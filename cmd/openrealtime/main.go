@@ -24,7 +24,9 @@ import (
 	"github.com/bojieli/OpenRealtime/internal/audio"
 	"github.com/bojieli/OpenRealtime/internal/simtime"
 	openaiwire "github.com/bojieli/OpenRealtime/protocol/openai"
+	benchmarkrelease "github.com/bojieli/OpenRealtime/release"
 	"github.com/bojieli/OpenRealtime/replay"
+	"github.com/bojieli/OpenRealtime/study"
 	"github.com/bojieli/OpenRealtime/trace"
 	"github.com/bojieli/OpenRealtime/visualization/ablation"
 	"github.com/bojieli/OpenRealtime/visualization/demonstrations"
@@ -54,13 +56,95 @@ func run(arguments []string, output io.Writer) error {
 		return runTrace(arguments[1:], output)
 	case "benchmark":
 		return runBenchmark(arguments[1:], output)
+	case "study":
+		return runStudy(arguments[1:], output)
+	case "release":
+		return runRelease(arguments[1:], output)
 	default:
 		return usageError()
 	}
 }
 
 func usageError() error {
-	return errors.New("usage: openrealtime <fixture|replay|protocol|trace|benchmark> <command> [options]")
+	return errors.New("usage: openrealtime <fixture|replay|protocol|trace|benchmark|study|release> <command> [options]")
+}
+
+func runStudy(arguments []string, output io.Writer) error {
+	if len(arguments) == 0 || arguments[0] != "build" {
+		return errors.New("usage: openrealtime study build --root <repository> --output <study.json>")
+	}
+	flags := flag.NewFlagSet("study build", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	root := flags.String("root", ".", "repository root")
+	outputPath := flags.String("output", "", "comparative study JSON output")
+	if err := flags.Parse(arguments[1:]); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || *outputPath == "" {
+		return errors.New("study build requires --output")
+	}
+	result, err := study.Build(*root)
+	if err != nil {
+		return err
+	}
+	if err := writeAtomicJSON(*outputPath, result); err != nil {
+		return err
+	}
+	return writeJSON(output, map[string]any{
+		"output": *outputPath, "release_id": result.ReleaseID,
+		"conditions": len(result.Conditions), "paired_effects": len(result.PairedEffects), "claims": len(result.Claims),
+	})
+}
+
+func runRelease(arguments []string, output io.Writer) error {
+	if len(arguments) == 0 {
+		return errors.New("usage: openrealtime release <build|verify> [options]")
+	}
+	switch arguments[0] {
+	case "build":
+		flags := flag.NewFlagSet("release build", flag.ContinueOnError)
+		flags.SetOutput(io.Discard)
+		root := flags.String("root", ".", "repository root")
+		outputPath := flags.String("output", "", "release manifest JSON output")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *outputPath == "" {
+			return errors.New("release build requires --output")
+		}
+		manifest, err := benchmarkrelease.Build(*root)
+		if err != nil {
+			return err
+		}
+		if err := writeAtomicJSON(*outputPath, manifest); err != nil {
+			return err
+		}
+		return writeJSON(output, map[string]any{
+			"output": *outputPath, "release_id": manifest.ReleaseID, "files": len(manifest.Files),
+		})
+	case "verify":
+		flags := flag.NewFlagSet("release verify", flag.ContinueOnError)
+		flags.SetOutput(io.Discard)
+		root := flags.String("root", ".", "repository root")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 1 {
+			return errors.New("release verify requires one manifest path")
+		}
+		manifest, err := benchmarkrelease.Load(flags.Arg(0))
+		if err != nil {
+			return err
+		}
+		if err := benchmarkrelease.Verify(*root, manifest); err != nil {
+			return err
+		}
+		return writeJSON(output, map[string]any{
+			"release_id": manifest.ReleaseID, "files": len(manifest.Files), "verified": true,
+		})
+	default:
+		return errors.New("usage: openrealtime release <build|verify> [options]")
+	}
 }
 
 func runFixture(arguments []string, output io.Writer) error {

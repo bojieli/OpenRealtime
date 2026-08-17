@@ -12,8 +12,8 @@ The working idea is to let a system listen, revise its understanding, prepare re
 
 ## Status
 
-M0 reproducibility through M5 translation and rapid-interaction demonstrations
-are complete; M6 comparative release work is next.
+M0 reproducibility through the M6 comparative reference release are complete;
+M7 stable API and conformance work is next.
 The repository contains a generated conformance layer for every event in the
 pinned OpenAI Realtime OpenAPI specification, deterministic 24 kHz PCM replay, an original
 redistributable audio fixture, and causal trace validation. There is no Python
@@ -38,6 +38,11 @@ M5 adds the OpenAI Translation session lifecycle, 200 ms PCM16 translation
 frames, append-only simultaneous-translation policies, and a GA Realtime rapid
 audio game. Both key-free demonstrations publish latency, symbolic task quality,
 failures, compute units, and protocol-valid causal traces.
+
+M6 adds deterministic paired-bootstrap analysis, explicit comparability groups,
+evidence-scoped claims and counterexamples, a prospective human-study protocol,
+and a SHA-256-verified `openrealtime-benchmarks-v0.1.0` release. Native and
+participant comparisons are honestly marked not run.
 
 ## Start here
 
@@ -79,9 +84,15 @@ To reproduce the M5 demonstrations:
 ./scripts/reproduce_m5.sh
 ```
 
+To reproduce and verify the M6 benchmark release:
+
+```bash
+./scripts/reproduce_m6.sh
+```
+
 These scripts create isolated build artifacts, validate every emitted message
 against the official protocol schemas, check trace causality, compare the
-result byte-for-byte with the checked-in golden files, and runs race, test,
+result byte-for-byte with the checked-in golden files, and run race, test,
 vet, and formatting gates. See
 [docs/reproducibility.md](docs/reproducibility.md) for the expected output and
 manual commands.

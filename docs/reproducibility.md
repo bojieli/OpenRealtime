@@ -117,3 +117,17 @@ all 150 causal traces, compares the report, dashboard, representative traces,
 and timelines byte-for-byte, then runs race, vet, and formatting gates. No API
 key, provider SDK, browser client, or proprietary fixture is required. See
 [m5-demonstrations.md](m5-demonstrations.md) for metric semantics and limits.
+
+## M6 comparative reference release
+
+Run:
+
+```bash
+./scripts/reproduce_m6.sh
+```
+
+After the complete M5 hierarchy, this command rebuilds the machine-readable
+comparative study, compares it byte-for-byte, rebuilds the 41-file release
+manifest, verifies every listed size and SHA-256 digest, and repeats the full Go
+quality gates. The native and human-study rows are deliberately `not_run`; see
+the technical report and prospective human-study protocol in `docs/research/`.

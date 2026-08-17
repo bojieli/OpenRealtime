@@ -625,6 +625,10 @@ Exit criteria:
 
 ### M6 — Comparative study and research release
 
+Status: complete for the open reference condition. Native-provider and human
+participant comparisons are prospectively specified and explicitly not run
+because neither provider access nor participant-study authority was in scope.
+
 Deliverables:
 
 - Native, endpointed, microturn, and hybrid comparisons where access permits.

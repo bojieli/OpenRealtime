@@ -139,8 +139,44 @@ All values are simulated/authored reference units, not model claims.
 
 ## M5 — Translation and rapid-interaction demonstrations
 
-- Status: next
+- Status: complete
+- Completed: 2026-08-17
+- Checkpoint command: `./scripts/reproduce_m5.sh`
 
-Next evidence must cover an incremental translation policy, quality/latency
-alignment metrics, a rapid audio game with deadline/jitter scoring, public
-fixtures, and repeatable reports without a proprietary client.
+### Deliverable evidence
+
+| Requirement | Evidence |
+| --- | --- |
+| Simultaneous translation | Endpointed, stable, and aggressive append-only policies in `translation/` |
+| Complete translation lifecycle | 90 traces across all three client and six non-error server event types |
+| Rapid audio game | Four-round Signal Match benchmark in `rapidgame/` |
+| Public fixtures and demos | CC0 symbolic manifest plus two key-free scripts |
+| Balanced reporting | Lag/reaction, exact task quality, failures, compute, and protocol record counts |
+
+Stable incremental translation has 79.399 ms P50 authored mean lag and exact
+quality 100 versus 586.616 ms for endpointed output, at higher compute. The
+aggressive counterexample is quicker but has quality 60. Signal Match microturn
+reaction P50 is 63.651 ms with zero deadline misses versus 152.303 ms and 102
+misses endpointed. These are injected symbolic results, not language or device
+performance.
+
+## M6 — Comparative study and research release
+
+- Status: complete for the open reference condition
+- Completed: 2026-08-17
+- Checkpoint command: `./scripts/reproduce_m6.sh`
+
+### Deliverable evidence
+
+| Requirement | Evidence |
+| --- | --- |
+| Endpointed/microturn comparison | Paired raw trials and deterministic 10,000-resample median intervals |
+| Native/hybrid scope | Native explicitly `not_run`; hybrid fast/slow retained in a separate task group |
+| Predefined ablations | M2 cadence, M3 duplex, M4 cognition, and M5 translation/game groups |
+| Human study | Prospective preregistration, ethics gate, exclusions, randomization, and analysis protocol; not run |
+| Technical report | `docs/research/technical-report-v0.1.md` with claims and counterexamples |
+| Versioned release | 41-file SHA-256 manifest plus machine-readable `study.json` |
+
+All claims point to published conditions and name their scope. Incomparable
+workloads are never combined into a leaderboard. Native provider and human
+participant results remain blocked, visible, and unclaimed.
