@@ -17,10 +17,13 @@ import (
 
 	"github.com/bojieli/OpenRealtime/adapters/reference"
 	"github.com/bojieli/OpenRealtime/baseline"
+	m2experiment "github.com/bojieli/OpenRealtime/experiments/m2"
 	"github.com/bojieli/OpenRealtime/internal/audio"
+	"github.com/bojieli/OpenRealtime/internal/simtime"
 	openaiwire "github.com/bojieli/OpenRealtime/protocol/openai"
 	"github.com/bojieli/OpenRealtime/replay"
 	"github.com/bojieli/OpenRealtime/trace"
+	"github.com/bojieli/OpenRealtime/visualization/ablation"
 	"github.com/bojieli/OpenRealtime/visualization/timeline"
 )
 
@@ -245,9 +248,20 @@ func runTrace(arguments []string, output io.Writer) error {
 }
 
 func runBenchmark(arguments []string, output io.Writer) error {
-	if len(arguments) == 0 || arguments[0] != "m1" {
-		return errors.New("usage: openrealtime benchmark m1 --fixture <audio.wav> --manifest <manifest.json> --output <directory>")
+	if len(arguments) == 0 {
+		return errors.New("usage: openrealtime benchmark <m1|m2> --fixture <audio.wav> --manifest <manifest.json> --output <directory>")
 	}
+	switch arguments[0] {
+	case "m1":
+		return runBenchmarkM1(arguments[1:], output)
+	case "m2":
+		return runBenchmarkM2(arguments[1:], output)
+	default:
+		return errors.New("usage: openrealtime benchmark <m1|m2> --fixture <audio.wav> --manifest <manifest.json> --output <directory>")
+	}
+}
+
+func runBenchmarkM1(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("benchmark m1", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	fixturePath := flags.String("fixture", "", "24 kHz PCM16 fixture")
@@ -256,7 +270,7 @@ func runBenchmark(arguments []string, output io.Writer) error {
 	trials := flags.Uint64("trials", 30, "number of paired deterministic trials")
 	seed := flags.Uint64("seed", 20260817, "base deterministic random seed")
 	frameMS := flags.Uint("frame-ms", 20, "input frame duration in milliseconds")
-	if err := flags.Parse(arguments[1:]); err != nil {
+	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 || *fixturePath == "" || *manifestPath == "" || *outputDirectory == "" {
@@ -329,6 +343,66 @@ func runBenchmark(arguments []string, output io.Writer) error {
 		"output": *outputDirectory, "trials": len(report.Trials),
 		"condition": report.Condition, "timing_mode": report.TimingMode,
 		"distributions": report.Distributions,
+	})
+}
+
+func runBenchmarkM2(arguments []string, output io.Writer) error {
+	flags := flag.NewFlagSet("benchmark m2", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	fixturePath := flags.String("fixture", "", "24 kHz PCM16 fixture")
+	manifestPath := flags.String("manifest", "", "reference adapter manifest")
+	outputDirectory := flags.String("output", "", "benchmark artifact directory")
+	trials := flags.Uint64("trials", 30, "number of paired deterministic trials")
+	seed := flags.Uint64("seed", 20260817, "base deterministic random seed")
+	frameMS := flags.Uint("frame-ms", 20, "input frame duration in milliseconds")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || *fixturePath == "" || *manifestPath == "" || *outputDirectory == "" {
+		return errors.New("benchmark m2 requires --fixture, --manifest, and --output")
+	}
+	if *frameMS == 0 || *frameMS > uint(^uint32(0)) {
+		return errors.New("frame-ms must fit a positive uint32")
+	}
+	if err := prepareEmptyDirectory(*outputDirectory); err != nil {
+		return err
+	}
+	manifest, err := reference.LoadManifest(*manifestPath)
+	if err != nil {
+		return err
+	}
+	report, err := m2experiment.Run(context.Background(), m2experiment.Config{
+		FixturePath: *fixturePath, Manifest: manifest, Trials: *trials, Seed: *seed,
+		FrameMS: uint32(*frameMS), Timing: simtime.DefaultModel(), Policies: m2experiment.DefaultPolicies(),
+	})
+	if err != nil {
+		return err
+	}
+	if err := writeAtomicJSON(filepath.Join(*outputDirectory, "report.json"), report); err != nil {
+		return err
+	}
+	visualization, err := newAtomicOutput(filepath.Join(*outputDirectory, "ablation.html"))
+	if err != nil {
+		return err
+	}
+	if err := ablation.Render(visualization.File, report); err != nil {
+		visualization.Abort()
+		return err
+	}
+	if err := visualization.Commit(); err != nil {
+		visualization.Abort()
+		return err
+	}
+	summaries := make(map[string]map[string]any, len(report.Conditions))
+	for _, condition := range report.Conditions {
+		summaries[condition.Policy.Name] = map[string]any{
+			"observed_latency_ns":         condition.Distributions["observed_latency_ns"],
+			"observed_minus_baseline_ns":  condition.SignedDistributions["observed_minus_baseline_ns"],
+			"prepared_pre_endpoint_count": condition.PreparedPreEndpointCount,
+		}
+	}
+	return writeJSON(output, map[string]any{
+		"output": *outputDirectory, "trials": *trials, "experiment": report.Experiment, "conditions": summaries,
 	})
 }
 

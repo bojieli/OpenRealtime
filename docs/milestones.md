@@ -69,8 +69,32 @@ speech naturalness, or production latency.
 
 ## M2 — Microturn engine
 
+- Status: complete
+- Completed: 2026-08-17
+- Checkpoint command: `./scripts/reproduce_m2.sh`
+
+### Deliverable evidence
+
+| Requirement | Evidence |
+| --- | --- |
+| Fixed scheduler | 50/100/200/400/800 ms policies in `microturn/scheduler.go` |
+| Event scheduler | Revision-triggered policy plus endpoint opportunity |
+| Revision-aware state | Stable-prefix and monotonic-source invariants in `microturn/ledger.go` |
+| Candidate lifecycle | Explicit prepare, supersede, cancel, and stale-result rejection |
+| Same components as B0 | M1 reference perception, cognition, and speech adapters reused unchanged |
+| Cadence ablation | Six paired 30-trial conditions in `benchmarks/m2/reference/report.json` |
+| Attribution | Observed-minus-B0 equals negative planning overlap with 0 ns error in every trial |
+
+The revision-event condition has 71.583 ms P50 simulated output-marker latency
+versus B0's 201.526 ms P50, with paired delta -128.333 ms. This is deterministic
+orchestration evidence over symbolic cues, not real model or semantic-audio
+performance. Coarser fixed conditions tying is explicitly retained as a fixture
+effect rather than hidden.
+
+## M3 — Incremental speech commitment and duplex behavior
+
 - Status: next
 
-Next evidence must cover fixed and event-driven scheduling, revision-aware
-candidates, prepare/supersede/cancel semantics, and an initial cadence ablation
-using the same component adapters as B0.
+Next evidence must cover streaming synthesis, prepared versus played audio,
+commit horizon and truncation, continuous input while output is active,
+interruption/backchannel classification, stop latency, and repair invariants.

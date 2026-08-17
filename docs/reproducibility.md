@@ -61,3 +61,17 @@ trace, and compares the report, trial-0000 trace, and HTML timeline with the
 checked reference artifacts. It then runs the same race, vet, and formatting
 gates as M0. See [m1-baseline.md](m1-baseline.md) for the stage equation,
 reported distribution, and limitations.
+
+## M2 cadence ablation
+
+Run:
+
+```bash
+./scripts/reproduce_m2.sh
+```
+
+The command regression-checks all M1 reference traces, then regenerates the six
+paired M2 scheduling conditions, complete action ledger, and HTML ablation
+view. It compares the report and visualization byte-for-byte and runs the full
+race, test, vet, and formatting gates. See [m2-engine.md](m2-engine.md) for the
+attribution equation and interpretation limits.

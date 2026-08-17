@@ -52,6 +52,9 @@ func TestPerceptionEnforcesOrderedPCMAndEmitsRevisions(t *testing.T) {
 	if !final.Final || final.RevisionID != 2 || final.SourceSample != 2 {
 		t.Fatalf("unexpected final revision: %+v", final)
 	}
+	if _, err := provider.Finalize(context.Background(), 2); err == nil {
+		t.Fatal("expected duplicate finalization to fail")
+	}
 	if _, err := provider.PushFrame(context.Background(), frame); err == nil {
 		t.Fatal("expected duplicate frame to fail")
 	}
@@ -60,7 +63,7 @@ func TestPerceptionEnforcesOrderedPCMAndEmitsRevisions(t *testing.T) {
 func TestReferenceCognitionAndSpeech(t *testing.T) {
 	t.Parallel()
 	candidate, err := NewCognition("reference answer").Respond(context.Background(), engine.PerceptionRevision{
-		RevisionID: 3, StableText: "question", Final: true,
+		RevisionID: 3, StableText: "question",
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -2,7 +2,6 @@
 package reference
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/hex"
@@ -35,12 +34,21 @@ type Manifest struct {
 }
 
 func LoadManifest(path string) (Manifest, error) {
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("read reference manifest: %w", err)
 	}
+	defer file.Close()
+	const maximumManifestBytes = int64(1 << 20)
+	metadata, err := file.Stat()
+	if err != nil {
+		return Manifest{}, fmt.Errorf("stat reference manifest: %w", err)
+	}
+	if metadata.Size() > maximumManifestBytes {
+		return Manifest{}, errors.New("reference manifest exceeds 1 MiB")
+	}
 	var manifest Manifest
-	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder := json.NewDecoder(io.LimitReader(file, maximumManifestBytes+1))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&manifest); err != nil {
 		return Manifest{}, fmt.Errorf("decode reference manifest: %w", err)
@@ -86,6 +94,7 @@ type Perception struct {
 	revision   uint64
 	nextFrame  uint64
 	nextSample uint64
+	finalized  bool
 }
 
 func NewPerception(manifest Manifest) *Perception {
@@ -109,6 +118,9 @@ func (provider *Perception) PushFrame(
 ) ([]engine.PerceptionRevision, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if provider.finalized {
+		return nil, errors.New("cannot push reference perception frames after finalization")
 	}
 	if frame.Index != provider.nextFrame || frame.SampleOffset != provider.nextSample {
 		return nil, errors.New("reference perception frames must be contiguous and ordered")
@@ -142,10 +154,14 @@ func (provider *Perception) Finalize(
 	if err := ctx.Err(); err != nil {
 		return engine.PerceptionRevision{}, err
 	}
+	if provider.finalized {
+		return engine.PerceptionRevision{}, errors.New("reference perception is already finalized")
+	}
 	if endSample != provider.nextSample || provider.nextCue != len(provider.manifest.Cues) {
 		return engine.PerceptionRevision{}, errors.New("cannot finalize before all ordered audio frames and manifest cues")
 	}
 	provider.revision++
+	provider.finalized = true
 	return engine.PerceptionRevision{
 		RevisionID:   provider.revision,
 		SourceSample: endSample,
@@ -179,8 +195,8 @@ func (provider *Cognition) Respond(
 	if err := ctx.Err(); err != nil {
 		return engine.ResponseCandidate{}, err
 	}
-	if !revision.Final {
-		return engine.ResponseCandidate{}, errors.New("endpointed cognition requires a final perception revision")
+	if revision.RevisionID == 0 || strings.TrimSpace(revision.StableText) == "" {
+		return engine.ResponseCandidate{}, errors.New("reference cognition requires a stable perception revision")
 	}
 	if strings.TrimSpace(provider.responseText) == "" {
 		return engine.ResponseCandidate{}, errors.New("reference response must not be empty")
@@ -190,7 +206,7 @@ func (provider *Cognition) Respond(
 		SourceRevision:  revision.RevisionID,
 		Text:            provider.responseText,
 		Semantic:        true,
-		ValiditySummary: "valid for the finalized reference fixture transcript",
+		ValiditySummary: fmt.Sprintf("valid while stable prefix from revision %d remains applicable", revision.RevisionID),
 	}, nil
 }
 

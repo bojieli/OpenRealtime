@@ -2,7 +2,6 @@
 package baseline
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"encoding/base64"
@@ -10,48 +9,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"slices"
 	"sort"
 
 	"github.com/bojieli/OpenRealtime/adapters/reference"
+	"github.com/bojieli/OpenRealtime/analysis"
 	"github.com/bojieli/OpenRealtime/engine"
 	"github.com/bojieli/OpenRealtime/internal/audio"
+	"github.com/bojieli/OpenRealtime/internal/fixture"
+	"github.com/bojieli/OpenRealtime/internal/simtime"
 	openaiwire "github.com/bojieli/OpenRealtime/protocol/openai"
-	"github.com/bojieli/OpenRealtime/replay"
 	"github.com/bojieli/OpenRealtime/trace"
 )
 
-const nanosecondsPerMillisecond = uint64(1_000_000)
-
-type Delay struct {
-	BaseNS   uint64 `json:"base_ns"`
-	JitterNS uint64 `json:"jitter_ns"`
-}
-
-type TimingModel struct {
-	StreamingRevision  Delay `json:"streaming_revision"`
-	PerceptionFinalize Delay `json:"perception_finalize"`
-	PerceptionQueue    Delay `json:"perception_queue"`
-	Cognition          Delay `json:"cognition"`
-	CognitionQueue     Delay `json:"cognition_queue"`
-	SpeechFirstChunk   Delay `json:"speech_first_chunk"`
-	PlaybackQueue      Delay `json:"playback_queue"`
-}
+type Delay = simtime.Delay
+type TimingModel = simtime.Model
+type StageDurations = simtime.Stages
+type Distribution = analysis.Distribution
 
 func DefaultTimingModel() TimingModel {
-	ms := func(base, jitter uint64) Delay {
-		return Delay{BaseNS: base * nanosecondsPerMillisecond, JitterNS: jitter * nanosecondsPerMillisecond}
-	}
-	return TimingModel{
-		StreamingRevision:  ms(30, 5),
-		PerceptionFinalize: ms(60, 12),
-		PerceptionQueue:    ms(3, 1),
-		Cognition:          ms(80, 20),
-		CognitionQueue:     ms(4, 1),
-		SpeechFirstChunk:   ms(55, 10),
-		PlaybackQueue:      ms(2, 1),
-	}
+	return simtime.DefaultModel()
 }
 
 type Config struct {
@@ -61,21 +38,6 @@ type Config struct {
 	Seed        uint64
 	FrameMS     uint32
 	Timing      TimingModel
-}
-
-type StageDurations struct {
-	PerceptionFinalizeNS uint64 `json:"perception_finalize_ns"`
-	PerceptionQueueNS    uint64 `json:"perception_queue_ns"`
-	CognitionNS          uint64 `json:"cognition_ns"`
-	CognitionQueueNS     uint64 `json:"cognition_queue_ns"`
-	SpeechFirstChunkNS   uint64 `json:"speech_first_chunk_ns"`
-	PlaybackQueueNS      uint64 `json:"playback_queue_ns"`
-}
-
-func (stages StageDurations) Sum() uint64 {
-	return stages.PerceptionFinalizeNS + stages.PerceptionQueueNS +
-		stages.CognitionNS + stages.CognitionQueueNS +
-		stages.SpeechFirstChunkNS + stages.PlaybackQueueNS
 }
 
 type Trial struct {
@@ -88,16 +50,6 @@ type Trial struct {
 	ReconciliationErrorNS     uint64         `json:"reconciliation_error_ns"`
 	Stages                    StageDurations `json:"stages"`
 	Trace                     []trace.Record `json:"-"`
-}
-
-type Distribution struct {
-	Count uint64 `json:"count"`
-	MinNS uint64 `json:"min_ns"`
-	P50NS uint64 `json:"p50_ns"`
-	P90NS uint64 `json:"p90_ns"`
-	P95NS uint64 `json:"p95_ns"`
-	P99NS uint64 `json:"p99_ns"`
-	MaxNS uint64 `json:"max_ns"`
 }
 
 type Report struct {
@@ -114,11 +66,6 @@ type Report struct {
 	Distributions map[string]Distribution `json:"distributions"`
 }
 
-type sampledTiming struct {
-	streamingRevision uint64
-	stages            StageDurations
-}
-
 type scheduledEvent struct {
 	key       string
 	parents   []string
@@ -127,13 +74,6 @@ type scheduledEvent struct {
 	direction openaiwire.Direction
 	profile   openaiwire.Profile
 	message   json.RawMessage
-}
-
-type inputFixture struct {
-	records     []trace.Record
-	frames      []engine.AudioFrame
-	endpointNS  uint64
-	sampleCount uint64
 }
 
 func Run(ctx context.Context, config Config) (Report, error) {
@@ -148,7 +88,7 @@ func Run(ctx context.Context, config Config) (Report, error) {
 	if fixtureHash != config.Manifest.FixtureSHA256 {
 		return Report{}, fmt.Errorf("fixture SHA-256 %s does not match manifest %s", fixtureHash, config.Manifest.FixtureSHA256)
 	}
-	input, err := loadInputFixture(config.FixturePath, config.FrameMS)
+	input, err := fixture.Load(config.FixturePath, config.FrameMS, "m1-input")
 	if err != nil {
 		return Report{}, err
 	}
@@ -174,8 +114,7 @@ func Run(ctx context.Context, config Config) (Report, error) {
 			return Report{}, err
 		}
 		trialSeed := config.Seed + trialIndex
-		random := rand.New(rand.NewPCG(trialSeed, trialSeed^0x9e3779b97f4a7c15))
-		timing, err := sampleTiming(config.Timing, random)
+		timing, err := simtime.Sample(config.Timing, trialSeed)
 		if err != nil {
 			return Report{}, err
 		}
@@ -185,85 +124,11 @@ func Run(ctx context.Context, config Config) (Report, error) {
 		}
 		report.Trials = append(report.Trials, trial)
 	}
-	report.Distributions = summarize(report.Trials)
+	report.Distributions, err = summarize(report.Trials)
+	if err != nil {
+		return Report{}, err
+	}
 	return report, nil
-}
-
-func loadInputFixture(path string, frameMS uint32) (inputFixture, error) {
-	var eventOutput, traceOutput bytes.Buffer
-	summary, err := replay.WAV(path, replay.Options{
-		SessionID: "m1-input", FrameDurationMS: frameMS, Events: &eventOutput, Trace: &traceOutput,
-	})
-	if err != nil {
-		return inputFixture{}, err
-	}
-	result := inputFixture{endpointNS: summary.DurationNS, sampleCount: summary.InputSampleCount}
-	var sampleOffset uint64
-	_, err = trace.Read(bytes.NewReader(traceOutput.Bytes()), func(record trace.Record) error {
-		result.records = append(result.records, record)
-		message, err := openaiwire.Decode(record.Message)
-		if err != nil {
-			return err
-		}
-		if message.Type() != openaiwire.EventInputAudioBufferAppend {
-			return nil
-		}
-		var payload struct {
-			Audio string `json:"audio"`
-		}
-		if err := message.Unmarshal(&payload); err != nil {
-			return err
-		}
-		pcm, err := base64.StdEncoding.DecodeString(payload.Audio)
-		if err != nil {
-			return err
-		}
-		result.frames = append(result.frames, engine.AudioFrame{
-			Index: uint64(len(result.frames)), SampleOffset: sampleOffset,
-			SampleRateHz: 24_000, PCM16LE: pcm,
-		})
-		sampleOffset += uint64(len(pcm) / 2)
-		return nil
-	})
-	if err != nil {
-		return inputFixture{}, err
-	}
-	if sampleOffset != summary.InputSampleCount {
-		return inputFixture{}, errors.New("input trace sample count does not match replay summary")
-	}
-	return result, nil
-}
-
-func sampleTiming(model TimingModel, random *rand.Rand) (sampledTiming, error) {
-	values := []*Delay{
-		&model.StreamingRevision, &model.PerceptionFinalize, &model.PerceptionQueue,
-		&model.Cognition, &model.CognitionQueue, &model.SpeechFirstChunk, &model.PlaybackQueue,
-	}
-	for _, delay := range values {
-		if delay.JitterNS > delay.BaseNS {
-			return sampledTiming{}, errors.New("timing jitter must not exceed its base duration")
-		}
-	}
-	return sampledTiming{
-		streamingRevision: jitter(model.StreamingRevision, random),
-		stages: StageDurations{
-			PerceptionFinalizeNS: jitter(model.PerceptionFinalize, random),
-			PerceptionQueueNS:    jitter(model.PerceptionQueue, random),
-			CognitionNS:          jitter(model.Cognition, random),
-			CognitionQueueNS:     jitter(model.CognitionQueue, random),
-			SpeechFirstChunkNS:   jitter(model.SpeechFirstChunk, random),
-			PlaybackQueueNS:      jitter(model.PlaybackQueue, random),
-		},
-	}, nil
-}
-
-func jitter(delay Delay, random *rand.Rand) uint64 {
-	if delay.JitterNS == 0 {
-		return delay.BaseNS
-	}
-	width := delay.JitterNS*2 + 1
-	offset := random.Uint64N(width)
-	return delay.BaseNS - delay.JitterNS + offset
 }
 
 func runTrial(
@@ -271,8 +136,8 @@ func runTrial(
 	index uint64,
 	seed uint64,
 	manifest reference.Manifest,
-	input inputFixture,
-	timing sampledTiming,
+	input fixture.Input,
+	timing simtime.Sampled,
 	validator *openaiwire.Validator,
 ) (Trial, error) {
 	perception := reference.NewPerception(manifest)
@@ -282,9 +147,9 @@ func runTrial(
 		return Trial{}, errors.New("M1 perception adapter must support streaming input")
 	}
 
-	schedule := make([]scheduledEvent, 0, len(input.records)+len(manifest.Cues)+12)
+	schedule := make([]scheduledEvent, 0, len(input.Records)+len(manifest.Cues)+12)
 	var order uint64
-	for _, record := range input.records {
+	for _, record := range input.Records {
 		schedule = append(schedule, scheduledEvent{
 			key: record.TraceID, parents: slices.Clone(record.CausalParentIDs), atNS: record.MonotonicNS,
 			order: order, direction: record.Direction, profile: record.Profile, message: slices.Clone(record.Message),
@@ -292,14 +157,14 @@ func runTrial(
 		order++
 	}
 	var revisions []engine.PerceptionRevision
-	for _, frame := range input.frames {
+	for _, frame := range input.Frames {
 		produced, err := perception.PushFrame(ctx, frame)
 		if err != nil {
 			return Trial{}, err
 		}
 		for _, revision := range produced {
 			revisions = append(revisions, revision)
-			frameIndex := frameForSample(input.frames, revision.SourceSample)
+			frameIndex := frameForSample(input.Frames, revision.SourceSample)
 			message, err := marshalEvent(map[string]any{
 				"event_id": fmt.Sprintf("event_m1_%02d_revision_%04d", index, revision.RevisionID),
 				"type":     openaiwire.EventConversationItemInputAudioTranscriptionDelta,
@@ -310,15 +175,15 @@ func runTrial(
 			}
 			schedule = append(schedule, scheduledEvent{
 				key:     fmt.Sprintf("trial_%02d_revision_%04d", index, revision.RevisionID),
-				parents: []string{input.records[frameIndex].TraceID},
-				atNS:    revision.SourceSample*1_000_000_000/24_000 + timing.streamingRevision,
+				parents: []string{input.Records[frameIndex].TraceID},
+				atNS:    revision.SourceSample*1_000_000_000/24_000 + timing.StreamingRevisionNS,
 				order:   order, direction: openaiwire.DirectionServer, profile: openaiwire.ProfileRealtime,
 				message: message,
 			})
 			order++
 		}
 	}
-	finalRevision, err := perception.Finalize(ctx, input.sampleCount)
+	finalRevision, err := perception.Finalize(ctx, input.SampleCount)
 	if err != nil {
 		return Trial{}, err
 	}
@@ -334,13 +199,13 @@ func runTrial(
 		return Trial{}, errors.New("reference speech adapter must return one final chunk")
 	}
 
-	endpointKey := input.records[len(input.records)-1].TraceID
+	endpointKey := input.Records[len(input.Records)-1].TraceID
 	lastRevisionKey := endpointKey
 	if len(revisions) > 0 {
 		lastRevisionKey = fmt.Sprintf("trial_%02d_revision_%04d", index, revisions[len(revisions)-1].RevisionID)
 	}
-	stage := timing.stages
-	perceptionDoneNS := input.endpointNS + stage.PerceptionFinalizeNS
+	stage := timing.Stages
+	perceptionDoneNS := input.EndpointNS + stage.PerceptionFinalizeNS
 	responseCreatedNS := perceptionDoneNS + stage.PerceptionQueueNS
 	cognitionDoneNS := responseCreatedNS + stage.CognitionNS
 	speechRequestedNS := cognitionDoneNS + stage.CognitionQueueNS
@@ -373,7 +238,7 @@ func runTrial(
 		"event_id": fmt.Sprintf("event_m1_%02d_transcript_done", index),
 		"type":     openaiwire.EventConversationItemInputAudioTranscriptionCompleted,
 		"item_id":  manifest.ItemID, "content_index": 0, "transcript": finalRevision.StableText,
-		"usage": map[string]any{"type": "duration", "seconds": float64(input.endpointNS) / 1_000_000_000},
+		"usage": map[string]any{"type": "duration", "seconds": float64(input.EndpointNS) / 1_000_000_000},
 	}); err != nil {
 		return Trial{}, err
 	}
@@ -436,10 +301,10 @@ func runTrial(
 	if err != nil {
 		return Trial{}, err
 	}
-	observed := firstOutputPlaybackNS - input.endpointNS
+	observed := firstOutputPlaybackNS - input.EndpointNS
 	sum := stage.Sum()
 	return Trial{
-		Index: index, Seed: seed, EndpointNS: input.endpointNS,
+		Index: index, Seed: seed, EndpointNS: input.EndpointNS,
 		FirstOutputPlaybackNS: firstOutputPlaybackNS, ObservedResponseLatencyNS: observed,
 		ReconciledStageSumNS: sum, ReconciliationErrorNS: absoluteDifference(observed, sum),
 		Stages: stage, Trace: records,
@@ -504,7 +369,7 @@ func absoluteDifference(left, right uint64) uint64 {
 	return right - left
 }
 
-func summarize(trials []Trial) map[string]Distribution {
+func summarize(trials []Trial) (map[string]Distribution, error) {
 	metrics := map[string][]uint64{
 		"observed_response_latency_ns": {},
 		"reconciled_stage_sum_ns":      {},
@@ -529,25 +394,11 @@ func summarize(trials []Trial) map[string]Distribution {
 	}
 	result := make(map[string]Distribution, len(metrics))
 	for name, values := range metrics {
-		result[name] = distribution(values)
+		distribution, err := analysis.Summarize(values)
+		if err != nil {
+			return nil, err
+		}
+		result[name] = distribution
 	}
-	return result
-}
-
-func distribution(values []uint64) Distribution {
-	sorted := slices.Clone(values)
-	slices.Sort(sorted)
-	return Distribution{
-		Count: uint64(len(sorted)), MinNS: sorted[0], P50NS: percentile(sorted, 50),
-		P90NS: percentile(sorted, 90), P95NS: percentile(sorted, 95),
-		P99NS: percentile(sorted, 99), MaxNS: sorted[len(sorted)-1],
-	}
-}
-
-func percentile(sorted []uint64, percent uint64) uint64 {
-	index := (percent*uint64(len(sorted)) + 99) / 100
-	if index == 0 {
-		return sorted[0]
-	}
-	return sorted[index-1]
+	return result, nil
 }

@@ -56,5 +56,18 @@ quality baselines. Live ASR, language, speech, WebSocket/WebRTC/SIP transport,
 and device adapters remain deferred. Native and hosted adapters are optional;
 the open reference condition cannot require an API key.
 
+## Microturn scheduling and planning state
+
+M2 separates scheduling from candidate lifecycle. Fixed and revision-event
+schedulers consume monotonic observations and emit named opportunities carrying
+the newest revision actually available at that instant. The revision ledger
+protects stable prefixes; the candidate ledger requires explicit replacement
+or cancellation and refuses candidates tied to unknown evidence. Experiment
+actions record openings, suppressions, requests, preparation, supersession,
+cancellation, endpoints, and playback markers in one deterministic order.
+
+Only text candidates are prepared before the endpoint in M2. Audio commitment,
+continuous input during output, interruption, and repair remain M3 boundaries.
+
 See [ADR-0001](adr/0001-go-production-engine.md) for the language decision
 and [protocol.md](protocol.md) for event semantics.
