@@ -140,7 +140,9 @@ The 2026-08-17–18 run completed the entire 498-trial official overlap
 population plus an 80-trial paired sensitivity cell on Gemini 3.1 Flash Live,
 with 578 unique outputs and no terminal failure. GPT-4o and Groq live cells are
 marked unavailable with their observed reason; historical GPT-4o paper results
-remain separate from local measurements. Read the
+remain separate from local measurements. Pinned published FDB-v3 tool-use and
+LiveKit endpointing tables add broader context without being represented as
+local runs. Read the
 [live-provider report](docs/research/live-provider-benchmark-2026-08.md) and
 [external benchmark instructions](benchmarks/external/README.md).
 

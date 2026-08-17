@@ -102,6 +102,19 @@ run: the paper used `gpt-4o-realtime-preview-2024-12-17`, the `alloy` voice,
 Silero-VAD, and a GPT-4o behavior judge. Reports must keep it separate from
 locally observed results and confidence intervals.
 
+## Full-Duplex-Bench v3 published tool-use reference
+
+`full-duplex-bench-v3-published-results.json` transcribes Tables 2–6 and the
+paper-reported pre-emptive tool-call rates from arXiv `2604.04847v1`. The source
+PDF digest and benchmark repository revision are pinned. It contains published
+results for `gpt-realtime-1.5`, Gemini Live 2.5 and 3.1, xAI Grok, Ultravox
+v0.7, and a Whisper→GPT-4o→OpenAI TTS cascade.
+
+The artifact is not a local run. It explicitly preserves that GPT-Realtime is
+not GPT-4o Realtime, xAI Grok is not Groq, and the cascade's GPT-4o component is
+not a GPT-4o Realtime result. Its argument and response metrics also depend on
+GPT-4o judges.
+
 ## Tool-use benchmark scope
 
 The v3 manifest pins the upstream 100-scenario disfluent tool-use definition
@@ -109,6 +122,26 @@ and its 12 mock APIs, but marks it `inventoried_not_run`. A valid FDB-v3 run
 also needs the separate audio bundle, LiveKit-equivalent orchestration, actual
 tool responses, ASR, and a declared argument/response judge. Reporting a small
 JSON-only tool-call test as an FDB-v3 score would be misleading.
+
+The v3 release card calls the audio “100 examples, 79 unique scenarios,” while
+the pinned `benchmark_data_v2.json` contains 100 unique definition IDs. The
+manifest records both observations and uses `definition_entries` rather than
+silently treating examples, recordings, and scenario designs as identical.
+
+## LiveKit eot-bench published component reference
+
+`livekit-eot-bench-published-2026-08.json` pins LiveKit revision
+`7f2acca997211908c6ee962ace8bcc8d6a66fbac` and transcribes its committed
+English operating-point table. The benchmark evaluates causal end-of-turn
+decisions over 400 turns, jointly sweeping score threshold, minimum action
+delay, and timeout.
+
+This is component evidence only. Its latency is endpointing dead air rather
+than inference or speech-response latency. Its OpenAI row is
+`gpt-realtime-2` semantic VAD, not GPT-4o, and the endpoint-event adapter
+produces binary rather than calibrated probability scores. The upstream
+harness uses Python, but this repository only stores a JSON transcription and
+does not add or execute a Python dependency.
 
 TOBench was also evaluated for fit. It is a 100-task omni-modal MCP benchmark,
 not a realtime duplex voice-protocol benchmark, and its official harness is a

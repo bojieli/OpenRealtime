@@ -148,6 +148,72 @@ appears less immediately yielding than that historical GPT-4o row, but no claim
 about better addressee detection is justified without the missing local
 categorical judge.
 
+## Published FDB-v3 tool-use context
+
+Full-Duplex-Bench v3 adds a different workload: 100 human recordings with
+multi-step tool calls, five disfluency categories, four domains, and 12
+zero-latency mock APIs. The table below is transcribed from the paper's Table 2,
+not produced by this repository. In particular, its OpenAI system is
+`gpt-realtime-1.5`, not GPT-4o, and its Grok system is xAI Grok, not Groq.
+
+| Published system | Tool-selection F1 | Argument accuracy | Response quality | Pass@1 | Turn-take | Interruption | Task completion |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| OpenAI `gpt-realtime-1.5` | 0.876 | 0.680 | 0.792 | 0.600 | 96% | 13.5% | 6.89 s |
+| Gemini 2.5 native audio | 0.786 | 0.593 | 0.554 | 0.490 | 92% | 14.1% | 7.26 s |
+| Gemini 3.1 Flash Live | 0.817 | 0.588 | 0.718 | 0.540 | 78% | 19.2% | 4.25 s |
+| xAI Grok | 0.797 | 0.542 | 0.617 | 0.430 | 94% | 25.5% | 6.65 s |
+| Ultravox v0.7 | 0.794 | 0.513 | 0.510 | 0.410 | 96% | 47.9% | 8.40 s |
+| Whisper → GPT-4o → OpenAI TTS | 0.803 | 0.562 | 0.600 | 0.450 | 100% | 33.0% | 10.12 s |
+
+The paper reports the following harder-case and latency breakdowns. Pass@1
+requires exactly the expected tools and perfect argument accuracy on every
+call; argument and response scoring use GPT-4o judges.
+
+| Published system | Self-correction Pass@1 | Hard Pass@1 | First word | First tool call | Task completion |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| OpenAI `gpt-realtime-1.5` | 0.588 | 0.433 | 6.36 s | 3.89 s | 6.89 s |
+| Gemini 2.5 native audio | 0.471 | 0.267 | 7.03 s | 4.61 s | 7.26 s |
+| Gemini 3.1 Flash Live | 0.353 | 0.300 | 3.95 s | 2.21 s | 4.25 s |
+| xAI Grok | 0.294 | 0.200 | 5.97 s | 0.63 s | 6.65 s |
+| Ultravox v0.7 | 0.353 | 0.267 | 3.88 s | 6.01 s | 8.40 s |
+| Whisper → GPT-4o → OpenAI TTS | 0.176 | 0.233 | 8.78 s | 3.15 s | 10.12 s |
+
+This establishes a published speed/accuracy trade-off: GPT-Realtime led
+Pass@1 and interruption avoidance, Gemini 3.1 completed fastest but failed to
+take 22% of turns, and the cascade always took the turn but completed slowest.
+It does not extend the local FDB-v1.5 result: the tasks, metrics, judging, and
+collection dates differ. The full tables for disfluency, difficulty, domain,
+and latency are pinned in
+`benchmarks/external/full-duplex-bench-v3-published-results.json`.
+
+## Published endpointing component context
+
+LiveKit eot-bench provides a complementary causal end-of-turn test. It sweeps
+threshold, action delay, and timeout over complete user turns; latency is
+endpointing dead air, not model inference or end-to-end response time. These
+English values come from the repository's committed artifacts at revision
+`7f2acca997211908c6ee962ace8bcc8d6a66fbac` and were not rerun locally:
+
+| Published component | False cutoff at 300 ms | False cutoff at 600 ms | Latency at 5% cutoff | Latency at 10% cutoff |
+| --- | ---: | ---: | ---: | ---: |
+| LiveKit Turn Detector v1 | 9.9% | 4.5% | 543 ms | 295 ms |
+| Deepgram Flux | 12.9% | 9.9% | 1,151 ms | 548 ms |
+| ultraVAD | 27.7% | 11.9% | 899 ms | 663 ms |
+| LiveKit Turn Detector v1-mini | 27.8% | 12.1% | 1,070 ms | 698 ms |
+| SmartTurn v3.2 | 35.2% | 14.8% | 1,051 ms | 739 ms |
+| AssemblyAI | 49.4% | 14.6% | 1,049 ms | 713 ms |
+| Soniox | — | 5.5% | 647 ms | 512 ms |
+| Cartesia Ink 2 | — | — | 1,056 ms | 911 ms |
+| OpenAI `gpt-realtime-2` semantic VAD | — | — | 1,143 ms | 824 ms |
+| Silence-only VAD baseline | 55.6% | 21.7% | 1,600 ms | 1,000 ms |
+
+Here `—` means no swept policy met that latency budget. The OpenAI adapter
+streams 100 ms audio chunks into `gpt-realtime-2` semantic VAD with `auto`
+eagerness and maps `input_audio_buffer.speech_stopped` to a binary score. It
+observed no endpoint event in 61/400 English turns. This is valuable evidence
+about one protocol component, but it is neither GPT-4o nor a speech-response
+benchmark and therefore is not merged with the local Gemini measurements.
+
 ## What was not claimed
 
 - No provider-billed cost is claimed. The $2.68 figure is a duration-based paid
@@ -160,14 +226,14 @@ categorical judge.
   omni-modal MCP workflows, not realtime duplex voice behavior, and its
   official harness requires Python 3.12 plus a large mixed MCP/Node setup.
 - TREX FT-Bench was also assessed: it measures autonomous LLM fine-tuning over
-  ten training tasks, not live voice. The similarly named FD-Bench and LiveKit
-  eot-bench are relevant voice references, but their official Python harnesses
-  respectively measure a separate full-duplex pipeline and an endpoint-detector
-  component. Neither is relabeled as an end-to-end result from this runner.
-- Full-Duplex-Bench v3 tool-use definitions are pinned, but v3 is not reported
-  as run. A valid result additionally requires its separate audio bundle,
-  LiveKit-equivalent orchestration, mock-tool execution, ASR, and a declared
-  judge policy.
+  ten training tasks, not live voice. The similarly named FD-Bench measures a
+  separate full-duplex pipeline. Neither is relabeled as a result from this
+  runner.
+- Full-Duplex-Bench v3 and LiveKit eot-bench values above are pinned published
+  reference data, not local runs. Their official Python harnesses were not run
+  or added as dependencies. A valid local FDB-v3 result additionally requires
+  its separate audio bundle, LiveKit-equivalent orchestration, mock-tool
+  execution, ASR, and a declared judge policy.
 - Groq is not xAI Grok. The Groq adapter is explicitly a current
   STT→LLM→TTS cascade (`whisper-large-v3-turbo`, `openai/gpt-oss-120b`, and
   the preview `canopylabs/orpheus-v1-english`), and no live score exists without
@@ -203,6 +269,7 @@ and large generated media are not redistributed.
 
 - [Full-Duplex-Bench repository](https://github.com/DanielLin94144/Full-Duplex-Bench)
 - [Full-Duplex-Bench v1.5 paper and Table 2](https://arxiv.org/html/2507.23159)
+- [Full-Duplex-Bench v3 paper and Tables 2–6](https://arxiv.org/html/2604.04847v1)
 - [OpenAI GPT-4o Realtime model and deprecated snapshots](https://developers.openai.com/api/docs/models/gpt-4o-realtime-preview)
 - [OpenAI GPT-Realtime 1.5 model](https://developers.openai.com/api/docs/models/gpt-realtime-1.5)
 - [Gemini Live API technical specifications](https://ai.google.dev/gemini-api/docs/live-api)

@@ -10,11 +10,18 @@
     "path": "v3/benchmark_data_v2.json",
     "bytes": 130622,
     "sha256": "816bc3cb6266c0110ae55dfaca3676f0e894b5c2dca89210e5dc7f85338b4663",
-    "scenarios": 100,
+    "definition_entries": 100,
+    "unique_definition_ids": 100,
     "domains": 4,
     "mock_tools": 12,
     "average_expected_tool_calls": 1.54,
     "state_rollback_scenarios": 21
+  },
+  "release_card": {
+    "audio_examples": 100,
+    "claimed_unique_scenarios": 79,
+    "speakers": 12,
+    "observation": "The pinned JSON contains 100 unique definition IDs, while the upstream v3 README describes the released audio as 100 examples covering 79 unique scenarios. Both upstream facts are preserved rather than silently treating examples and scenarios as synonyms."
   },
   "status": "inventoried_not_run",
   "reason": "The direct v1.5 duplex matrix is the preregistered experiment in this run. The v3 release requires a separate 702 MB-class audio bundle, LiveKit orchestration, tool execution, ASR, and judge policy. No partial result is reported as v3-compatible.",
