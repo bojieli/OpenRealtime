@@ -610,6 +610,8 @@ Exit criteria:
 
 ### M5 — Translation and rapid-interaction demonstrations
 
+Status: complete.
+
 Deliverables:
 
 - Simultaneous translation policy and evaluation adapter.

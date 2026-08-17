@@ -102,3 +102,18 @@ The command executes the complete M3 regression gate, including OpenAI protocol
 validation and race tests, then regenerates the 270-trial fast/slow report and
 HTML frontier byte-for-byte. See [m4-fast-slow.md](m4-fast-slow.md) for lifecycle
 semantics and interpretation limits.
+
+## M5 translation and rapid interaction
+
+Run:
+
+```bash
+./scripts/reproduce_m5.sh
+```
+
+The command executes the complete M4 regression hierarchy, then regenerates 90
+OpenAI Translation-profile traces and 60 GA Realtime game traces. It validates
+all 150 causal traces, compares the report, dashboard, representative traces,
+and timelines byte-for-byte, then runs race, vet, and formatting gates. No API
+key, provider SDK, browser client, or proprietary fixture is required. See
+[m5-demonstrations.md](m5-demonstrations.md) for metric semantics and limits.

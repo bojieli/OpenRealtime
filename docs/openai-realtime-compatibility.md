@@ -58,6 +58,10 @@ Client events are `session.update`, `session.input_audio_buffer.append`, and
 `session.updated`, `session.closed`, `session.input_transcript.delta`,
 `session.output_transcript.delta`, and `session.output_audio.delta`.
 
+M5 exercises this entire non-error translation lifecycle with 200 ms PCM16
+frames in 90 validated traces. Error coverage remains schema-conformance based:
+the deterministic reference provider does not fabricate server failures.
+
 ## Legacy beta
 
 The beta profile covers 12 client and 40 server definitions from the same

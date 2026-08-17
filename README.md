@@ -12,8 +12,8 @@ The working idea is to let a system listen, revise its understanding, prepare re
 
 ## Status
 
-M0 reproducibility through M4 fast/slow cognition are complete; M5 translation
-and rapid-interaction demonstrations are next.
+M0 reproducibility through M5 translation and rapid-interaction demonstrations
+are complete; M6 comparative release work is next.
 The repository contains a generated conformance layer for every event in the
 pinned OpenAI Realtime OpenAPI specification, deterministic 24 kHz PCM replay, an original
 redistributable audio fixture, and causal trace validation. There is no Python
@@ -33,6 +33,11 @@ and schema-valid OpenAI cancellation/clear/truncation traces.
 M4 adds goal/revision-scoped asynchronous deliberation, truthful progress
 claims, cancellation and failure handling, stale callback rejection, and a
 symbolic latency/quality/compute frontier.
+
+M5 adds the OpenAI Translation session lifecycle, 200 ms PCM16 translation
+frames, append-only simultaneous-translation policies, and a GA Realtime rapid
+audio game. Both key-free demonstrations publish latency, symbolic task quality,
+failures, compute units, and protocol-valid causal traces.
 
 ## Start here
 
@@ -68,8 +73,14 @@ To reproduce the M4 fast/slow comparison:
 ./scripts/reproduce_m4.sh
 ```
 
-Both scripts create isolated build artifacts, validate every emitted message
-against the official protocol schemas, checks trace causality, compares the
+To reproduce the M5 demonstrations:
+
+```bash
+./scripts/reproduce_m5.sh
+```
+
+These scripts create isolated build artifacts, validate every emitted message
+against the official protocol schemas, check trace causality, compare the
 result byte-for-byte with the checked-in golden files, and runs race, test,
 vet, and formatting gates. See
 [docs/reproducibility.md](docs/reproducibility.md) for the expected output and

@@ -20,12 +20,14 @@ import (
 	m2experiment "github.com/bojieli/OpenRealtime/experiments/m2"
 	m3experiment "github.com/bojieli/OpenRealtime/experiments/m3"
 	m4experiment "github.com/bojieli/OpenRealtime/experiments/m4"
+	m5experiment "github.com/bojieli/OpenRealtime/experiments/m5"
 	"github.com/bojieli/OpenRealtime/internal/audio"
 	"github.com/bojieli/OpenRealtime/internal/simtime"
 	openaiwire "github.com/bojieli/OpenRealtime/protocol/openai"
 	"github.com/bojieli/OpenRealtime/replay"
 	"github.com/bojieli/OpenRealtime/trace"
 	"github.com/bojieli/OpenRealtime/visualization/ablation"
+	"github.com/bojieli/OpenRealtime/visualization/demonstrations"
 	"github.com/bojieli/OpenRealtime/visualization/frontier"
 	"github.com/bojieli/OpenRealtime/visualization/timeline"
 )
@@ -252,7 +254,7 @@ func runTrace(arguments []string, output io.Writer) error {
 
 func runBenchmark(arguments []string, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: openrealtime benchmark <m1|m2|m3|m4> [options]")
+		return errors.New("usage: openrealtime benchmark <m1|m2|m3|m4|m5> [options]")
 	}
 	switch arguments[0] {
 	case "m1":
@@ -263,9 +265,117 @@ func runBenchmark(arguments []string, output io.Writer) error {
 		return runBenchmarkM3(arguments[1:], output)
 	case "m4":
 		return runBenchmarkM4(arguments[1:], output)
+	case "m5":
+		return runBenchmarkM5(arguments[1:], output)
 	default:
-		return errors.New("usage: openrealtime benchmark <m1|m2|m3|m4> [options]")
+		return errors.New("usage: openrealtime benchmark <m1|m2|m3|m4|m5> [options]")
 	}
+}
+
+func runBenchmarkM5(arguments []string, output io.Writer) error {
+	flags := flag.NewFlagSet("benchmark m5", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	fixturePath := flags.String("fixture", "", "24 kHz PCM16 fixture")
+	demonstrationPath := flags.String("demonstrations", "", "symbolic translation and game manifest")
+	outputDirectory := flags.String("output", "", "benchmark artifact directory")
+	trials := flags.Uint64("trials", 30, "number of deterministic trials per condition")
+	seed := flags.Uint64("seed", 20260817, "base deterministic random seed")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || *fixturePath == "" || *demonstrationPath == "" || *outputDirectory == "" {
+		return errors.New("benchmark m5 requires --fixture, --demonstrations, and --output")
+	}
+	if err := prepareEmptyDirectory(*outputDirectory); err != nil {
+		return err
+	}
+	manifest, err := reference.LoadDemonstrations(*demonstrationPath)
+	if err != nil {
+		return err
+	}
+	report, err := m5experiment.Run(context.Background(), m5experiment.Config{
+		FixturePath: *fixturePath, DemonstrationPath: *demonstrationPath,
+		Demonstrations: manifest, Trials: *trials, Seed: *seed,
+	})
+	if err != nil {
+		return err
+	}
+	if err := writeAtomicJSON(filepath.Join(*outputDirectory, "report.json"), report); err != nil {
+		return err
+	}
+	translationTraceDirectory := filepath.Join(*outputDirectory, "traces", "translation")
+	gameTraceDirectory := filepath.Join(*outputDirectory, "traces", "game")
+	if err := os.MkdirAll(translationTraceDirectory, 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(gameTraceDirectory, 0o755); err != nil {
+		return err
+	}
+	translationSummary := make(map[string]map[string]any, len(report.Translation.Conditions))
+	for _, condition := range report.Translation.Conditions {
+		for _, trial := range condition.Trials {
+			path := filepath.Join(translationTraceDirectory, fmt.Sprintf("%s-trial-%04d.jsonl", condition.Policy, trial.Index))
+			if err := writeAtomicTrace(path, trial.Trace); err != nil {
+				return err
+			}
+		}
+		translationSummary[string(condition.Policy)] = map[string]any{
+			"mean_lag_ns": condition.MeanLag, "completion_lag_ns": condition.CompletionLag,
+			"quality_score": condition.Quality, "failure_count": condition.FailureCount,
+			"compute_units": condition.Compute,
+		}
+	}
+	gameSummary := make(map[string]map[string]any, len(report.Game.Conditions))
+	for _, condition := range report.Game.Conditions {
+		for _, trial := range condition.Trials {
+			path := filepath.Join(gameTraceDirectory, fmt.Sprintf("%s-trial-%04d.jsonl", condition.Condition, trial.Index))
+			if err := writeAtomicTrace(path, trial.Trace); err != nil {
+				return err
+			}
+		}
+		gameSummary[string(condition.Condition)] = map[string]any{
+			"reaction_latency_ns": condition.ReactionLatency, "quality_score": condition.Quality,
+			"failure_count": condition.FailureCount, "compute_units": condition.Compute,
+		}
+	}
+	visualization, err := newAtomicOutput(filepath.Join(*outputDirectory, "demonstrations.html"))
+	if err != nil {
+		return err
+	}
+	if err := demonstrations.Render(visualization.File, report); err != nil {
+		visualization.Abort()
+		return err
+	}
+	if err := visualization.Commit(); err != nil {
+		visualization.Abort()
+		return err
+	}
+	if err := writeM5Timeline(filepath.Join(*outputDirectory, "timeline-translation-stable-trial-0000.html"), "M5 stable incremental translation — trial 0000", report.Translation.Conditions[1].Trials[0].Trace); err != nil {
+		return err
+	}
+	if err := writeM5Timeline(filepath.Join(*outputDirectory, "timeline-game-microturn-trial-0000.html"), "M5 rapid game microturn — trial 0000", report.Game.Conditions[1].Trials[0].Trace); err != nil {
+		return err
+	}
+	return writeJSON(output, map[string]any{
+		"output": *outputDirectory, "trials_per_condition": *trials, "experiment": report.Experiment,
+		"translation": translationSummary, "game": gameSummary,
+	})
+}
+
+func writeM5Timeline(path, title string, records []trace.Record) error {
+	artifact, err := newAtomicOutput(path)
+	if err != nil {
+		return err
+	}
+	if err := timeline.Render(artifact.File, title, records); err != nil {
+		artifact.Abort()
+		return err
+	}
+	if err := artifact.Commit(); err != nil {
+		artifact.Abort()
+		return err
+	}
+	return nil
 }
 
 func runBenchmarkM4(arguments []string, output io.Writer) error {

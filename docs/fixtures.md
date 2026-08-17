@@ -48,3 +48,17 @@ timed causal envelope. Both are generated project artifacts licensed CC0-1.0.
 | SHA-256 | `d0c859c47054b4c4194fc0c9013d68c081288a746af417d4bfd95f457ce385a6` |
 
 Scores are authored test expectations, not empirical model evaluations.
+
+## `m5-demonstrations.json`
+
+| Field | Value |
+| --- | --- |
+| Origin | Project-authored symbolic translation segments and Signal Match rounds |
+| Content | Five 200 ms source/target deltas and four deadline-sensitive audio-game cues |
+| Speech, imported corpus, or model output | None |
+| License | CC0-1.0 |
+| Purpose | Translation protocol lifecycle, append-only incremental policy, rapid-interaction latency, failure, quality, and compute accounting |
+| Bound fixture SHA-256 | `e7adb582e0ea62d376f28b38d12bedb8ca78149eb35441775bf810c9ff2521af` |
+
+The source and target tokens are state-machine labels, not translations of the
+audio. Exact-match scores are authored test expectations only.
