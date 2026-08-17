@@ -82,5 +82,19 @@ OpenAI cancellation, output-buffer clearing, and conversation-item truncation
 are emitted at the observed playback boundary. Input append events remain
 legal while the turn state is `SYSTEM_SPEAKING`, keeping the media path duplex.
 
+## Fast and slow cognition
+
+M4 gives each deliberation task a goal ID, revision ID, deadline, and cancellable
+context. Foreground decisions are bounded structured actions with explicit
+progress claims. Slow updates form a monotonic stream and reach coordinator
+state only while their exact goal revision remains current. Completion,
+failure, cancellation, deadline misses, and stale rejection are recorded rather
+than inferred from logs.
+
+Providers that honor context cancellation stop promptly. Providers that do not
+are still safe: an old callback can finish its goroutine but cannot overwrite a
+replacement goal. The open reference workload assigns symbolic quality and
+compute units so orchestration accounting stays independent of hosted models.
+
 See [ADR-0001](adr/0001-go-production-engine.md) for the language decision
 and [protocol.md](protocol.md) for event semantics.

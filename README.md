@@ -12,8 +12,8 @@ The working idea is to let a system listen, revise its understanding, prepare re
 
 ## Status
 
-M0 reproducibility through M3 duplex speech safety are complete; M4 fast/slow
-cognition is next.
+M0 reproducibility through M4 fast/slow cognition are complete; M5 translation
+and rapid-interaction demonstrations are next.
 The repository contains a generated conformance layer for every event in the
 pinned OpenAI Realtime OpenAPI specification, deterministic 24 kHz PCM replay, an original
 redistributable audio fixture, and causal trace validation. There is no Python
@@ -29,6 +29,10 @@ and paired latency attribution against B0.
 M3 adds streaming speech chunks, bounded prepared/queued horizons, irreversible
 played history, explicit invalidation repair, continuous input during output,
 and schema-valid OpenAI cancellation/clear/truncation traces.
+
+M4 adds goal/revision-scoped asynchronous deliberation, truthful progress
+claims, cancellation and failure handling, stale callback rejection, and a
+symbolic latency/quality/compute frontier.
 
 ## Start here
 
@@ -56,6 +60,12 @@ To reproduce the M3 duplex and repair scenarios:
 
 ```bash
 ./scripts/reproduce_m3.sh
+```
+
+To reproduce the M4 fast/slow comparison:
+
+```bash
+./scripts/reproduce_m4.sh
 ```
 
 Both scripts create isolated build artifacts, validate every emitted message

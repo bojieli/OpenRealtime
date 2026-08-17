@@ -21,4 +21,11 @@ func TestSummarizeNearestRank(t *testing.T) {
 	if signed.MinNS != -20 || signed.P50NS != 0 || signed.MaxNS != 10 {
 		t.Fatalf("unexpected signed distribution: %+v", signed)
 	}
+	scalar, err := SummarizeScalar([]uint64{9, 1, 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scalar.Min != 1 || scalar.P50 != 5 || scalar.Max != 9 {
+		t.Fatalf("unexpected scalar distribution: %+v", scalar)
+	}
 }

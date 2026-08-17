@@ -35,3 +35,16 @@ cryptographic hash before they can support perception-quality claims.
 `tests/golden/m0-openai-events.jsonl` is the byte-stable OpenAI Realtime client
 stream generated from the fixture. `tests/golden/m0-trace.jsonl` is the separate
 timed causal envelope. Both are generated project artifacts licensed CC0-1.0.
+
+## `m4-difficult-workload.json`
+
+| Field | Value |
+| --- | --- |
+| Origin | Project-authored symbolic difficult-question tasks |
+| Content | Three questions, truthful acknowledgements, fast/slow answers, fixed quality and compute units |
+| Model or human evaluation | None |
+| License | CC0-1.0 |
+| Purpose | Fast/slow lifecycle, truth-claim, deadline, quality, and cost accounting |
+| SHA-256 | `d0c859c47054b4c4194fc0c9013d68c081288a746af417d4bfd95f457ce385a6` |
+
+Scores are authored test expectations, not empirical model evaluations.

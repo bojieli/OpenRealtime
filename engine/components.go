@@ -57,6 +57,72 @@ type CognitionProvider interface {
 	Respond(context.Context, PerceptionRevision) (ResponseCandidate, error)
 }
 
+type GoalSnapshot struct {
+	GoalID     string
+	RevisionID uint64
+	Question   string
+	CreatedNS  uint64
+	DeadlineNS uint64
+}
+
+type FastAction string
+
+const (
+	FastListen      FastAction = "listen"
+	FastAcknowledge FastAction = "acknowledge"
+	FastAnswer      FastAction = "answer"
+	FastDefer       FastAction = "defer"
+	FastYield       FastAction = "yield"
+)
+
+type ProgressClaim string
+
+const (
+	ProgressNone      ProgressClaim = "none"
+	ProgressWorking   ProgressClaim = "working"
+	ProgressCompleted ProgressClaim = "completed"
+)
+
+type FastDecision struct {
+	GoalID        string
+	RevisionID    uint64
+	Action        FastAction
+	Text          string
+	ProgressClaim ProgressClaim
+	StartSlowPath bool
+}
+
+type FastDecisionProvider interface {
+	Name() string
+	Capabilities() Capabilities
+	Decide(context.Context, GoalSnapshot) (FastDecision, error)
+}
+
+type DeliberationStatus string
+
+const (
+	DeliberationProgress DeliberationStatus = "progress"
+	DeliberationFinal    DeliberationStatus = "final"
+	DeliberationFailed   DeliberationStatus = "failed"
+)
+
+type DeliberationUpdate struct {
+	GoalID       string
+	RevisionID   uint64
+	Sequence     uint64
+	Status       DeliberationStatus
+	Text         string
+	Error        string
+	ComputeUnits uint64
+	QualityScore uint32
+}
+
+type DeliberationProvider interface {
+	Name() string
+	Capabilities() Capabilities
+	Deliberate(context.Context, GoalSnapshot, func(DeliberationUpdate) error) error
+}
+
 type SpeechPlan struct {
 	CandidateID string
 	Text        string

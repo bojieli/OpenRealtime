@@ -26,6 +26,16 @@ type SignedDistribution struct {
 	MaxNS int64  `json:"max_ns"`
 }
 
+type ScalarDistribution struct {
+	Count uint64 `json:"count"`
+	Min   uint64 `json:"min"`
+	P50   uint64 `json:"p50"`
+	P90   uint64 `json:"p90"`
+	P95   uint64 `json:"p95"`
+	P99   uint64 `json:"p99"`
+	Max   uint64 `json:"max"`
+}
+
 func Summarize(values []uint64) (Distribution, error) {
 	if len(values) == 0 {
 		return Distribution{}, errors.New("distribution requires at least one value")
@@ -36,6 +46,19 @@ func Summarize(values []uint64) (Distribution, error) {
 		Count: uint64(len(sorted)), MinNS: sorted[0], P50NS: percentile(sorted, 50),
 		P90NS: percentile(sorted, 90), P95NS: percentile(sorted, 95),
 		P99NS: percentile(sorted, 99), MaxNS: sorted[len(sorted)-1],
+	}, nil
+}
+
+func SummarizeScalar(values []uint64) (ScalarDistribution, error) {
+	if len(values) == 0 {
+		return ScalarDistribution{}, errors.New("scalar distribution requires at least one value")
+	}
+	sorted := slices.Clone(values)
+	slices.Sort(sorted)
+	return ScalarDistribution{
+		Count: uint64(len(sorted)), Min: sorted[0], P50: percentile(sorted, 50),
+		P90: percentile(sorted, 90), P95: percentile(sorted, 95),
+		P99: percentile(sorted, 99), Max: sorted[len(sorted)-1],
 	}, nil
 }
 

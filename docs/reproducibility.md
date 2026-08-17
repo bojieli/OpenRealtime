@@ -89,3 +89,16 @@ The command first executes the complete M2 regression gate. It then regenerates
 compares the raw report plus four representative traces and timelines
 byte-for-byte. See [m3-duplex.md](m3-duplex.md) for horizon semantics and result
 limits.
+
+## M4 fast/slow cognition
+
+Run:
+
+```bash
+./scripts/reproduce_m4.sh
+```
+
+The command executes the complete M3 regression gate, including OpenAI protocol
+validation and race tests, then regenerates the 270-trial fast/slow report and
+HTML frontier byte-for-byte. See [m4-fast-slow.md](m4-fast-slow.md) for lifecycle
+semantics and interpretation limits.

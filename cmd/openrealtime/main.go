@@ -19,12 +19,14 @@ import (
 	"github.com/bojieli/OpenRealtime/baseline"
 	m2experiment "github.com/bojieli/OpenRealtime/experiments/m2"
 	m3experiment "github.com/bojieli/OpenRealtime/experiments/m3"
+	m4experiment "github.com/bojieli/OpenRealtime/experiments/m4"
 	"github.com/bojieli/OpenRealtime/internal/audio"
 	"github.com/bojieli/OpenRealtime/internal/simtime"
 	openaiwire "github.com/bojieli/OpenRealtime/protocol/openai"
 	"github.com/bojieli/OpenRealtime/replay"
 	"github.com/bojieli/OpenRealtime/trace"
 	"github.com/bojieli/OpenRealtime/visualization/ablation"
+	"github.com/bojieli/OpenRealtime/visualization/frontier"
 	"github.com/bojieli/OpenRealtime/visualization/timeline"
 )
 
@@ -250,7 +252,7 @@ func runTrace(arguments []string, output io.Writer) error {
 
 func runBenchmark(arguments []string, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: openrealtime benchmark <m1|m2|m3> --fixture <audio.wav> --manifest <manifest.json> --output <directory>")
+		return errors.New("usage: openrealtime benchmark <m1|m2|m3|m4> [options]")
 	}
 	switch arguments[0] {
 	case "m1":
@@ -259,9 +261,67 @@ func runBenchmark(arguments []string, output io.Writer) error {
 		return runBenchmarkM2(arguments[1:], output)
 	case "m3":
 		return runBenchmarkM3(arguments[1:], output)
+	case "m4":
+		return runBenchmarkM4(arguments[1:], output)
 	default:
-		return errors.New("usage: openrealtime benchmark <m1|m2|m3> --fixture <audio.wav> --manifest <manifest.json> --output <directory>")
+		return errors.New("usage: openrealtime benchmark <m1|m2|m3|m4> [options]")
 	}
+}
+
+func runBenchmarkM4(arguments []string, output io.Writer) error {
+	flags := flag.NewFlagSet("benchmark m4", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	workloadPath := flags.String("workload", "", "symbolic difficult-question workload")
+	outputDirectory := flags.String("output", "", "benchmark artifact directory")
+	trials := flags.Uint64("trials", 30, "number of deterministic trials per task")
+	seed := flags.Uint64("seed", 20260817, "base deterministic random seed")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || *workloadPath == "" || *outputDirectory == "" {
+		return errors.New("benchmark m4 requires --workload and --output")
+	}
+	if err := prepareEmptyDirectory(*outputDirectory); err != nil {
+		return err
+	}
+	workload, err := reference.LoadDifficultWorkload(*workloadPath)
+	if err != nil {
+		return err
+	}
+	report, err := m4experiment.Run(context.Background(), m4experiment.Config{
+		WorkloadPath: *workloadPath, Workload: workload, Trials: *trials, Seed: *seed,
+	})
+	if err != nil {
+		return err
+	}
+	if err := writeAtomicJSON(filepath.Join(*outputDirectory, "report.json"), report); err != nil {
+		return err
+	}
+	visualization, err := newAtomicOutput(filepath.Join(*outputDirectory, "frontier.html"))
+	if err != nil {
+		return err
+	}
+	if err := frontier.Render(visualization.File, report); err != nil {
+		visualization.Abort()
+		return err
+	}
+	if err := visualization.Commit(); err != nil {
+		visualization.Abort()
+		return err
+	}
+	summaries := make(map[string]map[string]any, len(report.Conditions))
+	for _, condition := range report.Conditions {
+		summaries[string(condition.Kind)] = map[string]any{
+			"first_truthful_progress_ns": condition.FirstTruthfulProgress,
+			"final_answer_ns":            condition.FinalAnswer, "quality_score": condition.Quality,
+			"compute_units": condition.Compute, "task_success_count": condition.TaskSuccessCount,
+			"truth_violation_count": condition.TruthViolationCount,
+		}
+	}
+	return writeJSON(output, map[string]any{
+		"output": *outputDirectory, "trials_per_task": *trials,
+		"experiment": report.Experiment, "conditions": summaries,
+	})
 }
 
 func runBenchmarkM1(arguments []string, output io.Writer) error {

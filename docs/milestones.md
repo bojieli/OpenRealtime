@@ -117,8 +117,30 @@ audio, not live classifier or device-performance claims.
 
 ## M4 — Fast/slow cognition
 
+- Status: complete
+- Completed: 2026-08-17
+- Checkpoint command: `./scripts/reproduce_m4.sh`
+
+### Deliverable evidence
+
+| Requirement | Evidence |
+| --- | --- |
+| Asynchronous contract | `DeliberationProvider`, streamed updates, and context-aware runner |
+| Stale safety | Exact goal/revision matching and late callback rejection |
+| Lifecycle closure | Completed, failed, explicitly cancelled, and parent-cancelled tests |
+| Truthful foreground | Progress claims validated against actual slow state |
+| Difficult workload | Three project-authored symbolic tasks in `tests/fixtures` |
+| Cost/quality comparison | 270 raw trials and frontier in `benchmarks/m4/reference` |
+
+Fast/slow moves P50 truthful progress from 386.242 ms to 34.909 ms while
+retaining symbolic P50 quality 94 and 90/90 successes, at compute P50 97 versus
+88. Fast-only is quicker and cheaper but has quality P50 38 and 0/90 successes.
+All values are simulated/authored reference units, not model claims.
+
+## M5 — Translation and rapid-interaction demonstrations
+
 - Status: next
 
-Next evidence must cover an asynchronous deliberation stream, truthful
-foreground acknowledgement, cancellation and failure, stale goal/revision
-rejection, and a difficult-question cost/quality comparison.
+Next evidence must cover an incremental translation policy, quality/latency
+alignment metrics, a rapid audio game with deadline/jitter scoring, public
+fixtures, and repeatable reports without a proprietary client.
