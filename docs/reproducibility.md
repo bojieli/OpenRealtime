@@ -1,0 +1,48 @@
+# M0 reproducibility
+
+M0 proves that a contributor can recreate a timing trace from a publicly
+redistributable audio fixture before any engine optimization.
+
+## Prerequisites
+
+- A POSIX shell
+- Go 1.25 or newer
+- `curl` for the pinned specification provenance check
+
+## One-command reproduction
+
+From the repository root:
+
+```bash
+./scripts/reproduce_m0.sh
+```
+
+The script downloads Go modules, builds a trimmed production binary, verifies
+the pinned official OpenAI schema extraction, regenerates the one-second WAV
+into ignored `artifacts/`, replays it in 20 ms frames, validates every OpenAI
+event plus whole-trace causality, compares all artifacts byte-for-byte with the
+CC0 golden files, and runs race, test, vet, and formatting gates.
+
+The canonical replay contains 50 OpenAI `input_audio_buffer.append` client
+events followed by one `input_audio_buffer.commit` event. It starts at
+monotonic time zero and commits at exactly 1,000,000,000 ns. The input is mono
+PCM16 at the OpenAI-required 24 kHz rate, and each wire event carries standard
+base64 audio.
+
+## Manual commands
+
+```bash
+go build -trimpath -o artifacts/openrealtime ./cmd/openrealtime
+artifacts/openrealtime fixture generate artifacts/m0-tone.wav
+artifacts/openrealtime replay artifacts/m0-tone.wav \
+  --events artifacts/m0-openai-events.jsonl \
+  --trace artifacts/m0-trace.jsonl --session-id m0-replay --frame-ms 20
+artifacts/openrealtime protocol validate \
+  --profile realtime --direction client artifacts/m0-openai-events.jsonl
+artifacts/openrealtime trace validate artifacts/m0-trace.jsonl
+artifacts/openrealtime trace summarize artifacts/m0-trace.jsonl
+```
+
+The fixture is procedurally generated square-wave audio. It contains no speech,
+personal data, imported recording, or synthesized voice. Its provenance and
+license are recorded in [fixtures.md](fixtures.md).
