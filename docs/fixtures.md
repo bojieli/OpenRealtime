@@ -12,9 +12,23 @@
 | Purpose | Deterministic framing, timing, hashing, schema, and replay checks |
 | SHA-256 | `e7adb582e0ea62d376f28b38d12bedb8ca78149eb35441775bf810c9ff2521af` |
 
-The fixture is intentionally not evidence of ASR or conversational quality. Speech
-fixtures selected for M1 will receive separate entries with language, speaker
-consent or public-license basis, transcript rights, transformations, and hash.
+The fixture is intentionally not evidence of ASR or conversational quality.
+
+## `m1-reference-manifest.json`
+
+| Field | Value |
+| --- | --- |
+| Origin | Project-authored symbolic annotations over `m0-tone.wav` |
+| Content | Three ordered revision cues, a final symbolic transcript, and fixed response text |
+| Human annotation or model output | None |
+| License | CC0-1.0 |
+| Purpose | Deterministic streaming-adapter and endpointed timing instrumentation |
+| Bound fixture SHA-256 | `e7adb582e0ea62d376f28b38d12bedb8ca78149eb35441775bf810c9ff2521af` |
+
+The words in the manifest do not claim to transcribe the tones. They are
+symbolic state-machine cues. Future speech fixtures require language, speaker
+consent or public-license basis, transcript rights, transformations, and a
+cryptographic hash before they can support perception-quality claims.
 
 ## Golden protocol artifacts
 

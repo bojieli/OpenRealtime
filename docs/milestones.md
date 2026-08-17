@@ -37,8 +37,40 @@ claim.
 
 ## M1 — Endpointed reference baseline
 
-- Status: in progress
+- Status: complete
+- Completed: 2026-08-17
+- Checkpoint command: `./scripts/reproduce_m1.sh`
 
-Next evidence must cover deterministic reference perception, cognition, and
-speech adapters; conventional endpointing; stage/queue latency reconciliation;
-repeated prerecorded distributions; and a timeline visualization.
+### Deliverable evidence
+
+| Requirement | Evidence |
+| --- | --- |
+| Streaming perception adapter | Strict ordered-frame manifest adapter in `adapters/reference` |
+| Language adapter | Final-revision-only fixed cognition adapter in `adapters/reference` |
+| Speech adapter | Deterministic PCM16 signal adapter in `adapters/reference` |
+| Conventional endpointing | `baseline/endpointed.go` forbids response creation before input commit and finalization |
+| End-to-end visualization | Self-contained HTML/SVG renderer in `visualization/timeline` |
+| Repeated distributions | 30 seeded raw trials plus P50/P90/P95/P99 summaries in `benchmarks/m1/reference/report.json` |
+| Stage reconciliation | Observed output-playback-marker latency equals six measured stage/queue durations with 0 ns maximum error |
+| Protocol conformance | Every one of 30 complete traces is validated against the pinned OpenAI Realtime schemas |
+
+### Exit-criteria evidence
+
+The checkpoint regenerates the reference report, all 30 complete traces, and
+the timeline. It compares the report and representative evidence byte-for-byte,
+then runs the OpenAI specification provenance check and Go race, unit, vet, and
+formatting gates. The 30-trial simulated latency is 170,745,602–227,753,374 ns
+with P50 201,525,834 ns and P95 222,334,515 ns; reconciliation error is 0 ns in
+every trial.
+
+M1 uses symbolic fixture-bound perception and deterministic signal speech. The
+numbers prove instrumentation and causality only; they do not measure ASR,
+speech naturalness, or production latency.
+
+## M2 — Microturn engine
+
+- Status: next
+
+Next evidence must cover fixed and event-driven scheduling, revision-aware
+candidates, prepare/supersede/cancel semantics, and an initial cadence ablation
+using the same component adapters as B0.

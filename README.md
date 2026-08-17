@@ -12,11 +12,15 @@ The working idea is to let a system listen, revise its understanding, prepare re
 
 ## Status
 
-M0 reproducibility scaffold is complete; M1 endpointed baseline work is next.
+M0 reproducibility and the M1 endpointed reference baseline are complete; M2
+microturn scheduling is next.
 The repository contains a generated conformance layer for every event in the
 pinned OpenAI Realtime OpenAPI specification, deterministic 24 kHz PCM replay, an original
 redistributable audio fixture, and causal trace validation. There is no Python
-runtime or build dependency. No performance claims exist yet.
+runtime or build dependency. M1 adds production-shaped component contracts, a
+deterministic endpointed control, exact stage/queue reconciliation, and a
+self-contained timeline. Its simulated timings are instrumentation evidence,
+not deployed performance claims.
 
 ## Start here
 
@@ -28,7 +32,13 @@ To reproduce the M0 timing trace from a clean checkout:
 ./scripts/reproduce_m0.sh
 ```
 
-The script creates isolated build artifacts, validates every emitted message
+To reproduce the 30-trial M1 endpointed reference condition:
+
+```bash
+./scripts/reproduce_m1.sh
+```
+
+Both scripts create isolated build artifacts, validate every emitted message
 against the official protocol schemas, checks trace causality, compares the
 result byte-for-byte with the checked-in golden files, and runs race, test,
 vet, and formatting gates. See

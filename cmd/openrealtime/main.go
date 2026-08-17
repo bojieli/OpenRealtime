@@ -4,6 +4,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -14,10 +15,13 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/bojieli/OpenRealtime/adapters/reference"
+	"github.com/bojieli/OpenRealtime/baseline"
 	"github.com/bojieli/OpenRealtime/internal/audio"
 	openaiwire "github.com/bojieli/OpenRealtime/protocol/openai"
 	"github.com/bojieli/OpenRealtime/replay"
 	"github.com/bojieli/OpenRealtime/trace"
+	"github.com/bojieli/OpenRealtime/visualization/timeline"
 )
 
 func main() {
@@ -40,13 +44,15 @@ func run(arguments []string, output io.Writer) error {
 		return runProtocol(arguments[1:], output)
 	case "trace":
 		return runTrace(arguments[1:], output)
+	case "benchmark":
+		return runBenchmark(arguments[1:], output)
 	default:
 		return usageError()
 	}
 }
 
 func usageError() error {
-	return errors.New("usage: openrealtime <fixture|replay|protocol|trace> <command> [options]")
+	return errors.New("usage: openrealtime <fixture|replay|protocol|trace|benchmark> <command> [options]")
 }
 
 func runFixture(arguments []string, output io.Writer) error {
@@ -238,6 +244,111 @@ func runTrace(arguments []string, output io.Writer) error {
 	})
 }
 
+func runBenchmark(arguments []string, output io.Writer) error {
+	if len(arguments) == 0 || arguments[0] != "m1" {
+		return errors.New("usage: openrealtime benchmark m1 --fixture <audio.wav> --manifest <manifest.json> --output <directory>")
+	}
+	flags := flag.NewFlagSet("benchmark m1", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	fixturePath := flags.String("fixture", "", "24 kHz PCM16 fixture")
+	manifestPath := flags.String("manifest", "", "reference adapter manifest")
+	outputDirectory := flags.String("output", "", "benchmark artifact directory")
+	trials := flags.Uint64("trials", 30, "number of paired deterministic trials")
+	seed := flags.Uint64("seed", 20260817, "base deterministic random seed")
+	frameMS := flags.Uint("frame-ms", 20, "input frame duration in milliseconds")
+	if err := flags.Parse(arguments[1:]); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || *fixturePath == "" || *manifestPath == "" || *outputDirectory == "" {
+		return errors.New("benchmark m1 requires --fixture, --manifest, and --output")
+	}
+	if *frameMS == 0 || *frameMS > uint(^uint32(0)) {
+		return errors.New("frame-ms must fit a positive uint32")
+	}
+	if err := prepareEmptyDirectory(*outputDirectory); err != nil {
+		return err
+	}
+	manifest, err := reference.LoadManifest(*manifestPath)
+	if err != nil {
+		return err
+	}
+	report, err := baseline.Run(context.Background(), baseline.Config{
+		FixturePath: *fixturePath,
+		Manifest:    manifest,
+		Trials:      *trials,
+		Seed:        *seed,
+		FrameMS:     uint32(*frameMS),
+		Timing:      baseline.DefaultTimingModel(),
+	})
+	if err != nil {
+		return err
+	}
+	if err := os.Mkdir(filepath.Join(*outputDirectory, "traces"), 0o755); err != nil {
+		return err
+	}
+	if err := writeAtomicJSON(filepath.Join(*outputDirectory, "report.json"), report); err != nil {
+		return err
+	}
+	for _, trial := range report.Trials {
+		path := filepath.Join(*outputDirectory, "traces", fmt.Sprintf("trial-%04d.jsonl", trial.Index))
+		artifact, err := newAtomicOutput(path)
+		if err != nil {
+			return err
+		}
+		writer := trace.NewWriter(artifact.File)
+		writeErr := error(nil)
+		for _, record := range trial.Trace {
+			if writeErr = writer.Write(record); writeErr != nil {
+				break
+			}
+		}
+		if writeErr == nil {
+			writeErr = writer.Flush()
+		}
+		if writeErr == nil {
+			writeErr = artifact.Commit()
+		}
+		if writeErr != nil {
+			artifact.Abort()
+			return writeErr
+		}
+	}
+	timelineArtifact, err := newAtomicOutput(filepath.Join(*outputDirectory, "timeline-trial-0000.html"))
+	if err != nil {
+		return err
+	}
+	if err := timeline.Render(timelineArtifact.File, "M1 endpointed reference — trial 0000", report.Trials[0].Trace); err != nil {
+		timelineArtifact.Abort()
+		return err
+	}
+	if err := timelineArtifact.Commit(); err != nil {
+		timelineArtifact.Abort()
+		return err
+	}
+	return writeJSON(output, map[string]any{
+		"output": *outputDirectory, "trials": len(report.Trials),
+		"condition": report.Condition, "timing_mode": report.TimingMode,
+		"distributions": report.Distributions,
+	})
+}
+
+func prepareEmptyDirectory(path string) error {
+	entries, err := os.ReadDir(path)
+	if errors.Is(err, os.ErrNotExist) {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			return fmt.Errorf("create benchmark output directory: %w", err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect benchmark output directory: %w", err)
+	}
+	if len(entries) != 0 {
+		return errors.New("benchmark output directory must be empty to prevent stale evidence")
+	}
+	return nil
+}
+
 func parseProfile(value string) (openaiwire.Profile, error) {
 	profile := openaiwire.Profile(value)
 	switch profile {
@@ -289,6 +400,18 @@ func writeJSON(output io.Writer, value any) error {
 	return encoder.Encode(value)
 }
 
+func writeAtomicJSON(path string, value any) error {
+	artifact, err := newAtomicOutput(path)
+	if err != nil {
+		return err
+	}
+	defer artifact.Abort()
+	if err := writeJSON(artifact.File, value); err != nil {
+		return err
+	}
+	return artifact.Commit()
+}
+
 type atomicOutput struct {
 	File      *os.File
 	temporary string
@@ -313,6 +436,9 @@ func (output *atomicOutput) Commit() error {
 		return nil
 	}
 	if err := output.File.Sync(); err != nil {
+		return err
+	}
+	if err := output.File.Chmod(0o644); err != nil {
 		return err
 	}
 	if err := output.File.Close(); err != nil {

@@ -46,3 +46,18 @@ artifacts/openrealtime trace summarize artifacts/m0-trace.jsonl
 The fixture is procedurally generated square-wave audio. It contains no speech,
 personal data, imported recording, or synthesized voice. Its provenance and
 license are recorded in [fixtures.md](fixtures.md).
+
+## M1 endpointed reference condition
+
+Run:
+
+```bash
+./scripts/reproduce_m1.sh
+```
+
+This command builds the production binary, rechecks the pinned official
+protocol source, runs 30 seeded endpointed trials, validates every generated
+trace, and compares the report, trial-0000 trace, and HTML timeline with the
+checked reference artifacts. It then runs the same race, vet, and formatting
+gates as M0. See [m1-baseline.md](m1-baseline.md) for the stage equation,
+reported distribution, and limitations.

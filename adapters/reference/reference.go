@@ -1,0 +1,247 @@
+// Package reference provides deterministic, key-free adapters for instrumentation baselines.
+package reference
+
+import (
+	"bytes"
+	"context"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+
+	"github.com/bojieli/OpenRealtime/engine"
+	"github.com/bojieli/OpenRealtime/internal/audio"
+)
+
+type Cue struct {
+	EndSample    uint64 `json:"end_sample"`
+	StableText   string `json:"stable_text"`
+	UnstableText string `json:"unstable_text"`
+	Delta        string `json:"delta"`
+}
+
+type Manifest struct {
+	SchemaVersion   string `json:"schema_version"`
+	AnnotationMode  string `json:"annotation_mode"`
+	FixtureSHA256   string `json:"fixture_sha256"`
+	ItemID          string `json:"item_id"`
+	FinalTranscript string `json:"final_transcript"`
+	ResponseText    string `json:"response_text"`
+	Cues            []Cue  `json:"cues"`
+}
+
+func LoadManifest(path string) (Manifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Manifest{}, fmt.Errorf("read reference manifest: %w", err)
+	}
+	var manifest Manifest
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&manifest); err != nil {
+		return Manifest{}, fmt.Errorf("decode reference manifest: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return Manifest{}, errors.New("reference manifest must contain exactly one JSON value")
+		}
+		return Manifest{}, fmt.Errorf("decode trailing reference manifest data: %w", err)
+	}
+	if manifest.SchemaVersion != "0.1.0" {
+		return Manifest{}, fmt.Errorf("unsupported reference manifest schema %q", manifest.SchemaVersion)
+	}
+	if manifest.AnnotationMode != "symbolic_non_transcription" {
+		return Manifest{}, fmt.Errorf("unsupported reference annotation mode %q", manifest.AnnotationMode)
+	}
+	if manifest.FixtureSHA256 == "" || manifest.ItemID == "" ||
+		manifest.FinalTranscript == "" || manifest.ResponseText == "" {
+		return Manifest{}, errors.New("reference manifest identities and texts must not be empty")
+	}
+	if len(manifest.Cues) == 0 {
+		return Manifest{}, errors.New("reference manifest must contain at least one streaming cue")
+	}
+	digest, err := hex.DecodeString(manifest.FixtureSHA256)
+	if err != nil || len(digest) != 32 {
+		return Manifest{}, errors.New("reference fixture_sha256 must be a 64-character hexadecimal digest")
+	}
+	for index, cue := range manifest.Cues {
+		if cue.EndSample == 0 || (cue.StableText == "" && cue.UnstableText == "" && cue.Delta == "") {
+			return Manifest{}, fmt.Errorf("cue %d is empty", index)
+		}
+		if index > 0 && cue.EndSample <= manifest.Cues[index-1].EndSample {
+			return Manifest{}, errors.New("reference cues must be strictly ordered by end_sample")
+		}
+	}
+	return manifest, nil
+}
+
+type Perception struct {
+	manifest   Manifest
+	nextCue    int
+	revision   uint64
+	nextFrame  uint64
+	nextSample uint64
+}
+
+func NewPerception(manifest Manifest) *Perception {
+	return &Perception{manifest: manifest}
+}
+
+func (provider *Perception) Name() string { return "reference.manifest_perception" }
+
+func (provider *Perception) Capabilities() engine.Capabilities {
+	return engine.Capabilities{
+		engine.CapabilityStreamingInput: true,
+		engine.CapabilityRevisions:      true,
+		engine.CapabilityCancellation:   true,
+		engine.CapabilityDeterministic:  true,
+	}
+}
+
+func (provider *Perception) PushFrame(
+	ctx context.Context,
+	frame engine.AudioFrame,
+) ([]engine.PerceptionRevision, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if frame.Index != provider.nextFrame || frame.SampleOffset != provider.nextSample {
+		return nil, errors.New("reference perception frames must be contiguous and ordered")
+	}
+	if frame.SampleRateHz != audio.OpenAIPCMSampleRate || len(frame.PCM16LE) == 0 || len(frame.PCM16LE)%2 != 0 {
+		return nil, errors.New("reference perception requires non-empty 24 kHz PCM16 frames")
+	}
+	provider.nextFrame++
+	provider.nextSample = frame.EndSample()
+	var revisions []engine.PerceptionRevision
+	for provider.nextCue < len(provider.manifest.Cues) &&
+		provider.manifest.Cues[provider.nextCue].EndSample <= frame.EndSample() {
+		cue := provider.manifest.Cues[provider.nextCue]
+		provider.revision++
+		revisions = append(revisions, engine.PerceptionRevision{
+			RevisionID:   provider.revision,
+			SourceSample: cue.EndSample,
+			StableText:   cue.StableText,
+			UnstableText: cue.UnstableText,
+			Delta:        cue.Delta,
+		})
+		provider.nextCue++
+	}
+	return revisions, nil
+}
+
+func (provider *Perception) Finalize(
+	ctx context.Context,
+	endSample uint64,
+) (engine.PerceptionRevision, error) {
+	if err := ctx.Err(); err != nil {
+		return engine.PerceptionRevision{}, err
+	}
+	if endSample != provider.nextSample || provider.nextCue != len(provider.manifest.Cues) {
+		return engine.PerceptionRevision{}, errors.New("cannot finalize before all ordered audio frames and manifest cues")
+	}
+	provider.revision++
+	return engine.PerceptionRevision{
+		RevisionID:   provider.revision,
+		SourceSample: endSample,
+		StableText:   provider.manifest.FinalTranscript,
+		Delta:        provider.manifest.FinalTranscript,
+		Final:        true,
+	}, nil
+}
+
+type Cognition struct {
+	responseText string
+}
+
+func NewCognition(responseText string) *Cognition {
+	return &Cognition{responseText: responseText}
+}
+
+func (provider *Cognition) Name() string { return "reference.fixed_cognition" }
+
+func (provider *Cognition) Capabilities() engine.Capabilities {
+	return engine.Capabilities{
+		engine.CapabilityCancellation:  true,
+		engine.CapabilityDeterministic: true,
+	}
+}
+
+func (provider *Cognition) Respond(
+	ctx context.Context,
+	revision engine.PerceptionRevision,
+) (engine.ResponseCandidate, error) {
+	if err := ctx.Err(); err != nil {
+		return engine.ResponseCandidate{}, err
+	}
+	if !revision.Final {
+		return engine.ResponseCandidate{}, errors.New("endpointed cognition requires a final perception revision")
+	}
+	if strings.TrimSpace(provider.responseText) == "" {
+		return engine.ResponseCandidate{}, errors.New("reference response must not be empty")
+	}
+	return engine.ResponseCandidate{
+		CandidateID:     fmt.Sprintf("candidate_%04d", revision.RevisionID),
+		SourceRevision:  revision.RevisionID,
+		Text:            provider.responseText,
+		Semantic:        true,
+		ValiditySummary: "valid for the finalized reference fixture transcript",
+	}, nil
+}
+
+type Speech struct {
+	durationMS uint32
+}
+
+func NewSpeech(durationMS uint32) *Speech {
+	return &Speech{durationMS: durationMS}
+}
+
+func (provider *Speech) Name() string { return "reference.signal_speech" }
+
+func (provider *Speech) Capabilities() engine.Capabilities {
+	return engine.Capabilities{
+		engine.CapabilityCancellation:  true,
+		engine.CapabilityDeterministic: true,
+		engine.CapabilityPCM16Output:   true,
+	}
+}
+
+func (provider *Speech) Synthesize(
+	ctx context.Context,
+	plan engine.SpeechPlan,
+) ([]engine.SpeechChunk, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if plan.CandidateID == "" || strings.TrimSpace(plan.Text) == "" {
+		return nil, errors.New("speech plan must identify a non-empty candidate")
+	}
+	if provider.durationMS == 0 {
+		return nil, errors.New("reference speech duration must be positive")
+	}
+	samples := uint64(audio.OpenAIPCMSampleRate) * uint64(provider.durationMS) / 1_000
+	if samples > uint64(int(^uint(0)>>1))/2 {
+		return nil, errors.New("reference speech duration is too large")
+	}
+	pcm := make([]byte, int(samples)*2)
+	for sample := uint64(0); sample < samples; sample++ {
+		value := int16(5_000)
+		if (sample/24)%2 == 1 {
+			value = -5_000
+		}
+		binary.LittleEndian.PutUint16(pcm[sample*2:sample*2+2], uint16(value))
+	}
+	return []engine.SpeechChunk{{
+		ChunkID:      "speech_0001",
+		CandidateID:  plan.CandidateID,
+		SampleRateHz: audio.OpenAIPCMSampleRate,
+		PCM16LE:      pcm,
+		Final:        true,
+	}}, nil
+}

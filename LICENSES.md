@@ -7,8 +7,9 @@ reuse rights are explicit:
   complete license text is in [`LICENSE`](LICENSE).
 - Project documentation, including `README.md`, `PLAN.md`, and `docs/`:
   [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/).
-- Original audio fixtures and golden traces in `tests/fixtures/` and
-  `tests/golden/`: [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/).
+- Original audio fixtures and golden traces in `tests/fixtures/`,
+  `tests/golden/`, and `benchmarks/*/reference/`:
+  [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/).
 - Generated OpenAI OpenAPI-derived schema and registry files: MIT, with source,
   revision, hash, and license text in `third_party/openai/NOTICE.md`.
 
