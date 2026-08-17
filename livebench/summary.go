@@ -22,27 +22,34 @@ type Distribution struct {
 }
 
 type ConditionSummary struct {
-	Descriptor        Descriptor   `json:"descriptor"`
-	Scenario          string       `json:"scenario"`
-	Condition         string       `json:"condition"`
-	Completed         int          `json:"completed"`
-	Failures          int          `json:"failures"`
-	UsageComplete     int          `json:"usage_complete"`
-	ConnectionSetupMS Distribution `json:"connection_setup_ms"`
-	ConnectionCount   Distribution `json:"connection_count"`
-	TransportRetries  Distribution `json:"transport_retries"`
-	InputDurationMS   Distribution `json:"input_duration_ms"`
-	ElapsedMS         Distribution `json:"elapsed_ms"`
-	FirstAudioMS      Distribution `json:"first_audio_ms"`
-	OutputAudioMS     Distribution `json:"output_audio_ms"`
-	FirstOutputVADMS  Distribution `json:"first_output_vad_ms"`
-	OverlapSpeechMS   Distribution `json:"overlap_speech_ms"`
-	StopLatencyMS     Distribution `json:"stop_latency_ms"`
-	ResponseLatencyMS Distribution `json:"response_latency_ms"`
-	InputTokens       Distribution `json:"input_tokens"`
-	OutputTokens      Distribution `json:"output_tokens"`
-	InputAudioTokens  Distribution `json:"input_audio_tokens"`
-	OutputAudioTokens Distribution `json:"output_audio_tokens"`
+	Descriptor              Descriptor   `json:"descriptor"`
+	Scenario                string       `json:"scenario"`
+	Condition               string       `json:"condition"`
+	Completed               int          `json:"completed"`
+	Failures                int          `json:"failures"`
+	RunAttempts             int          `json:"run_attempts"`
+	SuccessfulRunAttempts   int          `json:"successful_run_attempts"`
+	FailedRunAttempts       int          `json:"failed_run_attempts"`
+	AttemptLedgerTrials     int          `json:"attempt_ledger_trials"`
+	RetriedTrials           int          `json:"retried_trials"`
+	RecoveredTrials         int          `json:"recovered_trials"`
+	UsageComplete           int          `json:"usage_complete"`
+	SpeechDuringOverlapRate float64      `json:"speech_during_overlap_rate"`
+	ConnectionSetupMS       Distribution `json:"connection_setup_ms"`
+	ConnectionCount         Distribution `json:"connection_count"`
+	TransportRetries        Distribution `json:"transport_retries"`
+	InputDurationMS         Distribution `json:"input_duration_ms"`
+	ElapsedMS               Distribution `json:"elapsed_ms"`
+	FirstAudioMS            Distribution `json:"first_audio_ms"`
+	OutputAudioMS           Distribution `json:"output_audio_ms"`
+	FirstOutputVADMS        Distribution `json:"first_output_vad_ms"`
+	OverlapSpeechMS         Distribution `json:"overlap_speech_ms"`
+	StopLatencyMS           Distribution `json:"stop_latency_ms"`
+	ResponseLatencyMS       Distribution `json:"response_latency_ms"`
+	InputTokens             Distribution `json:"input_tokens"`
+	OutputTokens            Distribution `json:"output_tokens"`
+	InputAudioTokens        Distribution `json:"input_audio_tokens"`
+	OutputAudioTokens       Distribution `json:"output_audio_tokens"`
 }
 
 type PairedSummary struct {
@@ -60,24 +67,31 @@ type PairedSummary struct {
 }
 
 type SummaryReport struct {
-	SchemaVersion string             `json:"schema_version"`
-	GeneratedAt   time.Time          `json:"generated_at"`
-	Method        string             `json:"method"`
-	Scorer        string             `json:"scorer"`
-	Manifests     []string           `json:"manifests"`
-	Conditions    []ConditionSummary `json:"conditions"`
-	Pairs         []PairedSummary    `json:"pairs"`
+	SchemaVersion       string             `json:"schema_version"`
+	GeneratedAt         time.Time          `json:"generated_at"`
+	Benchmark           string             `json:"benchmark"`
+	Revision            string             `json:"revision"`
+	CollectionStartedAt *time.Time         `json:"collection_started_at,omitempty"`
+	CollectionEndedAt   *time.Time         `json:"collection_ended_at,omitempty"`
+	Method              string             `json:"method"`
+	Scorer              string             `json:"scorer"`
+	Manifests           []string           `json:"manifests"`
+	Conditions          []ConditionSummary `json:"conditions"`
+	Pairs               []PairedSummary    `json:"pairs"`
 }
 
 func SummarizeManifests(filenames []string) (SummaryReport, error) {
 	if len(filenames) == 0 {
 		return SummaryReport{}, errors.New("at least one run manifest is required")
 	}
+	benchmarkSet := false
 	report := SummaryReport{
 		SchemaVersion: ResultSchemaVersion, GeneratedAt: time.Now().UTC(),
-		Method:    "descriptive statistics and deterministic 10,000-resample percentile bootstrap 95% confidence intervals",
-		Scorer:    EnergyVADName + "; Full-Duplex-Bench get_timing.py interval and millisecond de-duplication definitions",
-		Manifests: append([]string(nil), filenames...),
+		Method:     "descriptive statistics and deterministic 10,000-resample percentile bootstrap 95% confidence intervals",
+		Scorer:     EnergyVADName + "; Full-Duplex-Bench get_timing.py interval and millisecond de-duplication definitions",
+		Manifests:  append([]string(nil), filenames...),
+		Conditions: make([]ConditionSummary, 0),
+		Pairs:      make([]PairedSummary, 0),
 	}
 	type groupData struct {
 		descriptor Descriptor
@@ -85,6 +99,7 @@ func SummarizeManifests(filenames []string) (SummaryReport, error) {
 		condition  string
 		results    []TrialResult
 		failures   int
+		attempts   []RunAttempt
 	}
 	groups := make(map[string]*groupData)
 	type pairData struct {
@@ -94,11 +109,19 @@ func SummarizeManifests(filenames []string) (SummaryReport, error) {
 	}
 	pairs := make(map[string]*pairData)
 	for _, filename := range filenames {
-		manifest, err := readRunManifest(filename)
+		manifest, err := ReadRunManifest(filename)
 		if err != nil {
 			return SummaryReport{}, err
 		}
+		if !benchmarkSet {
+			report.Benchmark = manifest.Benchmark
+			report.Revision = manifest.Revision
+			benchmarkSet = true
+		} else if manifest.Benchmark != report.Benchmark || manifest.Revision != report.Revision {
+			return SummaryReport{}, fmt.Errorf("manifest %s reports %s@%s, expected %s@%s", filename, manifest.Benchmark, manifest.Revision, report.Benchmark, report.Revision)
+		}
 		for _, result := range manifest.Completed {
+			updateCollectionBounds(&report, result.Session.StartedAt, result.Session.StartedAt.Add(time.Duration(result.Session.ElapsedMS*float64(time.Millisecond))))
 			key := summaryKey(result.Session.Descriptor, result.Sample.Scenario, result.Condition)
 			group := groups[key]
 			if group == nil {
@@ -127,16 +150,52 @@ func SummarizeManifests(filenames []string) (SummaryReport, error) {
 			}
 			group.failures++
 		}
+		for _, attempt := range manifest.Attempts {
+			updateCollectionBounds(&report, attempt.StartedAt, attempt.FinishedAt)
+			key := summaryKey(manifest.Descriptor, attempt.Scenario, attempt.Condition)
+			group := groups[key]
+			if group == nil {
+				group = &groupData{descriptor: manifest.Descriptor, scenario: attempt.Scenario, condition: attempt.Condition}
+				groups[key] = group
+			}
+			group.attempts = append(group.attempts, attempt)
+		}
 	}
 	for _, group := range groups {
 		summary := ConditionSummary{
 			Descriptor: group.descriptor, Scenario: group.scenario, Condition: group.condition,
 			Completed: len(group.results), Failures: group.failures,
 		}
+		attemptCounts := make(map[string]int)
+		for _, attempt := range group.attempts {
+			key := attempt.SampleID + "\x00" + fmt.Sprint(attempt.Replicate)
+			attemptCounts[key]++
+			if attempt.Succeeded {
+				summary.SuccessfulRunAttempts++
+			} else {
+				summary.FailedRunAttempts++
+			}
+		}
+		summary.RunAttempts = len(group.attempts)
+		summary.AttemptLedgerTrials = len(attemptCounts)
+		for _, count := range attemptCounts {
+			if count > 1 {
+				summary.RetriedTrials++
+			}
+		}
 		for _, result := range group.results {
 			if result.Session.Usage.Complete {
 				summary.UsageComplete++
 			}
+			if result.Attempt > 1 {
+				summary.RecoveredTrials++
+			}
+			if result.Timing.SpeechDuringOverlap {
+				summary.SpeechDuringOverlapRate++
+			}
+		}
+		if summary.Completed > 0 {
+			summary.SpeechDuringOverlapRate /= float64(summary.Completed)
 		}
 		summary.ConnectionSetupMS = distributionOf(group.results, func(result TrialResult) *float64 { return pointer(result.Session.ConnectionSetupMS) })
 		summary.ConnectionCount = distributionOf(group.results, func(result TrialResult) *float64 { return pointer(float64(result.Session.ConnectionCount)) })
@@ -215,6 +274,17 @@ func SummarizeManifests(filenames []string) (SummaryReport, error) {
 	return report, nil
 }
 
+func updateCollectionBounds(report *SummaryReport, startedAt, endedAt time.Time) {
+	if !startedAt.IsZero() && (report.CollectionStartedAt == nil || startedAt.Before(*report.CollectionStartedAt)) {
+		value := startedAt
+		report.CollectionStartedAt = &value
+	}
+	if !endedAt.IsZero() && (report.CollectionEndedAt == nil || endedAt.After(*report.CollectionEndedAt)) {
+		value := endedAt
+		report.CollectionEndedAt = &value
+	}
+}
+
 func WriteSummaryReport(filename string, report SummaryReport) error {
 	if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
 		return fmt.Errorf("create summary directory: %w", err)
@@ -222,7 +292,8 @@ func WriteSummaryReport(filename string, report SummaryReport) error {
 	return writeJSONAtomic(filename, report)
 }
 
-func readRunManifest(filename string) (RunManifest, error) {
+// ReadRunManifest decodes a supported live benchmark manifest.
+func ReadRunManifest(filename string) (RunManifest, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return RunManifest{}, fmt.Errorf("read manifest %s: %w", filename, err)
@@ -231,7 +302,7 @@ func readRunManifest(filename string) (RunManifest, error) {
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return RunManifest{}, fmt.Errorf("decode manifest %s: %w", filename, err)
 	}
-	if manifest.SchemaVersion != ResultSchemaVersion {
+	if !supportedResultSchema(manifest.SchemaVersion) {
 		return RunManifest{}, fmt.Errorf("manifest %s has unsupported schema %q", filename, manifest.SchemaVersion)
 	}
 	return manifest, nil

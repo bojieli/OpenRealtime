@@ -18,9 +18,13 @@ type TrialConfig struct {
 	OutputRoot string
 	Condition  string
 	Replicate  int
+	Attempt    int
 }
 
 func RunTrial(ctx context.Context, adapter Adapter, sample Sample, config TrialConfig) (TrialResult, error) {
+	if config.Attempt < 1 {
+		config.Attempt = 1
+	}
 	inputPath, inputHash, err := selectedInput(sample, config.Condition)
 	if err != nil {
 		return TrialResult{}, err
@@ -56,7 +60,7 @@ func RunTrial(ctx context.Context, adapter Adapter, sample Sample, config TrialC
 	providerDir := safeName.ReplaceAllString(session.Descriptor.Provider+"-"+session.Descriptor.Model, "-")
 	trialID := strings.Join([]string{providerDir, sample.Scenario, sample.ID, config.Condition, fmt.Sprintf("r%03d", config.Replicate)}, "/")
 	result := TrialResult{
-		SchemaVersion: ResultSchemaVersion, TrialID: trialID, Sample: sample, Condition: config.Condition,
+		SchemaVersion: ResultSchemaVersion, TrialID: trialID, Attempt: config.Attempt, Sample: sample, Condition: config.Condition,
 		InputSHA256: inputHash, OutputSHA256: outputHash, OutputWAV: outputPath,
 		Timing: ScoreTiming(input, aligned, sample.OverlapStartS, sample.OverlapEndS), Session: session,
 	}
@@ -80,7 +84,7 @@ func LoadTrialResult(descriptor Descriptor, sample Sample, config TrialConfig) (
 	if err := json.Unmarshal(data, &result); err != nil {
 		return TrialResult{}, false, fmt.Errorf("decode prior trial %s: %w", resultPath, err)
 	}
-	if result.SchemaVersion != ResultSchemaVersion || result.Sample.ID != sample.ID || result.Sample.Scenario != sample.Scenario || result.Condition != config.Condition || result.Session.Descriptor != descriptor {
+	if !supportedResultSchema(result.SchemaVersion) || result.Sample.ID != sample.ID || result.Sample.Scenario != sample.Scenario || result.Condition != config.Condition || result.Session.Descriptor != descriptor {
 		return TrialResult{}, false, fmt.Errorf("prior trial %s does not match the requested trial", resultPath)
 	}
 	inputPath, inputHash, err := selectedInput(sample, config.Condition)
@@ -101,18 +105,26 @@ func LoadTrialResult(descriptor Descriptor, sample Sample, config TrialConfig) (
 	if result.Timing.VAD != EnergyVADName {
 		return TrialResult{}, false, fmt.Errorf("prior trial %s uses scorer %q; rescore it with the current livebench before resuming", resultPath, result.Timing.VAD)
 	}
+	result.SchemaVersion = ResultSchemaVersion
+	if result.Attempt < 1 {
+		result.Attempt = 1
+	}
 	return result, true, nil
 }
 
 // RescoreManifest recomputes local metrics from immutable input/output WAVs.
 // It never makes a provider call and preserves session traces and hashes.
 func RescoreManifest(filename string) (RunManifest, error) {
-	manifest, err := readRunManifest(filename)
+	manifest, err := ReadRunManifest(filename)
 	if err != nil {
 		return RunManifest{}, err
 	}
 	for index := range manifest.Completed {
 		result := &manifest.Completed[index]
+		result.SchemaVersion = ResultSchemaVersion
+		if result.Attempt < 1 {
+			result.Attempt = 1
+		}
 		inputPath, inputHash, selectErr := selectedInput(result.Sample, result.Condition)
 		if selectErr != nil {
 			return RunManifest{}, fmt.Errorf("select input for %s: %w", result.TrialID, selectErr)
@@ -143,6 +155,7 @@ func RescoreManifest(filename string) (RunManifest, error) {
 			return RunManifest{}, err
 		}
 	}
+	manifest.SchemaVersion = ResultSchemaVersion
 	if err := WriteRunManifest(filename, manifest); err != nil {
 		return RunManifest{}, err
 	}
@@ -219,9 +232,11 @@ type RunManifest struct {
 	Descriptor    Descriptor    `json:"descriptor"`
 	Conditions    []string      `json:"conditions"`
 	Replicates    int           `json:"replicates"`
+	TrialAttempts int           `json:"trial_attempts"`
 	Samples       []Sample      `json:"samples"`
 	Completed     []TrialResult `json:"completed"`
 	Failures      []RunFailure  `json:"failures,omitempty"`
+	Attempts      []RunAttempt  `json:"attempts,omitempty"`
 }
 
 type RunFailure struct {
@@ -229,7 +244,25 @@ type RunFailure struct {
 	Scenario  string `json:"scenario"`
 	Condition string `json:"condition"`
 	Replicate int    `json:"replicate"`
+	Attempts  int    `json:"attempts"`
 	Error     string `json:"error"`
+}
+
+type RunAttempt struct {
+	SampleID   string    `json:"sample_id"`
+	Scenario   string    `json:"scenario"`
+	Condition  string    `json:"condition"`
+	Replicate  int       `json:"replicate"`
+	Attempt    int       `json:"attempt"`
+	StartedAt  time.Time `json:"started_at"`
+	FinishedAt time.Time `json:"finished_at"`
+	DurationMS float64   `json:"duration_ms"`
+	Succeeded  bool      `json:"succeeded"`
+	Error      string    `json:"error,omitempty"`
+}
+
+func supportedResultSchema(version string) bool {
+	return version == ResultSchemaVersion || version == legacyResultSchemaVersion
 }
 
 func WriteRunManifest(filename string, manifest RunManifest) error {

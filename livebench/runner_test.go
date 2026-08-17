@@ -31,7 +31,7 @@ func TestLoadTrialResultVerifiesBenchmarkHashes(t *testing.T) {
 	outputPath := filepath.Join(trialDir, "output.wav")
 	outputHash := writeTestWAV(t, outputPath)
 	result := TrialResult{
-		SchemaVersion: ResultSchemaVersion, TrialID: "test/scenario/1/overlap/r000",
+		SchemaVersion: legacyResultSchemaVersion, TrialID: "test/scenario/1/overlap/r000",
 		Sample: sample, Condition: "overlap", InputSHA256: inputHash,
 		OutputSHA256: outputHash, OutputWAV: outputPath,
 		Timing: TimingMetrics{VAD: EnergyVADName}, Session: SessionResult{Descriptor: descriptor},
@@ -39,8 +39,12 @@ func TestLoadTrialResultVerifiesBenchmarkHashes(t *testing.T) {
 	if err := writeJSONAtomic(resultPath, result); err != nil {
 		t.Fatal(err)
 	}
-	if _, exists, err := LoadTrialResult(descriptor, sample, config); err != nil || !exists {
+	loaded, exists, err := LoadTrialResult(descriptor, sample, config)
+	if err != nil || !exists {
 		t.Fatalf("load valid result: exists=%v err=%v", exists, err)
+	}
+	if loaded.SchemaVersion != ResultSchemaVersion || loaded.Attempt != 1 {
+		t.Fatalf("legacy result was not normalized: %+v", loaded)
 	}
 
 	changedSample := sample

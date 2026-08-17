@@ -47,6 +47,28 @@ go run ./cmd/livebench run \
 Live calls read only the provider-specific environment variable. Result JSON
 never stores an API key or base64 audio payload.
 
+Run a complete scenario with bounded retries and resumable provenance:
+
+```sh
+go run ./cmd/livebench run \
+  --dataset-root /path/to/fdb-v1.5 \
+  --output-root /path/to/results/user_interruption \
+  --provider gemini \
+  --model gemini-3.1-flash-live-preview \
+  --scenario user_interruption \
+  --conditions overlap \
+  --trial-attempts 3 \
+  --retry-delay 1s \
+  --resume=true
+```
+
+Each process invocation makes at most `--trial-attempts` calls for an
+unfinished trial, using exponential backoff capped at 30 seconds. The atomic
+manifest keeps every attempt's timestamps, duration, outcome, and error. Resume
+first verifies that the provider, exact model, conditions, replicates, and
+ordered sample plan match; it then preserves the attempt ledger and verifies
+input/output hashes before reusing a completed trial.
+
 Recompute local timing observations after a scorer update without repeating
 provider calls, then create a deterministic aggregate:
 

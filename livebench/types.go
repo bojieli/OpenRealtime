@@ -7,7 +7,10 @@ import (
 	"time"
 )
 
-const ResultSchemaVersion = "1.1.0"
+const (
+	ResultSchemaVersion       = "1.2.0"
+	legacyResultSchemaVersion = "1.1.0"
+)
 
 // Audio is little-endian, signed PCM16 mono audio without a container header.
 type Audio struct {
@@ -103,6 +106,7 @@ type Sample struct {
 type TrialResult struct {
 	SchemaVersion string        `json:"schema_version"`
 	TrialID       string        `json:"trial_id"`
+	Attempt       int           `json:"attempt"`
 	Sample        Sample        `json:"sample"`
 	Condition     string        `json:"condition"`
 	InputSHA256   string        `json:"input_sha256"`

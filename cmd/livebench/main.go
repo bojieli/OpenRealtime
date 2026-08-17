@@ -17,6 +17,8 @@ import (
 	"github.com/bojieli/OpenRealtime/livebench"
 )
 
+const maxRetryBackoff = 30 * time.Second
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "livebench:", err)
@@ -133,6 +135,8 @@ func runBenchmark(arguments []string) error {
 	limit := flags.Int("limit", 0, "maximum samples after filtering; zero means all")
 	selection := flags.String("selection", "even", "when limited: even or head")
 	replicates := flags.Int("replicates", 1, "number of trials per sample and condition")
+	trialAttempts := flags.Int("trial-attempts", 3, "bounded attempts for each live trial")
+	retryDelay := flags.Duration("retry-delay", time.Second, "base delay between live trial attempts")
 	trialTimeout := flags.Duration("trial-timeout", 5*time.Minute, "timeout for each live trial")
 	tailDuration := flags.Duration("tail-duration", 5*time.Second, "receive time after input ends")
 	continueOnError := flags.Bool("continue-on-error", true, "record failures and continue")
@@ -144,8 +148,8 @@ func runBenchmark(arguments []string) error {
 	if *datasetRoot == "" || *provider == "" {
 		return errors.New("--dataset-root and --provider are required")
 	}
-	if *replicates < 1 || *limit < 0 || *trialTimeout <= 0 || *tailDuration < 0 {
-		return errors.New("replicates, limit, trial-timeout, or tail-duration is invalid")
+	if *replicates < 1 || *trialAttempts < 1 || *trialAttempts > 10 || *retryDelay < 0 || *limit < 0 || *trialTimeout <= 0 || *tailDuration < 0 {
+		return errors.New("replicates, trial-attempts, retry-delay, limit, trial-timeout, or tail-duration is invalid")
 	}
 	conditions, err := parseConditions(*conditionList)
 	if err != nil {
@@ -177,9 +181,20 @@ func runBenchmark(arguments []string) error {
 	manifest := livebench.RunManifest{
 		SchemaVersion: livebench.ResultSchemaVersion, CreatedAt: time.Now().UTC(),
 		Benchmark: livebench.FullDuplexBenchName, Revision: livebench.FullDuplexBenchRevision,
-		Descriptor: descriptor, Conditions: conditions, Replicates: *replicates, Samples: samples,
+		Descriptor: descriptor, Conditions: conditions, Replicates: *replicates,
+		TrialAttempts: *trialAttempts, Samples: samples,
 	}
-	manifestPath := filepath.Join(*outputRoot, "run-"+sanitize(descriptor.Provider+"-"+descriptor.Model)+".json")
+	manifestPrefix := "run-"
+	if *dryRun {
+		manifestPrefix = "plan-"
+	}
+	manifestPath := filepath.Join(*outputRoot, manifestPrefix+sanitize(descriptor.Provider+"-"+descriptor.Model)+".json")
+	if *resume && !*dryRun {
+		manifest, err = resumeRunManifest(manifestPath, manifest)
+		if err != nil {
+			return err
+		}
+	}
 	if err := livebench.WriteRunManifest(manifestPath, manifest); err != nil {
 		return err
 	}
@@ -205,17 +220,22 @@ func runBenchmark(arguments []string) error {
 						continue
 					}
 				}
-				fmt.Fprintf(os.Stderr, "[%s] %s/%s %s replicate=%d\n", descriptor.Provider, sample.Scenario, sample.ID, condition, replicate)
-				trialCtx, cancel := context.WithTimeout(context.Background(), *trialTimeout)
-				result, trialErr := livebench.RunTrial(trialCtx, adapter, sample, trialConfig)
-				cancel()
+				attemptOffset := trialAttemptCount(manifest.Attempts, sample, trialConfig)
+				result, attempts, trialErr := runTrialAttempts(
+					context.Background(), adapter, sample, trialConfig, attemptOffset, *trialAttempts, *trialTimeout, *retryDelay,
+					func(attempt int) {
+						fmt.Fprintf(os.Stderr, "[%s] %s/%s %s replicate=%d attempt=%d run=%d/%d\n", descriptor.Provider, sample.Scenario, sample.ID, condition, replicate, attempt, attempt-attemptOffset, *trialAttempts)
+					},
+				)
+				manifest.Attempts = append(manifest.Attempts, attempts...)
+				if trialErr == nil {
+					manifest.Completed = append(manifest.Completed, result)
+				}
 				if trialErr != nil {
 					manifest.Failures = append(manifest.Failures, livebench.RunFailure{
 						SampleID: sample.ID, Scenario: sample.Scenario, Condition: condition,
-						Replicate: replicate, Error: trialErr.Error(),
+						Replicate: replicate, Attempts: attemptOffset + len(attempts), Error: trialErr.Error(),
 					})
-				} else {
-					manifest.Completed = append(manifest.Completed, result)
 				}
 				if err := livebench.WriteRunManifest(manifestPath, manifest); err != nil {
 					return err
@@ -227,6 +247,118 @@ func runBenchmark(arguments []string) error {
 		}
 	}
 	return printSummary(manifestPath, manifest)
+}
+
+func resumeRunManifest(filename string, planned livebench.RunManifest) (livebench.RunManifest, error) {
+	prior, err := livebench.ReadRunManifest(filename)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return planned, nil
+		}
+		return livebench.RunManifest{}, err
+	}
+	plannedSamples, err := json.Marshal(planned.Samples)
+	if err != nil {
+		return livebench.RunManifest{}, fmt.Errorf("encode planned samples: %w", err)
+	}
+	priorSamples, err := json.Marshal(prior.Samples)
+	if err != nil {
+		return livebench.RunManifest{}, fmt.Errorf("encode prior samples: %w", err)
+	}
+	if prior.Benchmark != planned.Benchmark || prior.Revision != planned.Revision ||
+		prior.Descriptor != planned.Descriptor || prior.Replicates != planned.Replicates ||
+		!slices.Equal(prior.Conditions, planned.Conditions) || string(priorSamples) != string(plannedSamples) {
+		return livebench.RunManifest{}, fmt.Errorf("prior manifest %s does not match the requested run plan", filename)
+	}
+	planned.CreatedAt = prior.CreatedAt
+	planned.Attempts = append([]livebench.RunAttempt(nil), prior.Attempts...)
+	return planned, nil
+}
+
+func trialAttemptCount(attempts []livebench.RunAttempt, sample livebench.Sample, config livebench.TrialConfig) int {
+	count := 0
+	for _, attempt := range attempts {
+		if attempt.SampleID == sample.ID && attempt.Scenario == sample.Scenario &&
+			attempt.Condition == config.Condition && attempt.Replicate == config.Replicate {
+			count++
+		}
+	}
+	return count
+}
+
+func runTrialAttempts(
+	ctx context.Context,
+	adapter livebench.Adapter,
+	sample livebench.Sample,
+	config livebench.TrialConfig,
+	attemptOffset int,
+	attemptLimit int,
+	trialTimeout time.Duration,
+	retryDelay time.Duration,
+	onStart func(int),
+) (livebench.TrialResult, []livebench.RunAttempt, error) {
+	var records []livebench.RunAttempt
+	var lastErr error
+	for runAttempt := 1; runAttempt <= attemptLimit; runAttempt++ {
+		attempt := attemptOffset + runAttempt
+		if onStart != nil {
+			onStart(attempt)
+		}
+		config.Attempt = attempt
+		startedAt := time.Now().UTC()
+		trialCtx, cancel := context.WithTimeout(ctx, trialTimeout)
+		result, runErr := livebench.RunTrial(trialCtx, adapter, sample, config)
+		cancel()
+		finishedAt := time.Now().UTC()
+		record := livebench.RunAttempt{
+			SampleID: sample.ID, Scenario: sample.Scenario, Condition: config.Condition,
+			Replicate: config.Replicate, Attempt: attempt, StartedAt: startedAt, FinishedAt: finishedAt,
+			DurationMS: float64(finishedAt.Sub(startedAt)) / float64(time.Millisecond), Succeeded: runErr == nil,
+		}
+		if runErr != nil {
+			record.Error = runErr.Error()
+		}
+		records = append(records, record)
+		if runErr == nil {
+			return result, records, nil
+		}
+		lastErr = runErr
+		if runAttempt < attemptLimit {
+			delay := retryBackoff(retryDelay, runAttempt)
+			if err := sleepContext(ctx, delay); err != nil {
+				return livebench.TrialResult{}, records, err
+			}
+		}
+	}
+	return livebench.TrialResult{}, records, lastErr
+}
+
+func retryBackoff(base time.Duration, failedAttempts int) time.Duration {
+	if base <= 0 {
+		return 0
+	}
+	delay := base
+	for attempt := 1; attempt < failedAttempts; attempt++ {
+		if delay >= maxRetryBackoff/2 {
+			return maxRetryBackoff
+		}
+		delay *= 2
+	}
+	return min(delay, maxRetryBackoff)
+}
+
+func sleepContext(ctx context.Context, duration time.Duration) error {
+	if duration <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func makeAdapter(provider, model string, tail time.Duration, dryRun bool) (livebench.Adapter, livebench.Descriptor, error) {

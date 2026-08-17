@@ -1,0 +1,591 @@
+{
+  "schema_version": "1.2.0",
+  "generated_at": "2026-08-17T17:14:16.227202Z",
+  "benchmark": "full-duplex-bench-v1.5",
+  "revision": "3e799c45a045256f47d5f1c9cda90157e2d2ec9e",
+  "collection_started_at": "2026-08-17T14:23:03.685308Z",
+  "collection_ended_at": "2026-08-17T17:13:55.153488Z",
+  "method": "descriptive statistics and deterministic 10,000-resample percentile bootstrap 95% confidence intervals",
+  "scorer": "openrealtime-energy-vad-v2-fdb-timing; Full-Duplex-Bench get_timing.py interval and millisecond de-duplication definitions",
+  "manifests": [
+    "artifacts/livebench-gemini-fdb15-full-overlap/background_speech/run-google-gemini-3.1-flash-live-preview.json",
+    "artifacts/livebench-gemini-fdb15-full-overlap/talking_to_other/run-google-gemini-3.1-flash-live-preview.json",
+    "artifacts/livebench-gemini-fdb15-full-overlap/user_backchannel/run-google-gemini-3.1-flash-live-preview.json",
+    "artifacts/livebench-gemini-fdb15-full-overlap/user_interruption/run-google-gemini-3.1-flash-live-preview.json"
+  ],
+  "conditions": [
+    {
+      "descriptor": {
+        "provider": "google",
+        "model": "gemini-3.1-flash-live-preview",
+        "transport": "websocket-v1beta",
+        "architecture": "native-audio-to-audio",
+        "profile": "fdb-v1.5-minimal-multisession-v1",
+        "input_sample_rate_hz": 16000,
+        "output_sample_rate_hz": 24000
+      },
+      "scenario": "background_speech",
+      "condition": "overlap",
+      "completed": 100,
+      "failures": 0,
+      "run_attempts": 100,
+      "successful_run_attempts": 99,
+      "failed_run_attempts": 1,
+      "attempt_ledger_trials": 99,
+      "retried_trials": 1,
+      "recovered_trials": 1,
+      "usage_complete": 0,
+      "speech_during_overlap_rate": 0.99,
+      "connection_setup_ms": {
+        "n": 100,
+        "mean": 3322.57866121,
+        "median": 2156.0592500000002,
+        "p95": 4351.601420499999,
+        "mean_ci_lower_95": 2360.8731773622503,
+        "mean_ci_upper_95": 5051.109274999748
+      },
+      "connection_count": {
+        "n": 100,
+        "mean": 1.03,
+        "median": 1,
+        "p95": 1,
+        "mean_ci_lower_95": 1,
+        "mean_ci_upper_95": 1.07
+      },
+      "transport_retries": {
+        "n": 100,
+        "mean": 0.04,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0.11
+      },
+      "input_duration_ms": {
+        "n": 100,
+        "mean": 12631.06125,
+        "median": 12622,
+        "p95": 13514.162499999999,
+        "mean_ci_lower_95": 12519.562921875,
+        "mean_ci_upper_95": 12738.72928125
+      },
+      "elapsed_ms": {
+        "n": 100,
+        "mean": 17671.598296710003,
+        "median": 17674.001896,
+        "p95": 18576.36504135,
+        "mean_ci_lower_95": 17555.907587943748,
+        "mean_ci_upper_95": 17782.62250583125
+      },
+      "first_audio_ms": {
+        "n": 100,
+        "mean": 3624.9590975499987,
+        "median": 3524.028146,
+        "p95": 4693.694125,
+        "mean_ci_lower_95": 3499.4419450064984,
+        "mean_ci_upper_95": 3753.1179008030003
+      },
+      "output_audio_ms": {
+        "n": 100,
+        "mean": 3416.7233328700004,
+        "median": 3130.625,
+        "p95": 4625.625,
+        "mean_ci_lower_95": 3108.2087703604984,
+        "mean_ci_upper_95": 3840.372749565998
+      },
+      "first_output_vad_ms": {
+        "n": 100,
+        "mean": 4358.6,
+        "median": 4260,
+        "p95": 5641,
+        "mean_ci_lower_95": 4204.4,
+        "mean_ci_upper_95": 4508.005
+      },
+      "overlap_speech_ms": {
+        "n": 100,
+        "mean": 657.15,
+        "median": 514.5,
+        "p95": 1435.8499999999988,
+        "mean_ci_lower_95": 569.80725,
+        "mean_ci_upper_95": 744.6907500000001
+      },
+      "stop_latency_ms": {
+        "n": 96,
+        "mean": 432.6041666666667,
+        "median": 260,
+        "p95": 1225,
+        "mean_ci_lower_95": 360.9348958333333,
+        "mean_ci_upper_95": 511.9817708333333
+      },
+      "response_latency_ms": {
+        "n": 100,
+        "mean": 1820.2,
+        "median": 1710,
+        "p95": 2884.9999999999995,
+        "mean_ci_lower_95": 1709.5974999999999,
+        "mean_ci_upper_95": 1931.5025
+      },
+      "input_tokens": {
+        "n": 0,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      },
+      "output_tokens": {
+        "n": 0,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      },
+      "input_audio_tokens": {
+        "n": 0,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      },
+      "output_audio_tokens": {
+        "n": 0,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      }
+    },
+    {
+      "descriptor": {
+        "provider": "google",
+        "model": "gemini-3.1-flash-live-preview",
+        "transport": "websocket-v1beta",
+        "architecture": "native-audio-to-audio",
+        "profile": "fdb-v1.5-minimal-multisession-v1",
+        "input_sample_rate_hz": 16000,
+        "output_sample_rate_hz": 24000
+      },
+      "scenario": "talking_to_other",
+      "condition": "overlap",
+      "completed": 100,
+      "failures": 0,
+      "run_attempts": 103,
+      "successful_run_attempts": 100,
+      "failed_run_attempts": 3,
+      "attempt_ledger_trials": 100,
+      "retried_trials": 3,
+      "recovered_trials": 3,
+      "usage_complete": 0,
+      "speech_during_overlap_rate": 0.98,
+      "connection_setup_ms": {
+        "n": 100,
+        "mean": 2597.3273791899996,
+        "median": 2498.6373125,
+        "p95": 3893.0498672999993,
+        "mean_ci_lower_95": 2316.3014253269994,
+        "mean_ci_upper_95": 2949.4973204209996
+      },
+      "connection_count": {
+        "n": 100,
+        "mean": 1.97,
+        "median": 2,
+        "p95": 3,
+        "mean_ci_lower_95": 1.81,
+        "mean_ci_upper_95": 2.12
+      },
+      "transport_retries": {
+        "n": 100,
+        "mean": 0.05,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0.13
+      },
+      "input_duration_ms": {
+        "n": 100,
+        "mean": 13121.580625,
+        "median": 13179.1875,
+        "p95": 14015.196875,
+        "mean_ci_lower_95": 13006.397703125,
+        "mean_ci_upper_95": 13230.772421874999
+      },
+      "elapsed_ms": {
+        "n": 100,
+        "mean": 18430.080382980002,
+        "median": 18791.661021,
+        "p95": 20642.06373395,
+        "mean_ci_lower_95": 18070.405067647,
+        "mean_ci_upper_95": 18762.063648053747
+      },
+      "first_audio_ms": {
+        "n": 99,
+        "mean": 3717.8605062929287,
+        "median": 3673.52425,
+        "p95": 5160.036950000001,
+        "mean_ci_lower_95": 3583.309848781818,
+        "mean_ci_upper_95": 3857.955316434093
+      },
+      "output_audio_ms": {
+        "n": 100,
+        "mean": 10279.218332889997,
+        "median": 10460.041666,
+        "p95": 20283.637499349996,
+        "mean_ci_lower_95": 9008.109280787503,
+        "mean_ci_upper_95": 11522.316551652995
+      },
+      "first_output_vad_ms": {
+        "n": 99,
+        "mean": 4112.727272727273,
+        "median": 3880,
+        "p95": 5787.999999999999,
+        "mean_ci_lower_95": 3948.4848484848485,
+        "mean_ci_upper_95": 4284.656565656565
+      },
+      "overlap_speech_ms": {
+        "n": 100,
+        "mean": 1135.49,
+        "median": 910,
+        "p95": 2324.299999999998,
+        "mean_ci_lower_95": 1003.8779999999999,
+        "mean_ci_upper_95": 1265.3707499999998
+      },
+      "stop_latency_ms": {
+        "n": 98,
+        "mean": 978.3333333333333,
+        "median": 760,
+        "p95": 2103,
+        "mean_ci_lower_95": 853.6377551020406,
+        "mean_ci_upper_95": 1109.3205782312928
+      },
+      "response_latency_ms": {
+        "n": 99,
+        "mean": 2095.252525252525,
+        "median": 2090,
+        "p95": 2742,
+        "mean_ci_lower_95": 2014.141414141414,
+        "mean_ci_upper_95": 2179.2954545454545
+      },
+      "input_tokens": {
+        "n": 0,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      },
+      "output_tokens": {
+        "n": 0,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      },
+      "input_audio_tokens": {
+        "n": 0,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      },
+      "output_audio_tokens": {
+        "n": 0,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      }
+    },
+    {
+      "descriptor": {
+        "provider": "google",
+        "model": "gemini-3.1-flash-live-preview",
+        "transport": "websocket-v1beta",
+        "architecture": "native-audio-to-audio",
+        "profile": "fdb-v1.5-minimal-multisession-v1",
+        "input_sample_rate_hz": 16000,
+        "output_sample_rate_hz": 24000
+      },
+      "scenario": "user_backchannel",
+      "condition": "overlap",
+      "completed": 98,
+      "failures": 0,
+      "run_attempts": 101,
+      "successful_run_attempts": 98,
+      "failed_run_attempts": 3,
+      "attempt_ledger_trials": 98,
+      "retried_trials": 2,
+      "recovered_trials": 2,
+      "usage_complete": 0,
+      "speech_during_overlap_rate": 0.9897959183673469,
+      "connection_setup_ms": {
+        "n": 98,
+        "mean": 1792.9761488469392,
+        "median": 1731.7457715,
+        "p95": 1987.0642606999995,
+        "mean_ci_lower_95": 1694.1519625551016,
+        "mean_ci_upper_95": 1932.649490391582
+      },
+      "connection_count": {
+        "n": 98,
+        "mean": 1.9795918367346939,
+        "median": 2,
+        "p95": 2,
+        "mean_ci_lower_95": 1.9387755102040816,
+        "mean_ci_upper_95": 2.020408163265306
+      },
+      "transport_retries": {
+        "n": 98,
+        "mean": 0.02040816326530612,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0.061224489795918366
+      },
+      "input_duration_ms": {
+        "n": 98,
+        "mean": 12119.561862244898,
+        "median": 12065.0625,
+        "p95": 12901,
+        "mean_ci_lower_95": 12036.160076530612,
+        "mean_ci_upper_95": 12206.751992984695
+      },
+      "elapsed_ms": {
+        "n": 98,
+        "mean": 17910.232201500003,
+        "median": 17900.802354,
+        "p95": 18960.8943125,
+        "mean_ci_lower_95": 17693.748216547207,
+        "mean_ci_upper_95": 18113.848753798477
+      },
+      "first_audio_ms": {
+        "n": 98,
+        "mean": 3818.4282775306124,
+        "median": 3654.3012289999997,
+        "p95": 4451.77871245,
+        "mean_ci_lower_95": 3635.383895253317,
+        "mean_ci_upper_95": 4114.7578781581615
+      },
+      "output_audio_ms": {
+        "n": 98,
+        "mean": 10677.467261326537,
+        "median": 10205.041666,
+        "p95": 13674.541665999997,
+        "mean_ci_lower_95": 9958.898936515823,
+        "mean_ci_upper_95": 11507.38985912143
+      },
+      "first_output_vad_ms": {
+        "n": 97,
+        "mean": 3847.0103092783506,
+        "median": 3820,
+        "p95": 4527.999999999999,
+        "mean_ci_lower_95": 3759.7938144329896,
+        "mean_ci_upper_95": 3933.407216494845
+      },
+      "overlap_speech_ms": {
+        "n": 98,
+        "mean": 619.8775510204082,
+        "median": 621,
+        "p95": 836.0000000000009,
+        "mean_ci_lower_95": 589.9783163265306,
+        "mean_ci_upper_95": 648.5533163265304
+      },
+      "stop_latency_ms": {
+        "n": 97,
+        "mean": 541.6494845360825,
+        "median": 540,
+        "p95": 743.9999999999999,
+        "mean_ci_lower_95": 514.2268041237113,
+        "mean_ci_upper_95": 569.0721649484536
+      },
+      "response_latency_ms": {
+        "n": 97,
+        "mean": 1775.1546391752577,
+        "median": 1780,
+        "p95": 2084,
+        "mean_ci_lower_95": 1735.6701030927834,
+        "mean_ci_upper_95": 1814.4329896907216
+      },
+      "input_tokens": {
+        "n": 0,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      },
+      "output_tokens": {
+        "n": 0,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      },
+      "input_audio_tokens": {
+        "n": 0,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      },
+      "output_audio_tokens": {
+        "n": 0,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      }
+    },
+    {
+      "descriptor": {
+        "provider": "google",
+        "model": "gemini-3.1-flash-live-preview",
+        "transport": "websocket-v1beta",
+        "architecture": "native-audio-to-audio",
+        "profile": "fdb-v1.5-minimal-multisession-v1",
+        "input_sample_rate_hz": 16000,
+        "output_sample_rate_hz": 24000
+      },
+      "scenario": "user_interruption",
+      "condition": "overlap",
+      "completed": 200,
+      "failures": 0,
+      "run_attempts": 200,
+      "successful_run_attempts": 200,
+      "failed_run_attempts": 0,
+      "attempt_ledger_trials": 200,
+      "retried_trials": 0,
+      "recovered_trials": 0,
+      "usage_complete": 0,
+      "speech_during_overlap_rate": 0.995,
+      "connection_setup_ms": {
+        "n": 200,
+        "mean": 2070.9446574650005,
+        "median": 1825.442,
+        "p95": 2743.6458678,
+        "mean_ci_lower_95": 2006.0005680182505,
+        "mean_ci_upper_95": 2136.68018825725
+      },
+      "connection_count": {
+        "n": 200,
+        "mean": 2.435,
+        "median": 2,
+        "p95": 3,
+        "mean_ci_lower_95": 2.365,
+        "mean_ci_upper_95": 2.505
+      },
+      "transport_retries": {
+        "n": 200,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      },
+      "input_duration_ms": {
+        "n": 200,
+        "mean": 14994.8790625,
+        "median": 15026.6875,
+        "p95": 16703.50625,
+        "mean_ci_lower_95": 14845.547421875,
+        "mean_ci_upper_95": 15143.25796875
+      },
+      "elapsed_ms": {
+        "n": 200,
+        "mean": 19595.794271654995,
+        "median": 19986.7482505,
+        "p95": 23030.531079800003,
+        "mean_ci_lower_95": 19275.45102479773,
+        "mean_ci_upper_95": 19914.64939209787
+      },
+      "first_audio_ms": {
+        "n": 200,
+        "mean": 4123.930049345,
+        "median": 4029.79375,
+        "p95": 5328.964185399999,
+        "mean_ci_lower_95": 4014.0593114939975,
+        "mean_ci_upper_95": 4243.961052868751
+      },
+      "output_audio_ms": {
+        "n": 200,
+        "mean": 23184.96041624004,
+        "median": 22110.083333,
+        "p95": 32575.637499349996,
+        "mean_ci_lower_95": 22317.50435894991,
+        "mean_ci_upper_95": 24060.122718340008
+      },
+      "first_output_vad_ms": {
+        "n": 200,
+        "mean": 4212.8,
+        "median": 4090,
+        "p95": 5561,
+        "mean_ci_lower_95": 4100.9974999999995,
+        "mean_ci_upper_95": 4335.4
+      },
+      "overlap_speech_ms": {
+        "n": 200,
+        "mean": 1227.355,
+        "median": 803,
+        "p95": 3658.1499999999996,
+        "mean_ci_lower_95": 1092.76925,
+        "mean_ci_upper_95": 1373.8785
+      },
+      "stop_latency_ms": {
+        "n": 198,
+        "mean": 811.060606060606,
+        "median": 460,
+        "p95": 2943,
+        "mean_ci_lower_95": 702.8270202020201,
+        "mean_ci_upper_95": 925.2537878787879
+      },
+      "response_latency_ms": {
+        "n": 200,
+        "mean": 2051.05,
+        "median": 2010,
+        "p95": 2563.4999999999995,
+        "mean_ci_lower_95": 2003.5,
+        "mean_ci_upper_95": 2099.25
+      },
+      "input_tokens": {
+        "n": 0,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      },
+      "output_tokens": {
+        "n": 0,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      },
+      "input_audio_tokens": {
+        "n": 0,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      },
+      "output_audio_tokens": {
+        "n": 0,
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "mean_ci_lower_95": 0,
+        "mean_ci_upper_95": 0
+      }
+    }
+  ],
+  "pairs": []
+}
