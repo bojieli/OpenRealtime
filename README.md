@@ -12,8 +12,8 @@ The working idea is to let a system listen, revise its understanding, prepare re
 
 ## Status
 
-M0 reproducibility, the M1 endpointed baseline, and the M2 microturn cadence
-ablation are complete; M3 safe incremental speech commitment is next.
+M0 reproducibility through M3 duplex speech safety are complete; M4 fast/slow
+cognition is next.
 The repository contains a generated conformance layer for every event in the
 pinned OpenAI Realtime OpenAPI specification, deterministic 24 kHz PCM replay, an original
 redistributable audio fixture, and causal trace validation. There is no Python
@@ -25,6 +25,10 @@ not deployed performance claims.
 M2 adds fixed and revision-triggered schedulers, immutable stable-prefix
 semantics, explicit candidate supersession/cancellation, stale-result rejection,
 and paired latency attribution against B0.
+
+M3 adds streaming speech chunks, bounded prepared/queued horizons, irreversible
+played history, explicit invalidation repair, continuous input during output,
+and schema-valid OpenAI cancellation/clear/truncation traces.
 
 ## Start here
 
@@ -46,6 +50,12 @@ To reproduce the paired M2 cadence ablation:
 
 ```bash
 ./scripts/reproduce_m2.sh
+```
+
+To reproduce the M3 duplex and repair scenarios:
+
+```bash
+./scripts/reproduce_m3.sh
 ```
 
 Both scripts create isolated build artifacts, validate every emitted message

@@ -6,11 +6,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
-	"sort"
 
 	"github.com/bojieli/OpenRealtime/adapters/reference"
 	"github.com/bojieli/OpenRealtime/analysis"
@@ -18,6 +16,7 @@ import (
 	"github.com/bojieli/OpenRealtime/internal/audio"
 	"github.com/bojieli/OpenRealtime/internal/fixture"
 	"github.com/bojieli/OpenRealtime/internal/simtime"
+	"github.com/bojieli/OpenRealtime/internal/wiretrace"
 	openaiwire "github.com/bojieli/OpenRealtime/protocol/openai"
 	"github.com/bojieli/OpenRealtime/trace"
 )
@@ -64,16 +63,6 @@ type Report struct {
 	Adapters      map[string]string       `json:"adapters"`
 	Trials        []Trial                 `json:"trials"`
 	Distributions map[string]Distribution `json:"distributions"`
-}
-
-type scheduledEvent struct {
-	key       string
-	parents   []string
-	atNS      uint64
-	order     uint64
-	direction openaiwire.Direction
-	profile   openaiwire.Profile
-	message   json.RawMessage
 }
 
 func Run(ctx context.Context, config Config) (Report, error) {
@@ -147,12 +136,12 @@ func runTrial(
 		return Trial{}, errors.New("M1 perception adapter must support streaming input")
 	}
 
-	schedule := make([]scheduledEvent, 0, len(input.Records)+len(manifest.Cues)+12)
+	schedule := make([]wiretrace.Event, 0, len(input.Records)+len(manifest.Cues)+12)
 	var order uint64
 	for _, record := range input.Records {
-		schedule = append(schedule, scheduledEvent{
-			key: record.TraceID, parents: slices.Clone(record.CausalParentIDs), atNS: record.MonotonicNS,
-			order: order, direction: record.Direction, profile: record.Profile, message: slices.Clone(record.Message),
+		schedule = append(schedule, wiretrace.Event{
+			Key: record.TraceID, Parents: slices.Clone(record.CausalParentIDs), AtNS: record.MonotonicNS,
+			Order: order, Direction: record.Direction, Profile: record.Profile, Message: slices.Clone(record.Message),
 		})
 		order++
 	}
@@ -165,7 +154,7 @@ func runTrial(
 		for _, revision := range produced {
 			revisions = append(revisions, revision)
 			frameIndex := frameForSample(input.Frames, revision.SourceSample)
-			message, err := marshalEvent(map[string]any{
+			message, err := wiretrace.Marshal(map[string]any{
 				"event_id": fmt.Sprintf("event_m1_%02d_revision_%04d", index, revision.RevisionID),
 				"type":     openaiwire.EventConversationItemInputAudioTranscriptionDelta,
 				"item_id":  manifest.ItemID, "content_index": 0, "delta": revision.Delta,
@@ -173,12 +162,12 @@ func runTrial(
 			if err != nil {
 				return Trial{}, err
 			}
-			schedule = append(schedule, scheduledEvent{
-				key:     fmt.Sprintf("trial_%02d_revision_%04d", index, revision.RevisionID),
-				parents: []string{input.Records[frameIndex].TraceID},
-				atNS:    revision.SourceSample*1_000_000_000/24_000 + timing.StreamingRevisionNS,
-				order:   order, direction: openaiwire.DirectionServer, profile: openaiwire.ProfileRealtime,
-				message: message,
+			schedule = append(schedule, wiretrace.Event{
+				Key:     fmt.Sprintf("trial_%02d_revision_%04d", index, revision.RevisionID),
+				Parents: []string{input.Records[frameIndex].TraceID},
+				AtNS:    revision.SourceSample*1_000_000_000/24_000 + timing.StreamingRevisionNS,
+				Order:   order, Direction: openaiwire.DirectionServer, Profile: openaiwire.ProfileRealtime,
+				Message: message,
 			})
 			order++
 		}
@@ -217,7 +206,7 @@ func runTrial(
 	assistantItemID := fmt.Sprintf("item_m1_assistant_%02d", index)
 	chain := endpointKey
 	add := func(key string, atNS uint64, value map[string]any) error {
-		message, err := marshalEvent(value)
+		message, err := wiretrace.Marshal(value)
 		if err != nil {
 			return err
 		}
@@ -225,9 +214,9 @@ func runTrial(
 		if key == fmt.Sprintf("trial_%02d_perception_done", index) && lastRevisionKey != endpointKey {
 			parents = append(parents, lastRevisionKey)
 		}
-		schedule = append(schedule, scheduledEvent{
-			key: key, parents: parents, atNS: atNS, order: order,
-			direction: openaiwire.DirectionServer, profile: openaiwire.ProfileRealtime, message: message,
+		schedule = append(schedule, wiretrace.Event{
+			Key: key, Parents: parents, AtNS: atNS, Order: order,
+			Direction: openaiwire.DirectionServer, Profile: openaiwire.ProfileRealtime, Message: message,
 		})
 		order++
 		chain = key
@@ -297,7 +286,7 @@ func runTrial(
 		}
 	}
 
-	records, err := materialize(schedule, fmt.Sprintf("m1-trial-%02d", index), validator)
+	records, err := wiretrace.Materialize(schedule, fmt.Sprintf("m1-trial-%02d", index), validator)
 	if err != nil {
 		return Trial{}, err
 	}
@@ -322,44 +311,6 @@ func frameForSample(frames []engine.AudioFrame, sourceSample uint64) int {
 		return len(frames) - 1
 	}
 	return index
-}
-
-func marshalEvent(value map[string]any) (json.RawMessage, error) {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
-}
-
-func materialize(events []scheduledEvent, sessionID string, validator *openaiwire.Validator) ([]trace.Record, error) {
-	sort.SliceStable(events, func(left, right int) bool {
-		if events[left].atNS != events[right].atNS {
-			return events[left].atNS < events[right].atNS
-		}
-		return events[left].order < events[right].order
-	})
-	state := trace.NewState()
-	records := make([]trace.Record, 0, len(events))
-	for sequence, event := range events {
-		message, err := openaiwire.Decode(event.message)
-		if err != nil {
-			return nil, fmt.Errorf("event %s: %w", event.key, err)
-		}
-		if err := validator.Validate(event.profile, event.direction, message); err != nil {
-			return nil, fmt.Errorf("event %s: %w", event.key, err)
-		}
-		record := trace.Record{
-			SchemaVersion: trace.SchemaVersion, TraceID: event.key, SessionID: sessionID,
-			Sequence: uint64(sequence), MonotonicNS: event.atNS, Direction: event.direction,
-			Profile: event.profile, CausalParentIDs: slices.Clone(event.parents), Message: slices.Clone(event.message),
-		}
-		if err := state.Accept(record); err != nil {
-			return nil, fmt.Errorf("event %s: %w", event.key, err)
-		}
-		records = append(records, record)
-	}
-	return records, nil
 }
 
 func absoluteDifference(left, right uint64) uint64 {

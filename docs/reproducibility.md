@@ -75,3 +75,17 @@ paired M2 scheduling conditions, complete action ledger, and HTML ablation
 view. It compares the report and visualization byte-for-byte and runs the full
 race, test, vet, and formatting gates. See [m2-engine.md](m2-engine.md) for the
 attribution equation and interpretation limits.
+
+## M3 duplex and repair scenarios
+
+Run:
+
+```bash
+./scripts/reproduce_m3.sh
+```
+
+The command first executes the complete M2 regression gate. It then regenerates
+120 M3 scenario traces, validates every OpenAI event and causal envelope, and
+compares the raw report plus four representative traces and timelines
+byte-for-byte. See [m3-duplex.md](m3-duplex.md) for horizon semantics and result
+limits.

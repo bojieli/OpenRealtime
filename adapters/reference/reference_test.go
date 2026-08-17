@@ -77,4 +77,16 @@ func TestReferenceCognitionAndSpeech(t *testing.T) {
 	if len(chunks) != 1 || !chunks[0].Final || chunks[0].DurationNS() != 100_000_000 {
 		t.Fatalf("unexpected speech chunks: %+v", chunks)
 	}
+	var streamed []engine.SpeechChunk
+	if err := NewSpeech(100).Stream(context.Background(), engine.SpeechPlan{
+		CandidateID: candidate.CandidateID, Text: candidate.Text,
+	}, func(chunk engine.SpeechChunk) error {
+		streamed = append(streamed, chunk)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(streamed) != 5 || streamed[0].SampleOffset != 0 || streamed[4].SampleOffset != 1_920 || !streamed[4].Final {
+		t.Fatalf("unexpected streaming speech: %+v", streamed)
+	}
 }

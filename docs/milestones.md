@@ -93,8 +93,32 @@ effect rather than hidden.
 
 ## M3 — Incremental speech commitment and duplex behavior
 
+- Status: complete
+- Completed: 2026-08-17
+- Checkpoint command: `./scripts/reproduce_m3.sh`
+
+### Deliverable evidence
+
+| Requirement | Evidence |
+| --- | --- |
+| Streaming synthesis | Five contiguous 20 ms reference chunks through `StreamingSpeechProvider` |
+| Commit horizon | Bounded prepared/queued/played sample state in `speech/commit.go` |
+| Truncation and cancellation | Exact discard accounting and OpenAI cancel/clear/truncate event traces |
+| Played-history safety | Invalidated played audio blocks closure until explicit repair |
+| Continuous input | Client audio append occurs while server output buffer is active |
+| Overlap policy | Directed speech yields; backchannel and side-speech scenarios continue |
+| Automated metrics | Stop latency, false/failure-to-stop, repairs, discard, and history violations |
+
+The directed scenario's injected stop latency is P50 17 ms and P95 26 ms with
+0 failures. Backchannel and side-speech scenarios have 0 false stops; all 30
+invalidation trials record a repair; all 120 trials have 0 played-history
+violations. These are deterministic safety checks over known labels and signal
+audio, not live classifier or device-performance claims.
+
+## M4 — Fast/slow cognition
+
 - Status: next
 
-Next evidence must cover streaming synthesis, prepared versus played audio,
-commit horizon and truncation, continuous input while output is active,
-interruption/backchannel classification, stop latency, and repair invariants.
+Next evidence must cover an asynchronous deliberation stream, truthful
+foreground acknowledgement, cancellation and failure, stale goal/revision
+rejection, and a difficult-question cost/quality comparison.

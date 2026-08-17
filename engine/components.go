@@ -6,11 +6,12 @@ import "context"
 type Capability string
 
 const (
-	CapabilityStreamingInput Capability = "streaming_input"
-	CapabilityRevisions      Capability = "revisions"
-	CapabilityCancellation   Capability = "cancellation"
-	CapabilityDeterministic  Capability = "deterministic"
-	CapabilityPCM16Output    Capability = "pcm16_output"
+	CapabilityStreamingInput  Capability = "streaming_input"
+	CapabilityRevisions       Capability = "revisions"
+	CapabilityCancellation    Capability = "cancellation"
+	CapabilityDeterministic   Capability = "deterministic"
+	CapabilityPCM16Output     Capability = "pcm16_output"
+	CapabilityStreamingOutput Capability = "streaming_output"
 )
 
 type Capabilities map[Capability]bool
@@ -64,6 +65,7 @@ type SpeechPlan struct {
 type SpeechChunk struct {
 	ChunkID      string
 	CandidateID  string
+	SampleOffset uint64
 	SampleRateHz uint32
 	PCM16LE      []byte
 	Final        bool
@@ -73,11 +75,18 @@ func (chunk SpeechChunk) DurationNS() uint64 {
 	if chunk.SampleRateHz == 0 {
 		return 0
 	}
-	return uint64(len(chunk.PCM16LE)/2) * 1_000_000_000 / uint64(chunk.SampleRateHz)
+	samples := uint64(len(chunk.PCM16LE) / 2)
+	rate := uint64(chunk.SampleRateHz)
+	return samples/rate*1_000_000_000 + samples%rate*1_000_000_000/rate
 }
 
 type SpeechProvider interface {
 	Name() string
 	Capabilities() Capabilities
 	Synthesize(context.Context, SpeechPlan) ([]SpeechChunk, error)
+}
+
+type StreamingSpeechProvider interface {
+	SpeechProvider
+	Stream(context.Context, SpeechPlan, func(SpeechChunk) error) error
 }

@@ -222,10 +222,43 @@ func (provider *Speech) Name() string { return "reference.signal_speech" }
 
 func (provider *Speech) Capabilities() engine.Capabilities {
 	return engine.Capabilities{
-		engine.CapabilityCancellation:  true,
-		engine.CapabilityDeterministic: true,
-		engine.CapabilityPCM16Output:   true,
+		engine.CapabilityCancellation:    true,
+		engine.CapabilityDeterministic:   true,
+		engine.CapabilityPCM16Output:     true,
+		engine.CapabilityStreamingOutput: true,
 	}
+}
+
+func (provider *Speech) Stream(
+	ctx context.Context,
+	plan engine.SpeechPlan,
+	consume func(engine.SpeechChunk) error,
+) error {
+	if consume == nil {
+		return errors.New("streaming speech requires a chunk consumer")
+	}
+	if err := validateSpeechPlan(plan, provider.durationMS); err != nil {
+		return err
+	}
+	const chunkMS = uint32(20)
+	totalSamples := uint64(audio.OpenAIPCMSampleRate) * uint64(provider.durationMS) / 1_000
+	chunkSamples := uint64(audio.OpenAIPCMSampleRate) * uint64(chunkMS) / 1_000
+	for offset, index := uint64(0), uint64(0); offset < totalSamples; index++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		end := min(offset+chunkSamples, totalSamples)
+		pcm := referenceSignal(offset, end)
+		if err := consume(engine.SpeechChunk{
+			ChunkID: fmt.Sprintf("speech_%04d", index+1), CandidateID: plan.CandidateID,
+			SampleOffset: offset, SampleRateHz: audio.OpenAIPCMSampleRate, PCM16LE: pcm,
+			Final: end == totalSamples,
+		}); err != nil {
+			return err
+		}
+		offset = end
+	}
+	return nil
 }
 
 func (provider *Speech) Synthesize(
@@ -235,24 +268,14 @@ func (provider *Speech) Synthesize(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if plan.CandidateID == "" || strings.TrimSpace(plan.Text) == "" {
-		return nil, errors.New("speech plan must identify a non-empty candidate")
-	}
-	if provider.durationMS == 0 {
-		return nil, errors.New("reference speech duration must be positive")
+	if err := validateSpeechPlan(plan, provider.durationMS); err != nil {
+		return nil, err
 	}
 	samples := uint64(audio.OpenAIPCMSampleRate) * uint64(provider.durationMS) / 1_000
 	if samples > uint64(int(^uint(0)>>1))/2 {
 		return nil, errors.New("reference speech duration is too large")
 	}
-	pcm := make([]byte, int(samples)*2)
-	for sample := uint64(0); sample < samples; sample++ {
-		value := int16(5_000)
-		if (sample/24)%2 == 1 {
-			value = -5_000
-		}
-		binary.LittleEndian.PutUint16(pcm[sample*2:sample*2+2], uint16(value))
-	}
+	pcm := referenceSignal(0, samples)
 	return []engine.SpeechChunk{{
 		ChunkID:      "speech_0001",
 		CandidateID:  plan.CandidateID,
@@ -260,4 +283,30 @@ func (provider *Speech) Synthesize(
 		PCM16LE:      pcm,
 		Final:        true,
 	}}, nil
+}
+
+func validateSpeechPlan(plan engine.SpeechPlan, durationMS uint32) error {
+	if plan.CandidateID == "" || strings.TrimSpace(plan.Text) == "" {
+		return errors.New("speech plan must identify a non-empty candidate")
+	}
+	if durationMS == 0 {
+		return errors.New("reference speech duration must be positive")
+	}
+	if durationMS > 600_000 {
+		return errors.New("reference speech duration must not exceed ten minutes")
+	}
+	return nil
+}
+
+func referenceSignal(startSample, endSample uint64) []byte {
+	pcm := make([]byte, int(endSample-startSample)*2)
+	for sample := startSample; sample < endSample; sample++ {
+		value := int16(5_000)
+		if (sample/24)%2 == 1 {
+			value = -5_000
+		}
+		offset := (sample - startSample) * 2
+		binary.LittleEndian.PutUint16(pcm[offset:offset+2], uint16(value))
+	}
+	return pcm
 }

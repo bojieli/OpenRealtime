@@ -69,5 +69,18 @@ cancellation, endpoints, and playback markers in one deterministic order.
 Only text candidates are prepared before the endpoint in M2. Audio commitment,
 continuous input during output, interruption, and repair remain M3 boundaries.
 
+## Speech commitment and duplex state
+
+M3 streams 20 ms speech chunks into a concurrency-safe commit controller. The
+controller distinguishes prepared, queued, and observed-played samples, bounds
+both lookahead regions, and treats played samples as immutable history. A
+directed interruption yields; listener backchannels and side speech do not
+stop playback. Candidate invalidation after playback creates a mandatory repair
+obligation that prevents clean closure until recorded.
+
+OpenAI cancellation, output-buffer clearing, and conversation-item truncation
+are emitted at the observed playback boundary. Input append events remain
+legal while the turn state is `SYSTEM_SPEAKING`, keeping the media path duplex.
+
 See [ADR-0001](adr/0001-go-production-engine.md) for the language decision
 and [protocol.md](protocol.md) for event semantics.

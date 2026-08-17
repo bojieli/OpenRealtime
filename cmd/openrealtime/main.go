@@ -18,6 +18,7 @@ import (
 	"github.com/bojieli/OpenRealtime/adapters/reference"
 	"github.com/bojieli/OpenRealtime/baseline"
 	m2experiment "github.com/bojieli/OpenRealtime/experiments/m2"
+	m3experiment "github.com/bojieli/OpenRealtime/experiments/m3"
 	"github.com/bojieli/OpenRealtime/internal/audio"
 	"github.com/bojieli/OpenRealtime/internal/simtime"
 	openaiwire "github.com/bojieli/OpenRealtime/protocol/openai"
@@ -249,15 +250,17 @@ func runTrace(arguments []string, output io.Writer) error {
 
 func runBenchmark(arguments []string, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: openrealtime benchmark <m1|m2> --fixture <audio.wav> --manifest <manifest.json> --output <directory>")
+		return errors.New("usage: openrealtime benchmark <m1|m2|m3> --fixture <audio.wav> --manifest <manifest.json> --output <directory>")
 	}
 	switch arguments[0] {
 	case "m1":
 		return runBenchmarkM1(arguments[1:], output)
 	case "m2":
 		return runBenchmarkM2(arguments[1:], output)
+	case "m3":
+		return runBenchmarkM3(arguments[1:], output)
 	default:
-		return errors.New("usage: openrealtime benchmark <m1|m2> --fixture <audio.wav> --manifest <manifest.json> --output <directory>")
+		return errors.New("usage: openrealtime benchmark <m1|m2|m3> --fixture <audio.wav> --manifest <manifest.json> --output <directory>")
 	}
 }
 
@@ -305,26 +308,8 @@ func runBenchmarkM1(arguments []string, output io.Writer) error {
 	}
 	for _, trial := range report.Trials {
 		path := filepath.Join(*outputDirectory, "traces", fmt.Sprintf("trial-%04d.jsonl", trial.Index))
-		artifact, err := newAtomicOutput(path)
-		if err != nil {
+		if err := writeAtomicTrace(path, trial.Trace); err != nil {
 			return err
-		}
-		writer := trace.NewWriter(artifact.File)
-		writeErr := error(nil)
-		for _, record := range trial.Trace {
-			if writeErr = writer.Write(record); writeErr != nil {
-				break
-			}
-		}
-		if writeErr == nil {
-			writeErr = writer.Flush()
-		}
-		if writeErr == nil {
-			writeErr = artifact.Commit()
-		}
-		if writeErr != nil {
-			artifact.Abort()
-			return writeErr
 		}
 	}
 	timelineArtifact, err := newAtomicOutput(filepath.Join(*outputDirectory, "timeline-trial-0000.html"))
@@ -343,6 +328,76 @@ func runBenchmarkM1(arguments []string, output io.Writer) error {
 		"output": *outputDirectory, "trials": len(report.Trials),
 		"condition": report.Condition, "timing_mode": report.TimingMode,
 		"distributions": report.Distributions,
+	})
+}
+
+func runBenchmarkM3(arguments []string, output io.Writer) error {
+	flags := flag.NewFlagSet("benchmark m3", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	fixturePath := flags.String("fixture", "", "24 kHz PCM16 fixture")
+	manifestPath := flags.String("manifest", "", "reference adapter manifest")
+	outputDirectory := flags.String("output", "", "benchmark artifact directory")
+	trials := flags.Uint64("trials", 30, "number of deterministic trials per scenario")
+	seed := flags.Uint64("seed", 20260817, "base deterministic random seed")
+	frameMS := flags.Uint("frame-ms", 20, "input frame duration in milliseconds")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || *fixturePath == "" || *manifestPath == "" || *outputDirectory == "" {
+		return errors.New("benchmark m3 requires --fixture, --manifest, and --output")
+	}
+	if *frameMS == 0 || *frameMS > uint(^uint32(0)) {
+		return errors.New("frame-ms must fit a positive uint32")
+	}
+	if err := prepareEmptyDirectory(*outputDirectory); err != nil {
+		return err
+	}
+	manifest, err := reference.LoadManifest(*manifestPath)
+	if err != nil {
+		return err
+	}
+	report, err := m3experiment.Run(context.Background(), m3experiment.Config{
+		FixturePath: *fixturePath, Manifest: manifest, Trials: *trials,
+		Seed: *seed, FrameMS: uint32(*frameMS),
+	})
+	if err != nil {
+		return err
+	}
+	if err := writeAtomicJSON(filepath.Join(*outputDirectory, "report.json"), report); err != nil {
+		return err
+	}
+	if err := os.Mkdir(filepath.Join(*outputDirectory, "traces"), 0o755); err != nil {
+		return err
+	}
+	summaries := make(map[string]map[string]any, len(report.Scenarios))
+	for _, condition := range report.Scenarios {
+		for _, trial := range condition.Trials {
+			path := filepath.Join(*outputDirectory, "traces", fmt.Sprintf("%s-trial-%04d.jsonl", condition.Scenario, trial.Index))
+			if err := writeAtomicTrace(path, trial.Trace); err != nil {
+				return err
+			}
+		}
+		timelineArtifact, err := newAtomicOutput(filepath.Join(*outputDirectory, fmt.Sprintf("timeline-%s-trial-0000.html", condition.Scenario)))
+		if err != nil {
+			return err
+		}
+		if err := timeline.Render(timelineArtifact.File, fmt.Sprintf("M3 %s — trial 0000", condition.Scenario), condition.Trials[0].Trace); err != nil {
+			timelineArtifact.Abort()
+			return err
+		}
+		if err := timelineArtifact.Commit(); err != nil {
+			timelineArtifact.Abort()
+			return err
+		}
+		summaries[string(condition.Scenario)] = map[string]any{
+			"stop_latency_ns": condition.StopLatency, "false_stop_count": condition.FalseStopCount,
+			"failure_to_stop_count": condition.FailureToStopCount, "repair_count": condition.RepairCount,
+			"history_violation_count": condition.HistoryViolationCount,
+		}
+	}
+	return writeJSON(output, map[string]any{
+		"output": *outputDirectory, "trials_per_scenario": *trials,
+		"experiment": report.Experiment, "scenarios": summaries,
 	})
 }
 
@@ -481,6 +536,27 @@ func writeAtomicJSON(path string, value any) error {
 	}
 	defer artifact.Abort()
 	if err := writeJSON(artifact.File, value); err != nil {
+		return err
+	}
+	return artifact.Commit()
+}
+
+func writeAtomicTrace(path string, records []trace.Record) error {
+	if len(records) == 0 {
+		return errors.New("cannot write an empty trace")
+	}
+	artifact, err := newAtomicOutput(path)
+	if err != nil {
+		return err
+	}
+	defer artifact.Abort()
+	writer := trace.NewWriter(artifact.File)
+	for _, record := range records {
+		if err := writer.Write(record); err != nil {
+			return err
+		}
+	}
+	if err := writer.Flush(); err != nil {
 		return err
 	}
 	return artifact.Commit()
