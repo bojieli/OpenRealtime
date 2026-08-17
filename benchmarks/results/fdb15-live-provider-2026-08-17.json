@@ -1,0 +1,150 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "fdb15-live-provider-2026-08-17-sg",
+  "status": "gemini_complete_other_live_cells_unavailable",
+  "environment": {
+    "timezone": "Asia/Singapore",
+    "os": "macOS 26.3 (25D125)",
+    "architecture": "arm64",
+    "go": "go1.25.7",
+    "repository_base_revision": "70053b7c33ab470a37e4f5145167dfe4465b4431",
+    "first_trial_utc": "2026-08-17T13:33:26.624358Z",
+    "last_trial_utc": "2026-08-17T14:02:00.499823Z"
+  },
+  "benchmark": {
+    "name": "Full-Duplex-Bench v1.5",
+    "revision": "3e799c45a045256f47d5f1c9cda90157e2d2ec9e",
+    "observed_complete_pairs_in_archive": 498,
+    "selection": "10 deterministic evenly indexed pairs per scenario after stable lexical ID ordering",
+    "conditions": ["overlap", "clean"],
+    "replicates": 1,
+    "pairs": 40,
+    "trials": 80,
+    "successful_trials": 80,
+    "terminal_failures": 0,
+    "unique_output_sha256": 80,
+    "sample_ids": {
+      "background_speech": ["1", "19", "29", "39", "49", "59", "69", "79", "89", "99"],
+      "talking_to_other": ["1", "19", "29", "39", "49", "59", "69", "79", "89", "99"],
+      "user_backchannel": ["1", "19", "29", "39", "49", "58", "68", "78", "88", "98"],
+      "user_interruption": ["1", "119", "139", "159", "179", "199", "38", "58", "78", "99"]
+    }
+  },
+  "local_system": {
+    "provider": "Google",
+    "model": "gemini-3.1-flash-live-preview",
+    "architecture": "native-audio-to-audio",
+    "transport": "raw WebSocket v1beta",
+    "profile": "fdb-v1.5-minimal-multisession-v1",
+    "input_audio": "PCM16 mono 16 kHz, 1,024 samples per frame, wall-clock pacing",
+    "output_audio": "PCM16 mono 24 kHz, immediate-playback alignment, interruption queue flush, exact input-duration crop/pad",
+    "setup": "AUDIO response modality and explicit minimal thinking; no added system instruction or transcription service"
+  },
+  "scoring": {
+    "vad": "openrealtime-energy-vad-v2-fdb-timing",
+    "intervals": "Full-Duplex-Bench get_timing.py overlap/response interval and millisecond de-duplication rules",
+    "statistics": "descriptive statistics with deterministic 10,000-resample percentile-bootstrap 95% confidence intervals",
+    "units": "milliseconds",
+    "not_silero_equivalent": true
+  },
+  "local_overlap_results": [
+    {
+      "scenario": "user_interruption",
+      "speech_during_annotated_overlap_rate": 0.9,
+      "mean_stop_latency_ms": 711.111,
+      "stop_latency_n": 9,
+      "stop_mean_ci_95_ms": [582.222, 842.222],
+      "mean_response_latency_ms": 2238.667,
+      "response_latency_n": 10,
+      "response_mean_ci_95_ms": [1891.992, 2633.0],
+      "mean_overlap_speech_ms": 1232.2,
+      "first_audio_overlap_minus_clean_ms": 120.904,
+      "first_audio_delta_mean_ci_95_ms": [-22.465, 293.563],
+      "overlap_speech_overlap_minus_clean_ms": -1721.2,
+      "overlap_speech_delta_mean_ci_95_ms": [-2298.81, -1083.168]
+    },
+    {
+      "scenario": "user_backchannel",
+      "speech_during_annotated_overlap_rate": 1.0,
+      "mean_stop_latency_ms": 580.0,
+      "stop_latency_n": 10,
+      "stop_mean_ci_95_ms": [500.0, 674.0],
+      "mean_response_latency_ms": 1974.0,
+      "response_latency_n": 10,
+      "response_mean_ci_95_ms": [1830.0, 2128.0],
+      "mean_overlap_speech_ms": 662.2,
+      "first_audio_overlap_minus_clean_ms": -103.28,
+      "first_audio_delta_mean_ci_95_ms": [-257.117, 38.261],
+      "overlap_speech_overlap_minus_clean_ms": -132.0,
+      "overlap_speech_delta_mean_ci_95_ms": [-268.8, -33.8]
+    },
+    {
+      "scenario": "talking_to_other",
+      "speech_during_annotated_overlap_rate": 1.0,
+      "mean_stop_latency_ms": 968.0,
+      "stop_latency_n": 10,
+      "stop_mean_ci_95_ms": [628.0, 1358.0],
+      "mean_response_latency_ms": 2120.0,
+      "response_latency_n": 10,
+      "response_mean_ci_95_ms": [1894.0, 2360.0],
+      "mean_overlap_speech_ms": 1054.5,
+      "first_audio_overlap_minus_clean_ms": -43.957,
+      "first_audio_delta_mean_ci_95_ms": [-173.241, 73.234],
+      "overlap_speech_overlap_minus_clean_ms": -862.6,
+      "overlap_speech_delta_mean_ci_95_ms": [-1269.105, -464.593]
+    },
+    {
+      "scenario": "background_speech",
+      "speech_during_annotated_overlap_rate": 1.0,
+      "mean_stop_latency_ms": 930.0,
+      "stop_latency_n": 10,
+      "stop_mean_ci_95_ms": [772.0, 1098.0],
+      "mean_response_latency_ms": 2234.0,
+      "response_latency_n": 10,
+      "response_mean_ci_95_ms": [1867.0, 2626.0],
+      "mean_overlap_speech_ms": 1367.3,
+      "first_audio_overlap_minus_clean_ms": 7.751,
+      "first_audio_delta_mean_ci_95_ms": [-228.693, 255.636],
+      "overlap_speech_overlap_minus_clean_ms": -248.5,
+      "overlap_speech_delta_mean_ci_95_ms": [-562.5, 0.0]
+    }
+  ],
+  "provider_availability": [
+    {
+      "provider": "OpenAI",
+      "requested_model": "gpt-4o-realtime-preview-2025-06-03",
+      "live_status": "not_measured",
+      "observed_error_code": "model_not_found",
+      "note": "The exact historical model request was preserved; no newer model was relabeled as GPT-4o."
+    },
+    {
+      "provider": "OpenAI",
+      "requested_model": "gpt-4o-realtime-preview",
+      "live_status": "not_measured",
+      "observed_error_code": "model_not_found"
+    },
+    {
+      "provider": "OpenAI",
+      "requested_model": "gpt-realtime-1.5",
+      "live_status": "not_measured",
+      "observed_error_code": "billing_not_active",
+      "note": "This non-GPT-4o model was probed only as a separately named availability check."
+    },
+    {
+      "provider": "Groq",
+      "requested_model": "whisper-large-v3-turbo + openai/gpt-oss-120b + canopylabs/orpheus-v1-english",
+      "live_status": "not_measured",
+      "observed_error_code": "credential_unavailable",
+      "architecture": "cascaded-stt-llm-tts",
+      "note": "Groq is not a native Groq Live audio-to-audio protocol and is not confused with xAI Grok."
+    }
+  ],
+  "published_reference": "../external/full-duplex-bench-v1.5-published-gpt4o.json",
+  "limitations": [
+    "Local timing uses a deterministic energy VAD, not the paper's Silero-VAD, so local and published absolute values are contextual rather than a same-run leaderboard.",
+    "The local sample has 10 pairs per scenario and one replicate from one Singapore-hosted machine; confidence intervals are correspondingly wide.",
+    "The GPT-4o behavior judge, ASR-aligned categorical behavior, prosody, UTMOSv2, and complete provider usage/cost were not run.",
+    "Gemini usage metadata was complete before session rotation in only 2 of 80 trials, so no token or cost aggregate is claimed.",
+    "Transient TLS establishment failures occurred during collection; completed trial manifests contain zero terminal failures, and three successful interruption trials record an internal connection retry."
+  ]
+}

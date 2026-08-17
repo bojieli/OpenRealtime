@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "retrieved_at": "2026-08-17T21:47:33+08:00",
+  "benchmark": "Full-Duplex-Bench v3",
+  "upstream_repository": "https://github.com/DanielLin94144/Full-Duplex-Bench",
+  "upstream_revision": "3e799c45a045256f47d5f1c9cda90157e2d2ec9e",
+  "dataset_file_id": "1SO_4MTazWQ_jvCx0dtmpQ-t40bdd07yz",
+  "redistributed": false,
+  "task_definition": {
+    "path": "v3/benchmark_data_v2.json",
+    "bytes": 130622,
+    "sha256": "816bc3cb6266c0110ae55dfaca3676f0e894b5c2dca89210e5dc7f85338b4663",
+    "scenarios": 100,
+    "domains": 4,
+    "mock_tools": 12,
+    "average_expected_tool_calls": 1.54,
+    "state_rollback_scenarios": 21
+  },
+  "status": "inventoried_not_run",
+  "reason": "The direct v1.5 duplex matrix is the preregistered experiment in this run. The v3 release requires a separate 702 MB-class audio bundle, LiveKit orchestration, tool execution, ASR, and judge policy. No partial result is reported as v3-compatible.",
+  "license_observation": "Repository-wide license is CC BY-NC 4.0; external data remains outside this repository. This is an artifact inventory, not legal advice."
+}

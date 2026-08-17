@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0.0",
+  "kind": "externally_published_reference",
+  "benchmark": "Full-Duplex-Bench v1.5",
+  "source": {
+    "title": "Full-Duplex-Bench v1.5: Evaluating Overlap Handling for Full-Duplex Speech Models",
+    "url": "https://arxiv.org/html/2507.23159",
+    "version": "arXiv:2507.23159v4",
+    "published_date": "2026-04-26",
+    "table": 2
+  },
+  "system": {
+    "provider": "OpenAI",
+    "model": "gpt-4o-realtime-preview-2024-12-17",
+    "voice": "alloy",
+    "architecture": "native-audio-to-audio"
+  },
+  "method": {
+    "behavior_judge": "GPT-4o over Parakeet-TDT ASR transcripts",
+    "timing_vad": "Silero-VAD",
+    "note": "Values are transcribed from the paper, not measured by OpenRealtime. They are a historical reference and must not be merged into locally observed confidence intervals."
+  },
+  "results": [
+    {
+      "scenario": "user_interruption",
+      "respond_rate": 0.78,
+      "resume_rate": 0.10,
+      "uncertain_rate": 0.02,
+      "unknown_rate": 0.12,
+      "mean_stop_latency_s": 0.23,
+      "mean_response_latency_s": 1.50
+    },
+    {
+      "scenario": "user_backchannel",
+      "respond_rate": 0.03,
+      "resume_rate": 0.70,
+      "uncertain_rate": 0.01,
+      "unknown_rate": 0.25,
+      "mean_stop_latency_s": 0.21,
+      "mean_response_latency_s": 1.32
+    },
+    {
+      "scenario": "talking_to_other",
+      "respond_rate": 0.91,
+      "resume_rate": 0.02,
+      "uncertain_rate": 0.01,
+      "unknown_rate": 0.06,
+      "mean_stop_latency_s": 0.18,
+      "mean_response_latency_s": 1.16
+    },
+    {
+      "scenario": "background_speech",
+      "respond_rate": 0.93,
+      "resume_rate": 0.04,
+      "uncertain_rate": 0.00,
+      "unknown_rate": 0.03,
+      "mean_stop_latency_s": 0.18,
+      "mean_response_latency_s": 1.26
+    }
+  ]
+}

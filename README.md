@@ -129,6 +129,19 @@ for precise coverage and the update policy.
 Stable adapter authors should start with [docs/api-v1.md](docs/api-v1.md) and
 the compiled [v1 reference example](examples/v1/reference/main.go).
 
+## External live-provider benchmark
+
+The no-Python `cmd/livebench` runner streams pinned Full-Duplex-Bench v1.5
+audio at wall-clock speed through exact OpenAI, Gemini, or explicitly cascaded
+Groq profiles. It produces aligned WAVs, hashes, secret-free traces, resumable
+atomic manifests, offline rescoring, and paired bootstrap summaries.
+
+The 2026-08-17 run completed 80/80 Gemini 3.1 Flash Live trials. GPT-4o and
+Groq live cells are marked unavailable with their observed reason; historical
+GPT-4o paper results remain separate from local measurements. Read the
+[live-provider report](docs/research/live-provider-benchmark-2026-08.md) and
+[external benchmark instructions](benchmarks/external/README.md).
+
 ## Principles
 
 - Research claims must be measurable and falsifiable.
