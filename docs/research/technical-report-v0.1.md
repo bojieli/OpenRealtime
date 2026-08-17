@@ -17,7 +17,7 @@ participant, or natural-language quality evaluator was used.
 ## Protocol and methods
 
 The conformance layer contains 133 direction/profile definitions representing
-67 unique wire event names from a cryptographically pinned official OpenAI
+66 unique wire event names from a cryptographically pinned official OpenAI
 OpenAPI revision. Exact wire JSON is placed in a separate versioned causal trace
 envelope; validation uses the event's profile and direction.
 

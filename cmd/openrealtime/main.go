@@ -16,12 +16,16 @@ import (
 	"sort"
 
 	"github.com/bojieli/OpenRealtime/adapters/reference"
+	referencev1 "github.com/bojieli/OpenRealtime/adapters/reference/v1"
+	stable "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/baseline"
+	stableconformance "github.com/bojieli/OpenRealtime/conformance"
 	m2experiment "github.com/bojieli/OpenRealtime/experiments/m2"
 	m3experiment "github.com/bojieli/OpenRealtime/experiments/m3"
 	m4experiment "github.com/bojieli/OpenRealtime/experiments/m4"
 	m5experiment "github.com/bojieli/OpenRealtime/experiments/m5"
 	"github.com/bojieli/OpenRealtime/internal/audio"
+	"github.com/bojieli/OpenRealtime/internal/fixture"
 	"github.com/bojieli/OpenRealtime/internal/simtime"
 	openaiwire "github.com/bojieli/OpenRealtime/protocol/openai"
 	benchmarkrelease "github.com/bojieli/OpenRealtime/release"
@@ -60,13 +64,93 @@ func run(arguments []string, output io.Writer) error {
 		return runStudy(arguments[1:], output)
 	case "release":
 		return runRelease(arguments[1:], output)
+	case "conformance":
+		return runConformance(arguments[1:], output)
 	default:
 		return usageError()
 	}
 }
 
 func usageError() error {
-	return errors.New("usage: openrealtime <fixture|replay|protocol|trace|benchmark|study|release> <command> [options]")
+	return errors.New("usage: openrealtime <fixture|replay|protocol|trace|benchmark|study|release|conformance> <command> [options]")
+}
+
+func runConformance(arguments []string, output io.Writer) error {
+	if len(arguments) == 0 {
+		return errors.New("usage: openrealtime conformance <protocol|reference|all> [options]")
+	}
+	if arguments[0] == "protocol" {
+		if len(arguments) != 1 {
+			return errors.New("conformance protocol accepts no options")
+		}
+		report, err := stableconformance.RunProtocol()
+		if err != nil {
+			return err
+		}
+		return writeJSON(output, report)
+	}
+	if arguments[0] != "reference" && arguments[0] != "all" {
+		return errors.New("usage: openrealtime conformance <protocol|reference|all> [options]")
+	}
+	flags := flag.NewFlagSet("conformance "+arguments[0], flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	fixturePath := flags.String("fixture", "", "24 kHz PCM16 fixture")
+	manifestPath := flags.String("manifest", "", "reference perception manifest")
+	workloadPath := flags.String("workload", "", "reference difficult-question workload")
+	if err := flags.Parse(arguments[1:]); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || *fixturePath == "" || *manifestPath == "" || *workloadPath == "" {
+		return errors.New("reference conformance requires --fixture, --manifest, and --workload")
+	}
+	providerReport, err := runReferenceConformance(*fixturePath, *manifestPath, *workloadPath)
+	if err != nil {
+		return err
+	}
+	if arguments[0] == "reference" {
+		return writeJSON(output, providerReport)
+	}
+	protocolReport, err := stableconformance.RunProtocol()
+	if err != nil {
+		return err
+	}
+	return writeJSON(output, struct {
+		Suite     string                           `json:"suite"`
+		Passed    bool                             `json:"passed"`
+		Protocol  stableconformance.ProtocolReport `json:"protocol"`
+		Providers stableconformance.ProviderReport `json:"providers"`
+	}{Suite: "openrealtime_v1", Passed: protocolReport.Passed && providerReport.Passed, Protocol: protocolReport, Providers: providerReport})
+}
+
+func runReferenceConformance(fixturePath, manifestPath, workloadPath string) (stableconformance.ProviderReport, error) {
+	manifest, err := reference.LoadManifest(manifestPath)
+	if err != nil {
+		return stableconformance.ProviderReport{}, err
+	}
+	workload, err := reference.LoadDifficultWorkload(workloadPath)
+	if err != nil {
+		return stableconformance.ProviderReport{}, err
+	}
+	input, err := fixture.Load(fixturePath, 20, "m7-reference-conformance")
+	if err != nil {
+		return stableconformance.ProviderReport{}, err
+	}
+	frames := make([]stable.AudioFrame, len(input.Frames))
+	for index, frame := range input.Frames {
+		frames[index] = stable.AudioFrame{
+			Index: frame.Index, SampleOffset: frame.SampleOffset, SampleRateHz: frame.SampleRateHz,
+			PCM16LE: append([]byte(nil), frame.PCM16LE...),
+		}
+	}
+	task := workload.Tasks[0]
+	return stableconformance.RunProviders(context.Background(), stable.ProviderSet{
+		Perception: referencev1.NewPerception(manifest), Cognition: referencev1.NewCognition(manifest.ResponseText),
+		Speech: referencev1.NewSpeech(100), Fast: referencev1.NewFast(task, reference.FastModeAcknowledge),
+		Deliberation: referencev1.NewDeliberation(task, reference.DeliberationComplete),
+	}, stableconformance.ProviderProbe{
+		Frames: frames, EndSample: input.SampleCount, SpeechText: manifest.ResponseText,
+		Goal: stable.GoalSnapshot{GoalID: task.ID, RevisionID: 1, Question: task.Question, DeadlineNS: 500_000_000},
+	})
 }
 
 func runStudy(arguments []string, output io.Writer) error {

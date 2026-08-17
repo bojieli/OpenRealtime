@@ -131,3 +131,17 @@ comparative study, compares it byte-for-byte, rebuilds the 41-file release
 manifest, verifies every listed size and SHA-256 digest, and repeats the full Go
 quality gates. The native and human-study rows are deliberately `not_run`; see
 the technical report and prospective human-study protocol in `docs/research/`.
+
+## M7 stable v1.0.0 release
+
+Run:
+
+```bash
+./scripts/reproduce_m7.sh
+```
+
+The final gate executes M0–M6, compares the combined protocol/provider
+conformance result and direct-consumer example byte-for-byte, compiles the
+maintained example, and repeats race, vet, and formatting checks. It validates
+133 OpenAI event definitions and all five stable provider roles. No Python,
+provider account, microphone, browser, or proprietary client is required.

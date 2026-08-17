@@ -96,5 +96,18 @@ are still safe: an old callback can finish its goroutine but cannot overwrite a
 replacement goal. The open reference workload assigns symbolic quality and
 compute units so orchestration accounting stays independent of hosted models.
 
+## Translation, release, and stable boundary
+
+M5 adds the distinct OpenAI Translation lifecycle with 200 ms input/output
+frames and append-only transcript deltas, plus a GA Realtime rapid-game path.
+M6 aggregates milestone reports only within named comparability groups and
+cryptographically inventories the benchmark release.
+
+M7 places the downstream contract in `api/v1`. The original `engine` and
+experiment packages remain free to evolve; versioned adapters clone data across
+that boundary. The stable conformance runner audits all protocol definitions
+and actively probes provider cancellation, ordering, continuity, finality, and
+terminal-state invariants. A breaking stable change moves to `api/v2`.
+
 See [ADR-0001](adr/0001-go-production-engine.md) for the language decision
 and [protocol.md](protocol.md) for event semantics.

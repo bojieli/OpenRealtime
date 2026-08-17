@@ -180,3 +180,24 @@ performance.
 All claims point to published conditions and name their scope. Incomparable
 workloads are never combined into a leaderboard. Native provider and human
 participant results remain blocked, visible, and unclaimed.
+
+## M7 — Stable research engine
+
+- Status: complete
+- Completed: 2026-08-17
+- Checkpoint command: `./scripts/reproduce_m7.sh`
+
+### Deliverable evidence
+
+| Requirement | Evidence |
+| --- | --- |
+| Versioned component API | Independent semantic import path `api/v1`, version 1.0.0 |
+| Stable adapters | Five provider roles bridged in `adapters/reference/v1` |
+| Protocol conformance | All 133 registry definitions, 178 schemas, 66 unique names, and strict fault probes |
+| Provider conformance | Descriptor, capability, cancellation, revision, PCM, decision, and deliberation checks |
+| Contributor documentation | `docs/api-v1.md`, compatibility policy, release notes, and updated contribution gate |
+| Maintained examples | Direct external-style consumer compiled and byte-compared by M7 |
+
+Research internals remain explicitly experimental; breaking stable provider
+changes require a new `api/v2` semantic import path. Downstream consumers can
+pin the v1.0.0 release and run the same public conformance suite.

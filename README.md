@@ -12,8 +12,8 @@ The working idea is to let a system listen, revise its understanding, prepare re
 
 ## Status
 
-M0 reproducibility through the M6 comparative reference release are complete;
-M7 stable API and conformance work is next.
+M0 through M7 are complete. The stable component API is v1.0.0 and the complete
+OpenAI protocol/provider conformance suite passes.
 The repository contains a generated conformance layer for every event in the
 pinned OpenAI Realtime OpenAPI specification, deterministic 24 kHz PCM replay, an original
 redistributable audio fixture, and causal trace validation. There is no Python
@@ -43,6 +43,12 @@ M6 adds deterministic paired-bootstrap analysis, explicit comparability groups,
 evidence-scoped claims and counterexamples, a prospective human-study protocol,
 and a SHA-256-verified `openrealtime-benchmarks-v0.1.0` release. Native and
 participant comparisons are honestly marked not run.
+
+M7 freezes `api/v1`, ships versioned reference adapters and a maintained direct
+consumer example, and audits all 133 OpenAI profile/direction definitions plus
+their 178-definition schema closure. The suite verifies 66 unique wire names,
+strict direction/profile/required-field faults, provider cancellation, revision
+and PCM continuity, and deliberation closure.
 
 ## Start here
 
@@ -90,6 +96,12 @@ To reproduce and verify the M6 benchmark release:
 ./scripts/reproduce_m6.sh
 ```
 
+To reproduce the complete stable v1.0.0 release:
+
+```bash
+./scripts/reproduce_m7.sh
+```
+
 These scripts create isolated build artifacts, validate every emitted message
 against the official protocol schemas, check trace causality, compare the
 result byte-for-byte with the checked-in golden files, and run race, test,
@@ -113,6 +125,9 @@ go run ./cmd/openrealtime protocol validate \
 
 See [docs/openai-realtime-compatibility.md](docs/openai-realtime-compatibility.md)
 for precise coverage and the update policy.
+
+Stable adapter authors should start with [docs/api-v1.md](docs/api-v1.md) and
+the compiled [v1 reference example](examples/v1/reference/main.go).
 
 ## Principles
 

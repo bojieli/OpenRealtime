@@ -644,6 +644,8 @@ Exit criteria:
 
 ### M7 — Stable research engine
 
+Status: complete.
+
 Deliverables:
 
 - Versioned component API.
