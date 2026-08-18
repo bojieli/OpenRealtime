@@ -1,0 +1,144 @@
+package gemini
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/trajectory"
+)
+
+func TestAdapterStreamsTextAndPreservesSignature(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("x-goog-api-key") != "secret" {
+			t.Error("missing API key header")
+		}
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = writer.Write([]byte("data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"hello\",\"thoughtSignature\":\"opaque\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":3,\"candidatesTokenCount\":1,\"totalTokenCount\":4}}\n\n"))
+	}))
+	defer server.Close()
+	adapter, err := New(Config{
+		APIKey: "secret", Model: "gemini-test", Endpoint: server.URL,
+		Phase: trajectory.PhaseFast, Effort: continuation.EffortMinimal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := continuation.Request{
+		InvocationID: "inv-1", Descriptor: adapter.Descriptor(),
+		Trajectory: trajectory.Snapshot{Version: 1, Items: []trajectory.Item{{
+			ID: "user", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "hi",
+		}}},
+		Invocation: continuation.Invocation{Instruction: "Respond.", MaxOutputTokens: 32},
+	}
+	var text strings.Builder
+	completion, err := adapter.Continue(context.Background(), request, func(event continuation.Event) error {
+		text.WriteString(event.Text)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text.String() != "hello" || completion.StopReason != "STOP" || completion.Usage.TotalTokens != 4 {
+		t.Fatalf("unexpected response: text=%q completion=%#v", text.String(), completion)
+	}
+	if completion.ProviderStateType != ProviderStateType || !strings.Contains(string(completion.ProviderState), "thoughtSignature") {
+		t.Fatalf("thought signature not preserved: %s", completion.ProviderState)
+	}
+}
+
+func TestBuildRequestReusesNativeStateAndCompilesToolResult(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		APIKey: "secret", Model: "gemini-test", Phase: trajectory.PhaseSlow,
+		Effort: continuation.EffortHigh, AllowTools: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	native := json.RawMessage(`{"role":"model","parts":[{"text":"I'll check.","thoughtSignature":"signed"},{"functionCall":{"id":"call-1","name":"lookup","args":{"key":"x"}}}]}`)
+	request := continuation.Request{
+		InvocationID: "inv-slow", Descriptor: adapter.Descriptor(),
+		Trajectory: trajectory.Snapshot{Version: 4, Items: []trajectory.Item{
+			{ID: "user", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "look it up"},
+			{ID: "fast", Kind: trajectory.KindAssistant, InvocationID: "inv-fast", Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "I'll check.", ProviderStateType: ProviderStateType, ProviderState: native},
+			{ID: "call", Kind: trajectory.KindToolCall, InvocationID: "inv-fast", Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, ToolCall: &trajectory.ToolCall{CallID: "call-1", Name: "lookup", Arguments: json.RawMessage(`{"key":"x"}`)}},
+			{ID: "result", Kind: trajectory.KindToolResult, InvocationID: "inv-fast", Producer: trajectory.Producer{Phase: trajectory.PhaseTool}, ToolResult: &trajectory.ToolResult{CallID: "call-1", Name: "lookup", Output: json.RawMessage(`{"value":7}`)}},
+			{ID: "resume", Kind: trajectory.KindInstruction, InvocationID: "inv-slow", Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, Content: "Continue."},
+		}},
+		Invocation: continuation.Invocation{
+			Instruction: "Continue.", Capabilities: []continuation.Capability{{Name: "lookup", Description: "Lookup values.", Available: true}},
+			Tools: []continuation.ToolDefinition{{Name: "lookup", Description: "Lookup values.", Parameters: json.RawMessage(`{"type":"object"}`)}},
+		},
+	}
+	body, err := adapter.buildRequest(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Contents) != 3 {
+		t.Fatalf("expected user, retained model, and result contents; got %#v", body.Contents)
+	}
+	if body.Contents[2].Role != "user" {
+		t.Fatalf("tool result role is %q, want user", body.Contents[2].Role)
+	}
+	if len(body.Contents[2].Parts) != 1 {
+		t.Fatalf("runtime instruction was mixed into function response: %#v", body.Contents[2].Parts)
+	}
+	encoded, _ := json.Marshal(body)
+	if strings.Count(string(encoded), "thoughtSignature") != 1 || !strings.Contains(string(encoded), "functionResponse") ||
+		!strings.Contains(string(encoded), "capability manifest") || !strings.Contains(string(encoded), "parametersJsonSchema") {
+		t.Fatalf("unexpected compiled request: %s", encoded)
+	}
+}
+
+func TestAppendGeminiContentCoalescesContinuationSegments(t *testing.T) {
+	t.Parallel()
+	first := json.RawMessage(`{"text":"fast"}`)
+	second := json.RawMessage(`{"text":"slow"}`)
+	contents := appendGeminiContent(nil, geminiContent{Role: "model", Parts: []json.RawMessage{first}})
+	contents = appendGeminiContent(contents, geminiContent{Role: "model", Parts: []json.RawMessage{second}})
+	contents = appendGeminiContent(contents, geminiContent{Role: "user", Parts: []json.RawMessage{json.RawMessage(`{"functionResponse":{}}`)}})
+	if len(contents) != 2 || len(contents[0].Parts) != 2 || contents[1].Role != "user" {
+		t.Fatalf("continuation segments were not coalesced: %#v", contents)
+	}
+}
+
+func TestBuildRequestKeepsCurrentPolicyOutOfModelContents(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		APIKey: "secret", Model: "gemini-test", Phase: trajectory.PhaseSlow,
+		Effort: continuation.EffortHigh,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "slow-invocation",
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			{ID: "user", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "question"},
+			{ID: "fast-control", Kind: trajectory.KindInstruction, InvocationID: "fast-invocation", Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, Content: "respond fast"},
+			{ID: "fast-answer", Kind: trajectory.KindAssistant, InvocationID: "fast-invocation", Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "working"},
+			{ID: "slow-control", Kind: trajectory.KindInstruction, InvocationID: "slow-invocation", Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, Content: "continue slowly"},
+		}},
+		Invocation: continuation.Invocation{Instruction: "continue slowly"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Contents) != 3 || body.Contents[0].Role != "user" || body.Contents[1].Role != "model" || body.Contents[2].Role != "user" {
+		t.Fatalf("unexpected continuation prefix: %#v", body.Contents)
+	}
+	encoded, _ := json.Marshal(body.Contents)
+	if strings.Contains(string(encoded), "continue slowly") || strings.Contains(string(encoded), "respond fast") {
+		t.Fatalf("internal control text leaked into model contents: %s", encoded)
+	}
+	system, _ := json.Marshal(body.SystemInstruction)
+	if !strings.Contains(string(system), "continue slowly") {
+		t.Fatalf("current phase policy missing from system instruction: %s", system)
+	}
+}

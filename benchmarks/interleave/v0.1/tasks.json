@@ -1,0 +1,56 @@
+[
+  {
+    "id": "active-seat-total",
+    "prompt": "Use records.read to read the exact keys route_north and route_south. Add their active_seats values and give the total with a short explanation.",
+    "records": {
+      "route_north": {"active_seats": 17, "as_of": "2026-08-18"},
+      "route_south": {"active_seats": 25, "as_of": "2026-08-18"}
+    },
+    "expected_substrings": ["42"],
+    "required_tool_calls": ["records.read", "records.read"],
+    "expected_tool_calls": [
+      {"name": "records.read", "arguments": {"key": "route_north"}},
+      {"name": "records.read", "arguments": {"key": "route_south"}}
+    ]
+  },
+  {
+    "id": "interval-overlap",
+    "prompt": "Use records.read for deployment_window and maintenance_window. Determine their overlap duration in minutes and state the overlapping UTC interval.",
+    "records": {
+      "deployment_window": {"start_utc": "2026-09-03T14:10:00Z", "end_utc": "2026-09-03T14:50:00Z"},
+      "maintenance_window": {"start_utc": "2026-09-03T14:30:00Z", "end_utc": "2026-09-03T15:15:00Z"}
+    },
+    "expected_substrings": ["20", "14:30", "14:50"],
+    "required_tool_calls": ["records.read", "records.read"],
+    "expected_tool_calls": [
+      {"name": "records.read", "arguments": {"key": "deployment_window"}},
+      {"name": "records.read", "arguments": {"key": "maintenance_window"}}
+    ]
+  },
+  {
+    "id": "shipment-mass",
+    "prompt": "Read shipment_case_a and shipment_case_b with records.read. Compute the combined mass from units times kg_per_unit and report the result in kilograms.",
+    "records": {
+      "shipment_case_a": {"units": 12, "kg_per_unit": 1.25},
+      "shipment_case_b": {"units": 8, "kg_per_unit": 2.5}
+    },
+    "expected_substrings": ["35", "kg"],
+    "required_tool_calls": ["records.read", "records.read"],
+    "expected_tool_calls": [
+      {"name": "records.read", "arguments": {"key": "shipment_case_a"}},
+      {"name": "records.read", "arguments": {"key": "shipment_case_b"}}
+    ]
+  },
+  {
+    "id": "opaque-code-retrieval",
+    "prompt": "Retrieve the exact access_phrase record using records.read and return its code exactly. The value is not inferable from this request, so do not guess.",
+    "records": {
+      "access_phrase": {"code": "cerulean-17"}
+    },
+    "expected_substrings": ["cerulean-17"],
+    "required_tool_calls": ["records.read"],
+    "expected_tool_calls": [
+      {"name": "records.read", "arguments": {"key": "access_phrase"}}
+    ]
+  }
+]

@@ -1,0 +1,1246 @@
+{
+  "schema_version": "interleave-benchmark-v0.1",
+  "created_at": "2026-08-18T03:16:05.12509788Z",
+  "fast": {
+    "provider": "google",
+    "model": "gemini-3.5-flash",
+    "phase": "fast",
+    "effort": "minimal",
+    "streaming": true,
+    "native_state_type": "google.gemini.generate-content.model-content.v1",
+    "retains_tool_calls": true,
+    "executable_tools": false
+  },
+  "slow": {
+    "provider": "google",
+    "model": "gemini-3.5-flash",
+    "phase": "slow",
+    "effort": "high",
+    "streaming": true,
+    "native_state_type": "google.gemini.generate-content.model-content.v1",
+    "retains_tool_calls": true,
+    "executable_tools": true
+  },
+  "task_definitions": 4,
+  "replicates": 3,
+  "task_count": 12,
+  "passed": 12,
+  "summary": {
+    "pass_rate": 1,
+    "task_duration_ms": {
+      "count": 12,
+      "mean": 4133.0053333333335,
+      "p50": 4059.61,
+      "p95": 5341.683,
+      "max": 5341.683
+    },
+    "fast_first_event_ms": {
+      "count": 12,
+      "mean": 668.0912499999998,
+      "p50": 644.261,
+      "p95": 798.834,
+      "max": 798.834
+    },
+    "fast_duration_ms": {
+      "count": 12,
+      "mean": 1073.32125,
+      "p50": 1052.207,
+      "p95": 1253.531,
+      "max": 1253.531
+    },
+    "slow_first_from_task_ms": {
+      "count": 12,
+      "mean": 1960.3655833333332,
+      "p50": 1956.794,
+      "p95": 2208.967,
+      "max": 2208.967
+    },
+    "total_tool_calls": 21,
+    "input_tokens": 13503,
+    "output_tokens": 2943,
+    "reasoning_tokens": 3670
+  },
+  "total_duration_ms": 49596.9,
+  "results": [
+    {
+      "task_id": "active-seat-total",
+      "replicate": 0,
+      "passed": true,
+      "duration_ms": 4059.61,
+      "invocations": [
+        {
+          "phase": "fast",
+          "ordinal": 1,
+          "start_offset_ms": 0.14,
+          "first_event_ms": 740.378,
+          "duration_ms": 1247.282,
+          "usage": {
+            "input_tokens": 125,
+            "output_tokens": 109,
+            "total_tokens": 234
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 1,
+          "start_offset_ms": 1247.474,
+          "first_event_ms": 778.512,
+          "duration_ms": 784.258,
+          "usage": {
+            "input_tokens": 330,
+            "output_tokens": 14,
+            "reasoning_tokens": 52,
+            "total_tokens": 396
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 2,
+          "start_offset_ms": 2031.874,
+          "first_event_ms": 718.021,
+          "duration_ms": 723.422,
+          "usage": {
+            "input_tokens": 427,
+            "output_tokens": 14,
+            "reasoning_tokens": 18,
+            "total_tokens": 459
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 3,
+          "start_offset_ms": 2755.389,
+          "first_event_ms": 877.209,
+          "duration_ms": 1304.157,
+          "usage": {
+            "input_tokens": 497,
+            "output_tokens": 136,
+            "reasoning_tokens": 65,
+            "total_tokens": 698
+          },
+          "stop_reason": "STOP"
+        }
+      ],
+      "assistant": [
+        {
+          "phase": "fast",
+          "text": "To find the total number of active seats for the north and south routes, I need to read the task records for the exact keys `route_north` and `route_south` using the `records.read` tool. \n\nSince I am currently in the first continuation phase and cannot execute tools immediately, I will need to perform these reads in the subsequent phase. Once the tool executes and retrieves the records, I will add the `active_seats` values from both routes together and provide you with the total and a short explanation."
+        },
+        {
+          "phase": "slow",
+          "text": "Based on the retrieved records:\n\n* **`route_north`**: 17 active seats (as of 2026-08-18)\n* **`route_south`**: 25 active seats (as of 2026-08-18)\n\n**Total Active Seats:** **42** (17 + 25)\n\n**Explanation:** By reading the database records for both route keys, we found that the northern route has 17 active seats and the southern route has 25 active seats. Combining these two quantities yields a total of 42 active seats across both routes."
+        }
+      ],
+      "tool_calls": [
+        {
+          "call_id": "call_5798040",
+          "name": "records.read",
+          "arguments": {
+            "key": "route_north"
+          }
+        },
+        {
+          "call_id": "call_4399368",
+          "name": "records.read",
+          "arguments": {
+            "key": "route_south"
+          }
+        }
+      ],
+      "tool_results": [
+        {
+          "call_id": "call_5798040",
+          "name": "records.read",
+          "output": {
+            "active_seats": 17,
+            "as_of": "2026-08-18"
+          }
+        },
+        {
+          "call_id": "call_4399368",
+          "name": "records.read",
+          "output": {
+            "active_seats": 25,
+            "as_of": "2026-08-18"
+          }
+        }
+      ],
+      "trajectory_items": 11,
+      "trajectory_sha256": "f18586f0184f418b5dbc12e3f12a1cfe3c902318b398641c5dc70d53d7a3e960"
+    },
+    {
+      "task_id": "interval-overlap",
+      "replicate": 0,
+      "passed": true,
+      "duration_ms": 5208.649,
+      "invocations": [
+        {
+          "phase": "fast",
+          "ordinal": 1,
+          "start_offset_ms": 0.12,
+          "first_event_ms": 614.897,
+          "duration_ms": 886.689,
+          "usage": {
+            "input_tokens": 119,
+            "output_tokens": 58,
+            "total_tokens": 177
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 1,
+          "start_offset_ms": 886.987,
+          "first_event_ms": 674.783,
+          "duration_ms": 682.091,
+          "usage": {
+            "input_tokens": 274,
+            "output_tokens": 14,
+            "reasoning_tokens": 48,
+            "total_tokens": 336
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 2,
+          "start_offset_ms": 1569.199,
+          "first_event_ms": 685.518,
+          "duration_ms": 857.843,
+          "usage": {
+            "input_tokens": 397,
+            "output_tokens": 31,
+            "reasoning_tokens": 15,
+            "total_tokens": 443
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 3,
+          "start_offset_ms": 2427.945,
+          "first_event_ms": 2302.621,
+          "duration_ms": 2780.63,
+          "usage": {
+            "input_tokens": 511,
+            "output_tokens": 181,
+            "reasoning_tokens": 564,
+            "total_tokens": 1256
+          },
+          "stop_reason": "STOP"
+        }
+      ],
+      "assistant": [
+        {
+          "phase": "fast",
+          "text": "To determine the overlap duration and the specific UTC interval between the deployment window and the maintenance window, I need to read the corresponding task records. \n\nI will proceed by calling `records.read` for both `deployment_window` and `maintenance_window` in the next phase."
+        },
+        {
+          "phase": "slow",
+          "text": " Now, I will read the `maintenance_window` record to determine its timing."
+        },
+        {
+          "phase": "slow",
+          "text": "Based on the retrieved records, here are the details of the windows:\n\n* **Deployment Window:** 2026-09-03T14:10:00Z to 2026-09-03T14:50:00Z\n* **Maintenance Window:** 2026-09-03T14:30:00Z to 2026-09-03T15:15:00Z\n\n### Overlap Analysis:\n* **Overlapping UTC Interval:** `2026-09-03T14:30:00Z` to `2026-09-03T14:50:00Z`\n* **Overlap Duration:** 20 minutes"
+        }
+      ],
+      "tool_calls": [
+        {
+          "call_id": "call_3818101",
+          "name": "records.read",
+          "arguments": {
+            "key": "deployment_window"
+          }
+        },
+        {
+          "call_id": "call_3355474",
+          "name": "records.read",
+          "arguments": {
+            "key": "maintenance_window"
+          }
+        }
+      ],
+      "tool_results": [
+        {
+          "call_id": "call_3818101",
+          "name": "records.read",
+          "output": {
+            "start_utc": "2026-09-03T14:10:00Z",
+            "end_utc": "2026-09-03T14:50:00Z"
+          }
+        },
+        {
+          "call_id": "call_3355474",
+          "name": "records.read",
+          "output": {
+            "start_utc": "2026-09-03T14:30:00Z",
+            "end_utc": "2026-09-03T15:15:00Z"
+          }
+        }
+      ],
+      "trajectory_items": 12,
+      "trajectory_sha256": "2ff41474e6f86bea5578a4b07f1d68b6a8467ce9c1a1db79133e5b672dd84ee4"
+    },
+    {
+      "task_id": "shipment-mass",
+      "replicate": 0,
+      "passed": true,
+      "duration_ms": 4488.196,
+      "invocations": [
+        {
+          "phase": "fast",
+          "ordinal": 1,
+          "start_offset_ms": 0.121,
+          "first_event_ms": 570.338,
+          "duration_ms": 868.855,
+          "usage": {
+            "input_tokens": 129,
+            "output_tokens": 68,
+            "total_tokens": 197
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 1,
+          "start_offset_ms": 869.021,
+          "first_event_ms": 929.896,
+          "duration_ms": 934.893,
+          "usage": {
+            "input_tokens": 294,
+            "output_tokens": 17,
+            "reasoning_tokens": 70,
+            "total_tokens": 381
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 2,
+          "start_offset_ms": 1804.014,
+          "first_event_ms": 842.815,
+          "duration_ms": 851.108,
+          "usage": {
+            "input_tokens": 404,
+            "output_tokens": 17,
+            "reasoning_tokens": 20,
+            "total_tokens": 441
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 3,
+          "start_offset_ms": 2655.23,
+          "first_event_ms": 1475.581,
+          "duration_ms": 1832.898,
+          "usage": {
+            "input_tokens": 469,
+            "output_tokens": 135,
+            "reasoning_tokens": 255,
+            "total_tokens": 859
+          },
+          "stop_reason": "STOP"
+        }
+      ],
+      "assistant": [
+        {
+          "phase": "fast",
+          "text": "To find the combined mass of the shipments, I need to read the data for both `shipment_case_a` and `shipment_case_b`. \n\nI will use the `records.read` tool to retrieve these records and then calculate the total mass in kilograms. Let's start by reading the records."
+        },
+        {
+          "phase": "slow",
+          "text": "Based on the retrieved records:\n\n* **shipment_case_a:**\n  * Units: 12\n  * Weight per unit: 1.25 kg\n  * Mass = $12 \\times 1.25\\text{ kg} = 15\\text{ kg}$\n\n* **shipment_case_b:**\n  * Units: 8\n  * Weight per unit: 2.5 kg\n  * Mass = $8 \\times 2.5\\text{ kg} = 20\\text{ kg}$\n\nThe combined mass of the shipments is **35 kg**."
+        }
+      ],
+      "tool_calls": [
+        {
+          "call_id": "call_6113600",
+          "name": "records.read",
+          "arguments": {
+            "key": "shipment_case_a"
+          }
+        },
+        {
+          "call_id": "call_4957971",
+          "name": "records.read",
+          "arguments": {
+            "key": "shipment_case_b"
+          }
+        }
+      ],
+      "tool_results": [
+        {
+          "call_id": "call_6113600",
+          "name": "records.read",
+          "output": {
+            "units": 12,
+            "kg_per_unit": 1.25
+          }
+        },
+        {
+          "call_id": "call_4957971",
+          "name": "records.read",
+          "output": {
+            "units": 8,
+            "kg_per_unit": 2.5
+          }
+        }
+      ],
+      "trajectory_items": 11,
+      "trajectory_sha256": "db1fbe81381b175ef136b00423ba11294b4954d8b02028eba789cc2e188c8f13"
+    },
+    {
+      "task_id": "opaque-code-retrieval",
+      "replicate": 0,
+      "passed": true,
+      "duration_ms": 2658.89,
+      "invocations": [
+        {
+          "phase": "fast",
+          "ordinal": 1,
+          "start_offset_ms": 0.111,
+          "first_event_ms": 736.486,
+          "duration_ms": 1028.356,
+          "usage": {
+            "input_tokens": 125,
+            "output_tokens": 61,
+            "total_tokens": 186
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 1,
+          "start_offset_ms": 1028.523,
+          "first_event_ms": 792.003,
+          "duration_ms": 792.925,
+          "usage": {
+            "input_tokens": 282,
+            "output_tokens": 14,
+            "reasoning_tokens": 44,
+            "total_tokens": 340
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 2,
+          "start_offset_ms": 1821.546,
+          "first_event_ms": 799.383,
+          "duration_ms": 837.309,
+          "usage": {
+            "input_tokens": 358,
+            "output_tokens": 23,
+            "reasoning_tokens": 33,
+            "total_tokens": 414
+          },
+          "stop_reason": "STOP"
+        }
+      ],
+      "assistant": [
+        {
+          "phase": "fast",
+          "text": "To retrieve the exact `access_phrase` record and obtain its code, I need to execute the `records.read` tool with the appropriate key. Since I cannot execute tools in this immediate response phase, I will proceed to the slow execution phase to run the tool and retrieve the record for you."
+        },
+        {
+          "phase": "slow",
+          "text": "The exact code retrieved for the `access_phrase` record is:\n\n**cerulean-17**"
+        }
+      ],
+      "tool_calls": [
+        {
+          "call_id": "call_2954708",
+          "name": "records.read",
+          "arguments": {
+            "key": "access_phrase"
+          }
+        }
+      ],
+      "tool_results": [
+        {
+          "call_id": "call_2954708",
+          "name": "records.read",
+          "output": {
+            "code": "cerulean-17"
+          }
+        }
+      ],
+      "trajectory_items": 8,
+      "trajectory_sha256": "fb89b1b66f0c36a6ea1406c6c3937de86ba4906eccd15084b26070dbb2963ab8"
+    },
+    {
+      "task_id": "active-seat-total",
+      "replicate": 1,
+      "passed": true,
+      "duration_ms": 3734.968,
+      "invocations": [
+        {
+          "phase": "fast",
+          "ordinal": 1,
+          "start_offset_ms": 0.135,
+          "first_event_ms": 560.278,
+          "duration_ms": 1010.496,
+          "usage": {
+            "input_tokens": 125,
+            "output_tokens": 96,
+            "total_tokens": 221
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 1,
+          "start_offset_ms": 1010.717,
+          "first_event_ms": 1023.838,
+          "duration_ms": 1056.459,
+          "usage": {
+            "input_tokens": 317,
+            "output_tokens": 28,
+            "reasoning_tokens": 102,
+            "total_tokens": 447
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 2,
+          "start_offset_ms": 2067.347,
+          "first_event_ms": 1197.844,
+          "duration_ms": 1667.577,
+          "usage": {
+            "input_tokens": 514,
+            "output_tokens": 156,
+            "reasoning_tokens": 97,
+            "total_tokens": 767
+          },
+          "stop_reason": "STOP"
+        }
+      ],
+      "assistant": [
+        {
+          "phase": "fast",
+          "text": "To get the total number of active seats for the northern and southern routes, I need to read the records for `route_north` and `route_south` using the `records.read` tool. \n\nSince I cannot execute tools in this immediate response phase, the tool execution will take place in the next phase. Once the data is retrieved, I will add the `active_seats` values from both records and provide you with the total and a brief explanation."
+        },
+        {
+          "phase": "slow",
+          "text": "Based on the records retrieved:\n\n* **Route North (`route_north`)**: 17 active seats (as of 2026-08-18)\n* **Route South (`route_south`)**: 25 active seats (as of 2026-08-18)\n\n**Total Active Seats:** \n$$17 + 25 = 42$$\n\n**Explanation:**\nThe active seats for both routes represent the capacity currently occupied or booked. Combining the 17 active seats on the Northern route and the 25 active seats on the Southern route yields a combined total of **42 active seats** across both pathways as of August 18, 2026."
+        }
+      ],
+      "tool_calls": [
+        {
+          "call_id": "call_3096685",
+          "name": "records.read",
+          "arguments": {
+            "key": "route_north"
+          }
+        },
+        {
+          "call_id": "call_3096697",
+          "name": "records.read",
+          "arguments": {
+            "key": "route_south"
+          }
+        }
+      ],
+      "tool_results": [
+        {
+          "call_id": "call_3096685",
+          "name": "records.read",
+          "output": {
+            "active_seats": 17,
+            "as_of": "2026-08-18"
+          }
+        },
+        {
+          "call_id": "call_3096697",
+          "name": "records.read",
+          "output": {
+            "active_seats": 25,
+            "as_of": "2026-08-18"
+          }
+        }
+      ],
+      "trajectory_items": 10,
+      "trajectory_sha256": "3e7d7c0ecf1746baa9cb931200ac2d0190fdd8a0d720f446814ca9c8370e6d6b"
+    },
+    {
+      "task_id": "interval-overlap",
+      "replicate": 1,
+      "passed": true,
+      "duration_ms": 5206.654,
+      "invocations": [
+        {
+          "phase": "fast",
+          "ordinal": 1,
+          "start_offset_ms": 0.126,
+          "first_event_ms": 781.458,
+          "duration_ms": 1253.531,
+          "usage": {
+            "input_tokens": 119,
+            "output_tokens": 89,
+            "total_tokens": 208
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 1,
+          "start_offset_ms": 1253.756,
+          "first_event_ms": 911.065,
+          "duration_ms": 914.382,
+          "usage": {
+            "input_tokens": 305,
+            "output_tokens": 28,
+            "reasoning_tokens": 64,
+            "total_tokens": 397
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 2,
+          "start_offset_ms": 2168.245,
+          "first_event_ms": 2462.71,
+          "duration_ms": 3038.355,
+          "usage": {
+            "input_tokens": 524,
+            "output_tokens": 215,
+            "reasoning_tokens": 631,
+            "total_tokens": 1370
+          },
+          "stop_reason": "STOP"
+        }
+      ],
+      "assistant": [
+        {
+          "phase": "fast",
+          "text": "To determine the overlap duration and the specific UTC interval between the deployment window and the maintenance window, I need to read the respective task records. \n\nSince I am currently in the first continuation phase and cannot execute tools immediately, I will initiate the retrieval of these records now. \n\nI am calling `records.read` for both `deployment_window` and `maintenance_window`. Please stand by for the results in the next phase."
+        },
+        {
+          "phase": "slow",
+          "text": "Based on the retrieved records, here are the details for the two windows:\n\n*   **Deployment Window:** \n    *   Start: `2026-09-03T14:10:00Z`\n    *   End: `2026-09-03T14:50:00Z`\n*   **Maintenance Window:** \n    *   Start: `2026-09-03T14:30:00Z`\n    *   End: `2026-09-03T15:15:00Z`\n\n### Overlap Determination:\n*   **Overlapping UTC Interval:** `2026-09-03T14:30:00Z` to `2026-09-03T14:50:00Z`\n*   **Overlap Duration:** **20 minutes**"
+        }
+      ],
+      "tool_calls": [
+        {
+          "call_id": "call_5691609",
+          "name": "records.read",
+          "arguments": {
+            "key": "deployment_window"
+          }
+        },
+        {
+          "call_id": "call_5691610",
+          "name": "records.read",
+          "arguments": {
+            "key": "maintenance_window"
+          }
+        }
+      ],
+      "tool_results": [
+        {
+          "call_id": "call_5691609",
+          "name": "records.read",
+          "output": {
+            "start_utc": "2026-09-03T14:10:00Z",
+            "end_utc": "2026-09-03T14:50:00Z"
+          }
+        },
+        {
+          "call_id": "call_5691610",
+          "name": "records.read",
+          "output": {
+            "start_utc": "2026-09-03T14:30:00Z",
+            "end_utc": "2026-09-03T15:15:00Z"
+          }
+        }
+      ],
+      "trajectory_items": 10,
+      "trajectory_sha256": "feaa551314980f63e7777f5b7b7fb0d4374d819b8d6a0b3b4b1a7f2b9c89de34"
+    },
+    {
+      "task_id": "shipment-mass",
+      "replicate": 1,
+      "passed": true,
+      "duration_ms": 4517.853,
+      "invocations": [
+        {
+          "phase": "fast",
+          "ordinal": 1,
+          "start_offset_ms": 0.199,
+          "first_event_ms": 644.261,
+          "duration_ms": 952.486,
+          "usage": {
+            "input_tokens": 129,
+            "output_tokens": 75,
+            "total_tokens": 204
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 1,
+          "start_offset_ms": 952.733,
+          "first_event_ms": 981.48,
+          "duration_ms": 987.08,
+          "usage": {
+            "input_tokens": 300,
+            "output_tokens": 17,
+            "reasoning_tokens": 49,
+            "total_tokens": 366
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 2,
+          "start_offset_ms": 1939.942,
+          "first_event_ms": 775.355,
+          "duration_ms": 779.056,
+          "usage": {
+            "input_tokens": 389,
+            "output_tokens": 17,
+            "reasoning_tokens": 71,
+            "total_tokens": 477
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 3,
+          "start_offset_ms": 2719.146,
+          "first_event_ms": 1180.387,
+          "duration_ms": 1798.66,
+          "usage": {
+            "input_tokens": 505,
+            "output_tokens": 188,
+            "reasoning_tokens": 171,
+            "total_tokens": 864
+          },
+          "stop_reason": "STOP"
+        }
+      ],
+      "assistant": [
+        {
+          "phase": "fast",
+          "text": "To compute the combined mass of the shipments, I need to read the data for both `shipment_case_a` and `shipment_case_b` to obtain their respective `units` and `kg_per_unit` values. \n\nI will use the `records.read` tool to retrieve these records. Let's initiate the reads."
+        },
+        {
+          "phase": "slow",
+          "text": "Based on the records retrieved:\n\n* **`shipment_case_a`**:\n  * Units: 12\n  * Weight per unit: 1.25 kg\n  * Mass = $12 \\times 1.25\\text{ kg} = 15.0\\text{ kg}$\n\n* **`shipment_case_b`**:\n  * Units: 8\n  * Weight per unit: 2.5 kg\n  * Mass = $8 \\times 2.5\\text{ kg} = 20.0\\text{ kg}$\n\n**Combined Mass**:\n$$\\text{Total Mass} = 15.0\\text{ kg} + 20.0\\text{ kg} = 35.0\\text{ kg}$$\n\nThe combined mass of the shipments is **35 kg**."
+        }
+      ],
+      "tool_calls": [
+        {
+          "call_id": "call_3552812",
+          "name": "records.read",
+          "arguments": {
+            "key": "shipment_case_a"
+          }
+        },
+        {
+          "call_id": "call_4247240",
+          "name": "records.read",
+          "arguments": {
+            "key": "shipment_case_b"
+          }
+        }
+      ],
+      "tool_results": [
+        {
+          "call_id": "call_3552812",
+          "name": "records.read",
+          "output": {
+            "units": 12,
+            "kg_per_unit": 1.25
+          }
+        },
+        {
+          "call_id": "call_4247240",
+          "name": "records.read",
+          "output": {
+            "units": 8,
+            "kg_per_unit": 2.5
+          }
+        }
+      ],
+      "trajectory_items": 11,
+      "trajectory_sha256": "cc8b74c74ffef71ce0a4bc53e1638168394842455612f4d8802c3fc787ea571f"
+    },
+    {
+      "task_id": "opaque-code-retrieval",
+      "replicate": 1,
+      "passed": true,
+      "duration_ms": 2759.068,
+      "invocations": [
+        {
+          "phase": "fast",
+          "ordinal": 1,
+          "start_offset_ms": 0.13,
+          "first_event_ms": 798.834,
+          "duration_ms": 1052.207,
+          "usage": {
+            "input_tokens": 125,
+            "output_tokens": 60,
+            "total_tokens": 185
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 1,
+          "start_offset_ms": 1052.401,
+          "first_event_ms": 904.393,
+          "duration_ms": 911.262,
+          "usage": {
+            "input_tokens": 281,
+            "output_tokens": 14,
+            "reasoning_tokens": 67,
+            "total_tokens": 362
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 2,
+          "start_offset_ms": 1963.767,
+          "first_event_ms": 774.082,
+          "duration_ms": 795.27,
+          "usage": {
+            "input_tokens": 380,
+            "output_tokens": 19,
+            "reasoning_tokens": 19,
+            "total_tokens": 418
+          },
+          "stop_reason": "STOP"
+        }
+      ],
+      "assistant": [
+        {
+          "phase": "fast",
+          "text": "To retrieve the exact `access_phrase` record and obtain its code, I need to execute the `records.read` tool with the appropriate key. Since I cannot execute tools in this immediate phase, I will proceed to the slow execution phase to run the tool and retrieve the record for you."
+        },
+        {
+          "phase": "slow",
+          "text": "The code for the `access_phrase` record is `cerulean-17`."
+        }
+      ],
+      "tool_calls": [
+        {
+          "call_id": "call_6326558",
+          "name": "records.read",
+          "arguments": {
+            "key": "access_phrase"
+          }
+        }
+      ],
+      "tool_results": [
+        {
+          "call_id": "call_6326558",
+          "name": "records.read",
+          "output": {
+            "code": "cerulean-17"
+          }
+        }
+      ],
+      "trajectory_items": 8,
+      "trajectory_sha256": "3e03941faf252c1b32121af45526a7a751d0baca1e0f32db6ffb24af74ff6099"
+    },
+    {
+      "task_id": "active-seat-total",
+      "replicate": 2,
+      "passed": true,
+      "duration_ms": 3541.997,
+      "invocations": [
+        {
+          "phase": "fast",
+          "ordinal": 1,
+          "start_offset_ms": 0.143,
+          "first_event_ms": 653.213,
+          "duration_ms": 1144.615,
+          "usage": {
+            "input_tokens": 125,
+            "output_tokens": 103,
+            "total_tokens": 228
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 1,
+          "start_offset_ms": 1144.811,
+          "first_event_ms": 861.822,
+          "duration_ms": 882.955,
+          "usage": {
+            "input_tokens": 324,
+            "output_tokens": 28,
+            "reasoning_tokens": 70,
+            "total_tokens": 422
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 2,
+          "start_offset_ms": 2028.456,
+          "first_event_ms": 1169.457,
+          "duration_ms": 1513.479,
+          "usage": {
+            "input_tokens": 489,
+            "output_tokens": 123,
+            "reasoning_tokens": 76,
+            "total_tokens": 688
+          },
+          "stop_reason": "STOP"
+        }
+      ],
+      "assistant": [
+        {
+          "phase": "fast",
+          "text": "To get the total number of active seats for the north and south routes, I need to read the records for both `route_north` and `route_south` using the `records.read` tool. \n\nSince I am currently in the first continuation phase and cannot execute tools immediately, I will need to perform these reads in the next phase. Once the data from both records is retrieved, I will add their `active_seats` values together and provide you with the total and a short explanation."
+        },
+        {
+          "phase": "slow",
+          "text": "Based on the records retrieved:\n\n* **`route_north`**: 17 active seats\n* **`route_south`**: 25 active seats\n\n**Total Active Seats:** 17 + 25 = **42**\n\n### Explanation\nBy reading the active seat data for both the northern and southern routes as of August 18, 2026, we find that the northern route has 17 active seats and the southern route has 25 active seats. Combining these two values gives a grand total of 42 active seats across both routes."
+        }
+      ],
+      "tool_calls": [
+        {
+          "call_id": "call_4236820",
+          "name": "records.read",
+          "arguments": {
+            "key": "route_north"
+          }
+        },
+        {
+          "call_id": "call_4236824",
+          "name": "records.read",
+          "arguments": {
+            "key": "route_south"
+          }
+        }
+      ],
+      "tool_results": [
+        {
+          "call_id": "call_4236820",
+          "name": "records.read",
+          "output": {
+            "active_seats": 17,
+            "as_of": "2026-08-18"
+          }
+        },
+        {
+          "call_id": "call_4236824",
+          "name": "records.read",
+          "output": {
+            "active_seats": 25,
+            "as_of": "2026-08-18"
+          }
+        }
+      ],
+      "trajectory_items": 10,
+      "trajectory_sha256": "5dedb9d152a18cc178757d0a153bfad8cc3b9d5310f2206ecd6de0ea09606a1c"
+    },
+    {
+      "task_id": "interval-overlap",
+      "replicate": 2,
+      "passed": true,
+      "duration_ms": 5341.683,
+      "invocations": [
+        {
+          "phase": "fast",
+          "ordinal": 1,
+          "start_offset_ms": 0.123,
+          "first_event_ms": 570.973,
+          "duration_ms": 1107.372,
+          "usage": {
+            "input_tokens": 119,
+            "output_tokens": 124,
+            "total_tokens": 243
+          },
+          "stop_reason": "MAX_TOKENS"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 1,
+          "start_offset_ms": 1107.556,
+          "first_event_ms": 794.063,
+          "duration_ms": 797.451,
+          "usage": {
+            "input_tokens": 339,
+            "output_tokens": 14,
+            "reasoning_tokens": 54,
+            "total_tokens": 407
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 2,
+          "start_offset_ms": 1905.105,
+          "first_event_ms": 718.285,
+          "duration_ms": 723.941,
+          "usage": {
+            "input_tokens": 468,
+            "output_tokens": 14,
+            "reasoning_tokens": 15,
+            "total_tokens": 497
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 3,
+          "start_offset_ms": 2629.141,
+          "first_event_ms": 2141.532,
+          "duration_ms": 2712.49,
+          "usage": {
+            "input_tokens": 565,
+            "output_tokens": 203,
+            "reasoning_tokens": 516,
+            "total_tokens": 1284
+          },
+          "stop_reason": "STOP"
+        }
+      ],
+      "assistant": [
+        {
+          "phase": "fast",
+          "text": "To determine the overlap duration and the specific UTC interval between the deployment window and the maintenance window, I will need to read the corresponding task records. \n\nSince I am currently in the immediate response phase and cannot execute tools, I will need to transition to the slow execution phase to retrieve this data. \n\nI will use the `records.read` tool to fetch the following keys:\n1. `deployment_window`\n2. `maintenance_window`\n\nOnce the records are retrieved, I will calculate the overlapping duration in minutes and provide the exact overlapping UTC interval. Let's proceed with reading the"
+        },
+        {
+          "phase": "slow",
+          "text": "Based on the records retrieved, the details of the two windows are:\n\n* **Deployment Window:**\n  * Start: `2026-09-03T14:10:00Z`\n  * End: `2026-09-03T14:50:00Z`\n\n* **Maintenance Window:**\n  * Start: `2026-09-03T14:30:00Z`\n  * End: `2026-09-03T15:15:00Z`\n\n### Overlap Analysis\n* **Overlapping UTC Interval:** `2026-09-03T14:30:00Z` to `2026-09-03T14:50:00Z`\n* **Overlap Duration:** **20 minutes**"
+        }
+      ],
+      "tool_calls": [
+        {
+          "call_id": "call_1486544",
+          "name": "records.read",
+          "arguments": {
+            "key": "deployment_window"
+          }
+        },
+        {
+          "call_id": "call_2409467",
+          "name": "records.read",
+          "arguments": {
+            "key": "maintenance_window"
+          }
+        }
+      ],
+      "tool_results": [
+        {
+          "call_id": "call_1486544",
+          "name": "records.read",
+          "output": {
+            "start_utc": "2026-09-03T14:10:00Z",
+            "end_utc": "2026-09-03T14:50:00Z"
+          }
+        },
+        {
+          "call_id": "call_2409467",
+          "name": "records.read",
+          "output": {
+            "start_utc": "2026-09-03T14:30:00Z",
+            "end_utc": "2026-09-03T15:15:00Z"
+          }
+        }
+      ],
+      "trajectory_items": 11,
+      "trajectory_sha256": "87e67c0a6f44f165956af5dd89338afe385e1b10ed71562e843cdcbf47771eb8"
+    },
+    {
+      "task_id": "shipment-mass",
+      "replicate": 2,
+      "passed": true,
+      "duration_ms": 5026.996,
+      "invocations": [
+        {
+          "phase": "fast",
+          "ordinal": 1,
+          "start_offset_ms": 0.119,
+          "first_event_ms": 745.775,
+          "duration_ms": 1237.301,
+          "usage": {
+            "input_tokens": 129,
+            "output_tokens": 124,
+            "total_tokens": 253
+          },
+          "stop_reason": "MAX_TOKENS"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 1,
+          "start_offset_ms": 1237.486,
+          "first_event_ms": 971.481,
+          "duration_ms": 979.719,
+          "usage": {
+            "input_tokens": 349,
+            "output_tokens": 17,
+            "reasoning_tokens": 73,
+            "total_tokens": 439
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 2,
+          "start_offset_ms": 2217.303,
+          "first_event_ms": 736.593,
+          "duration_ms": 743.345,
+          "usage": {
+            "input_tokens": 462,
+            "output_tokens": 17,
+            "reasoning_tokens": 19,
+            "total_tokens": 498
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 3,
+          "start_offset_ms": 2960.766,
+          "first_event_ms": 1550.806,
+          "duration_ms": 2066.178,
+          "usage": {
+            "input_tokens": 526,
+            "output_tokens": 164,
+            "reasoning_tokens": 246,
+            "total_tokens": 936
+          },
+          "stop_reason": "STOP"
+        }
+      ],
+      "assistant": [
+        {
+          "phase": "fast",
+          "text": "To find the combined mass of the shipments, I need to read the records for `shipment_case_a` and `shipment_case_b` to retrieve their `units` and `kg_per_unit` values. \n\nSince I am currently in the first continuation phase and cannot execute tools immediately, I will initiate the retrieval of these records using the `records.read` tool in the next phase. Once the data is retrieved, I will calculate the total mass for each shipment (units × kg_per_unit) and sum them to provide the combined mass in kilograms.\n\nLet"
+        },
+        {
+          "phase": "slow",
+          "text": "Based on the records retrieved:\n\n* **Shipment Case A:**\n  * Units: 12\n  * Weight per unit: 1.25 kg\n  * Mass: $12 \\times 1.25 = 15.0$ kg\n\n* **Shipment Case B:**\n  * Units: 8\n  * Weight per unit: 2.5 kg\n  * Mass: $8 \\times 2.5 = 20.0$ kg\n\n**Combined Mass:**\n$$\\text{Total Mass} = 15.0\\text{ kg} + 20.0\\text{ kg} = 35.0\\text{ kg}$$\n\nThe combined mass of the shipments is **35 kg**."
+        }
+      ],
+      "tool_calls": [
+        {
+          "call_id": "call_4174076",
+          "name": "records.read",
+          "arguments": {
+            "key": "shipment_case_a"
+          }
+        },
+        {
+          "call_id": "call_3855664",
+          "name": "records.read",
+          "arguments": {
+            "key": "shipment_case_b"
+          }
+        }
+      ],
+      "tool_results": [
+        {
+          "call_id": "call_4174076",
+          "name": "records.read",
+          "output": {
+            "units": 12,
+            "kg_per_unit": 1.25
+          }
+        },
+        {
+          "call_id": "call_3855664",
+          "name": "records.read",
+          "output": {
+            "units": 8,
+            "kg_per_unit": 2.5
+          }
+        }
+      ],
+      "trajectory_items": 11,
+      "trajectory_sha256": "b1c23aa6d5c4f9ee04e21d81d6d5c9db1a1519848d1791ec54a4720e9fd07975"
+    },
+    {
+      "task_id": "opaque-code-retrieval",
+      "replicate": 2,
+      "passed": true,
+      "duration_ms": 3051.5,
+      "invocations": [
+        {
+          "phase": "fast",
+          "ordinal": 1,
+          "start_offset_ms": 0.143,
+          "first_event_ms": 600.204,
+          "duration_ms": 1090.665,
+          "usage": {
+            "input_tokens": 125,
+            "output_tokens": 82,
+            "total_tokens": 207
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 1,
+          "start_offset_ms": 1090.863,
+          "first_event_ms": 1018.723,
+          "duration_ms": 1025.624,
+          "usage": {
+            "input_tokens": 303,
+            "output_tokens": 14,
+            "reasoning_tokens": 91,
+            "total_tokens": 408
+          },
+          "stop_reason": "STOP"
+        },
+        {
+          "phase": "slow",
+          "ordinal": 2,
+          "start_offset_ms": 2116.624,
+          "first_event_ms": 866.639,
+          "duration_ms": 934.787,
+          "usage": {
+            "input_tokens": 426,
+            "output_tokens": 22,
+            "reasoning_tokens": 55,
+            "total_tokens": 503
+          },
+          "stop_reason": "STOP"
+        }
+      ],
+      "assistant": [
+        {
+          "phase": "fast",
+          "text": "To retrieve the exact `access_phrase` record and obtain its code, I need to execute the `records.read` tool with the appropriate key. \n\nSince I am currently in the first continuation phase and cannot execute tools in this phase, I will initiate the tool call now to retrieve the record. Please stand by.\n\n*Note: The actual tool execution will occur in the next slow phase.*"
+        },
+        {
+          "phase": "slow",
+          "text": "The exact code for the `access_phrase` record is:\n\n**cerulean-17**"
+        }
+      ],
+      "tool_calls": [
+        {
+          "call_id": "call_5314424",
+          "name": "records.read",
+          "arguments": {
+            "key": "access_phrase"
+          }
+        }
+      ],
+      "tool_results": [
+        {
+          "call_id": "call_5314424",
+          "name": "records.read",
+          "output": {
+            "code": "cerulean-17"
+          }
+        }
+      ],
+      "trajectory_items": 8,
+      "trajectory_sha256": "6664e7246322bab409797f7bf93e99468ac3c96c9dbc841569910874dd1b3b27"
+    }
+  ]
+}
