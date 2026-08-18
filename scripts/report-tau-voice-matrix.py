@@ -309,6 +309,44 @@ def hash_evidence(experiment: Path) -> dict[str, Any]:
     }
 
 
+def collect_run_evidence(
+    repository_root: Path, matrix_id: str, matrix_sha256: str
+) -> list[dict[str, Any]]:
+    matrix_run_root = (
+        repository_root / ".runtime/benchmark-runs/tau-voice" / matrix_id
+    )
+    if not matrix_run_root.is_dir():
+        return []
+    evidence: list[dict[str, Any]] = []
+    for run_path in sorted(matrix_run_root.rglob("run.json")):
+        payload = json.loads(run_path.read_text(encoding="utf-8"))
+        require_equal(
+            payload.get("matrix_sha256"),
+            matrix_sha256,
+            f"run artifact {run_path} matrix hash",
+        )
+        entry: dict[str, Any] = {
+            "path": str(run_path.relative_to(repository_root)),
+            "sha256": sha256_file(run_path),
+            "status": payload.get("status"),
+            "selected_cell": payload.get("selected_cell"),
+            "started_at": payload.get("started_at"),
+            "completed_at": payload.get("completed_at"),
+            "openrealtime_revision": payload.get("openrealtime_revision"),
+            "gateway_health_start": payload.get("gateway_health"),
+            "gateway_health_final": payload.get("gateway_health_final"),
+        }
+        telemetry = run_path.with_name("gpu.csv")
+        if telemetry.is_file():
+            entry["gpu_telemetry"] = {
+                "path": str(telemetry.relative_to(repository_root)),
+                "sha256": sha256_file(telemetry),
+                "bytes": telemetry.stat().st_size,
+            }
+        evidence.append(entry)
+    return evidence
+
+
 def finite_json(value: Any) -> Any:
     if isinstance(value, float) and not math.isfinite(value):
         return None
@@ -490,6 +528,9 @@ def main() -> int:
             "interaction": "official tau2 compute_metrics_for_loaded_results and aggregate_domain_metrics",
             "partial_results": "forbidden",
         },
+        "execution_evidence": collect_run_evidence(
+            repository_root, matrix["matrix_id"], sha256_file(matrix_path)
+        ),
         "cells": {},
     }
 

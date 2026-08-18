@@ -41,6 +41,10 @@ restore_local_fast() {
   if [[ "${restored}" == false ]]; then
     "${repository_root}/scripts/local-cascade.sh" stop
     OPENREALTIME_FAST_PROVIDER=vllm \
+    OPENREALTIME_ASR_MODEL=Qwen/Qwen3-ASR-0.6B \
+    OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
+    OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
+    OPENREALTIME_ASR_PROVIDER_MAX_CHUNK=0s \
     OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
       "${repository_root}/scripts/local-cascade.sh" start
     restored=true
@@ -54,6 +58,10 @@ trap cleanup EXIT
 "${repository_root}/scripts/local-cascade.sh" stop
 OPENREALTIME_FAST_PROVIDER=gemini \
 OPENREALTIME_FAST_MODEL=gemini-3.5-flash \
+OPENREALTIME_ASR_MODEL=Qwen/Qwen3-ASR-0.6B \
+OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
+OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
+OPENREALTIME_ASR_PROVIDER_MAX_CHUNK=0s \
 OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
   "${repository_root}/scripts/local-cascade.sh" start
 

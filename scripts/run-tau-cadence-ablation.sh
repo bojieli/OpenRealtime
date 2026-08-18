@@ -22,6 +22,7 @@ start_profile() {
   OPENREALTIME_ASR_GPU_MEMORY_UTILIZATION=0.14 \
   OPENREALTIME_ASR_CHUNK_SECONDS="${chunk_seconds}" \
   OPENREALTIME_ASR_PROVIDER_CHUNK="${chunk_duration}" \
+  OPENREALTIME_ASR_PROVIDER_MAX_CHUNK=0s \
   OPENREALTIME_SLOW_EFFORT=high \
   OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
     "${repository_root}/scripts/local-cascade.sh" start
@@ -49,6 +50,7 @@ restore_baseline() {
     OPENREALTIME_ASR_GPU_MEMORY_UTILIZATION=0.14 \
     OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
     OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
+    OPENREALTIME_ASR_PROVIDER_MAX_CHUNK=0s \
     OPENREALTIME_SLOW_EFFORT=high \
     OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
       "${repository_root}/scripts/local-cascade.sh" start || true

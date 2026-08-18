@@ -20,6 +20,9 @@ import (
 
 func TestHealthReportsConfiguredContinuationProfiles(t *testing.T) {
 	t.Parallel()
+	metrics := &RuntimeMetrics{}
+	metrics.asrInputFrames.Add(9)
+	metrics.asrProviderAdvances.Add(3)
 	server, err := New(Config{
 		Model: "public-model", ASRModel: "qwen-asr", ASRProviderChunk: 200 * time.Millisecond,
 		PerceptionFactory: func() (v1.PerceptionProvider, error) { return &finalOnlyASR{}, nil },
@@ -27,6 +30,7 @@ func TestHealthReportsConfiguredContinuationProfiles(t *testing.T) {
 		SlowProvider:      &scriptedProvider{descriptor: continuation.Descriptor{Provider: "google", Model: "gemini-slow", Phase: trajectory.PhaseSlow, Effort: continuation.EffortHigh, Streaming: true, ToolAuthority: continuation.ToolAuthorityExecute, ExecutableTools: true}},
 		SpeechProvider:    fakeSpeech{},
 		SlowContextPolicy: interleave.SlowContextContentOnly,
+		RuntimeMetrics:    metrics,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -43,18 +47,51 @@ func TestHealthReportsConfiguredContinuationProfiles(t *testing.T) {
 		Fast   continuation.Descriptor `json:"fast"`
 		Slow   continuation.Descriptor `json:"slow"`
 		ASR    struct {
-			Model           string  `json:"model"`
-			ProviderChunkMS float64 `json:"provider_chunk_ms"`
+			Model              string  `json:"model"`
+			ProviderChunkMS    float64 `json:"provider_chunk_ms"`
+			ProviderMaxChunkMS float64 `json:"provider_max_chunk_ms"`
+			Strategy           string  `json:"strategy"`
 		} `json:"asr"`
 		SlowContext interleave.SlowContextPolicy `json:"slow_context"`
+		Runtime     RuntimeMetricsSnapshot       `json:"runtime"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
 	if body.Status != "ok" || body.Model != "public-model" || body.Fast.Model != "gemini-fast" ||
 		body.Fast.EffectiveToolAuthority() != continuation.ToolAuthorityPropose || body.Slow.Model != "gemini-slow" ||
-		body.ASR.Model != "qwen-asr" || body.ASR.ProviderChunkMS != 200 || body.SlowContext != interleave.SlowContextContentOnly {
+		body.ASR.Model != "qwen-asr" || body.ASR.ProviderChunkMS != 200 || body.SlowContext != interleave.SlowContextContentOnly ||
+		body.ASR.ProviderMaxChunkMS != 200 || body.ASR.Strategy != "fixed" ||
+		body.Runtime.ASRInputFrames != 9 || body.Runtime.ASRProviderAdvances != 3 {
 		t.Fatalf("unexpected health body: %#v", body)
+	}
+}
+
+func TestHealthReportsRevisionAdaptiveASRProfile(t *testing.T) {
+	t.Parallel()
+	server, err := New(Config{
+		ASRProviderChunk: 100 * time.Millisecond, ASRProviderMaxChunk: 400 * time.Millisecond,
+		PerceptionFactory: func() (v1.PerceptionProvider, error) { return &finalOnlyASR{}, nil },
+		FastProvider:      &scriptedProvider{}, SlowProvider: &scriptedProvider{}, SpeechProvider: fakeSpeech{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest("GET", "/healthz", nil)
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+	var body struct {
+		ASR struct {
+			ProviderChunkMS    float64 `json:"provider_chunk_ms"`
+			ProviderMaxChunkMS float64 `json:"provider_max_chunk_ms"`
+			Strategy           string  `json:"strategy"`
+		} `json:"asr"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.ASR.ProviderChunkMS != 100 || body.ASR.ProviderMaxChunkMS != 400 || body.ASR.Strategy != "revision-adaptive" {
+		t.Fatalf("unexpected adaptive ASR health: %#v", body.ASR)
 	}
 }
 

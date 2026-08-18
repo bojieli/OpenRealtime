@@ -163,6 +163,7 @@ case "${action}" in
       "${runtime_dir}/bin/realtimegateway" \
         --asr-model "${asr_model}" \
         --asr-provider-chunk "${OPENREALTIME_ASR_PROVIDER_CHUNK:-200ms}" \
+        --asr-provider-max-chunk "${OPENREALTIME_ASR_PROVIDER_MAX_CHUNK:-0s}" \
         --fast-provider "${fast_provider}" \
         --fast-model "${OPENREALTIME_FAST_MODEL:-}" \
         --fast-endpoint "${OPENREALTIME_FAST_ENDPOINT:-}" \

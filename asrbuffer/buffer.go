@@ -26,11 +26,16 @@ const (
 	maxSampleRateHz           = 384_000
 )
 
-// Config binds a provider to a minimum chunk duration. MaxInputFrameBytes is
-// an admission bound for one scheduler frame; zero selects 4 MiB.
+// Config binds a provider to a minimum chunk duration. MaximumChunk equal to
+// zero selects fixed cadence. A larger value enables revision-adaptive
+// backoff: changed ASR output resets to MinimumChunk, while an unchanged
+// provider advance doubles the next chunk up to MaximumChunk. The policy uses
+// only the presence of a typed revision, never transcript content.
+// MaxInputFrameBytes is an admission bound; zero selects 4 MiB.
 type Config struct {
 	Provider           v1.PerceptionProvider
 	MinimumChunk       time.Duration
+	MaximumChunk       time.Duration
 	MaxInputFrameBytes int
 }
 
@@ -43,6 +48,9 @@ type Stats struct {
 	ProviderSamples     uint64 `json:"provider_samples"`
 	PendingSamples      uint64 `json:"pending_samples"`
 	MinimumChunkSamples uint64 `json:"minimum_chunk_samples,omitempty"`
+	MaximumChunkSamples uint64 `json:"maximum_chunk_samples,omitempty"`
+	CurrentChunkSamples uint64 `json:"current_chunk_samples,omitempty"`
+	Policy              string `json:"policy"`
 	SampleRateHz        uint32 `json:"sample_rate_hz,omitempty"`
 	Finalized           bool   `json:"finalized"`
 }
@@ -52,6 +60,7 @@ type Stats struct {
 type Buffer struct {
 	provider     v1.PerceptionProvider
 	minimumChunk time.Duration
+	maximumChunk time.Duration
 	maxFrame     int
 
 	mu sync.Mutex
@@ -60,6 +69,8 @@ type Buffer struct {
 	pendingStartSample  uint64
 	sampleRateHz        uint32
 	minimumChunkSamples uint64
+	maximumChunkSamples uint64
+	currentChunkSamples uint64
 	nextInputIndex      uint64
 	nextInputSample     uint64
 	nextProviderIndex   uint64
@@ -79,6 +90,15 @@ func New(config Config) (*Buffer, error) {
 	if config.MinimumChunk <= 0 || config.MinimumChunk > maxChunkDuration {
 		return nil, fmt.Errorf("ASR minimum chunk must be in (0, %s]", maxChunkDuration)
 	}
+	if config.MaximumChunk < 0 || config.MaximumChunk > maxChunkDuration {
+		return nil, fmt.Errorf("ASR maximum chunk must be zero or in (0, %s]", maxChunkDuration)
+	}
+	if config.MaximumChunk == 0 {
+		config.MaximumChunk = config.MinimumChunk
+	}
+	if config.MaximumChunk < config.MinimumChunk {
+		return nil, errors.New("ASR maximum chunk cannot be smaller than its minimum")
+	}
 	if config.MaxInputFrameBytes < 0 {
 		return nil, errors.New("ASR maximum input frame size cannot be negative")
 	}
@@ -87,7 +107,8 @@ func New(config Config) (*Buffer, error) {
 	}
 	return &Buffer{
 		provider: config.Provider, minimumChunk: config.MinimumChunk,
-		maxFrame: config.MaxInputFrameBytes,
+		maximumChunk: config.MaximumChunk,
+		maxFrame:     config.MaxInputFrameBytes,
 	}, nil
 }
 
@@ -126,8 +147,8 @@ func (buffer *Buffer) Stats() Stats {
 }
 
 // PushFrame accepts one scheduler frame and may make zero or more provider
-// calls. Each emitted provider frame is exactly MinimumChunk long except the
-// final remainder flushed by Finalize.
+// calls. Each provider frame reaches the current fixed or adaptive threshold,
+// except the terminal remainder flushed by Finalize.
 func (buffer *Buffer) PushFrame(ctx context.Context, frame v1.AudioFrame) ([]v1.PerceptionRevision, error) {
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
@@ -143,10 +164,22 @@ func (buffer *Buffer) PushFrame(ctx context.Context, frame v1.AudioFrame) ([]v1.
 		if err != nil {
 			return nil, err
 		}
+		maximumSamples, err := durationSamples(buffer.maximumChunk, frame.SampleRateHz)
+		if err != nil {
+			return nil, err
+		}
 		buffer.sampleRateHz = frame.SampleRateHz
 		buffer.minimumChunkSamples = minimumSamples
+		buffer.maximumChunkSamples = maximumSamples
+		buffer.currentChunkSamples = minimumSamples
 		buffer.stats.SampleRateHz = frame.SampleRateHz
 		buffer.stats.MinimumChunkSamples = minimumSamples
+		buffer.stats.MaximumChunkSamples = maximumSamples
+		buffer.stats.CurrentChunkSamples = minimumSamples
+		buffer.stats.Policy = "fixed"
+		if maximumSamples > minimumSamples {
+			buffer.stats.Policy = "revision-adaptive"
+		}
 	}
 
 	buffer.haveInput = true
@@ -166,14 +199,14 @@ func (buffer *Buffer) PushFrame(ctx context.Context, frame v1.AudioFrame) ([]v1.
 			buffer.pendingStartSample = frame.SampleOffset + consumedSamples
 		}
 		pendingSamples := uint64(len(buffer.pending) / 2)
-		needed := buffer.minimumChunkSamples - pendingSamples
+		needed := buffer.currentChunkSamples - pendingSamples
 		available := frameSamples - consumedSamples
 		take := min(needed, available)
 		byteStart := int(consumedSamples * 2)
 		byteEnd := int((consumedSamples + take) * 2)
 		buffer.pending = append(buffer.pending, frame.PCM16LE[byteStart:byteEnd]...)
 		consumedSamples += take
-		if uint64(len(buffer.pending)/2) != buffer.minimumChunkSamples {
+		if uint64(len(buffer.pending)/2) != buffer.currentChunkSamples {
 			continue
 		}
 		produced, err := buffer.flush(ctx)
@@ -234,6 +267,12 @@ func (buffer *Buffer) flush(ctx context.Context) ([]v1.PerceptionRevision, error
 	buffer.stats.ProviderSamples += chunkSamples
 	buffer.pending = buffer.pending[:0]
 	buffer.pendingStartSample += chunkSamples
+	if len(revisions) > 0 {
+		buffer.currentChunkSamples = buffer.minimumChunkSamples
+	} else {
+		buffer.currentChunkSamples = min(buffer.currentChunkSamples*2, buffer.maximumChunkSamples)
+	}
+	buffer.stats.CurrentChunkSamples = buffer.currentChunkSamples
 	return revisions, nil
 }
 

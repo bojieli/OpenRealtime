@@ -21,6 +21,7 @@ type utteranceState struct {
 	sourceSample uint64
 	sampleRate   uint32
 	lastText     string
+	providerRuns uint64
 }
 
 func (session *session) mediaLoop() {
@@ -78,6 +79,8 @@ func (session *session) advanceUtterance(utterance *utteranceState, command medi
 		SampleRateHz: command.SampleRate, PCM16LE: command.PCM16,
 	}
 	revisions, err := utterance.provider.PushFrame(session.ctx, frame)
+	session.config.RuntimeMetrics.asrInputFrames.Add(1)
+	session.recordProviderAdvances(utterance)
 	if err != nil {
 		return err
 	}
@@ -92,10 +95,29 @@ func (session *session) advanceUtterance(utterance *utteranceState, command medi
 		return nil
 	}
 	final, err := utterance.provider.Finalize(session.ctx, utterance.sourceSample)
+	session.recordProviderAdvances(utterance)
 	if err != nil {
 		return err
 	}
+	session.config.RuntimeMetrics.asrFinalizations.Add(1)
 	return session.observeRevision(utterance, final, true)
+}
+
+type providerInvocationCounter interface {
+	ProviderInvocationCount() uint64
+}
+
+func (session *session) recordProviderAdvances(utterance *utteranceState) {
+	counter, ok := utterance.provider.(providerInvocationCounter)
+	if !ok {
+		return
+	}
+	current := counter.ProviderInvocationCount()
+	if current < utterance.providerRuns {
+		return
+	}
+	session.config.RuntimeMetrics.asrProviderAdvances.Add(current - utterance.providerRuns)
+	utterance.providerRuns = current
 }
 
 func (session *session) observeRevision(utterance *utteranceState, revision v1.PerceptionRevision, final bool) error {

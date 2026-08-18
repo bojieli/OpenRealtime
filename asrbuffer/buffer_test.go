@@ -14,6 +14,8 @@ type fakeProvider struct {
 	frames     []v1.AudioFrame
 	finalized  uint64
 	failAt     int
+	silent     bool
+	revisionAt map[int]bool
 }
 
 func (provider *fakeProvider) Descriptor() v1.Descriptor { return provider.descriptor }
@@ -24,6 +26,9 @@ func (provider *fakeProvider) PushFrame(_ context.Context, frame v1.AudioFrame) 
 	}
 	frame.PCM16LE = append([]byte(nil), frame.PCM16LE...)
 	provider.frames = append(provider.frames, frame)
+	if provider.silent && !provider.revisionAt[len(provider.frames)] {
+		return nil, nil
+	}
 	return []v1.PerceptionRevision{{RevisionID: uint64(len(provider.frames)), SourceSample: frame.SampleOffset + uint64(len(frame.PCM16LE)/2), UnstableText: "partial"}}, nil
 }
 
@@ -121,6 +126,40 @@ func TestBufferValidatesContinuityWithoutPoisoningSession(t *testing.T) {
 	}
 }
 
+func TestBufferAdaptsOnlyToTypedRevisionPresence(t *testing.T) {
+	t.Parallel()
+	upstream := &fakeProvider{silent: true, revisionAt: map[int]bool{4: true}}
+	buffer, err := New(Config{
+		Provider: upstream, MinimumChunk: 100 * time.Millisecond,
+		MaximumChunk: 400 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two unchanged advances back off 100 -> 200 -> 400 ms. The third
+	// 400 ms advance remains at the maximum.
+	if revisions, err := buffer.PushFrame(context.Background(), newFrame(0, 0, 11200)); err != nil || len(revisions) != 0 {
+		t.Fatalf("adaptive quiet frame: revisions=%v err=%v", revisions, err)
+	}
+	if len(upstream.frames) != 3 || len(upstream.frames[0].PCM16LE) != 3200 ||
+		len(upstream.frames[1].PCM16LE) != 6400 || len(upstream.frames[2].PCM16LE) != 12800 {
+		t.Fatalf("adaptive provider frames: %#v", upstream.frames)
+	}
+	// A typed revision on the next 400 ms advance resets the following
+	// threshold to 100 ms without inspecting its text.
+	if revisions, err := buffer.PushFrame(context.Background(), newFrame(1, 11200, 6400)); err != nil || len(revisions) != 1 {
+		t.Fatalf("adaptive changed frame: revisions=%v err=%v", revisions, err)
+	}
+	if revisions, err := buffer.PushFrame(context.Background(), newFrame(2, 17600, 1600)); err != nil || len(revisions) != 0 {
+		t.Fatalf("adaptive reset frame: revisions=%v err=%v", revisions, err)
+	}
+	stats := buffer.Stats()
+	if stats.Policy != "revision-adaptive" || stats.MinimumChunkSamples != 1600 ||
+		stats.MaximumChunkSamples != 6400 || stats.ProviderChunks != 5 || stats.CurrentChunkSamples != 3200 {
+		t.Fatalf("adaptive stats: %#v", stats)
+	}
+}
+
 func TestBufferProviderFailureIsTerminal(t *testing.T) {
 	t.Parallel()
 	buffer, err := New(Config{Provider: &fakeProvider{failAt: 1}, MinimumChunk: 50 * time.Millisecond})
@@ -142,6 +181,9 @@ func TestNewRejectsInvalidConfig(t *testing.T) {
 		{Provider: &fakeProvider{}},
 		{Provider: &fakeProvider{}, MinimumChunk: -time.Millisecond},
 		{Provider: &fakeProvider{}, MinimumChunk: time.Hour + time.Nanosecond},
+		{Provider: &fakeProvider{}, MinimumChunk: time.Millisecond, MaximumChunk: -time.Millisecond},
+		{Provider: &fakeProvider{}, MinimumChunk: time.Millisecond, MaximumChunk: time.Hour + time.Nanosecond},
+		{Provider: &fakeProvider{}, MinimumChunk: 200 * time.Millisecond, MaximumChunk: 100 * time.Millisecond},
 		{Provider: &fakeProvider{}, MinimumChunk: time.Millisecond, MaxInputFrameBytes: -1},
 	} {
 		if _, err := New(config); err == nil {

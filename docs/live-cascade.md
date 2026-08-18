@@ -224,6 +224,17 @@ not the registered treatment. `OPENREALTIME_SLOW_EFFORT` selects the explicit
 medium or high slow profile. `OPENREALTIME_SLOW_CONTEXT_POLICY` defaults to
 `canonical`; `content-only` and `independent` are registered benchmark
 controls whose typed provider projections never fork the canonical store.
+The same health document exposes cumulative session, input-frame, ASR provider
+advance, and ASR finalization counters. Matrix runners preserve both the start
+and final health snapshots, keeping provider work measurable without extending
+the standard Realtime event vocabulary.
+
+`OPENREALTIME_ASR_PROVIDER_MAX_CHUNK` enables a bounded revision-adaptive
+provider cadence when it exceeds `OPENREALTIME_ASR_PROVIDER_CHUNK`. The next
+threshold resets to the minimum after the provider emits a typed revision and
+doubles after an advance with no revision, up to the maximum. This controller
+does not read transcript content. A zero maximum preserves fixed cadence, and
+endpoint finalization always flushes pending audio immediately.
 
 The fast phase has two explicit provider profiles, not a content router. The
 default `--fast-provider vllm` selects local Qwen instruct with thinking

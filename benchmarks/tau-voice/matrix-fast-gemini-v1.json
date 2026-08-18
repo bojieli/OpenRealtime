@@ -41,6 +41,10 @@
   "runtime_requirements": {
     "slow_context": "canonical",
     "requires_local_fast": false,
+    "asr": {
+      "model": "Qwen/Qwen3-ASR-0.6B",
+      "provider_chunk_ms": 200
+    },
     "gateway_profiles": {
       "fast": {
         "provider": "google",

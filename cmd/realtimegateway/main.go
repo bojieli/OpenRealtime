@@ -42,6 +42,7 @@ type options struct {
 	asrURL          string
 	asrModel        string
 	asrChunk        time.Duration
+	asrMaxChunk     time.Duration
 	fastProvider    string
 	fastURL         string
 	fastEndpoint    string
@@ -71,6 +72,7 @@ func run(arguments []string) error {
 	flags.StringVar(&config.asrURL, "asr-url", qwenasr.DefaultBaseURL, "Qwen3-ASR service base URL")
 	flags.StringVar(&config.asrModel, "asr-model", qwenasr.DefaultModel, "Qwen3-ASR model identity")
 	flags.DurationVar(&config.asrChunk, "asr-provider-chunk", 200*time.Millisecond, "minimum stateful ASR advance interval")
+	flags.DurationVar(&config.asrMaxChunk, "asr-provider-max-chunk", 0, "maximum adaptive ASR advance interval; zero selects fixed cadence")
 	flags.StringVar(&config.fastProvider, "fast-provider", "vllm", "fast continuation provider: vllm or gemini")
 	flags.StringVar(&config.fastURL, "fast-base-url", openaicompat.DefaultBaseURL, "local OpenAI-compatible fast-model base URL")
 	flags.StringVar(&config.fastEndpoint, "fast-endpoint", "", "optional Gemini fast API endpoint override")
@@ -102,6 +104,9 @@ func serve(config options) error {
 	}
 	if config.asrChunk <= 0 {
 		return errors.New("ASR provider chunk must be positive")
+	}
+	if config.asrMaxChunk < 0 || (config.asrMaxChunk > 0 && config.asrMaxChunk < config.asrChunk) {
+		return errors.New("ASR maximum provider chunk must be zero or at least its minimum")
 	}
 	if config.requestTimeout <= 0 || config.shutdownTimeout <= 0 {
 		return errors.New("request and shutdown timeouts must be positive")
@@ -151,12 +156,19 @@ func serve(config options) error {
 		if err != nil {
 			return nil, err
 		}
-		return asrbuffer.New(asrbuffer.Config{Provider: asr, MinimumChunk: config.asrChunk})
+		return asrbuffer.New(asrbuffer.Config{
+			Provider: asr, MinimumChunk: config.asrChunk, MaximumChunk: config.asrMaxChunk,
+		})
+	}
+	effectiveASRMax := config.asrMaxChunk
+	if effectiveASRMax == 0 {
+		effectiveASRMax = config.asrChunk
 	}
 	gateway, err := realtimegateway.New(realtimegateway.Config{
 		Token: token, Model: config.publicModel, ASRModel: config.asrModel,
-		ASRProviderChunk: config.asrChunk, PerceptionFactory: perceptionFactory,
-		FastProvider: fast, SlowProvider: slow, SpeechProvider: speech,
+		ASRProviderChunk: config.asrChunk, ASRProviderMaxChunk: effectiveASRMax,
+		PerceptionFactory: perceptionFactory,
+		FastProvider:      fast, SlowProvider: slow, SpeechProvider: speech,
 		FastMaxTokens: config.fastTokens, SlowMaxTokens: config.slowTokens,
 		SlowPreparationMin: config.slowPace, SlowContextPolicy: slowContext,
 		ValidateWire: config.validateWire,

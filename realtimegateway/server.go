@@ -19,22 +19,24 @@ import (
 type PerceptionFactory func() (v1.PerceptionProvider, error)
 
 type Config struct {
-	Token              string
-	Model              string
-	ASRModel           string
-	ASRProviderChunk   time.Duration
-	PerceptionFactory  PerceptionFactory
-	FastProvider       continuation.Provider
-	SlowProvider       continuation.Provider
-	SpeechProvider     v1.StreamingSpeechProvider
-	FastMaxTokens      int
-	SlowMaxTokens      int
-	MaxSlowInvocations int
-	SlowPreparationMin time.Duration
-	SlowContextPolicy  interleave.SlowContextPolicy
-	MaxAudioFrameBytes int
-	MaxPendingEvents   int
-	ValidateWire       bool
+	Token               string
+	Model               string
+	ASRModel            string
+	ASRProviderChunk    time.Duration
+	ASRProviderMaxChunk time.Duration
+	PerceptionFactory   PerceptionFactory
+	FastProvider        continuation.Provider
+	SlowProvider        continuation.Provider
+	SpeechProvider      v1.StreamingSpeechProvider
+	FastMaxTokens       int
+	SlowMaxTokens       int
+	MaxSlowInvocations  int
+	SlowPreparationMin  time.Duration
+	SlowContextPolicy   interleave.SlowContextPolicy
+	MaxAudioFrameBytes  int
+	MaxPendingEvents    int
+	ValidateWire        bool
+	RuntimeMetrics      *RuntimeMetrics
 }
 
 type Server struct{ config Config }
@@ -69,6 +71,12 @@ func New(config Config) (*Server, error) {
 	if config.SlowContextPolicy == "" {
 		config.SlowContextPolicy = interleave.SlowContextCanonical
 	}
+	if config.RuntimeMetrics == nil {
+		config.RuntimeMetrics = &RuntimeMetrics{}
+	}
+	if config.ASRProviderMaxChunk == 0 {
+		config.ASRProviderMaxChunk = config.ASRProviderChunk
+	}
 	if _, err := interleave.ParseSlowContextPolicy(string(config.SlowContextPolicy)); err != nil {
 		return nil, err
 	}
@@ -82,10 +90,18 @@ func (server *Server) Handler() http.Handler {
 		_ = json.NewEncoder(writer).Encode(map[string]any{
 			"status": "ok", "model": server.config.Model,
 			"asr": map[string]any{
-				"model":             server.config.ASRModel,
-				"provider_chunk_ms": float64(server.config.ASRProviderChunk) / float64(time.Millisecond),
+				"model":                 server.config.ASRModel,
+				"provider_chunk_ms":     float64(server.config.ASRProviderChunk) / float64(time.Millisecond),
+				"provider_max_chunk_ms": float64(server.config.ASRProviderMaxChunk) / float64(time.Millisecond),
+				"strategy": func() string {
+					if server.config.ASRProviderMaxChunk > server.config.ASRProviderChunk {
+						return "revision-adaptive"
+					}
+					return "fixed"
+				}(),
 			},
 			"slow_context": server.config.SlowContextPolicy,
+			"runtime":      server.config.RuntimeMetrics.Snapshot(),
 			"fast":         server.config.FastProvider.Descriptor(),
 			"slow":         server.config.SlowProvider.Descriptor(),
 			"speech":       server.config.SpeechProvider.Descriptor(),
@@ -108,6 +124,7 @@ func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 	connection.SetReadLimit(int64(server.config.MaxAudioFrameBytes * 2))
+	server.config.RuntimeMetrics.sessionsStarted.Add(1)
 	session, err := newSession(request.Context(), connection, server.config, request.URL.Query().Get("model"))
 	if err != nil {
 		_ = connection.Close(websocket.StatusInternalError, "session initialization failed")
@@ -117,6 +134,7 @@ func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		_ = connection.Close(websocket.StatusInternalError, "session failed")
 		return
 	}
+	server.config.RuntimeMetrics.sessionsCompleted.Add(1)
 	_ = connection.Close(websocket.StatusNormalClosure, "session closed")
 }
 

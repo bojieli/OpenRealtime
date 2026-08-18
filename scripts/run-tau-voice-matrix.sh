@@ -54,10 +54,15 @@ fi
 expected_asr_model="$(jq -r '.runtime_requirements.asr.model // empty' "${matrix}")"
 if [[ -n "${expected_asr_model}" ]]; then
   expected_asr_chunk_ms="$(jq -r '.runtime_requirements.asr.provider_chunk_ms' "${matrix}")"
+  expected_asr_max_chunk_ms="$(jq -r '.runtime_requirements.asr.provider_max_chunk_ms // .runtime_requirements.asr.provider_chunk_ms' "${matrix}")"
+  expected_asr_strategy="$(jq -r '.runtime_requirements.asr.strategy // "fixed"' "${matrix}")"
   if ! jq -e \
     --arg model "${expected_asr_model}" \
     --argjson chunk_ms "${expected_asr_chunk_ms}" \
-    '.asr.model == $model and .asr.provider_chunk_ms == $chunk_ms' \
+    --argjson max_chunk_ms "${expected_asr_max_chunk_ms}" \
+    --arg strategy "${expected_asr_strategy}" \
+    '.asr.model == $model and .asr.provider_chunk_ms == $chunk_ms and
+     .asr.provider_max_chunk_ms == $max_chunk_ms and .asr.strategy == $strategy' \
     <<<"${gateway_health}" >/dev/null; then
     echo "gateway ASR profile does not match the preregistered matrix" >&2
     exit 1
@@ -220,7 +225,9 @@ for cell in "${cells[@]}"; do
   done < <(jq -r '.benchmark.domains[] | [.name,(.tasks|tostring)] | @tsv' "${matrix}")
 done
 
-jq '.status="complete" | .completed_at=now | .completed_at |= todateiso8601' \
+gateway_health_final="$(curl --fail --silent --show-error http://127.0.0.1:8765/healthz)"
+jq --argjson gateway_health_final "${gateway_health_final}" \
+  '.status="complete" | .gateway_health_final=$gateway_health_final | .completed_at=now | .completed_at |= todateiso8601' \
   "${run_root}/run.json" >"${run_root}/run.json.next"
 mv "${run_root}/run.json.next" "${run_root}/run.json"
 run_status="complete"
