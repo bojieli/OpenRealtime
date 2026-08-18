@@ -9,7 +9,7 @@
   },
   "runtime": {
     "path": "benchmarks/runtime/canonical-gateway-v1.json",
-    "sha256": "7bb24e3f42963f2f51185172dbdf04240f5d0b2293c51fec8ec9f155efeeb57e"
+    "sha256": "376e29185607aa6f2869dd0388f753b7d1028cf190e7d78b5b5d85bc3eaf652f"
   },
   "tau_voice": {
     "artifact_retention": {

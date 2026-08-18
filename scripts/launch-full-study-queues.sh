@@ -30,6 +30,39 @@ if [[ -n "$(git -C "${repository_root}" status --porcelain=v1 --untracked-files=
   exit 1
 fi
 
+runtime_manifest="${repository_root}/benchmarks/runtime/canonical-gateway-v1.json"
+runtime_identity="$("${repository_root}/scripts/capture-local-runtime-identity.sh")"
+if ! jq -e \
+  --arg version "$(jq -r '.local_fast.version' "${runtime_manifest}")" \
+  --arg model "$(jq -r '.local_fast.model' "${runtime_manifest}")" \
+  --arg revision "$(jq -r '.local_fast.revision' "${runtime_manifest}")" \
+  --arg served_model "$(jq -r '.local_fast.served_model' "${runtime_manifest}")" \
+  --arg memory "$(jq -r '.local_fast.gpu_memory_utilization' "${runtime_manifest}")" \
+  --arg max_context "$(jq -r '.local_fast.configured_context_tokens' "${runtime_manifest}")" '
+  def option_values($name):
+    .components.qwen.argv as $argv |
+    [$argv | to_entries[] | select(.value == $name) | $argv[.key + 1]];
+  def exact_option($name; $value):
+    option_values($name) == [$value];
+  .components.qwen.service == {
+    implementation:"vllm",
+    version:$version,
+    served_model:$served_model,
+    model:$model,
+    max_model_len:($max_context | tonumber)
+  } and
+  exact_option("--model"; $model) and
+  exact_option("--revision"; $revision) and
+  exact_option("--served-model-name"; $served_model) and
+  exact_option("--gpu-memory-utilization"; $memory) and
+  exact_option("--max-model-len"; $max_context) and
+  exact_option("--tool-call-parser"; "hermes") and
+  ([.components.qwen.argv[] | select(. == "--enable-auto-tool-choice")] | length) == 1
+' <<<"${runtime_identity}" >/dev/null; then
+  echo "local-fast runtime does not match the frozen full-study contract" >&2
+  exit 1
+fi
+
 queue_ids=(
   primary
   asr

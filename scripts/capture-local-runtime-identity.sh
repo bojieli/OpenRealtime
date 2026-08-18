@@ -50,4 +50,34 @@ for component in gateway asr fish qwen; do
     }' <<<"${identity}")"
 done
 
+if jq -e '.components.qwen != null' <<<"${identity}" >/dev/null; then
+  qwen_version="$(curl --fail --silent --max-time 3 http://127.0.0.1:8000/version)"
+  qwen_models="$(curl --fail --silent --max-time 3 http://127.0.0.1:8000/v1/models)"
+  if ! jq -e '.version | type == "string" and length > 0' <<<"${qwen_version}" >/dev/null; then
+    echo "Qwen vLLM version endpoint is invalid" >&2
+    exit 1
+  fi
+  if ! jq -e '
+    .data | length == 1 and
+    .[0].id == "qwen-fast" and
+    .[0].root == "Qwen/Qwen3-30B-A3B-FP8" and
+    (.[0].max_model_len | type == "number")
+  ' <<<"${qwen_models}" >/dev/null; then
+    echo "Qwen vLLM model endpoint is invalid" >&2
+    exit 1
+  fi
+  identity="$(jq \
+    --arg version "$(jq -r '.version' <<<"${qwen_version}")" \
+    --arg served_model "$(jq -r '.data[0].id' <<<"${qwen_models}")" \
+    --arg model "$(jq -r '.data[0].root' <<<"${qwen_models}")" \
+    --argjson max_model_len "$(jq '.data[0].max_model_len' <<<"${qwen_models}")" \
+    '.components.qwen.service={
+      implementation:"vllm",
+      version:$version,
+      served_model:$served_model,
+      model:$model,
+      max_model_len:$max_model_len
+    }' <<<"${identity}")"
+fi
+
 jq . <<<"${identity}"

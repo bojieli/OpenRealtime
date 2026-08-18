@@ -22,6 +22,21 @@ class StudyIncompleteError(RuntimeError):
     """The preregistered study is missing or contains inconsistent evidence."""
 
 
+LOCAL_FAST_CONTRACT = {
+    "implementation": "vllm",
+    "version": "0.19.0",
+    "model": "Qwen/Qwen3-30B-A3B-FP8",
+    "revision": "d206ba732169f29bb77fbf80fc2c4b81d4d30782",
+    "served_model": "qwen-fast",
+    "native_context_tokens": 40960,
+    "configured_context_tokens": 40960,
+    "kv_cache_tokens_observed_before_freeze": 44896,
+    "gpu_memory_utilization": "0.38",
+    "thinking": "disabled",
+    "tool_authority": "propose",
+}
+
+
 def arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -299,6 +314,9 @@ def validate_study_runtime(
         ".runtime/study-runtime/canonical-gateway-v1/realtimegateway",
         "study runtime path",
     )
+    require_equal(
+        runtime.get("local_fast"), LOCAL_FAST_CONTRACT, "study local-fast runtime"
+    )
     build = runtime.get("build")
     require(isinstance(build, dict), "study runtime build declaration is absent")
     require_equal(build.get("go"), "/usr/local/go/bin/go", "study runtime Go path")
@@ -308,6 +326,14 @@ def validate_study_runtime(
         "study runtime build command",
     )
     return path, runtime
+
+
+def require_argv_option(argv: list[str], option: str, expected: str, label: str) -> None:
+    positions = [index for index, value in enumerate(argv) if value == option]
+    require_equal(len(positions), 1, f"{label} {option} occurrence")
+    position = positions[0]
+    require(position + 1 < len(argv), f"{label} {option} has no value")
+    require_equal(argv[position + 1], expected, f"{label} {option}")
 
 
 def validate_runtime_identity(
@@ -361,6 +387,50 @@ def validate_runtime_identity(
             and all(isinstance(value, str) for value in component["argv"])
             and bool(component["argv"]),
             f"{label}/{name} has invalid argv evidence",
+        )
+    if requires_local_fast:
+        qwen = components["qwen"]
+        require_equal(
+            qwen.get("service"),
+            {
+                "implementation": LOCAL_FAST_CONTRACT["implementation"],
+                "version": LOCAL_FAST_CONTRACT["version"],
+                "served_model": LOCAL_FAST_CONTRACT["served_model"],
+                "model": LOCAL_FAST_CONTRACT["model"],
+                "max_model_len": LOCAL_FAST_CONTRACT["configured_context_tokens"],
+            },
+            f"{label}/qwen service contract",
+        )
+        argv = qwen["argv"]
+        require_argv_option(
+            argv, "--model", LOCAL_FAST_CONTRACT["model"], f"{label}/qwen"
+        )
+        require_argv_option(
+            argv, "--revision", LOCAL_FAST_CONTRACT["revision"], f"{label}/qwen"
+        )
+        require_argv_option(
+            argv,
+            "--served-model-name",
+            LOCAL_FAST_CONTRACT["served_model"],
+            f"{label}/qwen",
+        )
+        require_argv_option(
+            argv,
+            "--max-model-len",
+            str(LOCAL_FAST_CONTRACT["configured_context_tokens"]),
+            f"{label}/qwen",
+        )
+        require_argv_option(
+            argv,
+            "--gpu-memory-utilization",
+            LOCAL_FAST_CONTRACT["gpu_memory_utilization"],
+            f"{label}/qwen",
+        )
+        require_argv_option(argv, "--tool-call-parser", "hermes", f"{label}/qwen")
+        require_equal(
+            argv.count("--enable-auto-tool-choice"),
+            1,
+            f"{label}/qwen auto-tool-choice occurrence",
         )
 
 

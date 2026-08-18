@@ -43,12 +43,39 @@ def runtime_identity() -> dict:
         "command_sha256": "b" * 64,
         "argv": ["/runtime/component"],
     }
+    components = {name: dict(component) for name in ("gateway", "asr", "fish")}
+    components["qwen"] = {
+        **component,
+        "argv": [
+            "/runtime/python",
+            "-m",
+            "vllm.entrypoints.openai.api_server",
+            "--model",
+            "Qwen/Qwen3-30B-A3B-FP8",
+            "--revision",
+            "d206ba732169f29bb77fbf80fc2c4b81d4d30782",
+            "--served-model-name",
+            "qwen-fast",
+            "--gpu-memory-utilization",
+            "0.38",
+            "--max-model-len",
+            "40960",
+            "--enable-auto-tool-choice",
+            "--tool-call-parser",
+            "hermes",
+        ],
+        "service": {
+            "implementation": "vllm",
+            "version": "0.19.0",
+            "served_model": "qwen-fast",
+            "model": "Qwen/Qwen3-30B-A3B-FP8",
+            "max_model_len": 40960,
+        },
+    }
     return {
         "schema_version": "1.0.0",
         "host_boot_id": "boot",
-        "components": {
-            name: dict(component) for name in ("gateway", "asr", "fish", "qwen")
-        },
+        "components": components,
     }
 
 
@@ -99,6 +126,7 @@ class Fixture:
                 "source_revision": "c" * 40,
                 "binary_sha256": "a" * 64,
                 "runtime_path": ".runtime/study-runtime/canonical-gateway-v1/realtimegateway",
+                "local_fast": dict(REPORT.LOCAL_FAST_CONTRACT),
                 "build": {
                     "go": "/usr/local/go/bin/go",
                     "command": "go build -trimpath -buildvcs=false ./cmd/realtimegateway",
@@ -743,6 +771,18 @@ class FullStudyTest(unittest.TestCase):
         ] = "d" * 64
         write_json(path, report)
         with self.assertRaisesRegex(REPORT.StudyIncompleteError, "frozen executable"):
+            self.report()
+
+    def test_rejects_a_reduced_local_fast_context_window(self) -> None:
+        path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
+        report = json.loads(path.read_text(encoding="utf-8"))
+        report["execution_evidence"][0]["runtime_identity"]["components"]["qwen"][
+            "service"
+        ]["max_model_len"] = 16384
+        write_json(path, report)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "qwen service contract"
+        ):
             self.report()
 
     def test_rejects_tau_source_revision_change(self) -> None:

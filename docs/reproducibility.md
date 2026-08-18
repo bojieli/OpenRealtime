@@ -157,11 +157,13 @@ scripts/prepare-study-gateway.sh
 The command checks
 [`benchmarks/runtime/canonical-gateway-v1.json`](../benchmarks/runtime/canonical-gateway-v1.json),
 archives its pinned source revision, applies the declared trimmed build, and
-refuses to install a binary whose SHA-256 differs. Long benchmark launchers run
-through `scripts/with-study-runtime.sh`; the local cascade refuses to reuse a
-healthy gateway with a different hash. The earlier `matrix-v1` population is a
-preserved pre-freeze pilot and is intentionally absent from the full-study
-manifest.
+refuses to install a binary whose SHA-256 differs. The same manifest freezes
+the Qwen fast server at vLLM 0.19.0, model revision
+`d206ba732169f29bb77fbf80fc2c4b81d4d30782`, and its native 40,960-token
+window. Long benchmark launchers run through `scripts/with-study-runtime.sh`;
+the local cascade refuses to reuse a healthy gateway with a different hash.
+The earlier `matrix-v1` population is a preserved pre-freeze pilot and is
+intentionally absent from the full-study manifest.
 
 Each completed τ matrix then runs:
 
@@ -218,6 +220,8 @@ then checks every frozen tau-Voice task/trial population and execution record,
 including the host boot identity, process start identity, executable hash, and
 argv hash of the long-lived local runtime. Both the initial and final identity
 must carry the study gateway hash and describe the same processes;
+local-fast identities must additionally report vLLM 0.19.0, the pinned Qwen
+model and served-model names, and the frozen 40,960-token native context window;
 each tau-Voice raw archive must also prove the preregistered exception-only
 retry bound, exactly one scoring attempt per task, and retention of any failed
 infrastructure attempts;

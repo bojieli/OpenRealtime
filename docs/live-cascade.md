@@ -185,13 +185,22 @@ Start Qwen3-30B-A3B-FP8 with vLLM 0.19.0:
 VLLM_WORKER_MULTIPROC_METHOD=spawn \
 .runtime/qwen-asr/bin/python -m vllm.entrypoints.openai.api_server \
   --model Qwen/Qwen3-30B-A3B-FP8 \
+  --revision d206ba732169f29bb77fbf80fc2c4b81d4d30782 \
   --served-model-name qwen-fast \
   --host 127.0.0.1 --port 8000 \
   --gpu-memory-utilization 0.38 \
-  --max-model-len 16384 \
+  --max-model-len 40960 \
   --enable-auto-tool-choice \
   --tool-call-parser hermes
 ```
+
+The 40,960-token limit is the model's native context window, not a prompt
+truncation policy. The frozen host reported capacity for 44,896 KV-cache tokens
+at the declared 0.38 GPU-memory fraction, so one full-window continuation fits
+without increasing the co-located allocation. This preserves the canonical
+trajectory and its tool-result dependencies while the hosted slow continuation
+retains the larger-context role. Runtime evidence records both the exact model
+revision in argv and the vLLM `/version` and `/v1/models` declarations.
 
 The pinned Qwen tokenizer emits JSON inside `<tool_call>` tags, so the
 Hermes-compatible vLLM parser matches this checkpoint. The Qwen3-Coder XML

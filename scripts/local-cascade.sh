@@ -118,6 +118,20 @@ start_asr() {
       --chunk-size-sec "${chunk_seconds}"
 }
 
+start_fast() {
+  start_process qwen http://127.0.0.1:8000/health \
+    env VLLM_WORKER_MULTIPROC_METHOD=spawn \
+    "${repository_root}/.runtime/qwen-asr/bin/python" -m vllm.entrypoints.openai.api_server \
+      --model Qwen/Qwen3-30B-A3B-FP8 \
+      --revision d206ba732169f29bb77fbf80fc2c4b81d4d30782 \
+      --served-model-name qwen-fast \
+      --host 127.0.0.1 --port 8000 \
+      --gpu-memory-utilization 0.38 \
+      --max-model-len 40960 \
+      --enable-auto-tool-choice \
+      --tool-call-parser hermes
+}
+
 case "${action}" in
   start)
     : "${OPENREALTIME_GATEWAY_TOKEN:?OPENREALTIME_GATEWAY_TOKEN must be set}"
@@ -171,16 +185,7 @@ case "${action}" in
         --model-name fishaudio/s2-pro
 
     if [[ "${fast_provider}" == vllm ]]; then
-      start_process qwen http://127.0.0.1:8000/health \
-        env VLLM_WORKER_MULTIPROC_METHOD=spawn \
-        "${repository_root}/.runtime/qwen-asr/bin/python" -m vllm.entrypoints.openai.api_server \
-          --model Qwen/Qwen3-30B-A3B-FP8 \
-          --served-model-name qwen-fast \
-          --host 127.0.0.1 --port 8000 \
-          --gpu-memory-utilization 0.38 \
-          --max-model-len 16384 \
-          --enable-auto-tool-choice \
-          --tool-call-parser hermes
+      start_fast
     fi
 
     start_asr
@@ -210,6 +215,10 @@ case "${action}" in
     stop_process asr
     start_asr
     ;;
+  restart-fast)
+    stop_process qwen
+    start_fast
+    ;;
   status)
     status_process fish http://127.0.0.1:8081/health
     status_process qwen http://127.0.0.1:8000/health
@@ -217,7 +226,7 @@ case "${action}" in
     status_process gateway http://127.0.0.1:8765/healthz
     ;;
   *)
-    echo "usage: scripts/local-cascade.sh {start|stop|restart-asr|status}" >&2
+    echo "usage: scripts/local-cascade.sh {start|stop|restart-asr|restart-fast|status}" >&2
     exit 2
     ;;
 esac

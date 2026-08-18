@@ -31,7 +31,9 @@ one-task smoke, not a τ-Voice score.
 The publishable study never executes a gateway rebuilt from moving `HEAD`.
 [`canonical-gateway-v1.json`](../runtime/canonical-gateway-v1.json) pins a
 source commit, deterministic Go build command, destination, and executable
-hash. Reproduce or verify it with:
+hash. It also freezes the local-fast model revision, vLLM version, memory
+fraction, and full native 40,960-token context window. Reproduce or verify the
+gateway with:
 
 ```sh
 scripts/prepare-study-gateway.sh

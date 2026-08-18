@@ -230,6 +230,9 @@ the historical five provider roles; replacing them requires a versioned
 
 The implemented experimental path places stateful Qwen3-ASR 0.6B, a
 Qwen3-30B-A3B-FP8 fast model, and streaming Fish Audio S2-Pro on one 96 GB GPU;
+the fast server exposes the model's native 40,960-token window, pinned to
+revision `d206ba732169f29bb77fbf80fc2c4b81d4d30782`, instead of truncating the
+canonical trajectory at the earlier 16,384-token deployment limit.
 Gemini 3.5 Flash provides hosted high-reasoning slow continuation. Changed ASR
 revisions can prepare the heterogeneous Qwen→Gemini chain before endpoint, and
 an exact final match replays both stages before the canonical tool/result
