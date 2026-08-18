@@ -140,6 +140,79 @@ func TestOpenAIAdapterRequiresTerminalResponseWhenRequested(t *testing.T) {
 	}
 }
 
+func TestOpenAIAdapterStreamsDeclaredFinalizationSilence(t *testing.T) {
+	t.Parallel()
+	received := make(chan [][]byte, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(writer, request, nil)
+		if err != nil {
+			return
+		}
+		defer connection.CloseNow()
+		if _, _, err := connection.Read(request.Context()); err != nil {
+			return
+		}
+		_ = connection.Write(request.Context(), websocket.MessageText, []byte(`{"type":"session.updated"}`))
+		var chunks [][]byte
+		for len(chunks) < 3 {
+			_, data, err := connection.Read(request.Context())
+			if err != nil {
+				return
+			}
+			var event struct {
+				Type  string `json:"type"`
+				Audio string `json:"audio"`
+			}
+			if json.Unmarshal(data, &event) != nil || event.Type != "input_audio_buffer.append" {
+				continue
+			}
+			audio, err := base64.StdEncoding.DecodeString(event.Audio)
+			if err != nil {
+				return
+			}
+			chunks = append(chunks, audio)
+		}
+		received <- chunks
+		for {
+			if _, _, err := connection.Read(request.Context()); err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	adapter, err := NewOpenAIAdapter(OpenAIConfig{
+		APIKey: "test-secret", Endpoint: "ws" + strings.TrimPrefix(server.URL, "http"),
+		ChunkDuration: 20 * time.Millisecond, FinalizationSilence: 40 * time.Millisecond,
+		TailDuration: 5 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := make([]byte, 960)
+	for index := range input {
+		input[index] = 1
+	}
+	if _, err := adapter.Run(t.Context(), Audio{SampleRateHz: 24_000, PCM16: input}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case chunks := <-received:
+		if len(chunks) != 3 || len(chunks[0]) != 960 || len(chunks[1]) != 960 || len(chunks[2]) != 960 {
+			t.Fatalf("unexpected chunks: %v", chunks)
+		}
+		for index, chunk := range chunks[1:] {
+			for _, value := range chunk {
+				if value != 0 {
+					t.Fatalf("finalization chunk %d contains non-silence", index)
+				}
+			}
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server did not receive finalization silence")
+	}
+}
+
 func TestOpenAIAdapterSupportsTruthfulCompatibleEndpointDescriptor(t *testing.T) {
 	t.Parallel()
 	adapter, err := NewOpenAIAdapter(OpenAIConfig{

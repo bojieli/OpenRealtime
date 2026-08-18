@@ -113,6 +113,7 @@
     "output_vad_threshold": 0.5,
     "output_min_silence_duration_ms": 1500,
     "post_input_collection_s": 10,
+    "server_vad_finalization_silence_ms": 600,
     "objective_metrics": ["SRR", "SIR", "EIR", "NIR", "SRIR", "FSED", "ERT", "EIT", "IRD"]
   }
 }

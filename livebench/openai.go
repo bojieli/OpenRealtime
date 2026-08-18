@@ -25,11 +25,15 @@ type OpenAIConfig struct {
 	Instructions  string
 	ChunkDuration time.Duration
 	TailDuration  time.Duration
-	Provider      string
-	Architecture  string
-	Profile       string
-	Tools         []RealtimeTool
-	ExecuteTool   func(context.Context, string, json.RawMessage) (json.RawMessage, error)
+	// FinalizationSilence streams declared zero PCM after the supplied input.
+	// It lets a server-VAD endpoint close speech that reaches the final input
+	// sample without changing the conversational corpus or using a content rule.
+	FinalizationSilence time.Duration
+	Provider            string
+	Architecture        string
+	Profile             string
+	Tools               []RealtimeTool
+	ExecuteTool         func(context.Context, string, json.RawMessage) (json.RawMessage, error)
 	// AwaitTerminalResponse makes TailDuration a hard upper bound rather than a
 	// fixed collection window. The adapter returns as soon as a completed,
 	// non-tool response closes the post-input trajectory. This is appropriate
@@ -76,6 +80,9 @@ func NewOpenAIAdapter(config OpenAIConfig) (*OpenAIAdapter, error) {
 	}
 	if config.ChunkDuration < 20*time.Millisecond || config.ChunkDuration > time.Second {
 		return nil, errors.New("OpenAI chunk duration must be between 20ms and 1s")
+	}
+	if config.FinalizationSilence < 0 || config.FinalizationSilence > 5*time.Second {
+		return nil, errors.New("OpenAI finalization silence must be between zero and 5s")
 	}
 	seenTools := make(map[string]struct{}, len(config.Tools))
 	for index := range config.Tools {
@@ -465,6 +472,13 @@ func (adapter *OpenAIAdapter) Run(ctx context.Context, input Audio) (SessionResu
 
 	if err := streamOpenAIAudio(ctx, writeEvent, recorder, providerInput, adapter.config.ChunkDuration); err != nil {
 		return SessionResult{}, err
+	}
+	if adapter.config.FinalizationSilence > 0 {
+		finalSamples := int(adapter.config.FinalizationSilence * time.Duration(providerInput.SampleRateHz) / time.Second)
+		finalizer := Audio{PCM16: make([]byte, finalSamples*2), SampleRateHz: providerInput.SampleRateHz}
+		if err := streamOpenAIAudio(ctx, writeEvent, recorder, finalizer, adapter.config.ChunkDuration); err != nil {
+			return SessionResult{}, fmt.Errorf("send OpenAI finalization silence: %w", err)
+		}
 	}
 	stateMu.Lock()
 	inputComplete = true

@@ -25,6 +25,7 @@ mkdir -p "${run_root}"
   --provider-label openrealtime \
   --chunk-duration 20ms \
   --tail-duration 10s \
+  --vad-finalization-silence 600ms \
   --trial-timeout 3m \
   --trial-attempts 3 \
   --retry-delay 1s \

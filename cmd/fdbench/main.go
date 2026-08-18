@@ -134,6 +134,7 @@ func runBenchmark(arguments []string) error {
 	limit := flags.Int("limit", 0, "maximum conversations after filtering; zero means all")
 	chunkDuration := flags.Duration("chunk-duration", 20*time.Millisecond, "Realtime input frame duration")
 	tailDuration := flags.Duration("tail-duration", 10*time.Second, "fixed post-input collection window used by the upstream clients")
+	finalizationSilence := flags.Duration("vad-finalization-silence", 600*time.Millisecond, "silence streamed inside the fixed tail so server VAD closes a final utterance")
 	trialTimeout := flags.Duration("trial-timeout", 3*time.Minute, "timeout for each infrastructure attempt")
 	trialAttempts := flags.Int("trial-attempts", 3, "bounded infrastructure attempts per conversation")
 	retryDelay := flags.Duration("retry-delay", time.Second, "base delay between attempts")
@@ -145,7 +146,7 @@ func runBenchmark(arguments []string) error {
 	if *datasetRoot == "" || strings.TrimSpace(*apiKey) == "" {
 		return errors.New("--dataset-root and a non-empty --api-key/OPENREALTIME_API_KEY are required")
 	}
-	if *limit < 0 || *trialAttempts < 1 || *trialAttempts > 10 || *trialTimeout <= 0 || *retryDelay < 0 || *tailDuration <= 0 {
+	if *limit < 0 || *trialAttempts < 1 || *trialAttempts > 10 || *trialTimeout <= 0 || *retryDelay < 0 || *tailDuration <= 0 || *finalizationSilence < 0 || *finalizationSilence >= *tailDuration {
 		return errors.New("limit, attempt, timeout, retry, or tail configuration is invalid")
 	}
 	samples, err := fdbench.Discover(*datasetRoot)
@@ -159,7 +160,8 @@ func runBenchmark(arguments []string) error {
 	}
 	adapter, err := livebench.NewOpenAIAdapter(livebench.OpenAIConfig{
 		APIKey: *apiKey, Endpoint: *endpoint, Model: *model, Voice: *voice, Instructions: *instructions,
-		ChunkDuration: *chunkDuration, TailDuration: *tailDuration, Provider: *provider,
+		ChunkDuration: *chunkDuration, TailDuration: *tailDuration - *finalizationSilence,
+		FinalizationSilence: *finalizationSilence, Provider: *provider,
 		Architecture: "canonical-local-asr-fast-slow-tts", Profile: "fd-bench-standard-realtime-v1",
 	})
 	if err != nil {
@@ -167,7 +169,8 @@ func runBenchmark(arguments []string) error {
 	}
 	profileHash := hashJSON(map[string]any{
 		"profile": "fd-bench-standard-realtime-v1", "instructions": *instructions,
-		"chunk_duration": chunkDuration.String(), "tail_duration": tailDuration.String(), "voice": *voice,
+		"chunk_duration": chunkDuration.String(), "post_input_collection": tailDuration.String(),
+		"vad_finalization_silence": finalizationSilence.String(), "voice": *voice,
 	})
 	manifestPath := filepath.Join(*runRoot, "run-"+safeName(*provider)+".json")
 	manifest := runManifest{
