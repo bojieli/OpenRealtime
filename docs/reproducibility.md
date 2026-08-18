@@ -177,3 +177,9 @@ invocation. A resumed launcher appends a new invocation and marks an unfinished
 predecessor interrupted instead of overwriting it. The terminal gate requires
 the last invocation to complete, validates every identity, preserves
 interrupted attempts, and hashes each sidecar.
+
+τ-Voice launch evidence follows the same preservation rule. Every cell or
+all-cell process writes `run.json` and GPU telemetry below a unique
+timestamp/PID attempt directory. Resuming the benchmark population can reuse
+validated simulation files, but it cannot overwrite a failed, interrupted, or
+completed launcher attempt.

@@ -8,7 +8,8 @@ tau2_directory="${TAU2_DIR:-${repository_root}/.runtime/tau2-bench}"
 selected_cell="${1:-}"
 matrix_root="${repository_root}/.runtime/benchmark-runs/tau-voice/$(jq -r '.matrix_id' "${matrix}")"
 invocation_id="${selected_cell:-all-cells}"
-run_root="${matrix_root}/invocations/${invocation_id}"
+attempt_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+run_root="${matrix_root}/invocations/${invocation_id}/${attempt_id}"
 run_status="initializing"
 
 if [[ $# -gt 1 ]]; then
