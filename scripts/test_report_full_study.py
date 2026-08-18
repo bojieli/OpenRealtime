@@ -115,8 +115,25 @@ class Fixture:
                 "domains": [{"name": "airline", "tasks": 1}],
                 "total_tasks_per_cell": 1,
                 "num_trials": 1,
+                "infrastructure_retries": 3,
+                "infrastructure_retry_delay_seconds": 1,
             },
             "cells": [{"id": "control", "speech_complexity": "control"}],
+            "transport": {
+                "ping_interval_seconds": 20,
+                "ping_timeout_seconds": 0,
+            },
+            "reporting": {
+                "infrastructure_retry_policy": {
+                    "maximum_retries": 3,
+                    "maximum_attempts": 4,
+                    "retry_delay_seconds": 1,
+                    "seed_reused": True,
+                    "scope": "exceptions_only",
+                    "semantic_outcomes_retried": False,
+                    "attempt_artifacts": "preserved",
+                }
+            },
             "runtime_requirements": {
                 "gateway": {
                     "source_revision": "c" * 40,
@@ -144,6 +161,19 @@ class Fixture:
                 },
                 "population": {"cell": "control", "domain": "airline"},
                 "source": {"path": "artifacts", "files": 2, "bytes": 22},
+                "attempts": {
+                    "tasks": 1,
+                    "total": 1,
+                    "successful": 1,
+                    "failed_infrastructure": 0,
+                    "retried_tasks": 0,
+                    "maximum_observed": 1,
+                    "maximum_allowed": 4,
+                    "retry_delay_seconds": 1,
+                    "seed_reused": True,
+                    "retry_scope": "exceptions_only",
+                    "semantic_outcomes_retried": False,
+                },
                 "archive": {
                     "path": "raw-artifacts.tar.zst",
                     "format": "deterministic-pax-tar+zstd",
@@ -167,6 +197,15 @@ class Fixture:
                     "selected_cells": ["control"],
                 },
                 "benchmark": {"revision": "tau-revision"},
+                "execution_policy": {
+                    "transport": {
+                        "ping_interval_seconds": 20,
+                        "ping_timeout_seconds": 0,
+                    },
+                    "infrastructure_retries": matrix_payload["reporting"][
+                        "infrastructure_retry_policy"
+                    ],
+                },
                 "execution_evidence": [
                     {
                         "status": "complete",

@@ -405,6 +405,51 @@ def validate_tau_artifact_archive(
             and source[field] > 0,
             f"{label} source {field} is invalid",
         )
+    attempts = evidence.get("attempts")
+    require(isinstance(attempts, dict), f"{label} attempt declaration is absent")
+    domain_specification = next(
+        item for item in matrix["benchmark"]["domains"] if item["name"] == domain
+    )
+    expected_tasks = domain_specification["tasks"] * matrix["benchmark"]["num_trials"]
+    maximum_attempts = matrix["reporting"]["infrastructure_retry_policy"][
+        "maximum_attempts"
+    ]
+    require_equal(attempts.get("tasks"), expected_tasks, f"{label} attempt tasks")
+    require_equal(
+        attempts.get("successful"), expected_tasks, f"{label} successful attempts"
+    )
+    require_equal(
+        attempts.get("total"),
+        attempts.get("successful", 0) + attempts.get("failed_infrastructure", 0),
+        f"{label} total attempts",
+    )
+    require_equal(
+        attempts.get("maximum_allowed"), maximum_attempts, f"{label} attempt bound"
+    )
+    require(
+        isinstance(attempts.get("maximum_observed"), int)
+        and 1 <= attempts["maximum_observed"] <= maximum_attempts,
+        f"{label} observed attempt maximum is invalid",
+    )
+    require(
+        isinstance(attempts.get("retried_tasks"), int)
+        and 0 <= attempts["retried_tasks"] <= expected_tasks,
+        f"{label} retried task count is invalid",
+    )
+    require_equal(
+        attempts.get("retry_delay_seconds"),
+        matrix["reporting"]["infrastructure_retry_policy"]["retry_delay_seconds"],
+        f"{label} retry delay",
+    )
+    require_equal(attempts.get("seed_reused"), True, f"{label} retry seed policy")
+    require_equal(
+        attempts.get("retry_scope"), "exceptions_only", f"{label} retry scope"
+    )
+    require_equal(
+        attempts.get("semantic_outcomes_retried"),
+        False,
+        f"{label} semantic retry policy",
+    )
     archive_evidence = evidence.get("archive")
     require(
         isinstance(archive_evidence, dict), f"{label} archive declaration is absent"
@@ -434,6 +479,7 @@ def validate_tau_artifact_archive(
         "cell": cell_id,
         "domain": domain,
         "source": source,
+        "attempts": attempts,
         "archive": artifact(root, archive_path),
         "evidence": artifact(root, evidence_path),
     }
@@ -473,6 +519,50 @@ def validate_tau_matrix(
         matrix["benchmark"]["total_tasks_per_cell"],
         f"{matrix_id} declared tasks",
     )
+    infrastructure_retries = matrix["benchmark"].get("infrastructure_retries")
+    retry_policy = matrix.get("reporting", {}).get("infrastructure_retry_policy", {})
+    require(
+        isinstance(infrastructure_retries, int)
+        and not isinstance(infrastructure_retries, bool)
+        and infrastructure_retries >= 0,
+        f"{matrix_id} infrastructure retry count is invalid",
+    )
+    require_equal(
+        retry_policy.get("maximum_retries"),
+        infrastructure_retries,
+        f"{matrix_id} retry count",
+    )
+    require_equal(
+        retry_policy.get("maximum_attempts"),
+        infrastructure_retries + 1,
+        f"{matrix_id} attempt count",
+    )
+    require_equal(
+        retry_policy.get("retry_delay_seconds"),
+        matrix["benchmark"].get("infrastructure_retry_delay_seconds"),
+        f"{matrix_id} retry delay",
+    )
+    require_equal(
+        retry_policy.get("seed_reused"), True, f"{matrix_id} retry seed policy"
+    )
+    require_equal(
+        retry_policy.get("scope"), "exceptions_only", f"{matrix_id} retry scope"
+    )
+    require_equal(
+        retry_policy.get("semantic_outcomes_retried"),
+        False,
+        f"{matrix_id} semantic retry policy",
+    )
+    require_equal(
+        matrix.get("transport", {}).get("ping_interval_seconds"),
+        20,
+        f"{matrix_id} ping interval",
+    )
+    require_equal(
+        matrix.get("transport", {}).get("ping_timeout_seconds"),
+        0,
+        f"{matrix_id} ping timeout",
+    )
     matrix_evidence = report.get("matrix", {})
     require_equal(matrix_evidence.get("id"), matrix_id, f"{matrix_id} report matrix ID")
     require_equal(
@@ -484,6 +574,17 @@ def validate_tau_matrix(
         matrix_evidence.get("sha256"),
         matrix_specification["sha256"],
         f"{matrix_id} report matrix hash",
+    )
+    require_equal(
+        report.get("execution_policy"),
+        {
+            "transport": {
+                "ping_interval_seconds": 20,
+                "ping_timeout_seconds": 0,
+            },
+            "infrastructure_retries": retry_policy,
+        },
+        f"{matrix_id} report execution policy",
     )
     require_equal(
         matrix_evidence.get("selected_cells"), cell_ids, f"{matrix_id} selected cells"

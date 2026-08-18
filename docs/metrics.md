@@ -41,8 +41,12 @@ Complete tau-Voice reports retain the full typed termination-reason
 distribution for every domain and cell. `too_many_errors`, `user_stop`,
 `agent_stop`, and any infrastructure termination remain distinct outcomes;
 semantic failures are never retried or relabeled as infrastructure. The
-full-study gate reconciles those counts exactly against the declared
-task/trial population before publishing the benchmark panel.
+publishable matrices allow at most three exception-only infrastructure
+retries. Their raw-archive receipts expose total attempts, failed attempts,
+retried tasks, and the maximum observed attempt count; exactly one successful
+scoring attempt must remain per task. The full-study gate reconciles those
+counts exactly against the declared task/trial population before publishing
+the benchmark panel.
 
 Canonical-trajectory comparisons additionally report:
 

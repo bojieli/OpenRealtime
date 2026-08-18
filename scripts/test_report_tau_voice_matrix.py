@@ -42,6 +42,7 @@ class PopulationValidationTest(unittest.TestCase):
                     provider="openai",
                     model="gpt-realtime-1.5",
                     base_url="ws://127.0.0.1:8765/v1/realtime",
+                    openai_ping_timeout_seconds=0,
                 ),
                 agent_info=item(
                     implementation="discrete_time_audio_native_agent",
@@ -84,7 +85,9 @@ class PopulationValidationTest(unittest.TestCase):
 
     def validate(self):
         with (
-            mock.patch.object(REPORT.Results, "load_metadata", return_value=self.metadata),
+            mock.patch.object(
+                REPORT.Results, "load_metadata", return_value=self.metadata
+            ),
             mock.patch.object(
                 REPORT.Results,
                 "iter_simulations",
@@ -104,11 +107,14 @@ class PopulationValidationTest(unittest.TestCase):
                     "provider": "openai",
                     "compatibility_model": "gpt-realtime-1.5",
                     "base_url": "ws://127.0.0.1:8765/v1/realtime",
+                    "ping_timeout_seconds": 0,
                 },
                 voice_registry={"person": "tau-person-v1"},
             )
 
-    def test_accepts_exact_population_and_preserves_infrastructure_failure(self) -> None:
+    def test_accepts_exact_population_and_preserves_infrastructure_failure(
+        self,
+    ) -> None:
         self.assertEqual(
             self.validate(),
             {

@@ -26,7 +26,14 @@ matrix_id="$(jq -r '.matrix_id' "${matrix}")"
 matrix_sha256="$(sha256sum "${matrix}" | cut -d ' ' -f 1)"
 seed="$(jq -r '.benchmark.seed' "${matrix}")"
 num_trials="$(jq -r '.benchmark.num_trials' "${matrix}")"
+maximum_attempts="$(jq -r '.reporting.infrastructure_retry_policy.maximum_attempts' "${matrix}")"
+retry_delay_seconds="$(jq -r '.reporting.infrastructure_retry_policy.retry_delay_seconds' "${matrix}")"
 canonical_data_root="$(realpath -m "${data_root}")"
+
+if [[ "${num_trials}" != "1" ]]; then
+  echo "attempt-proof archiving currently requires exactly one trial per task" >&2
+  exit 1
+fi
 
 while IFS=$'\t' read -r cell domain tasks; do
   experiment="${data_root}/${matrix_id}-${cell}-${domain}-seed${seed}"
@@ -55,10 +62,22 @@ while IFS=$'\t' read -r cell domain tasks; do
       --arg matrix_sha256 "${matrix_sha256}" \
       --arg cell "${cell}" \
       --arg domain "${domain}" \
+      --argjson expected_simulations "${expected_simulations}" \
+      --argjson maximum_attempts "${maximum_attempts}" \
+      --argjson retry_delay_seconds "${retry_delay_seconds}" \
       '.schema_version == "1.0.0" and
        .matrix.id == $matrix_id and .matrix.sha256 == $matrix_sha256 and
        .population.cell == $cell and .population.domain == $domain and
        .source.path == "artifacts" and .source.files > 0 and .source.bytes > 0 and
+       .attempts.tasks == $expected_simulations and
+       .attempts.successful == .attempts.tasks and
+       .attempts.total == (.attempts.successful + .attempts.failed_infrastructure) and
+       .attempts.maximum_allowed == $maximum_attempts and
+       .attempts.maximum_observed <= .attempts.maximum_allowed and
+       .attempts.retry_delay_seconds == $retry_delay_seconds and
+       .attempts.seed_reused == true and
+       .attempts.retry_scope == "exceptions_only" and
+       .attempts.semantic_outcomes_retried == false and
        .archive.path == "raw-artifacts.tar.zst" and
        .archive.format == "deterministic-pax-tar+zstd"' \
       "${evidence}" >/dev/null; then
@@ -91,6 +110,64 @@ while IFS=$'\t' read -r cell domain tasks; do
     echo "tau raw artifacts are missing and no verified archive exists: ${artifacts}" >&2
     exit 1
   fi
+
+  task_directories="$(find "${artifacts}" -mindepth 1 -maxdepth 1 -type d -name 'task_*' | wc -l)"
+  if [[ "${task_directories}" != "${expected_simulations}" ]]; then
+    echo "tau attempt evidence has ${task_directories}/${expected_simulations} task directories: ${artifacts}" >&2
+    exit 1
+  fi
+  successful_attempts=0
+  failed_infrastructure_attempts=0
+  retried_tasks=0
+  maximum_observed_attempts=0
+  while IFS= read -r task_directory; do
+    mapfile -t statuses < <(find "${task_directory}" -mindepth 2 -maxdepth 2 -type f -name sim_status.json | sort)
+    attempts="${#statuses[@]}"
+    if (( attempts < 1 || attempts > maximum_attempts )); then
+      echo "tau task attempt count is outside the preregistered bound: ${task_directory} (${attempts}/${maximum_attempts})" >&2
+      exit 1
+    fi
+    if (( attempts > maximum_observed_attempts )); then
+      maximum_observed_attempts="${attempts}"
+    fi
+    if (( attempts > 1 )); then
+      retried_tasks=$((retried_tasks + 1))
+    fi
+    used_in_task=0
+    for status in "${statuses[@]}"; do
+      state="$(jq -r '.status // empty' "${status}")"
+      if [[ "${state}" == "used" ]]; then
+        used_in_task=$((used_in_task + 1))
+        successful_attempts=$((successful_attempts + 1))
+        simulation_id="$(basename "$(dirname "${status}")")"
+        simulation_id="${simulation_id#sim_}"
+        if [[ ! -f "${experiment}/simulations/${simulation_id}.json" ]] || \
+          ! jq -e --arg id "${simulation_id}" '.simulation_index[] | select(.id == $id)' \
+            "${experiment}/results.json" >/dev/null; then
+          echo "used tau attempt is not the indexed scoring simulation: ${status}" >&2
+          exit 1
+        fi
+      elif [[ "${state}" == "failed" ]]; then
+        if ! jq -e \
+          '.reason == "infrastructure_error" and
+           (.error | type == "string" and length > 0) and
+           (.error_type | type == "string" and length > 0)' \
+          "${status}" >/dev/null; then
+          echo "failed tau attempt is not typed infrastructure evidence: ${status}" >&2
+          exit 1
+        fi
+        failed_infrastructure_attempts=$((failed_infrastructure_attempts + 1))
+      else
+        echo "unknown tau attempt status ${state@Q}: ${status}" >&2
+        exit 1
+      fi
+    done
+    if [[ "${used_in_task}" != "1" ]]; then
+      echo "tau task must have exactly one used scoring attempt: ${task_directory}" >&2
+      exit 1
+    fi
+  done < <(find "${artifacts}" -mindepth 1 -maxdepth 1 -type d -name 'task_*' | sort)
+  total_attempts=$((successful_attempts + failed_infrastructure_attempts))
 
   source_files="$(find "${artifacts}" -type f | wc -l)"
   source_bytes="$(find "${artifacts}" -type f -printf '%s\n' | awk '{total += $1} END {print total + 0}')"
@@ -130,12 +207,33 @@ while IFS=$'\t' read -r cell domain tasks; do
     --argjson archive_bytes "${archive_bytes}" \
     --argjson source_files "${source_files}" \
     --argjson source_bytes "${source_bytes}" \
+    --argjson tasks "${expected_simulations}" \
+    --argjson total_attempts "${total_attempts}" \
+    --argjson successful_attempts "${successful_attempts}" \
+    --argjson failed_infrastructure_attempts "${failed_infrastructure_attempts}" \
+    --argjson retried_tasks "${retried_tasks}" \
+    --argjson maximum_observed_attempts "${maximum_observed_attempts}" \
+    --argjson maximum_attempts "${maximum_attempts}" \
+    --argjson retry_delay_seconds "${retry_delay_seconds}" \
     '{
       schema_version:"1.0.0",
       created_at:$created_at,
       matrix:{path:$matrix,id:$matrix_id,sha256:$matrix_sha256},
       population:{cell:$cell,domain:$domain},
       source:{path:"artifacts",files:$source_files,bytes:$source_bytes},
+      attempts:{
+        tasks:$tasks,
+        total:$total_attempts,
+        successful:$successful_attempts,
+        failed_infrastructure:$failed_infrastructure_attempts,
+        retried_tasks:$retried_tasks,
+        maximum_observed:$maximum_observed_attempts,
+        maximum_allowed:$maximum_attempts,
+        retry_delay_seconds:$retry_delay_seconds,
+        seed_reused:true,
+        retry_scope:"exceptions_only",
+        semantic_outcomes_retried:false
+      },
       archive:{
         path:$archive,
         format:"deterministic-pax-tar+zstd",

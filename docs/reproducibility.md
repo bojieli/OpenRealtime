@@ -204,6 +204,9 @@ then checks every frozen tau-Voice task/trial population and execution record,
 including the host boot identity, process start identity, executable hash, and
 argv hash of the long-lived local runtime. Both the initial and final identity
 must carry the study gateway hash and describe the same processes;
+each tau-Voice raw archive must also prove the preregistered exception-only
+retry bound, exactly one scoring attempt per task, and retention of any failed
+infrastructure attempts;
 then it checks the paired endpoint-preparation manipulation,
 all 498 FDB v1.5 overlap trials and their deterministic aggregate, all 100 FDB
 v3 tool-use examples in both official exact and GPT-4o evaluations, and all

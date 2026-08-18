@@ -183,6 +183,11 @@ def validate_population(
         audio_config.base_url, transport["base_url"], f"{label} transport endpoint"
     )
     require_equal(
+        audio_config.openai_ping_timeout_seconds,
+        transport["ping_timeout_seconds"],
+        f"{label} transport ping timeout",
+    )
+    require_equal(
         metadata.info.agent_info.implementation,
         "discrete_time_audio_native_agent",
         f"{label} upstream adapter",
@@ -208,9 +213,7 @@ def validate_population(
     if len(set(expected_task_ids)) != len(expected_task_ids):
         raise IncompleteMatrixError(f"{label}: duplicate task IDs in metadata")
     expected_population = {
-        (task_id, trial)
-        for task_id in expected_task_ids
-        for trial in range(num_trials)
+        (task_id, trial) for task_id in expected_task_ids for trial in range(num_trials)
     }
 
     index = metadata.simulation_index
@@ -270,7 +273,9 @@ def validate_population(
             raise IncompleteMatrixError(f"{label}: duplicate task/trial row {row!r}")
         actual_population.add(row)
     if actual_population != expected_population or actual_ids != set(indexed_ids):
-        raise IncompleteMatrixError(f"{label}: on-disk simulations fail population proof")
+        raise IncompleteMatrixError(
+            f"{label}: on-disk simulations fail population proof"
+        )
 
     termination_reasons: Counter[str] = Counter()
     for entry in index:
@@ -340,9 +345,7 @@ def cumulative_runtime_delta(
                 raise IncompleteMatrixError(
                     f"{field_path} is missing from the initial runtime snapshot"
                 )
-            result[key] = cumulative_runtime_delta(
-                start_value, final_value, field_path
-            )
+            result[key] = cumulative_runtime_delta(start_value, final_value, field_path)
             continue
         if type(final_value) not in (int, float) or type(start_value) not in (
             int,
@@ -362,9 +365,7 @@ def cumulative_runtime_delta(
 def collect_run_evidence(
     repository_root: Path, matrix_id: str, matrix_sha256: str
 ) -> list[dict[str, Any]]:
-    matrix_run_root = (
-        repository_root / ".runtime/benchmark-runs/tau-voice" / matrix_id
-    )
+    matrix_run_root = repository_root / ".runtime/benchmark-runs/tau-voice" / matrix_id
     if not matrix_run_root.is_dir():
         return []
     evidence: list[dict[str, Any]] = []
@@ -435,7 +436,9 @@ def sum_nested_counts(values: Iterable[dict[str, Any]]) -> dict[str, Any]:
     return dict(sorted(totals.items()))
 
 
-def aggregate_agent_metrics(domain_metrics: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def aggregate_agent_metrics(
+    domain_metrics: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
     metrics = list(domain_metrics.values())
 
     def mean_present(key: str) -> float | None:
@@ -465,7 +468,9 @@ def aggregate_agent_metrics(domain_metrics: dict[str, dict[str, Any]]) -> dict[s
         values = [metric.get(key, 0) for metric in metrics]
         if all(isinstance(value, dict) for value in values):
             result[key] = sum_nested_counts(values)
-        elif all(isinstance(value, int) and not isinstance(value, bool) for value in values):
+        elif all(
+            isinstance(value, int) and not isinstance(value, bool) for value in values
+        ):
             result[key] = sum(values)
     return result
 
@@ -474,7 +479,9 @@ def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     with temporary.open("w", encoding="utf-8") as stream:
-        json.dump(finite_json(payload), stream, indent=2, sort_keys=True, allow_nan=False)
+        json.dump(
+            finite_json(payload), stream, indent=2, sort_keys=True, allow_nan=False
+        )
         stream.write("\n")
         stream.flush()
         os.fsync(stream.fileno())
@@ -494,13 +501,38 @@ def main() -> int:
         raise IncompleteMatrixError("matrix contains duplicate cell IDs")
     if len(domain_names) != len(set(domain_names)):
         raise IncompleteMatrixError("matrix contains duplicate domains")
-    declared_tasks = sum(
-        domain["tasks"] for domain in matrix["benchmark"]["domains"]
-    )
+    declared_tasks = sum(domain["tasks"] for domain in matrix["benchmark"]["domains"])
     require_equal(
         declared_tasks,
         matrix["benchmark"]["total_tasks_per_cell"],
         "matrix total tasks per cell",
+    )
+    retries = matrix["benchmark"]["infrastructure_retries"]
+    retry_policy = matrix["reporting"]["infrastructure_retry_policy"]
+    require_equal(
+        retry_policy["maximum_retries"], retries, "infrastructure retry count"
+    )
+    require_equal(
+        retry_policy["maximum_attempts"], retries + 1, "infrastructure attempt count"
+    )
+    require_equal(
+        retry_policy["retry_delay_seconds"],
+        matrix["benchmark"]["infrastructure_retry_delay_seconds"],
+        "infrastructure retry delay",
+    )
+    require_equal(retry_policy["seed_reused"], True, "infrastructure retry seed")
+    require_equal(retry_policy["scope"], "exceptions_only", "retry scope")
+    require_equal(
+        retry_policy["semantic_outcomes_retried"], False, "semantic retry policy"
+    )
+    require_equal(
+        retry_policy["attempt_artifacts"], "preserved", "retry artifact policy"
+    )
+    require_equal(
+        matrix["transport"]["ping_interval_seconds"], 20, "transport ping interval"
+    )
+    require_equal(
+        matrix["transport"]["ping_timeout_seconds"], 0, "transport ping timeout"
     )
 
     expected_tau_revision = matrix["benchmark"]["revision"]
@@ -545,8 +577,7 @@ def main() -> int:
 
     if arguments.validate_only:
         print(
-            f"complete population: {matrix['matrix_id']} "
-            f"({', '.join(selected_cells)})"
+            f"complete population: {matrix['matrix_id']} ({', '.join(selected_cells)})"
         )
         return 0
 
@@ -591,6 +622,13 @@ def main() -> int:
             "task": "official tau2 compute_metrics per domain; equal-domain means overall",
             "interaction": "official tau2 compute_metrics_for_loaded_results and aggregate_domain_metrics",
             "partial_results": "forbidden",
+        },
+        "execution_policy": {
+            "transport": {
+                "ping_interval_seconds": matrix["transport"]["ping_interval_seconds"],
+                "ping_timeout_seconds": matrix["transport"]["ping_timeout_seconds"],
+            },
+            "infrastructure_retries": retry_policy,
         },
         "execution_evidence": collect_run_evidence(
             repository_root, matrix["matrix_id"], sha256_file(matrix_path)
