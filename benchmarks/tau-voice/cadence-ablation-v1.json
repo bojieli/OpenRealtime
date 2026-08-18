@@ -8,7 +8,7 @@
       "id": "c200",
       "role": "baseline",
       "tick_ms": 200,
-      "matrix": "benchmarks/tau-voice/matrix-v1.json"
+      "matrix": "benchmarks/tau-voice/matrix-canonical-v1.json"
     },
     {
       "id": "c050",

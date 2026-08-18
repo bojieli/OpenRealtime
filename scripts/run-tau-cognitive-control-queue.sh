@@ -33,6 +33,7 @@ if ! grep -Fx 'tau extended ablation queue complete' "${extended_log}" >/dev/nul
 fi
 
 echo "starting complete context-projection tau-Voice controls"
-"${repository_root}/scripts/run-tau-context-projection-ablation.sh" \
+"${repository_root}/scripts/with-study-runtime.sh" \
+  "${repository_root}/scripts/run-tau-context-projection-ablation.sh" \
   2>&1 | tee "${queue_root}/context-projection.log"
 echo "tau cognitive-control queue complete"

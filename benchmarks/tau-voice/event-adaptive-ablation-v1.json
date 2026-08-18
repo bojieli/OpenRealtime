@@ -7,7 +7,7 @@
     {
       "id": "fixed-200",
       "role": "endpoint-scale baseline",
-      "matrix": "benchmarks/tau-voice/matrix-v1.json"
+      "matrix": "benchmarks/tau-voice/matrix-canonical-v1.json"
     },
     {
       "id": "revision-event",

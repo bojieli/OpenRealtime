@@ -42,7 +42,7 @@
   "analysis": {
     "result_unit": "one complete 278-task speech-complexity cell",
     "primary": "pass^1 and exact tool outcome jointly with endpoint-to-first-semantic-audio latency and provider work",
-    "historical_baseline_use": "matrix-v1 remains an official task/interaction reference but is not the provider-work comparator because its live run predates provider health counters",
+    "baseline_use": "matrix-canonical-v1 is the frozen-runtime task/interaction baseline; the continuous-versus-endpoint pair is the provider-work comparator because both cells also carry adjacent health snapshots",
     "order_limitation": "this first complete pair has a fixed serial order; repeated randomized paired trials remain required for a magnitude claim",
     "no_private_composite": true,
     "partial_results_forbidden": true

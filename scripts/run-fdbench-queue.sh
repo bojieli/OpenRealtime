@@ -32,6 +32,7 @@ fi
 echo "starting complete released FD-Bench matrix"
 OPENREALTIME_API_KEY="${OPENREALTIME_GATEWAY_TOKEN}" \
   FDBENCH_RUN_TIMING_EVALUATOR=true \
+  "${repository_root}/scripts/with-study-runtime.sh" \
   "${repository_root}/scripts/run-fdbench-openrealtime.sh" \
   2>&1 | tee "${queue_root}/fd-bench-openrealtime.log"
 echo "FD-Bench queue complete"

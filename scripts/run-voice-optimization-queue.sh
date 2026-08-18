@@ -31,6 +31,7 @@ if ! grep -Fx 'voice benchmark queue complete' "${primary_log}" >/dev/null; then
 fi
 
 echo "starting complete paired Qwen3-ASR-1.7B tau-Voice ablation"
-"${repository_root}/scripts/run-tau-asr-ablation.sh" \
+"${repository_root}/scripts/with-study-runtime.sh" \
+  "${repository_root}/scripts/run-tau-asr-ablation.sh" \
   2>&1 | tee "${optimization_root}/tau-asr17.log"
 echo "voice optimization queue complete"

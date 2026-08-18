@@ -9,7 +9,7 @@
     "prohibited_adaptation": "No task text, expected tool call, identifier pattern, or benchmark label may be supplied to ASR or used for routing."
   },
   "baseline": {
-    "matrix": "benchmarks/tau-voice/matrix-v1.json",
+    "matrix": "benchmarks/tau-voice/matrix-canonical-v1.json",
     "model": "Qwen/Qwen3-ASR-0.6B",
     "model_revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
     "gpu_memory_utilization": 0.14

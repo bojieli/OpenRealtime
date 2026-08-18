@@ -3,7 +3,7 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-baseline_matrix="${repository_root}/benchmarks/tau-voice/matrix-v1.json"
+baseline_matrix="${repository_root}/benchmarks/tau-voice/matrix-canonical-v1.json"
 revision_matrix="${repository_root}/benchmarks/tau-voice/matrix-revision-event-v1.json"
 adaptive_matrix="${repository_root}/benchmarks/tau-voice/matrix-adaptive-v1.json"
 restored=false
@@ -30,6 +30,7 @@ start_profile() {
   OPENREALTIME_ASR_PROVIDER_CHUNK="${minimum_chunk}" \
   OPENREALTIME_ASR_PROVIDER_MAX_CHUNK="${maximum_chunk}" \
   OPENREALTIME_SLOW_EFFORT=high \
+  OPENREALTIME_PREPARATION_POLICY=continuous \
   OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
     "${repository_root}/scripts/local-cascade.sh" start
 
@@ -72,6 +73,7 @@ restore_baseline() {
     OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
     OPENREALTIME_ASR_PROVIDER_MAX_CHUNK=0s \
     OPENREALTIME_SLOW_EFFORT=high \
+    OPENREALTIME_PREPARATION_POLICY=continuous \
     OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
       "${repository_root}/scripts/local-cascade.sh" start || true
   fi
@@ -81,8 +83,8 @@ trap restore_baseline EXIT
 "${repository_root}/scripts/report-tau-voice-matrix.sh" \
   "${baseline_matrix}" "" \
   --validate-only \
-  --cell i1-qg-control \
-  --cell i1-qg-regular
+  --cell i1-qg-canonical-control \
+  --cell i1-qg-canonical-regular
 
 # Both conditions receive 50 ms input opportunities. The control preserves
 # fixed 200 ms provider advances; the candidate changes only the typed

@@ -4,7 +4,7 @@
   "frozen_at": "2026-08-18T00:00:00Z",
   "hypothesis": "Gemini 3.5 Flash at minimal thinking is a slower but more policy-consistent fast continuation than local no-thinking Qwen, while exact same-model continuation into high-thinking Gemini can improve final tool correctness and trajectory consistency.",
   "baseline": {
-    "matrix": "benchmarks/tau-voice/matrix-v1.json",
+    "matrix": "benchmarks/tau-voice/matrix-canonical-v1.json",
     "fast_provider": "vllm",
     "fast_model": "Qwen/Qwen3-30B-A3B-FP8",
     "fast_effort": "minimal",

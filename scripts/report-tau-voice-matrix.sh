@@ -3,7 +3,7 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-matrix="${1:-${repository_root}/benchmarks/tau-voice/matrix-v1.json}"
+matrix="${1:-${repository_root}/benchmarks/tau-voice/matrix-canonical-v1.json}"
 if [[ $# -gt 0 ]]; then
   shift
 fi

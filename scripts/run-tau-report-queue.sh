@@ -26,7 +26,7 @@ if ! grep -Fx 'fast-provider queue complete' "${fast_log}" >/dev/null; then
   exit 1
 fi
 
-for matrix_name in matrix-v1 matrix-asr17-v1 matrix-fast-gemini-v1; do
+for matrix_name in matrix-canonical-v1 matrix-asr17-v1 matrix-fast-gemini-v1; do
   echo "reporting complete ${matrix_name}"
   "${repository_root}/scripts/report-tau-voice-matrix.sh" \
     "${repository_root}/benchmarks/tau-voice/${matrix_name}.json" \

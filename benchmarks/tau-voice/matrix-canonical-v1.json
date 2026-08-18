@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
-  "matrix_id": "openrealtime-tau-voice-cadence800-v1",
-  "frozen_at": "2026-08-18T00:00:00Z",
+  "matrix_id": "openrealtime-tau-voice-canonical-v1",
+  "frozen_at": "2026-08-18T18:40:00Z",
   "benchmark": {
     "repository": "https://github.com/sierra-research/tau2-bench",
     "revision": "c3398666e6559e3a063da3fc04b5acf7f941464e",
@@ -23,12 +23,12 @@
       }
     ],
     "total_tasks_per_cell": 278,
+    "tick_seconds": 0.2,
     "max_concurrency": 1,
     "task_timeout_seconds": 1500,
     "conversation_timeout_seconds": 1200,
     "semantic_retries": 0,
-    "hallucination_retries": 0,
-    "tick_seconds": 0.8
+    "hallucination_retries": 0
   },
   "transport": {
     "adapter": "upstream DiscreteTimeOpenAIAdapter",
@@ -38,9 +38,9 @@
     "wire_protocol_changed": false
   },
   "system": {
-    "condition": "I1-QG-C800",
-    "trigger_policy": "fixed 800 ms tau audio frames and stateful ASR provider advances; final ASR, interruption, and tool-result events remain immediate",
-    "asr": "Qwen/Qwen3-ASR-0.6B, stateful 800 ms provider advances",
+    "condition": "I1-QG-CANONICAL",
+    "asr": "Qwen/Qwen3-ASR-0.6B, stateful 200 ms provider advances",
+    "scheduler": "50 ms internal opportunities projected to 200 ms tau ticks",
     "fast": "Qwen/Qwen3-30B-A3B-FP8 via vLLM, enable_thinking=false, proposal-only tool authority",
     "slow": "gemini-3.5-flash, high thinking, execute tool authority, exact canonical continuation",
     "tool_resumption": "complete external result batch resumes slow from the exact extended prefix; fast is not rerun",
@@ -52,12 +52,12 @@
       "source_revision": "3048160ee444c69941d6d4e12ddc47cea789afd0",
       "executable_sha256": "2168fe5a7b5dbef6051a6983a9148f0cc84434a64284b59cfd699f491a3d5df2"
     },
-    "preparation_policy": "continuous",
     "slow_context": "canonical",
+    "preparation_policy": "continuous",
     "requires_local_fast": true,
     "asr": {
       "model": "Qwen/Qwen3-ASR-0.6B",
-      "provider_chunk_ms": 800
+      "provider_chunk_ms": 200
     },
     "gateway_profiles": {
       "fast": {
@@ -72,30 +72,34 @@
         "effort": "high",
         "tool_authority": "execute"
       }
+    },
+    "speech": {
+      "name": "openai-speech-streaming/fishaudio/s2-pro",
+      "version": "openai-audio-speech-1"
     }
   },
   "cells": [
     {
-      "id": "i1-qg-c800-control",
+      "id": "i1-qg-canonical-control",
       "speech_complexity": "control",
       "voice_registry": "benchmarks/tau-voice/voices/fish-s2pro-personas-v1.json",
       "status": "preregistered"
     },
     {
-      "id": "i1-qg-c800-regular",
+      "id": "i1-qg-canonical-regular",
       "speech_complexity": "regular",
       "voice_registry": "benchmarks/tau-voice/voices/fish-s2pro-personas-v1.json",
       "status": "preregistered"
     }
   ],
   "reporting": {
-    "paired_baseline": "benchmarks/tau-voice/matrix-canonical-v1.json",
-    "only_intended_trigger_change": "tau audio frame, gateway ASR provider advance, and Qwen server chunk change together from 200 ms to 800 ms",
-    "semantic_event_policy_unchanged": true,
+    "runtime_manifest": "benchmarks/runtime/canonical-gateway-v1.json",
+    "supersedes_for_causal_comparison": "benchmarks/tau-voice/matrix-v1.json",
+    "supersession_reason": "the earlier control started on a pre-freeze gateway binary and remains preserved as pilot evidence rather than being mixed with later runtime conditions",
     "preserve_failures": true,
     "auto_resume_infrastructure_interruptions": true,
     "result_unit": "one complete 278-task speech-complexity cell",
-    "partial_run_label": "incomplete cadence ablation cell; not a tau-Voice score",
-    "cost_note": "tau's agent ledger is a compatibility-model pricing proxy; provider advances and local GPU telemetry are separate outcomes"
+    "partial_run_label": "incomplete cell; not a tau-Voice score",
+    "cost_note": "tau's agent ledger is a compatibility-model pricing proxy, not local Qwen/Gemini/Fish spend"
   }
 }

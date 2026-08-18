@@ -34,18 +34,21 @@ for domain_tasks in airline:50 retail:114 telecom:114; do
   fi
 done
 
-echo "starting complete tau regular cell"
-"${repository_root}/scripts/run-tau-voice-matrix.sh" i1-qg-regular \
-  2>&1 | tee "${queue_root}/tau-regular.log"
+echo "starting complete frozen-runtime tau canonical baseline"
+"${repository_root}/scripts/with-study-runtime.sh" \
+  "${repository_root}/scripts/run-tau-canonical-baseline.sh" \
+  2>&1 | tee "${queue_root}/tau-canonical.log"
 
 echo "starting complete Full-Duplex-Bench v1.5 overlap population"
 OPENREALTIME_API_KEY="${OPENREALTIME_GATEWAY_TOKEN}" \
+  "${repository_root}/scripts/with-study-runtime.sh" \
   "${repository_root}/scripts/run-fdb15-openrealtime.sh" \
   2>&1 | tee "${queue_root}/fdb15-openrealtime.log"
 
 echo "starting complete Full-Duplex-Bench v3 tool-use population"
 OPENREALTIME_API_KEY="${OPENREALTIME_GATEWAY_TOKEN}" \
   FDBV3_USE_LLM_JUDGE="${FDBV3_USE_LLM_JUDGE:-true}" \
+  "${repository_root}/scripts/with-study-runtime.sh" \
   "${repository_root}/scripts/run-fdb-v3-openrealtime.sh" \
   2>&1 | tee "${queue_root}/fdb-v3-openrealtime.log"
 

@@ -34,6 +34,7 @@ if ! grep -Fx 'FD-Bench queue complete' "${fd_log}" >/dev/null; then
 fi
 
 echo "starting complete paired Gemini-fast tau-Voice ablation"
-"${repository_root}/scripts/run-tau-fast-ablation.sh" \
+"${repository_root}/scripts/with-study-runtime.sh" \
+  "${repository_root}/scripts/run-tau-fast-ablation.sh" \
   2>&1 | tee "${queue_root}/tau-gemini-fast.log"
 echo "fast-provider queue complete"

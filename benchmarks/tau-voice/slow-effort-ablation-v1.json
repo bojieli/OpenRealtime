@@ -8,7 +8,7 @@
       "id": "high",
       "role": "baseline",
       "effort": "high",
-      "matrix": "benchmarks/tau-voice/matrix-v1.json"
+      "matrix": "benchmarks/tau-voice/matrix-canonical-v1.json"
     },
     {
       "id": "medium",

@@ -23,6 +23,19 @@ trap cleanup EXIT
 gateway_health="$(curl --fail --silent --show-error http://127.0.0.1:8765/healthz)"
 runtime_identity="$("${repository_root}/scripts/capture-local-runtime-identity.sh")"
 revision="$(git -C "${repository_root}" rev-parse HEAD)"
+expected_gateway_sha256="${OPENREALTIME_GATEWAY_SHA256:-}"
+if [[ -n "${expected_gateway_sha256}" ]]; then
+  if [[ ! "${expected_gateway_sha256}" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "OPENREALTIME_GATEWAY_SHA256 is invalid" >&2
+    exit 1
+  fi
+  if ! jq -e --arg sha256 "${expected_gateway_sha256}" \
+    '.components.gateway.executable_sha256 == $sha256' \
+    <<<"${runtime_identity}" >/dev/null; then
+    echo "gateway binary does not match OPENREALTIME_GATEWAY_SHA256" >&2
+    exit 1
+  fi
+fi
 
 if [[ "${action}" == start ]]; then
   if [[ -n "$(git -C "${repository_root}" status --porcelain=v1 --untracked-files=normal)" ]]; then
@@ -33,6 +46,7 @@ if [[ "${action}" == start ]]; then
     --arg benchmark "${benchmark}" \
     --arg started_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg revision "${revision}" \
+    --arg study_gateway_sha256 "${expected_gateway_sha256}" \
     --argjson gateway_health "${gateway_health}" \
     --argjson runtime_identity "${runtime_identity}" \
     '{
@@ -40,6 +54,7 @@ if [[ "${action}" == start ]]; then
       started_at:$started_at,
       openrealtime_revision_start:$revision,
       source_worktree_clean_start:true,
+      study_gateway_sha256:(if $study_gateway_sha256 == "" then null else $study_gateway_sha256 end),
       gateway_health_start:$gateway_health,
       runtime_identity_start:$runtime_identity
     }')"
@@ -86,6 +101,13 @@ else
      .invocations[-1].runtime_identity_start.components == $runtime_identity.components' \
     "${output}" >/dev/null; then
     echo "benchmark runtime identity changed before completion" >&2
+    exit 1
+  fi
+  if [[ -n "${expected_gateway_sha256}" ]] && ! jq -e \
+    --arg sha256 "${expected_gateway_sha256}" \
+    '.invocations[-1].study_gateway_sha256 == $sha256' \
+    "${output}" >/dev/null; then
+    echo "benchmark start was not bound to the current frozen gateway" >&2
     exit 1
   fi
   jq \

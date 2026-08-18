@@ -33,11 +33,13 @@ if ! grep -Fx 'tau reporting queue complete' "${report_log}" >/dev/null; then
 fi
 
 echo "starting complete fixed-cadence tau-Voice ablation"
-"${repository_root}/scripts/run-tau-cadence-ablation.sh" \
+"${repository_root}/scripts/with-study-runtime.sh" \
+  "${repository_root}/scripts/run-tau-cadence-ablation.sh" \
   2>&1 | tee "${queue_root}/cadence.log"
 
 echo "starting complete slow-effort tau-Voice ablation"
-"${repository_root}/scripts/run-tau-slow-effort-ablation.sh" \
+"${repository_root}/scripts/with-study-runtime.sh" \
+  "${repository_root}/scripts/run-tau-slow-effort-ablation.sh" \
   2>&1 | tee "${queue_root}/slow-effort.log"
 
 echo "tau extended ablation queue complete"

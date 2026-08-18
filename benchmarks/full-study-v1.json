@@ -7,6 +7,10 @@
     "cross_benchmark_composite": "forbidden",
     "presentation": "benchmark-specific evidence panel"
   },
+  "runtime": {
+    "path": "benchmarks/runtime/canonical-gateway-v1.json",
+    "sha256": "7bb24e3f42963f2f51185172dbdf04240f5d0b2293c51fec8ec9f155efeeb57e"
+  },
   "tau_voice": {
     "source_manifest": {
       "path": "benchmarks/external/tau-voice.manifest.json",
@@ -14,60 +18,60 @@
     },
     "matrices": [
       {
-        "path": "benchmarks/tau-voice/matrix-v1.json",
-        "sha256": "4762e9c69fb9eb9bf7eb47ea58340bb3121f6209faf2175d973e1978e3ab106b"
+        "path": "benchmarks/tau-voice/matrix-canonical-v1.json",
+        "sha256": "fd8aa09ddce4ab225122a9d921c8b261c0274d68fa898030a35c847ee7f0f577"
       },
       {
         "path": "benchmarks/tau-voice/matrix-asr17-v1.json",
-        "sha256": "23c1fee76900fc935d9ca54a8354245f0dc453b123424a34cfe94b841c128c50"
+        "sha256": "8cce55ff667f0d50cf340c1e1dd70630ce4d4a1d512b683a73c89b6cbc88c660"
       },
       {
         "path": "benchmarks/tau-voice/matrix-fast-gemini-v1.json",
-        "sha256": "01637c39ffa8c77cc9ca6879f9afdef56107da7228cbb5c9c26ecc73dbf707a0"
+        "sha256": "13cadc02c486528135bf35c6ba38a0156d6da717b6f63a051a25e4ad753aab84"
       },
       {
         "path": "benchmarks/tau-voice/matrix-cadence050-v1.json",
-        "sha256": "4fe9bfa14ad3bfa4087943a3ba179748d6c96ba84a13ecdbe2ec888d5fe2d041"
+        "sha256": "c1f55ac01584b610f077df556c9bccde495ab3e31d4eea5aa2e4703a95b66f6e"
       },
       {
         "path": "benchmarks/tau-voice/matrix-cadence100-v1.json",
-        "sha256": "355714c93ba39cb8f7a86fa3d76f4639d7c7538abb0fb8595eb0b262f8af12bb"
+        "sha256": "5a92036530c6e0277e4135c1e84a54adc18893e173f5d226092a82848ca811c0"
       },
       {
         "path": "benchmarks/tau-voice/matrix-cadence400-v1.json",
-        "sha256": "f9d4a42b32650c7e157a22a30b42e5836c90608a76cda1dcb8c2c79071b415f7"
+        "sha256": "8b0e5d45d0b1d264f51690ae41518bd3055def93e3ffe8c4b7a9045f791331b6"
       },
       {
         "path": "benchmarks/tau-voice/matrix-cadence800-v1.json",
-        "sha256": "aa033700557182ba7ff1ba120e11ff2272486c8bf9189fdc03cc28fd4a5b41a7"
+        "sha256": "b288e6aac306ea28b7013a991f9d7585ab08cef8f927560de4b665fb69433374"
       },
       {
         "path": "benchmarks/tau-voice/matrix-slow-medium-v1.json",
-        "sha256": "4ba0d99948d550b52fbf78e4d391140333e843ad101788f2fb8ac9cd93c9af04"
+        "sha256": "90688ca629319bfa33a54d9bc90dcaa850a94d44e25c8705a4ed063e5f52df24"
       },
       {
         "path": "benchmarks/tau-voice/matrix-content-only-v1.json",
-        "sha256": "7fa0fac66f22efd9a7512b3d59454895cd7026141a2e6c4943b0c22d679df780"
+        "sha256": "96206647b1002b21f5e492ab5cdf1a47071befb4f286f4849c95ed89e512ff43"
       },
       {
         "path": "benchmarks/tau-voice/matrix-independent-v1.json",
-        "sha256": "8ae1e912663467ccdc6bfd2a3cb05379aad01069ed531ca2ce716e1042989eab"
+        "sha256": "2a57156cb3a2ff3525e4d13a266ba5adb7bbb88d74a0bcc66ae9857af40fa77b"
       },
       {
         "path": "benchmarks/tau-voice/matrix-revision-event-v1.json",
-        "sha256": "63b7c865126500d6f7efc25d7969ded77dbbe5768375cb6c9b58851e876b18ae"
+        "sha256": "2e9301cec657c00aa2844869338ec250b24e8d088dd22084718f8283e62ff75d"
       },
       {
         "path": "benchmarks/tau-voice/matrix-adaptive-v1.json",
-        "sha256": "395d72b2c2ee7ed2073422d6c3f39513b449abf8b67b24aafef9df83d5cd8ba7"
+        "sha256": "5790a9b34a7500e5462c0d59c7989e358dc45b87c9fb81f08562b4b2c2bb7748"
       },
       {
         "path": "benchmarks/tau-voice/matrix-continuous-preparation-v1.json",
-        "sha256": "b43dbd522a2ee864fe0399d77a7d828d7aba1e10853154539f68d54ff55cbf0f"
+        "sha256": "9ef56dedc1640e0cf3110f2d54a24bf898c2b8add9b0ae606e6ef7bb7a356902"
       },
       {
         "path": "benchmarks/tau-voice/matrix-endpoint-preparation-v1.json",
-        "sha256": "e05baea9db0c8ebf7a992397d844791afa050a585ec11ba673da344be6dad9db"
+        "sha256": "ceec5410ed47e28aa4e7343de9347e94da666ddc993d052a3ca122d0e6920846"
       }
     ],
     "paired_reports": [
@@ -75,7 +79,7 @@
         "id": "openrealtime-tau-voice-endpoint-preparation-ablation-v1",
         "definition": {
           "path": "benchmarks/tau-voice/endpoint-preparation-ablation-v1.json",
-          "sha256": "3c185e2ff21503f419ead7d600ba1bfb22e9251885e1d7bfdff3f55e4794d11d"
+          "sha256": "cad7226b3ea4e6112f879f383c83a3e624541761e2dc82bf5f7d4359f68876fb"
         },
         "report": ".runtime/benchmark-runs/tau-voice/openrealtime-tau-voice-endpoint-preparation-ablation-v1/report.json"
       }

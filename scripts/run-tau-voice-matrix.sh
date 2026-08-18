@@ -3,7 +3,7 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-matrix="${TAU_VOICE_MATRIX:-${repository_root}/benchmarks/tau-voice/matrix-v1.json}"
+matrix="${TAU_VOICE_MATRIX:-${repository_root}/benchmarks/tau-voice/matrix-canonical-v1.json}"
 tau2_directory="${TAU2_DIR:-${repository_root}/.runtime/tau2-bench}"
 selected_cell="${1:-}"
 matrix_root="${repository_root}/.runtime/benchmark-runs/tau-voice/$(jq -r '.matrix_id' "${matrix}")"

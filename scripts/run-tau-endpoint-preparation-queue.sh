@@ -33,6 +33,7 @@ if ! grep -Fx 'tau event-adaptive queue complete' "${event_log}" >/dev/null; the
 fi
 
 echo "starting complete endpoint-preparation tau-Voice control"
-"${repository_root}/scripts/run-tau-endpoint-preparation-ablation.sh" \
+"${repository_root}/scripts/with-study-runtime.sh" \
+  "${repository_root}/scripts/run-tau-endpoint-preparation-ablation.sh" \
   2>&1 | tee "${queue_root}/endpoint-preparation.log"
 echo "tau endpoint-preparation queue complete"

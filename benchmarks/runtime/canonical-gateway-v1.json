@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0.0",
+  "runtime_id": "openrealtime-canonical-gateway-v1",
+  "source_revision": "3048160ee444c69941d6d4e12ddc47cea789afd0",
+  "binary_sha256": "2168fe5a7b5dbef6051a6983a9148f0cc84434a64284b59cfd699f491a3d5df2",
+  "runtime_path": ".runtime/study-runtime/canonical-gateway-v1/realtimegateway",
+  "build": {
+    "go": "/usr/local/go/bin/go",
+    "go_version": "go1.25.0 linux/amd64",
+    "command": "go build -trimpath -buildvcs=false ./cmd/realtimegateway",
+    "cgo_enabled": true,
+    "goarch": "amd64",
+    "goos": "linux",
+    "goamd64": "v1"
+  },
+  "scope": "Every publishable local cascade cell and external-adapter population in full-study-v1 uses this exact gateway executable."
+}

@@ -33,6 +33,7 @@ if ! grep -Fx 'tau cognitive-control queue complete' "${cognitive_log}" >/dev/nu
 fi
 
 echo "starting complete revision-event and adaptive tau-Voice controls"
-"${repository_root}/scripts/run-tau-event-adaptive-ablation.sh" \
+"${repository_root}/scripts/with-study-runtime.sh" \
+  "${repository_root}/scripts/run-tau-event-adaptive-ablation.sh" \
   2>&1 | tee "${queue_root}/event-adaptive.log"
 echo "tau event-adaptive queue complete"

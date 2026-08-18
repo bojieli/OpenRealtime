@@ -48,6 +48,11 @@
     "caller_speech": "fishaudio/s2-pro on the same local GPU through the separately named tau Fish backend"
   },
   "runtime_requirements": {
+    "gateway": {
+      "source_revision": "3048160ee444c69941d6d4e12ddc47cea789afd0",
+      "executable_sha256": "2168fe5a7b5dbef6051a6983a9148f0cc84434a64284b59cfd699f491a3d5df2"
+    },
+    "preparation_policy": "continuous",
     "slow_context": "canonical",
     "requires_local_fast": true,
     "asr": {
@@ -84,7 +89,7 @@
     }
   ],
   "reporting": {
-    "paired_baseline": "benchmarks/tau-voice/matrix-v1.json",
+    "paired_baseline": "benchmarks/tau-voice/matrix-canonical-v1.json",
     "only_intended_trigger_change": "tau audio frame, gateway ASR provider advance, and Qwen server chunk change together from 200 ms to 400 ms",
     "semantic_event_policy_unchanged": true,
     "preserve_failures": true,

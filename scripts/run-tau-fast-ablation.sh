@@ -4,7 +4,7 @@ set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 baseline_data="${repository_root}/.runtime/tau2-bench/data/simulations"
-baseline_matrix="${repository_root}/benchmarks/tau-voice/matrix-v1.json"
+baseline_matrix="${repository_root}/benchmarks/tau-voice/matrix-canonical-v1.json"
 candidate_matrix="${repository_root}/benchmarks/tau-voice/matrix-fast-gemini-v1.json"
 restored=false
 
@@ -18,14 +18,14 @@ done
 "${repository_root}/scripts/report-tau-voice-matrix.sh" \
   "${baseline_matrix}" "" \
   --validate-only \
-  --cell i1-qg-control \
-  --cell i1-qg-regular
+  --cell i1-qg-canonical-control \
+  --cell i1-qg-canonical-regular
 
-for cell in i1-qg-control i1-qg-regular; do
+for cell in i1-qg-canonical-control i1-qg-canonical-regular; do
   for domain_tasks in airline:50 retail:114 telecom:114; do
     domain="${domain_tasks%%:*}"
     expected="${domain_tasks##*:}"
-    simulation_dir="${baseline_data}/openrealtime-tau-voice-matrix-v1-${cell}-${domain}-seed300/simulations"
+    simulation_dir="${baseline_data}/openrealtime-tau-voice-canonical-v1-${cell}-${domain}-seed300/simulations"
     actual=0
     if [[ -d "${simulation_dir}" ]]; then
       actual="$(find "${simulation_dir}" -maxdepth 1 -type f -name '*.json' | wc -l)"
@@ -45,6 +45,7 @@ restore_local_fast() {
     OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
     OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
     OPENREALTIME_ASR_PROVIDER_MAX_CHUNK=0s \
+    OPENREALTIME_PREPARATION_POLICY=continuous \
     OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
       "${repository_root}/scripts/local-cascade.sh" start
     restored=true
@@ -62,6 +63,7 @@ OPENREALTIME_ASR_MODEL=Qwen/Qwen3-ASR-0.6B \
 OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
 OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
 OPENREALTIME_ASR_PROVIDER_MAX_CHUNK=0s \
+OPENREALTIME_PREPARATION_POLICY=continuous \
 OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
   "${repository_root}/scripts/local-cascade.sh" start
 
