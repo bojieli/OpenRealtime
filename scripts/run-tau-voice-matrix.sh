@@ -53,6 +53,14 @@ if ! curl --fail --silent --show-error http://127.0.0.1:8001/ >/dev/null; then
   exit 1
 fi
 runtime_identity="$("${repository_root}/scripts/capture-local-runtime-identity.sh")"
+expected_gateway_sha256="$(jq -r '.runtime_requirements.gateway.executable_sha256 // empty' "${matrix}")"
+if [[ -n "${expected_gateway_sha256}" ]] && \
+  ! jq -e --arg sha256 "${expected_gateway_sha256}" \
+    '.components.gateway.executable_sha256 == $sha256' \
+    <<<"${runtime_identity}" >/dev/null; then
+  echo "gateway binary does not match the preregistered matrix" >&2
+  exit 1
+fi
 expected_asr_model="$(jq -r '.runtime_requirements.asr.model // empty' "${matrix}")"
 if [[ -n "${expected_asr_model}" ]]; then
   expected_asr_chunk_ms="$(jq -r '.runtime_requirements.asr.provider_chunk_ms' "${matrix}")"
@@ -248,8 +256,20 @@ for cell in "${cells[@]}"; do
 done
 
 gateway_health_final="$(curl --fail --silent --show-error http://127.0.0.1:8765/healthz)"
+runtime_identity_final="$("${repository_root}/scripts/capture-local-runtime-identity.sh")"
+if ! jq -en \
+  --argjson initial "${runtime_identity}" \
+  --argjson final "${runtime_identity_final}" \
+  '$initial.host_boot_id == $final.host_boot_id and $initial.components == $final.components' \
+  >/dev/null; then
+  echo "local runtime process identity changed during the tau matrix invocation" >&2
+  exit 1
+fi
 jq --argjson gateway_health_final "${gateway_health_final}" \
-  '.status="complete" | .gateway_health_final=$gateway_health_final | .completed_at=now | .completed_at |= todateiso8601' \
+  --argjson runtime_identity_final "${runtime_identity_final}" \
+  '.status="complete" | .gateway_health_final=$gateway_health_final |
+   .runtime_identity_final=$runtime_identity_final |
+   .completed_at=now | .completed_at |= todateiso8601' \
   "${run_root}/run.json" >"${run_root}/run.json.next"
 mv "${run_root}/run.json.next" "${run_root}/run.json"
 run_status="complete"

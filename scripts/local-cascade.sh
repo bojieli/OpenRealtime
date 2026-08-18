@@ -128,7 +128,36 @@ case "${action}" in
       echo "OPENREALTIME_FAST_PROVIDER must be vllm or gemini" >&2
       exit 1
     fi
-    /usr/local/go/bin/go build -o "${runtime_dir}/bin/realtimegateway" ./cmd/realtimegateway
+    gateway_binary="${OPENREALTIME_GATEWAY_BINARY:-}"
+    gateway_sha256="${OPENREALTIME_GATEWAY_SHA256:-}"
+    if [[ -n "${gateway_binary}" ]]; then
+      if [[ "${gateway_binary}" != /* || ! -x "${gateway_binary}" ]]; then
+        echo "OPENREALTIME_GATEWAY_BINARY must name an absolute executable file" >&2
+        exit 1
+      fi
+      if [[ ! "${gateway_sha256}" =~ ^[0-9a-f]{64}$ ]]; then
+        echo "OPENREALTIME_GATEWAY_SHA256 must pin the supplied gateway binary" >&2
+        exit 1
+      fi
+      actual_gateway_sha256="$(sha256sum "${gateway_binary}" | cut -d ' ' -f 1)"
+      if [[ "${actual_gateway_sha256}" != "${gateway_sha256}" ]]; then
+        echo "frozen gateway hash mismatch: expected ${gateway_sha256}, found ${actual_gateway_sha256}" >&2
+        exit 1
+      fi
+      if health http://127.0.0.1:8765/healthz && [[ -f "${pid_dir}/gateway.pid" ]]; then
+        live_gateway_pid="$(<"${pid_dir}/gateway.pid")"
+        if [[ "${live_gateway_pid}" =~ ^[1-9][0-9]*$ ]] && kill -0 "${live_gateway_pid}" 2>/dev/null; then
+          live_gateway_sha256="$(sha256sum "/proc/${live_gateway_pid}/exe" | cut -d ' ' -f 1)"
+          if [[ "${live_gateway_sha256}" != "${gateway_sha256}" ]]; then
+            echo "healthy gateway ${live_gateway_pid} is not the requested frozen binary" >&2
+            exit 1
+          fi
+        fi
+      fi
+    else
+      gateway_binary="${runtime_dir}/bin/realtimegateway"
+      /usr/local/go/bin/go build -o "${gateway_binary}" ./cmd/realtimegateway
+    fi
 
     cuda_home="${repository_root}/.runtime/sglang-omni/lib/python3.12/site-packages/nvidia/cu13"
     start_process fish http://127.0.0.1:8081/health \
@@ -160,7 +189,7 @@ case "${action}" in
       env \
         OPENREALTIME_GATEWAY_TOKEN="${OPENREALTIME_GATEWAY_TOKEN}" \
         GEMINI_API_KEY="${GEMINI_API_KEY}" \
-      "${runtime_dir}/bin/realtimegateway" \
+      "${gateway_binary}" \
         --asr-model "${asr_model}" \
         --asr-provider-chunk "${OPENREALTIME_ASR_PROVIDER_CHUNK:-200ms}" \
         --asr-provider-max-chunk "${OPENREALTIME_ASR_PROVIDER_MAX_CHUNK:-0s}" \
