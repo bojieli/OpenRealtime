@@ -214,13 +214,16 @@ pin the v1.0.0 release and run the same public conformance suite.
   Fish S2-Pro, 50 ms scheduler/200 ms provider buffering, exact-match fast
   → slow private preparation, content-independent slow-launch pacing with
   exact-commit bypass, priority/capacity admission on one 96 GB GPU, and a
-  persistent standard Realtime gateway with 100 ms paced Fish output
+  persistent standard Realtime gateway with 100 ms paced Fish output; a closed
+  endpoint-only policy suppresses partial-revision continuation work while
+  preserving the same post-endpoint event loop
 - Evidence: `docs/live-cascade.md`, the exact-scored
   `realtime-benchmark-v0.6` background result, v0.7 endpointed/fast-only
   controls, the v0.8 one-second pacing ablation, and preserved negative results
   in `benchmarks/results/`
-- Required comparisons: endpointed, 50/100/200/400/800 ms, revision-event, and
-  adaptive scheduling using the same component versions
+- Required comparisons: complete endpoint-only, 50/100/200/400/800 ms,
+  revision-event, and adaptive populations using the same component versions;
+  all are frozen and queued
 - Boundary: fixed ticks are opportunities; actual component invocations are
   reported separately
 - Live gate: 12/12 selected official τ OpenAI-provider cases pass
@@ -279,3 +282,6 @@ pin the v1.0.0 release and run the same public conformance suite.
   Gemini high-thinking slow phase and all task/voice/runtime variables remain
   fixed
 - Architectural references: GPT-Live and TML Interaction Models
+- Trigger-time control: a complete endpoint-only preparation population runs
+  after the revision/adaptive queue; it changes no provider, prompt, tool,
+  speech, VAD, or post-endpoint transition

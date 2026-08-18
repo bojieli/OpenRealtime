@@ -111,6 +111,13 @@ quality. These runs do not establish a latency/cost distribution or
 native-model parity. See the
 [live cascade design and evidence](docs/live-cascade.md).
 
+The gateway exposes two closed, content-independent preparation policies.
+`continuous` admits private latest-wins fast→slow work on typed changed ASR
+revisions; `endpoint-only` admits no continuation work until server VAD commits
+the final ASR observation. Both then enter the identical canonical fast→slow
+event loop and tool-result resumption path. This is an internal experimental
+control and adds no Realtime wire events or model-authored routing decision.
+
 M10 full-benchmark execution is in progress. The frozen local condition runs
 all 278 public τ-Voice tasks in both control and regular speech, then all 498
 FDB v1.5 overlap recordings and all 100 released FDB v3 tool-use recordings.
@@ -132,7 +139,10 @@ comparison. Native architectural context names GPT-Live and Thinking Machines
 Lab Interaction Models; neither is relabeled as an executed local cell without
 a public callable endpoint. Complete content-only and independent context
 controls then test the canonical handoff using typed trajectory projections;
-they remain one-store benchmark controls, not production routing modes.
+they remain one-store benchmark controls, not production routing modes. The
+revision-event and bounded adaptive-ASR populations follow, then a complete
+endpoint-only preparation population isolates the benefit of pre-endpoint
+cognition with the same models, prompts, tools, VAD, and post-endpoint path.
 
 ## Start here
 

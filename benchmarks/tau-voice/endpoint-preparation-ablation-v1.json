@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0.0",
+  "ablation_id": "openrealtime-tau-voice-endpoint-preparation-ablation-v1",
+  "frozen_at": "2026-08-18T00:00:00Z",
+  "hypothesis": "typed partial-revision preparation reduces endpoint-to-semantic-audio latency without weakening task and tool correctness relative to an endpoint-only preparation control",
+  "conditions": [
+    {
+      "id": "continuous",
+      "role": "candidate",
+      "matrix": "benchmarks/tau-voice/matrix-continuous-preparation-v1.json",
+      "preparation_policy": "continuous"
+    },
+    {
+      "id": "endpoint-only",
+      "role": "trigger-time control",
+      "matrix": "benchmarks/tau-voice/matrix-endpoint-preparation-v1.json",
+      "preparation_policy": "endpoint-only"
+    }
+  ],
+  "invariants": [
+    "standard OpenAI Realtime wire events and server VAD configuration",
+    "complete task and speech populations, seed, simulator tick, timeout, retry, and concurrency",
+    "ASR, fast, slow, and speech models, prompts, tools, authority, and placement",
+    "one canonical store and the same fast-to-slow event loop after the final ASR observation",
+    "complete tool-result batches resume slow from the exact extended prefix"
+  ],
+  "intervention": {
+    "continuous": "typed changed partial ASR revisions may open private latest-wins fast-to-slow preparation",
+    "endpoint-only": "partial ASR revisions cannot invoke either continuation provider; final ASR opens the ordinary canonical loop",
+    "prohibited_inputs": [
+      "transcript content",
+      "keywords",
+      "task ID",
+      "difficulty classification",
+      "benchmark answer"
+    ]
+  },
+  "execution_order": [
+    "continuous",
+    "endpoint-only"
+  ],
+  "analysis": {
+    "result_unit": "one complete 278-task speech-complexity cell",
+    "primary": "pass^1 and exact tool outcome jointly with endpoint-to-first-semantic-audio latency and provider work",
+    "historical_baseline_use": "matrix-v1 remains an official task/interaction reference but is not the provider-work comparator because its live run predates provider health counters",
+    "order_limitation": "this first complete pair has a fixed serial order; repeated randomized paired trials remain required for a magnitude claim",
+    "no_private_composite": true,
+    "partial_results_forbidden": true
+  }
+}

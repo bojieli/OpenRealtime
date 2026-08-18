@@ -95,6 +95,13 @@ if [[ -n "${expected_slow_context}" ]] && \
   echo "gateway slow-context policy does not match the preregistered matrix" >&2
   exit 1
 fi
+expected_preparation_policy="$(jq -r '.runtime_requirements.preparation_policy // empty' "${matrix}")"
+if [[ -n "${expected_preparation_policy}" ]] && \
+  ! jq -e --arg policy "${expected_preparation_policy}" '.preparation_policy == $policy' \
+    <<<"${gateway_health}" >/dev/null; then
+  echo "gateway preparation policy does not match the preregistered matrix" >&2
+  exit 1
+fi
 
 mkdir -p "${run_root}"
 matrix_sha256="$(sha256sum "${matrix}" | cut -d ' ' -f 1)"

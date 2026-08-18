@@ -312,6 +312,32 @@ scripts/run-tau-event-adaptive-ablation.sh
 The queue wrapper waits for the previously registered cognitive controls and
 requires their exact completion marker before it changes the live profile.
 
+### Endpoint-only preparation control
+
+[`endpoint-preparation-ablation-v1.json`](endpoint-preparation-ablation-v1.json)
+pairs a fresh instrumented
+[`continuous` 200 ms population](matrix-continuous-preparation-v1.json) with
+[`matrix-endpoint-preparation-v1.json`](matrix-endpoint-preparation-v1.json).
+Both use standard server VAD, identical Qwen3-ASR/Qwen/Gemini/Fish providers,
+the same tools and authority, and the same canonical fast→slow→tool-result
+path after endpoint. The control changes one temporal fact: partial typed ASR
+revisions cannot invoke either continuation provider. No transcript content,
+task identity, or model-authored routing decision participates.
+
+Run the complete endpoint control after its paired baseline and event/adaptive
+predecessors validate:
+
+```bash
+scripts/run-tau-endpoint-preparation-ablation.sh
+```
+
+The queue wrapper requires the exact event/adaptive completion marker and
+restores the continuous 200 ms baseline after the control.
+The fresh continuous population is intentional: the original baseline run
+started before per-provider health counters were available. Its official task
+and interaction results remain a historical reference, but it is not used as
+the provider-work comparator.
+
 ## Primary reporting panel
 
 Report task and interaction behavior together:

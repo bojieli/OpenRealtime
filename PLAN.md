@@ -934,7 +934,11 @@ Status: in progress. The live 200 ms input / 200 ms stateful provider condition
 is implemented with Qwen3-ASR 0.6B, Qwen3-30B-A3B-FP8, Fish S2-Pro, explicit GPU
 admission, exact fast→slow background preparation, and real audio-to-audio
 reports. A same-fixture endpointed/fast-only/full-preparation exploratory check
-is published. A content-independent one-second slow-launch pacer reduced
+is published. A closed endpoint-only gateway policy and complete paired
+control population are now implemented, frozen, and queued; it suppresses
+partial-revision continuation calls but retains the identical post-endpoint
+fast→slow→tool-result trajectory. A content-independent one-second
+slow-launch pacer reduced
 speculative slow provider launches from 43 to 12 in one exact-scored trial and
 the final commit bypassed its remaining wait. A persistent standard Realtime
 gateway now composes all three local GPU services with hosted slow reasoning,
@@ -1023,7 +1027,11 @@ matrix, exact FDB v1.5/FDB v3 releases, and resumable runners are complete. The
 four complete cadence matrices, a complete medium-slow matrix, and complete
 content-only/independent context controls are queued. Native GPT-Live and TML
 Interaction Model controls remain unavailable through a public executable
-endpoint. No incomplete cell is a benchmark score.
+endpoint. A complete endpoint-only preparation control is queued behind the
+event/adaptive populations and changes only whether partial ASR revisions may
+start private continuation work. A fresh complete continuous population runs
+immediately before it because the historical baseline predates provider-work
+health counters. No incomplete cell is a benchmark score.
 
 Deliverables:
 
