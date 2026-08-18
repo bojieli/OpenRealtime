@@ -74,6 +74,15 @@ func New(config Config) (*Server, error) {
 	if config.RuntimeMetrics == nil {
 		config.RuntimeMetrics = &RuntimeMetrics{}
 	}
+	config.FastProvider = &measuredContinuationProvider{
+		provider: config.FastProvider, metrics: &config.RuntimeMetrics.fast,
+	}
+	config.SlowProvider = &measuredContinuationProvider{
+		provider: config.SlowProvider, metrics: &config.RuntimeMetrics.slow,
+	}
+	config.SpeechProvider = &measuredSpeechProvider{
+		provider: config.SpeechProvider, metrics: &config.RuntimeMetrics.speech,
+	}
 	if config.ASRProviderMaxChunk == 0 {
 		config.ASRProviderMaxChunk = config.ASRProviderChunk
 	}

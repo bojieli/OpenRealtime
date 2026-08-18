@@ -1,6 +1,15 @@
 package realtimegateway
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/trajectory"
+)
 
 func TestRuntimeMetricsSnapshotIsCumulativeAndContentFree(t *testing.T) {
 	t.Parallel()
@@ -15,5 +24,119 @@ func TestRuntimeMetricsSnapshotIsCumulativeAndContentFree(t *testing.T) {
 		ASRProviderAdvances: 7, ASRFinalizations: 2,
 	}) {
 		t.Fatalf("unexpected runtime metrics: %#v", got)
+	}
+}
+
+func TestMeasuredContinuationProviderCountsActualWorkAndUsage(t *testing.T) {
+	t.Parallel()
+	raw := &scriptedProvider{
+		descriptor: continuation.Descriptor{
+			Provider: "test", Model: "fast", Phase: trajectory.PhaseFast,
+			Effort: continuation.EffortMinimal, Streaming: true,
+		},
+		scripts: []providerScript{{
+			events: []continuation.Event{
+				{Kind: continuation.EventReasoningDelta, Text: "thinking"},
+				{Kind: continuation.EventAssistantDelta, Text: "answer"},
+			},
+			usage: continuation.Usage{
+				InputTokens: 10, OutputTokens: 4, ReasoningTokens: 2, TotalTokens: 14,
+			},
+		}},
+	}
+	metrics := &continuationProviderMetrics{}
+	provider := &measuredContinuationProvider{provider: raw, metrics: metrics}
+	events := 0
+	if _, err := provider.Continue(context.Background(), continuation.Request{}, func(continuation.Event) error {
+		events++
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := metrics.snapshot()
+	if events != 2 || got.Invocations != 1 || got.Completed != 1 || got.Failed != 0 || got.Cancelled != 0 ||
+		got.Events != 2 || got.FirstEventCount != 1 || got.InputTokens != 10 || got.OutputTokens != 4 ||
+		got.ReasoningTokens != 2 || got.TotalTokens != 14 {
+		t.Fatalf("unexpected continuation metrics: %#v", got)
+	}
+}
+
+func TestMeasuredProvidersSeparateCancellationFromFailure(t *testing.T) {
+	t.Parallel()
+	metrics := &continuationProviderMetrics{}
+	provider := &measuredContinuationProvider{
+		provider: blockingMetricsProvider{}, metrics: metrics,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := provider.Continue(ctx, continuation.Request{}, func(continuation.Event) error { return nil }); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled provider error = %v", err)
+	}
+	got := metrics.snapshot()
+	if got.Invocations != 1 || got.Cancelled != 1 || got.Failed != 0 || got.Completed != 0 {
+		t.Fatalf("unexpected cancellation metrics: %#v", got)
+	}
+	failedMetrics := &continuationProviderMetrics{}
+	failing := &measuredContinuationProvider{
+		provider: failingMetricsProvider{}, metrics: failedMetrics,
+	}
+	if _, err := failing.Continue(context.Background(), continuation.Request{}, func(continuation.Event) error { return nil }); err == nil {
+		t.Fatal("failing provider returned nil")
+	}
+	failedGot := failedMetrics.snapshot()
+	if failedGot.Invocations != 1 || failedGot.Failed != 1 || failedGot.Cancelled != 0 || failedGot.Completed != 0 {
+		t.Fatalf("unexpected failure metrics: %#v", failedGot)
+	}
+
+	speechMetrics := &speechProviderMetrics{}
+	speech := &measuredSpeechProvider{provider: fakeSpeech{}, metrics: speechMetrics}
+	if err := speech.Stream(context.Background(), v1.SpeechPlan{CandidateID: "candidate", Text: "answer"}, func(v1.SpeechChunk) error {
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	speechGot := speechMetrics.snapshot()
+	if speechGot.Invocations != 1 || speechGot.Completed != 1 || speechGot.Chunks != 1 ||
+		speechGot.Samples != 2_400 || speechGot.FirstChunkCount != 1 {
+		t.Fatalf("unexpected speech metrics: %#v", speechGot)
+	}
+}
+
+type blockingMetricsProvider struct{}
+
+type failingMetricsProvider struct{}
+
+func (failingMetricsProvider) Descriptor() continuation.Descriptor {
+	return continuation.Descriptor{
+		Provider: "test", Model: "failing", Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortMinimal, Streaming: true,
+	}
+}
+
+func (failingMetricsProvider) Continue(
+	context.Context,
+	continuation.Request,
+	continuation.Emit,
+) (continuation.Completion, error) {
+	return continuation.Completion{}, errors.New("provider failed")
+}
+
+func (blockingMetricsProvider) Descriptor() continuation.Descriptor {
+	return continuation.Descriptor{
+		Provider: "test", Model: "blocking", Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortMinimal, Streaming: true,
+	}
+}
+
+func (blockingMetricsProvider) Continue(
+	ctx context.Context,
+	_ continuation.Request,
+	_ continuation.Emit,
+) (continuation.Completion, error) {
+	select {
+	case <-ctx.Done():
+		return continuation.Completion{}, ctx.Err()
+	case <-time.After(time.Second):
+		return continuation.Completion{}, errors.New("provider did not receive cancellation")
 	}
 }

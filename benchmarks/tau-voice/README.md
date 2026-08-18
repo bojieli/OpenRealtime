@@ -284,10 +284,13 @@ transcript content. Each control repeats the full 278-task control and regular
 speech populations after the cadence and effort queue.
 
 Gateway runtime counters remain outside the Realtime wire contract. `/healthz`
-reports cumulative input frames, stateful ASR provider advances,
-finalizations, and sessions; every matrix run freezes the initial and final
-snapshots beside its GPU telemetry. This distinguishes a nominal tick from an
-actual ASR advance for cadence analysis.
+reports cumulative sessions, input frames, stateful ASR provider advances,
+fast/slow invocations and streamed events, provider-reported tokens, and Fish
+calls/chunks/source samples. It separates completed, failed, and cooperatively
+cancelled work and records cumulative/maximum provider and first-event timing.
+Every matrix run freezes the initial and final snapshots beside its GPU
+telemetry. This distinguishes nominal ticks from actual provider work and
+discarded speculation.
 
 The event/adaptive preregistration separates three quantities that must not be
 conflated: 50 ms simulator input opportunities, the stateful ASR provider's

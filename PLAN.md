@@ -945,8 +945,9 @@ together and verifies the live profile before execution. A separate
 revision-event control and bounded 100–400 ms revision-adaptive condition are
 also frozen and queued. Both use 50 ms input opportunities, and the adaptive
 rule observes typed revision presence only; matrix artifacts preserve start
-and final provider-work counters alongside GPU telemetry. Repeated randomized
-trials, tail distributions, and analysis of the complete results remain.
+and final ASR, fast, slow, and Fish provider-work/timing counters alongside GPU
+telemetry. Repeated randomized trials, tail distributions, and analysis of the
+complete results remain.
 
 Deliverables:
 
