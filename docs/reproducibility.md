@@ -176,6 +176,21 @@ counts, matrix hash, cell, and domain have been atomically recorded. The final
 publication gate rehashes every archive and refuses residual expanded copies;
 each archive restores the original tree losslessly with `tar --zstd -xf`.
 
+For operational progress during the multi-day run, use:
+
+```bash
+python3 scripts/report-full-study-progress.py \
+  --repository-root . \
+  --output .runtime/benchmark-runs/full-study-v1/progress.json
+```
+
+`run-full-study-monitor.sh` refreshes the same JSON every 60 seconds. It counts
+the full 7,784 τ task trials, 84 raw archives, 498 FDB1.5 samples, 100 FDBv3
+samples, 6,147 FD-Bench conversations, queue liveness, terminal failures, and
+disk headroom. This status file never scores partial populations and cannot
+declare completion: only a complete report from `report-full-study.py` can set
+`publication_complete`.
+
 After the long-running serial benchmark queue completes, run:
 
 ```bash
