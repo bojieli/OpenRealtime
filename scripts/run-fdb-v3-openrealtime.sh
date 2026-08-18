@@ -22,6 +22,9 @@ if [[ "$(git -C "${upstream_root}" rev-parse HEAD)" != "3e799c45a045256f47d5f1c9
 fi
 
 mkdir -p "${run_root}"
+run_context="${run_root}/run-context.json"
+"${repository_root}/scripts/benchmark-run-context.sh" start \
+  "${run_context}" full-duplex-bench-v3
 /usr/local/go/bin/go run ./cmd/fdbv3bench run \
   --dataset-root "${dataset_root}" \
   --profile benchmarks/fdb-v3/openrealtime-v1.json \
@@ -55,3 +58,6 @@ if [[ "${FDBV3_USE_LLM_JUDGE:-true}" == true ]]; then
     --output "${run_root}/evaluation-gpt4o.json" \
     --use-llm
 fi
+
+"${repository_root}/scripts/benchmark-run-context.sh" complete \
+  "${run_context}" full-duplex-bench-v3

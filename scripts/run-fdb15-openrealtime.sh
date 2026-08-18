@@ -16,6 +16,9 @@ if ! curl --fail --silent --show-error http://127.0.0.1:8765/healthz >/dev/null;
 fi
 
 mkdir -p "${output_root}"
+run_context="${output_root}/run-context.json"
+"${repository_root}/scripts/benchmark-run-context.sh" start \
+  "${run_context}" full-duplex-bench-v1.5
 /usr/local/go/bin/go run ./cmd/livebench run \
   --dataset-root "${dataset_root}" \
   --output-root "${output_root}" \
@@ -34,3 +37,5 @@ mkdir -p "${output_root}"
 /usr/local/go/bin/go run ./cmd/livebench summarize \
   --manifest "${output_root}/run-openrealtime-openrealtime-local.json" \
   --output "${output_root}/summary.json"
+"${repository_root}/scripts/benchmark-run-context.sh" complete \
+  "${run_context}" full-duplex-bench-v1.5

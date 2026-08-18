@@ -154,6 +154,43 @@ def validate_runtime_identity(
         )
 
 
+def validate_run_context(
+    root: Path, path_value: str, *, benchmark: str, label: str
+) -> tuple[Path, dict[str, Any]]:
+    path = resolve(root, path_value)
+    context = read_json(path, f"{label} run context")
+    require_equal(context.get("schema_version"), "1.0.0", f"{label} context schema")
+    require_equal(context.get("benchmark"), benchmark, f"{label} context benchmark")
+    require_equal(context.get("status"), "complete", f"{label} context status")
+    require_equal(
+        context.get("source_worktree_clean_start"), True, f"{label} clean source"
+    )
+    revision = context.get("openrealtime_revision_start")
+    require(
+        isinstance(revision, str)
+        and len(revision) == 40
+        and all(character in "0123456789abcdef" for character in revision),
+        f"{label} has an invalid source revision",
+    )
+    start = context.get("runtime_identity_start")
+    final = context.get("runtime_identity_final")
+    validate_runtime_identity(start, requires_local_fast=True, label=f"{label} start")
+    validate_runtime_identity(final, requires_local_fast=True, label=f"{label} final")
+    require_equal(
+        start.get("host_boot_id"), final.get("host_boot_id"), f"{label} runtime boot"
+    )
+    require_equal(
+        start.get("components"), final.get("components"), f"{label} runtime processes"
+    )
+    for snapshot_name in ("gateway_health_start", "gateway_health_final"):
+        snapshot = context.get(snapshot_name)
+        require(
+            isinstance(snapshot, dict) and snapshot.get("status") == "ok",
+            f"{label} {snapshot_name} is not healthy",
+        )
+    return path, context
+
+
 def validate_tau_matrix(
     root: Path, matrix_specification: dict[str, Any]
 ) -> dict[str, Any]:
@@ -394,6 +431,12 @@ def validate_fdb15(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
         item["scenario"]: item["observed_complete_samples"] for item in source["archives"]
     }
     require_equal(sum(scenario_population.values()), specification["population"], "FDB1.5 source population")
+    context_path, context = validate_run_context(
+        root,
+        specification["run_context"],
+        benchmark="full-duplex-bench-v1.5",
+        label="FDB1.5",
+    )
 
     run_path = resolve(root, specification["run_manifest"])
     run = read_json(run_path, "FDB1.5 run manifest")
@@ -447,6 +490,8 @@ def validate_fdb15(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
     require_equal(summary_counts, scenario_population, "FDB1.5 summary populations")
     return {
         "source_manifest": artifact(root, source_path),
+        "run_context": artifact(root, context_path),
+        "openrealtime_revision": context["openrealtime_revision_start"],
         "run_manifest": artifact(root, run_path),
         "summary": artifact(root, summary_path),
         "population": len(completed),
@@ -494,6 +539,12 @@ def validate_fdbv3(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
     require_equal(source.get("upstream_revision"), specification["upstream_revision"], "FDBv3 revision")
     require_equal(source["released_artifact"]["audio_examples"], specification["population"], "FDBv3 source population")
     require_equal(profile.get("source", {}).get("revision"), specification["upstream_revision"], "FDBv3 profile revision")
+    context_path, context = validate_run_context(
+        root,
+        specification["run_context"],
+        benchmark="full-duplex-bench-v3",
+        label="FDBv3",
+    )
 
     run_path = resolve(root, specification["run_manifest"])
     run = read_json(run_path, "FDBv3 run manifest")
@@ -523,6 +574,8 @@ def validate_fdbv3(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
     )
     return {
         "source_manifest": artifact(root, source_path),
+        "run_context": artifact(root, context_path),
+        "openrealtime_revision": context["openrealtime_revision_start"],
         "profile": artifact(root, profile_path),
         "run_manifest": artifact(root, run_path),
         "population": len(labels),
@@ -553,6 +606,12 @@ def validate_fdbench(root: Path, specification: dict[str, Any]) -> dict[str, Any
     require_equal(source.get("expected_released_conversations"), specification["population"], "FD-Bench source population")
     require_equal(source.get("expected_cell_count"), specification["cells"], "FD-Bench source cells")
     expected_cells = source["expected_cell_populations"]
+    context_path, context = validate_run_context(
+        root,
+        specification["run_context"],
+        benchmark="fd-bench",
+        label="FD-Bench",
+    )
 
     run_path = resolve(root, specification["run_manifest"])
     run = read_json(run_path, "FD-Bench run manifest")
@@ -628,6 +687,8 @@ def validate_fdbench(root: Path, specification: dict[str, Any]) -> dict[str, Any
         }
     return {
         "source_manifest": artifact(root, source_path),
+        "run_context": artifact(root, context_path),
+        "openrealtime_revision": context["openrealtime_revision_start"],
         "run_manifest": artifact(root, run_path),
         "finalization": artifact(root, finalization_path),
         "population": len(labels),

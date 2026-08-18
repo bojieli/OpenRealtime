@@ -168,3 +168,9 @@ released non-Moshi path does not produce their required inputs. The output is
 `.runtime/benchmark-runs/full-study-v1/report.json`; any missing population,
 terminal failure, hash mismatch, or evaluator gap prevents that file from
 being published.
+
+The three external runners also create a `run-context.json` sidecar before
+their first adapter call. Launch refuses a dirty OpenRealtime worktree. The
+sidecar binds the runner revision and live component identities, and completion
+is refused if the gateway, ASR, Fish, or local Qwen process changed during the
+population. The terminal gate validates and hashes each sidecar.

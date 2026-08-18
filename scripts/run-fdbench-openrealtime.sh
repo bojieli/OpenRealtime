@@ -13,6 +13,9 @@ output_root="${run_root}/output"
 cd "${repository_root}"
 mkdir -p "${run_root}"
 "${repository_root}/scripts/prepare-fdbench.sh"
+run_context="${run_root}/run-context.json"
+"${repository_root}/scripts/benchmark-run-context.sh" start \
+  "${run_context}" fd-bench
 
 /usr/local/go/bin/go run ./cmd/fdbench run \
   --dataset-root "${dataset_root}" \
@@ -52,5 +55,8 @@ if [[ "${FDBENCH_RUN_TIMING_EVALUATOR:-true}" == true ]]; then
       >"${run_root}/metrics/${cell}.log"
   done < <(find "${output_root}" -mindepth 2 -maxdepth 2 -type f -name 'openrealtime.txt' | sort)
 fi
+
+"${repository_root}/scripts/benchmark-run-context.sh" complete \
+  "${run_context}" fd-bench
 
 echo "FD-Bench full released matrix complete"

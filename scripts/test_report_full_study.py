@@ -52,6 +52,21 @@ def runtime_identity() -> dict:
     }
 
 
+def run_context(benchmark: str) -> dict:
+    identity = runtime_identity()
+    return {
+        "schema_version": "1.0.0",
+        "benchmark": benchmark,
+        "status": "complete",
+        "source_worktree_clean_start": True,
+        "openrealtime_revision_start": "c" * 40,
+        "gateway_health_start": {"status": "ok"},
+        "gateway_health_final": {"status": "ok"},
+        "runtime_identity_start": identity,
+        "runtime_identity_final": identity,
+    }
+
+
 class Fixture:
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -132,6 +147,8 @@ class Fixture:
             },
         )
         fdb15_run = self.root / ".runtime/fdb15/run.json"
+        fdb15_context = self.root / ".runtime/fdb15/context.json"
+        write_json(fdb15_context, run_context("full-duplex-bench-v1.5"))
         fdb15_descriptor = descriptor(
             "fdb-v1.5-openai-realtime-adapter-i1-qg-v1"
         )
@@ -189,6 +206,8 @@ class Fixture:
             {"profile": "fdbv3-profile", "source": {"revision": "fdb-revision"}},
         )
         fdbv3_run = self.root / ".runtime/fdbv3/run.json"
+        fdbv3_context = self.root / ".runtime/fdbv3/context.json"
+        write_json(fdbv3_context, run_context("full-duplex-bench-v3"))
         write_json(
             fdbv3_run,
             {
@@ -227,6 +246,8 @@ class Fixture:
             },
         )
         fd_run = self.root / ".runtime/fd/run.json"
+        fd_context = self.root / ".runtime/fd/context.json"
+        write_json(fd_context, run_context("fd-bench"))
         write_json(
             fd_run,
             {
@@ -318,6 +339,7 @@ class Fixture:
                     "population": 1,
                     "conditions": ["overlap"],
                     "replicates": 1,
+                    "run_context": self.relative(fdb15_context),
                     "run_manifest": self.relative(fdb15_run),
                     "summary": self.relative(fdb15_summary),
                 },
@@ -326,6 +348,7 @@ class Fixture:
                     "profile": self.pin(fdbv3_profile),
                     "upstream_revision": "fdb-revision",
                     "population": 1,
+                    "run_context": self.relative(fdbv3_context),
                     "run_manifest": self.relative(fdbv3_run),
                     "evaluations": {
                         "exact": self.relative(fdbv3_exact),
@@ -338,6 +361,7 @@ class Fixture:
                     "dataset_revision": "dataset-revision",
                     "population": 1,
                     "cells": 1,
+                    "run_context": self.relative(fd_context),
                     "run_manifest": self.relative(fd_run),
                     "finalization": self.relative(fd_finalization),
                     "metrics_directory": self.relative(fd_metric.parent),
@@ -354,6 +378,7 @@ class Fixture:
             "fdb15_run": fdb15_run,
             "fdbv3_judge": fdbv3_judge,
             "fd_metric": fd_metric,
+            "fd_context": fd_context,
             "matrix": matrix,
         }
 
@@ -428,6 +453,16 @@ class FullStudyTest(unittest.TestCase):
         ]
         write_json(path, report)
         with self.assertRaisesRegex(REPORT.StudyIncompleteError, "runtime components"):
+            self.report()
+
+    def test_rejects_external_runtime_replacement(self) -> None:
+        path = self.fixture.paths["fd_context"]
+        context = json.loads(path.read_text(encoding="utf-8"))
+        context["runtime_identity_final"]["components"]["gateway"][
+            "proc_start_time_ticks"
+        ] = "101"
+        write_json(path, context)
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "runtime processes"):
             self.report()
 
     def test_rejects_a_missing_official_llm_judge_score(self) -> None:

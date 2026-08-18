@@ -92,6 +92,7 @@
       "overlap"
     ],
     "replicates": 1,
+    "run_context": ".runtime/benchmark-runs/fdb15-openrealtime-full-overlap/run-context.json",
     "run_manifest": ".runtime/benchmark-runs/fdb15-openrealtime-full-overlap/run-openrealtime-openrealtime-local.json",
     "summary": ".runtime/benchmark-runs/fdb15-openrealtime-full-overlap/summary.json"
   },
@@ -106,6 +107,7 @@
     },
     "upstream_revision": "3e799c45a045256f47d5f1c9cda90157e2d2ec9e",
     "population": 100,
+    "run_context": ".runtime/benchmark-runs/fdb-v3/openrealtime-v1/run-context.json",
     "run_manifest": ".runtime/benchmark-runs/fdb-v3/openrealtime-v1/run-openrealtime.json",
     "evaluations": {
       "exact": ".runtime/benchmark-runs/fdb-v3/openrealtime-v1/evaluation-exact.json",
@@ -121,6 +123,7 @@
     "dataset_revision": "995e7178445b90d57dee8fab500c6e37a2f2c49e",
     "population": 6147,
     "cells": 21,
+    "run_context": ".runtime/benchmark-runs/fd-bench/openrealtime-v1/run-context.json",
     "run_manifest": ".runtime/benchmark-runs/fd-bench/openrealtime-v1/run-openrealtime.json",
     "finalization": ".runtime/benchmark-runs/fd-bench/openrealtime-v1/finalization.json",
     "metrics_directory": ".runtime/benchmark-runs/fd-bench/openrealtime-v1/metrics",
