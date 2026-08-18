@@ -31,6 +31,12 @@ for command_name in curl git jq nvidia-smi sha256sum uv; do
   fi
 done
 
+if [[ -n "$(git -C "${repository_root}" status --porcelain=v1 --untracked-files=normal)" ]]; then
+  echo "tau-Voice launch requires a clean OpenRealtime source tree" >&2
+  exit 1
+fi
+source_revision="$(git -C "${repository_root}" rev-parse HEAD)"
+
 "${repository_root}/scripts/prepare-tau-voice.sh"
 
 gateway_health="$(curl --fail --silent --show-error http://127.0.0.1:8765/healthz)" || {
@@ -134,11 +140,11 @@ jq -n \
   --arg matrix_sha256 "${matrix_sha256}" \
   --arg patch_sha256 "${patch_sha256}" \
   --arg tau_revision "$(git -C "${tau2_directory}" rev-parse HEAD)" \
-  --arg openrealtime_revision "$(git -C "${repository_root}" rev-parse HEAD)" \
+  --arg openrealtime_revision "${source_revision}" \
   --arg selected_cell "${selected_cell}" \
   --argjson gateway_health "${gateway_health}" \
   --argjson runtime_identity "${runtime_identity}" \
-  '{schema_version:"1.0.0",started_at:$started_at,matrix:$matrix,matrix_sha256:$matrix_sha256,patch_sha256:$patch_sha256,tau_revision:$tau_revision,openrealtime_revision:$openrealtime_revision,selected_cell:(if $selected_cell == "" then null else $selected_cell end),gateway_health:$gateway_health,runtime_identity:$runtime_identity,status:"running"}' \
+  '{schema_version:"1.0.0",started_at:$started_at,matrix:$matrix,matrix_sha256:$matrix_sha256,patch_sha256:$patch_sha256,tau_revision:$tau_revision,openrealtime_revision:$openrealtime_revision,source_worktree_clean_start:true,selected_cell:(if $selected_cell == "" then null else $selected_cell end),gateway_health:$gateway_health,runtime_identity:$runtime_identity,status:"running"}' \
   >"${run_root}/run.json"
 
 telemetry="${run_root}/gpu.csv"
@@ -257,6 +263,17 @@ done
 
 gateway_health_final="$(curl --fail --silent --show-error http://127.0.0.1:8765/healthz)"
 runtime_identity_final="$("${repository_root}/scripts/capture-local-runtime-identity.sh")"
+source_revision_final="$(git -C "${repository_root}" rev-parse HEAD)"
+if [[ -n "$(git -C "${repository_root}" status --porcelain=v1 --untracked-files=normal)" ]]; then
+  run_status="source_changed"
+  echo "OpenRealtime source tree became dirty during the tau matrix invocation" >&2
+  exit 1
+fi
+if [[ "${source_revision_final}" != "${source_revision}" ]]; then
+  run_status="source_changed"
+  echo "OpenRealtime source revision changed during the tau matrix invocation" >&2
+  exit 1
+fi
 if ! jq -en \
   --argjson initial "${runtime_identity}" \
   --argjson final "${runtime_identity_final}" \
@@ -267,8 +284,11 @@ if ! jq -en \
 fi
 jq --argjson gateway_health_final "${gateway_health_final}" \
   --argjson runtime_identity_final "${runtime_identity_final}" \
+  --arg openrealtime_revision_final "${source_revision_final}" \
   '.status="complete" | .gateway_health_final=$gateway_health_final |
    .runtime_identity_final=$runtime_identity_final |
+   .openrealtime_revision_final=$openrealtime_revision_final |
+   .source_worktree_clean_final=true |
    .completed_at=now | .completed_at |= todateiso8601' \
   "${run_root}/run.json" >"${run_root}/run.json.next"
 mv "${run_root}/run.json.next" "${run_root}/run.json"

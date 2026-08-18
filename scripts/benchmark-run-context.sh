@@ -103,6 +103,15 @@ else
     echo "benchmark runtime identity changed before completion" >&2
     exit 1
   fi
+  if [[ -n "$(git -C "${repository_root}" status --porcelain=v1 --untracked-files=normal)" ]]; then
+    echo "benchmark run context requires a clean OpenRealtime source tree at completion" >&2
+    exit 1
+  fi
+  start_revision="$(jq -r '.invocations[-1].openrealtime_revision_start' "${output}")"
+  if [[ "${revision}" != "${start_revision}" ]]; then
+    echo "OpenRealtime source revision changed during the benchmark invocation" >&2
+    exit 1
+  fi
   if [[ -n "${expected_gateway_sha256}" ]] && ! jq -e \
     --arg sha256 "${expected_gateway_sha256}" \
     '.invocations[-1].study_gateway_sha256 == $sha256' \
@@ -119,6 +128,7 @@ else
      .invocations[-1].status="complete" |
      .invocations[-1].completed_at=$completed_at |
      .invocations[-1].openrealtime_revision_at_completion=$revision |
+     .invocations[-1].source_worktree_clean_at_completion=true |
      .invocations[-1].gateway_health_final=$gateway_health |
      .invocations[-1].runtime_identity_final=$runtime_identity' \
     "${output}" >"${temporary}"

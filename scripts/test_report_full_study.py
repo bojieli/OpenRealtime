@@ -62,8 +62,10 @@ def run_context(benchmark: str) -> dict:
             {
                 "status": "complete",
                 "source_worktree_clean_start": True,
+                "source_worktree_clean_at_completion": True,
                 "study_gateway_sha256": "a" * 64,
                 "openrealtime_revision_start": "c" * 40,
+                "openrealtime_revision_at_completion": "c" * 40,
                 "gateway_health_start": {"status": "ok"},
                 "gateway_health_final": {"status": "ok"},
                 "runtime_identity_start": identity,
@@ -168,7 +170,10 @@ class Fixture:
                 "execution_evidence": [
                     {
                         "status": "complete",
-                        "openrealtime_revision": "openrealtime-revision",
+                        "openrealtime_revision": "c" * 40,
+                        "openrealtime_revision_final": "c" * 40,
+                        "source_worktree_clean_start": True,
+                        "source_worktree_clean_final": True,
                         "runtime_identity": runtime_identity(),
                         "runtime_identity_final": runtime_identity(),
                     }
@@ -620,6 +625,16 @@ class FullStudyTest(unittest.TestCase):
         with self.assertRaisesRegex(REPORT.StudyIncompleteError, "frozen executable"):
             self.report()
 
+    def test_rejects_tau_source_revision_change(self) -> None:
+        path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
+        report = json.loads(path.read_text(encoding="utf-8"))
+        report["execution_evidence"][0]["openrealtime_revision_final"] = "d" * 40
+        write_json(path, report)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "source revision at completion"
+        ):
+            self.report()
+
     def test_rejects_tau_raw_artifact_archive_drift(self) -> None:
         path = self.fixture.paths["tau_archive"]
         payload = bytearray(path.read_bytes())
@@ -653,6 +668,16 @@ class FullStudyTest(unittest.TestCase):
         write_json(path, context)
         with self.assertRaisesRegex(
             REPORT.StudyIncompleteError, "frozen gateway declaration"
+        ):
+            self.report()
+
+    def test_rejects_external_source_revision_change(self) -> None:
+        path = self.fixture.paths["fd_context"]
+        context = json.loads(path.read_text(encoding="utf-8"))
+        context["invocations"][0]["openrealtime_revision_at_completion"] = "d" * 40
+        write_json(path, context)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "source revision at completion"
         ):
             self.report()
 

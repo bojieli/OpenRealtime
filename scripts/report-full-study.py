@@ -322,6 +322,16 @@ def validate_run_context(
             f"{invocation_label} gateway_health_start is not healthy",
         )
         if invocation["status"] == "complete":
+            require_equal(
+                invocation.get("source_worktree_clean_at_completion"),
+                True,
+                f"{invocation_label} clean source at completion",
+            )
+            require_equal(
+                invocation.get("openrealtime_revision_at_completion"),
+                revision,
+                f"{invocation_label} source revision at completion",
+            )
             final = invocation.get("runtime_identity_final")
             validate_runtime_identity(
                 final,
@@ -591,6 +601,28 @@ def validate_tau_matrix(
     )
     for index, complete_run in enumerate(complete_runs):
         execution_label = f"{matrix_id} complete execution {index}"
+        revision = complete_run.get("openrealtime_revision")
+        require(
+            isinstance(revision, str)
+            and len(revision) == 40
+            and all(character in "0123456789abcdef" for character in revision),
+            f"{execution_label} source revision is invalid",
+        )
+        require_equal(
+            complete_run.get("source_worktree_clean_start"),
+            True,
+            f"{execution_label} clean source at start",
+        )
+        require_equal(
+            complete_run.get("source_worktree_clean_final"),
+            True,
+            f"{execution_label} clean source at completion",
+        )
+        require_equal(
+            complete_run.get("openrealtime_revision_final"),
+            revision,
+            f"{execution_label} source revision at completion",
+        )
         validate_runtime_identity(
             complete_run.get("runtime_identity"),
             requires_local_fast=requires_local_fast,
