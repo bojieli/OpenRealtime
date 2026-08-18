@@ -26,6 +26,23 @@ type sequenceProvider struct {
 	requests   []continuation.Request
 }
 
+type staticCatalog struct {
+	capabilities []continuation.Capability
+	tools        []continuation.ToolDefinition
+}
+
+func (catalog staticCatalog) Capabilities() []continuation.Capability {
+	return append([]continuation.Capability(nil), catalog.capabilities...)
+}
+
+func (catalog staticCatalog) Tools() []continuation.ToolDefinition {
+	result := append([]continuation.ToolDefinition(nil), catalog.tools...)
+	for index := range result {
+		result[index].Parameters = append(json.RawMessage(nil), result[index].Parameters...)
+	}
+	return result
+}
+
 func (provider *sequenceProvider) Descriptor() continuation.Descriptor { return provider.descriptor }
 
 func (provider *sequenceProvider) Continue(_ context.Context, request continuation.Request, emit continuation.Emit) (continuation.Completion, error) {
@@ -198,6 +215,124 @@ func TestEngineExposesSimpleFastThenSlowPhaseBoundary(t *testing.T) {
 	requests := slow.Requests()
 	if len(requests) != 1 || !snapshotContains(requests[0].Trajectory, trajectory.KindAssistant, "I'll check.") {
 		t.Fatalf("slow did not inherit fast trajectory: %#v", requests)
+	}
+}
+
+func TestEngineSharesOneAgentPolicyAcrossFastAndSlowProfiles(t *testing.T) {
+	t.Parallel()
+	store := trajectory.NewStore()
+	if err := store.Append(trajectory.Item{
+		ID: "user", Kind: trajectory.KindObservation,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "Change my booking.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fast := &sequenceProvider{
+		descriptor: descriptor("fast", trajectory.PhaseFast, false),
+		scripts:    []providerScript{{events: []continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "I'll help."}}}},
+	}
+	slow := &sequenceProvider{
+		descriptor: descriptor("slow", trajectory.PhaseSlow, false),
+		scripts:    []providerScript{{events: []continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Please provide the booking ID."}}}},
+	}
+	engine, err := New(Config{
+		Store: store, FastProvider: fast, SlowProvider: slow,
+		AgentInstruction: "Follow the airline policy and preserve the caller's identity.",
+		FastInstruction:  "Produce the smallest truthful first segment.",
+		SlowInstruction:  "Continue carefully from the same prefix.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Run(context.Background(), Request{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	fastInstruction := fast.Requests()[0].Invocation.Instruction
+	slowInstruction := slow.Requests()[0].Invocation.Instruction
+	if fastInstruction != "Follow the airline policy and preserve the caller's identity.\n\nProduce the smallest truthful first segment." {
+		t.Fatalf("unexpected fast instruction: %q", fastInstruction)
+	}
+	if slowInstruction != "Follow the airline policy and preserve the caller's identity.\n\nContinue carefully from the same prefix." {
+		t.Fatalf("unexpected slow instruction: %q", slowInstruction)
+	}
+}
+
+func TestEngineResumesExternalToolBatchOnCanonicalTrajectory(t *testing.T) {
+	t.Parallel()
+	store := trajectory.NewStore()
+	if err := store.Append(trajectory.Item{
+		ID: "user", Kind: trajectory.KindObservation,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "Compare both records.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	catalog := staticCatalog{
+		capabilities: []continuation.Capability{
+			{Name: "read_a", Description: "Read record A.", Available: true, ExecutionPhase: "slow"},
+			{Name: "read_b", Description: "Read record B.", Available: true, ExecutionPhase: "slow"},
+		},
+		tools: []continuation.ToolDefinition{
+			{Name: "read_a", Description: "Read record A.", Parameters: json.RawMessage(`{"type":"object"}`)},
+			{Name: "read_b", Description: "Read record B.", Parameters: json.RawMessage(`{"type":"object"}`)},
+		},
+	}
+	fast := &sequenceProvider{
+		descriptor: descriptor("fast", trajectory.PhaseFast, false),
+		scripts:    []providerScript{{events: []continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "I'll compare them."}}}},
+	}
+	slow := &sequenceProvider{
+		descriptor: descriptor("slow", trajectory.PhaseSlow, true),
+		scripts: []providerScript{
+			{events: []continuation.Event{
+				{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{CallID: "call-a", Name: "read_a", Arguments: json.RawMessage(`{}`)}},
+				{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{CallID: "call-b", Name: "read_b", Arguments: json.RawMessage(`{}`)}},
+			}},
+			{events: []continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "A is newer than B."}}},
+		},
+	}
+	engine, err := New(Config{Store: store, FastProvider: fast, SlowProvider: slow, ToolCatalog: catalog})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.RunFast(context.Background(), Request{SourceRevision: 4}, nil); err != nil {
+		t.Fatal(err)
+	}
+	first, err := engine.RunSlowStep(context.Background(), Request{SourceRevision: 4}, nil)
+	if err != nil || len(first.ToolCalls) != 2 {
+		t.Fatalf("unexpected first slow step: result=%#v err=%v", first, err)
+	}
+	versionBeforeResults := store.Snapshot().Version
+	if err := engine.AppendToolResults(first.InvocationID, []trajectory.ToolResult{{
+		CallID: "call-a", Name: "read_a", Output: json.RawMessage(`{"value":2}`),
+	}}); err == nil {
+		t.Fatal("partial external result batch was accepted")
+	}
+	if got := store.Snapshot().Version; got != versionBeforeResults {
+		t.Fatalf("partial result batch changed version: got %d want %d", got, versionBeforeResults)
+	}
+	if err := engine.AppendToolResults(first.InvocationID, []trajectory.ToolResult{
+		{CallID: "call-b", Name: "read_b", Output: json.RawMessage(`{"value":1}`)},
+		{CallID: "call-a", Name: "read_a", Output: json.RawMessage(`{"value":2}`)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := engine.RunSlowStep(context.Background(), Request{SourceRevision: 4}, nil)
+	if err != nil || second.AssistantText != "A is newer than B." {
+		t.Fatalf("unexpected resumed slow step: result=%#v err=%v", second, err)
+	}
+	items := store.Snapshot().Items
+	var resultNames []string
+	for _, item := range items {
+		if item.Kind == trajectory.KindToolResult {
+			resultNames = append(resultNames, item.ToolResult.Name)
+		}
+	}
+	if fmt.Sprint(resultNames) != "[read_a read_b]" {
+		t.Fatalf("tool results did not commit in call order: %v", resultNames)
+	}
+	requests := slow.Requests()
+	if len(requests) != 2 || !snapshotContains(requests[1].Trajectory, trajectory.KindToolResult, "") {
+		t.Fatalf("resumed slow continuation did not inherit external results: %#v", requests)
 	}
 }
 

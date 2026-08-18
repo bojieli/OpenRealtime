@@ -149,3 +149,70 @@ func TestBuildRequestDoesNotTreatAnotherModelStateAsNative(t *testing.T) {
 		t.Fatalf("foreign model state was miscompiled: %s", encoded)
 	}
 }
+
+func TestBuildRequestUsesOnlyCurrentContinuationPolicy(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		Model: "qwen-test", Provider: "vllm", Phase: trajectory.PhaseSlow,
+		Effort: continuation.EffortHigh,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "inv-current",
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			{ID: "user", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "question"},
+			{ID: "old-fast-policy", Kind: trajectory.KindInstruction, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, Content: "obsolete fast policy"},
+			{ID: "old-slow-policy", Kind: trajectory.KindInstruction, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, Content: "obsolete slow policy"},
+		}},
+		Invocation: continuation.Invocation{Instruction: "current complete policy"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Messages) < 1 || body.Messages[0].Role != "system" || body.Messages[0].Content != "current complete policy" {
+		t.Fatalf("unexpected system policy: %#v", body.Messages)
+	}
+	encoded, _ := json.Marshal(body)
+	if strings.Contains(string(encoded), "obsolete") {
+		t.Fatalf("historical control instruction leaked into request: %s", encoded)
+	}
+}
+
+func TestBuildRequestExcludesAssistantCancelledBeforePlayback(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		Model: "qwen-test", Provider: "vllm", Phase: trajectory.PhaseSlow,
+		Effort: continuation.EffortHigh,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, _ := json.Marshal(providerState{
+		Provider: "vllm", Model: "qwen-test",
+		Message: chatMessage{Role: "assistant", Content: "native text the user never heard", ReasoningContent: "native cancelled state"},
+	})
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "slow-current",
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			{ID: "user-1", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "first request"},
+			{ID: "fast-answer", Kind: trajectory.KindAssistant, InvocationID: "fast-cancelled", Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "portable text the user never heard", ProviderStateType: ProviderStateType, ProviderState: state},
+			{ID: "cancel", Kind: trajectory.KindAssistantState, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, AssistantState: &trajectory.AssistantState{AssistantItemID: "fast-answer", Visibility: trajectory.VisibilityCancelled}},
+			{ID: "user-2", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "interruption"},
+		}},
+		Invocation: continuation.Invocation{Instruction: "Continue from what was actually heard."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(body)
+	for _, excluded := range []string{"native text the user never heard", "native cancelled state", "portable text the user never heard"} {
+		if strings.Contains(string(encoded), excluded) {
+			t.Fatalf("cancelled assistant state leaked into request: %s", encoded)
+		}
+	}
+	if !strings.Contains(string(encoded), "first request") || !strings.Contains(string(encoded), "interruption") {
+		t.Fatalf("surrounding observations were lost: %s", encoded)
+	}
+}

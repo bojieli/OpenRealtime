@@ -289,8 +289,13 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 			MaxOutputTokens: maxTokens,
 		},
 	}
+	assistantVisibility := trajectory.AssistantVisibility(request.Trajectory)
+	cancelledInvocations := trajectory.CancelledAssistantInvocations(request.Trajectory)
 	nativeInvocations := make(map[string]geminiContent)
 	for _, item := range request.Trajectory.Items {
+		if _, cancelled := cancelledInvocations[item.InvocationID]; cancelled {
+			continue
+		}
 		if item.ProviderStateType == ProviderStateType && len(item.ProviderState) > 0 {
 			if _, duplicate := nativeInvocations[item.InvocationID]; duplicate {
 				continue
@@ -320,6 +325,9 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 	var lastSemanticKind trajectory.Kind
 	for _, item := range request.Trajectory.Items {
 		if item.Kind == trajectory.KindInstruction || item.Kind == trajectory.KindAssistantState {
+			continue
+		}
+		if item.Kind == trajectory.KindAssistant && assistantVisibility[item.ID] == trajectory.VisibilityCancelled {
 			continue
 		}
 		lastSemanticKind = item.Kind

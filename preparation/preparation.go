@@ -63,14 +63,23 @@ func Fingerprint(input Input) (string, error) {
 		Invocation: cloneInvocation(input.Request.Invocation),
 	}
 	projection.Invocation.SourceRevision = 0
+	assistantVisibility := trajectory.AssistantVisibility(input.Request.Trajectory)
+	cancelledInvocations := trajectory.CancelledAssistantInvocations(input.Request.Trajectory)
 	for _, item := range input.Request.Trajectory.Items {
 		if item.Kind == trajectory.KindAssistantState {
 			// Provider adapters skip media visibility transitions.
 			continue
 		}
+		if item.Kind == trajectory.KindAssistant && assistantVisibility[item.ID] == trajectory.VisibilityCancelled {
+			continue
+		}
 		projected := semanticItem{
 			Kind: item.Kind, Content: item.Content, ProviderStateType: item.ProviderStateType,
 			ProviderState: slices.Clone(item.ProviderState),
+		}
+		if _, cancelled := cancelledInvocations[item.InvocationID]; cancelled {
+			projected.ProviderStateType = ""
+			projected.ProviderState = nil
 		}
 		if item.ToolCall != nil {
 			call := *item.ToolCall

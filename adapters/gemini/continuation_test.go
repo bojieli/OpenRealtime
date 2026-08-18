@@ -142,3 +142,37 @@ func TestBuildRequestKeepsCurrentPolicyOutOfModelContents(t *testing.T) {
 		t.Fatalf("current phase policy missing from system instruction: %s", system)
 	}
 }
+
+func TestBuildRequestExcludesAssistantCancelledBeforePlayback(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		APIKey: "secret", Model: "gemini-test", Phase: trajectory.PhaseSlow,
+		Effort: continuation.EffortHigh,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	native := json.RawMessage(`{"role":"model","parts":[{"text":"native text the user never heard","thoughtSignature":"cancelled-signature"}]}`)
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "slow-current",
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			{ID: "user-1", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "first request"},
+			{ID: "fast-answer", Kind: trajectory.KindAssistant, InvocationID: "fast-cancelled", Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "portable text the user never heard", ProviderStateType: ProviderStateType, ProviderState: native},
+			{ID: "cancel", Kind: trajectory.KindAssistantState, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, AssistantState: &trajectory.AssistantState{AssistantItemID: "fast-answer", Visibility: trajectory.VisibilityCancelled}},
+			{ID: "user-2", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "interruption"},
+		}},
+		Invocation: continuation.Invocation{Instruction: "Continue from what was actually heard."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(body)
+	for _, excluded := range []string{"native text the user never heard", "cancelled-signature", "portable text the user never heard"} {
+		if strings.Contains(string(encoded), excluded) {
+			t.Fatalf("cancelled assistant state leaked into request: %s", encoded)
+		}
+	}
+	if !strings.Contains(string(encoded), "first request") || !strings.Contains(string(encoded), "interruption") {
+		t.Fatalf("surrounding observations were lost: %s", encoded)
+	}
+}

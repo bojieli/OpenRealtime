@@ -2,6 +2,7 @@ package trajectory
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 )
 
@@ -43,6 +44,29 @@ func TestStoreAppendBatchIsAtomic(t *testing.T) {
 	}
 }
 
+func TestStoreAppendBatchAtRejectsStaleWriterAtomically(t *testing.T) {
+	t.Parallel()
+	store := NewStore()
+	if err := store.Append(Item{ID: "one", Kind: KindObservation, Producer: Producer{Phase: PhaseUser}, Content: "one"}); err != nil {
+		t.Fatal(err)
+	}
+	err := store.AppendBatchAt(0, []Item{{
+		ID: "stale", Kind: KindObservation, Producer: Producer{Phase: PhaseUser}, Content: "stale",
+	}})
+	if !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("got %v, want version conflict", err)
+	}
+	snapshot := store.Snapshot()
+	if snapshot.Version != 1 || len(snapshot.Items) != 1 || snapshot.Items[0].ID != "one" {
+		t.Fatalf("stale append changed trajectory: %#v", snapshot)
+	}
+	if err := store.AppendBatchAt(1, []Item{{
+		ID: "two", Kind: KindObservation, Producer: Producer{Phase: PhaseUser}, Content: "two",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStoreRejectsInvalidToolAndVisibilityTransitions(t *testing.T) {
 	t.Parallel()
 	store := NewStore()
@@ -65,6 +89,58 @@ func TestStoreValidatesOpaqueProviderState(t *testing.T) {
 	}
 	if err := store.Append(Item{ID: "opaque", Kind: KindReasoning, Producer: Producer{Phase: PhaseSlow}, ProviderStateType: "gemini-content-v1", ProviderState: json.RawMessage(`{"role":"model","parts":[]}`)}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestStorePreservesStructuredEventMetadata(t *testing.T) {
+	t.Parallel()
+	store := NewStore()
+	metadata := &EventMetadata{
+		EventID: "event-1", Type: "asr.revision", Source: "qwen3-asr",
+		Channel: "voice", OccurredNS: 10, CorrelationID: "session-1",
+	}
+	if err := store.Append(Item{
+		ID: "observation", Kind: KindObservation, MonotonicNS: 20,
+		Producer: Producer{Phase: PhaseUser}, Content: "hello", Event: metadata,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	metadata.Type = "mutated"
+	snapshot := store.Snapshot()
+	if snapshot.Items[0].Event.Type != "asr.revision" || snapshot.Items[0].Event.OccurredNS != 10 || snapshot.Items[0].MonotonicNS != 20 {
+		t.Fatalf("event occurrence and commit metadata changed: %#v", snapshot.Items[0])
+	}
+	snapshot.Items[0].Event.Source = "mutated"
+	if got := store.Snapshot().Items[0].Event.Source; got != "qwen3-asr" {
+		t.Fatalf("event metadata aliases snapshot: %q", got)
+	}
+	if err := store.Append(Item{
+		ID: "bad", Kind: KindAssistant, MonotonicNS: 21,
+		Producer: Producer{Phase: PhaseFast}, Content: "bad", Event: &EventMetadata{
+			EventID: "event-2", Type: "bad", Source: "bad", Channel: "bad",
+		},
+	}); err == nil {
+		t.Fatal("model output accepted external event metadata")
+	}
+}
+
+func TestAssistantVisibilityResolvesAppendOnlyPlaybackState(t *testing.T) {
+	t.Parallel()
+	snapshot := Snapshot{Items: []Item{
+		{ID: "prepared", Kind: KindAssistant, InvocationID: "inv-prepared", Producer: Producer{Phase: PhaseFast}, Content: "one"},
+		{ID: "queued", Kind: KindAssistant, InvocationID: "inv-queued", Producer: Producer{Phase: PhaseFast}, Content: "two"},
+		{ID: "queued-state", Kind: KindAssistantState, Producer: Producer{Phase: PhaseRuntime}, AssistantState: &AssistantState{AssistantItemID: "queued", Visibility: VisibilityQueued}},
+		{ID: "cancelled", Kind: KindAssistant, InvocationID: "inv-cancelled", Producer: Producer{Phase: PhaseFast}, Content: "three"},
+		{ID: "cancelled-state", Kind: KindAssistantState, Producer: Producer{Phase: PhaseRuntime}, AssistantState: &AssistantState{AssistantItemID: "cancelled", Visibility: VisibilityCancelled}},
+	}}
+
+	visibility := AssistantVisibility(snapshot)
+	if visibility["prepared"] != VisibilityPrepared || visibility["queued"] != VisibilityQueued || visibility["cancelled"] != VisibilityCancelled {
+		t.Fatalf("unexpected resolved visibility: %#v", visibility)
+	}
+	cancelled := CancelledAssistantInvocations(snapshot)
+	if _, ok := cancelled["inv-cancelled"]; !ok || len(cancelled) != 1 {
+		t.Fatalf("unexpected cancelled invocations: %#v", cancelled)
 	}
 }
 

@@ -16,6 +16,12 @@ import (
 	"sync"
 )
 
+// ErrVersionConflict means a writer tried to publish work derived from a
+// trajectory prefix that is no longer current. Callers must rebuild from the
+// new prefix; silently appending stale model output would violate causal
+// continuity.
+var ErrVersionConflict = errors.New("trajectory version conflict")
+
 // Kind identifies the semantic role of an immutable trajectory item.
 type Kind string
 
@@ -87,6 +93,20 @@ type AssistantState struct {
 	Visibility      Visibility `json:"visibility"`
 }
 
+// EventMetadata preserves where and when an externally produced event
+// occurred. MonotonicNS on Item remains canonical commit time; OccurredNS is
+// source time and may precede it while an event waits for a safe point.
+// Routing priority is intentionally absent: it is runtime control metadata,
+// not model-visible conversation content.
+type EventMetadata struct {
+	EventID       string `json:"event_id"`
+	Type          string `json:"type"`
+	Source        string `json:"source"`
+	Channel       string `json:"channel"`
+	OccurredNS    uint64 `json:"occurred_ns"`
+	CorrelationID string `json:"correlation_id,omitempty"`
+}
+
 // Item is an immutable unit in the canonical trajectory.
 //
 // ProviderState is optional opaque JSON used only when the provider can resume
@@ -108,6 +128,7 @@ type Item struct {
 	ToolCall          *ToolCall       `json:"tool_call,omitempty"`
 	ToolResult        *ToolResult     `json:"tool_result,omitempty"`
 	AssistantState    *AssistantState `json:"assistant_state,omitempty"`
+	Event             *EventMetadata  `json:"event,omitempty"`
 	ProviderStateType string          `json:"provider_state_type,omitempty"`
 	ProviderState     json.RawMessage `json:"provider_state,omitempty"`
 }
@@ -117,6 +138,121 @@ type Item struct {
 type Snapshot struct {
 	Version uint64 `json:"version"`
 	Items   []Item `json:"items"`
+}
+
+// PendingToolCall is one executable call that has no terminal result in the
+// supplied trajectory prefix.
+type PendingToolCall struct {
+	ItemID         string
+	SourceRevision uint64
+	InvocationID   string
+	Call           ToolCall
+}
+
+// MatchedToolResult pairs a result with its authoritative pending call. The
+// returned slice always follows canonical call order, independent of result
+// arrival order.
+type MatchedToolResult struct {
+	Pending PendingToolCall
+	Result  ToolResult
+}
+
+// AssistantVisibility resolves append-only assistant-state transitions in a
+// snapshot. It is used by provider compilers so content cancelled before
+// playback does not reappear as conversational history.
+func AssistantVisibility(snapshot Snapshot) map[string]Visibility {
+	result := make(map[string]Visibility)
+	for _, item := range snapshot.Items {
+		switch item.Kind {
+		case KindAssistant:
+			visibility := item.Visibility
+			if visibility == "" {
+				visibility = VisibilityPrepared
+			}
+			result[item.ID] = visibility
+		case KindAssistantState:
+			if item.AssistantState != nil {
+				result[item.AssistantState.AssistantItemID] = item.AssistantState.Visibility
+			}
+		}
+	}
+	return result
+}
+
+// CancelledAssistantInvocations returns invocations whose visible assistant
+// content was later cancelled. Provider-native state for these invocations
+// must not be replayed because it can contain the cancelled text.
+func CancelledAssistantInvocations(snapshot Snapshot) map[string]struct{} {
+	visibility := AssistantVisibility(snapshot)
+	result := make(map[string]struct{})
+	for _, item := range snapshot.Items {
+		if item.Kind == KindAssistant && item.InvocationID != "" && visibility[item.ID] == VisibilityCancelled {
+			result[item.InvocationID] = struct{}{}
+		}
+	}
+	return result
+}
+
+// MatchToolResultBatch validates the synchronization contract for one slow
+// invocation: every currently pending call must receive exactly one
+// identity-matched terminal result in the same event. It does not mutate the
+// trajectory; a caller still commits all returned pairs atomically.
+func MatchToolResultBatch(snapshot Snapshot, invocationID string, results []ToolResult) ([]MatchedToolResult, error) {
+	if strings.TrimSpace(invocationID) == "" {
+		return nil, errors.New("tool result batch requires an invocation ID")
+	}
+	if len(results) == 0 {
+		return nil, errors.New("tool result batch is empty")
+	}
+	resolved := make(map[string]struct{})
+	for _, item := range snapshot.Items {
+		if item.Kind == KindToolResult && item.ToolResult != nil {
+			resolved[item.ToolResult.CallID] = struct{}{}
+		}
+	}
+	var pending []PendingToolCall
+	for _, item := range snapshot.Items {
+		if item.Kind != KindToolCall || item.ToolCall == nil || item.InvocationID != invocationID {
+			continue
+		}
+		if _, done := resolved[item.ToolCall.CallID]; done {
+			continue
+		}
+		call := *item.ToolCall
+		call.Arguments = slices.Clone(call.Arguments)
+		pending = append(pending, PendingToolCall{
+			ItemID: item.ID, SourceRevision: item.SourceRevision,
+			InvocationID: item.InvocationID, Call: call,
+		})
+	}
+	if len(pending) == 0 {
+		return nil, fmt.Errorf("slow invocation %q has no outstanding tool calls", invocationID)
+	}
+	if len(results) != len(pending) {
+		return nil, fmt.Errorf("slow invocation %q requires %d tool results in one batch, got %d", invocationID, len(pending), len(results))
+	}
+	provided := make(map[string]ToolResult, len(results))
+	for _, result := range results {
+		if _, duplicate := provided[result.CallID]; duplicate {
+			return nil, fmt.Errorf("duplicate result for tool call %q", result.CallID)
+		}
+		copy := result
+		copy.Output = slices.Clone(result.Output)
+		provided[result.CallID] = copy
+	}
+
+	matched := make([]MatchedToolResult, 0, len(pending))
+	for _, outstanding := range pending {
+		result, exists := provided[outstanding.Call.CallID]
+		if !exists {
+			return nil, fmt.Errorf("missing result for tool call %q", outstanding.Call.CallID)
+		}
+		if result.Name != outstanding.Call.Name {
+			return nil, fmt.Errorf("tool result name %q does not match call name %q", result.Name, outstanding.Call.Name)
+		}
+		matched = append(matched, MatchedToolResult{Pending: outstanding, Result: result})
+	}
+	return matched, nil
 }
 
 // Store is a concurrency-safe append-only canonical trajectory.
@@ -154,11 +290,26 @@ func (store *Store) Append(item Item) error {
 // refer to earlier items in the same batch, which makes a completed model turn
 // publishable as one safe-point transaction.
 func (store *Store) AppendBatch(items []Item) error {
+	return store.appendBatch(nil, items)
+}
+
+// AppendBatchAt atomically appends every item only when the store is still at
+// expectedVersion. It is the safe-point commit primitive for asynchronous
+// producers: providers may compute concurrently from immutable snapshots, but
+// only output derived from the current prefix can enter the canonical log.
+func (store *Store) AppendBatchAt(expectedVersion uint64, items []Item) error {
+	return store.appendBatch(&expectedVersion, items)
+}
+
+func (store *Store) appendBatch(expectedVersion *uint64, items []Item) error {
 	if len(items) == 0 {
 		return errors.New("trajectory append batch is empty")
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	if expectedVersion != nil && *expectedVersion != uint64(len(store.items)) {
+		return fmt.Errorf("%w: expected %d, current %d", ErrVersionConflict, *expectedVersion, len(store.items))
+	}
 
 	clone := store.cloneLocked()
 	for index := range items {
@@ -246,6 +397,17 @@ func validateCommon(item Item) error {
 	if item.ProviderStateType != "" {
 		if len(item.ProviderState) == 0 || !json.Valid(item.ProviderState) {
 			return errors.New("provider state must be valid JSON")
+		}
+	}
+	if item.Event != nil {
+		if strings.TrimSpace(item.Event.EventID) == "" || strings.TrimSpace(item.Event.Type) == "" ||
+			strings.TrimSpace(item.Event.Source) == "" || strings.TrimSpace(item.Event.Channel) == "" {
+			return errors.New("event metadata requires event ID, type, source, and channel")
+		}
+		switch item.Kind {
+		case KindObservation, KindToolResult, KindAssistantState:
+		default:
+			return fmt.Errorf("event metadata is not valid on %s", item.Kind)
 		}
 	}
 	return nil
@@ -439,6 +601,10 @@ func cloneItem(item Item) Item {
 	if item.AssistantState != nil {
 		copy := *item.AssistantState
 		item.AssistantState = &copy
+	}
+	if item.Event != nil {
+		copy := *item.Event
+		item.Event = &copy
 	}
 	return item
 }

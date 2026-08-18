@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -25,18 +26,25 @@ const (
 	defaultMaxSlowInvocations = 8
 	// DefaultFastInstruction is exported so pre-endpoint preparation can hash
 	// and invoke exactly the same model-visible policy as canonical RunFast.
-	DefaultFastInstruction = "Produce the immediate next assistant content as the low-latency first continuation of this agent. You know the complete tool schemas but only have proposal authority: a proposed call is working state for the slow continuation and cannot execute. If the request depends on information or an action not already evidenced in the trajectory, emit the appropriate tool proposal. Any assistant content before it may acknowledge what the agent is checking, but must not state an unknown result or claim completion."
+	DefaultFastInstruction = "Produce the smallest self-contained assistant segment that makes truthful immediate progress as the low-latency first continuation of this agent. You know the complete tool schemas but only have proposal authority: a proposed call is working state for the slow continuation and cannot execute. If the request depends on information or an action not already evidenced in the trajectory, emit the appropriate tool proposal. Any assistant content before it may acknowledge what the agent is checking, but must not state an unknown result or claim completion."
 	// DefaultSlowInstruction is the ordinary continuation policy used after the
 	// fast safe point and after every authoritative tool result.
-	DefaultSlowInstruction = "Continue the same agent trajectory with careful reasoning and independently resolve the latest user request. Treat fast assistant content and tool proposals as provisional working state, not as proof that the task is complete or correct. Only your tool calls have execution authority. Preserve user-supplied literal identifiers exactly; a tool error is authoritative, so do not guess spelling variants. Use available tools when needed, incorporate their results, and append an explicit correction instead of silently rewriting content the user has already heard."
+	DefaultSlowInstruction = "Continue the same agent trajectory with careful reasoning and independently resolve the latest user request. Treat fast assistant content and tool proposals as provisional working state, not as proof that the task is complete or correct. Do not repeat an already adequate fast segment; append only the missing answer, action, or explicit correction. Only your tool calls have execution authority. Preserve user-supplied literal identifiers exactly; a tool error is authoritative, so do not guess spelling variants. Use available tools when needed and incorporate their results."
 )
 
-// ToolSet is the shared capability surface. The fast continuation receives the
-// same definitions with proposal-only authority; only slow output reaches
-// Execute.
-type ToolSet interface {
+// ToolCatalog is the capability surface visible to both continuations. Tool
+// execution may live in this process or in an external asynchronous
+// orchestrator; visibility never implies execution authority.
+type ToolCatalog interface {
 	Capabilities() []continuation.Capability
 	Tools() []continuation.ToolDefinition
+}
+
+// ToolSet adds an in-process executor to a ToolCatalog. The fast continuation
+// receives the same definitions with proposal-only authority; only slow output
+// reaches Execute.
+type ToolSet interface {
+	ToolCatalog
 	Execute(context.Context, trajectory.ToolCall) trajectory.ToolResult
 }
 
@@ -58,7 +66,9 @@ type Config struct {
 	FastProvider        continuation.Provider
 	SlowProvider        continuation.Provider
 	Tools               ToolSet
+	ToolCatalog         ToolCatalog
 	Capabilities        []continuation.Capability
+	AgentInstruction    string
 	FastInstruction     string
 	SlowInstruction     string
 	FastMaxOutputTokens int
@@ -75,6 +85,7 @@ type Engine struct {
 	fast         continuation.Provider
 	slow         continuation.Provider
 	tools        ToolSet
+	catalog      ToolCatalog
 	capabilities []continuation.Capability
 	fastPrompt   string
 	slowPrompt   string
@@ -95,6 +106,13 @@ func New(config Config) (*Engine, error) {
 	if config.FastProvider == nil || config.SlowProvider == nil {
 		return nil, errors.New("interleave engine requires fast and slow providers")
 	}
+	if config.Tools != nil && config.ToolCatalog != nil {
+		return nil, errors.New("configure either an in-process tool set or an external tool catalog, not both")
+	}
+	catalog := config.ToolCatalog
+	if catalog == nil {
+		catalog = config.Tools
+	}
 	fastDescriptor := config.FastProvider.Descriptor()
 	slowDescriptor := config.SlowProvider.Descriptor()
 	if err := continuation.ValidateDescriptor(fastDescriptor); err != nil {
@@ -112,10 +130,10 @@ func New(config Config) (*Engine, error) {
 	if slowDescriptor.Phase != trajectory.PhaseSlow {
 		return nil, errors.New("slow provider must declare the slow phase")
 	}
-	if config.Tools != nil && fastDescriptor.EffectiveToolAuthority() != continuation.ToolAuthorityPropose {
+	if catalog != nil && fastDescriptor.EffectiveToolAuthority() != continuation.ToolAuthorityPropose {
 		return nil, errors.New("fast provider must have proposal authority when a tool set is configured")
 	}
-	if config.Tools != nil && slowDescriptor.EffectiveToolAuthority() != continuation.ToolAuthorityExecute {
+	if catalog != nil && slowDescriptor.EffectiveToolAuthority() != continuation.ToolAuthorityExecute {
 		return nil, errors.New("slow provider must permit executable tools when a tool set is configured")
 	}
 	if config.FastMaxOutputTokens < 0 || config.SlowMaxOutputTokens < 0 {
@@ -133,6 +151,8 @@ func New(config Config) (*Engine, error) {
 	if config.SlowInstruction == "" {
 		config.SlowInstruction = DefaultSlowInstruction
 	}
+	fastPrompt := composeInstruction(config.AgentInstruction, config.FastInstruction)
+	slowPrompt := composeInstruction(config.AgentInstruction, config.SlowInstruction)
 	if config.Now == nil {
 		origin := time.Now()
 		config.Now = func() uint64 { return uint64(time.Since(origin)) }
@@ -144,8 +164,8 @@ func New(config Config) (*Engine, error) {
 		}
 	}
 	capabilities := append([]continuation.Capability(nil), config.Capabilities...)
-	if config.Tools != nil {
-		capabilities = append(capabilities, config.Tools.Capabilities()...)
+	if catalog != nil {
+		capabilities = append(capabilities, catalog.Capabilities()...)
 	}
 	if err := validateCapabilities(capabilities); err != nil {
 		return nil, err
@@ -159,12 +179,19 @@ func New(config Config) (*Engine, error) {
 	}
 	return &Engine{
 		store: config.Store, fast: config.FastProvider, slow: config.SlowProvider,
-		tools: config.Tools, capabilities: capabilities,
-		fastPrompt: config.FastInstruction, slowPrompt: config.SlowInstruction,
+		tools: config.Tools, catalog: catalog, capabilities: capabilities,
+		fastPrompt: fastPrompt, slowPrompt: slowPrompt,
 		fastTokens: config.FastMaxOutputTokens, slowTokens: config.SlowMaxOutputTokens,
 		maxSlow: config.MaxSlowInvocations, now: config.Now, nextID: config.NextID,
 		runner: runner,
 	}, nil
+}
+
+func composeInstruction(agentInstruction, phaseInstruction string) string {
+	if strings.TrimSpace(agentInstruction) == "" {
+		return phaseInstruction
+	}
+	return agentInstruction + "\n\n" + phaseInstruction
 }
 
 // Request binds one rollout to the latest perception revision already present
@@ -215,6 +242,53 @@ func (engine *Engine) RunSlow(ctx context.Context, request Request, observer Str
 	}
 	result, observerErr, runErr := engine.runSlow(ctx, request, observer)
 	return result, errors.Join(runErr, observerErr)
+}
+
+// RunSlowStep performs exactly one higher-reasoning continuation and stops at
+// its terminal safe point. If it emits calls, an external orchestrator can
+// execute them asynchronously, append one complete result batch with
+// AppendToolResults, and invoke RunSlowStep again. No placeholder or second
+// agent state is introduced.
+func (engine *Engine) RunSlowStep(ctx context.Context, request Request, observer StreamObserver) (continuation.RunResult, error) {
+	if err := engine.requireTrajectory(); err != nil {
+		return continuation.RunResult{}, err
+	}
+	result, observerErr, runErr := engine.runSlowOnce(ctx, request, observer)
+	return result, errors.Join(runErr, observerErr)
+}
+
+// AppendToolResults commits the complete outstanding call set from one slow
+// invocation as a single version-checked transaction. Results may arrive in
+// any order; canonical order follows the model's call order. Partial batches,
+// duplicates, identity changes, and stale-prefix commits are rejected.
+func (engine *Engine) AppendToolResults(invocationID string, results []trajectory.ToolResult) error {
+	snapshot := engine.store.Snapshot()
+	matched, err := trajectory.MatchToolResultBatch(snapshot, invocationID, results)
+	if err != nil {
+		return err
+	}
+
+	items := make([]trajectory.Item, 0, len(matched))
+	parentID := snapshot.Items[len(snapshot.Items)-1].ID
+	for _, pair := range matched {
+		parents := []string{parentID}
+		if pair.Pending.ItemID != parentID {
+			parents = append(parents, pair.Pending.ItemID)
+		}
+		result := pair.Result
+		item := trajectory.Item{
+			ID: engine.nextID("tool-result"), Kind: trajectory.KindToolResult,
+			MonotonicNS: engine.now(), CausalParentIDs: parents,
+			SourceRevision: pair.Pending.SourceRevision, InvocationID: invocationID,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseTool}, ToolResult: &result,
+		}
+		items = append(items, item)
+		parentID = item.ID
+	}
+	if err := engine.store.AppendBatchAt(snapshot.Version, items); err != nil {
+		return fmt.Errorf("commit tool result batch for invocation %q: %w", invocationID, err)
+	}
+	return nil
 }
 
 // Run executes one fast continuation, then always starts slow continuation.
@@ -271,15 +345,10 @@ func (engine *Engine) runSlow(ctx context.Context, request Request, observer Str
 	var result SlowResult
 	var failures []error
 	for invocation := 0; invocation < engine.maxSlow; invocation++ {
-		slowObserver, slowObserverError := phaseObserver(trajectory.PhaseSlow, engine.slow.Descriptor(), observer)
-		slow, slowErr := engine.runner.Run(ctx, engine.slow, continuation.Invocation{
-			Instruction: engine.slowPrompt, SourceRevision: request.SourceRevision,
-			Capabilities: cloneCapabilities(engine.capabilities), Tools: engine.toolDefinitions(),
-			MaxOutputTokens: engine.slowTokens,
-		}, slowObserver)
+		slow, slowObserverErr, slowErr := engine.runSlowOnce(ctx, request, observer)
 		result.Runs = append(result.Runs, slow)
-		if observerErr := slowObserverError(); observerErr != nil {
-			return result, observerErr, errors.Join(failures...)
+		if slowObserverErr != nil {
+			return result, slowObserverErr, errors.Join(failures...)
 		}
 		if slowErr != nil {
 			if errors.Is(slowErr, continuation.ErrPreempted) && ctx.Err() == nil {
@@ -295,27 +364,24 @@ func (engine *Engine) runSlow(ctx context.Context, request Request, observer Str
 			break
 		}
 		if engine.tools == nil {
-			failures = append(failures, errors.New("slow continuation emitted tool calls without a configured tool set"))
+			// An external orchestrator owns these calls. Stop at the safe point;
+			// AppendToolResults followed by RunSlowStep resumes the same trajectory.
 			break
 		}
-		roundFailed := false
+		toolResults := make([]trajectory.ToolResult, 0, len(slow.ToolCalls))
 		for _, call := range slow.ToolCalls {
 			toolResult := engine.tools.Execute(ctx, call)
 			if toolResult.CallID != call.CallID || toolResult.Name != call.Name {
 				failures = append(failures, fmt.Errorf("tool %q returned mismatched identity", call.Name))
-				roundFailed = true
-				break
+				return result, nil, errors.Join(failures...)
 			}
-			if err := engine.appendToolResult(request.SourceRevision, slow.InvocationID, toolResult); err != nil {
-				failures = append(failures, err)
-				roundFailed = true
-				break
-			}
-			result.ToolResults = append(result.ToolResults, cloneToolResult(toolResult))
+			toolResults = append(toolResults, cloneToolResult(toolResult))
 		}
-		if roundFailed {
+		if err := engine.AppendToolResults(slow.InvocationID, toolResults); err != nil {
+			failures = append(failures, err)
 			break
 		}
+		result.ToolResults = append(result.ToolResults, toolResults...)
 		if ctx.Err() != nil {
 			failures = append(failures, ctx.Err())
 			break
@@ -327,6 +393,16 @@ func (engine *Engine) runSlow(ctx context.Context, request Request, observer Str
 	return result, nil, errors.Join(failures...)
 }
 
+func (engine *Engine) runSlowOnce(ctx context.Context, request Request, observer StreamObserver) (continuation.RunResult, error, error) {
+	slowObserver, slowObserverError := phaseObserver(trajectory.PhaseSlow, engine.slow.Descriptor(), observer)
+	result, runErr := engine.runner.Run(ctx, engine.slow, continuation.Invocation{
+		Instruction: engine.slowPrompt, SourceRevision: request.SourceRevision,
+		Capabilities: cloneCapabilities(engine.capabilities), Tools: engine.toolDefinitions(),
+		MaxOutputTokens: engine.slowTokens,
+	}, slowObserver)
+	return result, slowObserverError(), runErr
+}
+
 func (engine *Engine) requireTrajectory() error {
 	if len(engine.store.Snapshot().Items) == 0 {
 		return errors.New("interleave rollout requires an observation or prior trajectory item")
@@ -335,10 +411,10 @@ func (engine *Engine) requireTrajectory() error {
 }
 
 func (engine *Engine) toolDefinitions() []continuation.ToolDefinition {
-	if engine.tools == nil {
+	if engine.catalog == nil {
 		return nil
 	}
-	tools := engine.tools.Tools()
+	tools := engine.catalog.Tools()
 	for index := range tools {
 		tools[index].Parameters = slices.Clone(tools[index].Parameters)
 	}
@@ -350,22 +426,6 @@ func (engine *Engine) fastToolDefinitions() []continuation.ToolDefinition {
 		return nil
 	}
 	return engine.toolDefinitions()
-}
-
-func (engine *Engine) appendToolResult(sourceRevision uint64, invocationID string, result trajectory.ToolResult) error {
-	snapshot := engine.store.Snapshot()
-	item := trajectory.Item{
-		ID: engine.nextID("tool-result"), Kind: trajectory.KindToolResult,
-		MonotonicNS: engine.now(), SourceRevision: sourceRevision, InvocationID: invocationID,
-		Producer: trajectory.Producer{Phase: trajectory.PhaseTool}, ToolResult: &result,
-	}
-	if len(snapshot.Items) > 0 {
-		item.CausalParentIDs = []string{snapshot.Items[len(snapshot.Items)-1].ID}
-	}
-	if err := engine.store.Append(item); err != nil {
-		return fmt.Errorf("append tool result for %q: %w", result.Name, err)
-	}
-	return nil
 }
 
 func phaseObserver(phase trajectory.Phase, descriptor continuation.Descriptor, observer StreamObserver) (continuation.StreamObserver, func() error) {

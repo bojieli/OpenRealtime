@@ -69,6 +69,7 @@ type RunResult struct {
 	ToolProposals []trajectory.ToolCall `json:"tool_proposals,omitempty"`
 	ToolCalls     []trajectory.ToolCall `json:"tool_calls,omitempty"`
 	Completion    Completion            `json:"completion"`
+	Committed     bool                  `json:"committed"`
 	Interrupted   bool                  `json:"interrupted,omitempty"`
 }
 
@@ -110,22 +111,33 @@ func (runner *Runner) Run(
 	if len(before.Items) > 0 {
 		instruction.CausalParentIDs = []string{before.Items[len(before.Items)-1].ID}
 	}
-	if err := runner.store.Append(instruction); err != nil {
-		return RunResult{}, fmt.Errorf("append continuation instruction: %w", err)
-	}
-	prefix := runner.store.Snapshot()
+	// The instruction is visible to the provider as the next trajectory item,
+	// but it is not published separately. Instruction and model output commit as
+	// one version-checked safe-point transaction after generation completes.
+	prefix := before
+	prefix.Items = append(prefix.Items, instruction)
+	prefix.Version++
 	request := Request{
 		InvocationID: invocationID, Descriptor: descriptor,
 		Trajectory: prefix, Invocation: invocation,
 	}
 
 	var segments []bufferedSegment
+	declaredTools := make(map[string]struct{}, len(invocation.Tools))
+	for _, tool := range invocation.Tools {
+		declaredTools[tool.Name] = struct{}{}
+	}
 	emit := func(event Event) error {
 		if err := ValidateEvent(event); err != nil {
 			return err
 		}
 		if event.Kind == EventToolCall && descriptor.EffectiveToolAuthority() == ToolAuthorityNone {
 			return errors.New("continuation emitted a tool call without proposal or execution authority")
+		}
+		if event.Kind == EventToolCall {
+			if _, declared := declaredTools[event.ToolCall.Name]; !declared {
+				return fmt.Errorf("continuation emitted undeclared tool %q", event.ToolCall.Name)
+			}
 		}
 		if observer != nil {
 			if err := observer(event); err != nil {
@@ -152,7 +164,7 @@ func (runner *Runner) Run(
 	interrupted := providerErr != nil || ctx.Err() != nil
 	items := runner.buildItems(instruction, invocationID, descriptor, invocation, segments, completion, interrupted)
 	result := RunResult{
-		InvocationID: invocationID, StartVersion: prefix.Version,
+		InvocationID: invocationID, StartVersion: before.Version,
 		Completion: completion, Interrupted: interrupted,
 	}
 	for _, segment := range segments {
@@ -167,13 +179,22 @@ func (runner *Runner) Run(
 			}
 		}
 	}
-	if len(items) > 0 {
-		if err := runner.store.AppendBatch(items); err != nil {
-			return result, errors.Join(providerErr, fmt.Errorf("append continuation output: %w", err))
+	commitItems := make([]trajectory.Item, 0, len(items)+1)
+	commitItems = append(commitItems, instruction)
+	commitItems = append(commitItems, items...)
+	if err := runner.store.AppendBatchAt(before.Version, commitItems); err != nil {
+		result.Interrupted = true
+		result.ToolProposals = nil
+		result.ToolCalls = nil
+		result.EndVersion = runner.store.Snapshot().Version
+		if errors.Is(err, trajectory.ErrVersionConflict) {
+			err = errors.Join(ErrStalePrefix, err)
 		}
-		for _, item := range items {
-			result.AppendedIDs = append(result.AppendedIDs, item.ID)
-		}
+		return result, errors.Join(providerErr, fmt.Errorf("commit continuation safe point: %w", err))
+	}
+	result.Committed = true
+	for _, item := range commitItems {
+		result.AppendedIDs = append(result.AppendedIDs, item.ID)
 	}
 	result.EndVersion = runner.store.Snapshot().Version
 	return result, providerErr

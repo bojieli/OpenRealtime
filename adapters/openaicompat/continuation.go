@@ -443,11 +443,17 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 		result.ChatTemplateKwargs = map[string]any{"enable_thinking": false}
 	}
 
-	var instructions []string
+	// Invocation.Instruction is the complete policy for this continuation.
+	// Historical instruction items are audit records, not additional system
+	// prompts; replaying every fast/slow control instruction grows context and
+	// presents contradictory phase policies on long conversations.
+	instructions := []string{request.Invocation.Instruction}
+	assistantVisibility := trajectory.AssistantVisibility(request.Trajectory)
+	cancelledInvocations := trajectory.CancelledAssistantInvocations(request.Trajectory)
 	nativeInvocations := make(map[string]chatMessage)
 	for _, item := range request.Trajectory.Items {
-		if item.Kind == trajectory.KindInstruction {
-			instructions = append(instructions, item.Content)
+		if _, cancelled := cancelledInvocations[item.InvocationID]; cancelled {
+			continue
 		}
 		if item.ProviderStateType != ProviderStateType || len(item.ProviderState) == 0 || item.InvocationID == "" {
 			continue
@@ -463,9 +469,6 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 			nativeInvocations[item.InvocationID] = state.Message
 		}
 	}
-	if len(instructions) == 0 || instructions[len(instructions)-1] != request.Invocation.Instruction {
-		instructions = append(instructions, request.Invocation.Instruction)
-	}
 	if len(request.Invocation.Capabilities) > 0 {
 		encoded, err := json.Marshal(request.Invocation.Capabilities)
 		if err != nil {
@@ -480,6 +483,9 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 	consumedInvocations := make(map[string]struct{})
 	for _, item := range request.Trajectory.Items {
 		if item.Kind == trajectory.KindInstruction || item.Kind == trajectory.KindAssistantState {
+			continue
+		}
+		if item.Kind == trajectory.KindAssistant && assistantVisibility[item.ID] == trajectory.VisibilityCancelled {
 			continue
 		}
 		modelItem := isModelOutputItem(item.Kind)

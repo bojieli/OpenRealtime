@@ -21,6 +21,11 @@ import (
 // continuation from the interrupted canonical prefix at the next safe point.
 var ErrPreempted = errors.New("continuation preempted at resource safe point")
 
+// ErrStalePrefix means a continuation completed after another event had
+// already advanced the canonical trajectory. Its output was not committed and
+// must be recomputed from the new prefix.
+var ErrStalePrefix = errors.New("continuation computed from a stale trajectory prefix")
+
 // Effort is a provider-neutral reasoning-effort request. Adapters must reject
 // unsupported values rather than silently selecting a different effort.
 type Effort string

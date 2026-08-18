@@ -80,6 +80,51 @@ func TestFingerprintIgnoresOperationalRevisionButNotSemanticInput(t *testing.T) 
 	}
 }
 
+func TestFingerprintProjectsWhatTheUserActuallyHeard(t *testing.T) {
+	t.Parallel()
+	base := preparedInput("next", 1)
+	native := json.RawMessage(`{"provider":"vllm","model":"fast","message":{"role":"assistant","content":"unheard native"}}`)
+	assistant := trajectory.Item{
+		ID: "answer", Kind: trajectory.KindAssistant, InvocationID: "fast-invocation",
+		Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "candidate",
+		Visibility: trajectory.VisibilityPrepared, ProviderStateType: "openai-chat-assistant-v1", ProviderState: native,
+	}
+	base.Request.Trajectory.Items = append(base.Request.Trajectory.Items, assistant)
+	base.Request.Trajectory.Version = uint64(len(base.Request.Trajectory.Items))
+
+	prepared, err := Fingerprint(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queuedInput := base
+	queuedInput.Request.Trajectory.Items = append(append([]trajectory.Item(nil), base.Request.Trajectory.Items...), trajectory.Item{
+		ID: "queued", Kind: trajectory.KindAssistantState, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
+		AssistantState: &trajectory.AssistantState{AssistantItemID: "answer", Visibility: trajectory.VisibilityQueued},
+	})
+	queuedInput.Request.Trajectory.Version++
+	queued, err := Fingerprint(queuedInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if queued != prepared {
+		t.Fatalf("non-semantic playback progress changed fingerprint: %s != %s", queued, prepared)
+	}
+
+	cancelledInput := base
+	cancelledInput.Request.Trajectory.Items = append(append([]trajectory.Item(nil), base.Request.Trajectory.Items...), trajectory.Item{
+		ID: "cancelled", Kind: trajectory.KindAssistantState, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
+		AssistantState: &trajectory.AssistantState{AssistantItemID: "answer", Visibility: trajectory.VisibilityCancelled},
+	})
+	cancelledInput.Request.Trajectory.Version++
+	cancelled, err := Fingerprint(cancelledInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cancelled == prepared {
+		t.Fatal("cancelling unheard assistant content did not change provider-visible fingerprint")
+	}
+}
+
 func TestManagerCancelsAndCoalescesToLatestExactInput(t *testing.T) {
 	t.Parallel()
 	provider := &latestProvider{started: make(chan string, 4)}
