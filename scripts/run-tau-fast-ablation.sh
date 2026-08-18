@@ -75,6 +75,7 @@ TAU_VOICE_MATRIX="${candidate_matrix}" \
   --validate-only \
   --cell i1-gg-control \
   --cell i1-gg-regular
+"${repository_root}/scripts/archive-tau-voice-artifacts.sh" "${candidate_matrix}"
 
 restore_local_fast
 trap - EXIT

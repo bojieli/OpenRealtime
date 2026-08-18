@@ -79,6 +79,7 @@ for condition in \
   TAU_VOICE_MATRIX="${matrix}" \
     "${repository_root}/scripts/run-tau-voice-matrix.sh"
   "${repository_root}/scripts/report-tau-voice-matrix.sh" "${matrix}"
+  "${repository_root}/scripts/archive-tau-voice-artifacts.sh" "${matrix}"
 done
 
 restore_baseline

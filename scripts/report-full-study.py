@@ -347,6 +347,88 @@ def validate_run_context(
     return path, context
 
 
+def validate_tau_artifact_archive(
+    root: Path,
+    *,
+    matrix_path: Path,
+    matrix: dict[str, Any],
+    matrix_sha256: str,
+    cell_id: str,
+    domain: str,
+) -> dict[str, Any]:
+    experiment = (
+        root
+        / ".runtime/tau2-bench/data/simulations"
+        / (
+            f"{matrix['matrix_id']}-{cell_id}-{domain}-seed"
+            f"{matrix['benchmark']['seed']}"
+        )
+    )
+    evidence_path = experiment / "raw-artifacts-archive.json"
+    evidence = read_json(
+        evidence_path,
+        f"{matrix['matrix_id']}/{cell_id}/{domain} raw-artifact archive",
+    )
+    label = f"{matrix['matrix_id']}/{cell_id}/{domain} raw-artifact archive"
+    require_equal(evidence.get("schema_version"), "1.0.0", f"{label} schema")
+    require_equal(
+        evidence.get("matrix"),
+        {
+            "path": display_path(root, matrix_path),
+            "id": matrix["matrix_id"],
+            "sha256": matrix_sha256,
+        },
+        f"{label} matrix",
+    )
+    require_equal(
+        evidence.get("population"),
+        {"cell": cell_id, "domain": domain},
+        f"{label} population",
+    )
+    source = evidence.get("source")
+    require(isinstance(source, dict), f"{label} source declaration is absent")
+    require_equal(source.get("path"), "artifacts", f"{label} source path")
+    for field in ("files", "bytes"):
+        require(
+            isinstance(source.get(field), int)
+            and not isinstance(source[field], bool)
+            and source[field] > 0,
+            f"{label} source {field} is invalid",
+        )
+    archive_evidence = evidence.get("archive")
+    require(
+        isinstance(archive_evidence, dict), f"{label} archive declaration is absent"
+    )
+    require_equal(
+        archive_evidence.get("path"), "raw-artifacts.tar.zst", f"{label} path"
+    )
+    require_equal(
+        archive_evidence.get("format"),
+        "deterministic-pax-tar+zstd",
+        f"{label} format",
+    )
+    require(valid_sha256(archive_evidence.get("sha256")), f"{label} hash is invalid")
+    archive_path = experiment / "raw-artifacts.tar.zst"
+    require(archive_path.is_file(), f"{label} is missing: {archive_path}")
+    require_equal(
+        archive_path.stat().st_size, archive_evidence.get("bytes"), f"{label} bytes"
+    )
+    require_equal(
+        sha256_file(archive_path), archive_evidence["sha256"], f"{label} SHA-256"
+    )
+    require(
+        not (experiment / "artifacts").exists(),
+        f"{label} expanded duplicate artifacts remain",
+    )
+    return {
+        "cell": cell_id,
+        "domain": domain,
+        "source": source,
+        "archive": artifact(root, archive_path),
+        "evidence": artifact(root, evidence_path),
+    }
+
+
 def validate_tau_matrix(
     root: Path,
     matrix_specification: dict[str, Any],
@@ -409,6 +491,7 @@ def validate_tau_matrix(
     infrastructure_errors = 0
     termination_reasons: Counter[str] = Counter()
     cell_panel: dict[str, Any] = {}
+    raw_artifact_archives: list[dict[str, Any]] = []
     for cell_id in cell_ids:
         cell_report = report["cells"][cell_id]
         require_equal(
@@ -469,6 +552,16 @@ def validate_tau_matrix(
                 reasons.get("infrastructure_error", 0),
                 errors,
                 f"{matrix_id}/{cell_id}/{domain_name} infrastructure reconciliation",
+            )
+            raw_artifact_archives.append(
+                validate_tau_artifact_archive(
+                    root,
+                    matrix_path=matrix_path,
+                    matrix=matrix,
+                    matrix_sha256=matrix_specification["sha256"],
+                    cell_id=cell_id,
+                    domain=domain_name,
+                )
             )
             cell_simulations += expected_simulations
             cell_errors += errors
@@ -537,6 +630,7 @@ def validate_tau_matrix(
         "infrastructure_errors": infrastructure_errors,
         "termination_reasons": dict(sorted(termination_reasons.items())),
         "openrealtime_revisions": revisions,
+        "raw_artifact_archives": raw_artifact_archives,
         "cells": cell_panel,
     }
 
@@ -548,6 +642,17 @@ def validate_tau(
     expected_gateway_source_revision: str,
     expected_gateway_sha256: str,
 ) -> dict[str, Any]:
+    artifact_retention = specification.get("artifact_retention")
+    require_equal(
+        artifact_retention,
+        {
+            "scoring_inputs": "results.json and simulations/*.json remain expanded",
+            "raw_artifacts": "each complete cell/domain artifacts directory is preserved losslessly as deterministic-pax-tar+zstd",
+            "deletion_gate": "remove expanded duplicates only after archive readability, SHA-256, byte count, matrix identity, and exact task population are recorded",
+            "publication_gate": "the terminal reporter rehashes every archive and rejects missing evidence or remaining expanded duplicates",
+        },
+        "tau artifact-retention policy",
+    )
     source_path, source = load_pin(
         root, specification["source_manifest"], "tau source manifest"
     )
@@ -622,6 +727,7 @@ def validate_tau(
         )
     return {
         "source_manifest": artifact(root, source_path),
+        "artifact_retention": artifact_retention,
         "matrices": matrix_panel,
         "paired_reports": paired_panel,
         "population_across_preregistered_conditions": sum(

@@ -82,3 +82,4 @@ TAU_VOICE_MATRIX="${candidate_matrix}" \
   --validate-only \
   --cell i1-qg-asr17-control \
   --cell i1-qg-asr17-regular
+"${repository_root}/scripts/archive-tau-voice-artifacts.sh" "${candidate_matrix}"

@@ -69,6 +69,7 @@ start_profile medium
 TAU_VOICE_MATRIX="${candidate_matrix}" \
   "${repository_root}/scripts/run-tau-voice-matrix.sh"
 "${repository_root}/scripts/report-tau-voice-matrix.sh" "${candidate_matrix}"
+"${repository_root}/scripts/archive-tau-voice-artifacts.sh" "${candidate_matrix}"
 
 restore_baseline
 trap - EXIT

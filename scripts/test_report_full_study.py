@@ -109,6 +109,7 @@ class Fixture:
             "benchmark": {
                 "repository": "example",
                 "revision": "tau-revision",
+                "seed": 300,
                 "domains": [{"name": "airline", "tasks": 1}],
                 "total_tasks_per_cell": 1,
                 "num_trials": 1,
@@ -122,6 +123,33 @@ class Fixture:
             },
         }
         write_json(matrix, matrix_payload)
+        tau_experiment = (
+            self.root
+            / ".runtime/tau2-bench/data/simulations"
+            / "tau-mini-control-airline-seed300"
+        )
+        tau_archive = tau_experiment / "raw-artifacts.tar.zst"
+        tau_archive.parent.mkdir(parents=True, exist_ok=True)
+        tau_archive.write_bytes(b"deterministic archive")
+        write_json(
+            tau_experiment / "raw-artifacts-archive.json",
+            {
+                "schema_version": "1.0.0",
+                "matrix": {
+                    "path": self.relative(matrix),
+                    "id": "tau-mini",
+                    "sha256": REPORT.sha256_file(matrix),
+                },
+                "population": {"cell": "control", "domain": "airline"},
+                "source": {"path": "artifacts", "files": 2, "bytes": 22},
+                "archive": {
+                    "path": "raw-artifacts.tar.zst",
+                    "format": "deterministic-pax-tar+zstd",
+                    "sha256": REPORT.sha256_file(tau_archive),
+                    "bytes": tau_archive.stat().st_size,
+                },
+            },
+        )
         tau_report = (
             self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
         )
@@ -443,6 +471,12 @@ class Fixture:
                 },
                 "runtime": self.pin(runtime_manifest),
                 "tau_voice": {
+                    "artifact_retention": {
+                        "scoring_inputs": "results.json and simulations/*.json remain expanded",
+                        "raw_artifacts": "each complete cell/domain artifacts directory is preserved losslessly as deterministic-pax-tar+zstd",
+                        "deletion_gate": "remove expanded duplicates only after archive readability, SHA-256, byte count, matrix identity, and exact task population are recorded",
+                        "publication_gate": "the terminal reporter rehashes every archive and rejects missing evidence or remaining expanded duplicates",
+                    },
                     "source_manifest": self.pin(tau_source),
                     "matrices": [self.pin(matrix)],
                     "paired_reports": [],
@@ -497,6 +531,8 @@ class Fixture:
             "fd_context": fd_context,
             "fdb15_output": fdb15_output,
             "matrix": matrix,
+            "tau_archive": tau_archive,
+            "tau_experiment": tau_experiment,
         }
 
     @staticmethod
@@ -532,6 +568,14 @@ class FullStudyTest(unittest.TestCase):
             report["evidence_panel"]["tau_voice"][
                 "population_across_preregistered_conditions"
             ],
+            1,
+        )
+        self.assertEqual(
+            len(
+                report["evidence_panel"]["tau_voice"]["matrices"][0][
+                    "raw_artifact_archives"
+                ]
+            ),
             1,
         )
         self.assertEqual(
@@ -574,6 +618,22 @@ class FullStudyTest(unittest.TestCase):
         ] = "d" * 64
         write_json(path, report)
         with self.assertRaisesRegex(REPORT.StudyIncompleteError, "frozen executable"):
+            self.report()
+
+    def test_rejects_tau_raw_artifact_archive_drift(self) -> None:
+        path = self.fixture.paths["tau_archive"]
+        payload = bytearray(path.read_bytes())
+        payload[0] ^= 1
+        path.write_bytes(payload)
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "SHA-256"):
+            self.report()
+
+    def test_rejects_unreclaimed_expanded_tau_artifacts(self) -> None:
+        artifacts = self.fixture.paths["tau_experiment"] / "artifacts"
+        artifacts.mkdir()
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "expanded duplicate artifacts remain"
+        ):
             self.report()
 
     def test_rejects_external_runtime_replacement(self) -> None:

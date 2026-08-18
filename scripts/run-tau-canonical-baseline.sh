@@ -27,3 +27,4 @@ OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
 TAU_VOICE_MATRIX="${matrix}" \
   "${repository_root}/scripts/run-tau-voice-matrix.sh"
 "${repository_root}/scripts/report-tau-voice-matrix.sh" "${matrix}" "" --validate-only
+"${repository_root}/scripts/archive-tau-voice-artifacts.sh" "${matrix}"

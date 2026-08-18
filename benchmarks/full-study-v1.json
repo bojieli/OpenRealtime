@@ -12,6 +12,12 @@
     "sha256": "7bb24e3f42963f2f51185172dbdf04240f5d0b2293c51fec8ec9f155efeeb57e"
   },
   "tau_voice": {
+    "artifact_retention": {
+      "scoring_inputs": "results.json and simulations/*.json remain expanded",
+      "raw_artifacts": "each complete cell/domain artifacts directory is preserved losslessly as deterministic-pax-tar+zstd",
+      "deletion_gate": "remove expanded duplicates only after archive readability, SHA-256, byte count, matrix identity, and exact task population are recorded",
+      "publication_gate": "the terminal reporter rehashes every archive and rejects missing evidence or remaining expanded duplicates"
+    },
     "source_manifest": {
       "path": "benchmarks/external/tau-voice.manifest.json",
       "sha256": "67ab8b08a187aa364a0c8f4c22b783d47bfe4a8ccc961a8936279ed9020e8596"

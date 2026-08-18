@@ -93,11 +93,13 @@ start_profile 0.2 200ms 0s 200 200 fixed
 TAU_VOICE_MATRIX="${revision_matrix}" \
   "${repository_root}/scripts/run-tau-voice-matrix.sh"
 "${repository_root}/scripts/report-tau-voice-matrix.sh" "${revision_matrix}"
+"${repository_root}/scripts/archive-tau-voice-artifacts.sh" "${revision_matrix}"
 
 start_profile 0.1 100ms 400ms 100 400 revision-adaptive
 TAU_VOICE_MATRIX="${adaptive_matrix}" \
   "${repository_root}/scripts/run-tau-voice-matrix.sh"
 "${repository_root}/scripts/report-tau-voice-matrix.sh" "${adaptive_matrix}"
+"${repository_root}/scripts/archive-tau-voice-artifacts.sh" "${adaptive_matrix}"
 
 restore_baseline
 trap - EXIT

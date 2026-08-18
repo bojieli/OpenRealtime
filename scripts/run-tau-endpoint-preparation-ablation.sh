@@ -76,6 +76,8 @@ TAU_VOICE_MATRIX="${endpoint_matrix}" \
 python3 "${repository_root}/scripts/report-tau-endpoint-preparation.py" \
   --repository-root "${repository_root}" \
   --manifest "${repository_root}/benchmarks/tau-voice/endpoint-preparation-ablation-v1.json"
+"${repository_root}/scripts/archive-tau-voice-artifacts.sh" "${continuous_matrix}"
+"${repository_root}/scripts/archive-tau-voice-artifacts.sh" "${endpoint_matrix}"
 
 restore_baseline
 trap - EXIT
