@@ -162,5 +162,41 @@ class AggregationTest(unittest.TestCase):
         )
 
 
+class RuntimeEvidenceTest(unittest.TestCase):
+    def test_subtracts_additive_metrics_and_omits_maximum_gauges(self) -> None:
+        delta = REPORT.cumulative_runtime_delta(
+            {
+                "sessions_started": 2,
+                "fast": {
+                    "invocations": 4,
+                    "cumulative_elapsed_ns": 100,
+                    "maximum_elapsed_ns": 80,
+                },
+            },
+            {
+                "sessions_started": 7,
+                "fast": {
+                    "invocations": 10,
+                    "cumulative_elapsed_ns": 900,
+                    "maximum_elapsed_ns": 300,
+                },
+            },
+        )
+        self.assertEqual(
+            delta,
+            {
+                "sessions_started": 5,
+                "fast": {"invocations": 6, "cumulative_elapsed_ns": 800},
+            },
+        )
+
+    def test_rejects_counter_regression(self) -> None:
+        with self.assertRaisesRegex(REPORT.IncompleteMatrixError, "decreased"):
+            REPORT.cumulative_runtime_delta(
+                {"slow": {"invocations": 3}},
+                {"slow": {"invocations": 1}},
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

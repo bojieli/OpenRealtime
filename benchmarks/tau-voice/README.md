@@ -290,7 +290,9 @@ calls/chunks/source samples. It separates completed, failed, and cooperatively
 cancelled work and records cumulative/maximum provider and first-event timing.
 Every matrix run freezes the initial and final snapshots beside its GPU
 telemetry. This distinguishes nominal ticks from actual provider work and
-discarded speculation.
+discarded speculation. The strict reporter subtracts additive counters into a
+per-run delta and rejects any counter regression, which would indicate a
+gateway restart or an inconsistent measurement population.
 
 The event/adaptive preregistration separates three quantities that must not be
 conflated: 50 ms simulator input opportunities, the stateful ASR provider's

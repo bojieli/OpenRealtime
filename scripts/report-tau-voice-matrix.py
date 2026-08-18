@@ -309,6 +309,46 @@ def hash_evidence(experiment: Path) -> dict[str, Any]:
     }
 
 
+def cumulative_runtime_delta(
+    start: dict[str, Any], final: dict[str, Any], path: str = "runtime"
+) -> dict[str, Any]:
+    """Subtract additive, content-free counters while retaining their shape.
+
+    Maximum latency fields are gauges rather than cumulative counters and stay
+    in the raw health evidence. A decrease in any additive field means the
+    gateway restarted or the evidence is inconsistent, so the run cannot be
+    treated as one measurement population.
+    """
+    result: dict[str, Any] = {}
+    for key, final_value in final.items():
+        if key.startswith("maximum_"):
+            continue
+        start_value = start.get(key)
+        field_path = f"{path}.{key}"
+        if isinstance(final_value, dict):
+            if not isinstance(start_value, dict):
+                raise IncompleteMatrixError(
+                    f"{field_path} is missing from the initial runtime snapshot"
+                )
+            result[key] = cumulative_runtime_delta(
+                start_value, final_value, field_path
+            )
+            continue
+        if type(final_value) not in (int, float) or type(start_value) not in (
+            int,
+            float,
+        ):
+            raise IncompleteMatrixError(
+                f"{field_path} must be numeric in both runtime snapshots"
+            )
+        if final_value < start_value:
+            raise IncompleteMatrixError(
+                f"{field_path} decreased from {start_value} to {final_value}"
+            )
+        result[key] = final_value - start_value
+    return result
+
+
 def collect_run_evidence(
     repository_root: Path, matrix_id: str, matrix_sha256: str
 ) -> list[dict[str, Any]]:
@@ -336,6 +376,15 @@ def collect_run_evidence(
             "gateway_health_start": payload.get("gateway_health"),
             "gateway_health_final": payload.get("gateway_health_final"),
         }
+        health_start = payload.get("gateway_health")
+        health_final = payload.get("gateway_health_final")
+        if isinstance(health_start, dict) and isinstance(health_final, dict):
+            runtime_start = health_start.get("runtime")
+            runtime_final = health_final.get("runtime")
+            if isinstance(runtime_start, dict) and isinstance(runtime_final, dict):
+                entry["gateway_runtime_delta"] = cumulative_runtime_delta(
+                    runtime_start, runtime_final
+                )
         telemetry = run_path.with_name("gpu.csv")
         if telemetry.is_file():
             entry["gpu_telemetry"] = {
