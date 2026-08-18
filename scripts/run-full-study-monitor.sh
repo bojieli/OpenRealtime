@@ -10,11 +10,22 @@ if [[ ! "${interval_seconds}" =~ ^[0-9]+$ ]] || ((interval_seconds < 10)); then
   echo "OPENREALTIME_STUDY_MONITOR_INTERVAL_SECONDS must be an integer of at least 10" >&2
   exit 2
 fi
+if ! command -v jq >/dev/null; then
+  echo "required command jq is unavailable" >&2
+  exit 1
+fi
 
 while true; do
-  python3 "${repository_root}/scripts/report-full-study-progress.py" \
+  if python3 "${repository_root}/scripts/report-full-study-progress.py" \
     --repository-root "${repository_root}" \
     --manifest "${repository_root}/benchmarks/full-study-v1.json" \
-    --output "${output}"
+    --output "${output}"; then
+    if jq -e '.publication_complete == true' "${output}" >/dev/null; then
+      echo "full study publication is complete; monitor stopped"
+      exit 0
+    fi
+  else
+    echo "full study progress refresh failed; retrying after ${interval_seconds} seconds" >&2
+  fi
   sleep "${interval_seconds}"
 done
