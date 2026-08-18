@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0.0",
+  "ablation_id": "openrealtime-tau-voice-context-projection-ablation-v1",
+  "frozen_at": "2026-08-18T00:00:00Z",
+  "hypothesis": "the canonical fast working trace improves difficult task/tool continuity and reduces repetition or contradiction beyond assistant-content handoff or independent fast/slow generation",
+  "conditions": [
+    {
+      "id": "canonical",
+      "role": "target",
+      "matrix": "benchmarks/tau-voice/matrix-v1.json",
+      "slow_view": "exact canonical prefix"
+    },
+    {
+      "id": "content-only",
+      "role": "control",
+      "matrix": "benchmarks/tau-voice/matrix-content-only-v1.json",
+      "slow_view": "portable fast assistant content without fast reasoning, proposals, or native state"
+    },
+    {
+      "id": "independent",
+      "role": "negative_control",
+      "matrix": "benchmarks/tau-voice/matrix-independent-v1.json",
+      "slow_view": "no fast-produced items; authoritative prior slow calls/results remain"
+    }
+  ],
+  "complementary_same_family_control": "benchmarks/tau-voice/matrix-fast-gemini-v1.json",
+  "invariants": [
+    "one append-only canonical store and one safe-point commit owner in every condition",
+    "projections use trajectory kind, producer phase, invocation identity, and assistant-state identity only",
+    "no transcript text, task ID, benchmark answer, difficulty classifier, or keyword router affects projection",
+    "both phases retain identical tool schemas; fast proposes and only slow executes",
+    "complete tool-result batches resume slow under the same declared projection"
+  ],
+  "analysis": {
+    "result_unit": "one complete 278-task speech-complexity cell",
+    "primary": "pass^1 and exact tool outcomes jointly with the official interaction panel",
+    "consistency": [
+      "fast/slow repetition",
+      "contradiction",
+      "explicit repair",
+      "capability denial"
+    ],
+    "no_private_composite": true,
+    "partial_results_forbidden": true
+  }
+}

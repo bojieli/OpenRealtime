@@ -130,7 +130,9 @@ gate, complete 50/100/400/800 ms matrices isolate trigger cadence around the
 200 ms baseline, followed by a complete medium-versus-high Gemini slow-effort
 comparison. Native architectural context names GPT-Live and Thinking Machines
 Lab Interaction Models; neither is relabeled as an executed local cell without
-a public callable endpoint.
+a public callable endpoint. Complete content-only and independent context
+controls then test the canonical handoff using typed trajectory projections;
+they remain one-store benchmark controls, not production routing modes.
 
 ## Start here
 

@@ -270,6 +270,19 @@ execute, and the tool-result path resumes the exact canonical prefix. This is
 a full quality/interaction/usage Pareto comparison, not a latency preset or a
 task router.
 
+### Context-projection controls
+
+[`context-projection-ablation-v1.json`](context-projection-ablation-v1.json)
+freezes the canonical, content-only, and independent slow-context conditions.
+The content-only control retains fast assistant speech but withholds fast
+reasoning, proposals, and opaque state. The independent negative control
+withholds every fast-produced item from slow even though fast speech is still
+published. In all three, there is one canonical store, one safe-point owner,
+the same tool schemas and authority boundary, and exact complete-batch tool
+resumption. Projection uses typed provenance only and cannot examine task or
+transcript content. Each control repeats the full 278-task control and regular
+speech populations after the cadence and effort queue.
+
 ## Primary reporting panel
 
 Report task and interaction behavior together:
@@ -351,8 +364,9 @@ The gateway, provider gate, external tool-result resumption, local Fish
 caller/agent paths, strict voice registry, frozen baseline matrix, and bounded
 background orchestration are complete. The full control cell is running. The
 full regular cell, FDB v1.5, FDB v3, paired 1.7B ASR cells, complete FD-Bench
-matrix, paired Gemini-fast cells, four complete fixed-cadence matrices, and a
-complete slow-medium matrix are queued sequentially. Native GPT-Live and TML
+matrix, paired Gemini-fast cells, four complete fixed-cadence matrices, a
+complete slow-medium matrix, and complete content-only/independent context
+controls are queued sequentially. Native GPT-Live and TML
 Interaction Model cells remain unavailable through a public executable
 endpoint and are retained only as attributed published context. No patch test,
 conformance suite, mock, text-only run, partial cell, or one-task smoke will be

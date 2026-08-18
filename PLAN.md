@@ -980,9 +980,11 @@ requires an exact call multiset and exactly one identity-matched terminal
 result per call. An official τ airline task executed both required reads and,
 after the bounded-media change, passed its exact numeric communication check at
 reward 1.0. The trial also records superseded/failed background work and
-preserved failure cases. Canonical stable-partial effects, broader audible
-repair integration,
-same-family/content-only/independent controls, and an `api/v2` proposal remain.
+preserved failure cases. The same-family Gemini-fast matrix and typed
+content-only/independent slow-context projections are implemented and queued
+as complete controls; every condition retains one canonical store and differs
+only in the declared provider view. Canonical stable-partial effects, broader
+audible repair integration, and an `api/v2` proposal remain.
 
 Deliverables:
 
@@ -1014,9 +1016,10 @@ matrix, exact FDB v1.5/FDB v3 releases, and resumable runners are complete. The
 278-task control cell is running; regular, 498-recording FDB v1.5,
 100-recording FDB v3, complete Qwen3-ASR 1.7B paired cells, the 21-cell,
 6,147-conversation released FD-Bench matrix, complete paired Gemini-fast cells,
-four complete cadence matrices, and a complete medium-slow matrix are queued.
-Native GPT-Live and TML Interaction Model controls remain unavailable through
-a public executable endpoint. No incomplete cell is a benchmark score.
+four complete cadence matrices, a complete medium-slow matrix, and complete
+content-only/independent context controls are queued. Native GPT-Live and TML
+Interaction Model controls remain unavailable through a public executable
+endpoint. No incomplete cell is a benchmark score.
 
 Deliverables:
 
