@@ -933,7 +933,12 @@ Exit criteria:
 Status: in progress. The live 200 ms input / 200 ms stateful provider condition
 is implemented with Qwen3-ASR 0.6B, Qwen3-30B-A3B-FP8, Fish S2-Pro, explicit GPU
 admission, exact fast→slow background preparation, and real audio-to-audio
-reports. A same-fixture endpointed/fast-only/full-preparation exploratory check
+reports. The local-fast deployment now pins Qwen revision
+`d206ba732169f29bb77fbf80fc2c4b81d4d30782` under vLLM 0.19.0 and exposes the
+model's native 40,960-token window at the frozen 0.38 GPU-memory fraction; launch
+and terminal-publication gates reject a reduced window, changed argv, or changed
+service declaration rather than silently truncating the canonical trajectory.
+A same-fixture endpointed/fast-only/full-preparation exploratory check
 is published. A closed endpoint-only gateway policy and complete paired
 control population are now implemented, frozen, and queued; it suppresses
 partial-revision continuation calls but retains the identical post-endpoint
@@ -1036,7 +1041,11 @@ endpoint. A complete endpoint-only preparation control is queued behind the
 event/adaptive populations and changes only whether partial ASR revisions may
 start private continuation work. A fresh complete continuous population runs
 immediately before it to keep provider-work snapshots adjacent. A strict
-paired reporter requires matching frozen executable, source revisions,
+runtime contract additionally freezes the local Qwen revision, vLLM 0.19.0,
+served-model identity, Hermes tool parser, and native 40,960-token context
+window; the pre-launch and terminal gates attest both the service response and
+the live process argv. The strict paired reporter requires matching frozen
+executable, source revisions,
 ASR/model/Fish/tool profiles, complete populations, and provider deltas before
 it emits raw differences; disjoint foreground/private-call counters make zero
 speculation in the endpoint condition an exact manipulation check. It creates
