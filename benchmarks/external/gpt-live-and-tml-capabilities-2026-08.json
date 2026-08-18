@@ -99,7 +99,7 @@
       "published_claims": ["GPT-Live places media on a dedicated fast path and delegation/tools behind an asynchronous RPC boundary."],
       "local_status": "implemented_websocket_profile",
       "local_evidence": "Audio ingestion, ASR, cognition, TTS, external tool execution, and playback are concurrent producers coordinated by one safe-point owner. Slow and tool work cannot mutate media state directly. The current benchmark transport is WebSocket rather than GPT-Live's WebRTC/WARP path.",
-      "validation": ["go test -race ./eventloop ./realtimegateway ./speechcommit"]
+      "validation": ["go test -race ./eventloop ./realtimegateway ./speech"]
     },
     {
       "id": "prewarm-and-stateful-session",
@@ -113,7 +113,7 @@
       "published_claims": ["GPT-Live keeps a provisional latest message and a finalized authoritative record."],
       "local_status": "implemented",
       "local_evidence": "Unstable ASR revisions and private continuation chains stay speculative. Only an exact final semantic fingerprint can replay into the append-only canonical trajectory; played speech is immutable and unheard cancelled speech is removed from later projections.",
-      "validation": ["go test ./preparation ./trajectory ./speechcommit"]
+      "validation": ["go test ./preparation ./trajectory ./speech"]
     },
     {
       "id": "seamless-context-compaction-handoff",
