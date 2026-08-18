@@ -47,7 +47,7 @@ if ! curl --fail --silent --show-error http://127.0.0.1:8081/health >/dev/null; 
   echo "Fish Audio is not healthy" >&2
   exit 1
 fi
-requires_local_fast="$(jq -r '.runtime_requirements.requires_local_fast // true' "${matrix}")"
+requires_local_fast="$("${repository_root}/scripts/matrix-requires-local-fast.sh" "${matrix}")"
 if [[ "${requires_local_fast}" == true ]]; then
   if ! curl --fail --silent --show-error http://127.0.0.1:8000/health >/dev/null; then
     echo "Qwen vLLM is not healthy" >&2

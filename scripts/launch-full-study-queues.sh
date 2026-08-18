@@ -29,6 +29,7 @@ if [[ -n "$(git -C "${repository_root}" status --porcelain=v1 --untracked-files=
   echo "full-study queue launch requires a clean OpenRealtime source tree" >&2
   exit 1
 fi
+"${repository_root}/scripts/test_matrix_requires_local_fast.sh" >/dev/null
 
 runtime_manifest="${repository_root}/benchmarks/runtime/canonical-gateway-v1.json"
 runtime_identity="$("${repository_root}/scripts/capture-local-runtime-identity.sh")"
