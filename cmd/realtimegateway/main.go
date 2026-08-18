@@ -41,7 +41,9 @@ type options struct {
 	asrURL          string
 	asrModel        string
 	asrChunk        time.Duration
+	fastProvider    string
 	fastURL         string
+	fastEndpoint    string
 	fastModel       string
 	fastTokenEnv    string
 	fastTokens      int
@@ -67,8 +69,10 @@ func run(arguments []string) error {
 	flags.StringVar(&config.asrURL, "asr-url", qwenasr.DefaultBaseURL, "Qwen3-ASR service base URL")
 	flags.StringVar(&config.asrModel, "asr-model", qwenasr.DefaultModel, "Qwen3-ASR model identity")
 	flags.DurationVar(&config.asrChunk, "asr-provider-chunk", 200*time.Millisecond, "minimum stateful ASR advance interval")
+	flags.StringVar(&config.fastProvider, "fast-provider", "vllm", "fast continuation provider: vllm or gemini")
 	flags.StringVar(&config.fastURL, "fast-base-url", openaicompat.DefaultBaseURL, "local OpenAI-compatible fast-model base URL")
-	flags.StringVar(&config.fastModel, "fast-model", "qwen-fast", "local instruct model identity")
+	flags.StringVar(&config.fastEndpoint, "fast-endpoint", "", "optional Gemini fast API endpoint override")
+	flags.StringVar(&config.fastModel, "fast-model", "", "fast model identity; provider default when empty")
 	flags.StringVar(&config.fastTokenEnv, "fast-token-env", "QWEN_LLM_API_KEY", "optional environment variable containing the local LLM bearer token")
 	flags.IntVar(&config.fastTokens, "fast-max-tokens", 32, "fast spoken micro-turn output-token limit")
 	flags.StringVar(&config.slowModel, "slow-model", gemini.DefaultModel, "hosted slow model identity")
@@ -107,13 +111,7 @@ func serve(config options) error {
 	if geminiKey == "" {
 		return errors.New("GEMINI_API_KEY is required for the canonical slow continuation")
 	}
-	fast, err := openaicompat.New(openaicompat.Config{
-		APIKey: os.Getenv(config.fastTokenEnv), Model: config.fastModel, BaseURL: config.fastURL,
-		Provider: "vllm", Phase: trajectory.PhaseFast, Effort: continuation.EffortMinimal,
-		ToolAuthority: continuation.ToolAuthorityPropose,
-		ThinkingMode:  openaicompat.ThinkingDisabled, DisableReasoningCapture: true,
-		RequestTimeout: config.requestTimeout,
-	})
+	fast, err := makeFastProvider(config, geminiKey)
 	if err != nil {
 		return fmt.Errorf("configure fast continuation: %w", err)
 	}
@@ -176,6 +174,36 @@ func serve(config options) error {
 		shutdownContext, cancel := context.WithTimeout(context.Background(), config.shutdownTimeout)
 		defer cancel()
 		return httpServer.Shutdown(shutdownContext)
+	}
+}
+
+func makeFastProvider(config options, geminiKey string) (continuation.Provider, error) {
+	provider := strings.ToLower(strings.TrimSpace(config.fastProvider))
+	model := strings.TrimSpace(config.fastModel)
+	switch provider {
+	case "vllm":
+		if model == "" {
+			model = "qwen-fast"
+		}
+		return openaicompat.New(openaicompat.Config{
+			APIKey: os.Getenv(config.fastTokenEnv), Model: model, BaseURL: config.fastURL,
+			Provider: "vllm", Phase: trajectory.PhaseFast, Effort: continuation.EffortMinimal,
+			ToolAuthority: continuation.ToolAuthorityPropose,
+			ThinkingMode:  openaicompat.ThinkingDisabled, DisableReasoningCapture: true,
+			RequestTimeout: config.requestTimeout,
+		})
+	case "gemini":
+		if model == "" {
+			model = gemini.DefaultModel
+		}
+		return gemini.New(gemini.Config{
+			APIKey: geminiKey, Model: model, Endpoint: config.fastEndpoint,
+			Phase: trajectory.PhaseFast, Effort: continuation.EffortMinimal,
+			ToolAuthority: continuation.ToolAuthorityPropose, IncludeThoughts: false,
+			RequestTimeout: config.requestTimeout,
+		})
+	default:
+		return nil, fmt.Errorf("fast provider must be vllm or gemini, got %q", config.fastProvider)
 	}
 }
 

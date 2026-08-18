@@ -296,7 +296,8 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 		if _, cancelled := cancelledInvocations[item.InvocationID]; cancelled {
 			continue
 		}
-		if item.ProviderStateType == ProviderStateType && len(item.ProviderState) > 0 {
+		if item.ProviderStateType == ProviderStateType && len(item.ProviderState) > 0 &&
+			item.Producer.Provider == adapter.descriptor.Provider && item.Producer.Model == adapter.descriptor.Model {
 			if _, duplicate := nativeInvocations[item.InvocationID]; duplicate {
 				continue
 			}

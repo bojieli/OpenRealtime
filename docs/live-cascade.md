@@ -207,11 +207,31 @@ go run ./cmd/realtimegateway
 ```
 
 The default endpoint is `ws://127.0.0.1:8765/v1/realtime`; `/healthz` is the
-readiness endpoint. The production composition uses Qwen3-ASR 0.6B, local
-`qwen-fast` with thinking disabled and proposal-only tool authority, Gemini 3.5
-Flash at high effort with execute authority, and local Fish S2-Pro. Every
-client and server message is validated against the pinned standard Realtime
-schema unless `--validate-wire=false` is explicitly selected for diagnosis.
+readiness endpoint. The default production composition uses Qwen3-ASR 0.6B,
+local `qwen-fast` with thinking disabled and proposal-only tool authority,
+Gemini 3.5 Flash at high effort with execute authority, and local Fish S2-Pro.
+Every client and server message is validated against the pinned standard
+Realtime schema unless `--validate-wire=false` is explicitly selected for
+diagnosis.
+
+The fast phase has two explicit provider profiles, not a content router. The
+default `--fast-provider vllm` selects local Qwen instruct with thinking
+disabled. `--fast-provider gemini` selects Gemini 3.5 Flash with minimal
+thinking; slow remains Gemini 3.5 Flash at medium or high thinking. Both fast
+profiles receive the same policies, capability manifest, and tool schemas with
+proposal-only authority. When both phases use the exact same Gemini model, the
+slow phase may inherit its authenticated native state. A different Gemini
+model receives the portable assistant/proposal trajectory only; signed state
+is never replayed across model identities.
+
+The launcher exposes the hosted fast profile without starting the local Qwen
+LLM:
+
+```bash
+OPENREALTIME_FAST_PROVIDER=gemini \
+OPENREALTIME_FAST_MODEL=gemini-3.5-flash \
+  scripts/local-cascade.sh start
+```
 
 The service launcher also supports a declared `restart-asr` operation so a
 paired capacity experiment can change the ASR model without restarting Qwen,

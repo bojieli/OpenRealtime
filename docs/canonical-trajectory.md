@@ -284,6 +284,8 @@ portable continuity layer is the symbolic trajectory.
 - Cross-family continuation carries ordinary reasoning representations,
   assistant text, proposals, calls, and results.
 - Foreign text is never labeled as another provider's signed/private thinking.
+- Provider-native state is reusable only by the exact same provider and model
+  identity; another model in the same family receives the portable trajectory.
 
 Reasoning text is optional. The architecture remains valid when an adapter can
 retain only assistant/tool history and timing/token metadata.

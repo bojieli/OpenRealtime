@@ -66,7 +66,7 @@ func TestBuildRequestReusesNativeStateAndCompilesToolResult(t *testing.T) {
 		InvocationID: "inv-slow", Descriptor: adapter.Descriptor(),
 		Trajectory: trajectory.Snapshot{Version: 4, Items: []trajectory.Item{
 			{ID: "user", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "look it up"},
-			{ID: "fast", Kind: trajectory.KindAssistant, InvocationID: "inv-fast", Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "I'll check.", ProviderStateType: ProviderStateType, ProviderState: native},
+			{ID: "fast", Kind: trajectory.KindAssistant, InvocationID: "inv-fast", Producer: trajectory.Producer{Phase: trajectory.PhaseFast, Provider: "google", Model: "gemini-test"}, Content: "I'll check.", ProviderStateType: ProviderStateType, ProviderState: native},
 			{ID: "call", Kind: trajectory.KindToolCall, InvocationID: "inv-fast", Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, ToolCall: &trajectory.ToolCall{CallID: "call-1", Name: "lookup", Arguments: json.RawMessage(`{"key":"x"}`)}},
 			{ID: "result", Kind: trajectory.KindToolResult, InvocationID: "inv-fast", Producer: trajectory.Producer{Phase: trajectory.PhaseTool}, ToolResult: &trajectory.ToolResult{CallID: "call-1", Name: "lookup", Output: json.RawMessage(`{"value":7}`)}},
 			{ID: "resume", Kind: trajectory.KindInstruction, InvocationID: "inv-slow", Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, Content: "Continue."},
@@ -93,6 +93,33 @@ func TestBuildRequestReusesNativeStateAndCompilesToolResult(t *testing.T) {
 	if strings.Count(string(encoded), "thoughtSignature") != 1 || !strings.Contains(string(encoded), "functionResponse") ||
 		!strings.Contains(string(encoded), "capability manifest") || !strings.Contains(string(encoded), "parametersJsonSchema") {
 		t.Fatalf("unexpected compiled request: %s", encoded)
+	}
+}
+
+func TestBuildRequestDoesNotTreatAnotherGeminiModelStateAsNative(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		APIKey: "secret", Model: "model-b", Phase: trajectory.PhaseSlow,
+		Effort: continuation.EffortHigh,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	native := json.RawMessage(`{"role":"model","parts":[{"text":"native-a","thoughtSignature":"model-a-signature"}]}`)
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "inv-b",
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			{ID: "user", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "question"},
+			{ID: "answer", Kind: trajectory.KindAssistant, InvocationID: "inv-a", Producer: trajectory.Producer{Phase: trajectory.PhaseFast, Provider: "google", Model: "model-a"}, Content: "portable-a", ProviderStateType: ProviderStateType, ProviderState: native},
+		}},
+		Invocation: continuation.Invocation{Instruction: "Continue."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(body)
+	if strings.Contains(string(encoded), "native-a") || strings.Contains(string(encoded), "model-a-signature") || !strings.Contains(string(encoded), "portable-a") {
+		t.Fatalf("foreign Gemini model state was miscompiled: %s", encoded)
 	}
 }
 

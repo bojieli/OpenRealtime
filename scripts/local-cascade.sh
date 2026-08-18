@@ -122,6 +122,11 @@ case "${action}" in
   start)
     : "${OPENREALTIME_GATEWAY_TOKEN:?OPENREALTIME_GATEWAY_TOKEN must be set}"
     : "${GEMINI_API_KEY:?GEMINI_API_KEY must be set}"
+    fast_provider="${OPENREALTIME_FAST_PROVIDER:-vllm}"
+    if [[ "${fast_provider}" != vllm && "${fast_provider}" != gemini ]]; then
+      echo "OPENREALTIME_FAST_PROVIDER must be vllm or gemini" >&2
+      exit 1
+    fi
     /usr/local/go/bin/go build -o "${runtime_dir}/bin/realtimegateway" ./cmd/realtimegateway
 
     cuda_home="${repository_root}/.runtime/sglang-omni/lib/python3.12/site-packages/nvidia/cu13"
@@ -135,16 +140,18 @@ case "${action}" in
         --host 127.0.0.1 --port 8081 \
         --model-name fishaudio/s2-pro
 
-    start_process qwen http://127.0.0.1:8000/health \
-      env VLLM_WORKER_MULTIPROC_METHOD=spawn \
-      "${repository_root}/.runtime/qwen-asr/bin/python" -m vllm.entrypoints.openai.api_server \
-        --model Qwen/Qwen3-30B-A3B-FP8 \
-        --served-model-name qwen-fast \
-        --host 127.0.0.1 --port 8000 \
-        --gpu-memory-utilization 0.38 \
-        --max-model-len 16384 \
-        --enable-auto-tool-choice \
-        --tool-call-parser hermes
+    if [[ "${fast_provider}" == vllm ]]; then
+      start_process qwen http://127.0.0.1:8000/health \
+        env VLLM_WORKER_MULTIPROC_METHOD=spawn \
+        "${repository_root}/.runtime/qwen-asr/bin/python" -m vllm.entrypoints.openai.api_server \
+          --model Qwen/Qwen3-30B-A3B-FP8 \
+          --served-model-name qwen-fast \
+          --host 127.0.0.1 --port 8000 \
+          --gpu-memory-utilization 0.38 \
+          --max-model-len 16384 \
+          --enable-auto-tool-choice \
+          --tool-call-parser hermes
+    fi
 
     start_asr
 
@@ -152,7 +159,10 @@ case "${action}" in
       env \
         OPENREALTIME_GATEWAY_TOKEN="${OPENREALTIME_GATEWAY_TOKEN}" \
         GEMINI_API_KEY="${GEMINI_API_KEY}" \
-      "${runtime_dir}/bin/realtimegateway"
+      "${runtime_dir}/bin/realtimegateway" \
+        --fast-provider "${fast_provider}" \
+        --fast-model "${OPENREALTIME_FAST_MODEL:-}" \
+        --fast-endpoint "${OPENREALTIME_FAST_ENDPOINT:-}"
     ;;
   stop)
     stop_process gateway
