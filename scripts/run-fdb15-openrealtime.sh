@@ -28,4 +28,5 @@ mkdir -p "${output_root}"
   --trial-timeout 5m \
   --tail-duration 5s \
   --continue-on-error=true \
+  --require-complete=true \
   --resume=true

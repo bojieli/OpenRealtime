@@ -140,6 +140,7 @@ func runBenchmark(arguments []string) error {
 	trialTimeout := flags.Duration("trial-timeout", 5*time.Minute, "timeout for each live trial")
 	tailDuration := flags.Duration("tail-duration", 5*time.Second, "receive time after input ends")
 	continueOnError := flags.Bool("continue-on-error", true, "record failures and continue")
+	requireComplete := flags.Bool("require-complete", false, "exit nonzero after the sweep unless every planned trial completed")
 	resume := flags.Bool("resume", true, "reuse matching completed trial files")
 	dryRun := flags.Bool("dry-run", false, "write a run manifest without provider calls")
 	if err := flags.Parse(arguments); err != nil {
@@ -246,7 +247,14 @@ func runBenchmark(arguments []string) error {
 			}
 		}
 	}
-	return printSummary(manifestPath, manifest)
+	if err := printSummary(manifestPath, manifest); err != nil {
+		return err
+	}
+	if *requireComplete {
+		planned := len(samples) * len(conditions) * *replicates
+		return livebench.ValidateRunCompletion(planned, len(manifest.Completed), len(manifest.Failures))
+	}
+	return nil
 }
 
 func resumeRunManifest(filename string, planned livebench.RunManifest) (livebench.RunManifest, error) {

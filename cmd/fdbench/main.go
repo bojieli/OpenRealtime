@@ -140,6 +140,7 @@ func runBenchmark(arguments []string) error {
 	retryDelay := flags.Duration("retry-delay", time.Second, "base delay between attempts")
 	resume := flags.Bool("resume", true, "reuse matching completed result files")
 	continueOnError := flags.Bool("continue-on-error", true, "record exhausted failures and continue")
+	requireComplete := flags.Bool("require-complete", false, "exit nonzero after the sweep unless every planned conversation completed")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -246,7 +247,13 @@ func runBenchmark(arguments []string) error {
 			return lastErr
 		}
 	}
-	return encode(os.Stdout, map[string]any{"manifest": manifestPath, "planned": len(samples), "completed": len(manifest.Completed), "failures": len(manifest.Failures), "profile_sha256": profileHash})
+	if err := encode(os.Stdout, map[string]any{"manifest": manifestPath, "planned": len(samples), "completed": len(manifest.Completed), "failures": len(manifest.Failures), "profile_sha256": profileHash}); err != nil {
+		return err
+	}
+	if *requireComplete {
+		return livebench.ValidateRunCompletion(len(samples), len(manifest.Completed), len(manifest.Failures))
+	}
+	return nil
 }
 
 func splitCSV(value string) []string {

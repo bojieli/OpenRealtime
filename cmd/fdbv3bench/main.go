@@ -127,6 +127,7 @@ func runBenchmark(arguments []string) error {
 	retryDelay := flags.Duration("retry-delay", time.Second, "base delay between attempts")
 	resume := flags.Bool("resume", true, "reuse matching completed official result files")
 	continueOnError := flags.Bool("continue-on-error", true, "record exhausted failures and continue")
+	requireComplete := flags.Bool("require-complete", false, "exit nonzero after the sweep unless every planned example completed")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -243,7 +244,13 @@ func runBenchmark(arguments []string) error {
 	}
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(summary)
+	if err := encoder.Encode(summary); err != nil {
+		return err
+	}
+	if *requireComplete {
+		return livebench.ValidateRunCompletion(len(samples), len(manifest.Completed), len(manifest.Failures))
+	}
+	return nil
 }
 
 func contextWithTimeout(duration time.Duration) (context.Context, context.CancelFunc) {

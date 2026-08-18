@@ -37,6 +37,7 @@ mkdir -p "${run_root}"
   --trial-attempts 3 \
   --retry-delay 1s \
   --continue-on-error=true \
+  --require-complete=true \
   --resume=true
 
 python "${upstream_root}/v3/evaluate_tool_calls.py" \

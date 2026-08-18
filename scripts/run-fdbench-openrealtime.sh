@@ -31,6 +31,7 @@ mkdir -p "${run_root}"
   --retry-delay 1s \
   --resume=true \
   --continue-on-error=true \
+  --require-complete=true \
   2>&1 | tee "${run_root}/run.log"
 
 "${repository_root}/scripts/prepare-fdbench-evaluator.sh"
