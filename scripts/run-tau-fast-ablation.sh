@@ -4,6 +4,7 @@ set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 baseline_data="${repository_root}/.runtime/tau2-bench/data/simulations"
+baseline_matrix="${repository_root}/benchmarks/tau-voice/matrix-v1.json"
 candidate_matrix="${repository_root}/benchmarks/tau-voice/matrix-fast-gemini-v1.json"
 restored=false
 
@@ -13,6 +14,12 @@ for required in OPENAI_API_KEY GEMINI_API_KEY OPENREALTIME_GATEWAY_TOKEN; do
     exit 1
   fi
 done
+
+"${repository_root}/scripts/report-tau-voice-matrix.sh" \
+  "${baseline_matrix}" "" \
+  --validate-only \
+  --cell i1-qg-control \
+  --cell i1-qg-regular
 
 for cell in i1-qg-control i1-qg-regular; do
   for domain_tasks in airline:50 retail:114 telecom:114; do
@@ -50,6 +57,12 @@ OPENREALTIME_FAST_MODEL=gemini-3.5-flash \
 
 TAU_VOICE_MATRIX="${candidate_matrix}" \
   "${repository_root}/scripts/run-tau-voice-matrix.sh"
+
+"${repository_root}/scripts/report-tau-voice-matrix.sh" \
+  "${candidate_matrix}" "" \
+  --validate-only \
+  --cell i1-gg-control \
+  --cell i1-gg-regular
 
 restore_local_fast
 trap - EXIT

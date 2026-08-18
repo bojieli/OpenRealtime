@@ -267,6 +267,17 @@ composite score. Report per-domain and `control`/`regular` cells before any
 aggregate. Use the upstream interaction metric implementation on uploaded
 tick trajectories rather than locally redefining its windows.
 
+`scripts/report-tau-voice-matrix.sh` is the publication gate. It refuses to
+score a cell until every declared task/trial pair is present exactly once and
+the metadata, simulation index, files, domain, seed, speech complexity, tick
+duration, and pinned tau2 revision all agree with the frozen matrix. Only then
+does it call tau2's official task and interaction scorers. The report records
+the matrix and scorer hashes plus a content hash over every source trajectory;
+it is written atomically so an interrupted or partial run cannot masquerade as
+a score. Overall rows use the leaderboard's equal-domain mean, while count
+fields are sums. The final reporting queue runs this gate independently for
+the baseline, ASR, and Gemini-fast matrices after their full populations end.
+
 ## Optimization gate
 
 An optimization is accepted only if paired evidence shows one of:
