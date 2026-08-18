@@ -1035,7 +1035,16 @@ health counters. A strict paired reporter requires matching source revisions,
 ASR/model/Fish/tool profiles, complete populations, and provider deltas before
 it emits raw differences; disjoint foreground/private-call counters make zero
 speculation in the endpoint condition an exact manipulation check. It creates
-no private composite score. No incomplete cell is a benchmark score.
+no private composite score. A frozen study manifest now names all 14 complete
+tau-Voice matrices, the paired preparation report, the 498-trial FDB v1.5
+population and deterministic summary, both official 100-example FDB v3
+evaluations, and all 6,147 FD-Bench conversations plus 21 pinned timing
+reports. A final fail-closed reporter runs only after the serial dependency
+chain finishes. It verifies exact populations, zero terminal harness failures,
+source/profile hashes, evaluator coverage, Silero trace hashes, and explicit
+FD-Bench exclusions before publishing a benchmark-specific evidence panel.
+It never computes a cross-benchmark composite. No incomplete cell is a
+benchmark score.
 
 Deliverables:
 
@@ -1058,6 +1067,8 @@ Deliverables:
 - Difficult reasoning and active-tool workloads combined with overlap, interruption, selectivity, long-context, and cadence workloads.
 - Native realtime and interaction-model comparisons where access and redistribution permit.
 - Pareto analysis over first semantic audio, final quality, trajectory consistency, tool correctness, compute, and cost.
+- A single machine-readable publication gate that refuses partial populations
+  and preserves the native metric semantics of each benchmark family.
 
 Exit criteria:
 
@@ -1113,6 +1124,8 @@ Exit criteria:
 34. Complete the queued Gemini-minimal fast-provider matrix after FD-Bench,
     restoring the local Qwen fast profile afterward.
 35. Draft the `api/v2` migration only after the experimental trajectory contract stabilizes.
+36. Run the full-study publication gate after every queued population and
+    upstream evaluator finishes; publish no joint panel before that exact gate.
 
 ## 16. Risks and mitigations
 

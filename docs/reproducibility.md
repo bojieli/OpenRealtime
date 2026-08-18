@@ -145,3 +145,24 @@ conformance result and direct-consumer example byte-for-byte, compiles the
 maintained example, and repeats race, vet, and formatting checks. It validates
 133 OpenAI event definitions and all five stable provider roles. No Python,
 provider account, microphone, browser, or proprietary client is required.
+
+## M10 full-study publication gate
+
+After the long-running serial benchmark queue completes, run:
+
+```bash
+python scripts/report-full-study.py \
+  --repository-root . \
+  --manifest benchmarks/full-study-v1.json
+```
+
+The command has no partial mode. It checks every frozen tau-Voice task/trial
+population and execution record, the paired endpoint-preparation manipulation,
+all 498 FDB v1.5 overlap trials and their deterministic aggregate, all 100 FDB
+v3 tool-use examples in both official exact and GPT-4o evaluations, and all
+6,147 FD-Bench conversations, Silero traces, and 21 timing reports. WER, CPPL,
+and the subjective GPT score remain explicitly not evaluated because the
+released non-Moshi path does not produce their required inputs. The output is
+`.runtime/benchmark-runs/full-study-v1/report.json`; any missing population,
+terminal failure, hash mismatch, or evaluator gap prevents that file from
+being published.

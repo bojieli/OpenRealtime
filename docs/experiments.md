@@ -230,6 +230,15 @@ tool-use recordings serially on one GPU. A separate watcher then runs both
 complete 1.7B-ASR τ cells and restores the 0.6B baseline. Partial progress is
 operational evidence only, never an aggregate score.
 
+The final publication boundary is
+[`benchmarks/full-study-v1.json`](../benchmarks/full-study-v1.json). Its
+reporter validates all frozen τ-Voice matrices and the endpoint-preparation
+pair, then the native FDB v1.5, FDB v3, and FD-Bench completion artifacts. It
+requires zero terminal harness failures, exact released populations, matching
+source/profile hashes, complete upstream evaluator coverage, and hash-linked
+Silero traces. The output is a panel of native metrics; no cross-benchmark
+composite or partially available panel can be emitted.
+
 ## Trial and analysis rules
 
 Use paired prerecorded trials; randomize run order; retain warm and cold starts

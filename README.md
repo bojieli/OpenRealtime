@@ -143,6 +143,14 @@ they remain one-store benchmark controls, not production routing modes. The
 revision-event and bounded adaptive-ASR populations follow, then a complete
 endpoint-only preparation population isolates the benefit of pre-endpoint
 cognition with the same models, prompts, tools, VAD, and post-endpoint path.
+The terminal queue then evaluates
+[`benchmarks/full-study-v1.json`](benchmarks/full-study-v1.json) with a
+fail-closed reporter. It requires all 14 frozen tau-Voice matrix reports, the
+paired preparation report, the complete FDB v1.5 summary, both official FDB v3
+evaluations, and all 21 FD-Bench timing reports. It emits a benchmark-specific
+evidence panel only after exact population, hash, evaluator-coverage, and
+terminal-failure checks pass; it does not synthesize a private score across
+incommensurate suites.
 
 ## Start here
 

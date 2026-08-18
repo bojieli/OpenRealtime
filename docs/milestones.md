@@ -285,3 +285,8 @@ pin the v1.0.0 release and run the same public conformance suite.
 - Trigger-time control: a complete endpoint-only preparation population runs
   after the revision/adaptive queue; it changes no provider, prompt, tool,
   speech, VAD, or post-endpoint transition
+- Publication gate: one frozen manifest covers all 14 tau-Voice matrices, the
+  preparation pair, 498 FDB v1.5 trials, 100 FDB v3 examples, and 6,147
+  FD-Bench conversations. The terminal reporter refuses partial populations,
+  terminal harness failures, hash drift, missing official evaluations, or
+  undisclosed metric exclusions and retains separate benchmark semantics.
