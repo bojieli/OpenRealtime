@@ -24,6 +24,8 @@
   },
   "adapter_contract": {
     "base_class": "DiscreteTimeAdapter",
+    "provider": "openai",
+    "endpoint_parameter": "audio_native_config.base_url",
     "primary_method": "run_tick",
     "tool_result_method": "send_tool_result",
     "external_audio": "8 kHz G.711 mu-law by default",
@@ -35,6 +37,25 @@
       "provider events",
       "usage records"
     ]
+  },
+  "local_integration": {
+    "patch": "benchmarks/tau-voice/patches/0001-local-openai-fish-audio.patch",
+    "patch_sha256": "180f03a8f04d0aecb91f4b43039d1b975a70c0068986dc65e802dcbb3b7633fa",
+    "preparation_script": "scripts/prepare-tau-voice.sh",
+    "wire_protocol_changed": false,
+    "agent_transport": "standard upstream OpenAI Realtime adapter with explicit local WebSocket base_url",
+    "caller_synthesis_provider": "fish_audio",
+    "caller_synthesis_model": "fishaudio/s2-pro",
+    "caller_synthesis_default_endpoint": "http://127.0.0.1:8081/v1/audio/speech",
+    "caller_synthesis_output": "mono PCM16 resampled to the configured benchmark PCM rate",
+    "credential_policy": "OPENAI_API_KEY is a dedicated local-only gateway token; FISH_AUDIO_API_KEY is optional and never serialized",
+    "verification": {
+      "fresh_checkout_patch_applied": true,
+      "ruff_passed": true,
+      "affected_tests_passed": 85,
+      "live_provider_suite_passed": false,
+      "benchmark_tasks_run": 0
+    }
   },
   "interaction_metrics": [
     "response_latency_mean",
@@ -53,11 +74,11 @@
     "voice_to_text_capability_retention_percent_range": [30, 45]
   },
   "redistributed": false,
-  "status": "pinned_adapter_pending_not_run",
+  "status": "pinned_harness_patch_verified_gateway_pending_not_run",
   "blockers_observed": [
-    "The OpenRealtime persistent audio bridge has not yet implemented the upstream DiscreteTimeAdapter provider suite.",
-    "ELEVENLABS_API_KEY was not available in the evaluation environment.",
-    "External users must configure tau2 control-persona voice IDs; upstream defaults are private and unavailable."
+    "The persistent local OpenRealtime /v1/realtime gateway is not yet implemented or live-provider conformant.",
+    "The local Qwen3-ASR, Qwen fast model, and Fish agent-speech services were not running during harness verification.",
+    "Regular/accent cells require a preregistered Fish voice registry or reference map with speaker and license provenance."
   ],
   "reporting_rule": "Do not report an OpenRealtime tau-Voice score until the pinned provider adapter passes upstream tests and the complete declared task/condition cell finishes. Partial text-only, mock-tool, or interaction-only runs are not tau-Voice scores."
 }

@@ -1,0 +1,499 @@
+diff --git a/src/tau2/agent/base/voice.py b/src/tau2/agent/base/voice.py
+index 6127f38..426afc9 100644
+--- a/src/tau2/agent/base/voice.py
++++ b/src/tau2/agent/base/voice.py
+@@ -13 +12,0 @@ from tau2.data_model.voice import VoiceSettings
+-from tau2.data_model.voice_personas import get_elevenlabs_voice_id
+@@ -19,0 +19 @@ from tau2.voice.synthesis.synthesize import synthesize_voice
++from tau2.voice.synthesis.voice_selection import resolve_synthesis_voice_id
+@@ -117 +117,3 @@ class VoiceMixin(
+-        provider_config.voice_id = get_elevenlabs_voice_id(speech_env.persona_name)
++        provider_config.voice_id = resolve_synthesis_voice_id(
++            synthesis_config, speech_env.persona_name
++        )
+diff --git a/src/tau2/agent/discrete_time_audio_native_agent.py b/src/tau2/agent/discrete_time_audio_native_agent.py
+index 0460929..352ca8d 100644
+--- a/src/tau2/agent/discrete_time_audio_native_agent.py
++++ b/src/tau2/agent/discrete_time_audio_native_agent.py
+@@ -211,0 +212 @@ class DiscreteTimeAudioNativeAgent(FullDuplexAgent[DiscreteTimeAgentState]):
++        base_url: Optional[str] = None,
+@@ -256,0 +258 @@ class DiscreteTimeAudioNativeAgent(FullDuplexAgent[DiscreteTimeAgentState]):
++        self.base_url = base_url
+@@ -369,0 +372 @@ class DiscreteTimeAudioNativeAgent(FullDuplexAgent[DiscreteTimeAgentState]):
++                base_url=self.base_url,
+@@ -844,0 +848 @@ def create_discrete_time_audio_native_agent(tools, domain_policy, **kwargs):
++            base_url=audio_native_config.base_url,
+diff --git a/src/tau2/cli.py b/src/tau2/cli.py
+index 96295ef..a7fa9bb 100644
+--- a/src/tau2/cli.py
++++ b/src/tau2/cli.py
+@@ -41,0 +42 @@ from tau2.data_model.simulation import (
++from tau2.data_model.voice import FishAudioTTSConfig, SynthesisConfig, VoiceSettings
+@@ -44,0 +46,6 @@ from tau2.runner.work import parse_provider_limits
++from tau2.voice_config import (
++    DEFAULT_FISH_AUDIO_SOURCE_SAMPLE_RATE,
++    DEFAULT_FISH_AUDIO_TTS_ENDPOINT,
++    DEFAULT_FISH_AUDIO_TTS_MODEL,
++    DEFAULT_FISH_AUDIO_TTS_VOICE,
++)
+@@ -277,0 +285,6 @@ def add_run_args(parser):
++    parser.add_argument(
++        "--audio-native-base-url",
++        type=str,
++        default=None,
++        help="OpenAI Realtime-compatible WebSocket endpoint override.",
++    )
+@@ -314,0 +328,27 @@ def add_run_args(parser):
++    parser.add_argument(
++        "--voice-synthesis-provider",
++        choices=["elevenlabs", "fish_audio"],
++        default="elevenlabs",
++        help="TTS provider for the simulated caller.",
++    )
++    parser.add_argument(
++        "--fish-audio-endpoint",
++        default=DEFAULT_FISH_AUDIO_TTS_ENDPOINT,
++        help="Local Fish Audio OpenAI-compatible speech endpoint.",
++    )
++    parser.add_argument(
++        "--fish-audio-model",
++        default=DEFAULT_FISH_AUDIO_TTS_MODEL,
++        help="Fish Audio model name sent to the local endpoint.",
++    )
++    parser.add_argument(
++        "--fish-audio-voice",
++        default=DEFAULT_FISH_AUDIO_TTS_VOICE,
++        help="Fish Audio preset or uploaded voice name.",
++    )
++    parser.add_argument(
++        "--fish-audio-source-sample-rate",
++        type=int,
++        default=DEFAULT_FISH_AUDIO_SOURCE_SAMPLE_RATE,
++        help="Fallback PCM sample rate when Fish omits X-Sample-Rate.",
++    )
+@@ -630,0 +671 @@ def main():
++                base_url=args.audio_native_base_url,
+@@ -684,0 +726,16 @@ def main():
++            user_voice_settings = None
++            if args.voice_synthesis_provider == "fish_audio":
++                fish_config = FishAudioTTSConfig(
++                    endpoint=args.fish_audio_endpoint,
++                    model_id=args.fish_audio_model,
++                    voice_id=args.fish_audio_voice,
++                    source_sample_rate=args.fish_audio_source_sample_rate,
++                    output_sample_rate=args.pcm_sample_rate,
++                    seed=args.seed,
++                )
++                user_voice_settings = VoiceSettings(
++                    transcription_config=None,
++                    synthesis_config=SynthesisConfig(
++                        provider="fish_audio", provider_config=fish_config
++                    ),
++                )
+@@ -688,0 +746 @@ def main():
++                user_voice_settings=user_voice_settings,
+diff --git a/src/tau2/data_model/simulation.py b/src/tau2/data_model/simulation.py
+index 585abfa..658dc92 100644
+--- a/src/tau2/data_model/simulation.py
++++ b/src/tau2/data_model/simulation.py
+@@ -92,0 +93,4 @@ class AudioNativeConfig(BaseModel):
++    base_url: Optional[str] = Field(
++        default=None,
++        description="Explicit OpenAI Realtime-compatible WebSocket endpoint",
++    )
+diff --git a/src/tau2/data_model/voice.py b/src/tau2/data_model/voice.py
+index 753a340..b5e9b1a 100644
+--- a/src/tau2/data_model/voice.py
++++ b/src/tau2/data_model/voice.py
+@@ -5 +5 @@ from pathlib import Path
+-from typing import Any, Literal, Optional
++from typing import Any, Literal, Optional, Union
+@@ -7 +7 @@ from typing import Any, Literal, Optional
+-from pydantic import BaseModel, Field, computed_field
++from pydantic import BaseModel, Field, computed_field, model_validator
+@@ -19,0 +20,4 @@ from tau2.voice_config import (
++    DEFAULT_FISH_AUDIO_SOURCE_SAMPLE_RATE,
++    DEFAULT_FISH_AUDIO_TTS_ENDPOINT,
++    DEFAULT_FISH_AUDIO_TTS_MODEL,
++    DEFAULT_FISH_AUDIO_TTS_VOICE,
+@@ -82,0 +87 @@ class ElevenLabsTTSConfig(BaseModel):
++    provider: Literal["elevenlabs"] = "elevenlabs"
+@@ -101 +106,23 @@ class ElevenLabsTTSConfig(BaseModel):
+-ProviderConfig = ElevenLabsTTSConfig
++class FishAudioTTSConfig(BaseModel):
++    """Configuration for a local Fish Audio OpenAI-compatible TTS endpoint."""
++
++    provider: Literal["fish_audio"] = "fish_audio"
++    endpoint: str = Field(default=DEFAULT_FISH_AUDIO_TTS_ENDPOINT)
++    model_id: str = Field(default=DEFAULT_FISH_AUDIO_TTS_MODEL)
++    voice_id: str = Field(default=DEFAULT_FISH_AUDIO_TTS_VOICE)
++    source_sample_rate: int = Field(default=DEFAULT_FISH_AUDIO_SOURCE_SAMPLE_RATE, gt=0)
++    output_sample_rate: int = Field(default=16000, gt=0)
++    request_timeout_seconds: float = Field(default=120.0, gt=0)
++    seed: Optional[int] = Field(default=None)
++    insert_audio_tags: bool = Field(default=False)
++    audio_tags_probability: float = Field(default=0.0, ge=0.0, le=1.0)
++
++    @property
++    def output_audio_format(self) -> AudioFormat:
++        return AudioFormat(
++            encoding=AudioEncoding.PCM_S16LE,
++            sample_rate=self.output_sample_rate,
++        )
++
++
++ProviderConfig = Union[ElevenLabsTTSConfig, FishAudioTTSConfig]
+@@ -112 +139 @@ class SynthesisConfig(BaseModel):
+-    provider: str = Field(default="elevenlabs")
++    provider: Literal["elevenlabs", "fish_audio"] = Field(default="elevenlabs")
+@@ -123,0 +151,8 @@ class SynthesisConfig(BaseModel):
++    @model_validator(mode="after")
++    def provider_matches_config(self) -> "SynthesisConfig":
++        if self.provider_config is None:
++            raise ValueError("Synthesis provider_config is required")
++        if self.provider != self.provider_config.provider:
++            raise ValueError("Synthesis provider and provider_config must match")
++        return self
++
+diff --git a/src/tau2/runner/batch.py b/src/tau2/runner/batch.py
+index 8b9c818..0ecb175 100644
+--- a/src/tau2/runner/batch.py
++++ b/src/tau2/runner/batch.py
+@@ -20,0 +21 @@ from contextvars import ContextVar
++from copy import deepcopy
+@@ -496,3 +497,7 @@ def make_voice_run_settings(
+-    user_voice_settings = VoiceSettings(
+-        transcription_config=None,
+-        synthesis_config=SynthesisConfig(),
++    user_voice_settings = (
++        deepcopy(config.user_voice_settings)
++        if config.user_voice_settings is not None
++        else VoiceSettings(
++            transcription_config=None,
++            synthesis_config=SynthesisConfig(),
++        )
+diff --git a/src/tau2/runner/build.py b/src/tau2/runner/build.py
+index 0eb6bdc..2f443b5 100644
+--- a/src/tau2/runner/build.py
++++ b/src/tau2/runner/build.py
+@@ -34,0 +35 @@ from tau2.user_simulation_voice_presets import (
++from tau2.voice.synthesis.voice_selection import resolve_synthesis_voice_id
+@@ -261,0 +263,4 @@ def build_voice_user(
++    speech_environment.voice_id = resolve_synthesis_voice_id(
++        task_voice_settings.synthesis_config,
++        speech_environment.persona_name,
++    )
+diff --git a/src/tau2/voice/audio_native/adapter.py b/src/tau2/voice/audio_native/adapter.py
+index 7d9459d..7904f18 100644
+--- a/src/tau2/voice/audio_native/adapter.py
++++ b/src/tau2/voice/audio_native/adapter.py
+@@ -377,0 +378 @@ def create_adapter(
++    base_url: Optional[str] = None,
+@@ -392,0 +394,2 @@ def create_adapter(
++        base_url: Optional provider endpoint override. Currently supported by
++            the OpenAI Realtime-compatible provider only.
+@@ -436,0 +440 @@ def create_adapter(
++            base_url=base_url,
+@@ -439,0 +444,2 @@ def create_adapter(
++        if base_url is not None:
++            raise ValueError("base_url is only supported by the openai provider")
+@@ -450,0 +457,2 @@ def create_adapter(
++        if base_url is not None:
++            raise ValueError("base_url is only supported by the openai provider")
+@@ -461,0 +470,2 @@ def create_adapter(
++        if base_url is not None:
++            raise ValueError("base_url is only supported by the openai provider")
+@@ -472,0 +483,2 @@ def create_adapter(
++        if base_url is not None:
++            raise ValueError("base_url is only supported by the openai provider")
+@@ -483,0 +496,2 @@ def create_adapter(
++        if base_url is not None:
++            raise ValueError("base_url is only supported by the openai provider")
+diff --git a/src/tau2/voice/audio_native/openai/discrete_time_adapter.py b/src/tau2/voice/audio_native/openai/discrete_time_adapter.py
+index 8d9dc9a..1a7f152 100644
+--- a/src/tau2/voice/audio_native/openai/discrete_time_adapter.py
++++ b/src/tau2/voice/audio_native/openai/discrete_time_adapter.py
+@@ -72,0 +73 @@ class DiscreteTimeOpenAIAdapter(DiscreteTimeAdapter):
++        base_url: Optional[str] = None,
+@@ -86,2 +87,2 @@ class DiscreteTimeOpenAIAdapter(DiscreteTimeAdapter):
+-        if model is not None and provider is not None:
+-            raise ValueError("model and provider cannot be provided together")
++        if provider is not None and (model is not None or base_url is not None):
++            raise ValueError("model/base_url and provider cannot be provided together")
+@@ -90,0 +92 @@ class DiscreteTimeOpenAIAdapter(DiscreteTimeAdapter):
++        self.base_url = base_url
+@@ -102,0 +105 @@ class DiscreteTimeOpenAIAdapter(DiscreteTimeAdapter):
++                base_url=self.base_url,
+diff --git a/src/tau2/voice/audio_native/openai/provider.py b/src/tau2/voice/audio_native/openai/provider.py
+index 03eb2bb..a48816c 100644
+--- a/src/tau2/voice/audio_native/openai/provider.py
++++ b/src/tau2/voice/audio_native/openai/provider.py
+@@ -124,0 +125 @@ class OpenAIRealtimeProvider:
++        base_url: Optional[str] = None,
+@@ -133,0 +135,3 @@ class OpenAIRealtimeProvider:
++            base_url: Explicit OpenAI Realtime-compatible WebSocket endpoint.
++                This is intended for local or self-hosted implementations and
++                takes precedence over provider-specific environment defaults.
+@@ -139 +143,11 @@ class OpenAIRealtimeProvider:
+-        if self.model.startswith(PINE_MODEL_PREFIX):
++        if base_url is not None:
++            self.base_url = base_url.rstrip("/")
++            if not self.base_url.startswith(("ws://", "wss://")):
++                raise ValueError("OpenAI Realtime base URL must use ws:// or wss://")
++            self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
++            if not self.api_key:
++                raise ValueError(
++                    "OpenAI-compatible API key not provided. Set OPENAI_API_KEY "
++                    "even when the local endpoint accepts a development token."
++                )
++        elif self.model.startswith(PINE_MODEL_PREFIX):
+diff --git a/src/tau2/voice/synthesis/audio_effects/speech_generator.py b/src/tau2/voice/synthesis/audio_effects/speech_generator.py
+index b67d133..69c5a52 100644
+--- a/src/tau2/voice/synthesis/audio_effects/speech_generator.py
++++ b/src/tau2/voice/synthesis/audio_effects/speech_generator.py
+@@ -16 +15,0 @@ from tau2.data_model.voice import SynthesisConfig
+-from tau2.data_model.voice_personas import get_elevenlabs_voice_id
+@@ -18,0 +18 @@ from tau2.voice.synthesis.synthesize import synthesize_voice
++from tau2.voice.synthesis.voice_selection import resolve_synthesis_voice_id
+@@ -127 +127 @@ def create_streaming_audio_generators(
+-        voice_id = get_elevenlabs_voice_id(persona_name)
++        voice_id = resolve_synthesis_voice_id(synthesis_config, persona_name)
+diff --git a/src/tau2/voice/synthesis/synthesize.py b/src/tau2/voice/synthesis/synthesize.py
+index e9a7ab9..da207d4 100644
+--- a/src/tau2/voice/synthesis/synthesize.py
++++ b/src/tau2/voice/synthesis/synthesize.py
+@@ -6 +6,5 @@ from tau2.data_model.audio import AudioData
+-from tau2.data_model.voice import ElevenLabsTTSConfig
++from tau2.data_model.voice import (
++    ElevenLabsTTSConfig,
++    FishAudioTTSConfig,
++    ProviderConfig,
++)
+@@ -8,0 +13 @@ from tau2.voice.utils.elevenlabs_utils import tts_elevenlabs
++from tau2.voice.utils.fish_audio_utils import tts_fish_audio
+@@ -12,2 +16,0 @@ load_dotenv()
+-ProviderConfig = ElevenLabsTTSConfig
+-
+@@ -22,0 +26,2 @@ def synthesize_voice(
++        if not isinstance(provider_config, ElevenLabsTTSConfig):
++            raise ValueError("ElevenLabs synthesis requires ElevenLabsTTSConfig")
+@@ -23,0 +29,4 @@ def synthesize_voice(
++    elif provider == "fish_audio":
++        if not isinstance(provider_config, FishAudioTTSConfig):
++            raise ValueError("Fish Audio synthesis requires FishAudioTTSConfig")
++        audio_data = tts_fish_audio(text=text, config=provider_config)
+diff --git a/src/tau2/voice/synthesis/voice_selection.py b/src/tau2/voice/synthesis/voice_selection.py
+new file mode 100644
+index 0000000..dfbab48
+--- /dev/null
++++ b/src/tau2/voice/synthesis/voice_selection.py
+@@ -0,0 +1,18 @@
++"""Provider-aware output voice selection for synthesized benchmark callers."""
++
++from tau2.data_model.voice import SynthesisConfig
++from tau2.data_model.voice_personas import get_elevenlabs_voice_id
++
++
++def resolve_synthesis_voice_id(
++    synthesis_config: SynthesisConfig, persona_name: str
++) -> str:
++    """Resolve a voice without treating one provider's IDs as another's."""
++    if synthesis_config.provider == "elevenlabs":
++        return get_elevenlabs_voice_id(persona_name)
++    voice_id = synthesis_config.provider_config.voice_id
++    if not voice_id:
++        raise ValueError(
++            f"Synthesis provider {synthesis_config.provider} requires a voice ID"
++        )
++    return voice_id
+diff --git a/src/tau2/voice/utils/fish_audio_utils.py b/src/tau2/voice/utils/fish_audio_utils.py
+new file mode 100644
+index 0000000..88894b5
+--- /dev/null
++++ b/src/tau2/voice/utils/fish_audio_utils.py
+@@ -0,0 +1,57 @@
++"""Fish Audio synthesis through a local OpenAI-compatible speech endpoint."""
++
++import os
++
++import httpx
++
++from tau2.data_model.audio import AudioData, AudioEncoding, AudioFormat
++from tau2.data_model.voice import FishAudioTTSConfig
++from tau2.voice.utils.audio_preprocessing import resample_audio
++
++
++def tts_fish_audio(text: str, config: FishAudioTTSConfig) -> AudioData:
++    """Synthesize mono PCM16 with Fish Audio and normalize the sample rate."""
++    headers = {"Content-Type": "application/json", "Accept": "audio/pcm"}
++    api_key = os.getenv("FISH_AUDIO_API_KEY")
++    if api_key:
++        headers["Authorization"] = f"Bearer {api_key}"
++
++    payload = {
++        "model": config.model_id,
++        "input": text,
++        "voice": config.voice_id,
++        "response_format": "pcm",
++        "stream": False,
++    }
++    if config.seed is not None:
++        payload["seed"] = config.seed
++
++    response = httpx.post(
++        config.endpoint,
++        headers=headers,
++        json=payload,
++        timeout=config.request_timeout_seconds,
++    )
++    response.raise_for_status()
++    if not response.content or len(response.content) % 2:
++        raise ValueError("Fish Audio returned empty or misaligned PCM16 audio")
++
++    sample_rate_value = response.headers.get(
++        "X-Sample-Rate", str(config.source_sample_rate)
++    )
++    try:
++        sample_rate = int(sample_rate_value)
++    except ValueError as error:
++        raise ValueError("Fish Audio returned an invalid X-Sample-Rate") from error
++    if sample_rate <= 0:
++        raise ValueError("Fish Audio returned a non-positive sample rate")
++
++    audio = AudioData(
++        data=response.content,
++        format=AudioFormat(
++            encoding=AudioEncoding.PCM_S16LE,
++            sample_rate=sample_rate,
++            channels=1,
++        ),
++    )
++    return resample_audio(audio, config.output_sample_rate)
+diff --git a/src/tau2/voice_config.py b/src/tau2/voice_config.py
+index 2c4bdb3..de32703 100644
+--- a/src/tau2/voice_config.py
++++ b/src/tau2/voice_config.py
+@@ -33,0 +34,4 @@ DEFAULT_VOICE_SYNTHESIS_PROVIDER = "elevenlabs"
++DEFAULT_FISH_AUDIO_TTS_ENDPOINT = "http://127.0.0.1:8081/v1/audio/speech"
++DEFAULT_FISH_AUDIO_TTS_MODEL = "fishaudio/s2-pro"
++DEFAULT_FISH_AUDIO_TTS_VOICE = "default"
++DEFAULT_FISH_AUDIO_SOURCE_SAMPLE_RATE = 24000
+diff --git a/tests/test_voice/test_audio_native/test_openai_provider_config.py b/tests/test_voice/test_audio_native/test_openai_provider_config.py
+index 591da87..bddf1f4 100644
+--- a/tests/test_voice/test_audio_native/test_openai_provider_config.py
++++ b/tests/test_voice/test_audio_native/test_openai_provider_config.py
+@@ -3,0 +4 @@ from tau2.config import DEFAULT_OPENAI_REALTIME_BASE_URL
++from tau2.voice.audio_native.adapter import create_adapter
+@@ -15,0 +17,37 @@ def test_openai_model_uses_openai_environment(monkeypatch):
++def test_explicit_base_url_uses_standard_openai_credentials(monkeypatch):
++    monkeypatch.setenv("OPENAI_API_KEY", "local-development-token")
++    monkeypatch.setenv("PINE_API_KEY", "pine-key")
++
++    provider = OpenAIRealtimeProvider(
++        model="openrealtime-local",
++        base_url="ws://127.0.0.1:8765/v1/realtime/",
++    )
++
++    assert provider.api_key == "local-development-token"
++    assert provider.base_url == "ws://127.0.0.1:8765/v1/realtime"
++
++
++def test_explicit_base_url_requires_websocket_scheme(monkeypatch):
++    monkeypatch.setenv("OPENAI_API_KEY", "local-development-token")
++
++    with pytest.raises(ValueError, match="ws:// or wss://"):
++        OpenAIRealtimeProvider(
++            model="openrealtime-local",
++            base_url="http://127.0.0.1:8765/v1/realtime",
++        )
++
++
++def test_adapter_factory_propagates_explicit_base_url(monkeypatch):
++    monkeypatch.setenv("OPENAI_API_KEY", "local-development-token")
++
++    adapter, model = create_adapter(
++        provider="openai",
++        tick_duration_ms=200,
++        model="openrealtime-local",
++        base_url="ws://127.0.0.1:8765/v1/realtime",
++    )
++
++    assert model == "openrealtime-local"
++    assert adapter.provider.base_url == "ws://127.0.0.1:8765/v1/realtime"
++
++
+diff --git a/tests/test_voice/test_fish_audio_synthesis.py b/tests/test_voice/test_fish_audio_synthesis.py
+new file mode 100644
+index 0000000..d2b869d
+--- /dev/null
++++ b/tests/test_voice/test_fish_audio_synthesis.py
+@@ -0,0 +1,69 @@
++import httpx
++import pytest
++
++from tau2.data_model.voice import FishAudioTTSConfig, SynthesisConfig
++from tau2.voice.synthesis.voice_selection import resolve_synthesis_voice_id
++from tau2.voice.utils.fish_audio_utils import tts_fish_audio
++
++
++def test_fish_audio_uses_named_provider_and_returns_pcm16(monkeypatch):
++    captured = {}
++
++    def fake_post(url, *, headers, json, timeout):
++        captured.update(url=url, headers=headers, json=json, timeout=timeout)
++        return httpx.Response(
++            200,
++            content=b"\x01\x00\x02\x00",
++            headers={"X-Sample-Rate": "16000"},
++            request=httpx.Request("POST", url),
++        )
++
++    monkeypatch.setattr(httpx, "post", fake_post)
++    config = FishAudioTTSConfig(
++        endpoint="http://127.0.0.1:8081/v1/audio/speech",
++        model_id="fishaudio/s2-pro",
++        voice_id="control-voice",
++        source_sample_rate=16000,
++        output_sample_rate=16000,
++        seed=7,
++    )
++
++    audio = tts_fish_audio("hello", config)
++
++    assert audio.data == b"\x01\x00\x02\x00"
++    assert audio.format.is_pcm16
++    assert audio.format.sample_rate == 16000
++    assert captured["json"] == {
++        "model": "fishaudio/s2-pro",
++        "input": "hello",
++        "voice": "control-voice",
++        "response_format": "pcm",
++        "stream": False,
++        "seed": 7,
++    }
++
++
++def test_fish_audio_rejects_odd_pcm(monkeypatch):
++    def fake_post(url, *, headers, json, timeout):
++        return httpx.Response(
++            200,
++            content=b"\x01",
++            request=httpx.Request("POST", url),
++        )
++
++    monkeypatch.setattr(httpx, "post", fake_post)
++
++    with pytest.raises(ValueError, match="misaligned PCM16"):
++        tts_fish_audio("hello", FishAudioTTSConfig())
++
++
++def test_fish_audio_config_round_trip_preserves_provider():
++    config = SynthesisConfig(
++        provider="fish_audio",
++        provider_config=FishAudioTTSConfig(voice_id="local-control"),
++    )
++
++    restored = SynthesisConfig.model_validate(config.model_dump())
++
++    assert isinstance(restored.provider_config, FishAudioTTSConfig)
++    assert resolve_synthesis_voice_id(restored, "lisa_brenner") == "local-control"
