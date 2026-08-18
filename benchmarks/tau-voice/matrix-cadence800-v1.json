@@ -26,7 +26,8 @@
     "max_concurrency": 1,
     "task_timeout_seconds": 1500,
     "conversation_timeout_seconds": 1200,
-    "semantic_retries": 0,
+    "infrastructure_retries": 3,
+    "infrastructure_retry_delay_seconds": 1,
     "hallucination_retries": 0,
     "tick_seconds": 0.8
   },
@@ -35,6 +36,8 @@
     "provider": "openai",
     "compatibility_model": "gpt-realtime-1.5",
     "base_url": "ws://127.0.0.1:8765/v1/realtime",
+    "ping_interval_seconds": 20,
+    "ping_timeout_seconds": 0,
     "wire_protocol_changed": false
   },
   "system": {
@@ -94,6 +97,15 @@
     "semantic_event_policy_unchanged": true,
     "preserve_failures": true,
     "auto_resume_infrastructure_interruptions": true,
+    "infrastructure_retry_policy": {
+      "maximum_retries": 3,
+      "maximum_attempts": 4,
+      "retry_delay_seconds": 1,
+      "seed_reused": true,
+      "scope": "exceptions_only",
+      "semantic_outcomes_retried": false,
+      "attempt_artifacts": "preserved"
+    },
     "result_unit": "one complete 278-task speech-complexity cell",
     "partial_run_label": "incomplete cadence ablation cell; not a tau-Voice score",
     "cost_note": "tau's agent ledger is a compatibility-model pricing proxy; provider advances and local GPU telemetry are separate outcomes"

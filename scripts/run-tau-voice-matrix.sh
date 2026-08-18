@@ -185,12 +185,34 @@ seed="$(jq -r '.benchmark.seed' "${matrix}")"
 max_concurrency="$(jq -r '.benchmark.max_concurrency' "${matrix}")"
 task_timeout="$(jq -r '.benchmark.task_timeout_seconds' "${matrix}")"
 conversation_timeout="$(jq -r '.benchmark.conversation_timeout_seconds' "${matrix}")"
-semantic_retries="$(jq -r '.benchmark.semantic_retries' "${matrix}")"
+infrastructure_retries="$(jq -r '.benchmark.infrastructure_retries' "${matrix}")"
+infrastructure_retry_delay="$(jq -r '.benchmark.infrastructure_retry_delay_seconds' "${matrix}")"
 hallucination_retries="$(jq -r '.benchmark.hallucination_retries' "${matrix}")"
 tick_seconds="$(jq -r '.benchmark.tick_seconds' "${matrix}")"
 transport_provider="$(jq -r '.transport.provider' "${matrix}")"
 transport_model="$(jq -r '.transport.compatibility_model' "${matrix}")"
 transport_base_url="$(jq -r '.transport.base_url' "${matrix}")"
+transport_ping_interval="$(jq -r '.transport.ping_interval_seconds' "${matrix}")"
+transport_ping_timeout="$(jq -r '.transport.ping_timeout_seconds' "${matrix}")"
+if ! jq -e \
+  --argjson retries "${infrastructure_retries}" \
+  '.reporting.auto_resume_infrastructure_interruptions == true and
+   .reporting.infrastructure_retry_policy.maximum_retries == $retries and
+   .reporting.infrastructure_retry_policy.maximum_attempts == ($retries + 1) and
+   .reporting.infrastructure_retry_policy.retry_delay_seconds == .benchmark.infrastructure_retry_delay_seconds and
+   .reporting.infrastructure_retry_policy.seed_reused == true and
+   .reporting.infrastructure_retry_policy.scope == "exceptions_only" and
+   .reporting.infrastructure_retry_policy.semantic_outcomes_retried == false and
+   .reporting.infrastructure_retry_policy.attempt_artifacts == "preserved"' \
+  "${matrix}" >/dev/null; then
+  echo "matrix infrastructure retry policy is inconsistent" >&2
+  exit 1
+fi
+if [[ "${transport_ping_interval}" != "20" ]] || \
+  [[ "${transport_ping_timeout}" != "0" ]]; then
+  echo "matrix must pin 20-second pings with timeout-based disconnects disabled" >&2
+  exit 1
+fi
 run_status="running"
 for cell in "${cells[@]}"; do
   if [[ -n "${selected_cell}" && "${cell}" != "${selected_cell}" ]]; then
@@ -229,7 +251,8 @@ for cell in "${cells[@]}"; do
       --seed "${seed}" \
       --max-concurrency "${max_concurrency}" \
       --workers 0 \
-      --max-retries "${semantic_retries}" \
+      --max-retries "${infrastructure_retries}" \
+      --retry-delay "${infrastructure_retry_delay}" \
       --hallucination-retries "${hallucination_retries}" \
       --timeout "${task_timeout}" \
       --max-steps-seconds "${conversation_timeout}" \
@@ -237,6 +260,7 @@ for cell in "${cells[@]}"; do
       --audio-native-provider "${transport_provider}" \
       --audio-native-model "${transport_model}" \
       --audio-native-base-url "${transport_base_url}" \
+      --openai-realtime-ping-timeout "${transport_ping_timeout}" \
       --voice-synthesis-provider fish_audio \
       --fish-audio-endpoint http://127.0.0.1:8081/v1/audio/speech \
       --fish-audio-model fishaudio/s2-pro \

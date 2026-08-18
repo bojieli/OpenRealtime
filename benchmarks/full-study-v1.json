@@ -15,69 +15,69 @@
     "artifact_retention": {
       "scoring_inputs": "results.json and simulations/*.json remain expanded",
       "raw_artifacts": "each complete cell/domain artifacts directory is preserved losslessly as deterministic-pax-tar+zstd",
-      "deletion_gate": "remove expanded duplicates only after archive readability, SHA-256, byte count, matrix identity, and exact task population are recorded",
-      "publication_gate": "the terminal reporter rehashes every archive and rejects missing evidence or remaining expanded duplicates"
+      "deletion_gate": "remove expanded duplicates only after archive readability, SHA-256, byte count, matrix identity, exact task population, and the bounded exception-only attempt ledger are recorded",
+      "publication_gate": "the terminal reporter rehashes every archive and rejects missing evidence, invalid retry provenance, or remaining expanded duplicates"
     },
     "source_manifest": {
       "path": "benchmarks/external/tau-voice.manifest.json",
-      "sha256": "67ab8b08a187aa364a0c8f4c22b783d47bfe4a8ccc961a8936279ed9020e8596"
+      "sha256": "eea982bfa404bb31ba67e8624fff78fc930ede456c82d45202f86cbd539651b6"
     },
     "matrices": [
       {
         "path": "benchmarks/tau-voice/matrix-canonical-v1.json",
-        "sha256": "fd8aa09ddce4ab225122a9d921c8b261c0274d68fa898030a35c847ee7f0f577"
+        "sha256": "add27dd2b82cd36e897faf10e831950a6a52f07d36b3df53c4a0d27a5404bae3"
       },
       {
         "path": "benchmarks/tau-voice/matrix-asr17-v1.json",
-        "sha256": "8cce55ff667f0d50cf340c1e1dd70630ce4d4a1d512b683a73c89b6cbc88c660"
+        "sha256": "f67e12b0b449ba642a34fa4e0af885454bee0915247723c31bcf1f7eb2dfaf06"
       },
       {
         "path": "benchmarks/tau-voice/matrix-fast-gemini-v1.json",
-        "sha256": "13cadc02c486528135bf35c6ba38a0156d6da717b6f63a051a25e4ad753aab84"
+        "sha256": "ec2b50722ca9120360c8fa09b2fceb38245cb413fd5c72f5d2fc4c9ecb5971f1"
       },
       {
         "path": "benchmarks/tau-voice/matrix-cadence050-v1.json",
-        "sha256": "c1f55ac01584b610f077df556c9bccde495ab3e31d4eea5aa2e4703a95b66f6e"
+        "sha256": "b542c7c94fb10f389c8d920997250c9f449ec23689470a1319ecada8c84502b7"
       },
       {
         "path": "benchmarks/tau-voice/matrix-cadence100-v1.json",
-        "sha256": "5a92036530c6e0277e4135c1e84a54adc18893e173f5d226092a82848ca811c0"
+        "sha256": "66b04b71282d2049e025f55c361b7458539e0cf4ae1c73223d68f3a510102a32"
       },
       {
         "path": "benchmarks/tau-voice/matrix-cadence400-v1.json",
-        "sha256": "8b0e5d45d0b1d264f51690ae41518bd3055def93e3ffe8c4b7a9045f791331b6"
+        "sha256": "6425bc59a2af727894a43a24443ed620abcd1a3ab516c2d9a17b5372a25d2d33"
       },
       {
         "path": "benchmarks/tau-voice/matrix-cadence800-v1.json",
-        "sha256": "b288e6aac306ea28b7013a991f9d7585ab08cef8f927560de4b665fb69433374"
+        "sha256": "c4237902cd0451be75fe7b89e98768dd44222e445927922cb58cb17ba98cca0b"
       },
       {
         "path": "benchmarks/tau-voice/matrix-slow-medium-v1.json",
-        "sha256": "90688ca629319bfa33a54d9bc90dcaa850a94d44e25c8705a4ed063e5f52df24"
+        "sha256": "de9f7f21446659b284ef3d098d44ac0f6fa7474eb5154ba5d99e4e03027aee1c"
       },
       {
         "path": "benchmarks/tau-voice/matrix-content-only-v1.json",
-        "sha256": "96206647b1002b21f5e492ab5cdf1a47071befb4f286f4849c95ed89e512ff43"
+        "sha256": "9a21823923b10614491d707869a11cefff16a57c1184ca2063095a1da1d8a6b7"
       },
       {
         "path": "benchmarks/tau-voice/matrix-independent-v1.json",
-        "sha256": "2a57156cb3a2ff3525e4d13a266ba5adb7bbb88d74a0bcc66ae9857af40fa77b"
+        "sha256": "2fc69647e16a248d381932cc8576a4e1c4eac276c9da28ce8730627451254b47"
       },
       {
         "path": "benchmarks/tau-voice/matrix-revision-event-v1.json",
-        "sha256": "2e9301cec657c00aa2844869338ec250b24e8d088dd22084718f8283e62ff75d"
+        "sha256": "334ecf757694d575353598e9010cf1a1afd2d84775c826c039cd80d2f7352425"
       },
       {
         "path": "benchmarks/tau-voice/matrix-adaptive-v1.json",
-        "sha256": "5790a9b34a7500e5462c0d59c7989e358dc45b87c9fb81f08562b4b2c2bb7748"
+        "sha256": "091c8396ad71122a6f782bde2716ee85fc635266e79bde41646332cbb7a2cbe8"
       },
       {
         "path": "benchmarks/tau-voice/matrix-continuous-preparation-v1.json",
-        "sha256": "9ef56dedc1640e0cf3110f2d54a24bf898c2b8add9b0ae606e6ef7bb7a356902"
+        "sha256": "a4d5e1412c722bcb03c68b0fa5ade181650142ea900e407c9d064bb7a76c4e3b"
       },
       {
         "path": "benchmarks/tau-voice/matrix-endpoint-preparation-v1.json",
-        "sha256": "ceec5410ed47e28aa4e7343de9347e94da666ddc993d052a3ca122d0e6920846"
+        "sha256": "698347c0af712aa40efcb865e434d3ebc4891d7becf357d6620842ee793ce44e"
       }
     ],
     "paired_reports": [

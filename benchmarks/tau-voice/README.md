@@ -12,8 +12,8 @@ but fail the task, or intelligent but interact poorly.
 The pinned upstream identity and current run status are in
 [`tau-voice.manifest.json`](../external/tau-voice.manifest.json). No local score
 has been produced for the complete benchmark. A reproducible patch keeps τ's
-standard OpenAI adapter, adds an explicit local WebSocket endpoint, and adds
-Fish Audio as a separately identified caller-synthesis provider. The persistent
+standard OpenAI adapter, adds explicit local WebSocket and keepalive settings,
+and adds Fish Audio as a separately identified caller-synthesis provider. The persistent
 OpenRealtime gateway now passes all 12 selected cases in τ's official
 audio-native provider suite and has completed two exploratory airline tasks.
 A strict, provenance-recorded seven-persona Fish S2-Pro registry now covers
@@ -71,8 +71,9 @@ The upstream voice extra builds PyAudio. On Ubuntu, install
 
 The patch does not add an `openrealtime` provider to τ and does not alter the
 OpenAI Realtime wire protocol. It extends `DiscreteTimeOpenAIAdapter` with the
-ordinary operational parameter `base_url`; all session, audio, tool, and usage
-events remain on the standard OpenAI path. It also adds `fish_audio` beside
+ordinary operational parameters `base_url` and
+`openai_ping_timeout_seconds`; all session, audio, tool, and usage events
+remain on the standard OpenAI path. It also adds `fish_audio` beside
 `elevenlabs` in the simulated caller's synthesis layer. The provider name,
 model, endpoint, voice, sample rates, and seed are retained in `VoiceRunConfig`;
 the optional Fish bearer token is read only from `FISH_AUDIO_API_KEY`.
@@ -116,7 +117,7 @@ uv --directory .runtime/tau2-bench run tau2 run \
   --task-ids 3 \
   --num-trials 1 \
   --max-concurrency 1 \
-  --max-retries 0 \
+  --max-retries 3 \
   --hallucination-retries 0 \
   --timeout 480 \
   --max-steps-seconds 360 \
@@ -124,6 +125,7 @@ uv --directory .runtime/tau2-bench run tau2 run \
   --audio-native-provider openai \
   --audio-native-model gpt-realtime-1.5 \
   --audio-native-base-url ws://127.0.0.1:8765/v1/realtime \
+  --openai-realtime-ping-timeout 0 \
   --voice-synthesis-provider fish_audio \
   --fish-audio-endpoint http://127.0.0.1:8081/v1/audio/speech \
   --fish-audio-model fishaudio/s2-pro \
@@ -144,7 +146,8 @@ inside OpenRealtime, not through the τ client.
 The checked patch is
 [`0001-local-openai-fish-audio.patch`](patches/0001-local-openai-fish-audio.patch).
 At the pinned revision its focused and affected voice/streaming suites passed
-85 tests before the strict registry addition and 86 afterward. In addition,
+85 tests before the strict registry addition, 86 afterward, and 89 after the
+receive-gap liveness correction. In addition,
 the live local composition passes 12/12 OpenAI-selected
 cases in the official horizontal provider suite. That suite covers lifecycle,
 200 ms timing, two speech lengths, multi-turn audio, tool-result resumption,
@@ -158,6 +161,37 @@ only the benchmark client was pinned to one CPU with FIFO priority 10. The
 checked result preserves both the saturated-host failures and that execution
 condition: the isolated pass establishes adapter/function conformance, not an
 uncontended latency distribution.
+
+## Asynchronous transport liveness and retries
+
+The preserved pre-freeze pilot exposed a benchmark-transport failure rather
+than a task failure. On affected retail tasks, the last successful receive
+tick was followed by 33–61 seconds of wall-clock work in τ's hosted user
+simulator. During that interval the discrete orchestrator intentionally made
+no agent tick and therefore did not call the OpenAI adapter's `recv()`. The
+`websockets` client default still sent protocol pings, but its 20-second Pong
+deadline could close the session while application events waited behind that
+deliberate receive gap. The next tick then raised `Not connected to API`.
+Raw task logs and failed attempt directories remain preserved with the pilot.
+
+The confirmatory matrices make liveness explicit. They retain the standard
+20-second WebSocket ping interval but set the Pong timeout to zero, which in
+`websockets` means that keepalive pings continue while timeout-based closure is
+disabled. TCP and the next protocol read/write still surface real endpoint
+failure. This is the Chapter 4 asynchronous-event principle at the adapter
+boundary: wall-clock work in one producer must not be mistaken for the death
+of an independent event stream. It changes no Realtime event or model
+semantics and retains the adapter's bounded receive-side backpressure.
+
+Each publishable matrix also preregisters three whole-task infrastructure
+retries (four attempts maximum), a fixed one-second retry delay, and reuse of
+the same task seed. The pinned upstream `run_with_retry` applies these retries
+only when an attempt raises an exception; completed semantic
+outcomes, low rewards, tool errors, and hallucinations are never retried.
+Every failed attempt keeps its `artifacts/task_*/sim_*/sim_status.json`, task
+log, and debug evidence, and the lossless raw-artifact archive retains those
+directories. Any task that still ends in `infrastructure_error` after the
+bound makes the terminal study fail closed.
 
 ## Adapter boundary
 

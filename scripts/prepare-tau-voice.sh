@@ -4,7 +4,7 @@ set -euo pipefail
 
 readonly TAU2_REVISION="c3398666e6559e3a063da3fc04b5acf7f941464e"
 readonly TAU2_REPOSITORY="https://github.com/sierra-research/tau2-bench.git"
-readonly PATCH_SHA256="7f213e091f0600aad734169d48d78f1b8c079f3890275464f04988b20b12fc7d"
+readonly PATCH_SHA256="f34fe88d5ca6342a272b7f64b13da690acb390ef9b30b951b9c6d97466d301ac"
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 tau2_directory="${TAU2_DIR:-${repository_root}/.runtime/tau2-bench}"
