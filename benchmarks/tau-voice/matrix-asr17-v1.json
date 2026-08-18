@@ -38,6 +38,27 @@
     "agent_speech": "fishaudio/s2-pro on the local GPU, paced 100 ms output frames",
     "caller_speech": "fishaudio/s2-pro on the same local GPU through the separately named tau Fish backend"
   },
+  "runtime_requirements": {
+    "requires_local_fast": true,
+    "asr": {
+      "model": "Qwen/Qwen3-ASR-1.7B",
+      "provider_chunk_ms": 200
+    },
+    "gateway_profiles": {
+      "fast": {
+        "provider": "vllm",
+        "model": "qwen-fast",
+        "effort": "minimal",
+        "tool_authority": "propose"
+      },
+      "slow": {
+        "provider": "google",
+        "model": "gemini-3.5-flash",
+        "effort": "high",
+        "tool_authority": "execute"
+      }
+    }
+  },
   "cells": [
     {
       "id": "i1-qg-asr17-control",

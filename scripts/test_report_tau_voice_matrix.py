@@ -43,7 +43,10 @@ class PopulationValidationTest(unittest.TestCase):
                     model="gpt-realtime-1.5",
                     base_url="ws://127.0.0.1:8765/v1/realtime",
                 ),
-                agent_info=item(implementation="discrete_time_audio_native_agent"),
+                agent_info=item(
+                    implementation="discrete_time_audio_native_agent",
+                    llm="openai:gpt-realtime-1.5",
+                ),
                 user_info=item(
                     voice_settings=item(
                         synthesis_config=item(

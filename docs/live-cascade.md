@@ -214,6 +214,15 @@ Every client and server message is validated against the pinned standard
 Realtime schema unless `--validate-wire=false` is explicitly selected for
 diagnosis.
 
+The local launcher passes the declared ASR identity, ASR provider chunk, and
+slow effort into the gateway. `/healthz` reports those deployment parameters
+alongside the fast, slow, and speech descriptors so a benchmark can reject a
+stale process before starting. Fixed-cadence experiments set both
+`OPENREALTIME_ASR_CHUNK_SECONDS` for the Qwen server and
+`OPENREALTIME_ASR_PROVIDER_CHUNK` for the gateway buffer; changing only one is
+not the registered treatment. `OPENREALTIME_SLOW_EFFORT` selects the explicit
+medium or high slow profile.
+
 The fast phase has two explicit provider profiles, not a content router. The
 default `--fast-provider vllm` selects local Qwen instruct with thinking
 disabled. `--fast-provider gemini` selects Gemini 3.5 Flash with minimal
@@ -233,10 +242,10 @@ OPENREALTIME_FAST_MODEL=gemini-3.5-flash \
   scripts/local-cascade.sh start
 ```
 
-The service launcher also supports a declared `restart-asr` operation so a
-paired capacity experiment can change the ASR model without restarting Qwen,
-Fish, the Gemini-facing gateway, or benchmark orchestration. The first such
-experiment is frozen in `benchmarks/tau-voice/asr-ablation-v1.json`:
+The service launcher also supports `restart-asr` for local diagnosis. A scored
+capacity experiment restarts both ASR and the gateway so the adapter descriptor
+cannot retain the previous model identity. The first such experiment is frozen
+in `benchmarks/tau-voice/asr-ablation-v1.json`:
 Qwen3-ASR 0.6B versus the official 1.7B streaming model, with every benchmark
 and cognitive variable held fixed. It is a post-baseline ablation, not an
 automatic fallback or input-dependent router.

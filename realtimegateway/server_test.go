@@ -20,10 +20,11 @@ import (
 func TestHealthReportsConfiguredContinuationProfiles(t *testing.T) {
 	t.Parallel()
 	server, err := New(Config{
-		Model: "public-model", PerceptionFactory: func() (v1.PerceptionProvider, error) { return &finalOnlyASR{}, nil },
-		FastProvider:   &scriptedProvider{descriptor: continuation.Descriptor{Provider: "google", Model: "gemini-fast", Phase: trajectory.PhaseFast, Effort: continuation.EffortMinimal, Streaming: true, ToolAuthority: continuation.ToolAuthorityPropose}},
-		SlowProvider:   &scriptedProvider{descriptor: continuation.Descriptor{Provider: "google", Model: "gemini-slow", Phase: trajectory.PhaseSlow, Effort: continuation.EffortHigh, Streaming: true, ToolAuthority: continuation.ToolAuthorityExecute, ExecutableTools: true}},
-		SpeechProvider: fakeSpeech{},
+		Model: "public-model", ASRModel: "qwen-asr", ASRProviderChunk: 200 * time.Millisecond,
+		PerceptionFactory: func() (v1.PerceptionProvider, error) { return &finalOnlyASR{}, nil },
+		FastProvider:      &scriptedProvider{descriptor: continuation.Descriptor{Provider: "google", Model: "gemini-fast", Phase: trajectory.PhaseFast, Effort: continuation.EffortMinimal, Streaming: true, ToolAuthority: continuation.ToolAuthorityPropose}},
+		SlowProvider:      &scriptedProvider{descriptor: continuation.Descriptor{Provider: "google", Model: "gemini-slow", Phase: trajectory.PhaseSlow, Effort: continuation.EffortHigh, Streaming: true, ToolAuthority: continuation.ToolAuthorityExecute, ExecutableTools: true}},
+		SpeechProvider:    fakeSpeech{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -39,12 +40,17 @@ func TestHealthReportsConfiguredContinuationProfiles(t *testing.T) {
 		Model  string                  `json:"model"`
 		Fast   continuation.Descriptor `json:"fast"`
 		Slow   continuation.Descriptor `json:"slow"`
+		ASR    struct {
+			Model           string  `json:"model"`
+			ProviderChunkMS float64 `json:"provider_chunk_ms"`
+		} `json:"asr"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
 	if body.Status != "ok" || body.Model != "public-model" || body.Fast.Model != "gemini-fast" ||
-		body.Fast.EffectiveToolAuthority() != continuation.ToolAuthorityPropose || body.Slow.Model != "gemini-slow" {
+		body.Fast.EffectiveToolAuthority() != continuation.ToolAuthorityPropose || body.Slow.Model != "gemini-slow" ||
+		body.ASR.Model != "qwen-asr" || body.ASR.ProviderChunkMS != 200 {
 		t.Fatalf("unexpected health body: %#v", body)
 	}
 }

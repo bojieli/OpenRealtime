@@ -187,6 +187,11 @@ def validate_population(
         "discrete_time_audio_native_agent",
         f"{label} upstream adapter",
     )
+    require_equal(
+        metadata.info.agent_info.llm,
+        f"{transport['provider']}:{transport['compatibility_model']}",
+        f"{label} upstream adapter model",
+    )
     voice_settings = metadata.info.user_info.voice_settings
     if voice_settings is None or voice_settings.synthesis_config is None:
         raise IncompleteMatrixError(f"{label}: missing caller speech configuration")

@@ -123,6 +123,7 @@ case "${action}" in
     : "${OPENREALTIME_GATEWAY_TOKEN:?OPENREALTIME_GATEWAY_TOKEN must be set}"
     : "${GEMINI_API_KEY:?GEMINI_API_KEY must be set}"
     fast_provider="${OPENREALTIME_FAST_PROVIDER:-vllm}"
+    asr_model="${OPENREALTIME_ASR_MODEL:-Qwen/Qwen3-ASR-0.6B}"
     if [[ "${fast_provider}" != vllm && "${fast_provider}" != gemini ]]; then
       echo "OPENREALTIME_FAST_PROVIDER must be vllm or gemini" >&2
       exit 1
@@ -160,9 +161,12 @@ case "${action}" in
         OPENREALTIME_GATEWAY_TOKEN="${OPENREALTIME_GATEWAY_TOKEN}" \
         GEMINI_API_KEY="${GEMINI_API_KEY}" \
       "${runtime_dir}/bin/realtimegateway" \
+        --asr-model "${asr_model}" \
+        --asr-provider-chunk "${OPENREALTIME_ASR_PROVIDER_CHUNK:-200ms}" \
         --fast-provider "${fast_provider}" \
         --fast-model "${OPENREALTIME_FAST_MODEL:-}" \
-        --fast-endpoint "${OPENREALTIME_FAST_ENDPOINT:-}"
+        --fast-endpoint "${OPENREALTIME_FAST_ENDPOINT:-}" \
+        --slow-effort "${OPENREALTIME_SLOW_EFFORT:-high}"
     ;;
   stop)
     stop_process gateway

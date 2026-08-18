@@ -20,6 +20,8 @@ type PerceptionFactory func() (v1.PerceptionProvider, error)
 type Config struct {
 	Token              string
 	Model              string
+	ASRModel           string
+	ASRProviderChunk   time.Duration
 	PerceptionFactory  PerceptionFactory
 	FastProvider       continuation.Provider
 	SlowProvider       continuation.Provider
@@ -71,6 +73,10 @@ func (server *Server) Handler() http.Handler {
 		writer.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(writer).Encode(map[string]any{
 			"status": "ok", "model": server.config.Model,
+			"asr": map[string]any{
+				"model":             server.config.ASRModel,
+				"provider_chunk_ms": float64(server.config.ASRProviderChunk) / float64(time.Millisecond),
+			},
 			"fast":   server.config.FastProvider.Descriptor(),
 			"slow":   server.config.SlowProvider.Descriptor(),
 			"speech": server.config.SpeechProvider.Descriptor(),

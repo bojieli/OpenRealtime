@@ -147,7 +147,8 @@ func serve(config options) error {
 		return asrbuffer.New(asrbuffer.Config{Provider: asr, MinimumChunk: config.asrChunk})
 	}
 	gateway, err := realtimegateway.New(realtimegateway.Config{
-		Token: token, Model: config.publicModel, PerceptionFactory: perceptionFactory,
+		Token: token, Model: config.publicModel, ASRModel: config.asrModel,
+		ASRProviderChunk: config.asrChunk, PerceptionFactory: perceptionFactory,
 		FastProvider: fast, SlowProvider: slow, SpeechProvider: speech,
 		FastMaxTokens: config.fastTokens, SlowMaxTokens: config.slowTokens,
 		SlowPreparationMin: config.slowPace, ValidateWire: config.validateWire,

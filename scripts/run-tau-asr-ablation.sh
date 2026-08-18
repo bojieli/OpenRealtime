@@ -39,20 +39,32 @@ done
 
 restore_baseline_asr() {
   if [[ "${restored}" == false ]]; then
-    restored=true
+    "${repository_root}/scripts/local-cascade.sh" stop || true
     OPENREALTIME_ASR_MODEL=Qwen/Qwen3-ASR-0.6B \
     OPENREALTIME_ASR_GPU_MEMORY_UTILIZATION=0.14 \
-      "${repository_root}/scripts/local-cascade.sh" restart-asr || true
+    OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
+    OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
+      "${repository_root}/scripts/local-cascade.sh" start || true
+    restored=true
   fi
 }
 trap restore_baseline_asr EXIT
 
+"${repository_root}/scripts/local-cascade.sh" stop
 OPENREALTIME_ASR_MODEL=Qwen/Qwen3-ASR-1.7B \
 OPENREALTIME_ASR_GPU_MEMORY_UTILIZATION=0.18 \
-  "${repository_root}/scripts/local-cascade.sh" restart-asr
+OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
+OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
+  "${repository_root}/scripts/local-cascade.sh" start
 
 if ! tr '\0' ' ' <"/proc/$(<"${repository_root}/.runtime/local-cascade/pids/asr.pid")/cmdline" | grep -F 'Qwen/Qwen3-ASR-1.7B' >/dev/null; then
   echo "ASR process does not identify the preregistered 1.7B candidate" >&2
+  exit 1
+fi
+gateway_health="$(curl --fail --silent --show-error http://127.0.0.1:8765/healthz)"
+if ! jq -e '.asr.model == "Qwen/Qwen3-ASR-1.7B" and .asr.provider_chunk_ms == 200' \
+  <<<"${gateway_health}" >/dev/null; then
+  echo "gateway does not report the preregistered 1.7B ASR profile" >&2
   exit 1
 fi
 

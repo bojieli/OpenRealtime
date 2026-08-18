@@ -51,6 +51,18 @@ if ! curl --fail --silent --show-error http://127.0.0.1:8001/ >/dev/null; then
   echo "Qwen3-ASR is not healthy" >&2
   exit 1
 fi
+expected_asr_model="$(jq -r '.runtime_requirements.asr.model // empty' "${matrix}")"
+if [[ -n "${expected_asr_model}" ]]; then
+  expected_asr_chunk_ms="$(jq -r '.runtime_requirements.asr.provider_chunk_ms' "${matrix}")"
+  if ! jq -e \
+    --arg model "${expected_asr_model}" \
+    --argjson chunk_ms "${expected_asr_chunk_ms}" \
+    '.asr.model == $model and .asr.provider_chunk_ms == $chunk_ms' \
+    <<<"${gateway_health}" >/dev/null; then
+    echo "gateway ASR profile does not match the preregistered matrix" >&2
+    exit 1
+  fi
+fi
 for phase in fast slow; do
   expected_provider="$(jq -r --arg phase "${phase}" '.runtime_requirements.gateway_profiles[$phase].provider // empty' "${matrix}")"
   if [[ -z "${expected_provider}" ]]; then
@@ -83,7 +95,8 @@ jq -n \
   --arg tau_revision "$(git -C "${tau2_directory}" rev-parse HEAD)" \
   --arg openrealtime_revision "$(git -C "${repository_root}" rev-parse HEAD)" \
   --arg selected_cell "${selected_cell}" \
-  '{schema_version:"1.0.0",started_at:$started_at,matrix:$matrix,matrix_sha256:$matrix_sha256,patch_sha256:$patch_sha256,tau_revision:$tau_revision,openrealtime_revision:$openrealtime_revision,selected_cell:(if $selected_cell == "" then null else $selected_cell end),status:"running"}' \
+  --argjson gateway_health "${gateway_health}" \
+  '{schema_version:"1.0.0",started_at:$started_at,matrix:$matrix,matrix_sha256:$matrix_sha256,patch_sha256:$patch_sha256,tau_revision:$tau_revision,openrealtime_revision:$openrealtime_revision,selected_cell:(if $selected_cell == "" then null else $selected_cell end),gateway_health:$gateway_health,status:"running"}' \
   >"${run_root}/run.json"
 
 telemetry="${run_root}/gpu.csv"
@@ -118,6 +131,18 @@ if [[ -n "${selected_cell}" ]] && ! printf '%s\n' "${cells[@]}" | grep -Fx "${se
   echo "unknown matrix cell: ${selected_cell}" >&2
   exit 2
 fi
+task_split="$(jq -r '.benchmark.task_split' "${matrix}")"
+num_trials="$(jq -r '.benchmark.num_trials' "${matrix}")"
+seed="$(jq -r '.benchmark.seed' "${matrix}")"
+max_concurrency="$(jq -r '.benchmark.max_concurrency' "${matrix}")"
+task_timeout="$(jq -r '.benchmark.task_timeout_seconds' "${matrix}")"
+conversation_timeout="$(jq -r '.benchmark.conversation_timeout_seconds' "${matrix}")"
+semantic_retries="$(jq -r '.benchmark.semantic_retries' "${matrix}")"
+hallucination_retries="$(jq -r '.benchmark.hallucination_retries' "${matrix}")"
+tick_seconds="$(jq -r '.benchmark.tick_seconds' "${matrix}")"
+transport_provider="$(jq -r '.transport.provider' "${matrix}")"
+transport_model="$(jq -r '.transport.compatibility_model' "${matrix}")"
+transport_base_url="$(jq -r '.transport.base_url' "${matrix}")"
 run_status="running"
 for cell in "${cells[@]}"; do
   if [[ -n "${selected_cell}" && "${cell}" != "${selected_cell}" ]]; then
@@ -136,12 +161,12 @@ for cell in "${cells[@]}"; do
   done < <(jq -r '.[]' "${registry}" | sort -u)
 
   while IFS=$'\t' read -r domain expected_tasks; do
-    actual_split_tasks="$(jq '.base | length' "${tau2_directory}/data/tau2/domains/${domain}/split_tasks.json")"
+    actual_split_tasks="$(jq --arg split "${task_split}" '.[$split] | length' "${tau2_directory}/data/tau2/domains/${domain}/split_tasks.json")"
     if [[ "${actual_split_tasks}" != "${expected_tasks}" ]]; then
       echo "matrix expects ${expected_tasks} ${domain} tasks, upstream split has ${actual_split_tasks}" >&2
       exit 1
     fi
-    save_to="$(jq -r '.matrix_id' "${matrix}")-${cell}-${domain}-seed300"
+    save_to="$(jq -r '.matrix_id' "${matrix}")-${cell}-${domain}-seed${seed}"
     log_dir="${run_root}/${cell}"
     mkdir -p "${log_dir}"
     log_file="${log_dir}/${domain}.log"
@@ -151,25 +176,25 @@ for cell in "${cells[@]}"; do
     PYTHONPATH="${tau2_directory}/src" \
     uv --directory "${tau2_directory}" run tau2 run \
       --domain "${domain}" \
-      --task-split-name base \
-      --num-trials 1 \
-      --seed 300 \
-      --max-concurrency 1 \
+      --task-split-name "${task_split}" \
+      --num-trials "${num_trials}" \
+      --seed "${seed}" \
+      --max-concurrency "${max_concurrency}" \
       --workers 0 \
-      --max-retries 0 \
-      --hallucination-retries 0 \
-      --timeout 1500 \
-      --max-steps-seconds 1200 \
+      --max-retries "${semantic_retries}" \
+      --hallucination-retries "${hallucination_retries}" \
+      --timeout "${task_timeout}" \
+      --max-steps-seconds "${conversation_timeout}" \
       --audio-native \
-      --audio-native-provider openai \
-      --audio-native-model gpt-realtime-1.5 \
-      --audio-native-base-url ws://127.0.0.1:8765/v1/realtime \
+      --audio-native-provider "${transport_provider}" \
+      --audio-native-model "${transport_model}" \
+      --audio-native-base-url "${transport_base_url}" \
       --voice-synthesis-provider fish_audio \
       --fish-audio-endpoint http://127.0.0.1:8081/v1/audio/speech \
       --fish-audio-model fishaudio/s2-pro \
       --fish-audio-voice default \
       --fish-audio-voice-registry "${registry}" \
-      --tick-duration 0.2 \
+      --tick-duration "${tick_seconds}" \
       --speech-complexity "${speech_complexity}" \
       --user-llm gpt-4.1-2025-04-14 \
       --save-to "${save_to}" \
@@ -179,8 +204,9 @@ for cell in "${cells[@]}"; do
       2>&1 | tee -a "${log_file}"
     simulation_dir="${tau2_directory}/data/simulations/${save_to}/simulations"
     completed_tasks="$(find "${simulation_dir}" -maxdepth 1 -type f -name '*.json' | wc -l)"
-    if [[ "${completed_tasks}" != "${expected_tasks}" ]]; then
-      echo "${cell}/${domain} returned successfully but saved ${completed_tasks}/${expected_tasks} simulations" >&2
+    expected_simulations="$((expected_tasks * num_trials))"
+    if [[ "${completed_tasks}" != "${expected_simulations}" ]]; then
+      echo "${cell}/${domain} returned successfully but saved ${completed_tasks}/${expected_simulations} simulations" >&2
       exit 1
     fi
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] complete ${cell}/${domain}" | tee -a "${log_file}"
