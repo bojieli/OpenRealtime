@@ -147,6 +147,12 @@ upstream mock semantics; all results are sent as standard
 then waits for a completed terminal response rather than silently truncating a
 high-thinking continuation at a fixed receive tail.
 
+Preparation pins both sides of that evaluation boundary. In addition to the
+released audio archive and discovered topology, it checks out the declared
+upstream revision and verifies the exact task definition, official evaluator,
+mock API, reference agent, and runner hashes. A matching Git `HEAD` alone is
+not accepted because local modifications could otherwise change scoring.
+
 Prepare and run the exact released population:
 
 ```sh

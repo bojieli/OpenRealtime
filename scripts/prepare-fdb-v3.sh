@@ -8,13 +8,40 @@ runtime_root="${FDBV3_RUNTIME_ROOT:-${repository_root}/.runtime/full-duplex-benc
 archive_root="${runtime_root}/archives"
 archive="${archive_root}/fdb-v3-data.zip"
 dataset_root="${runtime_root}/dataset"
+upstream_root="${FDB_UPSTREAM_ROOT:-${repository_root}/.runtime/full-duplex-bench}"
 
-for command_name in gdown jq sha256sum unzip; do
+for command_name in gdown git jq sha256sum unzip; do
   if ! command -v "${command_name}" >/dev/null; then
     echo "required command ${command_name} is unavailable" >&2
     exit 1
   fi
 done
+
+upstream_revision="$(jq -r '.upstream_revision' "${manifest}")"
+if [[ ! -d "${upstream_root}/.git" ]]; then
+  git clone --filter=blob:none \
+    "$(jq -r '.upstream_repository' "${manifest}")" "${upstream_root}"
+fi
+git -C "${upstream_root}" fetch --quiet origin "${upstream_revision}"
+git -C "${upstream_root}" checkout --quiet --detach "${upstream_revision}"
+if [[ "$(git -C "${upstream_root}" rev-parse HEAD)" != "${upstream_revision}" ]]; then
+  echo "Full-Duplex-Bench v3 upstream revision mismatch" >&2
+  exit 1
+fi
+while IFS=$'\t' read -r relative_path expected_sha256; do
+  actual_sha256="$(sha256sum "${upstream_root}/${relative_path}" | cut -d ' ' -f 1)"
+  if [[ "${actual_sha256}" != "${expected_sha256}" ]]; then
+    echo "Full-Duplex-Bench v3 source identity mismatch: ${relative_path}" >&2
+    exit 1
+  fi
+done < <(jq -r '
+  [
+    {path:.task_definition.path,sha256:.task_definition.sha256},
+    {path:.official_harness.agent_path,sha256:.official_harness.agent_sha256},
+    {path:.official_harness.mock_api_path,sha256:.official_harness.mock_api_sha256},
+    {path:.official_harness.evaluator_path,sha256:.official_harness.evaluator_sha256},
+    {path:.official_harness.runner_path,sha256:.official_harness.runner_sha256}
+  ][] | [.path,.sha256] | @tsv' "${manifest}")
 
 mkdir -p "${archive_root}" "${dataset_root}"
 expected_bytes="$(jq -r '.released_artifact.bytes' "${manifest}")"
