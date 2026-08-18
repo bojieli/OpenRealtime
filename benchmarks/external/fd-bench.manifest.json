@@ -14,15 +14,13 @@
     "note": "The upstream license text contains internally inconsistent distribution clauses. This inventory is not legal advice; artifacts remain external and must not be redistributed from this repository."
   },
   "source_files": {
-    "benchmarking.py": "86a515a2c86fcd9ae89da9c96b2a4dd461b5d41a68dc752f5d3d719b114ee979",
+    "benchmark/benchmarking.py": "86a515a2c86fcd9ae89da9c96b2a4dd461b5d41a68dc752f5d3d719b114ee979",
     "openai/data_gen/output_all.jsonl": "28879c8765445aac809a5f856510cbef40c73fff9dbc7b753d90c984ec20092f",
     "examples/moshi/moshi/client_audiofile.py": "b223fd12abcd389da30ff8e95bd0d3c0e3c7cdde71d8a05defabd6e5e2a9704b",
     "LICENSE.txt": "79ec84374ec4f85e4505f3535d5a6d6ad51b05a72d9dd531862a2678febd2ada"
   },
-  "paper_reported_conversations": 293,
+  "paper_reported_conversations_per_cell": 293,
   "released_ground_truth_lines": 293,
-  "expected_released_conversations_per_cell": 291,
-  "known_missing_conversation_ids": [60, 120],
   "archives": [
     {
       "cell": "chattts-single-round-combine-easy",
@@ -104,8 +102,38 @@
     }
   ],
   "archive_bytes": 8310251185,
-  "expected_cells": 13,
-  "expected_released_conversations": 3783,
+  "expected_archive_count": 13,
+  "expected_cell_populations": {
+    "chattts-single-round-combine-easy": 291,
+    "chattts-single-round-combine-hard": 291,
+    "chattts-single-round-combine-med": 291,
+    "cosyvoice2-single-round-combine-easy": 293,
+    "cosyvoice2-single-round-combine-easy-noisy-bg-0dB": 293,
+    "cosyvoice2-single-round-combine-easy-noisy-bg-10dB": 293,
+    "cosyvoice2-single-round-combine-easy-noisy-bg-20dB": 293,
+    "cosyvoice2-single-round-combine-easy-noisy-gap-0dB": 293,
+    "cosyvoice2-single-round-combine-easy-noisy-gap-10dB": 293,
+    "cosyvoice2-single-round-combine-easy-noisy-gap-20dB": 293,
+    "cosyvoice2-single-round-combine-hard": 293,
+    "cosyvoice2-single-round-combine-med": 293,
+    "f5tts-single-round-combine-easy": 293,
+    "f5tts-single-round-combine-easy-noisy-bg-0dB": 293,
+    "f5tts-single-round-combine-easy-noisy-bg-10dB": 293,
+    "f5tts-single-round-combine-easy-noisy-bg-20dB": 293,
+    "f5tts-single-round-combine-easy-noisy-gap-0dB": 293,
+    "f5tts-single-round-combine-easy-noisy-gap-10dB": 293,
+    "f5tts-single-round-combine-easy-noisy-gap-20dB": 293,
+    "f5tts-single-round-combine-hard": 293,
+    "f5tts-single-round-combine-med": 293
+  },
+  "known_missing_conversation_ids_by_cell": {
+    "chattts-single-round-combine-easy": [60, 120],
+    "chattts-single-round-combine-hard": [60, 120],
+    "chattts-single-round-combine-med": [60, 120]
+  },
+  "expected_cell_count": 21,
+  "expected_released_conversations": 6147,
+  "observed_input_duration_h": 77.21841388830373,
   "evaluation_contract": {
     "input_timestamp_rate_hz": 16000,
     "output_vad": "silero-vad",

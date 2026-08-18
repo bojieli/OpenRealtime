@@ -20,6 +20,12 @@ done
 
 mkdir -p "${archive_root}" "${dataset_root}"
 dataset_revision="$(jq -r '.dataset_revision' "${manifest}")"
+expected_archive_count="$(jq '.expected_archive_count' "${manifest}")"
+manifest_archive_count="$(jq '.archives | length' "${manifest}")"
+if [[ "${manifest_archive_count}" != "${expected_archive_count}" ]]; then
+  echo "FD-Bench manifest contains ${manifest_archive_count} archives; expected ${expected_archive_count}" >&2
+  exit 1
+fi
 
 while IFS=$'\t' read -r cell remote_path expected_bytes expected_sha256; do
   archive="${archive_root}/${cell}.tgz"
@@ -69,7 +75,7 @@ done < <(jq -r '.source_files | to_entries[] | [.key,.value] | @tsv' "${manifest
 
 inspection="${runtime_root}/inspection.json"
 /usr/local/go/bin/go run ./cmd/fdbench inspect --dataset-root "${dataset_root}" >"${inspection}"
-expected_cells="$(jq '.expected_cells' "${manifest}")"
+expected_cells="$(jq '.expected_cell_count' "${manifest}")"
 expected_samples="$(jq '.expected_released_conversations' "${manifest}")"
 actual_cells="$(jq '.cells | length' "${inspection}")"
 actual_samples="$(jq '.samples' "${inspection}")"
@@ -77,8 +83,16 @@ if [[ "${actual_cells}" != "${expected_cells}" || "${actual_samples}" != "${expe
   echo "discovered ${actual_cells} FD-Bench cells/${actual_samples} conversations; expected ${expected_cells}/${expected_samples}" >&2
   exit 1
 fi
-if ! jq -e 'all(.cells[]; .samples == 291 and .missing_conversation_ids == [60,120])' "${inspection}" >/dev/null; then
-  echo "FD-Bench released-cell population differs from the pinned discrepancy" >&2
+expected_populations="$(jq -cS '.expected_cell_populations' "${manifest}")"
+actual_populations="$(jq -cS '.cells | with_entries(.value = .value.samples)' "${inspection}")"
+if [[ "${actual_populations}" != "${expected_populations}" ]]; then
+  echo "FD-Bench per-cell population differs from the pinned release" >&2
+  exit 1
+fi
+expected_missing="$(jq -cS '.known_missing_conversation_ids_by_cell' "${manifest}")"
+actual_missing="$(jq -cS '.cells | with_entries(select(.value.missing_conversation_ids != null) | .value = .value.missing_conversation_ids)' "${inspection}")"
+if [[ "${actual_missing}" != "${expected_missing}" ]]; then
+  echo "FD-Bench missing-conversation map differs from the pinned release" >&2
   exit 1
 fi
 
