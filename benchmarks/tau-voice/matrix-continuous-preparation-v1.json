@@ -52,6 +52,10 @@
     "preparation_policy": "continuous",
     "slow_context": "canonical",
     "requires_local_fast": true,
+    "speech": {
+      "name": "openai-speech-streaming/fishaudio/s2-pro",
+      "version": "openai-audio-speech-1"
+    },
     "asr": {
       "model": "Qwen/Qwen3-ASR-0.6B",
       "provider_chunk_ms": 200,

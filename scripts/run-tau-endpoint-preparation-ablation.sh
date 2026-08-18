@@ -38,7 +38,9 @@ start_profile() {
      .fast.provider == "vllm" and .fast.model == "qwen-fast" and
      .fast.effort == "minimal" and .fast.tool_authority == "propose" and
      .slow.provider == "google" and .slow.model == "gemini-3.5-flash" and
-     .slow.effort == "high" and .slow.tool_authority == "execute"' \
+     .slow.effort == "high" and .slow.tool_authority == "execute" and
+     .speech.name == "openai-speech-streaming/fishaudio/s2-pro" and
+     .speech.version == "openai-audio-speech-1"' \
     <<<"${health}" >/dev/null; then
     echo "gateway does not report the preregistered ${preparation_policy} preparation profile" >&2
     return 1
@@ -71,6 +73,9 @@ start_profile endpoint-only
 TAU_VOICE_MATRIX="${endpoint_matrix}" \
   "${repository_root}/scripts/run-tau-voice-matrix.sh"
 "${repository_root}/scripts/report-tau-voice-matrix.sh" "${endpoint_matrix}"
+python3 "${repository_root}/scripts/report-tau-endpoint-preparation.py" \
+  --repository-root "${repository_root}" \
+  --manifest "${repository_root}/benchmarks/tau-voice/endpoint-preparation-ablation-v1.json"
 
 restore_baseline
 trap - EXIT

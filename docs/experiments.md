@@ -217,9 +217,12 @@ preregistered behind the fixed/revision/adaptive queue. It suppresses all
 partial-revision fast and slow calls, then uses the unchanged canonical loop
 after final ASR. A fresh continuous population runs immediately before it so
 both conditions use the same provider-counter generation; the historical
-baseline predates those counters. Required next comparisons still include non-tool reflex
-workloads, native systems, tail distributions, cancellation/interruption load,
-cost-policy ablations with repetition, and human judgment.
+baseline predates those counters. The paired reporter rejects mismatched
+source revisions or ASR/model/Fish/tool profiles and publishes only raw
+official-metric and measured-work differences. Required next comparisons still
+include non-tool reflex workloads, native systems, tail distributions,
+cancellation/interruption load, cost-policy ablations with repetition, and
+human judgment.
 
 The current full-benchmark sequence freezes the I1 local condition, runs both
 278-task τ speech cells, all 498 FDB v1.5 overlap recordings, and all 100 FDB v3

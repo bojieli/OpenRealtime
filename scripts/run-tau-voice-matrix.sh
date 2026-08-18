@@ -102,6 +102,18 @@ if [[ -n "${expected_preparation_policy}" ]] && \
   echo "gateway preparation policy does not match the preregistered matrix" >&2
   exit 1
 fi
+expected_speech_name="$(jq -r '.runtime_requirements.speech.name // empty' "${matrix}")"
+if [[ -n "${expected_speech_name}" ]]; then
+  expected_speech_version="$(jq -r '.runtime_requirements.speech.version' "${matrix}")"
+  if ! jq -e \
+    --arg name "${expected_speech_name}" \
+    --arg version "${expected_speech_version}" \
+    '.speech.name == $name and .speech.version == $version' \
+    <<<"${gateway_health}" >/dev/null; then
+    echo "gateway speech profile does not match the preregistered matrix" >&2
+    exit 1
+  fi
+fi
 
 mkdir -p "${run_root}"
 matrix_sha256="$(sha256sum "${matrix}" | cut -d ' ' -f 1)"

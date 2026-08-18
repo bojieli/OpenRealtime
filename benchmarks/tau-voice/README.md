@@ -337,6 +337,11 @@ The fresh continuous population is intentional: the original baseline run
 started before per-provider health counters were available. Its official task
 and interaction results remain a historical reference, but it is not used as
 the provider-work comparator.
+The paired reporter refuses to emit unless both full matrix reports are
+complete, their model/ASR/Fish/tool profiles and source revision match, and
+both contain start-to-final provider deltas. It publishes raw official-metric
+and provider-work differences without a private composite or a confidence
+claim from the single fixed-order trial.
 
 ## Primary reporting panel
 
