@@ -30,3 +30,7 @@ mkdir -p "${output_root}"
   --continue-on-error=true \
   --require-complete=true \
   --resume=true
+
+/usr/local/go/bin/go run ./cmd/livebench summarize \
+  --manifest "${output_root}/run-openrealtime-openrealtime-local.json" \
+  --output "${output_root}/summary.json"

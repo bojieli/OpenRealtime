@@ -1,0 +1,133 @@
+{
+  "schema_version": "1.0.0",
+  "study_id": "openrealtime-full-voice-study-v1",
+  "status": "preregistered",
+  "publication_policy": {
+    "partial_results": "forbidden",
+    "cross_benchmark_composite": "forbidden",
+    "presentation": "benchmark-specific evidence panel"
+  },
+  "tau_voice": {
+    "source_manifest": {
+      "path": "benchmarks/external/tau-voice.manifest.json",
+      "sha256": "67ab8b08a187aa364a0c8f4c22b783d47bfe4a8ccc961a8936279ed9020e8596"
+    },
+    "matrices": [
+      {
+        "path": "benchmarks/tau-voice/matrix-v1.json",
+        "sha256": "4762e9c69fb9eb9bf7eb47ea58340bb3121f6209faf2175d973e1978e3ab106b"
+      },
+      {
+        "path": "benchmarks/tau-voice/matrix-asr17-v1.json",
+        "sha256": "23c1fee76900fc935d9ca54a8354245f0dc453b123424a34cfe94b841c128c50"
+      },
+      {
+        "path": "benchmarks/tau-voice/matrix-fast-gemini-v1.json",
+        "sha256": "01637c39ffa8c77cc9ca6879f9afdef56107da7228cbb5c9c26ecc73dbf707a0"
+      },
+      {
+        "path": "benchmarks/tau-voice/matrix-cadence050-v1.json",
+        "sha256": "4fe9bfa14ad3bfa4087943a3ba179748d6c96ba84a13ecdbe2ec888d5fe2d041"
+      },
+      {
+        "path": "benchmarks/tau-voice/matrix-cadence100-v1.json",
+        "sha256": "355714c93ba39cb8f7a86fa3d76f4639d7c7538abb0fb8595eb0b262f8af12bb"
+      },
+      {
+        "path": "benchmarks/tau-voice/matrix-cadence400-v1.json",
+        "sha256": "f9d4a42b32650c7e157a22a30b42e5836c90608a76cda1dcb8c2c79071b415f7"
+      },
+      {
+        "path": "benchmarks/tau-voice/matrix-cadence800-v1.json",
+        "sha256": "aa033700557182ba7ff1ba120e11ff2272486c8bf9189fdc03cc28fd4a5b41a7"
+      },
+      {
+        "path": "benchmarks/tau-voice/matrix-slow-medium-v1.json",
+        "sha256": "4ba0d99948d550b52fbf78e4d391140333e843ad101788f2fb8ac9cd93c9af04"
+      },
+      {
+        "path": "benchmarks/tau-voice/matrix-content-only-v1.json",
+        "sha256": "7fa0fac66f22efd9a7512b3d59454895cd7026141a2e6c4943b0c22d679df780"
+      },
+      {
+        "path": "benchmarks/tau-voice/matrix-independent-v1.json",
+        "sha256": "8ae1e912663467ccdc6bfd2a3cb05379aad01069ed531ca2ce716e1042989eab"
+      },
+      {
+        "path": "benchmarks/tau-voice/matrix-revision-event-v1.json",
+        "sha256": "63b7c865126500d6f7efc25d7969ded77dbbe5768375cb6c9b58851e876b18ae"
+      },
+      {
+        "path": "benchmarks/tau-voice/matrix-adaptive-v1.json",
+        "sha256": "395d72b2c2ee7ed2073422d6c3f39513b449abf8b67b24aafef9df83d5cd8ba7"
+      },
+      {
+        "path": "benchmarks/tau-voice/matrix-continuous-preparation-v1.json",
+        "sha256": "b43dbd522a2ee864fe0399d77a7d828d7aba1e10853154539f68d54ff55cbf0f"
+      },
+      {
+        "path": "benchmarks/tau-voice/matrix-endpoint-preparation-v1.json",
+        "sha256": "e05baea9db0c8ebf7a992397d844791afa050a585ec11ba673da344be6dad9db"
+      }
+    ],
+    "paired_reports": [
+      {
+        "id": "openrealtime-tau-voice-endpoint-preparation-ablation-v1",
+        "definition": {
+          "path": "benchmarks/tau-voice/endpoint-preparation-ablation-v1.json",
+          "sha256": "3c185e2ff21503f419ead7d600ba1bfb22e9251885e1d7bfdff3f55e4794d11d"
+        },
+        "report": ".runtime/benchmark-runs/tau-voice/openrealtime-tau-voice-endpoint-preparation-ablation-v1/report.json"
+      }
+    ]
+  },
+  "full_duplex_bench_v1_5": {
+    "source_manifest": {
+      "path": "benchmarks/external/full-duplex-bench-v1.5.manifest.json",
+      "sha256": "ed5b9aefdd882e326cfde430d48dabdbbc881f3e2033e496ff26b240a9d49ae8"
+    },
+    "upstream_revision": "3e799c45a045256f47d5f1c9cda90157e2d2ec9e",
+    "population": 498,
+    "conditions": [
+      "overlap"
+    ],
+    "replicates": 1,
+    "run_manifest": ".runtime/benchmark-runs/fdb15-openrealtime-full-overlap/run-openrealtime-openrealtime-local.json",
+    "summary": ".runtime/benchmark-runs/fdb15-openrealtime-full-overlap/summary.json"
+  },
+  "full_duplex_bench_v3": {
+    "source_manifest": {
+      "path": "benchmarks/external/full-duplex-bench-v3.manifest.json",
+      "sha256": "49c13bffeda75b05f64a0504a212f91b6d37f82a2c1c670df16923577a72f705"
+    },
+    "profile": {
+      "path": "benchmarks/fdb-v3/openrealtime-v1.json",
+      "sha256": "e8a3b0cf14d4870ffab03cc2ca70ac35ff4899a9021a320900c89e5092aac046"
+    },
+    "upstream_revision": "3e799c45a045256f47d5f1c9cda90157e2d2ec9e",
+    "population": 100,
+    "run_manifest": ".runtime/benchmark-runs/fdb-v3/openrealtime-v1/run-openrealtime.json",
+    "evaluations": {
+      "exact": ".runtime/benchmark-runs/fdb-v3/openrealtime-v1/evaluation-exact.json",
+      "gpt4o": ".runtime/benchmark-runs/fdb-v3/openrealtime-v1/evaluation-gpt4o.json"
+    }
+  },
+  "fd_bench": {
+    "source_manifest": {
+      "path": "benchmarks/external/fd-bench.manifest.json",
+      "sha256": "a3983d4f3c31e5e58687404cea2ea794e93d273b2c3663b79d1b2f0bf3e9ee2c"
+    },
+    "upstream_revision": "8a4b7df1b4dcb0fc50a7a5660247a2ffe8d394eb",
+    "dataset_revision": "995e7178445b90d57dee8fab500c6e37a2f2c49e",
+    "population": 6147,
+    "cells": 21,
+    "run_manifest": ".runtime/benchmark-runs/fd-bench/openrealtime-v1/run-openrealtime.json",
+    "finalization": ".runtime/benchmark-runs/fd-bench/openrealtime-v1/finalization.json",
+    "metrics_directory": ".runtime/benchmark-runs/fd-bench/openrealtime-v1/metrics",
+    "explicit_exclusions": [
+      "WER",
+      "CPPL",
+      "subjective_GPT_score"
+    ]
+  }
+}
