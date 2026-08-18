@@ -209,6 +209,7 @@ class Fixture:
                 "benchmark": "Full-Duplex-Bench v3",
                 "upstream_revision": "fdb-revision",
                 "released_artifact": {"audio_examples": 1},
+                "official_harness": {"evaluator_sha256": "5320"},
             },
         )
         fdbv3_profile = self.root / "benchmarks/fdbv3/profile.json"
@@ -265,6 +266,23 @@ class Fixture:
         fdbv3_judge = self.root / ".runtime/fdbv3/judge.json"
         write_json(fdbv3_exact, self.evaluation(None))
         write_json(fdbv3_judge, self.evaluation(1.0))
+        fdbv3_judge_evidence = self.root / ".runtime/fdbv3/judge-evidence.json"
+        write_json(
+            fdbv3_judge_evidence,
+            {
+                "schema_version": "1.0.0",
+                "status": "complete",
+                "scenarios": 1,
+                "expected_calls": {"argument": 1, "response": 1, "total": 2},
+                "successful_valid_calls": 2,
+                "evaluator": {"sha256": "5320"},
+                "evaluation": {"sha256": REPORT.sha256_file(fdbv3_judge)},
+                "calls": [
+                    {"sequence": 0, "requested_model": "gpt-4o"},
+                    {"sequence": 1, "requested_model": "gpt-4o"},
+                ],
+            },
+        )
 
         fd_source = self.root / "benchmarks/external/fd.json"
         write_json(
@@ -404,6 +422,7 @@ class Fixture:
                     "evaluations": {
                         "exact": self.relative(fdbv3_exact),
                         "gpt4o": self.relative(fdbv3_judge),
+                        "gpt4o_evidence": self.relative(fdbv3_judge_evidence),
                     },
                 },
                 "fd_bench": {
@@ -428,6 +447,7 @@ class Fixture:
             "study": study,
             "fdb15_run": fdb15_run,
             "fdbv3_judge": fdbv3_judge,
+            "fdbv3_judge_evidence": fdbv3_judge_evidence,
             "fd_metric": fd_metric,
             "fd_context": fd_context,
             "fdb15_output": fdb15_output,
@@ -521,6 +541,14 @@ class FullStudyTest(unittest.TestCase):
         path = self.fixture.paths["fdbv3_judge"]
         write_json(path, Fixture.evaluation(None))
         with self.assertRaisesRegex(REPORT.StudyIncompleteError, "LLM response score"):
+            self.report()
+
+    def test_rejects_silent_official_judge_fallback(self) -> None:
+        path = self.fixture.paths["fdbv3_judge_evidence"]
+        evidence = json.loads(path.read_text(encoding="utf-8"))
+        evidence["successful_valid_calls"] = 1
+        write_json(path, evidence)
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "successful judge"):
             self.report()
 
     def test_rejects_an_unreported_fdbench_exclusion(self) -> None:

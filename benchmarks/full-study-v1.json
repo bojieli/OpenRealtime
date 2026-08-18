@@ -111,7 +111,8 @@
     "run_manifest": ".runtime/benchmark-runs/fdb-v3/openrealtime-v1/run-openrealtime.json",
     "evaluations": {
       "exact": ".runtime/benchmark-runs/fdb-v3/openrealtime-v1/evaluation-exact.json",
-      "gpt4o": ".runtime/benchmark-runs/fdb-v3/openrealtime-v1/evaluation-gpt4o.json"
+      "gpt4o": ".runtime/benchmark-runs/fdb-v3/openrealtime-v1/evaluation-gpt4o.json",
+      "gpt4o_evidence": ".runtime/benchmark-runs/fdb-v3/openrealtime-v1/evaluation-gpt4o-evidence.json"
     }
   },
   "fd_bench": {

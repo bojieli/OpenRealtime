@@ -51,12 +51,16 @@ python "${upstream_root}/v3/evaluate_tool_calls.py" \
 
 if [[ "${FDBV3_USE_LLM_JUDGE:-true}" == true ]]; then
   : "${OPENAI_API_KEY:?OPENAI_API_KEY must be set for the official FDB v3 GPT-4o judge}"
-  python "${upstream_root}/v3/evaluate_tool_calls.py" \
+  evaluator_sha256="$(jq -r '.official_harness.evaluator_sha256' benchmarks/external/full-duplex-bench-v3.manifest.json)"
+  python "${repository_root}/scripts/run-fdbv3-strict-judge.py" \
+    --evaluator "${upstream_root}/v3/evaluate_tool_calls.py" \
+    --evaluator-sha256 "${evaluator_sha256}" \
     --benchmark "${upstream_root}/v3/benchmark_data_v2.json" \
     --results-dir "${dataset_root}" \
     --provider openrealtime \
     --output "${run_root}/evaluation-gpt4o.json" \
-    --use-llm
+    --evidence "${run_root}/evaluation-gpt4o-evidence.json" \
+    --expected-scenarios 100
 fi
 
 "${repository_root}/scripts/benchmark-run-context.sh" complete \

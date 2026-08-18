@@ -627,6 +627,65 @@ def validate_fdbv3_evaluation(
     return report
 
 
+def validate_fdbv3_judge_evidence(
+    root: Path,
+    path_value: str,
+    *,
+    evaluation_path: Path,
+    evaluator_sha256: str,
+    scenarios: int,
+) -> tuple[Path, dict[str, Any]]:
+    path = resolve(root, path_value)
+    evidence = read_json(path, "FDBv3 GPT-4o call evidence")
+    require_equal(evidence.get("schema_version"), "1.0.0", "FDBv3 judge evidence schema")
+    require_equal(evidence.get("status"), "complete", "FDBv3 judge evidence status")
+    require_equal(evidence.get("scenarios"), scenarios, "FDBv3 judge evidence scenarios")
+    expected = evidence.get("expected_calls", {})
+    require(
+        all(
+            isinstance(expected.get(name), int)
+            and not isinstance(expected[name], bool)
+            and expected[name] >= 0
+            for name in ("argument", "response", "total")
+        ),
+        "FDBv3 judge expected-call counts are invalid",
+    )
+    require_equal(
+        expected["argument"] + expected["response"],
+        expected["total"],
+        "FDBv3 judge expected-call reconciliation",
+    )
+    require(expected["total"] > 0, "FDBv3 judge opened no calls")
+    require_equal(
+        evidence.get("successful_valid_calls"),
+        expected["total"],
+        "FDBv3 successful judge calls",
+    )
+    calls = evidence.get("calls")
+    require(isinstance(calls, list), "FDBv3 judge call ledger is absent")
+    require_equal(len(calls), expected["total"], "FDBv3 judge call ledger length")
+    require_equal(
+        [call.get("sequence") for call in calls],
+        list(range(len(calls))),
+        "FDBv3 judge call sequence",
+    )
+    require(
+        all(call.get("requested_model") == "gpt-4o" for call in calls),
+        "FDBv3 judge used a model other than gpt-4o",
+    )
+    require_equal(
+        evidence.get("evaluator", {}).get("sha256"),
+        evaluator_sha256,
+        "FDBv3 judge evaluator hash",
+    )
+    require_equal(
+        evidence.get("evaluation", {}).get("sha256"),
+        sha256_file(evaluation_path),
+        "FDBv3 judge evaluation hash",
+    )
+    return path, evidence
+
+
 def validate_fdbv3(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
     source_path, source = load_pin(
         root, specification["source_manifest"], "FDBv3 source manifest"
@@ -694,6 +753,13 @@ def validate_fdbv3(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
     judge = validate_fdbv3_evaluation(
         judge_path, sample_ids=sample_ids, llm_judge=True, label="FDBv3 GPT-4o evaluation"
     )
+    judge_evidence_path, judge_evidence = validate_fdbv3_judge_evidence(
+        root,
+        specification["evaluations"]["gpt4o_evidence"],
+        evaluation_path=judge_path,
+        evaluator_sha256=source["official_harness"]["evaluator_sha256"],
+        scenarios=len(sample_ids),
+    )
     return {
         "source_manifest": artifact(root, source_path),
         "run_context": artifact(root, context_path),
@@ -715,6 +781,11 @@ def validate_fdbv3(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
             },
             "gpt4o": {
                 "artifact": artifact(root, judge_path),
+                "call_evidence": artifact(root, judge_evidence_path),
+                "judge_calls": {
+                    "expected": judge_evidence["expected_calls"],
+                    "successful_valid": judge_evidence["successful_valid_calls"],
+                },
                 "turn_taking": judge.get("turn_taking"),
                 "by_metric": judge.get("by_metric"),
                 "latency": judge.get("latency"),
