@@ -10,6 +10,23 @@
 This document describes schema and codec coverage. Live transport and complete
 server behavior are separate milestones and are not implied by event decoding.
 
+## Internal synchronization does not change the wire
+
+The experimental canonical trajectory and safe-point event loop add no client
+or server event types. Asynchronous transcription, response cancellation,
+output-buffer clearing, item truncation, ordinary function calls/results, and
+audio/transcript deltas already provide the observable wire behavior. Fast and
+slow phase identity, reasoning lifecycle, event priority, trajectory versions,
+and preparation fingerprints remain internal trace data.
+
+In particular, an input transcription may complete independently of response
+events, so the internal runtime correlates it by item/event identity instead of
+assuming arrival order. When output is interrupted, OpenRealtime projects the
+actual playback boundary through the existing cancel/clear/truncate lifecycle;
+content cancelled before playback is excluded from later internal provider
+context. This preserves compatibility while keeping acoustic and cognitive
+history synchronized.
+
 ## GA Realtime client events (11)
 
 `session.update`, `input_audio_buffer.append`, `input_audio_buffer.commit`,

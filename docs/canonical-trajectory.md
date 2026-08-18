@@ -19,6 +19,12 @@ chapters 4 and 9 of the AI Agent book: the engine resumes ordinary model
 generation at safe boundaries as new observations arrive; it does not expose a
 model-authored workflow state machine.
 
+The precise concurrency contract is specified in the
+[safe-point asynchronous event loop](safe-point-event-loop.md). It is part of
+the architecture, not an implementation detail: without versioned safe-point
+transactions, fast and slow cannot be said to inherit one trajectory under
+real concurrent input.
+
 ## The complete cognitive policy
 
 Fast and slow are execution profiles of one agent, not two agents:
@@ -79,13 +85,20 @@ fields. This is an internal representation, not an OpenAI Realtime event.
    size, but must preserve capability, action, and audible-history facts.
 8. Provider-specific reasoning loss or normalization is declared; cross-model
    latent/KV continuity is never claimed.
+9. An invocation instruction and every output item from that invocation enter
+   the trajectory in one compare-and-append transaction. A stale prefix
+   publishes nothing and exposes no tool action.
+10. Source occurrence time and canonical commit time are distinct. Waiting for
+    a safe point never falsifies when an external event actually happened.
+11. All results for the executable calls emitted by one slow invocation cross
+    the asynchronous boundary as one complete identity-checked batch.
 
 ## Fast continuation and tool awareness
 
-The fast provider receives the canonical identity and behavior policy, the
-current trajectory projection, the complete capability manifest, and the real
-tool definitions. It therefore knows that the agent can use a capability and
-knows the schema needed to form a correct request.
+The fast provider receives the common agent/domain policy plus its phase
+instruction, the current trajectory projection, the complete capability
+manifest, and the real tool definitions. It therefore knows that the agent can
+use a capability and knows the schema needed to form a correct request.
 
 Its descriptor grants `propose`, never `execute`, authority. A native model
 tool call is validated and stored as `tool_proposal`. No code path sends it to
@@ -188,6 +201,21 @@ only for a changed, non-empty semantic revision. TTS consumes only canonical,
 speakable assistant segments. Tool results, interruptions, and other semantic
 events may wake the loop without waiting for a periodic tick.
 
+Ticks and unstable hypotheses stay outside the canonical conversation unless a
+declared stability/turn policy promotes a response-eligible observation. They
+may still drive private latest-wins preparation. Once promoted, concurrent
+event sources only enqueue structured events; one event-loop owner drains them
+at safe points. Routine events wait. A trusted interrupt classification
+requests cooperative cancellation and is committed immediately after the
+active continuation reaches its boundary. Priority is never inferred from
+words in a transcript.
+
+For a canonical observation the cognitive transition is `fast → slow`; for a
+complete tool-result batch it is `slow`; for playback state alone it is empty.
+Those are the only reference routing rules. Event occurrence metadata is
+retained even when canonical ordering places the event after the
+completed/interrupted model prefix that was active when it occurred.
+
 ## Co-located resource admission
 
 Co-location removes network handoffs but introduces contention. Admission is
@@ -224,6 +252,12 @@ The slow continuation inherits what has already been heard. It may replace
 unplayed content. If later reasoning contradicts played content, it must append
 an explicit correction. The current live benchmark starts TTS only after a
 canonical model safe point; speculative TTS remains a separate experiment.
+
+Cancelled-before-playback assistant text is removed from every later provider
+projection, including opaque native state from the same invocation that may
+embed the cancelled text. Prepared, queued, and played content remains visible;
+the operational queued/played transitions themselves do not inflate semantic
+fingerprints.
 
 ## Provider-boundary compatibility
 

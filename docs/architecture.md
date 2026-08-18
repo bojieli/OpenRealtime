@@ -92,6 +92,27 @@ causally valid prefix to each provider and records which items were representabl
 in that provider's chat/reasoning format. The external OpenAI-compatible wire
 protocol remains unchanged.
 
+### Synchronization boundary
+
+The event loop is the only owner that advances semantic state. Audio, ASR,
+playback, and tool workers are concurrent producers; they enqueue typed events
+and never mutate conversation history from callbacks. At each safe point the
+loop drains an arrival-ordered batch, appends it atomically, and applies one
+content-independent transition: observation runs fast then slow, tool results
+resume slow, and playback state invokes neither model.
+
+Every provider call captures trajectory version `v`. Its phase instruction and
+completed output publish in one compare-and-append transaction only while `v`
+is current. An interrupt is typed by a trusted acoustic/semantic source and
+requests cooperative cancellation; no transcript keyword or model-authored
+status controls scheduling. Tools execute only after a slow call commits and
+return as a complete identity-matched event batch. Source occurrence time is
+kept separately from commit time so safe-point waiting stays observable.
+
+This is the synchronization layer derived from Chapter 4's asynchronous event
+model. The complete contract and state machine are in
+[safe-point-event-loop.md](safe-point-event-loop.md) and ADR-0004.
+
 ## Microturn scheduling and planning state
 
 M2 separates scheduling from candidate lifecycle. Fixed and revision-event
@@ -171,7 +192,8 @@ are still replaceable and which require an explicit correction.
 The fast phase may use a local Qwen instruct model with thinking disabled or
 Gemini 3.5 Flash with minimal thinking. The initial slow phase uses Gemini 3.5
 Flash with medium or high thinking. Both receive the same capability manifest
-and real tool definitions. Fast-native tool calls become `tool_proposal` items
+and real tool definitions as well as the same agent/domain system policy.
+Fast-native tool calls become `tool_proposal` items
 and cannot execute; only slow-native calls become `tool_call` items. This gives
 the fast model enough schema knowledge to avoid capability denial without
 creating a second action authority.
@@ -188,6 +210,11 @@ retains its completed prefix, appends the observation, and resumes from the
 extended trajectory. Actual tool calls remain subject to authority and
 idempotency policies independent of model latency. A tool result can satisfy
 only a distinct, preceding executable call and never a fast proposal.
+
+Assistant playback state is also append-only. Provider projections omit
+assistant content cancelled before playback and invalidate opaque state from
+that invocation, preventing unheard speech from reappearing as shared memory.
+Played content remains immutable and can only be corrected by a later segment.
 
 This continuation contract is experimental. Stable `api/v1` continues to expose
 the historical five provider roles; replacing them requires a versioned
@@ -246,4 +273,6 @@ See [ADR-0001](adr/0001-go-production-engine.md) for the language decision
 and [protocol.md](protocol.md) for event semantics. The experimental cognitive
 boundary is specified in
 [canonical-trajectory.md](canonical-trajectory.md) and accepted in
-[ADR-0003](adr/0003-canonical-trajectory-continuations.md).
+[ADR-0003](adr/0003-canonical-trajectory-continuations.md). Its asynchronous
+single-owner synchronization is accepted in
+[ADR-0004](adr/0004-safe-point-asynchronous-event-loop.md).

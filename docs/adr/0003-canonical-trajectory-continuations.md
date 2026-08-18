@@ -144,7 +144,10 @@ improving the internal trajectory semantics.
 ## Implementation evidence
 
 The accepted design is implemented by the experimental `trajectory`,
-`continuation`, `preparation`, `admission`, and `interleave` packages. An
+`eventloop`, `continuation`, `preparation`, `admission`, and `interleave`
+packages. ADR-0004 defines the single-owner safe-point synchronization that
+serializes asynchronous observations, interruptions, playback transitions,
+and tool results around those continuations. An
 exact-scored co-located Qwen3-ASR/Qwen/Fish S2-Pro run with hosted Gemini 3.5
 Flash committed and replayed both prepared stages, then preserved one
 non-executable fast proposal, one executable slow call, and one result. Failed
