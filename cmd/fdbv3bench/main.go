@@ -101,6 +101,7 @@ type runManifest struct {
 	Profile       string               `json:"profile"`
 	ProfileSHA256 string               `json:"profile_sha256"`
 	Descriptor    livebench.Descriptor `json:"descriptor"`
+	TrialAttempts int                  `json:"trial_attempts"`
 	Samples       []fdbv3.Sample       `json:"samples"`
 	Completed     []string             `json:"completed"`
 	Failures      []failure            `json:"failures,omitempty"`
@@ -164,7 +165,7 @@ func runBenchmark(arguments []string) error {
 		SchemaVersion: "1.0.0", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 		Benchmark: fdbv3.BenchmarkName, Revision: fdbv3.BenchmarkRevision,
 		Profile: profile.Profile, ProfileSHA256: profile.SHA256,
-		Descriptor: adapter.Descriptor(), Samples: samples,
+		Descriptor: adapter.Descriptor(), TrialAttempts: *trialAttempts, Samples: samples,
 	}
 	if err := os.MkdirAll(*runRoot, 0o755); err != nil {
 		return fmt.Errorf("create FDB v3 run root: %w", err)
@@ -186,12 +187,19 @@ func runBenchmark(arguments []string) error {
 
 	for _, sample := range samples {
 		label := sample.ExampleID + "_" + sample.PID
+		remainingAttempts, recordedSuccess, attemptErr := sampleAttemptState(manifest.Attempts, label, *trialAttempts)
+		if attemptErr != nil {
+			return fmt.Errorf("attempt ledger for %s: %w", label, attemptErr)
+		}
 		if *resume {
 			_, found, loadErr := fdbv3.LoadCompleted(sample, *provider, profile.SHA256, *model)
 			if loadErr != nil {
 				return loadErr
 			}
-			if found {
+			if recordedSuccess && !found {
+				return fmt.Errorf("attempt ledger records success for %s but its verified result is missing", label)
+			}
+			if found && recordedSuccess {
 				fmt.Fprintf(os.Stderr, "[fdb-v3] %s (resume)\n", label)
 				manifest.Completed = appendUnique(manifest.Completed, label)
 				manifest.Failures = removeFailure(manifest.Failures, label)
@@ -200,9 +208,16 @@ func runBenchmark(arguments []string) error {
 				}
 				continue
 			}
+			if found {
+				fmt.Fprintf(os.Stderr, "[fdb-v3] %s has an uncertified prior result; rerunning within the remaining attempt budget\n", label)
+			}
 		}
+		attemptsUsed := *trialAttempts - len(remainingAttempts)
 		var lastErr error
-		for number := 1; number <= *trialAttempts; number++ {
+		if len(remainingAttempts) == 0 {
+			lastErr = fmt.Errorf("attempt budget exhausted for %s: used=%d maximum=%d", label, attemptsUsed, *trialAttempts)
+		}
+		for index, number := range remainingAttempts {
 			fmt.Fprintf(os.Stderr, "[fdb-v3] %s attempt=%d/%d\n", label, number, *trialAttempts)
 			started := time.Now().UTC()
 			ctx, cancel := contextWithTimeout(*trialTimeout)
@@ -217,19 +232,20 @@ func runBenchmark(arguments []string) error {
 				record.Error = runErr.Error()
 			}
 			manifest.Attempts = append(manifest.Attempts, record)
+			attemptsUsed++
 			lastErr = runErr
 			if runErr == nil {
 				manifest.Completed = appendUnique(manifest.Completed, label)
 				manifest.Failures = removeFailure(manifest.Failures, label)
 				break
 			}
-			if number < *trialAttempts {
+			if index < len(remainingAttempts)-1 {
 				timer := time.NewTimer(time.Duration(number) * *retryDelay)
 				<-timer.C
 			}
 		}
 		if lastErr != nil {
-			manifest.Failures = append(removeFailure(manifest.Failures, label), failure{Sample: label, Attempts: *trialAttempts, Error: lastErr.Error()})
+			manifest.Failures = append(removeFailure(manifest.Failures, label), failure{Sample: label, Attempts: attemptsUsed, Error: lastErr.Error()})
 		}
 		if err := publishManifest(manifestPath, &manifest); err != nil {
 			return err
@@ -309,10 +325,20 @@ func validatePrior(prior, planned runManifest) error {
 	priorSamples, _ := json.Marshal(prior.Samples)
 	plannedSamples, _ := json.Marshal(planned.Samples)
 	if prior.SchemaVersion != planned.SchemaVersion || prior.Benchmark != planned.Benchmark || prior.Revision != planned.Revision ||
-		prior.ProfileSHA256 != planned.ProfileSHA256 || prior.Descriptor != planned.Descriptor || string(priorSamples) != string(plannedSamples) {
+		prior.ProfileSHA256 != planned.ProfileSHA256 || prior.Descriptor != planned.Descriptor || prior.TrialAttempts != planned.TrialAttempts || string(priorSamples) != string(plannedSamples) {
 		return errors.New("prior manifest does not match benchmark, profile, descriptor, or sample hashes")
 	}
 	return nil
+}
+
+func sampleAttemptState(attempts []attempt, sample string, maximum int) ([]int, bool, error) {
+	var outcomes []livebench.AttemptOutcome
+	for _, record := range attempts {
+		if record.Sample == sample {
+			outcomes = append(outcomes, livebench.AttemptOutcome{Number: record.Number, Succeeded: record.Succeeded})
+		}
+	}
+	return livebench.AnalyzeAttemptOutcomes(outcomes, maximum)
 }
 
 func appendUnique(values []string, value string) []string {

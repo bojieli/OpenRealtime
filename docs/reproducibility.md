@@ -224,12 +224,15 @@ infrastructure attempts;
 then it checks the paired endpoint-preparation manipulation,
 all 498 FDB v1.5 overlap trials and their deterministic aggregate, all 100 FDB
 v3 tool-use examples in both official exact and GPT-4o evaluations, and all
-6,147 FD-Bench conversations, Silero traces, and 21 timing reports. WER, CPPL,
-and the subjective GPT score remain explicitly not evaluated because the
-released non-Moshi path does not produce their required inputs. The output is
-`.runtime/benchmark-runs/full-study-v1/report.json`; any missing population,
-terminal failure, hash mismatch, or evaluator gap prevents that file from
-being published.
+6,147 FD-Bench conversations, Silero traces, and 21 timing reports. For each of
+these three external suites it also requires the preregistered three-attempt
+lifetime budget, a contiguous attempt ledger for every planned trial, and
+exactly one terminal successful attempt; restarting a runner never refreshes
+that budget. WER, CPPL, and the subjective GPT score remain explicitly not
+evaluated because the released non-Moshi path does not produce their required
+inputs. The output is `.runtime/benchmark-runs/full-study-v1/report.json`; any
+missing population, terminal failure, retry-provenance violation, hash
+mismatch, or evaluator gap prevents that file from being published.
 
 The evidence panel commits to raw outputs as deterministic
 `path\0size\0sha256` trees. The terminal reporter directly rehashes all FDB

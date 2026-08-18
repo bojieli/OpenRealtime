@@ -234,10 +234,11 @@ The final publication boundary is
 [`benchmarks/full-study-v1.json`](../benchmarks/full-study-v1.json). Its
 reporter validates all frozen τ-Voice matrices and the endpoint-preparation
 pair, then the native FDB v1.5, FDB v3, and FD-Bench completion artifacts. It
-requires zero terminal harness failures, exact released populations, matching
-source/profile hashes, complete upstream evaluator coverage, and hash-linked
-Silero traces. The output is a panel of native metrics; no cross-benchmark
-composite or partially available panel can be emitted.
+requires zero terminal harness failures, exact released populations, bounded
+append-only attempt ledgers across process resumes, matching source/profile
+hashes, complete upstream evaluator coverage, and hash-linked Silero traces.
+The output is a panel of native metrics; no cross-benchmark composite or
+partially available panel can be emitted.
 
 ## Trial and analysis rules
 

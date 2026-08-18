@@ -177,6 +177,105 @@ def validate_local_descriptor(
     require_equal(descriptor, expected, f"{label} descriptor")
 
 
+def validate_attempt_ledger(
+    value: Any,
+    *,
+    expected: set[Any],
+    maximum: int,
+    identity: Any,
+    number_field: str,
+    label: str,
+) -> tuple[dict[str, Any], dict[Any, int]]:
+    """Validate a complete append-only provider-call ledger.
+
+    The configured maximum is a lifetime budget for each logical trial across
+    all process resumes. A terminally publishable trial has a contiguous
+    prefix 1..N, exactly one success, and that success is its last attempt.
+    """
+    require(
+        isinstance(value, list), f"{label} attempt ledger must be a JSON array"
+    )
+    groups: dict[Any, list[dict[str, Any]]] = {}
+    for index, record in enumerate(value):
+        require(
+            isinstance(record, dict),
+            f"{label} attempt record {index} must be a JSON object",
+        )
+        key = identity(record)
+        try:
+            known_trial = key in expected
+        except TypeError as error:
+            raise StudyIncompleteError(
+                f"{label} attempt record {index} has an invalid trial identity"
+            ) from error
+        require(
+            known_trial,
+            f"{label} attempt ledger contains unknown trial {key!r}",
+        )
+        groups.setdefault(key, []).append(record)
+    require_equal(set(groups), expected, f"{label} attempt-ledger trials")
+
+    successes: dict[Any, int] = {}
+    retried = 0
+    maximum_observed = 0
+    for key, records in groups.items():
+        require(
+            1 <= len(records) <= maximum,
+            f"{label} trial {key!r} attempt count must be within 1..{maximum}",
+        )
+        numbers = [record.get(number_field) for record in records]
+        require(
+            all(
+                isinstance(number, int) and not isinstance(number, bool)
+                for number in numbers
+            ),
+            f"{label} trial {key!r} attempt numbers are invalid",
+        )
+        require_equal(
+            numbers,
+            list(range(1, len(records) + 1)),
+            f"{label} trial {key!r} attempt numbering",
+        )
+        require(
+            all(isinstance(record.get("succeeded"), bool) for record in records),
+            f"{label} trial {key!r} attempt outcomes are invalid",
+        )
+        successful = [
+            index
+            for index, record in enumerate(records)
+            if record.get("succeeded") is True
+        ]
+        require_equal(
+            successful,
+            [len(records) - 1],
+            f"{label} trial {key!r} successful terminal attempt",
+        )
+        require(
+            all(
+                isinstance(record.get("error"), str) and bool(record["error"])
+                for record in records[:-1]
+            ),
+            f"{label} trial {key!r} failed attempts lack error evidence",
+        )
+        require(
+            not records[-1].get("error"),
+            f"{label} trial {key!r} successful attempt contains an error",
+        )
+        successes[key] = numbers[-1]
+        retried += int(len(records) > 1)
+        maximum_observed = max(maximum_observed, len(records))
+    return (
+        {
+            "maximum_attempts": maximum,
+            "attempts": len(value),
+            "trials": len(groups),
+            "retried_trials": retried,
+            "maximum_observed": maximum_observed,
+        },
+        successes,
+    )
+
+
 def validate_study_runtime(
     root: Path, specification: dict[str, Any]
 ) -> tuple[Path, dict[str, Any]]:
@@ -913,6 +1012,14 @@ def validate_fdb15(
     require_equal(
         run.get("replicates"), specification["replicates"], "FDB1.5 replicates"
     )
+    require_equal(
+        specification.get("trial_attempts"), 3, "FDB1.5 preregistered attempts"
+    )
+    require_equal(
+        run.get("trial_attempts"),
+        specification["trial_attempts"],
+        "FDB1.5 run attempt budget",
+    )
     validate_local_descriptor(
         run.get("descriptor", {}),
         profile="fdb-v1.5-openai-realtime-adapter-i1-qg-v1",
@@ -934,6 +1041,25 @@ def validate_fdb15(
         len(completed), specification["population"], "FDB1.5 completed population"
     )
     require_equal(len(run.get("failures", [])), 0, "FDB1.5 terminal failures")
+    expected_trials = {
+        (scenario, sample_id, condition, replicate)
+        for scenario, sample_id in sample_rows
+        for condition in specification["conditions"]
+        for replicate in range(specification["replicates"])
+    }
+    attempt_summary, successful_attempts = validate_attempt_ledger(
+        run.get("attempts"),
+        expected=expected_trials,
+        maximum=specification["trial_attempts"],
+        identity=lambda item: (
+            item.get("scenario"),
+            item.get("sample_id"),
+            item.get("condition"),
+            item.get("replicate"),
+        ),
+        number_field="attempt",
+        label="FDB1.5",
+    )
     trial_ids = [item.get("trial_id") for item in completed]
     require_equal(len(trial_ids), len(set(trial_ids)), "FDB1.5 unique completed trials")
     require_equal(
@@ -948,6 +1074,24 @@ def validate_fdb15(
     output_entries: list[tuple[Path, str | None]] = []
     result_entries: list[tuple[Path, str | None]] = []
     for item in completed:
+        replicate_label = item.get("trial_id", "").rsplit("/", 1)[-1]
+        require(
+            len(replicate_label) == 4
+            and replicate_label.startswith("r")
+            and replicate_label[1:].isdigit(),
+            f"FDB1.5 completed trial has invalid replicate identity: {item.get('trial_id')!r}",
+        )
+        completed_identity = (
+            item["sample"]["scenario"],
+            item["sample"]["id"],
+            item["condition"],
+            int(replicate_label[1:]),
+        )
+        require_equal(
+            item.get("attempt"),
+            successful_attempts.get(completed_identity),
+            f"FDB1.5 {item['trial_id']} successful attempt",
+        )
         output_path = resolve(root, item.get("output_wav", ""))
         output_entries.append((output_path, item.get("output_sha256")))
         result_entries.append(
@@ -988,6 +1132,7 @@ def validate_fdb15(
         "summary": artifact(root, summary_path),
         "population": len(completed),
         "terminal_failures": 0,
+        "attempt_ledger": attempt_summary,
         "raw_results": result_tree,
         "output_audio": output_tree,
         "metrics": conditions,
@@ -1181,6 +1326,14 @@ def validate_fdbv3(
         specification["profile"]["sha256"],
         "FDBv3 run profile hash",
     )
+    require_equal(
+        specification.get("trial_attempts"), 3, "FDBv3 preregistered attempts"
+    )
+    require_equal(
+        run.get("trial_attempts"),
+        specification["trial_attempts"],
+        "FDBv3 run attempt budget",
+    )
     validate_local_descriptor(
         run.get("descriptor", {}), profile=profile["profile"], label="FDBv3"
     )
@@ -1193,6 +1346,14 @@ def validate_fdbv3(
     require_equal(set(run.get("completed", [])), labels, "FDBv3 completed samples")
     require_equal(len(run.get("completed", [])), len(labels), "FDBv3 completed count")
     require_equal(len(run.get("failures", [])), 0, "FDBv3 terminal failures")
+    attempt_summary, _ = validate_attempt_ledger(
+        run.get("attempts"),
+        expected=labels,
+        maximum=specification["trial_attempts"],
+        identity=lambda item: item.get("sample"),
+        number_field="number",
+        label="FDBv3",
+    )
     output_entries: list[tuple[Path, str | None]] = []
     result_entries: list[tuple[Path, str | None]] = []
     for sample in samples:
@@ -1278,6 +1439,7 @@ def validate_fdbv3(
         "run_manifest": artifact(root, run_path),
         "population": len(labels),
         "terminal_failures": 0,
+        "attempt_ledger": attempt_summary,
         "raw_results": result_tree,
         "output_audio": output_tree,
         "evaluations": {
@@ -1349,6 +1511,14 @@ def validate_fdbench(
         specification["dataset_revision"],
         "FD-Bench run dataset revision",
     )
+    require_equal(
+        specification.get("trial_attempts"), 3, "FD-Bench preregistered attempts"
+    )
+    require_equal(
+        run.get("trial_attempts"),
+        specification["trial_attempts"],
+        "FD-Bench run attempt budget",
+    )
     validate_local_descriptor(
         run.get("descriptor", {}),
         profile="fd-bench-standard-realtime-v1",
@@ -1370,6 +1540,14 @@ def validate_fdbench(
         len(run.get("completed", [])), len(labels), "FD-Bench completed count"
     )
     require_equal(len(run.get("failures", [])), 0, "FD-Bench terminal failures")
+    attempt_summary, _ = validate_attempt_ledger(
+        run.get("attempts"),
+        expected=labels,
+        maximum=specification["trial_attempts"],
+        identity=lambda item: item.get("sample"),
+        number_field="number",
+        label="FD-Bench",
+    )
 
     finalization_path = resolve(root, specification["finalization"])
     finalization = read_json(finalization_path, "FD-Bench finalization")
@@ -1511,6 +1689,7 @@ def validate_fdbench(
         "population": len(labels),
         "cells": len(metric_panel),
         "terminal_failures": 0,
+        "attempt_ledger": attempt_summary,
         "raw_results": finalization["result_evidence"],
         "output_audio": finalization["audio_evidence"],
         "explicit_exclusions": specification["explicit_exclusions"],

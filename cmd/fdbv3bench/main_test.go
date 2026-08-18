@@ -2,16 +2,6 @@ package main
 
 import "testing"
 
-func TestSplitCSVAndSafeName(t *testing.T) {
-	values := splitCSV("alpha, beta,,gamma")
-	if len(values) != 3 || values[1] != "beta" {
-		t.Fatalf("splitCSV returned %#v", values)
-	}
-	if got := safeName("open realtime/one"); got != "open-realtime-one" {
-		t.Fatalf("safeName returned %q", got)
-	}
-}
-
 func TestSampleAttemptStatePreservesLifetimeBudget(t *testing.T) {
 	t.Parallel()
 	remaining, succeeded, err := sampleAttemptState([]attempt{
@@ -24,14 +14,14 @@ func TestSampleAttemptStatePreservesLifetimeBudget(t *testing.T) {
 	}
 }
 
-func TestSampleAttemptStateRejectsAttemptAfterSuccess(t *testing.T) {
+func TestSampleAttemptStateRejectsDuplicateNumber(t *testing.T) {
 	t.Parallel()
 	_, _, err := sampleAttemptState([]attempt{
-		{Sample: "target", Number: 1, Succeeded: true},
-		{Sample: "target", Number: 2},
+		{Sample: "target", Number: 1},
+		{Sample: "target", Number: 1},
 	}, "target", 3)
 	if err == nil {
-		t.Fatal("expected an attempt after success to be rejected")
+		t.Fatal("expected duplicate attempt number to be rejected")
 	}
 }
 

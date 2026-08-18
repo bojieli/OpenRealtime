@@ -265,17 +265,29 @@ class Fixture:
                 "descriptor": fdb15_descriptor,
                 "conditions": ["overlap"],
                 "replicates": 1,
+                "trial_attempts": 3,
                 "samples": [{"scenario": "background", "id": "1"}],
                 "completed": [
                     {
                         "trial_id": "openrealtime/background/1/overlap/r000",
                         "sample": {"scenario": "background", "id": "1"},
                         "condition": "overlap",
+                        "attempt": 1,
                         "output_wav": self.relative(fdb15_output),
                         "output_sha256": REPORT.sha256_file(fdb15_output),
                     }
                 ],
                 "failures": [],
+                "attempts": [
+                    {
+                        "sample_id": "1",
+                        "scenario": "background",
+                        "condition": "overlap",
+                        "replicate": 0,
+                        "attempt": 1,
+                        "succeeded": True,
+                    }
+                ],
             },
         )
         fdb15_summary = self.root / ".runtime/fdb15/summary.json"
@@ -324,6 +336,7 @@ class Fixture:
                 "profile": "fdbv3-profile",
                 "profile_sha256": REPORT.sha256_file(fdbv3_profile),
                 "descriptor": descriptor("fdbv3-profile"),
+                "trial_attempts": 3,
                 "samples": [
                     {
                         "example_id": "example",
@@ -335,6 +348,9 @@ class Fixture:
                 ],
                 "completed": ["example_pid"],
                 "failures": [],
+                "attempts": [
+                    {"sample": "example_pid", "number": 1, "succeeded": True}
+                ],
             },
         )
         fdbv3_output = self.root / ".runtime/fdbv3/sample/output_openrealtime.wav"
@@ -427,9 +443,17 @@ class Fixture:
                 "revision": "fd-revision",
                 "dataset_revision": "dataset-revision",
                 "descriptor": descriptor("fd-bench-standard-realtime-v1"),
+                "trial_attempts": 3,
                 "samples": [{"cell": "cell", "id": "conversation_1"}],
                 "completed": ["cell/conversation_1"],
                 "failures": [],
+                "attempts": [
+                    {
+                        "sample": "cell/conversation_1",
+                        "number": 1,
+                        "succeeded": True,
+                    }
+                ],
             },
         )
         trace = self.root / ".runtime/fd/output/cell/openrealtime.txt"
@@ -531,6 +555,7 @@ class Fixture:
                     "population": 1,
                     "conditions": ["overlap"],
                     "replicates": 1,
+                    "trial_attempts": 3,
                     "run_context": self.relative(fdb15_context),
                     "run_manifest": self.relative(fdb15_run),
                     "summary": self.relative(fdb15_summary),
@@ -540,6 +565,7 @@ class Fixture:
                     "profile": self.pin(fdbv3_profile),
                     "upstream_revision": "fdb-revision",
                     "population": 1,
+                    "trial_attempts": 3,
                     "run_context": self.relative(fdbv3_context),
                     "run_manifest": self.relative(fdbv3_run),
                     "evaluations": {
@@ -554,6 +580,7 @@ class Fixture:
                     "dataset_revision": "dataset-revision",
                     "population": 1,
                     "cells": 1,
+                    "trial_attempts": 3,
                     "run_context": self.relative(fd_context),
                     "run_manifest": self.relative(fd_run),
                     "finalization": self.relative(fd_finalization),
@@ -569,6 +596,8 @@ class Fixture:
         self.paths = {
             "study": study,
             "fdb15_run": fdb15_run,
+            "fdbv3_run": fdbv3_run,
+            "fd_run": fd_run,
             "fdbv3_judge": fdbv3_judge,
             "fdbv3_judge_evidence": fdbv3_judge_evidence,
             "fd_metric": fd_metric,
@@ -632,6 +661,58 @@ class FullStudyTest(unittest.TestCase):
         run["failures"] = [{"sample_id": "1"}]
         write_json(path, run)
         with self.assertRaisesRegex(REPORT.StudyIncompleteError, "terminal failures"):
+            self.report()
+
+    def test_rejects_an_external_trial_over_its_lifetime_attempt_budget(self) -> None:
+        path = self.fixture.paths["fdb15_run"]
+        run = json.loads(path.read_text(encoding="utf-8"))
+        run["attempts"] = [
+            {
+                "sample_id": "1",
+                "scenario": "background",
+                "condition": "overlap",
+                "replicate": 0,
+                "attempt": number,
+                "succeeded": number == 4,
+                **({} if number == 4 else {"error": "infrastructure failure"}),
+            }
+            for number in range(1, 5)
+        ]
+        write_json(path, run)
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "attempt count"):
+            self.report()
+
+    def test_rejects_duplicate_external_attempt_numbers(self) -> None:
+        path = self.fixture.paths["fdbv3_run"]
+        run = json.loads(path.read_text(encoding="utf-8"))
+        run["attempts"] = [
+            {
+                "sample": "example_pid",
+                "number": 1,
+                "succeeded": False,
+                "error": "infrastructure failure",
+            },
+            {"sample": "example_pid", "number": 1, "succeeded": True},
+        ]
+        write_json(path, run)
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "attempt numbering"):
+            self.report()
+
+    def test_rejects_external_attempt_ledger_without_success(self) -> None:
+        path = self.fixture.paths["fd_run"]
+        run = json.loads(path.read_text(encoding="utf-8"))
+        run["attempts"] = [
+            {
+                "sample": "cell/conversation_1",
+                "number": 1,
+                "succeeded": False,
+                "error": "infrastructure failure",
+            }
+        ]
+        write_json(path, run)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "successful terminal attempt"
+        ):
             self.report()
 
     def test_rejects_an_incomplete_tau_termination_distribution(self) -> None:

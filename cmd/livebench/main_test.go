@@ -93,13 +93,25 @@ func TestRunTrialAttemptsContinuesAttemptNumbersAfterResume(t *testing.T) {
 		t.Context(), adapter,
 		livebench.Sample{Benchmark: "benchmark", Revision: "revision", Scenario: "scenario", ID: "1", InputPath: inputPath, InputSHA256: inputHash},
 		livebench.TrialConfig{OutputRoot: root, Condition: "overlap"},
-		3, 2, time.Second, 0, nil,
+		1, 3, time.Second, 0, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Attempt != 4 || len(attempts) != 1 || attempts[0].Attempt != 4 {
+	if result.Attempt != 2 || len(attempts) != 1 || attempts[0].Attempt != 2 {
 		t.Fatalf("result_attempt=%d records=%+v", result.Attempt, attempts)
+	}
+}
+
+func TestRunTrialAttemptsDoesNotRefreshExhaustedBudget(t *testing.T) {
+	t.Parallel()
+	adapter := &flakyAdapter{}
+	_, attempts, err := runTrialAttempts(
+		t.Context(), adapter, livebench.Sample{}, livebench.TrialConfig{},
+		3, 3, time.Second, 0, nil,
+	)
+	if err == nil || adapter.calls != 0 || len(attempts) != 0 {
+		t.Fatalf("err=%v calls=%d attempts=%v", err, adapter.calls, attempts)
 	}
 }
 
@@ -120,7 +132,6 @@ func TestResumeRunManifestPreservesAttemptLedger(t *testing.T) {
 	}
 	prior := plan
 	prior.CreatedAt = createdAt
-	prior.TrialAttempts = 2
 	prior.Attempts = []livebench.RunAttempt{{
 		SampleID: "1", Scenario: "scenario", Condition: "overlap", Attempt: 1,
 	}}
@@ -139,6 +150,25 @@ func TestResumeRunManifestPreservesAttemptLedger(t *testing.T) {
 	}
 	if len(resumed.Completed) != 0 || len(resumed.Failures) != 0 {
 		t.Fatalf("stale outcomes were retained: completed=%d failures=%d", len(resumed.Completed), len(resumed.Failures))
+	}
+}
+
+func TestResumeRunManifestRejectsChangedAttemptBudget(t *testing.T) {
+	t.Parallel()
+	filename := filepath.Join(t.TempDir(), "run.json")
+	prior := livebench.RunManifest{
+		SchemaVersion: livebench.ResultSchemaVersion, Benchmark: "benchmark", Revision: "revision",
+		Descriptor: livebench.Descriptor{Provider: "provider", Model: "model"},
+		Conditions: []string{"overlap"}, Replicates: 1, TrialAttempts: 2,
+		Samples: []livebench.Sample{{Scenario: "scenario", ID: "1"}},
+	}
+	if err := livebench.WriteRunManifest(filename, prior); err != nil {
+		t.Fatal(err)
+	}
+	planned := prior
+	planned.TrialAttempts = 3
+	if _, err := resumeRunManifest(filename, planned); err == nil {
+		t.Fatal("expected an attempt-budget mismatch")
 	}
 }
 

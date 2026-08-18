@@ -207,12 +207,24 @@ func runBenchmark(arguments []string) error {
 		for _, sample := range samples {
 			for _, condition := range conditions {
 				trialConfig := livebench.TrialConfig{OutputRoot: *outputRoot, Condition: condition, Replicate: replicate}
+				attemptHistory := trialAttemptOutcomes(manifest.Attempts, sample, trialConfig)
+				_, recordedSuccess, attemptErr := livebench.AnalyzeAttemptOutcomes(attemptHistory, *trialAttempts)
+				if attemptErr != nil {
+					return fmt.Errorf("attempt ledger for %s/%s %s replicate=%d: %w", sample.Scenario, sample.ID, condition, replicate, attemptErr)
+				}
 				if *resume {
 					prior, exists, loadErr := livebench.LoadTrialResult(descriptor, sample, trialConfig)
 					if loadErr != nil {
 						return loadErr
 					}
-					if exists {
+					if recordedSuccess && !exists {
+						return fmt.Errorf("attempt ledger records success for %s/%s %s replicate=%d but its verified result is missing", sample.Scenario, sample.ID, condition, replicate)
+					}
+					if exists && recordedSuccess {
+						successfulAttempt := attemptHistory[len(attemptHistory)-1].Number
+						if prior.Attempt != successfulAttempt {
+							return fmt.Errorf("verified result for %s/%s %s replicate=%d records attempt %d but the ledger records success at attempt %d", sample.Scenario, sample.ID, condition, replicate, prior.Attempt, successfulAttempt)
+						}
 						fmt.Fprintf(os.Stderr, "[%s] %s/%s %s replicate=%d (resume)\n", descriptor.Provider, sample.Scenario, sample.ID, condition, replicate)
 						manifest.Completed = append(manifest.Completed, prior)
 						if err := livebench.WriteRunManifest(manifestPath, manifest); err != nil {
@@ -220,12 +232,15 @@ func runBenchmark(arguments []string) error {
 						}
 						continue
 					}
+					if exists {
+						fmt.Fprintf(os.Stderr, "[%s] %s/%s %s replicate=%d has an uncertified prior result; rerunning within the remaining attempt budget\n", descriptor.Provider, sample.Scenario, sample.ID, condition, replicate)
+					}
 				}
-				attemptOffset := trialAttemptCount(manifest.Attempts, sample, trialConfig)
+				attemptOffset := len(attemptHistory)
 				result, attempts, trialErr := runTrialAttempts(
 					context.Background(), adapter, sample, trialConfig, attemptOffset, *trialAttempts, *trialTimeout, *retryDelay,
 					func(attempt int) {
-						fmt.Fprintf(os.Stderr, "[%s] %s/%s %s replicate=%d attempt=%d run=%d/%d\n", descriptor.Provider, sample.Scenario, sample.ID, condition, replicate, attempt, attempt-attemptOffset, *trialAttempts)
+						fmt.Fprintf(os.Stderr, "[%s] %s/%s %s replicate=%d attempt=%d/%d\n", descriptor.Provider, sample.Scenario, sample.ID, condition, replicate, attempt, *trialAttempts)
 					},
 				)
 				manifest.Attempts = append(manifest.Attempts, attempts...)
@@ -275,6 +290,7 @@ func resumeRunManifest(filename string, planned livebench.RunManifest) (livebenc
 	}
 	if prior.Benchmark != planned.Benchmark || prior.Revision != planned.Revision ||
 		prior.Descriptor != planned.Descriptor || prior.Replicates != planned.Replicates ||
+		prior.TrialAttempts != planned.TrialAttempts ||
 		!slices.Equal(prior.Conditions, planned.Conditions) || string(priorSamples) != string(plannedSamples) {
 		return livebench.RunManifest{}, fmt.Errorf("prior manifest %s does not match the requested run plan", filename)
 	}
@@ -283,15 +299,15 @@ func resumeRunManifest(filename string, planned livebench.RunManifest) (livebenc
 	return planned, nil
 }
 
-func trialAttemptCount(attempts []livebench.RunAttempt, sample livebench.Sample, config livebench.TrialConfig) int {
-	count := 0
+func trialAttemptOutcomes(attempts []livebench.RunAttempt, sample livebench.Sample, config livebench.TrialConfig) []livebench.AttemptOutcome {
+	var outcomes []livebench.AttemptOutcome
 	for _, attempt := range attempts {
 		if attempt.SampleID == sample.ID && attempt.Scenario == sample.Scenario &&
 			attempt.Condition == config.Condition && attempt.Replicate == config.Replicate {
-			count++
+			outcomes = append(outcomes, livebench.AttemptOutcome{Number: attempt.Attempt, Succeeded: attempt.Succeeded})
 		}
 	}
-	return count
+	return outcomes
 }
 
 func runTrialAttempts(
@@ -305,10 +321,16 @@ func runTrialAttempts(
 	retryDelay time.Duration,
 	onStart func(int),
 ) (livebench.TrialResult, []livebench.RunAttempt, error) {
+	attemptNumbers, err := livebench.RemainingAttemptNumbers(attemptOffset, attemptLimit)
+	if err != nil {
+		return livebench.TrialResult{}, nil, err
+	}
+	if len(attemptNumbers) == 0 {
+		return livebench.TrialResult{}, nil, fmt.Errorf("attempt budget exhausted: used=%d maximum=%d", attemptOffset, attemptLimit)
+	}
 	var records []livebench.RunAttempt
 	var lastErr error
-	for runAttempt := 1; runAttempt <= attemptLimit; runAttempt++ {
-		attempt := attemptOffset + runAttempt
+	for index, attempt := range attemptNumbers {
 		if onStart != nil {
 			onStart(attempt)
 		}
@@ -331,8 +353,8 @@ func runTrialAttempts(
 			return result, records, nil
 		}
 		lastErr = runErr
-		if runAttempt < attemptLimit {
-			delay := retryBackoff(retryDelay, runAttempt)
+		if index < len(attemptNumbers)-1 {
+			delay := retryBackoff(retryDelay, attempt)
 			if err := sleepContext(ctx, delay); err != nil {
 				return livebench.TrialResult{}, records, err
 			}

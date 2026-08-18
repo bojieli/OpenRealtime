@@ -82,12 +82,14 @@ go run ./cmd/livebench run \
   --resume=true
 ```
 
-Each process invocation makes at most `--trial-attempts` calls for an
-unfinished trial, using exponential backoff capped at 30 seconds. The atomic
-manifest keeps every attempt's timestamps, duration, outcome, and error. Resume
-first verifies that the provider, exact model, conditions, replicates, and
-ordered sample plan match; it then preserves the attempt ledger and verifies
-input/output hashes before reusing a completed trial.
+Each logical trial makes at most `--trial-attempts` calls over its entire
+lifetime, including every process resume, using exponential backoff capped at
+30 seconds. The atomic manifest keeps every attempt's timestamps, duration,
+outcome, and error. Resume first verifies that the provider, exact model,
+conditions, replicates, attempt budget, and ordered sample plan match. It then
+requires contiguous attempt provenance ending in a recorded success before it
+reuses a hash-verified result; an uncertified result is rerun only within the
+unused suffix of the original budget.
 
 Recompute local timing observations after a scorer update without repeating
 provider calls, then create a deterministic aggregate:
