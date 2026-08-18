@@ -143,7 +143,9 @@ def aggregate(benchmark: Any) -> dict[str, Any]:
         early_interrupt_times.append(flatten(data["Lead Times Interrupt"]))
         lead_times_to_interruption.append(flatten(data["Lead Times to Interruption"]))
 
-    to_ms = lambda values: [int(value / 16) for value in flatten(values) if value > 0]
+    def to_ms(values):
+        return [int(value / 16) for value in flatten(values) if value > 0]
+
     lead_ms = to_ms(lead_times) + to_ms(lead_times_to_interruption)
     metrics = {
         "SRR_pct": round(100 * rate(counters["success_responses"], counters["rounds"]), 2),
