@@ -127,7 +127,7 @@ func runBenchmark(arguments []string) error {
 	flags := flag.NewFlagSet("run", flag.ContinueOnError)
 	datasetRoot := flags.String("dataset-root", "", "Full-Duplex-Bench v1.5 dataset root")
 	outputRoot := flags.String("output-root", "artifacts/livebench", "result root")
-	provider := flags.String("provider", "", "openai, gemini, or groq")
+	provider := flags.String("provider", "", "openrealtime, openai, gemini, or groq")
 	model := flags.String("model", "", "exact provider model or snapshot")
 	scenario := flags.String("scenario", "", "optional scenario filter")
 	sampleID := flags.String("sample-id", "", "optional sample ID filter")
@@ -363,11 +363,35 @@ func sleepContext(ctx context.Context, duration time.Duration) error {
 
 func makeAdapter(provider, model string, tail time.Duration, dryRun bool) (livebench.Adapter, livebench.Descriptor, error) {
 	switch strings.ToLower(provider) {
+	case "openrealtime":
+		if model == "" {
+			model = "openrealtime-local"
+		}
+		endpoint := os.Getenv("OPENREALTIME_BASE_URL")
+		if endpoint == "" {
+			endpoint = "ws://127.0.0.1:8765/v1/realtime"
+		}
+		config := livebench.OpenAIConfig{
+			APIKey: os.Getenv("OPENREALTIME_API_KEY"), Model: model,
+			Endpoint: endpoint, TailDuration: tail,
+			Provider: "openrealtime", Architecture: "canonical-local-asr-fast-slow-tts",
+			Profile: "fdb-v1.5-openai-realtime-adapter-i1-qg-v1",
+		}
+		descriptor := livebench.Descriptor{
+			Provider: config.Provider, Model: model, Transport: "websocket-openai-realtime",
+			Architecture: config.Architecture, Profile: config.Profile,
+			InputSampleRate: 24_000, OutputSampleRate: 24_000,
+		}
+		if dryRun {
+			return nil, descriptor, nil
+		}
+		adapter, err := livebench.NewOpenAIAdapter(config)
+		return adapter, descriptor, err
 	case "openai":
 		if model == "" {
 			model = livebench.DefaultGPT4oRealtimeModel
 		}
-		descriptor := livebench.Descriptor{Provider: "openai", Model: model, Transport: "websocket", Architecture: "native-audio-to-audio", Profile: "fdb-v1.5-server-vad-v1", InputSampleRate: 24_000, OutputSampleRate: 24_000}
+		descriptor := livebench.Descriptor{Provider: "openai", Model: model, Transport: "websocket-openai-realtime", Architecture: "native-audio-to-audio", Profile: "fdb-v1.5-server-vad-v1", InputSampleRate: 24_000, OutputSampleRate: 24_000}
 		if dryRun {
 			return nil, descriptor, nil
 		}

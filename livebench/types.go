@@ -68,18 +68,42 @@ type Usage struct {
 }
 
 type SessionResult struct {
-	Descriptor        Descriptor    `json:"descriptor"`
-	StartedAt         time.Time     `json:"started_at"`
-	ConnectionSetupMS float64       `json:"connection_setup_ms"`
-	ConnectionCount   int           `json:"connection_count"`
-	InputDurationMS   float64       `json:"input_duration_ms"`
-	ElapsedMS         float64       `json:"elapsed_ms"`
-	FirstAudioMS      *float64      `json:"first_audio_ms,omitempty"`
-	OutputAudioMS     float64       `json:"output_audio_ms"`
-	OutputTranscript  string        `json:"output_transcript,omitempty"`
-	Usage             Usage         `json:"usage,omitempty"`
-	Chunks            []OutputChunk `json:"-"`
-	Events            []WireEvent   `json:"events"`
+	Descriptor        Descriptor         `json:"descriptor"`
+	StartedAt         time.Time          `json:"started_at"`
+	ConnectionSetupMS float64            `json:"connection_setup_ms"`
+	ConnectionCount   int                `json:"connection_count"`
+	InputDurationMS   float64            `json:"input_duration_ms"`
+	ElapsedMS         float64            `json:"elapsed_ms"`
+	FirstAudioMS      *float64           `json:"first_audio_ms,omitempty"`
+	OutputAudioMS     float64            `json:"output_audio_ms"`
+	OutputTranscript  string             `json:"output_transcript,omitempty"`
+	InputTranscripts  []string           `json:"input_transcripts,omitempty"`
+	UserSpeechEndMS   *float64           `json:"user_speech_end_ms,omitempty"`
+	UserSpeechEndsMS  []float64          `json:"user_speech_ends_ms,omitempty"`
+	ToolCalls         []RealtimeToolCall `json:"tool_calls,omitempty"`
+	Usage             Usage              `json:"usage,omitempty"`
+	Chunks            []OutputChunk      `json:"-"`
+	Events            []WireEvent        `json:"events"`
+}
+
+// RealtimeTool is the standard function-tool shape accepted by a Realtime
+// session.update event. Parameters must contain a JSON Schema object.
+type RealtimeTool struct {
+	Type        string          `json:"type"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
+}
+
+// RealtimeToolCall records the authoritative function call observed on the
+// wire and the external result used to resume the same Realtime trajectory.
+type RealtimeToolCall struct {
+	CallID      string          `json:"call_id"`
+	Name        string          `json:"name"`
+	Arguments   json.RawMessage `json:"arguments"`
+	Output      json.RawMessage `json:"output"`
+	RequestedMS float64         `json:"requested_ms"`
+	CompletedMS float64         `json:"completed_ms"`
 }
 
 type Adapter interface {
