@@ -104,6 +104,11 @@ func TestBufferSplitsLargeFrameAndFlushesTerminalRemainder(t *testing.T) {
 	if stats.ProviderChunks != 3 || stats.ProviderSamples != 7200 || stats.PendingSamples != 0 || !stats.Finalized || upstream.finalized != 7200 {
 		t.Fatalf("stats=%#v finalized=%d", stats, upstream.finalized)
 	}
+	metrics := buffer.ProviderRuntimeMetrics()
+	if metrics.AdvanceInvocations != 3 || metrics.AdvanceFailures != 0 ||
+		metrics.FinalizeInvocations != 1 || metrics.FinalizeFailures != 0 {
+		t.Fatalf("provider runtime metrics=%#v", metrics)
+	}
 	if _, err := buffer.PushFrame(context.Background(), newFrame(1, 7200, 800)); err == nil {
 		t.Fatal("expected finalized buffer to reject input")
 	}
@@ -168,6 +173,10 @@ func TestBufferProviderFailureIsTerminal(t *testing.T) {
 	}
 	if _, err := buffer.PushFrame(context.Background(), newFrame(0, 0, 800)); err == nil {
 		t.Fatal("expected provider failure")
+	}
+	metrics := buffer.ProviderRuntimeMetrics()
+	if buffer.ProviderInvocationCount() != 1 || metrics.AdvanceInvocations != 1 || metrics.AdvanceFailures != 1 {
+		t.Fatalf("failed provider metrics=%#v count=%d", metrics, buffer.ProviderInvocationCount())
 	}
 	if _, err := buffer.PushFrame(context.Background(), newFrame(1, 800, 800)); err == nil {
 		t.Fatal("expected terminal failure")

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	"github.com/bojieli/OpenRealtime/asrbuffer"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -99,6 +100,34 @@ func TestMeasuredProvidersSeparateCancellationFromFailure(t *testing.T) {
 	if speechGot.Invocations != 1 || speechGot.Completed != 1 || speechGot.Chunks != 1 ||
 		speechGot.Samples != 2_400 || speechGot.FirstChunkCount != 1 {
 		t.Fatalf("unexpected speech metrics: %#v", speechGot)
+	}
+}
+
+func TestSessionAggregatesActualASRBoundaryMetrics(t *testing.T) {
+	t.Parallel()
+	buffer, err := asrbuffer.New(asrbuffer.Config{
+		Provider: &finalOnlyASR{}, MinimumChunk: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionMetrics := &RuntimeMetrics{}
+	session := &session{config: Config{RuntimeMetrics: sessionMetrics}}
+	utterance := &utteranceState{provider: buffer}
+	if _, err := buffer.PushFrame(context.Background(), v1.AudioFrame{
+		Index: 0, SampleRateHz: 8_000, PCM16LE: make([]byte, 160),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	session.recordProviderAdvances(utterance)
+	if _, err := buffer.Finalize(context.Background(), 80); err != nil {
+		t.Fatal(err)
+	}
+	session.recordProviderAdvances(utterance)
+	got := sessionMetrics.Snapshot()
+	if got.ASRProviderAdvances != 1 || got.ASRProviderFailures != 0 ||
+		got.ASRFinalizeAttempts != 1 || got.ASRFinalizeFailures != 0 {
+		t.Fatalf("unexpected ASR boundary metrics: %#v", got)
 	}
 }
 

@@ -167,6 +167,7 @@ class RuntimeEvidenceTest(unittest.TestCase):
         delta = REPORT.cumulative_runtime_delta(
             {
                 "sessions_started": 2,
+                "asr_provider_maximum_elapsed_ns": 90,
                 "fast": {
                     "invocations": 4,
                     "cumulative_elapsed_ns": 100,
@@ -175,6 +176,7 @@ class RuntimeEvidenceTest(unittest.TestCase):
             },
             {
                 "sessions_started": 7,
+                "asr_provider_maximum_elapsed_ns": 400,
                 "fast": {
                     "invocations": 10,
                     "cumulative_elapsed_ns": 900,

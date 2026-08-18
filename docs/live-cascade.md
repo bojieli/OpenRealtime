@@ -227,10 +227,12 @@ controls whose typed provider projections never fork the canonical store.
 The same health document exposes cumulative session, input-frame, ASR provider
 advance, fast/slow continuation, and Fish speech counters. Continuation and
 speech aggregates separate completion, failure, and cooperative cancellation;
-they also record streamed event/chunk counts, tokens or source samples, and
-cumulative/maximum provider and first-event timing. Matrix runners preserve
-both the start and final health snapshots, keeping provider work measurable
-without extending the standard Realtime event vocabulary.
+ASR aggregates separately measure stateful advance and endpoint-finalization
+attempts, failures, and elapsed time. The other aggregates record streamed
+event/chunk counts, tokens or source samples, and cumulative/maximum provider
+and first-event timing. Matrix runners preserve both the start and final health
+snapshots, keeping provider work measurable without extending the standard
+Realtime event vocabulary.
 
 `OPENREALTIME_ASR_PROVIDER_MAX_CHUNK` enables a bounded revision-adaptive
 provider cadence when it exceeds `OPENREALTIME_ASR_PROVIDER_CHUNK`. The next

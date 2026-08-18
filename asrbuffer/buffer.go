@@ -39,20 +39,42 @@ type Config struct {
 	MaxInputFrameBytes int
 }
 
-// Stats is a point-in-time, secret-free snapshot. ProviderChunks counts calls
-// to the wrapped provider's PushFrame; it intentionally excludes Finalize.
+// Stats is a point-in-time, secret-free snapshot. ProviderChunks counts
+// successful calls to the wrapped provider's PushFrame; ProviderAttempts and
+// timing include failures. Finalization is measured separately.
 type Stats struct {
-	InputFrames         uint64 `json:"input_frames"`
-	InputSamples        uint64 `json:"input_samples"`
-	ProviderChunks      uint64 `json:"provider_chunks"`
-	ProviderSamples     uint64 `json:"provider_samples"`
-	PendingSamples      uint64 `json:"pending_samples"`
-	MinimumChunkSamples uint64 `json:"minimum_chunk_samples,omitempty"`
-	MaximumChunkSamples uint64 `json:"maximum_chunk_samples,omitempty"`
-	CurrentChunkSamples uint64 `json:"current_chunk_samples,omitempty"`
-	Policy              string `json:"policy"`
-	SampleRateHz        uint32 `json:"sample_rate_hz,omitempty"`
-	Finalized           bool   `json:"finalized"`
+	InputFrames          uint64 `json:"input_frames"`
+	InputSamples         uint64 `json:"input_samples"`
+	ProviderAttempts     uint64 `json:"provider_attempts"`
+	ProviderChunks       uint64 `json:"provider_chunks"`
+	ProviderFailures     uint64 `json:"provider_failures"`
+	ProviderSamples      uint64 `json:"provider_samples"`
+	ProviderElapsedNS    uint64 `json:"provider_elapsed_ns"`
+	ProviderMaxElapsedNS uint64 `json:"provider_max_elapsed_ns"`
+	FinalizeAttempts     uint64 `json:"finalize_attempts"`
+	FinalizeFailures     uint64 `json:"finalize_failures"`
+	FinalizeElapsedNS    uint64 `json:"finalize_elapsed_ns"`
+	FinalizeMaxElapsedNS uint64 `json:"finalize_max_elapsed_ns"`
+	PendingSamples       uint64 `json:"pending_samples"`
+	MinimumChunkSamples  uint64 `json:"minimum_chunk_samples,omitempty"`
+	MaximumChunkSamples  uint64 `json:"maximum_chunk_samples,omitempty"`
+	CurrentChunkSamples  uint64 `json:"current_chunk_samples,omitempty"`
+	Policy               string `json:"policy"`
+	SampleRateHz         uint32 `json:"sample_rate_hz,omitempty"`
+	Finalized            bool   `json:"finalized"`
+}
+
+// ProviderMetrics is the monotonic subset used by process-level benchmark
+// telemetry. It contains no transcript or audio content.
+type ProviderMetrics struct {
+	AdvanceInvocations   uint64
+	AdvanceFailures      uint64
+	AdvanceElapsedNS     uint64
+	AdvanceMaxElapsedNS  uint64
+	FinalizeInvocations  uint64
+	FinalizeFailures     uint64
+	FinalizeElapsedNS    uint64
+	FinalizeMaxElapsedNS uint64
 }
 
 // Buffer owns one utterance. Calls are serialized because the wrapped
@@ -127,13 +149,31 @@ func (buffer *Buffer) Descriptor() v1.Descriptor {
 	return descriptor
 }
 
-// ProviderInvocationCount returns the number of completed PushFrame calls at
-// the wrapped provider boundary. Benchmark drivers use before/after snapshots
-// to distinguish cheap scheduler ticks from actual decode opportunities.
+// ProviderInvocationCount returns the number of completed PushFrame attempts
+// at the wrapped provider boundary. Benchmark drivers use before/after
+// snapshots to distinguish cheap scheduler ticks from actual decode
+// opportunities, including a terminal failed attempt.
 func (buffer *Buffer) ProviderInvocationCount() uint64 {
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
-	return buffer.stats.ProviderChunks
+	return buffer.stats.ProviderAttempts
+}
+
+// ProviderRuntimeMetrics returns monotonic provider-boundary counters and
+// timing for process-level aggregation.
+func (buffer *Buffer) ProviderRuntimeMetrics() ProviderMetrics {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	return ProviderMetrics{
+		AdvanceInvocations:   buffer.stats.ProviderAttempts,
+		AdvanceFailures:      buffer.stats.ProviderFailures,
+		AdvanceElapsedNS:     buffer.stats.ProviderElapsedNS,
+		AdvanceMaxElapsedNS:  buffer.stats.ProviderMaxElapsedNS,
+		FinalizeInvocations:  buffer.stats.FinalizeAttempts,
+		FinalizeFailures:     buffer.stats.FinalizeFailures,
+		FinalizeElapsedNS:    buffer.stats.FinalizeElapsedNS,
+		FinalizeMaxElapsedNS: buffer.stats.FinalizeMaxElapsedNS,
+	}
 }
 
 // Stats returns an immutable snapshot.
@@ -239,8 +279,14 @@ func (buffer *Buffer) Finalize(ctx context.Context, sourceSample uint64) (v1.Per
 			return v1.PerceptionRevision{}, buffer.fail(err)
 		}
 	}
+	started := time.Now()
 	result, err := buffer.provider.Finalize(ctx, sourceSample)
+	elapsed := uint64(time.Since(started))
+	buffer.stats.FinalizeAttempts++
+	buffer.stats.FinalizeElapsedNS += elapsed
+	buffer.stats.FinalizeMaxElapsedNS = max(buffer.stats.FinalizeMaxElapsedNS, elapsed)
 	if err != nil {
+		buffer.stats.FinalizeFailures++
 		return v1.PerceptionRevision{}, buffer.fail(fmt.Errorf("finalize buffered ASR provider: %w", err))
 	}
 	buffer.finalized = true
@@ -257,8 +303,14 @@ func (buffer *Buffer) flush(ctx context.Context) ([]v1.PerceptionRevision, error
 		Index: buffer.nextProviderIndex, SampleOffset: buffer.pendingStartSample,
 		SampleRateHz: buffer.sampleRateHz, PCM16LE: audio,
 	}
+	started := time.Now()
 	revisions, err := buffer.provider.PushFrame(ctx, frame)
+	elapsed := uint64(time.Since(started))
+	buffer.stats.ProviderAttempts++
+	buffer.stats.ProviderElapsedNS += elapsed
+	buffer.stats.ProviderMaxElapsedNS = max(buffer.stats.ProviderMaxElapsedNS, elapsed)
 	if err != nil {
+		buffer.stats.ProviderFailures++
 		return nil, fmt.Errorf("push buffered ASR chunk %d: %w", buffer.nextProviderIndex, err)
 	}
 	chunkSamples := uint64(len(audio) / 2)

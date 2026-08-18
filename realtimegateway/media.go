@@ -8,20 +8,26 @@ import (
 	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	"github.com/bojieli/OpenRealtime/asrbuffer"
 	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/preparation"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 type utteranceState struct {
-	itemID       string
-	provider     v1.PerceptionProvider
-	preparation  *preparedTurn
-	frameIndex   uint64
-	sourceSample uint64
-	sampleRate   uint32
-	lastText     string
-	providerRuns uint64
+	itemID            string
+	provider          v1.PerceptionProvider
+	preparation       *preparedTurn
+	frameIndex        uint64
+	sourceSample      uint64
+	sampleRate        uint32
+	lastText          string
+	providerRuns      uint64
+	providerFailures  uint64
+	providerElapsedNS uint64
+	finalizeRuns      uint64
+	finalizeFailures  uint64
+	finalizeElapsedNS uint64
 }
 
 func (session *session) mediaLoop() {
@@ -107,6 +113,10 @@ type providerInvocationCounter interface {
 	ProviderInvocationCount() uint64
 }
 
+type providerRuntimeMetrics interface {
+	ProviderRuntimeMetrics() asrbuffer.ProviderMetrics
+}
+
 func (session *session) recordProviderAdvances(utterance *utteranceState) {
 	counter, ok := utterance.provider.(providerInvocationCounter)
 	if !ok {
@@ -118,6 +128,33 @@ func (session *session) recordProviderAdvances(utterance *utteranceState) {
 	}
 	session.config.RuntimeMetrics.asrProviderAdvances.Add(current - utterance.providerRuns)
 	utterance.providerRuns = current
+	detailed, ok := utterance.provider.(providerRuntimeMetrics)
+	if !ok {
+		return
+	}
+	metrics := detailed.ProviderRuntimeMetrics()
+	if metrics.AdvanceFailures >= utterance.providerFailures {
+		session.config.RuntimeMetrics.asrProviderFailures.Add(metrics.AdvanceFailures - utterance.providerFailures)
+		utterance.providerFailures = metrics.AdvanceFailures
+	}
+	if metrics.AdvanceElapsedNS >= utterance.providerElapsedNS {
+		session.config.RuntimeMetrics.asrProviderElapsedNS.Add(metrics.AdvanceElapsedNS - utterance.providerElapsedNS)
+		utterance.providerElapsedNS = metrics.AdvanceElapsedNS
+	}
+	updateMaximum(&session.config.RuntimeMetrics.asrProviderMaxElapsedNS, metrics.AdvanceMaxElapsedNS)
+	if metrics.FinalizeInvocations >= utterance.finalizeRuns {
+		session.config.RuntimeMetrics.asrFinalizeAttempts.Add(metrics.FinalizeInvocations - utterance.finalizeRuns)
+		utterance.finalizeRuns = metrics.FinalizeInvocations
+	}
+	if metrics.FinalizeFailures >= utterance.finalizeFailures {
+		session.config.RuntimeMetrics.asrFinalizeFailures.Add(metrics.FinalizeFailures - utterance.finalizeFailures)
+		utterance.finalizeFailures = metrics.FinalizeFailures
+	}
+	if metrics.FinalizeElapsedNS >= utterance.finalizeElapsedNS {
+		session.config.RuntimeMetrics.asrFinalizeElapsedNS.Add(metrics.FinalizeElapsedNS - utterance.finalizeElapsedNS)
+		utterance.finalizeElapsedNS = metrics.FinalizeElapsedNS
+	}
+	updateMaximum(&session.config.RuntimeMetrics.asrFinalizeMaxElapsedNS, metrics.FinalizeMaxElapsedNS)
 }
 
 func (session *session) observeRevision(utterance *utteranceState, revision v1.PerceptionRevision, final bool) error {

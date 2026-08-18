@@ -285,9 +285,10 @@ speech populations after the cadence and effort queue.
 
 Gateway runtime counters remain outside the Realtime wire contract. `/healthz`
 reports cumulative sessions, input frames, stateful ASR provider advances,
-fast/slow invocations and streamed events, provider-reported tokens, and Fish
-calls/chunks/source samples. It separates completed, failed, and cooperatively
-cancelled work and records cumulative/maximum provider and first-event timing.
+ASR advance/finalization failures and elapsed time, fast/slow invocations and
+streamed events, provider-reported tokens, and Fish calls/chunks/source
+samples. It separates completed, failed, and cooperatively cancelled work and
+records cumulative/maximum provider and first-event timing.
 Every matrix run freezes the initial and final snapshots beside its GPU
 telemetry. This distinguishes nominal ticks from actual provider work and
 discarded speculation. The strict reporter subtracts additive counters into a

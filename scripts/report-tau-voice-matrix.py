@@ -321,7 +321,7 @@ def cumulative_runtime_delta(
     """
     result: dict[str, Any] = {}
     for key, final_value in final.items():
-        if key.startswith("maximum_"):
+        if key.startswith("maximum_") or "_maximum_" in key:
             continue
         start_value = start.get(key)
         field_path = f"{path}.{key}"

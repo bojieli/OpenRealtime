@@ -14,26 +14,40 @@ import (
 // provider work without exposing model content or extending the Realtime wire.
 // A gateway restart deliberately starts a new measurement population.
 type RuntimeMetrics struct {
-	sessionsStarted     atomic.Uint64
-	sessionsCompleted   atomic.Uint64
-	asrInputFrames      atomic.Uint64
-	asrProviderAdvances atomic.Uint64
-	asrFinalizations    atomic.Uint64
-	fast                continuationProviderMetrics
-	slow                continuationProviderMetrics
-	speech              speechProviderMetrics
+	sessionsStarted         atomic.Uint64
+	sessionsCompleted       atomic.Uint64
+	asrInputFrames          atomic.Uint64
+	asrProviderAdvances     atomic.Uint64
+	asrProviderFailures     atomic.Uint64
+	asrProviderElapsedNS    atomic.Uint64
+	asrProviderMaxElapsedNS atomic.Uint64
+	asrFinalizeAttempts     atomic.Uint64
+	asrFinalizeFailures     atomic.Uint64
+	asrFinalizeElapsedNS    atomic.Uint64
+	asrFinalizeMaxElapsedNS atomic.Uint64
+	asrFinalizations        atomic.Uint64
+	fast                    continuationProviderMetrics
+	slow                    continuationProviderMetrics
+	speech                  speechProviderMetrics
 }
 
 // RuntimeMetricsSnapshot is the immutable health/report representation.
 type RuntimeMetricsSnapshot struct {
-	SessionsStarted     uint64                              `json:"sessions_started"`
-	SessionsCompleted   uint64                              `json:"sessions_completed"`
-	ASRInputFrames      uint64                              `json:"asr_input_frames"`
-	ASRProviderAdvances uint64                              `json:"asr_provider_advances"`
-	ASRFinalizations    uint64                              `json:"asr_finalizations"`
-	Fast                ContinuationProviderMetricsSnapshot `json:"fast"`
-	Slow                ContinuationProviderMetricsSnapshot `json:"slow"`
-	Speech              SpeechProviderMetricsSnapshot       `json:"speech"`
+	SessionsStarted         uint64                              `json:"sessions_started"`
+	SessionsCompleted       uint64                              `json:"sessions_completed"`
+	ASRInputFrames          uint64                              `json:"asr_input_frames"`
+	ASRProviderAdvances     uint64                              `json:"asr_provider_advances"`
+	ASRProviderFailures     uint64                              `json:"asr_provider_failures"`
+	ASRProviderElapsedNS    uint64                              `json:"asr_provider_elapsed_ns"`
+	ASRProviderMaxElapsedNS uint64                              `json:"asr_provider_maximum_elapsed_ns"`
+	ASRFinalizeAttempts     uint64                              `json:"asr_finalize_attempts"`
+	ASRFinalizeFailures     uint64                              `json:"asr_finalize_failures"`
+	ASRFinalizeElapsedNS    uint64                              `json:"asr_finalize_elapsed_ns"`
+	ASRFinalizeMaxElapsedNS uint64                              `json:"asr_finalize_maximum_elapsed_ns"`
+	ASRFinalizations        uint64                              `json:"asr_finalizations"`
+	Fast                    ContinuationProviderMetricsSnapshot `json:"fast"`
+	Slow                    ContinuationProviderMetricsSnapshot `json:"slow"`
+	Speech                  SpeechProviderMetricsSnapshot       `json:"speech"`
 }
 
 func (metrics *RuntimeMetrics) Snapshot() RuntimeMetricsSnapshot {
@@ -41,14 +55,21 @@ func (metrics *RuntimeMetrics) Snapshot() RuntimeMetricsSnapshot {
 		return RuntimeMetricsSnapshot{}
 	}
 	return RuntimeMetricsSnapshot{
-		SessionsStarted:     metrics.sessionsStarted.Load(),
-		SessionsCompleted:   metrics.sessionsCompleted.Load(),
-		ASRInputFrames:      metrics.asrInputFrames.Load(),
-		ASRProviderAdvances: metrics.asrProviderAdvances.Load(),
-		ASRFinalizations:    metrics.asrFinalizations.Load(),
-		Fast:                metrics.fast.snapshot(),
-		Slow:                metrics.slow.snapshot(),
-		Speech:              metrics.speech.snapshot(),
+		SessionsStarted:         metrics.sessionsStarted.Load(),
+		SessionsCompleted:       metrics.sessionsCompleted.Load(),
+		ASRInputFrames:          metrics.asrInputFrames.Load(),
+		ASRProviderAdvances:     metrics.asrProviderAdvances.Load(),
+		ASRProviderFailures:     metrics.asrProviderFailures.Load(),
+		ASRProviderElapsedNS:    metrics.asrProviderElapsedNS.Load(),
+		ASRProviderMaxElapsedNS: metrics.asrProviderMaxElapsedNS.Load(),
+		ASRFinalizeAttempts:     metrics.asrFinalizeAttempts.Load(),
+		ASRFinalizeFailures:     metrics.asrFinalizeFailures.Load(),
+		ASRFinalizeElapsedNS:    metrics.asrFinalizeElapsedNS.Load(),
+		ASRFinalizeMaxElapsedNS: metrics.asrFinalizeMaxElapsedNS.Load(),
+		ASRFinalizations:        metrics.asrFinalizations.Load(),
+		Fast:                    metrics.fast.snapshot(),
+		Slow:                    metrics.slow.snapshot(),
+		Speech:                  metrics.speech.snapshot(),
 	}
 }
 
