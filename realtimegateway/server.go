@@ -32,6 +32,7 @@ type Config struct {
 	SlowMaxTokens       int
 	MaxSlowInvocations  int
 	SlowPreparationMin  time.Duration
+	PreparationPolicy   PreparationPolicy
 	SlowContextPolicy   interleave.SlowContextPolicy
 	MaxAudioFrameBytes  int
 	MaxPendingEvents    int
@@ -71,6 +72,9 @@ func New(config Config) (*Server, error) {
 	if config.SlowContextPolicy == "" {
 		config.SlowContextPolicy = interleave.SlowContextCanonical
 	}
+	if config.PreparationPolicy == "" {
+		config.PreparationPolicy = PreparationContinuous
+	}
 	if config.RuntimeMetrics == nil {
 		config.RuntimeMetrics = &RuntimeMetrics{}
 	}
@@ -89,6 +93,11 @@ func New(config Config) (*Server, error) {
 	if _, err := interleave.ParseSlowContextPolicy(string(config.SlowContextPolicy)); err != nil {
 		return nil, err
 	}
+	preparationPolicy, err := ParsePreparationPolicy(string(config.PreparationPolicy))
+	if err != nil {
+		return nil, err
+	}
+	config.PreparationPolicy = preparationPolicy
 	return &Server{config: config}, nil
 }
 
@@ -109,11 +118,12 @@ func (server *Server) Handler() http.Handler {
 					return "fixed"
 				}(),
 			},
-			"slow_context": server.config.SlowContextPolicy,
-			"runtime":      server.config.RuntimeMetrics.Snapshot(),
-			"fast":         server.config.FastProvider.Descriptor(),
-			"slow":         server.config.SlowProvider.Descriptor(),
-			"speech":       server.config.SpeechProvider.Descriptor(),
+			"preparation_policy": server.config.PreparationPolicy,
+			"slow_context":       server.config.SlowContextPolicy,
+			"runtime":            server.config.RuntimeMetrics.Snapshot(),
+			"fast":               server.config.FastProvider.Descriptor(),
+			"slow":               server.config.SlowProvider.Descriptor(),
+			"speech":             server.config.SpeechProvider.Descriptor(),
 		})
 	})
 	mux.Handle("GET /v1/realtime", server)

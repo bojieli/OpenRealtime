@@ -22,6 +22,14 @@ OpenAI Realtime-compatible gateway. The controlled path is:
 This is an internal server architecture. It does not add events or fields to the
 OpenAI Realtime wire protocol, and it does not alter stable `api/v1`.
 
+The live gateway has two explicit preparation policies. `continuous` is the
+reference path above. `endpoint-only` keeps stateful ASR and standard server
+VAD but does not allocate a private continuation chain, so partial revisions
+cannot invoke fast or slow. The final transcript still becomes the same typed
+`asr.endpoint` observation and enters the same canonical fast → slow → tool
+result loop. The policy is selected per deployment, never from transcript
+content or a model decision.
+
 The persistent gateway path is:
 
 ```text
@@ -95,6 +103,12 @@ the ordinary live slow provider.
 The benchmark records observed/distinct revisions, chain disposition, per-stage
 timings, exact replay/fallback counts, and provider usage without storing raw
 reasoning. This makes canceled hosted slow work visible.
+
+The endpoint-only policy guarantees zero pre-endpoint continuation work by
+construction; its aggregate counters therefore contain ordinary post-endpoint
+provider work only. Comparing it with `continuous` changes temporal
+availability alone; it does not replace the fast model with the slow model or
+create a separate agent policy.
 
 ### Temporal launch pacing
 
@@ -224,6 +238,9 @@ not the registered treatment. `OPENREALTIME_SLOW_EFFORT` selects the explicit
 medium or high slow profile. `OPENREALTIME_SLOW_CONTEXT_POLICY` defaults to
 `canonical`; `content-only` and `independent` are registered benchmark
 controls whose typed provider projections never fork the canonical store.
+`OPENREALTIME_PREPARATION_POLICY` defaults to `continuous`; `endpoint-only`
+disables all partial-revision continuation work while retaining the identical
+canonical event loop after VAD finalization.
 The same health document exposes cumulative session, input-frame, ASR provider
 advance, fast/slow continuation, and Fish speech counters. Continuation and
 speech aggregates separate completion, failure, and cooperative cancellation;

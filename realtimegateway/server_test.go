@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -29,6 +30,7 @@ func TestHealthReportsConfiguredContinuationProfiles(t *testing.T) {
 		FastProvider:      &scriptedProvider{descriptor: continuation.Descriptor{Provider: "google", Model: "gemini-fast", Phase: trajectory.PhaseFast, Effort: continuation.EffortMinimal, Streaming: true, ToolAuthority: continuation.ToolAuthorityPropose}},
 		SlowProvider:      &scriptedProvider{descriptor: continuation.Descriptor{Provider: "google", Model: "gemini-slow", Phase: trajectory.PhaseSlow, Effort: continuation.EffortHigh, Streaming: true, ToolAuthority: continuation.ToolAuthorityExecute, ExecutableTools: true}},
 		SpeechProvider:    fakeSpeech{},
+		PreparationPolicy: PreparationEndpointOnly,
 		SlowContextPolicy: interleave.SlowContextContentOnly,
 		RuntimeMetrics:    metrics,
 	})
@@ -53,6 +55,7 @@ func TestHealthReportsConfiguredContinuationProfiles(t *testing.T) {
 			Strategy           string  `json:"strategy"`
 		} `json:"asr"`
 		SlowContext interleave.SlowContextPolicy `json:"slow_context"`
+		Preparation PreparationPolicy            `json:"preparation_policy"`
 		Runtime     RuntimeMetricsSnapshot       `json:"runtime"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
@@ -61,6 +64,7 @@ func TestHealthReportsConfiguredContinuationProfiles(t *testing.T) {
 	if body.Status != "ok" || body.Model != "public-model" || body.Fast.Model != "gemini-fast" ||
 		body.Fast.EffectiveToolAuthority() != continuation.ToolAuthorityPropose || body.Slow.Model != "gemini-slow" ||
 		body.ASR.Model != "qwen-asr" || body.ASR.ProviderChunkMS != 200 || body.SlowContext != interleave.SlowContextContentOnly ||
+		body.Preparation != PreparationEndpointOnly ||
 		body.ASR.ProviderMaxChunkMS != 200 || body.ASR.Strategy != "fixed" ||
 		body.Runtime.ASRInputFrames != 9 || body.Runtime.ASRProviderAdvances != 3 {
 		t.Fatalf("unexpected health body: %#v", body)
@@ -93,6 +97,45 @@ func TestHealthReportsRevisionAdaptiveASRProfile(t *testing.T) {
 	if body.ASR.ProviderChunkMS != 100 || body.ASR.ProviderMaxChunkMS != 400 || body.ASR.Strategy != "revision-adaptive" {
 		t.Fatalf("unexpected adaptive ASR health: %#v", body.ASR)
 	}
+}
+
+func TestPreparationPolicyIsExplicitAndClosed(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{"continuous", "ENDPOINT-ONLY"} {
+		if _, err := ParsePreparationPolicy(value); err != nil {
+			t.Fatalf("parse %q: %v", value, err)
+		}
+	}
+	if _, err := ParsePreparationPolicy("smart-router"); err == nil {
+		t.Fatal("undeclared preparation policy was accepted")
+	}
+}
+
+func TestServerDefaultsToContinuousPreparation(t *testing.T) {
+	t.Parallel()
+	server, err := New(Config{
+		PerceptionFactory: func() (v1.PerceptionProvider, error) { return &finalOnlyASR{}, nil },
+		FastProvider:      &scriptedProvider{}, SlowProvider: &scriptedProvider{}, SpeechProvider: fakeSpeech{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.config.PreparationPolicy != PreparationContinuous {
+		t.Fatalf("default preparation policy = %q", server.config.PreparationPolicy)
+	}
+	server.config.PreparationPolicy = PreparationEndpointOnly
+	session, err := newSession(context.Background(), nil, server.config, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := session.newPreparation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared != nil {
+		t.Fatal("endpoint-only policy allocated a private continuation chain")
+	}
+	session.cancel(errors.New("test complete"))
 }
 
 type finalOnlyASR struct {
@@ -207,7 +250,8 @@ func TestStandardRealtimeGatewayRunsCanonicalToolResumption(t *testing.T) {
 	server, err := New(Config{
 		Model: "openrealtime-test", PerceptionFactory: func() (v1.PerceptionProvider, error) { return &finalOnlyASR{}, nil },
 		FastProvider: fast, SlowProvider: slow, SpeechProvider: fakeSpeech{},
-		ValidateWire: true,
+		PreparationPolicy: PreparationEndpointOnly,
+		ValidateWire:      true,
 	})
 	if err != nil {
 		t.Fatal(err)

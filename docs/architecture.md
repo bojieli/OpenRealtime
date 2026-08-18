@@ -142,6 +142,12 @@ performs no fuzzy transcript match or semantic difficulty routing.
 Speculative TTS is still outside this measured path. Audio commitment,
 continuous input during output, interruption, and repair remain M3 boundaries.
 
+For the endpoint-only trigger control, the media path deliberately allocates no
+private chain. It continues incremental ASR, commits the same final typed
+observation, and then uses the ordinary event-loop-owned canonical transition.
+This creates a single-variable timing ablation: private work availability
+changes, while cognition order, tool authority, context, and speech do not.
+
 ## Speech commitment and duplex state
 
 M3 streams 20 ms speech chunks into a concurrency-safe commit controller. The

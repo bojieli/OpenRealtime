@@ -49,7 +49,7 @@ func (session *session) mediaLoop() {
 					session.sendError("asr_provider_error", err.Error())
 					continue
 				}
-				prepared, err := session.cognitive.NewPreparation()
+				prepared, err := session.newPreparation()
 				if err != nil {
 					session.sendError("preparation_error", err.Error())
 					continue
@@ -109,6 +109,13 @@ func (session *session) advanceUtterance(utterance *utteranceState, command medi
 	return session.observeRevision(utterance, final, true)
 }
 
+func (session *session) newPreparation() (*preparedTurn, error) {
+	if session.config.PreparationPolicy == PreparationEndpointOnly {
+		return nil, nil
+	}
+	return session.cognitive.NewPreparation()
+}
+
 type providerInvocationCounter interface {
 	ProviderInvocationCount() uint64
 }
@@ -160,7 +167,7 @@ func (session *session) recordProviderAdvances(utterance *utteranceState) {
 func (session *session) observeRevision(utterance *utteranceState, revision v1.PerceptionRevision, final bool) error {
 	text := revision.StableText + revision.UnstableText
 	revisionID := session.sourceRev.Add(1)
-	if strings.TrimSpace(text) != "" && text != utterance.lastText {
+	if utterance.preparation != nil && strings.TrimSpace(text) != "" && text != utterance.lastText {
 		if err := utterance.preparation.Observe(session.ctx, revisionID, text); err != nil && !errors.Is(err, preparation.ErrClosed) {
 			return fmt.Errorf("prepare transcript revision: %w", err)
 		}
@@ -169,7 +176,7 @@ func (session *session) observeRevision(utterance *utteranceState, revision v1.P
 	if !final {
 		return nil
 	}
-	if strings.TrimSpace(text) != "" {
+	if strings.TrimSpace(text) != "" && utterance.preparation != nil {
 		// Final stability is a distinct scheduler opportunity even when Qwen's
 		// text bytes equal the last partial revision. The semantic fingerprint
 		// coalesces it without a second model request.
@@ -181,7 +188,7 @@ func (session *session) observeRevision(utterance *utteranceState, revision v1.P
 			return fmt.Errorf("commit prepared continuation: %w", err)
 		}
 		session.cognitive.AttachPreparation(revisionID, chain)
-	} else {
+	} else if strings.TrimSpace(text) == "" {
 		closePreparedTurn(utterance, errors.New("empty final transcript"))
 	}
 	if err := session.send(event("conversation.item.created", session.nextID("event"), map[string]any{

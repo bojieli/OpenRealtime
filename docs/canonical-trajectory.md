@@ -232,6 +232,13 @@ requests cooperative cancellation and is committed immediately after the
 active continuation reaches its boundary. Priority is never inferred from
 words in a transcript.
 
+Pre-endpoint preparation is itself a closed temporal policy, not a routing
+decision. Under `continuous`, changed typed ASR revisions may drive the private
+latest-wins chain. Under the endpoint-only experimental control, they cannot
+invoke either continuation provider. In both cases the final ASR observation
+is committed once and selects the same `fast → slow` canonical transition;
+complete tool-result batches select the same slow-only resumption transition.
+
 For a canonical observation the cognitive transition is `fast → slow`; for a
 complete tool-result batch it is `slow`; for playback state alone it is empty.
 Those are the only reference routing rules. Event occurrence metadata is

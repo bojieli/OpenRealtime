@@ -45,6 +45,11 @@ adapter. Every accepted client event and emitted server event is checked by the
 pinned validator in the production command. Fast/slow authority, reasoning,
 trajectory versions, preparation, and media epochs remain internal.
 
+The `continuous` versus `endpoint-only` preparation setting is also internal.
+It controls whether typed partial transcripts may start private work; standard
+server VAD and transcription events still define the public lifecycle, and the
+same response/function-call events expose the post-endpoint result.
+
 External tools use the ordinary protocol sequence: the slow continuation emits
 standard function-call response items; the client sends one
 `function_call_output` item per call followed by `response.create`; the gateway

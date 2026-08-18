@@ -5,6 +5,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/interleave"
+	"github.com/bojieli/OpenRealtime/realtimegateway"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -27,6 +28,16 @@ func TestSlowContextPolicyRejectsUndeclaredControls(t *testing.T) {
 	}
 	if _, err := interleave.ParseSlowContextPolicy("router"); err == nil {
 		t.Fatal("undeclared slow context policy was accepted")
+	}
+}
+
+func TestPreparationPolicyRejectsImplicitRouting(t *testing.T) {
+	t.Parallel()
+	if _, err := realtimegateway.ParsePreparationPolicy("endpoint-only"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := realtimegateway.ParsePreparationPolicy("auto"); err == nil {
+		t.Fatal("implicit preparation routing was accepted")
 	}
 }
 
