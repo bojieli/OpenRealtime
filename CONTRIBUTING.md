@@ -39,6 +39,9 @@ Every pull request must:
    client or server event sent on the wire.
 8. Treat `api/v1` as stable. A breaking interface or semantic change requires a
    new `api/v2` import path, migration documentation, and a major release.
+9. Treat canonical trajectory and reasoning data as internal. Raw reasoning
+   retention must be opt-in, provider-permitted, consented where applicable,
+   and unnecessary for ordinary wire compatibility or timing evidence.
 
 Contributors certify that they have the right to submit their contribution and
 license it under the repository’s applicable license. Substantial architecture

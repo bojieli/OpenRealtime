@@ -1,11 +1,51 @@
 # Protocol architecture
 
-OpenRealtime has two deliberately separate protocols.
+OpenRealtime has two deliberately separate representation layers.
 
 1. The external wire protocol is the OpenAI Realtime event protocol. Existing
    client and server messages retain their documented names and JSON shapes.
 2. The research trace protocol is an append-only timing envelope around one
    complete wire message. It adds evidence without changing what peers send.
+
+No OpenAI Realtime protocol update is planned or required. The canonical
+trajectory does not introduce another external protocol.
+It is internal cognitive state compiled into each model provider's supported
+message format. Fast/slow continuation, reasoning lifecycle, and tool provenance
+may be represented by a few internal research records, but they do not add or
+rename OpenAI Realtime client/server event types. Those records belong in a
+parallel internal journal, not on the Realtime connection.
+
+Raw reasoning content is not required for wire compatibility or ordinary trace
+validation. When a research run retains it, retention must be explicit and
+provider-compatible; the default observability surface should record only the
+continuation phase, model identity, timing, interruption/resumption, token
+counts when available, and trajectory item references or hashes.
+
+`tool_proposal` is likewise internal. A fast provider may emit a native
+structured tool-call event so it can express the correct capability and
+arguments, but proposal authority maps that event to non-executable trajectory
+state. Only a slow provider with execute authority can create the function-call
+behavior projected onto existing Realtime events. The public protocol does not
+need a separate proposal event or a fast/slow control event.
+
+The current `trace-record-v0.2` schema continues to wrap wire messages only.
+Internal continuation telemetry must not be disguised as an OpenAI message
+inside that envelope. A future experiment may add fields or records to a
+parallel internal journal or introduce a separately versioned trace schema, but
+neither choice changes the OpenAI profile registry or wire validators.
+
+The live `realtimebench` report is a separate research artifact, currently
+`realtime-benchmark-v0.8`. Its ASR revisions, private fast→slow preparation
+attempts, temporal launch-pacing telemetry, semantic fingerprints, exact stage
+replay/fallback counts, admission classes, model timings, scoring contract, and
+canonical digest are not
+serialized inside `trace-record-v0.2` or sent to Realtime clients.
+
+This boundary reuses existing public behavior. The official OpenAI Realtime API
+already defines ordinary response lifecycle, output-audio, transcript, and
+function-call events; internal model substitution does not need a peer-visible
+event. See the official [Realtime API reference](https://platform.openai.com/docs/api-reference/realtime)
+and [GPT-Realtime-2 model description](https://developers.openai.com/api/docs/models/gpt-realtime-2).
 
 ## Wire events
 

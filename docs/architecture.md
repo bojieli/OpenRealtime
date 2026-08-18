@@ -56,6 +56,42 @@ quality baselines. Live ASR, language, speech, WebSocket/WebRTC/SIP transport,
 and device adapters remain deferred. Native and hosted adapters are optional;
 the open reference condition cannot require an API key.
 
+## Target realtime abstraction
+
+The experimental architecture combines two independent mechanisms:
+
+1. **Microturn execution for responsiveness.** Continuous media and incremental
+   perception create fixed or event-driven opportunities to advance cognition
+   and speech without waiting for a VAD endpoint.
+2. **Canonical-trajectory continuation for intelligence.** A low-latency model
+   and a higher-reasoning model append successive reasoning, assistant, and
+   tool items to one trajectory. The slow phase continues the fast phase; it
+   is not a second agent sending advice.
+
+```text
+audio frames → incremental ASR ─┐
+tool/user/system events ────────┼→ scheduler and safe-point event loop
+playback/interrupt events ──────┘                 │
+                                                  ▼
+                                      canonical trajectory
+                                      ├─ observations
+                                      ├─ reasoning
+                                      ├─ assistant content
+                                      ├─ non-executable tool proposals
+                                      └─ executable tool calls/results
+                                           │           │
+                                     fast append   slow append
+                                           └─────┬─────┘
+                                                 ▼
+                                      speech plan and commit
+```
+
+The canonical trajectory is the cognitive source of truth; the timed causal
+trace is the experimental evidence record. A trajectory compiler supplies a
+causally valid prefix to each provider and records which items were representable
+in that provider's chat/reasoning format. The external OpenAI-compatible wire
+protocol remains unchanged.
+
 ## Microturn scheduling and planning state
 
 M2 separates scheduling from candidate lifecycle. Fixed and revision-event
@@ -66,7 +102,23 @@ or cancellation and refuses candidates tied to unknown evidence. Experiment
 actions record openings, suppressions, requests, preparation, supersession,
 cancellation, endpoints, and playback markers in one deterministic order.
 
-Only text candidates are prepared before the endpoint in M2. Audio commitment,
+A scheduler opening is not synonymous with a provider call. In the live path,
+audio ingestion and ASR state are persistent; a 50 ms opportunity contributes
+to a stateful 200 ms provider buffer, and an opportunity with no new usable
+evidence does not start a language model. Recognition revisions, tool results,
+slow continuation, and interruption events may wake the loop between fixed
+ticks. Reports separate opportunities, provider advances, semantic revisions,
+and model preparation attempts.
+
+The live preparation manager generalizes M2's text candidate rule to one
+private continuation chain. A changed revision runs fast and then slow over the
+same private append-only prefix; newer revisions cancel/coalesce older chains.
+Nothing in that branch is audible or executable. At endpoint, the root and
+each consumed stage must match their complete provider-visible semantic
+fingerprints before their captured events are replayed through the ordinary
+canonical runner. Any mismatch falls back to the live provider. The manager
+performs no fuzzy transcript match or semantic difficulty routing.
+Speculative TTS is still outside this measured path. Audio commitment,
 continuous input during output, interruption, and repair remain M3 boundaries.
 
 ## Speech commitment and duplex state
@@ -82,7 +134,7 @@ OpenAI cancellation, output-buffer clearing, and conversation-item truncation
 are emitted at the observed playback boundary. Input append events remain
 legal while the turn state is `SYSTEM_SPEAKING`, keeping the media path duplex.
 
-## Fast and slow cognition
+## Historical M4 fast/slow baseline
 
 M4 gives each deliberation task a goal ID, revision ID, deadline, and cancellable
 context. Foreground decisions are bounded structured actions with explicit
@@ -95,6 +147,87 @@ Providers that honor context cancellation stop promptly. Providers that do not
 are still safe: an old callback can finish its goroutine but cannot overwrite a
 replacement goal. The open reference workload assigns symbolic quality and
 compute units so orchestration accounting stays independent of hosted models.
+
+This M4 abstraction is retained for reproducibility and as an independent
+fast/slow control. It is not the target design for continuous thinking because
+`FastDecision` and `DeliberationUpdate` describe two information channels.
+
+## Canonical trajectory and interleaved thinking
+
+The target experimental interface replaces foreground decisions and slow advice
+with ordinary trajectory continuations:
+
+```text
+system → observation → fast reasoning → fast assistant content/tool proposal
+       → continuation instruction → slow reasoning → executable tool call
+       → tool result → slow reasoning → slow assistant content
+```
+
+Every completed item is appended before a later invocation consumes it. Fast
+assistant content is marked prepared, queued, or played through the existing
+speech commitment controller, so the slow continuation knows which statements
+are still replaceable and which require an explicit correction.
+
+The fast phase may use a local Qwen instruct model with thinking disabled or
+Gemini 3.5 Flash with minimal thinking. The initial slow phase uses Gemini 3.5
+Flash with medium or high thinking. Both receive the same capability manifest
+and real tool definitions. Fast-native tool calls become `tool_proposal` items
+and cannot execute; only slow-native calls become `tool_call` items. This gives
+the fast model enough schema knowledge to avoid capability denial without
+creating a second action authority.
+
+Same-family continuation may preserve provider-native reasoning where supported.
+Cross-family continuation cannot transfer hidden state or KV cache; it carries
+a symbolic reasoning representation and exact assistant/tool history through
+the trajectory compiler. Adapters must not pass foreign text as provider-signed
+thinking or silently claim latent continuity.
+
+New observations are consumed at safe points. Routine events queue until a
+reasoning or tool boundary; urgent interruption cancels current decoding,
+retains its completed prefix, appends the observation, and resumes from the
+extended trajectory. Actual tool calls remain subject to authority and
+idempotency policies independent of model latency. A tool result can satisfy
+only a distinct, preceding executable call and never a fast proposal.
+
+This continuation contract is experimental. Stable `api/v1` continues to expose
+the historical five provider roles; replacing them requires a versioned
+`api/v2` design and migration guide.
+
+## Live co-located model path
+
+The implemented experimental path places stateful Qwen3-ASR 0.6B, a
+Qwen3-30B-A3B-FP8 fast model, and streaming Fish Audio S2-Pro on one 96 GB GPU;
+Gemini 3.5 Flash provides hosted high-reasoning slow continuation. Changed ASR
+revisions can prepare the heterogeneous Qwen→Gemini chain before endpoint, and
+an exact final match replays both stages before the canonical tool/result
+continuation. An explicit admission governor reserves interactive capacity for
+perception, final fast fallback, and TTS, while fast preparation is speculative
+and a local slow model would be background work. Scheduling class and cost come
+from deployment provenance, never transcript content.
+
+A generic per-stage temporal pacer can limit speculative slow launch frequency.
+It does not decide whether slow reasoning is semantically needed: every fast
+completion still makes slow eligible. The pacer observes only monotonic time,
+stage identity, cancellation, and exact commit. Superseded waits end before a
+provider call, while exact commit bypasses the remaining delay so the final
+canonical continuation is not held behind a speculative cost budget. The
+default interval is zero and preserves immediate continuation.
+
+Preemption is cooperative. Cancelling a lease requests a provider safe point
+but does not free capacity until the holder returns. Queue ordering is class,
+then deadline, then FIFO. Strict priority protects interaction but may starve
+background work under sustained load; a fairness policy is a separate,
+measurable deployment choice.
+
+Co-location is a hypothesis, not a guarantee: removing network handoffs can
+reduce latency while shared memory bandwidth and compute can increase tail
+latency. Endpointed, microturn, co-located, split-process, and partially hosted
+conditions must therefore use the same workload and report quality alongside
+timing.
+
+The first passed integration artifact and its limitations are documented in
+[live-cascade.md](live-cascade.md). It establishes wiring and authority
+invariants, not parity with native realtime or interaction models.
 
 ## Translation, release, and stable boundary
 
@@ -110,4 +243,7 @@ and actively probes provider cancellation, ordering, continuity, finality, and
 terminal-state invariants. A breaking stable change moves to `api/v2`.
 
 See [ADR-0001](adr/0001-go-production-engine.md) for the language decision
-and [protocol.md](protocol.md) for event semantics.
+and [protocol.md](protocol.md) for event semantics. The experimental cognitive
+boundary is specified in
+[canonical-trajectory.md](canonical-trajectory.md) and accepted in
+[ADR-0003](adr/0003-canonical-trajectory-continuations.md).

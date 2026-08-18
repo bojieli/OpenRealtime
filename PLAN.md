@@ -1,22 +1,34 @@
 # OpenRealtime Project Plan
 
 - **Subtitle:** Microturn Realtime Intelligence Engine
-- **Status:** Clean-slate planning specification, version 0.1
-- **Date:** 2026-08-17
+- **Status:** Living research specification, version 0.2
+- **Date:** 2026-08-18
 
 ## 1. Executive summary
 
-OpenRealtime is a research-first open-source project for building and evaluating realtime spoken intelligence. It asks whether the responsiveness commonly associated with native speech-to-speech interaction models can also emerge from a modular system when that system operates incrementally, plans before the user finishes speaking, and receives frequent opportunities to revise, speak, stop, and repair.
+OpenRealtime is a research-first open-source project for building and evaluating realtime spoken intelligence. It asks whether a modular system can obtain both qualities that are usually traded against one another:
+
+1. **High responsiveness**, by running ASR, language generation, and speech synthesis incrementally and opening decision opportunities while interaction is still unfolding.
+2. **High intelligence**, by letting a low-latency model speak first and a higher-reasoning model continue the same canonical trajectory rather than starting a second, loosely coupled agent.
+
+The central experiment is whether these two mechanisms can approach the responsiveness of native realtime and interaction models without giving up the tool use, long-context reasoning, observability, and replaceability of a modular system.
 
 The project will build:
 
-1. A precise model of **microturn execution**: periodic or event-driven decision opportunities over a continuously changing stream of perceptual evidence.
-2. An instrumented reference engine that separates incremental perception, fast foreground cognition, slow background cognition, speech planning, and audio commitment.
-3. Reproducible baselines covering conventional endpointed cascades, microturn cascades, hybrid systems, and native speech-to-speech systems.
-4. Benchmarks for turn timing, interruption, backchannels, overlap, simultaneous translation, rapid audio games, tool use, and difficult questions requiring slow thought.
-5. Public traces, metrics, ablations, and a research report that states both positive and negative results.
+1. A precise model of **microturn execution**: periodic and event-driven safe opportunities to advance perception, cognition, tools, speech planning, and commitment.
+2. A **canonical trajectory** containing ordered observations, reasoning segments, assistant content, tool calls, and tool results.
+3. **Heterogeneous interleaved thinking**: fast and slow model invocations append successive segments to that one trajectory, with no separate-agent advice protocol.
+4. A live, co-located ASR–LLM–TTS path whose queueing, GPU contention, first-token, first-audio, cancellation, and repair behavior can be measured.
+5. Reproducible baselines covering endpointed cascades, microturn cascades, independent fast/slow systems, interleaved fast/slow systems, and native speech-to-speech systems.
+6. Benchmarks for turn timing, interruption, backchannels, overlap, simultaneous translation, rapid audio games, tool use, and difficult questions requiring continued thought.
+7. Public traces, metrics, ablations, and a research report that states both positive and negative results.
 
 The project is successful if it produces credible evidence about the hypothesis. A result showing that modular microturn systems cannot match native systems in important dimensions is still a successful research outcome if the experiment is sound and the limitations are characterized.
+
+The focused internal design is documented in
+[docs/canonical-trajectory.md](docs/canonical-trajectory.md). The first live
+implementation and its exploratory positive and negative evidence are in
+[docs/live-cascade.md](docs/live-cascade.md).
 
 ## 2. Clean-slate provenance
 
@@ -33,13 +45,15 @@ Before accepting a substantial contribution, maintainers should require:
 
 ### 3.1 Mission
 
-Build an open experimental platform that determines how much realtime conversational performance can be obtained from **incrementality and scheduling**, independent of whether the underlying intelligence is implemented by separate ASR, language, and speech models or by a native multimodal model.
+Build an open experimental platform that determines how much realtime conversational performance can be obtained from **incrementality and scheduling**, and how much intelligence can be retained through **continuous, interleaved thinking over a shared trajectory**. The two questions are related but must be measured independently: trigger timing governs when work can begin, while trajectory-preserving model continuation governs how much reasoning and tool competence remains available after an immediate response.
 
 ### 3.2 Central thesis
 
-The central thesis is:
+The central thesis has two parts:
 
 > Realtime interaction is partly a scheduling property, not solely a model category.
+
+> Fast and slow computation can remain one coherent agent when both append to the same canonical trajectory instead of exchanging summaries as separate minds.
 
 This thesis does **not** claim that scheduling erases all architectural differences. Text-mediated systems may lose prosody, emotion, non-speech sounds, speaker state, and other paralinguistic information. Native audio models may possess interaction capabilities that a text bottleneck cannot reproduce. OpenRealtime must measure those differences rather than assume them away.
 
@@ -60,7 +74,10 @@ This thesis does **not** claim that scheduling erases all architectural differen
 - Streaming ASR hypotheses with stable and unstable spans.
 - Fixed, adaptive, and learned microturn trigger policies.
 - Early response planning while user speech continues.
-- Fast foreground and slow background cognitive paths.
+- Fast and slow model continuations over one canonical trajectory.
+- Continuous thinking across assistant speech, asynchronous observations, and tool calls.
+- Model-family and reasoning-budget substitution at safe trajectory boundaries.
+- Co-located local ASR, LLM, and TTS inference with explicit GPU scheduling.
 - Speculative language generation and speech synthesis.
 - Explicit commit, cancel, truncate, and repair semantics.
 - Voice activity, turn projection, barge-in, overlap, and backchannels.
@@ -93,9 +110,22 @@ A **microturn** is a bounded decision opportunity created while interaction is s
 - Interrupt or yield ongoing speech.
 - Start, pause, or cancel a tool action.
 
-A nominal 200 ms interval is the initial experimental condition because human conversational timing and prior incremental systems make that scale interesting. It is not a required production setting. Experiments must compare intervals such as 50, 100, 200, 400, and 800 ms, plus event-driven and adaptive policies.
+A nominal 200 ms interval is the initial experimental condition because human conversational timing and interaction-model systems make that scale interesting. It is not a required production setting. Experiments must compare intervals such as 50, 100, 200, 400, and 800 ms, plus event-driven and adaptive policies.
 
-### 5.2 Incremental hypothesis
+A microturn is **not** an instruction to restart ASR, LLM, and TTS from scratch every 200 ms. Audio ingestion is continuous; ASR maintains incremental state; language-model sessions should reuse a stable prefix or persistent sequence; and TTS consumes only new speakable spans. A tick merely creates a safe opportunity to inspect new evidence and decide whether any stage should advance.
+
+### 5.2 Trigger hierarchy and safe points
+
+The engine distinguishes four clocks that must not be conflated:
+
+1. **Media frames** preserve capture timing, commonly in 10–20 ms units.
+2. **Perception updates** are emitted when a streaming ASR or acoustic model has a new revision; their cadence is provider-specific.
+3. **Microturn opportunities** are fixed, revision-triggered, endpoint-triggered, or adaptive scheduling events.
+4. **Semantic events**—a tool result, user interruption, slow continuation, or speech invalidation—wake the event loop immediately rather than waiting for the next periodic tick.
+
+Model and tool work is consumed at safe trajectory boundaries. A routine event may queue until the current reasoning segment or tool call reaches a boundary. An urgent interruption may cancel current decoding, retain the completed reasoning prefix, append the new observation, and continue from the extended trajectory. Independent work may execute concurrently, but its outputs rejoin the same ordered trajectory with explicit causality.
+
+### 5.3 Incremental hypothesis
 
 An ASR or perception result is represented as:
 
@@ -107,7 +137,7 @@ An ASR or perception result is represented as:
 
 Downstream components must never confuse a partial hypothesis with committed truth.
 
-### 5.3 Response candidate
+### 5.4 Response candidate
 
 A response candidate is a proposed semantic action or utterance derived from the current evidence. It has:
 
@@ -118,17 +148,40 @@ A response candidate is a proposed semantic action or utterance derived from the
 - Optional tool actions.
 - A speech plan that may not yet be audible.
 
-### 5.4 Commit horizon
+### 5.5 Commit horizon
 
 The **commit horizon** separates output that may still be replaced from output already heard by the user. Text generation can be revised cheaply; synthesized but unplayed audio can be discarded; played audio can only be repaired socially through clarification or correction.
 
-### 5.5 Fast and slow cognition
+### 5.6 Canonical trajectory
 
-- The **fast path** handles frequent, low-cost decisions: backchannels, turn prediction, short answers, interruption, and routing.
-- The **slow path** handles difficult reasoning, planning, retrieval, and tool work.
-- The slow path may update future speech or request a correction, but it may not silently rewrite audio already committed.
+The **canonical trajectory** is the single ordered working memory of the agent. It contains typed items for:
 
-### 5.6 Perceived responsiveness
+- System and phase instructions.
+- User and environmental observations, including partial recognition revisions.
+- Assistant reasoning segments when the provider exposes a reusable representation.
+- Assistant content, including whether and when it became audible.
+- Non-executable fast tool proposals as structured working state.
+- Tool calls, tool progress, tool results, and authorization decisions.
+- Cancellation, supersession, and explicit repair events.
+
+Every model invocation consumes a causally valid prefix of this trajectory. Its completed output is appended before a later invocation may depend on it. Provider adapters may render trajectory items differently, but they may not silently discard a spoken commitment, fabricate a completed tool result, or present two incompatible histories to the fast and slow models.
+
+### 5.7 Heterogeneous interleaved thinking
+
+Fast and slow are phases of one rollout, not separate agents:
+
+- The **fast continuation** uses a strict latency budget and may be a local instruct model with thinking disabled or a hosted model with minimal thinking. It may emit ordinary assistant content, a non-executable structured tool proposal, or remain silent.
+- The **slow continuation** inherits the exact trajectory prefix—including fast reasoning when portable, fast assistant content, and subsequent observations—and continues with a higher reasoning budget. It may reason, call tools, consume results, and emit further assistant content.
+- Tool capability awareness and schemas are shared. Execution authority differs:
+  a fast native call becomes `tool_proposal` working state and cannot execute;
+  only a new slow `tool_call` reaches the authority/tool runtime.
+- Slow output is not an advisory side channel. It is the next reasoning, tool-call, or assistant segment in the same trajectory.
+
+The default research policy schedules one slow continuation after every completed fast phase that was invoked for newly appended trajectory input, including a stable partial recognition before endpointing. New events may extend or supersede that work, but the runtime keeps at most one current slow continuation for the same trajectory branch. This removes a hand-written difficulty router from the reference condition and permits thinking while listening. Conditional continuation may be studied later as a learned cost/quality policy.
+
+Different models cannot share latent state or KV cache. Same-family minimal-to-high-thinking continuation may reuse provider-native reasoning representations when supported. Cross-family continuation is symbolic: reasoning, content, calls, and results are translated through the canonical trajectory without pretending that one provider produced another provider's signed or private thinking block.
+
+### 5.8 Perceived responsiveness
 
 Perceived responsiveness is not identical to first audio latency. A meaningless filler sound can arrive quickly while the system remains unhelpful. Evaluation therefore combines timing, semantic progress, appropriateness, interruption behavior, repair burden, and user judgment.
 
@@ -152,11 +205,11 @@ What amount of speculative work is beneficial before revision and repair costs d
 
 **H3:** Speculative text generation and synthesis will improve latency only when coupled to explicit validity, cancellation, and commit policies. Ungated speculation will increase audible corrections and reduce trust.
 
-### RQ4: Fast/slow separation
+### RQ4: Interleaved fast/slow continuation
 
-Can a small fast model maintain conversational flow while a stronger slow model improves difficult answers?
+Can a low-latency model respond immediately while a stronger model continues the same reasoning trajectory, uses tools, and improves the eventual answer without behaving like a second agent?
 
-**H4:** Separating foreground coordination from background deliberation will improve the latency-quality frontier, especially for queries where an immediate acknowledgement can be followed by a considered answer.
+**H4:** A fast continuation followed by a slow continuation over the same canonical trajectory will improve the latency-quality frontier relative to a single blocking model, while producing fewer contradictions, repeated work, and false capability denials than two independently prompted fast/slow models.
 
 ### RQ5: Full duplex
 
@@ -176,38 +229,49 @@ Which capabilities remain systematically better in native speech-to-speech syste
 
 **H7:** Native systems will initially outperform text-bottleneck cascades on emotion, non-speech vocalization, prosodic intent, and graceful overlap. The gap should be reported and used to define hybrid interfaces rather than hidden.
 
+### RQ8: Co-located modular inference
+
+How much latency is removed—and how much queueing is introduced—when streaming ASR, a fast language model, and streaming TTS share one local accelerator?
+
+**H8:** Persistent sessions and priority-aware co-location will reduce network and handoff delay relative to hosted or process-isolated cascades, but naive co-location will suffer GPU contention. The claim succeeds only if first semantic audio, tail latency, task quality, and discarded compute improve together.
+
+### RQ9: Reasoning continuity across model boundaries
+
+When does carrying earlier reasoning improve a later continuation, and when does a foreign reasoning format harm it?
+
+**H9:** Same-family minimal-to-high-thinking continuation will preserve reasoning most faithfully. Cross-family continuation will outperform content-only handoff when it carries a model-neutral working trace, but raw foreign thinking syntax may be neutral or harmful and must be tested rather than assumed compatible.
+
 ## 7. Reference architecture
 
 ```text
-Audio input
-    │
-    ▼
-Frame clock ────────────────┐
-    │                       │
-    ▼                       │
-Incremental perception     │
-    │ revisions            │
-    ▼                       │
-Microturn ledger ◄─────────┤ timing and trace bus
-    │                       │
-    ├── Turn/overlap policy │
-    ├── Fast cognition      │
-    └── Slow cognition      │
-             │              │
-             ▼              │
-      Response candidates   │
-             │              │
-             ▼              │
-      Commit controller     │
-       │       │       │    │
-       │       │       └────┤ cancel/repair
-       │       ▼            │
-       │   Tool actions     │
-       ▼                    │
-Streaming speech plan       │
-       │                    │
-       ▼                    │
-Audio output ───────────────┘
+Audio input ─→ frame clock ─→ incremental ASR/acoustic perception
+                                      │ revisions and events
+                                      ▼
+                         microturn + asynchronous event loop
+                                      │ safe opportunities
+                                      ▼
+                ┌────────── canonical trajectory ──────────┐
+                │ observations                             │
+                │ reasoning segments                       │
+                │ assistant content and audible commits    │
+                │ tool calls, progress, and results        │
+                └───────────────┬───────────────────────────┘
+                                │ shared prefix
+                   ┌────────────┴────────────┐
+                   │                         │
+           fast continuation         slow continuation
+        low latency/minimal thought  medium/high thought
+           content or silence          reasoning/tools/content
+                   │                         │
+                   └──────── append in order ┘
+                                │
+                 assistant content → streaming TTS
+                                │
+                     commit/cancel/repair controller
+                                │
+                         audible audio output
+                                │ playback/interrupt events
+                                └──────────→ event loop
 ```
 
 ### 7.1 Frame clock
@@ -220,7 +284,14 @@ Audio output ───────────────┘
 
 ### 7.2 Incremental perception
 
-The first implementation targets streaming ASR, with extension points for speaker identity, acoustic events, prosody, vision, and environment state. The contract must expose revisions rather than only final transcripts.
+The first live implementation uses stateful Qwen3-ASR 0.6B and exposes
+revisions rather than only a final transcript, with extension points for
+SenseVoice and other public ASR models, speaker identity, acoustic events,
+prosody, vision, and environment state.
+
+An adapter must declare whether it is causal streaming, chunked streaming, or repeated inference over an increasing window. Increasing-prefix simulation is a valid experimental condition but cannot be reported as true streaming. Qwen3-ASR is recorded as a stateful chunked-streaming service in the first run. Future SenseVoice or other deployments must make the same declaration and cannot label repeated full-prefix inference as causal streaming.
+
+ASR is not invoked as a stateless batch job on every microturn. It owns a persistent stream and publishes a revision only when its evidence changes. Voice activity and semantic endpointing are evidence sources, not mandatory gates that downstream cognition must always wait for.
 
 ### 7.3 Microturn scheduler
 
@@ -235,6 +306,8 @@ The scheduler creates decision opportunities using interchangeable policies:
 7. Learned policy, introduced only after trace data and safe offline evaluation exist.
 
 The scheduler records why every microturn fired or was suppressed.
+
+Fixed ticks and event triggers share one interface. A tick with no new usable evidence may be recorded and suppressed without invoking a language model. A perception revision, tool result, user interruption, slow-model completion, or output invalidation may open an immediate opportunity between fixed ticks. Experiments must report both opportunity count and actual provider invocation count.
 
 ### 7.4 Turn and overlap manager
 
@@ -252,31 +325,51 @@ REPAIRING
 
 Transitions must use acoustic evidence, semantic evidence, current system commitments, and policy. Side speech and listener backchannels must not automatically be interpreted as commands to stop.
 
-### 7.5 Fast cognition
+### 7.5 Canonical trajectory store
 
-Responsibilities:
+The trajectory store is the cognitive source of truth. It appends typed items atomically, preserves causal parents and monotonic time, and can compile a valid provider-specific context from any prefix. The store distinguishes private reasoning from user-visible content and records when content crosses the audio commit horizon.
 
-- Decide whether to listen, acknowledge, answer, defer, or yield.
-- Generate short, low-risk response candidates.
-- Classify interruption and backchannel evidence.
-- Route difficult work to the slow path.
-- Produce structured decisions under a strict deadline.
+The store, rather than either model, owns item identity, revision provenance, invocation identity, tool lifecycle, and cancellation facts. Models do not generate workflow status fields. A fast or slow invocation produces ordinary reasoning and assistant content. A native fast call is appended as a non-executable `tool_proposal`; a native slow call is appended as an executable `tool_call`. The runtime supplies provenance and rejects a result that references a proposal.
 
-Fast cognition is replaceable. Rules and small classifiers should be benchmarked alongside language models.
+### 7.6 Fast continuation
 
-### 7.6 Slow cognition
+The fast continuation receives the latest valid trajectory prefix, a shared capability manifest, the real tool schemas, and a strict deadline. It produces ordinary assistant content, an optional structured proposal, or no content. Asking a question is ordinary assistant text; keeping quiet is an empty visible segment. Turn yielding and playback stopping remain media-policy decisions.
 
-Responsibilities:
+Two primary fast conditions are planned:
 
-- Produce higher-quality answers and plans.
-- Use retrieval and tools.
-- Re-evaluate assumptions as the utterance evolves.
-- Return structured updates with a validity scope.
-- Declare when the fast path should avoid premature content.
+- A local Qwen instruct model with thinking disabled or tightly bounded, optimized for reflexive FD-Bench-style interaction.
+- Gemini 3.5 Flash with minimal thinking, accepting higher network latency in exchange for stronger semantic judgment.
 
-The slow path is asynchronous and must be cancellable. Stale results are rejected by revision or goal identity rather than allowed to overwrite newer state.
+Both must receive the same description and schemas for what the overall agent can do. The fast model has proposal-only authority. Its call-shaped output is useful working state for slow, but the trajectory type and runner make it impossible to execute or attach a result to it. This structural separation avoids false capability denial without trusting prompt compliance as an action boundary.
 
-### 7.7 Response and speech planning
+### 7.7 Slow continuation and tools
+
+After every canonical fast phase invoked for newly appended trajectory input, a continuation instruction asks the slow model to continue the latest request. This may begin from a stable partial recognition before endpointing. Gemini 3.5 Flash with medium or high thinking is the initial condition. The invocation receives the same trajectory plus the fast reasoning representation when compatible, the exact assistant content and proposals already emitted, a larger context view, and execute authority for the same tool definitions.
+
+The slow model continues normally: reasoning may lead to assistant content, a newly generated authoritative tool call, a tool result, more reasoning, and further content. A fast proposal is evidence about prior working intent, not an already-pending call. Slow outputs append directly to the canonical trajectory; they are not summarized into a separate `SlowUpdate` advice channel. An authority policy remains responsible for approving irreversible external effects.
+
+The slow runner is asynchronous and cancellable. A new urgent event forces a safe point; completed reasoning is retained, the observation is appended, and continuation resumes from the extended prefix. A late result is never rewritten into an earlier position. Its provenance remains visible so a later model can accept, qualify, or repair it.
+
+Before an endpoint, every changed ASR revision may prepare one private
+fast-to-slow chain. The reference manager keeps at most one chain active and
+coalesces revisions while cancellation reaches a provider safe point. Fast
+output is appended to a private trajectory and slow consumes that exact prefix;
+the private branch has neither a tool runtime nor a speech sink. A root is
+accepted only if a SHA-256 fingerprint of every provider-visible semantic input
+matches the final request, and each captured stage is replayed only if its own
+canonical request fingerprint also matches. Operational IDs/timestamps are
+excluded because the model cannot see them. This is cache validation, not
+semantic routing: there is no fuzzy transcript normalization, keyword rule, or
+difficulty classifier. A slow call becomes executable only when its exact
+captured event is replayed into the canonical runner after final evidence.
+
+### 7.8 Event loop and continuation boundaries
+
+The event loop batches routine observations at natural safe points, forces an early safe point for urgent interruptions, and permits genuinely independent operations to run concurrently. It should preserve the familiar synchronous `assistant tool-call → tool result` sequence when possible, while representing real asynchronous progress explicitly when a tool has been initiated but not completed.
+
+Model substitution occurs only at trajectory boundaries. A runtime cannot move a KV cache from Qwen to Gemini; it can carry the completed symbolic prefix. If a provider exposes only signed thinking blocks or summaries, the adapter must preserve what is legally and technically reusable and declare what was omitted or normalized.
+
+### 7.9 Response and speech planning
 
 The speech planner turns semantic candidates into incrementally synthesizable spans. It should support:
 
@@ -287,7 +380,7 @@ The speech planner turns semantic candidates into incrementally synthesizable sp
 - Audio chunk identifiers linked to source text and candidate revision.
 - Truncation boundaries and repair annotations.
 
-### 7.8 Commit controller
+### 7.10 Commit controller
 
 The controller is the safety boundary between speculation and user-visible output. Its policy considers:
 
@@ -300,7 +393,32 @@ The controller is the safety boundary between speculation and user-visible outpu
 
 Irreversible tool calls require a separate authority policy and are never justified merely by low latency.
 
-### 7.9 Trace and replay system
+### 7.11 Local inference and resource governor
+
+The live modular path now supports a co-located Qwen3-ASR, Qwen fast LLM, and
+streaming Fish Audio S2-Pro on the same accelerator, while slow Gemini may be
+hosted. Co-location remains an experimental variable, not an assumed latency
+win. The first governor controls request admission with explicit runtime class,
+deadline, abstract capacity cost, and an interactive reservation; it never
+classifies prompt text. It records:
+
+- Reserved memory and model residency.
+- Prefill, decode, and synthesis priority.
+- Queue arrival, service, and wait time per stage.
+- Persistent-session and prefix-cache reuse.
+- Preemption and cancellation delay.
+- GPU utilization, memory bandwidth pressure, and discarded speculative work.
+
+ASR, final fast fallback, and TTS receive interactive priority. Pre-endpoint
+fast work is speculative and cooperatively preemptible; a local slow
+continuation is background and cooperatively preemptible. Capacity is released
+only after the provider reaches a safe point. This protects perception and
+audible-output deadlines, but strict priority can starve background work under
+sustained load; fairness or a background reservation must be an explicit
+follow-up policy. Separate-process, shared-runtime, and partially hosted
+placements should be compared.
+
+### 7.12 Trace and replay system
 
 Every experiment emits an append-only trace with:
 
@@ -308,55 +426,56 @@ Every experiment emits an append-only trace with:
 - Audio frame ranges, stored or hashed according to consent.
 - Perception revisions.
 - Microturn triggers and suppressions.
-- Model request and response spans.
+- Canonical trajectory item identities and the prefix boundary visible to each invocation.
+- Fast/slow phase, model identity, reasoning budget, and request/response timing spans.
 - Candidate creation, replacement, commitment, playback, and cancellation.
 - Tool lifecycle.
-- Network and queue delays.
+- Network, provider, and GPU queue delays.
 - Resource use and estimated cost.
 
 Replay can replace models with recorded outputs, inject network jitter, and evaluate alternative policies against the same input.
 
 ## 8. Protocol and extension boundaries
 
-The project requires a small semantic event protocol for reproducible experiments. It is not a universal model gateway.
+The external OpenAI Realtime wire protocol remains unchanged. Canonical
+trajectory items are internal engine state, not new client/server messages.
+No OpenAI protocol revision is needed to implement microturn scheduling,
+fast/slow continuation, tool execution, or provider-state inheritance; adapters
+project their results onto existing text, audio, cancellation, and function-call
+events.
+Reproducibility does not require a second public event vocabulary. The current
+implementation uses typed trajectory items plus separate benchmark reports. If
+a streaming internal journal becomes necessary, it should stay compact and
+separately versioned around observation, continuation lifecycle, preparation
+disposition, tool action/result, speech commitment, and metric records. It must
+not mirror every model-internal transition or masquerade as a Realtime event.
+Internal records carry monotonic time and causal identity; provider-specific
+data belongs in a namespaced extension.
 
-Initial event families:
-
-```text
-media.input.frame
-media.output.played
-perception.revision
-perception.finalized
-microturn.opened
-microturn.decision
-turn.state.changed
-candidate.created
-candidate.superseded
-speech.prepared
-speech.committed
-speech.cancelled
-speech.repair.requested
-tool.requested
-tool.started
-tool.completed
-tool.cancelled
-metric.sampled
-session.ended
-```
-
-All events contain a schema version, session ID, monotonic timestamp, causal parent IDs, and provider-neutral payload. Provider-specific data may be retained in a namespaced extension field.
+Reasoning observability is deliberately minimal. The default trace records
+phase, model, timing, token counts when exposed, interruption/resumption, and a
+hash or item reference. Raw reasoning text is opt-in research data subject to
+provider support, privacy, consent, and retention policy. It is never required
+on the OpenAI-compatible wire boundary.
 
 ### 8.1 Component interfaces
 
 - `PerceptionProvider`: audio frames to perception revisions.
-- `FastDecisionProvider`: current state to bounded structured decision.
-- `DeliberationProvider`: goal snapshot to asynchronous result stream.
+- `TrajectoryStore`: append typed items and compile a causally valid prefix.
+- `ContinuationProvider`: a trajectory prefix and phase configuration to streamed reasoning, assistant-content, and native call events; descriptor authority determines whether a call becomes a proposal or an executable call.
+- `ContinuationPolicy`: safe opportunities to fast or slow model invocations.
 - `SpeechProvider`: speech spans to timestamped audio chunks.
 - `TurnPolicy`: evidence to turn/overlap state transition.
 - `CommitPolicy`: candidate and evidence to prepare/commit/cancel decision.
 - `ToolProvider`: typed calls with authority and cancellation semantics.
 
 Adapters must declare capabilities rather than silently ignore unsupported operations.
+The existing stable `api/v1` fast-decision and deliberation roles remain supported
+as the reproducible M4 boundary. Canonical-trajectory continuation is an
+experimental interface and requires `api/v2` before it can replace those roles
+for downstream Go consumers. Here `api/v2` means a future version of this
+repository's component interfaces, not a version or fork of the OpenAI Realtime
+wire protocol.
 
 ## 9. Experimental program
 
@@ -366,10 +485,19 @@ Each major experiment should compare as many of these conditions as applicable:
 
 - **B0: Endpointed cascade.** Wait for end-of-turn, then ASR finalization, language generation, and speech.
 - **B1: Streaming without microturn policy.** Stream components but retain conventional response initiation.
-- **M1: Fixed-cadence microturn cascade.** Same component models as B0.
-- **M2: Adaptive microturn cascade.** Trigger from stability and turn prediction.
-- **M3: Fast/slow microturn cascade.** Separate foreground coordination and deliberation.
-- **N1: Native realtime speech model.** Use public API behavior as available.
+- **R0: Fixed-cadence reflex cascade.** Incremental ASR, one fast model, and streaming TTS, with the same component versions as B0 where possible.
+- **R1: Adaptive reflex cascade.** The R0 models with revision-, stability-, and turn-projection triggers.
+- **I0: Homogeneous interleaved thinking.** Gemini 3.5 Flash minimal-thinking fast continuation followed by the same family at medium/high thinking over one trajectory.
+- **I1: Heterogeneous interleaved thinking.** Local Qwen instruct fast continuation followed by Gemini 3.5 Flash medium/high thinking over one trajectory.
+- **D0: Independent dual-model control.** Fast output and slow advice are generated independently and reconciled afterward. This intentionally retains the split-brain baseline.
+- **N0: Online native speech model.** Speech-in/speech-out service whose
+  response is conventionally opened by VAD/endpointing, for example applicable
+  Qwen online, GPT-Realtime-2, or Gemini Live profiles available during the
+  study.
+- **N1: Native interaction model.** Persistent audio-in/audio-out model trained
+  to advance on short blocks, such as Thinking Machines Lab Interaction Models
+  or Moshi. Record the system's actual block scale (for example 80 or 200 ms)
+  rather than assuming all native systems use the same clock.
 - **H1: Hybrid.** Native or acoustic model for interaction signals with modular higher-level reasoning.
 
 Comparisons must control component model versions, region, network path, audio device, prompt, voice, and workload where possible.
@@ -377,14 +505,23 @@ Comparisons must control component model versions, region, network path, audio d
 ### 9.2 Ablations
 
 - Trigger interval.
+- Fixed versus perception-event versus semantic-event triggering.
+- Opportunity count versus actual ASR/LLM/TTS invocation count.
 - Stable-prefix gating.
 - Turn projection model.
 - Speculative text generation.
 - Speculative TTS.
 - Commit horizon size.
 - Backchannel policy.
-- Slow-path availability.
+- Fast-model choice: local Qwen instruct versus Gemini 3.5 Flash minimal thinking.
+- Slow continuation availability and reasoning effort.
+- Always-continue versus learned continuation policy.
+- Same-family versus cross-family continuation.
+- Full reasoning inheritance, normalized working trace, and content-only handoff.
+- Independent advice versus canonical-trajectory continuation.
 - Cancellation support.
+- Prefix/session reuse.
+- Co-located versus split or hosted component placement.
 - Acoustic/prosodic side channel.
 - Network latency and jitter.
 - Small versus strong fast-decision model.
@@ -413,7 +550,7 @@ Streaming speech translation where quality and latency are both measured. Begin 
 
 #### F. Difficult questions
 
-Questions that need tools or deliberation. Compare silence, fillers, immediate partial answers, explicit deferral, and fast acknowledgement followed by slow completion.
+Questions that need tools or continued reasoning. Compare blocking slow inference, fast-only answers, independent fast/slow advice, and interleaved fast/slow continuation. Score whether the later model inherits prior reasoning and spoken commitments, whether the agent repeats itself or contradicts audible content, and whether tools are used without falsely denying or claiming capabilities.
 
 #### G. Paralinguistic challenge set
 
@@ -425,8 +562,11 @@ Sarcasm, uncertainty, laughter, sighs, emotional prosody, and non-speech events.
 
 - Capture-to-perception revision latency.
 - Stable-prefix latency.
+- Trigger-to-provider-start and trigger-to-provider-first-token latency.
 - End-of-user-speech to first audible output.
 - First **semantic** audio latency, excluding non-substantive filler.
+- Time from first semantic audio to the first slow continuation or tool call.
+- Time to final correct answer or completed tool outcome.
 - Predicted versus actual turn-end error.
 - User interruption to audible system stop.
 - Tool request and tool completion latency.
@@ -442,6 +582,9 @@ Sarcasm, uncertainty, laughter, sighs, emotional prosody, and non-speech events.
 - Audible false-start duration.
 - Repair count and repair duration.
 - Repetition and contradiction rate.
+- Fast/slow commitment contradiction and explicit-repair rate.
+- False capability denial and false action-completion rate.
+- Resumption success after user, ASR, or tool interruption.
 - Conversation task success.
 
 ### 10.3 Content quality
@@ -449,13 +592,16 @@ Sarcasm, uncertainty, laughter, sighs, emotional prosody, and non-speech events.
 - ASR word and semantic error rates.
 - Factual and reasoning task scores.
 - Tool correctness.
+- Reasoning continuity: retained assumptions, avoided duplicate work, and correct use of earlier tool state.
 - Translation quality paired with latency metrics.
 - Human ratings of relevance, naturalness, prosody, trust, and cognitive burden.
 
 ### 10.4 Efficiency
 
 - Audio, text, and reasoning tokens where exposed.
+- Microturn opportunities, suppressed opportunities, and actual provider invocations.
 - Compute time, CPU/GPU utilization, memory, and network bandwidth.
+- Queue wait, cache reuse, model preemption, and residency time by component.
 - Discarded speculative work.
 - Cost per successful interaction and cost per conversation minute.
 
@@ -487,6 +633,7 @@ OpenRealtime/
 ├── SECURITY.md
 ├── docs/
 │   ├── architecture.md
+│   ├── canonical-trajectory.md
 │   ├── protocol.md
 │   ├── experiments.md
 │   ├── metrics.md
@@ -594,7 +741,11 @@ Exit criteria:
 - Stop latency, false stop, and repair metrics are automatically reproducible.
 - No played audio is silently removed from the semantic history.
 
-### M4 — Fast/slow cognition
+### M4 — Fast/slow cognition lifecycle baseline
+
+Status: complete historical milestone. Its independent foreground decision and
+slow-update abstraction remains reproducible but is not the target cognitive
+architecture introduced in plan version 0.2.
 
 Deliverables:
 
@@ -657,6 +808,79 @@ Exit criteria:
 - Experimental changes no longer routinely break stable adapters.
 - Downstream applications can depend on a documented release while research continues behind experimental flags.
 
+### M8 — Live local microturn cascade
+
+Status: in progress. The first 50 ms scheduler / 200 ms provider condition is
+implemented with Qwen3-ASR 0.6B, Qwen3-30B-A3B-FP8, Fish S2-Pro, explicit GPU
+admission, exact fast→slow background preparation, and real audio-to-audio
+reports. A same-fixture endpointed/fast-only/full-preparation exploratory check
+is published. A content-independent one-second slow-launch pacer reduced
+speculative slow provider launches from 43 to 12 in one exact-scored trial and
+the final commit bypassed its remaining wait. Repeated randomized trials,
+interval sweeps, remaining cadences, adaptive scheduling, tail distributions,
+and aligned GPU utilization remain.
+
+Deliverables:
+
+- Live incremental ASR adapter with an explicit causal/chunked/increasing-prefix declaration.
+- Local fast-model adapter with a persistent session or measured prefix-cache behavior.
+- Streaming Fish Audio speech adapter with measured first-chunk latency.
+- GPU resource governor for co-located ASR, language, and speech inference.
+- Endpointed, 50/100/200/400/800 ms, revision-event, and adaptive conditions using the same models.
+
+Exit criteria:
+
+- A real audio-to-audio run publishes stage, queue, cache, GPU, and playback timing rather than symbolic delays.
+- Every fixed tick can be distinguished from an actual provider invocation.
+- Co-location claims report tail latency, task quality, and contention, not only median first audio.
+
+### M9 — Canonical trajectory and heterogeneous interleaved thinking
+
+Status: in progress. The append-only store, provider compilers, fast/slow
+runners, proposal-versus-execute authority, exact-match pre-endpoint
+fast→slow preparation, exact stage replay/live fallback, tool-result
+continuation, content-independent per-stage temporal pacing with exact-commit
+bypass, exact tool-trajectory scoring, and passing heterogeneous live trials
+are implemented. The scorer requires an exact call multiset and exactly
+one identity-matched terminal result per call. The trial also records
+superseded/failed background work and preserved failure cases. Canonical
+stable-partial effects, audible repair
+integration, same-family/content-only/independent controls, and an `api/v2`
+proposal remain.
+
+Deliverables:
+
+- Experimental canonical trajectory schema and append-only store.
+- Provider-specific context compilers for local Qwen and Gemini 3.5 Flash.
+- Fast and slow continuation runners over the same trajectory.
+- Tool-capability manifest and schemas shared by both phases, with fast calls mapped to non-executable proposals and execution restricted to slow authority.
+- Safe-point interruption, reasoning preservation, tool-result injection, and audible-commit repair.
+- Migration proposal from the M4 roles to an eventual `api/v2` continuation interface.
+
+Exit criteria:
+
+- Slow inference consumes the exact fast trajectory prefix and never relies on a lossy task summary.
+- Proposals, executable calls, and results remain distinct; executable calls
+  and results appear once in causal order and are visible to every later
+  continuation.
+- New user or ASR evidence can interrupt, extend, and resume thinking without erasing completed reasoning or silently rewriting speech.
+- Same-family, cross-family, content-only, and independent-advice controls are reproducible.
+
+### M10 — Responsiveness–intelligence comparative study
+
+Deliverables:
+
+- Paired local-Qwen-fast and Gemini-fast conditions with Gemini 3.5 Flash medium/high slow continuation.
+- Difficult reasoning and active-tool workloads combined with overlap, interruption, and cadence workloads.
+- Native realtime and interaction-model comparisons where access and redistribution permit.
+- Pareto analysis over first semantic audio, final quality, trajectory consistency, tool correctness, compute, and cost.
+
+Exit criteria:
+
+- The project can separately attribute gains to trigger timing and to continued reasoning.
+- Results identify when the two mechanisms compose, interfere through resource contention, or fail to match native systems.
+- Claims of high responsiveness and high intelligence are supported by joint measurements rather than separate demonstrations.
+
 ## 15. Initial issue backlog
 
 1. Write the glossary and event causality rules.
@@ -679,6 +903,15 @@ Exit criteria:
 18. Add simultaneous translation fixture and SimulEval adapter.
 19. Prepare human-study protocol and ethics checklist.
 20. Publish M0/M1 reproducibility instructions.
+21. Maintain the implemented experimental canonical trajectory item schema and provider context compiler contract.
+22. Extend the implemented fast/slow continuation phases without a separate advice channel.
+23. Compare the implemented Qwen3-ASR/local-Qwen/Fish Audio adapters with SenseVoice and other declared ASR conditions.
+24. Extend implemented priority/capacity admission with aligned GPU residency, utilization, and queue sampling.
+25. Expand the implemented fixed-tick versus provider-invocation accounting across every cadence condition.
+26. Add same-family and cross-family reasoning-continuity ablations.
+27. Add capability-consistency and split-brain evaluations.
+28. Add safe-point interruption with retained partial reasoning.
+29. Draft the `api/v2` migration only after the experimental trajectory contract stabilizes.
 
 ## 16. Risks and mitigations
 
@@ -700,7 +933,22 @@ Exit criteria:
 ### Cost explosion
 
 - **Risk:** Frequent triggers duplicate inference.
-- **Mitigation:** Prefix caching, debouncing, state reuse, explicit budgets, and discarded-work metrics.
+- **Mitigation:** Treat ticks as opportunities rather than mandatory calls; use persistent ASR/model sessions, prefix caching, state reuse, explicit budgets, and discarded-work metrics. The reference semantic policy still makes slow eligible after a completed fast continuation. The implemented temporal pacer can delay only speculative provider launch, is bypassed by exact commit, and never reads content; any learned admission rule is likewise a declared cost-policy ablation, never content-pattern routing.
+
+### Split-brain cognition
+
+- **Risk:** Independently prompted fast and slow models disagree about capabilities, repeat work, or contradict content already spoken.
+- **Mitigation:** Use one canonical trajectory, one capability manifest, ordinary interleaved reasoning/tool/content items, and an independent-advice condition only as a control.
+
+### Cross-model reasoning mismatch
+
+- **Risk:** A receiving model cannot consume another provider's private, signed, or template-specific reasoning representation.
+- **Mitigation:** Declare provider capabilities, preserve native reasoning only where supported, compare a model-neutral working trace with content-only handoff, and never label symbolic transfer as latent-state continuation.
+
+### Accelerator contention
+
+- **Risk:** Co-located ASR, LLM, TTS, and background reasoning remove network delay but create GPU queueing and missed audio deadlines.
+- **Mitigation:** Reserve foreground capacity, prioritize perception and first audio, run slow continuation opportunistically, and publish component queue and utilization distributions.
 
 ### Native-model feature mismatch
 
@@ -737,11 +985,13 @@ Exit criteria:
 At the end of the initial research program, a reader should be able to answer:
 
 1. Which parts of realtime conversational quality improved because of cadence and incrementality?
-2. Which improvements required speculation, early planning, or fast/slow separation?
+2. Which improvements required speculation, early planning, or canonical-trajectory fast/slow continuation?
 3. What were the costs in wrong starts, repairs, compute, and complexity?
 4. Which behaviors remained better in native speech systems?
 5. Which results generalized across languages, tasks, providers, and networks?
 6. How can another researcher reproduce or challenge the findings?
+7. Did trigger timing improve responsiveness independently of model intelligence?
+8. Did interleaved thinking improve final reasoning and tool use without sacrificing the foreground latency gain?
 
 If these questions are answered with evidence, OpenRealtime has achieved its mission regardless of whether the original thesis is fully confirmed.
 
@@ -758,6 +1008,7 @@ The implementation and study should begin from these public sources and add a ma
 7. Lin et al., “Full-Duplex-Bench: A Benchmark to Evaluate Full-duplex Spoken Dialogue Models on Turn-taking Capabilities,” 2025. <https://arxiv.org/abs/2503.04721>
 8. Lin et al., “Full-Duplex-Bench v1.5: Evaluating Overlap Handling for Full-Duplex Speech Models,” 2025. <https://arxiv.org/abs/2507.23159>
 9. Ma et al., “SimulEval: An Evaluation Toolkit for Simultaneous Translation,” EMNLP 2020. <https://aclanthology.org/2020.emnlp-demos.19/>
+10. Thinking Machines Lab, “Interaction Models: A Scalable Approach to Human-AI Collaboration,” 2026. <https://thinkingmachines.ai/blog/interaction-models/>
 10. OpenAI, Realtime API documentation. <https://developers.openai.com/api/docs/guides/realtime>
 
 Public APIs and papers evolve. Any experiment must cite the exact version and retrieval date used.

@@ -137,6 +137,11 @@ retaining symbolic P50 quality 94 and 90/90 successes, at compute P50 97 versus
 88. Fast-only is quicker and cheaper but has quality P50 38 and 0/90 successes.
 All values are simulated/authored reference units, not model claims.
 
+M4's foreground-decision and slow-update roles remain a historical baseline.
+Plan version 0.2 uses them as the independent fast/slow control rather than the
+target continuous-thinking interface. The target has one canonical trajectory
+with fast and slow model continuations appending successive ordinary items.
+
 ## M5 — Translation and rapid-interaction demonstrations
 
 - Status: complete
@@ -201,3 +206,48 @@ participant results remain blocked, visible, and unclaimed.
 Research internals remain explicitly experimental; breaking stable provider
 changes require a new `api/v2` semantic import path. Downstream consumers can
 pin the v1.0.0 release and run the same public conformance suite.
+
+## M8 — Live local microturn cascade
+
+- Status: in progress; first live slice completed 2026-08-18
+- Implemented: stateful Qwen3-ASR 0.6B, local Qwen3-30B-A3B-FP8, streaming
+  Fish S2-Pro, 50 ms scheduler/200 ms provider buffering, exact-match fast
+  → slow private preparation, content-independent slow-launch pacing with
+  exact-commit bypass, and priority/capacity admission on one 96 GB GPU
+- Evidence: `docs/live-cascade.md`, the exact-scored
+  `realtime-benchmark-v0.6` background result, v0.7 endpointed/fast-only
+  controls, the v0.8 one-second pacing ablation, and preserved negative results
+  in `benchmarks/results/`
+- Required comparisons: endpointed, 50/100/200/400/800 ms, revision-event, and
+  adaptive scheduling using the same component versions
+- Boundary: fixed ticks are opportunities; actual component invocations are
+  reported separately
+
+## M9 — Canonical trajectory and interleaved thinking
+
+- Status: in progress; first heterogeneous tool-grounding slice completed
+  2026-08-18
+- Implemented: append-only trajectory, Qwen/Gemini context compilers,
+  proposal-only fast calls, execute-authority slow calls, exact causal results,
+  unconditional slow continuation, private fast→slow preparation, exact
+  per-stage replay/live fallback, temporal launch pacing that cannot delay
+  exact commit, tool-result continuation, and exact name-plus-JSON-argument
+  scoring
+- Target: fast and slow models continue one trajectory containing observations,
+  reusable reasoning, assistant content, proposals, executable calls, and
+  results
+- Primary conditions: Gemini 3.5 Flash minimal→medium/high thinking and local
+  Qwen instruct→Gemini 3.5 Flash medium/high thinking
+- Control: M4-style independent foreground/background advice
+- Compatibility: experimental internals first; stable replacement requires
+  `api/v2`
+
+## Planned M10 — Joint responsiveness–intelligence study
+
+- Status: planned
+- Target: attribute gains separately to microturn timing and canonical-trajectory
+  continuation, then test whether they compose in one live condition
+- Comparators: endpoint/VAD-triggered online speech models and persistent
+  short-block native interaction models are separate conditions
+- Required outcomes: first semantic audio, final reasoning/tool quality,
+  contradiction and capability consistency, repair, compute, queueing, and cost

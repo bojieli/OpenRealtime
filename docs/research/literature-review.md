@@ -1,6 +1,6 @@
 # Initial literature review
 
-Retrieved 2026-08-17. This is a maintained map of evidence and design pressure,
+Retrieved 2026-08-17; architecture synthesis updated 2026-08-18. This is a maintained map of evidence and design pressure,
 not an assertion that prior results transfer unchanged to OpenRealtime.
 
 ## Incremental dialogue and response planning
@@ -32,6 +32,14 @@ Moshi models user and system audio streams in parallel and reports theoretical
 information lost by a text bottleneck, including emotion and non-speech sound.
 OpenRealtime should compare observable behavior without assuming modular parity.
 
+Thinking Machines Lab's Interaction Models use time-aligned 200 ms microturns
+and persistent streaming sessions, and pair realtime foreground interaction
+with asynchronous background reasoning. This supports 200 ms as an experimental
+condition and reinforces two caveats: a tick is not a stateless restart, and
+background reasoning must not block the foreground media loop. It does not show
+that a modular cascade automatically matches a natively trained interaction
+model.
+
 The OpenAI Realtime API is a concrete interoperability baseline rather than a
 research result. Its current public reference separates client and server
 events across Realtime, transcription, and translation sessions over low-
@@ -44,6 +52,23 @@ ambient speech. The repository has since added dynamic v2 and tool-use v3. Its
 repository-wide CC BY-NC 4.0 license means data or code must not be copied into
 the permissive OpenRealtime distribution. A separately installed adapter can be
 evaluated where usage is compliant.
+
+## Asynchronous events and continuous thinking
+
+The target OpenRealtime abstraction treats user speech, recognition revisions,
+assistant reasoning/content, tool calls/results, and interruptions as one
+ordered trajectory. Events are consumed at safe boundaries: routine events may
+batch, urgent events may force an early boundary, and independent tools may run
+concurrently while retaining causal provenance.
+
+This produces a specific fast/slow hypothesis. A fast and a slow model should
+not be prompted as two independent agents and reconciled through an advice
+summary. Instead, the fast model appends the first reasoning/content segment
+and any non-executable tool proposal, and the slow model continues from that
+exact prefix with execute authority. The project calls this heterogeneous
+interleaved thinking. One exploratory live tool trial now validates the
+proposal/call/result wiring, but the comparative claim remains prospective
+until tested against the independent M4 baseline and the registered controls.
 
 ## Simultaneous translation
 
@@ -74,3 +99,6 @@ share-alike code into the Apache-licensed package.
    <https://aclanthology.org/2020.emnlp-demos.19/>
 10. OpenAI, “Realtime API reference.”
     <https://platform.openai.com/docs/api-reference/realtime>
+11. Thinking Machines Lab (2026), “Interaction Models: A Scalable Approach to
+    Human-AI Collaboration.”
+    <https://thinkingmachines.ai/blog/interaction-models/>

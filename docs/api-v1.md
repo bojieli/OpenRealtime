@@ -4,6 +4,13 @@ Import `github.com/bojieli/OpenRealtime/api/v1`. The semantic import path and
 `v1.Version == "1.0.0"` freeze the component contract independently from the
 experimental engine packages.
 
+Plan version 0.2 includes an implemented experimental canonical-trajectory
+continuation design, but it does not change this API. The existing fast-decision
+and deliberation roles remain the supported M4 boundary. Replacing them requires
+a separate `api/v2` contract and migration guide after live validation. This is
+a Go import-path version for OpenRealtime components; it does not imply an
+OpenAI Realtime protocol revision.
+
 ## Compatibility promise
 
 The project may add optional capabilities, new concrete adapters, helper

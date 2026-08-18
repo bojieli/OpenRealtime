@@ -16,7 +16,8 @@ is not legal advice and must be rechecked at the pinned revision.
 | SimulEval | simultaneous text/speech translation quality and latency | official repository archived 2025-09-18 | CC BY-SA 4.0 stated by repository | protocol adapter or clean metric implementation |
 | Moshi | native full-duplex open baseline | official code and weights public | component-specific terms require inventory | optional N1 adapter; never core dependency |
 | Rapid audio games | reaction, timing, rule adherence | project workload pending | original scripts/fixtures target CC0 | build in M5 |
-| Difficult questions | foreground acknowledgement plus tool/deliberation | project workload pending | prompts and expected answers must be redistributable | build in M4 |
+| Difficult questions | fast response, continued reasoning, and tools | symbolic M4 and original four-task interleaved workload exist; one live opaque-record voice trial completed | project prompts/record fixtures are original; generated/model outputs require provenance | retain M4 as independent control; expand paired interleaved conditions in M9 |
+| Trajectory consistency | contradiction, repeated work, capability denial, proposal/call authority, interruption/resumption | proposal-versus-execute invariants and one positive/one negative live integration artifact exist; paired corpus pending | target original fixtures and event scripts | build paired independent/interleaved conditions in M9 |
 | Paralinguistic challenge | emotion, sarcasm, laughter, sighs, non-speech | source not selected | voice/performer rights are critical | do not collect until ethics checklist |
 
 ## Selection gates

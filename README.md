@@ -4,11 +4,34 @@
 
 OpenRealtime is an open research project investigating a specific question:
 
-> Can an incremental, modular speech system achieve the perceived responsiveness and interactive behavior of native realtime speech models when perception, reasoning, and speech are scheduled at conversational cadence?
+> Can an incremental, modular speech system combine the responsiveness of native realtime interaction with the intelligence of a high-reasoning, tool-using agent?
 
 The project is not intended to be another configurable ASR–LLM–TTS wrapper. Its primary outputs are a falsifiable research program, a reproducible benchmark suite, an instrumented reference engine, and evidence about when microturn scheduling works—and when it does not.
 
-The working idea is to let a system listen, revise its understanding, prepare responses, and manage speech continuously. Fast foreground behavior and slower background reasoning are separated, while speculation, cancellation, repair, barge-in, and full-duplex interaction are treated as first-class engineering problems.
+The working idea has two orthogonal parts. Microturn scheduling lets streaming ASR, language generation, and TTS advance before a VAD-defined turn has ended. Heterogeneous interleaved thinking lets a low-latency model speak first and a higher-reasoning model continue the same canonical trajectory—including earlier reasoning, audible assistant content, tool calls, and tool results. Together they target high responsiveness and high intelligence without treating fast and slow models as separate agents.
+
+## Target architecture
+
+```text
+continuous audio → incremental perception → microturn/event scheduler
+                                             │
+                                             ▼
+                                  one canonical trajectory
+                                  ├── fast continuation
+                                  ├── slow continuation
+                                  ├── fast tool proposals (never executable)
+                                  ├── slow tool calls/results
+                                  └── assistant content → streaming TTS
+```
+
+A 200 ms tick is a decision opportunity, not a command to restart every model. ASR and model sessions retain incremental state; event arrivals such as recognition revisions, user interruption, tool completion, or slow continuation may trigger work between ticks. Fast and slow inference append successive segments to one trajectory rather than exchanging an advisory summary. Both see the real tool schemas: fast calls become non-executable proposals, while only slow calls reach the tool runtime.
+
+The comparative study keeps three categories distinct: endpoint/VAD-triggered
+online speech models, persistent short-block interaction models such as Moshi
+or Thinking Machines Lab Interaction Models, and this modular microturn
+cascade. Matching one latency number is not treated as architectural parity;
+tool quality, overlap, prosody, repair, compute, and tail behavior remain part
+of the comparison.
 
 ## Status
 
@@ -16,8 +39,9 @@ M0 through M7 are complete. The stable component API is v1.0.0 and the complete
 OpenAI protocol/provider conformance suite passes.
 The repository contains a generated conformance layer for every event in the
 pinned OpenAI Realtime OpenAPI specification, deterministic 24 kHz PCM replay, an original
-redistributable audio fixture, and causal trace validation. There is no Python
-runtime or build dependency. M1 adds production-shaped component contracts, a
+redistributable audio fixture, and causal trace validation. The core Go build
+has no Python dependency; optional live Qwen and SGLang-Omni model sidecars use
+their own Python environments. M1 adds production-shaped component contracts, a
 deterministic endpointed control, exact stage/queue reconciliation, and a
 self-contained timeline. Its simulated timings are instrumentation evidence,
 not deployed performance claims.
@@ -32,7 +56,10 @@ and schema-valid OpenAI cancellation/clear/truncation traces.
 
 M4 adds goal/revision-scoped asynchronous deliberation, truthful progress
 claims, cancellation and failure handling, stale callback rejection, and a
-symbolic latency/quality/compute frontier.
+symbolic latency/quality/compute frontier. This remains a reproducible
+historical baseline. The plan now targets a canonical-trajectory continuation
+interface in which fast and slow models generate successive portions of one
+rollout rather than separate foreground decisions and slow advice.
 
 M5 adds the OpenAI Translation session lifecycle, 200 ms PCM16 translation
 frames, append-only simultaneous-translation policies, and a GA Realtime rapid
@@ -50,9 +77,31 @@ their 178-definition schema closure. The suite verifies 66 unique wire names,
 strict direction/profile/required-field faults, provider cancellation, revision
 and PCM continuity, and deliberation closure.
 
+M8/M9 are in progress. The repository now has experimental stateful Qwen3-ASR,
+local vLLM Qwen, Gemini 3.5 Flash, and Fish S2-Pro adapters; a 50 ms scheduler
+with 200 ms provider buffering; exact-match latest-revision fast→slow private
+preparation; a content-independent slow-launch pacer whose wait is bypassed by
+exact commit; proposal-versus-execute tool authority; canonical continuation;
+exact tool-trajectory scoring; and a priority/capacity admission governor. A
+real co-located audio-to-audio tool trial committed and replayed both prepared
+stages, had zero additional endpoint-time fast delay, made one fast proposal
+and one independently authorized slow call, and returned the correct grounded
+answer. Same-fixture endpointed and fast-only controls, exact call/result
+scoring, failed runs, and discarded work remain published. The single-sample
+controls expose stage movement, and a one-second pacing ablation reduced
+speculative slow launches from 43 to 12 once without changing exact task
+quality. These runs do not establish a latency/cost distribution or
+native-model parity. See the
+[live cascade design and evidence](docs/live-cascade.md).
+
 ## Start here
 
-Read [PLAN.md](PLAN.md) for the complete research questions, architecture, experimental design, milestones, and contribution roadmap.
+Read [PLAN.md](PLAN.md) for the complete research questions, architecture,
+experimental design, milestones, and contribution roadmap. The focused
+[canonical trajectory design](docs/canonical-trajectory.md) specifies how
+microturn timing, asynchronous events, fast/slow continuation, tools, and
+speech commitment fit together without changing the external Realtime wire
+protocol.
 
 To reproduce the M0 timing trace from a clean checkout:
 
@@ -150,6 +199,9 @@ local runs. Read the
 
 - Research claims must be measurable and falsifiable.
 - The 200 ms microturn is an experimental reference point, not a universal constant.
+- A trigger opens an opportunity; it does not require stateless ASR, LLM, and TTS reinference.
+- Fast and slow models are compute phases of one agent and must consume one canonical trajectory.
+- Tool capability awareness is shared even when execution authority is restricted to the slow continuation.
 - Latency, interaction quality, intelligence, cost, and failure behavior must be evaluated together.
 - Native speech-to-speech models are legitimate baselines and optional components, not opponents to be dismissed.
 - Provider adapters exist to support experiments; model aggregation is outside the project scope.
