@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0.0",
+  "matrix_id": "openrealtime-tau-voice-slow-medium-v1",
+  "frozen_at": "2026-08-18T00:00:00Z",
+  "benchmark": {
+    "repository": "https://github.com/sierra-research/tau2-bench",
+    "revision": "c3398666e6559e3a063da3fc04b5acf7f941464e",
+    "task_split": "base",
+    "seed": 300,
+    "num_trials": 1,
+    "domains": [
+      {
+        "name": "airline",
+        "tasks": 50
+      },
+      {
+        "name": "retail",
+        "tasks": 114
+      },
+      {
+        "name": "telecom",
+        "tasks": 114
+      }
+    ],
+    "total_tasks_per_cell": 278,
+    "max_concurrency": 1,
+    "task_timeout_seconds": 1500,
+    "conversation_timeout_seconds": 1200,
+    "semantic_retries": 0,
+    "hallucination_retries": 0,
+    "tick_seconds": 0.2
+  },
+  "transport": {
+    "adapter": "upstream DiscreteTimeOpenAIAdapter",
+    "provider": "openai",
+    "compatibility_model": "gpt-realtime-1.5",
+    "base_url": "ws://127.0.0.1:8765/v1/realtime",
+    "wire_protocol_changed": false
+  },
+  "system": {
+    "condition": "I1-QG-SM",
+    "trigger_policy": "fixed 200 ms tau audio frames and stateful ASR provider advances; final ASR, interruption, and tool-result events remain immediate",
+    "asr": "Qwen/Qwen3-ASR-0.6B, stateful 200 ms provider advances",
+    "fast": "Qwen/Qwen3-30B-A3B-FP8 via vLLM, enable_thinking=false, proposal-only tool authority",
+    "slow": "gemini-3.5-flash, medium thinking, execute tool authority, exact canonical continuation",
+    "tool_resumption": "complete external result batch resumes slow from the exact extended prefix; fast is not rerun",
+    "agent_speech": "fishaudio/s2-pro on the local GPU, paced 100 ms output frames",
+    "caller_speech": "fishaudio/s2-pro on the same local GPU through the separately named tau Fish backend"
+  },
+  "runtime_requirements": {
+    "requires_local_fast": true,
+    "asr": {
+      "model": "Qwen/Qwen3-ASR-0.6B",
+      "provider_chunk_ms": 200
+    },
+    "gateway_profiles": {
+      "fast": {
+        "provider": "vllm",
+        "model": "qwen-fast",
+        "effort": "minimal",
+        "tool_authority": "propose"
+      },
+      "slow": {
+        "provider": "google",
+        "model": "gemini-3.5-flash",
+        "effort": "medium",
+        "tool_authority": "execute"
+      }
+    }
+  },
+  "cells": [
+    {
+      "id": "i1-qg-slow-medium-control",
+      "speech_complexity": "control",
+      "voice_registry": "benchmarks/tau-voice/voices/fish-s2pro-personas-v1.json",
+      "status": "preregistered"
+    },
+    {
+      "id": "i1-qg-slow-medium-regular",
+      "speech_complexity": "regular",
+      "voice_registry": "benchmarks/tau-voice/voices/fish-s2pro-personas-v1.json",
+      "status": "preregistered"
+    }
+  ],
+  "reporting": {
+    "paired_baseline": "benchmarks/tau-voice/matrix-v1.json",
+    "only_intended_cognitive_change": "gemini-3.5-flash slow reasoning effort changes from high to medium",
+    "preserve_failures": true,
+    "auto_resume_infrastructure_interruptions": true,
+    "result_unit": "one complete 278-task speech-complexity cell",
+    "partial_run_label": "incomplete slow-effort ablation cell; not a tau-Voice score",
+    "cost_note": "tau's agent ledger is a compatibility-model pricing proxy; hosted Gemini request usage and local GPU telemetry are separate outcomes"
+  }
+}

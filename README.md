@@ -124,7 +124,13 @@ of input, upstream-compatible 16 kHz timestamps, and exact Silero-VAD settings.
 After that corpus completes, a paired full τ matrix changes only the fast
 continuation from local no-thinking Qwen to Gemini 3.5 Flash at minimal
 thinking, retaining Gemini high-thinking slow continuation. No incomplete cell
-is reported as a benchmark score.
+is reported as a benchmark score. A strict report queue then proves exact
+task/trial populations and invokes the pinned upstream scorers. Behind that
+gate, complete 50/100/400/800 ms matrices isolate trigger cadence around the
+200 ms baseline, followed by a complete medium-versus-high Gemini slow-effort
+comparison. Native architectural context names GPT-Live and Thinking Machines
+Lab Interaction Models; neither is relabeled as an executed local cell without
+a public callable endpoint.
 
 ## Start here
 

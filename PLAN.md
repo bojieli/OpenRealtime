@@ -930,8 +930,8 @@ Exit criteria:
 
 ### M8 — Live local microturn cascade
 
-Status: in progress. The first 50 ms scheduler / 200 ms provider condition is
-implemented with Qwen3-ASR 0.6B, Qwen3-30B-A3B-FP8, Fish S2-Pro, explicit GPU
+Status: in progress. The live 200 ms input / 200 ms stateful provider condition
+is implemented with Qwen3-ASR 0.6B, Qwen3-30B-A3B-FP8, Fish S2-Pro, explicit GPU
 admission, exact fast→slow background preparation, and real audio-to-audio
 reports. A same-fixture endpointed/fast-only/full-preparation exploratory check
 is published. A content-independent one-second slow-launch pacer reduced
@@ -939,9 +939,11 @@ speculative slow provider launches from 43 to 12 in one exact-scored trial and
 the final commit bypassed its remaining wait. A persistent standard Realtime
 gateway now composes all three local GPU services with hosted slow reasoning,
 passes the official τ OpenAI provider suite 12/12, and exposes paced Fish agent
-speech. Repeated randomized trials,
-interval sweeps, remaining cadences, adaptive scheduling, tail distributions,
-and aligned GPU utilization remain.
+speech. Complete 50/100/400/800 ms candidate matrices are frozen and queued;
+each changes the τ input frame, gateway provider chunk, and Qwen server chunk
+together and verifies the live profile before execution. Repeated randomized
+trials, adaptive scheduling, tail distributions, and aligned GPU utilization
+remain.
 
 Deliverables:
 
@@ -1011,9 +1013,10 @@ exploratory paired task, strict seven-persona Fish registry, frozen baseline
 matrix, exact FDB v1.5/FDB v3 releases, and resumable runners are complete. The
 278-task control cell is running; regular, 498-recording FDB v1.5,
 100-recording FDB v3, complete Qwen3-ASR 1.7B paired cells, the 21-cell,
-6,147-conversation released FD-Bench matrix, and complete paired Gemini-fast
-cells are queued. Native controls and cadence/effort ablations remain. No
-incomplete cell is a benchmark score.
+6,147-conversation released FD-Bench matrix, complete paired Gemini-fast cells,
+four complete cadence matrices, and a complete medium-slow matrix are queued.
+Native GPT-Live and TML Interaction Model controls remain unavailable through
+a public executable endpoint. No incomplete cell is a benchmark score.
 
 Deliverables:
 

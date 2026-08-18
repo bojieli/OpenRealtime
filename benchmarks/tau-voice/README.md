@@ -248,6 +248,28 @@ cannot overlap FD-Bench or alter the frozen baseline. The decision is a paired
 quality/latency/compute Pareto comparison, never task-dependent provider
 routing.
 
+### Fixed-cadence ablation
+
+[`cadence-ablation-v1.json`](cadence-ablation-v1.json) freezes complete 50,
+100, 200, 400, and 800 ms conditions. The existing 200 ms matrix is the
+baseline; each of the four candidate matrices repeats all 278 tasks in both
+speech conditions. A treatment changes the upstream τ audio frame, the
+gateway's stateful ASR provider chunk, and the Qwen streaming server chunk
+together. Model identities, fast/slow authority, semantic event wakeups, Fish
+speech, seed, task population, and retry policy stay fixed. The execution
+order alternates below and above 200 ms to reduce monotone drift confounding.
+The gateway profile is verified from `/healthz` before every matrix.
+
+### Slow-effort ablation
+
+[`slow-effort-ablation-v1.json`](slow-effort-ablation-v1.json) pairs the
+high-effort baseline with a complete Gemini 3.5 Flash medium-effort matrix.
+Only slow reasoning effort changes. Fast remains local Qwen with thinking
+disabled, every tool schema remains visible to both phases, only slow can
+execute, and the tool-result path resumes the exact canonical prefix. This is
+a full quality/interaction/usage Pareto comparison, not a latency preset or a
+task router.
+
 ## Primary reporting panel
 
 Report task and interaction behavior together:
@@ -276,7 +298,8 @@ the matrix and scorer hashes plus a content hash over every source trajectory;
 it is written atomically so an interrupted or partial run cannot masquerade as
 a score. Overall rows use the leaderboard's equal-domain mean, while count
 fields are sums. The final reporting queue runs this gate independently for
-the baseline, ASR, and Gemini-fast matrices after their full populations end.
+the baseline, ASR, and Gemini-fast matrices after their full populations end;
+each later cadence and effort runner applies the same gate before advancing.
 
 ## Optimization gate
 
@@ -328,9 +351,9 @@ The gateway, provider gate, external tool-result resumption, local Fish
 caller/agent paths, strict voice registry, frozen baseline matrix, and bounded
 background orchestration are complete. The full control cell is running. The
 full regular cell, FDB v1.5, FDB v3, paired 1.7B ASR cells, complete FD-Bench
-matrix, and paired Gemini-fast cells are queued sequentially. Native GPT-Live
-and TML Interaction Model cells remain unavailable through a public executable
-endpoint and are retained only as attributed published context. Cadence and
-slow-effort ablations remain after the preregistered matrices. No patch test,
+matrix, paired Gemini-fast cells, four complete fixed-cadence matrices, and a
+complete slow-medium matrix are queued sequentially. Native GPT-Live and TML
+Interaction Model cells remain unavailable through a public executable
+endpoint and are retained only as attributed published context. No patch test,
 conformance suite, mock, text-only run, partial cell, or one-task smoke will be
 relabeled as a full τ-Voice score.
