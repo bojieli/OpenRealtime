@@ -1,0 +1,4202 @@
+{
+  "schema_version": "realtime-benchmark-v0.5",
+  "created_at": "2026-08-18T07:16:56.922374168Z",
+  "scenario_id": "opaque-code-retrieval",
+  "input_sha256": "9f22039a6363c831ccf645ac77d8c8a114897e639b5a82a7d8d34bb3c5a7e530",
+  "reference_text": "Use records read with the key access underscore phrase. Return the code exactly. The value is not in this request, so do not guess.",
+  "scoring": {
+    "expected_substrings": [
+      "cerulean-17"
+    ],
+    "required_tool_calls": [
+      "records.read"
+    ],
+    "expected_tool_calls": [
+      {
+        "name": "records.read",
+        "arguments": {
+          "key": "access_phrase"
+        }
+      }
+    ]
+  },
+  "runtime": {
+    "asr_provider_chunk": "200ms",
+    "asr_scheduler_frame": "50ms",
+    "asr_transport": "qwen-asr-stateful-http",
+    "fast_preparation": "true",
+    "gpu_admission": "explicit-class-reserved-capacity",
+    "gpu_admission_capacity": "100",
+    "gpu_interactive_reserve": "25",
+    "input_generation": "Fish S2-Pro seed 0; explicit spoken underscore",
+    "scorer": "exact-tool-trajectory-v1",
+    "slow_preparation": "true",
+    "tts_transport": "openai-compatible-speech-http",
+    "wire_protocol": "unchanged-openai-realtime"
+  },
+  "admission": {
+    "capacity": 100,
+    "reserved_interactive": 25,
+    "used": 0,
+    "lower_priority_used": 0,
+    "running": {},
+    "waiting": {},
+    "admitted": 80,
+    "released": 80,
+    "preemptions": 0,
+    "cancelled_waiters": 0,
+    "deadline_misses": 0,
+    "classes": {
+      "interactive": {
+        "admitted": 50,
+        "released": 50,
+        "preemptions": 0,
+        "wait_total_ms": 0.219464,
+        "wait_max_ms": 0.019839,
+        "service_total_ms": 1864.822049,
+        "service_max_ms": 51.394321,
+        "preemption_to_release_total_ms": 0,
+        "preemption_to_release_max_ms": 0
+      },
+      "speculative": {
+        "admitted": 30,
+        "released": 30,
+        "preemptions": 0,
+        "wait_total_ms": 0.027859,
+        "wait_max_ms": 0.003321,
+        "service_total_ms": 3970.119142,
+        "service_max_ms": 179.183249,
+        "preemption_to_release_total_ms": 0,
+        "preemption_to_release_max_ms": 0
+      }
+    }
+  },
+  "background_preparation": {
+    "enabled": true,
+    "observed": 31,
+    "distinct_inputs": 30,
+    "started": 30,
+    "completed": 1,
+    "superseded": 29,
+    "failed": 0,
+    "coalesced": 1,
+    "committed": true,
+    "committed_attempt": "prepared-chain-30",
+    "committed_fingerprint": "728f1990848d2a6f0ced6d6a40176e3f35b7e530fdcabb5e7bb7f3b0518a7fab",
+    "replayed_stages": 2,
+    "fallback_stages": 0,
+    "attempts": [
+      {
+        "attempt_id": "prepared-chain-1",
+        "fingerprint": "397f2e1252d3a357e9be4a8807590278dd859990dcd668d7f0ad661fe6d10de7",
+        "source_revision": 1,
+        "triggered_offset_ms": 231.259725,
+        "ended_offset_ms": 430.267078,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-1-invocation-1",
+            "started_offset_ms": 231.299253,
+            "first_event_offset_ms": 258.815505,
+            "ended_offset_ms": 306.196585,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-1-invocation-4",
+            "started_offset_ms": 306.238426,
+            "ended_offset_ms": 430.261117,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-2",
+        "fingerprint": "c26cf8e641331096fbfc7091f2fac86da744abdda2ec961c5d81f1a737469cf5",
+        "source_revision": 2,
+        "triggered_offset_ms": 430.213087,
+        "ended_offset_ms": 631.37272,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-2-invocation-1",
+            "started_offset_ms": 430.298047,
+            "first_event_offset_ms": 452.944812,
+            "ended_offset_ms": 554.000778,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-2-invocation-4",
+            "started_offset_ms": 554.043282,
+            "ended_offset_ms": 631.369898,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-3",
+        "fingerprint": "43edde41e9b7bd4460ccd6fa05a6c2cba83b573497f749e5e8a4f8fcac3b0d81",
+        "source_revision": 3,
+        "triggered_offset_ms": 631.325285,
+        "ended_offset_ms": 837.963553,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-3-invocation-1",
+            "started_offset_ms": 631.399642,
+            "first_event_offset_ms": 655.943387,
+            "ended_offset_ms": 693.950553,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-3-invocation-4",
+            "started_offset_ms": 693.985542,
+            "ended_offset_ms": 837.961342,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-4",
+        "fingerprint": "a703668f60f8ab76e42cc476bda08f25f69d5b0b07b9360dc29de82696cb498e",
+        "source_revision": 4,
+        "triggered_offset_ms": 837.921045,
+        "ended_offset_ms": 1037.421582,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-4-invocation-1",
+            "started_offset_ms": 837.987296,
+            "first_event_offset_ms": 861.922337,
+            "ended_offset_ms": 978.663527,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-4-invocation-4",
+            "started_offset_ms": 978.702526,
+            "ended_offset_ms": 1037.419196,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-5",
+        "fingerprint": "c961d4f0113e0833ab16223d57b5a1db1919cd05c098d2329e2a7fb2ff8ce8bf",
+        "source_revision": 5,
+        "triggered_offset_ms": 1037.381431,
+        "ended_offset_ms": 1252.079479,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-5-invocation-1",
+            "started_offset_ms": 1037.444091,
+            "first_event_offset_ms": 1060.987962,
+            "ended_offset_ms": 1176.101118,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-5-invocation-4",
+            "started_offset_ms": 1176.15728,
+            "ended_offset_ms": 1252.077237,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-6",
+        "fingerprint": "9157067fd22d5c40e454ac01e9e1c480a1af05482a099bf9e3874aaa8a7b2325",
+        "source_revision": 6,
+        "triggered_offset_ms": 1251.97325,
+        "ended_offset_ms": 1428.916258,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-6-invocation-1",
+            "started_offset_ms": 1252.121571,
+            "first_event_offset_ms": 1383.677369,
+            "ended_offset_ms": 1383.726491,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-6-invocation-4",
+            "started_offset_ms": 1383.755031,
+            "ended_offset_ms": 1428.914245,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-7",
+        "fingerprint": "822c89c716c4e7e6a772a3ed4c041b2aff0e8778415cd0d68bdd17b727ef71ac",
+        "source_revision": 7,
+        "triggered_offset_ms": 1428.877823,
+        "ended_offset_ms": 1643.094311,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-7-invocation-1",
+            "started_offset_ms": 1428.942363,
+            "first_event_offset_ms": 1552.406906,
+            "ended_offset_ms": 1552.45289,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-7-invocation-4",
+            "started_offset_ms": 1552.482251,
+            "ended_offset_ms": 1643.092022,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-8",
+        "fingerprint": "5f63399be209298f5f9fdeb09a0ed62dfe1d5b6772bd08f8f8f9fcb854380275",
+        "source_revision": 8,
+        "triggered_offset_ms": 1643.052462,
+        "ended_offset_ms": 1836.195278,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-8-invocation-1",
+            "started_offset_ms": 1643.1185,
+            "first_event_offset_ms": 1771.932778,
+            "ended_offset_ms": 1771.982344,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-8-invocation-4",
+            "started_offset_ms": 1772.011403,
+            "ended_offset_ms": 1836.192956,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-9",
+        "fingerprint": "c771cfc42519db72f15b56e83272e4b7d9b58c2e4161d5c0e405b459f0a19e8e",
+        "source_revision": 9,
+        "triggered_offset_ms": 1836.149054,
+        "ended_offset_ms": 2232.935508,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-9-invocation-1",
+            "started_offset_ms": 1836.221313,
+            "first_event_offset_ms": 1959.536009,
+            "ended_offset_ms": 1959.576245,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-9-invocation-4",
+            "started_offset_ms": 1959.61724,
+            "ended_offset_ms": 2232.933507,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-10",
+        "fingerprint": "7f326958f56cbf7b1dbe6b5ca38a432b2ea3f47fdf2f391f3785a4997caf63c0",
+        "source_revision": 10,
+        "triggered_offset_ms": 2232.872579,
+        "ended_offset_ms": 2646.436096,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-10-invocation-1",
+            "started_offset_ms": 2232.965189,
+            "first_event_offset_ms": 2354.334427,
+            "ended_offset_ms": 2354.390454,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-10-invocation-4",
+            "started_offset_ms": 2354.419197,
+            "ended_offset_ms": 2646.432916,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-11",
+        "fingerprint": "9d3e8d0280151b4b9cb8732f721cef1cf839f5c0924695a9345dd86bc909ebfc",
+        "source_revision": 11,
+        "triggered_offset_ms": 2646.393628,
+        "ended_offset_ms": 3036.139833,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-11-invocation-1",
+            "started_offset_ms": 2646.46262,
+            "first_event_offset_ms": 2770.760003,
+            "ended_offset_ms": 2770.815498,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-11-invocation-4",
+            "started_offset_ms": 2770.844986,
+            "ended_offset_ms": 3036.137221,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-12",
+        "fingerprint": "06b1e4551e9829724f594f6b25b654526cc065829d8ab7c07c601f0b8e47c106",
+        "source_revision": 12,
+        "triggered_offset_ms": 3036.092678,
+        "ended_offset_ms": 3438.400943,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-12-invocation-1",
+            "started_offset_ms": 3036.16751,
+            "first_event_offset_ms": 3172.495064,
+            "ended_offset_ms": 3172.541109,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-12-invocation-4",
+            "started_offset_ms": 3172.571524,
+            "ended_offset_ms": 3438.398121,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-13",
+        "fingerprint": "dce525d62b47cd717234de8b28dbfe9e58d8da9206c1cd6fa7ae11edabb1e2c6",
+        "source_revision": 13,
+        "triggered_offset_ms": 3438.350875,
+        "ended_offset_ms": 4035.705658,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-13-invocation-1",
+            "started_offset_ms": 3438.429161,
+            "first_event_offset_ms": 3576.212345,
+            "ended_offset_ms": 3576.264862,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-13-invocation-4",
+            "started_offset_ms": 3576.304201,
+            "ended_offset_ms": 4035.703223,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-14",
+        "fingerprint": "7a6ae4bc68cef8475267b3e5a1b00bb391615da291077bd9d1afbf4cff334544",
+        "source_revision": 14,
+        "triggered_offset_ms": 4035.660452,
+        "ended_offset_ms": 4844.041033,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-14-invocation-1",
+            "started_offset_ms": 4035.727455,
+            "first_event_offset_ms": 4160.875377,
+            "ended_offset_ms": 4160.916442,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-14-invocation-4",
+            "started_offset_ms": 4160.944084,
+            "ended_offset_ms": 4844.039284,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-15",
+        "fingerprint": "55cd3118b765d0a2cda8f44dea86647a467577c5ee8c2e2d717a3959a56195f2",
+        "source_revision": 15,
+        "triggered_offset_ms": 4843.938981,
+        "ended_offset_ms": 5040.15223,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-15-invocation-1",
+            "started_offset_ms": 4844.067138,
+            "first_event_offset_ms": 4993.390194,
+            "ended_offset_ms": 4993.431493,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-15-invocation-4",
+            "started_offset_ms": 4993.459137,
+            "ended_offset_ms": 5040.149634,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-16",
+        "fingerprint": "98974e6a7c31a8ff40ee7ab09de79ed802d6ffd661f56481cd25d7949db81633",
+        "source_revision": 16,
+        "triggered_offset_ms": 5040.114291,
+        "ended_offset_ms": 5242.810855,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-16-invocation-1",
+            "started_offset_ms": 5040.183609,
+            "first_event_offset_ms": 5187.955284,
+            "ended_offset_ms": 5188.015139,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-16-invocation-4",
+            "started_offset_ms": 5188.049643,
+            "ended_offset_ms": 5242.808628,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-17",
+        "fingerprint": "5493efa34a72e3e354bbca2006607d0abd6d150b19fdf43544eb68afa835df74",
+        "source_revision": 17,
+        "triggered_offset_ms": 5242.763466,
+        "ended_offset_ms": 5649.647775,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-17-invocation-1",
+            "started_offset_ms": 5242.836675,
+            "first_event_offset_ms": 5387.942192,
+            "ended_offset_ms": 5387.989923,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-17-invocation-4",
+            "started_offset_ms": 5388.020714,
+            "ended_offset_ms": 5649.646,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-18",
+        "fingerprint": "ea2ff0000ba3cc6136b89a47bcaff6377308c686d814b0fb9f7eed49e1cb3ce6",
+        "source_revision": 18,
+        "triggered_offset_ms": 5649.608162,
+        "ended_offset_ms": 5832.992213,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-18-invocation-1",
+            "started_offset_ms": 5649.673885,
+            "first_event_offset_ms": 5810.894497,
+            "ended_offset_ms": 5810.94579,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-18-invocation-4",
+            "started_offset_ms": 5810.98052,
+            "ended_offset_ms": 5832.990355,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-19",
+        "fingerprint": "67798544e26c628a3b85a7bab4da6d82d9f15e63d981b6c90e26c2d4ed8a81af",
+        "source_revision": 19,
+        "triggered_offset_ms": 5832.951584,
+        "ended_offset_ms": 6840.641188,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-19-invocation-1",
+            "started_offset_ms": 5833.017955,
+            "first_event_offset_ms": 5972.228108,
+            "ended_offset_ms": 5972.270949,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-19-invocation-4",
+            "started_offset_ms": 5972.300642,
+            "ended_offset_ms": 6840.638372,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-20",
+        "fingerprint": "d022cb5619f1c9bafe68ddc86440718d5c6bbec24fb781a75ed2d331d077f7ea",
+        "source_revision": 20,
+        "triggered_offset_ms": 6840.571845,
+        "ended_offset_ms": 7043.522785,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-20-invocation-1",
+            "started_offset_ms": 6840.670552,
+            "first_event_offset_ms": 6974.480089,
+            "ended_offset_ms": 6974.522483,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-20-invocation-4",
+            "started_offset_ms": 6974.554009,
+            "ended_offset_ms": 7043.52036,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-21",
+        "fingerprint": "380f4208ab343e5282bd3288f5461d4afcd3ce34ce1eb52e92fb24b865554aa2",
+        "source_revision": 21,
+        "triggered_offset_ms": 7043.474823,
+        "ended_offset_ms": 7237.008431,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-21-invocation-1",
+            "started_offset_ms": 7043.547982,
+            "first_event_offset_ms": 7173.467076,
+            "ended_offset_ms": 7173.50779,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-21-invocation-4",
+            "started_offset_ms": 7173.534451,
+            "ended_offset_ms": 7237.006332,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-22",
+        "fingerprint": "529de64bdf5dd63f598d9f0bd5de09db60c0355969c1d71aaf8079cff1d807b0",
+        "source_revision": 22,
+        "triggered_offset_ms": 7236.969537,
+        "ended_offset_ms": 7642.066314,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-22-invocation-1",
+            "started_offset_ms": 7237.03073,
+            "first_event_offset_ms": 7371.372895,
+            "ended_offset_ms": 7371.432654,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-22-invocation-4",
+            "started_offset_ms": 7371.467276,
+            "ended_offset_ms": 7642.063612,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-23",
+        "fingerprint": "c81ae829947731a47f82e6755ff1ac3e9b0ba0865650d9328be32d4b59318063",
+        "source_revision": 23,
+        "triggered_offset_ms": 7642.023159,
+        "ended_offset_ms": 8042.403029,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-23-invocation-1",
+            "started_offset_ms": 7642.093567,
+            "first_event_offset_ms": 7780.469975,
+            "ended_offset_ms": 7780.516605,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-23-invocation-4",
+            "started_offset_ms": 7780.547856,
+            "ended_offset_ms": 8042.399341,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-24",
+        "fingerprint": "b927cafcaa451e94b167ad218f95e262fff44267aa99dddfb5a828357ccc2c01",
+        "source_revision": 24,
+        "triggered_offset_ms": 8042.351525,
+        "ended_offset_ms": 8236.912067,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-24-invocation-1",
+            "started_offset_ms": 8042.431828,
+            "first_event_offset_ms": 8179.220903,
+            "ended_offset_ms": 8179.266907,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-24-invocation-4",
+            "started_offset_ms": 8179.302856,
+            "ended_offset_ms": 8236.910692,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-25",
+        "fingerprint": "28fd68f78469ba9e969df04b27ed3ff65e43ecce3cb6310a11fe37e5103d268b",
+        "source_revision": 25,
+        "triggered_offset_ms": 8236.870969,
+        "ended_offset_ms": 8840.841478,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-25-invocation-1",
+            "started_offset_ms": 8236.936406,
+            "first_event_offset_ms": 8365.093492,
+            "ended_offset_ms": 8365.13349,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-25-invocation-4",
+            "started_offset_ms": 8365.162423,
+            "ended_offset_ms": 8840.838871,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-26",
+        "fingerprint": "573223bb7fa181fec2f445386ab28132d423c48ffb2ff8bed8c69f643b7a40c7",
+        "source_revision": 26,
+        "triggered_offset_ms": 8840.797093,
+        "ended_offset_ms": 9043.235906,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-26-invocation-1",
+            "started_offset_ms": 8840.870086,
+            "first_event_offset_ms": 8993.588452,
+            "ended_offset_ms": 8993.656565,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-26-invocation-4",
+            "started_offset_ms": 8993.696098,
+            "ended_offset_ms": 9043.233038,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-27",
+        "fingerprint": "55d9a42eb85f30c20a65b016d3e4dec7650c8f6064700e25f7c5f21db561cb56",
+        "source_revision": 27,
+        "triggered_offset_ms": 9043.194071,
+        "ended_offset_ms": 9238.224486,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-27-invocation-1",
+            "started_offset_ms": 9043.262406,
+            "first_event_offset_ms": 9177.713754,
+            "ended_offset_ms": 9177.76262,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-27-invocation-4",
+            "started_offset_ms": 9177.810892,
+            "ended_offset_ms": 9238.222548,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-28",
+        "fingerprint": "dfaca30abfe7cffc5f918a7d65404f62727679e14640dcc1dbafd01b69fd37b9",
+        "source_revision": 28,
+        "triggered_offset_ms": 9238.178423,
+        "ended_offset_ms": 9438.388059,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-28-invocation-1",
+            "started_offset_ms": 9238.251299,
+            "first_event_offset_ms": 9373.187799,
+            "ended_offset_ms": 9373.237135,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-28-invocation-4",
+            "started_offset_ms": 9373.272314,
+            "ended_offset_ms": 9438.386338,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-29",
+        "fingerprint": "211d83ba286f116c973bffefb383d0ffa6cdce8c51aded2757892fb621b87b5e",
+        "source_revision": 29,
+        "triggered_offset_ms": 9438.34975,
+        "ended_offset_ms": 9637.471085,
+        "outcome": "superseded",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-29-invocation-1",
+            "started_offset_ms": 9438.408629,
+            "first_event_offset_ms": 9617.581557,
+            "ended_offset_ms": 9617.626677,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-29-invocation-4",
+            "started_offset_ms": 9617.660341,
+            "ended_offset_ms": 9637.46792,
+            "outcome": "failed"
+          }
+        ]
+      },
+      {
+        "attempt_id": "prepared-chain-30",
+        "fingerprint": "728f1990848d2a6f0ced6d6a40176e3f35b7e530fdcabb5e7bb7f3b0518a7fab",
+        "source_revision": 30,
+        "triggered_offset_ms": 9637.423275,
+        "ended_offset_ms": 11312.209396,
+        "outcome": "completed",
+        "stages": [
+          {
+            "index": 0,
+            "phase": "fast",
+            "invocation_id": "prepared-chain-30-invocation-1",
+            "started_offset_ms": 9637.502037,
+            "first_event_offset_ms": 9769.683594,
+            "ended_offset_ms": 9769.726402,
+            "outcome": "completed"
+          },
+          {
+            "index": 1,
+            "phase": "slow",
+            "invocation_id": "prepared-chain-30-invocation-4",
+            "started_offset_ms": 9769.756577,
+            "first_event_offset_ms": 11306.057793,
+            "ended_offset_ms": 11312.171044,
+            "outcome": "completed"
+          }
+        ]
+      }
+    ]
+  },
+  "fast": {
+    "provider": "vllm",
+    "model": "qwen-fast",
+    "phase": "fast",
+    "effort": "minimal",
+    "streaming": true,
+    "native_state_type": "openai-compatible.chat-completion.assistant-message.v1",
+    "retains_tool_calls": true,
+    "tool_authority": "propose",
+    "executable_tools": false
+  },
+  "slow": {
+    "provider": "google",
+    "model": "gemini-3.5-flash",
+    "phase": "slow",
+    "effort": "high",
+    "streaming": true,
+    "native_state_type": "google.gemini.generate-content.model-content.v1",
+    "retains_tool_calls": true,
+    "tool_authority": "execute",
+    "executable_tools": true
+  },
+  "tts": {
+    "name": "openai-speech-streaming/fishaudio/s2-pro",
+    "version": "openai-audio-speech-1",
+    "capabilities": {
+      "cancellation": true,
+      "pcm16_output": true,
+      "streaming_output": true
+    }
+  },
+  "asr": {
+    "case_id": "opaque-code-retrieval",
+    "input_sha256": "9f22039a6363c831ccf645ac77d8c8a114897e639b5a82a7d8d34bb3c5a7e530",
+    "descriptor": {
+      "name": "qwen3-asr-streaming/Qwen/Qwen3-ASR-0.6B",
+      "version": "qwen-asr-0.0.6",
+      "capabilities": {
+        "cancellation": true,
+        "revisions": true,
+        "streaming_input": true
+      }
+    },
+    "paced": true,
+    "frame_duration_ms": 50,
+    "input_sample_rate_hz": 24000,
+    "input_duration_ms": 9798.833333,
+    "frames": [
+      {
+        "index": 0,
+        "end_sample": 1200,
+        "audio_end_ms": 50,
+        "invocation_start_ms": 50.091538,
+        "schedule_lateness_ms": 0.091538,
+        "provider_boundary_ms": 0.012451,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 1,
+        "end_sample": 2400,
+        "audio_end_ms": 100,
+        "invocation_start_ms": 100.690012,
+        "schedule_lateness_ms": 0.690012,
+        "provider_boundary_ms": 0.017507,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 2,
+        "end_sample": 3600,
+        "audio_end_ms": 150,
+        "invocation_start_ms": 150.838531,
+        "schedule_lateness_ms": 0.838531,
+        "provider_boundary_ms": 0.028714,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 3,
+        "end_sample": 4800,
+        "audio_end_ms": 200,
+        "invocation_start_ms": 201.034865,
+        "schedule_lateness_ms": 1.034865,
+        "provider_boundary_ms": 30.024401,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 4,
+        "end_sample": 6000,
+        "audio_end_ms": 250,
+        "invocation_start_ms": 250.604721,
+        "schedule_lateness_ms": 0.604721,
+        "provider_boundary_ms": 0.001954,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 5,
+        "end_sample": 7200,
+        "audio_end_ms": 300,
+        "invocation_start_ms": 300.793509,
+        "schedule_lateness_ms": 0.793509,
+        "provider_boundary_ms": 0.002047,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 6,
+        "end_sample": 8400,
+        "audio_end_ms": 350,
+        "invocation_start_ms": 350.179121,
+        "schedule_lateness_ms": 0.179121,
+        "provider_boundary_ms": 0.002447,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 7,
+        "end_sample": 9600,
+        "audio_end_ms": 400,
+        "invocation_start_ms": 400.346786,
+        "schedule_lateness_ms": 0.346786,
+        "provider_boundary_ms": 29.742918,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 8,
+        "end_sample": 10800,
+        "audio_end_ms": 450,
+        "invocation_start_ms": 450.08892,
+        "schedule_lateness_ms": 0.08892,
+        "provider_boundary_ms": 0.002697,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 9,
+        "end_sample": 12000,
+        "audio_end_ms": 500,
+        "invocation_start_ms": 500.831309,
+        "schedule_lateness_ms": 0.831309,
+        "provider_boundary_ms": 0.002652,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 10,
+        "end_sample": 13200,
+        "audio_end_ms": 550,
+        "invocation_start_ms": 550.186849,
+        "schedule_lateness_ms": 0.186849,
+        "provider_boundary_ms": 0.001633,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 11,
+        "end_sample": 14400,
+        "audio_end_ms": 600,
+        "invocation_start_ms": 600.34846,
+        "schedule_lateness_ms": 0.34846,
+        "provider_boundary_ms": 30.871617,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 12,
+        "end_sample": 15600,
+        "audio_end_ms": 650,
+        "invocation_start_ms": 650.314095,
+        "schedule_lateness_ms": 0.314095,
+        "provider_boundary_ms": 0.001661,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 13,
+        "end_sample": 16800,
+        "audio_end_ms": 700,
+        "invocation_start_ms": 700.233246,
+        "schedule_lateness_ms": 0.233246,
+        "provider_boundary_ms": 0.001691,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 14,
+        "end_sample": 18000,
+        "audio_end_ms": 750,
+        "invocation_start_ms": 750.773049,
+        "schedule_lateness_ms": 0.773049,
+        "provider_boundary_ms": 0.001984,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 15,
+        "end_sample": 19200,
+        "audio_end_ms": 800,
+        "invocation_start_ms": 800.896226,
+        "schedule_lateness_ms": 0.896226,
+        "provider_boundary_ms": 36.915547,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 16,
+        "end_sample": 20400,
+        "audio_end_ms": 850,
+        "invocation_start_ms": 850.762781,
+        "schedule_lateness_ms": 0.762781,
+        "provider_boundary_ms": 0.00228,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 17,
+        "end_sample": 21600,
+        "audio_end_ms": 900,
+        "invocation_start_ms": 900.82789,
+        "schedule_lateness_ms": 0.82789,
+        "provider_boundary_ms": 0.001976,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 18,
+        "end_sample": 22800,
+        "audio_end_ms": 950,
+        "invocation_start_ms": 950.450809,
+        "schedule_lateness_ms": 0.450809,
+        "provider_boundary_ms": 0.001789,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 19,
+        "end_sample": 24000,
+        "audio_end_ms": 1000,
+        "invocation_start_ms": 1001.04077,
+        "schedule_lateness_ms": 1.04077,
+        "provider_boundary_ms": 36.240352,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 20,
+        "end_sample": 25200,
+        "audio_end_ms": 1050,
+        "invocation_start_ms": 1050.557093,
+        "schedule_lateness_ms": 0.557093,
+        "provider_boundary_ms": 0.002704,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 21,
+        "end_sample": 26400,
+        "audio_end_ms": 1100,
+        "invocation_start_ms": 1100.063936,
+        "schedule_lateness_ms": 0.063936,
+        "provider_boundary_ms": 0.001739,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 22,
+        "end_sample": 27600,
+        "audio_end_ms": 1150,
+        "invocation_start_ms": 1150.632418,
+        "schedule_lateness_ms": 0.632418,
+        "provider_boundary_ms": 0.00146,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 23,
+        "end_sample": 28800,
+        "audio_end_ms": 1200,
+        "invocation_start_ms": 1200.453841,
+        "schedule_lateness_ms": 0.453841,
+        "provider_boundary_ms": 51.408016,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 24,
+        "end_sample": 30000,
+        "audio_end_ms": 1250,
+        "invocation_start_ms": 1251.941367,
+        "schedule_lateness_ms": 1.941367,
+        "provider_boundary_ms": 0.00109,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 25,
+        "end_sample": 31200,
+        "audio_end_ms": 1300,
+        "invocation_start_ms": 1300.673333,
+        "schedule_lateness_ms": 0.673333,
+        "provider_boundary_ms": 0.002273,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 26,
+        "end_sample": 32400,
+        "audio_end_ms": 1350,
+        "invocation_start_ms": 1350.901484,
+        "schedule_lateness_ms": 0.901484,
+        "provider_boundary_ms": 0.001239,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 27,
+        "end_sample": 33600,
+        "audio_end_ms": 1400,
+        "invocation_start_ms": 1400.913394,
+        "schedule_lateness_ms": 0.913394,
+        "provider_boundary_ms": 27.866343,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 28,
+        "end_sample": 34800,
+        "audio_end_ms": 1450,
+        "invocation_start_ms": 1452.7776,
+        "schedule_lateness_ms": 2.7776,
+        "provider_boundary_ms": 0.00244,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 29,
+        "end_sample": 36000,
+        "audio_end_ms": 1500,
+        "invocation_start_ms": 1501.06193,
+        "schedule_lateness_ms": 1.06193,
+        "provider_boundary_ms": 0.001738,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 30,
+        "end_sample": 37200,
+        "audio_end_ms": 1550,
+        "invocation_start_ms": 1552.628302,
+        "schedule_lateness_ms": 2.628302,
+        "provider_boundary_ms": 0.001559,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 31,
+        "end_sample": 38400,
+        "audio_end_ms": 1600,
+        "invocation_start_ms": 1600.101725,
+        "schedule_lateness_ms": 0.101725,
+        "provider_boundary_ms": 42.851526,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 32,
+        "end_sample": 39600,
+        "audio_end_ms": 1650,
+        "invocation_start_ms": 1650.164079,
+        "schedule_lateness_ms": 0.164079,
+        "provider_boundary_ms": 0.001758,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 33,
+        "end_sample": 40800,
+        "audio_end_ms": 1700,
+        "invocation_start_ms": 1700.735694,
+        "schedule_lateness_ms": 0.735694,
+        "provider_boundary_ms": 0.001884,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 34,
+        "end_sample": 42000,
+        "audio_end_ms": 1750,
+        "invocation_start_ms": 1750.970136,
+        "schedule_lateness_ms": 0.970136,
+        "provider_boundary_ms": 0.001327,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 35,
+        "end_sample": 43200,
+        "audio_end_ms": 1800,
+        "invocation_start_ms": 1800.306553,
+        "schedule_lateness_ms": 0.306553,
+        "provider_boundary_ms": 35.734652,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 36,
+        "end_sample": 44400,
+        "audio_end_ms": 1850,
+        "invocation_start_ms": 1850.313987,
+        "schedule_lateness_ms": 0.313987,
+        "provider_boundary_ms": 0.00183,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 37,
+        "end_sample": 45600,
+        "audio_end_ms": 1900,
+        "invocation_start_ms": 1900.725426,
+        "schedule_lateness_ms": 0.725426,
+        "provider_boundary_ms": 0.001995,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 38,
+        "end_sample": 46800,
+        "audio_end_ms": 1950,
+        "invocation_start_ms": 1950.706491,
+        "schedule_lateness_ms": 0.706491,
+        "provider_boundary_ms": 0.001612,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 39,
+        "end_sample": 48000,
+        "audio_end_ms": 2000,
+        "invocation_start_ms": 2000.894282,
+        "schedule_lateness_ms": 0.894282,
+        "provider_boundary_ms": 35.185332,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 40,
+        "end_sample": 49200,
+        "audio_end_ms": 2050,
+        "invocation_start_ms": 2050.793627,
+        "schedule_lateness_ms": 0.793627,
+        "provider_boundary_ms": 0.002109,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 41,
+        "end_sample": 50400,
+        "audio_end_ms": 2100,
+        "invocation_start_ms": 2100.967809,
+        "schedule_lateness_ms": 0.967809,
+        "provider_boundary_ms": 0.00174,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 42,
+        "end_sample": 51600,
+        "audio_end_ms": 2150,
+        "invocation_start_ms": 2151.78114,
+        "schedule_lateness_ms": 1.78114,
+        "provider_boundary_ms": 0.001408,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 43,
+        "end_sample": 52800,
+        "audio_end_ms": 2200,
+        "invocation_start_ms": 2200.961406,
+        "schedule_lateness_ms": 0.961406,
+        "provider_boundary_ms": 31.811588,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 44,
+        "end_sample": 54000,
+        "audio_end_ms": 2250,
+        "invocation_start_ms": 2250.989908,
+        "schedule_lateness_ms": 0.989908,
+        "provider_boundary_ms": 0.00208,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 45,
+        "end_sample": 55200,
+        "audio_end_ms": 2300,
+        "invocation_start_ms": 2300.444288,
+        "schedule_lateness_ms": 0.444288,
+        "provider_boundary_ms": 0.001797,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 46,
+        "end_sample": 56400,
+        "audio_end_ms": 2350,
+        "invocation_start_ms": 2350.947654,
+        "schedule_lateness_ms": 0.947654,
+        "provider_boundary_ms": 0.002433,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 47,
+        "end_sample": 57600,
+        "audio_end_ms": 2400,
+        "invocation_start_ms": 2400.681948,
+        "schedule_lateness_ms": 0.681948,
+        "provider_boundary_ms": 50.928779,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 48,
+        "end_sample": 58800,
+        "audio_end_ms": 2450,
+        "invocation_start_ms": 2451.615334,
+        "schedule_lateness_ms": 1.615334,
+        "provider_boundary_ms": 0.000895,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 49,
+        "end_sample": 60000,
+        "audio_end_ms": 2500,
+        "invocation_start_ms": 2500.76134,
+        "schedule_lateness_ms": 0.76134,
+        "provider_boundary_ms": 0.002042,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 50,
+        "end_sample": 61200,
+        "audio_end_ms": 2550,
+        "invocation_start_ms": 2550.886772,
+        "schedule_lateness_ms": 0.886772,
+        "provider_boundary_ms": 0.002352,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 51,
+        "end_sample": 62400,
+        "audio_end_ms": 2600,
+        "invocation_start_ms": 2601.03145,
+        "schedule_lateness_ms": 1.03145,
+        "provider_boundary_ms": 45.253325,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 52,
+        "end_sample": 63600,
+        "audio_end_ms": 2650,
+        "invocation_start_ms": 2650.722305,
+        "schedule_lateness_ms": 0.722305,
+        "provider_boundary_ms": 0.001739,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 53,
+        "end_sample": 64800,
+        "audio_end_ms": 2700,
+        "invocation_start_ms": 2700.82207,
+        "schedule_lateness_ms": 0.82207,
+        "provider_boundary_ms": 0.001693,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 54,
+        "end_sample": 66000,
+        "audio_end_ms": 2750,
+        "invocation_start_ms": 2750.979847,
+        "schedule_lateness_ms": 0.979847,
+        "provider_boundary_ms": 0.001872,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 55,
+        "end_sample": 67200,
+        "audio_end_ms": 2800,
+        "invocation_start_ms": 2800.094111,
+        "schedule_lateness_ms": 0.094111,
+        "provider_boundary_ms": 34.116793,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 56,
+        "end_sample": 68400,
+        "audio_end_ms": 2850,
+        "invocation_start_ms": 2850.36902,
+        "schedule_lateness_ms": 0.36902,
+        "provider_boundary_ms": 0.001866,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 57,
+        "end_sample": 69600,
+        "audio_end_ms": 2900,
+        "invocation_start_ms": 2900.52914,
+        "schedule_lateness_ms": 0.52914,
+        "provider_boundary_ms": 0.002495,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 58,
+        "end_sample": 70800,
+        "audio_end_ms": 2950,
+        "invocation_start_ms": 2950.688167,
+        "schedule_lateness_ms": 0.688167,
+        "provider_boundary_ms": 0.00166,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 59,
+        "end_sample": 72000,
+        "audio_end_ms": 3000,
+        "invocation_start_ms": 3000.831179,
+        "schedule_lateness_ms": 0.831179,
+        "provider_boundary_ms": 35.149821,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 60,
+        "end_sample": 73200,
+        "audio_end_ms": 3050,
+        "invocation_start_ms": 3050.038534,
+        "schedule_lateness_ms": 0.038534,
+        "provider_boundary_ms": 0.001923,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 61,
+        "end_sample": 74400,
+        "audio_end_ms": 3100,
+        "invocation_start_ms": 3100.821859,
+        "schedule_lateness_ms": 0.821859,
+        "provider_boundary_ms": 0.002468,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 62,
+        "end_sample": 75600,
+        "audio_end_ms": 3150,
+        "invocation_start_ms": 3150.984126,
+        "schedule_lateness_ms": 0.984126,
+        "provider_boundary_ms": 0.00232,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 63,
+        "end_sample": 76800,
+        "audio_end_ms": 3200,
+        "invocation_start_ms": 3200.896343,
+        "schedule_lateness_ms": 0.896343,
+        "provider_boundary_ms": 44.644223,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 64,
+        "end_sample": 78000,
+        "audio_end_ms": 3250,
+        "invocation_start_ms": 3250.709297,
+        "schedule_lateness_ms": 0.709297,
+        "provider_boundary_ms": 0.002458,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 65,
+        "end_sample": 79200,
+        "audio_end_ms": 3300,
+        "invocation_start_ms": 3300.771136,
+        "schedule_lateness_ms": 0.771136,
+        "provider_boundary_ms": 0.002277,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 66,
+        "end_sample": 80400,
+        "audio_end_ms": 3350,
+        "invocation_start_ms": 3352.769922,
+        "schedule_lateness_ms": 2.769922,
+        "provider_boundary_ms": 0.001777,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 67,
+        "end_sample": 81600,
+        "audio_end_ms": 3400,
+        "invocation_start_ms": 3400.943399,
+        "schedule_lateness_ms": 0.943399,
+        "provider_boundary_ms": 37.284807,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 68,
+        "end_sample": 82800,
+        "audio_end_ms": 3450,
+        "invocation_start_ms": 3450.905266,
+        "schedule_lateness_ms": 0.905266,
+        "provider_boundary_ms": 0.002101,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 69,
+        "end_sample": 84000,
+        "audio_end_ms": 3500,
+        "invocation_start_ms": 3500.066057,
+        "schedule_lateness_ms": 0.066057,
+        "provider_boundary_ms": 0.003188,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 70,
+        "end_sample": 85200,
+        "audio_end_ms": 3550,
+        "invocation_start_ms": 3550.730577,
+        "schedule_lateness_ms": 0.730577,
+        "provider_boundary_ms": 0.002119,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 71,
+        "end_sample": 86400,
+        "audio_end_ms": 3600,
+        "invocation_start_ms": 3600.598961,
+        "schedule_lateness_ms": 0.598961,
+        "provider_boundary_ms": 46.659359,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 72,
+        "end_sample": 87600,
+        "audio_end_ms": 3650,
+        "invocation_start_ms": 3650.42361,
+        "schedule_lateness_ms": 0.42361,
+        "provider_boundary_ms": 0.001763,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 73,
+        "end_sample": 88800,
+        "audio_end_ms": 3700,
+        "invocation_start_ms": 3700.588299,
+        "schedule_lateness_ms": 0.588299,
+        "provider_boundary_ms": 0.00205,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 74,
+        "end_sample": 90000,
+        "audio_end_ms": 3750,
+        "invocation_start_ms": 3751.767202,
+        "schedule_lateness_ms": 1.767202,
+        "provider_boundary_ms": 0.001819,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 75,
+        "end_sample": 91200,
+        "audio_end_ms": 3800,
+        "invocation_start_ms": 3800.936543,
+        "schedule_lateness_ms": 0.936543,
+        "provider_boundary_ms": 36.521533,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 76,
+        "end_sample": 92400,
+        "audio_end_ms": 3850,
+        "invocation_start_ms": 3850.598423,
+        "schedule_lateness_ms": 0.598423,
+        "provider_boundary_ms": 0.002457,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 77,
+        "end_sample": 93600,
+        "audio_end_ms": 3900,
+        "invocation_start_ms": 3900.762798,
+        "schedule_lateness_ms": 0.762798,
+        "provider_boundary_ms": 0.002394,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 78,
+        "end_sample": 94800,
+        "audio_end_ms": 3950,
+        "invocation_start_ms": 3950.925474,
+        "schedule_lateness_ms": 0.925474,
+        "provider_boundary_ms": 0.001612,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 79,
+        "end_sample": 96000,
+        "audio_end_ms": 4000,
+        "invocation_start_ms": 4000.022288,
+        "schedule_lateness_ms": 0.022288,
+        "provider_boundary_ms": 35.542045,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 80,
+        "end_sample": 97200,
+        "audio_end_ms": 4050,
+        "invocation_start_ms": 4050.156851,
+        "schedule_lateness_ms": 0.156851,
+        "provider_boundary_ms": 0.002086,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 81,
+        "end_sample": 98400,
+        "audio_end_ms": 4100,
+        "invocation_start_ms": 4100.295079,
+        "schedule_lateness_ms": 0.295079,
+        "provider_boundary_ms": 0.001594,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 82,
+        "end_sample": 99600,
+        "audio_end_ms": 4150,
+        "invocation_start_ms": 4151.448396,
+        "schedule_lateness_ms": 1.448396,
+        "provider_boundary_ms": 0.001192,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 83,
+        "end_sample": 100800,
+        "audio_end_ms": 4200,
+        "invocation_start_ms": 4200.175596,
+        "schedule_lateness_ms": 0.175596,
+        "provider_boundary_ms": 34.816756,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 84,
+        "end_sample": 102000,
+        "audio_end_ms": 4250,
+        "invocation_start_ms": 4250.155683,
+        "schedule_lateness_ms": 0.155683,
+        "provider_boundary_ms": 0.001577,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 85,
+        "end_sample": 103200,
+        "audio_end_ms": 4300,
+        "invocation_start_ms": 4300.30324,
+        "schedule_lateness_ms": 0.30324,
+        "provider_boundary_ms": 0.001534,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 86,
+        "end_sample": 104400,
+        "audio_end_ms": 4350,
+        "invocation_start_ms": 4350.450372,
+        "schedule_lateness_ms": 0.450372,
+        "provider_boundary_ms": 0.002415,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 87,
+        "end_sample": 105600,
+        "audio_end_ms": 4400,
+        "invocation_start_ms": 4400.594818,
+        "schedule_lateness_ms": 0.594818,
+        "provider_boundary_ms": 34.725588,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 88,
+        "end_sample": 106800,
+        "audio_end_ms": 4450,
+        "invocation_start_ms": 4450.503095,
+        "schedule_lateness_ms": 0.503095,
+        "provider_boundary_ms": 0.002171,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 89,
+        "end_sample": 108000,
+        "audio_end_ms": 4500,
+        "invocation_start_ms": 4501.158031,
+        "schedule_lateness_ms": 1.158031,
+        "provider_boundary_ms": 0.001795,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 90,
+        "end_sample": 109200,
+        "audio_end_ms": 4550,
+        "invocation_start_ms": 4550.320444,
+        "schedule_lateness_ms": 0.320444,
+        "provider_boundary_ms": 0.001611,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 91,
+        "end_sample": 110400,
+        "audio_end_ms": 4600,
+        "invocation_start_ms": 4600.475341,
+        "schedule_lateness_ms": 0.475341,
+        "provider_boundary_ms": 32.54125,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 92,
+        "end_sample": 111600,
+        "audio_end_ms": 4650,
+        "invocation_start_ms": 4650.224872,
+        "schedule_lateness_ms": 0.224872,
+        "provider_boundary_ms": 0.002144,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 93,
+        "end_sample": 112800,
+        "audio_end_ms": 4700,
+        "invocation_start_ms": 4700.382854,
+        "schedule_lateness_ms": 0.382854,
+        "provider_boundary_ms": 0.001593,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 94,
+        "end_sample": 114000,
+        "audio_end_ms": 4750,
+        "invocation_start_ms": 4750.551667,
+        "schedule_lateness_ms": 0.551667,
+        "provider_boundary_ms": 0.001987,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 95,
+        "end_sample": 115200,
+        "audio_end_ms": 4800,
+        "invocation_start_ms": 4800.717637,
+        "schedule_lateness_ms": 0.717637,
+        "provider_boundary_ms": 43.12138,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 96,
+        "end_sample": 116400,
+        "audio_end_ms": 4850,
+        "invocation_start_ms": 4850.096105,
+        "schedule_lateness_ms": 0.096105,
+        "provider_boundary_ms": 0.002392,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 97,
+        "end_sample": 117600,
+        "audio_end_ms": 4900,
+        "invocation_start_ms": 4900.170958,
+        "schedule_lateness_ms": 0.170958,
+        "provider_boundary_ms": 0.00197,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 98,
+        "end_sample": 118800,
+        "audio_end_ms": 4950,
+        "invocation_start_ms": 4950.234213,
+        "schedule_lateness_ms": 0.234213,
+        "provider_boundary_ms": 0.002324,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 99,
+        "end_sample": 120000,
+        "audio_end_ms": 5000,
+        "invocation_start_ms": 5000.760249,
+        "schedule_lateness_ms": 0.760249,
+        "provider_boundary_ms": 39.26075,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 100,
+        "end_sample": 121200,
+        "audio_end_ms": 5050,
+        "invocation_start_ms": 5050.741318,
+        "schedule_lateness_ms": 0.741318,
+        "provider_boundary_ms": 0.001844,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 101,
+        "end_sample": 122400,
+        "audio_end_ms": 5100,
+        "invocation_start_ms": 5100.760079,
+        "schedule_lateness_ms": 0.760079,
+        "provider_boundary_ms": 0.002143,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 102,
+        "end_sample": 123600,
+        "audio_end_ms": 5150,
+        "invocation_start_ms": 5150.440419,
+        "schedule_lateness_ms": 0.440419,
+        "provider_boundary_ms": 0.002417,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 103,
+        "end_sample": 124800,
+        "audio_end_ms": 5200,
+        "invocation_start_ms": 5200.34517,
+        "schedule_lateness_ms": 0.34517,
+        "provider_boundary_ms": 42.311339,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 104,
+        "end_sample": 126000,
+        "audio_end_ms": 5250,
+        "invocation_start_ms": 5250.030216,
+        "schedule_lateness_ms": 0.030216,
+        "provider_boundary_ms": 0.001834,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 105,
+        "end_sample": 127200,
+        "audio_end_ms": 5300,
+        "invocation_start_ms": 5300.054629,
+        "schedule_lateness_ms": 0.054629,
+        "provider_boundary_ms": 0.001608,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 106,
+        "end_sample": 128400,
+        "audio_end_ms": 5350,
+        "invocation_start_ms": 5350.501401,
+        "schedule_lateness_ms": 0.501401,
+        "provider_boundary_ms": 0.001299,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 107,
+        "end_sample": 129600,
+        "audio_end_ms": 5400,
+        "invocation_start_ms": 5400.30976,
+        "schedule_lateness_ms": 0.30976,
+        "provider_boundary_ms": 44.129376,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 108,
+        "end_sample": 130800,
+        "audio_end_ms": 5450,
+        "invocation_start_ms": 5450.601164,
+        "schedule_lateness_ms": 0.601164,
+        "provider_boundary_ms": 0.002577,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 109,
+        "end_sample": 132000,
+        "audio_end_ms": 5500,
+        "invocation_start_ms": 5501.765811,
+        "schedule_lateness_ms": 1.765811,
+        "provider_boundary_ms": 0.00209,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 110,
+        "end_sample": 133200,
+        "audio_end_ms": 5550,
+        "invocation_start_ms": 5550.940183,
+        "schedule_lateness_ms": 0.940183,
+        "provider_boundary_ms": 0.001513,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 111,
+        "end_sample": 134400,
+        "audio_end_ms": 5600,
+        "invocation_start_ms": 5600.040854,
+        "schedule_lateness_ms": 0.040854,
+        "provider_boundary_ms": 49.462486,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 112,
+        "end_sample": 135600,
+        "audio_end_ms": 5650,
+        "invocation_start_ms": 5650.852654,
+        "schedule_lateness_ms": 0.852654,
+        "provider_boundary_ms": 0.001581,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 113,
+        "end_sample": 136800,
+        "audio_end_ms": 5700,
+        "invocation_start_ms": 5701.035707,
+        "schedule_lateness_ms": 1.035707,
+        "provider_boundary_ms": 0.0019,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 114,
+        "end_sample": 138000,
+        "audio_end_ms": 5750,
+        "invocation_start_ms": 5750.663018,
+        "schedule_lateness_ms": 0.663018,
+        "provider_boundary_ms": 0.001679,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 115,
+        "end_sample": 139200,
+        "audio_end_ms": 5800,
+        "invocation_start_ms": 5800.459477,
+        "schedule_lateness_ms": 0.459477,
+        "provider_boundary_ms": 32.400608,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 116,
+        "end_sample": 140400,
+        "audio_end_ms": 5850,
+        "invocation_start_ms": 5850.994416,
+        "schedule_lateness_ms": 0.994416,
+        "provider_boundary_ms": 0.0022,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 117,
+        "end_sample": 141600,
+        "audio_end_ms": 5900,
+        "invocation_start_ms": 5900.514975,
+        "schedule_lateness_ms": 0.514975,
+        "provider_boundary_ms": 0.001887,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 118,
+        "end_sample": 142800,
+        "audio_end_ms": 5950,
+        "invocation_start_ms": 5950.348676,
+        "schedule_lateness_ms": 0.348676,
+        "provider_boundary_ms": 0.002402,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 119,
+        "end_sample": 144000,
+        "audio_end_ms": 6000,
+        "invocation_start_ms": 6000.235257,
+        "schedule_lateness_ms": 0.235257,
+        "provider_boundary_ms": 37.246614,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 120,
+        "end_sample": 145200,
+        "audio_end_ms": 6050,
+        "invocation_start_ms": 6050.603498,
+        "schedule_lateness_ms": 0.603498,
+        "provider_boundary_ms": 0.001989,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 121,
+        "end_sample": 146400,
+        "audio_end_ms": 6100,
+        "invocation_start_ms": 6100.765738,
+        "schedule_lateness_ms": 0.765738,
+        "provider_boundary_ms": 0.002634,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 122,
+        "end_sample": 147600,
+        "audio_end_ms": 6150,
+        "invocation_start_ms": 6150.909888,
+        "schedule_lateness_ms": 0.909888,
+        "provider_boundary_ms": 0.002169,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 123,
+        "end_sample": 148800,
+        "audio_end_ms": 6200,
+        "invocation_start_ms": 6201.033635,
+        "schedule_lateness_ms": 1.033635,
+        "provider_boundary_ms": 32.572135,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 124,
+        "end_sample": 150000,
+        "audio_end_ms": 6250,
+        "invocation_start_ms": 6250.800894,
+        "schedule_lateness_ms": 0.800894,
+        "provider_boundary_ms": 0.002037,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 125,
+        "end_sample": 151200,
+        "audio_end_ms": 6300,
+        "invocation_start_ms": 6300.912761,
+        "schedule_lateness_ms": 0.912761,
+        "provider_boundary_ms": 0.002254,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 126,
+        "end_sample": 152400,
+        "audio_end_ms": 6350,
+        "invocation_start_ms": 6352.065622,
+        "schedule_lateness_ms": 2.065622,
+        "provider_boundary_ms": 0.002067,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 127,
+        "end_sample": 153600,
+        "audio_end_ms": 6400,
+        "invocation_start_ms": 6400.251105,
+        "schedule_lateness_ms": 0.251105,
+        "provider_boundary_ms": 36.534465,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 128,
+        "end_sample": 154800,
+        "audio_end_ms": 6450,
+        "invocation_start_ms": 6450.932718,
+        "schedule_lateness_ms": 0.932718,
+        "provider_boundary_ms": 0.004966,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 129,
+        "end_sample": 156000,
+        "audio_end_ms": 6500,
+        "invocation_start_ms": 6500.058176,
+        "schedule_lateness_ms": 0.058176,
+        "provider_boundary_ms": 0.003496,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 130,
+        "end_sample": 157200,
+        "audio_end_ms": 6550,
+        "invocation_start_ms": 6550.220469,
+        "schedule_lateness_ms": 0.220469,
+        "provider_boundary_ms": 0.001991,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 131,
+        "end_sample": 158400,
+        "audio_end_ms": 6600,
+        "invocation_start_ms": 6600.713931,
+        "schedule_lateness_ms": 0.713931,
+        "provider_boundary_ms": 34.001474,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 132,
+        "end_sample": 159600,
+        "audio_end_ms": 6650,
+        "invocation_start_ms": 6650.811312,
+        "schedule_lateness_ms": 0.811312,
+        "provider_boundary_ms": 0.002187,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 133,
+        "end_sample": 160800,
+        "audio_end_ms": 6700,
+        "invocation_start_ms": 6700.96304,
+        "schedule_lateness_ms": 0.96304,
+        "provider_boundary_ms": 0.001924,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 134,
+        "end_sample": 162000,
+        "audio_end_ms": 6750,
+        "invocation_start_ms": 6750.06604,
+        "schedule_lateness_ms": 0.06604,
+        "provider_boundary_ms": 0.00199,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 135,
+        "end_sample": 163200,
+        "audio_end_ms": 6800,
+        "invocation_start_ms": 6800.230061,
+        "schedule_lateness_ms": 0.230061,
+        "provider_boundary_ms": 40.232335,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 136,
+        "end_sample": 164400,
+        "audio_end_ms": 6850,
+        "invocation_start_ms": 6850.670592,
+        "schedule_lateness_ms": 0.670592,
+        "provider_boundary_ms": 0.002531,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 137,
+        "end_sample": 165600,
+        "audio_end_ms": 6900,
+        "invocation_start_ms": 6901.775478,
+        "schedule_lateness_ms": 1.775478,
+        "provider_boundary_ms": 0.002076,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 138,
+        "end_sample": 166800,
+        "audio_end_ms": 6950,
+        "invocation_start_ms": 6950.858641,
+        "schedule_lateness_ms": 0.858641,
+        "provider_boundary_ms": 0.001959,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 139,
+        "end_sample": 168000,
+        "audio_end_ms": 7000,
+        "invocation_start_ms": 7000.525075,
+        "schedule_lateness_ms": 0.525075,
+        "provider_boundary_ms": 42.83836,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 140,
+        "end_sample": 169200,
+        "audio_end_ms": 7050,
+        "invocation_start_ms": 7050.598917,
+        "schedule_lateness_ms": 0.598917,
+        "provider_boundary_ms": 0.002048,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 141,
+        "end_sample": 170400,
+        "audio_end_ms": 7100,
+        "invocation_start_ms": 7101.265822,
+        "schedule_lateness_ms": 1.265822,
+        "provider_boundary_ms": 0.002005,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 142,
+        "end_sample": 171600,
+        "audio_end_ms": 7150,
+        "invocation_start_ms": 7150.981186,
+        "schedule_lateness_ms": 0.981186,
+        "provider_boundary_ms": 0.002091,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 143,
+        "end_sample": 172800,
+        "audio_end_ms": 7200,
+        "invocation_start_ms": 7200.770336,
+        "schedule_lateness_ms": 0.770336,
+        "provider_boundary_ms": 36.103064,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 144,
+        "end_sample": 174000,
+        "audio_end_ms": 7250,
+        "invocation_start_ms": 7250.530798,
+        "schedule_lateness_ms": 0.530798,
+        "provider_boundary_ms": 0.002823,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 145,
+        "end_sample": 175200,
+        "audio_end_ms": 7300,
+        "invocation_start_ms": 7300.580453,
+        "schedule_lateness_ms": 0.580453,
+        "provider_boundary_ms": 0.002189,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 146,
+        "end_sample": 176400,
+        "audio_end_ms": 7350,
+        "invocation_start_ms": 7350.812941,
+        "schedule_lateness_ms": 0.812941,
+        "provider_boundary_ms": 0.001891,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 147,
+        "end_sample": 177600,
+        "audio_end_ms": 7400,
+        "invocation_start_ms": 7400.058469,
+        "schedule_lateness_ms": 0.058469,
+        "provider_boundary_ms": 33.777594,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 148,
+        "end_sample": 178800,
+        "audio_end_ms": 7450,
+        "invocation_start_ms": 7450.98108,
+        "schedule_lateness_ms": 0.98108,
+        "provider_boundary_ms": 0.00253,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 149,
+        "end_sample": 180000,
+        "audio_end_ms": 7500,
+        "invocation_start_ms": 7500.080201,
+        "schedule_lateness_ms": 0.080201,
+        "provider_boundary_ms": 0.002319,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 150,
+        "end_sample": 181200,
+        "audio_end_ms": 7550,
+        "invocation_start_ms": 7550.238983,
+        "schedule_lateness_ms": 0.238983,
+        "provider_boundary_ms": 0.001753,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 151,
+        "end_sample": 182400,
+        "audio_end_ms": 7600,
+        "invocation_start_ms": 7600.376953,
+        "schedule_lateness_ms": 0.376953,
+        "provider_boundary_ms": 41.531578,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 152,
+        "end_sample": 183600,
+        "audio_end_ms": 7650,
+        "invocation_start_ms": 7650.297401,
+        "schedule_lateness_ms": 0.297401,
+        "provider_boundary_ms": 0.002278,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 153,
+        "end_sample": 184800,
+        "audio_end_ms": 7700,
+        "invocation_start_ms": 7700.461462,
+        "schedule_lateness_ms": 0.461462,
+        "provider_boundary_ms": 0.002342,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 154,
+        "end_sample": 186000,
+        "audio_end_ms": 7750,
+        "invocation_start_ms": 7750.496505,
+        "schedule_lateness_ms": 0.496505,
+        "provider_boundary_ms": 0.002337,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 155,
+        "end_sample": 187200,
+        "audio_end_ms": 7800,
+        "invocation_start_ms": 7800.845477,
+        "schedule_lateness_ms": 0.845477,
+        "provider_boundary_ms": 32.037219,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 156,
+        "end_sample": 188400,
+        "audio_end_ms": 7850,
+        "invocation_start_ms": 7851.03234,
+        "schedule_lateness_ms": 1.03234,
+        "provider_boundary_ms": 0.002617,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 157,
+        "end_sample": 189600,
+        "audio_end_ms": 7900,
+        "invocation_start_ms": 7900.160726,
+        "schedule_lateness_ms": 0.160726,
+        "provider_boundary_ms": 0.00218,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 158,
+        "end_sample": 190800,
+        "audio_end_ms": 7950,
+        "invocation_start_ms": 7950.309014,
+        "schedule_lateness_ms": 0.309014,
+        "provider_boundary_ms": 0.001801,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 159,
+        "end_sample": 192000,
+        "audio_end_ms": 8000,
+        "invocation_start_ms": 8000.44908,
+        "schedule_lateness_ms": 0.44908,
+        "provider_boundary_ms": 41.771807,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 160,
+        "end_sample": 193200,
+        "audio_end_ms": 8050,
+        "invocation_start_ms": 8050.65776,
+        "schedule_lateness_ms": 0.65776,
+        "provider_boundary_ms": 0.00202,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 161,
+        "end_sample": 194400,
+        "audio_end_ms": 8100,
+        "invocation_start_ms": 8100.608489,
+        "schedule_lateness_ms": 0.608489,
+        "provider_boundary_ms": 0.002067,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 162,
+        "end_sample": 195600,
+        "audio_end_ms": 8150,
+        "invocation_start_ms": 8151.06472,
+        "schedule_lateness_ms": 1.06472,
+        "provider_boundary_ms": 0.002015,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 163,
+        "end_sample": 196800,
+        "audio_end_ms": 8200,
+        "invocation_start_ms": 8200.605548,
+        "schedule_lateness_ms": 0.605548,
+        "provider_boundary_ms": 36.158111,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 164,
+        "end_sample": 198000,
+        "audio_end_ms": 8250,
+        "invocation_start_ms": 8250.895634,
+        "schedule_lateness_ms": 0.895634,
+        "provider_boundary_ms": 0.001897,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 165,
+        "end_sample": 199200,
+        "audio_end_ms": 8300,
+        "invocation_start_ms": 8300.959607,
+        "schedule_lateness_ms": 0.959607,
+        "provider_boundary_ms": 0.001723,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 166,
+        "end_sample": 200400,
+        "audio_end_ms": 8350,
+        "invocation_start_ms": 8350.517506,
+        "schedule_lateness_ms": 0.517506,
+        "provider_boundary_ms": 0.001908,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 167,
+        "end_sample": 201600,
+        "audio_end_ms": 8400,
+        "invocation_start_ms": 8400.453339,
+        "schedule_lateness_ms": 0.453339,
+        "provider_boundary_ms": 37.915914,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 168,
+        "end_sample": 202800,
+        "audio_end_ms": 8450,
+        "invocation_start_ms": 8450.543816,
+        "schedule_lateness_ms": 0.543816,
+        "provider_boundary_ms": 0.001928,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 169,
+        "end_sample": 204000,
+        "audio_end_ms": 8500,
+        "invocation_start_ms": 8501.772186,
+        "schedule_lateness_ms": 1.772186,
+        "provider_boundary_ms": 0.002704,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 170,
+        "end_sample": 205200,
+        "audio_end_ms": 8550,
+        "invocation_start_ms": 8550.775168,
+        "schedule_lateness_ms": 0.775168,
+        "provider_boundary_ms": 0.001887,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 171,
+        "end_sample": 206400,
+        "audio_end_ms": 8600,
+        "invocation_start_ms": 8600.935386,
+        "schedule_lateness_ms": 0.935386,
+        "provider_boundary_ms": 34.334054,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 172,
+        "end_sample": 207600,
+        "audio_end_ms": 8650,
+        "invocation_start_ms": 8650.392833,
+        "schedule_lateness_ms": 0.392833,
+        "provider_boundary_ms": 0.002414,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 173,
+        "end_sample": 208800,
+        "audio_end_ms": 8700,
+        "invocation_start_ms": 8701.774763,
+        "schedule_lateness_ms": 1.774763,
+        "provider_boundary_ms": 0.001856,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 174,
+        "end_sample": 210000,
+        "audio_end_ms": 8750,
+        "invocation_start_ms": 8750.947276,
+        "schedule_lateness_ms": 0.947276,
+        "provider_boundary_ms": 0.002252,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 175,
+        "end_sample": 211200,
+        "audio_end_ms": 8800,
+        "invocation_start_ms": 8800.047645,
+        "schedule_lateness_ms": 0.047645,
+        "provider_boundary_ms": 40.639122,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 176,
+        "end_sample": 212400,
+        "audio_end_ms": 8850,
+        "invocation_start_ms": 8850.913804,
+        "schedule_lateness_ms": 0.913804,
+        "provider_boundary_ms": 0.002065,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 177,
+        "end_sample": 213600,
+        "audio_end_ms": 8900,
+        "invocation_start_ms": 8900.986527,
+        "schedule_lateness_ms": 0.986527,
+        "provider_boundary_ms": 0.00192,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 178,
+        "end_sample": 214800,
+        "audio_end_ms": 8950,
+        "invocation_start_ms": 8951.055059,
+        "schedule_lateness_ms": 1.055059,
+        "provider_boundary_ms": 0.001996,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 179,
+        "end_sample": 216000,
+        "audio_end_ms": 9000,
+        "invocation_start_ms": 9000.291191,
+        "schedule_lateness_ms": 0.291191,
+        "provider_boundary_ms": 42.787066,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 180,
+        "end_sample": 217200,
+        "audio_end_ms": 9050,
+        "invocation_start_ms": 9050.463798,
+        "schedule_lateness_ms": 0.463798,
+        "provider_boundary_ms": 0.003307,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 181,
+        "end_sample": 218400,
+        "audio_end_ms": 9100,
+        "invocation_start_ms": 9100.697384,
+        "schedule_lateness_ms": 0.697384,
+        "provider_boundary_ms": 0.002586,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 182,
+        "end_sample": 219600,
+        "audio_end_ms": 9150,
+        "invocation_start_ms": 9150.540143,
+        "schedule_lateness_ms": 0.540143,
+        "provider_boundary_ms": 0.00261,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 183,
+        "end_sample": 220800,
+        "audio_end_ms": 9200,
+        "invocation_start_ms": 9200.07024,
+        "schedule_lateness_ms": 0.07024,
+        "provider_boundary_ms": 38.008712,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 184,
+        "end_sample": 222000,
+        "audio_end_ms": 9250,
+        "invocation_start_ms": 9250.030343,
+        "schedule_lateness_ms": 0.030343,
+        "provider_boundary_ms": 0.002438,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 185,
+        "end_sample": 223200,
+        "audio_end_ms": 9300,
+        "invocation_start_ms": 9300.354971,
+        "schedule_lateness_ms": 0.354971,
+        "provider_boundary_ms": 0.001994,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 186,
+        "end_sample": 224400,
+        "audio_end_ms": 9350,
+        "invocation_start_ms": 9350.59103,
+        "schedule_lateness_ms": 0.59103,
+        "provider_boundary_ms": 0.001529,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 187,
+        "end_sample": 225600,
+        "audio_end_ms": 9400,
+        "invocation_start_ms": 9400.587947,
+        "schedule_lateness_ms": 0.587947,
+        "provider_boundary_ms": 37.669385,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 188,
+        "end_sample": 226800,
+        "audio_end_ms": 9450,
+        "invocation_start_ms": 9450.154135,
+        "schedule_lateness_ms": 0.154135,
+        "provider_boundary_ms": 0.001809,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 189,
+        "end_sample": 228000,
+        "audio_end_ms": 9500,
+        "invocation_start_ms": 9500.830024,
+        "schedule_lateness_ms": 0.830024,
+        "provider_boundary_ms": 0.002216,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 190,
+        "end_sample": 229200,
+        "audio_end_ms": 9550,
+        "invocation_start_ms": 9550.649762,
+        "schedule_lateness_ms": 0.649762,
+        "provider_boundary_ms": 0.002835,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 191,
+        "end_sample": 230400,
+        "audio_end_ms": 9600,
+        "invocation_start_ms": 9600.21235,
+        "schedule_lateness_ms": 0.21235,
+        "provider_boundary_ms": 37.113401,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 192,
+        "end_sample": 231600,
+        "audio_end_ms": 9650,
+        "invocation_start_ms": 9650.751502,
+        "schedule_lateness_ms": 0.751502,
+        "provider_boundary_ms": 0.002237,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 193,
+        "end_sample": 232800,
+        "audio_end_ms": 9700,
+        "invocation_start_ms": 9700.423477,
+        "schedule_lateness_ms": 0.423477,
+        "provider_boundary_ms": 0.001929,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 194,
+        "end_sample": 234000,
+        "audio_end_ms": 9750,
+        "invocation_start_ms": 9750.444441,
+        "schedule_lateness_ms": 0.444441,
+        "provider_boundary_ms": 0.002079,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 195,
+        "end_sample": 235172,
+        "audio_end_ms": 9798.833333,
+        "invocation_start_ms": 9799.760137,
+        "schedule_lateness_ms": 0.926804,
+        "provider_boundary_ms": 0.001545,
+        "provider_invocations": 0,
+        "revision_count": 0
+      }
+    ],
+    "revisions": [
+      {
+        "revision_id": 1,
+        "source_sample": 4800,
+        "source_ms": 200,
+        "wall_ms": 231.064425,
+        "unstable_text": "You",
+        "delta": "You",
+        "final": false
+      },
+      {
+        "revision_id": 2,
+        "source_sample": 9600,
+        "source_ms": 400,
+        "wall_ms": 430.095483,
+        "unstable_text": "Use",
+        "delta": "Use",
+        "final": false
+      },
+      {
+        "revision_id": 3,
+        "source_sample": 14400,
+        "source_ms": 600,
+        "wall_ms": 631.224655,
+        "unstable_text": "Use.",
+        "delta": ".",
+        "final": false
+      },
+      {
+        "revision_id": 4,
+        "source_sample": 19200,
+        "source_ms": 800,
+        "wall_ms": 837.818037,
+        "unstable_text": "Use recursion.",
+        "delta": "Use recursion.",
+        "final": false
+      },
+      {
+        "revision_id": 5,
+        "source_sample": 24000,
+        "source_ms": 1000,
+        "wall_ms": 1037.285365,
+        "unstable_text": "Use records.",
+        "delta": "Use records.",
+        "final": false
+      },
+      {
+        "revision_id": 6,
+        "source_sample": 28800,
+        "source_ms": 1200,
+        "wall_ms": 1251.866274,
+        "unstable_text": "Use records read.",
+        "delta": "Use records read.",
+        "final": false
+      },
+      {
+        "revision_id": 7,
+        "source_sample": 33600,
+        "source_ms": 1400,
+        "wall_ms": 1428.785133,
+        "unstable_text": "Use Records.read",
+        "delta": "Use Records.read",
+        "final": false
+      },
+      {
+        "revision_id": 8,
+        "source_sample": 38400,
+        "source_ms": 1600,
+        "wall_ms": 1642.95821,
+        "unstable_text": "Use Records.Read with the.",
+        "delta": "Use Records.Read with the.",
+        "final": false
+      },
+      {
+        "revision_id": 9,
+        "source_sample": 43200,
+        "source_ms": 1800,
+        "wall_ms": 1836.047539,
+        "unstable_text": "Use Records.Read with the key.",
+        "delta": "Use Records.Read with the key.",
+        "final": false
+      },
+      {
+        "revision_id": 10,
+        "source_sample": 52800,
+        "source_ms": 2200,
+        "wall_ms": 2232.777916,
+        "unstable_text": "Use Records.Read with the key access.",
+        "delta": "Use Records.Read with the key access.",
+        "final": false
+      },
+      {
+        "revision_id": 11,
+        "source_sample": 62400,
+        "source_ms": 2600,
+        "wall_ms": 2646.288483,
+        "unstable_text": "Use Records.ReadWith the key access under.",
+        "delta": "Use Records.ReadWith the key access under.",
+        "final": false
+      },
+      {
+        "revision_id": 12,
+        "source_sample": 72000,
+        "source_ms": 3000,
+        "wall_ms": 3035.984995,
+        "unstable_text": "Use Records.ReadWith the key access underscore.",
+        "delta": "Use Records.ReadWith the key access underscore.",
+        "final": false
+      },
+      {
+        "revision_id": 13,
+        "source_sample": 81600,
+        "source_ms": 3400,
+        "wall_ms": 3438.233368,
+        "unstable_text": "Use Records.ReadWith the key access underscore phrase.",
+        "delta": "Use Records.ReadWith the key access underscore phrase.",
+        "final": false
+      },
+      {
+        "revision_id": 14,
+        "source_sample": 96000,
+        "source_ms": 4000,
+        "wall_ms": 4035.569547,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase.",
+        "final": false
+      },
+      {
+        "revision_id": 15,
+        "source_sample": 115200,
+        "source_ms": 4800,
+        "wall_ms": 4843.844233,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase, return.",
+        "final": false
+      },
+      {
+        "revision_id": 16,
+        "source_sample": 120000,
+        "source_ms": 5000,
+        "wall_ms": 5040.024817,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return the.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase, return the.",
+        "final": false
+      },
+      {
+        "revision_id": 17,
+        "source_sample": 124800,
+        "source_ms": 5200,
+        "wall_ms": 5242.662384,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return the code.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase, return the code.",
+        "final": false
+      },
+      {
+        "revision_id": 18,
+        "source_sample": 134400,
+        "source_ms": 5600,
+        "wall_ms": 5649.509063,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exact.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exact.",
+        "final": false
+      },
+      {
+        "revision_id": 19,
+        "source_sample": 139200,
+        "source_ms": 5800,
+        "wall_ms": 5832.864828,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly.",
+        "final": false
+      },
+      {
+        "revision_id": 20,
+        "source_sample": 163200,
+        "source_ms": 6800,
+        "wall_ms": 6840.468582,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly, the value.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly, the value.",
+        "final": false
+      },
+      {
+        "revision_id": 21,
+        "source_sample": 168000,
+        "source_ms": 7000,
+        "wall_ms": 7043.368637,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is.",
+        "final": false
+      },
+      {
+        "revision_id": 22,
+        "source_sample": 172800,
+        "source_ms": 7200,
+        "wall_ms": 7236.877948,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not.",
+        "final": false
+      },
+      {
+        "revision_id": 23,
+        "source_sample": 182400,
+        "source_ms": 7600,
+        "wall_ms": 7641.913125,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this.",
+        "final": false
+      },
+      {
+        "revision_id": 24,
+        "source_sample": 192000,
+        "source_ms": 8000,
+        "wall_ms": 8042.226184,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this record.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this record.",
+        "final": false
+      },
+      {
+        "revision_id": 25,
+        "source_sample": 196800,
+        "source_ms": 8200,
+        "wall_ms": 8236.768887,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this request.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this request.",
+        "final": false
+      },
+      {
+        "revision_id": 26,
+        "source_sample": 211200,
+        "source_ms": 8800,
+        "wall_ms": 8840.692053,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this request, so.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this request, so.",
+        "final": false
+      },
+      {
+        "revision_id": 27,
+        "source_sample": 216000,
+        "source_ms": 9000,
+        "wall_ms": 9043.083582,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this request, so do.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this request, so do.",
+        "final": false
+      },
+      {
+        "revision_id": 28,
+        "source_sample": 220800,
+        "source_ms": 9200,
+        "wall_ms": 9238.084334,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this request, so do not.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this request, so do not.",
+        "final": false
+      },
+      {
+        "revision_id": 29,
+        "source_sample": 225600,
+        "source_ms": 9400,
+        "wall_ms": 9438.262013,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this request, so do not get.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this request, so do not get.",
+        "final": false
+      },
+      {
+        "revision_id": 30,
+        "source_sample": 230400,
+        "source_ms": 9600,
+        "wall_ms": 9637.329835,
+        "unstable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this request, so do not guess.",
+        "delta": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this request, so do not guess.",
+        "final": false
+      },
+      {
+        "revision_id": 31,
+        "source_sample": 235172,
+        "source_ms": 9798.833333333334,
+        "wall_ms": 9844.869304,
+        "stable_text": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this request, so do not guess.",
+        "final": true
+      }
+    ],
+    "scheduler_ticks": 196,
+    "provider_invocations": 49,
+    "finalization_provider_invocations": 1,
+    "first_partial_source_ms": 200,
+    "first_partial_wall_ms": 231.064425,
+    "end_to_final_ms": 46.100144,
+    "finalization_provider_boundary_ms": 45.101464,
+    "elapsed_ms": 9844.933477,
+    "provider_service_ms": 1865.896384,
+    "provider_service_rtf": 0.1904202592890453,
+    "mean_provider_invocation_ms": 37.933227499999994,
+    "p95_provider_invocation_ms": 49.462486,
+    "max_schedule_lateness_ms": 2.7776,
+    "final_transcript": "Use Records.ReadWith the KeyAccess underscore phrase, return the code exactly. The value is not in this request, so do not guess.",
+    "reference_text": "Use records read with the key access underscore phrase. Return the code exactly. The value is not in this request, so do not guess.",
+    "word_error_rate": 0.16666666666666666
+  },
+  "model_invocations": [
+    {
+      "invocation_id": "prepared-chain-1-invocation-1",
+      "phase": "fast",
+      "ordinal": 1,
+      "start_offset_ms": 231.31,
+      "first_event_ms": 27.504098,
+      "first_event_offset_ms": 258.814098,
+      "duration_ms": 74.864941,
+      "usage": {
+        "input_tokens": 314,
+        "output_tokens": 10,
+        "total_tokens": 324
+      },
+      "stop_reason": "stop",
+      "source_revision": 1
+    },
+    {
+      "invocation_id": "prepared-chain-1-invocation-4",
+      "phase": "slow",
+      "ordinal": 1,
+      "start_offset_ms": 306.253098,
+      "duration_ms": 124.001244,
+      "usage": {},
+      "source_revision": 1,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-2-invocation-1",
+      "phase": "fast",
+      "ordinal": 2,
+      "start_offset_ms": 430.310023,
+      "first_event_ms": 22.633568,
+      "first_event_offset_ms": 452.943591,
+      "duration_ms": 123.660104,
+      "usage": {
+        "input_tokens": 314,
+        "output_tokens": 21,
+        "total_tokens": 335
+      },
+      "stop_reason": "stop",
+      "source_revision": 2
+    },
+    {
+      "invocation_id": "prepared-chain-2-invocation-4",
+      "phase": "slow",
+      "ordinal": 2,
+      "start_offset_ms": 554.054897,
+      "duration_ms": 77.307609,
+      "usage": {},
+      "source_revision": 2,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-3-invocation-1",
+      "phase": "fast",
+      "ordinal": 3,
+      "start_offset_ms": 631.410169,
+      "first_event_ms": 24.532264,
+      "first_event_offset_ms": 655.942433,
+      "duration_ms": 62.519084,
+      "usage": {
+        "input_tokens": 315,
+        "output_tokens": 9,
+        "total_tokens": 324
+      },
+      "stop_reason": "stop",
+      "source_revision": 3
+    },
+    {
+      "invocation_id": "prepared-chain-3-invocation-4",
+      "phase": "slow",
+      "ordinal": 3,
+      "start_offset_ms": 694.006066,
+      "duration_ms": 143.94592,
+      "usage": {},
+      "source_revision": 3,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-4-invocation-1",
+      "phase": "fast",
+      "ordinal": 4,
+      "start_offset_ms": 837.997204,
+      "first_event_ms": 23.924028,
+      "first_event_offset_ms": 861.921232,
+      "duration_ms": 140.641009,
+      "usage": {
+        "input_tokens": 316,
+        "output_tokens": 24,
+        "total_tokens": 340
+      },
+      "stop_reason": "stop",
+      "source_revision": 4
+    },
+    {
+      "invocation_id": "prepared-chain-4-invocation-4",
+      "phase": "slow",
+      "ordinal": 4,
+      "start_offset_ms": 978.727019,
+      "duration_ms": 58.686411,
+      "usage": {},
+      "source_revision": 4,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-5-invocation-1",
+      "phase": "fast",
+      "ordinal": 5,
+      "start_offset_ms": 1037.453579,
+      "first_event_ms": 23.532876,
+      "first_event_offset_ms": 1060.986455,
+      "duration_ms": 138.617703,
+      "usage": {
+        "input_tokens": 316,
+        "output_tokens": 24,
+        "total_tokens": 340
+      },
+      "stop_reason": "stop",
+      "source_revision": 5
+    },
+    {
+      "invocation_id": "prepared-chain-5-invocation-4",
+      "phase": "slow",
+      "ordinal": 5,
+      "start_offset_ms": 1176.170832,
+      "duration_ms": 75.891262,
+      "usage": {},
+      "source_revision": 5,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-6-invocation-1",
+      "phase": "fast",
+      "ordinal": 6,
+      "start_offset_ms": 1252.133331,
+      "first_event_ms": 131.542757,
+      "first_event_offset_ms": 1383.676088,
+      "duration_ms": 131.571819,
+      "usage": {
+        "input_tokens": 317,
+        "output_tokens": 21,
+        "total_tokens": 338
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 6
+    },
+    {
+      "invocation_id": "prepared-chain-6-invocation-4",
+      "phase": "slow",
+      "ordinal": 6,
+      "start_offset_ms": 1383.767515,
+      "duration_ms": 45.141032,
+      "usage": {},
+      "source_revision": 6,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-7-invocation-1",
+      "phase": "fast",
+      "ordinal": 7,
+      "start_offset_ms": 1428.951484,
+      "first_event_ms": 123.453934,
+      "first_event_offset_ms": 1552.405418,
+      "duration_ms": 123.481585,
+      "usage": {
+        "input_tokens": 316,
+        "output_tokens": 21,
+        "total_tokens": 337
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 7
+    },
+    {
+      "invocation_id": "prepared-chain-7-invocation-4",
+      "phase": "slow",
+      "ordinal": 7,
+      "start_offset_ms": 1552.494444,
+      "duration_ms": 90.591946,
+      "usage": {},
+      "source_revision": 7,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-8-invocation-1",
+      "phase": "fast",
+      "ordinal": 8,
+      "start_offset_ms": 1643.128995,
+      "first_event_ms": 128.802922,
+      "first_event_offset_ms": 1771.931917,
+      "duration_ms": 128.83287,
+      "usage": {
+        "input_tokens": 319,
+        "output_tokens": 21,
+        "total_tokens": 340
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 8
+    },
+    {
+      "invocation_id": "prepared-chain-8-invocation-4",
+      "phase": "slow",
+      "ordinal": 8,
+      "start_offset_ms": 1772.022804,
+      "duration_ms": 64.160516,
+      "usage": {},
+      "source_revision": 8,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-9-invocation-1",
+      "phase": "fast",
+      "ordinal": 9,
+      "start_offset_ms": 1836.233389,
+      "first_event_ms": 123.302073,
+      "first_event_offset_ms": 1959.535462,
+      "duration_ms": 123.32441,
+      "usage": {
+        "input_tokens": 320,
+        "output_tokens": 21,
+        "total_tokens": 341
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 9
+    },
+    {
+      "invocation_id": "prepared-chain-9-invocation-4",
+      "phase": "slow",
+      "ordinal": 9,
+      "start_offset_ms": 1959.629151,
+      "duration_ms": 273.282418,
+      "usage": {},
+      "source_revision": 9,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-10-invocation-1",
+      "phase": "fast",
+      "ordinal": 10,
+      "start_offset_ms": 2232.975434,
+      "first_event_ms": 121.357791,
+      "first_event_offset_ms": 2354.333225,
+      "duration_ms": 121.392883,
+      "usage": {
+        "input_tokens": 321,
+        "output_tokens": 20,
+        "total_tokens": 341
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 10
+    },
+    {
+      "invocation_id": "prepared-chain-10-invocation-4",
+      "phase": "slow",
+      "ordinal": 10,
+      "start_offset_ms": 2354.432705,
+      "duration_ms": 291.994473,
+      "usage": {},
+      "source_revision": 10,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-11-invocation-1",
+      "phase": "fast",
+      "ordinal": 11,
+      "start_offset_ms": 2646.474342,
+      "first_event_ms": 124.283925,
+      "first_event_offset_ms": 2770.758267,
+      "duration_ms": 124.320871,
+      "usage": {
+        "input_tokens": 322,
+        "output_tokens": 20,
+        "total_tokens": 342
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 11
+    },
+    {
+      "invocation_id": "prepared-chain-11-invocation-4",
+      "phase": "slow",
+      "ordinal": 11,
+      "start_offset_ms": 2770.855952,
+      "duration_ms": 265.274451,
+      "usage": {},
+      "source_revision": 11,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-12-invocation-1",
+      "phase": "fast",
+      "ordinal": 12,
+      "start_offset_ms": 3036.182524,
+      "first_event_ms": 136.311357,
+      "first_event_offset_ms": 3172.493881,
+      "duration_ms": 136.338634,
+      "usage": {
+        "input_tokens": 322,
+        "output_tokens": 22,
+        "total_tokens": 344
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 12
+    },
+    {
+      "invocation_id": "prepared-chain-12-invocation-4",
+      "phase": "slow",
+      "ordinal": 12,
+      "start_offset_ms": 3172.583993,
+      "duration_ms": 265.807733,
+      "usage": {},
+      "source_revision": 12,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-13-invocation-1",
+      "phase": "fast",
+      "ordinal": 13,
+      "start_offset_ms": 3438.441857,
+      "first_event_ms": 137.769242,
+      "first_event_offset_ms": 3576.211099,
+      "duration_ms": 137.799003,
+      "usage": {
+        "input_tokens": 323,
+        "output_tokens": 23,
+        "total_tokens": 346
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 13
+    },
+    {
+      "invocation_id": "prepared-chain-13-invocation-4",
+      "phase": "slow",
+      "ordinal": 13,
+      "start_offset_ms": 3576.317377,
+      "duration_ms": 459.379083,
+      "usage": {},
+      "source_revision": 13,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-14-invocation-1",
+      "phase": "fast",
+      "ordinal": 14,
+      "start_offset_ms": 4035.738955,
+      "first_event_ms": 125.135456,
+      "first_event_offset_ms": 4160.874411,
+      "duration_ms": 125.15883,
+      "usage": {
+        "input_tokens": 323,
+        "output_tokens": 21,
+        "total_tokens": 344
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 14
+    },
+    {
+      "invocation_id": "prepared-chain-14-invocation-4",
+      "phase": "slow",
+      "ordinal": 14,
+      "start_offset_ms": 4160.956976,
+      "duration_ms": 683.020767,
+      "usage": {},
+      "source_revision": 14,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-15-invocation-1",
+      "phase": "fast",
+      "ordinal": 15,
+      "start_offset_ms": 4844.076706,
+      "first_event_ms": 149.312464,
+      "first_event_offset_ms": 4993.38917,
+      "duration_ms": 149.337176,
+      "usage": {
+        "input_tokens": 325,
+        "output_tokens": 21,
+        "total_tokens": 346
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 15
+    },
+    {
+      "invocation_id": "prepared-chain-15-invocation-4",
+      "phase": "slow",
+      "ordinal": 15,
+      "start_offset_ms": 4993.472887,
+      "duration_ms": 46.670706,
+      "usage": {},
+      "source_revision": 15,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-16-invocation-1",
+      "phase": "fast",
+      "ordinal": 16,
+      "start_offset_ms": 5040.204865,
+      "first_event_ms": 147.749474,
+      "first_event_offset_ms": 5187.954339,
+      "duration_ms": 147.774499,
+      "usage": {
+        "input_tokens": 326,
+        "output_tokens": 21,
+        "total_tokens": 347
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 16
+    },
+    {
+      "invocation_id": "prepared-chain-16-invocation-4",
+      "phase": "slow",
+      "ordinal": 16,
+      "start_offset_ms": 5188.063474,
+      "duration_ms": 54.739813,
+      "usage": {},
+      "source_revision": 16,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-17-invocation-1",
+      "phase": "fast",
+      "ordinal": 17,
+      "start_offset_ms": 5242.847718,
+      "first_event_ms": 145.093026,
+      "first_event_offset_ms": 5387.940744,
+      "duration_ms": 145.120916,
+      "usage": {
+        "input_tokens": 327,
+        "output_tokens": 21,
+        "total_tokens": 348
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 17
+    },
+    {
+      "invocation_id": "prepared-chain-17-invocation-4",
+      "phase": "slow",
+      "ordinal": 17,
+      "start_offset_ms": 5388.032394,
+      "duration_ms": 261.608336,
+      "usage": {},
+      "source_revision": 17,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-18-invocation-1",
+      "phase": "fast",
+      "ordinal": 18,
+      "start_offset_ms": 5649.68396,
+      "first_event_ms": 161.209834,
+      "first_event_offset_ms": 5810.893794,
+      "duration_ms": 161.239673,
+      "usage": {
+        "input_tokens": 328,
+        "output_tokens": 21,
+        "total_tokens": 349
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 18
+    },
+    {
+      "invocation_id": "prepared-chain-18-invocation-4",
+      "phase": "slow",
+      "ordinal": 18,
+      "start_offset_ms": 5810.993114,
+      "duration_ms": 21.987263,
+      "usage": {},
+      "source_revision": 18,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-19-invocation-1",
+      "phase": "fast",
+      "ordinal": 19,
+      "start_offset_ms": 5833.02912,
+      "first_event_ms": 139.198024,
+      "first_event_offset_ms": 5972.227144,
+      "duration_ms": 139.221554,
+      "usage": {
+        "input_tokens": 328,
+        "output_tokens": 21,
+        "total_tokens": 349
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 19
+    },
+    {
+      "invocation_id": "prepared-chain-19-invocation-4",
+      "phase": "slow",
+      "ordinal": 19,
+      "start_offset_ms": 5972.313758,
+      "duration_ms": 868.307622,
+      "usage": {},
+      "source_revision": 19,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-20-invocation-1",
+      "phase": "fast",
+      "ordinal": 20,
+      "start_offset_ms": 6840.681955,
+      "first_event_ms": 133.797007,
+      "first_event_offset_ms": 6974.478962,
+      "duration_ms": 133.822045,
+      "usage": {
+        "input_tokens": 331,
+        "output_tokens": 21,
+        "total_tokens": 352
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 20
+    },
+    {
+      "invocation_id": "prepared-chain-20-invocation-4",
+      "phase": "slow",
+      "ordinal": 20,
+      "start_offset_ms": 6974.564804,
+      "duration_ms": 68.949993,
+      "usage": {},
+      "source_revision": 20,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-21-invocation-1",
+      "phase": "fast",
+      "ordinal": 21,
+      "start_offset_ms": 7043.558582,
+      "first_event_ms": 129.9075,
+      "first_event_offset_ms": 7173.466082,
+      "duration_ms": 129.930686,
+      "usage": {
+        "input_tokens": 332,
+        "output_tokens": 21,
+        "total_tokens": 353
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 21
+    },
+    {
+      "invocation_id": "prepared-chain-21-invocation-4",
+      "phase": "slow",
+      "ordinal": 21,
+      "start_offset_ms": 7173.545743,
+      "duration_ms": 63.455517,
+      "usage": {},
+      "source_revision": 21,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-22-invocation-1",
+      "phase": "fast",
+      "ordinal": 22,
+      "start_offset_ms": 7237.041492,
+      "first_event_ms": 134.330265,
+      "first_event_offset_ms": 7371.371757,
+      "duration_ms": 134.367752,
+      "usage": {
+        "input_tokens": 333,
+        "output_tokens": 21,
+        "total_tokens": 354
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 22
+    },
+    {
+      "invocation_id": "prepared-chain-22-invocation-4",
+      "phase": "slow",
+      "ordinal": 22,
+      "start_offset_ms": 7371.481619,
+      "duration_ms": 270.575381,
+      "usage": {},
+      "source_revision": 22,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-23-invocation-1",
+      "phase": "fast",
+      "ordinal": 23,
+      "start_offset_ms": 7642.105156,
+      "first_event_ms": 138.363861,
+      "first_event_offset_ms": 7780.469017,
+      "duration_ms": 138.389282,
+      "usage": {
+        "input_tokens": 335,
+        "output_tokens": 21,
+        "total_tokens": 356
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 23
+    },
+    {
+      "invocation_id": "prepared-chain-23-invocation-4",
+      "phase": "slow",
+      "ordinal": 23,
+      "start_offset_ms": 7780.560929,
+      "duration_ms": 261.831749,
+      "usage": {},
+      "source_revision": 23,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-24-invocation-1",
+      "phase": "fast",
+      "ordinal": 24,
+      "start_offset_ms": 8042.442925,
+      "first_event_ms": 136.777124,
+      "first_event_offset_ms": 8179.220049,
+      "duration_ms": 136.805453,
+      "usage": {
+        "input_tokens": 336,
+        "output_tokens": 21,
+        "total_tokens": 357
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 24
+    },
+    {
+      "invocation_id": "prepared-chain-24-invocation-4",
+      "phase": "slow",
+      "ordinal": 24,
+      "start_offset_ms": 8179.319853,
+      "duration_ms": 57.585232,
+      "usage": {},
+      "source_revision": 24,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-25-invocation-1",
+      "phase": "fast",
+      "ordinal": 25,
+      "start_offset_ms": 8236.947313,
+      "first_event_ms": 128.145232,
+      "first_event_offset_ms": 8365.092545,
+      "duration_ms": 128.16911,
+      "usage": {
+        "input_tokens": 336,
+        "output_tokens": 21,
+        "total_tokens": 357
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 25
+    },
+    {
+      "invocation_id": "prepared-chain-25-invocation-4",
+      "phase": "slow",
+      "ordinal": 25,
+      "start_offset_ms": 8365.174744,
+      "duration_ms": 475.658312,
+      "usage": {},
+      "source_revision": 25,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-26-invocation-1",
+      "phase": "fast",
+      "ordinal": 26,
+      "start_offset_ms": 8840.87969,
+      "first_event_ms": 152.707032,
+      "first_event_offset_ms": 8993.586722,
+      "duration_ms": 152.75006,
+      "usage": {
+        "input_tokens": 338,
+        "output_tokens": 21,
+        "total_tokens": 359
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 26
+    },
+    {
+      "invocation_id": "prepared-chain-26-invocation-4",
+      "phase": "slow",
+      "ordinal": 26,
+      "start_offset_ms": 8993.708563,
+      "duration_ms": 49.518697,
+      "usage": {},
+      "source_revision": 26,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-27-invocation-1",
+      "phase": "fast",
+      "ordinal": 27,
+      "start_offset_ms": 9043.272092,
+      "first_event_ms": 134.440396,
+      "first_event_offset_ms": 9177.712488,
+      "duration_ms": 134.470347,
+      "usage": {
+        "input_tokens": 339,
+        "output_tokens": 21,
+        "total_tokens": 360
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 27
+    },
+    {
+      "invocation_id": "prepared-chain-27-invocation-4",
+      "phase": "slow",
+      "ordinal": 27,
+      "start_offset_ms": 9177.852452,
+      "duration_ms": 60.364962,
+      "usage": {},
+      "source_revision": 27,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-28-invocation-1",
+      "phase": "fast",
+      "ordinal": 28,
+      "start_offset_ms": 9238.260548,
+      "first_event_ms": 134.926017,
+      "first_event_offset_ms": 9373.186565,
+      "duration_ms": 134.956621,
+      "usage": {
+        "input_tokens": 340,
+        "output_tokens": 21,
+        "total_tokens": 361
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 28
+    },
+    {
+      "invocation_id": "prepared-chain-28-invocation-4",
+      "phase": "slow",
+      "ordinal": 28,
+      "start_offset_ms": 9373.287343,
+      "duration_ms": 65.093559,
+      "usage": {},
+      "source_revision": 28,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-29-invocation-1",
+      "phase": "fast",
+      "ordinal": 29,
+      "start_offset_ms": 9438.418165,
+      "first_event_ms": 179.162604,
+      "first_event_offset_ms": 9617.580769,
+      "duration_ms": 179.190585,
+      "usage": {
+        "input_tokens": 341,
+        "output_tokens": 21,
+        "total_tokens": 362
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 29
+    },
+    {
+      "invocation_id": "prepared-chain-29-invocation-4",
+      "phase": "slow",
+      "ordinal": 29,
+      "start_offset_ms": 9617.672585,
+      "duration_ms": 19.784161,
+      "usage": {},
+      "source_revision": 29,
+      "error": "send Gemini request: Post \"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse\": context canceled"
+    },
+    {
+      "invocation_id": "prepared-chain-30-invocation-1",
+      "phase": "fast",
+      "ordinal": 30,
+      "start_offset_ms": 9637.514858,
+      "first_event_ms": 132.167612,
+      "first_event_offset_ms": 9769.68247,
+      "duration_ms": 132.193935,
+      "usage": {
+        "input_tokens": 341,
+        "output_tokens": 21,
+        "total_tokens": 362
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 30
+    },
+    {
+      "invocation_id": "prepared-chain-30-invocation-4",
+      "phase": "slow",
+      "ordinal": 30,
+      "start_offset_ms": 9769.770413,
+      "first_event_ms": 1536.286667,
+      "first_event_offset_ms": 11306.05708,
+      "duration_ms": 1542.355554,
+      "usage": {
+        "input_tokens": 271,
+        "output_tokens": 14,
+        "reasoning_tokens": 182,
+        "total_tokens": 467
+      },
+      "stop_reason": "STOP",
+      "source_revision": 30
+    },
+    {
+      "invocation_id": "invocation-8",
+      "phase": "slow",
+      "ordinal": 31,
+      "start_offset_ms": 11312.306977,
+      "first_event_ms": 2633.107725,
+      "first_event_offset_ms": 13945.414702,
+      "duration_ms": 2643.759161,
+      "usage": {
+        "input_tokens": 486,
+        "output_tokens": 14,
+        "reasoning_tokens": 448,
+        "total_tokens": 948
+      },
+      "stop_reason": "STOP",
+      "source_revision": 31
+    },
+    {
+      "invocation_id": "invocation-12",
+      "phase": "slow",
+      "ordinal": 32,
+      "start_offset_ms": 13956.188364,
+      "first_event_ms": 2254.710427,
+      "first_event_offset_ms": 16210.898791,
+      "duration_ms": 2260.822775,
+      "usage": {
+        "input_tokens": 974,
+        "output_tokens": 16,
+        "reasoning_tokens": 354,
+        "total_tokens": 1344
+      },
+      "stop_reason": "STOP",
+      "source_revision": 31
+    },
+    {
+      "invocation_id": "invocation-16",
+      "phase": "slow",
+      "ordinal": 33,
+      "start_offset_ms": 16217.233951,
+      "first_event_ms": 960.690582,
+      "first_event_offset_ms": 17177.924533,
+      "duration_ms": 965.816962,
+      "usage": {
+        "input_tokens": 1372,
+        "output_tokens": 16,
+        "reasoning_tokens": 10,
+        "total_tokens": 1398
+      },
+      "stop_reason": "STOP",
+      "source_revision": 31
+    },
+    {
+      "invocation_id": "invocation-20",
+      "phase": "slow",
+      "ordinal": 34,
+      "start_offset_ms": 17183.210339,
+      "first_event_ms": 1184.079091,
+      "first_event_offset_ms": 18367.28943,
+      "duration_ms": 1190.022363,
+      "usage": {
+        "input_tokens": 1426,
+        "output_tokens": 18,
+        "reasoning_tokens": 146,
+        "total_tokens": 1590
+      },
+      "stop_reason": "STOP",
+      "source_revision": 31
+    },
+    {
+      "invocation_id": "invocation-24",
+      "phase": "slow",
+      "ordinal": 35,
+      "start_offset_ms": 18373.482517,
+      "first_event_ms": 1130.458947,
+      "first_event_offset_ms": 19503.941464,
+      "duration_ms": 1133.939673,
+      "usage": {
+        "input_tokens": 1620,
+        "output_tokens": 16,
+        "reasoning_tokens": 92,
+        "total_tokens": 1728
+      },
+      "stop_reason": "STOP",
+      "source_revision": 31
+    }
+  ],
+  "tool_proposals": [
+    {
+      "call_id": "chatcmpl-tool-b15037dc2d6ba32e",
+      "name": "records.read",
+      "arguments": {
+        "key": "KeyAccess"
+      }
+    }
+  ],
+  "tool_calls": [
+    {
+      "call_id": "call_4722535",
+      "name": "records.read",
+      "arguments": {
+        "key": "key_access"
+      }
+    },
+    {
+      "call_id": "call_4363461",
+      "name": "records.read",
+      "arguments": {
+        "key": "KEY_ACCESS"
+      }
+    },
+    {
+      "call_id": "call_518880",
+      "name": "records.read",
+      "arguments": {
+        "key": "key_access_phrase"
+      }
+    },
+    {
+      "call_id": "call_5395765",
+      "name": "records.read",
+      "arguments": {
+        "key": "key_access_code"
+      }
+    },
+    {
+      "call_id": "call_186228",
+      "name": "records.read",
+      "arguments": {
+        "key": "key_access_underscore_phrase"
+      }
+    },
+    {
+      "call_id": "call_5579116",
+      "name": "records.read",
+      "arguments": {
+        "key": "key_access_value"
+      }
+    }
+  ],
+  "tool_results": [
+    {
+      "call_id": "call_4722535",
+      "name": "records.read",
+      "error": "record \"key_access\" does not exist"
+    },
+    {
+      "call_id": "call_4363461",
+      "name": "records.read",
+      "error": "record \"KEY_ACCESS\" does not exist"
+    },
+    {
+      "call_id": "call_518880",
+      "name": "records.read",
+      "error": "record \"key_access_phrase\" does not exist"
+    },
+    {
+      "call_id": "call_5395765",
+      "name": "records.read",
+      "error": "record \"key_access_code\" does not exist"
+    },
+    {
+      "call_id": "call_186228",
+      "name": "records.read",
+      "error": "record \"key_access_underscore_phrase\" does not exist"
+    },
+    {
+      "call_id": "call_5579116",
+      "name": "records.read",
+      "error": "record \"key_access_value\" does not exist"
+    }
+  ],
+  "trajectory": {
+    "items": 21,
+    "public_sha256": "5d0acef0a963041be3fdb25f4e2aff7b7fcb4d49f586a568eb1147cf4e7c750e",
+    "kind_counts": {
+      "instruction": 7,
+      "observation": 1,
+      "tool_call": 6,
+      "tool_proposal": 1,
+      "tool_result": 6
+    }
+  },
+  "committed_fast_invocation_id": "prepared-chain-30-invocation-1",
+  "endpoint_to_fast_first_event_ms": 0,
+  "endpoint_to_fast_safe_point_ms": 0,
+  "total_duration_ms": 19507.937727,
+  "passed": false,
+  "score_failures": [
+    "final answer does not contain \"cerulean-17\"",
+    "unexpected tool call \"records.read\"({\"key\":\"KEY_ACCESS\"}) occurred 1 extra time(s)",
+    "expected tool call \"records.read\"({\"key\":\"access_phrase\"}) missing 1 occurrence(s)",
+    "unexpected tool call \"records.read\"({\"key\":\"key_access\"}) occurred 1 extra time(s)",
+    "unexpected tool call \"records.read\"({\"key\":\"key_access_code\"}) occurred 1 extra time(s)",
+    "unexpected tool call \"records.read\"({\"key\":\"key_access_phrase\"}) occurred 1 extra time(s)",
+    "unexpected tool call \"records.read\"({\"key\":\"key_access_underscore_phrase\"}) occurred 1 extra time(s)",
+    "unexpected tool call \"records.read\"({\"key\":\"key_access_value\"}) occurred 1 extra time(s)",
+    "tool \"records.read\" returned an error",
+    "tool \"records.read\" returned an error",
+    "tool \"records.read\" returned an error",
+    "tool \"records.read\" returned an error",
+    "tool \"records.read\" returned an error",
+    "tool \"records.read\" returned an error"
+  ],
+  "errors": [
+    "slow continuation: slow continuation exceeded 6 invocation safety limit"
+  ]
+}

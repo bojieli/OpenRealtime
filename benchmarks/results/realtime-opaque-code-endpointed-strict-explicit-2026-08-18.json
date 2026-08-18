@@ -1,0 +1,4034 @@
+{
+  "schema_version": "realtime-benchmark-v0.6",
+  "created_at": "2026-08-18T07:34:54.461826514Z",
+  "scenario_id": "opaque-code-retrieval",
+  "input_sha256": "15cb8ab88bd03141d23ae2f8597d315a3963c722576e1e2037c90c5167255162",
+  "reference_text": "Call records dot read with this JSON argument: key equals access underscore phrase. The exact key value has two words, access and phrase, separated by one underscore. Do not add any other word. Return the code exactly.",
+  "scoring": {
+    "version": "exact-tool-trajectory-v2",
+    "expected_substrings": [
+      "cerulean-17"
+    ],
+    "required_tool_calls": [
+      "records.read"
+    ],
+    "expected_tool_calls": [
+      {
+        "name": "records.read",
+        "arguments": {
+          "key": "access_phrase"
+        }
+      }
+    ]
+  },
+  "runtime": {
+    "asr_provider_chunk": "200ms",
+    "asr_scheduler_frame": "50ms",
+    "asr_transport": "qwen-asr-stateful-http",
+    "condition": "b0-endpointed",
+    "fast_preparation": "false",
+    "gpu_admission": "explicit-class-reserved-capacity",
+    "gpu_admission_capacity": "100",
+    "gpu_interactive_reserve": "25",
+    "input_generation": "Fish S2-Pro seed 0; explicit JSON argument",
+    "local_priority": "ASR exclusive interactive; Qwen speculative",
+    "slow_preparation": "false",
+    "tts_transport": "openai-compatible-speech-http",
+    "wire_protocol": "unchanged-openai-realtime"
+  },
+  "admission": {
+    "capacity": 100,
+    "reserved_interactive": 25,
+    "used": 0,
+    "lower_priority_used": 0,
+    "running": {},
+    "waiting": {},
+    "admitted": 84,
+    "released": 84,
+    "preemptions": 0,
+    "cancelled_waiters": 0,
+    "deadline_misses": 0,
+    "classes": {
+      "interactive": {
+        "admitted": 84,
+        "released": 84,
+        "preemptions": 0,
+        "wait_total_ms": 0.390339,
+        "wait_max_ms": 0.027799,
+        "service_total_ms": 7417.248932,
+        "service_max_ms": 1493.089593,
+        "preemption_to_release_total_ms": 0,
+        "preemption_to_release_max_ms": 0
+      }
+    }
+  },
+  "fast": {
+    "provider": "vllm",
+    "model": "qwen-fast",
+    "phase": "fast",
+    "effort": "minimal",
+    "streaming": true,
+    "native_state_type": "openai-compatible.chat-completion.assistant-message.v1",
+    "retains_tool_calls": true,
+    "tool_authority": "propose",
+    "executable_tools": false
+  },
+  "slow": {
+    "provider": "google",
+    "model": "gemini-3.5-flash",
+    "phase": "slow",
+    "effort": "high",
+    "streaming": true,
+    "native_state_type": "google.gemini.generate-content.model-content.v1",
+    "retains_tool_calls": true,
+    "tool_authority": "execute",
+    "executable_tools": true
+  },
+  "tts": {
+    "name": "openai-speech-streaming/fishaudio/s2-pro",
+    "version": "openai-audio-speech-1",
+    "capabilities": {
+      "cancellation": true,
+      "pcm16_output": true,
+      "streaming_output": true
+    }
+  },
+  "asr": {
+    "case_id": "opaque-code-retrieval",
+    "input_sha256": "15cb8ab88bd03141d23ae2f8597d315a3963c722576e1e2037c90c5167255162",
+    "descriptor": {
+      "name": "qwen3-asr-streaming/Qwen/Qwen3-ASR-0.6B",
+      "version": "qwen-asr-0.0.6",
+      "capabilities": {
+        "cancellation": true,
+        "revisions": true,
+        "streaming_input": true
+      }
+    },
+    "paced": true,
+    "frame_duration_ms": 50,
+    "input_sample_rate_hz": 24000,
+    "input_duration_ms": 16079.833333,
+    "frames": [
+      {
+        "index": 0,
+        "end_sample": 1200,
+        "audio_end_ms": 50,
+        "invocation_start_ms": 50.162502,
+        "schedule_lateness_ms": 0.162502,
+        "provider_boundary_ms": 0.006985,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 1,
+        "end_sample": 2400,
+        "audio_end_ms": 100,
+        "invocation_start_ms": 100.34003,
+        "schedule_lateness_ms": 0.34003,
+        "provider_boundary_ms": 0.027002,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 2,
+        "end_sample": 3600,
+        "audio_end_ms": 150,
+        "invocation_start_ms": 150.533093,
+        "schedule_lateness_ms": 0.533093,
+        "provider_boundary_ms": 0.039291,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 3,
+        "end_sample": 4800,
+        "audio_end_ms": 200,
+        "invocation_start_ms": 200.728021,
+        "schedule_lateness_ms": 0.728021,
+        "provider_boundary_ms": 171.650486,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 4,
+        "end_sample": 6000,
+        "audio_end_ms": 250,
+        "invocation_start_ms": 372.382731,
+        "schedule_lateness_ms": 122.382731,
+        "provider_boundary_ms": 0.001173,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 5,
+        "end_sample": 7200,
+        "audio_end_ms": 300,
+        "invocation_start_ms": 372.384402,
+        "schedule_lateness_ms": 72.384402,
+        "provider_boundary_ms": 0.000598,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 6,
+        "end_sample": 8400,
+        "audio_end_ms": 350,
+        "invocation_start_ms": 372.385166,
+        "schedule_lateness_ms": 22.385166,
+        "provider_boundary_ms": 0.000309,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 7,
+        "end_sample": 9600,
+        "audio_end_ms": 400,
+        "invocation_start_ms": 400.48384,
+        "schedule_lateness_ms": 0.48384,
+        "provider_boundary_ms": 67.814191,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 8,
+        "end_sample": 10800,
+        "audio_end_ms": 450,
+        "invocation_start_ms": 468.306002,
+        "schedule_lateness_ms": 18.306002,
+        "provider_boundary_ms": 0.001289,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 9,
+        "end_sample": 12000,
+        "audio_end_ms": 500,
+        "invocation_start_ms": 500.476572,
+        "schedule_lateness_ms": 0.476572,
+        "provider_boundary_ms": 0.002851,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 10,
+        "end_sample": 13200,
+        "audio_end_ms": 550,
+        "invocation_start_ms": 550.633765,
+        "schedule_lateness_ms": 0.633765,
+        "provider_boundary_ms": 0.002158,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 11,
+        "end_sample": 14400,
+        "audio_end_ms": 600,
+        "invocation_start_ms": 600.727862,
+        "schedule_lateness_ms": 0.727862,
+        "provider_boundary_ms": 75.768068,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 12,
+        "end_sample": 15600,
+        "audio_end_ms": 650,
+        "invocation_start_ms": 676.503672,
+        "schedule_lateness_ms": 26.503672,
+        "provider_boundary_ms": 0.00143,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 13,
+        "end_sample": 16800,
+        "audio_end_ms": 700,
+        "invocation_start_ms": 700.649958,
+        "schedule_lateness_ms": 0.649958,
+        "provider_boundary_ms": 0.00276,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 14,
+        "end_sample": 18000,
+        "audio_end_ms": 750,
+        "invocation_start_ms": 750.768861,
+        "schedule_lateness_ms": 0.768861,
+        "provider_boundary_ms": 0.002409,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 15,
+        "end_sample": 19200,
+        "audio_end_ms": 800,
+        "invocation_start_ms": 800.927636,
+        "schedule_lateness_ms": 0.927636,
+        "provider_boundary_ms": 73.208526,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 16,
+        "end_sample": 20400,
+        "audio_end_ms": 850,
+        "invocation_start_ms": 874.142705,
+        "schedule_lateness_ms": 24.142705,
+        "provider_boundary_ms": 0.001156,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 17,
+        "end_sample": 21600,
+        "audio_end_ms": 900,
+        "invocation_start_ms": 900.299876,
+        "schedule_lateness_ms": 0.299876,
+        "provider_boundary_ms": 0.001776,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 18,
+        "end_sample": 22800,
+        "audio_end_ms": 950,
+        "invocation_start_ms": 950.460167,
+        "schedule_lateness_ms": 0.460167,
+        "provider_boundary_ms": 0.001742,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 19,
+        "end_sample": 24000,
+        "audio_end_ms": 1000,
+        "invocation_start_ms": 1004.360549,
+        "schedule_lateness_ms": 4.360549,
+        "provider_boundary_ms": 62.847763,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 20,
+        "end_sample": 25200,
+        "audio_end_ms": 1050,
+        "invocation_start_ms": 1067.214202,
+        "schedule_lateness_ms": 17.214202,
+        "provider_boundary_ms": 0.000923,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 21,
+        "end_sample": 26400,
+        "audio_end_ms": 1100,
+        "invocation_start_ms": 1100.337736,
+        "schedule_lateness_ms": 0.337736,
+        "provider_boundary_ms": 0.00236,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 22,
+        "end_sample": 27600,
+        "audio_end_ms": 1150,
+        "invocation_start_ms": 1150.506055,
+        "schedule_lateness_ms": 0.506055,
+        "provider_boundary_ms": 0.001719,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 23,
+        "end_sample": 28800,
+        "audio_end_ms": 1200,
+        "invocation_start_ms": 1200.666096,
+        "schedule_lateness_ms": 0.666096,
+        "provider_boundary_ms": 71.853427,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 24,
+        "end_sample": 30000,
+        "audio_end_ms": 1250,
+        "invocation_start_ms": 1272.527423,
+        "schedule_lateness_ms": 22.527423,
+        "provider_boundary_ms": 0.001026,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 25,
+        "end_sample": 31200,
+        "audio_end_ms": 1300,
+        "invocation_start_ms": 1300.639053,
+        "schedule_lateness_ms": 0.639053,
+        "provider_boundary_ms": 0.002971,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 26,
+        "end_sample": 32400,
+        "audio_end_ms": 1350,
+        "invocation_start_ms": 1350.775428,
+        "schedule_lateness_ms": 0.775428,
+        "provider_boundary_ms": 0.002819,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 27,
+        "end_sample": 33600,
+        "audio_end_ms": 1400,
+        "invocation_start_ms": 1402.351658,
+        "schedule_lateness_ms": 2.351658,
+        "provider_boundary_ms": 68.145995,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 28,
+        "end_sample": 34800,
+        "audio_end_ms": 1450,
+        "invocation_start_ms": 1470.508098,
+        "schedule_lateness_ms": 20.508098,
+        "provider_boundary_ms": 0.001071,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 29,
+        "end_sample": 36000,
+        "audio_end_ms": 1500,
+        "invocation_start_ms": 1500.635261,
+        "schedule_lateness_ms": 0.635261,
+        "provider_boundary_ms": 0.001505,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 30,
+        "end_sample": 37200,
+        "audio_end_ms": 1550,
+        "invocation_start_ms": 1550.772174,
+        "schedule_lateness_ms": 0.772174,
+        "provider_boundary_ms": 0.002417,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 31,
+        "end_sample": 38400,
+        "audio_end_ms": 1600,
+        "invocation_start_ms": 1600.919098,
+        "schedule_lateness_ms": 0.919098,
+        "provider_boundary_ms": 60.385658,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 32,
+        "end_sample": 39600,
+        "audio_end_ms": 1650,
+        "invocation_start_ms": 1661.312456,
+        "schedule_lateness_ms": 11.312456,
+        "provider_boundary_ms": 0.006683,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 33,
+        "end_sample": 40800,
+        "audio_end_ms": 1700,
+        "invocation_start_ms": 1700.471704,
+        "schedule_lateness_ms": 0.471704,
+        "provider_boundary_ms": 0.002014,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 34,
+        "end_sample": 42000,
+        "audio_end_ms": 1750,
+        "invocation_start_ms": 1750.612122,
+        "schedule_lateness_ms": 0.612122,
+        "provider_boundary_ms": 0.002217,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 35,
+        "end_sample": 43200,
+        "audio_end_ms": 1800,
+        "invocation_start_ms": 1800.774157,
+        "schedule_lateness_ms": 0.774157,
+        "provider_boundary_ms": 62.710383,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 36,
+        "end_sample": 44400,
+        "audio_end_ms": 1850,
+        "invocation_start_ms": 1863.491613,
+        "schedule_lateness_ms": 13.491613,
+        "provider_boundary_ms": 0.000983,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 37,
+        "end_sample": 45600,
+        "audio_end_ms": 1900,
+        "invocation_start_ms": 1900.678455,
+        "schedule_lateness_ms": 0.678455,
+        "provider_boundary_ms": 0.002377,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 38,
+        "end_sample": 46800,
+        "audio_end_ms": 1950,
+        "invocation_start_ms": 1950.838029,
+        "schedule_lateness_ms": 0.838029,
+        "provider_boundary_ms": 0.001802,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 39,
+        "end_sample": 48000,
+        "audio_end_ms": 2000,
+        "invocation_start_ms": 2000.992221,
+        "schedule_lateness_ms": 0.992221,
+        "provider_boundary_ms": 68.088667,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 40,
+        "end_sample": 49200,
+        "audio_end_ms": 2050,
+        "invocation_start_ms": 2069.088458,
+        "schedule_lateness_ms": 19.088458,
+        "provider_boundary_ms": 0.000864,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 41,
+        "end_sample": 50400,
+        "audio_end_ms": 2100,
+        "invocation_start_ms": 2100.241074,
+        "schedule_lateness_ms": 0.241074,
+        "provider_boundary_ms": 0.002154,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 42,
+        "end_sample": 51600,
+        "audio_end_ms": 2150,
+        "invocation_start_ms": 2152.349386,
+        "schedule_lateness_ms": 2.349386,
+        "provider_boundary_ms": 0.001805,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 43,
+        "end_sample": 52800,
+        "audio_end_ms": 2200,
+        "invocation_start_ms": 2200.513068,
+        "schedule_lateness_ms": 0.513068,
+        "provider_boundary_ms": 73.717942,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 44,
+        "end_sample": 54000,
+        "audio_end_ms": 2250,
+        "invocation_start_ms": 2274.242738,
+        "schedule_lateness_ms": 24.242738,
+        "provider_boundary_ms": 0.001161,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 45,
+        "end_sample": 55200,
+        "audio_end_ms": 2300,
+        "invocation_start_ms": 2300.580453,
+        "schedule_lateness_ms": 0.580453,
+        "provider_boundary_ms": 0.001905,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 46,
+        "end_sample": 56400,
+        "audio_end_ms": 2350,
+        "invocation_start_ms": 2350.228971,
+        "schedule_lateness_ms": 0.228971,
+        "provider_boundary_ms": 0.00229,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 47,
+        "end_sample": 57600,
+        "audio_end_ms": 2400,
+        "invocation_start_ms": 2400.419224,
+        "schedule_lateness_ms": 0.419224,
+        "provider_boundary_ms": 63.509482,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 48,
+        "end_sample": 58800,
+        "audio_end_ms": 2450,
+        "invocation_start_ms": 2463.934498,
+        "schedule_lateness_ms": 13.934498,
+        "provider_boundary_ms": 0.001546,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 49,
+        "end_sample": 60000,
+        "audio_end_ms": 2500,
+        "invocation_start_ms": 2500.032893,
+        "schedule_lateness_ms": 0.032893,
+        "provider_boundary_ms": 0.002006,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 50,
+        "end_sample": 61200,
+        "audio_end_ms": 2550,
+        "invocation_start_ms": 2550.200185,
+        "schedule_lateness_ms": 0.200185,
+        "provider_boundary_ms": 0.002808,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 51,
+        "end_sample": 62400,
+        "audio_end_ms": 2600,
+        "invocation_start_ms": 2600.348208,
+        "schedule_lateness_ms": 0.348208,
+        "provider_boundary_ms": 68.449676,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 52,
+        "end_sample": 63600,
+        "audio_end_ms": 2650,
+        "invocation_start_ms": 2668.804829,
+        "schedule_lateness_ms": 18.804829,
+        "provider_boundary_ms": 0.000934,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 53,
+        "end_sample": 64800,
+        "audio_end_ms": 2700,
+        "invocation_start_ms": 2700.96301,
+        "schedule_lateness_ms": 0.96301,
+        "provider_boundary_ms": 0.002954,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 54,
+        "end_sample": 66000,
+        "audio_end_ms": 2750,
+        "invocation_start_ms": 2750.070753,
+        "schedule_lateness_ms": 0.070753,
+        "provider_boundary_ms": 0.001635,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 55,
+        "end_sample": 67200,
+        "audio_end_ms": 2800,
+        "invocation_start_ms": 2800.233206,
+        "schedule_lateness_ms": 0.233206,
+        "provider_boundary_ms": 65.207532,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 56,
+        "end_sample": 68400,
+        "audio_end_ms": 2850,
+        "invocation_start_ms": 2865.446923,
+        "schedule_lateness_ms": 15.446923,
+        "provider_boundary_ms": 0.001741,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 57,
+        "end_sample": 69600,
+        "audio_end_ms": 2900,
+        "invocation_start_ms": 2900.600715,
+        "schedule_lateness_ms": 0.600715,
+        "provider_boundary_ms": 0.001832,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 58,
+        "end_sample": 70800,
+        "audio_end_ms": 2950,
+        "invocation_start_ms": 2950.778703,
+        "schedule_lateness_ms": 0.778703,
+        "provider_boundary_ms": 0.00179,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 59,
+        "end_sample": 72000,
+        "audio_end_ms": 3000,
+        "invocation_start_ms": 3002.408815,
+        "schedule_lateness_ms": 2.408815,
+        "provider_boundary_ms": 61.019339,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 60,
+        "end_sample": 73200,
+        "audio_end_ms": 3050,
+        "invocation_start_ms": 3063.434863,
+        "schedule_lateness_ms": 13.434863,
+        "provider_boundary_ms": 0.000952,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 61,
+        "end_sample": 74400,
+        "audio_end_ms": 3100,
+        "invocation_start_ms": 3100.585531,
+        "schedule_lateness_ms": 0.585531,
+        "provider_boundary_ms": 0.002636,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 62,
+        "end_sample": 75600,
+        "audio_end_ms": 3150,
+        "invocation_start_ms": 3150.707892,
+        "schedule_lateness_ms": 0.707892,
+        "provider_boundary_ms": 0.002265,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 63,
+        "end_sample": 76800,
+        "audio_end_ms": 3200,
+        "invocation_start_ms": 3200.870082,
+        "schedule_lateness_ms": 0.870082,
+        "provider_boundary_ms": 66.910378,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 64,
+        "end_sample": 78000,
+        "audio_end_ms": 3250,
+        "invocation_start_ms": 3267.786458,
+        "schedule_lateness_ms": 17.786458,
+        "provider_boundary_ms": 0.001153,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 65,
+        "end_sample": 79200,
+        "audio_end_ms": 3300,
+        "invocation_start_ms": 3300.946648,
+        "schedule_lateness_ms": 0.946648,
+        "provider_boundary_ms": 0.001851,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 66,
+        "end_sample": 80400,
+        "audio_end_ms": 3350,
+        "invocation_start_ms": 3350.043566,
+        "schedule_lateness_ms": 0.043566,
+        "provider_boundary_ms": 0.00217,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 67,
+        "end_sample": 81600,
+        "audio_end_ms": 3400,
+        "invocation_start_ms": 3400.199345,
+        "schedule_lateness_ms": 0.199345,
+        "provider_boundary_ms": 69.672028,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 68,
+        "end_sample": 82800,
+        "audio_end_ms": 3450,
+        "invocation_start_ms": 3469.876372,
+        "schedule_lateness_ms": 19.876372,
+        "provider_boundary_ms": 0.000827,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 69,
+        "end_sample": 84000,
+        "audio_end_ms": 3500,
+        "invocation_start_ms": 3500.998044,
+        "schedule_lateness_ms": 0.998044,
+        "provider_boundary_ms": 0.002064,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 70,
+        "end_sample": 85200,
+        "audio_end_ms": 3550,
+        "invocation_start_ms": 3550.16604,
+        "schedule_lateness_ms": 0.16604,
+        "provider_boundary_ms": 0.002172,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 71,
+        "end_sample": 86400,
+        "audio_end_ms": 3600,
+        "invocation_start_ms": 3600.302435,
+        "schedule_lateness_ms": 0.302435,
+        "provider_boundary_ms": 70.597895,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 72,
+        "end_sample": 87600,
+        "audio_end_ms": 3650,
+        "invocation_start_ms": 3670.909289,
+        "schedule_lateness_ms": 20.909289,
+        "provider_boundary_ms": 0.000938,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 73,
+        "end_sample": 88800,
+        "audio_end_ms": 3700,
+        "invocation_start_ms": 3701.4194,
+        "schedule_lateness_ms": 1.4194,
+        "provider_boundary_ms": 0.002162,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 74,
+        "end_sample": 90000,
+        "audio_end_ms": 3750,
+        "invocation_start_ms": 3750.56191,
+        "schedule_lateness_ms": 0.56191,
+        "provider_boundary_ms": 0.002627,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 75,
+        "end_sample": 91200,
+        "audio_end_ms": 3800,
+        "invocation_start_ms": 3800.723083,
+        "schedule_lateness_ms": 0.723083,
+        "provider_boundary_ms": 56.182411,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 76,
+        "end_sample": 92400,
+        "audio_end_ms": 3850,
+        "invocation_start_ms": 3856.912562,
+        "schedule_lateness_ms": 6.912562,
+        "provider_boundary_ms": 0.001197,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 77,
+        "end_sample": 93600,
+        "audio_end_ms": 3900,
+        "invocation_start_ms": 3900.340449,
+        "schedule_lateness_ms": 0.340449,
+        "provider_boundary_ms": 0.002421,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 78,
+        "end_sample": 94800,
+        "audio_end_ms": 3950,
+        "invocation_start_ms": 3950.491317,
+        "schedule_lateness_ms": 0.491317,
+        "provider_boundary_ms": 0.002136,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 79,
+        "end_sample": 96000,
+        "audio_end_ms": 4000,
+        "invocation_start_ms": 4000.625435,
+        "schedule_lateness_ms": 0.625435,
+        "provider_boundary_ms": 87.193515,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 80,
+        "end_sample": 97200,
+        "audio_end_ms": 4050,
+        "invocation_start_ms": 4087.827251,
+        "schedule_lateness_ms": 37.827251,
+        "provider_boundary_ms": 0.000828,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 81,
+        "end_sample": 98400,
+        "audio_end_ms": 4100,
+        "invocation_start_ms": 4100.923784,
+        "schedule_lateness_ms": 0.923784,
+        "provider_boundary_ms": 0.001737,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 82,
+        "end_sample": 99600,
+        "audio_end_ms": 4150,
+        "invocation_start_ms": 4150.576083,
+        "schedule_lateness_ms": 0.576083,
+        "provider_boundary_ms": 0.001819,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 83,
+        "end_sample": 100800,
+        "audio_end_ms": 4200,
+        "invocation_start_ms": 4200.700403,
+        "schedule_lateness_ms": 0.700403,
+        "provider_boundary_ms": 71.285973,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 84,
+        "end_sample": 102000,
+        "audio_end_ms": 4250,
+        "invocation_start_ms": 4271.994477,
+        "schedule_lateness_ms": 21.994477,
+        "provider_boundary_ms": 0.000991,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 85,
+        "end_sample": 103200,
+        "audio_end_ms": 4300,
+        "invocation_start_ms": 4300.099545,
+        "schedule_lateness_ms": 0.099545,
+        "provider_boundary_ms": 0.001816,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 86,
+        "end_sample": 104400,
+        "audio_end_ms": 4350,
+        "invocation_start_ms": 4350.233477,
+        "schedule_lateness_ms": 0.233477,
+        "provider_boundary_ms": 0.002101,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 87,
+        "end_sample": 105600,
+        "audio_end_ms": 4400,
+        "invocation_start_ms": 4400.398673,
+        "schedule_lateness_ms": 0.398673,
+        "provider_boundary_ms": 56.529072,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 88,
+        "end_sample": 106800,
+        "audio_end_ms": 4450,
+        "invocation_start_ms": 4456.934014,
+        "schedule_lateness_ms": 6.934014,
+        "provider_boundary_ms": 0.001034,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 89,
+        "end_sample": 108000,
+        "audio_end_ms": 4500,
+        "invocation_start_ms": 4500.038928,
+        "schedule_lateness_ms": 0.038928,
+        "provider_boundary_ms": 0.002442,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 90,
+        "end_sample": 109200,
+        "audio_end_ms": 4550,
+        "invocation_start_ms": 4550.218911,
+        "schedule_lateness_ms": 0.218911,
+        "provider_boundary_ms": 0.002113,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 91,
+        "end_sample": 110400,
+        "audio_end_ms": 4600,
+        "invocation_start_ms": 4600.402721,
+        "schedule_lateness_ms": 0.402721,
+        "provider_boundary_ms": 64.015317,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 92,
+        "end_sample": 111600,
+        "audio_end_ms": 4650,
+        "invocation_start_ms": 4664.425808,
+        "schedule_lateness_ms": 14.425808,
+        "provider_boundary_ms": 0.001274,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 93,
+        "end_sample": 112800,
+        "audio_end_ms": 4700,
+        "invocation_start_ms": 4700.556412,
+        "schedule_lateness_ms": 0.556412,
+        "provider_boundary_ms": 0.001811,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 94,
+        "end_sample": 114000,
+        "audio_end_ms": 4750,
+        "invocation_start_ms": 4750.922808,
+        "schedule_lateness_ms": 0.922808,
+        "provider_boundary_ms": 0.002008,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 95,
+        "end_sample": 115200,
+        "audio_end_ms": 4800,
+        "invocation_start_ms": 4800.024721,
+        "schedule_lateness_ms": 0.024721,
+        "provider_boundary_ms": 61.593909,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 96,
+        "end_sample": 116400,
+        "audio_end_ms": 4850,
+        "invocation_start_ms": 4861.629152,
+        "schedule_lateness_ms": 11.629152,
+        "provider_boundary_ms": 0.001045,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 97,
+        "end_sample": 117600,
+        "audio_end_ms": 4900,
+        "invocation_start_ms": 4900.790081,
+        "schedule_lateness_ms": 0.790081,
+        "provider_boundary_ms": 0.001597,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 98,
+        "end_sample": 118800,
+        "audio_end_ms": 4950,
+        "invocation_start_ms": 4950.950483,
+        "schedule_lateness_ms": 0.950483,
+        "provider_boundary_ms": 0.002099,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 99,
+        "end_sample": 120000,
+        "audio_end_ms": 5000,
+        "invocation_start_ms": 5000.047851,
+        "schedule_lateness_ms": 0.047851,
+        "provider_boundary_ms": 62.644267,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 100,
+        "end_sample": 121200,
+        "audio_end_ms": 5050,
+        "invocation_start_ms": 5062.697636,
+        "schedule_lateness_ms": 12.697636,
+        "provider_boundary_ms": 0.001037,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 101,
+        "end_sample": 122400,
+        "audio_end_ms": 5100,
+        "invocation_start_ms": 5100.857025,
+        "schedule_lateness_ms": 0.857025,
+        "provider_boundary_ms": 0.00195,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 102,
+        "end_sample": 123600,
+        "audio_end_ms": 5150,
+        "invocation_start_ms": 5150.998679,
+        "schedule_lateness_ms": 0.998679,
+        "provider_boundary_ms": 0.001973,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 103,
+        "end_sample": 124800,
+        "audio_end_ms": 5200,
+        "invocation_start_ms": 5200.156345,
+        "schedule_lateness_ms": 0.156345,
+        "provider_boundary_ms": 68.69894,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 104,
+        "end_sample": 126000,
+        "audio_end_ms": 5250,
+        "invocation_start_ms": 5268.862797,
+        "schedule_lateness_ms": 18.862797,
+        "provider_boundary_ms": 0.000819,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 105,
+        "end_sample": 127200,
+        "audio_end_ms": 5300,
+        "invocation_start_ms": 5301.028364,
+        "schedule_lateness_ms": 1.028364,
+        "provider_boundary_ms": 0.002146,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 106,
+        "end_sample": 128400,
+        "audio_end_ms": 5350,
+        "invocation_start_ms": 5350.199011,
+        "schedule_lateness_ms": 0.199011,
+        "provider_boundary_ms": 0.001949,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 107,
+        "end_sample": 129600,
+        "audio_end_ms": 5400,
+        "invocation_start_ms": 5400.34116,
+        "schedule_lateness_ms": 0.34116,
+        "provider_boundary_ms": 61.116926,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 108,
+        "end_sample": 130800,
+        "audio_end_ms": 5450,
+        "invocation_start_ms": 5461.482017,
+        "schedule_lateness_ms": 11.482017,
+        "provider_boundary_ms": 0.001017,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 109,
+        "end_sample": 132000,
+        "audio_end_ms": 5500,
+        "invocation_start_ms": 5500.631764,
+        "schedule_lateness_ms": 0.631764,
+        "provider_boundary_ms": 0.002188,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 110,
+        "end_sample": 133200,
+        "audio_end_ms": 5550,
+        "invocation_start_ms": 5550.786163,
+        "schedule_lateness_ms": 0.786163,
+        "provider_boundary_ms": 0.001567,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 111,
+        "end_sample": 134400,
+        "audio_end_ms": 5600,
+        "invocation_start_ms": 5600.924572,
+        "schedule_lateness_ms": 0.924572,
+        "provider_boundary_ms": 59.580289,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 112,
+        "end_sample": 135600,
+        "audio_end_ms": 5650,
+        "invocation_start_ms": 5660.511098,
+        "schedule_lateness_ms": 10.511098,
+        "provider_boundary_ms": 0.001265,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 113,
+        "end_sample": 136800,
+        "audio_end_ms": 5700,
+        "invocation_start_ms": 5700.643025,
+        "schedule_lateness_ms": 0.643025,
+        "provider_boundary_ms": 0.00233,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 114,
+        "end_sample": 138000,
+        "audio_end_ms": 5750,
+        "invocation_start_ms": 5750.781853,
+        "schedule_lateness_ms": 0.781853,
+        "provider_boundary_ms": 0.002616,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 115,
+        "end_sample": 139200,
+        "audio_end_ms": 5800,
+        "invocation_start_ms": 5800.922539,
+        "schedule_lateness_ms": 0.922539,
+        "provider_boundary_ms": 60.649067,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 116,
+        "end_sample": 140400,
+        "audio_end_ms": 5850,
+        "invocation_start_ms": 5861.578652,
+        "schedule_lateness_ms": 11.578652,
+        "provider_boundary_ms": 0.001283,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 117,
+        "end_sample": 141600,
+        "audio_end_ms": 5900,
+        "invocation_start_ms": 5900.706825,
+        "schedule_lateness_ms": 0.706825,
+        "provider_boundary_ms": 0.001725,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 118,
+        "end_sample": 142800,
+        "audio_end_ms": 5950,
+        "invocation_start_ms": 5950.84184,
+        "schedule_lateness_ms": 0.84184,
+        "provider_boundary_ms": 0.001822,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 119,
+        "end_sample": 144000,
+        "audio_end_ms": 6000,
+        "invocation_start_ms": 6000.99296,
+        "schedule_lateness_ms": 0.99296,
+        "provider_boundary_ms": 68.837943,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 120,
+        "end_sample": 145200,
+        "audio_end_ms": 6050,
+        "invocation_start_ms": 6069.83922,
+        "schedule_lateness_ms": 19.83922,
+        "provider_boundary_ms": 0.000784,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 121,
+        "end_sample": 146400,
+        "audio_end_ms": 6100,
+        "invocation_start_ms": 6101.351037,
+        "schedule_lateness_ms": 1.351037,
+        "provider_boundary_ms": 0.001881,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 122,
+        "end_sample": 147600,
+        "audio_end_ms": 6150,
+        "invocation_start_ms": 6150.483596,
+        "schedule_lateness_ms": 0.483596,
+        "provider_boundary_ms": 0.001845,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 123,
+        "end_sample": 148800,
+        "audio_end_ms": 6200,
+        "invocation_start_ms": 6200.651346,
+        "schedule_lateness_ms": 0.651346,
+        "provider_boundary_ms": 68.133431,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 124,
+        "end_sample": 150000,
+        "audio_end_ms": 6250,
+        "invocation_start_ms": 6268.789827,
+        "schedule_lateness_ms": 18.789827,
+        "provider_boundary_ms": 0.001306,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 125,
+        "end_sample": 151200,
+        "audio_end_ms": 6300,
+        "invocation_start_ms": 6300.946417,
+        "schedule_lateness_ms": 0.946417,
+        "provider_boundary_ms": 0.002914,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 126,
+        "end_sample": 152400,
+        "audio_end_ms": 6350,
+        "invocation_start_ms": 6350.063402,
+        "schedule_lateness_ms": 0.063402,
+        "provider_boundary_ms": 0.002722,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 127,
+        "end_sample": 153600,
+        "audio_end_ms": 6400,
+        "invocation_start_ms": 6400.226612,
+        "schedule_lateness_ms": 0.226612,
+        "provider_boundary_ms": 59.535898,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 128,
+        "end_sample": 154800,
+        "audio_end_ms": 6450,
+        "invocation_start_ms": 6459.768072,
+        "schedule_lateness_ms": 9.768072,
+        "provider_boundary_ms": 0.001765,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 129,
+        "end_sample": 156000,
+        "audio_end_ms": 6500,
+        "invocation_start_ms": 6500.930008,
+        "schedule_lateness_ms": 0.930008,
+        "provider_boundary_ms": 0.001733,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 130,
+        "end_sample": 157200,
+        "audio_end_ms": 6550,
+        "invocation_start_ms": 6550.030616,
+        "schedule_lateness_ms": 0.030616,
+        "provider_boundary_ms": 0.001818,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 131,
+        "end_sample": 158400,
+        "audio_end_ms": 6600,
+        "invocation_start_ms": 6600.162629,
+        "schedule_lateness_ms": 0.162629,
+        "provider_boundary_ms": 68.004646,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 132,
+        "end_sample": 159600,
+        "audio_end_ms": 6650,
+        "invocation_start_ms": 6668.173318,
+        "schedule_lateness_ms": 18.173318,
+        "provider_boundary_ms": 0.000913,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 133,
+        "end_sample": 160800,
+        "audio_end_ms": 6700,
+        "invocation_start_ms": 6700.338918,
+        "schedule_lateness_ms": 0.338918,
+        "provider_boundary_ms": 0.001668,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 134,
+        "end_sample": 162000,
+        "audio_end_ms": 6750,
+        "invocation_start_ms": 6750.478379,
+        "schedule_lateness_ms": 0.478379,
+        "provider_boundary_ms": 0.002033,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 135,
+        "end_sample": 163200,
+        "audio_end_ms": 6800,
+        "invocation_start_ms": 6800.632119,
+        "schedule_lateness_ms": 0.632119,
+        "provider_boundary_ms": 60.981339,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 136,
+        "end_sample": 164400,
+        "audio_end_ms": 6850,
+        "invocation_start_ms": 6861.619893,
+        "schedule_lateness_ms": 11.619893,
+        "provider_boundary_ms": 0.001558,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 137,
+        "end_sample": 165600,
+        "audio_end_ms": 6900,
+        "invocation_start_ms": 6900.765776,
+        "schedule_lateness_ms": 0.765776,
+        "provider_boundary_ms": 0.002032,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 138,
+        "end_sample": 166800,
+        "audio_end_ms": 6950,
+        "invocation_start_ms": 6950.923725,
+        "schedule_lateness_ms": 0.923725,
+        "provider_boundary_ms": 0.001975,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 139,
+        "end_sample": 168000,
+        "audio_end_ms": 7000,
+        "invocation_start_ms": 7000.033839,
+        "schedule_lateness_ms": 0.033839,
+        "provider_boundary_ms": 71.220532,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 140,
+        "end_sample": 169200,
+        "audio_end_ms": 7050,
+        "invocation_start_ms": 7071.264583,
+        "schedule_lateness_ms": 21.264583,
+        "provider_boundary_ms": 0.001837,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 141,
+        "end_sample": 170400,
+        "audio_end_ms": 7100,
+        "invocation_start_ms": 7100.409856,
+        "schedule_lateness_ms": 0.409856,
+        "provider_boundary_ms": 0.001681,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 142,
+        "end_sample": 171600,
+        "audio_end_ms": 7150,
+        "invocation_start_ms": 7150.568866,
+        "schedule_lateness_ms": 0.568866,
+        "provider_boundary_ms": 0.001586,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 143,
+        "end_sample": 172800,
+        "audio_end_ms": 7200,
+        "invocation_start_ms": 7200.706842,
+        "schedule_lateness_ms": 0.706842,
+        "provider_boundary_ms": 75.369859,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 144,
+        "end_sample": 174000,
+        "audio_end_ms": 7250,
+        "invocation_start_ms": 7276.085878,
+        "schedule_lateness_ms": 26.085878,
+        "provider_boundary_ms": 0.00131,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 145,
+        "end_sample": 175200,
+        "audio_end_ms": 7300,
+        "invocation_start_ms": 7300.239367,
+        "schedule_lateness_ms": 0.239367,
+        "provider_boundary_ms": 0.001875,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 146,
+        "end_sample": 176400,
+        "audio_end_ms": 7350,
+        "invocation_start_ms": 7350.397518,
+        "schedule_lateness_ms": 0.397518,
+        "provider_boundary_ms": 0.002208,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 147,
+        "end_sample": 177600,
+        "audio_end_ms": 7400,
+        "invocation_start_ms": 7401.350593,
+        "schedule_lateness_ms": 1.350593,
+        "provider_boundary_ms": 68.295549,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 148,
+        "end_sample": 178800,
+        "audio_end_ms": 7450,
+        "invocation_start_ms": 7469.651845,
+        "schedule_lateness_ms": 19.651845,
+        "provider_boundary_ms": 0.00115,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 149,
+        "end_sample": 180000,
+        "audio_end_ms": 7500,
+        "invocation_start_ms": 7500.784736,
+        "schedule_lateness_ms": 0.784736,
+        "provider_boundary_ms": 0.002139,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 150,
+        "end_sample": 181200,
+        "audio_end_ms": 7550,
+        "invocation_start_ms": 7550.923742,
+        "schedule_lateness_ms": 0.923742,
+        "provider_boundary_ms": 0.00218,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 151,
+        "end_sample": 182400,
+        "audio_end_ms": 7600,
+        "invocation_start_ms": 7600.025249,
+        "schedule_lateness_ms": 0.025249,
+        "provider_boundary_ms": 68.916375,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 152,
+        "end_sample": 183600,
+        "audio_end_ms": 7650,
+        "invocation_start_ms": 7668.948852,
+        "schedule_lateness_ms": 18.948852,
+        "provider_boundary_ms": 0.000941,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 153,
+        "end_sample": 184800,
+        "audio_end_ms": 7700,
+        "invocation_start_ms": 7700.044596,
+        "schedule_lateness_ms": 0.044596,
+        "provider_boundary_ms": 0.002891,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 154,
+        "end_sample": 186000,
+        "audio_end_ms": 7750,
+        "invocation_start_ms": 7750.215041,
+        "schedule_lateness_ms": 0.215041,
+        "provider_boundary_ms": 0.002085,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 155,
+        "end_sample": 187200,
+        "audio_end_ms": 7800,
+        "invocation_start_ms": 7800.334886,
+        "schedule_lateness_ms": 0.334886,
+        "provider_boundary_ms": 61.61059,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 156,
+        "end_sample": 188400,
+        "audio_end_ms": 7850,
+        "invocation_start_ms": 7861.951079,
+        "schedule_lateness_ms": 11.951079,
+        "provider_boundary_ms": 0.001726,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 157,
+        "end_sample": 189600,
+        "audio_end_ms": 7900,
+        "invocation_start_ms": 7900.043219,
+        "schedule_lateness_ms": 0.043219,
+        "provider_boundary_ms": 0.002084,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 158,
+        "end_sample": 190800,
+        "audio_end_ms": 7950,
+        "invocation_start_ms": 7950.162935,
+        "schedule_lateness_ms": 0.162935,
+        "provider_boundary_ms": 0.00242,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 159,
+        "end_sample": 192000,
+        "audio_end_ms": 8000,
+        "invocation_start_ms": 8000.309213,
+        "schedule_lateness_ms": 0.309213,
+        "provider_boundary_ms": 62.520088,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 160,
+        "end_sample": 193200,
+        "audio_end_ms": 8050,
+        "invocation_start_ms": 8062.835937,
+        "schedule_lateness_ms": 12.835937,
+        "provider_boundary_ms": 0.001115,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 161,
+        "end_sample": 194400,
+        "audio_end_ms": 8100,
+        "invocation_start_ms": 8103.368643,
+        "schedule_lateness_ms": 3.368643,
+        "provider_boundary_ms": 0.002402,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 162,
+        "end_sample": 195600,
+        "audio_end_ms": 8150,
+        "invocation_start_ms": 8150.534428,
+        "schedule_lateness_ms": 0.534428,
+        "provider_boundary_ms": 0.002651,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 163,
+        "end_sample": 196800,
+        "audio_end_ms": 8200,
+        "invocation_start_ms": 8200.69503,
+        "schedule_lateness_ms": 0.69503,
+        "provider_boundary_ms": 71.586847,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 164,
+        "end_sample": 198000,
+        "audio_end_ms": 8250,
+        "invocation_start_ms": 8272.289856,
+        "schedule_lateness_ms": 22.289856,
+        "provider_boundary_ms": 0.00071,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 165,
+        "end_sample": 199200,
+        "audio_end_ms": 8300,
+        "invocation_start_ms": 8300.423833,
+        "schedule_lateness_ms": 0.423833,
+        "provider_boundary_ms": 0.002012,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 166,
+        "end_sample": 200400,
+        "audio_end_ms": 8350,
+        "invocation_start_ms": 8350.55496,
+        "schedule_lateness_ms": 0.55496,
+        "provider_boundary_ms": 0.002023,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 167,
+        "end_sample": 201600,
+        "audio_end_ms": 8400,
+        "invocation_start_ms": 8400.704428,
+        "schedule_lateness_ms": 0.704428,
+        "provider_boundary_ms": 66.748809,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 168,
+        "end_sample": 202800,
+        "audio_end_ms": 8450,
+        "invocation_start_ms": 8467.460658,
+        "schedule_lateness_ms": 17.460658,
+        "provider_boundary_ms": 0.00091,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 169,
+        "end_sample": 204000,
+        "audio_end_ms": 8500,
+        "invocation_start_ms": 8500.624666,
+        "schedule_lateness_ms": 0.624666,
+        "provider_boundary_ms": 0.002034,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 170,
+        "end_sample": 205200,
+        "audio_end_ms": 8550,
+        "invocation_start_ms": 8550.771105,
+        "schedule_lateness_ms": 0.771105,
+        "provider_boundary_ms": 0.002209,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 171,
+        "end_sample": 206400,
+        "audio_end_ms": 8600,
+        "invocation_start_ms": 8600.919148,
+        "schedule_lateness_ms": 0.919148,
+        "provider_boundary_ms": 65.635722,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 172,
+        "end_sample": 207600,
+        "audio_end_ms": 8650,
+        "invocation_start_ms": 8666.562903,
+        "schedule_lateness_ms": 16.562903,
+        "provider_boundary_ms": 0.00094,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 173,
+        "end_sample": 208800,
+        "audio_end_ms": 8700,
+        "invocation_start_ms": 8702.358693,
+        "schedule_lateness_ms": 2.358693,
+        "provider_boundary_ms": 0.002309,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 174,
+        "end_sample": 210000,
+        "audio_end_ms": 8750,
+        "invocation_start_ms": 8750.492431,
+        "schedule_lateness_ms": 0.492431,
+        "provider_boundary_ms": 0.001376,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 175,
+        "end_sample": 211200,
+        "audio_end_ms": 8800,
+        "invocation_start_ms": 8800.613533,
+        "schedule_lateness_ms": 0.613533,
+        "provider_boundary_ms": 60.37034,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 176,
+        "end_sample": 212400,
+        "audio_end_ms": 8850,
+        "invocation_start_ms": 8860.989631,
+        "schedule_lateness_ms": 10.989631,
+        "provider_boundary_ms": 0.001359,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 177,
+        "end_sample": 213600,
+        "audio_end_ms": 8900,
+        "invocation_start_ms": 8900.09922,
+        "schedule_lateness_ms": 0.09922,
+        "provider_boundary_ms": 0.001845,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 178,
+        "end_sample": 214800,
+        "audio_end_ms": 8950,
+        "invocation_start_ms": 8950.237377,
+        "schedule_lateness_ms": 0.237377,
+        "provider_boundary_ms": 0.001861,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 179,
+        "end_sample": 216000,
+        "audio_end_ms": 9000,
+        "invocation_start_ms": 9000.409102,
+        "schedule_lateness_ms": 0.409102,
+        "provider_boundary_ms": 68.561269,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 180,
+        "end_sample": 217200,
+        "audio_end_ms": 9050,
+        "invocation_start_ms": 9068.977688,
+        "schedule_lateness_ms": 18.977688,
+        "provider_boundary_ms": 0.000869,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 181,
+        "end_sample": 218400,
+        "audio_end_ms": 9100,
+        "invocation_start_ms": 9100.078504,
+        "schedule_lateness_ms": 0.078504,
+        "provider_boundary_ms": 0.002387,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 182,
+        "end_sample": 219600,
+        "audio_end_ms": 9150,
+        "invocation_start_ms": 9150.240828,
+        "schedule_lateness_ms": 0.240828,
+        "provider_boundary_ms": 0.001932,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 183,
+        "end_sample": 220800,
+        "audio_end_ms": 9200,
+        "invocation_start_ms": 9200.402528,
+        "schedule_lateness_ms": 0.402528,
+        "provider_boundary_ms": 65.755081,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 184,
+        "end_sample": 222000,
+        "audio_end_ms": 9250,
+        "invocation_start_ms": 9266.162804,
+        "schedule_lateness_ms": 16.162804,
+        "provider_boundary_ms": 0.000815,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 185,
+        "end_sample": 223200,
+        "audio_end_ms": 9300,
+        "invocation_start_ms": 9300.295003,
+        "schedule_lateness_ms": 0.295003,
+        "provider_boundary_ms": 0.002202,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 186,
+        "end_sample": 224400,
+        "audio_end_ms": 9350,
+        "invocation_start_ms": 9350.418834,
+        "schedule_lateness_ms": 0.418834,
+        "provider_boundary_ms": 0.002322,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 187,
+        "end_sample": 225600,
+        "audio_end_ms": 9400,
+        "invocation_start_ms": 9400.567462,
+        "schedule_lateness_ms": 0.567462,
+        "provider_boundary_ms": 71.647685,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 188,
+        "end_sample": 226800,
+        "audio_end_ms": 9450,
+        "invocation_start_ms": 9472.222691,
+        "schedule_lateness_ms": 22.222691,
+        "provider_boundary_ms": 0.001104,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 189,
+        "end_sample": 228000,
+        "audio_end_ms": 9500,
+        "invocation_start_ms": 9500.345381,
+        "schedule_lateness_ms": 0.345381,
+        "provider_boundary_ms": 0.001787,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 190,
+        "end_sample": 229200,
+        "audio_end_ms": 9550,
+        "invocation_start_ms": 9550.489123,
+        "schedule_lateness_ms": 0.489123,
+        "provider_boundary_ms": 0.002191,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 191,
+        "end_sample": 230400,
+        "audio_end_ms": 9600,
+        "invocation_start_ms": 9600.89947,
+        "schedule_lateness_ms": 0.89947,
+        "provider_boundary_ms": 69.557762,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 192,
+        "end_sample": 231600,
+        "audio_end_ms": 9650,
+        "invocation_start_ms": 9670.465109,
+        "schedule_lateness_ms": 20.465109,
+        "provider_boundary_ms": 0.000996,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 193,
+        "end_sample": 232800,
+        "audio_end_ms": 9700,
+        "invocation_start_ms": 9700.624441,
+        "schedule_lateness_ms": 0.624441,
+        "provider_boundary_ms": 0.001684,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 194,
+        "end_sample": 234000,
+        "audio_end_ms": 9750,
+        "invocation_start_ms": 9750.791064,
+        "schedule_lateness_ms": 0.791064,
+        "provider_boundary_ms": 0.002942,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 195,
+        "end_sample": 235200,
+        "audio_end_ms": 9800,
+        "invocation_start_ms": 9800.964554,
+        "schedule_lateness_ms": 0.964554,
+        "provider_boundary_ms": 73.069091,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 196,
+        "end_sample": 236400,
+        "audio_end_ms": 9850,
+        "invocation_start_ms": 9874.039402,
+        "schedule_lateness_ms": 24.039402,
+        "provider_boundary_ms": 0.00085,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 197,
+        "end_sample": 237600,
+        "audio_end_ms": 9900,
+        "invocation_start_ms": 9900.171167,
+        "schedule_lateness_ms": 0.171167,
+        "provider_boundary_ms": 0.002912,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 198,
+        "end_sample": 238800,
+        "audio_end_ms": 9950,
+        "invocation_start_ms": 9950.307227,
+        "schedule_lateness_ms": 0.307227,
+        "provider_boundary_ms": 0.116509,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 199,
+        "end_sample": 240000,
+        "audio_end_ms": 10000,
+        "invocation_start_ms": 10000.561328,
+        "schedule_lateness_ms": 0.561328,
+        "provider_boundary_ms": 66.643032,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 200,
+        "end_sample": 241200,
+        "audio_end_ms": 10050,
+        "invocation_start_ms": 10067.210865,
+        "schedule_lateness_ms": 17.210865,
+        "provider_boundary_ms": 0.001701,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 201,
+        "end_sample": 242400,
+        "audio_end_ms": 10100,
+        "invocation_start_ms": 10100.336786,
+        "schedule_lateness_ms": 0.336786,
+        "provider_boundary_ms": 0.001622,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 202,
+        "end_sample": 243600,
+        "audio_end_ms": 10150,
+        "invocation_start_ms": 10150.483849,
+        "schedule_lateness_ms": 0.483849,
+        "provider_boundary_ms": 0.002237,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 203,
+        "end_sample": 244800,
+        "audio_end_ms": 10200,
+        "invocation_start_ms": 10200.626701,
+        "schedule_lateness_ms": 0.626701,
+        "provider_boundary_ms": 70.221441,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 204,
+        "end_sample": 246000,
+        "audio_end_ms": 10250,
+        "invocation_start_ms": 10270.85217,
+        "schedule_lateness_ms": 20.85217,
+        "provider_boundary_ms": 0.001442,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 205,
+        "end_sample": 247200,
+        "audio_end_ms": 10300,
+        "invocation_start_ms": 10301.005917,
+        "schedule_lateness_ms": 1.005917,
+        "provider_boundary_ms": 0.002134,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 206,
+        "end_sample": 248400,
+        "audio_end_ms": 10350,
+        "invocation_start_ms": 10350.164541,
+        "schedule_lateness_ms": 0.164541,
+        "provider_boundary_ms": 0.002038,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 207,
+        "end_sample": 249600,
+        "audio_end_ms": 10400,
+        "invocation_start_ms": 10400.309312,
+        "schedule_lateness_ms": 0.309312,
+        "provider_boundary_ms": 70.952707,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 208,
+        "end_sample": 250800,
+        "audio_end_ms": 10450,
+        "invocation_start_ms": 10471.267942,
+        "schedule_lateness_ms": 21.267942,
+        "provider_boundary_ms": 0.001238,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 209,
+        "end_sample": 252000,
+        "audio_end_ms": 10500,
+        "invocation_start_ms": 10500.410982,
+        "schedule_lateness_ms": 0.410982,
+        "provider_boundary_ms": 0.002016,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 210,
+        "end_sample": 253200,
+        "audio_end_ms": 10550,
+        "invocation_start_ms": 10550.561662,
+        "schedule_lateness_ms": 0.561662,
+        "provider_boundary_ms": 0.002809,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 211,
+        "end_sample": 254400,
+        "audio_end_ms": 10600,
+        "invocation_start_ms": 10600.703156,
+        "schedule_lateness_ms": 0.703156,
+        "provider_boundary_ms": 66.140488,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 212,
+        "end_sample": 255600,
+        "audio_end_ms": 10650,
+        "invocation_start_ms": 10666.848142,
+        "schedule_lateness_ms": 16.848142,
+        "provider_boundary_ms": 0.000967,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 213,
+        "end_sample": 256800,
+        "audio_end_ms": 10700,
+        "invocation_start_ms": 10701.011402,
+        "schedule_lateness_ms": 1.011402,
+        "provider_boundary_ms": 0.002482,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 214,
+        "end_sample": 258000,
+        "audio_end_ms": 10750,
+        "invocation_start_ms": 10750.183378,
+        "schedule_lateness_ms": 0.183378,
+        "provider_boundary_ms": 0.002222,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 215,
+        "end_sample": 259200,
+        "audio_end_ms": 10800,
+        "invocation_start_ms": 10800.353492,
+        "schedule_lateness_ms": 0.353492,
+        "provider_boundary_ms": 77.398307,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 216,
+        "end_sample": 260400,
+        "audio_end_ms": 10850,
+        "invocation_start_ms": 10877.758156,
+        "schedule_lateness_ms": 27.758156,
+        "provider_boundary_ms": 0.001174,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 217,
+        "end_sample": 261600,
+        "audio_end_ms": 10900,
+        "invocation_start_ms": 10900.919181,
+        "schedule_lateness_ms": 0.919181,
+        "provider_boundary_ms": 0.002444,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 218,
+        "end_sample": 262800,
+        "audio_end_ms": 10950,
+        "invocation_start_ms": 10950.023841,
+        "schedule_lateness_ms": 0.023841,
+        "provider_boundary_ms": 0.001612,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 219,
+        "end_sample": 264000,
+        "audio_end_ms": 11000,
+        "invocation_start_ms": 11000.182897,
+        "schedule_lateness_ms": 0.182897,
+        "provider_boundary_ms": 64.671049,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 220,
+        "end_sample": 265200,
+        "audio_end_ms": 11050,
+        "invocation_start_ms": 11064.860674,
+        "schedule_lateness_ms": 14.860674,
+        "provider_boundary_ms": 0.001164,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 221,
+        "end_sample": 266400,
+        "audio_end_ms": 11100,
+        "invocation_start_ms": 11100.995002,
+        "schedule_lateness_ms": 0.995002,
+        "provider_boundary_ms": 0.001892,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 222,
+        "end_sample": 267600,
+        "audio_end_ms": 11150,
+        "invocation_start_ms": 11150.159219,
+        "schedule_lateness_ms": 0.159219,
+        "provider_boundary_ms": 0.002123,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 223,
+        "end_sample": 268800,
+        "audio_end_ms": 11200,
+        "invocation_start_ms": 11200.307394,
+        "schedule_lateness_ms": 0.307394,
+        "provider_boundary_ms": 78.265045,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 224,
+        "end_sample": 270000,
+        "audio_end_ms": 11250,
+        "invocation_start_ms": 11278.579042,
+        "schedule_lateness_ms": 28.579042,
+        "provider_boundary_ms": 0.000824,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 225,
+        "end_sample": 271200,
+        "audio_end_ms": 11300,
+        "invocation_start_ms": 11300.707387,
+        "schedule_lateness_ms": 0.707387,
+        "provider_boundary_ms": 0.00162,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 226,
+        "end_sample": 272400,
+        "audio_end_ms": 11350,
+        "invocation_start_ms": 11350.848683,
+        "schedule_lateness_ms": 0.848683,
+        "provider_boundary_ms": 0.002153,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 227,
+        "end_sample": 273600,
+        "audio_end_ms": 11400,
+        "invocation_start_ms": 11400.991985,
+        "schedule_lateness_ms": 0.991985,
+        "provider_boundary_ms": 71.305745,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 228,
+        "end_sample": 274800,
+        "audio_end_ms": 11450,
+        "invocation_start_ms": 11472.303561,
+        "schedule_lateness_ms": 22.303561,
+        "provider_boundary_ms": 0.001666,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 229,
+        "end_sample": 276000,
+        "audio_end_ms": 11500,
+        "invocation_start_ms": 11500.418463,
+        "schedule_lateness_ms": 0.418463,
+        "provider_boundary_ms": 0.002094,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 230,
+        "end_sample": 277200,
+        "audio_end_ms": 11550,
+        "invocation_start_ms": 11550.555952,
+        "schedule_lateness_ms": 0.555952,
+        "provider_boundary_ms": 0.002058,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 231,
+        "end_sample": 278400,
+        "audio_end_ms": 11600,
+        "invocation_start_ms": 11600.700427,
+        "schedule_lateness_ms": 0.700427,
+        "provider_boundary_ms": 64.267186,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 232,
+        "end_sample": 279600,
+        "audio_end_ms": 11650,
+        "invocation_start_ms": 11664.972931,
+        "schedule_lateness_ms": 14.972931,
+        "provider_boundary_ms": 0.001021,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 233,
+        "end_sample": 280800,
+        "audio_end_ms": 11700,
+        "invocation_start_ms": 11700.068391,
+        "schedule_lateness_ms": 0.068391,
+        "provider_boundary_ms": 0.001932,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 234,
+        "end_sample": 282000,
+        "audio_end_ms": 11750,
+        "invocation_start_ms": 11750.342585,
+        "schedule_lateness_ms": 0.342585,
+        "provider_boundary_ms": 0.002216,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 235,
+        "end_sample": 283200,
+        "audio_end_ms": 11800,
+        "invocation_start_ms": 11800.486058,
+        "schedule_lateness_ms": 0.486058,
+        "provider_boundary_ms": 74.455083,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 236,
+        "end_sample": 284400,
+        "audio_end_ms": 11850,
+        "invocation_start_ms": 11874.947295,
+        "schedule_lateness_ms": 24.947295,
+        "provider_boundary_ms": 0.001204,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 237,
+        "end_sample": 285600,
+        "audio_end_ms": 11900,
+        "invocation_start_ms": 11900.052437,
+        "schedule_lateness_ms": 0.052437,
+        "provider_boundary_ms": 0.002132,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 238,
+        "end_sample": 286800,
+        "audio_end_ms": 11950,
+        "invocation_start_ms": 11950.226556,
+        "schedule_lateness_ms": 0.226556,
+        "provider_boundary_ms": 0.002356,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 239,
+        "end_sample": 288000,
+        "audio_end_ms": 12000,
+        "invocation_start_ms": 12000.39628,
+        "schedule_lateness_ms": 0.39628,
+        "provider_boundary_ms": 69.301263,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 240,
+        "end_sample": 289200,
+        "audio_end_ms": 12050,
+        "invocation_start_ms": 12069.703687,
+        "schedule_lateness_ms": 19.703687,
+        "provider_boundary_ms": 0.001083,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 241,
+        "end_sample": 290400,
+        "audio_end_ms": 12100,
+        "invocation_start_ms": 12100.843841,
+        "schedule_lateness_ms": 0.843841,
+        "provider_boundary_ms": 0.001765,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 242,
+        "end_sample": 291600,
+        "audio_end_ms": 12150,
+        "invocation_start_ms": 12150.995715,
+        "schedule_lateness_ms": 0.995715,
+        "provider_boundary_ms": 0.001954,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 243,
+        "end_sample": 292800,
+        "audio_end_ms": 12200,
+        "invocation_start_ms": 12200.151821,
+        "schedule_lateness_ms": 0.151821,
+        "provider_boundary_ms": 73.074178,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 244,
+        "end_sample": 294000,
+        "audio_end_ms": 12250,
+        "invocation_start_ms": 12273.230421,
+        "schedule_lateness_ms": 23.230421,
+        "provider_boundary_ms": 0.00114,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 245,
+        "end_sample": 295200,
+        "audio_end_ms": 12300,
+        "invocation_start_ms": 12300.42109,
+        "schedule_lateness_ms": 0.42109,
+        "provider_boundary_ms": 0.002021,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 246,
+        "end_sample": 296400,
+        "audio_end_ms": 12350,
+        "invocation_start_ms": 12350.556322,
+        "schedule_lateness_ms": 0.556322,
+        "provider_boundary_ms": 0.00186,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 247,
+        "end_sample": 297600,
+        "audio_end_ms": 12400,
+        "invocation_start_ms": 12400.701408,
+        "schedule_lateness_ms": 0.701408,
+        "provider_boundary_ms": 65.337017,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 248,
+        "end_sample": 298800,
+        "audio_end_ms": 12450,
+        "invocation_start_ms": 12466.042838,
+        "schedule_lateness_ms": 16.042838,
+        "provider_boundary_ms": 0.001012,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 249,
+        "end_sample": 300000,
+        "audio_end_ms": 12500,
+        "invocation_start_ms": 12500.170976,
+        "schedule_lateness_ms": 0.170976,
+        "provider_boundary_ms": 0.00287,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 250,
+        "end_sample": 301200,
+        "audio_end_ms": 12550,
+        "invocation_start_ms": 12550.337441,
+        "schedule_lateness_ms": 0.337441,
+        "provider_boundary_ms": 0.002657,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 251,
+        "end_sample": 302400,
+        "audio_end_ms": 12600,
+        "invocation_start_ms": 12600.480254,
+        "schedule_lateness_ms": 0.480254,
+        "provider_boundary_ms": 65.100276,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 252,
+        "end_sample": 303600,
+        "audio_end_ms": 12650,
+        "invocation_start_ms": 12665.585127,
+        "schedule_lateness_ms": 15.585127,
+        "provider_boundary_ms": 0.001485,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 253,
+        "end_sample": 304800,
+        "audio_end_ms": 12700,
+        "invocation_start_ms": 12700.711317,
+        "schedule_lateness_ms": 0.711317,
+        "provider_boundary_ms": 0.002162,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 254,
+        "end_sample": 306000,
+        "audio_end_ms": 12750,
+        "invocation_start_ms": 12750.854384,
+        "schedule_lateness_ms": 0.854384,
+        "provider_boundary_ms": 0.00212,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 255,
+        "end_sample": 307200,
+        "audio_end_ms": 12800,
+        "invocation_start_ms": 12801.763056,
+        "schedule_lateness_ms": 1.763056,
+        "provider_boundary_ms": 79.266327,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 256,
+        "end_sample": 308400,
+        "audio_end_ms": 12850,
+        "invocation_start_ms": 12881.036729,
+        "schedule_lateness_ms": 31.036729,
+        "provider_boundary_ms": 0.001026,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 257,
+        "end_sample": 309600,
+        "audio_end_ms": 12900,
+        "invocation_start_ms": 12900.47202,
+        "schedule_lateness_ms": 0.47202,
+        "provider_boundary_ms": 0.002153,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 258,
+        "end_sample": 310800,
+        "audio_end_ms": 12950,
+        "invocation_start_ms": 12950.798906,
+        "schedule_lateness_ms": 0.798906,
+        "provider_boundary_ms": 0.002062,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 259,
+        "end_sample": 312000,
+        "audio_end_ms": 13000,
+        "invocation_start_ms": 13000.963732,
+        "schedule_lateness_ms": 0.963732,
+        "provider_boundary_ms": 71.688051,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 260,
+        "end_sample": 313200,
+        "audio_end_ms": 13050,
+        "invocation_start_ms": 13072.663209,
+        "schedule_lateness_ms": 22.663209,
+        "provider_boundary_ms": 0.000854,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 261,
+        "end_sample": 314400,
+        "audio_end_ms": 13100,
+        "invocation_start_ms": 13100.824902,
+        "schedule_lateness_ms": 0.824902,
+        "provider_boundary_ms": 0.002017,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 262,
+        "end_sample": 315600,
+        "audio_end_ms": 13150,
+        "invocation_start_ms": 13151.016344,
+        "schedule_lateness_ms": 1.016344,
+        "provider_boundary_ms": 0.002656,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 263,
+        "end_sample": 316800,
+        "audio_end_ms": 13200,
+        "invocation_start_ms": 13200.210283,
+        "schedule_lateness_ms": 0.210283,
+        "provider_boundary_ms": 78.455479,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 264,
+        "end_sample": 318000,
+        "audio_end_ms": 13250,
+        "invocation_start_ms": 13278.673125,
+        "schedule_lateness_ms": 28.673125,
+        "provider_boundary_ms": 0.000826,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 265,
+        "end_sample": 319200,
+        "audio_end_ms": 13300,
+        "invocation_start_ms": 13300.821173,
+        "schedule_lateness_ms": 0.821173,
+        "provider_boundary_ms": 0.002225,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 266,
+        "end_sample": 320400,
+        "audio_end_ms": 13350,
+        "invocation_start_ms": 13351.01708,
+        "schedule_lateness_ms": 1.01708,
+        "provider_boundary_ms": 0.001495,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 267,
+        "end_sample": 321600,
+        "audio_end_ms": 13400,
+        "invocation_start_ms": 13400.178432,
+        "schedule_lateness_ms": 0.178432,
+        "provider_boundary_ms": 65.030791,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 268,
+        "end_sample": 322800,
+        "audio_end_ms": 13450,
+        "invocation_start_ms": 13465.214019,
+        "schedule_lateness_ms": 15.214019,
+        "provider_boundary_ms": 0.001288,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 269,
+        "end_sample": 324000,
+        "audio_end_ms": 13500,
+        "invocation_start_ms": 13500.348724,
+        "schedule_lateness_ms": 0.348724,
+        "provider_boundary_ms": 0.002456,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 270,
+        "end_sample": 325200,
+        "audio_end_ms": 13550,
+        "invocation_start_ms": 13550.490566,
+        "schedule_lateness_ms": 0.490566,
+        "provider_boundary_ms": 0.00207,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 271,
+        "end_sample": 326400,
+        "audio_end_ms": 13600,
+        "invocation_start_ms": 13600.630598,
+        "schedule_lateness_ms": 0.630598,
+        "provider_boundary_ms": 71.543546,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 272,
+        "end_sample": 327600,
+        "audio_end_ms": 13650,
+        "invocation_start_ms": 13672.180898,
+        "schedule_lateness_ms": 22.180898,
+        "provider_boundary_ms": 0.000869,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 273,
+        "end_sample": 328800,
+        "audio_end_ms": 13700,
+        "invocation_start_ms": 13700.302678,
+        "schedule_lateness_ms": 0.302678,
+        "provider_boundary_ms": 0.00221,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 274,
+        "end_sample": 330000,
+        "audio_end_ms": 13750,
+        "invocation_start_ms": 13750.477362,
+        "schedule_lateness_ms": 0.477362,
+        "provider_boundary_ms": 0.00261,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 275,
+        "end_sample": 331200,
+        "audio_end_ms": 13800,
+        "invocation_start_ms": 13800.629214,
+        "schedule_lateness_ms": 0.629214,
+        "provider_boundary_ms": 72.744975,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 276,
+        "end_sample": 332400,
+        "audio_end_ms": 13850,
+        "invocation_start_ms": 13873.379444,
+        "schedule_lateness_ms": 23.379444,
+        "provider_boundary_ms": 0.001128,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 277,
+        "end_sample": 333600,
+        "audio_end_ms": 13900,
+        "invocation_start_ms": 13900.48946,
+        "schedule_lateness_ms": 0.48946,
+        "provider_boundary_ms": 0.001987,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 278,
+        "end_sample": 334800,
+        "audio_end_ms": 13950,
+        "invocation_start_ms": 13950.700395,
+        "schedule_lateness_ms": 0.700395,
+        "provider_boundary_ms": 0.001554,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 279,
+        "end_sample": 336000,
+        "audio_end_ms": 14000,
+        "invocation_start_ms": 14000.859436,
+        "schedule_lateness_ms": 0.859436,
+        "provider_boundary_ms": 72.806187,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 280,
+        "end_sample": 337200,
+        "audio_end_ms": 14050,
+        "invocation_start_ms": 14073.672951,
+        "schedule_lateness_ms": 23.672951,
+        "provider_boundary_ms": 0.001193,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 281,
+        "end_sample": 338400,
+        "audio_end_ms": 14100,
+        "invocation_start_ms": 14100.830681,
+        "schedule_lateness_ms": 0.830681,
+        "provider_boundary_ms": 0.002319,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 282,
+        "end_sample": 339600,
+        "audio_end_ms": 14150,
+        "invocation_start_ms": 14150.99154,
+        "schedule_lateness_ms": 0.99154,
+        "provider_boundary_ms": 0.001919,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 283,
+        "end_sample": 340800,
+        "audio_end_ms": 14200,
+        "invocation_start_ms": 14200.149302,
+        "schedule_lateness_ms": 0.149302,
+        "provider_boundary_ms": 80.325636,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 284,
+        "end_sample": 342000,
+        "audio_end_ms": 14250,
+        "invocation_start_ms": 14280.479915,
+        "schedule_lateness_ms": 30.479915,
+        "provider_boundary_ms": 0.001506,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 285,
+        "end_sample": 343200,
+        "audio_end_ms": 14300,
+        "invocation_start_ms": 14300.633245,
+        "schedule_lateness_ms": 0.633245,
+        "provider_boundary_ms": 0.002351,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 286,
+        "end_sample": 344400,
+        "audio_end_ms": 14350,
+        "invocation_start_ms": 14350.807784,
+        "schedule_lateness_ms": 0.807784,
+        "provider_boundary_ms": 0.002173,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 287,
+        "end_sample": 345600,
+        "audio_end_ms": 14400,
+        "invocation_start_ms": 14400.983134,
+        "schedule_lateness_ms": 0.983134,
+        "provider_boundary_ms": 68.742381,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 288,
+        "end_sample": 346800,
+        "audio_end_ms": 14450,
+        "invocation_start_ms": 14469.730354,
+        "schedule_lateness_ms": 19.730354,
+        "provider_boundary_ms": 0.001462,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 289,
+        "end_sample": 348000,
+        "audio_end_ms": 14500,
+        "invocation_start_ms": 14502.346746,
+        "schedule_lateness_ms": 2.346746,
+        "provider_boundary_ms": 0.002329,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 290,
+        "end_sample": 349200,
+        "audio_end_ms": 14550,
+        "invocation_start_ms": 14550.346934,
+        "schedule_lateness_ms": 0.346934,
+        "provider_boundary_ms": 0.002322,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 291,
+        "end_sample": 350400,
+        "audio_end_ms": 14600,
+        "invocation_start_ms": 14602.348787,
+        "schedule_lateness_ms": 2.348787,
+        "provider_boundary_ms": 79.34707,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 292,
+        "end_sample": 351600,
+        "audio_end_ms": 14650,
+        "invocation_start_ms": 14681.702161,
+        "schedule_lateness_ms": 31.702161,
+        "provider_boundary_ms": 0.000948,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 293,
+        "end_sample": 352800,
+        "audio_end_ms": 14700,
+        "invocation_start_ms": 14700.855637,
+        "schedule_lateness_ms": 0.855637,
+        "provider_boundary_ms": 0.001668,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 294,
+        "end_sample": 354000,
+        "audio_end_ms": 14750,
+        "invocation_start_ms": 14750.993131,
+        "schedule_lateness_ms": 0.993131,
+        "provider_boundary_ms": 0.002332,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 295,
+        "end_sample": 355200,
+        "audio_end_ms": 14800,
+        "invocation_start_ms": 14800.346791,
+        "schedule_lateness_ms": 0.346791,
+        "provider_boundary_ms": 68.981262,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 296,
+        "end_sample": 356400,
+        "audio_end_ms": 14850,
+        "invocation_start_ms": 14869.332518,
+        "schedule_lateness_ms": 19.332518,
+        "provider_boundary_ms": 0.000976,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 297,
+        "end_sample": 357600,
+        "audio_end_ms": 14900,
+        "invocation_start_ms": 14900.489514,
+        "schedule_lateness_ms": 0.489514,
+        "provider_boundary_ms": 0.001588,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 298,
+        "end_sample": 358800,
+        "audio_end_ms": 14950,
+        "invocation_start_ms": 14950.62924,
+        "schedule_lateness_ms": 0.62924,
+        "provider_boundary_ms": 0.002648,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 299,
+        "end_sample": 360000,
+        "audio_end_ms": 15000,
+        "invocation_start_ms": 15000.773911,
+        "schedule_lateness_ms": 0.773911,
+        "provider_boundary_ms": 76.809211,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 300,
+        "end_sample": 361200,
+        "audio_end_ms": 15050,
+        "invocation_start_ms": 15077.59042,
+        "schedule_lateness_ms": 27.59042,
+        "provider_boundary_ms": 0.001252,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 301,
+        "end_sample": 362400,
+        "audio_end_ms": 15100,
+        "invocation_start_ms": 15100.751667,
+        "schedule_lateness_ms": 0.751667,
+        "provider_boundary_ms": 0.001532,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 302,
+        "end_sample": 363600,
+        "audio_end_ms": 15150,
+        "invocation_start_ms": 15150.950101,
+        "schedule_lateness_ms": 0.950101,
+        "provider_boundary_ms": 0.001942,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 303,
+        "end_sample": 364800,
+        "audio_end_ms": 15200,
+        "invocation_start_ms": 15200.053681,
+        "schedule_lateness_ms": 0.053681,
+        "provider_boundary_ms": 80.176108,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 304,
+        "end_sample": 366000,
+        "audio_end_ms": 15250,
+        "invocation_start_ms": 15280.236904,
+        "schedule_lateness_ms": 30.236904,
+        "provider_boundary_ms": 0.001539,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 305,
+        "end_sample": 367200,
+        "audio_end_ms": 15300,
+        "invocation_start_ms": 15300.336988,
+        "schedule_lateness_ms": 0.336988,
+        "provider_boundary_ms": 0.001761,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 306,
+        "end_sample": 368400,
+        "audio_end_ms": 15350,
+        "invocation_start_ms": 15350.494406,
+        "schedule_lateness_ms": 0.494406,
+        "provider_boundary_ms": 0.001831,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 307,
+        "end_sample": 369600,
+        "audio_end_ms": 15400,
+        "invocation_start_ms": 15400.644885,
+        "schedule_lateness_ms": 0.644885,
+        "provider_boundary_ms": 68.266459,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 308,
+        "end_sample": 370800,
+        "audio_end_ms": 15450,
+        "invocation_start_ms": 15468.915817,
+        "schedule_lateness_ms": 18.915817,
+        "provider_boundary_ms": 0.000896,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 309,
+        "end_sample": 372000,
+        "audio_end_ms": 15500,
+        "invocation_start_ms": 15501.062481,
+        "schedule_lateness_ms": 1.062481,
+        "provider_boundary_ms": 0.001933,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 310,
+        "end_sample": 373200,
+        "audio_end_ms": 15550,
+        "invocation_start_ms": 15550.215283,
+        "schedule_lateness_ms": 0.215283,
+        "provider_boundary_ms": 0.002253,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 311,
+        "end_sample": 374400,
+        "audio_end_ms": 15600,
+        "invocation_start_ms": 15600.338761,
+        "schedule_lateness_ms": 0.338761,
+        "provider_boundary_ms": 76.245341,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 312,
+        "end_sample": 375600,
+        "audio_end_ms": 15650,
+        "invocation_start_ms": 15676.591304,
+        "schedule_lateness_ms": 26.591304,
+        "provider_boundary_ms": 0.000794,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 313,
+        "end_sample": 376800,
+        "audio_end_ms": 15700,
+        "invocation_start_ms": 15700.74718,
+        "schedule_lateness_ms": 0.74718,
+        "provider_boundary_ms": 0.00206,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 314,
+        "end_sample": 378000,
+        "audio_end_ms": 15750,
+        "invocation_start_ms": 15750.92166,
+        "schedule_lateness_ms": 0.92166,
+        "provider_boundary_ms": 0.001835,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 315,
+        "end_sample": 379200,
+        "audio_end_ms": 15800,
+        "invocation_start_ms": 15800.274858,
+        "schedule_lateness_ms": 0.274858,
+        "provider_boundary_ms": 72.625146,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 316,
+        "end_sample": 380400,
+        "audio_end_ms": 15850,
+        "invocation_start_ms": 15872.907372,
+        "schedule_lateness_ms": 22.907372,
+        "provider_boundary_ms": 0.001297,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 317,
+        "end_sample": 381600,
+        "audio_end_ms": 15900,
+        "invocation_start_ms": 15901.058186,
+        "schedule_lateness_ms": 1.058186,
+        "provider_boundary_ms": 0.002174,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 318,
+        "end_sample": 382800,
+        "audio_end_ms": 15950,
+        "invocation_start_ms": 15950.233942,
+        "schedule_lateness_ms": 0.233942,
+        "provider_boundary_ms": 0.002345,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 319,
+        "end_sample": 384000,
+        "audio_end_ms": 16000,
+        "invocation_start_ms": 16000.40291,
+        "schedule_lateness_ms": 0.40291,
+        "provider_boundary_ms": 69.940323,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 320,
+        "end_sample": 385200,
+        "audio_end_ms": 16050,
+        "invocation_start_ms": 16070.347523,
+        "schedule_lateness_ms": 20.347523,
+        "provider_boundary_ms": 0.000779,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 321,
+        "end_sample": 385916,
+        "audio_end_ms": 16079.833333,
+        "invocation_start_ms": 16080.495746,
+        "schedule_lateness_ms": 0.662413,
+        "provider_boundary_ms": 0.001889,
+        "provider_invocations": 0,
+        "revision_count": 0
+      }
+    ],
+    "revisions": [
+      {
+        "revision_id": 1,
+        "source_sample": 9600,
+        "source_ms": 400,
+        "wall_ms": 468.302929,
+        "unstable_text": "Call.",
+        "delta": "Call.",
+        "final": false
+      },
+      {
+        "revision_id": 2,
+        "source_sample": 14400,
+        "source_ms": 600,
+        "wall_ms": 676.500592,
+        "unstable_text": "Call record.",
+        "delta": "Call record.",
+        "final": false
+      },
+      {
+        "revision_id": 3,
+        "source_sample": 19200,
+        "source_ms": 800,
+        "wall_ms": 874.140173,
+        "unstable_text": "Call records.",
+        "delta": "Call records.",
+        "final": false
+      },
+      {
+        "revision_id": 4,
+        "source_sample": 28800,
+        "source_ms": 1200,
+        "wall_ms": 1272.52461,
+        "unstable_text": "CallRecords dot.",
+        "delta": "CallRecords dot.",
+        "final": false
+      },
+      {
+        "revision_id": 5,
+        "source_sample": 33600,
+        "source_ms": 1400,
+        "wall_ms": 1470.502818,
+        "unstable_text": "CallRecords dot read.",
+        "delta": "CallRecords dot read.",
+        "final": false
+      },
+      {
+        "revision_id": 6,
+        "source_sample": 38400,
+        "source_ms": 1600,
+        "wall_ms": 1661.309657,
+        "unstable_text": "Call Records dot read.",
+        "delta": "Call Records dot read.",
+        "final": false
+      },
+      {
+        "revision_id": 7,
+        "source_sample": 43200,
+        "source_ms": 1800,
+        "wall_ms": 1863.489279,
+        "unstable_text": "Call Records dot read with.",
+        "delta": "Call Records dot read with.",
+        "final": false
+      },
+      {
+        "revision_id": 8,
+        "source_sample": 48000,
+        "source_ms": 2000,
+        "wall_ms": 2069.086078,
+        "unstable_text": "Call records dot read with this.",
+        "delta": "Call records dot read with this.",
+        "final": false
+      },
+      {
+        "revision_id": 9,
+        "source_sample": 52800,
+        "source_ms": 2200,
+        "wall_ms": 2274.23685,
+        "unstable_text": "Call records dot read with this JSON.",
+        "delta": "Call records dot read with this JSON.",
+        "final": false
+      },
+      {
+        "revision_id": 10,
+        "source_sample": 62400,
+        "source_ms": 2600,
+        "wall_ms": 2668.802486,
+        "unstable_text": "Call records dot read with this JSON argument.",
+        "delta": "Call records dot read with this JSON argument.",
+        "final": false
+      },
+      {
+        "revision_id": 11,
+        "source_sample": 86400,
+        "source_ms": 3600,
+        "wall_ms": 3670.905981,
+        "unstable_text": "Call records dot read with this JSON argument, key.",
+        "delta": "Call records dot read with this JSON argument, key.",
+        "final": false
+      },
+      {
+        "revision_id": 12,
+        "source_sample": 91200,
+        "source_ms": 3800,
+        "wall_ms": 3856.910111,
+        "unstable_text": "Call records dot read with this JSON argument key.",
+        "delta": "Call records dot read with this JSON argument key.",
+        "final": false
+      },
+      {
+        "revision_id": 13,
+        "source_sample": 96000,
+        "source_ms": 4000,
+        "wall_ms": 4087.824725,
+        "unstable_text": "Call records dot read with this JSON argument key equal.",
+        "delta": "Call records dot read with this JSON argument key equal.",
+        "final": false
+      },
+      {
+        "revision_id": 14,
+        "source_sample": 100800,
+        "source_ms": 4200,
+        "wall_ms": 4271.99179,
+        "unstable_text": "Call records dot read with this JSON argument, key equals.",
+        "delta": "Call records dot read with this JSON argument, key equals.",
+        "final": false
+      },
+      {
+        "revision_id": 15,
+        "source_sample": 110400,
+        "source_ms": 4600,
+        "wall_ms": 4664.423134,
+        "unstable_text": "Call records dot read with this JSON argument, key equals access.",
+        "delta": "Call records dot read with this JSON argument, key equals access.",
+        "final": false
+      },
+      {
+        "revision_id": 16,
+        "source_sample": 115200,
+        "source_ms": 4800,
+        "wall_ms": 4861.625819,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access.",
+        "delta": "Call records dot read with this JSON argument: key equals access.",
+        "final": false
+      },
+      {
+        "revision_id": 17,
+        "source_sample": 124800,
+        "source_ms": 5200,
+        "wall_ms": 5268.859959,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access under.",
+        "delta": "Call records dot read with this JSON argument: key equals access under.",
+        "final": false
+      },
+      {
+        "revision_id": 18,
+        "source_sample": 129600,
+        "source_ms": 5400,
+        "wall_ms": 5461.463921,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore.",
+        "final": false
+      },
+      {
+        "revision_id": 19,
+        "source_sample": 144000,
+        "source_ms": 6000,
+        "wall_ms": 6069.836266,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase.",
+        "final": false
+      },
+      {
+        "revision_id": 20,
+        "source_sample": 168000,
+        "source_ms": 7000,
+        "wall_ms": 7071.26038,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase. The exact.",
+        "delta": " The exact.",
+        "final": false
+      },
+      {
+        "revision_id": 21,
+        "source_sample": 172800,
+        "source_ms": 7200,
+        "wall_ms": 7276.082939,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key.",
+        "final": false
+      },
+      {
+        "revision_id": 22,
+        "source_sample": 182400,
+        "source_ms": 7600,
+        "wall_ms": 7668.946184,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value.",
+        "final": false
+      },
+      {
+        "revision_id": 23,
+        "source_sample": 196800,
+        "source_ms": 8200,
+        "wall_ms": 8272.287196,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has.",
+        "final": false
+      },
+      {
+        "revision_id": 24,
+        "source_sample": 201600,
+        "source_ms": 8400,
+        "wall_ms": 8467.457712,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two.",
+        "final": false
+      },
+      {
+        "revision_id": 25,
+        "source_sample": 206400,
+        "source_ms": 8600,
+        "wall_ms": 8666.559212,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words.",
+        "final": false
+      },
+      {
+        "revision_id": 26,
+        "source_sample": 225600,
+        "source_ms": 9400,
+        "wall_ms": 9472.220303,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words access.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words access.",
+        "final": false
+      },
+      {
+        "revision_id": 27,
+        "source_sample": 230400,
+        "source_ms": 9600,
+        "wall_ms": 9670.462598,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and.",
+        "final": false
+      },
+      {
+        "revision_id": 28,
+        "source_sample": 240000,
+        "source_ms": 10000,
+        "wall_ms": 10067.207435,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase.",
+        "final": false
+      },
+      {
+        "revision_id": 29,
+        "source_sample": 259200,
+        "source_ms": 10800,
+        "wall_ms": 10877.755147,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated.",
+        "final": false
+      },
+      {
+        "revision_id": 30,
+        "source_sample": 264000,
+        "source_ms": 11000,
+        "wall_ms": 11064.8578,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase separated.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase separated.",
+        "final": false
+      },
+      {
+        "revision_id": 31,
+        "source_sample": 268800,
+        "source_ms": 11200,
+        "wall_ms": 11278.576437,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by.",
+        "final": false
+      },
+      {
+        "revision_id": 32,
+        "source_sample": 273600,
+        "source_ms": 11400,
+        "wall_ms": 11472.301522,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one.",
+        "final": false
+      },
+      {
+        "revision_id": 33,
+        "source_sample": 283200,
+        "source_ms": 11800,
+        "wall_ms": 11874.944533,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore.",
+        "final": false
+      },
+      {
+        "revision_id": 34,
+        "source_sample": 307200,
+        "source_ms": 12800,
+        "wall_ms": 12881.03378,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not.",
+        "delta": " Do not.",
+        "final": false
+      },
+      {
+        "revision_id": 35,
+        "source_sample": 312000,
+        "source_ms": 13000,
+        "wall_ms": 13072.655934,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add.",
+        "final": false
+      },
+      {
+        "revision_id": 36,
+        "source_sample": 316800,
+        "source_ms": 13200,
+        "wall_ms": 13278.670275,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any.",
+        "final": false
+      },
+      {
+        "revision_id": 37,
+        "source_sample": 326400,
+        "source_ms": 13600,
+        "wall_ms": 13672.178085,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any other.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any other.",
+        "final": false
+      },
+      {
+        "revision_id": 38,
+        "source_sample": 336000,
+        "source_ms": 14000,
+        "wall_ms": 14073.670385,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any other word.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any other word.",
+        "final": false
+      },
+      {
+        "revision_id": 39,
+        "source_sample": 350400,
+        "source_ms": 14600,
+        "wall_ms": 14681.699542,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any other word. Return.",
+        "delta": " Return.",
+        "final": false
+      },
+      {
+        "revision_id": 40,
+        "source_sample": 360000,
+        "source_ms": 15000,
+        "wall_ms": 15077.5867,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any other word. Return the.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any other word. Return the.",
+        "final": false
+      },
+      {
+        "revision_id": 41,
+        "source_sample": 364800,
+        "source_ms": 15200,
+        "wall_ms": 15280.233862,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any other word. Return the code.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any other word. Return the code.",
+        "final": false
+      },
+      {
+        "revision_id": 42,
+        "source_sample": 374400,
+        "source_ms": 15600,
+        "wall_ms": 15676.58762,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any other word. Return the code exact.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any other word. Return the code exact.",
+        "final": false
+      },
+      {
+        "revision_id": 43,
+        "source_sample": 379200,
+        "source_ms": 15800,
+        "wall_ms": 15872.904366,
+        "unstable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any other word. Return the code exactly.",
+        "delta": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any other word. Return the code exactly.",
+        "final": false
+      },
+      {
+        "revision_id": 44,
+        "source_sample": 385916,
+        "source_ms": 16079.833333333334,
+        "wall_ms": 16156.301735,
+        "stable_text": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any other word. Return the code exactly.",
+        "final": true
+      }
+    ],
+    "scheduler_ticks": 322,
+    "provider_invocations": 81,
+    "finalization_provider_invocations": 1,
+    "first_partial_source_ms": 400,
+    "first_partial_wall_ms": 468.302929,
+    "end_to_final_ms": 76.470271,
+    "finalization_provider_boundary_ms": 75.799599,
+    "elapsed_ms": 16156.303604,
+    "provider_service_ms": 5683.332687,
+    "provider_service_rtf": 0.35344475090648625,
+    "mean_provider_invocation_ms": 70.09416359999997,
+    "p95_provider_invocation_ms": 79.34707,
+    "max_schedule_lateness_ms": 122.382731,
+    "final_transcript": "Call records dot read with this JSON argument: key equals access underscore phrase, the exact key value has two words: access and phrase, separated by one underscore. Do not add any other word. Return the code exactly.",
+    "reference_text": "Call records dot read with this JSON argument: key equals access underscore phrase. The exact key value has two words, access and phrase, separated by one underscore. Do not add any other word. Return the code exactly.",
+    "word_error_rate": 0
+  },
+  "model_invocations": [
+    {
+      "invocation_id": "invocation-1",
+      "phase": "fast",
+      "ordinal": 1,
+      "start_offset_ms": 16156.476368,
+      "first_event_ms": 242.886243,
+      "first_event_offset_ms": 16399.362611,
+      "duration_ms": 242.938101,
+      "usage": {
+        "input_tokens": 357,
+        "output_tokens": 21,
+        "total_tokens": 378
+      },
+      "stop_reason": "tool_calls",
+      "source_revision": 44
+    },
+    {
+      "invocation_id": "invocation-4",
+      "phase": "slow",
+      "ordinal": 1,
+      "start_offset_ms": 16399.45928,
+      "first_event_ms": 1136.056005,
+      "first_event_offset_ms": 17535.515285,
+      "duration_ms": 1143.113534,
+      "usage": {
+        "input_tokens": 287,
+        "output_tokens": 14,
+        "reasoning_tokens": 91,
+        "total_tokens": 392
+      },
+      "stop_reason": "STOP",
+      "source_revision": 44
+    },
+    {
+      "invocation_id": "invocation-8",
+      "phase": "slow",
+      "ordinal": 2,
+      "start_offset_ms": 17542.692227,
+      "first_event_ms": 1273.844736,
+      "first_event_offset_ms": 18816.536963,
+      "duration_ms": 1296.776389,
+      "usage": {
+        "input_tokens": 410,
+        "output_tokens": 6,
+        "reasoning_tokens": 74,
+        "total_tokens": 490
+      },
+      "stop_reason": "STOP",
+      "source_revision": 44
+    }
+  ],
+  "speech": [
+    {
+      "phase": "slow",
+      "ordinal": 1,
+      "start_offset_ms": 18839.590792,
+      "first_audio_offset_ms": 20331.431357999998,
+      "result": {
+        "case_id": "slow-1",
+        "text": "cerulean-17",
+        "descriptor": {
+          "name": "openai-speech-streaming/fishaudio/s2-pro",
+          "version": "openai-audio-speech-1",
+          "capabilities": {
+            "cancellation": true,
+            "pcm16_output": true,
+            "streaming_output": true
+          }
+        },
+        "first_audio_ms": 1491.840566,
+        "elapsed_ms": 1493.094798,
+        "output_duration_ms": 1625.4166666666667,
+        "real_time_factor": 0.9185920315816457,
+        "output_bytes": 78020,
+        "output_sha256": "714869389e61900c9ca401a0ad3f5f59818439510681284d0e6a69b361508925",
+        "chunks": [
+          {
+            "sequence": 1,
+            "arrival_ms": 1491.840722,
+            "audio_bytes": 4456,
+            "sample_offset": 0,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 2,
+            "arrival_ms": 1491.930502,
+            "audio_bytes": 4458,
+            "sample_offset": 2228,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 3,
+            "arrival_ms": 1491.960051,
+            "audio_bytes": 4458,
+            "sample_offset": 4457,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 4,
+            "arrival_ms": 1491.99873,
+            "audio_bytes": 4458,
+            "sample_offset": 6686,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 5,
+            "arrival_ms": 1492.037588,
+            "audio_bytes": 4460,
+            "sample_offset": 8915,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 6,
+            "arrival_ms": 1492.076836,
+            "audio_bytes": 4458,
+            "sample_offset": 11145,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 7,
+            "arrival_ms": 1492.120266,
+            "audio_bytes": 4458,
+            "sample_offset": 13374,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 8,
+            "arrival_ms": 1492.155826,
+            "audio_bytes": 4458,
+            "sample_offset": 15603,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 9,
+            "arrival_ms": 1492.202315,
+            "audio_bytes": 4458,
+            "sample_offset": 17832,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 10,
+            "arrival_ms": 1492.240315,
+            "audio_bytes": 4458,
+            "sample_offset": 20061,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 11,
+            "arrival_ms": 1492.280913,
+            "audio_bytes": 4458,
+            "sample_offset": 22290,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 12,
+            "arrival_ms": 1492.501539,
+            "audio_bytes": 4458,
+            "sample_offset": 24519,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 13,
+            "arrival_ms": 1492.603696,
+            "audio_bytes": 4458,
+            "sample_offset": 26748,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 14,
+            "arrival_ms": 1492.645229,
+            "audio_bytes": 4460,
+            "sample_offset": 28977,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 15,
+            "arrival_ms": 1492.732914,
+            "audio_bytes": 4458,
+            "sample_offset": 31207,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 16,
+            "arrival_ms": 1492.788399,
+            "audio_bytes": 4458,
+            "sample_offset": 33436,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 17,
+            "arrival_ms": 1492.834461,
+            "audio_bytes": 4458,
+            "sample_offset": 35665,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 18,
+            "arrival_ms": 1492.854397,
+            "audio_bytes": 2228,
+            "sample_offset": 37894,
+            "sample_rate_hz": 24000,
+            "final": false
+          },
+          {
+            "sequence": 19,
+            "arrival_ms": 1493.088282,
+            "audio_bytes": 4,
+            "sample_offset": 39008,
+            "sample_rate_hz": 24000,
+            "final": true
+          }
+        ],
+        "output_sample_rate_hz": 24000
+      }
+    }
+  ],
+  "assistant": [
+    {
+      "phase": "slow",
+      "text": "cerulean-17"
+    }
+  ],
+  "tool_proposals": [
+    {
+      "call_id": "chatcmpl-tool-ab78433a0c8f71a7",
+      "name": "records.read",
+      "arguments": {
+        "key": "access_phrase"
+      }
+    }
+  ],
+  "tool_calls": [
+    {
+      "call_id": "call_6517650",
+      "name": "records.read",
+      "arguments": {
+        "key": "access_phrase"
+      }
+    }
+  ],
+  "tool_results": [
+    {
+      "call_id": "call_6517650",
+      "name": "records.read",
+      "output": {
+        "code": "cerulean-17"
+      }
+    }
+  ],
+  "trajectory": {
+    "items": 9,
+    "public_sha256": "12cd0c03b0b9c3c213849fd6869f018eead03f0a53f40714553a5178f2d85472",
+    "kind_counts": {
+      "assistant": 1,
+      "assistant_state": 1,
+      "instruction": 3,
+      "observation": 1,
+      "tool_call": 1,
+      "tool_proposal": 1,
+      "tool_result": 1
+    }
+  },
+  "committed_fast_invocation_id": "invocation-1",
+  "endpoint_to_fast_first_event_ms": 319.529278,
+  "endpoint_to_fast_safe_point_ms": 319.5811359999989,
+  "endpoint_to_first_audio_ms": 4251.5980249999975,
+  "total_duration_ms": 20332.891818,
+  "passed": true
+}
