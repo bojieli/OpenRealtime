@@ -163,6 +163,19 @@ healthy gateway with a different hash. The earlier `matrix-v1` population is a
 preserved pre-freeze pilot and is intentionally absent from the full-study
 manifest.
 
+Each completed τ matrix then runs:
+
+```bash
+scripts/archive-tau-voice-artifacts.sh benchmarks/tau-voice/MATRIX.json
+```
+
+The scorer-required `results.json` and simulation trajectories remain
+expanded. Duplicate raw WAV/task-log trees are removed only after a
+deterministic PAX+Zstandard archive is readable and its SHA-256, size, source
+counts, matrix hash, cell, and domain have been atomically recorded. The final
+publication gate rehashes every archive and refuses residual expanded copies;
+each archive restores the original tree losslessly with `tar --zstd -xf`.
+
 After the long-running serial benchmark queue completes, run:
 
 ```bash

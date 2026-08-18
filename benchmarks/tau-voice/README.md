@@ -45,6 +45,16 @@ initial and final identities, and the terminal reporter rejects a missing,
 changed, or mixed executable. `matrix-v1.json` is preserved because its live
 pilot began before this freeze; it is not admitted by `full-study-v1.json`.
 
+The full matrices also have a lossless storage gate. After an exact matrix
+population validates, `archive-tau-voice-artifacts.sh` writes one deterministic
+PAX+Zstandard archive per cell/domain, verifies that it can be listed, records
+its SHA-256 and source file/byte counts, and only then removes the duplicate
+expanded WAV/task-log tree. `results.json` and every `simulations/*.json`
+scoring trajectory remain expanded. The terminal study reporter rehashes all
+84 archives and rejects missing evidence, archive drift, or an unarchived
+expanded tree. The raw files are exactly recoverable with the recorded `tar
+--zstd -xf` command; this is retention compaction, not benchmark filtering.
+
 Prepare the exact upstream revision, apply the local-endpoint/Fish patch, and
 run its affected tests:
 
