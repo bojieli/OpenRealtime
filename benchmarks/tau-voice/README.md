@@ -11,8 +11,64 @@ but fail the task, or intelligent but interact poorly.
 
 The pinned upstream identity and current run status are in
 [`tau-voice.manifest.json`](../external/tau-voice.manifest.json). No local score
-has been produced. The adapter and required external voice credentials are
+has been produced. A reproducible patch now keeps τ's standard OpenAI adapter,
+adds an explicit local WebSocket endpoint, and adds Fish Audio as a separately
+identified caller-synthesis provider. The persistent OpenRealtime gateway is
 still pending, so published τ-Voice numbers remain external context only.
+
+## Executable harness integration
+
+Prepare the exact upstream revision, apply the local-endpoint/Fish patch, and
+run its affected tests:
+
+```sh
+scripts/prepare-tau-voice.sh --verify
+```
+
+The upstream voice extra builds PyAudio. On Ubuntu, install
+`portaudio19-dev` before `--verify` if `portaudio.h` is unavailable.
+
+The patch does not add an `openrealtime` provider to τ and does not alter the
+OpenAI Realtime wire protocol. It extends `DiscreteTimeOpenAIAdapter` with the
+ordinary operational parameter `base_url`; all session, audio, tool, and usage
+events remain on the standard OpenAI path. It also adds `fish_audio` beside
+`elevenlabs` in the simulated caller's synthesis layer. The provider name,
+model, endpoint, voice, sample rates, and seed are retained in `VoiceRunConfig`;
+the optional Fish bearer token is read only from `FISH_AUDIO_API_KEY`.
+
+After the local gateway and model services are running, the first control
+smoke command has this shape:
+
+```sh
+TAU2_DIR=.runtime/tau2-bench scripts/prepare-tau-voice.sh
+OPENAI_API_KEY=local-only-token uv --directory .runtime/tau2-bench run tau2 run \
+  --domain airline \
+  --audio-native \
+  --audio-native-provider openai \
+  --audio-native-model openrealtime-local \
+  --audio-native-base-url ws://127.0.0.1:8765/v1/realtime \
+  --voice-synthesis-provider fish_audio \
+  --fish-audio-endpoint http://127.0.0.1:8081/v1/audio/speech \
+  --fish-audio-model fishaudio/s2-pro \
+  --fish-audio-voice default \
+  --tick-duration 0.2 \
+  --speech-complexity control \
+  --num-tasks 1 \
+  --num-trials 1 \
+  --verbose-logs
+```
+
+Use a dedicated local-only token in `OPENAI_API_KEY`; do not send a hosted API
+key to a development gateway. Fish needs no key on a trusted loopback server.
+The hosted slow continuation still reads its own provider credential inside
+OpenRealtime, not through the τ client.
+
+The checked patch is
+[`0001-local-openai-fish-audio.patch`](patches/0001-local-openai-fish-audio.patch).
+At the pinned revision its focused and affected voice/streaming suites pass 85
+tests. This verifies configuration, PCM synthesis, effects, and caller
+streaming; it is not the upstream live provider suite and is not a benchmark
+score.
 
 ## Adapter boundary
 
@@ -44,6 +100,12 @@ The bridge must pass the upstream audio-native provider test suite at revision
 continuous time and τ-Voice's default 200 ms evaluation ticks must remain
 distinct in telemetry.
 
+Fish Audio serves two distinct roles in the local condition. Agent speech is
+produced inside the OpenRealtime cascade and crosses the Realtime WebSocket as
+audio events. Simulated caller speech is produced directly by τ's patched
+`fish_audio` synthesis backend before its normal effects and telephony stages.
+Those paths must be reported separately even when they share one Fish service.
+
 ## Preregistered system matrix
 
 Use the same benchmark tasks, user simulator, tool environment, speech
@@ -65,9 +127,13 @@ where compute permits. The provider's real ASR advance size is reported
 separately. A 50 ms opportunity around a 200 ms stateful ASR buffer is a valid
 condition; describing it as 50 ms ASR inference is not.
 
-Run both `control` and `regular`. Use complete 278-task cells for confirmatory
-claims. Small task subsets are smoke tests and must be labeled by IDs, domains,
-selection procedure, and exploratory status.
+Run both `control` and `regular`. A single named Fish preset is sufficient for
+the clean paired control smoke test. The regular/accent condition requires a
+preregistered Fish voice registry or reference-audio map with license and
+speaker provenance; it must not reuse ElevenLabs IDs or be reported as the
+unmodified upstream voice condition. Use complete 278-task cells for
+confirmatory claims. Small task subsets are smoke tests and must be labeled by
+IDs, domains, selection procedure, and exploratory status.
 
 ## Intelligence and synchronization ablations
 
@@ -127,10 +193,11 @@ not success by themselves. Preserve failed trials and all condition changes.
 
 ## Current blockers and next action
 
-The upstream repository and interface are pinned, but this environment lacks
-the required ElevenLabs key and externally configured control-persona voice
-IDs. The next implementation action is the persistent `DiscreteTimeAdapter`
-bridge and upstream provider-conformance tests. The first live action after
-credentials are supplied is a one-task `control` smoke test followed by the
-preregistered paired matrix; no mock or text-only run will be relabeled as
-τ-Voice.
+The ElevenLabs dependency is removed for the local condition. The remaining
+critical path is the persistent OpenRealtime `/v1/realtime` gateway backed by
+the implemented ASR, canonical fast/slow event loop, external tool-result
+resumption, and Fish agent speech. Once that gateway passes τ's live provider
+suite, run the one-task `control` smoke command above. Configure and disclose
+Fish reference voices before any `regular` cell, then run the preregistered
+paired matrix. No patch test, mock, text-only run, or incomplete smoke run will
+be relabeled as a τ-Voice score.

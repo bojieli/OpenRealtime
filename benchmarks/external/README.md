@@ -15,12 +15,14 @@ speech conditions, and tick-level interaction metrics. Its default tick is
 200 ms.
 
 This is the primary planned joint intelligence/interaction benchmark for
-OpenRealtime, but it has not been run locally. The persistent OpenRealtime
-`DiscreteTimeAdapter` bridge remains to be implemented, and the current
-environment lacks the ElevenLabs credential and externally configured persona
-voice IDs required by the upstream user simulator. A mock-tool, text-only, or
-partial smoke result must not be reported as a τ-Voice score. See the
-[integration and evaluation plan](../tau-voice/README.md).
+OpenRealtime, but it has not been run locally. A checked patch preserves the
+standard upstream OpenAI adapter while adding an explicit local endpoint and a
+separately attributed Fish Audio caller synthesizer; 85 affected upstream tests
+pass from a fresh pinned checkout. The persistent OpenRealtime gateway and its
+live provider conformance remain to be implemented. Regular/accent cells also
+require a provenance-recorded Fish voice registry. A patch test, mock-tool,
+text-only, or partial smoke result must not be reported as a τ-Voice score. See
+the [integration and evaluation plan](../tau-voice/README.md).
 
 ## Full-Duplex-Bench v1.5
 

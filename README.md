@@ -206,8 +206,10 @@ local runs. Read the
 [external benchmark instructions](benchmarks/external/README.md).
 
 τ-Voice is pinned as the primary M10 joint intelligence/interaction benchmark.
-Its OpenRealtime adapter and required external voice credentials are still
-pending, so this repository does not claim a local τ-Voice score. See the
+Its standard OpenAI adapter can now target the planned local endpoint, and Fish
+Audio replaces ElevenLabs for local caller synthesis in a verified pinned
+patch. The persistent gateway and live provider conformance are still pending,
+so this repository does not claim a local τ-Voice score. See the
 [τ-Voice evaluation plan](benchmarks/tau-voice/README.md).
 
 ## Principles

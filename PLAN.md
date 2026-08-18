@@ -965,8 +965,9 @@ Deliverables:
 
 - Paired local-Qwen-fast and Gemini-fast conditions with Gemini 3.5 Flash medium/high slow continuation.
 - A pinned τ-Voice adapter covering its full 278-task airline/retail/telecom
-  suite in both control and regular speech conditions, subject to upstream
-  credentials/persona access.
+  suite in both control and regular speech conditions. Preserve its standard
+  OpenAI adapter with an explicit local endpoint; use the separately named
+  Fish Audio caller backend. Regular cells require disclosed Fish voice assets.
 - Difficult reasoning and active-tool workloads combined with overlap, interruption, selectivity, long-context, and cadence workloads.
 - Native realtime and interaction-model comparisons where access and redistribution permit.
 - Pareto analysis over first semantic audio, final quality, trajectory consistency, tool correctness, compute, and cost.
@@ -1011,10 +1012,12 @@ Exit criteria:
 27. Add capability-consistency and split-brain evaluations.
 28. Integrate the implemented safe-point event loop with live ASR, playback,
     and asynchronous tool ingress; add bounded queue and overload policy.
-29. Implement the pinned τ-Voice `DiscreteTimeAdapter` bridge and run provider
-    conformance before any scored task.
-30. Run the preregistered τ-Voice matrix only after required persona and TTS
-    credentials are available; publish failures and incomplete cells.
+29. Complete the persistent local Realtime gateway used by the verified pinned
+    τ-Voice OpenAI-adapter/Fish patch and run live provider conformance before
+    any scored task.
+30. Run the preregistered τ-Voice matrix only after the control voice and the
+    provenance-recorded regular Fish voice set are fixed; publish failures and
+    incomplete cells.
 31. Draft the `api/v2` migration only after the experimental trajectory contract stabilizes.
 
 ## 16. Risks and mitigations

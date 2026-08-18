@@ -254,5 +254,6 @@ pin the v1.0.0 release and run the same public conformance suite.
 - Required outcomes: first semantic audio, final reasoning/tool quality,
   contradiction and capability consistency, repair, compute, queueing, and cost
 - Primary joint harness: pinned τ-Voice full airline/retail/telecom matrix in
-  control and regular speech conditions; adapter and external voice credentials
-  remain pending, so no local score is claimed
+  control and regular speech conditions; local-endpoint/Fish harness patch is
+  verified, while the persistent gateway, provider conformance, and disclosed
+  regular-condition Fish voices remain pending, so no local score is claimed
