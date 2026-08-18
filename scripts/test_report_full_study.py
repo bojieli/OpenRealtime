@@ -157,6 +157,10 @@ class Fixture:
         fdb15_descriptor = descriptor(
             "fdb-v1.5-openai-realtime-adapter-i1-qg-v1"
         )
+        fdb15_output = self.root / ".runtime/fdb15/trial/output.wav"
+        fdb15_output.parent.mkdir(parents=True, exist_ok=True)
+        fdb15_output.write_bytes(b"fdb15-audio")
+        write_json(fdb15_output.parent / "result_overlap.json", {"result": "raw"})
         write_json(
             fdb15_run,
             {
@@ -172,6 +176,8 @@ class Fixture:
                         "trial_id": "openrealtime/background/1/overlap/r000",
                         "sample": {"scenario": "background", "id": "1"},
                         "condition": "overlap",
+                        "output_wav": self.relative(fdb15_output),
+                        "output_sha256": REPORT.sha256_file(fdb15_output),
                     }
                 ],
                 "failures": [],
@@ -222,9 +228,37 @@ class Fixture:
                 "profile": "fdbv3-profile",
                 "profile_sha256": REPORT.sha256_file(fdbv3_profile),
                 "descriptor": descriptor("fdbv3-profile"),
-                "samples": [{"example_id": "example", "pid": "pid"}],
+                "samples": [
+                    {
+                        "example_id": "example",
+                        "pid": "pid",
+                        "directory": self.relative(self.root / ".runtime/fdbv3/sample"),
+                        "input_sha256": "d" * 64,
+                        "metadata_sha256": "e" * 64,
+                    }
+                ],
                 "completed": ["example_pid"],
                 "failures": [],
+            },
+        )
+        fdbv3_output = self.root / ".runtime/fdbv3/sample/output_openrealtime.wav"
+        fdbv3_output.parent.mkdir(parents=True, exist_ok=True)
+        fdbv3_output.write_bytes(b"fdbv3-audio")
+        write_json(
+            fdbv3_output.parent / "result_openrealtime.json",
+            {
+                "openrealtime_schema_version": "1.0.0",
+                "status": "completed",
+                "pid": "pid",
+                "example_id": "example",
+                "provider": "openrealtime",
+                "openrealtime": {
+                    "benchmark_revision": "fdb-revision",
+                    "profile_sha256": REPORT.sha256_file(fdbv3_profile),
+                    "input_sha256": "d" * 64,
+                    "metadata_sha256": "e" * 64,
+                    "output_sha256": REPORT.sha256_file(fdbv3_output),
+                },
             },
         )
         fdbv3_exact = self.root / ".runtime/fdbv3/exact.json"
@@ -283,6 +317,18 @@ class Fixture:
                     "timestamp_rate_hz": 16000,
                 },
                 "results": 1,
+                "result_evidence": {
+                    "algorithm": "sha256(path\\0size\\0file_sha256\\n)",
+                    "digest": "a" * 64,
+                    "files": 1,
+                    "bytes": 1,
+                },
+                "audio_evidence": {
+                    "algorithm": "sha256(path\\0size\\0file_sha256\\n)",
+                    "digest": "b" * 64,
+                    "files": 1,
+                    "bytes": 1,
+                },
                 "traces": {
                     "cell": {
                         "path": self.relative(trace),
@@ -384,6 +430,7 @@ class Fixture:
             "fdbv3_judge": fdbv3_judge,
             "fd_metric": fd_metric,
             "fd_context": fd_context,
+            "fdb15_output": fdb15_output,
             "matrix": matrix,
         }
 
@@ -490,6 +537,11 @@ class FullStudyTest(unittest.TestCase):
         matrix["benchmark"]["num_trials"] = 2
         write_json(path, matrix)
         with self.assertRaisesRegex(REPORT.StudyIncompleteError, "SHA-256"):
+            self.report()
+
+    def test_rejects_raw_output_drift(self) -> None:
+        self.fixture.paths["fdb15_output"].write_bytes(b"changed-audio")
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "output.wav SHA-256"):
             self.report()
 
 

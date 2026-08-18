@@ -87,6 +87,62 @@ def artifact(root: Path, path: Path) -> dict[str, Any]:
     }
 
 
+def artifact_tree(
+    root: Path,
+    entries: list[tuple[Path, str | None]],
+    *,
+    label: str,
+) -> dict[str, Any]:
+    digest = hashlib.sha256()
+    total_bytes = 0
+    seen: set[str] = set()
+    for path, expected_hash in sorted(entries, key=lambda item: display_path(root, item[0])):
+        require(path.is_file(), f"{label} artifact is missing: {path}")
+        logical_path = display_path(root, path)
+        require(logical_path not in seen, f"{label} contains duplicate path {logical_path}")
+        seen.add(logical_path)
+        size = path.stat().st_size
+        file_hash = sha256_file(path)
+        if expected_hash is not None:
+            require_equal(file_hash, expected_hash, f"{label} {logical_path} SHA-256")
+        total_bytes += size
+        digest.update(logical_path.encode())
+        digest.update(b"\0")
+        digest.update(str(size).encode())
+        digest.update(b"\0")
+        digest.update(file_hash.encode())
+        digest.update(b"\n")
+    return {
+        "algorithm": "sha256(path\\0size\\0file_sha256\\n)",
+        "digest": digest.hexdigest(),
+        "files": len(entries),
+        "bytes": total_bytes,
+    }
+
+
+def validate_tree_summary(value: Any, *, files: int, label: str) -> None:
+    require(isinstance(value, dict), f"{label} evidence tree is absent")
+    require_equal(
+        value.get("algorithm"),
+        "sha256(path\\0size\\0file_sha256\\n)",
+        f"{label} evidence algorithm",
+    )
+    require_equal(value.get("files"), files, f"{label} evidence files")
+    require(
+        isinstance(value.get("bytes"), int)
+        and not isinstance(value["bytes"], bool)
+        and value["bytes"] >= 0,
+        f"{label} evidence bytes are invalid",
+    )
+    digest = value.get("digest")
+    require(
+        isinstance(digest, str)
+        and len(digest) == 64
+        and all(character in "0123456789abcdef" for character in digest),
+        f"{label} evidence digest is invalid",
+    )
+
+
 def load_pin(root: Path, specification: dict[str, Any], label: str) -> tuple[Path, dict[str, Any]]:
     path = resolve(root, specification["path"])
     payload = read_json(path, label)
@@ -496,6 +552,16 @@ def validate_fdb15(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
         all(item.get("condition") == "overlap" for item in completed),
         "FDB1.5 completed a condition outside overlap",
     )
+    output_entries: list[tuple[Path, str | None]] = []
+    result_entries: list[tuple[Path, str | None]] = []
+    for item in completed:
+        output_path = resolve(root, item.get("output_wav", ""))
+        output_entries.append((output_path, item.get("output_sha256")))
+        result_entries.append(
+            (output_path.parent / f"result_{item['condition']}.json", None)
+        )
+    output_tree = artifact_tree(root, output_entries, label="FDB1.5 output audio")
+    result_tree = artifact_tree(root, result_entries, label="FDB1.5 raw results")
 
     summary_path = resolve(root, specification["summary"])
     summary = read_json(summary_path, "FDB1.5 summary")
@@ -525,6 +591,8 @@ def validate_fdb15(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
         "summary": artifact(root, summary_path),
         "population": len(completed),
         "terminal_failures": 0,
+        "raw_results": result_tree,
+        "output_audio": output_tree,
         "metrics": conditions,
     }
 
@@ -592,6 +660,31 @@ def validate_fdbv3(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
     require_equal(set(run.get("completed", [])), labels, "FDBv3 completed samples")
     require_equal(len(run.get("completed", [])), len(labels), "FDBv3 completed count")
     require_equal(len(run.get("failures", [])), 0, "FDBv3 terminal failures")
+    output_entries: list[tuple[Path, str | None]] = []
+    result_entries: list[tuple[Path, str | None]] = []
+    for sample in samples:
+        directory = resolve(root, sample["directory"])
+        output_path = directory / "output_openrealtime.wav"
+        result_path = directory / "result_openrealtime.json"
+        result = read_json(result_path, f"FDBv3 raw result {sample['example_id']}")
+        require_equal(
+            result.get("openrealtime_schema_version"),
+            "1.0.0",
+            f"FDBv3 {sample['example_id']} result schema",
+        )
+        require_equal(result.get("status"), "completed", f"FDBv3 {sample['example_id']} status")
+        require_equal(result.get("pid"), sample["pid"], f"FDBv3 {sample['example_id']} PID")
+        require_equal(result.get("example_id"), sample["example_id"], f"FDBv3 {sample['example_id']} ID")
+        require_equal(result.get("provider"), "openrealtime", f"FDBv3 {sample['example_id']} provider")
+        evidence = result.get("openrealtime", {})
+        require_equal(evidence.get("benchmark_revision"), specification["upstream_revision"], f"FDBv3 {sample['example_id']} evidence revision")
+        require_equal(evidence.get("profile_sha256"), specification["profile"]["sha256"], f"FDBv3 {sample['example_id']} evidence profile")
+        require_equal(evidence.get("input_sha256"), sample["input_sha256"], f"FDBv3 {sample['example_id']} input hash")
+        require_equal(evidence.get("metadata_sha256"), sample["metadata_sha256"], f"FDBv3 {sample['example_id']} metadata hash")
+        output_entries.append((output_path, evidence.get("output_sha256")))
+        result_entries.append((result_path, None))
+    output_tree = artifact_tree(root, output_entries, label="FDBv3 output audio")
+    result_tree = artifact_tree(root, result_entries, label="FDBv3 raw results")
 
     exact_path = resolve(root, specification["evaluations"]["exact"])
     judge_path = resolve(root, specification["evaluations"]["gpt4o"])
@@ -611,6 +704,8 @@ def validate_fdbv3(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
         "run_manifest": artifact(root, run_path),
         "population": len(labels),
         "terminal_failures": 0,
+        "raw_results": result_tree,
+        "output_audio": output_tree,
         "evaluations": {
             "exact": {
                 "artifact": artifact(root, exact_path),
@@ -669,6 +764,16 @@ def validate_fdbench(root: Path, specification: dict[str, Any]) -> dict[str, Any
     require_equal(finalization.get("benchmark"), "FD-Bench", "FD-Bench finalization benchmark")
     require_equal(finalization.get("revision"), specification["upstream_revision"], "FD-Bench finalization revision")
     require_equal(finalization.get("results"), specification["population"], "FD-Bench finalized population")
+    validate_tree_summary(
+        finalization.get("result_evidence"),
+        files=specification["population"],
+        label="FD-Bench raw results",
+    )
+    validate_tree_summary(
+        finalization.get("audio_evidence"),
+        files=specification["population"],
+        label="FD-Bench output audio",
+    )
     vad = finalization.get("vad", {})
     contract = source["evaluation_contract"]
     require_equal(vad.get("name"), contract["output_vad"], "FD-Bench VAD")
@@ -727,6 +832,8 @@ def validate_fdbench(root: Path, specification: dict[str, Any]) -> dict[str, Any
         "population": len(labels),
         "cells": len(metric_panel),
         "terminal_failures": 0,
+        "raw_results": finalization["result_evidence"],
+        "output_audio": finalization["audio_evidence"],
         "explicit_exclusions": specification["explicit_exclusions"],
         "metrics": metric_panel,
     }

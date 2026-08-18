@@ -169,6 +169,13 @@ released non-Moshi path does not produce their required inputs. The output is
 terminal failure, hash mismatch, or evaluator gap prevents that file from
 being published.
 
+The evidence panel commits to raw outputs as deterministic
+`path\0size\0sha256` trees. The terminal reporter directly rehashes all FDB
+v1.5 and FDB v3 result/audio files. FD-Bench avoids a redundant scan of its
+much larger audio corpus: the mandatory Silero finalizer already verifies each
+WAV against its result record and now emits separate raw-result and audio tree
+roots during that pass; the terminal gate validates and retains both roots.
+
 The three external runners also create a `run-context.json` sidecar before
 their first adapter call. Launch refuses a dirty OpenRealtime worktree. The
 sidecar binds the runner revision and live component identities, and completion

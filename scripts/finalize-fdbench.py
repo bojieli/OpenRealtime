@@ -75,6 +75,25 @@ def atomic_text(path: Path, value: str) -> None:
             os.unlink(temporary)
 
 
+def evidence_tree(entries: list[tuple[str, int, str]]) -> dict[str, Any]:
+    digest = hashlib.sha256()
+    total_bytes = 0
+    for logical_path, size, file_hash in sorted(entries):
+        total_bytes += size
+        digest.update(logical_path.encode())
+        digest.update(b"\0")
+        digest.update(str(size).encode())
+        digest.update(b"\0")
+        digest.update(file_hash.encode())
+        digest.update(b"\n")
+    return {
+        "algorithm": "sha256(path\\0size\\0file_sha256\\n)",
+        "digest": digest.hexdigest(),
+        "files": len(entries),
+        "bytes": total_bytes,
+    }
+
+
 def conversation_number(result: dict[str, Any]) -> int:
     return int(result["sample"]["conversation"])
 
@@ -129,12 +148,14 @@ def main() -> None:
     except importlib.metadata.PackageNotFoundError:
         package_version = "unknown"
     model = load_silero_vad()
-    output_root = Path(args.output_root)
+    output_root = Path(args.output_root).resolve()
     result_paths = sorted(output_root.glob("*/results/conversation_*.json"))
     if not result_paths:
         raise SystemExit(f"no FD-Bench results found below {output_root}")
 
     by_cell: dict[str, list[dict[str, Any]]] = {}
+    result_evidence: list[tuple[str, int, str]] = []
+    audio_evidence: list[tuple[str, int, str]] = []
     for result_path in result_paths:
         result = json.loads(result_path.read_text(encoding="utf-8"))
         output_path = validate_result(result_path, result)
@@ -161,6 +182,20 @@ def main() -> None:
             "audio_loader": "pcm16-wave+torchaudio.transforms.Resample",
         }
         atomic_json(result_path, result)
+        result_evidence.append(
+            (
+                result_path.relative_to(output_root).as_posix(),
+                result_path.stat().st_size,
+                sha256(result_path),
+            )
+        )
+        audio_evidence.append(
+            (
+                output_path.relative_to(output_root).as_posix(),
+                output_path.stat().st_size,
+                result["output_sha256"],
+            )
+        )
         by_cell.setdefault(result["sample"]["cell"], []).append(result)
 
     traces: dict[str, dict[str, Any]] = {}
@@ -193,6 +228,8 @@ def main() -> None:
                     "audio_loader": "pcm16-wave+torchaudio.transforms.Resample",
                 },
                 "results": len(result_paths),
+                "result_evidence": evidence_tree(result_evidence),
+                "audio_evidence": evidence_tree(audio_evidence),
                 "traces": traces,
             },
             indent=2,
