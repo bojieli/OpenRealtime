@@ -40,7 +40,7 @@
   },
   "local_integration": {
     "patch": "benchmarks/tau-voice/patches/0001-local-openai-fish-audio.patch",
-    "patch_sha256": "ac6dde2138b565ade036b980eb3178069a8de1614f1eb727db05ba61213e3abe",
+    "patch_sha256": "7f213e091f0600aad734169d48d78f1b8c079f3890275464f04988b20b12fc7d",
     "preparation_script": "scripts/prepare-tau-voice.sh",
     "wire_protocol_changed": false,
     "agent_transport": "standard upstream OpenAI Realtime adapter with explicit local WebSocket base_url",
@@ -52,7 +52,7 @@
     "verification": {
       "fresh_checkout_patch_applied": true,
       "ruff_passed": true,
-      "affected_tests_passed": 85,
+      "affected_tests_passed": 86,
       "live_provider_suite_passed": true,
       "live_provider_suite_passed_tests": 12,
       "live_provider_suite_execution_condition": "final full pass used CPU affinity and FIFO priority 10 for the unchanged benchmark client on a 0%-idle shared host; two ordinary-scheduler reruns each had one wall-clock tick above 300 ms",
@@ -78,10 +78,10 @@
     "voice_to_text_capability_retention_percent_range": [30, 45]
   },
   "redistributed": false,
-  "status": "exploratory_gateway_and_task_smoke_complete_full_matrix_pending",
+  "status": "full_control_running_regular_and_follow_on_benchmarks_queued",
   "blockers_observed": [
-    "The complete 278-task control and regular cells, repeated trials, cadence sweeps, and native comparison conditions have not been run.",
-    "Regular/accent cells require a preregistered Fish voice registry or reference map with speaker and license provenance."
+    "The complete 278-task control and regular cells, repeated trials, cadence sweeps, and native comparison conditions have not yet completed.",
+    "GPT-Live and TML Interaction Model endpoints are not publicly executable in the current environment, so their published claims remain contextual rather than local scores."
   ],
   "reporting_rule": "Do not report an OpenRealtime tau-Voice score until the pinned provider adapter passes upstream tests and the complete declared task/condition cell finishes. Partial text-only, mock-tool, or interaction-only runs are not tau-Voice scores."
 }

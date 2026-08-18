@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0.0",
+  "registry": "fish-s2pro-personas-v1.json",
+  "purpose": "Preregistered synthetic reference voices for tau-Voice caller synthesis",
+  "source_kind": "locally generated synthetic speech; no human recording or cloned identity",
+  "generator": {
+    "model": "fishaudio/s2-pro",
+    "model_revision": "1de9996b6be38b745688de084d87a5633f714e4e",
+    "serving_stack": "SGLang-Omni 0.1.2 OpenAI-compatible speech API",
+    "license": "Fish Audio Research License",
+    "intended_use": "non-commercial benchmark research",
+    "endpoint_recorded_separately": true
+  },
+  "reference_text": "I am calling today because I need help with my account. Please check the details carefully and explain the next step.",
+  "consent_statement": "Synthetic voice generated locally with Fish Audio S2-Pro; no human identity or biometric source.",
+  "entries": [
+    {
+      "persona": "matt_delaney",
+      "voice": "tau-matt-delaney-v1",
+      "seed": 1101,
+      "style_tag": "[middle-aged American Midwestern man, calm, clear, respectful]"
+    },
+    {
+      "persona": "lisa_brenner",
+      "voice": "tau-lisa-brenner-v1",
+      "seed": 1102,
+      "style_tag": "[American woman in her late forties, clipped, tense, impatient but controlled]"
+    },
+    {
+      "persona": "mildred_kaplan",
+      "voice": "tau-mildred-kaplan-v1",
+      "seed": 1103,
+      "style_tag": "[elderly American woman in her early eighties, careful pace, slightly uncertain]"
+    },
+    {
+      "persona": "arjun_roy",
+      "voice": "tau-arjun-roy-v1",
+      "seed": 1104,
+      "style_tag": "[Bengali man from Dhaka speaking English with a strong Bengali accent, calm and direct]"
+    },
+    {
+      "persona": "wei_lin",
+      "voice": "tau-wei-lin-v1",
+      "seed": 1105,
+      "style_tag": "[Chinese woman from Sichuan speaking English with a strong Sichuan Mandarin accent, upbeat and brisk]"
+    },
+    {
+      "persona": "mamadou_diallo",
+      "voice": "tau-mamadou-diallo-v1",
+      "seed": 1106,
+      "style_tag": "[Senegalese man speaking English with a strong French accent, hurried and matter-of-fact]"
+    },
+    {
+      "persona": "priya_patil",
+      "voice": "tau-priya-patil-v1",
+      "seed": 1107,
+      "style_tag": "[Maharashtrian woman speaking Indian English with a strong regional accent, hurried and focused]"
+    }
+  ],
+  "generated_artifacts": "Runtime receipt records WAV SHA-256, byte length, upload response, and generation time before benchmark launch.",
+  "comparability": "These are non-official Fish voices and are not directly comparable to the upstream ElevenLabs leaderboard condition."
+}

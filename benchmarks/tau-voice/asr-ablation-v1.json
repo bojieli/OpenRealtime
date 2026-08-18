@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0.0",
+  "ablation_id": "openrealtime-tau-voice-asr-quality-v1",
+  "frozen_at": "2026-08-18T00:00:00Z",
+  "hypothesis": "A higher-capacity streaming ASR improves grounded tool-argument accuracy on hard spoken identifiers without materially regressing foreground responsiveness.",
+  "motivation": {
+    "classification": "post-hoc mechanism observation; not an evaluation subset or success criterion",
+    "observation": "The frozen 0.6B control run remained responsive but repeatedly mistranscribed an alphanumeric user identifier, after which the slow model issued structurally valid calls with incorrect arguments.",
+    "prohibited_adaptation": "No task text, expected tool call, identifier pattern, or benchmark label may be supplied to ASR or used for routing."
+  },
+  "baseline": {
+    "matrix": "benchmarks/tau-voice/matrix-v1.json",
+    "model": "Qwen/Qwen3-ASR-0.6B",
+    "model_revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+    "gpu_memory_utilization": 0.14
+  },
+  "candidate": {
+    "matrix": "benchmarks/tau-voice/matrix-asr17-v1.json",
+    "model": "Qwen/Qwen3-ASR-1.7B",
+    "model_revision": "7278e1e70fe206f11671096ffdd38061171dd6e5",
+    "gpu_memory_utilization": 0.18
+  },
+  "shared_runtime": {
+    "qwen_asr_package": "0.0.6",
+    "vllm": "0.19.0",
+    "torch": "2.10.0+cu128",
+    "backend": "official qwen_asr streaming demo backed by vLLM",
+    "chunk_seconds": 0.2,
+    "hardware": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 97887 MiB",
+    "official_model_card": "https://huggingface.co/Qwen/Qwen3-ASR-1.7B"
+  },
+  "controlled_variables": [
+    "all 278 base tasks in airline, retail, and telecom",
+    "seed 300 and one trial per task",
+    "control and regular speech conditions",
+    "Fish S2-Pro caller and agent voices",
+    "50 ms internal opportunities and 200 ms benchmark ticks",
+    "Qwen3-30B-A3B-FP8 no-thinking fast phase",
+    "Gemini 3.5 Flash high-thinking slow continuation",
+    "canonical tool authority and exact result resumption",
+    "single-GPU co-location and max concurrency one"
+  ],
+  "primary_outcomes": [
+    "tau pass^1 overall and by domain",
+    "exact tool name and argument correctness",
+    "identifier-related clarification and repair turns",
+    "response and yield latency",
+    "ASR advance latency and real-time factor",
+    "GPU memory, utilization, and queueing"
+  ],
+  "acceptance_rule": "Accept 1.7B only on a complete paired cell when grounded task/tool correctness improves without a meaningful regression in response/yield latency or interaction selectivity. The motivating task alone cannot pass this gate.",
+  "status": "preregistered_after_baseline_start_full_cells_queued"
+}
