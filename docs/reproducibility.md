@@ -176,6 +176,20 @@ counts, matrix hash, cell, and domain have been atomically recorded. The final
 publication gate rehashes every archive and refuses residual expanded copies;
 each archive restores the original tree losslessly with `tar --zstd -xf`.
 
+After the local Qwen, Gemini-backed gateway, ASR, and Fish services are healthy,
+launch the entire dependency-ordered queue chain once with:
+
+```bash
+scripts/launch-full-study-queues.sh
+```
+
+Use `--check` to run the complete preflight without starting processes. The
+launcher refuses a dirty source tree, missing scripts, or any live duplicate
+queue; records the exact source, script hashes, and PIDs; preserves prior queue
+logs; and detaches all ten queues. Each successor waits for the current-run
+completion marker from its predecessor, so a failed stage halts the chain
+rather than skipping ahead.
+
 For operational progress during the multi-day run, use:
 
 ```bash

@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+receipt_root="${repository_root}/.runtime/benchmark-runs/full-study-queue-launches-v1"
+check_only=false
+
+if [[ "${1:-}" == "--check" ]]; then
+  check_only=true
+elif [[ $# -ne 0 ]]; then
+  echo "usage: scripts/launch-full-study-queues.sh [--check]" >&2
+  exit 2
+fi
+
+for required in OPENAI_API_KEY GEMINI_API_KEY OPENREALTIME_GATEWAY_TOKEN; do
+  if [[ -z "${!required:-}" ]]; then
+    echo "required environment variable ${required} is unset" >&2
+    exit 1
+  fi
+done
+for command_name in bash git jq nohup setsid sha256sum; do
+  if ! command -v "${command_name}" >/dev/null; then
+    echo "required command ${command_name} is unavailable" >&2
+    exit 1
+  fi
+done
+if [[ -n "$(git -C "${repository_root}" status --porcelain=v1 --untracked-files=normal)" ]]; then
+  echo "full-study queue launch requires a clean OpenRealtime source tree" >&2
+  exit 1
+fi
+
+queue_ids=(
+  primary
+  asr
+  fd_bench
+  fast
+  tau_reports
+  cadence_and_effort
+  context
+  event_adaptive
+  endpoint_preparation
+  publication
+)
+declare -A queue_scripts=(
+  [primary]="scripts/run-voice-benchmark-queue.sh"
+  [asr]="scripts/run-voice-optimization-queue.sh"
+  [fd_bench]="scripts/run-fdbench-queue.sh"
+  [fast]="scripts/run-fast-provider-queue.sh"
+  [tau_reports]="scripts/run-tau-report-queue.sh"
+  [cadence_and_effort]="scripts/run-tau-extended-ablation-queue.sh"
+  [context]="scripts/run-tau-cognitive-control-queue.sh"
+  [event_adaptive]="scripts/run-tau-event-adaptive-queue.sh"
+  [endpoint_preparation]="scripts/run-tau-endpoint-preparation-queue.sh"
+  [publication]="scripts/run-full-study-report-queue.sh"
+)
+declare -A queue_roots=(
+  [primary]=".runtime/benchmark-runs/voice-benchmark-queue-v1"
+  [asr]=".runtime/benchmark-runs/voice-optimization-queue-v1"
+  [fd_bench]=".runtime/benchmark-runs/fd-bench-queue-v1"
+  [fast]=".runtime/benchmark-runs/fast-provider-queue-v1"
+  [tau_reports]=".runtime/benchmark-runs/tau-report-queue-v1"
+  [cadence_and_effort]=".runtime/benchmark-runs/tau-extended-ablation-queue-v1"
+  [context]=".runtime/benchmark-runs/tau-cognitive-control-queue-v1"
+  [event_adaptive]=".runtime/benchmark-runs/tau-event-adaptive-queue-v1"
+  [endpoint_preparation]=".runtime/benchmark-runs/tau-endpoint-preparation-queue-v1"
+  [publication]=".runtime/benchmark-runs/full-study-report-queue-v1"
+)
+
+declare -A queue_script_hashes=()
+for id in "${queue_ids[@]}"; do
+  relative_script="${queue_scripts[$id]}"
+  script="${repository_root}/${relative_script}"
+  if [[ ! -f "${script}" || ! -r "${script}" ]]; then
+    echo "queue ${id} script is missing or unreadable: ${relative_script}" >&2
+    exit 1
+  fi
+  if ! bash -n "${script}"; then
+    echo "queue ${id} script has invalid Bash syntax: ${relative_script}" >&2
+    exit 1
+  fi
+  queue_script_hashes[$id]="$(sha256sum "${script}" | cut -d ' ' -f 1)"
+done
+
+for id in "${queue_ids[@]}"; do
+  pid_file="${repository_root}/${queue_roots[$id]}/queue.pid"
+  if [[ ! -f "${pid_file}" ]]; then
+    continue
+  fi
+  pid="$(<"${pid_file}")"
+  if [[ "${pid}" =~ ^[1-9][0-9]*$ ]] && kill -0 "${pid}" 2>/dev/null; then
+    echo "queue ${id} already has live PID ${pid}; refusing a duplicate launch" >&2
+    exit 1
+  fi
+done
+
+if [[ "${check_only}" == true ]]; then
+  echo "full-study queue launch preconditions satisfied"
+  exit 0
+fi
+
+revision="$(git -C "${repository_root}" rev-parse HEAD)"
+launched_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+launch_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+mkdir -p "${receipt_root}"
+partial_receipt="${receipt_root}/${launch_id}.launching.json"
+receipt="${receipt_root}/${launch_id}.json"
+queues='[]'
+for id in "${queue_ids[@]}"; do
+  relative_script="${queue_scripts[$id]}"
+  script="${repository_root}/${relative_script}"
+  root="${repository_root}/${queue_roots[$id]}"
+  pid_file="${root}/queue.pid"
+  log="${root}/queue.log"
+  mkdir -p "${root}"
+  script_sha256="${queue_script_hashes[$id]}"
+  if [[ -f "${log}" ]]; then
+    mv "${log}" "${root}/queue.before-${launch_id}.log"
+  fi
+  printf '[%s] launch %s revision=%s script_sha256=%s\n' \
+    "${launched_at}" "${id}" "${revision}" "${script_sha256}" >"${log}"
+  nohup setsid bash "${script}" >>"${log}" 2>&1 < /dev/null &
+  pid=$!
+  printf '%s\n' "${pid}" >"${pid_file}"
+  if ! kill -0 "${pid}" 2>/dev/null; then
+    echo "queue ${id} failed during launch; see ${log}" >&2
+    exit 1
+  fi
+  queues="$(
+    jq -c \
+      --arg id "${id}" \
+      --arg script "${relative_script}" \
+      --arg script_sha256 "${script_sha256}" \
+      --arg pid_file "${queue_roots[$id]}/queue.pid" \
+      --arg log "${queue_roots[$id]}/queue.log" \
+      --argjson pid "${pid}" \
+      '. + [{id:$id,script:$script,script_sha256:$script_sha256,pid:$pid,pid_file:$pid_file,log:$log}]' \
+      <<<"${queues}"
+  )"
+  jq -n \
+    --arg launched_at "${launched_at}" \
+    --arg revision "${revision}" \
+    --arg state "launching" \
+    --argjson queues "${queues}" \
+    '{schema_version:"1.0.0",state:$state,launched_at:$launched_at,openrealtime_revision:$revision,queues:$queues}' \
+    >"${partial_receipt}.tmp"
+  mv "${partial_receipt}.tmp" "${partial_receipt}"
+  echo "launched ${id} queue as PID ${pid}"
+done
+
+jq -n \
+  --arg launched_at "${launched_at}" \
+  --arg revision "${revision}" \
+  --arg state "launched" \
+  --argjson queues "${queues}" \
+  '{schema_version:"1.0.0",state:$state,launched_at:$launched_at,openrealtime_revision:$revision,queues:$queues}' \
+  >"${receipt}.tmp"
+mv "${receipt}.tmp" "${receipt}"
+rm -f "${partial_receipt}"
+echo "full-study queue launch receipt: ${receipt}"
