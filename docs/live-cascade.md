@@ -244,6 +244,8 @@ canonical event loop after VAD finalization.
 The same health document exposes cumulative session, input-frame, ASR provider
 advance, fast/slow continuation, and Fish speech counters. Continuation and
 speech aggregates separate completion, failure, and cooperative cancellation;
+canonical fast/slow calls and private preparation calls have disjoint
+aggregates selected by typed execution provenance;
 ASR aggregates separately measure stateful advance and endpoint-finalization
 attempts, failures, and elapsed time. The other aggregates record streamed
 event/chunk counts, tokens or source samples, and cumulative/maximum provider

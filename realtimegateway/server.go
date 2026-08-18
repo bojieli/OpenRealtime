@@ -38,6 +38,8 @@ type Config struct {
 	MaxPendingEvents    int
 	ValidateWire        bool
 	RuntimeMetrics      *RuntimeMetrics
+	preparationFast     continuation.Provider
+	preparationSlow     continuation.Provider
 }
 
 type Server struct{ config Config }
@@ -78,11 +80,18 @@ func New(config Config) (*Server, error) {
 	if config.RuntimeMetrics == nil {
 		config.RuntimeMetrics = &RuntimeMetrics{}
 	}
+	rawFast, rawSlow := config.FastProvider, config.SlowProvider
 	config.FastProvider = &measuredContinuationProvider{
-		provider: config.FastProvider, metrics: &config.RuntimeMetrics.fast,
+		provider: rawFast, metrics: &config.RuntimeMetrics.fast,
 	}
 	config.SlowProvider = &measuredContinuationProvider{
-		provider: config.SlowProvider, metrics: &config.RuntimeMetrics.slow,
+		provider: rawSlow, metrics: &config.RuntimeMetrics.slow,
+	}
+	config.preparationFast = &measuredContinuationProvider{
+		provider: rawFast, metrics: &config.RuntimeMetrics.fastPreparation,
+	}
+	config.preparationSlow = &measuredContinuationProvider{
+		provider: rawSlow, metrics: &config.RuntimeMetrics.slowPreparation,
 	}
 	config.SpeechProvider = &measuredSpeechProvider{
 		provider: config.SpeechProvider, metrics: &config.RuntimeMetrics.speech,

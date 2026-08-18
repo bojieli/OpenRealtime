@@ -63,6 +63,24 @@ class DifferenceTest(unittest.TestCase):
             {"calls": 2.0, "timing": {"ns": 10.0}},
         )
 
+    def test_endpoint_manipulation_check_rejects_private_work(self) -> None:
+        continuous = {
+            "fast_preparation": {"invocations": 4},
+            "slow_preparation": {"invocations": 3},
+        }
+        endpoint = {
+            "fast_preparation": {"invocations": 0},
+            "slow_preparation": {"invocations": 0},
+        }
+        self.assertTrue(
+            REPORT.preparation_manipulation_check(continuous, endpoint)["fast"][
+                "continuous_opened_private_work"
+            ]
+        )
+        endpoint["fast_preparation"]["invocations"] = 1
+        with self.assertRaisesRegex(REPORT.PairedReportError, "endpoint-only"):
+            REPORT.preparation_manipulation_check(continuous, endpoint)
+
 
 class InvariantTest(unittest.TestCase):
     def test_accepts_preparation_as_the_only_policy_change(self) -> None:

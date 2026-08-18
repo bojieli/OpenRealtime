@@ -1033,8 +1033,9 @@ start private continuation work. A fresh complete continuous population runs
 immediately before it because the historical baseline predates provider-work
 health counters. A strict paired reporter requires matching source revisions,
 ASR/model/Fish/tool profiles, complete populations, and provider deltas before
-it emits raw differences; it creates no private composite score. No incomplete
-cell is a benchmark score.
+it emits raw differences; disjoint foreground/private-call counters make zero
+speculation in the endpoint condition an exact manipulation check. It creates
+no private composite score. No incomplete cell is a benchmark score.
 
 Deliverables:
 

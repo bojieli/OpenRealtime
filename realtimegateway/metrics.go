@@ -28,6 +28,8 @@ type RuntimeMetrics struct {
 	asrFinalizations        atomic.Uint64
 	fast                    continuationProviderMetrics
 	slow                    continuationProviderMetrics
+	fastPreparation         continuationProviderMetrics
+	slowPreparation         continuationProviderMetrics
 	speech                  speechProviderMetrics
 }
 
@@ -47,6 +49,8 @@ type RuntimeMetricsSnapshot struct {
 	ASRFinalizations        uint64                              `json:"asr_finalizations"`
 	Fast                    ContinuationProviderMetricsSnapshot `json:"fast"`
 	Slow                    ContinuationProviderMetricsSnapshot `json:"slow"`
+	FastPreparation         ContinuationProviderMetricsSnapshot `json:"fast_preparation"`
+	SlowPreparation         ContinuationProviderMetricsSnapshot `json:"slow_preparation"`
 	Speech                  SpeechProviderMetricsSnapshot       `json:"speech"`
 }
 
@@ -69,13 +73,17 @@ func (metrics *RuntimeMetrics) Snapshot() RuntimeMetricsSnapshot {
 		ASRFinalizations:        metrics.asrFinalizations.Load(),
 		Fast:                    metrics.fast.snapshot(),
 		Slow:                    metrics.slow.snapshot(),
+		FastPreparation:         metrics.fastPreparation.snapshot(),
+		SlowPreparation:         metrics.slowPreparation.snapshot(),
 		Speech:                  metrics.speech.snapshot(),
 	}
 }
 
-// ContinuationProviderMetricsSnapshot counts actual provider calls across
-// foreground and speculative preparation. Durations are cumulative monotonic
-// elapsed nanoseconds so reports can derive rates and averages without lossy rounding.
+// ContinuationProviderMetricsSnapshot counts actual provider calls. Fast and
+// Slow are canonical foreground calls; FastPreparation and SlowPreparation
+// are private pre-endpoint calls. The classes are disjoint and selected from
+// typed execution provenance. Durations are cumulative monotonic elapsed
+// nanoseconds so reports can derive rates and averages without lossy rounding.
 // An in-flight call temporarily makes Invocations greater than the sum of its
 // three terminal outcomes.
 type ContinuationProviderMetricsSnapshot struct {

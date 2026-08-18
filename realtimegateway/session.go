@@ -115,6 +115,7 @@ func newSession(parent context.Context, connection *websocket.Conn, config Confi
 	}
 	result.cognitive, err = newCognitionRuntime(cognitionConfig{
 		Store: result.store, Fast: config.FastProvider, Slow: config.SlowProvider, Callbacks: result,
+		PreparationFast: config.preparationFast, PreparationSlow: config.preparationSlow,
 		FastTokens: config.FastMaxTokens, SlowTokens: config.SlowMaxTokens,
 		MaxSlow: config.MaxSlowInvocations, SlowPace: config.SlowPreparationMin,
 		SlowPolicy: config.SlowContextPolicy,

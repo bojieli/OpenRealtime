@@ -138,6 +138,59 @@ func TestServerDefaultsToContinuousPreparation(t *testing.T) {
 	session.cancel(errors.New("test complete"))
 }
 
+func TestContinuousPreparationUsesPrivateProviderClass(t *testing.T) {
+	t.Parallel()
+	fast := &scriptedProvider{
+		descriptor: continuation.Descriptor{
+			Provider: "fake-fast", Model: "fast", Phase: trajectory.PhaseFast,
+			Effort: continuation.EffortMinimal, Streaming: true,
+		},
+		scripts: []providerScript{{}},
+	}
+	slow := &scriptedProvider{
+		descriptor: continuation.Descriptor{
+			Provider: "fake-slow", Model: "slow", Phase: trajectory.PhaseSlow,
+			Effort: continuation.EffortHigh, Streaming: true,
+		},
+		scripts: []providerScript{{}},
+	}
+	server, err := New(Config{
+		PerceptionFactory: func() (v1.PerceptionProvider, error) { return &finalOnlyASR{}, nil },
+		FastProvider:      fast, SlowProvider: slow, SpeechProvider: fakeSpeech{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := newSession(context.Background(), nil, server.config, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := session.newPreparation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := prepared.Observe(context.Background(), 1, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(time.Second)
+	for {
+		runtime := server.config.RuntimeMetrics.Snapshot()
+		if runtime.FastPreparation.Invocations == 1 && runtime.SlowPreparation.Invocations == 1 {
+			if runtime.Fast.Invocations != 0 || runtime.Slow.Invocations != 0 {
+				t.Fatalf("private preparation leaked into foreground counters: %#v", runtime)
+			}
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("private preparation did not reach both stages: %#v", runtime)
+		case <-time.After(time.Millisecond):
+		}
+	}
+	closePreparedTurn(&utteranceState{preparation: prepared}, errors.New("test complete"))
+	session.cancel(errors.New("test complete"))
+}
+
 type finalOnlyASR struct {
 	frames       uint64
 	sourceSample uint64
@@ -349,6 +402,11 @@ func TestStandardRealtimeGatewayRunsCanonicalToolResumption(t *testing.T) {
 	}
 	if fast.count() != 1 || slow.count() != 2 {
 		t.Fatalf("tool resumption reran fast or lost slow continuation: fast=%d slow=%d", fast.count(), slow.count())
+	}
+	runtime := server.config.RuntimeMetrics.Snapshot()
+	if runtime.Fast.Invocations != 1 || runtime.Slow.Invocations != 2 ||
+		runtime.FastPreparation.Invocations != 0 || runtime.SlowPreparation.Invocations != 0 {
+		t.Fatalf("endpoint-only provider provenance is incorrect: %#v", runtime)
 	}
 }
 

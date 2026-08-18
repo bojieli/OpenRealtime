@@ -62,6 +62,31 @@ func TestMeasuredContinuationProviderCountsActualWorkAndUsage(t *testing.T) {
 	}
 }
 
+func TestPreparationProviderMetricsAreDisjointFromForeground(t *testing.T) {
+	t.Parallel()
+	raw := &scriptedProvider{
+		descriptor: continuation.Descriptor{
+			Provider: "test", Model: "fast", Phase: trajectory.PhaseFast,
+			Effort: continuation.EffortMinimal, Streaming: true,
+		},
+		scripts: []providerScript{{
+			events: []continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "answer"}},
+			usage:  continuation.Usage{InputTokens: 8, OutputTokens: 2, TotalTokens: 10},
+		}},
+	}
+	total := &continuationProviderMetrics{}
+	preparationMetrics := &continuationProviderMetrics{}
+	preparationProvider := &measuredContinuationProvider{provider: raw, metrics: preparationMetrics}
+	if _, err := preparationProvider.Continue(context.Background(), continuation.Request{}, func(continuation.Event) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	totalSnapshot := total.snapshot()
+	preparationSnapshot := preparationMetrics.snapshot()
+	if totalSnapshot.Invocations != 0 || preparationSnapshot.Invocations != 1 || preparationSnapshot.TotalTokens != 10 {
+		t.Fatalf("preparation=%#v total=%#v", preparationSnapshot, totalSnapshot)
+	}
+}
+
 func TestMeasuredProvidersSeparateCancellationFromFailure(t *testing.T) {
 	t.Parallel()
 	metrics := &continuationProviderMetrics{}

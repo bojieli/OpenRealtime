@@ -95,6 +95,8 @@ type cognitionRuntime struct {
 	store       *trajectory.Store
 	fast        continuation.Provider
 	slow        continuation.Provider
+	prepareFast continuation.Provider
+	prepareSlow continuation.Provider
 	callbacks   cognitionCallbacks
 	fastTokens  int
 	slowTokens  int
@@ -109,22 +111,30 @@ type cognitionRuntime struct {
 }
 
 type cognitionConfig struct {
-	Store      *trajectory.Store
-	Fast       continuation.Provider
-	Slow       continuation.Provider
-	Callbacks  cognitionCallbacks
-	FastTokens int
-	SlowTokens int
-	MaxSlow    int
-	SlowPace   time.Duration
-	SlowPolicy interleave.SlowContextPolicy
-	Now        func() uint64
-	NextID     func(string) string
+	Store           *trajectory.Store
+	Fast            continuation.Provider
+	Slow            continuation.Provider
+	PreparationFast continuation.Provider
+	PreparationSlow continuation.Provider
+	Callbacks       cognitionCallbacks
+	FastTokens      int
+	SlowTokens      int
+	MaxSlow         int
+	SlowPace        time.Duration
+	SlowPolicy      interleave.SlowContextPolicy
+	Now             func() uint64
+	NextID          func(string) string
 }
 
 func newCognitionRuntime(config cognitionConfig) (*cognitionRuntime, error) {
 	if config.Store == nil || config.Fast == nil || config.Slow == nil || config.Callbacks == nil {
 		return nil, errors.New("gateway cognition requires store, fast/slow providers, and callbacks")
+	}
+	if config.PreparationFast == nil {
+		config.PreparationFast = config.Fast
+	}
+	if config.PreparationSlow == nil {
+		config.PreparationSlow = config.Slow
 	}
 	if config.FastTokens <= 0 {
 		config.FastTokens = 32
@@ -151,7 +161,9 @@ func newCognitionRuntime(config cognitionConfig) (*cognitionRuntime, error) {
 		return nil, err
 	}
 	return &cognitionRuntime{
-		store: config.Store, fast: config.Fast, slow: config.Slow, callbacks: config.Callbacks,
+		store: config.Store, fast: config.Fast, slow: config.Slow,
+		prepareFast: config.PreparationFast, prepareSlow: config.PreparationSlow,
+		callbacks:  config.Callbacks,
 		fastTokens: config.FastTokens, slowTokens: config.SlowTokens, maxSlow: config.MaxSlow,
 		slowPace: config.SlowPace, now: config.Now, nextID: config.NextID,
 		slowPolicy: config.SlowPolicy, slowProject: slowProject,
@@ -168,11 +180,11 @@ func (runtime *cognitionRuntime) NewPreparation() (*preparedTurn, error) {
 	slowInstruction := composePhaseInstruction(semantics.Instruction, interleave.DefaultSlowInstruction)
 	manager, err := preparation.NewChainManager(preparation.ChainConfig{
 		Stages: []preparation.ChainStage{
-			{Provider: runtime.fast, Invocation: continuation.Invocation{
+			{Provider: runtime.prepareFast, Invocation: continuation.Invocation{
 				Instruction: fastInstruction, Capabilities: capabilities, Tools: tools,
 				MaxOutputTokens: runtime.fastTokens,
 			}},
-			{Provider: runtime.slow, Invocation: continuation.Invocation{
+			{Provider: runtime.prepareSlow, Invocation: continuation.Invocation{
 				Instruction: slowInstruction, Capabilities: capabilities, Tools: tools,
 				MaxOutputTokens: runtime.slowTokens,
 			}, Projection: runtime.slowProject, MinimumStartInterval: runtime.slowPace},

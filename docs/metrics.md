@@ -90,6 +90,12 @@ matching candidate completed before endpoint, the endpoint-relative value is
 zero while the report still retains that candidate's nonzero invocation
 latency.
 
+The live gateway additionally keeps disjoint provider aggregates for canonical
+fast/slow calls and private fast/slow preparation calls. Classification comes
+from the typed execution path that owns the call, never transcript content.
+Each class separately reports starts, completion/failure/cancellation, events,
+tokens, and provider/first-event time; no subtraction of nested timers is used.
+
 Tool metrics distinguish non-executable proposals from authoritative calls.
 Proposal count is not tool-call success, and a result counts only when it is
 causally attached to an executable call with matching identity.

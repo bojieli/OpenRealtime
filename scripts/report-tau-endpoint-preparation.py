@@ -82,6 +82,28 @@ def scale_numeric(value: Any, denominator: int) -> Any:
     raise PairedReportError("runtime delta contains a non-numeric leaf")
 
 
+def preparation_manipulation_check(
+    continuous: dict[str, Any], endpoint: dict[str, Any]
+) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for phase in ("fast", "slow"):
+        field = f"{phase}_preparation"
+        continuous_invocations = continuous.get(field, {}).get("invocations")
+        endpoint_invocations = endpoint.get(field, {}).get("invocations")
+        if type(continuous_invocations) is not int or type(endpoint_invocations) is not int:
+            raise PairedReportError(f"missing {field} invocation provenance")
+        if endpoint_invocations != 0:
+            raise PairedReportError(
+                f"endpoint-only condition launched {endpoint_invocations} {field} calls"
+            )
+        result[phase] = {
+            "continuous_preparation_invocations": continuous_invocations,
+            "endpoint_preparation_invocations": endpoint_invocations,
+            "continuous_opened_private_work": continuous_invocations > 0,
+        }
+    return result
+
+
 def cell_signature(matrix: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         {
@@ -302,6 +324,9 @@ def main() -> int:
     continuous_runtime = continuous_evidence["gateway_runtime_delta"]
     endpoint_runtime = endpoint_evidence["gateway_runtime_delta"]
     runtime_difference = numeric_difference(continuous_runtime, endpoint_runtime)
+    manipulation_check = preparation_manipulation_check(
+        continuous_runtime, endpoint_runtime
+    )
     output = arguments.output
     if output is None:
         output = (
@@ -334,6 +359,8 @@ def main() -> int:
             "planned_simulations_per_condition": planned_simulations,
             "cell_metric_differences": cell_differences,
             "provider_work": {
+                "classes": "fast/slow are canonical foreground calls; fast_preparation/slow_preparation are disjoint private calls",
+                "manipulation_check": manipulation_check,
                 "continuous": continuous_runtime,
                 "endpoint_only": endpoint_runtime,
                 "continuous_minus_endpoint_only": runtime_difference,
