@@ -274,4 +274,8 @@ pin the v1.0.0 release and run the same public conformance suite.
 - Capacity ablation: complete paired τ cells change only Qwen3-ASR 0.6B to 1.7B
   after the primary queue; task-specific recognition hints and content routers
   are prohibited
+- Fast-provider ablation: complete paired τ cells change only local
+  no-thinking Qwen fast to Gemini 3.5 Flash minimal-thinking fast, while the
+  Gemini high-thinking slow phase and all task/voice/runtime variables remain
+  fixed
 - Architectural references: GPT-Live and TML Interaction Models

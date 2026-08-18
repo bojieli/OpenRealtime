@@ -32,22 +32,45 @@ done
 
 "${repository_root}/scripts/prepare-tau-voice.sh"
 
-if ! curl --fail --silent --show-error http://127.0.0.1:8765/healthz >/dev/null; then
+gateway_health="$(curl --fail --silent --show-error http://127.0.0.1:8765/healthz)" || {
   echo "OpenRealtime gateway is not healthy" >&2
   exit 1
-fi
+}
 if ! curl --fail --silent --show-error http://127.0.0.1:8081/health >/dev/null; then
   echo "Fish Audio is not healthy" >&2
   exit 1
 fi
-if ! curl --fail --silent --show-error http://127.0.0.1:8000/health >/dev/null; then
-  echo "Qwen vLLM is not healthy" >&2
-  exit 1
+requires_local_fast="$(jq -r '.runtime_requirements.requires_local_fast // true' "${matrix}")"
+if [[ "${requires_local_fast}" == true ]]; then
+  if ! curl --fail --silent --show-error http://127.0.0.1:8000/health >/dev/null; then
+    echo "Qwen vLLM is not healthy" >&2
+    exit 1
+  fi
 fi
 if ! curl --fail --silent --show-error http://127.0.0.1:8001/ >/dev/null; then
   echo "Qwen3-ASR is not healthy" >&2
   exit 1
 fi
+for phase in fast slow; do
+  expected_provider="$(jq -r --arg phase "${phase}" '.runtime_requirements.gateway_profiles[$phase].provider // empty' "${matrix}")"
+  if [[ -z "${expected_provider}" ]]; then
+    continue
+  fi
+  expected_model="$(jq -r --arg phase "${phase}" '.runtime_requirements.gateway_profiles[$phase].model' "${matrix}")"
+  expected_effort="$(jq -r --arg phase "${phase}" '.runtime_requirements.gateway_profiles[$phase].effort' "${matrix}")"
+  expected_authority="$(jq -r --arg phase "${phase}" '.runtime_requirements.gateway_profiles[$phase].tool_authority' "${matrix}")"
+  if ! jq -e \
+    --arg phase "${phase}" \
+    --arg provider "${expected_provider}" \
+    --arg model "${expected_model}" \
+    --arg effort "${expected_effort}" \
+    --arg authority "${expected_authority}" \
+    '.[$phase].provider == $provider and .[$phase].model == $model and .[$phase].effort == $effort and .[$phase].tool_authority == $authority' \
+    <<<"${gateway_health}" >/dev/null; then
+    echo "gateway ${phase} profile does not match the preregistered matrix" >&2
+    exit 1
+  fi
+done
 
 mkdir -p "${run_root}"
 matrix_sha256="$(sha256sum "${matrix}" | cut -d ' ' -f 1)"

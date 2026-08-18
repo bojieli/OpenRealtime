@@ -17,6 +17,38 @@ import (
 	"github.com/coder/websocket"
 )
 
+func TestHealthReportsConfiguredContinuationProfiles(t *testing.T) {
+	t.Parallel()
+	server, err := New(Config{
+		Model: "public-model", PerceptionFactory: func() (v1.PerceptionProvider, error) { return &finalOnlyASR{}, nil },
+		FastProvider:   &scriptedProvider{descriptor: continuation.Descriptor{Provider: "google", Model: "gemini-fast", Phase: trajectory.PhaseFast, Effort: continuation.EffortMinimal, Streaming: true, ToolAuthority: continuation.ToolAuthorityPropose}},
+		SlowProvider:   &scriptedProvider{descriptor: continuation.Descriptor{Provider: "google", Model: "gemini-slow", Phase: trajectory.PhaseSlow, Effort: continuation.EffortHigh, Streaming: true, ToolAuthority: continuation.ToolAuthorityExecute, ExecutableTools: true}},
+		SpeechProvider: fakeSpeech{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest("GET", "/healthz", nil)
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != 200 {
+		t.Fatalf("health status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var body struct {
+		Status string                  `json:"status"`
+		Model  string                  `json:"model"`
+		Fast   continuation.Descriptor `json:"fast"`
+		Slow   continuation.Descriptor `json:"slow"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Status != "ok" || body.Model != "public-model" || body.Fast.Model != "gemini-fast" ||
+		body.Fast.EffectiveToolAuthority() != continuation.ToolAuthorityPropose || body.Slow.Model != "gemini-slow" {
+		t.Fatalf("unexpected health body: %#v", body)
+	}
+}
+
 type finalOnlyASR struct {
 	frames       uint64
 	sourceSample uint64

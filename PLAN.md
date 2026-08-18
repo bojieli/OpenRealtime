@@ -1010,9 +1010,10 @@ Status: full execution in progress. The 12-case official τ provider gate,
 exploratory paired task, strict seven-persona Fish registry, frozen baseline
 matrix, exact FDB v1.5/FDB v3 releases, and resumable runners are complete. The
 278-task control cell is running; regular, 498-recording FDB v1.5,
-100-recording FDB v3, complete Qwen3-ASR 1.7B paired cells, and the 21-cell,
-6,147-conversation released FD-Bench matrix are queued. Native controls and
-cadence/effort ablations remain. No incomplete cell is a benchmark score.
+100-recording FDB v3, complete Qwen3-ASR 1.7B paired cells, the 21-cell,
+6,147-conversation released FD-Bench matrix, and complete paired Gemini-fast
+cells are queued. Native controls and cadence/effort ablations remain. No
+incomplete cell is a benchmark score.
 
 Deliverables:
 
@@ -1030,6 +1031,8 @@ Deliverables:
   WER or CPPL files.
 - A complete paired Qwen3-ASR 0.6B/1.7B capacity matrix whose motivating
   identifier failure cannot become a task-specific hint or routing rule.
+- A complete paired local-Qwen/Gemini-3.5-Flash fast-provider matrix with the
+  same high-thinking Gemini slow continuation and no content-dependent router.
 - Difficult reasoning and active-tool workloads combined with overlap, interruption, selectivity, long-context, and cadence workloads.
 - Native realtime and interaction-model comparisons where access and redistribution permit.
 - Pareto analysis over first semantic audio, final quality, trajectory consistency, tool correctness, compute, and cost.
@@ -1085,7 +1088,9 @@ Exit criteria:
     queue, restoring the baseline service afterward.
 33. Complete the queued 21-cell released FD-Bench population and its pinned
     Silero/upstream-timing evaluation after the ASR capacity matrix.
-34. Draft the `api/v2` migration only after the experimental trajectory contract stabilizes.
+34. Complete the queued Gemini-minimal fast-provider matrix after FD-Bench,
+    restoring the local Qwen fast profile afterward.
+35. Draft the `api/v2` migration only after the experimental trajectory contract stabilizes.
 
 ## 16. Risks and mitigations
 

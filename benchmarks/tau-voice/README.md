@@ -18,8 +18,9 @@ OpenRealtime gateway now passes all 12 selected cases in τ's official
 audio-native provider suite and has completed two exploratory airline tasks.
 A strict, provenance-recorded seven-persona Fish S2-Pro registry now covers
 both speech conditions. The complete 278-task control cell is running; regular,
-FDB v1.5, and FDB v3 cells are queued behind it to avoid GPU interference. The
-checked result remains explicitly a one-task smoke, not a τ-Voice score.
+FDB v1.5, FDB v3, paired ASR, FD-Bench, and paired Gemini-fast cells are queued
+behind it to avoid GPU interference. The checked result remains explicitly a
+one-task smoke, not a τ-Voice score.
 
 ## Executable harness integration
 
@@ -229,6 +230,24 @@ requires the complete paired task/tool and interaction panel. The candidate
 matrix runs only after all baseline voice benchmarks finish, and the launcher
 restores the 0.6B service afterward.
 
+### Fast-provider ablation
+
+[`fast-ablation-v1.json`](fast-ablation-v1.json) preregisters the two fast
+profiles requested by the architecture: local Qwen instruct with thinking
+disabled versus Gemini 3.5 Flash with minimal thinking. Both receive the same
+policy, capability manifest, and schemas under proposal-only authority; both
+continue unconditionally into the same Gemini 3.5 Flash high-thinking slow
+profile. Qwen→Gemini continuity is portable and symbolic. Exact-model
+Gemini→Gemini continuity may additionally retain authenticated native state.
+
+The candidate matrix repeats all 278 tasks in both control and regular speech.
+Before starting, its runner verifies the gateway's provider, model, effort, and
+tool authority against `/healthz`; the hosted condition does not start or
+require local Qwen. It is queued after the existing full benchmark chain so it
+cannot overlap FD-Bench or alter the frozen baseline. The decision is a paired
+quality/latency/compute Pareto comparison, never task-dependent provider
+routing.
+
 ## Primary reporting panel
 
 Report task and interaction behavior together:
@@ -297,10 +316,10 @@ preserved as negative evidence rather than used as the primary tool test.
 The gateway, provider gate, external tool-result resumption, local Fish
 caller/agent paths, strict voice registry, frozen baseline matrix, and bounded
 background orchestration are complete. The full control cell is running. The
-full regular cell, FDB v1.5, FDB v3, and paired 1.7B ASR cells are queued
-sequentially on the same GPU. Native GPT-Live and TML Interaction Model cells
-remain unavailable through a public executable endpoint and are retained only
-as attributed published context. Cadence, effort, and same-family fast-model
-ablations remain after the primary and ASR matrices. No patch test,
+full regular cell, FDB v1.5, FDB v3, paired 1.7B ASR cells, complete FD-Bench
+matrix, and paired Gemini-fast cells are queued sequentially. Native GPT-Live
+and TML Interaction Model cells remain unavailable through a public executable
+endpoint and are retained only as attributed published context. Cadence and
+slow-effort ablations remain after the preregistered matrices. No patch test,
 conformance suite, mock, text-only run, partial cell, or one-task smoke will be
 relabeled as a full τ-Voice score.

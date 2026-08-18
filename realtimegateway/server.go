@@ -4,6 +4,7 @@ package realtimegateway
 
 import (
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -68,8 +69,12 @@ func (server *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
-		writer.WriteHeader(http.StatusOK)
-		_, _ = writer.Write([]byte(`{"status":"ok"}`))
+		_ = json.NewEncoder(writer).Encode(map[string]any{
+			"status": "ok", "model": server.config.Model,
+			"fast":   server.config.FastProvider.Descriptor(),
+			"slow":   server.config.SlowProvider.Descriptor(),
+			"speech": server.config.SpeechProvider.Descriptor(),
+		})
 	})
 	mux.Handle("GET /v1/realtime", server)
 	return mux

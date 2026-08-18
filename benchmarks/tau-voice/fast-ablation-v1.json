@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0.0",
+  "ablation_id": "openrealtime-tau-voice-fast-provider-v1",
+  "frozen_at": "2026-08-18T00:00:00Z",
+  "hypothesis": "Gemini 3.5 Flash at minimal thinking is a slower but more policy-consistent fast continuation than local no-thinking Qwen, while exact same-model continuation into high-thinking Gemini can improve final tool correctness and trajectory consistency.",
+  "baseline": {
+    "matrix": "benchmarks/tau-voice/matrix-v1.json",
+    "fast_provider": "vllm",
+    "fast_model": "Qwen/Qwen3-30B-A3B-FP8",
+    "fast_effort": "minimal",
+    "thinking": "disabled",
+    "continuity_to_slow": "portable symbolic trajectory"
+  },
+  "candidate": {
+    "matrix": "benchmarks/tau-voice/matrix-fast-gemini-v1.json",
+    "fast_provider": "google",
+    "fast_model": "gemini-3.5-flash",
+    "fast_effort": "minimal",
+    "thinking": "minimal",
+    "continuity_to_slow": "authenticated native state for the exact same model plus the portable trajectory"
+  },
+  "shared_slow_profile": {
+    "provider": "google",
+    "model": "gemini-3.5-flash",
+    "effort": "high",
+    "tool_authority": "execute"
+  },
+  "controlled_variables": [
+    "all 278 base tasks in airline, retail, and telecom",
+    "seed 300 and one trial per task",
+    "control and regular speech conditions",
+    "Qwen3-ASR 0.6B with 200 ms stateful advances",
+    "Fish S2-Pro caller and agent voices",
+    "50 ms internal opportunities and 200 ms benchmark ticks",
+    "32-token fast bound and proposal-only fast tool authority",
+    "unconditional fast-to-slow continuation and slow-only tool-result resumption",
+    "single-GPU Fish/ASR co-location and max concurrency one"
+  ],
+  "primary_outcomes": [
+    "tau pass^1 overall and by domain",
+    "exact tool name and argument correctness",
+    "capability denial, contradiction, repeated acknowledgement, and repair turns",
+    "response and yield latency",
+    "fast and slow provider latency, token use, and canceled work",
+    "local GPU memory, utilization, and queueing",
+    "hosted request count and reported usage"
+  ],
+  "decision_rule": "Report the paired Pareto frontier. Gemini fast is preferred only if complete cells improve task/tool and trajectory consistency enough to justify any first-response latency and hosted-compute regression; no task text or benchmark label may route between fast providers.",
+  "status": "preregistered_full_cells_queued_after_primary_full_benchmarks"
+}

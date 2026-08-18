@@ -129,6 +129,19 @@ Primary measures are upstream SRR, SIR, EIR, NIR, SRIR, FSED, ERT, EIT, and
 IRD by condition. This is a robustness matrix, not an intelligence proxy, and
 its 21 cells are reported separately before any aggregate.
 
+### H13 fast-provider intelligence/latency frontier
+
+Two complete paired τ-Voice matrices compare local Qwen instruct with thinking
+disabled against Gemini 3.5 Flash with minimal thinking as the fast phase. The
+slow phase remains Gemini 3.5 Flash at high thinking, and every other task,
+speech, cadence, ASR, tool-authority, TTS, and seed variable is fixed. The
+Gemini-fast candidate may reuse authenticated native state only because the
+slow phase uses the exact same model; Qwen fast crosses through the portable
+canonical trajectory. Primary outcomes jointly cover pass^1, exact tools,
+contradiction/repetition/repair, response and yield latency, canceled work,
+local GPU pressure, and hosted usage. Neither profile is selected from input
+content or benchmark identity.
+
 ### Joint success criterion
 
 The architecture succeeds only if the responsiveness and intelligence gains

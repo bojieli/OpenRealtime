@@ -121,7 +121,10 @@ Qwen3-ASR 0.6B to 1.7B, motivated by a preserved identifier-transcription
 failure. A final queue runs the separate FD-Bench release: 13 source archives
 expanding to 21 audio conditions, 6,147 released conversations, 77.2184 hours
 of input, upstream-compatible 16 kHz timestamps, and exact Silero-VAD settings.
-No incomplete cell is reported as a benchmark score.
+After that corpus completes, a paired full τ matrix changes only the fast
+continuation from local no-thinking Qwen to Gemini 3.5 Flash at minimal
+thinking, retaining Gemini high-thinking slow continuation. No incomplete cell
+is reported as a benchmark score.
 
 ## Start here
 
