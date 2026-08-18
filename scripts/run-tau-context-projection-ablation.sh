@@ -16,6 +16,8 @@ done
 start_profile() {
   local policy="$1"
   "${repository_root}/scripts/local-cascade.sh" stop
+  OPENREALTIME_FAST_PROVIDER=vllm \
+  OPENREALTIME_FAST_MODEL=qwen-fast \
   OPENREALTIME_ASR_MODEL=Qwen/Qwen3-ASR-0.6B \
   OPENREALTIME_ASR_GPU_MEMORY_UTILIZATION=0.14 \
   OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
@@ -43,20 +45,14 @@ start_profile() {
 
 restore_baseline() {
   if [[ "${restored}" == false ]]; then
+    start_profile canonical
     restored=true
-    "${repository_root}/scripts/local-cascade.sh" stop || true
-    OPENREALTIME_ASR_MODEL=Qwen/Qwen3-ASR-0.6B \
-    OPENREALTIME_ASR_GPU_MEMORY_UTILIZATION=0.14 \
-    OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
-    OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
-    OPENREALTIME_ASR_PROVIDER_MAX_CHUNK=0s \
-    OPENREALTIME_SLOW_EFFORT=high \
-    OPENREALTIME_PREPARATION_POLICY=continuous \
-    OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
-      "${repository_root}/scripts/local-cascade.sh" start || true
   fi
 }
-trap restore_baseline EXIT
+cleanup() {
+  restore_baseline || true
+}
+trap cleanup EXIT
 
 "${repository_root}/scripts/report-tau-voice-matrix.sh" \
   "${baseline_matrix}" "" \

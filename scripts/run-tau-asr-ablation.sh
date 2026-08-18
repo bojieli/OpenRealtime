@@ -37,42 +37,58 @@ for cell in i1-qg-canonical-control i1-qg-canonical-regular; do
   done
 done
 
+start_asr_profile() {
+  local model="$1"
+  local memory_utilization="$2"
+  "${repository_root}/scripts/local-cascade.sh" stop
+  OPENREALTIME_FAST_PROVIDER=vllm \
+  OPENREALTIME_FAST_MODEL=qwen-fast \
+  OPENREALTIME_ASR_MODEL="${model}" \
+  OPENREALTIME_ASR_GPU_MEMORY_UTILIZATION="${memory_utilization}" \
+  OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
+  OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
+  OPENREALTIME_ASR_PROVIDER_MAX_CHUNK=0s \
+  OPENREALTIME_SLOW_EFFORT=high \
+  OPENREALTIME_PREPARATION_POLICY=continuous \
+  OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
+    "${repository_root}/scripts/local-cascade.sh" start
+
+  local asr_pid
+  asr_pid="$(<"${repository_root}/.runtime/local-cascade/pids/asr.pid")"
+  if ! tr '\0' ' ' <"/proc/${asr_pid}/cmdline" | grep -F -- "--asr-model-path ${model}" >/dev/null; then
+    echo "ASR process does not identify the preregistered ${model} profile" >&2
+    return 1
+  fi
+  local gateway_health
+  gateway_health="$(curl --fail --silent --show-error http://127.0.0.1:8765/healthz)"
+  if ! jq -e \
+    --arg model "${model}" '
+    .asr.model == $model and
+    .asr.provider_chunk_ms == 200 and .asr.provider_max_chunk_ms == 200 and
+    .asr.strategy == "fixed" and .preparation_policy == "continuous" and
+    .slow_context == "canonical" and
+    .fast.provider == "vllm" and .fast.model == "qwen-fast" and
+    .fast.effort == "minimal" and .fast.tool_authority == "propose" and
+    .slow.provider == "google" and .slow.model == "gemini-3.5-flash" and
+    .slow.effort == "high" and .slow.tool_authority == "execute"
+  ' <<<"${gateway_health}" >/dev/null; then
+    echo "gateway does not report the preregistered ${model} ASR profile" >&2
+    return 1
+  fi
+}
+
 restore_baseline_asr() {
   if [[ "${restored}" == false ]]; then
-    "${repository_root}/scripts/local-cascade.sh" stop || true
-    OPENREALTIME_ASR_MODEL=Qwen/Qwen3-ASR-0.6B \
-    OPENREALTIME_ASR_GPU_MEMORY_UTILIZATION=0.14 \
-    OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
-    OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
-    OPENREALTIME_ASR_PROVIDER_MAX_CHUNK=0s \
-    OPENREALTIME_PREPARATION_POLICY=continuous \
-    OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
-      "${repository_root}/scripts/local-cascade.sh" start || true
+    start_asr_profile Qwen/Qwen3-ASR-0.6B 0.14
     restored=true
   fi
 }
-trap restore_baseline_asr EXIT
+cleanup() {
+  restore_baseline_asr || true
+}
+trap cleanup EXIT
 
-"${repository_root}/scripts/local-cascade.sh" stop
-OPENREALTIME_ASR_MODEL=Qwen/Qwen3-ASR-1.7B \
-OPENREALTIME_ASR_GPU_MEMORY_UTILIZATION=0.18 \
-OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
-OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
-OPENREALTIME_ASR_PROVIDER_MAX_CHUNK=0s \
-OPENREALTIME_PREPARATION_POLICY=continuous \
-OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
-  "${repository_root}/scripts/local-cascade.sh" start
-
-if ! tr '\0' ' ' <"/proc/$(<"${repository_root}/.runtime/local-cascade/pids/asr.pid")/cmdline" | grep -F 'Qwen/Qwen3-ASR-1.7B' >/dev/null; then
-  echo "ASR process does not identify the preregistered 1.7B candidate" >&2
-  exit 1
-fi
-gateway_health="$(curl --fail --silent --show-error http://127.0.0.1:8765/healthz)"
-if ! jq -e '.asr.model == "Qwen/Qwen3-ASR-1.7B" and .asr.provider_chunk_ms == 200 and .slow_context == "canonical"' \
-  <<<"${gateway_health}" >/dev/null; then
-  echo "gateway does not report the preregistered 1.7B ASR profile" >&2
-  exit 1
-fi
+start_asr_profile Qwen/Qwen3-ASR-1.7B 0.18
 
 TAU_VOICE_MATRIX="${candidate_matrix}" \
   "${repository_root}/scripts/run-tau-voice-matrix.sh"
@@ -83,3 +99,6 @@ TAU_VOICE_MATRIX="${candidate_matrix}" \
   --cell i1-qg-asr17-control \
   --cell i1-qg-asr17-regular
 "${repository_root}/scripts/archive-tau-voice-artifacts.sh" "${candidate_matrix}"
+
+restore_baseline_asr
+trap - EXIT

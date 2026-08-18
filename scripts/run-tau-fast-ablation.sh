@@ -37,17 +37,44 @@ for cell in i1-qg-canonical-control i1-qg-canonical-regular; do
   done
 done
 
+start_fast_profile() {
+  local provider="$1"
+  local model="$2"
+  "${repository_root}/scripts/local-cascade.sh" stop
+  OPENREALTIME_FAST_PROVIDER="${provider}" \
+  OPENREALTIME_FAST_MODEL="${model}" \
+  OPENREALTIME_ASR_MODEL=Qwen/Qwen3-ASR-0.6B \
+  OPENREALTIME_ASR_GPU_MEMORY_UTILIZATION=0.14 \
+  OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
+  OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
+  OPENREALTIME_ASR_PROVIDER_MAX_CHUNK=0s \
+  OPENREALTIME_SLOW_EFFORT=high \
+  OPENREALTIME_PREPARATION_POLICY=continuous \
+  OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
+    "${repository_root}/scripts/local-cascade.sh" start
+
+  local health
+  health="$(curl --fail --silent --show-error http://127.0.0.1:8765/healthz)"
+  if ! jq -e \
+    --arg provider "${provider}" \
+    --arg model "${model}" '
+    .asr.model == "Qwen/Qwen3-ASR-0.6B" and
+    .asr.provider_chunk_ms == 200 and .asr.provider_max_chunk_ms == 200 and
+    .asr.strategy == "fixed" and .preparation_policy == "continuous" and
+    .slow_context == "canonical" and
+    .fast.provider == $provider and .fast.model == $model and
+    .fast.effort == "minimal" and .fast.tool_authority == "propose" and
+    .slow.provider == "google" and .slow.model == "gemini-3.5-flash" and
+    .slow.effort == "high" and .slow.tool_authority == "execute"
+  ' <<<"${health}" >/dev/null; then
+    echo "gateway does not report the preregistered ${provider}/${model} fast profile" >&2
+    return 1
+  fi
+}
+
 restore_local_fast() {
   if [[ "${restored}" == false ]]; then
-    "${repository_root}/scripts/local-cascade.sh" stop
-    OPENREALTIME_FAST_PROVIDER=vllm \
-    OPENREALTIME_ASR_MODEL=Qwen/Qwen3-ASR-0.6B \
-    OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
-    OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
-    OPENREALTIME_ASR_PROVIDER_MAX_CHUNK=0s \
-    OPENREALTIME_PREPARATION_POLICY=continuous \
-    OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
-      "${repository_root}/scripts/local-cascade.sh" start
+    start_fast_profile vllm qwen-fast
     restored=true
   fi
 }
@@ -56,16 +83,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"${repository_root}/scripts/local-cascade.sh" stop
-OPENREALTIME_FAST_PROVIDER=gemini \
-OPENREALTIME_FAST_MODEL=gemini-3.5-flash \
-OPENREALTIME_ASR_MODEL=Qwen/Qwen3-ASR-0.6B \
-OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
-OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
-OPENREALTIME_ASR_PROVIDER_MAX_CHUNK=0s \
-OPENREALTIME_PREPARATION_POLICY=continuous \
-OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
-  "${repository_root}/scripts/local-cascade.sh" start
+start_fast_profile gemini gemini-3.5-flash
 
 TAU_VOICE_MATRIX="${candidate_matrix}" \
   "${repository_root}/scripts/run-tau-voice-matrix.sh"
