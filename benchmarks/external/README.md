@@ -5,6 +5,23 @@ upstream revision, download identity, byte length, digest, observed sample
 count, and license statement. Downloading or using an archive remains an
 explicit user action subject to its upstream terms.
 
+## τ-Voice
+
+`tau-voice.manifest.json` pins Sierra Research's `tau2-bench` revision
+`c3398666e6559e3a063da3fc04b5acf7f941464e` and the τ-Voice paper. The
+benchmark combines 278 grounded airline/retail/telecom tasks with full-duplex
+speech, real environment tools, multi-turn policy following, control/regular
+speech conditions, and tick-level interaction metrics. Its default tick is
+200 ms.
+
+This is the primary planned joint intelligence/interaction benchmark for
+OpenRealtime, but it has not been run locally. The persistent OpenRealtime
+`DiscreteTimeAdapter` bridge remains to be implemented, and the current
+environment lacks the ElevenLabs credential and externally configured persona
+voice IDs required by the upstream user simulator. A mock-tool, text-only, or
+partial smoke result must not be reported as a τ-Voice score. See the
+[integration and evaluation plan](../tau-voice/README.md).
+
 ## Full-Duplex-Bench v1.5
 
 The Go `livebench` runner consumes the original paired `input.wav`,

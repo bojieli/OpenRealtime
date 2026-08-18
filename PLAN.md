@@ -1,7 +1,7 @@
 # OpenRealtime Project Plan
 
 - **Subtitle:** Microturn Realtime Intelligence Engine
-- **Status:** Living research specification, version 0.2
+- **Status:** Living research specification, version 0.3
 - **Date:** 2026-08-18
 
 ## 1. Executive summary
@@ -18,15 +18,18 @@ The project will build:
 1. A precise model of **microturn execution**: periodic and event-driven safe opportunities to advance perception, cognition, tools, speech planning, and commitment.
 2. A **canonical trajectory** containing ordered observations, reasoning segments, assistant content, tool calls, and tool results.
 3. **Heterogeneous interleaved thinking**: fast and slow model invocations append successive segments to that one trajectory, with no separate-agent advice protocol.
-4. A live, co-located ASR–LLM–TTS path whose queueing, GPU contention, first-token, first-audio, cancellation, and repair behavior can be measured.
-5. Reproducible baselines covering endpointed cascades, microturn cascades, independent fast/slow systems, interleaved fast/slow systems, and native speech-to-speech systems.
-6. Benchmarks for turn timing, interruption, backchannels, overlap, simultaneous translation, rapid audio games, tool use, and difficult questions requiring continued thought.
-7. Public traces, metrics, ablations, and a research report that states both positive and negative results.
+4. A **single-owner safe-point event loop** that serializes asynchronous observations, model output, playback transitions, and tool results with versioned atomic commits.
+5. A live, co-located ASR–LLM–TTS path whose queueing, GPU contention, first-token, first-audio, cancellation, and repair behavior can be measured.
+6. Reproducible baselines covering endpointed cascades, microturn cascades, independent fast/slow systems, interleaved fast/slow systems, and native speech-to-speech systems.
+7. Benchmarks for turn timing, interruption, backchannels, overlap, simultaneous translation, rapid audio games, tool use, and difficult questions requiring continued thought.
+8. Public traces, metrics, ablations, and a research report that states both positive and negative results.
 
 The project is successful if it produces credible evidence about the hypothesis. A result showing that modular microturn systems cannot match native systems in important dimensions is still a successful research outcome if the experiment is sound and the limitations are characterized.
 
 The focused internal design is documented in
-[docs/canonical-trajectory.md](docs/canonical-trajectory.md). The first live
+[docs/canonical-trajectory.md](docs/canonical-trajectory.md), with the
+concurrency contract in
+[docs/safe-point-event-loop.md](docs/safe-point-event-loop.md). The first live
 implementation and its exploratory positive and negative evidence are in
 [docs/live-cascade.md](docs/live-cascade.md).
 
@@ -125,6 +128,14 @@ The engine distinguishes four clocks that must not be conflated:
 
 Model and tool work is consumed at safe trajectory boundaries. A routine event may queue until the current reasoning segment or tool call reaches a boundary. An urgent interruption may cancel current decoding, retain the completed reasoning prefix, append the new observation, and continue from the extended trajectory. Independent work may execute concurrently, but its outputs rejoin the same ordered trajectory with explicit causality.
 
+The event loop is the sole semantic transition owner. Each invocation captures
+trajectory version `v`; its phase instruction and completed output append
+atomically only if the store is still at `v`. Concurrent producers enqueue
+events rather than mutating state. Event occurrence time is distinct from
+canonical commit time, so waiting for a safe point is measurable rather than
+hidden. Urgency is trusted typed metadata from acoustic/semantic policy, never
+keyword matching over transcript content.
+
 ### 5.3 Incremental hypothesis
 
 An ASR or perception result is represented as:
@@ -176,6 +187,9 @@ Fast and slow are phases of one rollout, not separate agents:
   a fast native call becomes `tool_proposal` working state and cannot execute;
   only a new slow `tool_call` reaches the authority/tool runtime.
 - Slow output is not an advisory side channel. It is the next reasoning, tool-call, or assistant segment in the same trajectory.
+- Both phases receive one common agent/domain system policy. Phase instructions
+  alter compute/authority behavior but cannot create different agent identities
+  or capability descriptions.
 
 The default research policy schedules one slow continuation after every completed fast phase that was invoked for newly appended trajectory input, including a stable partial recognition before endpointing. New events may extend or supersede that work, but the runtime keeps at most one current slow continuation for the same trajectory branch. This removes a hand-written difficulty router from the reference condition and permits thinking while listening. Conditional continuation may be studied later as a learned cost/quality policy.
 
@@ -331,9 +345,23 @@ The trajectory store is the cognitive source of truth. It appends typed items at
 
 The store, rather than either model, owns item identity, revision provenance, invocation identity, tool lifecycle, and cancellation facts. Models do not generate workflow status fields. A fast or slow invocation produces ordinary reasoning and assistant content. A native fast call is appended as a non-executable `tool_proposal`; a native slow call is appended as an executable `tool_call`. The runtime supplies provenance and rejects a result that references a proposal.
 
+The store exposes versioned compare-and-append. An external event batch or
+model continuation derived from prefix `v` either appends completely while
+`v` remains current or appends nothing. Phase instructions are provider-visible
+during generation but enter the audit trajectory in the same transaction as
+their output, so an in-flight invocation cannot leave a misleading standalone
+instruction. Assistant playback state is append-only: cancelled-before-playback
+content and native state that embeds it are excluded from subsequent provider
+views, while played content remains immutable.
+
 ### 7.6 Fast continuation
 
-The fast continuation receives the latest valid trajectory prefix, a shared capability manifest, the real tool schemas, and a strict deadline. It produces ordinary assistant content, an optional structured proposal, or no content. Asking a question is ordinary assistant text; keeping quiet is an empty visible segment. Turn yielding and playback stopping remain media-policy decisions.
+The fast continuation receives the latest valid trajectory prefix, the common
+agent/domain instruction, a shared capability manifest, the real tool schemas,
+and a strict deadline. It produces the smallest truthful ordinary assistant
+segment that makes progress, an optional structured proposal, or no content.
+Asking a question is ordinary assistant text; keeping quiet is an empty visible
+segment. Turn yielding and playback stopping remain media-policy decisions.
 
 Two primary fast conditions are planned:
 
@@ -344,7 +372,7 @@ Both must receive the same description and schemas for what the overall agent ca
 
 ### 7.7 Slow continuation and tools
 
-After every canonical fast phase invoked for newly appended trajectory input, a continuation instruction asks the slow model to continue the latest request. This may begin from a stable partial recognition before endpointing. Gemini 3.5 Flash with medium or high thinking is the initial condition. The invocation receives the same trajectory plus the fast reasoning representation when compatible, the exact assistant content and proposals already emitted, a larger context view, and execute authority for the same tool definitions.
+After every canonical fast phase invoked for newly appended trajectory input, a continuation instruction asks the slow model to continue the latest request. This may begin from a stable partial recognition before endpointing. Gemini 3.5 Flash with medium or high thinking is the initial condition. The invocation receives the same agent/domain policy and trajectory plus the fast reasoning representation when compatible, the exact assistant content and proposals already emitted, a larger context view, and execute authority for the same tool definitions. It appends only missing work, an action, or an explicit correction rather than repeating an adequate fast segment.
 
 The slow model continues normally: reasoning may lead to assistant content, a newly generated authoritative tool call, a tool result, more reasoning, and further content. A fast proposal is evidence about prior working intent, not an already-pending call. Slow outputs append directly to the canonical trajectory; they are not summarized into a separate `SlowUpdate` advice channel. An authority policy remains responsible for approving irreversible external effects.
 
@@ -365,9 +393,44 @@ captured event is replayed into the canonical runner after final evidence.
 
 ### 7.8 Event loop and continuation boundaries
 
-The event loop batches routine observations at natural safe points, forces an early safe point for urgent interruptions, and permits genuinely independent operations to run concurrently. It should preserve the familiar synchronous `assistant tool-call → tool result` sequence when possible, while representing real asynchronous progress explicitly when a tool has been initiated but not completed.
+The event loop is one actor over a unified ingress queue. Audio/perception,
+playback, client, and tool workers are concurrent event producers; they never
+append semantic items from callback goroutines. It snapshots pending events in
+arrival order, compiles their causal metadata, and atomically commits the whole
+batch before invoking cognition. Events arriving during processing remain for
+the next safe point.
+
+The reference cognitive transition table is deliberately small:
+
+| Committed batch contains | Continuation transition |
+| --- | --- |
+| Response-eligible observation | fast, then one slow continuation |
+| Complete authoritative tool-result batch | one slow continuation |
+| Playback-state transitions only | none |
+
+If observations and results share a batch, fast runs once for the new evidence
+and slow consumes the combined prefix. There is no `answer`, `ask`, `yield`,
+`stop`, `present_slow`, difficulty, or keyword router. Eligibility of an ASR
+revision and interruption priority are typed decisions made by declared
+perception/turn policies, not inferred by the event loop from text.
+
+Routine observations wait for the current provider boundary. A trusted urgent
+event requests cooperative cancellation; completed partial reasoning or
+assistant content may commit, incomplete calls are suppressed, and the event
+commits next. Compare-and-append remains mandatory because a provider may
+ignore cancellation. Source occurrence and canonical commit timestamps are
+both retained.
+
+Tool initiation and completion are split. Only a committed slow call batch is
+dispatched. Results may finish concurrently, but every outstanding call from
+that invocation must return in one exact identity-checked event; the batch is
+ordered by original call order and committed atomically. The event then resumes
+slow directly without rerunning fast.
 
 Model substitution occurs only at trajectory boundaries. A runtime cannot move a KV cache from Qwen to Gemini; it can carry the completed symbolic prefix. If a provider exposes only signed thinking blocks or summaries, the adapter must preserve what is legally and technically reusable and declare what was omitted or normalized.
+
+The normative runtime details are in
+[docs/safe-point-event-loop.md](docs/safe-point-event-loop.md) and ADR-0004.
 
 ### 7.9 Response and speech planning
 
@@ -502,6 +565,14 @@ Each major experiment should compare as many of these conditions as applicable:
 
 Comparisons must control component model versions, region, network path, audio device, prompt, voice, and workload where possible.
 
+τ-Voice is the primary joint falsification harness for B0/R0/R1/I0/I1/D0 and
+available N0/N1 conditions because it combines grounded environment tools,
+long multi-turn policy context, task success, and full-duplex interaction. Its
+200 ms default simulation tick is an evaluation clock, not permission to tie
+the implementation to a 200 ms internal scheduler. Each submission records the
+actual internal cadence and maps continuous output to the benchmark tick
+contract.
+
 ### 9.2 Ablations
 
 - Trigger interval.
@@ -525,6 +596,11 @@ Comparisons must control component model versions, region, network path, audio d
 - Acoustic/prosodic side channel.
 - Network latency and jitter.
 - Small versus strong fast-decision model.
+- Slow launch immediately after every committed fast safe point versus a
+  separately declared content-independent resource pacer.
+- Serial callback mutation versus the canonical safe-point event loop is not a
+  benchmark condition: the former violates the architecture and belongs only
+  in fault-injection tests.
 
 ### 9.3 Workload families
 
@@ -551,6 +627,13 @@ Streaming speech translation where quality and latency are both measured. Begin 
 #### F. Difficult questions
 
 Questions that need tools or continued reasoning. Compare blocking slow inference, fast-only answers, independent fast/slow advice, and interleaved fast/slow continuation. Score whether the later model inherits prior reasoning and spoken commitments, whether the agent repeats itself or contradicts audible content, and whether tools are used without falsely denying or claiming capabilities.
+
+τ-Voice is the main external workload here. Run its airline, retail, and
+telecom task policies under both clean/control and realistic/regular speech.
+Preserve the benchmark's real environment tools and database outcome checks;
+do not replace them with text-only or mocked call-shape scoring. Report tool and
+long-context failure subsets separately so an aggregate pass rate cannot hide
+split-brain, forgotten-policy, or synchronization failures.
 
 #### G. Paralinguistic challenge set
 
@@ -586,6 +669,9 @@ Sarcasm, uncertainty, laughter, sighs, emotional prosody, and non-speech events.
 - False capability denial and false action-completion rate.
 - Resumption success after user, ASR, or tool interruption.
 - Conversation task success.
+- τ-Voice response/yield latency and rate, agent interruption rate, and
+  selectivity for backchannels, vocal tics, and non-directed speech using the
+  upstream tick-level metric implementation.
 
 ### 10.3 Content quality
 
@@ -841,12 +927,15 @@ runners, proposal-versus-execute authority, exact-match pre-endpoint
 fast→slow preparation, exact stage replay/live fallback, tool-result
 continuation, content-independent per-stage temporal pacing with exact-commit
 bypass, exact tool-trajectory scoring, and passing heterogeneous live trials
-are implemented. The scorer requires an exact call multiset and exactly
-one identity-matched terminal result per call. The trial also records
-superseded/failed background work and preserved failure cases. Canonical
-stable-partial effects, audible repair
-integration, same-family/content-only/independent controls, and an `api/v2`
-proposal remain.
+are implemented. The single-owner structured event loop, versioned
+compare-and-append model transactions, trusted typed interruption, complete
+asynchronous tool-result batches, common agent policy across phases, and
+cancellation-aware audible-history projection are also implemented. The scorer
+requires an exact call multiset and exactly one identity-matched terminal
+result per call. The trial also records superseded/failed background work and
+preserved failure cases. Canonical stable-partial effects, end-to-end audible
+repair integration, bounded production ingress/backpressure,
+same-family/content-only/independent controls, and an `api/v2` proposal remain.
 
 Deliverables:
 
@@ -855,6 +944,8 @@ Deliverables:
 - Fast and slow continuation runners over the same trajectory.
 - Tool-capability manifest and schemas shared by both phases, with fast calls mapped to non-executable proposals and execution restricted to slow authority.
 - Safe-point interruption, reasoning preservation, tool-result injection, and audible-commit repair.
+- One structured event-loop owner with atomic event/model/result transactions,
+  occurrence-versus-commit provenance, and no content-pattern routing.
 - Migration proposal from the M4 roles to an eventual `api/v2` continuation interface.
 
 Exit criteria:
@@ -864,6 +955,8 @@ Exit criteria:
   and results appear once in causal order and are visible to every later
   continuation.
 - New user or ASR evidence can interrupt, extend, and resume thinking without erasing completed reasoning or silently rewriting speech.
+- Concurrent event, provider, and tool completion race tests prove that stale
+  work cannot append or expose a side effect.
 - Same-family, cross-family, content-only, and independent-advice controls are reproducible.
 
 ### M10 — Responsiveness–intelligence comparative study
@@ -871,7 +964,10 @@ Exit criteria:
 Deliverables:
 
 - Paired local-Qwen-fast and Gemini-fast conditions with Gemini 3.5 Flash medium/high slow continuation.
-- Difficult reasoning and active-tool workloads combined with overlap, interruption, and cadence workloads.
+- A pinned τ-Voice adapter covering its full 278-task airline/retail/telecom
+  suite in both control and regular speech conditions, subject to upstream
+  credentials/persona access.
+- Difficult reasoning and active-tool workloads combined with overlap, interruption, selectivity, long-context, and cadence workloads.
 - Native realtime and interaction-model comparisons where access and redistribution permit.
 - Pareto analysis over first semantic audio, final quality, trajectory consistency, tool correctness, compute, and cost.
 
@@ -879,6 +975,9 @@ Exit criteria:
 
 - The project can separately attribute gains to trigger timing and to continued reasoning.
 - Results identify when the two mechanisms compose, interfere through resource contention, or fail to match native systems.
+- τ-Voice results report pass^1 jointly with response/yield behavior,
+  interruption rate, and selectivity; a latency-only or text-only result does
+  not satisfy the milestone.
 - Claims of high responsiveness and high intelligence are supported by joint measurements rather than separate demonstrations.
 
 ## 15. Initial issue backlog
@@ -910,8 +1009,13 @@ Exit criteria:
 25. Expand the implemented fixed-tick versus provider-invocation accounting across every cadence condition.
 26. Add same-family and cross-family reasoning-continuity ablations.
 27. Add capability-consistency and split-brain evaluations.
-28. Add safe-point interruption with retained partial reasoning.
-29. Draft the `api/v2` migration only after the experimental trajectory contract stabilizes.
+28. Integrate the implemented safe-point event loop with live ASR, playback,
+    and asynchronous tool ingress; add bounded queue and overload policy.
+29. Implement the pinned τ-Voice `DiscreteTimeAdapter` bridge and run provider
+    conformance before any scored task.
+30. Run the preregistered τ-Voice matrix only after required persona and TTS
+    credentials are available; publish failures and incomplete cells.
+31. Draft the `api/v2` migration only after the experimental trajectory contract stabilizes.
 
 ## 16. Risks and mitigations
 
@@ -1009,6 +1113,7 @@ The implementation and study should begin from these public sources and add a ma
 8. Lin et al., “Full-Duplex-Bench v1.5: Evaluating Overlap Handling for Full-Duplex Speech Models,” 2025. <https://arxiv.org/abs/2507.23159>
 9. Ma et al., “SimulEval: An Evaluation Toolkit for Simultaneous Translation,” EMNLP 2020. <https://aclanthology.org/2020.emnlp-demos.19/>
 10. Thinking Machines Lab, “Interaction Models: A Scalable Approach to Human-AI Collaboration,” 2026. <https://thinkingmachines.ai/blog/interaction-models/>
-10. OpenAI, Realtime API documentation. <https://developers.openai.com/api/docs/guides/realtime>
+11. Ray et al., “τ-Voice: Benchmarking Full-Duplex Voice Agents on Real-World Domains,” 2026. <https://arxiv.org/abs/2603.13686>
+12. OpenAI, Realtime API documentation. <https://developers.openai.com/api/docs/guides/realtime>
 
 Public APIs and papers evolve. Any experiment must cite the exact version and retrieval date used.

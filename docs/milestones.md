@@ -232,7 +232,9 @@ pin the v1.0.0 release and run the same public conformance suite.
   unconditional slow continuation, private fast→slow preparation, exact
   per-stage replay/live fallback, temporal launch pacing that cannot delay
   exact commit, tool-result continuation, and exact name-plus-JSON-argument
-  scoring
+  scoring; one structured safe-point event-loop owner, versioned atomic model
+  commits, typed interruption, complete asynchronous result transactions,
+  common agent policy, and cancellation-aware audible-history projection
 - Target: fast and slow models continue one trajectory containing observations,
   reusable reasoning, assistant content, proposals, executable calls, and
   results
@@ -251,3 +253,6 @@ pin the v1.0.0 release and run the same public conformance suite.
   short-block native interaction models are separate conditions
 - Required outcomes: first semantic audio, final reasoning/tool quality,
   contradiction and capability consistency, repair, compute, queueing, and cost
+- Primary joint harness: pinned τ-Voice full airline/retail/telecom matrix in
+  control and regular speech conditions; adapter and external voice credentials
+  remain pending, so no local score is claimed

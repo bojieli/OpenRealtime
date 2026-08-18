@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0.0",
+  "artifact_kind": "external_benchmark_pin",
+  "retrieved_at": "2026-08-18T00:00:00Z",
+  "locally_executed": false,
+  "benchmark": {
+    "name": "tau-Voice",
+    "display_name": "τ-Voice",
+    "paper_url": "https://arxiv.org/abs/2603.13686",
+    "paper_task_count": 278,
+    "domains": ["airline", "retail", "telecom"],
+    "primary_task_metric": "pass^1",
+    "speech_conditions": ["control", "regular"],
+    "default_tick_duration_seconds": 0.2
+  },
+  "source": {
+    "repository_url": "https://github.com/sierra-research/tau2-bench",
+    "repository_revision": "c3398666e6559e3a063da3fc04b5acf7f941464e",
+    "revision_committed_at": "2026-08-14T13:59:57-07:00",
+    "license": "MIT",
+    "voice_readme_path": "src/tau2/voice/README.md",
+    "adapter_contract_path": "src/tau2/voice/audio_native/adapter.py",
+    "interaction_metrics_path": "docs/interaction-metrics.md"
+  },
+  "adapter_contract": {
+    "base_class": "DiscreteTimeAdapter",
+    "primary_method": "run_tick",
+    "tool_result_method": "send_tool_result",
+    "external_audio": "8 kHz G.711 mu-law by default",
+    "output": [
+      "tick-capped agent audio",
+      "proportional transcript",
+      "tool calls",
+      "speech activity",
+      "provider events",
+      "usage records"
+    ]
+  },
+  "interaction_metrics": [
+    "response_latency_mean",
+    "yield_latency_mean",
+    "response_rate",
+    "yield_rate",
+    "agent_interruption_rate",
+    "selectivity_backchannel",
+    "selectivity_vocal_tic",
+    "selectivity_non_directed"
+  ],
+  "published_context": {
+    "text_reasoning_pass_percent": 85,
+    "voice_control_pass_percent_range": [31, 51],
+    "voice_regular_pass_percent_range": [26, 38],
+    "voice_to_text_capability_retention_percent_range": [30, 45]
+  },
+  "redistributed": false,
+  "status": "pinned_adapter_pending_not_run",
+  "blockers_observed": [
+    "The OpenRealtime persistent audio bridge has not yet implemented the upstream DiscreteTimeAdapter provider suite.",
+    "ELEVENLABS_API_KEY was not available in the evaluation environment.",
+    "External users must configure tau2 control-persona voice IDs; upstream defaults are private and unavailable."
+  ],
+  "reporting_rule": "Do not report an OpenRealtime tau-Voice score until the pinned provider adapter passes upstream tests and the complete declared task/condition cell finishes. Partial text-only, mock-tool, or interaction-only runs are not tau-Voice scores."
+}

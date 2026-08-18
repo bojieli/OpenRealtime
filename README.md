@@ -26,6 +26,12 @@ continuous audio → incremental perception → microturn/event scheduler
 
 A 200 ms tick is a decision opportunity, not a command to restart every model. ASR and model sessions retain incremental state; event arrivals such as recognition revisions, user interruption, tool completion, or slow continuation may trigger work between ticks. Fast and slow inference append successive segments to one trajectory rather than exchanging an advisory summary. Both see the real tool schemas: fast calls become non-executable proposals, while only slow calls reach the tool runtime.
 
+Concurrent sources do not mutate that trajectory directly. One safe-point
+event loop commits structured event batches, model continuations, and complete
+tool-result batches with versioned atomic transactions. Routine events wait for
+the next boundary; a trusted typed interruption requests cancellation. No
+keyword router or model-authored goal/status machine controls the transition.
+
 The comparative study keeps three categories distinct: endpoint/VAD-triggered
 online speech models, persistent short-block interaction models such as Moshi
 or Thinking Machines Lab Interaction Models, and this modular microturn
@@ -83,6 +89,9 @@ with 200 ms provider buffering; exact-match latest-revision fast→slow private
 preparation; a content-independent slow-launch pacer whose wait is bypassed by
 exact commit; proposal-versus-execute tool authority; canonical continuation;
 exact tool-trajectory scoring; and a priority/capacity admission governor. A
+single-owner asynchronous event loop now adds source-versus-commit provenance,
+typed interruption, stale-prefix rejection, atomic external tool results, and
+cancellation-aware audible-history projection. A
 real co-located audio-to-audio tool trial committed and replayed both prepared
 stages, had zero additional endpoint-time fast delay, made one fast proposal
 and one independently authorized slow call, and returned the correct grounded
@@ -101,7 +110,8 @@ experimental design, milestones, and contribution roadmap. The focused
 [canonical trajectory design](docs/canonical-trajectory.md) specifies how
 microturn timing, asynchronous events, fast/slow continuation, tools, and
 speech commitment fit together without changing the external Realtime wire
-protocol.
+protocol. The normative synchronization state machine is in the
+[safe-point event-loop design](docs/safe-point-event-loop.md).
 
 To reproduce the M0 timing trace from a clean checkout:
 
@@ -194,6 +204,11 @@ LiveKit endpointing tables add broader context without being represented as
 local runs. Read the
 [live-provider report](docs/research/live-provider-benchmark-2026-08.md) and
 [external benchmark instructions](benchmarks/external/README.md).
+
+τ-Voice is pinned as the primary M10 joint intelligence/interaction benchmark.
+Its OpenRealtime adapter and required external voice credentials are still
+pending, so this repository does not claim a local τ-Voice score. See the
+[τ-Voice evaluation plan](benchmarks/tau-voice/README.md).
 
 ## Principles
 
