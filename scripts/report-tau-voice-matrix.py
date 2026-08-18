@@ -15,7 +15,7 @@ import math
 import os
 import subprocess
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -272,14 +272,24 @@ def validate_population(
     if actual_population != expected_population or actual_ids != set(indexed_ids):
         raise IncompleteMatrixError(f"{label}: on-disk simulations fail population proof")
 
+    termination_reasons: Counter[str] = Counter()
+    for entry in index:
+        reason = entry.termination_reason
+        if hasattr(reason, "value"):
+            reason = reason.value
+        if not isinstance(reason, str) or not reason:
+            raise IncompleteMatrixError(
+                f"{label}: simulation {entry.id!r} has no typed termination reason"
+            )
+        termination_reasons[reason] += 1
+
     return {
         "status": "complete",
         "tasks": expected_tasks,
         "trials_per_task": num_trials,
         "simulations": expected_simulations,
-        "infrastructure_errors": sum(
-            entry.termination_reason == "infrastructure_error" for entry in index
-        ),
+        "termination_reasons": dict(sorted(termination_reasons.items())),
+        "infrastructure_errors": termination_reasons.get("infrastructure_error", 0),
     }
 
 

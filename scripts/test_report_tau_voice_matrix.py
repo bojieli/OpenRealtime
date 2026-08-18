@@ -116,6 +116,10 @@ class PopulationValidationTest(unittest.TestCase):
                 "tasks": 2,
                 "trials_per_task": 1,
                 "simulations": 2,
+                "termination_reasons": {
+                    "infrastructure_error": 1,
+                    "user_stop": 1,
+                },
                 "infrastructure_errors": 1,
             },
         )

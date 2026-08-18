@@ -90,6 +90,7 @@ class Fixture:
                                     "tasks": 1,
                                     "trials_per_task": 1,
                                     "simulations": 1,
+                                    "termination_reasons": {"user_stop": 1},
                                     "infrastructure_errors": 0,
                                 }
                             }
@@ -380,6 +381,21 @@ class FullStudyTest(unittest.TestCase):
         run["failures"] = [{"sample_id": "1"}]
         write_json(path, run)
         with self.assertRaisesRegex(REPORT.StudyIncompleteError, "terminal failures"):
+            self.report()
+
+    def test_rejects_an_incomplete_tau_termination_distribution(self) -> None:
+        path = (
+            self.root
+            / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
+        )
+        report = json.loads(path.read_text(encoding="utf-8"))
+        report["cells"]["control"]["domains"]["airline"]["population"][
+            "termination_reasons"
+        ] = {}
+        write_json(path, report)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "termination population"
+        ):
             self.report()
 
     def test_rejects_a_missing_official_llm_judge_score(self) -> None:

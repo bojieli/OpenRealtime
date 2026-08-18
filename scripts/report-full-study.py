@@ -152,6 +152,7 @@ def validate_tau_matrix(
 
     total_simulations = 0
     infrastructure_errors = 0
+    termination_reasons: Counter[str] = Counter()
     cell_panel: dict[str, Any] = {}
     for cell_id in cell_ids:
         cell_report = report["cells"][cell_id]
@@ -162,6 +163,7 @@ def validate_tau_matrix(
         )
         cell_simulations = 0
         cell_errors = 0
+        cell_termination_reasons: Counter[str] = Counter()
         for domain_name, domain in domains.items():
             population = cell_report["domains"][domain_name].get("population", {})
             expected_simulations = domain["tasks"] * matrix["benchmark"]["num_trials"]
@@ -190,13 +192,39 @@ def validate_tau_matrix(
                 isinstance(errors, int) and errors >= 0,
                 f"{matrix_id}/{cell_id}/{domain_name} has invalid infrastructure count",
             )
+            reasons = population.get("termination_reasons")
+            require(
+                isinstance(reasons, dict)
+                and all(
+                    isinstance(reason, str)
+                    and reason
+                    and isinstance(count, int)
+                    and not isinstance(count, bool)
+                    and count >= 0
+                    for reason, count in reasons.items()
+                ),
+                f"{matrix_id}/{cell_id}/{domain_name} has invalid termination reasons",
+            )
+            require_equal(
+                sum(reasons.values()),
+                expected_simulations,
+                f"{matrix_id}/{cell_id}/{domain_name} termination population",
+            )
+            require_equal(
+                reasons.get("infrastructure_error", 0),
+                errors,
+                f"{matrix_id}/{cell_id}/{domain_name} infrastructure reconciliation",
+            )
             cell_simulations += expected_simulations
             cell_errors += errors
+            cell_termination_reasons.update(reasons)
         total_simulations += cell_simulations
         infrastructure_errors += cell_errors
+        termination_reasons.update(cell_termination_reasons)
         cell_panel[cell_id] = {
             "simulations": cell_simulations,
             "infrastructure_errors": cell_errors,
+            "termination_reasons": dict(sorted(cell_termination_reasons.items())),
             "overall": cell_report.get("overall"),
         }
 
@@ -225,6 +253,7 @@ def validate_tau_matrix(
         "report": artifact(root, report_path),
         "population": total_simulations,
         "infrastructure_errors": infrastructure_errors,
+        "termination_reasons": dict(sorted(termination_reasons.items())),
         "openrealtime_revisions": revisions,
         "cells": cell_panel,
     }

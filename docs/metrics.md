@@ -37,6 +37,13 @@ repetition or contradiction, and task success. Content measures depend on the
 workload: WER or semantic error for perception, factual or reasoning score for
 answers, tool correctness, and translation quality for translation.
 
+Complete tau-Voice reports retain the full typed termination-reason
+distribution for every domain and cell. `too_many_errors`, `user_stop`,
+`agent_stop`, and any infrastructure termination remain distinct outcomes;
+semantic failures are never retried or relabeled as infrastructure. The
+full-study gate reconciles those counts exactly against the declared
+task/trial population before publishing the benchmark panel.
+
 Canonical-trajectory comparisons additionally report:
 
 - Contradictions between slow continuation and content already played.
