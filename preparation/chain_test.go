@@ -371,6 +371,45 @@ func TestChainRejectsExecutableAuthorityBeforeFinalStage(t *testing.T) {
 	}
 }
 
+func TestCommittedChainCancellationStopsUnconsumedPreparation(t *testing.T) {
+	t.Parallel()
+	descriptor := continuation.Descriptor{
+		Provider: "test", Model: "fast", Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortMinimal, Streaming: true,
+		ToolAuthority: continuation.ToolAuthorityPropose,
+	}
+	started := make(chan struct{})
+	provider := &chainTestProvider{
+		descriptor: descriptor, started: started, release: make(chan struct{}),
+		events: []continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "stale"}},
+	}
+	invocation, _ := chainInvocations()
+	manager, err := NewChainManager(ChainConfig{Stages: []ChainStage{{
+		Provider: provider, Invocation: invocation,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	input := chainInput("question", 1)
+	if err := manager.Observe(ctx, input); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	chain, _, err := manager.Commit(input)
+	if err != nil || chain == nil {
+		t.Fatalf("commit: chain=%v err=%v", chain != nil, err)
+	}
+	chain.Cancel(ErrSuperseded)
+	report := waitForChainReport(t, ctx, manager, func(report ChainReport) bool {
+		return report.Superseded == 1
+	})
+	if report.Failed != 0 || report.Completed != 0 || report.Attempts[0].Outcome != "superseded" {
+		t.Fatalf("cancelled committed chain report = %+v", report)
+	}
+}
+
 func TestChainRejectsNegativeStageStartInterval(t *testing.T) {
 	t.Parallel()
 	fastInvocation, _ := chainInvocations()

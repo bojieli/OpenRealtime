@@ -14,6 +14,7 @@ import (
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/interleave"
+	"github.com/bojieli/OpenRealtime/preparation"
 	protocol "github.com/bojieli/OpenRealtime/protocol/openai"
 	"github.com/bojieli/OpenRealtime/trajectory"
 	"github.com/coder/websocket"
@@ -189,6 +190,24 @@ func TestContinuousPreparationUsesPrivateProviderClass(t *testing.T) {
 	}
 	closePreparedTurn(&utteranceState{preparation: prepared}, errors.New("test complete"))
 	session.cancel(errors.New("test complete"))
+}
+
+func TestCognitionConsumesExactPreparationAndDropsOnlyOlderRevisions(t *testing.T) {
+	t.Parallel()
+	runtime := &cognitionRuntime{prepared: map[uint64]*preparation.CommittedChain{
+		1: nil,
+		2: nil,
+		3: nil,
+	}}
+	if chain := runtime.takePreparation(2); chain != nil {
+		t.Fatal("nil exact preparation unexpectedly became non-nil")
+	}
+	runtime.preparedMu.Lock()
+	defer runtime.preparedMu.Unlock()
+	remaining, exists := runtime.prepared[3]
+	if len(runtime.prepared) != 1 || !exists || remaining != nil {
+		t.Fatalf("remaining prepared revisions = %#v", runtime.prepared)
+	}
 }
 
 type finalOnlyASR struct {

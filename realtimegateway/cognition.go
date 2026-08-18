@@ -209,8 +209,12 @@ func (runtime *cognitionRuntime) AttachPreparation(revision uint64, chain *prepa
 		return
 	}
 	runtime.preparedMu.Lock()
+	displaced := runtime.prepared[revision]
 	runtime.prepared[revision] = chain
 	runtime.preparedMu.Unlock()
+	if displaced != nil && displaced != chain {
+		displaced.Cancel(preparation.ErrSuperseded)
+	}
 }
 
 func (runtime *cognitionRuntime) Process(ctx context.Context, batch eventloop.Batch) error {
@@ -239,10 +243,7 @@ func (runtime *cognitionRuntime) Process(ctx context.Context, batch eventloop.Ba
 func (runtime *cognitionRuntime) newProcessor(sourceRevision uint64) (*interleave.Processor, error) {
 	semantics := runtime.callbacks.Semantics().clone()
 	fast, slow := runtime.fast, runtime.slow
-	runtime.preparedMu.Lock()
-	chain := runtime.prepared[sourceRevision]
-	delete(runtime.prepared, sourceRevision)
-	runtime.preparedMu.Unlock()
+	chain := runtime.takePreparation(sourceRevision)
 	if chain != nil {
 		var err error
 		fast, err = chain.StageProvider(0, fast)
@@ -293,6 +294,29 @@ func (runtime *cognitionRuntime) newProcessor(sourceRevision uint64) (*interleav
 		return nil, err
 	}
 	return processor, nil
+}
+
+// takePreparation consumes the exact final revision and cancels only older
+// prepared roots. A newer root may already have arrived concurrently and must
+// remain available for its own committed observation batch.
+func (runtime *cognitionRuntime) takePreparation(sourceRevision uint64) *preparation.CommittedChain {
+	runtime.preparedMu.Lock()
+	chain := runtime.prepared[sourceRevision]
+	var stale []*preparation.CommittedChain
+	for revision, candidate := range runtime.prepared {
+		if revision > sourceRevision {
+			continue
+		}
+		delete(runtime.prepared, revision)
+		if revision != sourceRevision && candidate != nil {
+			stale = append(stale, candidate)
+		}
+	}
+	runtime.preparedMu.Unlock()
+	for _, candidate := range stale {
+		candidate.Cancel(preparation.ErrSuperseded)
+	}
+	return chain
 }
 
 func resultAssistantIDs(store *trajectory.Store, result continuation.RunResult) []string {

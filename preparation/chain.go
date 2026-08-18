@@ -620,6 +620,25 @@ type CommittedChain struct {
 	state   *chainState
 }
 
+// Cancel stops any still-running private preparation behind this committed
+// handle without waiting for the provider boundary. It is used when a newer
+// typed source revision makes an unconsumed prepared root stale. Completed
+// candidates require no action and remain ordinary garbage-collectable data.
+func (chain *CommittedChain) Cancel(cause error) {
+	if chain == nil || chain.manager == nil {
+		return
+	}
+	if cause == nil {
+		cause = ErrSuperseded
+	}
+	chain.manager.mu.Lock()
+	active := chain.manager.active
+	if active != nil {
+		active.cancel(cause)
+	}
+	chain.manager.mu.Unlock()
+}
+
 // StageProvider returns a provider that waits for the selected prepared stage,
 // replays it only for an exact stage-input match, and otherwise calls fallback.
 func (chain *CommittedChain) StageProvider(index int, fallback continuation.Provider) (*PreparedStageProvider, error) {
