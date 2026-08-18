@@ -336,6 +336,57 @@ func TestEngineResumesExternalToolBatchOnCanonicalTrajectory(t *testing.T) {
 	}
 }
 
+func TestExternalSlowResumptionLimitComesFromCanonicalTrajectory(t *testing.T) {
+	t.Parallel()
+	store := trajectory.NewStore()
+	if err := store.Append(trajectory.Item{
+		ID: "user", Kind: trajectory.KindObservation, SourceRevision: 9,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "act",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	catalog := staticCatalog{tools: []continuation.ToolDefinition{{
+		Name: "act", Description: "Perform the action.", Parameters: json.RawMessage(`{"type":"object"}`),
+	}}}
+	fast := &sequenceProvider{descriptor: descriptor("fast", trajectory.PhaseFast, false), scripts: []providerScript{{}}}
+	slow := &sequenceProvider{
+		descriptor: descriptor("slow", trajectory.PhaseSlow, true),
+		scripts: []providerScript{{events: []continuation.Event{{
+			Kind:     continuation.EventToolCall,
+			ToolCall: &trajectory.ToolCall{CallID: "call-1", Name: "act", Arguments: json.RawMessage(`{}`)},
+		}}}},
+	}
+	firstEngine, err := New(Config{
+		Store: store, FastProvider: fast, SlowProvider: slow, ToolCatalog: catalog, MaxSlowInvocations: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := firstEngine.RunSlowStep(context.Background(), Request{SourceRevision: 9}, nil)
+	if err != nil || len(first.ToolCalls) != 1 {
+		t.Fatalf("first external slow step: result=%#v err=%v", first, err)
+	}
+	if err := firstEngine.AppendToolResults(first.InvocationID, []trajectory.ToolResult{{
+		CallID: "call-1", Name: "act", Output: json.RawMessage(`{"ok":true}`),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	// Reconstructing the engine simulates recovery without relying on a hidden
+	// in-memory state flag. The canonical invocation still owns the budget.
+	secondEngine, err := New(Config{
+		Store: store, FastProvider: fast, SlowProvider: slow, ToolCatalog: catalog, MaxSlowInvocations: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := secondEngine.RunSlowStep(context.Background(), Request{SourceRevision: 9}, nil); err == nil {
+		t.Fatal("reconstructed external continuation bypassed the canonical slow-invocation limit")
+	}
+	if got := len(slow.Requests()); got != 1 {
+		t.Fatalf("slow provider calls = %d, want 1", got)
+	}
+}
+
 func TestEngineAlwaysInvokesSlowAfterSilentFast(t *testing.T) {
 	t.Parallel()
 	store := trajectory.NewStore()

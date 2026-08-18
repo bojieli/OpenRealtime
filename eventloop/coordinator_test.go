@@ -113,6 +113,40 @@ func TestTypedInterruptCancelsAtSafePointWithoutContentRouting(t *testing.T) {
 	}
 }
 
+func TestOperationalInterruptDoesNotFabricateTrajectoryItem(t *testing.T) {
+	t.Parallel()
+	store := trajectory.NewStore()
+	started := make(chan struct{})
+	coordinator, err := New(Config{
+		Store: store, MaxPendingEvents: 4, ReservedInterruptEvents: 1,
+		Processor: ProcessorFunc(func(ctx context.Context, _ Batch) error {
+			close(started)
+			<-ctx.Done()
+			return ctx.Err()
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := coordinator.Submit(observationEvent("hello", PriorityRoutine)); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, runErr := coordinator.RunNext(context.Background())
+		done <- runErr
+	}()
+	<-started
+	coordinator.Interrupt(errors.New("acoustic speech start"))
+	if runErr := <-done; runErr == nil {
+		t.Fatal("operational interrupt did not cancel the active processor")
+	}
+	snapshot := store.Snapshot()
+	if len(snapshot.Items) != 1 || snapshot.Items[0].Kind != trajectory.KindObservation {
+		t.Fatalf("operational interrupt changed canonical trajectory: %#v", snapshot.Items)
+	}
+}
+
 func TestToolResultsCrossSafePointAsOneCompleteBatch(t *testing.T) {
 	t.Parallel()
 	store := trajectory.NewStore()

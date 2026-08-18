@@ -248,6 +248,23 @@ func (coordinator *Coordinator) Active() bool {
 	return coordinator.active
 }
 
+// Interrupt cooperatively cancels the processor currently running at a safe
+// point without fabricating a model-visible trajectory item. It is used for
+// operational signals such as the acoustic start of user speech: the final
+// transcript is submitted later as the authoritative observation event.
+// Calling Interrupt while idle is a no-op.
+func (coordinator *Coordinator) Interrupt(cause error) {
+	if cause == nil {
+		cause = ErrInterrupted
+	}
+	coordinator.mu.Lock()
+	cancel := coordinator.activeCancel
+	coordinator.mu.Unlock()
+	if cancel != nil {
+		cancel(cause)
+	}
+}
+
 func (coordinator *Coordinator) finish(epoch uint64) {
 	coordinator.mu.Lock()
 	defer coordinator.mu.Unlock()

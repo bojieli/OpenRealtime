@@ -26,10 +26,10 @@ const (
 	defaultMaxSlowInvocations = 8
 	// DefaultFastInstruction is exported so pre-endpoint preparation can hash
 	// and invoke exactly the same model-visible policy as canonical RunFast.
-	DefaultFastInstruction = "Produce the smallest self-contained assistant segment that makes truthful immediate progress as the low-latency first continuation of this agent. You know the complete tool schemas but only have proposal authority: a proposed call is working state for the slow continuation and cannot execute. If the request depends on information or an action not already evidenced in the trajectory, emit the appropriate tool proposal. Any assistant content before it may acknowledge what the agent is checking, but must not state an unknown result or claim completion."
+	DefaultFastInstruction = "Produce one self-contained spoken micro-turn that makes truthful immediate progress as the low-latency first continuation of this agent. Keep assistant content to one short sentence of at most twelve words; do not enumerate questions. You know the complete tool schemas but only have proposal authority: a proposed call is working state for the slow continuation and cannot execute. If the request depends on information or an action not already evidenced in the trajectory, emit the appropriate tool proposal. Any assistant content before it may acknowledge what the agent is checking, but must not state an unknown result or claim completion."
 	// DefaultSlowInstruction is the ordinary continuation policy used after the
 	// fast safe point and after every authoritative tool result.
-	DefaultSlowInstruction = "Continue the same agent trajectory with careful reasoning and independently resolve the latest user request. Treat fast assistant content and tool proposals as provisional working state, not as proof that the task is complete or correct. Do not repeat an already adequate fast segment; append only the missing answer, action, or explicit correction. Only your tool calls have execution authority. Preserve user-supplied literal identifiers exactly; a tool error is authoritative, so do not guess spelling variants. Use available tools when needed and incorporate their results."
+	DefaultSlowInstruction = "Continue the same agent trajectory with careful reasoning and independently resolve the latest user request. Treat fast assistant content and tool proposals as provisional working state, not as proof that the task is complete or correct. Do not repeat an already adequate fast segment; append only the missing answer, action, or explicit correction. Only your tool calls have execution authority. Preserve user-supplied literal identifiers exactly; a tool error is authoritative, so do not guess spelling variants. Use available tools when needed and incorporate their results. For spoken output, give the shortest complete answer that preserves every required fact, confirmation, and correction."
 )
 
 // ToolCatalog is the capability surface visible to both continuations. Tool
@@ -253,8 +253,31 @@ func (engine *Engine) RunSlowStep(ctx context.Context, request Request, observer
 	if err := engine.requireTrajectory(); err != nil {
 		return continuation.RunResult{}, err
 	}
+	if count := slowInvocationCount(engine.store.Snapshot(), request.SourceRevision); count >= engine.maxSlow {
+		return continuation.RunResult{}, fmt.Errorf("slow continuation exceeded %d invocation safety limit", engine.maxSlow)
+	}
 	result, observerErr, runErr := engine.runSlowOnce(ctx, request, observer)
 	return result, errors.Join(runErr, observerErr)
+}
+
+// slowInvocationCount derives the external-resumption budget from canonical
+// state rather than a process-local workflow flag. A freshly constructed
+// processor therefore enforces the same bound after an exact result batch.
+func slowInvocationCount(snapshot trajectory.Snapshot, sourceRevision uint64) int {
+	start := 0
+	for index, item := range snapshot.Items {
+		if item.Kind == trajectory.KindObservation && item.SourceRevision == sourceRevision {
+			start = index + 1
+		}
+	}
+	invocations := make(map[string]struct{})
+	for _, item := range snapshot.Items[start:] {
+		if item.SourceRevision != sourceRevision || item.Producer.Phase != trajectory.PhaseSlow || item.InvocationID == "" {
+			continue
+		}
+		invocations[item.InvocationID] = struct{}{}
+	}
+	return len(invocations)
 }
 
 // AppendToolResults commits the complete outstanding call set from one slow
