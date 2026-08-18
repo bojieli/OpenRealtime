@@ -252,6 +252,15 @@ latency. Endpointed, microturn, co-located, split-process, and partially hosted
 conditions must therefore use the same workload and report quality alongside
 timing.
 
+GPT-Live and TML Interaction Models are architectural reference points, not
+names for this modular implementation. GPT-Live's documented continuous media
+path avoids turn detection, while TML makes learned 200 ms input/output
+microturns; the current OpenRealtime gateway still uses VAD to promote a
+canonical response and does not claim learned simultaneous speech. LiveKit is
+only incidental upstream benchmark transport/component context. The explicit
+claim-to-evidence boundary is maintained in
+[research/gpt-live-tml-capability-audit-2026-08.md](research/gpt-live-tml-capability-audit-2026-08.md).
+
 The first passed integration artifact and its limitations are documented in
 [live-cascade.md](live-cascade.md). It establishes wiring and authority
 invariants, not parity with native realtime or interaction models.

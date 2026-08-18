@@ -35,9 +35,10 @@ keyword router or model-authored goal/status machine controls the transition.
 The comparative study keeps three categories distinct: endpoint/VAD-triggered
 online speech models, persistent short-block interaction models such as Moshi
 or Thinking Machines Lab Interaction Models, and this modular microturn
-cascade. Matching one latency number is not treated as architectural parity;
-tool quality, overlap, prosody, repair, compute, and tail behavior remain part
-of the comparison.
+cascade. GPT-Live is the principal product-level continuous-voice comparison;
+LiveKit is not used as its proxy. Matching one latency number is not treated as
+architectural parity; tool quality, overlap, prosody, repair, compute, and tail
+behavior remain part of the comparison.
 
 ## Status
 
@@ -109,6 +110,15 @@ speculative slow launches from 43 to 12 once without changing exact task
 quality. These runs do not establish a latency/cost distribution or
 native-model parity. See the
 [live cascade design and evidence](docs/live-cascade.md).
+
+M10 full-benchmark execution is in progress. The frozen local condition runs
+all 278 public τ-Voice tasks in both control and regular speech, then all 498
+FDB v1.5 overlap recordings and all 100 released FDB v3 tool-use recordings.
+The FDB runners use the standard OpenAI Realtime adapter against the local
+endpoint; FDB v3 sends real function-call outputs and waits for the terminal
+post-result response. A subsequent complete paired τ matrix changes only
+Qwen3-ASR 0.6B to 1.7B, motivated by a preserved identifier-transcription
+failure. No incomplete cell is reported as a benchmark score.
 
 ## Start here
 
@@ -207,8 +217,9 @@ population plus an 80-trial paired sensitivity cell on Gemini 3.1 Flash Live,
 with 578 unique outputs and no terminal failure. GPT-4o and Groq live cells are
 marked unavailable with their observed reason; historical GPT-4o paper results
 remain separate from local measurements. Pinned published FDB-v3 tool-use and
-LiveKit endpointing tables add broader context without being represented as
-local runs. Read the
+LiveKit endpointing-component tables add context without being represented as
+local runs. LiveKit is incidental here, not the continuous-voice comparison
+target; that target is GPT-Live. Read the
 [live-provider report](docs/research/live-provider-benchmark-2026-08.md) and
 [external benchmark instructions](benchmarks/external/README.md).
 
@@ -219,6 +230,9 @@ patch. The gateway passes the 12 selected cases in the official upstream
 OpenAI-provider suite. One paired airline-task smoke improved reward from 0 to
 1 while reducing duration by 29.5%; it is exploratory evidence, not a complete
 τ-Voice score. See the [τ-Voice evaluation plan](benchmarks/tau-voice/README.md).
+The capability-by-capability comparison with GPT-Live and Thinking Machines
+Lab is in the
+[interaction-model audit](docs/research/gpt-live-tml-capability-audit-2026-08.md).
 
 ## Principles
 

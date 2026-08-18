@@ -1,0 +1,143 @@
+{
+  "schema_version": "1.0.0",
+  "retrieved_at": "2026-08-18",
+  "artifact_kind": "public_claim_to_local_evidence_matrix",
+  "comparison_targets": ["GPT-Live", "TML-Interaction-Small"],
+  "not_a_target": {
+    "name": "LiveKit",
+    "reason": "LiveKit appears only as transport in the upstream FDB v3 harness and as the author of a separately inventoried endpointing benchmark. Its product capabilities are not used as a proxy for GPT-Live."
+  },
+  "sources": [
+    {
+      "id": "gpt-live-release",
+      "url": "https://openai.com/index/introducing-gpt-live/",
+      "published": "2026-07-08"
+    },
+    {
+      "id": "gpt-live-engineering",
+      "url": "https://openai.com/index/continuous-voice-interaction-with-gpt-live/",
+      "published": "2026-08-03"
+    },
+    {
+      "id": "tml-interaction-models",
+      "url": "https://thinkingmachines.ai/blog/interaction-models/",
+      "published": "2026-05-11",
+      "doi": "10.64434/tml.20260511"
+    }
+  ],
+  "availability_probe": {
+    "date": "2026-08-18",
+    "method": "Authenticated GET /v1/models; retained only IDs matching live or realtime",
+    "gpt_live_voice_model_present": false,
+    "matching_model_ids": [
+      "gpt-live-transcribe",
+      "gpt-realtime",
+      "gpt-realtime-1.5",
+      "gpt-realtime-2",
+      "gpt-realtime-2.1",
+      "gpt-realtime-2.1-mini",
+      "gpt-realtime-2025-08-28",
+      "gpt-realtime-mini",
+      "gpt-realtime-mini-2025-12-15",
+      "gpt-realtime-translate",
+      "gpt-realtime-whisper"
+    ],
+    "scope_caveat": "Model-list visibility is account-scoped and time-varying. The official GPT-Live pages still describe the GPT-Live API as planned/upcoming, so no direct GPT-Live benchmark is claimed."
+  },
+  "capabilities": [
+    {
+      "id": "continuous-full-duplex",
+      "published_claims": ["GPT-Live listens and speaks simultaneously without a turn detector in its audio path.", "TML interleaves continuous input and output micro-turns."],
+      "local_status": "partial",
+      "local_evidence": "The media and playback paths remain duplex and accept input during output, but the current local gateway uses server VAD for canonical speech commitment and interrupts assistant speech when new user speech starts.",
+      "validation": ["go test ./realtimegateway ./duplex", "full FDB v1.5 run pending"]
+    },
+    {
+      "id": "subturn-decision-cadence",
+      "published_claims": ["GPT-Live makes interaction decisions many times per second.", "TML uses time-aligned 200 ms input/output micro-turns."],
+      "local_status": "partial",
+      "local_evidence": "OpenRealtime exposes 50 ms scheduler opportunities, coalesces them into stateful 200 ms Qwen3-ASR advances, and starts revision-safe private fast/slow preparation. It does not yet emit canonical speech every 200 ms while the user is speaking.",
+      "validation": ["benchmarks/results/qwen3-asr-0.6b-cadence-200ms-colocated-2026-08-18.json"]
+    },
+    {
+      "id": "backchannel-floor-and-silence",
+      "published_claims": ["GPT-Live can backchannel, wait through thinking pauses, and sustain quick exchanges.", "TML models silence, overlap, interruption, and backchannels in the stream."],
+      "local_status": "full_benchmark_running",
+      "local_evidence": "The speech commit controller distinguishes directed interruptions, listener backchannels, side speech, and queued playback. The official 498-example FDB v1.5 population is queued; no aggregate parity claim is made before it completes.",
+      "validation": ["scripts/run-fdb15-openrealtime.sh"]
+    },
+    {
+      "id": "proactive-time-aware-speech",
+      "published_claims": ["GPT-Live reports a better sense of time and live translation.", "TML reports TimeSpeak, CueSpeak, and simultaneous-speech capabilities."],
+      "local_status": "not_implemented_end_to_end",
+      "local_evidence": "OpenRealtime has deterministic clocks and a protocol translation fixture, but no learned time-aware policy that initiates speech from an acoustic/visual cue while user speech continues.",
+      "validation": []
+    },
+    {
+      "id": "asynchronous-deep-reasoning",
+      "published_claims": ["GPT-Live delegates search, reasoning, and agentic work to GPT-5.5 on an asynchronous path.", "TML pairs the interaction model with an asynchronous background model."],
+      "local_status": "implemented",
+      "local_evidence": "Every changed semantic revision makes one private fast continuation and then one slow continuation eligible. Canonical observations run fast then slow; tool results resume slow. There is no semantic router, difficulty classifier, or model-authored control state.",
+      "validation": ["go test ./interleave ./preparation ./eventloop ./realtimegateway"]
+    },
+    {
+      "id": "shared-context-not-split-brain",
+      "published_claims": ["TML sends the full conversation to the background model and shares context.", "GPT-Live derives discrete application messages without blocking its continuous media path."],
+      "local_status": "implemented",
+      "local_evidence": "Fast and slow append to one versioned canonical trajectory. Cross-family continuation transfers the exact portable assistant/tool history and declares that hidden KV state is not shared.",
+      "validation": ["docs/canonical-trajectory.md", "docs/adr/0003-canonical-trajectory-continuations.md"]
+    },
+    {
+      "id": "tool-awareness-authority-and-resumption",
+      "published_claims": ["GPT-Live and TML can use tools asynchronously while interaction continues."],
+      "local_status": "implemented_full_benchmark_running",
+      "local_evidence": "Both model phases see the exact tool catalog. Fast calls are structurally non-executable proposals; slow calls are authoritative. Standard function_call_output events resume the same slow trajectory. The FDB v3 adapter waits for the terminal post-result response rather than a fixed receive tail. The 278-task tau-Voice matrix and 100-example FDB v3 run are running/queued.",
+      "validation": ["go test ./continuation ./interleave ./realtimegateway ./livebench ./fdbv3", "scripts/run-tau-voice-matrix.sh", "scripts/run-fdb-v3-openrealtime.sh"]
+    },
+    {
+      "id": "media-application-isolation",
+      "published_claims": ["GPT-Live places media on a dedicated fast path and delegation/tools behind an asynchronous RPC boundary."],
+      "local_status": "implemented_websocket_profile",
+      "local_evidence": "Audio ingestion, ASR, cognition, TTS, external tool execution, and playback are concurrent producers coordinated by one safe-point owner. Slow and tool work cannot mutate media state directly. The current benchmark transport is WebSocket rather than GPT-Live's WebRTC/WARP path.",
+      "validation": ["go test -race ./eventloop ./realtimegateway ./speechcommit"]
+    },
+    {
+      "id": "prewarm-and-stateful-session",
+      "published_claims": ["GPT-Live prewarms a frontier session, prefills context, and retains affinity/cache.", "TML appends 200 ms requests to a persistent GPU sequence."],
+      "local_status": "partial",
+      "local_evidence": "The local ASR session is stateful and revision preparation begins before endpoint. Hosted slow requests retain symbolic trajectory context but no cross-family KV-cache continuity is claimed.",
+      "validation": ["benchmarks/results/realtime-active-seat-qwen3-asr-qwen3-30b-gemini-3.5-flash-s2pro-2026-08-18.json"]
+    },
+    {
+      "id": "provisional-and-authoritative-history",
+      "published_claims": ["GPT-Live keeps a provisional latest message and a finalized authoritative record."],
+      "local_status": "implemented",
+      "local_evidence": "Unstable ASR revisions and private continuation chains stay speculative. Only an exact final semantic fingerprint can replay into the append-only canonical trajectory; played speech is immutable and unheard cancelled speech is removed from later projections.",
+      "validation": ["go test ./preparation ./trajectory ./speechcommit"]
+    },
+    {
+      "id": "seamless-context-compaction-handoff",
+      "published_claims": ["GPT-Live warms a replacement model, compacts context off-path, and cuts over without media interruption."],
+      "local_status": "not_implemented",
+      "local_evidence": "OpenRealtime has provider projections and bounded contexts but no dual-running session replacement and no measured interruption-free compaction cutover.",
+      "validation": []
+    },
+    {
+      "id": "long-context-agent-intelligence",
+      "published_claims": ["GPT-Live reports gains on GPQA, BrowseComp, and an internal tau-Voice Telecom variant.", "TML reports FDB v3 and turn-based intelligence metrics, sometimes with its background agent."],
+      "local_status": "full_benchmark_running",
+      "local_evidence": "The official public tau-Voice base suite runs 278 tasks across airline, retail, and telecom with the standard Realtime adapter. The local FDB v3 run adds 100 disfluent tool-use recordings. A preserved 0.6B ASR identifier failure motivates a complete, task-agnostic paired 1.7B ASR matrix. Published internal variants are not treated as identical suites.",
+      "validation": ["benchmarks/tau-voice/matrix-v1.json", "benchmarks/tau-voice/asr-ablation-v1.json", "benchmarks/external/full-duplex-bench-v3.manifest.json"]
+    }
+  ],
+  "published_tml_reference": {
+    "model": "TML-Interaction-Small",
+    "architecture": "276B-parameter MoE, 12B active",
+    "availability": "limited research preview announced; no executable endpoint was available for this run",
+    "fdb_v1_turn_taking_latency_seconds": 0.40,
+    "fdb_v1_5_average": 77.8,
+    "fdb_v3_response_quality_percent": 82.8,
+    "fdb_v3_pass_at_1_percent": 68.0,
+    "background_agent_note": "The TML article marks reasoning/tool benchmarks with an asterisk when the background agent is enabled. These are published reference values, not locally reproduced results."
+  }
+}

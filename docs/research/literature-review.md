@@ -40,6 +40,16 @@ background reasoning must not block the foreground media loop. It does not show
 that a modular cascade automatically matches a natively trained interaction
 model.
 
+GPT-Live is a distinct comparison target from GPT-Realtime and LiveKit. Its
+official engineering description removes turn detection from the continuous
+media path, makes interaction decisions several times per second, and delegates
+deeper search/reasoning to an asynchronous frontier-model path. It also
+describes provisional versus authoritative conversation state, prewarmed model
+sessions, and warm context-compaction handoff. These are design pressures, not
+local results: the official pages describe API access as upcoming, and the
+account-scoped model inventory used for this study did not expose a GPT-Live
+voice endpoint.
+
 The OpenAI Realtime API is a concrete interoperability baseline rather than a
 research result. Its current public reference separates client and server
 events across Realtime, transcription, and translation sessions over low-
@@ -52,6 +62,12 @@ ambient speech. The repository has since added dynamic v2 and tool-use v3. Its
 repository-wide CC BY-NC 4.0 license means data or code must not be copied into
 the permissive OpenRealtime distribution. A separately installed adapter can be
 evaluated where usage is compliant.
+
+Qwen3-ASR provides official 0.6B and 1.7B models under one streaming/offline
+inference interface. That makes capacity a cleaner recognition ablation than
+changing ASR families after an observed identifier error. Model capacity,
+latency, memory allocation, and grounded tool-argument accuracy still have to
+be reported together; the larger model is not presumed better end to end.
 
 ## Asynchronous events and continuous thinking
 
@@ -102,3 +118,10 @@ share-alike code into the Apache-licensed package.
 11. Thinking Machines Lab (2026), “Interaction Models: A Scalable Approach to
     Human-AI Collaboration.”
     <https://thinkingmachines.ai/blog/interaction-models/>
+12. OpenAI (2026), “Introducing GPT-Live.”
+    <https://openai.com/index/introducing-gpt-live/>
+13. OpenAI (2026), “How OpenAI built continuous voice interaction with
+    GPT-Live.”
+    <https://openai.com/index/continuous-voice-interaction-with-gpt-live/>
+14. Qwen (2026), “Qwen3-ASR-1.7B model card.”
+    <https://huggingface.co/Qwen/Qwen3-ASR-1.7B>

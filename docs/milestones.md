@@ -251,8 +251,8 @@ pin the v1.0.0 release and run the same public conformance suite.
 
 ## M10 — Joint responsiveness–intelligence study
 
-- Status: started with a 12-case official provider gate and an exploratory
-  one-task τ airline pair; no full benchmark score is claimed
+- Status: full execution in progress after a 12-case official provider gate and
+  an exploratory one-task τ airline pair; no incomplete score is claimed
 - Target: attribute gains separately to microturn timing and canonical-trajectory
   continuation, then test whether they compose in one live condition
 - Comparators: endpoint/VAD-triggered online speech models and persistent
@@ -262,4 +262,13 @@ pin the v1.0.0 release and run the same public conformance suite.
 - Primary joint harness: pinned τ-Voice full airline/retail/telecom matrix in
   control and regular speech conditions; local-endpoint/Fish harness patch,
   persistent gateway, provider conformance, and one-task control smoke are
-  complete, while full cells and disclosed regular-condition Fish voices remain
+  complete; a strict seven-persona registry is frozen, the control cell is
+  running, and the regular cell is queued
+- Secondary full harnesses: all 498 FDB v1.5 overlap recordings and all 100 FDB
+  v3 disfluent tool-use recordings run sequentially through the standard OpenAI
+  Realtime adapter with real local tool-result resumption
+- Capacity ablation: complete paired τ cells change only Qwen3-ASR 0.6B to 1.7B
+  after the primary queue; task-specific recognition hints and content routers
+  are prohibited
+- Architectural references: GPT-Live and TML Interaction Models; LiveKit is
+  retained only as incidental upstream transport/component-benchmark context

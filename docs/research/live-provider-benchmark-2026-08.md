@@ -150,6 +150,12 @@ categorical judge.
 
 ## Published FDB-v3 tool-use context
 
+Subsequent to this completed Gemini report, OpenRealtime pinned the exact FDB
+v3 released audio bundle and implemented a direct standard-Realtime tool
+runner. Its full 100-recording local cell and official evaluator are queued
+behind the frozen τ-Voice and FDB v1.5 cells. Until that queue completes, the
+table in this section remains published context rather than a local result.
+
 Full-Duplex-Bench v3 adds a different workload: 100 human recordings with
 multi-step tool calls, five disfluency categories, four domains, and 12
 zero-latency mock APIs. The table below is transcribed from the paper's Table 2,
@@ -230,10 +236,12 @@ benchmark and therefore is not merged with the local Gemini measurements.
   separate full-duplex pipeline. Neither is relabeled as a result from this
   runner.
 - Full-Duplex-Bench v3 and LiveKit eot-bench values above are pinned published
-  reference data, not local runs. Their official Python harnesses were not run
-  or added as dependencies. A valid local FDB-v3 result additionally requires
-  its separate audio bundle, LiveKit-equivalent orchestration, mock-tool
-  execution, ASR, and a declared judge policy.
+  reference data, not results of this 2026-08-17–18 Gemini run. The later FDB
+  v3 implementation pins the separate bundle, executes its mock tools through
+  the standard Realtime adapter, and invokes the official evaluator, but its
+  queued output remains unreported until all 100 recordings finish. LiveKit is
+  only component/transport context here; GPT-Live is the continuous-voice
+  comparison target.
 - Groq is not xAI Grok. The Groq adapter is explicitly a current
   STT→LLM→TTS cascade (`whisper-large-v3-turbo`, `openai/gpt-oss-120b`, and
   the preview `canopylabs/orpheus-v1-english`), and no live score exists without

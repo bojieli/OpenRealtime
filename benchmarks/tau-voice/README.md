@@ -16,7 +16,10 @@ standard OpenAI adapter, adds an explicit local WebSocket endpoint, and adds
 Fish Audio as a separately identified caller-synthesis provider. The persistent
 OpenRealtime gateway now passes all 12 selected cases in τ's official
 audio-native provider suite and has completed two exploratory airline tasks.
-The checked result is explicitly a one-task smoke, not a 278-task τ-Voice score.
+A strict, provenance-recorded seven-persona Fish S2-Pro registry now covers
+both speech conditions. The complete 278-task control cell is running; regular,
+FDB v1.5, and FDB v3 cells are queued behind it to avoid GPU interference. The
+checked result remains explicitly a one-task smoke, not a τ-Voice score.
 
 ## Executable harness integration
 
@@ -104,8 +107,9 @@ inside OpenRealtime, not through the τ client.
 
 The checked patch is
 [`0001-local-openai-fish-audio.patch`](patches/0001-local-openai-fish-audio.patch).
-At the pinned revision its focused and affected voice/streaming suites pass 85
-tests. In addition, the live local composition passes 12/12 OpenAI-selected
+At the pinned revision its focused and affected voice/streaming suites passed
+85 tests before the strict registry addition and 86 afterward. In addition,
+the live local composition passes 12/12 OpenAI-selected
 cases in the official horizontal provider suite. That suite covers lifecycle,
 200 ms timing, two speech lengths, multi-turn audio, tool-result resumption,
 usage, and barge-in. It is a compatibility gate, not a task score.
@@ -209,6 +213,22 @@ content-independent launch pacer may be tested as a resource ablation and must
 be bypassed at exact final commit. Content patterns, keyword routers, and
 benchmark-task lookup are prohibited.
 
+### Capacity-controlled ASR ablation
+
+The baseline matrix freezes Qwen3-ASR 0.6B. During its first complete control
+run, one preserved failure repeatedly corrupted a spoken alphanumeric user ID;
+the slow model then made structurally valid calls with the wrong arguments.
+This is mechanism evidence, not permission to specialize to that task.
+
+[`asr-ablation-v1.json`](asr-ablation-v1.json) preregisters a complete paired
+comparison with the official Qwen3-ASR 1.7B streaming model. The benchmark,
+seed, voices, cadence, Qwen fast phase, Gemini slow phase, tool policy, and
+single-GPU placement remain fixed. Only the ASR model and its disclosed GPU
+allocation change. The motivating task is not the acceptance test: adoption
+requires the complete paired task/tool and interaction panel. The candidate
+matrix runs only after all baseline voice benchmarks finish, and the launcher
+restores the 0.6B service afterward.
+
 ## Primary reporting panel
 
 Report task and interaction behavior together:
@@ -272,13 +292,15 @@ An earlier task-1 smoke correctly refused a disallowed cancellation and
 received reward 1.0, but skipped two expected diagnostic read actions; it is
 preserved as negative evidence rather than used as the primary tool test.
 
-## Current blockers and next action
+## Current execution state and next action
 
-The gateway, official provider gate, external tool-result resumption, local
-Fish caller/agent paths, and one-task control smoke are complete. Next, freeze
-the paired matrix manifests, add repeated seeds and task subsets without tuning
-against their contents, configure and disclose Fish reference voices for the
-`regular` condition, and then run complete 278-task cells as resources permit.
-Native baselines and cadence/effort ablations remain outstanding. No patch
-test, conformance suite, mock, text-only run, or one-task smoke will be
+The gateway, provider gate, external tool-result resumption, local Fish
+caller/agent paths, strict voice registry, frozen baseline matrix, and bounded
+background orchestration are complete. The full control cell is running. The
+full regular cell, FDB v1.5, FDB v3, and paired 1.7B ASR cells are queued
+sequentially on the same GPU. Native GPT-Live and TML Interaction Model cells
+remain unavailable through a public executable endpoint and are retained only
+as attributed published context. Cadence, effort, and same-family fast-model
+ablations remain after the primary and ASR matrices. No patch test,
+conformance suite, mock, text-only run, partial cell, or one-task smoke will be
 relabeled as a full τ-Voice score.

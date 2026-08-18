@@ -564,10 +564,12 @@ Each major experiment should compare as many of these conditions as applicable:
   response is conventionally opened by VAD/endpointing, for example applicable
   Qwen online, GPT-Realtime-2, or Gemini Live profiles available during the
   study.
-- **N1: Native interaction model.** Persistent audio-in/audio-out model trained
-  to advance on short blocks, such as Thinking Machines Lab Interaction Models
-  or Moshi. Record the system's actual block scale (for example 80 or 200 ms)
-  rather than assuming all native systems use the same clock.
+- **N1: Native interaction model.** Continuous or persistent audio-in/audio-out
+  model trained to make subturn interaction decisions, such as GPT-Live,
+  Thinking Machines Lab Interaction Models, or Moshi. Record the system's
+  actual decision/block scale where disclosed rather than assuming all native
+  systems use the same clock. Do not substitute GPT-Realtime or LiveKit when a
+  GPT-Live endpoint is unavailable.
 - **H1: Hybrid.** Native or acoustic model for interaction signals with modular higher-level reasoning.
 
 Comparisons must control component model versions, region, network path, audio device, prompt, voice, and workload where possible.
@@ -603,6 +605,8 @@ contract.
 - Acoustic/prosodic side channel.
 - Network latency and jitter.
 - Small versus strong fast-decision model.
+- Streaming ASR capacity: Qwen3-ASR 0.6B versus 1.7B with identical downstream
+  components, tasks, voices, cadence, and seed.
 - Slow launch immediately after every committed fast safe point versus a
   separately declared content-independent resource pacer.
 - Serial callback mutation versus the canonical safe-point event loop is not a
@@ -641,6 +645,12 @@ Preserve the benchmark's real environment tools and database outcome checks;
 do not replace them with text-only or mocked call-shape scoring. Report tool and
 long-context failure subsets separately so an aggregate pass rate cannot hide
 split-brain, forgotten-policy, or synchronization failures.
+
+Full-Duplex-Bench v3 complements τ-Voice with 100 released human recordings,
+79 unique scenarios, 12 mock APIs, disfluency, rollback, and exact tool-call
+evaluation. Run it through the standard OpenAI Realtime adapter with real
+`function_call_output` resumption. Its response-quality judge and transcript
+alignment method must be declared separately from tool-name/argument metrics.
 
 #### G. Paralinguistic challenge set
 
@@ -683,6 +693,8 @@ Sarcasm, uncertainty, laughter, sighs, emotional prosody, and non-speech events.
 ### 10.3 Content quality
 
 - ASR word and semantic error rates.
+- Exact recognition and repair burden for spoken identifiers, numbers, and
+  addresses; aggregate WER alone cannot hide grounded argument corruption.
 - Factual and reasoning task scores.
 - Tool correctness.
 - Reasoning continuity: retained assumptions, avoided duplicate work, and correct use of earlier tool state.
@@ -979,10 +991,13 @@ Exit criteria:
 
 ### M10 — Responsiveness–intelligence comparative study
 
-Status: started with an exploratory official τ provider gate and one-task
-paired smoke. This is not a complete benchmark cell: the 278-task matrix,
-regular speech voices, repeated trials, native controls, and cadence/effort
-ablations remain.
+Status: full execution in progress. The 12-case official τ provider gate,
+exploratory paired task, strict seven-persona Fish registry, frozen baseline
+matrix, exact FDB v1.5/FDB v3 releases, and resumable runners are complete. The
+278-task control cell is running; regular, 498-recording FDB v1.5,
+100-recording FDB v3, and complete Qwen3-ASR 1.7B paired cells are queued.
+Native controls and cadence/effort ablations remain. No incomplete cell is a
+benchmark score.
 
 Deliverables:
 
@@ -990,7 +1005,12 @@ Deliverables:
 - A pinned τ-Voice adapter covering its full 278-task airline/retail/telecom
   suite in both control and regular speech conditions. Preserve its standard
   OpenAI adapter with an explicit local endpoint; use the separately named
-  Fish Audio caller backend. Regular cells require disclosed Fish voice assets.
+  Fish Audio caller backend and the disclosed strict Fish voice registry.
+- Complete FDB v1.5 overlap and FDB v3 disfluent tool-use populations through
+  the same standard Realtime boundary, with immutable artifacts, actual tool
+  results, terminal result resumption, and official evaluation.
+- A complete paired Qwen3-ASR 0.6B/1.7B capacity matrix whose motivating
+  identifier failure cannot become a task-specific hint or routing rule.
 - Difficult reasoning and active-tool workloads combined with overlap, interruption, selectivity, long-context, and cadence workloads.
 - Native realtime and interaction-model comparisons where access and redistribution permit.
 - Pareto analysis over first semantic audio, final quality, trajectory consistency, tool correctness, compute, and cost.
@@ -1037,10 +1057,14 @@ Exit criteria:
     asynchronous tool ingress, bounded queues, and overload tests.
 29. Maintain the completed persistent local Realtime gateway and its 12-case
     official τ OpenAI-provider conformance gate as the wire/runtime changes.
-30. Run the preregistered τ-Voice matrix only after the control voice and the
-    provenance-recorded regular Fish voice set are fixed; publish failures and
-    incomplete cells.
-31. Draft the `api/v2` migration only after the experimental trajectory contract stabilizes.
+30. Complete the running preregistered τ-Voice control/regular matrix with the
+    fixed provenance-recorded Fish voice set; publish failures and incomplete
+    cells without relabeling them.
+31. Complete the queued FDB v1.5/FDB v3 populations and official FDB v3
+    evaluation through the standard Realtime adapter.
+32. Complete the frozen 0.6B/1.7B ASR capacity comparison after the primary
+    queue, restoring the baseline service afterward.
+33. Draft the `api/v2` migration only after the experimental trajectory contract stabilizes.
 
 ## 16. Risks and mitigations
 
@@ -1140,5 +1164,8 @@ The implementation and study should begin from these public sources and add a ma
 10. Thinking Machines Lab, “Interaction Models: A Scalable Approach to Human-AI Collaboration,” 2026. <https://thinkingmachines.ai/blog/interaction-models/>
 11. Ray et al., “τ-Voice: Benchmarking Full-Duplex Voice Agents on Real-World Domains,” 2026. <https://arxiv.org/abs/2603.13686>
 12. OpenAI, Realtime API documentation. <https://developers.openai.com/api/docs/guides/realtime>
+13. OpenAI, “Introducing GPT-Live,” 2026. <https://openai.com/index/introducing-gpt-live/>
+14. OpenAI, “How OpenAI built continuous voice interaction with GPT-Live,” 2026. <https://openai.com/index/continuous-voice-interaction-with-gpt-live/>
+15. Qwen, “Qwen3-ASR-1.7B model card,” 2026. <https://huggingface.co/Qwen/Qwen3-ASR-1.7B>
 
 Public APIs and papers evolve. Any experiment must cite the exact version and retrieval date used.

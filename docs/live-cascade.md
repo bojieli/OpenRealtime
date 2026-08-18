@@ -213,6 +213,14 @@ Flash at high effort with execute authority, and local Fish S2-Pro. Every
 client and server message is validated against the pinned standard Realtime
 schema unless `--validate-wire=false` is explicitly selected for diagnosis.
 
+The service launcher also supports a declared `restart-asr` operation so a
+paired capacity experiment can change the ASR model without restarting Qwen,
+Fish, the Gemini-facing gateway, or benchmark orchestration. The first such
+experiment is frozen in `benchmarks/tau-voice/asr-ablation-v1.json`:
+Qwen3-ASR 0.6B versus the official 1.7B streaming model, with every benchmark
+and cognitive variable held fixed. It is a post-baseline ablation, not an
+automatic fallback or input-dependent router.
+
 The gateway has no answer/ask/yield/status router. A final ASR observation runs
 fast once and slow once. A complete external function-result batch resumes the
 slow continuation directly from the exact extended canonical prefix; fast is

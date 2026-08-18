@@ -17,8 +17,9 @@ canonical-trajectory experiments without rewriting the completed evidence.
 - **M3 fast/slow:** foreground coordination and deliberation are separate.
 - **N0 online native/VAD:** public speech-in/speech-out services opened by
   endpoint/VAD behavior, where access permits.
-- **N1 native interaction:** persistent short-block interaction models, where
-  access permits.
+- **N1 native interaction:** GPT-Live, TML Interaction Models, Moshi, or another
+  continuous/short-block interaction model, where access permits. GPT-Realtime
+  and LiveKit are not substitutes for an unavailable GPT-Live endpoint.
 - **H1 hybrid:** acoustic or native interaction signals with modular cognition.
 
 The same fixture, prompt, model version, voice, region, device path, network
@@ -79,9 +80,9 @@ scored untruthful.
 - **N0 online native/VAD:** applicable Qwen online, GPT-Realtime-2, and Gemini
   Live profiles are measured with their documented endpoint behavior where
   access and terms permit.
-- **N1 native interaction:** Thinking Machines Lab Interaction Models, Moshi,
-  or another available persistent short-block model are measured at their
-  actual cadence where access and terms permit.
+- **N1 native interaction:** GPT-Live, Thinking Machines Lab Interaction
+  Models, Moshi, or another available persistent interaction model are measured
+  at their actual cadence where access and terms permit.
 
 ### H8 trigger timing and co-location
 
@@ -105,6 +106,15 @@ I0 is expected to preserve reasoning continuity better than I1 when the
 provider supports native reasoning replay. I1 must compare reusable reasoning,
 a normalized working trace, and content-only continuation. Foreign raw thinking
 syntax is not assumed valid input for another provider.
+
+### H11 streaming-ASR capacity
+
+The official Qwen3-ASR 1.7B streaming model is compared with the frozen 0.6B
+baseline under identical τ-Voice tasks, voices, seed, cadence, fast/slow models,
+and tool policy. The hypothesis is improved grounded identifier/tool-argument
+accuracy without a meaningful interaction-latency regression. The preserved
+identifier failure motivates the ablation but cannot define its acceptance
+subset, add recognition hints, or select the model at runtime.
 
 ### Joint success criterion
 
@@ -180,6 +190,12 @@ All positive and negative reports are interpreted in
 endpointed control, non-tool reflex workload, all registered cadences, native
 systems, tail distributions, cancellation/interruption load, cost-policy
 ablations with repetition, and human judgment.
+
+The current full-benchmark sequence freezes the I1 local condition, runs both
+278-task τ speech cells, all 498 FDB v1.5 overlap recordings, and all 100 FDB v3
+tool-use recordings serially on one GPU. A separate watcher then runs both
+complete 1.7B-ASR τ cells and restores the 0.6B baseline. Partial progress is
+operational evidence only, never an aggregate score.
 
 ## Trial and analysis rules
 

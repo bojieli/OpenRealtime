@@ -14,14 +14,15 @@ speech, real environment tools, multi-turn policy following, control/regular
 speech conditions, and tick-level interaction metrics. Its default tick is
 200 ms.
 
-This is the primary planned joint intelligence/interaction benchmark for
-OpenRealtime, but it has not been run locally. A checked patch preserves the
+This is the primary joint intelligence/interaction benchmark for OpenRealtime.
+A checked patch preserves the
 standard upstream OpenAI adapter while adding an explicit local endpoint and a
-separately attributed Fish Audio caller synthesizer; 85 affected upstream tests
-pass from a fresh pinned checkout. The persistent OpenRealtime gateway and its
-live provider conformance remain to be implemented. Regular/accent cells also
-require a provenance-recorded Fish voice registry. A patch test, mock-tool,
-text-only, or partial smoke result must not be reported as a τ-Voice score. See
+separately attributed Fish Audio caller synthesizer; 86 affected upstream tests
+pass from a fresh pinned checkout. The persistent gateway passes 12/12 selected
+official provider tests, and the seven-persona Fish voice registry records its
+generated-source provenance. A two-cell full run is in progress/queued. A
+patch test, mock-tool, text-only, exploratory task, or incomplete cell must not
+be reported as a τ-Voice score. See
 the [integration and evaluation plan](../tau-voice/README.md).
 
 ## Full-Duplex-Bench v1.5
@@ -121,7 +122,7 @@ run: the paper used `gpt-4o-realtime-preview-2024-12-17`, the `alloy` voice,
 Silero-VAD, and a GPT-4o behavior judge. Reports must keep it separate from
 locally observed results and confidence intervals.
 
-## Full-Duplex-Bench v3 published tool-use reference
+## Full-Duplex-Bench v3 tool-use benchmark
 
 `full-duplex-bench-v3-published-results.json` transcribes Tables 2–6 and the
 paper-reported pre-emptive tool-call rates from arXiv `2604.04847v1`. The source
@@ -129,18 +130,37 @@ PDF digest and benchmark repository revision are pinned. It contains published
 results for `gpt-realtime-1.5`, Gemini Live 2.5 and 3.1, xAI Grok, Ultravox
 v0.7, and a Whisper→GPT-4o→OpenAI TTS cascade.
 
-The artifact is not a local run. It explicitly preserves that GPT-Realtime is
-not GPT-4o Realtime, xAI Grok is not Groq, and the cascade's GPT-4o component is
-not a GPT-4o Realtime result. Its argument and response metrics also depend on
-GPT-4o judges.
+The published artifact is not a local run. It explicitly preserves that
+GPT-Realtime is not GPT-4o Realtime, xAI Grok is not Groq, and the cascade's
+GPT-4o component is not a GPT-4o Realtime result. Its argument and response
+metrics also depend on GPT-4o judges.
 
-## Tool-use benchmark scope
+## Tool-use benchmark execution
 
-The v3 manifest pins the upstream 100-scenario disfluent tool-use definition
-and its 12 mock APIs, but marks it `inventoried_not_run`. A valid FDB-v3 run
-also needs the separate audio bundle, LiveKit-equivalent orchestration, actual
-tool responses, ASR, and a declared argument/response judge. Reporting a small
-JSON-only tool-call test as an FDB-v3 score would be misleading.
+The v3 manifest now pins the exact 736,136,419-byte released bundle and its 100
+recordings, 79 unique released scenario IDs, 150 expected calls, 17 rollback
+examples, official 12-tool catalog, mock APIs, runner, and evaluator. The
+direct Go runner streams every recording through the standard OpenAI Realtime
+adapter pointed at the local endpoint. Authoritative function calls execute the
+upstream mock semantics; all results are sent as standard
+`function_call_output` items, followed by one `response.create`. The adapter
+then waits for a completed terminal response rather than silently truncating a
+high-thinking continuation at a fixed receive tail.
+
+Prepare and run the exact released population:
+
+```sh
+scripts/prepare-fdb-v3.sh
+OPENREALTIME_API_KEY="$OPENREALTIME_GATEWAY_TOKEN" \
+  scripts/run-fdb-v3-openrealtime.sh
+```
+
+The run writes upstream-compatible `output_openrealtime.wav` and
+`result_openrealtime.json` files, a resumable immutable manifest, exact
+evaluation, and—when enabled—the official GPT-4o argument/response judgment.
+It is queued but not yet a completed local score. The wire transcript and VAD
+end event are retained as local evidence; paper-identical Parakeet alignment
+has not been claimed.
 
 The v3 release card calls the audio “100 examples, 79 unique scenarios,” while
 the pinned `benchmark_data_v2.json` contains 100 unique definition IDs. The
@@ -161,6 +181,13 @@ than inference or speech-response latency. Its OpenAI row is
 produces binary rather than calibrated probability scores. The upstream
 harness uses Python, but this repository only stores a JSON transcription and
 does not add or execute a Python dependency.
+
+LiveKit is not the comparison target for OpenRealtime's continuous interaction
+architecture. GPT-Live and Thinking Machines Lab Interaction Models are the
+targets; LiveKit appears here only because it authors this separate endpointing
+benchmark and is transport machinery in the upstream FDB v3 implementation.
+The machine-readable capability ledger is
+`gpt-live-and-tml-capabilities-2026-08.json`.
 
 TOBench was also evaluated for fit. It is a 100-task omni-modal MCP benchmark,
 not a realtime duplex voice-protocol benchmark, and its official harness is a
