@@ -11,10 +11,12 @@ but fail the task, or intelligent but interact poorly.
 
 The pinned upstream identity and current run status are in
 [`tau-voice.manifest.json`](../external/tau-voice.manifest.json). No local score
-has been produced. A reproducible patch now keeps τ's standard OpenAI adapter,
-adds an explicit local WebSocket endpoint, and adds Fish Audio as a separately
-identified caller-synthesis provider. The persistent OpenRealtime gateway is
-still pending, so published τ-Voice numbers remain external context only.
+has been produced for the complete benchmark. A reproducible patch keeps τ's
+standard OpenAI adapter, adds an explicit local WebSocket endpoint, and adds
+Fish Audio as a separately identified caller-synthesis provider. The persistent
+OpenRealtime gateway now passes all 12 selected cases in τ's official
+audio-native provider suite and has completed two exploratory airline tasks.
+The checked result is explicitly a one-task smoke, not a 278-task τ-Voice score.
 
 ## Executable harness integration
 
@@ -36,16 +38,52 @@ events remain on the standard OpenAI path. It also adds `fish_audio` beside
 model, endpoint, voice, sample rates, and seed are retained in `VoiceRunConfig`;
 the optional Fish bearer token is read only from `FISH_AUDIO_API_KEY`.
 
-After the local gateway and model services are running, the first control
-smoke command has this shape:
+Start the local gateway after Qwen3-ASR, vLLM Qwen, and Fish S2-Pro are healthy:
+
+```sh
+export OPENREALTIME_GATEWAY_TOKEN=local-only-token
+export GEMINI_API_KEY=...
+go run ./cmd/realtimegateway
+```
+
+The gateway ingests persistent G.711/PCM audio, uses acoustic VAD plus 200 ms
+stateful ASR advances, commits one canonical fast→slow trajectory, emits only
+slow-authorized function calls, resumes slow from exact external result
+batches, and streams locally generated Fish speech. It validates every wire
+message against the pinned OpenAI Realtime schema by default.
+
+Run the official upstream provider suite through its ordinary OpenAI adapter:
+
+```sh
+OPENAI_REALTIME_BASE_URL=ws://127.0.0.1:8765/v1/realtime \
+OPENAI_REALTIME_API_KEY="$OPENREALTIME_GATEWAY_TOKEN" \
+uv --directory .runtime/tau2-bench run pytest \
+  tests/test_voice/test_audio_native/test_provider_suite.py \
+  -q -s -k openai
+```
+
+`OPENAI_API_KEY` remains the hosted key used by τ's user simulator and by the
+suite's upstream availability gate. The patched local Realtime transport reads
+only `OPENAI_REALTIME_API_KEY`, so a hosted credential is never sent to the
+loopback gateway.
+
+The reproducible task-3 control smoke is:
 
 ```sh
 TAU2_DIR=.runtime/tau2-bench scripts/prepare-tau-voice.sh
-OPENAI_API_KEY=local-only-token uv --directory .runtime/tau2-bench run tau2 run \
+OPENAI_REALTIME_API_KEY="$OPENREALTIME_GATEWAY_TOKEN" \
+uv --directory .runtime/tau2-bench run tau2 run \
   --domain airline \
+  --task-ids 3 \
+  --num-trials 1 \
+  --max-concurrency 1 \
+  --max-retries 0 \
+  --hallucination-retries 0 \
+  --timeout 480 \
+  --max-steps-seconds 360 \
   --audio-native \
   --audio-native-provider openai \
-  --audio-native-model openrealtime-local \
+  --audio-native-model gpt-realtime-1.5 \
   --audio-native-base-url ws://127.0.0.1:8765/v1/realtime \
   --voice-synthesis-provider fish_audio \
   --fish-audio-endpoint http://127.0.0.1:8081/v1/audio/speech \
@@ -53,27 +91,39 @@ OPENAI_API_KEY=local-only-token uv --directory .runtime/tau2-bench run tau2 run 
   --fish-audio-voice default \
   --tick-duration 0.2 \
   --speech-complexity control \
-  --num-tasks 1 \
-  --num-trials 1 \
+  --save-to openrealtime-canonical-tools-optimized-2026-08-18 \
   --verbose-logs
 ```
 
-Use a dedicated local-only token in `OPENAI_API_KEY`; do not send a hosted API
-key to a development gateway. Fish needs no key on a trusted loopback server.
-The hosted slow continuation still reads its own provider credential inside
-OpenRealtime, not through the τ client.
+The `gpt-realtime-1.5` model value is only the compatibility/pricing identity
+expected by the pinned upstream ledger. The endpoint is the local composite,
+not an OpenAI model. Consequently τ's reported agent cost is a consistent
+pricing proxy, not the actual Qwen/Gemini/Fish spend. Fish needs no key on a
+trusted loopback server. The hosted slow continuation reads `GEMINI_API_KEY`
+inside OpenRealtime, not through the τ client.
 
 The checked patch is
 [`0001-local-openai-fish-audio.patch`](patches/0001-local-openai-fish-audio.patch).
 At the pinned revision its focused and affected voice/streaming suites pass 85
-tests. This verifies configuration, PCM synthesis, effects, and caller
-streaming; it is not the upstream live provider suite and is not a benchmark
-score.
+tests. In addition, the live local composition passes 12/12 OpenAI-selected
+cases in the official horizontal provider suite. That suite covers lifecycle,
+200 ms timing, two speech lengths, multi-turn audio, tool-result resumption,
+usage, and barge-in. It is a compatibility gate, not a task score.
+
+The final post-hardening rerun occurred while unrelated host work held all 32
+logical CPUs at 0% idle. Two ordinary-scheduler runs each passed 11/12 and
+failed one wall-clock tick at 414 ms and 386 ms respectively; the failed case
+passed alone at a 215 ms maximum. The unchanged full suite passed 12/12 when
+only the benchmark client was pinned to one CPU with FIFO priority 10. The
+checked result preserves both the saturated-host failures and that execution
+condition: the isolated pass establishes adapter/function conformance, not an
+uncontended latency distribution.
 
 ## Adapter boundary
 
-Implement an upstream `DiscreteTimeAdapter` against a persistent OpenRealtime
-session; do not port or fork the benchmark loop. The bridge must:
+The implemented bridge uses the upstream `DiscreteTimeOpenAIAdapter` against a
+persistent OpenRealtime session; it does not port or fork the benchmark loop.
+Its contract is:
 
 1. Accept the benchmark `system_prompt` as the shared `AgentInstruction` seen
    by both fast and slow profiles.
@@ -191,13 +241,44 @@ An optimization is accepted only if paired evidence shows one of:
 Cache hits, fewer calls, or lower first-token latency are explanatory metrics,
 not success by themselves. Preserve failed trials and all condition changes.
 
+## Exploratory paired result: 2026-08-18
+
+The checked secret-free record is
+[`tau-voice-openrealtime-smoke-2026-08-18.json`](../results/tau-voice-openrealtime-smoke-2026-08-18.json).
+Both conditions used official airline task 3, seed 300, 200 ms ticks, control
+speech, the standard OpenAI Realtime adapter, local Fish caller and agent
+speech, Qwen3-ASR, Qwen fast, and Gemini 3.5 Flash high slow reasoning.
+
+| Measure | Baseline | Bounded/superseding media |
+| --- | ---: | ---: |
+| τ task reward | 0.0 | 1.0 |
+| Required read actions | 2/2 | 2/2 |
+| Exact communication `4` | Fail | Pass |
+| DB match | Pass | Pass |
+| Unresponsive period | No | No |
+| Duration | 317.20 s | 223.61 s |
+| τ priced agent-cost proxy | $1.0191 | $0.5601 |
+
+The optimization made the fast phase one short spoken micro-turn, reduced its
+hard output bound from 96 to 32 tokens, coalesced arbitrary Fish fragments into
+real-time-paced 100 ms wire frames, and made an authoritative slow assistant or
+tool safe point supersede only unplayed fast media. It did not inspect task
+text or add a difficulty/status router. In this sequential pair, duration fell
+29.5%, the pricing proxy fell 45.0%, and reward rose from 0 to 1. This is useful
+mechanism evidence, but one task and one sample per condition do not establish
+a distribution or general benchmark improvement.
+
+An earlier task-1 smoke correctly refused a disallowed cancellation and
+received reward 1.0, but skipped two expected diagnostic read actions; it is
+preserved as negative evidence rather than used as the primary tool test.
+
 ## Current blockers and next action
 
-The ElevenLabs dependency is removed for the local condition. The remaining
-critical path is the persistent OpenRealtime `/v1/realtime` gateway backed by
-the implemented ASR, canonical fast/slow event loop, external tool-result
-resumption, and Fish agent speech. Once that gateway passes τ's live provider
-suite, run the one-task `control` smoke command above. Configure and disclose
-Fish reference voices before any `regular` cell, then run the preregistered
-paired matrix. No patch test, mock, text-only run, or incomplete smoke run will
-be relabeled as a τ-Voice score.
+The gateway, official provider gate, external tool-result resumption, local
+Fish caller/agent paths, and one-task control smoke are complete. Next, freeze
+the paired matrix manifests, add repeated seeds and task subsets without tuning
+against their contents, configure and disclose Fish reference voices for the
+`regular` condition, and then run complete 278-task cells as resources permit.
+Native baselines and cadence/effort ablations remain outstanding. No patch
+test, conformance suite, mock, text-only run, or one-task smoke will be
+relabeled as a full τ-Voice score.

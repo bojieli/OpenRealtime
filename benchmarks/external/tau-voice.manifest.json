@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "artifact_kind": "external_benchmark_pin",
   "retrieved_at": "2026-08-18T00:00:00Z",
-  "locally_executed": false,
+  "locally_executed": true,
   "benchmark": {
     "name": "tau-Voice",
     "display_name": "τ-Voice",
@@ -40,7 +40,7 @@
   },
   "local_integration": {
     "patch": "benchmarks/tau-voice/patches/0001-local-openai-fish-audio.patch",
-    "patch_sha256": "180f03a8f04d0aecb91f4b43039d1b975a70c0068986dc65e802dcbb3b7633fa",
+    "patch_sha256": "ac6dde2138b565ade036b980eb3178069a8de1614f1eb727db05ba61213e3abe",
     "preparation_script": "scripts/prepare-tau-voice.sh",
     "wire_protocol_changed": false,
     "agent_transport": "standard upstream OpenAI Realtime adapter with explicit local WebSocket base_url",
@@ -48,13 +48,17 @@
     "caller_synthesis_model": "fishaudio/s2-pro",
     "caller_synthesis_default_endpoint": "http://127.0.0.1:8081/v1/audio/speech",
     "caller_synthesis_output": "mono PCM16 resampled to the configured benchmark PCM rate",
-    "credential_policy": "OPENAI_API_KEY is a dedicated local-only gateway token; FISH_AUDIO_API_KEY is optional and never serialized",
+    "credential_policy": "OPENAI_REALTIME_API_KEY is the dedicated local-only gateway token; hosted OPENAI_API_KEY is never sent to the local endpoint; FISH_AUDIO_API_KEY is optional and never serialized",
     "verification": {
       "fresh_checkout_patch_applied": true,
       "ruff_passed": true,
       "affected_tests_passed": 85,
-      "live_provider_suite_passed": false,
-      "benchmark_tasks_run": 0
+      "live_provider_suite_passed": true,
+      "live_provider_suite_passed_tests": 12,
+      "live_provider_suite_execution_condition": "final full pass used CPU affinity and FIFO priority 10 for the unchanged benchmark client on a 0%-idle shared host; two ordinary-scheduler reruns each had one wall-clock tick above 300 ms",
+      "benchmark_tasks_run": 2,
+      "benchmark_simulations_completed": 3,
+      "checked_result": "benchmarks/results/tau-voice-openrealtime-smoke-2026-08-18.json"
     }
   },
   "interaction_metrics": [
@@ -74,10 +78,9 @@
     "voice_to_text_capability_retention_percent_range": [30, 45]
   },
   "redistributed": false,
-  "status": "pinned_harness_patch_verified_gateway_pending_not_run",
+  "status": "exploratory_gateway_and_task_smoke_complete_full_matrix_pending",
   "blockers_observed": [
-    "The persistent local OpenRealtime /v1/realtime gateway is not yet implemented or live-provider conformant.",
-    "The local Qwen3-ASR, Qwen fast model, and Fish agent-speech services were not running during harness verification.",
+    "The complete 278-task control and regular cells, repeated trials, cadence sweeps, and native comparison conditions have not been run.",
     "Regular/accent cells require a preregistered Fish voice registry or reference map with speaker and license provenance."
   ],
   "reporting_rule": "Do not report an OpenRealtime tau-Voice score until the pinned provider adapter passes upstream tests and the complete declared task/condition cell finishes. Partial text-only, mock-tool, or interaction-only runs are not tau-Voice scores."

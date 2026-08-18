@@ -213,7 +213,8 @@ pin the v1.0.0 release and run the same public conformance suite.
 - Implemented: stateful Qwen3-ASR 0.6B, local Qwen3-30B-A3B-FP8, streaming
   Fish S2-Pro, 50 ms scheduler/200 ms provider buffering, exact-match fast
   → slow private preparation, content-independent slow-launch pacing with
-  exact-commit bypass, and priority/capacity admission on one 96 GB GPU
+  exact-commit bypass, priority/capacity admission on one 96 GB GPU, and a
+  persistent standard Realtime gateway with 100 ms paced Fish output
 - Evidence: `docs/live-cascade.md`, the exact-scored
   `realtime-benchmark-v0.6` background result, v0.7 endpointed/fast-only
   controls, the v0.8 one-second pacing ablation, and preserved negative results
@@ -222,6 +223,7 @@ pin the v1.0.0 release and run the same public conformance suite.
   adaptive scheduling using the same component versions
 - Boundary: fixed ticks are opportunities; actual component invocations are
   reported separately
+- Live gate: 12/12 selected official τ OpenAI-provider cases pass
 
 ## M9 — Canonical trajectory and interleaved thinking
 
@@ -235,6 +237,9 @@ pin the v1.0.0 release and run the same public conformance suite.
   scoring; one structured safe-point event-loop owner, versioned atomic model
   commits, typed interruption, complete asynchronous result transactions,
   common agent policy, and cancellation-aware audible-history projection
+- Gateway: standard tool results resume slow from the exact extended canonical
+  prefix without rerunning fast; a slow safe point supersedes only unplayed
+  fast media without content routing
 - Target: fast and slow models continue one trajectory containing observations,
   reusable reasoning, assistant content, proposals, executable calls, and
   results
@@ -244,9 +249,10 @@ pin the v1.0.0 release and run the same public conformance suite.
 - Compatibility: experimental internals first; stable replacement requires
   `api/v2`
 
-## Planned M10 — Joint responsiveness–intelligence study
+## M10 — Joint responsiveness–intelligence study
 
-- Status: planned
+- Status: started with a 12-case official provider gate and an exploratory
+  one-task τ airline pair; no full benchmark score is claimed
 - Target: attribute gains separately to microturn timing and canonical-trajectory
   continuation, then test whether they compose in one live condition
 - Comparators: endpoint/VAD-triggered online speech models and persistent
@@ -254,6 +260,6 @@ pin the v1.0.0 release and run the same public conformance suite.
 - Required outcomes: first semantic audio, final reasoning/tool quality,
   contradiction and capability consistency, repair, compute, queueing, and cost
 - Primary joint harness: pinned τ-Voice full airline/retail/telecom matrix in
-  control and regular speech conditions; local-endpoint/Fish harness patch is
-  verified, while the persistent gateway, provider conformance, and disclosed
-  regular-condition Fish voices remain pending, so no local score is claimed
+  control and regular speech conditions; local-endpoint/Fish harness patch,
+  persistent gateway, provider conformance, and one-task control smoke are
+  complete, while full cells and disclosed regular-condition Fish voices remain

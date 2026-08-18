@@ -192,6 +192,15 @@ request. Cancelled-before-playback assistant text and provider-native state from
 that invocation are omitted. Queue/played bookkeeping does not change a
 preparation fingerprint because both remain model-visible audible history.
 
+The gateway additionally bounds how far media can get ahead of this state.
+Fish fragments are coalesced into 100 ms wire frames and paced against their
+encoded duration. A committed slow assistant or tool call invalidates queued
+and active fast-only media without cancelling slow media. The already emitted
+prefix is handled by normal Realtime playback/truncation events and is never
+rewritten. This prevents an authoritative tool result from waiting behind a
+large provisional client-side audio buffer without introducing a semantic
+router.
+
 ## Latency path
 
 The principled latency optimizations are changes in when safe work begins and
@@ -235,6 +244,9 @@ but it remains separate from the OpenAI-compatible connection.
 - `preparation`: private latest-wins work and exact provider-visible
   fingerprints.
 - `speech`: prepared/queued/played/cancelled media commitment.
+- `realtimegateway`: standard Realtime transport, persistent acoustic/media
+  state, exact external result batching, phase-authority speech supersession,
+  and 100 ms paced Fish audio projection.
 
 The `cognition` M4 goal/update abstraction remains a benchmark control and is
 not part of this target state machine.

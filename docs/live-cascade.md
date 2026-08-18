@@ -2,7 +2,9 @@
 
 ## Implemented slice
 
-The repository now contains one real audio-to-audio integration path:
+The repository now contains two compositions of the same real audio-to-audio
+runtime: the controlled `realtimebench` harness and a persistent standard
+OpenAI Realtime-compatible gateway. The controlled path is:
 
 ```text
 24 kHz PCM input
@@ -20,6 +22,19 @@ The repository now contains one real audio-to-audio integration path:
 This is an internal server architecture. It does not add events or fields to the
 OpenAI Realtime wire protocol, and it does not alter stable `api/v1`.
 
+The persistent gateway path is:
+
+```text
+8 kHz G.711 mu-law or 24 kHz PCM Realtime input
+  → acoustic VAD with prefix/silence hysteresis
+  → persistent Qwen3-ASR with 200 ms provider buffering
+  → response-eligible canonical observation
+  → Qwen fast spoken micro-turn + unconditional Gemini slow continuation
+  → standard function-call events
+  → exact complete tool-result batch → slow-only resumption
+  → Fish S2-Pro PCM → fixed 100 ms paced Realtime audio frames
+```
+
 The relevant packages are:
 
 | Package | Responsibility |
@@ -35,6 +50,8 @@ The relevant packages are:
 | `adapters/openaicompat` | Local vLLM context and streaming compiler |
 | `adapters/gemini` | Gemini reasoning/tool continuation compiler |
 | `adapters/openaitts` | OpenAI-compatible streaming speech transport |
+| `realtimegateway` | Persistent Realtime session, VAD/media, canonical cognition, tool resumption, and bounded speech |
+| `cmd/realtimegateway` | Production composition of local Qwen3-ASR/Qwen/Fish with hosted Gemini slow reasoning |
 | `realtimebench` | End-to-end timing, scoring, and secret-free evidence |
 
 ## Tool authority
@@ -177,6 +194,55 @@ VLLM_WORKER_MULTIPROC_METHOD=spawn \
   --gpu-memory-utilization 0.14 \
   --chunk-size-sec 0.2
 ```
+
+## Persistent standard Realtime gateway
+
+After all three local services are healthy, start the gateway with a dedicated
+loopback credential and the hosted slow-model credential:
+
+```bash
+export OPENREALTIME_GATEWAY_TOKEN=local-only-token
+export GEMINI_API_KEY=...
+go run ./cmd/realtimegateway
+```
+
+The default endpoint is `ws://127.0.0.1:8765/v1/realtime`; `/healthz` is the
+readiness endpoint. The production composition uses Qwen3-ASR 0.6B, local
+`qwen-fast` with thinking disabled and proposal-only tool authority, Gemini 3.5
+Flash at high effort with execute authority, and local Fish S2-Pro. Every
+client and server message is validated against the pinned standard Realtime
+schema unless `--validate-wire=false` is explicitly selected for diagnosis.
+
+The gateway has no answer/ask/yield/status router. A final ASR observation runs
+fast once and slow once. A complete external function-result batch resumes the
+slow continuation directly from the exact extended canonical prefix; fast is
+not rerun. No process-local agent or advice object owns the resumption. Both
+phases see the same session instruction and tool definitions. Fast call-shaped
+output is a non-executable proposal; only a newly committed slow call crosses
+the WebSocket.
+
+The speech scheduler separates semantic and acoustic commitment:
+
+- fast assistant text is canonical but provisional until played;
+- the fast model is instructed to emit one self-contained spoken micro-turn of
+  at most twelve words and has a 32-token hard bound;
+- arbitrary Fish HTTP fragments are coalesced into fixed 100 ms Realtime audio
+  frames and paced at media time, preventing an entire long utterance from
+  being deposited in the client buffer;
+- a slow assistant or authoritative tool safe point cancels only unplayed fast
+  media, while user VAD interrupts all unplayed speech; and
+- played text remains visible to later continuations and can only be corrected,
+  never erased.
+
+This supersession rule depends only on phase authority and playback state. It
+does not inspect transcript/model text or benchmark identity.
+
+The pinned τ audio-native provider suite exercises this endpoint through τ's
+ordinary OpenAI adapter. On 2026-08-18 all 12 selected OpenAI cases passed,
+including 200 ms timing bounds, multi-turn speech, function-call result
+resumption, usage, and barge-in. See the
+[τ-Voice integration record](../benchmarks/tau-voice/README.md) for exact
+commands and limitations.
 
 Generate the checked input fixture through the same Fish S2-Pro server. The
 seed is sent as the provider-specific `seed` request field and recorded in the

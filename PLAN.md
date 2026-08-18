@@ -443,6 +443,13 @@ The speech planner turns semantic candidates into incrementally synthesizable sp
 - Audio chunk identifiers linked to source text and candidate revision.
 - Truncation boundaries and repair annotations.
 
+The persistent gateway's initial policy makes fast output one bounded spoken
+micro-turn, coalesces Fish output into paced 100 ms wire frames, and lets a
+committed slow assistant or tool call supersede only unplayed fast media. This
+is a phase-authority/playback rule, not a transcript classifier. It prevents
+the stronger continuation from waiting behind a large provisional audio buffer
+while preserving every already-heard prefix.
+
 ### 7.10 Commit controller
 
 The controller is the safety boundary between speculation and user-visible output. Its policy considers:
@@ -902,7 +909,10 @@ admission, exact fast→slow background preparation, and real audio-to-audio
 reports. A same-fixture endpointed/fast-only/full-preparation exploratory check
 is published. A content-independent one-second slow-launch pacer reduced
 speculative slow provider launches from 43 to 12 in one exact-scored trial and
-the final commit bypassed its remaining wait. Repeated randomized trials,
+the final commit bypassed its remaining wait. A persistent standard Realtime
+gateway now composes all three local GPU services with hosted slow reasoning,
+passes the official τ OpenAI provider suite 12/12, and exposes paced Fish agent
+speech. Repeated randomized trials,
 interval sweeps, remaining cadences, adaptive scheduling, tail distributions,
 and aligned GPU utilization remain.
 
@@ -930,11 +940,19 @@ bypass, exact tool-trajectory scoring, and passing heterogeneous live trials
 are implemented. The single-owner structured event loop, versioned
 compare-and-append model transactions, trusted typed interruption, complete
 asynchronous tool-result batches, common agent policy across phases, and
-cancellation-aware audible-history projection are also implemented. The scorer
+cancellation-aware audible-history projection are also implemented and wired
+into the persistent Realtime server. Standard external function results resume
+slow directly from the exact extended canonical prefix without rerunning fast;
+the bounded continuation count is itself derived from that prefix rather than
+hidden process state. Phase-authority media
+supersession and 100 ms real-time output pacing bound the unplayed fast prefix.
+The scorer
 requires an exact call multiset and exactly one identity-matched terminal
-result per call. The trial also records superseded/failed background work and
-preserved failure cases. Canonical stable-partial effects, end-to-end audible
-repair integration, bounded production ingress/backpressure,
+result per call. An official τ airline task executed both required reads and,
+after the bounded-media change, passed its exact numeric communication check at
+reward 1.0. The trial also records superseded/failed background work and
+preserved failure cases. Canonical stable-partial effects, broader audible
+repair integration,
 same-family/content-only/independent controls, and an `api/v2` proposal remain.
 
 Deliverables:
@@ -960,6 +978,11 @@ Exit criteria:
 - Same-family, cross-family, content-only, and independent-advice controls are reproducible.
 
 ### M10 — Responsiveness–intelligence comparative study
+
+Status: started with an exploratory official τ provider gate and one-task
+paired smoke. This is not a complete benchmark cell: the 278-task matrix,
+regular speech voices, repeated trials, native controls, and cadence/effort
+ablations remain.
 
 Deliverables:
 
@@ -1010,11 +1033,10 @@ Exit criteria:
 25. Expand the implemented fixed-tick versus provider-invocation accounting across every cadence condition.
 26. Add same-family and cross-family reasoning-continuity ablations.
 27. Add capability-consistency and split-brain evaluations.
-28. Integrate the implemented safe-point event loop with live ASR, playback,
-    and asynchronous tool ingress; add bounded queue and overload policy.
-29. Complete the persistent local Realtime gateway used by the verified pinned
-    τ-Voice OpenAI-adapter/Fish patch and run live provider conformance before
-    any scored task.
+28. Maintain the integrated safe-point event loop across live ASR, playback,
+    asynchronous tool ingress, bounded queues, and overload tests.
+29. Maintain the completed persistent local Realtime gateway and its 12-case
+    official τ OpenAI-provider conformance gate as the wire/runtime changes.
 30. Run the preregistered τ-Voice matrix only after the control voice and the
     provenance-recorded regular Fish voice set are fixed; publish failures and
     incomplete cells.

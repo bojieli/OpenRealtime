@@ -253,6 +253,21 @@ unplayed content. If later reasoning contradicts played content, it must append
 an explicit correction. The current live benchmark starts TTS only after a
 canonical model safe point; speculative TTS remains a separate experiment.
 
+The persistent gateway makes that replacement rule operational. Fast output is
+a bounded spoken micro-turn, not an unconstrained answer queued ahead of slow
+reasoning. Fish provider fragments are normalized into fixed 100 ms wire frames
+and released at media time. When a slow assistant segment or authoritative
+tool call commits, it advances a fast-media epoch: queued fast speech from an
+older epoch is discarded and an active fast stream is cooperatively cancelled.
+Slow speech is not invalidated. At most the bounded already-sent media prefix
+remains, and ordinary playback/truncation events decide what was heard.
+
+This is a consequence of phase authority plus the acoustic commit horizon. It
+is not a learned or hand-written semantic decision, and it never searches model
+text. The canonical fast assistant item remains in the audit trajectory; its
+append-only visibility transitions determine whether later provider projections
+include or omit it.
+
 Cancelled-before-playback assistant text is removed from every later provider
 projection, including opaque native state from the same invocation that may
 embed the cancelled text. Prepared, queued, and played content remains visible;
@@ -279,6 +294,13 @@ The public OpenAI Realtime client/server protocol is unchanged. Canonical
 items, preparation attempts, scheduling classes, and continuation lifecycle are
 internal. Existing text, audio, cancellation, and function-call events carry
 observable behavior.
+
+`realtimegateway` implements this projection at `/v1/realtime`: session/audio
+events enter the canonical runtime, slow calls leave as standard function-call
+events, standard `conversation.item.create` function outputs become one exact
+result batch, and the resulting slow continuation leaves as ordinary response
+audio/transcript events. Fast/slow phase names, preparation fingerprints, media
+epochs, and canonical item IDs do not become public protocol extensions.
 
 Default research telemetry contains model/profile identity, reasoning effort,
 source revision, prefix boundary, start/first-event/completion/cancellation

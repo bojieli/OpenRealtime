@@ -34,8 +34,9 @@ Adopt one provider-neutral event-loop state machine:
    processing reaches a provider-supported safe point.
 5. Every model continuation computes from an immutable version and atomically
    publishes only if that version remains current.
-6. Observation batches run fast then slow. Tool-result batches resume slow
-   directly. Media-state-only batches run neither.
+6. A batch containing a new observation runs fast then slow once. A
+   tool-result-only batch resumes slow directly. Media-state-only batches run
+   neither.
 7. Tool calls execute only after a slow call commits. All results for one call
    batch cross back as one exact, identity-checked transaction.
 8. Event occurrence time and canonical commit time are retained separately.
@@ -47,6 +48,11 @@ Adopt one provider-neutral event-loop state machine:
 11. Ingress has an explicit hard bound and may reserve capacity for interrupts.
     Exhaustion returns backpressure; the coordinator never silently drops,
     merges, or overwrites a semantic event.
+12. Acoustic output has a bounded commit horizon. Provider fragments are
+    normalized into paced wire frames, and a slow assistant/tool safe point
+    may invalidate only unplayed fast media. This media transition re-enters
+    the queue as typed assistant state and does not cancel the slow transition
+    that caused it.
 
 The OpenAI Realtime protocol and stable `api/v1` remain unchanged.
 

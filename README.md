@@ -92,6 +92,13 @@ exact tool-trajectory scoring; and a priority/capacity admission governor. A
 single-owner asynchronous event loop now adds source-versus-commit provenance,
 typed interruption, stale-prefix rejection, atomic external tool results, and
 cancellation-aware audible-history projection. A
+standard `/v1/realtime` gateway now composes the live services, resumes slow
+directly from standard function results, bounds fast speech as a micro-turn,
+and emits paced 100 ms Fish audio. It passes 12/12 selected cases in the pinned
+official τ provider suite. In a one-task exploratory τ airline pair, the
+bounded/superseding media condition retained 2/2 required tool reads, improved
+reward from 0 to 1, and reduced duration by 29.5%; this is not a full benchmark
+score. A
 real co-located audio-to-audio tool trial committed and replayed both prepared
 stages, had zero additional endpoint-time fast delay, made one fast proposal
 and one independently authorized slow call, and returned the correct grounded
@@ -206,11 +213,12 @@ local runs. Read the
 [external benchmark instructions](benchmarks/external/README.md).
 
 τ-Voice is pinned as the primary M10 joint intelligence/interaction benchmark.
-Its standard OpenAI adapter can now target the planned local endpoint, and Fish
+Its standard OpenAI adapter targets the implemented local endpoint, and Fish
 Audio replaces ElevenLabs for local caller synthesis in a verified pinned
-patch. The persistent gateway and live provider conformance are still pending,
-so this repository does not claim a local τ-Voice score. See the
-[τ-Voice evaluation plan](benchmarks/tau-voice/README.md).
+patch. The gateway passes the 12 selected cases in the official upstream
+OpenAI-provider suite. One paired airline-task smoke improved reward from 0 to
+1 while reducing duration by 29.5%; it is exploratory evidence, not a complete
+τ-Voice score. See the [τ-Voice evaluation plan](benchmarks/tau-voice/README.md).
 
 ## Principles
 

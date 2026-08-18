@@ -7,8 +7,10 @@
 - Generated definitions: 133 across four profiles and two directions
 - Unique wire event names: 66
 
-This document describes schema and codec coverage. Live transport and complete
-server behavior are separate milestones and are not implied by event decoding.
+This document describes schema and codec coverage. The repository also contains
+a focused live `/v1/realtime` server for the canonical local cascade. It is a
+strict, schema-validated subset rather than an implementation of every decoded
+Realtime feature; unsupported standard client events return a standard error.
 
 ## Internal synchronization does not change the wire
 
@@ -26,6 +28,36 @@ actual playback boundary through the existing cancel/clear/truncate lifecycle;
 content cancelled before playback is excluded from later internal provider
 context. This preserves compatibility while keeping acoustic and cognitive
 history synchronized.
+
+## Implemented gateway subset
+
+`cmd/realtimegateway` serves a persistent WebSocket using only standard events.
+It accepts `session.update`, `input_audio_buffer.append`,
+`input_audio_buffer.clear`, `conversation.item.create` for function outputs,
+`conversation.item.truncate`, `response.create`, and `response.cancel`.
+Automatic server VAD owns input commitment; explicit
+`input_audio_buffer.commit` is therefore not part of this initial profile.
+
+The server emits the standard session update, error, speech start/stop,
+conversation item/transcription, response, audio/transcript, function-call,
+truncation, and buffer-cleared lifecycles needed by the pinned τ OpenAI
+adapter. Every accepted client event and emitted server event is checked by the
+pinned validator in the production command. Fast/slow authority, reasoning,
+trajectory versions, preparation, and media epochs remain internal.
+
+External tools use the ordinary protocol sequence: the slow continuation emits
+standard function-call response items; the client sends one
+`function_call_output` item per call followed by `response.create`; the gateway
+validates the complete call-ID/name batch, commits it atomically, and resumes
+slow without rerunning fast. Agent speech uses ordinary output-audio and
+transcript deltas. Local Fish fragments are emitted as real-time-paced 100 ms
+wire frames so server cancellation remains meaningful at the acoustic commit
+horizon.
+
+The pinned official τ horizontal provider suite passes 12/12 selected OpenAI
+cases against this live endpoint. This validates the implemented subset; it
+does not imply MCP, DTMF, translation, manual input commits, every item CRUD
+operation, or full parity with the hosted service.
 
 ## GA Realtime client events (11)
 

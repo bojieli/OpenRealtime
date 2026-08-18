@@ -50,6 +50,10 @@ tool-proposal, tool-call, and tool-result items.
   phase.
 - Fast/slow model substitution occurs at safe trajectory boundaries. Cross-
   model transfer is symbolic and does not claim shared latent state or KV cache.
+- The production voice profile constrains fast assistant content to one bounded
+  spoken micro-turn. At a later slow assistant/tool safe point, unplayed fast
+  media is superseded while played media remains canonical. This decision uses
+  phase authority and playback state only, never output text.
 
 Microturn schedulers continue to open opportunities rather than mandatory
 provider calls. Continuous ASR, model sessions, and TTS retain their own state.
@@ -70,6 +74,8 @@ depends on prompt content.
 The OpenAI Realtime wire protocol and its generated schemas remain unchanged.
 Canonical trajectory items are internal. Optional research telemetry records
 only minimal reasoning lifecycle metadata by default; raw reasoning is opt-in.
+The persistent gateway projects the decision through ordinary response audio,
+function-call, function-output, cancellation, and truncation events.
 
 Stable `api/v1` is unchanged. M4 remains a historical result and the independent
 fast/slow control. A public continuation interface requires `api/v2` after the
@@ -147,12 +153,15 @@ The accepted design is implemented by the experimental `trajectory`,
 `eventloop`, `continuation`, `preparation`, `admission`, and `interleave`
 packages. ADR-0004 defines the single-owner safe-point synchronization that
 serializes asynchronous observations, interruptions, playback transitions,
-and tool results around those continuations. An
+and tool results around those continuations. `realtimegateway` now composes
+that runtime behind the standard Realtime transport. The pinned official τ
+OpenAI-provider suite passes 12/12 cases, and a one-task airline smoke resumes
+two authoritative reads and passes its exact communication check. An
 exact-scored co-located Qwen3-ASR/Qwen/Fish S2-Pro run with hosted Gemini 3.5
 Flash committed and replayed both prepared stages, then preserved one
 non-executable fast proposal, one executable slow call, and one result. Failed
 runs remain published, including a wrong-call recovery that exposed the old
 coarse scorer and a six-call identifier loop stopped by the invocation bound.
-This is exploratory implementation evidence, not the comparative-study
+These are exploratory implementation results, not the comparative-study
 conclusion. See
 [live-cascade.md](../live-cascade.md).
