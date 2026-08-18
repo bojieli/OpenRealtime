@@ -1,0 +1,34 @@
+# SGLang-Omni v0.1.2 profile for Fish Audio S2-Pro sharing one 96 GB GPU
+# with the OpenRealtime Qwen fast-LLM and incremental-ASR services.
+#
+# The CLI --model-path should point at the exact local checkpoint revision.
+# mem_fraction_static is deliberately constrained because the SGLang default
+# (0.85) assumes it owns the GPU. This profile optimizes single-session voice
+# latency; throughput experiments should use a separately named profile.
+config_cls: S2ProPipelineConfig
+name: fish-s2-pro-colocated-96gb
+model_path: fishaudio/s2-pro
+
+runtime_overrides:
+  preprocessing:
+    max_concurrency: 2
+
+  tts_engine:
+    server_args_overrides:
+      # SGLang 0.5.16 profiles S2-Pro's 7.5 GB weights plus runtime
+      # allocations at a minimum viable fraction of about 0.276 on this GPU.
+      # 0.30 leaves a bounded KV pool and still preserves headroom for the
+      # 0.38 Qwen fast-LLM pool and the incremental ASR service.
+      mem_fraction_static: 0.30
+      max_running_requests: 1
+      max_total_tokens: 4096
+      cuda_graph_max_bs: 1
+      # Keep decode graphs enabled for the single admitted request. On wheel-
+      # supplied CUDA toolchains, CUDA_HOME/lib64 must resolve to the wheel's
+      # library directory before FlashInfer JITs its SM120 kernels; otherwise
+      # the host linker can silently select a different libcudart major.
+      disable_cuda_graph: false
+
+  vocoder:
+    max_batch_size: 1
+    max_batch_wait_ms: 1

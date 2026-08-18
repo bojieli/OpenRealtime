@@ -1,0 +1,901 @@
+{
+  "schema_version": "0.2.0",
+  "created_at": "2026-08-18T04:43:17.912096832Z",
+  "runtime": {
+    "asr_provider_chunk": "200ms",
+    "asr_scheduler_frame": "50ms",
+    "asr_transport": "qwen-asr-stateful-http",
+    "wire_protocol": "unchanged-openai-realtime"
+  },
+  "asr": {
+    "case_id": "tau2-check-order-12345",
+    "input_sha256": "e83723d27324588d7509a2a29f19c55c472b49d6dcb87097e006be6ce0e8ef72",
+    "descriptor": {
+      "name": "qwen3-asr-streaming/Qwen/Qwen3-ASR-0.6B",
+      "version": "qwen-asr-0.0.6",
+      "capabilities": {
+        "cancellation": true,
+        "revisions": true,
+        "streaming_input": true
+      }
+    },
+    "paced": true,
+    "frame_duration_ms": 50,
+    "input_sample_rate_hz": 16000,
+    "input_duration_ms": 3600,
+    "frames": [
+      {
+        "index": 0,
+        "end_sample": 800,
+        "audio_end_ms": 50,
+        "invocation_start_ms": 50.23706,
+        "schedule_lateness_ms": 0.23706,
+        "provider_ms": 0.023368,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 1,
+        "end_sample": 1600,
+        "audio_end_ms": 100,
+        "invocation_start_ms": 100.42359,
+        "schedule_lateness_ms": 0.42359,
+        "provider_ms": 0.042402,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 2,
+        "end_sample": 2400,
+        "audio_end_ms": 150,
+        "invocation_start_ms": 150.640923,
+        "schedule_lateness_ms": 0.640923,
+        "provider_ms": 0.02494,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 3,
+        "end_sample": 3200,
+        "audio_end_ms": 200,
+        "invocation_start_ms": 200.85963,
+        "schedule_lateness_ms": 0.85963,
+        "provider_ms": 52.098822,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 4,
+        "end_sample": 4000,
+        "audio_end_ms": 250,
+        "invocation_start_ms": 252.965981,
+        "schedule_lateness_ms": 2.965981,
+        "provider_ms": 0.000895,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 5,
+        "end_sample": 4800,
+        "audio_end_ms": 300,
+        "invocation_start_ms": 300.061609,
+        "schedule_lateness_ms": 0.061609,
+        "provider_ms": 0.001829,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 6,
+        "end_sample": 5600,
+        "audio_end_ms": 350,
+        "invocation_start_ms": 350.214898,
+        "schedule_lateness_ms": 0.214898,
+        "provider_ms": 0.003275,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 7,
+        "end_sample": 6400,
+        "audio_end_ms": 400,
+        "invocation_start_ms": 400.787412,
+        "schedule_lateness_ms": 0.787412,
+        "provider_ms": 40.563628,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 8,
+        "end_sample": 7200,
+        "audio_end_ms": 450,
+        "invocation_start_ms": 450.512316,
+        "schedule_lateness_ms": 0.512316,
+        "provider_ms": 0.001905,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 9,
+        "end_sample": 8000,
+        "audio_end_ms": 500,
+        "invocation_start_ms": 500.666619,
+        "schedule_lateness_ms": 0.666619,
+        "provider_ms": 0.002796,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 10,
+        "end_sample": 8800,
+        "audio_end_ms": 550,
+        "invocation_start_ms": 550.81182,
+        "schedule_lateness_ms": 0.81182,
+        "provider_ms": 0.002137,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 11,
+        "end_sample": 9600,
+        "audio_end_ms": 600,
+        "invocation_start_ms": 602.772022,
+        "schedule_lateness_ms": 2.772022,
+        "provider_ms": 42.071436,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 12,
+        "end_sample": 10400,
+        "audio_end_ms": 650,
+        "invocation_start_ms": 650.979979,
+        "schedule_lateness_ms": 0.979979,
+        "provider_ms": 0.001967,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 13,
+        "end_sample": 11200,
+        "audio_end_ms": 700,
+        "invocation_start_ms": 703.40349,
+        "schedule_lateness_ms": 3.40349,
+        "provider_ms": 0.00199,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 14,
+        "end_sample": 12000,
+        "audio_end_ms": 750,
+        "invocation_start_ms": 750.533088,
+        "schedule_lateness_ms": 0.533088,
+        "provider_ms": 0.001865,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 15,
+        "end_sample": 12800,
+        "audio_end_ms": 800,
+        "invocation_start_ms": 800.667869,
+        "schedule_lateness_ms": 0.667869,
+        "provider_ms": 48.614015,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 16,
+        "end_sample": 13600,
+        "audio_end_ms": 850,
+        "invocation_start_ms": 850.375372,
+        "schedule_lateness_ms": 0.375372,
+        "provider_ms": 0.001582,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 17,
+        "end_sample": 14400,
+        "audio_end_ms": 900,
+        "invocation_start_ms": 900.548937,
+        "schedule_lateness_ms": 0.548937,
+        "provider_ms": 0.001446,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 18,
+        "end_sample": 15200,
+        "audio_end_ms": 950,
+        "invocation_start_ms": 950.709895,
+        "schedule_lateness_ms": 0.709895,
+        "provider_ms": 0.002033,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 19,
+        "end_sample": 16000,
+        "audio_end_ms": 1000,
+        "invocation_start_ms": 1000.820766,
+        "schedule_lateness_ms": 0.820766,
+        "provider_ms": 33.867524,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 20,
+        "end_sample": 16800,
+        "audio_end_ms": 1050,
+        "invocation_start_ms": 1050.826927,
+        "schedule_lateness_ms": 0.826927,
+        "provider_ms": 0.001905,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 21,
+        "end_sample": 17600,
+        "audio_end_ms": 1100,
+        "invocation_start_ms": 1100.050044,
+        "schedule_lateness_ms": 0.050044,
+        "provider_ms": 0.001943,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 22,
+        "end_sample": 18400,
+        "audio_end_ms": 1150,
+        "invocation_start_ms": 1150.209023,
+        "schedule_lateness_ms": 0.209023,
+        "provider_ms": 0.001642,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 23,
+        "end_sample": 19200,
+        "audio_end_ms": 1200,
+        "invocation_start_ms": 1200.334479,
+        "schedule_lateness_ms": 0.334479,
+        "provider_ms": 41.963507,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 24,
+        "end_sample": 20000,
+        "audio_end_ms": 1250,
+        "invocation_start_ms": 1250.459611,
+        "schedule_lateness_ms": 0.459611,
+        "provider_ms": 0.002437,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 25,
+        "end_sample": 20800,
+        "audio_end_ms": 1300,
+        "invocation_start_ms": 1300.112572,
+        "schedule_lateness_ms": 0.112572,
+        "provider_ms": 0.001542,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 26,
+        "end_sample": 21600,
+        "audio_end_ms": 1350,
+        "invocation_start_ms": 1350.331949,
+        "schedule_lateness_ms": 0.331949,
+        "provider_ms": 0.002177,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 27,
+        "end_sample": 22400,
+        "audio_end_ms": 1400,
+        "invocation_start_ms": 1400.459282,
+        "schedule_lateness_ms": 0.459282,
+        "provider_ms": 34.428919,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 28,
+        "end_sample": 23200,
+        "audio_end_ms": 1450,
+        "invocation_start_ms": 1451.043653,
+        "schedule_lateness_ms": 1.043653,
+        "provider_ms": 0.002083,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 29,
+        "end_sample": 24000,
+        "audio_end_ms": 1500,
+        "invocation_start_ms": 1500.162256,
+        "schedule_lateness_ms": 0.162256,
+        "provider_ms": 0.002365,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 30,
+        "end_sample": 24800,
+        "audio_end_ms": 1550,
+        "invocation_start_ms": 1550.331887,
+        "schedule_lateness_ms": 0.331887,
+        "provider_ms": 0.001977,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 31,
+        "end_sample": 25600,
+        "audio_end_ms": 1600,
+        "invocation_start_ms": 1600.71742,
+        "schedule_lateness_ms": 0.71742,
+        "provider_ms": 37.091912,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 32,
+        "end_sample": 26400,
+        "audio_end_ms": 1650,
+        "invocation_start_ms": 1650.983196,
+        "schedule_lateness_ms": 0.983196,
+        "provider_ms": 0.003007,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 33,
+        "end_sample": 27200,
+        "audio_end_ms": 1700,
+        "invocation_start_ms": 1700.229915,
+        "schedule_lateness_ms": 0.229915,
+        "provider_ms": 0.001778,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 34,
+        "end_sample": 28000,
+        "audio_end_ms": 1750,
+        "invocation_start_ms": 1750.385771,
+        "schedule_lateness_ms": 0.385771,
+        "provider_ms": 0.001854,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 35,
+        "end_sample": 28800,
+        "audio_end_ms": 1800,
+        "invocation_start_ms": 1800.651926,
+        "schedule_lateness_ms": 0.651926,
+        "provider_ms": 36.094482,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 36,
+        "end_sample": 29600,
+        "audio_end_ms": 1850,
+        "invocation_start_ms": 1850.907653,
+        "schedule_lateness_ms": 0.907653,
+        "provider_ms": 0.001912,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 37,
+        "end_sample": 30400,
+        "audio_end_ms": 1900,
+        "invocation_start_ms": 1901.046031,
+        "schedule_lateness_ms": 1.046031,
+        "provider_ms": 0.001637,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 38,
+        "end_sample": 31200,
+        "audio_end_ms": 1950,
+        "invocation_start_ms": 1950.215838,
+        "schedule_lateness_ms": 0.215838,
+        "provider_ms": 0.002385,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 39,
+        "end_sample": 32000,
+        "audio_end_ms": 2000,
+        "invocation_start_ms": 2000.380956,
+        "schedule_lateness_ms": 0.380956,
+        "provider_ms": 31.885339,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 40,
+        "end_sample": 32800,
+        "audio_end_ms": 2050,
+        "invocation_start_ms": 2050.426881,
+        "schedule_lateness_ms": 0.426881,
+        "provider_ms": 0.001633,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 41,
+        "end_sample": 33600,
+        "audio_end_ms": 2100,
+        "invocation_start_ms": 2100.585282,
+        "schedule_lateness_ms": 0.585282,
+        "provider_ms": 0.002176,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 42,
+        "end_sample": 34400,
+        "audio_end_ms": 2150,
+        "invocation_start_ms": 2150.76238,
+        "schedule_lateness_ms": 0.76238,
+        "provider_ms": 0.002292,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 43,
+        "end_sample": 35200,
+        "audio_end_ms": 2200,
+        "invocation_start_ms": 2200.924623,
+        "schedule_lateness_ms": 0.924623,
+        "provider_ms": 63.262267,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 44,
+        "end_sample": 36000,
+        "audio_end_ms": 2250,
+        "invocation_start_ms": 2264.195454,
+        "schedule_lateness_ms": 14.195454,
+        "provider_ms": 0.001103,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 45,
+        "end_sample": 36800,
+        "audio_end_ms": 2300,
+        "invocation_start_ms": 2300.355281,
+        "schedule_lateness_ms": 0.355281,
+        "provider_ms": 0.001991,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 46,
+        "end_sample": 37600,
+        "audio_end_ms": 2350,
+        "invocation_start_ms": 2350.532052,
+        "schedule_lateness_ms": 0.532052,
+        "provider_ms": 0.003072,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 47,
+        "end_sample": 38400,
+        "audio_end_ms": 2400,
+        "invocation_start_ms": 2400.710895,
+        "schedule_lateness_ms": 0.710895,
+        "provider_ms": 34.269407,
+        "provider_invocations": 1,
+        "revision_count": 0
+      },
+      {
+        "index": 48,
+        "end_sample": 39200,
+        "audio_end_ms": 2450,
+        "invocation_start_ms": 2450.091469,
+        "schedule_lateness_ms": 0.091469,
+        "provider_ms": 0.002297,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 49,
+        "end_sample": 40000,
+        "audio_end_ms": 2500,
+        "invocation_start_ms": 2500.256224,
+        "schedule_lateness_ms": 0.256224,
+        "provider_ms": 0.003222,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 50,
+        "end_sample": 40800,
+        "audio_end_ms": 2550,
+        "invocation_start_ms": 2550.411921,
+        "schedule_lateness_ms": 0.411921,
+        "provider_ms": 0.001951,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 51,
+        "end_sample": 41600,
+        "audio_end_ms": 2600,
+        "invocation_start_ms": 2600.569959,
+        "schedule_lateness_ms": 0.569959,
+        "provider_ms": 36.395962,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 52,
+        "end_sample": 42400,
+        "audio_end_ms": 2650,
+        "invocation_start_ms": 2650.065809,
+        "schedule_lateness_ms": 0.065809,
+        "provider_ms": 0.001997,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 53,
+        "end_sample": 43200,
+        "audio_end_ms": 2700,
+        "invocation_start_ms": 2700.229831,
+        "schedule_lateness_ms": 0.229831,
+        "provider_ms": 0.001387,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 54,
+        "end_sample": 44000,
+        "audio_end_ms": 2750,
+        "invocation_start_ms": 2751.771889,
+        "schedule_lateness_ms": 1.771889,
+        "provider_ms": 0.002376,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 55,
+        "end_sample": 44800,
+        "audio_end_ms": 2800,
+        "invocation_start_ms": 2800.937644,
+        "schedule_lateness_ms": 0.937644,
+        "provider_ms": 38.598793,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 56,
+        "end_sample": 45600,
+        "audio_end_ms": 2850,
+        "invocation_start_ms": 2850.664927,
+        "schedule_lateness_ms": 0.664927,
+        "provider_ms": 0.0017,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 57,
+        "end_sample": 46400,
+        "audio_end_ms": 2900,
+        "invocation_start_ms": 2903.782563,
+        "schedule_lateness_ms": 3.782563,
+        "provider_ms": 0.002216,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 58,
+        "end_sample": 47200,
+        "audio_end_ms": 2950,
+        "invocation_start_ms": 2950.92022,
+        "schedule_lateness_ms": 0.92022,
+        "provider_ms": 0.002011,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 59,
+        "end_sample": 48000,
+        "audio_end_ms": 3000,
+        "invocation_start_ms": 3001.031632,
+        "schedule_lateness_ms": 1.031632,
+        "provider_ms": 31.344192,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 60,
+        "end_sample": 48800,
+        "audio_end_ms": 3050,
+        "invocation_start_ms": 3050.53107,
+        "schedule_lateness_ms": 0.53107,
+        "provider_ms": 0.001314,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 61,
+        "end_sample": 49600,
+        "audio_end_ms": 3100,
+        "invocation_start_ms": 3100.665431,
+        "schedule_lateness_ms": 0.665431,
+        "provider_ms": 0.00258,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 62,
+        "end_sample": 50400,
+        "audio_end_ms": 3150,
+        "invocation_start_ms": 3150.815552,
+        "schedule_lateness_ms": 0.815552,
+        "provider_ms": 0.002274,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 63,
+        "end_sample": 51200,
+        "audio_end_ms": 3200,
+        "invocation_start_ms": 3200.773514,
+        "schedule_lateness_ms": 0.773514,
+        "provider_ms": 35.818359,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 64,
+        "end_sample": 52000,
+        "audio_end_ms": 3250,
+        "invocation_start_ms": 3250.757035,
+        "schedule_lateness_ms": 0.757035,
+        "provider_ms": 0.001588,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 65,
+        "end_sample": 52800,
+        "audio_end_ms": 3300,
+        "invocation_start_ms": 3300.947294,
+        "schedule_lateness_ms": 0.947294,
+        "provider_ms": 0.002612,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 66,
+        "end_sample": 53600,
+        "audio_end_ms": 3350,
+        "invocation_start_ms": 3350.048021,
+        "schedule_lateness_ms": 0.048021,
+        "provider_ms": 0.00185,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 67,
+        "end_sample": 54400,
+        "audio_end_ms": 3400,
+        "invocation_start_ms": 3400.176172,
+        "schedule_lateness_ms": 0.176172,
+        "provider_ms": 35.416878,
+        "provider_invocations": 1,
+        "revision_count": 1
+      },
+      {
+        "index": 68,
+        "end_sample": 55200,
+        "audio_end_ms": 3450,
+        "invocation_start_ms": 3451.776109,
+        "schedule_lateness_ms": 1.776109,
+        "provider_ms": 0.00147,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 69,
+        "end_sample": 56000,
+        "audio_end_ms": 3500,
+        "invocation_start_ms": 3500.953292,
+        "schedule_lateness_ms": 0.953292,
+        "provider_ms": 0.001948,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 70,
+        "end_sample": 56800,
+        "audio_end_ms": 3550,
+        "invocation_start_ms": 3550.050718,
+        "schedule_lateness_ms": 0.050718,
+        "provider_ms": 0.002584,
+        "provider_invocations": 0,
+        "revision_count": 0
+      },
+      {
+        "index": 71,
+        "end_sample": 57600,
+        "audio_end_ms": 3600,
+        "invocation_start_ms": 3600.231606,
+        "schedule_lateness_ms": 0.231606,
+        "provider_ms": 32.981585,
+        "provider_invocations": 1,
+        "revision_count": 0
+      }
+    ],
+    "revisions": [
+      {
+        "revision_id": 1,
+        "source_sample": 3200,
+        "source_ms": 200,
+        "wall_ms": 252.963747,
+        "unstable_text": "Can you?",
+        "delta": "Can you?",
+        "final": false
+      },
+      {
+        "revision_id": 2,
+        "source_sample": 6400,
+        "source_ms": 400,
+        "wall_ms": 441.356018,
+        "unstable_text": "Can you try.",
+        "delta": "Can you try.",
+        "final": false
+      },
+      {
+        "revision_id": 3,
+        "source_sample": 9600,
+        "source_ms": 600,
+        "wall_ms": 644.847197,
+        "unstable_text": "Can you check this?",
+        "delta": "Can you check this?",
+        "final": false
+      },
+      {
+        "revision_id": 4,
+        "source_sample": 12800,
+        "source_ms": 800,
+        "wall_ms": 849.286674,
+        "unstable_text": "Can you check the stats?",
+        "delta": "Can you check the stats?",
+        "final": false
+      },
+      {
+        "revision_id": 5,
+        "source_sample": 16000,
+        "source_ms": 1000,
+        "wall_ms": 1034.69292,
+        "unstable_text": "Can you check the status?",
+        "delta": "Can you check the status?",
+        "final": false
+      },
+      {
+        "revision_id": 6,
+        "source_sample": 19200,
+        "source_ms": 1200,
+        "wall_ms": 1242.302634,
+        "unstable_text": "Can you check the status of my?",
+        "delta": "Can you check the status of my?",
+        "final": false
+      },
+      {
+        "revision_id": 7,
+        "source_sample": 25600,
+        "source_ms": 1600,
+        "wall_ms": 1637.814277,
+        "unstable_text": "Can you check the status of my order?",
+        "delta": "Can you check the status of my order?",
+        "final": false
+      },
+      {
+        "revision_id": 8,
+        "source_sample": 28800,
+        "source_ms": 1800,
+        "wall_ms": 1836.751132,
+        "unstable_text": "Can you check the status of my order number?",
+        "delta": "Can you check the status of my order number?",
+        "final": false
+      },
+      {
+        "revision_id": 9,
+        "source_sample": 35200,
+        "source_ms": 2200,
+        "wall_ms": 2264.192323,
+        "unstable_text": "Can you check the status of my order number one?",
+        "delta": "Can you check the status of my order number one?",
+        "final": false
+      },
+      {
+        "revision_id": 10,
+        "source_sample": 41600,
+        "source_ms": 2600,
+        "wall_ms": 2636.971052,
+        "unstable_text": "Can you check the status of my order number one two?",
+        "delta": "Can you check the status of my order number one two?",
+        "final": false
+      },
+      {
+        "revision_id": 11,
+        "source_sample": 44800,
+        "source_ms": 2800,
+        "wall_ms": 2839.541092,
+        "unstable_text": "Can you check the status of my order number one two three?",
+        "delta": "Can you check the status of my order number one two three?",
+        "final": false
+      },
+      {
+        "revision_id": 12,
+        "source_sample": 48000,
+        "source_ms": 3000,
+        "wall_ms": 3032.379743,
+        "unstable_text": "Can you check the status of my order number one two three four?",
+        "delta": "Can you check the status of my order number one two three four?",
+        "final": false
+      },
+      {
+        "revision_id": 13,
+        "source_sample": 51200,
+        "source_ms": 3200,
+        "wall_ms": 3236.596646,
+        "unstable_text": "Can you check the status of my order number one two three four five.",
+        "delta": "Can you check the status of my order number one two three four five.",
+        "final": false
+      },
+      {
+        "revision_id": 14,
+        "source_sample": 54400,
+        "source_ms": 3400,
+        "wall_ms": 3435.597906,
+        "unstable_text": "Can you check the status of my order number one two three four five?",
+        "delta": "Can you check the status of my order number one two three four five?",
+        "final": false
+      },
+      {
+        "revision_id": 15,
+        "source_sample": 57600,
+        "source_ms": 3600,
+        "wall_ms": 3634.673304,
+        "stable_text": "Can you check the status of my order number one two three four five?",
+        "final": true
+      }
+    ],
+    "scheduler_ticks": 72,
+    "provider_invocations": 18,
+    "finalization_provider_invocations": 0,
+    "first_partial_source_ms": 200,
+    "first_partial_wall_ms": 252.963747,
+    "end_to_final_ms": 34.674573,
+    "finalization_provider_ms": 1.453331,
+    "elapsed_ms": 3634.674573,
+    "provider_compute_ms": 708.220358,
+    "provider_compute_rtf": 0.19672787722222224,
+    "mean_frame_provider_ms": 39.26483483333334,
+    "p95_frame_provider_ms": 63.262267,
+    "max_schedule_lateness_ms": 14.195454,
+    "final_transcript": "Can you check the status of my order number one two three four five?",
+    "reference_text": "Can you check the status of my order number 12345?",
+    "word_error_rate": 0.5
+  }
+}

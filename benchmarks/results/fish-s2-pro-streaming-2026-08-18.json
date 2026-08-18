@@ -1,0 +1,240 @@
+{
+  "schema_version": "0.1.0",
+  "created_at": "2026-08-18T03:48:35.559733065Z",
+  "runtime": {
+    "asr_transport": "qwen-asr-stateful-http",
+    "tts_transport": "fish-speech-native-http",
+    "tts_wav_sha256": "e8f4157bccbde55a018827a068341c11686fc15cef8f4b92e6ca015233c92193",
+    "wire_protocol": "unchanged-openai-realtime"
+  },
+  "tts": {
+    "case_id": "order-status-short",
+    "text": "Your order is on the way.",
+    "descriptor": {
+      "name": "fish-audio-streaming/fishaudio/s2-pro",
+      "version": "fish-speech-2.0.0",
+      "capabilities": {
+        "cancellation": true,
+        "pcm16_output": true,
+        "streaming_output": true
+      }
+    },
+    "first_audio_ms": 7990.89122,
+    "elapsed_ms": 8266.84533,
+    "output_duration_ms": 2275.5416666666665,
+    "real_time_factor": 3.6329131877025618,
+    "output_bytes": 109226,
+    "output_sha256": "ad24cb3854a335b695745d4c8c150495fac00ce77346d6a0bce3047cf167e93b",
+    "chunks": [
+      {
+        "sequence": 1,
+        "arrival_ms": 7990.891749,
+        "audio_bytes": 4456,
+        "sample_offset": 0,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 2,
+        "arrival_ms": 7990.949926,
+        "audio_bytes": 4458,
+        "sample_offset": 2228,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 3,
+        "arrival_ms": 7991.013355,
+        "audio_bytes": 4458,
+        "sample_offset": 4457,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 4,
+        "arrival_ms": 7991.095162,
+        "audio_bytes": 4458,
+        "sample_offset": 6686,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 5,
+        "arrival_ms": 7991.157741,
+        "audio_bytes": 4460,
+        "sample_offset": 8915,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 6,
+        "arrival_ms": 7991.218395,
+        "audio_bytes": 4458,
+        "sample_offset": 11145,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 7,
+        "arrival_ms": 7991.284869,
+        "audio_bytes": 4458,
+        "sample_offset": 13374,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 8,
+        "arrival_ms": 7991.346346,
+        "audio_bytes": 4458,
+        "sample_offset": 15603,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 9,
+        "arrival_ms": 7991.428644,
+        "audio_bytes": 4458,
+        "sample_offset": 17832,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 10,
+        "arrival_ms": 7991.500047,
+        "audio_bytes": 4458,
+        "sample_offset": 20061,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 11,
+        "arrival_ms": 7991.551312,
+        "audio_bytes": 4458,
+        "sample_offset": 22290,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 12,
+        "arrival_ms": 7991.607744,
+        "audio_bytes": 4458,
+        "sample_offset": 24519,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 13,
+        "arrival_ms": 7991.68747,
+        "audio_bytes": 4458,
+        "sample_offset": 26748,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 14,
+        "arrival_ms": 7991.738055,
+        "audio_bytes": 4460,
+        "sample_offset": 28977,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 15,
+        "arrival_ms": 7991.790868,
+        "audio_bytes": 4458,
+        "sample_offset": 31207,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 16,
+        "arrival_ms": 7991.877435,
+        "audio_bytes": 4458,
+        "sample_offset": 33436,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 17,
+        "arrival_ms": 7991.931844,
+        "audio_bytes": 4458,
+        "sample_offset": 35665,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 18,
+        "arrival_ms": 7991.982551,
+        "audio_bytes": 4458,
+        "sample_offset": 37894,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 19,
+        "arrival_ms": 7992.039896,
+        "audio_bytes": 4458,
+        "sample_offset": 40123,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 20,
+        "arrival_ms": 7992.121955,
+        "audio_bytes": 4458,
+        "sample_offset": 42352,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 21,
+        "arrival_ms": 7992.179847,
+        "audio_bytes": 4458,
+        "sample_offset": 44581,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 22,
+        "arrival_ms": 7992.324682,
+        "audio_bytes": 4460,
+        "sample_offset": 46810,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 23,
+        "arrival_ms": 7992.393572,
+        "audio_bytes": 4458,
+        "sample_offset": 49040,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 24,
+        "arrival_ms": 7992.44418,
+        "audio_bytes": 4458,
+        "sample_offset": 51269,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 25,
+        "arrival_ms": 7992.4688,
+        "audio_bytes": 2228,
+        "sample_offset": 53498,
+        "sample_rate_hz": 24000,
+        "final": false
+      },
+      {
+        "sequence": 26,
+        "arrival_ms": 8266.840438,
+        "audio_bytes": 2,
+        "sample_offset": 54612,
+        "sample_rate_hz": 24000,
+        "final": true
+      }
+    ],
+    "output_sample_rate_hz": 24000
+  }
+}
