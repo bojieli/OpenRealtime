@@ -180,9 +180,13 @@ The official FDB v3 evaluator normally falls back to exact argument matching
 when a GPT-4o call fails. The full run therefore uses a fail-closed harness
 around the pinned `evaluate_all_v2(use_llm=True)` function. It calculates the
 judge opportunities from the exact scenario/result population, records only
-valid JSON judge responses, retains request/response hashes and usage, and
-requires every expected call before writing the GPT-4o report. The separate
-exact evaluation remains the unmodified official CLI output.
+valid JSON judge responses, and requires every expected call before writing
+the GPT-4o report. Each successful-call receipt binds the complete request,
+raw response, parsed response, unique response ID, returned GPT-4o model, and
+token usage. The judge client is pinned to `https://api.openai.com/v1`, so a
+process-level SDK endpoint override cannot silently redirect this independent
+evaluation to the local adapter. The separate exact evaluation remains the
+unmodified official CLI output.
 
 The three external runners also create a `run-context.json` sidecar before
 their first adapter call. Launch refuses a dirty OpenRealtime worktree. The

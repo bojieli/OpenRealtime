@@ -15,6 +15,9 @@ from types import SimpleNamespace
 from typing import Any
 
 
+OPENAI_API_ORIGIN = "https://api.openai.com/v1"
+
+
 class StrictJudgeError(RuntimeError):
     """The official judge did not complete every expected valid call."""
 
@@ -116,7 +119,10 @@ class StrictCompletions:
     def create(self, **kwargs: Any) -> Any:
         response = self.completions.create(**kwargs)
         try:
-            content = response.choices[0].message.content.strip()
+            raw_content = response.choices[0].message.content
+            if not isinstance(raw_content, str):
+                raise ValueError("judge response content is not text")
+            content = raw_content.strip()
             if content.startswith("```"):
                 lines = content.splitlines()[1:]
                 if lines and lines[-1].strip().startswith("```"):
@@ -125,27 +131,58 @@ class StrictCompletions:
             parsed = json.loads(content)
             if not isinstance(parsed.get("correct"), bool) or not isinstance(
                 parsed.get("explanation"), str
-            ):
+            ) or not parsed["explanation"].strip():
                 raise ValueError(
-                    "judge response lacks boolean correct and string explanation fields"
+                    "judge response lacks boolean correct and nonempty explanation fields"
                 )
         except (AttributeError, IndexError, TypeError, json.JSONDecodeError, ValueError) as error:
             raise StrictJudgeError(f"invalid GPT-4o judge response: {error}") from error
-        messages = kwargs.get("messages", [])
-        request_json = json.dumps(messages, sort_keys=True, ensure_ascii=False)
+        request_json = json.dumps(
+            kwargs,
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
         usage = getattr(response, "usage", None)
         if hasattr(usage, "model_dump"):
             usage = usage.model_dump(mode="json")
         elif usage is not None and not isinstance(usage, dict):
             usage = None
+        response_id = getattr(response, "id", None)
+        response_model = getattr(response, "model", None)
+        if not isinstance(response_id, str) or not response_id:
+            raise StrictJudgeError("GPT-4o judge response has no response ID")
+        if not isinstance(response_model, str) or not (
+            response_model == "gpt-4o" or response_model.startswith("gpt-4o-")
+        ):
+            raise StrictJudgeError(
+                f"GPT-4o judge returned unexpected model {response_model!r}"
+            )
+        if (
+            not isinstance(usage, dict)
+            or not isinstance(usage.get("total_tokens"), int)
+            or isinstance(usage["total_tokens"], bool)
+            or usage["total_tokens"] <= 0
+        ):
+            raise StrictJudgeError("GPT-4o judge response has no valid token usage")
         self.records.append(
             {
                 "sequence": len(self.records),
                 "requested_model": kwargs.get("model"),
-                "response_id": getattr(response, "id", None),
-                "response_model": getattr(response, "model", None),
+                "response_id": response_id,
+                "response_model": response_model,
                 "request_sha256": sha256_text(request_json),
-                "response_sha256": sha256_text(content),
+                "response_sha256": sha256_text(raw_content),
+                "parsed_response_sha256": sha256_text(
+                    json.dumps(
+                        parsed,
+                        sort_keys=True,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    )
+                ),
                 "usage": usage,
             }
         )
@@ -182,7 +219,9 @@ def main() -> int:
     except ImportError as error:
         raise StrictJudgeError("the OpenAI SDK is required for the strict judge") from error
     records: list[dict[str, Any]] = []
-    module._openai_client = strict_client(OpenAI(), records)
+    module._openai_client = strict_client(
+        OpenAI(base_url=OPENAI_API_ORIGIN), records
+    )
     report = module.evaluate_all_v2(benchmark, entries, use_llm=True)
     if len(records) != expected_calls["total"]:
         raise StrictJudgeError(
@@ -190,12 +229,13 @@ def main() -> int:
         )
     atomic_json(args.output.resolve(), report)
     evidence = {
-        "schema_version": "1.0.0",
+        "schema_version": "1.1.0",
         "status": "complete",
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "scenarios": len(entries),
         "expected_calls": expected_calls,
         "successful_valid_calls": len(records),
+        "api_origin": OPENAI_API_ORIGIN,
         "evaluator": {
             "path": str(evaluator_path),
             "sha256": args.evaluator_sha256,

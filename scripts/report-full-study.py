@@ -52,6 +52,14 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def valid_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 def read_json(path: Path, label: str) -> dict[str, Any]:
     if not path.is_file():
         raise StudyIncompleteError(f"{label} is missing: {path}")
@@ -637,9 +645,14 @@ def validate_fdbv3_judge_evidence(
 ) -> tuple[Path, dict[str, Any]]:
     path = resolve(root, path_value)
     evidence = read_json(path, "FDBv3 GPT-4o call evidence")
-    require_equal(evidence.get("schema_version"), "1.0.0", "FDBv3 judge evidence schema")
+    require_equal(evidence.get("schema_version"), "1.1.0", "FDBv3 judge evidence schema")
     require_equal(evidence.get("status"), "complete", "FDBv3 judge evidence status")
     require_equal(evidence.get("scenarios"), scenarios, "FDBv3 judge evidence scenarios")
+    require_equal(
+        evidence.get("api_origin"),
+        "https://api.openai.com/v1",
+        "FDBv3 judge API origin",
+    )
     expected = evidence.get("expected_calls", {})
     require(
         all(
@@ -672,6 +685,43 @@ def validate_fdbv3_judge_evidence(
     require(
         all(call.get("requested_model") == "gpt-4o" for call in calls),
         "FDBv3 judge used a model other than gpt-4o",
+    )
+    response_ids: list[str] = []
+    for index, call in enumerate(calls):
+        call_label = f"FDBv3 judge call {index}"
+        response_id = call.get("response_id")
+        require(
+            isinstance(response_id, str) and bool(response_id),
+            f"{call_label} has no response ID",
+        )
+        response_ids.append(response_id)
+        response_model = call.get("response_model")
+        require(
+            isinstance(response_model, str)
+            and (
+                response_model == "gpt-4o"
+                or response_model.startswith("gpt-4o-")
+            ),
+            f"{call_label} has an invalid response model",
+        )
+        for field in (
+            "request_sha256",
+            "response_sha256",
+            "parsed_response_sha256",
+        ):
+            require(valid_sha256(call.get(field)), f"{call_label} has an invalid {field}")
+        usage = call.get("usage")
+        require(
+            isinstance(usage, dict)
+            and isinstance(usage.get("total_tokens"), int)
+            and not isinstance(usage["total_tokens"], bool)
+            and usage["total_tokens"] > 0,
+            f"{call_label} has invalid token usage",
+        )
+    require_equal(
+        len(set(response_ids)),
+        len(response_ids),
+        "FDBv3 judge unique response IDs",
     )
     require_equal(
         evidence.get("evaluator", {}).get("sha256"),

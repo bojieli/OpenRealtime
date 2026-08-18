@@ -270,16 +270,35 @@ class Fixture:
         write_json(
             fdbv3_judge_evidence,
             {
-                "schema_version": "1.0.0",
+                "schema_version": "1.1.0",
                 "status": "complete",
                 "scenarios": 1,
+                "api_origin": "https://api.openai.com/v1",
                 "expected_calls": {"argument": 1, "response": 1, "total": 2},
                 "successful_valid_calls": 2,
                 "evaluator": {"sha256": "5320"},
                 "evaluation": {"sha256": REPORT.sha256_file(fdbv3_judge)},
                 "calls": [
-                    {"sequence": 0, "requested_model": "gpt-4o"},
-                    {"sequence": 1, "requested_model": "gpt-4o"},
+                    {
+                        "sequence": 0,
+                        "requested_model": "gpt-4o",
+                        "response_id": "response-0",
+                        "response_model": "gpt-4o-2024-08-06",
+                        "request_sha256": "1" * 64,
+                        "response_sha256": "2" * 64,
+                        "parsed_response_sha256": "3" * 64,
+                        "usage": {"total_tokens": 10},
+                    },
+                    {
+                        "sequence": 1,
+                        "requested_model": "gpt-4o",
+                        "response_id": "response-1",
+                        "response_model": "gpt-4o-2024-08-06",
+                        "request_sha256": "4" * 64,
+                        "response_sha256": "5" * 64,
+                        "parsed_response_sha256": "6" * 64,
+                        "usage": {"total_tokens": 11},
+                    },
                 ],
             },
         )
@@ -549,6 +568,14 @@ class FullStudyTest(unittest.TestCase):
         evidence["successful_valid_calls"] = 1
         write_json(path, evidence)
         with self.assertRaisesRegex(REPORT.StudyIncompleteError, "successful judge"):
+            self.report()
+
+    def test_rejects_an_incomplete_official_judge_receipt(self) -> None:
+        path = self.fixture.paths["fdbv3_judge_evidence"]
+        evidence = json.loads(path.read_text(encoding="utf-8"))
+        evidence["calls"][0]["response_sha256"] = None
+        write_json(path, evidence)
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "response_sha256"):
             self.report()
 
     def test_rejects_an_unreported_fdbench_exclusion(self) -> None:

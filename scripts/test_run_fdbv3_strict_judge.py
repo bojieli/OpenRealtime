@@ -43,6 +43,8 @@ class StrictCompletionTest(unittest.TestCase):
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["requested_model"], "gpt-4o")
         self.assertEqual(len(records[0]["response_sha256"]), 64)
+        self.assertEqual(len(records[0]["parsed_response_sha256"]), 64)
+        self.assertEqual(records[0]["usage"]["total_tokens"], 10)
 
     def test_rejects_invalid_json_without_recording_success(self) -> None:
         records = []
@@ -55,6 +57,15 @@ class StrictCompletionTest(unittest.TestCase):
         records = []
         completion = JUDGE.StrictCompletions(
             FakeCompletions('{"correct":true}'), records
+        )
+        with self.assertRaises(JUDGE.StrictJudgeError):
+            completion.create(model="gpt-4o", messages=[])
+        self.assertEqual(records, [])
+
+    def test_rejects_an_empty_explanation(self) -> None:
+        records = []
+        completion = JUDGE.StrictCompletions(
+            FakeCompletions('{"correct":true,"explanation":""}'), records
         )
         with self.assertRaises(JUDGE.StrictJudgeError):
             completion.create(model="gpt-4o", messages=[])
