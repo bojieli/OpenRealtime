@@ -234,16 +234,17 @@ index 03eb2bb..a48816c 100644
 +            base_url: Explicit OpenAI Realtime-compatible WebSocket endpoint.
 +                This is intended for local or self-hosted implementations and
 +                takes precedence over provider-specific environment defaults.
-@@ -139 +143,11 @@ class OpenAIRealtimeProvider:
+@@ -139 +143,12 @@ class OpenAIRealtimeProvider:
 -        if self.model.startswith(PINE_MODEL_PREFIX):
++        base_url = base_url or os.environ.get("OPENAI_REALTIME_BASE_URL")
 +        if base_url is not None:
 +            self.base_url = base_url.rstrip("/")
 +            if not self.base_url.startswith(("ws://", "wss://")):
 +                raise ValueError("OpenAI Realtime base URL must use ws:// or wss://")
-+            self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
++            self.api_key = api_key or os.environ.get("OPENAI_REALTIME_API_KEY")
 +            if not self.api_key:
 +                raise ValueError(
-+                    "OpenAI-compatible API key not provided. Set OPENAI_API_KEY "
++                    "OpenAI-compatible API key not provided. Set OPENAI_REALTIME_API_KEY "
 +                    "even when the local endpoint accepts a development token."
 +                )
 +        elif self.model.startswith(PINE_MODEL_PREFIX):
@@ -386,7 +387,7 @@ index 591da87..bddf1f4 100644
 +from tau2.voice.audio_native.adapter import create_adapter
 @@ -15,0 +17,37 @@ def test_openai_model_uses_openai_environment(monkeypatch):
 +def test_explicit_base_url_uses_standard_openai_credentials(monkeypatch):
-+    monkeypatch.setenv("OPENAI_API_KEY", "local-development-token")
++    monkeypatch.setenv("OPENAI_REALTIME_API_KEY", "local-development-token")
 +    monkeypatch.setenv("PINE_API_KEY", "pine-key")
 +
 +    provider = OpenAIRealtimeProvider(
@@ -399,7 +400,7 @@ index 591da87..bddf1f4 100644
 +
 +
 +def test_explicit_base_url_requires_websocket_scheme(monkeypatch):
-+    monkeypatch.setenv("OPENAI_API_KEY", "local-development-token")
++    monkeypatch.setenv("OPENAI_REALTIME_API_KEY", "local-development-token")
 +
 +    with pytest.raises(ValueError, match="ws:// or wss://"):
 +        OpenAIRealtimeProvider(
@@ -409,7 +410,7 @@ index 591da87..bddf1f4 100644
 +
 +
 +def test_adapter_factory_propagates_explicit_base_url(monkeypatch):
-+    monkeypatch.setenv("OPENAI_API_KEY", "local-development-token")
++    monkeypatch.setenv("OPENAI_REALTIME_API_KEY", "local-development-token")
 +
 +    adapter, model = create_adapter(
 +        provider="openai",
