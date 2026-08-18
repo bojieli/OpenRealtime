@@ -166,7 +166,8 @@ case "${action}" in
         --fast-provider "${fast_provider}" \
         --fast-model "${OPENREALTIME_FAST_MODEL:-}" \
         --fast-endpoint "${OPENREALTIME_FAST_ENDPOINT:-}" \
-        --slow-effort "${OPENREALTIME_SLOW_EFFORT:-high}"
+        --slow-effort "${OPENREALTIME_SLOW_EFFORT:-high}" \
+        --slow-context "${OPENREALTIME_SLOW_CONTEXT_POLICY:-canonical}"
     ;;
   stop)
     stop_process gateway

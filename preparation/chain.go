@@ -24,6 +24,7 @@ import (
 type ChainStage struct {
 	Provider             continuation.Provider
 	Invocation           continuation.Invocation
+	Projection           continuation.TrajectoryProjection
 	MinimumStartInterval time.Duration
 }
 
@@ -192,6 +193,7 @@ func NewChainManager(config ChainConfig) (*ChainManager, error) {
 		}
 		stages[index] = ChainStage{
 			Provider: stage.Provider, Invocation: cloneInvocation(stage.Invocation),
+			Projection:           stage.Projection,
 			MinimumStartInterval: stage.MinimumStartInterval,
 		}
 	}
@@ -326,9 +328,17 @@ func (manager *ChainManager) fingerprint(input ChainInput) (string, error) {
 	for index, stage := range manager.stages {
 		invocation := cloneInvocation(stage.Invocation)
 		invocation.SourceRevision = input.SourceRevision
+		projected := cloneSnapshot(input.Trajectory)
+		if stage.Projection != nil {
+			var projectionErr error
+			projected, projectionErr = stage.Projection(projected)
+			if projectionErr != nil {
+				return "", fmt.Errorf("project preparation chain stage %d: %w", index, projectionErr)
+			}
+		}
 		value, err := Fingerprint(Input{Request: continuation.Request{
 			Descriptor: stage.Provider.Descriptor(), Invocation: invocation,
-			Trajectory: cloneSnapshot(input.Trajectory),
+			Trajectory: projected,
 		}})
 		if err != nil {
 			return "", fmt.Errorf("fingerprint preparation chain stage %d: %w", index, err)
@@ -441,7 +451,13 @@ func (manager *ChainManager) run(ctx context.Context, state *chainState) {
 		}
 		invocation := cloneInvocation(configured.Invocation)
 		invocation.SourceRevision = state.input.SourceRevision
-		result, runErr := runner.Run(ctx, capture, invocation, nil)
+		var result continuation.RunResult
+		var runErr error
+		if configured.Projection == nil {
+			result, runErr = runner.Run(ctx, capture, invocation, nil)
+		} else {
+			result, runErr = runner.RunProjected(ctx, capture, invocation, configured.Projection, nil)
+		}
 		ended := manager.clock()
 		outcome := "completed"
 		if runErr != nil || result.Interrupted {

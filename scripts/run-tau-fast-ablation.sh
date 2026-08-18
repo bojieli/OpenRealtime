@@ -41,6 +41,7 @@ restore_local_fast() {
   if [[ "${restored}" == false ]]; then
     "${repository_root}/scripts/local-cascade.sh" stop
     OPENREALTIME_FAST_PROVIDER=vllm \
+    OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
       "${repository_root}/scripts/local-cascade.sh" start
     restored=true
   fi
@@ -53,6 +54,7 @@ trap cleanup EXIT
 "${repository_root}/scripts/local-cascade.sh" stop
 OPENREALTIME_FAST_PROVIDER=gemini \
 OPENREALTIME_FAST_MODEL=gemini-3.5-flash \
+OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
   "${repository_root}/scripts/local-cascade.sh" start
 
 TAU_VOICE_MATRIX="${candidate_matrix}" \

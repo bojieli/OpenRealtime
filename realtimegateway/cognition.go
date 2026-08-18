@@ -92,18 +92,20 @@ type cognitionCallbacks interface {
 }
 
 type cognitionRuntime struct {
-	store      *trajectory.Store
-	fast       continuation.Provider
-	slow       continuation.Provider
-	callbacks  cognitionCallbacks
-	fastTokens int
-	slowTokens int
-	maxSlow    int
-	slowPace   time.Duration
-	now        func() uint64
-	nextID     func(string) string
-	preparedMu sync.Mutex
-	prepared   map[uint64]*preparation.CommittedChain
+	store       *trajectory.Store
+	fast        continuation.Provider
+	slow        continuation.Provider
+	callbacks   cognitionCallbacks
+	fastTokens  int
+	slowTokens  int
+	maxSlow     int
+	slowPace    time.Duration
+	slowPolicy  interleave.SlowContextPolicy
+	slowProject continuation.TrajectoryProjection
+	now         func() uint64
+	nextID      func(string) string
+	preparedMu  sync.Mutex
+	prepared    map[uint64]*preparation.CommittedChain
 }
 
 type cognitionConfig struct {
@@ -115,6 +117,7 @@ type cognitionConfig struct {
 	SlowTokens int
 	MaxSlow    int
 	SlowPace   time.Duration
+	SlowPolicy interleave.SlowContextPolicy
 	Now        func() uint64
 	NextID     func(string) string
 }
@@ -140,10 +143,18 @@ func newCognitionRuntime(config cognitionConfig) (*cognitionRuntime, error) {
 		var sequence atomic.Uint64
 		config.NextID = func(prefix string) string { return fmt.Sprintf("%s-%d", prefix, sequence.Add(1)) }
 	}
+	if config.SlowPolicy == "" {
+		config.SlowPolicy = interleave.SlowContextCanonical
+	}
+	slowProject, err := interleave.SlowContextProjection(config.SlowPolicy)
+	if err != nil {
+		return nil, err
+	}
 	return &cognitionRuntime{
 		store: config.Store, fast: config.Fast, slow: config.Slow, callbacks: config.Callbacks,
 		fastTokens: config.FastTokens, slowTokens: config.SlowTokens, maxSlow: config.MaxSlow,
 		slowPace: config.SlowPace, now: config.Now, nextID: config.NextID,
+		slowPolicy: config.SlowPolicy, slowProject: slowProject,
 		prepared: make(map[uint64]*preparation.CommittedChain),
 	}, nil
 }
@@ -164,7 +175,7 @@ func (runtime *cognitionRuntime) NewPreparation() (*preparedTurn, error) {
 			{Provider: runtime.slow, Invocation: continuation.Invocation{
 				Instruction: slowInstruction, Capabilities: capabilities, Tools: tools,
 				MaxOutputTokens: runtime.slowTokens,
-			}, MinimumStartInterval: runtime.slowPace},
+			}, Projection: runtime.slowProject, MinimumStartInterval: runtime.slowPace},
 		},
 		RetainReasoning: true,
 	})
@@ -237,7 +248,8 @@ func (runtime *cognitionRuntime) newProcessor(sourceRevision uint64) (*interleav
 		ToolCatalog: catalog, AgentInstruction: semantics.Instruction,
 		FastMaxOutputTokens: runtime.fastTokens, SlowMaxOutputTokens: runtime.slowTokens,
 		MaxSlowInvocations: runtime.maxSlow, RetainReasoning: true,
-		Now: runtime.now, NextID: runtime.nextID,
+		SlowContextPolicy: runtime.slowPolicy,
+		Now:               runtime.now, NextID: runtime.nextID,
 	})
 	if err != nil {
 		return nil, err

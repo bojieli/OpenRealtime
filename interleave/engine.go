@@ -75,6 +75,7 @@ type Config struct {
 	SlowMaxOutputTokens int
 	MaxSlowInvocations  int
 	RetainReasoning     bool
+	SlowContextPolicy   SlowContextPolicy
 	Now                 func() uint64
 	NextID              func(prefix string) string
 }
@@ -95,6 +96,7 @@ type Engine struct {
 	now          func() uint64
 	nextID       func(string) string
 	runner       *continuation.Runner
+	slowProject  continuation.TrajectoryProjection
 }
 
 // New creates an engine and rejects phase or tool-authority configurations
@@ -151,6 +153,9 @@ func New(config Config) (*Engine, error) {
 	if config.SlowInstruction == "" {
 		config.SlowInstruction = DefaultSlowInstruction
 	}
+	if config.SlowContextPolicy == "" {
+		config.SlowContextPolicy = SlowContextCanonical
+	}
 	fastPrompt := composeInstruction(config.AgentInstruction, config.FastInstruction)
 	slowPrompt := composeInstruction(config.AgentInstruction, config.SlowInstruction)
 	if config.Now == nil {
@@ -177,13 +182,17 @@ func New(config Config) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
+	slowProject, err := SlowContextProjection(config.SlowContextPolicy)
+	if err != nil {
+		return nil, err
+	}
 	return &Engine{
 		store: config.Store, fast: config.FastProvider, slow: config.SlowProvider,
 		tools: config.Tools, catalog: catalog, capabilities: capabilities,
 		fastPrompt: fastPrompt, slowPrompt: slowPrompt,
 		fastTokens: config.FastMaxOutputTokens, slowTokens: config.SlowMaxOutputTokens,
 		maxSlow: config.MaxSlowInvocations, now: config.Now, nextID: config.NextID,
-		runner: runner,
+		runner: runner, slowProject: slowProject,
 	}, nil
 }
 
@@ -418,11 +427,18 @@ func (engine *Engine) runSlow(ctx context.Context, request Request, observer Str
 
 func (engine *Engine) runSlowOnce(ctx context.Context, request Request, observer StreamObserver) (continuation.RunResult, error, error) {
 	slowObserver, slowObserverError := phaseObserver(trajectory.PhaseSlow, engine.slow.Descriptor(), observer)
-	result, runErr := engine.runner.Run(ctx, engine.slow, continuation.Invocation{
+	invocation := continuation.Invocation{
 		Instruction: engine.slowPrompt, SourceRevision: request.SourceRevision,
 		Capabilities: cloneCapabilities(engine.capabilities), Tools: engine.toolDefinitions(),
 		MaxOutputTokens: engine.slowTokens,
-	}, slowObserver)
+	}
+	var result continuation.RunResult
+	var runErr error
+	if engine.slowProject == nil {
+		result, runErr = engine.runner.Run(ctx, engine.slow, invocation, slowObserver)
+	} else {
+		result, runErr = engine.runner.RunProjected(ctx, engine.slow, invocation, engine.slowProject, slowObserver)
+	}
 	return result, slowObserverError(), runErr
 }
 

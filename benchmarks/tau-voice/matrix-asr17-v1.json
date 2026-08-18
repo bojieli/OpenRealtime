@@ -39,6 +39,7 @@
     "caller_speech": "fishaudio/s2-pro on the same local GPU through the separately named tau Fish backend"
   },
   "runtime_requirements": {
+    "slow_context": "canonical",
     "requires_local_fast": true,
     "asr": {
       "model": "Qwen/Qwen3-ASR-1.7B",

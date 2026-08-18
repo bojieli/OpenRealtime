@@ -12,6 +12,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/interleave"
 	"github.com/coder/websocket"
 )
 
@@ -30,6 +31,7 @@ type Config struct {
 	SlowMaxTokens      int
 	MaxSlowInvocations int
 	SlowPreparationMin time.Duration
+	SlowContextPolicy  interleave.SlowContextPolicy
 	MaxAudioFrameBytes int
 	MaxPendingEvents   int
 	ValidateWire       bool
@@ -64,6 +66,12 @@ func New(config Config) (*Server, error) {
 	if config.MaxPendingEvents < 2 {
 		return nil, errors.New("Realtime gateway requires at least two pending event slots")
 	}
+	if config.SlowContextPolicy == "" {
+		config.SlowContextPolicy = interleave.SlowContextCanonical
+	}
+	if _, err := interleave.ParseSlowContextPolicy(string(config.SlowContextPolicy)); err != nil {
+		return nil, err
+	}
 	return &Server{config: config}, nil
 }
 
@@ -77,9 +85,10 @@ func (server *Server) Handler() http.Handler {
 				"model":             server.config.ASRModel,
 				"provider_chunk_ms": float64(server.config.ASRProviderChunk) / float64(time.Millisecond),
 			},
-			"fast":   server.config.FastProvider.Descriptor(),
-			"slow":   server.config.SlowProvider.Descriptor(),
-			"speech": server.config.SpeechProvider.Descriptor(),
+			"slow_context": server.config.SlowContextPolicy,
+			"fast":         server.config.FastProvider.Descriptor(),
+			"slow":         server.config.SlowProvider.Descriptor(),
+			"speech":       server.config.SpeechProvider.Descriptor(),
 		})
 	})
 	mux.Handle("GET /v1/realtime", server)

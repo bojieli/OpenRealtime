@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -18,6 +19,12 @@ import (
 // speech planner can use assistant deltas for speculative TTS while the
 // trajectory remains authoritative at completion.
 type StreamObserver func(Event) error
+
+// TrajectoryProjection derives model-visible experimental context from an
+// immutable canonical prefix. It cannot change the store or the version used
+// for the eventual compare-and-append commit. Production uses nil (the exact
+// canonical prefix); non-nil projections exist only for registered controls.
+type TrajectoryProjection func(trajectory.Snapshot) (trajectory.Snapshot, error)
 
 // Runner coordinates one provider invocation and atomically appends its output
 // at the next safe point.
@@ -88,6 +95,32 @@ func (runner *Runner) Run(
 	invocation Invocation,
 	observer StreamObserver,
 ) (RunResult, error) {
+	return runner.run(ctx, provider, invocation, nil, observer)
+}
+
+// RunProjected invokes a provider over an explicit experimental projection,
+// while still committing against the exact canonical version captured before
+// inference. A projection therefore cannot create an alternate memory owner.
+func (runner *Runner) RunProjected(
+	ctx context.Context,
+	provider Provider,
+	invocation Invocation,
+	projection TrajectoryProjection,
+	observer StreamObserver,
+) (RunResult, error) {
+	if projection == nil {
+		return RunResult{}, errors.New("projected continuation requires a projection")
+	}
+	return runner.run(ctx, provider, invocation, projection, observer)
+}
+
+func (runner *Runner) run(
+	ctx context.Context,
+	provider Provider,
+	invocation Invocation,
+	projection TrajectoryProjection,
+	observer StreamObserver,
+) (RunResult, error) {
 	if provider == nil {
 		return RunResult{}, errors.New("continuation provider is required")
 	}
@@ -102,6 +135,24 @@ func (runner *Runner) Run(
 
 	invocationID := runner.nextID("invocation")
 	before := runner.store.Snapshot()
+	providerPrefix := before
+	if projection != nil {
+		projectionInput, err := runner.store.Prefix(before.Version)
+		if err != nil {
+			return RunResult{InvocationID: invocationID, StartVersion: before.Version}, fmt.Errorf("clone continuation prefix for projection: %w", err)
+		}
+		providerPrefix, err = projection(projectionInput)
+		if err != nil {
+			return RunResult{InvocationID: invocationID, StartVersion: before.Version}, fmt.Errorf("project continuation trajectory: %w", err)
+		}
+		if providerPrefix.Version != before.Version {
+			return RunResult{InvocationID: invocationID, StartVersion: before.Version}, errors.New("trajectory projection changed the canonical version")
+		}
+		if err := validateProjection(before, providerPrefix); err != nil {
+			return RunResult{InvocationID: invocationID, StartVersion: before.Version}, err
+		}
+		providerPrefix.Items = slices.Clone(providerPrefix.Items)
+	}
 	instruction := trajectory.Item{
 		ID: runner.nextID("instruction"), Kind: trajectory.KindInstruction,
 		MonotonicNS: runner.now(), Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
@@ -114,8 +165,15 @@ func (runner *Runner) Run(
 	// The instruction is visible to the provider as the next trajectory item,
 	// but it is not published separately. Instruction and model output commit as
 	// one version-checked safe-point transaction after generation completes.
-	prefix := before
-	prefix.Items = append(prefix.Items, instruction)
+	visibleInstruction := instruction
+	if projection != nil {
+		visibleInstruction.CausalParentIDs = nil
+		if len(providerPrefix.Items) > 0 {
+			visibleInstruction.CausalParentIDs = []string{providerPrefix.Items[len(providerPrefix.Items)-1].ID}
+		}
+	}
+	prefix := providerPrefix
+	prefix.Items = append(prefix.Items, visibleInstruction)
 	prefix.Version++
 	request := Request{
 		InvocationID: invocationID, Descriptor: descriptor,
@@ -198,6 +256,56 @@ func (runner *Runner) Run(
 	}
 	result.EndVersion = runner.store.Snapshot().Version
 	return result, providerErr
+}
+
+func validateProjection(canonical, projected trajectory.Snapshot) error {
+	canonicalByID := make(map[string]trajectory.Item, len(canonical.Items))
+	canonicalOrder := make(map[string]int, len(canonical.Items))
+	for index, item := range canonical.Items {
+		canonicalByID[item.ID] = item
+		canonicalOrder[item.ID] = index
+	}
+	retained := make(map[string]struct{}, len(projected.Items))
+	previous := -1
+	for _, item := range projected.Items {
+		original, exists := canonicalByID[item.ID]
+		if !exists {
+			return fmt.Errorf("trajectory projection fabricated item %q", item.ID)
+		}
+		if _, duplicate := retained[item.ID]; duplicate {
+			return fmt.Errorf("trajectory projection duplicated item %q", item.ID)
+		}
+		if canonicalOrder[item.ID] <= previous {
+			return errors.New("trajectory projection changed canonical item order")
+		}
+		previous = canonicalOrder[item.ID]
+		retained[item.ID] = struct{}{}
+		if len(item.ProviderState) > 0 && !slices.Equal(item.ProviderState, original.ProviderState) {
+			return fmt.Errorf("trajectory projection replaced provider state on item %q", item.ID)
+		}
+		if item.ProviderStateType != "" && item.ProviderStateType != original.ProviderStateType {
+			return fmt.Errorf("trajectory projection replaced provider state type on item %q", item.ID)
+		}
+		original.CausalParentIDs = slices.Clone(item.CausalParentIDs)
+		original.ProviderStateType = item.ProviderStateType
+		original.ProviderState = slices.Clone(item.ProviderState)
+		if !reflect.DeepEqual(original, item) {
+			return fmt.Errorf("trajectory projection changed semantic item %q", item.ID)
+		}
+	}
+	for _, item := range projected.Items {
+		for _, parent := range item.CausalParentIDs {
+			if _, exists := retained[parent]; !exists {
+				return fmt.Errorf("trajectory projection left dangling parent %q on item %q", parent, item.ID)
+			}
+		}
+		if item.Kind == trajectory.KindAssistantState && item.AssistantState != nil {
+			if _, exists := retained[item.AssistantState.AssistantItemID]; !exists {
+				return fmt.Errorf("trajectory projection left dangling assistant state on item %q", item.ID)
+			}
+		}
+	}
+	return nil
 }
 
 func cloneInvocation(invocation Invocation) Invocation {

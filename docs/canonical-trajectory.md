@@ -135,6 +135,28 @@ point, and invoke slow again after an authoritative tool result while a call is
 pending. A finite invocation bound is a resource-safety guard, not a semantic
 router.
 
+## Registered context controls
+
+Production uses the exact canonical prefix. Two negative controls test which
+part of continuity matters without creating another memory owner:
+
+- `content-only` retains portable fast assistant content but removes fast
+  reasoning, tool proposals, and opaque native state from the slow provider's
+  view.
+- `independent` removes all fast-produced items from the slow provider's view,
+  while retaining user observations and prior authoritative slow calls,
+  results, and assistant history. Fast speech is still published, making this
+  the intentionally split-brain experimental control.
+
+Both are pure projections over typed item kind, producer phase, invocation
+identity, and assistant-state identity. They never inspect transcript text,
+task IDs, or model claims. The canonical store is unchanged. The continuation
+runner captures its full version before inference, gives the provider the
+declared view, and compare-and-appends output only to that same store version.
+Prepared pre-endpoint slow work uses the identical projection, and complete
+tool-result batches resume under it. Thus the controls measure information
+inheritance; they do not introduce an advice channel or a second agent loop.
+
 ## Revision-safe work before the endpoint
 
 Incremental ASR revisions can start an entire fast-to-slow continuation while

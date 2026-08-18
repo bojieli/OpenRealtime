@@ -83,6 +83,13 @@ for phase in fast slow; do
     exit 1
   fi
 done
+expected_slow_context="$(jq -r '.runtime_requirements.slow_context // empty' "${matrix}")"
+if [[ -n "${expected_slow_context}" ]] && \
+  ! jq -e --arg policy "${expected_slow_context}" '.slow_context == $policy' \
+    <<<"${gateway_health}" >/dev/null; then
+  echo "gateway slow-context policy does not match the preregistered matrix" >&2
+  exit 1
+fi
 
 mkdir -p "${run_root}"
 matrix_sha256="$(sha256sum "${matrix}" | cut -d ' ' -f 1)"

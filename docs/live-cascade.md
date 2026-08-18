@@ -221,7 +221,9 @@ stale process before starting. Fixed-cadence experiments set both
 `OPENREALTIME_ASR_CHUNK_SECONDS` for the Qwen server and
 `OPENREALTIME_ASR_PROVIDER_CHUNK` for the gateway buffer; changing only one is
 not the registered treatment. `OPENREALTIME_SLOW_EFFORT` selects the explicit
-medium or high slow profile.
+medium or high slow profile. `OPENREALTIME_SLOW_CONTEXT_POLICY` defaults to
+`canonical`; `content-only` and `independent` are registered benchmark
+controls whose typed provider projections never fork the canonical store.
 
 The fast phase has two explicit provider profiles, not a content router. The
 default `--fast-provider vllm` selects local Qwen instruct with thinking

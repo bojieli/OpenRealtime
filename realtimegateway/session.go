@@ -117,7 +117,8 @@ func newSession(parent context.Context, connection *websocket.Conn, config Confi
 		Store: result.store, Fast: config.FastProvider, Slow: config.SlowProvider, Callbacks: result,
 		FastTokens: config.FastMaxTokens, SlowTokens: config.SlowMaxTokens,
 		MaxSlow: config.MaxSlowInvocations, SlowPace: config.SlowPreparationMin,
-		Now: func() uint64 { return uint64(time.Since(origin)) }, NextID: result.nextID,
+		SlowPolicy: config.SlowContextPolicy,
+		Now:        func() uint64 { return uint64(time.Since(origin)) }, NextID: result.nextID,
 	})
 	if err != nil {
 		cancel(err)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -21,6 +22,21 @@ type blockingProvider struct {
 	descriptor Descriptor
 	started    chan Request
 	release    chan struct{}
+}
+
+type requestCapturingProvider struct {
+	descriptor Descriptor
+	request    Request
+}
+
+func (provider *requestCapturingProvider) Descriptor() Descriptor { return provider.descriptor }
+
+func (provider *requestCapturingProvider) Continue(_ context.Context, request Request, emit Emit) (Completion, error) {
+	provider.request = request
+	if err := emit(Event{Kind: EventAssistantDelta, Text: "projected answer"}); err != nil {
+		return Completion{}, err
+	}
+	return Completion{}, nil
 }
 
 func (provider *blockingProvider) Descriptor() Descriptor { return provider.descriptor }
@@ -86,6 +102,65 @@ func TestRunnerAppendsOneInterleavedTurn(t *testing.T) {
 	}
 	if items[2].ProviderStateType != "test-state" || len(items[3].ProviderState) != 0 {
 		t.Fatal("native state was not attached exactly once")
+	}
+}
+
+func TestRunnerProjectionChangesOnlyProviderView(t *testing.T) {
+	t.Parallel()
+	store := trajectory.NewStore()
+	if err := store.AppendBatch([]trajectory.Item{
+		{ID: "user", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "question"},
+		{ID: "private", Kind: trajectory.KindReasoning, Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "working"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := NewRunner(RunnerConfig{Store: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &requestCapturingProvider{descriptor: Descriptor{
+		Provider: "test", Model: "slow", Phase: trajectory.PhaseSlow,
+		Effort: EffortHigh, Streaming: true,
+	}}
+	result, err := runner.RunProjected(context.Background(), provider, Invocation{Instruction: "continue"}, func(snapshot trajectory.Snapshot) (trajectory.Snapshot, error) {
+		snapshot.Items = snapshot.Items[:1]
+		return snapshot, nil
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.request.Trajectory.Items) != 2 || provider.request.Trajectory.Items[0].ID != "user" || provider.request.Trajectory.Version != 3 {
+		t.Fatalf("unexpected provider projection: %#v", provider.request.Trajectory)
+	}
+	canonical := store.Snapshot()
+	if !result.Committed || canonical.Version != 4 || canonical.Items[1].ID != "private" || canonical.Items[2].Kind != trajectory.KindInstruction {
+		t.Fatalf("projection changed canonical commit: result=%#v snapshot=%#v", result, canonical)
+	}
+}
+
+func TestRunnerRejectsProjectionThatChangesSemanticContent(t *testing.T) {
+	t.Parallel()
+	store := trajectory.NewStore()
+	if err := store.Append(trajectory.Item{ID: "user", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "original"}); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := NewRunner(RunnerConfig{Store: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &requestCapturingProvider{descriptor: Descriptor{
+		Provider: "test", Model: "slow", Phase: trajectory.PhaseSlow,
+		Effort: EffortHigh, Streaming: true,
+	}}
+	result, err := runner.RunProjected(context.Background(), provider, Invocation{Instruction: "continue"}, func(snapshot trajectory.Snapshot) (trajectory.Snapshot, error) {
+		snapshot.Items[0].Content = "fabricated"
+		return snapshot, nil
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "changed semantic item") || result.Committed {
+		t.Fatalf("semantic projection mutation escaped: result=%#v err=%v", result, err)
+	}
+	if got := store.Snapshot(); got.Version != 1 || got.Items[0].Content != "original" {
+		t.Fatalf("rejected projection mutated canonical state: %#v", got)
 	}
 }
 

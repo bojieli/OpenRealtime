@@ -21,6 +21,7 @@ import (
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/asrbuffer"
 	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/interleave"
 	"github.com/bojieli/OpenRealtime/realtimegateway"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -52,6 +53,7 @@ type options struct {
 	slowEffort      string
 	slowTokens      int
 	slowPace        time.Duration
+	slowContext     string
 	ttsURL          string
 	ttsModel        string
 	ttsVoice        string
@@ -80,6 +82,7 @@ func run(arguments []string) error {
 	flags.StringVar(&config.slowEffort, "slow-effort", "high", "slow reasoning effort: medium or high")
 	flags.IntVar(&config.slowTokens, "slow-max-tokens", 2048, "slow continuation output-token limit")
 	flags.DurationVar(&config.slowPace, "slow-preparation-min-interval", 0, "content-independent speculative slow launch interval")
+	flags.StringVar(&config.slowContext, "slow-context", "canonical", "slow context policy: canonical, content-only, or independent")
 	flags.StringVar(&config.ttsURL, "tts-url", "http://127.0.0.1:8081/v1/audio/speech", "local Fish Audio OpenAI-compatible speech endpoint")
 	flags.StringVar(&config.ttsModel, "tts-model", openaitts.DefaultModel, "Fish Audio model identity")
 	flags.StringVar(&config.ttsVoice, "tts-voice", "default", "Fish Audio voice or reference preset")
@@ -119,6 +122,10 @@ func serve(config options) error {
 	if err != nil {
 		return err
 	}
+	slowContext, err := interleave.ParseSlowContextPolicy(config.slowContext)
+	if err != nil {
+		return err
+	}
 	slow, err := gemini.New(gemini.Config{
 		APIKey: geminiKey, Model: config.slowModel, Endpoint: config.slowEndpoint,
 		Phase: trajectory.PhaseSlow, Effort: slowEffort,
@@ -151,7 +158,8 @@ func serve(config options) error {
 		ASRProviderChunk: config.asrChunk, PerceptionFactory: perceptionFactory,
 		FastProvider: fast, SlowProvider: slow, SpeechProvider: speech,
 		FastMaxTokens: config.fastTokens, SlowMaxTokens: config.slowTokens,
-		SlowPreparationMin: config.slowPace, ValidateWire: config.validateWire,
+		SlowPreparationMin: config.slowPace, SlowContextPolicy: slowContext,
+		ValidateWire: config.validateWire,
 	})
 	if err != nil {
 		return err

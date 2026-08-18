@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/interleave"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -16,6 +17,16 @@ func TestParseSlowEffortKeepsDeliberativeProfiles(t *testing.T) {
 	}
 	if _, err := parseSlowEffort(string(continuation.EffortMinimal)); err == nil {
 		t.Fatal("minimal effort was accepted for the slow continuation")
+	}
+}
+
+func TestSlowContextPolicyRejectsUndeclaredControls(t *testing.T) {
+	t.Parallel()
+	if _, err := interleave.ParseSlowContextPolicy("content-only"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := interleave.ParseSlowContextPolicy("router"); err == nil {
+		t.Fatal("undeclared slow context policy was accepted")
 	}
 }
 

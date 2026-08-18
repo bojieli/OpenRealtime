@@ -22,13 +22,14 @@ start_profile() {
   OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
   OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
   OPENREALTIME_SLOW_EFFORT="${effort}" \
+  OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
     "${repository_root}/scripts/local-cascade.sh" start
   local health
   health="$(curl --fail --silent --show-error http://127.0.0.1:8765/healthz)"
   if ! jq -e \
     --arg effort "${effort}" \
     '.asr.model == "Qwen/Qwen3-ASR-0.6B" and
-     .asr.provider_chunk_ms == 200 and
+     .asr.provider_chunk_ms == 200 and .slow_context == "canonical" and
      .fast.provider == "vllm" and .fast.model == "qwen-fast" and
      .fast.effort == "minimal" and .fast.tool_authority == "propose" and
      .slow.provider == "google" and .slow.model == "gemini-3.5-flash" and
@@ -48,6 +49,7 @@ restore_baseline() {
     OPENREALTIME_ASR_CHUNK_SECONDS=0.2 \
     OPENREALTIME_ASR_PROVIDER_CHUNK=200ms \
     OPENREALTIME_SLOW_EFFORT=high \
+    OPENREALTIME_SLOW_CONTEXT_POLICY=canonical \
       "${repository_root}/scripts/local-cascade.sh" start || true
   fi
 }

@@ -12,6 +12,7 @@ import (
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/interleave"
 	protocol "github.com/bojieli/OpenRealtime/protocol/openai"
 	"github.com/bojieli/OpenRealtime/trajectory"
 	"github.com/coder/websocket"
@@ -25,6 +26,7 @@ func TestHealthReportsConfiguredContinuationProfiles(t *testing.T) {
 		FastProvider:      &scriptedProvider{descriptor: continuation.Descriptor{Provider: "google", Model: "gemini-fast", Phase: trajectory.PhaseFast, Effort: continuation.EffortMinimal, Streaming: true, ToolAuthority: continuation.ToolAuthorityPropose}},
 		SlowProvider:      &scriptedProvider{descriptor: continuation.Descriptor{Provider: "google", Model: "gemini-slow", Phase: trajectory.PhaseSlow, Effort: continuation.EffortHigh, Streaming: true, ToolAuthority: continuation.ToolAuthorityExecute, ExecutableTools: true}},
 		SpeechProvider:    fakeSpeech{},
+		SlowContextPolicy: interleave.SlowContextContentOnly,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -44,13 +46,14 @@ func TestHealthReportsConfiguredContinuationProfiles(t *testing.T) {
 			Model           string  `json:"model"`
 			ProviderChunkMS float64 `json:"provider_chunk_ms"`
 		} `json:"asr"`
+		SlowContext interleave.SlowContextPolicy `json:"slow_context"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
 	if body.Status != "ok" || body.Model != "public-model" || body.Fast.Model != "gemini-fast" ||
 		body.Fast.EffectiveToolAuthority() != continuation.ToolAuthorityPropose || body.Slow.Model != "gemini-slow" ||
-		body.ASR.Model != "qwen-asr" || body.ASR.ProviderChunkMS != 200 {
+		body.ASR.Model != "qwen-asr" || body.ASR.ProviderChunkMS != 200 || body.SlowContext != interleave.SlowContextContentOnly {
 		t.Fatalf("unexpected health body: %#v", body)
 	}
 }

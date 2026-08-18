@@ -195,6 +195,92 @@ func TestChainPreparesSlowFromFastTrajectoryAndCommitsWithoutWaiting(t *testing.
 	}
 }
 
+func TestChainAppliesSameProjectionDuringPreparationAndReplay(t *testing.T) {
+	t.Parallel()
+	fastDescriptor := continuation.Descriptor{
+		Provider: "test", Model: "fast", Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortMinimal, Streaming: true,
+		ToolAuthority: continuation.ToolAuthorityPropose, RetainsToolCalls: true,
+	}
+	slowDescriptor := continuation.Descriptor{
+		Provider: "test", Model: "slow", Phase: trajectory.PhaseSlow,
+		Effort: continuation.EffortHigh, Streaming: true,
+		ToolAuthority: continuation.ToolAuthorityExecute, ExecutableTools: true,
+		RetainsToolCalls: true,
+	}
+	fast := &chainTestProvider{descriptor: fastDescriptor, events: []continuation.Event{
+		{Kind: continuation.EventReasoningDelta, Text: "private"},
+		{Kind: continuation.EventAssistantDelta, Text: "visible"},
+	}}
+	slow := &chainTestProvider{descriptor: slowDescriptor, events: []continuation.Event{{
+		Kind: continuation.EventAssistantDelta, Text: "complete",
+	}}}
+	projection := func(snapshot trajectory.Snapshot) (trajectory.Snapshot, error) {
+		items := snapshot.Items[:0]
+		for _, item := range snapshot.Items {
+			if item.Producer.Phase == trajectory.PhaseFast && item.Kind == trajectory.KindReasoning {
+				continue
+			}
+			item.CausalParentIDs = nil
+			items = append(items, item)
+		}
+		snapshot.Items = items
+		return snapshot, nil
+	}
+	fastInvocation, slowInvocation := chainInvocations()
+	manager, err := NewChainManager(ChainConfig{
+		Stages: []ChainStage{
+			{Provider: fast, Invocation: fastInvocation},
+			{Provider: slow, Invocation: slowInvocation, Projection: projection},
+		},
+		RetainReasoning: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	input := chainInput("question", 1)
+	if err := manager.Observe(ctx, input); err != nil {
+		t.Fatal(err)
+	}
+	waitForChainReport(t, ctx, manager, func(report ChainReport) bool { return report.Completed == 1 })
+	prepared, _, err := manager.Commit(input)
+	if err != nil || prepared == nil {
+		t.Fatalf("commit projection chain: prepared=%v err=%v", prepared != nil, err)
+	}
+	preparedFast, err := prepared.StageProvider(0, &fallbackProvider{descriptor: fastDescriptor})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slowFallback := &fallbackProvider{descriptor: slowDescriptor}
+	preparedSlow, err := prepared.StageProvider(1, slowFallback)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := trajectory.NewStore()
+	if err := store.AppendBatch(cloneSnapshot(input.Trajectory).Items); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := continuation.NewRunner(continuation.RunnerConfig{Store: store, RetainReasoning: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.Run(ctx, preparedFast, fastInvocation, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.RunProjected(ctx, preparedSlow, slowInvocation, projection, nil); err != nil {
+		t.Fatal(err)
+	}
+	requests := slow.Requests()
+	if len(requests) != 1 || containsKind(requests[0].Trajectory, trajectory.KindReasoning) || !containsKind(requests[0].Trajectory, trajectory.KindAssistant) {
+		t.Fatalf("prepared slow request ignored projection: %#v", requests)
+	}
+	if slowFallback.calls.Load() != 0 || manager.Report().ReplayedStages != 2 {
+		t.Fatalf("projected replay fell back: calls=%d report=%+v", slowFallback.calls.Load(), manager.Report())
+	}
+}
+
 func TestChainRejectsStaleRootAndPreparedStageFallsBackOnSemanticMismatch(t *testing.T) {
 	t.Parallel()
 	fastDescriptor := continuation.Descriptor{
