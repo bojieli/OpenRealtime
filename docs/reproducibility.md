@@ -173,4 +173,7 @@ The three external runners also create a `run-context.json` sidecar before
 their first adapter call. Launch refuses a dirty OpenRealtime worktree. The
 sidecar binds the runner revision and live component identities, and completion
 is refused if the gateway, ASR, Fish, or local Qwen process changed during the
-population. The terminal gate validates and hashes each sidecar.
+invocation. A resumed launcher appends a new invocation and marks an unfinished
+predecessor interrupted instead of overwriting it. The terminal gate requires
+the last invocation to complete, validates every identity, preserves
+interrupted attempts, and hashes each sidecar.

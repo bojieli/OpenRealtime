@@ -29,22 +29,49 @@ if [[ "${action}" == start ]]; then
     echo "benchmark run context requires a clean OpenRealtime source tree" >&2
     exit 1
   fi
-  jq -n \
+  invocation="$(jq -n \
     --arg benchmark "${benchmark}" \
     --arg started_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg revision "${revision}" \
     --argjson gateway_health "${gateway_health}" \
     --argjson runtime_identity "${runtime_identity}" \
     '{
-      schema_version:"1.0.0",
-      benchmark:$benchmark,
       status:"running",
       started_at:$started_at,
       openrealtime_revision_start:$revision,
       source_worktree_clean_start:true,
       gateway_health_start:$gateway_health,
       runtime_identity_start:$runtime_identity
-    }' >"${temporary}"
+    }')"
+  if [[ -f "${output}" ]]; then
+    if ! jq -e \
+      --arg benchmark "${benchmark}" \
+      '.schema_version == "1.0.0" and .benchmark == $benchmark and
+       (.invocations | type == "array")' "${output}" >/dev/null; then
+      echo "prior benchmark run context is incompatible: ${output}" >&2
+      exit 1
+    fi
+    jq \
+      --arg interrupted_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      --argjson invocation "${invocation}" \
+      'if .status == "running" and .invocations[-1].status == "running" then
+         .invocations[-1].status="interrupted" |
+         .invocations[-1].interrupted_at=$interrupted_at
+       else . end |
+       .status="running" |
+       .invocations += [$invocation]' \
+      "${output}" >"${temporary}"
+  else
+    jq -n \
+      --arg benchmark "${benchmark}" \
+      --argjson invocation "${invocation}" \
+      '{
+        schema_version:"1.0.0",
+        benchmark:$benchmark,
+        status:"running",
+        invocations:[$invocation]
+      }' >"${temporary}"
+  fi
 else
   if [[ ! -f "${output}" ]]; then
     echo "benchmark run context is missing: ${output}" >&2
@@ -54,9 +81,9 @@ else
     --arg benchmark "${benchmark}" \
     --argjson runtime_identity "${runtime_identity}" \
     '.schema_version == "1.0.0" and .benchmark == $benchmark and
-     .status == "running" and
-     .runtime_identity_start.host_boot_id == $runtime_identity.host_boot_id and
-     .runtime_identity_start.components == $runtime_identity.components' \
+     .status == "running" and .invocations[-1].status == "running" and
+     .invocations[-1].runtime_identity_start.host_boot_id == $runtime_identity.host_boot_id and
+     .invocations[-1].runtime_identity_start.components == $runtime_identity.components' \
     "${output}" >/dev/null; then
     echo "benchmark runtime identity changed before completion" >&2
     exit 1
@@ -67,10 +94,11 @@ else
     --argjson gateway_health "${gateway_health}" \
     --argjson runtime_identity "${runtime_identity}" \
     '.status="complete" |
-     .completed_at=$completed_at |
-     .openrealtime_revision_at_completion=$revision |
-     .gateway_health_final=$gateway_health |
-     .runtime_identity_final=$runtime_identity' \
+     .invocations[-1].status="complete" |
+     .invocations[-1].completed_at=$completed_at |
+     .invocations[-1].openrealtime_revision_at_completion=$revision |
+     .invocations[-1].gateway_health_final=$gateway_health |
+     .invocations[-1].runtime_identity_final=$runtime_identity' \
     "${output}" >"${temporary}"
 fi
 

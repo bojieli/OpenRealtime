@@ -58,12 +58,17 @@ def run_context(benchmark: str) -> dict:
         "schema_version": "1.0.0",
         "benchmark": benchmark,
         "status": "complete",
-        "source_worktree_clean_start": True,
-        "openrealtime_revision_start": "c" * 40,
-        "gateway_health_start": {"status": "ok"},
-        "gateway_health_final": {"status": "ok"},
-        "runtime_identity_start": identity,
-        "runtime_identity_final": identity,
+        "invocations": [
+            {
+                "status": "complete",
+                "source_worktree_clean_start": True,
+                "openrealtime_revision_start": "c" * 40,
+                "gateway_health_start": {"status": "ok"},
+                "gateway_health_final": {"status": "ok"},
+                "runtime_identity_start": identity,
+                "runtime_identity_final": identity,
+            }
+        ],
     }
 
 
@@ -458,7 +463,7 @@ class FullStudyTest(unittest.TestCase):
     def test_rejects_external_runtime_replacement(self) -> None:
         path = self.fixture.paths["fd_context"]
         context = json.loads(path.read_text(encoding="utf-8"))
-        context["runtime_identity_final"]["components"]["gateway"][
+        context["invocations"][0]["runtime_identity_final"]["components"]["gateway"][
             "proc_start_time_ticks"
         ] = "101"
         write_json(path, context)

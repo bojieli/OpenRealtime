@@ -162,32 +162,59 @@ def validate_run_context(
     require_equal(context.get("schema_version"), "1.0.0", f"{label} context schema")
     require_equal(context.get("benchmark"), benchmark, f"{label} context benchmark")
     require_equal(context.get("status"), "complete", f"{label} context status")
-    require_equal(
-        context.get("source_worktree_clean_start"), True, f"{label} clean source"
-    )
-    revision = context.get("openrealtime_revision_start")
+    invocations = context.get("invocations")
     require(
-        isinstance(revision, str)
-        and len(revision) == 40
-        and all(character in "0123456789abcdef" for character in revision),
-        f"{label} has an invalid source revision",
+        isinstance(invocations, list) and bool(invocations),
+        f"{label} context invocation ledger is absent",
     )
-    start = context.get("runtime_identity_start")
-    final = context.get("runtime_identity_final")
-    validate_runtime_identity(start, requires_local_fast=True, label=f"{label} start")
-    validate_runtime_identity(final, requires_local_fast=True, label=f"{label} final")
-    require_equal(
-        start.get("host_boot_id"), final.get("host_boot_id"), f"{label} runtime boot"
-    )
-    require_equal(
-        start.get("components"), final.get("components"), f"{label} runtime processes"
-    )
-    for snapshot_name in ("gateway_health_start", "gateway_health_final"):
-        snapshot = context.get(snapshot_name)
+    require_equal(invocations[-1].get("status"), "complete", f"{label} final invocation")
+    for index, invocation in enumerate(invocations):
+        invocation_label = f"{label} invocation {index}"
+        require(
+            invocation.get("status") in {"complete", "interrupted"},
+            f"{invocation_label} has a non-terminal status",
+        )
+        require_equal(
+            invocation.get("source_worktree_clean_start"),
+            True,
+            f"{invocation_label} clean source",
+        )
+        revision = invocation.get("openrealtime_revision_start")
+        require(
+            isinstance(revision, str)
+            and len(revision) == 40
+            and all(character in "0123456789abcdef" for character in revision),
+            f"{invocation_label} has an invalid source revision",
+        )
+        start = invocation.get("runtime_identity_start")
+        validate_runtime_identity(
+            start, requires_local_fast=True, label=f"{invocation_label} start"
+        )
+        snapshot = invocation.get("gateway_health_start")
         require(
             isinstance(snapshot, dict) and snapshot.get("status") == "ok",
-            f"{label} {snapshot_name} is not healthy",
+            f"{invocation_label} gateway_health_start is not healthy",
         )
+        if invocation["status"] == "complete":
+            final = invocation.get("runtime_identity_final")
+            validate_runtime_identity(
+                final, requires_local_fast=True, label=f"{invocation_label} final"
+            )
+            require_equal(
+                start.get("host_boot_id"),
+                final.get("host_boot_id"),
+                f"{invocation_label} runtime boot",
+            )
+            require_equal(
+                start.get("components"),
+                final.get("components"),
+                f"{invocation_label} runtime processes",
+            )
+            final_health = invocation.get("gateway_health_final")
+            require(
+                isinstance(final_health, dict) and final_health.get("status") == "ok",
+                f"{invocation_label} gateway_health_final is not healthy",
+            )
     return path, context
 
 
@@ -491,7 +518,9 @@ def validate_fdb15(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
     return {
         "source_manifest": artifact(root, source_path),
         "run_context": artifact(root, context_path),
-        "openrealtime_revision": context["openrealtime_revision_start"],
+        "openrealtime_revisions": sorted(
+            {item["openrealtime_revision_start"] for item in context["invocations"]}
+        ),
         "run_manifest": artifact(root, run_path),
         "summary": artifact(root, summary_path),
         "population": len(completed),
@@ -575,7 +604,9 @@ def validate_fdbv3(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
     return {
         "source_manifest": artifact(root, source_path),
         "run_context": artifact(root, context_path),
-        "openrealtime_revision": context["openrealtime_revision_start"],
+        "openrealtime_revisions": sorted(
+            {item["openrealtime_revision_start"] for item in context["invocations"]}
+        ),
         "profile": artifact(root, profile_path),
         "run_manifest": artifact(root, run_path),
         "population": len(labels),
@@ -688,7 +719,9 @@ def validate_fdbench(root: Path, specification: dict[str, Any]) -> dict[str, Any
     return {
         "source_manifest": artifact(root, source_path),
         "run_context": artifact(root, context_path),
-        "openrealtime_revision": context["openrealtime_revision_start"],
+        "openrealtime_revisions": sorted(
+            {item["openrealtime_revision_start"] for item in context["invocations"]}
+        ),
         "run_manifest": artifact(root, run_path),
         "finalization": artifact(root, finalization_path),
         "population": len(labels),
