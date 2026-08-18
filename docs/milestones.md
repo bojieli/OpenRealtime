@@ -267,8 +267,11 @@ pin the v1.0.0 release and run the same public conformance suite.
 - Secondary full harnesses: all 498 FDB v1.5 overlap recordings and all 100 FDB
   v3 disfluent tool-use recordings run sequentially through the standard OpenAI
   Realtime adapter with real local tool-result resumption
+- Long-form duplex harness: all 21 released FD-Bench audio cells from 13 source
+  archives (6,147 conversations; 77.2184 input hours) run afterward through the
+  same adapter, followed by the pinned Silero-VAD and upstream timing-decision
+  core
 - Capacity ablation: complete paired τ cells change only Qwen3-ASR 0.6B to 1.7B
   after the primary queue; task-specific recognition hints and content routers
   are prohibited
-- Architectural references: GPT-Live and TML Interaction Models; LiveKit is
-  retained only as incidental upstream transport/component-benchmark context
+- Architectural references: GPT-Live and TML Interaction Models

@@ -1,9 +1,9 @@
 # GPT-Live and TML interaction capability audit
 
 This audit compares OpenRealtime with **GPT-Live** and Thinking Machines Lab's
-interaction models. LiveKit is not the product comparison target. It appears
-only as incidental transport in the upstream Full-Duplex-Bench v3 harness and
-as the source of a separately inventoried endpointing component benchmark.
+interaction models. LiveKit is not the product comparison target; its only
+mention is as incidental transport in the upstream Full-Duplex-Bench v3
+harness.
 
 The machine-readable claim/evidence ledger is
 `benchmarks/external/gpt-live-and-tml-capabilities-2026-08.json`. A published
@@ -71,6 +71,10 @@ The local matrix deliberately uses complementary suites:
   not a directly comparable score.
 - FDB v3 measures 100 human-recorded disfluent tool-use examples against the
   upstream 12-tool API and official evaluator.
+- The separate FD-Bench matrix measures long-form interruption, response
+  timing, noise, and synthesized-caller sensitivity over all 21 released audio
+  cells from 13 source archives. It does not replace τ-Voice intelligence or
+  FDB v3 tool scores.
 - Deterministic gateway tests establish synchronization, authority, and result
   resumption invariants that aggregate benchmark scores cannot prove.
 
@@ -96,3 +100,4 @@ claim a direct GPT-Live benchmark.
 - [How OpenAI built continuous voice interaction with GPT-Live](https://openai.com/index/continuous-voice-interaction-with-gpt-live/)
 - [Thinking Machines Lab: Interaction Models](https://thinkingmachines.ai/blog/interaction-models/)
 - [Full-Duplex-Bench](https://github.com/DanielLin94144/Full-Duplex-Bench)
+- [FD-Bench](https://github.com/pengyizhou/FD-Bench)

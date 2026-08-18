@@ -116,6 +116,19 @@ accuracy without a meaningful interaction-latency regression. The preserved
 identifier failure motivates the ablation but cannot define its acceptance
 subset, add recognition hints, or select the model at runtime.
 
+### H12 long-form duplex robustness
+
+The complete released FD-Bench matrix tests whether the same frozen local
+cascade retains response, interruption, and false-interruption behavior across
+three synthesized caller families, three difficulty levels, background noise,
+and noise inserted into gaps. The condition changes only the released input
+audio; endpoint, 20 ms transport frames, internal cadence, ASR/fast/slow/TTS
+models, voice, prompt, declared 600 ms server-VAD finalization silence, and
+fixed 10-second collection tail remain constant.
+Primary measures are upstream SRR, SIR, EIR, NIR, SRIR, FSED, ERT, EIT, and
+IRD by condition. This is a robustness matrix, not an intelligence proxy, and
+its 21 cells are reported separately before any aggregate.
+
 ### Joint success criterion
 
 The architecture succeeds only if the responsiveness and intelligence gains

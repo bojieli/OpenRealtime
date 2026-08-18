@@ -192,34 +192,6 @@ collection dates differ. The full tables for disfluency, difficulty, domain,
 and latency are pinned in
 `benchmarks/external/full-duplex-bench-v3-published-results.json`.
 
-## Published endpointing component context
-
-LiveKit eot-bench provides a complementary causal end-of-turn test. It sweeps
-threshold, action delay, and timeout over complete user turns; latency is
-endpointing dead air, not model inference or end-to-end response time. These
-English values come from the repository's committed artifacts at revision
-`7f2acca997211908c6ee962ace8bcc8d6a66fbac` and were not rerun locally:
-
-| Published component | False cutoff at 300 ms | False cutoff at 600 ms | Latency at 5% cutoff | Latency at 10% cutoff |
-| --- | ---: | ---: | ---: | ---: |
-| LiveKit Turn Detector v1 | 9.9% | 4.5% | 543 ms | 295 ms |
-| Deepgram Flux | 12.9% | 9.9% | 1,151 ms | 548 ms |
-| ultraVAD | 27.7% | 11.9% | 899 ms | 663 ms |
-| LiveKit Turn Detector v1-mini | 27.8% | 12.1% | 1,070 ms | 698 ms |
-| SmartTurn v3.2 | 35.2% | 14.8% | 1,051 ms | 739 ms |
-| AssemblyAI | 49.4% | 14.6% | 1,049 ms | 713 ms |
-| Soniox | — | 5.5% | 647 ms | 512 ms |
-| Cartesia Ink 2 | — | — | 1,056 ms | 911 ms |
-| OpenAI `gpt-realtime-2` semantic VAD | — | — | 1,143 ms | 824 ms |
-| Silence-only VAD baseline | 55.6% | 21.7% | 1,600 ms | 1,000 ms |
-
-Here `—` means no swept policy met that latency budget. The OpenAI adapter
-streams 100 ms audio chunks into `gpt-realtime-2` semantic VAD with `auto`
-eagerness and maps `input_audio_buffer.speech_stopped` to a binary score. It
-observed no endpoint event in 61/400 English turns. This is valuable evidence
-about one protocol component, but it is neither GPT-4o nor a speech-response
-benchmark and therefore is not merged with the local Gemini measurements.
-
 ## What was not claimed
 
 - No provider-billed cost is claimed. The $2.68 figure is a duration-based paid
@@ -235,13 +207,11 @@ benchmark and therefore is not merged with the local Gemini measurements.
   ten training tasks, not live voice. The similarly named FD-Bench measures a
   separate full-duplex pipeline. Neither is relabeled as a result from this
   runner.
-- Full-Duplex-Bench v3 and LiveKit eot-bench values above are pinned published
-  reference data, not results of this 2026-08-17–18 Gemini run. The later FDB
-  v3 implementation pins the separate bundle, executes its mock tools through
-  the standard Realtime adapter, and invokes the official evaluator, but its
-  queued output remains unreported until all 100 recordings finish. LiveKit is
-  only component/transport context here; GPT-Live is the continuous-voice
-  comparison target.
+- Full-Duplex-Bench v3 values above are pinned published reference data, not
+  results of this 2026-08-17–18 Gemini run. The later FDB v3 implementation
+  pins the separate bundle, executes its mock tools through the standard
+  Realtime adapter, and invokes the official evaluator, but its queued output
+  remains unreported until all 100 recordings finish.
 - Groq is not xAI Grok. The Groq adapter is explicitly a current
   STT→LLM→TTS cascade (`whisper-large-v3-turbo`, `openai/gpt-oss-120b`, and
   the preview `canopylabs/orpheus-v1-english`), and no live score exists without
@@ -288,4 +258,3 @@ and large generated media are not redistributed.
 - [TOBench official overview](https://williamiiliu.github.io/tobench_online/)
 - [TREX FT-Bench paper](https://arxiv.org/abs/2604.14116)
 - [FD-Bench repository](https://github.com/pengyizhou/FD-Bench)
-- [LiveKit eot-bench repository](https://github.com/livekit/eot-bench)

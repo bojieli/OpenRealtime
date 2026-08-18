@@ -5,7 +5,7 @@
   "comparison_targets": ["GPT-Live", "TML-Interaction-Small"],
   "not_a_target": {
     "name": "LiveKit",
-    "reason": "LiveKit appears only as transport in the upstream FDB v3 harness and as the author of a separately inventoried endpointing benchmark. Its product capabilities are not used as a proxy for GPT-Live."
+    "reason": "LiveKit appears only as transport in the upstream FDB v3 harness. Its product capabilities are not used as a proxy for GPT-Live."
   },
   "sources": [
     {

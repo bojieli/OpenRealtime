@@ -9,8 +9,7 @@ is not legal advice and must be rechecked at the pinned revision.
 | Full-Duplex-Bench v1/v1.5 | pause, backchannel, turn-taking, interruption, overlap | official code/data repository | repository license CC BY-NC 4.0 | external opt-in; no vendoring |
 | Full-Duplex-Bench v2 | dynamic multi-turn examiner | official repository, actively evolving | same repository license; inspect sub-artifacts | experimental external adapter |
 | Full-Duplex-Bench v3 | disfluent speech and tool use | exact 736,136,419-byte/100-recording release, code, mock APIs, evaluator, and paper tables pinned; full local run queued | inspect every sub-artifact | standard OpenAI Realtime adapter, actual tool results, terminal result resumption, exact plus official LLM judge |
-| FD-Bench | full-duplex response time, interruption handling, WER/BLEU, and subjective quality | code and external audio dataset public | NTUitive license; external assets require review | comparison/inventory only: official pipeline requires Python, PyTorch, and CUDA; selected FDB v1.5 has the more direct commercial overlap matrix |
-| LiveKit eot-bench | causal end-of-turn decisions and latency/false-cutoff Pareto frontiers in 14 languages | code, dataset, reference predictions, and English table pinned at `7f2acca` | Apache-2.0 stated for repository | published component comparison transcribed; not an end-to-end live-system score; official harness is Python |
+| FD-Bench | long-form full-duplex response timing, interruptions, noise, TTS sensitivity, WER/CPPL, and subjective quality | exact 8,310,251,185-byte input release pinned: 13 archives expand to 21 cells, 6,147 conversations, and 77.2184 hours; only three ChatTTS cells omit IDs 60 and 120 from the nominal 293 | NTUitive non-commercial license with internally inconsistent distribution clauses; external only | complete standard-Realtime matrix queued after the ASR ablation; exact Silero settings and upstream timing core, with unavailable non-Moshi WER/CPPL stages disclosed rather than fabricated |
 | TOBench | 100 closed-loop omni-modal tasks, 27 MCP servers, 324 tools | official MIT repository and external task bundle | per-task services and asset terms require inventory | comparison/inventory only: upstream harness requires Python and is not a realtime duplex voice benchmark |
 | τ-Voice | 278 grounded airline/retail/telecom tasks with real tools, long policy context, full-duplex interaction, accents/noise, interruptions, backchannels, tics, and non-directed speech | paper and MIT `tau2-bench` harness pinned at `c339866`; patch passes 86 affected tests; provider gate and exploratory tasks complete; full matrix running | repository MIT; seven generated Fish voices have separate provenance | primary M10 joint task/interaction benchmark; retain the standard OpenAI adapter against the local gateway, preserve partial failures, and report only complete cells |
 | GPT-Live / TML capability audit | continuous full-duplex decisions, async background reasoning, tools, cache/handoff, long-context intelligence | official engineering/launch articles and account-scoped model availability recorded | published claims only; no model outputs redistributed | product/architecture comparison; never substitute GPT-Realtime or LiveKit for GPT-Live, and do not claim a local score without an executable endpoint |
@@ -32,15 +31,16 @@ Access alone does not imply redistribution permission.
 TOBench is relevant to general tool-using agent quality, but it does not isolate
 realtime voice turn-taking or provider audio protocols. Its official harness
 also requires Python 3.12 plus a large mixed MCP/Node environment. The current
-live-provider experiment therefore uses Full-Duplex-Bench v1.5 as the direct
-duplex benchmark and records Full-Duplex-Bench v3's published results as the
-tool-use comparison; it does not relabel that transcription or a partial
-TOBench port as a local compatible result.
+live-provider experiment therefore uses Full-Duplex-Bench v1.5 as the compact
+paired duplex benchmark, Full-Duplex-Bench v3 as the tool-use benchmark, and a
+separately pinned full FD-Bench matrix as the long-form interruption/noise/TTS
+sensitivity benchmark. It does not relabel a partial TOBench port as a local
+compatible result.
 
 The similarly named 2026 FT-Bench belongs to TREX and measures autonomous LLM
 fine-tuning over ten training tasks. It is not a voice-agent benchmark. If
-“FTbench” is intended to mean Full-Duplex-Bench/FD-Bench, the live experiment
-reported here uses the pinned Full-Duplex-Bench v1.5 corpus directly.
+“FTbench” is intended to mean Full-Duplex-Bench/FD-Bench, both families now
+have separately named and pinned adapters; their results are never merged.
 
 τ-Voice is a better fit than TOBench for the fast/slow target because it keeps
 grounded tool/task evaluation inside a full-duplex voice trajectory. Its 200 ms

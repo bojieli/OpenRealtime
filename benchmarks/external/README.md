@@ -167,27 +167,52 @@ the pinned `benchmark_data_v2.json` contains 100 unique definition IDs. The
 manifest records both observations and uses `definition_entries` rather than
 silently treating examples, recordings, and scenario designs as identical.
 
-## LiveKit eot-bench published component reference
+## FD-Bench long-form interaction matrix
 
-`livekit-eot-bench-published-2026-08.json` pins LiveKit revision
-`7f2acca997211908c6ee962ace8bcc8d6a66fbac` and transcribes its committed
-English operating-point table. The benchmark evaluates causal end-of-turn
-decisions over 400 turns, jointly sweeping score threshold, minimum action
-delay, and timeout.
+`fd-bench.manifest.json` pins Peng et al.'s separate FD-Bench repository,
+Hugging Face dataset revision, 13 archives, 8,310,251,185 bytes, and source
+digests. This is not Full-Duplex-Bench v1.5 or v3. The archives expand to 21
+cells that vary ChatTTS, CosyVoice2, and F5-TTS inputs across difficulty, noise
+placement, and three SNR levels. Full inspection finds 6,147 playable
+conversations and 77.2184 hours of input. The paper and ground-truth file
+describe 293 conversations per cell. Only the three ChatTTS cells omit IDs 60
+and 120 and therefore contain 291; all other cells contain 293. The adapter
+never synthesizes replacements.
 
-This is component evidence only. Its latency is endpointing dead air rather
-than inference or speech-response latency. Its OpenAI row is
-`gpt-realtime-2` semantic VAD, not GPT-4o, and the endpoint-event adapter
-produces binary rather than calibrated probability scores. The upstream
-harness uses Python, but this repository only stores a JSON transcription and
-does not add or execute a Python dependency.
+Prepare and inspect the complete external release:
 
-LiveKit is not the comparison target for OpenRealtime's continuous interaction
-architecture. GPT-Live and Thinking Machines Lab Interaction Models are the
-targets; LiveKit appears here only because it authors this separate endpointing
-benchmark and is transport machinery in the upstream FDB v3 implementation.
-The machine-readable capability ledger is
-`gpt-live-and-tml-capabilities-2026-08.json`.
+```sh
+scripts/prepare-fdbench.sh
+go run ./cmd/fdbench inspect --dataset-root .runtime/fd-bench/dataset
+```
+
+Run all conditions after the primary and ASR-ablation queues:
+
+```sh
+OPENREALTIME_API_KEY="$OPENREALTIME_GATEWAY_TOKEN" \
+  scripts/run-fdbench-openrealtime.sh
+```
+
+The Go runner streams 20 ms PCM frames at wall-clock speed through the same
+standard OpenAI Realtime adapter and records aligned playback, hashes,
+credential-free wire evidence, bounded retries, and an immutable resume
+manifest. It retains the upstream clients' fixed 10-second post-input window.
+Since 188/291 files in the inspected clean ChatTTS cell leave less than 500 ms
+after their last annotated speech, a declared 600 ms zero-PCM finalizer is
+streamed inside—not in addition to—that window so standard server VAD can close
+the last utterance.
+Finalization uses Silero-VAD 6.2.1 with threshold 0.5, 1,500 ms minimum silence,
+and the benchmark's 16 kHz timestamp clock, then emits the original five-field
+trace format. The evaluator invokes the pinned upstream
+`analyze_VAD_interruption_new2` decision core and faithfully aggregates SRR,
+SIR, EIR, NIR, SRIR, FSED, ERT, EIT, and IRD.
+
+The released non-Moshi entry points unconditionally read a WER file they never
+create and a separately precomputed Llama-3 CPPL file. Those and the separate
+OpenAI subjective batch judge are explicitly marked unevaluated; no dummy WER,
+CPPL, or judge result is inserted. At 77.2184 hours of source audio before the
+fixed collection tails, this matrix is intentionally queued rather than
+sharing GPU service with a frozen cell.
 
 TOBench was also evaluated for fit. It is a 100-task omni-modal MCP benchmark,
 not a realtime duplex voice-protocol benchmark, and its official harness is a

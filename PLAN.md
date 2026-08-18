@@ -652,6 +652,21 @@ evaluation. Run it through the standard OpenAI Realtime adapter with real
 `function_call_output` resumption. Its response-quality judge and transcript
 alignment method must be declared separately from tool-name/argument metrics.
 
+Peng et al.'s FD-Bench is a distinct long-form interaction suite, not an
+abbreviation for Full-Duplex-Bench. Run every released audio condition through
+the same standard Realtime boundary at wall-clock speed. Preserve the
+release's 16 kHz timestamp clock, Silero-VAD threshold 0.5 and 1,500 ms minimum
+silence, and 10-second post-input collection window. Because many released
+files end during speech, stream a declared 600 ms zero-PCM VAD finalizer inside
+that fixed window; otherwise the standard server-VAD boundary may never emit
+the final turn. The 13 source archives expand to 21 evaluation cells and 6,147
+conversations (77.2184 hours). The paper and ground truth describe 293
+conversations per cell. Only the three released ChatTTS cells contain 291:
+IDs 60 and 120 are absent; the other 18 cells contain all 293. Report the exact
+released population and this discrepancy instead of imputing cases. Keep its
+interaction timing metrics separate from τ-Voice task/tool success and FDB v3
+tool correctness.
+
 #### G. Paralinguistic challenge set
 
 Sarcasm, uncertainty, laughter, sighs, emotional prosody, and non-speech events. This set is expected to expose limitations of text bottlenecks.
@@ -995,9 +1010,9 @@ Status: full execution in progress. The 12-case official τ provider gate,
 exploratory paired task, strict seven-persona Fish registry, frozen baseline
 matrix, exact FDB v1.5/FDB v3 releases, and resumable runners are complete. The
 278-task control cell is running; regular, 498-recording FDB v1.5,
-100-recording FDB v3, and complete Qwen3-ASR 1.7B paired cells are queued.
-Native controls and cadence/effort ablations remain. No incomplete cell is a
-benchmark score.
+100-recording FDB v3, complete Qwen3-ASR 1.7B paired cells, and the 21-cell,
+6,147-conversation released FD-Bench matrix are queued. Native controls and
+cadence/effort ablations remain. No incomplete cell is a benchmark score.
 
 Deliverables:
 
@@ -1009,6 +1024,10 @@ Deliverables:
 - Complete FDB v1.5 overlap and FDB v3 disfluent tool-use populations through
   the same standard Realtime boundary, with immutable artifacts, actual tool
   results, terminal result resumption, and official evaluation.
+- Complete all 21 released FD-Bench cells from the 13 source archives through
+  that boundary, retain the upstream timestamp/VAD contract, and evaluate the
+  pinned upstream timing decision core without inventing its missing non-Moshi
+  WER or CPPL files.
 - A complete paired Qwen3-ASR 0.6B/1.7B capacity matrix whose motivating
   identifier failure cannot become a task-specific hint or routing rule.
 - Difficult reasoning and active-tool workloads combined with overlap, interruption, selectivity, long-context, and cadence workloads.
@@ -1064,7 +1083,9 @@ Exit criteria:
     evaluation through the standard Realtime adapter.
 32. Complete the frozen 0.6B/1.7B ASR capacity comparison after the primary
     queue, restoring the baseline service afterward.
-33. Draft the `api/v2` migration only after the experimental trajectory contract stabilizes.
+33. Complete the queued 21-cell released FD-Bench population and its pinned
+    Silero/upstream-timing evaluation after the ASR capacity matrix.
+34. Draft the `api/v2` migration only after the experimental trajectory contract stabilizes.
 
 ## 16. Risks and mitigations
 
@@ -1167,5 +1188,6 @@ The implementation and study should begin from these public sources and add a ma
 13. OpenAI, “Introducing GPT-Live,” 2026. <https://openai.com/index/introducing-gpt-live/>
 14. OpenAI, “How OpenAI built continuous voice interaction with GPT-Live,” 2026. <https://openai.com/index/continuous-voice-interaction-with-gpt-live/>
 15. Qwen, “Qwen3-ASR-1.7B model card,” 2026. <https://huggingface.co/Qwen/Qwen3-ASR-1.7B>
+16. Peng et al., “FD-Bench: A Full-Duplex Benchmarking Pipeline Designed for Full Duplex Spoken Dialogue Systems,” 2025. <https://arxiv.org/abs/2507.19040>
 
 Public APIs and papers evolve. Any experiment must cite the exact version and retrieval date used.
