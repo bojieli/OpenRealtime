@@ -39,9 +39,7 @@ def require(condition: bool, message: str) -> None:
 
 def require_equal(actual: Any, expected: Any, label: str) -> None:
     if actual != expected:
-        raise StudyIncompleteError(
-            f"{label}: expected {expected!r}, found {actual!r}"
-        )
+        raise StudyIncompleteError(f"{label}: expected {expected!r}, found {actual!r}")
 
 
 def sha256_file(path: Path) -> str:
@@ -104,10 +102,14 @@ def artifact_tree(
     digest = hashlib.sha256()
     total_bytes = 0
     seen: set[str] = set()
-    for path, expected_hash in sorted(entries, key=lambda item: display_path(root, item[0])):
+    for path, expected_hash in sorted(
+        entries, key=lambda item: display_path(root, item[0])
+    ):
         require(path.is_file(), f"{label} artifact is missing: {path}")
         logical_path = display_path(root, path)
-        require(logical_path not in seen, f"{label} contains duplicate path {logical_path}")
+        require(
+            logical_path not in seen, f"{label} contains duplicate path {logical_path}"
+        )
         seen.add(logical_path)
         size = path.stat().st_size
         file_hash = sha256_file(path)
@@ -151,7 +153,9 @@ def validate_tree_summary(value: Any, *, files: int, label: str) -> None:
     )
 
 
-def load_pin(root: Path, specification: dict[str, Any], label: str) -> tuple[Path, dict[str, Any]]:
+def load_pin(
+    root: Path, specification: dict[str, Any], label: str
+) -> tuple[Path, dict[str, Any]]:
     path = resolve(root, specification["path"])
     payload = read_json(path, label)
     require_equal(sha256_file(path), specification["sha256"], f"{label} SHA-256")
@@ -173,8 +177,46 @@ def validate_local_descriptor(
     require_equal(descriptor, expected, f"{label} descriptor")
 
 
+def validate_study_runtime(
+    root: Path, specification: dict[str, Any]
+) -> tuple[Path, dict[str, Any]]:
+    path, runtime = load_pin(root, specification, "study runtime manifest")
+    require_equal(runtime.get("schema_version"), "1.0.0", "study runtime schema")
+    require_equal(
+        runtime.get("runtime_id"),
+        "openrealtime-canonical-gateway-v1",
+        "study runtime ID",
+    )
+    source_revision = runtime.get("source_revision")
+    require(
+        isinstance(source_revision, str)
+        and len(source_revision) == 40
+        and all(character in "0123456789abcdef" for character in source_revision),
+        "study runtime source revision is invalid",
+    )
+    require(valid_sha256(runtime.get("binary_sha256")), "study runtime hash is invalid")
+    require_equal(
+        runtime.get("runtime_path"),
+        ".runtime/study-runtime/canonical-gateway-v1/realtimegateway",
+        "study runtime path",
+    )
+    build = runtime.get("build")
+    require(isinstance(build, dict), "study runtime build declaration is absent")
+    require_equal(build.get("go"), "/usr/local/go/bin/go", "study runtime Go path")
+    require_equal(
+        build.get("command"),
+        "go build -trimpath -buildvcs=false ./cmd/realtimegateway",
+        "study runtime build command",
+    )
+    return path, runtime
+
+
 def validate_runtime_identity(
-    identity: Any, *, requires_local_fast: bool, label: str
+    identity: Any,
+    *,
+    requires_local_fast: bool,
+    expected_gateway_sha256: str,
+    label: str,
 ) -> None:
     require(isinstance(identity, dict), f"{label} runtime identity is absent")
     require_equal(identity.get("schema_version"), "1.0.0", f"{label} identity schema")
@@ -189,6 +231,11 @@ def validate_runtime_identity(
     if requires_local_fast:
         required.add("qwen")
     require(required <= set(components), f"{label} is missing runtime components")
+    require_equal(
+        components["gateway"].get("executable_sha256"),
+        expected_gateway_sha256,
+        f"{label}/gateway frozen executable",
+    )
     for name in sorted(required):
         component = components[name]
         require(
@@ -219,7 +266,12 @@ def validate_runtime_identity(
 
 
 def validate_run_context(
-    root: Path, path_value: str, *, benchmark: str, label: str
+    root: Path,
+    path_value: str,
+    *,
+    benchmark: str,
+    expected_gateway_sha256: str,
+    label: str,
 ) -> tuple[Path, dict[str, Any]]:
     path = resolve(root, path_value)
     context = read_json(path, f"{label} run context")
@@ -231,7 +283,9 @@ def validate_run_context(
         isinstance(invocations, list) and bool(invocations),
         f"{label} context invocation ledger is absent",
     )
-    require_equal(invocations[-1].get("status"), "complete", f"{label} final invocation")
+    require_equal(
+        invocations[-1].get("status"), "complete", f"{label} final invocation"
+    )
     for index, invocation in enumerate(invocations):
         invocation_label = f"{label} invocation {index}"
         require(
@@ -243,6 +297,11 @@ def validate_run_context(
             True,
             f"{invocation_label} clean source",
         )
+        require_equal(
+            invocation.get("study_gateway_sha256"),
+            expected_gateway_sha256,
+            f"{invocation_label} frozen gateway declaration",
+        )
         revision = invocation.get("openrealtime_revision_start")
         require(
             isinstance(revision, str)
@@ -252,7 +311,10 @@ def validate_run_context(
         )
         start = invocation.get("runtime_identity_start")
         validate_runtime_identity(
-            start, requires_local_fast=True, label=f"{invocation_label} start"
+            start,
+            requires_local_fast=True,
+            expected_gateway_sha256=expected_gateway_sha256,
+            label=f"{invocation_label} start",
         )
         snapshot = invocation.get("gateway_health_start")
         require(
@@ -262,7 +324,10 @@ def validate_run_context(
         if invocation["status"] == "complete":
             final = invocation.get("runtime_identity_final")
             validate_runtime_identity(
-                final, requires_local_fast=True, label=f"{invocation_label} final"
+                final,
+                requires_local_fast=True,
+                expected_gateway_sha256=expected_gateway_sha256,
+                label=f"{invocation_label} final",
             )
             require_equal(
                 start.get("host_boot_id"),
@@ -283,11 +348,26 @@ def validate_run_context(
 
 
 def validate_tau_matrix(
-    root: Path, matrix_specification: dict[str, Any]
+    root: Path,
+    matrix_specification: dict[str, Any],
+    *,
+    expected_gateway_source_revision: str,
+    expected_gateway_sha256: str,
 ) -> dict[str, Any]:
     matrix_path, matrix = load_pin(root, matrix_specification, "tau matrix")
     matrix_id = matrix.get("matrix_id")
     require(isinstance(matrix_id, str) and matrix_id, f"{matrix_path} has no matrix_id")
+    gateway_requirement = matrix.get("runtime_requirements", {}).get("gateway", {})
+    require_equal(
+        gateway_requirement.get("source_revision"),
+        expected_gateway_source_revision,
+        f"{matrix_id} frozen gateway source",
+    )
+    require_equal(
+        gateway_requirement.get("executable_sha256"),
+        expected_gateway_sha256,
+        f"{matrix_id} frozen gateway executable",
+    )
     report_path = root / ".runtime/benchmark-runs/tau-voice" / matrix_id / "report.json"
     report = read_json(report_path, f"tau report {matrix_id}")
     require_equal(report.get("schema_version"), "1.0.0", f"{matrix_id} report schema")
@@ -321,7 +401,9 @@ def validate_tau_matrix(
         matrix["benchmark"]["revision"],
         f"{matrix_id} tau revision",
     )
-    require_equal(set(report.get("cells", {})), set(cell_ids), f"{matrix_id} report cells")
+    require_equal(
+        set(report.get("cells", {})), set(cell_ids), f"{matrix_id} report cells"
+    )
 
     total_simulations = 0
     infrastructure_errors = 0
@@ -415,10 +497,28 @@ def validate_tau_matrix(
         "requires_local_fast", True
     )
     for index, complete_run in enumerate(complete_runs):
+        execution_label = f"{matrix_id} complete execution {index}"
         validate_runtime_identity(
             complete_run.get("runtime_identity"),
             requires_local_fast=requires_local_fast,
-            label=f"{matrix_id} complete execution {index}",
+            expected_gateway_sha256=expected_gateway_sha256,
+            label=f"{execution_label} start",
+        )
+        validate_runtime_identity(
+            complete_run.get("runtime_identity_final"),
+            requires_local_fast=requires_local_fast,
+            expected_gateway_sha256=expected_gateway_sha256,
+            label=f"{execution_label} final",
+        )
+        require_equal(
+            complete_run["runtime_identity"].get("host_boot_id"),
+            complete_run["runtime_identity_final"].get("host_boot_id"),
+            f"{execution_label} runtime boot",
+        )
+        require_equal(
+            complete_run["runtime_identity"].get("components"),
+            complete_run["runtime_identity_final"].get("components"),
+            f"{execution_label} runtime processes",
         )
     revisions = sorted(
         {
@@ -441,12 +541,28 @@ def validate_tau_matrix(
     }
 
 
-def validate_tau(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
-    source_path, source = load_pin(root, specification["source_manifest"], "tau source manifest")
+def validate_tau(
+    root: Path,
+    specification: dict[str, Any],
+    *,
+    expected_gateway_source_revision: str,
+    expected_gateway_sha256: str,
+) -> dict[str, Any]:
+    source_path, source = load_pin(
+        root, specification["source_manifest"], "tau source manifest"
+    )
     require_equal(
         source.get("benchmark", {}).get("name"), "tau-Voice", "tau source benchmark"
     )
-    matrix_panel = [validate_tau_matrix(root, item) for item in specification["matrices"]]
+    matrix_panel = [
+        validate_tau_matrix(
+            root,
+            item,
+            expected_gateway_source_revision=expected_gateway_source_revision,
+            expected_gateway_sha256=expected_gateway_sha256,
+        )
+        for item in specification["matrices"]
+    ]
     matrix_ids = [item["matrix_id"] for item in matrix_panel]
     require_equal(len(matrix_ids), len(set(matrix_ids)), "unique tau matrix IDs")
 
@@ -455,7 +571,9 @@ def validate_tau(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
         definition_path, definition = load_pin(
             root, pair["definition"], f"tau paired definition {pair['id']}"
         )
-        require_equal(definition.get("ablation_id"), pair["id"], "tau paired definition ID")
+        require_equal(
+            definition.get("ablation_id"), pair["id"], "tau paired definition ID"
+        )
         report_path = resolve(root, pair["report"])
         report = read_json(report_path, f"tau paired report {pair['id']}")
         require_equal(report.get("status"), "complete", f"{pair['id']} status")
@@ -467,7 +585,9 @@ def validate_tau(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
             f"{pair['id']} definition path",
         )
         require_equal(
-            ablation.get("sha256"), pair["definition"]["sha256"], f"{pair['id']} definition hash"
+            ablation.get("sha256"),
+            pair["definition"]["sha256"],
+            f"{pair['id']} definition hash",
         )
         endpoint_work = (
             report.get("comparison", {})
@@ -510,44 +630,70 @@ def validate_tau(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def validate_fdb15(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
+def validate_fdb15(
+    root: Path, specification: dict[str, Any], *, expected_gateway_sha256: str
+) -> dict[str, Any]:
     source_path, source = load_pin(
         root, specification["source_manifest"], "FDB1.5 source manifest"
     )
     require_equal(source.get("benchmark"), "Full-Duplex-Bench v1.5", "FDB1.5 source")
     require_equal(
-        source.get("upstream_revision"), specification["upstream_revision"], "FDB1.5 revision"
+        source.get("upstream_revision"),
+        specification["upstream_revision"],
+        "FDB1.5 revision",
     )
     scenario_population = {
-        item["scenario"]: item["observed_complete_samples"] for item in source["archives"]
+        item["scenario"]: item["observed_complete_samples"]
+        for item in source["archives"]
     }
-    require_equal(sum(scenario_population.values()), specification["population"], "FDB1.5 source population")
+    require_equal(
+        sum(scenario_population.values()),
+        specification["population"],
+        "FDB1.5 source population",
+    )
     context_path, context = validate_run_context(
         root,
         specification["run_context"],
         benchmark="full-duplex-bench-v1.5",
+        expected_gateway_sha256=expected_gateway_sha256,
         label="FDB1.5",
     )
 
     run_path = resolve(root, specification["run_manifest"])
     run = read_json(run_path, "FDB1.5 run manifest")
     require_equal(run.get("schema_version"), "1.2.0", "FDB1.5 run schema")
-    require_equal(run.get("benchmark"), "full-duplex-bench-v1.5", "FDB1.5 run benchmark")
-    require_equal(run.get("revision"), specification["upstream_revision"], "FDB1.5 run revision")
-    require_equal(run.get("conditions"), specification["conditions"], "FDB1.5 conditions")
-    require_equal(run.get("replicates"), specification["replicates"], "FDB1.5 replicates")
+    require_equal(
+        run.get("benchmark"), "full-duplex-bench-v1.5", "FDB1.5 run benchmark"
+    )
+    require_equal(
+        run.get("revision"), specification["upstream_revision"], "FDB1.5 run revision"
+    )
+    require_equal(
+        run.get("conditions"), specification["conditions"], "FDB1.5 conditions"
+    )
+    require_equal(
+        run.get("replicates"), specification["replicates"], "FDB1.5 replicates"
+    )
     validate_local_descriptor(
         run.get("descriptor", {}),
         profile="fdb-v1.5-openai-realtime-adapter-i1-qg-v1",
         label="FDB1.5",
     )
     samples = run.get("samples", [])
-    require_equal(len(samples), specification["population"], "FDB1.5 planned population")
+    require_equal(
+        len(samples), specification["population"], "FDB1.5 planned population"
+    )
     sample_rows = [(item.get("scenario"), item.get("id")) for item in samples]
     require_equal(len(sample_rows), len(set(sample_rows)), "FDB1.5 unique samples")
-    require_equal(Counter(item[0] for item in sample_rows), Counter(scenario_population), "FDB1.5 scenarios")
+    require_equal(
+        Counter(item[0] for item in sample_rows),
+        Counter(scenario_population),
+        "FDB1.5 scenarios",
+    )
     completed = run.get("completed", [])
-    require_equal(len(completed), specification["population"], "FDB1.5 completed population")
+    require_equal(
+        len(completed), specification["population"], "FDB1.5 completed population"
+    )
     require_equal(len(run.get("failures", [])), 0, "FDB1.5 terminal failures")
     trial_ids = [item.get("trial_id") for item in completed]
     require_equal(len(trial_ids), len(set(trial_ids)), "FDB1.5 unique completed trials")
@@ -574,10 +720,14 @@ def validate_fdb15(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
     summary_path = resolve(root, specification["summary"])
     summary = read_json(summary_path, "FDB1.5 summary")
     require_equal(summary.get("schema_version"), "1.2.0", "FDB1.5 summary schema")
-    require_equal(summary.get("benchmark"), run["benchmark"], "FDB1.5 summary benchmark")
+    require_equal(
+        summary.get("benchmark"), run["benchmark"], "FDB1.5 summary benchmark"
+    )
     require_equal(summary.get("revision"), run["revision"], "FDB1.5 summary revision")
     conditions = summary.get("conditions", [])
-    require_equal(len(conditions), len(scenario_population), "FDB1.5 summary conditions")
+    require_equal(
+        len(conditions), len(scenario_population), "FDB1.5 summary conditions"
+    )
     summary_counts: dict[str, int] = {}
     for condition in conditions:
         require_equal(condition.get("condition"), "overlap", "FDB1.5 summary condition")
@@ -613,7 +763,9 @@ def validate_fdbv3_evaluation(
     scenarios = report.get("scenario_results", [])
     require_equal(len(scenarios), len(sample_ids), f"{label} scenario rows")
     require_equal(
-        {item.get("scenario_id") for item in scenarios}, sample_ids, f"{label} scenario IDs"
+        {item.get("scenario_id") for item in scenarios},
+        sample_ids,
+        f"{label} scenario IDs",
     )
     for scenario in scenarios:
         score = scenario.get("metrics", {}).get("response_qual", {}).get("score")
@@ -623,15 +775,22 @@ def validate_fdbv3_evaluation(
                 f"{label}/{scenario.get('scenario_id')} lacks an LLM response score",
             )
         else:
-            require_equal(score, None, f"{label}/{scenario.get('scenario_id')} exact-only response score")
+            require_equal(
+                score,
+                None,
+                f"{label}/{scenario.get('scenario_id')} exact-only response score",
+            )
     aggregate_score = report.get("by_metric", {}).get("response_qual")
     if llm_judge:
         require(
-            isinstance(aggregate_score, (int, float)) and not isinstance(aggregate_score, bool),
+            isinstance(aggregate_score, (int, float))
+            and not isinstance(aggregate_score, bool),
             f"{label} lacks the aggregate LLM response score",
         )
     else:
-        require_equal(aggregate_score, None, f"{label} exact-only aggregate response score")
+        require_equal(
+            aggregate_score, None, f"{label} exact-only aggregate response score"
+        )
     return report
 
 
@@ -645,9 +804,13 @@ def validate_fdbv3_judge_evidence(
 ) -> tuple[Path, dict[str, Any]]:
     path = resolve(root, path_value)
     evidence = read_json(path, "FDBv3 GPT-4o call evidence")
-    require_equal(evidence.get("schema_version"), "1.1.0", "FDBv3 judge evidence schema")
+    require_equal(
+        evidence.get("schema_version"), "1.1.0", "FDBv3 judge evidence schema"
+    )
     require_equal(evidence.get("status"), "complete", "FDBv3 judge evidence status")
-    require_equal(evidence.get("scenarios"), scenarios, "FDBv3 judge evidence scenarios")
+    require_equal(
+        evidence.get("scenarios"), scenarios, "FDBv3 judge evidence scenarios"
+    )
     require_equal(
         evidence.get("api_origin"),
         "https://api.openai.com/v1",
@@ -698,10 +861,7 @@ def validate_fdbv3_judge_evidence(
         response_model = call.get("response_model")
         require(
             isinstance(response_model, str)
-            and (
-                response_model == "gpt-4o"
-                or response_model.startswith("gpt-4o-")
-            ),
+            and (response_model == "gpt-4o" or response_model.startswith("gpt-4o-")),
             f"{call_label} has an invalid response model",
         )
         for field in (
@@ -709,7 +869,9 @@ def validate_fdbv3_judge_evidence(
             "response_sha256",
             "parsed_response_sha256",
         ):
-            require(valid_sha256(call.get(field)), f"{call_label} has an invalid {field}")
+            require(
+                valid_sha256(call.get(field)), f"{call_label} has an invalid {field}"
+            )
         usage = call.get("usage")
         require(
             isinstance(usage, dict)
@@ -736,19 +898,34 @@ def validate_fdbv3_judge_evidence(
     return path, evidence
 
 
-def validate_fdbv3(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
+def validate_fdbv3(
+    root: Path, specification: dict[str, Any], *, expected_gateway_sha256: str
+) -> dict[str, Any]:
     source_path, source = load_pin(
         root, specification["source_manifest"], "FDBv3 source manifest"
     )
     profile_path, profile = load_pin(root, specification["profile"], "FDBv3 profile")
     require_equal(source.get("benchmark"), "Full-Duplex-Bench v3", "FDBv3 source")
-    require_equal(source.get("upstream_revision"), specification["upstream_revision"], "FDBv3 revision")
-    require_equal(source["released_artifact"]["audio_examples"], specification["population"], "FDBv3 source population")
-    require_equal(profile.get("source", {}).get("revision"), specification["upstream_revision"], "FDBv3 profile revision")
+    require_equal(
+        source.get("upstream_revision"),
+        specification["upstream_revision"],
+        "FDBv3 revision",
+    )
+    require_equal(
+        source["released_artifact"]["audio_examples"],
+        specification["population"],
+        "FDBv3 source population",
+    )
+    require_equal(
+        profile.get("source", {}).get("revision"),
+        specification["upstream_revision"],
+        "FDBv3 profile revision",
+    )
     context_path, context = validate_run_context(
         root,
         specification["run_context"],
         benchmark="full-duplex-bench-v3",
+        expected_gateway_sha256=expected_gateway_sha256,
         label="FDBv3",
     )
 
@@ -756,10 +933,18 @@ def validate_fdbv3(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
     run = read_json(run_path, "FDBv3 run manifest")
     require_equal(run.get("schema_version"), "1.0.0", "FDBv3 run schema")
     require_equal(run.get("benchmark"), "Full-Duplex-Bench v3", "FDBv3 benchmark")
-    require_equal(run.get("revision"), specification["upstream_revision"], "FDBv3 run revision")
+    require_equal(
+        run.get("revision"), specification["upstream_revision"], "FDBv3 run revision"
+    )
     require_equal(run.get("profile"), profile["profile"], "FDBv3 run profile")
-    require_equal(run.get("profile_sha256"), specification["profile"]["sha256"], "FDBv3 run profile hash")
-    validate_local_descriptor(run.get("descriptor", {}), profile=profile["profile"], label="FDBv3")
+    require_equal(
+        run.get("profile_sha256"),
+        specification["profile"]["sha256"],
+        "FDBv3 run profile hash",
+    )
+    validate_local_descriptor(
+        run.get("descriptor", {}), profile=profile["profile"], label="FDBv3"
+    )
     samples = run.get("samples", [])
     require_equal(len(samples), specification["population"], "FDBv3 planned population")
     labels = {f"{item['example_id']}_{item['pid']}" for item in samples}
@@ -781,15 +966,43 @@ def validate_fdbv3(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
             "1.0.0",
             f"FDBv3 {sample['example_id']} result schema",
         )
-        require_equal(result.get("status"), "completed", f"FDBv3 {sample['example_id']} status")
-        require_equal(result.get("pid"), sample["pid"], f"FDBv3 {sample['example_id']} PID")
-        require_equal(result.get("example_id"), sample["example_id"], f"FDBv3 {sample['example_id']} ID")
-        require_equal(result.get("provider"), "openrealtime", f"FDBv3 {sample['example_id']} provider")
+        require_equal(
+            result.get("status"), "completed", f"FDBv3 {sample['example_id']} status"
+        )
+        require_equal(
+            result.get("pid"), sample["pid"], f"FDBv3 {sample['example_id']} PID"
+        )
+        require_equal(
+            result.get("example_id"),
+            sample["example_id"],
+            f"FDBv3 {sample['example_id']} ID",
+        )
+        require_equal(
+            result.get("provider"),
+            "openrealtime",
+            f"FDBv3 {sample['example_id']} provider",
+        )
         evidence = result.get("openrealtime", {})
-        require_equal(evidence.get("benchmark_revision"), specification["upstream_revision"], f"FDBv3 {sample['example_id']} evidence revision")
-        require_equal(evidence.get("profile_sha256"), specification["profile"]["sha256"], f"FDBv3 {sample['example_id']} evidence profile")
-        require_equal(evidence.get("input_sha256"), sample["input_sha256"], f"FDBv3 {sample['example_id']} input hash")
-        require_equal(evidence.get("metadata_sha256"), sample["metadata_sha256"], f"FDBv3 {sample['example_id']} metadata hash")
+        require_equal(
+            evidence.get("benchmark_revision"),
+            specification["upstream_revision"],
+            f"FDBv3 {sample['example_id']} evidence revision",
+        )
+        require_equal(
+            evidence.get("profile_sha256"),
+            specification["profile"]["sha256"],
+            f"FDBv3 {sample['example_id']} evidence profile",
+        )
+        require_equal(
+            evidence.get("input_sha256"),
+            sample["input_sha256"],
+            f"FDBv3 {sample['example_id']} input hash",
+        )
+        require_equal(
+            evidence.get("metadata_sha256"),
+            sample["metadata_sha256"],
+            f"FDBv3 {sample['example_id']} metadata hash",
+        )
         output_entries.append((output_path, evidence.get("output_sha256")))
         result_entries.append((result_path, None))
     output_tree = artifact_tree(root, output_entries, label="FDBv3 output audio")
@@ -798,10 +1011,16 @@ def validate_fdbv3(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
     exact_path = resolve(root, specification["evaluations"]["exact"])
     judge_path = resolve(root, specification["evaluations"]["gpt4o"])
     exact = validate_fdbv3_evaluation(
-        exact_path, sample_ids=sample_ids, llm_judge=False, label="FDBv3 exact evaluation"
+        exact_path,
+        sample_ids=sample_ids,
+        llm_judge=False,
+        label="FDBv3 exact evaluation",
     )
     judge = validate_fdbv3_evaluation(
-        judge_path, sample_ids=sample_ids, llm_judge=True, label="FDBv3 GPT-4o evaluation"
+        judge_path,
+        sample_ids=sample_ids,
+        llm_judge=True,
+        label="FDBv3 GPT-4o evaluation",
     )
     judge_evidence_path, judge_evidence = validate_fdbv3_judge_evidence(
         root,
@@ -844,19 +1063,38 @@ def validate_fdbv3(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def validate_fdbench(root: Path, specification: dict[str, Any]) -> dict[str, Any]:
+def validate_fdbench(
+    root: Path, specification: dict[str, Any], *, expected_gateway_sha256: str
+) -> dict[str, Any]:
     source_path, source = load_pin(
         root, specification["source_manifest"], "FD-Bench source manifest"
     )
-    require_equal(source.get("upstream_revision"), specification["upstream_revision"], "FD-Bench revision")
-    require_equal(source.get("dataset_revision"), specification["dataset_revision"], "FD-Bench dataset revision")
-    require_equal(source.get("expected_released_conversations"), specification["population"], "FD-Bench source population")
-    require_equal(source.get("expected_cell_count"), specification["cells"], "FD-Bench source cells")
+    require_equal(
+        source.get("upstream_revision"),
+        specification["upstream_revision"],
+        "FD-Bench revision",
+    )
+    require_equal(
+        source.get("dataset_revision"),
+        specification["dataset_revision"],
+        "FD-Bench dataset revision",
+    )
+    require_equal(
+        source.get("expected_released_conversations"),
+        specification["population"],
+        "FD-Bench source population",
+    )
+    require_equal(
+        source.get("expected_cell_count"),
+        specification["cells"],
+        "FD-Bench source cells",
+    )
     expected_cells = source["expected_cell_populations"]
     context_path, context = validate_run_context(
         root,
         specification["run_context"],
         benchmark="fd-bench",
+        expected_gateway_sha256=expected_gateway_sha256,
         label="FD-Bench",
     )
 
@@ -864,27 +1102,51 @@ def validate_fdbench(root: Path, specification: dict[str, Any]) -> dict[str, Any
     run = read_json(run_path, "FD-Bench run manifest")
     require_equal(run.get("schema_version"), "1.0.0", "FD-Bench run schema")
     require_equal(run.get("benchmark"), "FD-Bench", "FD-Bench run benchmark")
-    require_equal(run.get("revision"), specification["upstream_revision"], "FD-Bench run revision")
-    require_equal(run.get("dataset_revision"), specification["dataset_revision"], "FD-Bench run dataset revision")
+    require_equal(
+        run.get("revision"), specification["upstream_revision"], "FD-Bench run revision"
+    )
+    require_equal(
+        run.get("dataset_revision"),
+        specification["dataset_revision"],
+        "FD-Bench run dataset revision",
+    )
     validate_local_descriptor(
-        run.get("descriptor", {}), profile="fd-bench-standard-realtime-v1", label="FD-Bench"
+        run.get("descriptor", {}),
+        profile="fd-bench-standard-realtime-v1",
+        label="FD-Bench",
     )
     samples = run.get("samples", [])
-    require_equal(len(samples), specification["population"], "FD-Bench planned population")
+    require_equal(
+        len(samples), specification["population"], "FD-Bench planned population"
+    )
     labels = {f"{item['cell']}/{item['id']}" for item in samples}
     require_equal(len(labels), len(samples), "FD-Bench unique samples")
     require_equal(
-        Counter(item["cell"] for item in samples), Counter(expected_cells), "FD-Bench cell populations"
+        Counter(item["cell"] for item in samples),
+        Counter(expected_cells),
+        "FD-Bench cell populations",
     )
     require_equal(set(run.get("completed", [])), labels, "FD-Bench completed samples")
-    require_equal(len(run.get("completed", [])), len(labels), "FD-Bench completed count")
+    require_equal(
+        len(run.get("completed", [])), len(labels), "FD-Bench completed count"
+    )
     require_equal(len(run.get("failures", [])), 0, "FD-Bench terminal failures")
 
     finalization_path = resolve(root, specification["finalization"])
     finalization = read_json(finalization_path, "FD-Bench finalization")
-    require_equal(finalization.get("benchmark"), "FD-Bench", "FD-Bench finalization benchmark")
-    require_equal(finalization.get("revision"), specification["upstream_revision"], "FD-Bench finalization revision")
-    require_equal(finalization.get("results"), specification["population"], "FD-Bench finalized population")
+    require_equal(
+        finalization.get("benchmark"), "FD-Bench", "FD-Bench finalization benchmark"
+    )
+    require_equal(
+        finalization.get("revision"),
+        specification["upstream_revision"],
+        "FD-Bench finalization revision",
+    )
+    require_equal(
+        finalization.get("results"),
+        specification["population"],
+        "FD-Bench finalized population",
+    )
     validate_tree_summary(
         finalization.get("result_evidence"),
         files=specification["population"],
@@ -898,41 +1160,98 @@ def validate_fdbench(root: Path, specification: dict[str, Any]) -> dict[str, Any
     vad = finalization.get("vad", {})
     contract = source["evaluation_contract"]
     require_equal(vad.get("name"), contract["output_vad"], "FD-Bench VAD")
-    require_equal(vad.get("package_version"), contract["output_vad_package_version"], "FD-Bench VAD version")
-    require_equal(vad.get("threshold"), contract["output_vad_threshold"], "FD-Bench VAD threshold")
-    require_equal(vad.get("min_silence_duration_ms"), contract["output_min_silence_duration_ms"], "FD-Bench VAD silence")
-    require_equal(vad.get("timestamp_rate_hz"), contract["input_timestamp_rate_hz"], "FD-Bench VAD clock")
+    require_equal(
+        vad.get("package_version"),
+        contract["output_vad_package_version"],
+        "FD-Bench VAD version",
+    )
+    require_equal(
+        vad.get("threshold"), contract["output_vad_threshold"], "FD-Bench VAD threshold"
+    )
+    require_equal(
+        vad.get("min_silence_duration_ms"),
+        contract["output_min_silence_duration_ms"],
+        "FD-Bench VAD silence",
+    )
+    require_equal(
+        vad.get("timestamp_rate_hz"),
+        contract["input_timestamp_rate_hz"],
+        "FD-Bench VAD clock",
+    )
     traces = finalization.get("traces", {})
     require_equal(set(traces), set(expected_cells), "FD-Bench finalized trace cells")
 
     expected_metric_names = {
-        "SRR_pct", "SIR_pct", "EIR_pct", "NIR_pct", "SRIR_pct",
-        "FSED_ms", "ERT_ms", "EIT_ms", "IRD_ms",
+        "SRR_pct",
+        "SIR_pct",
+        "EIR_pct",
+        "NIR_pct",
+        "SRIR_pct",
+        "FSED_ms",
+        "ERT_ms",
+        "EIT_ms",
+        "IRD_ms",
     }
     metrics_directory = resolve(root, specification["metrics_directory"])
-    metric_paths = sorted(metrics_directory.glob("*.json")) if metrics_directory.is_dir() else []
-    require_equal({path.stem for path in metric_paths}, set(expected_cells), "FD-Bench metric cells")
+    metric_paths = (
+        sorted(metrics_directory.glob("*.json")) if metrics_directory.is_dir() else []
+    )
+    require_equal(
+        {path.stem for path in metric_paths},
+        set(expected_cells),
+        "FD-Bench metric cells",
+    )
     metric_panel: dict[str, Any] = {}
     for cell, expected_population in expected_cells.items():
         trace = traces[cell]
-        require_equal(trace.get("samples"), expected_population, f"FD-Bench {cell} trace population")
+        require_equal(
+            trace.get("samples"),
+            expected_population,
+            f"FD-Bench {cell} trace population",
+        )
         trace_path = resolve(root, trace["path"])
         require(trace_path.is_file(), f"FD-Bench {cell} trace is missing: {trace_path}")
-        require_equal(sha256_file(trace_path), trace.get("sha256"), f"FD-Bench {cell} trace hash")
+        require_equal(
+            sha256_file(trace_path), trace.get("sha256"), f"FD-Bench {cell} trace hash"
+        )
         metric_path = metrics_directory / f"{cell}.json"
         metric = read_json(metric_path, f"FD-Bench metric {cell}")
-        require_equal(metric.get("schema_version"), "1.0.0", f"FD-Bench {cell} metric schema")
-        require_equal(metric.get("benchmark"), "FD-Bench", f"FD-Bench {cell} metric benchmark")
-        require_equal(metric.get("revision"), specification["upstream_revision"], f"FD-Bench {cell} metric revision")
-        require_equal(metric.get("trace", {}).get("samples"), expected_population, f"FD-Bench {cell} metric population")
-        require_equal(metric.get("trace", {}).get("sha256"), trace["sha256"], f"FD-Bench {cell} metric trace hash")
+        require_equal(
+            metric.get("schema_version"), "1.0.0", f"FD-Bench {cell} metric schema"
+        )
+        require_equal(
+            metric.get("benchmark"), "FD-Bench", f"FD-Bench {cell} metric benchmark"
+        )
+        require_equal(
+            metric.get("revision"),
+            specification["upstream_revision"],
+            f"FD-Bench {cell} metric revision",
+        )
+        require_equal(
+            metric.get("trace", {}).get("samples"),
+            expected_population,
+            f"FD-Bench {cell} metric population",
+        )
+        require_equal(
+            metric.get("trace", {}).get("sha256"),
+            trace["sha256"],
+            f"FD-Bench {cell} metric trace hash",
+        )
         require_equal(
             resolve(root, metric.get("trace", {}).get("path", trace["path"])),
             trace_path,
             f"FD-Bench {cell} metric trace path",
         )
-        require_equal(set(metric.get("metrics", {})), expected_metric_names, f"FD-Bench {cell} objective metrics")
-        require_equal(set(metric.get("not_evaluated", {})), set(specification["explicit_exclusions"]), f"FD-Bench {cell} exclusions")
+        require_equal(
+            set(metric.get("metrics", {})),
+            expected_metric_names,
+            f"FD-Bench {cell} objective metrics",
+        )
+        require_equal(
+            set(metric.get("not_evaluated", {})),
+            set(specification["explicit_exclusions"]),
+            f"FD-Bench {cell} exclusions",
+        )
         metric_panel[cell] = {
             "population": expected_population,
             "artifact": artifact(root, metric_path),
@@ -966,7 +1285,12 @@ def build_report(root: Path, manifest_path: Path) -> dict[str, Any]:
     require_equal(manifest.get("status"), "preregistered", "study manifest status")
     policy = manifest.get("publication_policy", {})
     require_equal(policy.get("partial_results"), "forbidden", "partial-results policy")
-    require_equal(policy.get("cross_benchmark_composite"), "forbidden", "composite policy")
+    require_equal(
+        policy.get("cross_benchmark_composite"), "forbidden", "composite policy"
+    )
+    runtime_path, runtime = validate_study_runtime(root, manifest["runtime"])
+    gateway_source_revision = runtime["source_revision"]
+    gateway_sha256 = runtime["binary_sha256"]
     return {
         "schema_version": "1.0.0",
         "status": "complete",
@@ -974,17 +1298,33 @@ def build_report(root: Path, manifest_path: Path) -> dict[str, Any]:
         "study": {
             "id": manifest["study_id"],
             "manifest": artifact(root, manifest_path),
+            "runtime_manifest": artifact(root, runtime_path),
+            "gateway_source_revision": gateway_source_revision,
+            "gateway_executable_sha256": gateway_sha256,
             "publication_policy": policy,
         },
         "evidence_panel": {
-            "tau_voice": validate_tau(root, manifest["tau_voice"]),
+            "tau_voice": validate_tau(
+                root,
+                manifest["tau_voice"],
+                expected_gateway_source_revision=gateway_source_revision,
+                expected_gateway_sha256=gateway_sha256,
+            ),
             "full_duplex_bench_v1_5": validate_fdb15(
-                root, manifest["full_duplex_bench_v1_5"]
+                root,
+                manifest["full_duplex_bench_v1_5"],
+                expected_gateway_sha256=gateway_sha256,
             ),
             "full_duplex_bench_v3": validate_fdbv3(
-                root, manifest["full_duplex_bench_v3"]
+                root,
+                manifest["full_duplex_bench_v3"],
+                expected_gateway_sha256=gateway_sha256,
             ),
-            "fd_bench": validate_fdbench(root, manifest["fd_bench"]),
+            "fd_bench": validate_fdbench(
+                root,
+                manifest["fd_bench"],
+                expected_gateway_sha256=gateway_sha256,
+            ),
         },
         "interpretation": {
             "aggregation": "none across benchmark families",

@@ -62,6 +62,7 @@ def run_context(benchmark: str) -> dict:
             {
                 "status": "complete",
                 "source_worktree_clean_start": True,
+                "study_gateway_sha256": "a" * 64,
                 "openrealtime_revision_start": "c" * 40,
                 "gateway_health_start": {"status": "ok"},
                 "gateway_health_final": {"status": "ok"},
@@ -87,6 +88,21 @@ class Fixture:
     def _build(self) -> None:
         tau_source = self.root / "benchmarks/external/tau.json"
         write_json(tau_source, {"benchmark": {"name": "tau-Voice"}})
+        runtime_manifest = self.root / "benchmarks/runtime/canonical-gateway-v1.json"
+        write_json(
+            runtime_manifest,
+            {
+                "schema_version": "1.0.0",
+                "runtime_id": "openrealtime-canonical-gateway-v1",
+                "source_revision": "c" * 40,
+                "binary_sha256": "a" * 64,
+                "runtime_path": ".runtime/study-runtime/canonical-gateway-v1/realtimegateway",
+                "build": {
+                    "go": "/usr/local/go/bin/go",
+                    "command": "go build -trimpath -buildvcs=false ./cmd/realtimegateway",
+                },
+            },
+        )
         matrix = self.root / "benchmarks/tau/matrix.json"
         matrix_payload = {
             "matrix_id": "tau-mini",
@@ -98,9 +114,17 @@ class Fixture:
                 "num_trials": 1,
             },
             "cells": [{"id": "control", "speech_complexity": "control"}],
+            "runtime_requirements": {
+                "gateway": {
+                    "source_revision": "c" * 40,
+                    "executable_sha256": "a" * 64,
+                }
+            },
         }
         write_json(matrix, matrix_payload)
-        tau_report = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
+        tau_report = (
+            self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
+        )
         write_json(
             tau_report,
             {
@@ -118,6 +142,7 @@ class Fixture:
                         "status": "complete",
                         "openrealtime_revision": "openrealtime-revision",
                         "runtime_identity": runtime_identity(),
+                        "runtime_identity_final": runtime_identity(),
                     }
                 ],
                 "cells": {
@@ -154,9 +179,7 @@ class Fixture:
         fdb15_run = self.root / ".runtime/fdb15/run.json"
         fdb15_context = self.root / ".runtime/fdb15/context.json"
         write_json(fdb15_context, run_context("full-duplex-bench-v1.5"))
-        fdb15_descriptor = descriptor(
-            "fdb-v1.5-openai-realtime-adapter-i1-qg-v1"
-        )
+        fdb15_descriptor = descriptor("fdb-v1.5-openai-realtime-adapter-i1-qg-v1")
         fdb15_output = self.root / ".runtime/fdb15/trial/output.wav"
         fdb15_output.parent.mkdir(parents=True, exist_ok=True)
         fdb15_output.write_bytes(b"fdb15-audio")
@@ -339,7 +362,9 @@ class Fixture:
         )
         trace = self.root / ".runtime/fd/output/cell/openrealtime.txt"
         trace.parent.mkdir(parents=True, exist_ok=True)
-        trace.write_text("conversation_1.wav || [] || [] || [] || []\n", encoding="utf-8")
+        trace.write_text(
+            "conversation_1.wav || [] || [] || [] || []\n", encoding="utf-8"
+        )
         fd_finalization = self.root / ".runtime/fd/finalization.json"
         write_json(
             fd_finalization,
@@ -416,6 +441,7 @@ class Fixture:
                     "cross_benchmark_composite": "forbidden",
                     "presentation": "benchmark-specific evidence panel",
                 },
+                "runtime": self.pin(runtime_manifest),
                 "tau_voice": {
                     "source_manifest": self.pin(tau_source),
                     "matrices": [self.pin(matrix)],
@@ -508,7 +534,9 @@ class FullStudyTest(unittest.TestCase):
             ],
             1,
         )
-        self.assertEqual(report["interpretation"]["aggregation"], "none across benchmark families")
+        self.assertEqual(
+            report["interpretation"]["aggregation"], "none across benchmark families"
+        )
 
     def test_rejects_terminal_failures_even_with_a_completed_row(self) -> None:
         path = self.fixture.paths["fdb15_run"]
@@ -519,10 +547,7 @@ class FullStudyTest(unittest.TestCase):
             self.report()
 
     def test_rejects_an_incomplete_tau_termination_distribution(self) -> None:
-        path = (
-            self.root
-            / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
-        )
+        path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
         report = json.loads(path.read_text(encoding="utf-8"))
         report["cells"]["control"]["domains"]["airline"]["population"][
             "termination_reasons"
@@ -534,16 +559,21 @@ class FullStudyTest(unittest.TestCase):
             self.report()
 
     def test_rejects_missing_runtime_process_identity(self) -> None:
-        path = (
-            self.root
-            / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
-        )
+        path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
         report = json.loads(path.read_text(encoding="utf-8"))
-        del report["execution_evidence"][0]["runtime_identity"]["components"][
-            "gateway"
-        ]
+        del report["execution_evidence"][0]["runtime_identity"]["components"]["gateway"]
         write_json(path, report)
         with self.assertRaisesRegex(REPORT.StudyIncompleteError, "runtime components"):
+            self.report()
+
+    def test_rejects_tau_execution_on_a_different_gateway_binary(self) -> None:
+        path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
+        report = json.loads(path.read_text(encoding="utf-8"))
+        report["execution_evidence"][0]["runtime_identity"]["components"]["gateway"][
+            "executable_sha256"
+        ] = "d" * 64
+        write_json(path, report)
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "frozen executable"):
             self.report()
 
     def test_rejects_external_runtime_replacement(self) -> None:
@@ -554,6 +584,16 @@ class FullStudyTest(unittest.TestCase):
         ] = "101"
         write_json(path, context)
         with self.assertRaisesRegex(REPORT.StudyIncompleteError, "runtime processes"):
+            self.report()
+
+    def test_rejects_external_run_without_the_frozen_gateway_declaration(self) -> None:
+        path = self.fixture.paths["fd_context"]
+        context = json.loads(path.read_text(encoding="utf-8"))
+        context["invocations"][0]["study_gateway_sha256"] = None
+        write_json(path, context)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "frozen gateway declaration"
+        ):
             self.report()
 
     def test_rejects_a_missing_official_llm_judge_score(self) -> None:
