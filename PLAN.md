@@ -941,9 +941,12 @@ gateway now composes all three local GPU services with hosted slow reasoning,
 passes the official τ OpenAI provider suite 12/12, and exposes paced Fish agent
 speech. Complete 50/100/400/800 ms candidate matrices are frozen and queued;
 each changes the τ input frame, gateway provider chunk, and Qwen server chunk
-together and verifies the live profile before execution. Repeated randomized
-trials, adaptive scheduling, tail distributions, and aligned GPU utilization
-remain.
+together and verifies the live profile before execution. A separate
+revision-event control and bounded 100–400 ms revision-adaptive condition are
+also frozen and queued. Both use 50 ms input opportunities, and the adaptive
+rule observes typed revision presence only; matrix artifacts preserve start
+and final provider-work counters alongside GPU telemetry. Repeated randomized
+trials, tail distributions, and analysis of the complete results remain.
 
 Deliverables:
 

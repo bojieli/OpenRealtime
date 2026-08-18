@@ -283,6 +283,29 @@ resumption. Projection uses typed provenance only and cannot examine task or
 transcript content. Each control repeats the full 278-task control and regular
 speech populations after the cadence and effort queue.
 
+Gateway runtime counters remain outside the Realtime wire contract. `/healthz`
+reports cumulative input frames, stateful ASR provider advances,
+finalizations, and sessions; every matrix run freezes the initial and final
+snapshots beside its GPU telemetry. This distinguishes a nominal tick from an
+actual ASR advance for cadence analysis.
+
+The event/adaptive preregistration separates three quantities that must not be
+conflated: 50 ms simulator input opportunities, the stateful ASR provider's
+current advance threshold, and ASR revisions that actually open a preparation
+opportunity. `matrix-revision-event-v1.json` holds the provider threshold at
+200 ms. `matrix-adaptive-v1.json` starts at 100 ms, doubles after an advance
+without a typed revision, caps at 400 ms, and resets after a typed revision.
+The rule can observe revision presence and finalization only; transcript text,
+keywords, task identity, and model difficulty are prohibited inputs. Run both
+complete controls with:
+
+```bash
+scripts/run-tau-event-adaptive-ablation.sh
+```
+
+The queue wrapper waits for the previously registered cognitive controls and
+requires their exact completion marker before it changes the live profile.
+
 ## Primary reporting panel
 
 Report task and interaction behavior together:
