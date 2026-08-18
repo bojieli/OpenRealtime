@@ -34,6 +34,24 @@ def descriptor(profile: str) -> dict:
     }
 
 
+def runtime_identity() -> dict:
+    component = {
+        "pid": 1,
+        "proc_start_time_ticks": "100",
+        "executable": "/runtime/component",
+        "executable_sha256": "a" * 64,
+        "command_sha256": "b" * 64,
+        "argv": ["/runtime/component"],
+    }
+    return {
+        "schema_version": "1.0.0",
+        "host_boot_id": "boot",
+        "components": {
+            name: dict(component) for name in ("gateway", "asr", "fish", "qwen")
+        },
+    }
+
+
 class Fixture:
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -79,6 +97,7 @@ class Fixture:
                     {
                         "status": "complete",
                         "openrealtime_revision": "openrealtime-revision",
+                        "runtime_identity": runtime_identity(),
                     }
                 ],
                 "cells": {
@@ -396,6 +415,19 @@ class FullStudyTest(unittest.TestCase):
         with self.assertRaisesRegex(
             REPORT.StudyIncompleteError, "termination population"
         ):
+            self.report()
+
+    def test_rejects_missing_runtime_process_identity(self) -> None:
+        path = (
+            self.root
+            / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
+        )
+        report = json.loads(path.read_text(encoding="utf-8"))
+        del report["execution_evidence"][0]["runtime_identity"]["components"][
+            "gateway"
+        ]
+        write_json(path, report)
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "runtime components"):
             self.report()
 
     def test_rejects_a_missing_official_llm_judge_score(self) -> None:

@@ -109,6 +109,51 @@ def validate_local_descriptor(
     require_equal(descriptor, expected, f"{label} descriptor")
 
 
+def validate_runtime_identity(
+    identity: Any, *, requires_local_fast: bool, label: str
+) -> None:
+    require(isinstance(identity, dict), f"{label} runtime identity is absent")
+    require_equal(identity.get("schema_version"), "1.0.0", f"{label} identity schema")
+    require(
+        isinstance(identity.get("host_boot_id"), str)
+        and bool(identity["host_boot_id"]),
+        f"{label} host boot identity is absent",
+    )
+    components = identity.get("components")
+    require(isinstance(components, dict), f"{label} runtime components are absent")
+    required = {"gateway", "asr", "fish"}
+    if requires_local_fast:
+        required.add("qwen")
+    require(required <= set(components), f"{label} is missing runtime components")
+    for name in sorted(required):
+        component = components[name]
+        require(
+            isinstance(component.get("pid"), int)
+            and not isinstance(component["pid"], bool)
+            and component["pid"] > 0,
+            f"{label}/{name} has an invalid PID",
+        )
+        require(
+            isinstance(component.get("proc_start_time_ticks"), str)
+            and component["proc_start_time_ticks"].isdigit(),
+            f"{label}/{name} has an invalid process start identity",
+        )
+        for field in ("executable_sha256", "command_sha256"):
+            value = component.get(field)
+            require(
+                isinstance(value, str)
+                and len(value) == 64
+                and all(character in "0123456789abcdef" for character in value),
+                f"{label}/{name} has an invalid {field}",
+            )
+        require(
+            isinstance(component.get("argv"), list)
+            and all(isinstance(value, str) for value in component["argv"])
+            and bool(component["argv"]),
+            f"{label}/{name} has invalid argv evidence",
+        )
+
+
 def validate_tau_matrix(
     root: Path, matrix_specification: dict[str, Any]
 ) -> dict[str, Any]:
@@ -238,6 +283,15 @@ def validate_tau_matrix(
     require(isinstance(execution, list), f"{matrix_id} execution evidence is absent")
     complete_runs = [item for item in execution if item.get("status") == "complete"]
     require(complete_runs, f"{matrix_id} has no complete execution artifact")
+    requires_local_fast = matrix.get("runtime_requirements", {}).get(
+        "requires_local_fast", True
+    )
+    for index, complete_run in enumerate(complete_runs):
+        validate_runtime_identity(
+            complete_run.get("runtime_identity"),
+            requires_local_fast=requires_local_fast,
+            label=f"{matrix_id} complete execution {index}",
+        )
     revisions = sorted(
         {
             item["openrealtime_revision"]

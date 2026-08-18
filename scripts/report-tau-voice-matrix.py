@@ -383,6 +383,7 @@ def collect_run_evidence(
             "started_at": payload.get("started_at"),
             "completed_at": payload.get("completed_at"),
             "openrealtime_revision": payload.get("openrealtime_revision"),
+            "runtime_identity": payload.get("runtime_identity"),
             "gateway_health_start": payload.get("gateway_health"),
             "gateway_health_final": payload.get("gateway_health_final"),
         }

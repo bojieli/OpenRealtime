@@ -51,6 +51,7 @@ if ! curl --fail --silent --show-error http://127.0.0.1:8001/ >/dev/null; then
   echo "Qwen3-ASR is not healthy" >&2
   exit 1
 fi
+runtime_identity="$("${repository_root}/scripts/capture-local-runtime-identity.sh")"
 expected_asr_model="$(jq -r '.runtime_requirements.asr.model // empty' "${matrix}")"
 if [[ -n "${expected_asr_model}" ]]; then
   expected_asr_chunk_ms="$(jq -r '.runtime_requirements.asr.provider_chunk_ms' "${matrix}")"
@@ -127,7 +128,8 @@ jq -n \
   --arg openrealtime_revision "$(git -C "${repository_root}" rev-parse HEAD)" \
   --arg selected_cell "${selected_cell}" \
   --argjson gateway_health "${gateway_health}" \
-  '{schema_version:"1.0.0",started_at:$started_at,matrix:$matrix,matrix_sha256:$matrix_sha256,patch_sha256:$patch_sha256,tau_revision:$tau_revision,openrealtime_revision:$openrealtime_revision,selected_cell:(if $selected_cell == "" then null else $selected_cell end),gateway_health:$gateway_health,status:"running"}' \
+  --argjson runtime_identity "${runtime_identity}" \
+  '{schema_version:"1.0.0",started_at:$started_at,matrix:$matrix,matrix_sha256:$matrix_sha256,patch_sha256:$patch_sha256,tau_revision:$tau_revision,openrealtime_revision:$openrealtime_revision,selected_cell:(if $selected_cell == "" then null else $selected_cell end),gateway_health:$gateway_health,runtime_identity:$runtime_identity,status:"running"}' \
   >"${run_root}/run.json"
 
 telemetry="${run_root}/gpu.csv"
