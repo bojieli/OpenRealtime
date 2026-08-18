@@ -44,6 +44,10 @@ declares the same source/hash pair, every completed τ launcher captures both
 initial and final identities, and the terminal reporter rejects a missing,
 changed, or mixed executable. `matrix-v1.json` is preserved because its live
 pilot began before this freeze; it is not admitted by `full-study-v1.json`.
+The launcher also requires a clean OpenRealtime tree at both boundaries and
+the same source revision throughout the invocation. Source edits therefore
+produce an interrupted/non-publishable attempt rather than silently mixing
+harness implementations inside one matrix population.
 
 The full matrices also have a lossless storage gate. After an exact matrix
 population validates, `archive-tau-voice-artifacts.sh` writes one deterministic

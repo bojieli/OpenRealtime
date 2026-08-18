@@ -237,8 +237,9 @@ The three external runners also create a `run-context.json` sidecar before
 their first adapter call. Launch refuses a dirty OpenRealtime worktree. The
 sidecar binds the runner revision, declared study-gateway hash, and live
 component identities, and completion is refused if the gateway, ASR, Fish, or
-local Qwen process changed during the invocation. A resumed launcher appends a
-new invocation and marks an unfinished
+local Qwen process changed during the invocation. Completion also requires a
+clean worktree at the same source revision recorded at launch. A resumed
+launcher appends a new invocation and marks an unfinished
 predecessor interrupted instead of overwriting it. The terminal gate requires
 the last invocation to complete, validates every identity, preserves
 interrupted attempts, and hashes each sidecar.
@@ -247,4 +248,6 @@ interrupted attempts, and hashes each sidecar.
 all-cell process writes `run.json` and GPU telemetry below a unique
 timestamp/PID attempt directory. Resuming the benchmark population can reuse
 validated simulation files, but it cannot overwrite a failed, interrupted, or
-completed launcher attempt.
+completed launcher attempt. A complete attempt records clean source at both
+boundaries and matching initial/final OpenRealtime revisions; the terminal
+report rejects any complete population lacking that evidence.
