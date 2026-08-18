@@ -127,7 +127,7 @@
       "published_claims": ["GPT-Live reports gains on GPQA, BrowseComp, and an internal tau-Voice Telecom variant.", "TML reports FDB v3 and turn-based intelligence metrics, sometimes with its background agent."],
       "local_status": "full_benchmark_running",
       "local_evidence": "The official public tau-Voice base suite runs 278 tasks across airline, retail, and telecom with the standard Realtime adapter. The local FDB v3 run adds 100 disfluent tool-use recordings. A preserved 0.6B ASR identifier failure motivates a complete, task-agnostic paired 1.7B ASR matrix. Published internal variants are not treated as identical suites.",
-      "validation": ["benchmarks/tau-voice/matrix-v1.json", "benchmarks/tau-voice/asr-ablation-v1.json", "benchmarks/external/full-duplex-bench-v3.manifest.json"]
+      "validation": ["benchmarks/tau-voice/matrix-canonical-v1.json", "benchmarks/tau-voice/asr-ablation-v1.json", "benchmarks/external/full-duplex-bench-v3.manifest.json"]
     }
   ],
   "published_tml_reference": {

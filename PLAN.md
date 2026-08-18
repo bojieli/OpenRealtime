@@ -1019,9 +1019,14 @@ Exit criteria:
 ### M10 — Responsiveness–intelligence comparative study
 
 Status: full execution in progress. The 12-case official τ provider gate,
-exploratory paired task, strict seven-persona Fish registry, frozen baseline
-matrix, exact FDB v1.5/FDB v3 releases, and resumable runners are complete. The
-278-task control cell is running; regular, 498-recording FDB v1.5,
+exploratory paired task, strict seven-persona Fish registry, exact FDB
+v1.5/FDB v3 releases, and resumable runners are complete. The 278-task control
+that launched before the executable freeze is running as a preserved pilot and
+is excluded from causal comparisons. The publishable baseline and every later
+condition declare one reproducible gateway built from source revision
+`3048160ee444c69941d6d4e12ddc47cea789afd0` with executable SHA-256
+`2168fe5a7b5dbef6051a6983a9148f0cc84434a64284b59cfd699f491a3d5df2`.
+Its complete control/regular populations, 498-recording FDB v1.5,
 100-recording FDB v3, complete Qwen3-ASR 1.7B paired cells, the 21-cell,
 6,147-conversation released FD-Bench matrix, complete paired Gemini-fast cells,
 four complete cadence matrices, a complete medium-slow matrix, and complete
@@ -1030,8 +1035,8 @@ Interaction Model controls remain unavailable through a public executable
 endpoint. A complete endpoint-only preparation control is queued behind the
 event/adaptive populations and changes only whether partial ASR revisions may
 start private continuation work. A fresh complete continuous population runs
-immediately before it because the historical baseline predates provider-work
-health counters. A strict paired reporter requires matching source revisions,
+immediately before it to keep provider-work snapshots adjacent. A strict
+paired reporter requires matching frozen executable, source revisions,
 ASR/model/Fish/tool profiles, complete populations, and provider deltas before
 it emits raw differences; disjoint foreground/private-call counters make zero
 speculation in the endpoint condition an exact manipulation check. It creates
@@ -1041,8 +1046,9 @@ population and deterministic summary, both official 100-example FDB v3
 evaluations, and all 6,147 FD-Bench conversations plus 21 pinned timing
 reports. A final fail-closed reporter runs only after the serial dependency
 chain finishes. It verifies exact populations, zero terminal harness failures,
-source/profile hashes, evaluator coverage, Silero trace hashes, and explicit
-FD-Bench exclusions before publishing a benchmark-specific evidence panel.
+source/profile hashes, frozen gateway identities, evaluator coverage, Silero
+trace hashes, and explicit FD-Bench exclusions before publishing a
+benchmark-specific evidence panel.
 It never computes a cross-benchmark composite. No incomplete cell is a
 benchmark score.
 

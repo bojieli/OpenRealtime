@@ -148,6 +148,21 @@ provider account, microphone, browser, or proprietary client is required.
 
 ## M10 full-study publication gate
 
+First reproduce or verify the exact gateway under test:
+
+```bash
+scripts/prepare-study-gateway.sh
+```
+
+The command checks
+[`benchmarks/runtime/canonical-gateway-v1.json`](../benchmarks/runtime/canonical-gateway-v1.json),
+archives its pinned source revision, applies the declared trimmed build, and
+refuses to install a binary whose SHA-256 differs. Long benchmark launchers run
+through `scripts/with-study-runtime.sh`; the local cascade refuses to reuse a
+healthy gateway with a different hash. The earlier `matrix-v1` population is a
+preserved pre-freeze pilot and is intentionally absent from the full-study
+manifest.
+
 After the long-running serial benchmark queue completes, run:
 
 ```bash
@@ -156,9 +171,11 @@ python scripts/report-full-study.py \
   --manifest benchmarks/full-study-v1.json
 ```
 
-The command has no partial mode. It checks every frozen tau-Voice task/trial
-population and execution record, including the host boot identity, process
-start identity, executable hash, and argv hash of the long-lived local runtime;
+The command has no partial mode. It first verifies the pinned runtime manifest,
+then checks every frozen tau-Voice task/trial population and execution record,
+including the host boot identity, process start identity, executable hash, and
+argv hash of the long-lived local runtime. Both the initial and final identity
+must carry the study gateway hash and describe the same processes;
 then it checks the paired endpoint-preparation manipulation,
 all 498 FDB v1.5 overlap trials and their deterministic aggregate, all 100 FDB
 v3 tool-use examples in both official exact and GPT-4o evaluations, and all
@@ -190,9 +207,10 @@ unmodified official CLI output.
 
 The three external runners also create a `run-context.json` sidecar before
 their first adapter call. Launch refuses a dirty OpenRealtime worktree. The
-sidecar binds the runner revision and live component identities, and completion
-is refused if the gateway, ASR, Fish, or local Qwen process changed during the
-invocation. A resumed launcher appends a new invocation and marks an unfinished
+sidecar binds the runner revision, declared study-gateway hash, and live
+component identities, and completion is refused if the gateway, ASR, Fish, or
+local Qwen process changed during the invocation. A resumed launcher appends a
+new invocation and marks an unfinished
 predecessor interrupted instead of overwriting it. The terminal gate requires
 the last invocation to complete, validates every identity, preserves
 interrupted attempts, and hashes each sidecar.

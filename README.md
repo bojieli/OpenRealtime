@@ -118,8 +118,14 @@ the final ASR observation. Both then enter the identical canonical fast→slow
 event loop and tool-result resumption path. This is an internal experimental
 control and adds no Realtime wire events or model-authored routing decision.
 
-M10 full-benchmark execution is in progress. The frozen local condition runs
-all 278 public τ-Voice tasks in both control and regular speech, then all 498
+M10 full-benchmark execution is in progress. The first long τ control launched
+before the executable freeze is retained as pilot evidence and is excluded
+from causal comparisons. When it finishes, the queue reproduces the gateway
+from source revision `3048160ee444c69941d6d4e12ddc47cea789afd0`, verifies
+executable SHA-256
+`2168fe5a7b5dbef6051a6983a9148f0cc84434a64284b59cfd699f491a3d5df2`,
+and starts the publishable canonical baseline. That condition runs all 278
+public τ-Voice tasks in both control and regular speech, then all 498
 FDB v1.5 overlap recordings and all 100 released FDB v3 tool-use recordings.
 The FDB runners use the standard OpenAI Realtime adapter against the local
 endpoint; FDB v3 sends real function-call outputs and waits for the terminal
@@ -150,7 +156,10 @@ paired preparation report, the complete FDB v1.5 summary, both official FDB v3
 evaluations, and all 21 FD-Bench timing reports. It emits a benchmark-specific
 evidence panel only after exact population, hash, evaluator-coverage, and
 terminal-failure checks pass; it does not synthesize a private score across
-incommensurate suites.
+incommensurate suites. Every matrix declares the same gateway source and
+executable hash. Every completed τ invocation and external run context must
+prove the same gateway executable and unchanged start-to-final process
+identity; a mixed-runtime population is rejected.
 
 ## Start here
 

@@ -17,12 +17,33 @@ Fish Audio as a separately identified caller-synthesis provider. The persistent
 OpenRealtime gateway now passes all 12 selected cases in τ's official
 audio-native provider suite and has completed two exploratory airline tasks.
 A strict, provenance-recorded seven-persona Fish S2-Pro registry now covers
-both speech conditions. The complete 278-task control cell is running; regular,
-FDB v1.5, FDB v3, paired ASR, FD-Bench, and paired Gemini-fast cells are queued
-behind it to avoid GPU interference. The checked result remains explicitly a
+both speech conditions. A complete 278-task control launched before the
+executable freeze is running as a preserved pilot. It is not the causal
+baseline. The queue next runs both speech conditions from
+[`matrix-canonical-v1.json`](matrix-canonical-v1.json) with the exact gateway
+declared by [`canonical-gateway-v1.json`](../runtime/canonical-gateway-v1.json),
+then FDB v1.5, FDB v3, paired ASR, FD-Bench, and paired Gemini-fast cells
+serially to avoid GPU interference. The checked result remains explicitly a
 one-task smoke, not a τ-Voice score.
 
 ## Executable harness integration
+
+The publishable study never executes a gateway rebuilt from moving `HEAD`.
+[`canonical-gateway-v1.json`](../runtime/canonical-gateway-v1.json) pins a
+source commit, deterministic Go build command, destination, and executable
+hash. Reproduce or verify it with:
+
+```sh
+scripts/prepare-study-gateway.sh
+```
+
+`scripts/with-study-runtime.sh COMMAND ...` exports only the verified absolute
+binary path and hash to a benchmark launcher. `local-cascade.sh` refuses a
+healthy gateway with a different executable. Every matrix independently
+declares the same source/hash pair, every completed τ launcher captures both
+initial and final identities, and the terminal reporter rejects a missing,
+changed, or mixed executable. `matrix-v1.json` is preserved because its live
+pilot began before this freeze; it is not admitted by `full-study-v1.json`.
 
 Prepare the exact upstream revision, apply the local-endpoint/Fish patch, and
 run its affected tests:
@@ -251,9 +272,9 @@ routing.
 ### Fixed-cadence ablation
 
 [`cadence-ablation-v1.json`](cadence-ablation-v1.json) freezes complete 50,
-100, 200, 400, and 800 ms conditions. The existing 200 ms matrix is the
-baseline; each of the four candidate matrices repeats all 278 tasks in both
-speech conditions. A treatment changes the upstream τ audio frame, the
+100, 200, 400, and 800 ms conditions. The frozen-runtime canonical 200 ms
+matrix is the baseline; each of the four candidate matrices repeats all 278
+tasks in both speech conditions. A treatment changes the upstream τ audio frame, the
 gateway's stateful ASR provider chunk, and the Qwen streaming server chunk
 together. Model identities, fast/slow authority, semantic event wakeups, Fish
 speech, seed, task population, and retry policy stay fixed. The execution
@@ -335,10 +356,11 @@ scripts/run-tau-endpoint-preparation-ablation.sh
 
 The queue wrapper requires the exact event/adaptive completion marker and
 restores the continuous 200 ms baseline after the control.
-The fresh continuous population is intentional: the original baseline run
-started before per-provider health counters were available. Its official task
-and interaction results remain a historical reference, but it is not used as
-the provider-work comparator.
+The fresh continuous population is intentional: it is run adjacent to the
+endpoint-only control so provider-work deltas are not inferred across the
+longer serial study. The separate canonical baseline uses the same frozen
+gateway and is the causal task/interaction reference; the pre-freeze pilot is
+retained only as non-causal operational evidence.
 The paired reporter refuses to emit unless both full matrix reports are
 complete, their model/ASR/Fish/tool profiles and source revision match, and
 both contain start-to-final provider deltas. It publishes raw official-metric
@@ -373,7 +395,7 @@ the matrix and scorer hashes plus a content hash over every source trajectory;
 it is written atomically so an interrupted or partial run cannot masquerade as
 a score. Overall rows use the leaderboard's equal-domain mean, while count
 fields are sums. The final reporting queue runs this gate independently for
-the baseline, ASR, and Gemini-fast matrices after their full populations end;
+the canonical baseline, ASR, and Gemini-fast matrices after their full populations end;
 each later cadence and effort runner applies the same gate before advancing.
 
 ## Optimization gate
@@ -423,13 +445,14 @@ preserved as negative evidence rather than used as the primary tool test.
 ## Current execution state and next action
 
 The gateway, provider gate, external tool-result resumption, local Fish
-caller/agent paths, strict voice registry, frozen baseline matrix, and bounded
-background orchestration are complete. The full control cell is running. The
-full regular cell, FDB v1.5, FDB v3, paired 1.7B ASR cells, complete FD-Bench
-matrix, paired Gemini-fast cells, four complete fixed-cadence matrices, a
-complete slow-medium matrix, and complete content-only/independent context
-controls are queued sequentially. Native GPT-Live and TML
-Interaction Model cells remain unavailable through a public executable
-endpoint and are retained only as attributed published context. No patch test,
+caller/agent paths, strict voice registry, canonical matrix, reproducible
+gateway manifest, and bounded background orchestration are complete. The
+pre-freeze pilot control is running and remains outside the publishable study.
+The complete frozen-runtime canonical control/regular cells, FDB v1.5, FDB v3,
+paired 1.7B ASR cells, complete FD-Bench matrix, paired Gemini-fast cells, four
+complete fixed-cadence matrices, a complete slow-medium matrix, and complete
+content-only/independent context controls are queued sequentially. Native
+GPT-Live and TML Interaction Model cells remain unavailable through a public
+executable endpoint and are retained only as attributed published context. No patch test,
 conformance suite, mock, text-only run, partial cell, or one-task smoke will be
 relabeled as a full τ-Voice score.
