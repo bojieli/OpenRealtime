@@ -1692,7 +1692,11 @@ def validate_tau(
         "the study declares no tau-Voice paired reports",
     )
     paired_panel = []
-    for pair in paired_specifications:
+    for index, pair in enumerate(paired_specifications):
+        require_declared(
+            pair, ("id", "definition", "report"), f"tau paired report {index}"
+        )
+        require_fields(pair, f"tau paired report {index}", text=("id", "report"))
         definition_path, definition = load_pin(
             root, pair["definition"], f"tau paired definition {pair['id']}"
         )

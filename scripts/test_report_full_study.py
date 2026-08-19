@@ -971,6 +971,21 @@ class FullStudyTest(unittest.TestCase):
         ):
             self.report()
 
+    def test_rejects_a_paired_report_that_omits_a_declaration(self) -> None:
+        """An omitted key must refuse by name, not die with a KeyError."""
+        path = self.fixture.paths["study"]
+        pristine = path.read_text(encoding="utf-8")
+        for key in ("id", "definition", "report"):
+            with self.subTest(key=key):
+                document = json.loads(pristine)
+                del document["tau_voice"]["paired_reports"][0][key]
+                write_json(path, document)
+                with self.assertRaisesRegex(
+                    REPORT.StudyIncompleteError, f"tau paired report 0 declares no {key}"
+                ):
+                    self.report()
+        path.write_text(pristine, encoding="utf-8")
+
     def test_rejects_a_paired_report_whose_continuous_arm_did_nothing(self) -> None:
         """Both arms silent means the two conditions are one condition."""
         for phase in ("fast_preparation", "slow_preparation"):
