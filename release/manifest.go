@@ -45,8 +45,14 @@ type Manifest struct {
 	Files          []File         `json:"files"`
 }
 
+// The release covers evidence and the documents that are themselves versioned:
+// traces, reports, fixtures, schemas, generated protocol bindings, and the
+// version-stamped research documents. Living prose — PLAN.md, docs/experiments.md,
+// docs/metrics.md, docs/openai-realtime-compatibility.md — is deliberately absent.
+// Pinning a document that is expected to change makes every edit to it look like
+// evidence tampering, which trains readers to ignore the one signal this manifest
+// exists to carry.
 var defaultInputs = []string{
-	"PLAN.md",
 	"benchmarks/m1/reference",
 	"benchmarks/m2/reference",
 	"benchmarks/m3/reference",
@@ -55,9 +61,6 @@ var defaultInputs = []string{
 	"benchmarks/releases/v0.1.0/README.md",
 	"benchmarks/releases/v0.1.0/preregistration.json",
 	"benchmarks/releases/v0.1.0/study.json",
-	"docs/experiments.md",
-	"docs/metrics.md",
-	"docs/openai-realtime-compatibility.md",
 	"docs/research/human-study-protocol-v0.1.md",
 	"docs/research/technical-report-v0.1.md",
 	"protocol/openai/events_gen.go",
@@ -75,7 +78,7 @@ func Build(root string) (Manifest, error) {
 		return Manifest{}, err
 	}
 	manifest := Manifest{
-		SchemaVersion: SchemaVersion, ReleaseID: ReleaseID, ReleaseDate: "2026-08-17",
+		SchemaVersion: SchemaVersion, ReleaseID: ReleaseID, ReleaseDate: "2026-08-19",
 		Runtime:      "Go 1.25+; no Python runtime or build dependency",
 		EvidenceMode: "deterministic_project_authored_reference", ProtocolSource: source,
 	}

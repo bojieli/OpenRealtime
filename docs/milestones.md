@@ -180,7 +180,7 @@ performance.
 | Predefined ablations | M2 cadence, M3 duplex, M4 cognition, and M5 translation/game groups |
 | Human study | Prospective preregistration, ethics gate, exclusions, randomization, and analysis protocol; not run |
 | Technical report | `docs/research/technical-report-v0.1.md` with claims and counterexamples |
-| Versioned release | 41-file SHA-256 manifest plus machine-readable `study.json` |
+| Versioned release | 37-file SHA-256 evidence manifest plus machine-readable `study.json` |
 
 All claims point to published conditions and name their scope. Incomparable
 workloads are never combined into a leaderboard. Native provider and human
