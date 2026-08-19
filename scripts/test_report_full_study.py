@@ -707,6 +707,41 @@ class Fixture:
             },
         )
 
+        paired_definition = self.root / "benchmarks/tau-voice/pair-v1.json"
+        write_json(paired_definition, {"ablation_id": "pair-v1"})
+        continuous_evidence = self.root / ".runtime/paired/continuous.json"
+        write_json(continuous_evidence, {"status": "complete"})
+        endpoint_evidence = self.root / ".runtime/paired/endpoint.json"
+        write_json(endpoint_evidence, {"status": "complete"})
+        paired_report = self.root / ".runtime/paired/report.json"
+        write_json(
+            paired_report,
+            {
+                "status": "complete",
+                "ablation": {
+                    "id": "pair-v1",
+                    "path": self.relative(paired_definition),
+                    "sha256": REPORT.sha256_file(paired_definition),
+                },
+                "comparison": {
+                    "provider_work": {
+                        "continuous": {
+                            "fast_preparation": {"invocations": 4},
+                            "slow_preparation": {"invocations": 3},
+                        },
+                        "endpoint_only": {
+                            "fast_preparation": {"invocations": 0},
+                            "slow_preparation": {"invocations": 0},
+                        },
+                    }
+                },
+                "evidence": {
+                    "continuous_report": self.pin(continuous_evidence),
+                    "endpoint_report": self.pin(endpoint_evidence),
+                },
+            },
+        )
+
         study = self.root / "benchmarks/full-study.json"
         write_json(
             study,
@@ -729,7 +764,13 @@ class Fixture:
                     },
                     "source_manifest": self.pin(tau_source),
                     "matrices": [self.pin(matrix)],
-                    "paired_reports": [],
+                    "paired_reports": [
+                        {
+                            "id": "pair-v1",
+                            "definition": self.pin(paired_definition),
+                            "report": self.relative(paired_report),
+                        }
+                    ],
                 },
                 "full_duplex_bench_v1_5": {
                     "source_manifest": self.pin(fdb15_source),
@@ -790,6 +831,7 @@ class Fixture:
             "tau_archive": tau_archive,
             "tau_experiment": tau_experiment,
             "tau_run": tau_run,
+            "paired_report": paired_report,
         }
 
     @staticmethod
@@ -926,6 +968,45 @@ class FullStudyTest(unittest.TestCase):
         write_json(path, document)
         with self.assertRaisesRegex(
             REPORT.StudyIncompleteError, "declares no presentation policy"
+        ):
+            self.report()
+
+    def test_rejects_a_paired_report_whose_continuous_arm_did_nothing(self) -> None:
+        """Both arms silent means the two conditions are one condition."""
+        for phase in ("fast_preparation", "slow_preparation"):
+            with self.subTest(phase=phase):
+                path = self.fixture.paths["paired_report"]
+                document = json.loads(path.read_text(encoding="utf-8"))
+                work = document["comparison"]["provider_work"]
+                work["continuous"][phase]["invocations"] = 0
+                write_json(path, document)
+                with self.assertRaisesRegex(
+                    REPORT.StudyIncompleteError, "manipulated nothing"
+                ):
+                    self.report()
+                work["continuous"][phase]["invocations"] = 4
+                write_json(path, document)
+
+    def test_rejects_a_paired_report_with_no_continuous_provenance(self) -> None:
+        """An absent continuous block is not a continuous block of zero."""
+        path = self.fixture.paths["paired_report"]
+        document = json.loads(path.read_text(encoding="utf-8"))
+        del document["comparison"]["provider_work"]["continuous"]
+        write_json(path, document)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "manipulated nothing"
+        ):
+            self.report()
+
+    def test_rejects_a_paired_report_whose_endpoint_arm_worked(self) -> None:
+        path = self.fixture.paths["paired_report"]
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["comparison"]["provider_work"]["endpoint_only"][
+            "fast_preparation"
+        ]["invocations"] = 1
+        write_json(path, document)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "endpoint-only fast_preparation"
         ):
             self.report()
 

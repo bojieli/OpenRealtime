@@ -1714,16 +1714,26 @@ def validate_tau(
             pair["definition"]["sha256"],
             f"{pair['id']} definition hash",
         )
-        endpoint_work = (
-            report.get("comparison", {})
-            .get("provider_work", {})
-            .get("endpoint_only", {})
-        )
+        provider_work = report.get("comparison", {}).get("provider_work", {})
+        endpoint_work = provider_work.get("endpoint_only", {})
+        continuous_work = provider_work.get("continuous", {})
         for phase in ("fast_preparation", "slow_preparation"):
             require_equal(
                 endpoint_work.get(phase, {}).get("invocations"),
                 0,
                 f"{pair['id']} endpoint-only {phase}",
+            )
+            # Proving the endpoint arm did nothing proves nothing on its own:
+            # if the continuous arm also opened no private calls, the two arms
+            # are the same condition and every published difference is noise.
+            # The gate has to see the manipulation it is releasing evidence for.
+            continuous_invocations = continuous_work.get(phase, {}).get("invocations")
+            require(
+                isinstance(continuous_invocations, int)
+                and not isinstance(continuous_invocations, bool)
+                and continuous_invocations > 0,
+                f"{pair['id']} continuous {phase} records no private calls, so "
+                f"the paired ablation manipulated nothing",
             )
         for evidence_name in ("continuous_report", "endpoint_report"):
             evidence = report.get("evidence", {}).get(evidence_name, {})

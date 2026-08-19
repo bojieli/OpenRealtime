@@ -81,6 +81,26 @@ class DifferenceTest(unittest.TestCase):
         with self.assertRaisesRegex(REPORT.PairedReportError, "endpoint-only"):
             REPORT.preparation_manipulation_check(continuous, endpoint)
 
+    def test_endpoint_manipulation_check_rejects_a_null_manipulation(self) -> None:
+        silent = {
+            "fast_preparation": {"invocations": 0},
+            "slow_preparation": {"invocations": 0},
+        }
+        with self.assertRaisesRegex(REPORT.PairedReportError, "manipulated nothing"):
+            REPORT.preparation_manipulation_check(silent, dict(silent))
+
+    def test_endpoint_manipulation_check_rejects_a_silent_slow_phase(self) -> None:
+        continuous = {
+            "fast_preparation": {"invocations": 4},
+            "slow_preparation": {"invocations": 0},
+        }
+        endpoint = {
+            "fast_preparation": {"invocations": 0},
+            "slow_preparation": {"invocations": 0},
+        }
+        with self.assertRaisesRegex(REPORT.PairedReportError, "no slow_preparation"):
+            REPORT.preparation_manipulation_check(continuous, endpoint)
+
 
 class InvariantTest(unittest.TestCase):
     def test_accepts_preparation_as_the_only_policy_change(self) -> None:

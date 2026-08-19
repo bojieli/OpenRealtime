@@ -96,6 +96,17 @@ def preparation_manipulation_check(
             raise PairedReportError(
                 f"endpoint-only condition launched {endpoint_invocations} {field} calls"
             )
+        # A manipulation check that only proves the endpoint condition did
+        # nothing is half a check. If the continuous condition also opened no
+        # private calls, the two arms are identical, the ablation manipulated
+        # nothing, and every difference it publishes is noise -- yet the check
+        # passed, and "continuous_opened_private_work: false" was published as
+        # an ordinary result rather than a refusal. Both halves are required.
+        if continuous_invocations <= 0:
+            raise PairedReportError(
+                f"continuous condition launched no {field} calls, so the "
+                f"ablation manipulated nothing"
+            )
         result[phase] = {
             "continuous_preparation_invocations": continuous_invocations,
             "endpoint_preparation_invocations": endpoint_invocations,
