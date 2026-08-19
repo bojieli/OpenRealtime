@@ -26,7 +26,7 @@ if ! grep -Fx 'tau endpoint-preparation queue complete' "${endpoint_log}" >/dev/
   exit 1
 fi
 
-python "${repository_root}/scripts/report-full-study.py" \
+python3 "${repository_root}/scripts/report-full-study.py" \
   --repository-root "${repository_root}" \
   --manifest "${repository_root}/benchmarks/full-study-v1.json" \
   --output "${repository_root}/.runtime/benchmark-runs/full-study-v1/report.json"

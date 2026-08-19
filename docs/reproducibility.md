@@ -201,6 +201,14 @@ logs; and detaches all ten queues. Each successor waits for the current-run
 completion marker from its predecessor, so a failed stage halts the chain
 rather than skipping ahead.
 
+The launcher preflights `python3`, so every queue and every documented command
+invokes `python3` or an explicit virtual-environment interpreter path, never a
+bare `python`. A stock Ubuntu PATH has no `python`, so an unpinned invocation
+reproduces only on a machine that happens to provide one, and it fails at the
+end of a multi-day serial chain instead of at launch.
+`scripts/test_study_interpreter_pinning.sh` enforces this and runs inside the
+launcher preflight.
+
 For operational progress during the multi-day run, use:
 
 ```bash
@@ -229,7 +237,7 @@ with no matching live process.
 After the long-running serial benchmark queue completes, run:
 
 ```bash
-python scripts/report-full-study.py \
+python3 scripts/report-full-study.py \
   --repository-root . \
   --manifest benchmarks/full-study-v1.json
 ```
