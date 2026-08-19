@@ -416,7 +416,16 @@ class Fixture:
         fdb15_output = self.root / ".runtime/fdb15/trial/output.wav"
         fdb15_output.parent.mkdir(parents=True, exist_ok=True)
         fdb15_output.write_bytes(b"fdb15-audio")
-        write_json(fdb15_output.parent / "result_overlap.json", {"result": "raw"})
+        fdb15_trial = {
+            "trial_id": "openrealtime/background/1/overlap/r000",
+            "sample": {"scenario": "background", "id": "1"},
+            "condition": "overlap",
+            "attempt": 1,
+            "input_sha256": "d" * 64,
+            "output_wav": self.relative(fdb15_output),
+            "output_sha256": REPORT.sha256_file(fdb15_output),
+        }
+        write_json(fdb15_output.parent / "result_overlap.json", dict(fdb15_trial))
         write_json(
             fdb15_run,
             {
@@ -428,16 +437,7 @@ class Fixture:
                 "replicates": 1,
                 "trial_attempts": 3,
                 "samples": [{"scenario": "background", "id": "1"}],
-                "completed": [
-                    {
-                        "trial_id": "openrealtime/background/1/overlap/r000",
-                        "sample": {"scenario": "background", "id": "1"},
-                        "condition": "overlap",
-                        "attempt": 1,
-                        "output_wav": self.relative(fdb15_output),
-                        "output_sha256": REPORT.sha256_file(fdb15_output),
-                    }
-                ],
+                "completed": [dict(fdb15_trial)],
                 "failures": [],
                 "attempts": [
                     {
@@ -671,7 +671,11 @@ class Fixture:
                 "schema_version": "1.0.0",
                 "benchmark": "FD-Bench",
                 "revision": "fd-revision",
-                "trace": {"samples": 1, "sha256": REPORT.sha256_file(trace)},
+                "trace": {
+                    "path": self.relative(trace),
+                    "samples": 1,
+                    "sha256": REPORT.sha256_file(trace),
+                },
                 "metrics": {
                     "SRR_pct": 1,
                     "SIR_pct": 2,
@@ -781,6 +785,7 @@ class Fixture:
             "fd_metric": fd_metric,
             "fd_context": fd_context,
             "fdb15_output": fdb15_output,
+            "fdb15_result": fdb15_output.parent / "result_overlap.json",
             "matrix": matrix,
             "tau_archive": tau_archive,
             "tau_experiment": tau_experiment,
@@ -881,6 +886,103 @@ class FullStudyTest(unittest.TestCase):
         ):
             self.report()
 
+    def test_rejects_a_tau_run_that_never_recorded_its_cell(self) -> None:
+        """A recorded null claims whole-matrix coverage; absence must not."""
+        path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
+        document = json.loads(path.read_text(encoding="utf-8"))
+        del document["execution_evidence"][0]["selected_cell"]
+        write_json(path, document)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "did not record which cell it ran"
+        ):
+            self.report()
+
+    def test_rejects_a_tau_cell_with_no_headline_result(self) -> None:
+        cases = (
+            (("overall",), "recorded no overall result"),
+            (("overall", "agent_metrics"), "recorded no agent metrics"),
+            (("overall", "agent_metrics", "avg_reward"), "recorded no average reward"),
+        )
+        for path_keys, message in cases:
+            with self.subTest(field=".".join(path_keys)):
+                self.setUp()
+                path = (
+                    self.root
+                    / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
+                )
+                document = json.loads(path.read_text(encoding="utf-8"))
+                container = document["cells"]["control"]
+                for key in path_keys[:-1]:
+                    container = container[key]
+                del container[path_keys[-1]]
+                write_json(path, document)
+                with self.assertRaisesRegex(REPORT.StudyIncompleteError, message):
+                    self.report()
+
+    def test_rejects_a_study_that_declares_no_presentation_policy(self) -> None:
+        path = self.fixture.paths["study"]
+        document = json.loads(path.read_text(encoding="utf-8"))
+        del document["publication_policy"]["presentation"]
+        write_json(path, document)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "declares no presentation policy"
+        ):
+            self.report()
+
+    def test_rejects_a_study_that_declares_no_paired_reports(self) -> None:
+        """Absent declaration makes the paired-report loop verify nothing."""
+        path = self.fixture.paths["study"]
+        document = json.loads(path.read_text(encoding="utf-8"))
+        del document["tau_voice"]["paired_reports"]
+        write_json(path, document)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "declares no tau-Voice paired reports"
+        ):
+            self.report()
+
+    def test_rejects_an_fdbv3_evaluation_missing_a_population_block(self) -> None:
+        """turn-taking and latency figures need the populations behind them."""
+        cases = (
+            (("turn_taking",), "recorded no turn-taking counts"),
+            (("turn_taking", "total"), "turn-taking total is not a count"),
+            (("turn_taking", "turn_taken"), "turn-taking turn_taken is not a count"),
+            (("latency",), "recorded no latency population"),
+            (("latency", "total_samples"), "latency sample population is not a count"),
+            (("by_metric",), "recorded no aggregate metrics"),
+        )
+        for path_keys, message in cases:
+            with self.subTest(field=".".join(path_keys)):
+                self.setUp()
+                path = self.root / ".runtime/fdbv3/exact.json"
+                document = json.loads(path.read_text(encoding="utf-8"))
+                container = document
+                for key in path_keys[:-1]:
+                    container = container[key]
+                del container[path_keys[-1]]
+                write_json(path, document)
+                with self.assertRaisesRegex(REPORT.StudyIncompleteError, message):
+                    self.report()
+
+    def test_rejects_an_fdbv3_scenario_that_never_recorded_a_score(self) -> None:
+        """An absent metrics block must not read as the exact evaluation's null."""
+        cases = (
+            (("metrics",), "recorded no metrics"),
+            (("metrics", "response_qual"), "recorded no response_qual metric"),
+            (("metrics", "response_qual", "score"), "recorded no score"),
+        )
+        for path_keys, message in cases:
+            with self.subTest(field=".".join(path_keys)):
+                self.setUp()
+                path = self.root / ".runtime/fdbv3/exact.json"
+                document = json.loads(path.read_text(encoding="utf-8"))
+                container = document["scenario_results"][0]
+                for key in path_keys[:-1]:
+                    container = container[key]
+                del container[path_keys[-1]]
+                write_json(path, document)
+                with self.assertRaisesRegex(REPORT.StudyIncompleteError, message):
+                    self.report()
+
     def test_rejects_fdbv3_audio_without_a_declared_hash(self) -> None:
         for result in self.root.rglob("result_openrealtime.json"):
             document = json.loads(result.read_text(encoding="utf-8"))
@@ -930,10 +1032,165 @@ class FullStudyTest(unittest.TestCase):
     def test_rejects_a_cell_that_never_recorded_its_scored_population(self) -> None:
         path = self.fixture.paths["fd_metric"]
         metric = json.loads(path.read_text(encoding="utf-8"))
-        metric["counts"].pop("rounds")
+        metric.pop("counts")
         write_json(path, metric)
         with self.assertRaisesRegex(
             REPORT.StudyIncompleteError, "scored round population"
+        ):
+            self.report()
+
+    def test_rejects_a_cell_missing_a_single_scored_population(self) -> None:
+        """A rate whose denominator vanished is published over nothing.
+
+        The panel copies counts through wholesale, so a dropped counter is an
+        absent key rather than a null and the no-unexplained-nulls rule cannot
+        see it.
+        """
+        for counter in ("rounds", "interruptions", "gaps"):
+            with self.subTest(counter=counter):
+                self.setUp()
+                path = self.fixture.paths["fd_metric"]
+                metric = json.loads(path.read_text(encoding="utf-8"))
+                metric["counts"].pop(counter)
+                write_json(path, metric)
+                with self.assertRaisesRegex(
+                    REPORT.StudyIncompleteError, "scored populations"
+                ):
+                    self.report()
+
+    def test_rejects_a_scored_population_that_is_not_a_count(self) -> None:
+        path = self.fixture.paths["fd_metric"]
+        metric = json.loads(path.read_text(encoding="utf-8"))
+        metric["counts"]["interruptions"] = -1
+        write_json(path, metric)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "non-negative integers"
+        ):
+            self.report()
+
+    def test_rejects_an_fd_sample_that_never_recorded_its_identity(self) -> None:
+        """Sample identity is what the planned population is counted against."""
+        for field in ("cell", "id"):
+            with self.subTest(field=field):
+                self.setUp()
+                path = self.fixture.paths["fd_run"]
+                run = json.loads(path.read_text(encoding="utf-8"))
+                run["samples"][0].pop(field)
+                write_json(path, run)
+                with self.assertRaisesRegex(
+                    REPORT.StudyIncompleteError, f"recorded no {field}"
+                ):
+                    self.report()
+
+    def test_rejects_an_fd_metric_that_never_recorded_its_scored_trace(self) -> None:
+        """The metric must say which trace it scored, not have it assumed.
+
+        This check previously defaulted the metric's trace path to the
+        finalization's own path, so it compared that path against itself and
+        passed for any metric file that stayed silent.
+        """
+        path = self.fixture.paths["fd_metric"]
+        metric = json.loads(path.read_text(encoding="utf-8"))
+        metric["trace"].pop("path")
+        write_json(path, metric)
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "recorded no path"):
+            self.report()
+
+    def test_rejects_an_fd_metric_that_scored_a_different_trace(self) -> None:
+        path = self.fixture.paths["fd_metric"]
+        metric = json.loads(path.read_text(encoding="utf-8"))
+        metric["trace"]["path"] = ".runtime/fd/some-other-trace.jsonl"
+        write_json(path, metric)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "metric trace path"
+        ):
+            self.report()
+
+    def test_rejects_an_fd_trace_that_never_recorded_its_path(self) -> None:
+        path = self.fixture.root / ".runtime/fd/finalization.json"
+        finalization = json.loads(path.read_text(encoding="utf-8"))
+        finalization["traces"]["cell"].pop("path")
+        write_json(path, finalization)
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "recorded no path"):
+            self.report()
+
+    def test_rejects_an_fdb15_trial_that_never_recorded_its_sample(self) -> None:
+        """A completed trial that names no sample is checked against nothing."""
+        path = self.fixture.paths["fdb15_run"]
+        run = json.loads(path.read_text(encoding="utf-8"))
+        run["completed"][0].pop("sample")
+        write_json(path, run)
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "is not a record"):
+            self.report()
+
+    def test_rejects_an_fdb15_trial_sample_missing_its_identity(self) -> None:
+        for field in ("scenario", "id"):
+            with self.subTest(field=field):
+                self.setUp()
+                path = self.fixture.paths["fdb15_run"]
+                run = json.loads(path.read_text(encoding="utf-8"))
+                run["completed"][0]["sample"].pop(field)
+                write_json(path, run)
+                with self.assertRaisesRegex(
+                    REPORT.StudyIncompleteError, f"recorded no {field}"
+                ):
+                    self.report()
+
+    def test_rejects_an_fdb15_summary_condition_missing_its_population(self) -> None:
+        path = self.fixture.root / ".runtime/fdb15/summary.json"
+        summary = json.loads(path.read_text(encoding="utf-8"))
+        summary["conditions"][0].pop("completed")
+        write_json(path, summary)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "recorded no completed count"
+        ):
+            self.report()
+
+    def test_rejects_an_fdbv3_sample_that_never_recorded_its_identity(self) -> None:
+        for field in ("example_id", "pid", "directory", "input_sha256"):
+            with self.subTest(field=field):
+                self.setUp()
+                path = self.fixture.paths["fdbv3_run"]
+                run = json.loads(path.read_text(encoding="utf-8"))
+                run["samples"][0].pop(field)
+                write_json(path, run)
+                with self.assertRaisesRegex(
+                    REPORT.StudyIncompleteError, f"recorded no {field}"
+                ):
+                    self.report()
+
+    def test_rejects_a_manifest_missing_a_structural_field(self) -> None:
+        """A malformed preregistration must refuse, not raise a KeyError."""
+        for pointer in (
+            ("study_id",),
+            ("runtime", "sha256"),
+            ("fd_bench",),
+            ("fd_bench", "cells"),
+            ("full_duplex_bench_v1_5", "replicates"),
+            ("full_duplex_bench_v3", "evaluations", "gpt4o_evidence"),
+            ("tau_voice", "matrices"),
+        ):
+            with self.subTest(pointer=".".join(pointer)):
+                self.setUp()
+                path = self.fixture.paths["study"]
+                manifest = json.loads(path.read_text(encoding="utf-8"))
+                container = manifest
+                for step in pointer[:-1]:
+                    container = container[step]
+                container.pop(pointer[-1])
+                write_json(path, manifest)
+                with self.assertRaisesRegex(
+                    REPORT.StudyIncompleteError, f"declares no {pointer[-1]}"
+                ):
+                    self.report()
+
+    def test_rejects_a_tau_matrix_entry_missing_its_hash(self) -> None:
+        path = self.fixture.paths["study"]
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        manifest["tau_voice"]["matrices"][0].pop("sha256")
+        write_json(path, manifest)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, r"matrices\[0\] declares no sha256"
         ):
             self.report()
 
@@ -1355,6 +1612,72 @@ class FullStudyTest(unittest.TestCase):
     def test_rejects_raw_output_drift(self) -> None:
         self.fixture.paths["fdb15_output"].write_bytes(b"changed-audio")
         with self.assertRaisesRegex(REPORT.StudyIncompleteError, "output.wav SHA-256"):
+            self.report()
+
+    def test_rejects_an_fdb15_raw_result_that_contradicts_its_trial(self) -> None:
+        """The runner records no hash for this file, so only agreement binds it."""
+        for field, expected in (
+            ("trial_id", "raw result trial_id"),
+            ("condition", "raw result condition"),
+            ("attempt", "raw result attempt"),
+            ("input_sha256", "raw result input_sha256"),
+            ("output_sha256", "raw result output_sha256"),
+            ("output_wav", "raw result output path"),
+            ("output_wav", "raw result records no output path"),
+        ):
+            with self.subTest(field=field, expected=expected):
+                self.setUp()
+                path = self.fixture.paths["fdb15_result"]
+                raw = json.loads(path.read_text(encoding="utf-8"))
+                raw[field] = 9 if "records no" in expected else (
+                    "e" * 64 if field.endswith("sha256") else "elsewhere/other.wav"
+                )
+                write_json(path, raw)
+                with self.assertRaisesRegex(REPORT.StudyIncompleteError, expected):
+                    self.report()
+
+    def test_rejects_an_fdb15_raw_result_missing_a_bound_field(self) -> None:
+        """Absence must not read as agreement the way a shared null would."""
+        for field, expected in (
+            ("trial_id", "raw result trial_id"),
+            ("condition", "raw result condition"),
+            ("attempt", "raw result attempt"),
+            ("input_sha256", "did not record a valid input_sha256"),
+            ("output_sha256", "did not record a valid output_sha256"),
+            ("output_wav", "raw result records no output path"),
+            ("sample", "raw result records no sample"),
+        ):
+            with self.subTest(field=field):
+                self.setUp()
+                path = self.fixture.paths["fdb15_result"]
+                raw = json.loads(path.read_text(encoding="utf-8"))
+                del raw[field]
+                write_json(path, raw)
+                with self.assertRaisesRegex(REPORT.StudyIncompleteError, expected):
+                    self.report()
+
+    def test_rejects_an_fdb15_raw_result_from_another_sample(self) -> None:
+        for field in ("scenario", "id"):
+            with self.subTest(field=field):
+                self.setUp()
+                path = self.fixture.paths["fdb15_result"]
+                raw = json.loads(path.read_text(encoding="utf-8"))
+                raw["sample"][field] = "other"
+                write_json(path, raw)
+                with self.assertRaisesRegex(
+                    REPORT.StudyIncompleteError, f"raw result sample {field}"
+                ):
+                    self.report()
+
+    def test_rejects_a_completed_trial_without_a_declared_input_hash(self) -> None:
+        path = self.fixture.paths["fdb15_run"]
+        run = json.loads(path.read_text(encoding="utf-8"))
+        for item in run["completed"]:
+            del item["input_sha256"]
+        write_json(path, run)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "did not record a valid input_sha256"
+        ):
             self.report()
 
 

@@ -79,6 +79,113 @@ def require_equal(actual: Any, expected: Any, label: str) -> None:
         raise StudyIncompleteError(f"{label}: expected {expected!r}, found {actual!r}")
 
 
+def require_declared(
+    container: Any, keys: tuple[str, ...], label: str
+) -> dict[str, Any]:
+    """Return `container` once it declares every named key.
+
+    The arm validators index their preregistered declarations directly. An
+    omitted key still fails closed, but as a KeyError traceback rather than as
+    a statement of what the study never declared -- which reads as a broken
+    tool instead of the refusal a reader has to act on.
+    """
+    require(isinstance(container, dict), f"{label} is not a record")
+    for key in keys:
+        require(key in container, f"{label} declares no {key}")
+    return container
+
+
+def require_fields(
+    record: Any,
+    label: str,
+    *,
+    text: tuple[str, ...] = (),
+    count: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    """Return `record` once it carries every named field.
+
+    The callers below index these fields directly, to build the identity keys
+    a population is checked against and to resolve the artifacts a hash is
+    bound to. A runner that never wrote one of them would otherwise kill the
+    gate with a KeyError, which reads as a broken tool rather than as the
+    refusal the study's reader needs to see.
+    """
+    require(isinstance(record, dict), f"{label} is not a record")
+    for name in text:
+        value = record.get(name)
+        require(
+            isinstance(value, str) and value.strip() != "",
+            f"{label} recorded no {name}",
+        )
+    for name in count:
+        value = record.get(name)
+        require(
+            isinstance(value, int) and not isinstance(value, bool) and value >= 0,
+            f"{label} recorded no {name} count",
+        )
+    return record
+
+
+_ARTIFACT_SHAPE = {"path": None, "sha256": None}
+
+# The preregistration manifest is hand-authored and under version control, so a
+# missing field here is a malformed experiment definition rather than a runner
+# fault. The validators below index these fields directly, which turned that
+# mistake into a traceback; naming the absent field keeps every refusal
+# readable. `None` marks a leaf whose value the relevant validator checks.
+STUDY_MANIFEST_SHAPE: dict[str, Any] = {
+    "study_id": None,
+    "runtime": _ARTIFACT_SHAPE,
+    "fd_bench": {
+        "source_manifest": _ARTIFACT_SHAPE,
+        "run_context": None,
+        "run_manifest": None,
+        "finalization": None,
+        "metrics_directory": None,
+        "cells": None,
+        "dataset_revision": None,
+        "explicit_exclusions": None,
+        "upstream_revision": None,
+    },
+    "full_duplex_bench_v1_5": {
+        "source_manifest": _ARTIFACT_SHAPE,
+        "run_context": None,
+        "run_manifest": None,
+        "summary": None,
+        "conditions": None,
+        "replicates": None,
+        "upstream_revision": None,
+    },
+    "full_duplex_bench_v3": {
+        "source_manifest": _ARTIFACT_SHAPE,
+        "run_context": None,
+        "run_manifest": None,
+        "profile": _ARTIFACT_SHAPE,
+        "evaluations": {"exact": None, "gpt4o": None, "gpt4o_evidence": None},
+        "upstream_revision": None,
+    },
+    "tau_voice": {
+        "source_manifest": _ARTIFACT_SHAPE,
+        "matrices": [_ARTIFACT_SHAPE],
+    },
+}
+
+
+def require_shape(value: Any, shape: Any, label: str) -> None:
+    """Require every field the validators below index without checking."""
+    if shape is None:
+        return
+    if isinstance(shape, list):
+        require(isinstance(value, list), f"{label} is not a list")
+        for index, item in enumerate(value):
+            require_shape(item, shape[0], f"{label}[{index}]")
+        return
+    require(isinstance(value, dict), f"{label} is not a record")
+    for key, child in shape.items():
+        require(key in value, f"{label} declares no {key}")
+        require_shape(value[key], child, f"{label}.{key}")
+
+
 def require_recorded_no_failures(run: dict[str, Any], label: str) -> None:
     """Require an explicitly recorded, empty terminal-failure ledger.
 
@@ -318,6 +425,8 @@ def validate_tree_summary(value: Any, *, files: int, label: str) -> None:
 def load_pin(
     root: Path, specification: dict[str, Any], label: str
 ) -> tuple[Path, dict[str, Any]]:
+    require_declared(specification, ("path", "sha256"), label)
+    require_fields(specification, label, text=("path", "sha256"))
     path = resolve(root, specification["path"])
     payload = read_json(path, label)
     require_equal(sha256_file(path), specification["sha256"], f"{label} SHA-256")
@@ -1323,11 +1432,30 @@ def validate_tau_matrix(
         total_simulations += cell_simulations
         infrastructure_errors += cell_errors
         termination_reasons.update(cell_termination_reasons)
+        # The panel copies this block through wholesale, so a headline score the
+        # runner never wrote arrives as an absent key rather than a null and is
+        # published as a cell that simply has no reward beside it.
+        overall = cell_report.get("overall")
+        require(
+            isinstance(overall, dict),
+            f"{matrix_id}/{cell_id} recorded no overall result",
+        )
+        agent_metrics = overall.get("agent_metrics")
+        require(
+            isinstance(agent_metrics, dict),
+            f"{matrix_id}/{cell_id} recorded no agent metrics",
+        )
+        average_reward = agent_metrics.get("avg_reward")
+        require(
+            isinstance(average_reward, (int, float))
+            and not isinstance(average_reward, bool),
+            f"{matrix_id}/{cell_id} recorded no average reward",
+        )
         cell_panel[cell_id] = {
             "simulations": cell_simulations,
             "infrastructure_errors": cell_errors,
             "termination_reasons": dict(sorted(cell_termination_reasons.items())),
-            "overall": cell_report.get("overall"),
+            "overall": overall,
         }
 
     expected_total = (
@@ -1424,7 +1552,14 @@ def validate_tau_matrix(
             final_identity.get("components"),
             f"{execution_label} runtime processes",
         )
-        selected_cell = complete_run.get("selected_cell")
+        # A recorded null means "this run covered the whole matrix", so an
+        # absent key silently claims coverage the runner never asserted.
+        # Require the field, then allow its null.
+        require(
+            "selected_cell" in complete_run,
+            f"{execution_label} did not record which cell it ran",
+        )
+        selected_cell = complete_run["selected_cell"]
         require(
             selected_cell is None or selected_cell in cell_ids,
             f"{execution_label} selected cell is invalid",
@@ -1549,8 +1684,15 @@ def validate_tau(
     require(matrix_ids, "the study declares no tau-Voice matrix")
     require_equal(len(matrix_ids), len(set(matrix_ids)), "unique tau matrix IDs")
 
+    # A vacuous loop verifies nothing: dropping the declaration drops every
+    # paired-report check with it and still publishes a panel.
+    paired_specifications = specification.get("paired_reports")
+    require(
+        isinstance(paired_specifications, list),
+        "the study declares no tau-Voice paired reports",
+    )
     paired_panel = []
-    for pair in specification.get("paired_reports", []):
+    for pair in paired_specifications:
         definition_path, definition = load_pin(
             root, pair["definition"], f"tau paired definition {pair['id']}"
         )
@@ -1709,6 +1851,12 @@ def validate_fdb15(
     )
     trial_ids = [item.get("trial_id") for item in completed]
     require_equal(len(trial_ids), len(set(trial_ids)), "FDB1.5 unique completed trials")
+    for item in completed:
+        require_fields(
+            item.get("sample"),
+            f"FDB1.5 completed trial {item.get('trial_id')!r} sample",
+            text=("scenario", "id"),
+        )
     require_equal(
         {(item["sample"]["scenario"], item["sample"]["id"]) for item in completed},
         set(sample_rows),
@@ -1748,9 +1896,51 @@ def validate_fdb15(
                 ),
             )
         )
-        result_entries.append(
-            (output_path.parent / f"result_{item['condition']}.json", None)
+        result_path = output_path.parent / f"result_{item['condition']}.json"
+        result_entries.append((result_path, None))
+        # The runner writes this file and the manifest entry from a single
+        # value, but records no hash for the file, so artifact_tree admits
+        # whatever is on disk and republishes its digest as though it were
+        # attested. Bind the raw result to the entry it duplicates, the way
+        # FDBv3 already binds its own raw results.
+        raw_result = read_json(result_path, f"FDB1.5 raw result {item['trial_id']}")
+        for field in ("trial_id", "condition", "attempt"):
+            require_equal(
+                raw_result.get(field),
+                item.get(field),
+                f"FDB1.5 {item['trial_id']} raw result {field}",
+            )
+        for field in ("input_sha256", "output_sha256"):
+            require_equal(
+                declared_sha256(
+                    raw_result, field, f"FDB1.5 {item['trial_id']} raw result"
+                ),
+                declared_sha256(
+                    item, field, f"FDB1.5 {item['trial_id']} completed trial"
+                ),
+                f"FDB1.5 {item['trial_id']} raw result {field}",
+            )
+        raw_output_wav = raw_result.get("output_wav")
+        require(
+            isinstance(raw_output_wav, str) and raw_output_wav.strip() != "",
+            f"FDB1.5 {item['trial_id']} raw result records no output path",
         )
+        require_equal(
+            resolve(root, raw_output_wav),
+            output_path,
+            f"FDB1.5 {item['trial_id']} raw result output path",
+        )
+        raw_sample = raw_result.get("sample")
+        require(
+            isinstance(raw_sample, dict),
+            f"FDB1.5 {item['trial_id']} raw result records no sample",
+        )
+        for field in ("scenario", "id"):
+            require_equal(
+                raw_sample.get(field),
+                item["sample"].get(field),
+                f"FDB1.5 {item['trial_id']} raw result sample {field}",
+            )
     output_tree = artifact_tree(root, output_entries, label="FDB1.5 output audio")
     result_tree = artifact_tree(root, result_entries, label="FDB1.5 raw results")
 
@@ -1766,7 +1956,13 @@ def validate_fdb15(
         len(conditions), len(scenario_population), "FDB1.5 summary conditions"
     )
     summary_counts: dict[str, int] = {}
-    for condition in conditions:
+    for index, condition in enumerate(conditions):
+        require_fields(
+            condition,
+            f"FDB1.5 summary condition {index}",
+            text=("scenario",),
+            count=("completed",),
+        )
         require_equal(condition.get("condition"), "overlap", "FDB1.5 summary condition")
         require_equal(condition.get("failures"), 0, "FDB1.5 summary failures")
         validate_local_descriptor(
@@ -1805,8 +2001,42 @@ def validate_fdbv3_evaluation(
         sample_ids,
         f"{label} scenario IDs",
     )
+    # The panel copies these blocks through wholesale, so a counter the runner
+    # never wrote arrives as an absent key rather than a null and publishes a
+    # turn-taking or latency figure with no population behind it.
+    turn_taking = report.get("turn_taking")
+    require(isinstance(turn_taking, dict), f"{label} recorded no turn-taking counts")
+    for name in ("total", "turn_taken"):
+        value = turn_taking.get(name)
+        require(
+            isinstance(value, int) and not isinstance(value, bool) and value >= 0,
+            f"{label} turn-taking {name} is not a count",
+        )
+    latency = report.get("latency")
+    require(isinstance(latency, dict), f"{label} recorded no latency population")
+    samples = latency.get("total_samples")
+    require(
+        isinstance(samples, int) and not isinstance(samples, bool) and samples >= 0,
+        f"{label} latency sample population is not a count",
+    )
     for scenario in scenarios:
-        score = scenario.get("metrics", {}).get("response_qual", {}).get("score")
+        # Chained .get() defaults cannot tell "the runner recorded no score",
+        # which is what the exact evaluation is required to do, from "the runner
+        # never wrote the metrics block at all", which is missing evidence.
+        # Requiring the structure makes the empty score an explicit null.
+        scenario_label = f"{label}/{scenario.get('scenario_id')}"
+        metrics = scenario.get("metrics")
+        require(isinstance(metrics, dict), f"{scenario_label} recorded no metrics")
+        response_qual = metrics.get("response_qual")
+        require(
+            isinstance(response_qual, dict),
+            f"{scenario_label} recorded no response_qual metric",
+        )
+        require(
+            "score" in response_qual,
+            f"{scenario_label} response_qual recorded no score",
+        )
+        score = response_qual["score"]
         if llm_judge:
             require(
                 isinstance(score, (int, float)) and not isinstance(score, bool),
@@ -1818,7 +2048,13 @@ def validate_fdbv3_evaluation(
                 None,
                 f"{label}/{scenario.get('scenario_id')} exact-only response score",
             )
-    aggregate_score = report.get("by_metric", {}).get("response_qual")
+    by_metric = report.get("by_metric")
+    require(isinstance(by_metric, dict), f"{label} recorded no aggregate metrics")
+    require(
+        "response_qual" in by_metric,
+        f"{label} aggregate metrics recorded no response_qual",
+    )
+    aggregate_score = by_metric["response_qual"]
     if llm_judge:
         require(
             isinstance(aggregate_score, (int, float))
@@ -1994,6 +2230,18 @@ def validate_fdbv3(
     )
     samples = run.get("samples", [])
     require_equal(len(samples), specification["population"], "FDBv3 planned population")
+    for index, item in enumerate(samples):
+        require_fields(
+            item,
+            f"FDBv3 sample {index}",
+            text=(
+                "example_id",
+                "pid",
+                "directory",
+                "input_sha256",
+                "metadata_sha256",
+            ),
+        )
     labels = {f"{item['example_id']}_{item['pid']}" for item in samples}
     sample_ids = {item["example_id"] for item in samples}
     require_equal(len(labels), len(samples), "FDBv3 unique sample labels")
@@ -2193,6 +2441,8 @@ def validate_fdbench(
     require_equal(
         len(samples), specification["population"], "FD-Bench planned population"
     )
+    for index, item in enumerate(samples):
+        require_fields(item, f"FD-Bench sample {index}", text=("cell", "id"))
     labels = {f"{item['cell']}/{item['id']}" for item in samples}
     require_equal(len(labels), len(samples), "FD-Bench unique samples")
     require_equal(
@@ -2274,6 +2524,16 @@ def validate_fdbench(
         "EIT_ms",
         "IRD_ms",
     }
+    expected_count_names = {
+        "rounds",
+        "interruptions",
+        "gaps",
+        "success_responses",
+        "success_responses_to_interruption",
+        "success_interruptions",
+        "early_interruptions",
+        "noise_interruptions",
+    }
     metrics_directory = resolve(root, specification["metrics_directory"])
     metric_paths = (
         sorted(metrics_directory.glob("*.json")) if metrics_directory.is_dir() else []
@@ -2291,6 +2551,7 @@ def validate_fdbench(
             expected_population,
             f"FD-Bench {cell} trace population",
         )
+        require_fields(trace, f"FD-Bench {cell} trace", text=("path",))
         trace_path = resolve(root, trace["path"])
         require(trace_path.is_file(), f"FD-Bench {cell} trace is missing: {trace_path}")
         require_equal(
@@ -2309,18 +2570,27 @@ def validate_fdbench(
             specification["upstream_revision"],
             f"FD-Bench {cell} metric revision",
         )
+        metric_trace = metric.get("trace")
+        require(
+            isinstance(metric_trace, dict),
+            f"FD-Bench {cell} metric recorded no scored trace",
+        )
         require_equal(
-            metric.get("trace", {}).get("samples"),
+            metric_trace.get("samples"),
             expected_population,
             f"FD-Bench {cell} metric population",
         )
         require_equal(
-            metric.get("trace", {}).get("sha256"),
+            metric_trace.get("sha256"),
             trace["sha256"],
             f"FD-Bench {cell} metric trace hash",
         )
+        # Not `.get("path", trace["path"])`: defaulting to the finalization's
+        # own path compares that path against itself, so a metric file that
+        # never said which trace it scored would satisfy the check vacuously.
+        require_fields(metric_trace, f"FD-Bench {cell} metric trace", text=("path",))
         require_equal(
-            resolve(root, metric.get("trace", {}).get("path", trace["path"])),
+            resolve(root, metric_trace["path"]),
             trace_path,
             f"FD-Bench {cell} metric trace path",
         )
@@ -2339,8 +2609,27 @@ def validate_fdbench(
         # a cell that scored none still emits a full set of metric keys.
         counts = metric.get("counts")
         require(
-            isinstance(counts, dict) and isinstance(counts.get("rounds"), int),
+            isinstance(counts, dict),
             f"FD-Bench {cell} metric must record the scored round population",
+        )
+        # Every published rate divides by one of these counters. The panel
+        # copies this dict through wholesale, so a counter the runner never
+        # wrote arrives as an absent key rather than a null and slips past the
+        # no-unexplained-nulls rule, publishing a rate with no population
+        # behind it.
+        require_equal(
+            set(counts),
+            expected_count_names,
+            f"FD-Bench {cell} scored populations",
+        )
+        require(
+            all(
+                isinstance(counts[name], int)
+                and not isinstance(counts[name], bool)
+                and counts[name] >= 0
+                for name in expected_count_names
+            ),
+            f"FD-Bench {cell} scored populations must be non-negative integers",
         )
         require(
             counts["rounds"] > 0,
@@ -2396,6 +2685,83 @@ def validate_fdbench(
     }
 
 
+def require_preregistered_declarations(manifest: dict[str, Any]) -> None:
+    """Name an omitted preregistration key rather than dying on a KeyError."""
+    require_fields(manifest, "the study preregistration", text=("study_id",))
+    require_declared(
+        manifest,
+        (
+            "runtime",
+            "tau_voice",
+            "full_duplex_bench_v1_5",
+            "full_duplex_bench_v3",
+            "fd_bench",
+        ),
+        "the study preregistration",
+    )
+    require_declared(
+        manifest["tau_voice"],
+        ("source_manifest", "matrices"),
+        "the tau-Voice arm",
+    )
+    matrices = manifest["tau_voice"]["matrices"]
+    require(isinstance(matrices, list), "the tau-Voice arm declares no matrices")
+    for index, matrix in enumerate(matrices):
+        require_declared(
+            matrix, ("path", "sha256"), f"tau-Voice matrix {index}"
+        )
+    require_declared(
+        manifest["full_duplex_bench_v1_5"],
+        (
+            "source_manifest",
+            "upstream_revision",
+            "conditions",
+            "replicates",
+            "run_context",
+            "run_manifest",
+            "summary",
+        ),
+        "the FDB1.5 arm",
+    )
+    require_declared(
+        manifest["full_duplex_bench_v3"],
+        (
+            "source_manifest",
+            "profile",
+            "upstream_revision",
+            "run_context",
+            "run_manifest",
+            "evaluations",
+        ),
+        "the FDBv3 arm",
+    )
+    require_declared(
+        manifest["full_duplex_bench_v3"]["profile"],
+        ("path", "sha256"),
+        "the FDBv3 profile",
+    )
+    require_declared(
+        manifest["full_duplex_bench_v3"]["evaluations"],
+        ("exact", "gpt4o", "gpt4o_evidence"),
+        "the FDBv3 evaluations",
+    )
+    require_declared(
+        manifest["fd_bench"],
+        (
+            "source_manifest",
+            "upstream_revision",
+            "dataset_revision",
+            "cells",
+            "run_context",
+            "run_manifest",
+            "finalization",
+            "metrics_directory",
+            "explicit_exclusions",
+        ),
+        "the FD-Bench arm",
+    )
+
+
 def build_report(root: Path, manifest_path: Path) -> dict[str, Any]:
     manifest = read_json(manifest_path, "full study manifest")
     require_equal(manifest.get("schema_version"), "1.0.0", "study manifest schema")
@@ -2405,6 +2771,16 @@ def build_report(root: Path, manifest_path: Path) -> dict[str, Any]:
     require_equal(
         policy.get("cross_benchmark_composite"), "forbidden", "composite policy"
     )
+    # The panel republishes this policy block, so a declaration the manifest
+    # never made would be presented as one the study committed to. The wording
+    # is prose and may change; that it was declared at all may not.
+    presentation = policy.get("presentation")
+    require(
+        isinstance(presentation, str) and presentation.strip() != "",
+        "the study declares no presentation policy",
+    )
+    require_shape(manifest, STUDY_MANIFEST_SHAPE, "the study manifest")
+    require_preregistered_declarations(manifest)
     runtime_path, runtime = validate_study_runtime(root, manifest["runtime"])
     gateway_source_revision = runtime["source_revision"]
     gateway_sha256 = runtime["binary_sha256"]
