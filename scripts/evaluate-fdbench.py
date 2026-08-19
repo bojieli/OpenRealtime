@@ -155,8 +155,15 @@ def aggregate(benchmark: Any) -> dict[str, Any]:
     lead_times: list[Any] = []
     early_interrupt_times: list[Any] = []
     lead_times_to_interruption: list[Any] = []
-    for data in benchmark.VAD_marks.values():
+    unscored: list[str] = []
+    for name, data in benchmark.VAD_marks.items():
         if data["Number Round"] <= 0:
+            # Upstream skips these. Skipping them silently shrinks the scored
+            # population while the trace still reports its full sample count, so
+            # a run in which most samples produced nothing publishes the same
+            # rates as a run in which every sample scored. Record which samples
+            # dropped out; the caller decides whether that is tolerable.
+            unscored.append(str(name))
             continue
         counters["rounds"] += data["Number Round"]
         counters["interruptions"] += data["Number Interrupt"]
@@ -183,6 +190,13 @@ def aggregate(benchmark: Any) -> dict[str, Any]:
         raise ValueError(
             "FD-Bench scored no rounds; every metric would be computed over an "
             "empty population. This is a failed evaluation, not a result."
+        )
+    if unscored:
+        raise ValueError(
+            f"FD-Bench scored {len(benchmark.VAD_marks) - len(unscored)} of "
+            f"{len(benchmark.VAD_marks)} samples; these produced no rounds and "
+            f"would have been dropped from every rate without appearing in any "
+            f"published count: {', '.join(sorted(unscored)[:5])}"
         )
 
     response_ms = to_ms(response_delays)
@@ -249,7 +263,9 @@ def aggregate(benchmark: Any) -> dict[str, Any]:
     return {
         "metrics": metrics,
         "not_measured": not_measured,
-        "counts": counters,
+        # `samples` states the population every rate above was computed over, so
+        # a reader never has to infer it from the metrics themselves.
+        "counts": {**counters, "samples": len(benchmark.VAD_marks)},
         "categories": categories,
     }
 

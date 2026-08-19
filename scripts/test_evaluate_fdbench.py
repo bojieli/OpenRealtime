@@ -91,6 +91,33 @@ class AggregateTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "scored no rounds"):
             EVALUATE.aggregate(Upstream({"a": mark(), "b": mark()}))
 
+    def test_refuses_a_run_whose_samples_partly_dropped_out(self) -> None:
+        """A partial drop-out is the dangerous case: enough samples survive that
+        every rate still computes, and the rates describe only the survivors."""
+        with self.assertRaisesRegex(ValueError, "scored 1 of 3 samples"):
+            EVALUATE.aggregate(
+                Upstream(
+                    {
+                        "live": mark(**{"Number Round": 4, "Success Response": 4}),
+                        "dead-a": mark(),
+                        "dead-b": mark(),
+                    }
+                )
+            )
+
+    def test_publishes_the_population_every_rate_was_computed_over(self) -> None:
+        result = EVALUATE.aggregate(
+            Upstream(
+                {
+                    "a": mark(**{"Number Round": 2, "Success Response": 2}),
+                    "b": mark(**{"Number Round": 2, "Success Response": 1}),
+                }
+            )
+        )
+
+        self.assertEqual(result["counts"]["samples"], 2)
+        self.assertEqual(result["counts"]["rounds"], 4)
+
     def test_separates_a_measured_zero_from_an_unmeasurable_one(self) -> None:
         result = EVALUATE.aggregate(
             Upstream({"a": mark(**{"Number Round": 4, "Number Gaps": 3})})

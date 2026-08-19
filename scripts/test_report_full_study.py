@@ -689,6 +689,7 @@ class Fixture:
                 },
                 "not_measured": {},
                 "counts": {
+                    "samples": 1,
                     "rounds": 4,
                     "interruptions": 2,
                     "gaps": 1,
@@ -985,6 +986,19 @@ class FullStudyTest(unittest.TestCase):
                 ):
                     self.report()
         path.write_text(pristine, encoding="utf-8")
+
+    def test_rejects_fd_bench_metrics_that_aggregated_fewer_samples(self) -> None:
+        """The trace states what was submitted; counts.samples states what was
+        actually aggregated. A gap between them means some samples left every
+        published rate while the trace still claimed the full population."""
+        path = self.root / ".runtime/fd/metrics/cell.json"
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["counts"]["samples"] = 0
+        write_json(path, document)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "aggregated sample population"
+        ):
+            self.report()
 
     def test_rejects_an_emptied_population_that_would_verify_nothing(self) -> None:
         """An empty list is a list: the type check passes and every loop below it

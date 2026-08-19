@@ -2543,6 +2543,7 @@ def validate_fdbench(
         "IRD_ms",
     }
     expected_count_names = {
+        "samples",
         "rounds",
         "interruptions",
         "gaps",
@@ -2652,6 +2653,16 @@ def validate_fdbench(
         require(
             counts["rounds"] > 0,
             f"FD-Bench {cell} scored no rounds, so its metrics measure nothing",
+        )
+        # The trace states how many samples were submitted; `samples` states how
+        # many the evaluator actually aggregated over. If those differ, some
+        # samples dropped out of every published rate while the trace still
+        # reported the full population, and the rates describe a smaller run
+        # than the one the study claims to have made.
+        require_equal(
+            counts["samples"],
+            expected_population,
+            f"FD-Bench {cell} aggregated sample population",
         )
         # A metric with no value must say why it has none, and an explanation
         # with no matching null is a stale claim. Requiring the two sets to be
