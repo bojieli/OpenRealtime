@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 import wave
@@ -51,17 +52,24 @@ class ValidateResultTest(unittest.TestCase):
     """Drive validate_result over a complete result, then remove one fact."""
 
     def setUp(self) -> None:
+        # Mirror the layout the runner writes -- <root>/<cell>/results/<name>.json
+        # beside <root>/<cell>/audio/ -- because validate_result now reconciles a
+        # result's declared identity against the path it was discovered at.
         self.directory = Path(tempfile.mkdtemp())
-        self.audio = self.directory / "conversation_1.wav"
+        self.addCleanup(shutil.rmtree, self.directory, ignore_errors=True)
+        self.output_root = self.directory / "output"
+        self.cell = "cell-a"
+        self.results_root = self.output_root / self.cell / "results"
+        self.results_root.mkdir(parents=True)
+        audio_root = self.output_root / self.cell / "audio"
+        audio_root.mkdir(parents=True)
+        self.audio = audio_root / "conversation_1.wav"
         with wave.open(str(self.audio), "wb") as sink:
             sink.setnchannels(1)
             sink.setsampwidth(2)
             sink.setframerate(16000)
             sink.writeframes(b"\x00\x01" * 160)
-        self.addCleanup(
-            lambda: [item.unlink() for item in self.directory.iterdir()]
-            and self.directory.rmdir()
-        )
+        self.result_path = self.results_root / "conversation_1.json"
 
     def result(self, **overrides) -> dict:
         record = {
@@ -81,15 +89,19 @@ class ValidateResultTest(unittest.TestCase):
         record.update(overrides)
         return record
 
-    def validate(self, record: dict) -> Path:
-        return FINALIZE.validate_result(self.directory / "result.json", record)
+    def validate(self, record: dict, result_path: Path | None = None) -> Path:
+        return FINALIZE.validate_result(
+            result_path or self.result_path, record, self.output_root
+        )
 
     def test_accepts_a_complete_result(self) -> None:
         self.assertEqual(self.validate(self.result()), self.audio)
 
-    def refuses(self, record: dict, message: str) -> None:
+    def refuses(
+        self, record: dict, message: str, result_path: Path | None = None
+    ) -> None:
         with self.assertRaises(ValueError) as caught:
-            self.validate(record)
+            self.validate(record, result_path)
         self.assertIn(message, str(caught.exception))
 
     def test_refuses_a_result_that_recorded_no_output_path(self) -> None:
@@ -131,3 +143,35 @@ class ValidateResultTest(unittest.TestCase):
         record = self.result(status="running")
         del record["sample"]
         self.refuses(record, "is not a completed pinned FD-Bench result")
+
+    def test_refuses_a_result_filed_under_a_cell_it_does_not_declare(self) -> None:
+        # The finalizer groups by `sample.cell` and the runner files by
+        # directory. When the two disagree, the result joins another
+        # condition's trace and is scored as that condition's evidence. Two
+        # such results crossing leaves every per-cell population intact, so no
+        # count anywhere records that the conditions traded audio.
+        other = self.output_root / "cell-b" / "results"
+        other.mkdir(parents=True)
+        self.refuses(
+            self.result(),
+            "declares cell cell-a but was written under cell-b",
+            other / "conversation_1.json",
+        )
+
+    def test_refuses_a_result_whose_conversation_number_moved(self) -> None:
+        # The trace line names conversation_<declared>.wav. If the declared
+        # number is not the one the file was written as, the line points at
+        # audio belonging to a different sample -- and upstream scores this
+        # audio against that sample's ground truth.
+        record = self.result()
+        record["sample"]["conversation"] = 7
+        self.refuses(record, "declares conversation 7 but was written as conversation_1")
+
+    def test_refuses_a_result_that_does_not_sit_below_the_output_root(self) -> None:
+        nested = self.output_root / "extra" / self.cell / "results"
+        nested.mkdir(parents=True)
+        self.refuses(
+            self.result(),
+            "does not sit directly below the output root",
+            nested / "conversation_1.json",
+        )

@@ -117,7 +117,7 @@ def read_pcm16(path: Path, sampling_rate: int) -> Any:
     return audio
 
 
-def validate_result(result_path: Path, result: dict[str, Any]) -> Path:
+def validate_result(result_path: Path, result: dict[str, Any], output_root: Path) -> Path:
     if (
         result.get("schema_version") != "1.0.0"
         or result.get("benchmark") != "FD-Bench"
@@ -147,6 +147,36 @@ def validate_result(result_path: Path, result: dict[str, Any]) -> Path:
         raise ValueError(
             f"{result_path} sample recorded no conversation number"
         ) from error
+
+    # A result carries its condition and conversation number twice: once in the
+    # fields below, and once in the path the runner wrote it to. Everything
+    # downstream trusts the fields -- `by_cell` groups on `sample.cell`, and the
+    # trace line names `conversation_<sample.conversation>.wav`. Nothing has
+    # compared the two, so a result that names the wrong cell is filed under
+    # that cell's trace and scored as that condition's evidence. When two such
+    # results cross, both per-cell populations still match the declaration and
+    # every published count is unchanged; the only trace of it is that each
+    # condition's numbers now describe the other's audio. Reconcile the
+    # declaration against the location that produced it.
+    declared_cell = sample["cell"]
+    located_cell = result_path.parent.parent.name
+    if declared_cell != located_cell:
+        raise ValueError(
+            f"{result_path} declares cell {declared_cell} but was written under "
+            f"{located_cell}; its results would be scored as the wrong condition"
+        )
+    declared_conversation = int(sample["conversation"])
+    located_conversation = result_path.stem
+    if located_conversation != f"conversation_{declared_conversation}":
+        raise ValueError(
+            f"{result_path} declares conversation {declared_conversation} but was "
+            f"written as {located_conversation}; its trace line would name audio "
+            f"that belongs to a different sample"
+        )
+    if result_path.parent.parent.parent != output_root:
+        raise ValueError(
+            f"{result_path} does not sit directly below the output root {output_root}"
+        )
 
     output_path = Path(result["output_wav"])
     if not output_path.is_absolute():
@@ -180,7 +210,7 @@ def main() -> None:
     audio_evidence: list[tuple[str, int, str]] = []
     for result_path in result_paths:
         result = json.loads(result_path.read_text(encoding="utf-8"))
-        output_path = validate_result(result_path, result)
+        output_path = validate_result(result_path, result, output_root)
         audio = read_pcm16(output_path, TIMESTAMP_RATE_HZ)
         segments = get_speech_timestamps(
             audio,
