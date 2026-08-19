@@ -23,20 +23,66 @@ def require(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
+SNAPSHOT_FIELDS = (
+    "host_boot_id",
+    "expected_components",
+    "component_roots",
+    "gpu_uuids",
+    "processes",
+)
+PROCESS_FIELDS = (
+    "gpu_uuid",
+    "component",
+    "component_pid",
+    "pid",
+    "proc_start_time_ticks",
+)
+
+
 def process_identity(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     return [
-        {
-            key: process[key]
-            for key in (
-                "gpu_uuid",
-                "component",
-                "component_pid",
-                "pid",
-                "proc_start_time_ticks",
-            )
-        }
+        {key: process[key] for key in PROCESS_FIELDS}
         for process in snapshot["processes"]
     ]
+
+
+def require_snapshot(snapshot: Any, label: str) -> dict[str, Any]:
+    """Return `snapshot` once it records everything this summary reads.
+
+    The checks in main() compare each snapshot against the first one, and two
+    snapshots that both omit a field agree vacuously. Without this, a guard log
+    that never recorded which host, device, or components it watched would pass
+    every "did not change" check and be summarised as proof of exclusive GPU
+    ownership. The requirements below are exactly what
+    capture-local-gpu-ownership.sh already refuses to emit without, so they
+    cannot reject an honest capture.
+    """
+    require(isinstance(snapshot, dict), f"{label} is not a record")
+    for name in SNAPSHOT_FIELDS:
+        require(name in snapshot, f"{label} recorded no {name}")
+    processes = snapshot["processes"]
+    require(
+        isinstance(processes, list) and bool(processes),
+        f"{label} claims exclusive ownership over no GPU processes",
+    )
+    for index, process in enumerate(processes):
+        require(isinstance(process, dict), f"{label} process {index} is not a record")
+        for name in PROCESS_FIELDS:
+            require(name in process, f"{label} process {index} recorded no {name}")
+    components = snapshot["expected_components"]
+    require(
+        isinstance(components, list) and bool(components),
+        f"{label} expects no components",
+    )
+    require(
+        sorted({process["component"] for process in processes}) == sorted(components),
+        f"{label} does not occupy every expected component",
+    )
+    require(
+        isinstance(snapshot["gpu_uuids"], list) and bool(snapshot["gpu_uuids"]),
+        f"{label} recorded no GPU device",
+    )
+    return snapshot
 
 
 def main() -> int:
@@ -54,7 +100,14 @@ def main() -> int:
         json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()
     ]
     require(len(records) >= 3, "GPU ownership evidence is incomplete")
+    require(
+        all(isinstance(record, dict) for record in records),
+        "GPU ownership evidence contains a record that is not an object",
+    )
     require(records[0].get("type") == "guard.started", "GPU guard start is absent")
+    for name in ("interval_seconds", "recorded_at"):
+        require(name in records[0], f"GPU guard start recorded no {name}")
+    require("recorded_at" in records[-1], "GPU guard completion recorded no recorded_at")
     require(
         records[-1].get("type") == "guard.completed"
         and records[-1].get("status") == "complete"
@@ -70,7 +123,10 @@ def main() -> int:
         ),
         "GPU ownership evidence contains a violation",
     )
-    snapshots = [item["ownership"] for item in checks]
+    snapshots = [
+        require_snapshot(item.get("ownership"), f"GPU check {index} ownership")
+        for index, item in enumerate(checks)
+    ]
     capture_timeout_seconds = records[0].get("capture_timeout_seconds")
     require(
         isinstance(capture_timeout_seconds, int)

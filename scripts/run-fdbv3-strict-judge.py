@@ -86,14 +86,32 @@ def build_entries(
         scenario = scenarios.get(result.get("example_id"))
         if scenario is None:
             continue
-        actual_calls = result.get("actual_tool_calls", [])
+        # The ledger below predicts how many judge calls this population must
+        # open, and the run is refused unless exactly that many succeed. That
+        # reconciliation is only meaningful if it is computed over evidence
+        # the runner actually recorded: defaulting an absent tool-call list to
+        # `[]` or an absent transcript to `""` predicts zero calls for the
+        # sample, which the judge then trivially satisfies by never scoring it.
+        actual_calls = result.get("actual_tool_calls")
+        if not isinstance(actual_calls, list) or not all(
+            isinstance(call, dict) for call in actual_calls
+        ):
+            raise StrictJudgeError(
+                f"{result_path} recorded no tool calls for scenario "
+                f"{scenario['id']}"
+            )
         remaining = Counter(call.get("function") for call in actual_calls)
         for expected in scenario["expected_tool_calls"]:
             function = expected["function"]
             if remaining[function] > 0:
                 argument_calls += 1
                 remaining[function] -= 1
-        transcript = result.get("transcript", "")
+        transcript = result.get("transcript")
+        if not isinstance(transcript, str):
+            raise StrictJudgeError(
+                f"{result_path} recorded no transcript for scenario "
+                f"{scenario['id']}"
+            )
         if transcript.strip():
             response_calls += 1
         entries.append(

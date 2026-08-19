@@ -190,13 +190,27 @@ def external_progress(root: Path, specification: dict[str, Any]) -> dict[str, An
     context_path = resolve(root, Path(specification["run_context"]))
     run = read_json(run_path)
     context = read_json(context_path)
-    completed = run.get("completed", []) if run else []
-    failures = run.get("failures", []) if run else []
+
+    # A manifest that exists but records no list is malformed, not a run that
+    # has finished nothing. Counting it as 0 makes a corrupt manifest read
+    # exactly like a queue that has only just started, so the monitor names the
+    # defect instead -- it stays resilient and terminal, and the caller raises
+    # the report to "attention".
+    malformed: list[str] = []
+
+    def population(name: str) -> int:
+        value = run.get(name, []) if run else []
+        if isinstance(value, list):
+            return len(value)
+        malformed.append(f"run manifest {run_path} records no {name} list")
+        return 0
+
     return {
-        "observed": len(completed) if isinstance(completed, list) else 0,
+        "observed": population("completed"),
         "expected": specification["population"],
-        "terminal_failures": len(failures) if isinstance(failures, list) else 0,
+        "terminal_failures": population("failures"),
         "run_context_status": context.get("status") if context else "not_started",
+        "malformed": malformed,
     }
 
 
@@ -348,6 +362,8 @@ def build_progress(root: Path, manifest_path: Path) -> dict[str, Any]:
                 f"{STALLED_PROCESS_STATES[queue['state']]} and cannot advance the study"
             )
     for benchmark, progress in external.items():
+        for defect in progress["malformed"]:
+            warnings.append(f"{benchmark} {defect}")
         if progress["terminal_failures"]:
             warnings.append(
                 f"{benchmark} has {progress['terminal_failures']} terminal failures"

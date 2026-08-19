@@ -103,6 +103,57 @@ class ExpectedCallTest(unittest.TestCase):
         self.assertEqual(len(entries), 1)
         self.assertEqual(counts, {"argument": 1, "response": 1, "total": 2})
 
+    def build_one(self, result: dict) -> tuple[list, dict]:
+        benchmark = {
+            "scenarios": [
+                {"id": "one", "expected_tool_calls": [{"function": "search"}]}
+            ]
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "result_openrealtime.json").write_text(
+                json.dumps(result), encoding="utf-8"
+            )
+            return JUDGE.build_entries(benchmark, Path(directory), "openrealtime")
+
+    def test_refuses_a_result_that_recorded_no_tool_calls(self) -> None:
+        with self.assertRaises(JUDGE.StrictJudgeError) as caught:
+            self.build_one({"example_id": "one", "transcript": "done"})
+        self.assertIn("recorded no tool calls", str(caught.exception))
+
+    def test_refuses_a_result_whose_tool_calls_are_not_records(self) -> None:
+        with self.assertRaises(JUDGE.StrictJudgeError):
+            self.build_one(
+                {
+                    "example_id": "one",
+                    "actual_tool_calls": ["search"],
+                    "transcript": "done",
+                }
+            )
+
+    def test_refuses_a_result_that_recorded_no_transcript(self) -> None:
+        with self.assertRaises(JUDGE.StrictJudgeError) as caught:
+            self.build_one(
+                {"example_id": "one", "actual_tool_calls": [{"function": "search"}]}
+            )
+        self.assertIn("recorded no transcript", str(caught.exception))
+
+    def test_refuses_a_result_whose_transcript_is_null(self) -> None:
+        with self.assertRaises(JUDGE.StrictJudgeError):
+            self.build_one(
+                {
+                    "example_id": "one",
+                    "actual_tool_calls": [{"function": "search"}],
+                    "transcript": None,
+                }
+            )
+
+    def test_still_counts_a_sample_that_legitimately_called_nothing(self) -> None:
+        entries, counts = self.build_one(
+            {"example_id": "one", "actual_tool_calls": [], "transcript": "done"}
+        )
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(counts, {"argument": 0, "response": 1, "total": 1})
+
 
 if __name__ == "__main__":
     unittest.main()

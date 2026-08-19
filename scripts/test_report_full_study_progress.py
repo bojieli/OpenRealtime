@@ -112,6 +112,37 @@ class ProgressTest(unittest.TestCase):
         self.assertIn("terminal failures", report["warnings"][0])
         self.assertEqual(report["external"]["full_duplex_bench_v3"]["observed"], 3)
 
+    def test_malformed_run_manifest_is_not_reported_as_no_progress(self) -> None:
+        path = self.root / ".runtime/fdbv3/run.json"
+        run = json.loads(path.read_text(encoding="utf-8"))
+        run["completed"] = {"one": True}
+        write_json(path, run)
+        report = self.report()
+        self.assertEqual(report["status"], "attention")
+        self.assertEqual(report["external"]["full_duplex_bench_v3"]["observed"], 0)
+        self.assertTrue(
+            any("records no completed list" in warning for warning in report["warnings"]),
+            report["warnings"],
+        )
+
+    def test_malformed_failure_ledger_is_not_reported_as_no_failures(self) -> None:
+        path = self.root / ".runtime/fd/run.json"
+        run = json.loads(path.read_text(encoding="utf-8"))
+        run["failures"] = "none"
+        write_json(path, run)
+        report = self.report()
+        self.assertEqual(report["status"], "attention")
+        self.assertTrue(
+            any("records no failures list" in warning for warning in report["warnings"]),
+            report["warnings"],
+        )
+
+    def test_a_run_that_has_not_started_raises_no_malformed_warning(self) -> None:
+        (self.root / ".runtime/fdb15/run.json").unlink()
+        report = self.report()
+        self.assertEqual(report["external"]["full_duplex_bench_v1_5"]["observed"], 0)
+        self.assertEqual(report["warnings"], [])
+
     def queue_report(self, state: str | None, complete: bool = False) -> dict:
         """Build a report for one queue whose supervisor is in the given state."""
         directory = self.root / ".runtime/benchmark-runs/queue-v1"
