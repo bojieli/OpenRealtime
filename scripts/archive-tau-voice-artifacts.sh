@@ -22,6 +22,29 @@ for command_name in find jq realpath sha256sum tar zstd; do
   fi
 done
 
+# Every scalar the archive republishes as attempt evidence has to be declared by
+# the matrix before any population is read. A matrix that omits one of these
+# yields the string "null" from jq -r, which either lands verbatim in the
+# evidence file or dies later as an "unbound variable" in an arithmetic context;
+# neither states that the matrix never declared the value.
+require_declared_scalar() {
+  local field="$1"
+  local value="$2"
+  if [[ -z "${value}" || "${value}" == "null" ]]; then
+    echo "tau-Voice matrix ${matrix} declares no ${field}" >&2
+    exit 1
+  fi
+}
+require_positive_integer() {
+  local field="$1"
+  local value="$2"
+  require_declared_scalar "${field}" "${value}"
+  if [[ ! "${value}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "tau-Voice matrix ${matrix} declares a non-positive ${field}: ${value}" >&2
+    exit 1
+  fi
+}
+
 matrix_id="$(jq -r '.matrix_id' "${matrix}")"
 matrix_sha256="$(sha256sum "${matrix}" | cut -d ' ' -f 1)"
 seed="$(jq -r '.benchmark.seed' "${matrix}")"
@@ -30,12 +53,35 @@ maximum_attempts="$(jq -r '.reporting.infrastructure_retry_policy.maximum_attemp
 retry_delay_seconds="$(jq -r '.reporting.infrastructure_retry_policy.retry_delay_seconds' "${matrix}")"
 canonical_data_root="$(realpath -m "${data_root}")"
 
+require_declared_scalar "matrix_id" "${matrix_id}"
+require_declared_scalar "benchmark.seed" "${seed}"
+require_positive_integer "benchmark.num_trials" "${num_trials}"
+require_positive_integer \
+  "reporting.infrastructure_retry_policy.maximum_attempts" "${maximum_attempts}"
+require_declared_scalar \
+  "reporting.infrastructure_retry_policy.retry_delay_seconds" "${retry_delay_seconds}"
+if [[ ! "${retry_delay_seconds}" =~ ^(0|[1-9][0-9]*)$ ]]; then
+  echo "tau-Voice matrix ${matrix} declares a non-integer retry delay: ${retry_delay_seconds}" >&2
+  exit 1
+fi
+
 if [[ "${num_trials}" != "1" ]]; then
   echo "attempt-proof archiving currently requires exactly one trial per task" >&2
   exit 1
 fi
 
+# A matrix with no cells or no domains produces an empty population feed, and the
+# loop below then archives nothing and exits 0 -- an empty sweep is indistinguishable
+# from a completed one. Count the population up front and require it to be non-empty.
+declared_populations="$(jq -r '(.cells | length) * (.benchmark.domains | length)' "${matrix}")"
+require_positive_integer "population of cells x domains" "${declared_populations}"
+
+archived_populations=0
 while IFS=$'\t' read -r cell domain tasks; do
+  require_declared_scalar "a cell id" "${cell}"
+  require_declared_scalar "cell ${cell} domain name" "${domain}"
+  require_positive_integer "cell ${cell} domain ${domain} task count" "${tasks}"
+  archived_populations=$((archived_populations + 1))
   experiment="${data_root}/${matrix_id}-${cell}-${domain}-seed${seed}"
   canonical_experiment="$(realpath -m "${experiment}")"
   if [[ "${canonical_experiment}" != "${canonical_data_root}/"* ]]; then
@@ -254,3 +300,10 @@ done < <(
     [$cell, .name, (.tasks | tostring)] | @tsv
   ' "${matrix}"
 )
+
+# The loop runs in this shell, so its counter survives; a short feed means some
+# declared population never reached the archiver at all.
+if [[ "${archived_populations}" != "${declared_populations}" ]]; then
+  echo "tau raw-artifact archiving covered ${archived_populations}/${declared_populations} declared populations" >&2
+  exit 1
+fi

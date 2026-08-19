@@ -67,6 +67,7 @@ class AttemptProofArchiveTest(unittest.TestCase):
         (self.experiment / "artifacts/task_0/sim_failed-first/task.log").write_text(
             "preserved failure\n", encoding="utf-8"
         )
+        self.pristine_matrix = self.matrix.read_text(encoding="utf-8")
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -131,6 +132,79 @@ class AttemptProofArchiveTest(unittest.TestCase):
         self.assertIn("not typed infrastructure evidence", completed.stderr)
         self.assertTrue((self.experiment / "artifacts").is_dir())
         self.assertFalse((self.experiment / "raw-artifacts.tar.zst").exists())
+
+    def load_matrix(self) -> dict:
+        """Re-parse the pristine matrix so subtests never inherit each other's mutation."""
+        return json.loads(self.pristine_matrix)
+
+    def test_rejects_a_matrix_that_declares_no_population(self) -> None:
+        for description, mutate in (
+            ("no cells", lambda m: m.__setitem__("cells", [])),
+            ("no domains", lambda m: m["benchmark"].__setitem__("domains", [])),
+        ):
+            with self.subTest(description):
+                matrix = self.load_matrix()
+                mutate(matrix)
+                write_json(self.matrix, matrix)
+
+                completed = self.run_archive()
+
+                self.assertNotEqual(completed.returncode, 0, completed.stdout)
+                self.assertIn("population of cells x domains", completed.stderr)
+                self.assertTrue((self.experiment / "artifacts").is_dir())
+                self.assertFalse((self.experiment / "raw-artifacts.tar.zst").exists())
+
+    def test_rejects_a_matrix_that_leaves_its_retry_policy_undeclared(self) -> None:
+        for field in ("maximum_attempts", "retry_delay_seconds"):
+            with self.subTest(field):
+                matrix = self.load_matrix()
+                del matrix["reporting"]["infrastructure_retry_policy"][field]
+                write_json(self.matrix, matrix)
+
+                completed = self.run_archive()
+
+                self.assertNotEqual(completed.returncode, 0, completed.stdout)
+                self.assertIn(
+                    f"declares no reporting.infrastructure_retry_policy.{field}",
+                    completed.stderr,
+                )
+                self.assertFalse((self.experiment / "raw-artifacts.tar.zst").exists())
+
+    def test_rejects_a_domain_that_declares_no_task_population(self) -> None:
+        for description, tasks in (("absent", None), ("zero", 0)):
+            with self.subTest(description):
+                matrix = self.load_matrix()
+                if tasks is None:
+                    del matrix["benchmark"]["domains"][0]["tasks"]
+                else:
+                    matrix["benchmark"]["domains"][0]["tasks"] = tasks
+                write_json(self.matrix, matrix)
+
+                completed = self.run_archive()
+
+                self.assertNotEqual(completed.returncode, 0, completed.stdout)
+                self.assertIn("domain airline task count", completed.stderr)
+                self.assertFalse((self.experiment / "raw-artifacts.tar.zst").exists())
+
+    def test_rejects_a_matrix_that_leaves_its_identity_undeclared(self) -> None:
+        for field, path in (
+            ("matrix_id", ("matrix_id",)),
+            ("benchmark.seed", ("benchmark", "seed")),
+            ("benchmark.num_trials", ("benchmark", "num_trials")),
+        ):
+            with self.subTest(field):
+                matrix = self.load_matrix()
+                node = matrix
+                for key in path[:-1]:
+                    node = node[key]
+                del node[path[-1]]
+                write_json(self.matrix, matrix)
+
+                completed = self.run_archive()
+
+                self.assertNotEqual(completed.returncode, 0, completed.stdout)
+                self.assertIn(f"declares no {field}", completed.stderr)
+                self.assertFalse((self.experiment / "raw-artifacts.tar.zst").exists())
 
 
 if __name__ == "__main__":
