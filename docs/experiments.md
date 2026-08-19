@@ -129,6 +129,18 @@ Primary measures are upstream SRR, SIR, EIR, NIR, SRIR, FSED, ERT, EIT, and
 IRD by condition. This is a robustness matrix, not an intelligence proxy, and
 its 21 cells are reported separately before any aggregate.
 
+Every one of those measures is a ratio over a population or a median over a
+sample set, and either can legitimately be empty: a cell in which no
+interruption occurred has no interruption success rate, and one that emitted no
+speech has no first-speech-emission delay. Such a metric is reported by name
+under `not_measured` with the population that was empty, never as a zero. The
+distinction is not cosmetic — the five latency measures are lower-is-better, so
+a fabricated zero would publish an unmeasured cell as the best result in the
+matrix. A cell that scored no rounds at all is refused outright rather than
+published as a row of zeroes, and the publication gate rejects both an
+unexplained undefined metric and an explanation with no matching undefined
+metric.
+
 ### H13 fast-provider intelligence/latency frontier
 
 Two complete paired τ-Voice matrices compare local Qwen instruct with thinking

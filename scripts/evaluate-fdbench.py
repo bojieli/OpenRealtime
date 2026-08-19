@@ -7,6 +7,14 @@ does not invent those artifacts. It invokes the pinned upstream parser and
 `analyze_VAD_interruption_new2` implementation, then faithfully aggregates the
 timing/interaction fields that implementation produced. WER, CPPL, and GPT
 subjective scores remain explicitly unevaluated.
+
+Two absences are reported separately and must not be confused. `not_evaluated`
+names metrics this wrapper never computes because upstream does not produce the
+inputs. `not_measured` names metrics that were computed but landed on an empty
+population — no interruptions occurred, no response-delay samples were emitted —
+and are therefore undefined. Neither is ever published as a zero: a rate over no
+trials and a median over no samples are missing measurements, and for the latency
+metrics a fabricated zero would read as the best score attainable.
 """
 
 from __future__ import annotations
@@ -53,9 +61,16 @@ def flatten(values: Iterable[Any]) -> list[Any]:
     return result
 
 
-def median(values: list[int]) -> float:
+def median(values: list[int]) -> float | None:
+    """Median of the observed samples, or None when nothing was observed.
+
+    An empty sample set has no median. Returning 0 would publish the best
+    attainable value for every latency metric here — a run that emitted no
+    speech at all would report a 0 ms first-speech-emission delay, which reads
+    as a perfect score rather than as a missing measurement.
+    """
     if not values:
-        return 0
+        return None
     ordered = sorted(values)
     middle = len(ordered) // 2
     if len(ordered) % 2:
@@ -63,8 +78,26 @@ def median(values: list[int]) -> float:
     return (ordered[middle - 1] + ordered[middle]) / 2
 
 
-def rate(numerator: int, denominator: int) -> float:
-    return numerator / denominator if denominator else 0
+def rate(numerator: int, denominator: int) -> float | None:
+    """Ratio over an observed population, or None when that population is empty.
+
+    A zero denominator makes the rate undefined, not zero. "0 of 0 interruptions
+    succeeded" is the absence of a measurement, and publishing it as 0% is
+    indistinguishable from having interrupted many times and failed every one.
+    """
+    if not denominator:
+        return None
+    return numerator / denominator
+
+
+def percentage(numerator: int, denominator: int) -> float | None:
+    value = rate(numerator, denominator)
+    return None if value is None else round(100 * value, 2)
+
+
+def milliseconds(values: list[int]) -> float | None:
+    value = median(values)
+    return None if value is None else round(value, 2)
 
 
 def atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -146,26 +179,79 @@ def aggregate(benchmark: Any) -> dict[str, Any]:
     def to_ms(values):
         return [int(value / 16) for value in flatten(values) if value > 0]
 
+    if counters["rounds"] <= 0:
+        raise ValueError(
+            "FD-Bench scored no rounds; every metric would be computed over an "
+            "empty population. This is a failed evaluation, not a result."
+        )
+
+    response_ms = to_ms(response_delays)
     lead_ms = to_ms(lead_times) + to_ms(lead_times_to_interruption)
+    early_ms = to_ms(early_interrupt_times)
+    interruption_ms = to_ms(interruption_delays)
     metrics = {
-        "SRR_pct": round(100 * rate(counters["success_responses"], counters["rounds"]), 2),
-        "SIR_pct": round(100 * rate(counters["success_interruptions"], counters["interruptions"]), 2),
-        "EIR_pct": round(100 * rate(counters["early_interruptions"], counters["rounds"]), 2),
-        "NIR_pct": round(100 * rate(counters["noise_interruptions"], counters["gaps"]), 2),
-        "SRIR_pct": round(100 * rate(counters["success_responses_to_interruption"], counters["success_interruptions"]), 2),
-        "FSED_ms": round(median(to_ms(response_delays)), 2),
-        "ERT_ms": round(median(lead_ms), 2),
-        "EIT_ms": round(median(to_ms(early_interrupt_times)), 2),
-        "IRD_ms": round(median(to_ms(interruption_delays)), 2),
+        "SRR_pct": percentage(counters["success_responses"], counters["rounds"]),
+        "SIR_pct": percentage(counters["success_interruptions"], counters["interruptions"]),
+        "EIR_pct": percentage(counters["early_interruptions"], counters["rounds"]),
+        "NIR_pct": percentage(counters["noise_interruptions"], counters["gaps"]),
+        "SRIR_pct": percentage(
+            counters["success_responses_to_interruption"], counters["success_interruptions"]
+        ),
+        "FSED_ms": milliseconds(response_ms),
+        "ERT_ms": milliseconds(lead_ms),
+        "EIT_ms": milliseconds(early_ms),
+        "IRD_ms": milliseconds(interruption_ms),
     }
+    # Every undefined metric names the empty population that made it undefined,
+    # so a reader never has to guess whether a null means "not observed" or
+    # "not implemented". The two maps are kept in exact correspondence below.
+    populations = {
+        "SRR_pct": ("scored rounds", counters["rounds"]),
+        "SIR_pct": ("observed interruptions", counters["interruptions"]),
+        "EIR_pct": ("scored rounds", counters["rounds"]),
+        "NIR_pct": ("observed gaps", counters["gaps"]),
+        "SRIR_pct": ("successful interruptions", counters["success_interruptions"]),
+        "FSED_ms": ("response-delay samples", len(response_ms)),
+        "ERT_ms": ("lead-time samples", len(lead_ms)),
+        "EIT_ms": ("early-interruption samples", len(early_ms)),
+        "IRD_ms": ("interruption-delay samples", len(interruption_ms)),
+    }
+    not_measured = {
+        name: f"no {label} were observed, so the value is undefined rather than zero"
+        for name, (label, size) in populations.items()
+        if size == 0
+    }
+    undefined = {name for name, value in metrics.items() if value is None}
+    if undefined != set(not_measured):
+        raise ValueError(
+            "FD-Bench metric nullity and its explanations disagree: "
+            f"undefined={sorted(undefined)}, explained={sorted(not_measured)}"
+        )
+
     categories = {}
     for name, count in benchmark.interruption_cats.items():
+        # An absent category is a disagreement between the upstream tallies, not
+        # a category that scored zero, so it is refused rather than defaulted.
+        for label, table in (
+            ("interruption_success", benchmark.interruption_success_cats),
+            ("response_success", benchmark.interruption_res_suc_cats),
+        ):
+            if name not in table:
+                raise ValueError(
+                    f"FD-Bench category {name!r} is missing from {label}; the "
+                    "upstream tallies disagree and cannot be aggregated"
+                )
         categories[name] = {
             "all": count,
-            "interruption_success": benchmark.interruption_success_cats.get(name, 0),
-            "response_success": benchmark.interruption_res_suc_cats.get(name, 0),
+            "interruption_success": benchmark.interruption_success_cats[name],
+            "response_success": benchmark.interruption_res_suc_cats[name],
         }
-    return {"metrics": metrics, "counts": counters, "categories": categories}
+    return {
+        "metrics": metrics,
+        "not_measured": not_measured,
+        "counts": counters,
+        "categories": categories,
+    }
 
 
 def main() -> None:

@@ -683,7 +683,17 @@ class Fixture:
                     "EIT_ms": 8,
                     "IRD_ms": 9,
                 },
-                "counts": {},
+                "not_measured": {},
+                "counts": {
+                    "rounds": 4,
+                    "interruptions": 2,
+                    "gaps": 1,
+                    "success_responses": 4,
+                    "success_responses_to_interruption": 2,
+                    "success_interruptions": 2,
+                    "early_interruptions": 0,
+                    "noise_interruptions": 0,
+                },
                 "categories": {},
                 "not_evaluated": {
                     "WER": "not emitted",
@@ -895,12 +905,68 @@ class FullStudyTest(unittest.TestCase):
     def test_rejects_a_panel_field_that_carries_no_value(self) -> None:
         path = self.fixture.paths["fd_metric"]
         metric = json.loads(path.read_text(encoding="utf-8"))
-        del metric["counts"]
+        del metric["categories"]
         write_json(path, metric)
         with self.assertRaisesRegex(
             REPORT.StudyIncompleteError, "evidence panel field has no value"
         ):
             self.report()
+
+    def test_rejects_a_cell_that_scored_no_rounds(self) -> None:
+        """A full set of metric keys computed over nothing is not a result.
+
+        The trace population check counts lines the runner wrote; it passes
+        whether or not the decision core scored a single round.
+        """
+        path = self.fixture.paths["fd_metric"]
+        metric = json.loads(path.read_text(encoding="utf-8"))
+        metric["counts"]["rounds"] = 0
+        write_json(path, metric)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "scored no rounds"
+        ):
+            self.report()
+
+    def test_rejects_a_cell_that_never_recorded_its_scored_population(self) -> None:
+        path = self.fixture.paths["fd_metric"]
+        metric = json.loads(path.read_text(encoding="utf-8"))
+        metric["counts"].pop("rounds")
+        write_json(path, metric)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "scored round population"
+        ):
+            self.report()
+
+    def test_rejects_an_undefined_metric_with_no_explanation(self) -> None:
+        path = self.fixture.paths["fd_metric"]
+        metric = json.loads(path.read_text(encoding="utf-8"))
+        metric["metrics"]["SIR_pct"] = None
+        write_json(path, metric)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "undefined metrics and their explanations"
+        ):
+            self.report()
+
+    def test_rejects_an_explanation_with_no_undefined_metric(self) -> None:
+        """A stale explanation is a claim about evidence that is not there."""
+        path = self.fixture.paths["fd_metric"]
+        metric = json.loads(path.read_text(encoding="utf-8"))
+        metric["not_measured"]["SIR_pct"] = "no observed interruptions"
+        write_json(path, metric)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "undefined metrics and their explanations"
+        ):
+            self.report()
+
+    def test_publishes_an_undefined_metric_by_name_not_as_a_null(self) -> None:
+        path = self.fixture.paths["fd_metric"]
+        metric = json.loads(path.read_text(encoding="utf-8"))
+        metric["metrics"]["SIR_pct"] = None
+        metric["not_measured"]["SIR_pct"] = "no observed interruptions"
+        write_json(path, metric)
+        panel = self.report()["evidence_panel"]["fd_bench"]["metrics"]["cell"]
+        self.assertNotIn("SIR_pct", panel["metrics"])
+        self.assertIn("SIR_pct", panel["not_measured"])
 
     def test_permits_only_the_declared_empty_panel_field(self) -> None:
         report = self.report()

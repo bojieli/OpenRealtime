@@ -2334,12 +2334,46 @@ def validate_fdbench(
             set(specification["explicit_exclusions"]),
             f"FD-Bench {cell} exclusions",
         )
+        # The trace population above counts lines the runner wrote. It says
+        # nothing about how many rounds the decision core actually scored, and
+        # a cell that scored none still emits a full set of metric keys.
+        counts = metric.get("counts")
+        require(
+            isinstance(counts, dict) and isinstance(counts.get("rounds"), int),
+            f"FD-Bench {cell} metric must record the scored round population",
+        )
+        require(
+            counts["rounds"] > 0,
+            f"FD-Bench {cell} scored no rounds, so its metrics measure nothing",
+        )
+        # A metric with no value must say why it has none, and an explanation
+        # with no matching null is a stale claim. Requiring the two sets to be
+        # equal refuses both directions.
+        not_measured = metric.get("not_measured")
+        require(
+            isinstance(not_measured, dict),
+            f"FD-Bench {cell} metric must record which values were not measured",
+        )
+        require_equal(
+            set(not_measured),
+            {name for name, value in metric["metrics"].items() if value is None},
+            f"FD-Bench {cell} undefined metrics and their explanations",
+        )
+        # Undefined metrics are published by name in not_measured rather than
+        # as nulls under metrics, which is how this panel already reports
+        # not_evaluated. A reader scanning metrics sees only measurements.
         metric_panel[cell] = {
             "population": expected_population,
+            "scored_rounds": counts["rounds"],
             "artifact": artifact(root, metric_path),
             "trace": artifact(root, trace_path),
-            "metrics": metric["metrics"],
-            "counts": metric.get("counts"),
+            "metrics": {
+                name: value
+                for name, value in metric["metrics"].items()
+                if value is not None
+            },
+            "not_measured": not_measured,
+            "counts": counts,
             "categories": metric.get("categories"),
             "not_evaluated": metric["not_evaluated"],
         }
