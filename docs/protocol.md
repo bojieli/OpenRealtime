@@ -106,11 +106,11 @@ artifact tracked in this repository.
 
 A record naming no causal parents emits `causal_parent_ids` as an empty array;
 the writer normalises an absent list, because a nil slice would serialise to
-`null` and the schema requires an array. Five reference traces published in
-benchmarks release v0.1.0 predate that normalisation and open with a null
-instead. Their bytes are hash-pinned by that release's manifest and are left
-as published; the conformance sweep names them explicitly and requires them to
-be conformant in every other respect, so the exception cannot widen.
+`null` and the schema requires an array. Five M5 reference traces were generated
+before that normalisation and opened with a null instead, so they were
+regenerated and the release manifest re-cut. The conformance sweep carries no
+exceptions: every trace record this repository ships validates against the
+published schema, and any that does not fails the build.
 
 ## Audio compatibility
 

@@ -118,20 +118,6 @@ func TestPublishedSchemaEnumerationsMatchTheWriter(t *testing.T) {
 	}
 }
 
-// Five reference traces shipped in benchmarks release v0.1.0 before the writer
-// normalised a root record's absent causal parents, so each opens with
-// "causal_parent_ids": null. Their bytes are hash-pinned by that release's
-// manifest and are not rewritten here; reissuing a dated release is a release
-// decision, not a test fixture change. The exception is bounded below: these
-// files must fail in exactly that one way and be otherwise conformant.
-var releasedNullRootParents = map[string]bool{
-	"benchmarks/m5/reference/game-endpointed-trial-0000.jsonl":                    true,
-	"benchmarks/m5/reference/game-microturn_50ms-trial-0000.jsonl":                true,
-	"benchmarks/m5/reference/translation-aggressive_incremental-trial-0000.jsonl": true,
-	"benchmarks/m5/reference/translation-endpointed-trial-0000.jsonl":             true,
-	"benchmarks/m5/reference/translation-stable_incremental-trial-0000.jsonl":     true,
-}
-
 func discoverTraceArtifacts(t *testing.T) []string {
 	t.Helper()
 	var found []string
@@ -174,7 +160,6 @@ func discoverTraceArtifacts(t *testing.T) []string {
 func TestTrackedTraceArtifactsMatchThePublishedSchema(t *testing.T) {
 	t.Parallel()
 	schema := compileTraceSchema(t)
-	exercised := make(map[string]bool)
 	validated := 0
 	for _, path := range discoverTraceArtifacts(t) {
 		relative := filepath.ToSlash(strings.TrimPrefix(filepath.Clean(path), "../"))
@@ -193,43 +178,15 @@ func TestTrackedTraceArtifactsMatchThePublishedSchema(t *testing.T) {
 				t.Errorf("%s record %d is not JSON: %v", relative, index, err)
 				continue
 			}
-			if schema.Validate(value) == nil {
-				if !releasedNullRootParents[relative] {
-					validated++
-				}
-				continue
-			}
-			if !releasedNullRootParents[relative] {
+			if err := schema.Validate(value); err != nil {
 				t.Errorf("%s record %d does not match the published schema: %v",
-					relative, index, schema.Validate(value))
-				continue
-			}
-			// Bound the exception: the only tolerated defect is a null
-			// causal_parent_ids, and the record must be conformant once that
-			// one field is repaired.
-			record, ok := value.(map[string]any)
-			if !ok || record["causal_parent_ids"] != nil {
-				t.Errorf("%s record %d fails for a reason the release exception does not cover: %v",
-					relative, index, schema.Validate(value))
-				continue
-			}
-			record["causal_parent_ids"] = []any{}
-			if err := schema.Validate(record); err != nil {
-				t.Errorf("%s record %d is non-conformant beyond its null causal parents: %v",
 					relative, index, err)
 				continue
 			}
-			exercised[relative] = true
+			validated++
 		}
 	}
 	if validated == 0 {
-		t.Error("no unexcepted trace record was validated; the sweep proves nothing")
-	}
-	// A stale exception is a silent licence to regress: every excepted file
-	// must still exhibit the defect it is excepted for.
-	for relative := range releasedNullRootParents {
-		if !exercised[relative] {
-			t.Errorf("%s no longer needs its release exception; remove it", relative)
-		}
+		t.Error("no trace record was validated; the sweep proves nothing")
 	}
 }
