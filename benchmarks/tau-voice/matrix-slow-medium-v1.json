@@ -75,6 +75,10 @@
         "effort": "medium",
         "tool_authority": "execute"
       }
+    },
+    "speech": {
+      "name": "openai-speech-streaming/fishaudio/s2-pro",
+      "version": "openai-audio-speech-1"
     }
   },
   "cells": [

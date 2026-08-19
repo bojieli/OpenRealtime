@@ -30,6 +30,7 @@ if [[ -n "$(git -C "${repository_root}" status --porcelain=v1 --untracked-files=
   exit 1
 fi
 "${repository_root}/scripts/test_matrix_requires_local_fast.sh" >/dev/null
+"${repository_root}/scripts/test_matrix_requirement.sh" >/dev/null
 "${repository_root}/scripts/test_capture_local_gpu_ownership.sh" >/dev/null
 "${repository_root}/scripts/test_local_gpu_ownership_guard.sh" >/dev/null
 "${repository_root}/scripts/test_full_study_freshness.sh" >/dev/null

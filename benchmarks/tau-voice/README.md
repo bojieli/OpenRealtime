@@ -51,6 +51,15 @@ the same source revision throughout the invocation. Source edits therefore
 produce an interrupted/non-publishable attempt rather than silently mixing
 harness implementations inside one matrix population.
 
+Each admitted matrix also preregisters its full runtime under
+`runtime_requirements`: the gateway executable hash, the ASR model and
+cadence, both gateway profiles, the slow-context and preparation policies, and
+the speech backend name and version. `run-tau-voice-matrix.sh` compares every
+one of them against the live gateway before the first task and refuses a
+launch that omits any of them, so an undeclared requirement cannot pass as a
+satisfied one. `scripts/test_matrix_requirement.sh` holds all fourteen
+admitted matrices to that contract.
+
 The full matrices also have a lossless storage gate. After an exact matrix
 population validates, `archive-tau-voice-artifacts.sh` writes one deterministic
 PAX+Zstandard archive per cell/domain, verifies that it can be listed, records

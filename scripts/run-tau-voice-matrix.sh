@@ -59,39 +59,47 @@ if ! curl --fail --silent --show-error http://127.0.0.1:8001/ >/dev/null; then
   exit 1
 fi
 runtime_identity="$("${repository_root}/scripts/capture-local-runtime-identity.sh")"
-expected_gateway_sha256="$(jq -r '.runtime_requirements.gateway.executable_sha256 // empty' "${matrix}")"
-if [[ -n "${expected_gateway_sha256}" ]] && \
-  ! jq -e --arg sha256 "${expected_gateway_sha256}" \
-    '.components.gateway.executable_sha256 == $sha256' \
-    <<<"${runtime_identity}" >/dev/null; then
+
+# Every matrix admitted by benchmarks/full-study-v1.json preregisters each
+# field read below. They used to be read with `// empty` and their comparison
+# skipped when the read came back empty, so a matrix that failed to declare
+# part of its runtime left that part unconstrained and an arbitrary gateway
+# passed as a matching one. matrix-requirement.sh refuses and names the field
+# instead, so an undeclared requirement cannot read as a satisfied one.
+matrix_requirement() {
+  "${repository_root}/scripts/matrix-requirement.sh" "${matrix}" "$1"
+}
+
+expected_gateway_sha256="$(matrix_requirement gateway.executable_sha256)" || exit 1
+if ! jq -e --arg sha256 "${expected_gateway_sha256}" \
+  '.components.gateway.executable_sha256 == $sha256' \
+  <<<"${runtime_identity}" >/dev/null; then
   echo "gateway binary does not match the preregistered matrix" >&2
   exit 1
 fi
-expected_asr_model="$(jq -r '.runtime_requirements.asr.model // empty' "${matrix}")"
-if [[ -n "${expected_asr_model}" ]]; then
-  expected_asr_chunk_ms="$(jq -r '.runtime_requirements.asr.provider_chunk_ms' "${matrix}")"
-  expected_asr_max_chunk_ms="$(jq -r '.runtime_requirements.asr.provider_max_chunk_ms // .runtime_requirements.asr.provider_chunk_ms' "${matrix}")"
-  expected_asr_strategy="$(jq -r '.runtime_requirements.asr.strategy // "fixed"' "${matrix}")"
-  if ! jq -e \
-    --arg model "${expected_asr_model}" \
-    --argjson chunk_ms "${expected_asr_chunk_ms}" \
-    --argjson max_chunk_ms "${expected_asr_max_chunk_ms}" \
-    --arg strategy "${expected_asr_strategy}" \
-    '.asr.model == $model and .asr.provider_chunk_ms == $chunk_ms and
-     .asr.provider_max_chunk_ms == $max_chunk_ms and .asr.strategy == $strategy' \
-    <<<"${gateway_health}" >/dev/null; then
-    echo "gateway ASR profile does not match the preregistered matrix" >&2
-    exit 1
-  fi
+expected_asr_model="$(matrix_requirement asr.model)" || exit 1
+expected_asr_chunk_ms="$(matrix_requirement asr.provider_chunk_ms)" || exit 1
+# A fixed-cadence matrix states one chunk size and no adaptive strategy. These
+# two defaults name that shape; unlike the reads above they do not skip a
+# comparison, so the observed ASR profile is still checked in full.
+expected_asr_max_chunk_ms="$(jq -r '.runtime_requirements.asr.provider_max_chunk_ms // .runtime_requirements.asr.provider_chunk_ms' "${matrix}")"
+expected_asr_strategy="$(jq -r '.runtime_requirements.asr.strategy // "fixed"' "${matrix}")"
+if ! jq -e \
+  --arg model "${expected_asr_model}" \
+  --argjson chunk_ms "${expected_asr_chunk_ms}" \
+  --argjson max_chunk_ms "${expected_asr_max_chunk_ms}" \
+  --arg strategy "${expected_asr_strategy}" \
+  '.asr.model == $model and .asr.provider_chunk_ms == $chunk_ms and
+   .asr.provider_max_chunk_ms == $max_chunk_ms and .asr.strategy == $strategy' \
+  <<<"${gateway_health}" >/dev/null; then
+  echo "gateway ASR profile does not match the preregistered matrix" >&2
+  exit 1
 fi
 for phase in fast slow; do
-  expected_provider="$(jq -r --arg phase "${phase}" '.runtime_requirements.gateway_profiles[$phase].provider // empty' "${matrix}")"
-  if [[ -z "${expected_provider}" ]]; then
-    continue
-  fi
-  expected_model="$(jq -r --arg phase "${phase}" '.runtime_requirements.gateway_profiles[$phase].model' "${matrix}")"
-  expected_effort="$(jq -r --arg phase "${phase}" '.runtime_requirements.gateway_profiles[$phase].effort' "${matrix}")"
-  expected_authority="$(jq -r --arg phase "${phase}" '.runtime_requirements.gateway_profiles[$phase].tool_authority' "${matrix}")"
+  expected_provider="$(matrix_requirement "gateway_profiles.${phase}.provider")" || exit 1
+  expected_model="$(matrix_requirement "gateway_profiles.${phase}.model")" || exit 1
+  expected_effort="$(matrix_requirement "gateway_profiles.${phase}.effort")" || exit 1
+  expected_authority="$(matrix_requirement "gateway_profiles.${phase}.tool_authority")" || exit 1
   if ! jq -e \
     --arg phase "${phase}" \
     --arg provider "${expected_provider}" \
@@ -104,31 +112,27 @@ for phase in fast slow; do
     exit 1
   fi
 done
-expected_slow_context="$(jq -r '.runtime_requirements.slow_context // empty' "${matrix}")"
-if [[ -n "${expected_slow_context}" ]] && \
-  ! jq -e --arg policy "${expected_slow_context}" '.slow_context == $policy' \
-    <<<"${gateway_health}" >/dev/null; then
+expected_slow_context="$(matrix_requirement slow_context)" || exit 1
+if ! jq -e --arg policy "${expected_slow_context}" '.slow_context == $policy' \
+  <<<"${gateway_health}" >/dev/null; then
   echo "gateway slow-context policy does not match the preregistered matrix" >&2
   exit 1
 fi
-expected_preparation_policy="$(jq -r '.runtime_requirements.preparation_policy // empty' "${matrix}")"
-if [[ -n "${expected_preparation_policy}" ]] && \
-  ! jq -e --arg policy "${expected_preparation_policy}" '.preparation_policy == $policy' \
-    <<<"${gateway_health}" >/dev/null; then
+expected_preparation_policy="$(matrix_requirement preparation_policy)" || exit 1
+if ! jq -e --arg policy "${expected_preparation_policy}" '.preparation_policy == $policy' \
+  <<<"${gateway_health}" >/dev/null; then
   echo "gateway preparation policy does not match the preregistered matrix" >&2
   exit 1
 fi
-expected_speech_name="$(jq -r '.runtime_requirements.speech.name // empty' "${matrix}")"
-if [[ -n "${expected_speech_name}" ]]; then
-  expected_speech_version="$(jq -r '.runtime_requirements.speech.version' "${matrix}")"
-  if ! jq -e \
-    --arg name "${expected_speech_name}" \
-    --arg version "${expected_speech_version}" \
-    '.speech.name == $name and .speech.version == $version' \
-    <<<"${gateway_health}" >/dev/null; then
-    echo "gateway speech profile does not match the preregistered matrix" >&2
-    exit 1
-  fi
+expected_speech_name="$(matrix_requirement speech.name)" || exit 1
+expected_speech_version="$(matrix_requirement speech.version)" || exit 1
+if ! jq -e \
+  --arg name "${expected_speech_name}" \
+  --arg version "${expected_speech_version}" \
+  '.speech.name == $name and .speech.version == $version' \
+  <<<"${gateway_health}" >/dev/null; then
+  echo "gateway speech profile does not match the preregistered matrix" >&2
+  exit 1
 fi
 
 mkdir -p "${run_root}"
