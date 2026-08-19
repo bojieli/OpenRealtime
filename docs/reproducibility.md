@@ -249,7 +249,11 @@ v3 tool-use examples in both official exact and GPT-4o evaluations, and all
 these three external suites it also requires the preregistered three-attempt
 lifetime budget, a contiguous attempt ledger for every planned trial, and
 exactly one terminal successful attempt; restarting a runner never refreshes
-that budget. WER, CPPL, and the subjective GPT score remain explicitly not
+that budget. Each of those run manifests must also record its terminal-failure
+ledger explicitly, as a list. A missing ledger is refused rather than read as
+zero: a runner that stopped before recording its failures would otherwise
+write a manifest indistinguishable from a clean run, so absence would be
+published as success. WER, CPPL, and the subjective GPT score remain explicitly not
 evaluated because the released non-Moshi path does not produce their required
 inputs. The output is `.runtime/benchmark-runs/full-study-v1/report.json`; any
 missing population, terminal failure, retry-provenance violation, hash

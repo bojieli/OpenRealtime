@@ -77,6 +77,22 @@ def require_equal(actual: Any, expected: Any, label: str) -> None:
         raise StudyIncompleteError(f"{label}: expected {expected!r}, found {actual!r}")
 
 
+def require_recorded_no_failures(run: dict[str, Any], label: str) -> None:
+    """Require an explicitly recorded, empty terminal-failure ledger.
+
+    A missing key is refused rather than read as zero. A runner that stopped
+    before recording its failures writes a manifest indistinguishable from a
+    clean run, so treating absence as success would publish exactly the
+    evidence this gate exists to withhold.
+    """
+    failures = run.get("failures")
+    require(
+        isinstance(failures, list),
+        f"{label} did not record a terminal failure ledger",
+    )
+    require_equal(len(failures), 0, f"{label} terminal failures")
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -1596,7 +1612,7 @@ def validate_fdb15(
     require_equal(
         len(completed), specification["population"], "FDB1.5 completed population"
     )
-    require_equal(len(run.get("failures", [])), 0, "FDB1.5 terminal failures")
+    require_recorded_no_failures(run, "FDB1.5")
     expected_trials = {
         (scenario, sample_id, condition, replicate)
         for scenario, sample_id in sample_rows
@@ -1901,7 +1917,7 @@ def validate_fdbv3(
     require_equal(len(sample_ids), len(samples), "FDBv3 unique example IDs")
     require_equal(set(run.get("completed", [])), labels, "FDBv3 completed samples")
     require_equal(len(run.get("completed", [])), len(labels), "FDBv3 completed count")
-    require_equal(len(run.get("failures", [])), 0, "FDBv3 terminal failures")
+    require_recorded_no_failures(run, "FDBv3")
     attempt_summary, _ = validate_attempt_ledger(
         run.get("attempts"),
         expected=labels,
@@ -2095,7 +2111,7 @@ def validate_fdbench(
     require_equal(
         len(run.get("completed", [])), len(labels), "FD-Bench completed count"
     )
-    require_equal(len(run.get("failures", [])), 0, "FD-Bench terminal failures")
+    require_recorded_no_failures(run, "FD-Bench")
     attempt_summary, _ = validate_attempt_ledger(
         run.get("attempts"),
         expected=labels,

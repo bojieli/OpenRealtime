@@ -833,6 +833,32 @@ class FullStudyTest(unittest.TestCase):
         with self.assertRaisesRegex(REPORT.StudyIncompleteError, "terminal failures"):
             self.report()
 
+    def test_rejects_a_run_manifest_without_a_terminal_failure_ledger(self) -> None:
+        for key in ("fdb15_run", "fdbv3_run", "fd_run"):
+            with self.subTest(run=key):
+                self.setUp()
+                path = self.fixture.paths[key]
+                run = json.loads(path.read_text(encoding="utf-8"))
+                del run["failures"]
+                write_json(path, run)
+                with self.assertRaisesRegex(
+                    REPORT.StudyIncompleteError, "terminal failure ledger"
+                ):
+                    self.report()
+
+    def test_rejects_a_terminal_failure_ledger_that_is_not_a_list(self) -> None:
+        for key in ("fdb15_run", "fdbv3_run", "fd_run"):
+            with self.subTest(run=key):
+                self.setUp()
+                path = self.fixture.paths[key]
+                run = json.loads(path.read_text(encoding="utf-8"))
+                run["failures"] = 0
+                write_json(path, run)
+                with self.assertRaisesRegex(
+                    REPORT.StudyIncompleteError, "terminal failure ledger"
+                ):
+                    self.report()
+
     def test_rejects_an_external_trial_over_its_lifetime_attempt_budget(self) -> None:
         path = self.fixture.paths["fdb15_run"]
         run = json.loads(path.read_text(encoding="utf-8"))
