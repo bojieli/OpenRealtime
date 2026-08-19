@@ -325,6 +325,30 @@ class Fixture:
         tau_guard = self.gpu_guard(
             tau_run.parent / "control/airline.gpu-ownership.summary.json"
         )
+        tau_execution = {
+            "path": self.relative(tau_run),
+            "status": "complete",
+            "selected_cell": None,
+            "openrealtime_revision": "c" * 40,
+            "openrealtime_revision_final": "c" * 40,
+            "source_worktree_clean_start": True,
+            "source_worktree_clean_final": True,
+            "runtime_identity": runtime_identity(),
+            "runtime_identity_final": runtime_identity(),
+            "gpu_ownership_guards": [tau_guard],
+        }
+        write_json(
+            tau_run,
+            {
+                "matrix_sha256": REPORT.sha256_file(matrix),
+                **{
+                    key: value
+                    for key, value in tau_execution.items()
+                    if key not in {"path", "sha256"}
+                },
+            },
+        )
+        tau_execution["sha256"] = REPORT.sha256_file(tau_run)
         write_json(
             tau_report,
             {
@@ -346,20 +370,7 @@ class Fixture:
                         "infrastructure_retry_policy"
                     ],
                 },
-                "execution_evidence": [
-                    {
-                        "path": self.relative(tau_run),
-                        "status": "complete",
-                        "selected_cell": None,
-                        "openrealtime_revision": "c" * 40,
-                        "openrealtime_revision_final": "c" * 40,
-                        "source_worktree_clean_start": True,
-                        "source_worktree_clean_final": True,
-                        "runtime_identity": runtime_identity(),
-                        "runtime_identity_final": runtime_identity(),
-                        "gpu_ownership_guards": [tau_guard],
-                    }
-                ],
+                "execution_evidence": [tau_execution],
                 "cells": {
                     "control": {
                         "domains": {
@@ -762,6 +773,7 @@ class Fixture:
             "matrix": matrix,
             "tau_archive": tau_archive,
             "tau_experiment": tau_experiment,
+            "tau_run": tau_run,
         }
 
     @staticmethod
@@ -920,6 +932,24 @@ class FullStudyTest(unittest.TestCase):
         ):
             self.report()
 
+    def test_rejects_multiple_tau_process_invocations(self) -> None:
+        path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
+        report = json.loads(path.read_text(encoding="utf-8"))
+        report["execution_evidence"].append(report["execution_evidence"][0])
+        write_json(path, report)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "source-stable invocation count"
+        ):
+            self.report()
+
+    def test_rejects_tau_run_artifact_drift(self) -> None:
+        path = self.fixture.paths["tau_run"]
+        run = json.loads(path.read_text(encoding="utf-8"))
+        run["started_at"] = "2026-01-02T00:00:00Z"
+        write_json(path, run)
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "run SHA-256"):
+            self.report()
+
     def test_rejects_transient_gpu_ownership_violation(self) -> None:
         path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
         report = json.loads(path.read_text(encoding="utf-8"))
@@ -1057,6 +1087,28 @@ class FullStudyTest(unittest.TestCase):
         ] = "101"
         write_json(path, context)
         with self.assertRaisesRegex(REPORT.StudyIncompleteError, "runtime processes"):
+            self.report()
+
+    def test_rejects_multiple_external_process_invocations(self) -> None:
+        path = self.fixture.paths["fd_context"]
+        context = json.loads(path.read_text(encoding="utf-8"))
+        context["invocations"].append(context["invocations"][0])
+        write_json(path, context)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "source-stable invocation count"
+        ):
+            self.report()
+
+    def test_rejects_cross_benchmark_orchestration_revision_drift(self) -> None:
+        path = self.fixture.paths["fd_context"]
+        context = json.loads(path.read_text(encoding="utf-8"))
+        context["invocations"][0]["openrealtime_revision_start"] = "d" * 40
+        context["invocations"][0]["openrealtime_revision_at_completion"] = "d" * 40
+        write_json(path, context)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError,
+            "source-stable orchestration revision count",
+        ):
             self.report()
 
     def test_rejects_external_run_without_the_frozen_gateway_declaration(self) -> None:

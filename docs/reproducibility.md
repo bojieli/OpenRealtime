@@ -193,7 +193,10 @@ scripts/launch-full-study-queues.sh
 
 Use `--check` to run the complete preflight without starting processes. The
 launcher refuses a dirty source tree, missing scripts, or any live duplicate
-queue; records the exact source, script hashes, and PIDs; preserves prior queue
+queue. It also refuses a pre-existing causal τ experiment/invocation or
+external-suite run root, preventing process-level resume from silently mixing
+source revisions. The launcher records the exact source, script hashes, and
+PIDs; preserves prior queue
 logs; and detaches all ten queues. Each successor waits for the current-run
 completion marker from its predecessor, so a failed stage halts the chain
 rather than skipping ahead.
@@ -229,6 +232,10 @@ must carry the study gateway hash and describe the same processes;
 the reporter also rehashes every ownership log, verifies every interval check,
 and requires exact guard coverage for every τ cell/domain and every completed
 external-benchmark invocation;
+each matrix or external suite must come from one clean process invocation, and
+all 17 populations must report the same OpenRealtime orchestration revision;
+process-level resume across source revisions is therefore not publishable,
+while bounded exception-only retries inside the frozen invocation remain valid;
 local-fast identities must additionally report vLLM 0.19.0, the pinned Qwen
 model and served-model names, and the frozen 40,960-token native context window;
 each tau-Voice raw archive must also prove the preregistered exception-only

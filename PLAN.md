@@ -944,6 +944,14 @@ guard require every compute PID to descend from the frozen ASR, Fish, and local
 Qwen service roots and to retain the same boot, PID/start, and GPU UUID. A
 single transient foreign process or identity change invalidates the invocation;
 aggregate utilization sampling alone is explicitly insufficient evidence.
+The publication gate additionally requires one clean all-cell process
+invocation for each τ matrix, one process invocation for each external suite,
+and one identical orchestration revision across all 17 populations. Retry is a
+bounded per-trial operation inside that frozen invocation, not permission to
+merge partial results produced by different source revisions.
+Launch preflight enforces the same rule by rejecting pre-existing causal
+population roots; an invalidated attempt must be deliberately quarantined and
+the affected population restarted from an empty root.
 A same-fixture endpointed/fast-only/full-preparation exploratory check
 is published. A closed endpoint-only gateway policy and complete paired
 control population are now implemented, frozen, and queued; it suppresses

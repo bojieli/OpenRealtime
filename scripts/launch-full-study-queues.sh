@@ -32,6 +32,9 @@ fi
 "${repository_root}/scripts/test_matrix_requires_local_fast.sh" >/dev/null
 "${repository_root}/scripts/test_capture_local_gpu_ownership.sh" >/dev/null
 "${repository_root}/scripts/test_local_gpu_ownership_guard.sh" >/dev/null
+"${repository_root}/scripts/test_full_study_freshness.sh" >/dev/null
+"${repository_root}/scripts/check-full-study-freshness.sh" \
+  "${repository_root}/benchmarks/full-study-v1.json" "${repository_root}" >/dev/null
 
 runtime_manifest="${repository_root}/benchmarks/runtime/canonical-gateway-v1.json"
 runtime_identity="$("${repository_root}/scripts/capture-local-runtime-identity.sh")"

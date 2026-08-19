@@ -792,6 +792,7 @@ def validate_run_context(
         isinstance(invocations, list) and bool(invocations),
         f"{label} context invocation ledger is absent",
     )
+    require_equal(len(invocations), 1, f"{label} source-stable invocation count")
     require_equal(
         invocations[-1].get("status"), "complete", f"{label} final invocation"
     )
@@ -1212,13 +1213,46 @@ def validate_tau_matrix(
     require_equal(total_simulations, expected_total, f"{matrix_id} total population")
     execution = report.get("execution_evidence")
     require(isinstance(execution, list), f"{matrix_id} execution evidence is absent")
+    require_equal(len(execution), 1, f"{matrix_id} source-stable invocation count")
     complete_runs = [item for item in execution if item.get("status") == "complete"]
-    require(complete_runs, f"{matrix_id} has no complete execution artifact")
+    require_equal(len(complete_runs), 1, f"{matrix_id} complete execution count")
+    require_equal(
+        complete_runs[0].get("selected_cell"),
+        None,
+        f"{matrix_id} all-cell execution",
+    )
     requires_local_fast = matrix.get("runtime_requirements", {}).get(
         "requires_local_fast", True
     )
     for index, complete_run in enumerate(complete_runs):
         execution_label = f"{matrix_id} complete execution {index}"
+        run_path_value = complete_run.get("path")
+        require(
+            isinstance(run_path_value, str) and bool(run_path_value),
+            f"{execution_label} run path is absent",
+        )
+        run_path = resolve(root, run_path_value)
+        expected_run_root = (
+            root / ".runtime/benchmark-runs/tau-voice" / matrix_id / "invocations"
+        ).resolve()
+        try:
+            run_path.relative_to(expected_run_root)
+        except ValueError as error:
+            raise StudyIncompleteError(
+                f"{execution_label} run artifact is outside its matrix invocation root"
+            ) from error
+        require_equal(run_path.name, "run.json", f"{execution_label} run filename")
+        run_payload = read_json(run_path, f"{execution_label} run artifact")
+        require_equal(
+            sha256_file(run_path),
+            complete_run.get("sha256"),
+            f"{execution_label} run SHA-256",
+        )
+        require_equal(
+            run_payload.get("matrix_sha256"),
+            matrix_specification["sha256"],
+            f"{execution_label} run matrix SHA-256",
+        )
         revision = complete_run.get("openrealtime_revision")
         require(
             isinstance(revision, str)
@@ -1271,11 +1305,6 @@ def validate_tau_matrix(
             f"{execution_label} selected cell is invalid",
         )
         covered_cells = [selected_cell] if selected_cell is not None else cell_ids
-        run_path_value = complete_run.get("path")
-        require(
-            isinstance(run_path_value, str) and bool(run_path_value),
-            f"{execution_label} run path is absent",
-        )
         run_directory = Path(run_path_value).parent
         expected_guard_paths = {
             (
@@ -1314,6 +1343,27 @@ def validate_tau_matrix(
                 host_boot_id=start_identity["host_boot_id"],
                 requires_local_fast=requires_local_fast,
                 label=f"{execution_label} GPU ownership guard {guard_index}",
+            )
+        projected_fields = {
+            "status": "status",
+            "selected_cell": "selected_cell",
+            "started_at": "started_at",
+            "completed_at": "completed_at",
+            "openrealtime_revision": "openrealtime_revision",
+            "openrealtime_revision_final": "openrealtime_revision_final",
+            "source_worktree_clean_start": "source_worktree_clean_start",
+            "source_worktree_clean_final": "source_worktree_clean_final",
+            "runtime_identity": "runtime_identity",
+            "runtime_identity_final": "runtime_identity_final",
+            "gateway_health_start": "gateway_health",
+            "gateway_health_final": "gateway_health_final",
+            "gpu_ownership_guards": "gpu_ownership_guards",
+        }
+        for report_field, run_field in projected_fields.items():
+            require_equal(
+                complete_run.get(report_field),
+                run_payload.get(run_field),
+                f"{execution_label} projected {report_field}",
             )
     revisions = sorted(
         {
@@ -2179,6 +2229,40 @@ def build_report(root: Path, manifest_path: Path) -> dict[str, Any]:
     runtime_path, runtime = validate_study_runtime(root, manifest["runtime"])
     gateway_source_revision = runtime["source_revision"]
     gateway_sha256 = runtime["binary_sha256"]
+    tau_panel = validate_tau(
+        root,
+        manifest["tau_voice"],
+        expected_gateway_source_revision=gateway_source_revision,
+        expected_gateway_sha256=gateway_sha256,
+    )
+    fdb15_panel = validate_fdb15(
+        root,
+        manifest["full_duplex_bench_v1_5"],
+        expected_gateway_sha256=gateway_sha256,
+    )
+    fdbv3_panel = validate_fdbv3(
+        root,
+        manifest["full_duplex_bench_v3"],
+        expected_gateway_sha256=gateway_sha256,
+    )
+    fdbench_panel = validate_fdbench(
+        root,
+        manifest["fd_bench"],
+        expected_gateway_sha256=gateway_sha256,
+    )
+    orchestration_revisions = {
+        revision
+        for matrix in tau_panel["matrices"]
+        for revision in matrix["openrealtime_revisions"]
+    }
+    for panel in (fdb15_panel, fdbv3_panel, fdbench_panel):
+        orchestration_revisions.update(panel["openrealtime_revisions"])
+    require_equal(
+        len(orchestration_revisions),
+        1,
+        "source-stable orchestration revision count",
+    )
+    orchestration_revision = next(iter(orchestration_revisions))
     return {
         "schema_version": "1.0.0",
         "status": "complete",
@@ -2189,30 +2273,14 @@ def build_report(root: Path, manifest_path: Path) -> dict[str, Any]:
             "runtime_manifest": artifact(root, runtime_path),
             "gateway_source_revision": gateway_source_revision,
             "gateway_executable_sha256": gateway_sha256,
+            "orchestration_revision": orchestration_revision,
             "publication_policy": policy,
         },
         "evidence_panel": {
-            "tau_voice": validate_tau(
-                root,
-                manifest["tau_voice"],
-                expected_gateway_source_revision=gateway_source_revision,
-                expected_gateway_sha256=gateway_sha256,
-            ),
-            "full_duplex_bench_v1_5": validate_fdb15(
-                root,
-                manifest["full_duplex_bench_v1_5"],
-                expected_gateway_sha256=gateway_sha256,
-            ),
-            "full_duplex_bench_v3": validate_fdbv3(
-                root,
-                manifest["full_duplex_bench_v3"],
-                expected_gateway_sha256=gateway_sha256,
-            ),
-            "fd_bench": validate_fdbench(
-                root,
-                manifest["fd_bench"],
-                expected_gateway_sha256=gateway_sha256,
-            ),
+            "tau_voice": tau_panel,
+            "full_duplex_bench_v1_5": fdb15_panel,
+            "full_duplex_bench_v3": fdbv3_panel,
+            "fd_bench": fdbench_panel,
         },
         "interpretation": {
             "aggregation": "none across benchmark families",
