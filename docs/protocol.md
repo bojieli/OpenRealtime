@@ -98,7 +98,19 @@ Rules spanning records are enforced by Go rather than per-record JSON Schema:
 6. Capture or media time is derived from absolute sample offset. It is not wall
    time and cannot be inferred from serialization order alone.
 
-The trace schema is `schemas/trace-record-v0.2.schema.json`.
+The trace schema is `schemas/trace-record-v0.2.schema.json`. That schema is a
+released artifact, so the writer is checked against it rather than merely
+alongside it: `trace/schema_test.go` validates freshly written records, the
+schema's enumerations against the writer's own constants, and every trace
+artifact tracked in this repository.
+
+A record naming no causal parents emits `causal_parent_ids` as an empty array;
+the writer normalises an absent list, because a nil slice would serialise to
+`null` and the schema requires an array. Five reference traces published in
+benchmarks release v0.1.0 predate that normalisation and open with a null
+instead. Their bytes are hash-pinned by that release's manifest and are left
+as published; the conformance sweep names them explicitly and requires them to
+be conformant in every other respect, so the exception cannot widen.
 
 ## Audio compatibility
 

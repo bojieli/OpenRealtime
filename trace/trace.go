@@ -108,6 +108,13 @@ func (writer *Writer) Write(record Record) error {
 	if err := writer.state.Accept(record); err != nil {
 		return err
 	}
+	// causal_parent_ids is required and typed as an array by the published
+	// schema, and a nil slice marshals to null. A root record names no
+	// parents, so without this every trace would open with a record no
+	// third-party validator accepts.
+	if record.CausalParentIDs == nil {
+		record.CausalParentIDs = []string{}
+	}
 	data, err := json.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("encode trace record: %w", err)
