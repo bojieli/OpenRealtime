@@ -125,14 +125,41 @@ def count_json_files(path: Path) -> int:
 
 
 def tau_matrix_progress(root: Path, matrix_path: Path) -> dict[str, Any]:
+    # A matrix that cannot state its own scope is a defect to name, not a
+    # matrix of zero tasks. Every branch below that used to fall back to 0 --
+    # an unreadable file, a missing num_trials, an empty cell or domain list,
+    # a non-integer task count -- shrank the study's declared population while
+    # leaving the completion fraction looking healthier than before. The
+    # monitor now records each such matrix in "malformed" so build_progress
+    # raises the report to "attention" instead of quietly narrowing the study.
+    malformed: list[str] = []
     matrix = read_json(matrix_path)
     if matrix is None:
-        return {"matrix": str(matrix_path), "status": "invalid_or_missing"}
+        return {
+            "matrix": str(matrix_path),
+            "status": "invalid_or_missing",
+            "matrix_id": None,
+            "observed": 0,
+            "expected": 0,
+            "archives": 0,
+            "archives_expected": 0,
+            "report_complete": False,
+            "populations": [],
+            "malformed": [f"matrix {matrix_path} is unreadable or not valid JSON"],
+        }
     matrix_id = matrix.get("matrix_id")
     seed = matrix.get("benchmark", {}).get("seed")
     trials = matrix.get("benchmark", {}).get("num_trials")
     cells = matrix.get("cells", [])
     domains = matrix.get("benchmark", {}).get("domains", [])
+    if not isinstance(trials, int) or isinstance(trials, bool) or trials <= 0:
+        malformed.append(f"matrix {matrix_path} declares no positive num_trials")
+    if not isinstance(cells, list) or not cells:
+        malformed.append(f"matrix {matrix_path} declares no cells")
+        cells = []
+    if not isinstance(domains, list) or not domains:
+        malformed.append(f"matrix {matrix_path} declares no benchmark domains")
+        domains = []
     expected = 0
     observed = 0
     archive_expected = 0
@@ -143,11 +170,21 @@ def tau_matrix_progress(root: Path, matrix_path: Path) -> dict[str, Any]:
         for domain in domains:
             name = domain.get("name")
             tasks = domain.get("tasks")
-            declared = (
-                tasks * trials
-                if isinstance(tasks, int) and isinstance(trials, int)
-                else 0
-            )
+            if (
+                isinstance(tasks, int)
+                and not isinstance(tasks, bool)
+                and tasks > 0
+                and isinstance(trials, int)
+                and not isinstance(trials, bool)
+                and trials > 0
+            ):
+                declared = tasks * trials
+            else:
+                declared = 0
+                malformed.append(
+                    f"matrix {matrix_path} cell {cell_id} domain {name} "
+                    f"declares no positive task population"
+                )
             experiment = (
                 root
                 / ".runtime/tau2-bench/data/simulations"
@@ -182,6 +219,7 @@ def tau_matrix_progress(root: Path, matrix_path: Path) -> dict[str, Any]:
         "archives_expected": archive_expected,
         "report_complete": bool(report and report.get("status") == "complete"),
         "populations": populations,
+        "malformed": malformed,
     }
 
 
@@ -361,6 +399,9 @@ def build_progress(root: Path, manifest_path: Path) -> dict[str, Any]:
                 f"queue {queue['id']} supervisor {queue['pid']} is "
                 f"{STALLED_PROCESS_STATES[queue['state']]} and cannot advance the study"
             )
+    for matrix in tau_matrices:
+        for defect in matrix.get("malformed", []):
+            warnings.append(f"tau_voice {defect}")
     for benchmark, progress in external.items():
         for defect in progress["malformed"]:
             warnings.append(f"{benchmark} {defect}")

@@ -137,6 +137,56 @@ class ProgressTest(unittest.TestCase):
             report["warnings"],
         )
 
+    def rewrite_matrix(self, mutate) -> None:
+        path = self.root / "benchmarks/matrix.json"
+        matrix = json.loads(path.read_text(encoding="utf-8"))
+        mutate(matrix)
+        write_json(path, matrix)
+
+    def assert_named_shrink(self, fragment: str, expected: int) -> None:
+        report = self.report()
+        self.assertEqual(report["status"], "attention")
+        self.assertEqual(report["tau_voice"]["expected"], expected)
+        self.assertTrue(
+            any(
+                warning.startswith("tau_voice ") and fragment in warning
+                for warning in report["warnings"]
+            ),
+            report["warnings"],
+        )
+
+    def test_matrix_without_trials_is_not_reported_as_zero_tasks(self) -> None:
+        self.rewrite_matrix(lambda matrix: matrix["benchmark"].pop("num_trials"))
+        self.assert_named_shrink("declares no positive num_trials", 0)
+
+    def test_matrix_without_cells_is_not_reported_as_zero_tasks(self) -> None:
+        self.rewrite_matrix(lambda matrix: matrix.__setitem__("cells", []))
+        self.assert_named_shrink("declares no cells", 0)
+
+    def test_matrix_without_domains_is_not_reported_as_zero_tasks(self) -> None:
+        self.rewrite_matrix(
+            lambda matrix: matrix["benchmark"].__setitem__("domains", [])
+        )
+        self.assert_named_shrink("declares no benchmark domains", 0)
+
+    def test_domain_without_tasks_is_not_reported_as_zero_tasks(self) -> None:
+        self.rewrite_matrix(
+            lambda matrix: matrix["benchmark"]["domains"][0].__setitem__("tasks", 0)
+        )
+        self.assert_named_shrink("declares no positive task population", 0)
+
+    def test_unreadable_matrix_is_not_reported_as_zero_tasks(self) -> None:
+        (self.root / "benchmarks/matrix.json").write_text("{ not json", encoding="utf-8")
+        self.assert_named_shrink("is unreadable or not valid JSON", 0)
+
+    def test_a_matrix_that_states_its_scope_raises_no_warning(self) -> None:
+        report = self.report()
+        self.assertEqual(report["tau_voice"]["expected"], 2)
+        self.assertEqual(
+            [warning for warning in report["warnings"] if warning.startswith("tau_voice ")],
+            [],
+        )
+
     def test_a_run_that_has_not_started_raises_no_malformed_warning(self) -> None:
         (self.root / ".runtime/fdb15/run.json").unlink()
         report = self.report()
