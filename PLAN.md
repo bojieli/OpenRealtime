@@ -938,6 +938,12 @@ reports. The local-fast deployment now pins Qwen revision
 model's native 40,960-token window at the frozen 0.38 GPU-memory fraction; launch
 and terminal-publication gates reject a reduced window, changed argv, or changed
 service declaration rather than silently truncating the canonical trajectory.
+Publishable runs now enforce exclusive GPU process ancestry over the complete
+scored provider interval. The initial identity and five-second append-only
+guard require every compute PID to descend from the frozen ASR, Fish, and local
+Qwen service roots and to retain the same boot, PID/start, and GPU UUID. A
+single transient foreign process or identity change invalidates the invocation;
+aggregate utilization sampling alone is explicitly insufficient evidence.
 A same-fixture endpointed/fast-only/full-preparation exploratory check
 is published. A closed endpoint-only gateway policy and complete paired
 control population are now implemented, frozen, and queued; it suppresses
@@ -1177,7 +1183,7 @@ Exit criteria:
 ### Accelerator contention
 
 - **Risk:** Co-located ASR, LLM, TTS, and background reasoning remove network delay but create GPU queueing and missed audio deadlines.
-- **Mitigation:** Reserve foreground capacity, prioritize perception and first audio, run slow continuation opportunistically, and publish component queue and utilization distributions.
+- **Mitigation:** Reserve foreground capacity, prioritize perception and first audio, run slow continuation opportunistically, publish component queue and utilization distributions, and invalidate benchmark invocations that lack continuous exclusive process-ancestry evidence.
 
 ### Native-model feature mismatch
 

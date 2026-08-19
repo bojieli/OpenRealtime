@@ -124,7 +124,10 @@ from causal comparisons. When it finishes, the queue reproduces the gateway
 from source revision `3048160ee444c69941d6d4e12ddc47cea789afd0`, verifies
 executable SHA-256
 `2168fe5a7b5dbef6051a6983a9148f0cc84434a64284b59cfd699f491a3d5df2`,
-and starts the publishable canonical baseline. That condition runs all 278
+requires continuous exclusive GPU process-ancestry evidence, and starts the
+publishable canonical baseline. A transient foreign compute process invalidates
+the entire scored invocation rather than becoming unrecorded latency noise.
+That condition runs all 278
 public τ-Voice tasks in both control and regular speech, then all 498
 FDB v1.5 overlap recordings and all 100 released FDB v3 tool-use recordings.
 The FDB runners use the standard OpenAI Realtime adapter against the local

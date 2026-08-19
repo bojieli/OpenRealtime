@@ -162,6 +162,12 @@ the Qwen fast server at vLLM 0.19.0, model revision
 `d206ba732169f29bb77fbf80fc2c4b81d4d30782`, and its native 40,960-token
 window. Long benchmark launchers run through `scripts/with-study-runtime.sh`;
 the local cascade refuses to reuse a healthy gateway with a different hash.
+The manifest also freezes an exclusive process-ancestry GPU policy. Preflight
+rejects a compute PID outside the registered local service trees, and every
+scored provider invocation runs under a five-second ownership guard. Its
+append-only checks and content-addressed summary are retained with the run;
+even a transient violation invalidates that invocation. This prevents an
+unrelated colocated workload from silently changing latency or memory pressure.
 The earlier `matrix-v1` population is a preserved pre-freeze pilot and is
 intentionally absent from the full-study manifest.
 
@@ -220,6 +226,9 @@ then checks every frozen tau-Voice task/trial population and execution record,
 including the host boot identity, process start identity, executable hash, and
 argv hash of the long-lived local runtime. Both the initial and final identity
 must carry the study gateway hash and describe the same processes;
+the reporter also rehashes every ownership log, verifies every interval check,
+and requires exact guard coverage for every τ cell/domain and every completed
+external-benchmark invocation;
 local-fast identities must additionally report vLLM 0.19.0, the pinned Qwen
 model and served-model names, and the frozen 40,960-token native context window;
 each tau-Voice raw archive must also prove the preregistered exception-only

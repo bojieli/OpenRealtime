@@ -261,6 +261,16 @@ latency. Endpointed, microturn, co-located, split-process, and partially hosted
 conditions must therefore use the same workload and report quality alongside
 timing.
 
+Publishable measurements also require exclusive accelerator ownership for the
+entire scored provider invocation. Ownership is defined structurally: every
+GPU compute PID must descend from the registered ASR, Fish, and—when the fast
+phase is local—Qwen service root, with the same boot ID, root PID/start pair,
+GPU-process PID/start pair, and GPU UUID throughout the interval. The guard
+samples every five seconds and records append-only checks. Any unregistered
+process, process replacement, missing component, or multi-GPU placement
+invalidates the whole invocation. Utilization telemetry remains useful for
+contention analysis, but it is not an isolation proof.
+
 GPT-Live and TML Interaction Models are architectural reference points, not
 names for this modular implementation. GPT-Live's documented continuous media
 path avoids turn detection, while TML makes learned 200 ms input/output
