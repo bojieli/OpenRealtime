@@ -57,7 +57,16 @@ def require_equal(actual: Any, expected: Any, label: str) -> None:
 
 
 def numeric_difference(left: Any, right: Any) -> Any:
-    """Return left-right for common finite numeric leaves in two structures."""
+    """Return left-right for common finite numeric leaves in two structures.
+
+    A leaf that cannot be differenced is dropped, which is right for the
+    descriptive counters this walks but wrong for the metrics the ablation
+    exists to compare. report-tau-voice-matrix publishes avg_reward as None
+    when a domain scored nothing, so a silently dropped key let a report read
+    "status": "complete" with its headline comparison simply absent -- the
+    reader sees no difference rather than no measurement. required_difference
+    below refuses that; this helper stays permissive for everything else.
+    """
     if isinstance(left, dict) and isinstance(right, dict):
         result = {
             key: numeric_difference(left[key], right[key])
@@ -72,6 +81,46 @@ def numeric_difference(left: Any, right: Any) -> Any:
     ):
         return left - right
     return None
+
+
+# The metrics the endpoint-preparation ablation is published to compare. Each
+# must survive differencing in every cell, or the report is not a comparison.
+REQUIRED_METRICS = (
+    ("agent_metrics", "avg_reward"),
+    ("agent_metrics", "avg_agent_cost"),
+)
+
+
+def require_compared_metrics(
+    speech: str, difference: Any, left: Any, right: Any
+) -> None:
+    """Refuse a cell whose headline metrics did not survive differencing."""
+    for path in REQUIRED_METRICS:
+        node: Any = difference
+        for key in path:
+            node = node.get(key) if isinstance(node, dict) else None
+        if type(node) in (int, float):
+            continue
+        name = ".".join(path)
+        unmeasured = [
+            label
+            for label, side in (("continuous", left), ("endpoint-only", right))
+            if not _has_finite_leaf(side, path)
+        ]
+        detail = (
+            f" ({' and '.join(unmeasured)} recorded no measurement)"
+            if unmeasured
+            else ""
+        )
+        raise PairedReportError(
+            f"cell {speech} published no {name} difference{detail}"
+        )
+
+
+def _has_finite_leaf(node: Any, path: tuple[str, ...]) -> bool:
+    for key in path:
+        node = node.get(key) if isinstance(node, dict) else None
+    return type(node) in (int, float) and math.isfinite(node)
 
 
 def scale_numeric(value: Any, denominator: int) -> Any:
@@ -319,12 +368,13 @@ def main() -> int:
     require_equal(
         sorted(endpoint_metrics), sorted(continuous_metrics), "speech populations"
     )
-    cell_differences = {
-        speech: numeric_difference(
-            continuous_metrics[speech], endpoint_metrics[speech]
-        )
-        for speech in sorted(continuous_metrics)
-    }
+    cell_differences = {}
+    for speech in sorted(continuous_metrics):
+        left = continuous_metrics[speech]
+        right = endpoint_metrics[speech]
+        difference = numeric_difference(left, right)
+        require_compared_metrics(speech, difference, left, right)
+        cell_differences[speech] = difference
 
     benchmark = continuous_matrix["benchmark"]
     planned_simulations = (

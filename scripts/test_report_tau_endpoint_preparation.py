@@ -63,6 +63,51 @@ class DifferenceTest(unittest.TestCase):
             {"calls": 2.0, "timing": {"ns": 10.0}},
         )
 
+    @staticmethod
+    def cell(reward, cost=1.0) -> dict:
+        return {"agent_metrics": {"avg_reward": reward, "avg_agent_cost": cost}}
+
+    def test_accepts_a_cell_whose_headline_metrics_both_scored(self) -> None:
+        left, right = self.cell(0.8), self.cell(0.2)
+        REPORT.require_compared_metrics(
+            "simple", REPORT.numeric_difference(left, right), left, right
+        )
+
+    def test_rejects_a_cell_whose_reward_never_scored(self) -> None:
+        cases = (
+            ("continuous", self.cell(None), self.cell(0.2)),
+            ("endpoint-only", self.cell(0.8), self.cell(None)),
+            ("continuous and endpoint-only", self.cell(None), self.cell(None)),
+        )
+        for expected, left, right in cases:
+            with self.subTest(unmeasured=expected):
+                with self.assertRaisesRegex(
+                    REPORT.PairedReportError,
+                    f"no agent_metrics.avg_reward difference "
+                    f"\\({expected} recorded no measurement\\)",
+                ):
+                    REPORT.require_compared_metrics(
+                        "simple", REPORT.numeric_difference(left, right), left, right
+                    )
+
+    def test_rejects_a_cell_whose_cost_never_scored(self) -> None:
+        left, right = self.cell(0.8, None), self.cell(0.2, 0.5)
+        with self.assertRaisesRegex(
+            REPORT.PairedReportError, "no agent_metrics.avg_agent_cost difference"
+        ):
+            REPORT.require_compared_metrics(
+                "simple", REPORT.numeric_difference(left, right), left, right
+            )
+
+    def test_rejects_a_cell_that_recorded_no_agent_metrics_at_all(self) -> None:
+        left, right = {}, self.cell(0.2)
+        with self.assertRaisesRegex(
+            REPORT.PairedReportError, "no agent_metrics.avg_reward difference"
+        ):
+            REPORT.require_compared_metrics(
+                "simple", REPORT.numeric_difference(left, right), left, right
+            )
+
     def test_endpoint_manipulation_check_rejects_private_work(self) -> None:
         continuous = {
             "fast_preparation": {"invocations": 4},
