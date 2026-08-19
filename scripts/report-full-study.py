@@ -227,6 +227,22 @@ def require_no_unexplained_nulls(report: dict[str, Any]) -> None:
         )
 
 
+def declared_population(specification: dict[str, Any], label: str) -> int:
+    """Return a preregistered population, refusing a scope of nothing.
+
+    Every downstream count is checked against this number, so a suite declared
+    as zero trials would verify nothing and still publish a panel for it.
+    """
+    population = specification.get("population")
+    require(
+        isinstance(population, int)
+        and not isinstance(population, bool)
+        and population > 0,
+        f"{label} declares no preregistered population",
+    )
+    return population
+
+
 def declared_sha256(container: dict[str, Any], key: str, label: str) -> str:
     """Return a recorded SHA-256, refusing an absent or malformed one.
 
@@ -1530,6 +1546,7 @@ def validate_tau(
         for item in specification["matrices"]
     ]
     matrix_ids = [item["matrix_id"] for item in matrix_panel]
+    require(matrix_ids, "the study declares no tau-Voice matrix")
     require_equal(len(matrix_ids), len(set(matrix_ids)), "unique tau matrix IDs")
 
     paired_panel = []
@@ -1600,6 +1617,7 @@ def validate_tau(
 def validate_fdb15(
     root: Path, specification: dict[str, Any], *, expected_gateway_sha256: str
 ) -> dict[str, Any]:
+    declared_population(specification, "FDB1.5")
     source_path, source = load_pin(
         root, specification["source_manifest"], "FDB1.5 source manifest"
     )
@@ -1921,6 +1939,7 @@ def validate_fdbv3_judge_evidence(
 def validate_fdbv3(
     root: Path, specification: dict[str, Any], *, expected_gateway_sha256: str
 ) -> dict[str, Any]:
+    declared_population(specification, "FDBv3")
     source_path, source = load_pin(
         root, specification["source_manifest"], "FDBv3 source manifest"
     )
@@ -2112,6 +2131,7 @@ def validate_fdbv3(
 def validate_fdbench(
     root: Path, specification: dict[str, Any], *, expected_gateway_sha256: str
 ) -> dict[str, Any]:
+    declared_population(specification, "FD-Bench")
     source_path, source = load_pin(
         root, specification["source_manifest"], "FD-Bench source manifest"
     )

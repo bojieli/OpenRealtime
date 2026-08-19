@@ -257,8 +257,11 @@ published as success. WER, CPPL, and the subjective GPT score remain explicitly 
 evaluated because the released non-Moshi path does not produce their required
 inputs. The output is `.runtime/benchmark-runs/full-study-v1/report.json`; any
 missing population, terminal failure, retry-provenance violation, hash
-mismatch, or evaluator gap prevents that file from being published. As a final
-invariant the panel itself may not carry a null: panel values are copied out of
+mismatch, or evaluator gap prevents that file from being published. The preregistered scope may not be empty
+either: a manifest declaring no tau-Voice matrix, or an external suite whose
+population is zero, verifies nothing and is refused rather than published as a
+complete panel over nothing. As a final invariant the panel itself may not
+carry a null: panel values are copied out of
 upstream artifacts, so a field a runner never wrote would otherwise be
 published as a result. The single exception is the official exact evaluation's
 response-quality aggregate, which this gate independently requires to be

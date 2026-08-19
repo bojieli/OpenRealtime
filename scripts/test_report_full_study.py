@@ -907,6 +907,33 @@ class FullStudyTest(unittest.TestCase):
         nulls = {path for path, _ in REPORT.null_panel_fields(report)}
         self.assertEqual(nulls, set(REPORT.PERMITTED_NULL_PANEL_FIELDS))
 
+    def test_rejects_a_study_that_declares_no_tau_matrix(self) -> None:
+        path = self.fixture.paths["study"]
+        study = json.loads(path.read_text(encoding="utf-8"))
+        study["tau_voice"]["matrices"] = []
+        write_json(path, study)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "declares no tau-Voice matrix"
+        ):
+            self.report()
+
+    def test_rejects_an_external_suite_declared_as_an_empty_population(self) -> None:
+        for key, suite in (
+            ("full_duplex_bench_v1_5", "FDB1.5"),
+            ("full_duplex_bench_v3", "FDBv3"),
+            ("fd_bench", "FD-Bench"),
+        ):
+            with self.subTest(suite=suite):
+                self.setUp()
+                path = self.fixture.paths["study"]
+                study = json.loads(path.read_text(encoding="utf-8"))
+                study[key]["population"] = 0
+                write_json(path, study)
+                with self.assertRaisesRegex(
+                    REPORT.StudyIncompleteError, "declares no preregistered population"
+                ):
+                    self.report()
+
     def test_rejects_an_external_trial_over_its_lifetime_attempt_budget(self) -> None:
         path = self.fixture.paths["fdb15_run"]
         run = json.loads(path.read_text(encoding="utf-8"))
