@@ -1685,10 +1685,14 @@ def validate_tau(
     require_equal(len(matrix_ids), len(set(matrix_ids)), "unique tau matrix IDs")
 
     # A vacuous loop verifies nothing: dropping the declaration drops every
-    # paired-report check with it and still publishes a panel.
+    # paired-report check with it and still publishes a panel. Requiring a list
+    # only closes half of that -- an EMPTY list is a list, and it drops exactly
+    # the same checks while satisfying the type. The study declares paired
+    # ablations; publishing a panel that validated none of them is the same
+    # absence-read-as-success this gate exists to refuse.
     paired_specifications = specification.get("paired_reports")
     require(
-        isinstance(paired_specifications, list),
+        isinstance(paired_specifications, list) and bool(paired_specifications),
         "the study declares no tau-Voice paired reports",
     )
     paired_panel = []

@@ -986,6 +986,26 @@ class FullStudyTest(unittest.TestCase):
                     self.report()
         path.write_text(pristine, encoding="utf-8")
 
+    def test_rejects_an_emptied_population_that_would_verify_nothing(self) -> None:
+        """An empty list is a list: the type check passes and every loop below it
+        iterates zero times, so a study that validated nothing publishes as if it
+        had validated everything."""
+        path = self.fixture.paths["study"]
+        pristine = path.read_text(encoding="utf-8")
+        for pointer, message in (
+            (("tau_voice", "paired_reports"), "declares no tau-Voice paired reports"),
+        ):
+            with self.subTest(pointer="/".join(pointer)):
+                document = json.loads(pristine)
+                node = document
+                for key in pointer[:-1]:
+                    node = node[key]
+                node[pointer[-1]] = []
+                write_json(path, document)
+                with self.assertRaisesRegex(REPORT.StudyIncompleteError, message):
+                    self.report()
+        path.write_text(pristine, encoding="utf-8")
+
     def test_rejects_a_paired_report_whose_continuous_arm_did_nothing(self) -> None:
         """Both arms silent means the two conditions are one condition."""
         for phase in ("fast_preparation", "slow_preparation"):
