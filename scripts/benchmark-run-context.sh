@@ -119,18 +119,68 @@ else
     echo "benchmark start was not bound to the current frozen gateway" >&2
     exit 1
   fi
+  gpu_summary="${OPENREALTIME_GPU_OWNERSHIP_SUMMARY:-}"
+  if [[ -z "${gpu_summary}" || ! -f "${gpu_summary}" ]]; then
+    echo "completed benchmark invocation requires OPENREALTIME_GPU_OWNERSHIP_SUMMARY" >&2
+    exit 1
+  fi
+  gpu_summary="$(readlink -f "${gpu_summary}")"
+  case "${gpu_summary}" in
+    "${repository_root}"/*) gpu_summary_relative="${gpu_summary#"${repository_root}/"}" ;;
+    *)
+      echo "GPU ownership summary is outside the repository: ${gpu_summary}" >&2
+      exit 1
+      ;;
+  esac
+  if ! jq -e \
+    '.schema_version == "1.0.0" and .status == "complete" and .checks > 0 and
+     (.log.path | type == "string") and (.log.sha256 | type == "string") and
+     (.log.bytes | type == "number")' "${gpu_summary}" >/dev/null; then
+    echo "GPU ownership summary is invalid: ${gpu_summary}" >&2
+    exit 1
+  fi
+  gpu_log_relative="$(jq -r '.log.path' "${gpu_summary}")"
+  gpu_log="$(readlink -f "${repository_root}/${gpu_log_relative}")"
+  case "${gpu_log}" in
+    "${repository_root}"/*) ;;
+    *)
+      echo "GPU ownership log is outside the repository: ${gpu_log_relative}" >&2
+      exit 1
+      ;;
+  esac
+  if [[ ! -f "${gpu_log}" ]] || ! jq -e \
+    --arg sha256 "$(sha256sum "${gpu_log}" | cut -d ' ' -f 1)" \
+    --argjson bytes "$(stat -c %s "${gpu_log}")" \
+    '.log.sha256 == $sha256 and .log.bytes == $bytes' \
+    "${gpu_summary}" >/dev/null; then
+    echo "GPU ownership log does not match its summary" >&2
+    exit 1
+  fi
+  gpu_summary_sha256="$(sha256sum "${gpu_summary}" | cut -d ' ' -f 1)"
+  gpu_summary_bytes="$(stat -c %s "${gpu_summary}")"
+  gpu_summary_evidence="$(jq -c . "${gpu_summary}")"
   jq \
     --arg completed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg revision "${revision}" \
     --argjson gateway_health "${gateway_health}" \
     --argjson runtime_identity "${runtime_identity}" \
+    --arg gpu_summary_path "${gpu_summary_relative}" \
+    --arg gpu_summary_sha256 "${gpu_summary_sha256}" \
+    --argjson gpu_summary_bytes "${gpu_summary_bytes}" \
+    --argjson gpu_summary_evidence "${gpu_summary_evidence}" \
     '.status="complete" |
      .invocations[-1].status="complete" |
      .invocations[-1].completed_at=$completed_at |
      .invocations[-1].openrealtime_revision_at_completion=$revision |
      .invocations[-1].source_worktree_clean_at_completion=true |
      .invocations[-1].gateway_health_final=$gateway_health |
-     .invocations[-1].runtime_identity_final=$runtime_identity' \
+     .invocations[-1].runtime_identity_final=$runtime_identity |
+     .invocations[-1].gpu_ownership_guard={
+       path:$gpu_summary_path,
+       sha256:$gpu_summary_sha256,
+       bytes:$gpu_summary_bytes,
+       evidence:$gpu_summary_evidence
+     }' \
     "${output}" >"${temporary}"
 fi
 

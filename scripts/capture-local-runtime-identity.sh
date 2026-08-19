@@ -8,6 +8,14 @@ pid_root="${runtime_root}/pids"
 captured_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 boot_id="$(< /proc/sys/kernel/random/boot_id)"
 
+process_start_ticks() {
+  local pid="$1"
+  local stat_line stat_tail
+  stat_line="$(<"/proc/${pid}/stat")"
+  stat_tail="${stat_line##*) }"
+  awk '{print $20}' <<<"${stat_tail}"
+}
+
 identity="$(jq -n \
   --arg captured_at "${captured_at}" \
   --arg boot_id "${boot_id}" \
@@ -30,7 +38,7 @@ for component in gateway asr fish qwen; do
   executable="$(readlink -f "/proc/${pid}/exe")"
   executable_sha256="$(sha256sum "/proc/${pid}/exe" | cut -d ' ' -f 1)"
   command_sha256="$(sha256sum "/proc/${pid}/cmdline" | cut -d ' ' -f 1)"
-  start_time_ticks="$(cut -d ' ' -f 22 "/proc/${pid}/stat")"
+  start_time_ticks="$(process_start_ticks "${pid}")"
   argv="$(jq -Rs 'split("\u0000") | map(select(length > 0))' "/proc/${pid}/cmdline")"
   identity="$(jq \
     --arg component "${component}" \
@@ -79,5 +87,19 @@ if jq -e '.components.qwen != null' <<<"${identity}" >/dev/null; then
       max_model_len:$max_model_len
     }' <<<"${identity}")"
 fi
+
+gpu_ownership="$("${repository_root}/scripts/capture-local-gpu-ownership.sh" "${runtime_root}")"
+if ! jq -e \
+  --argjson identity "${identity}" '
+  .host_boot_id == $identity.host_boot_id and
+  all(.component_roots | to_entries[];
+    $identity.components[.key].pid == .value.pid and
+    $identity.components[.key].proc_start_time_ticks == .value.proc_start_time_ticks)
+' <<<"${gpu_ownership}" >/dev/null; then
+  echo "GPU ownership does not match the captured local component identity" >&2
+  exit 1
+fi
+identity="$(jq --argjson gpu_ownership "${gpu_ownership}" \
+  '.gpu_ownership=$gpu_ownership' <<<"${identity}")"
 
 jq . <<<"${identity}"

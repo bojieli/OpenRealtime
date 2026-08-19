@@ -24,7 +24,7 @@ for required in OPENAI_API_KEY GEMINI_API_KEY OPENREALTIME_GATEWAY_TOKEN; do
   fi
 done
 
-for command_name in curl git jq nvidia-smi sha256sum uv; do
+for command_name in curl git jq nvidia-smi python3 readlink setsid sha256sum stat timeout uv; do
   if ! command -v "${command_name}" >/dev/null; then
     echo "required command ${command_name} is unavailable" >&2
     exit 1
@@ -144,8 +144,37 @@ jq -n \
   --arg selected_cell "${selected_cell}" \
   --argjson gateway_health "${gateway_health}" \
   --argjson runtime_identity "${runtime_identity}" \
-  '{schema_version:"1.0.0",started_at:$started_at,matrix:$matrix,matrix_sha256:$matrix_sha256,patch_sha256:$patch_sha256,tau_revision:$tau_revision,openrealtime_revision:$openrealtime_revision,source_worktree_clean_start:true,selected_cell:(if $selected_cell == "" then null else $selected_cell end),gateway_health:$gateway_health,runtime_identity:$runtime_identity,status:"running"}' \
+  '{schema_version:"1.0.0",started_at:$started_at,matrix:$matrix,matrix_sha256:$matrix_sha256,patch_sha256:$patch_sha256,tau_revision:$tau_revision,openrealtime_revision:$openrealtime_revision,source_worktree_clean_start:true,selected_cell:(if $selected_cell == "" then null else $selected_cell end),gateway_health:$gateway_health,runtime_identity:$runtime_identity,gpu_ownership_guards:[],status:"running"}' \
   >"${run_root}/run.json"
+
+record_gpu_guard() {
+  local summary="$1"
+  local relative summary_sha256 summary_bytes evidence
+  if [[ ! -f "${summary}" ]] || ! jq -e \
+    '.schema_version == "1.0.0" and .status == "complete" and .checks > 0' \
+    "${summary}" >/dev/null; then
+    echo "GPU ownership summary is missing or incomplete: ${summary}" >&2
+    return 1
+  fi
+  case "${summary}" in
+    "${repository_root}"/*) relative="${summary#"${repository_root}/"}" ;;
+    *)
+      echo "GPU ownership summary is outside the repository: ${summary}" >&2
+      return 1
+      ;;
+  esac
+  summary_sha256="$(sha256sum "${summary}" | cut -d ' ' -f 1)"
+  summary_bytes="$(stat -c %s "${summary}")"
+  evidence="$(jq -c . "${summary}")"
+  jq \
+    --arg path "${relative}" \
+    --arg sha256 "${summary_sha256}" \
+    --argjson bytes "${summary_bytes}" \
+    --argjson evidence "${evidence}" \
+    '.gpu_ownership_guards += [{path:$path,sha256:$sha256,bytes:$bytes,evidence:$evidence}]' \
+    "${run_root}/run.json" >"${run_root}/run.json.next"
+  mv "${run_root}/run.json.next" "${run_root}/run.json"
+}
 
 telemetry="${run_root}/gpu.csv"
 echo 'timestamp,index,name,memory_used_mib,utilization_gpu_percent,power_draw_watts,loadavg' >"${telemetry}"
@@ -242,9 +271,12 @@ for cell in "${cells[@]}"; do
     log_file="${log_dir}/${domain}.log"
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] start ${cell}/${domain} (${expected_tasks} tasks)" | tee -a "${log_file}"
 
-    OPENAI_REALTIME_API_KEY="${OPENREALTIME_GATEWAY_TOKEN}" \
-    PYTHONPATH="${tau2_directory}/src" \
-    uv --directory "${tau2_directory}" run tau2 run \
+    gpu_guard_stem="${log_dir}/${domain}.gpu-ownership"
+    "${repository_root}/scripts/run-with-local-gpu-ownership-guard.sh" \
+      "${gpu_guard_stem}" -- env \
+      OPENAI_REALTIME_API_KEY="${OPENREALTIME_GATEWAY_TOKEN}" \
+      PYTHONPATH="${tau2_directory}/src" \
+      uv --directory "${tau2_directory}" run tau2 run \
       --domain "${domain}" \
       --task-split-name "${task_split}" \
       --num-trials "${num_trials}" \
@@ -274,6 +306,7 @@ for cell in "${cells[@]}"; do
       --verbose-logs \
       --llm-log-mode latest \
       2>&1 | tee -a "${log_file}"
+    record_gpu_guard "${gpu_guard_stem}.summary.json"
     simulation_dir="${tau2_directory}/data/simulations/${save_to}/simulations"
     completed_tasks="$(find "${simulation_dir}" -maxdepth 1 -type f -name '*.json' | wc -l)"
     expected_simulations="$((expected_tasks * num_trials))"

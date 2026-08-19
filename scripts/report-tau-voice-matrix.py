@@ -391,6 +391,7 @@ def collect_run_evidence(
             "runtime_identity_final": payload.get("runtime_identity_final"),
             "gateway_health_start": payload.get("gateway_health"),
             "gateway_health_final": payload.get("gateway_health_final"),
+            "gpu_ownership_guards": payload.get("gpu_ownership_guards"),
         }
         health_start = payload.get("gateway_health")
         health_final = payload.get("gateway_health_final")

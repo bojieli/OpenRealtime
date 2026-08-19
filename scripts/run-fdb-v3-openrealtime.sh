@@ -25,7 +25,11 @@ mkdir -p "${run_root}"
 run_context="${run_root}/run-context.json"
 "${repository_root}/scripts/benchmark-run-context.sh" start \
   "${run_context}" full-duplex-bench-v3
-/usr/local/go/bin/go run ./cmd/fdbv3bench run \
+invocation_index="$(jq '.invocations | length - 1' "${run_context}")"
+gpu_guard_stem="${run_root}/gpu-ownership-invocation-${invocation_index}"
+export OPENREALTIME_GPU_OWNERSHIP_SUMMARY="${gpu_guard_stem}.summary.json"
+"${repository_root}/scripts/run-with-local-gpu-ownership-guard.sh" \
+  "${gpu_guard_stem}" -- /usr/local/go/bin/go run ./cmd/fdbv3bench run \
   --dataset-root "${dataset_root}" \
   --profile benchmarks/fdb-v3/openrealtime-v1.json \
   --run-root "${run_root}" \

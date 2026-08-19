@@ -19,7 +19,7 @@ for required in OPENAI_API_KEY GEMINI_API_KEY OPENREALTIME_GATEWAY_TOKEN; do
     exit 1
   fi
 done
-for command_name in bash git jq nohup setsid sha256sum; do
+for command_name in bash curl git jq nvidia-smi nohup python3 readlink setsid sha256sum stat timeout; do
   if ! command -v "${command_name}" >/dev/null; then
     echo "required command ${command_name} is unavailable" >&2
     exit 1
@@ -30,6 +30,8 @@ if [[ -n "$(git -C "${repository_root}" status --porcelain=v1 --untracked-files=
   exit 1
 fi
 "${repository_root}/scripts/test_matrix_requires_local_fast.sh" >/dev/null
+"${repository_root}/scripts/test_capture_local_gpu_ownership.sh" >/dev/null
+"${repository_root}/scripts/test_local_gpu_ownership_guard.sh" >/dev/null
 
 runtime_manifest="${repository_root}/benchmarks/runtime/canonical-gateway-v1.json"
 runtime_identity="$("${repository_root}/scripts/capture-local-runtime-identity.sh")"
