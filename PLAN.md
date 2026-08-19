@@ -951,7 +951,8 @@ bounded per-trial operation inside that frozen invocation, not permission to
 merge partial results produced by different source revisions.
 Launch preflight enforces the same rule by rejecting pre-existing causal
 population roots; an invalidated attempt must be deliberately quarantined and
-the affected population restarted from an empty root.
+the affected population restarted from an empty root. The terminal reporter
+must execute from that same orchestration revision with a clean worktree.
 A same-fixture endpointed/fast-only/full-preparation exploratory check
 is published. A closed endpoint-only gateway policy and complete paired
 control population are now implemented, frozen, and queued; it suppresses

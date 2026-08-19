@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 
 SCRIPT = Path(__file__).with_name("report-full-study.py")
@@ -799,8 +800,9 @@ class FullStudyTest(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.fixture = Fixture(self.root)
 
-    def report(self) -> dict:
-        return REPORT.build_report(self.root, self.fixture.paths["study"])
+    def report(self, source_state: tuple[str, bool] = ("c" * 40, True)) -> dict:
+        with mock.patch.object(REPORT, "git_source_state", return_value=source_state):
+            return REPORT.build_report(self.root, self.fixture.paths["study"])
 
     def test_accepts_only_the_complete_exact_population(self) -> None:
         report = self.report()
@@ -1110,6 +1112,20 @@ class FullStudyTest(unittest.TestCase):
             "source-stable orchestration revision count",
         ):
             self.report()
+
+    def test_rejects_a_different_terminal_reporter_revision(self) -> None:
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError,
+            "terminal reporter orchestration revision",
+        ):
+            self.report(("d" * 40, True))
+
+    def test_rejects_a_dirty_terminal_reporter_worktree(self) -> None:
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError,
+            "terminal reporter clean source",
+        ):
+            self.report(("c" * 40, False))
 
     def test_rejects_external_run_without_the_frozen_gateway_declaration(self) -> None:
         path = self.fixture.paths["fd_context"]

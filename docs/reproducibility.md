@@ -236,6 +236,7 @@ each matrix or external suite must come from one clean process invocation, and
 all 17 populations must report the same OpenRealtime orchestration revision;
 process-level resume across source revisions is therefore not publishable,
 while bounded exception-only retries inside the frozen invocation remain valid;
+the terminal reporter itself must run from that revision with a clean worktree;
 local-fast identities must additionally report vLLM 0.19.0, the pinned Qwen
 model and served-model names, and the frozen 40,960-token native context window;
 each tau-Voice raw archive must also prove the preregistered exception-only

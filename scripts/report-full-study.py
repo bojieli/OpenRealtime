@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 from typing import Any
 
 
@@ -112,6 +113,41 @@ def parse_utc_timestamp(value: Any, label: str) -> datetime:
         raise StudyIncompleteError(f"{label} timestamp is invalid: {value}") from error
     require(timestamp.tzinfo is not None, f"{label} timestamp has no timezone")
     return timestamp.astimezone(timezone.utc)
+
+
+def git_source_state(root: Path) -> tuple[str, bool]:
+    try:
+        revision = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        ).stdout.strip()
+        status = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(root),
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=normal",
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise StudyIncompleteError(
+            f"cannot verify terminal reporter source: {error}"
+        ) from error
+    require(
+        len(revision) == 40
+        and all(character in "0123456789abcdef" for character in revision),
+        "terminal reporter source revision is invalid",
+    )
+    return revision, not bool(status)
 
 
 def resolve(root: Path, value: str) -> Path:
@@ -2263,6 +2299,13 @@ def build_report(root: Path, manifest_path: Path) -> dict[str, Any]:
         "source-stable orchestration revision count",
     )
     orchestration_revision = next(iter(orchestration_revisions))
+    reporter_revision, reporter_clean = git_source_state(root)
+    require_equal(
+        reporter_revision,
+        orchestration_revision,
+        "terminal reporter orchestration revision",
+    )
+    require_equal(reporter_clean, True, "terminal reporter clean source")
     return {
         "schema_version": "1.0.0",
         "status": "complete",
@@ -2274,6 +2317,7 @@ def build_report(root: Path, manifest_path: Path) -> dict[str, Any]:
             "gateway_source_revision": gateway_source_revision,
             "gateway_executable_sha256": gateway_sha256,
             "orchestration_revision": orchestration_revision,
+            "source_worktree_clean": reporter_clean,
             "publication_policy": policy,
         },
         "evidence_panel": {
