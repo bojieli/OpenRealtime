@@ -78,14 +78,32 @@ def build_entries(
     benchmark: dict[str, Any], results_dir: Path, provider: str
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     scenarios = {scenario["id"]: scenario for scenario in benchmark["scenarios"]}
+    judged: dict[Any, Path] = {}
     entries: list[dict[str, Any]] = []
     argument_calls = 0
     response_calls = 0
     for result_path in sorted(results_dir.rglob(f"result_{provider}.json")):
         result = json.loads(result_path.read_text(encoding="utf-8"))
-        scenario = scenarios.get(result.get("example_id"))
+        # A result whose example_id names no preregistered scenario is
+        # evidence the run does not match the benchmark it claims to answer.
+        # Skipping it dropped that sample from the judged population, and the
+        # count check below then compared the survivors against
+        # --expected-scenarios -- so an unknown id paired with a duplicated
+        # one balanced the ledger exactly while leaving a real scenario
+        # unjudged. Both halves are refused by identity, not by count.
+        example_id = result.get("example_id")
+        scenario = scenarios.get(example_id)
         if scenario is None:
-            continue
+            raise StrictJudgeError(
+                f"{result_path} names scenario {example_id!r}, which the "
+                f"benchmark does not preregister"
+            )
+        if example_id in judged:
+            raise StrictJudgeError(
+                f"{result_path} repeats scenario {example_id!r}, already "
+                f"judged from {judged[example_id]}"
+            )
+        judged[example_id] = result_path
         # The ledger below predicts how many judge calls this population must
         # open, and the run is refused unless exactly that many succeed. That
         # reconciliation is only meaningful if it is computed over evidence
@@ -121,6 +139,12 @@ def build_entries(
                 "transcript": transcript,
                 "result_data": result,
             }
+        )
+    unjudged = sorted(set(scenarios) - set(judged), key=str)
+    if unjudged:
+        raise StrictJudgeError(
+            f"{len(unjudged)} preregistered scenarios produced no result: "
+            f"{', '.join(str(item) for item in unjudged[:5])}"
         )
     return entries, {
         "argument": argument_calls,

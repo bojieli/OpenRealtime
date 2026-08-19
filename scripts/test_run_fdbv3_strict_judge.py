@@ -147,6 +147,55 @@ class ExpectedCallTest(unittest.TestCase):
                 }
             )
 
+    def build_many(self, scenario_ids: list[str], results: list[dict]):
+        benchmark = {
+            "scenarios": [
+                {"id": item, "expected_tool_calls": [{"function": "search"}]}
+                for item in scenario_ids
+            ]
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for index, result in enumerate(results):
+                sample = Path(directory) / f"sample{index}"
+                sample.mkdir()
+                (sample / "result_openrealtime.json").write_text(
+                    json.dumps(result), encoding="utf-8"
+                )
+            return JUDGE.build_entries(benchmark, Path(directory), "openrealtime")
+
+    @staticmethod
+    def result(example_id: str) -> dict:
+        return {
+            "example_id": example_id,
+            "actual_tool_calls": [{"function": "search"}],
+            "transcript": "done",
+        }
+
+    def test_judges_each_preregistered_scenario_exactly_once(self) -> None:
+        entries, counts = self.build_many(
+            ["one", "two"], [self.result("one"), self.result("two")]
+        )
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(counts["total"], 4)
+
+    def test_refuses_a_result_for_an_unpreregistered_scenario(self) -> None:
+        with self.assertRaises(JUDGE.StrictJudgeError) as caught:
+            self.build_many(["one"], [self.result("one"), self.result("stray")])
+        self.assertIn("does not preregister", str(caught.exception))
+
+    def test_refuses_a_duplicated_scenario_that_balances_the_count(self) -> None:
+        """Two results for 'one' plus none for 'two' used to satisfy the count."""
+        with self.assertRaises(JUDGE.StrictJudgeError) as caught:
+            self.build_many(
+                ["one", "two"], [self.result("one"), self.result("one")]
+            )
+        self.assertIn("repeats scenario", str(caught.exception))
+
+    def test_refuses_a_preregistered_scenario_that_produced_no_result(self) -> None:
+        with self.assertRaises(JUDGE.StrictJudgeError) as caught:
+            self.build_many(["one", "two"], [self.result("one")])
+        self.assertIn("produced no result", str(caught.exception))
+
     def test_still_counts_a_sample_that_legitimately_called_nothing(self) -> None:
         entries, counts = self.build_one(
             {"example_id": "one", "actual_tool_calls": [], "transcript": "done"}
