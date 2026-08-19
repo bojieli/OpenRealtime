@@ -36,6 +36,25 @@ LOCAL_FAST_CONTRACT = {
     "tool_authority": "propose",
 }
 
+GPU_OWNERSHIP_CONTRACT = {
+    "policy": "exclusive-process-ancestry",
+    "scope": "entire scored provider invocation",
+    "sampling_interval_seconds": 5,
+    "capture_timeout_seconds": 15,
+    "expected_components_local_fast": ["asr", "fish", "qwen"],
+    "expected_components_remote_fast": ["asr", "fish"],
+    "identity": [
+        "host_boot_id",
+        "component_root_pid",
+        "component_root_proc_start_time_ticks",
+        "gpu_process_pid",
+        "gpu_process_proc_start_time_ticks",
+        "gpu_uuid",
+    ],
+    "violation_policy": "invalidate the entire invocation",
+    "evidence": "append-only ownership checks plus a content-addressed terminal summary",
+}
+
 
 def arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -207,9 +226,7 @@ def validate_attempt_ledger(
     all process resumes. A terminally publishable trial has a contiguous
     prefix 1..N, exactly one success, and that success is its last attempt.
     """
-    require(
-        isinstance(value, list), f"{label} attempt ledger must be a JSON array"
-    )
+    require(isinstance(value, list), f"{label} attempt ledger must be a JSON array")
     groups: dict[Any, list[dict[str, Any]]] = {}
     for index, record in enumerate(value):
         require(
@@ -317,6 +334,11 @@ def validate_study_runtime(
     require_equal(
         runtime.get("local_fast"), LOCAL_FAST_CONTRACT, "study local-fast runtime"
     )
+    require_equal(
+        runtime.get("gpu_ownership"),
+        GPU_OWNERSHIP_CONTRACT,
+        "study GPU ownership runtime",
+    )
     build = runtime.get("build")
     require(isinstance(build, dict), "study runtime build declaration is absent")
     require_equal(build.get("go"), "/usr/local/go/bin/go", "study runtime Go path")
@@ -328,12 +350,285 @@ def validate_study_runtime(
     return path, runtime
 
 
-def require_argv_option(argv: list[str], option: str, expected: str, label: str) -> None:
+def require_argv_option(
+    argv: list[str], option: str, expected: str, label: str
+) -> None:
     positions = [index for index, value in enumerate(argv) if value == option]
     require_equal(len(positions), 1, f"{label} {option} occurrence")
     position = positions[0]
     require(position + 1 < len(argv), f"{label} {option} has no value")
     require_equal(argv[position + 1], expected, f"{label} {option}")
+
+
+def gpu_component_names(requires_local_fast: bool) -> list[str]:
+    names = ["asr", "fish"]
+    if requires_local_fast:
+        names.append("qwen")
+    return sorted(names)
+
+
+def gpu_process_identity(processes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            key: process.get(key)
+            for key in (
+                "gpu_uuid",
+                "component",
+                "component_pid",
+                "pid",
+                "proc_start_time_ticks",
+            )
+        }
+        for process in processes
+    ]
+
+
+def validate_gpu_ownership_snapshot(
+    value: Any,
+    *,
+    components: dict[str, Any],
+    host_boot_id: str,
+    requires_local_fast: bool,
+    label: str,
+) -> None:
+    require(isinstance(value, dict), f"{label} GPU ownership snapshot is absent")
+    require_equal(value.get("schema_version"), "1.0.0", f"{label} GPU schema")
+    require_equal(value.get("exclusive"), True, f"{label} GPU exclusivity")
+    require_equal(value.get("host_boot_id"), host_boot_id, f"{label} GPU host boot")
+    expected = gpu_component_names(requires_local_fast)
+    require_equal(
+        value.get("expected_components"), expected, f"{label} GPU component set"
+    )
+    roots = value.get("component_roots")
+    require(isinstance(roots, dict), f"{label} GPU component roots are absent")
+    require_equal(sorted(roots), expected, f"{label} GPU component roots")
+    for name in expected:
+        root = roots[name]
+        require(isinstance(root, dict), f"{label}/{name} GPU root is invalid")
+        require_equal(
+            root.get("pid"), components[name].get("pid"), f"{label}/{name} GPU root PID"
+        )
+        require_equal(
+            root.get("proc_start_time_ticks"),
+            components[name].get("proc_start_time_ticks"),
+            f"{label}/{name} GPU root process start",
+        )
+    gpu_uuids = value.get("gpu_uuids")
+    require(
+        isinstance(gpu_uuids, list)
+        and len(gpu_uuids) == 1
+        and isinstance(gpu_uuids[0], str)
+        and bool(gpu_uuids[0]),
+        f"{label} must attest exactly one GPU",
+    )
+    processes = value.get("processes")
+    require(
+        isinstance(processes, list) and bool(processes),
+        f"{label} GPU process evidence is absent",
+    )
+    observed: set[str] = set()
+    process_ids: set[tuple[str, int]] = set()
+    for index, process in enumerate(processes):
+        process_label = f"{label} GPU process {index}"
+        require(isinstance(process, dict), f"{process_label} is invalid")
+        component = process.get("component")
+        require(component in expected, f"{process_label} has an unknown component")
+        observed.add(component)
+        require_equal(
+            process.get("component_pid"),
+            roots[component].get("pid"),
+            f"{process_label} component root",
+        )
+        pid = process.get("pid")
+        require(
+            isinstance(pid, int) and not isinstance(pid, bool) and pid > 0,
+            f"{process_label} has an invalid PID",
+        )
+        require(
+            isinstance(process.get("proc_start_time_ticks"), str)
+            and process["proc_start_time_ticks"].isdigit(),
+            f"{process_label} has an invalid process start identity",
+        )
+        require_equal(
+            process.get("gpu_uuid"), gpu_uuids[0], f"{process_label} GPU identity"
+        )
+        process_key = (gpu_uuids[0], pid)
+        require(process_key not in process_ids, f"{process_label} is duplicated")
+        process_ids.add(process_key)
+        memory = process.get("used_memory_mib")
+        require(
+            isinstance(memory, int) and not isinstance(memory, bool) and memory >= 0,
+            f"{process_label} has invalid memory evidence",
+        )
+    require_equal(sorted(observed), expected, f"{label} occupied GPU components")
+
+
+def validate_gpu_ownership_guard(
+    root: Path,
+    value: Any,
+    *,
+    components: dict[str, Any],
+    host_boot_id: str,
+    requires_local_fast: bool,
+    label: str,
+) -> None:
+    require(isinstance(value, dict), f"{label} GPU ownership guard is absent")
+    path_value = value.get("path")
+    require(isinstance(path_value, str) and bool(path_value), f"{label} path is absent")
+    summary_path = resolve(root, path_value)
+    try:
+        summary_path.relative_to(root.resolve())
+    except ValueError as error:
+        raise StudyIncompleteError(
+            f"{label} summary is outside the repository"
+        ) from error
+    summary = read_json(summary_path, f"{label} summary")
+    require_equal(sha256_file(summary_path), value.get("sha256"), f"{label} SHA-256")
+    require_equal(summary_path.stat().st_size, value.get("bytes"), f"{label} bytes")
+    require_equal(summary, value.get("evidence"), f"{label} embedded evidence")
+    require_equal(summary.get("schema_version"), "1.0.0", f"{label} schema")
+    require_equal(summary.get("status"), "complete", f"{label} status")
+    require_equal(
+        summary.get("expected_components"),
+        gpu_component_names(requires_local_fast),
+        f"{label} component set",
+    )
+    require_equal(summary.get("host_boot_id"), host_boot_id, f"{label} host boot")
+    checks = summary.get("checks")
+    require(
+        isinstance(checks, int) and not isinstance(checks, bool) and checks > 0,
+        f"{label} check count is invalid",
+    )
+    interval = summary.get("interval_seconds")
+    require(
+        isinstance(interval, int) and not isinstance(interval, bool) and interval > 0,
+        f"{label} interval is invalid",
+    )
+    require_equal(
+        interval,
+        GPU_OWNERSHIP_CONTRACT["sampling_interval_seconds"],
+        f"{label} frozen sampling interval",
+    )
+    capture_timeout = summary.get("capture_timeout_seconds")
+    require(
+        isinstance(capture_timeout, int)
+        and not isinstance(capture_timeout, bool)
+        and capture_timeout > 0,
+        f"{label} capture timeout is invalid",
+    )
+    require_equal(
+        capture_timeout,
+        GPU_OWNERSHIP_CONTRACT["capture_timeout_seconds"],
+        f"{label} frozen capture timeout",
+    )
+    log_artifact = summary.get("log")
+    require(isinstance(log_artifact, dict), f"{label} log evidence is absent")
+    log_path_value = log_artifact.get("path")
+    require(
+        isinstance(log_path_value, str) and bool(log_path_value),
+        f"{label} log path is absent",
+    )
+    log_path = resolve(root, log_path_value)
+    try:
+        log_path.relative_to(root.resolve())
+    except ValueError as error:
+        raise StudyIncompleteError(f"{label} log is outside the repository") from error
+    require(log_path.is_file(), f"{label} log is missing: {log_path}")
+    require_equal(
+        sha256_file(log_path), log_artifact.get("sha256"), f"{label} log SHA-256"
+    )
+    require_equal(
+        log_path.stat().st_size, log_artifact.get("bytes"), f"{label} log bytes"
+    )
+    try:
+        records = [
+            json.loads(line)
+            for line in log_path.read_text(encoding="utf-8").splitlines()
+        ]
+    except (OSError, json.JSONDecodeError) as error:
+        raise StudyIncompleteError(f"cannot parse {label} log: {error}") from error
+    require_equal(len(records), checks + 2, f"{label} log record count")
+    require(
+        isinstance(records[0], dict)
+        and records[0].get("type") == "guard.started"
+        and records[0].get("status") == "running",
+        f"{label} start record is invalid",
+    )
+    require_equal(
+        records[0].get("interval_seconds"), interval, f"{label} logged interval"
+    )
+    require_equal(
+        records[0].get("capture_timeout_seconds"),
+        capture_timeout,
+        f"{label} logged capture timeout",
+    )
+    require(
+        isinstance(records[-1], dict)
+        and records[-1].get("type") == "guard.completed"
+        and records[-1].get("status") == "complete"
+        and records[-1].get("exit_status") == 0,
+        f"{label} completion record is invalid",
+    )
+    require_equal(
+        summary.get("started_at"), records[0].get("recorded_at"), f"{label} start time"
+    )
+    require_equal(
+        summary.get("completed_at"),
+        records[-1].get("recorded_at"),
+        f"{label} completion time",
+    )
+    first_snapshot: dict[str, Any] | None = None
+    for index, record in enumerate(records[1:-1]):
+        check_label = f"{label} check {index}"
+        require(
+            isinstance(record, dict)
+            and record.get("type") == "guard.check"
+            and record.get("status") == "ok",
+            f"{check_label} is not successful",
+        )
+        snapshot = record.get("ownership")
+        validate_gpu_ownership_snapshot(
+            snapshot,
+            components=components,
+            host_boot_id=host_boot_id,
+            requires_local_fast=requires_local_fast,
+            label=check_label,
+        )
+        if first_snapshot is None:
+            first_snapshot = snapshot
+        else:
+            for field in (
+                "host_boot_id",
+                "expected_components",
+                "component_roots",
+                "gpu_uuids",
+            ):
+                require_equal(
+                    snapshot.get(field),
+                    first_snapshot.get(field),
+                    f"{check_label} stable {field}",
+                )
+            require_equal(
+                gpu_process_identity(snapshot["processes"]),
+                gpu_process_identity(first_snapshot["processes"]),
+                f"{check_label} stable GPU process identity",
+            )
+    assert first_snapshot is not None
+    require_equal(
+        summary.get("component_roots"),
+        first_snapshot.get("component_roots"),
+        f"{label} summarized component roots",
+    )
+    require_equal(
+        summary.get("gpu_uuids"),
+        first_snapshot.get("gpu_uuids"),
+        f"{label} summarized GPU identity",
+    )
+    require_equal(
+        summary.get("processes"),
+        gpu_process_identity(first_snapshot["processes"]),
+        f"{label} summarized process identity",
+    )
 
 
 def validate_runtime_identity(
@@ -388,6 +683,13 @@ def validate_runtime_identity(
             and bool(component["argv"]),
             f"{label}/{name} has invalid argv evidence",
         )
+    validate_gpu_ownership_snapshot(
+        identity.get("gpu_ownership"),
+        components=components,
+        host_boot_id=identity["host_boot_id"],
+        requires_local_fast=requires_local_fast,
+        label=label,
+    )
     if requires_local_fast:
         qwen = components["qwen"]
         require_equal(
@@ -522,6 +824,14 @@ def validate_run_context(
             require(
                 isinstance(final_health, dict) and final_health.get("status") == "ok",
                 f"{invocation_label} gateway_health_final is not healthy",
+            )
+            validate_gpu_ownership_guard(
+                root,
+                invocation.get("gpu_ownership_guard"),
+                components=start["components"],
+                host_boot_id=start["host_boot_id"],
+                requires_local_fast=True,
+                label=f"{invocation_label} GPU ownership",
             )
     return path, context
 
@@ -893,28 +1203,80 @@ def validate_tau_matrix(
             revision,
             f"{execution_label} source revision at completion",
         )
+        start_identity = complete_run.get("runtime_identity")
+        final_identity = complete_run.get("runtime_identity_final")
         validate_runtime_identity(
-            complete_run.get("runtime_identity"),
+            start_identity,
             requires_local_fast=requires_local_fast,
             expected_gateway_sha256=expected_gateway_sha256,
             label=f"{execution_label} start",
         )
         validate_runtime_identity(
-            complete_run.get("runtime_identity_final"),
+            final_identity,
             requires_local_fast=requires_local_fast,
             expected_gateway_sha256=expected_gateway_sha256,
             label=f"{execution_label} final",
         )
         require_equal(
-            complete_run["runtime_identity"].get("host_boot_id"),
-            complete_run["runtime_identity_final"].get("host_boot_id"),
+            start_identity.get("host_boot_id"),
+            final_identity.get("host_boot_id"),
             f"{execution_label} runtime boot",
         )
         require_equal(
-            complete_run["runtime_identity"].get("components"),
-            complete_run["runtime_identity_final"].get("components"),
+            start_identity.get("components"),
+            final_identity.get("components"),
             f"{execution_label} runtime processes",
         )
+        selected_cell = complete_run.get("selected_cell")
+        require(
+            selected_cell is None or selected_cell in cell_ids,
+            f"{execution_label} selected cell is invalid",
+        )
+        covered_cells = [selected_cell] if selected_cell is not None else cell_ids
+        run_path_value = complete_run.get("path")
+        require(
+            isinstance(run_path_value, str) and bool(run_path_value),
+            f"{execution_label} run path is absent",
+        )
+        run_directory = Path(run_path_value).parent
+        expected_guard_paths = {
+            (
+                run_directory / cell_id / f"{domain}.gpu-ownership.summary.json"
+            ).as_posix()
+            for cell_id in covered_cells
+            for domain in domains
+        }
+        guards = complete_run.get("gpu_ownership_guards")
+        require(
+            isinstance(guards, list),
+            f"{execution_label} GPU ownership guards are absent",
+        )
+        require(
+            all(
+                isinstance(item, dict) and isinstance(item.get("path"), str)
+                for item in guards
+            ),
+            f"{execution_label} GPU ownership guard paths are invalid",
+        )
+        require_equal(
+            {item["path"] for item in guards},
+            expected_guard_paths,
+            f"{execution_label} GPU ownership guard coverage",
+        )
+        require_equal(
+            len(guards),
+            len(expected_guard_paths),
+            f"{execution_label} unique GPU ownership guards",
+        )
+        for guard_index, guard in enumerate(guards):
+            validate_gpu_ownership_guard(
+                root,
+                guard,
+                components=start_identity["components"],
+                host_boot_id=start_identity["host_boot_id"],
+                requires_local_fast=requires_local_fast,
+                label=f"{execution_label} GPU ownership guard {guard_index}",
+            )
     revisions = sorted(
         {
             item["openrealtime_revision"]
@@ -950,8 +1312,8 @@ def validate_tau(
         {
             "scoring_inputs": "results.json and simulations/*.json remain expanded",
             "raw_artifacts": "each complete cell/domain artifacts directory is preserved losslessly as deterministic-pax-tar+zstd",
-            "deletion_gate": "remove expanded duplicates only after archive readability, SHA-256, byte count, matrix identity, and exact task population are recorded",
-            "publication_gate": "the terminal reporter rehashes every archive and rejects missing evidence or remaining expanded duplicates",
+            "deletion_gate": "remove expanded duplicates only after archive readability, SHA-256, byte count, matrix identity, exact task population, and the bounded exception-only attempt ledger are recorded",
+            "publication_gate": "the terminal reporter rehashes every archive and rejects missing evidence, invalid retry provenance, or remaining expanded duplicates",
         },
         "tau artifact-retention policy",
     )

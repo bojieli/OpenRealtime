@@ -36,16 +36,19 @@ def descriptor(profile: str) -> dict:
 
 def runtime_identity() -> dict:
     component = {
-        "pid": 1,
         "proc_start_time_ticks": "100",
         "executable": "/runtime/component",
         "executable_sha256": "a" * 64,
         "command_sha256": "b" * 64,
         "argv": ["/runtime/component"],
     }
-    components = {name: dict(component) for name in ("gateway", "asr", "fish")}
+    components = {
+        name: {**component, "pid": pid}
+        for name, pid in (("gateway", 10), ("asr", 20), ("fish", 30))
+    }
     components["qwen"] = {
         **component,
+        "pid": 40,
         "argv": [
             "/runtime/python",
             "-m",
@@ -72,14 +75,41 @@ def runtime_identity() -> dict:
             "max_model_len": 40960,
         },
     }
+    gpu_processes = [
+        {
+            "gpu_uuid": "GPU-test",
+            "component": name,
+            "component_pid": components[name]["pid"],
+            "pid": components[name]["pid"] + 1,
+            "proc_start_time_ticks": str(200 + index),
+            "used_memory_mib": 1000 + index,
+        }
+        for index, name in enumerate(("asr", "fish", "qwen"))
+    ]
     return {
         "schema_version": "1.0.0",
         "host_boot_id": "boot",
         "components": components,
+        "gpu_ownership": {
+            "schema_version": "1.0.0",
+            "captured_at": "2026-01-01T00:00:00Z",
+            "host_boot_id": "boot",
+            "exclusive": True,
+            "expected_components": ["asr", "fish", "qwen"],
+            "component_roots": {
+                name: {
+                    "pid": components[name]["pid"],
+                    "proc_start_time_ticks": components[name]["proc_start_time_ticks"],
+                }
+                for name in ("asr", "fish", "qwen")
+            },
+            "gpu_uuids": ["GPU-test"],
+            "processes": gpu_processes,
+        },
     }
 
 
-def run_context(benchmark: str) -> dict:
+def run_context(benchmark: str, guard: dict) -> dict:
     identity = runtime_identity()
     return {
         "schema_version": "1.0.0",
@@ -97,6 +127,7 @@ def run_context(benchmark: str) -> dict:
                 "gateway_health_final": {"status": "ok"},
                 "runtime_identity_start": identity,
                 "runtime_identity_final": identity,
+                "gpu_ownership_guard": guard,
             }
         ],
     }
@@ -114,6 +145,79 @@ class Fixture:
     def pin(self, path: Path) -> dict:
         return {"path": self.relative(path), "sha256": REPORT.sha256_file(path)}
 
+    def gpu_guard(self, summary_path: Path) -> dict:
+        identity = runtime_identity()
+        snapshot = identity["gpu_ownership"]
+        if not summary_path.name.endswith(".summary.json"):
+            raise RuntimeError("GPU guard fixture summary must end in .summary.json")
+        log_path = summary_path.with_name(
+            summary_path.name.removesuffix(".summary.json") + ".jsonl"
+        )
+        records = [
+            {
+                "type": "guard.started",
+                "status": "running",
+                "recorded_at": "2026-01-01T00:00:00Z",
+                "interval_seconds": 5,
+                "capture_timeout_seconds": 15,
+            },
+            {
+                "type": "guard.check",
+                "status": "ok",
+                "recorded_at": "2026-01-01T00:00:01Z",
+                "ownership": snapshot,
+            },
+            {
+                "type": "guard.completed",
+                "status": "complete",
+                "recorded_at": "2026-01-01T00:00:02Z",
+                "exit_status": 0,
+            },
+        ]
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(
+            "".join(
+                json.dumps(record, separators=(",", ":")) + "\n" for record in records
+            ),
+            encoding="utf-8",
+        )
+        process_fields = (
+            "gpu_uuid",
+            "component",
+            "component_pid",
+            "pid",
+            "proc_start_time_ticks",
+        )
+        summary = {
+            "schema_version": "1.0.0",
+            "status": "complete",
+            "interval_seconds": 5,
+            "capture_timeout_seconds": 15,
+            "started_at": records[0]["recorded_at"],
+            "completed_at": records[-1]["recorded_at"],
+            "checks": 1,
+            "host_boot_id": snapshot["host_boot_id"],
+            "expected_components": snapshot["expected_components"],
+            "component_roots": snapshot["component_roots"],
+            "gpu_uuids": snapshot["gpu_uuids"],
+            "processes": [
+                {key: process[key] for key in process_fields}
+                for process in snapshot["processes"]
+            ],
+            "log": {
+                "path": self.relative(log_path),
+                "sha256": REPORT.sha256_file(log_path),
+                "bytes": log_path.stat().st_size,
+            },
+        }
+        write_json(summary_path, summary)
+        return {
+            "path": self.relative(summary_path),
+            "sha256": REPORT.sha256_file(summary_path),
+            "bytes": summary_path.stat().st_size,
+            "evidence": summary,
+        }
+
     def _build(self) -> None:
         tau_source = self.root / "benchmarks/external/tau.json"
         write_json(tau_source, {"benchmark": {"name": "tau-Voice"}})
@@ -127,6 +231,7 @@ class Fixture:
                 "binary_sha256": "a" * 64,
                 "runtime_path": ".runtime/study-runtime/canonical-gateway-v1/realtimegateway",
                 "local_fast": dict(REPORT.LOCAL_FAST_CONTRACT),
+                "gpu_ownership": dict(REPORT.GPU_OWNERSHIP_CONTRACT),
                 "build": {
                     "go": "/usr/local/go/bin/go",
                     "command": "go build -trimpath -buildvcs=false ./cmd/realtimegateway",
@@ -213,6 +318,13 @@ class Fixture:
         tau_report = (
             self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
         )
+        tau_run = (
+            self.root
+            / ".runtime/benchmark-runs/tau-voice/tau-mini/invocations/all-cells/attempt/run.json"
+        )
+        tau_guard = self.gpu_guard(
+            tau_run.parent / "control/airline.gpu-ownership.summary.json"
+        )
         write_json(
             tau_report,
             {
@@ -236,13 +348,16 @@ class Fixture:
                 },
                 "execution_evidence": [
                     {
+                        "path": self.relative(tau_run),
                         "status": "complete",
+                        "selected_cell": None,
                         "openrealtime_revision": "c" * 40,
                         "openrealtime_revision_final": "c" * 40,
                         "source_worktree_clean_start": True,
                         "source_worktree_clean_final": True,
                         "runtime_identity": runtime_identity(),
                         "runtime_identity_final": runtime_identity(),
+                        "gpu_ownership_guards": [tau_guard],
                     }
                 ],
                 "cells": {
@@ -278,7 +393,13 @@ class Fixture:
         )
         fdb15_run = self.root / ".runtime/fdb15/run.json"
         fdb15_context = self.root / ".runtime/fdb15/context.json"
-        write_json(fdb15_context, run_context("full-duplex-bench-v1.5"))
+        fdb15_guard = self.gpu_guard(
+            self.root / ".runtime/fdb15/gpu-ownership-invocation-0.summary.json"
+        )
+        write_json(
+            fdb15_context,
+            run_context("full-duplex-bench-v1.5", fdb15_guard),
+        )
         fdb15_descriptor = descriptor("fdb-v1.5-openai-realtime-adapter-i1-qg-v1")
         fdb15_output = self.root / ".runtime/fdb15/trial/output.wav"
         fdb15_output.parent.mkdir(parents=True, exist_ok=True)
@@ -354,7 +475,13 @@ class Fixture:
         )
         fdbv3_run = self.root / ".runtime/fdbv3/run.json"
         fdbv3_context = self.root / ".runtime/fdbv3/context.json"
-        write_json(fdbv3_context, run_context("full-duplex-bench-v3"))
+        fdbv3_guard = self.gpu_guard(
+            self.root / ".runtime/fdbv3/gpu-ownership-invocation-0.summary.json"
+        )
+        write_json(
+            fdbv3_context,
+            run_context("full-duplex-bench-v3", fdbv3_guard),
+        )
         write_json(
             fdbv3_run,
             {
@@ -376,9 +503,7 @@ class Fixture:
                 ],
                 "completed": ["example_pid"],
                 "failures": [],
-                "attempts": [
-                    {"sample": "example_pid", "number": 1, "succeeded": True}
-                ],
+                "attempts": [{"sample": "example_pid", "number": 1, "succeeded": True}],
             },
         )
         fdbv3_output = self.root / ".runtime/fdbv3/sample/output_openrealtime.wav"
@@ -462,7 +587,10 @@ class Fixture:
         )
         fd_run = self.root / ".runtime/fd/run.json"
         fd_context = self.root / ".runtime/fd/context.json"
-        write_json(fd_context, run_context("fd-bench"))
+        fd_guard = self.gpu_guard(
+            self.root / ".runtime/fd/gpu-ownership-invocation-0.summary.json"
+        )
+        write_json(fd_context, run_context("fd-bench", fd_guard))
         write_json(
             fd_run,
             {
@@ -570,8 +698,8 @@ class Fixture:
                     "artifact_retention": {
                         "scoring_inputs": "results.json and simulations/*.json remain expanded",
                         "raw_artifacts": "each complete cell/domain artifacts directory is preserved losslessly as deterministic-pax-tar+zstd",
-                        "deletion_gate": "remove expanded duplicates only after archive readability, SHA-256, byte count, matrix identity, and exact task population are recorded",
-                        "publication_gate": "the terminal reporter rehashes every archive and rejects missing evidence or remaining expanded duplicates",
+                        "deletion_gate": "remove expanded duplicates only after archive readability, SHA-256, byte count, matrix identity, exact task population, and the bounded exception-only attempt ledger are recorded",
+                        "publication_gate": "the terminal reporter rehashes every archive and rejects missing evidence, invalid retry provenance, or remaining expanded duplicates",
                     },
                     "source_manifest": self.pin(tau_source),
                     "matrices": [self.pin(matrix)],
@@ -763,6 +891,70 @@ class FullStudyTest(unittest.TestCase):
         with self.assertRaisesRegex(REPORT.StudyIncompleteError, "runtime components"):
             self.report()
 
+    def test_rejects_unregistered_gpu_process_at_runtime_capture(self) -> None:
+        path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
+        report = json.loads(path.read_text(encoding="utf-8"))
+        report["execution_evidence"][0]["runtime_identity"]["gpu_ownership"][
+            "processes"
+        ].append(
+            {
+                "gpu_uuid": "GPU-test",
+                "component": "foreign",
+                "component_pid": 99,
+                "pid": 100,
+                "proc_start_time_ticks": "300",
+                "used_memory_mib": 1,
+            }
+        )
+        write_json(path, report)
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "unknown component"):
+            self.report()
+
+    def test_rejects_missing_tau_gpu_guard_coverage(self) -> None:
+        path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
+        report = json.loads(path.read_text(encoding="utf-8"))
+        report["execution_evidence"][0]["gpu_ownership_guards"] = []
+        write_json(path, report)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "GPU ownership guard coverage"
+        ):
+            self.report()
+
+    def test_rejects_transient_gpu_ownership_violation(self) -> None:
+        path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
+        report = json.loads(path.read_text(encoding="utf-8"))
+        guard = report["execution_evidence"][0]["gpu_ownership_guards"][0]
+        summary_path = self.root / guard["path"]
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        log_path = self.root / summary["log"]["path"]
+        records = [
+            json.loads(line)
+            for line in log_path.read_text(encoding="utf-8").splitlines()
+        ]
+        records[1] = {
+            "type": "guard.check",
+            "status": "violation",
+            "recorded_at": "2026-01-01T00:00:01Z",
+            "error": "foreign GPU process",
+        }
+        log_path.write_text(
+            "".join(
+                json.dumps(record, separators=(",", ":")) + "\n" for record in records
+            ),
+            encoding="utf-8",
+        )
+        summary["log"]["sha256"] = REPORT.sha256_file(log_path)
+        summary["log"]["bytes"] = log_path.stat().st_size
+        write_json(summary_path, summary)
+        guard["sha256"] = REPORT.sha256_file(summary_path)
+        guard["bytes"] = summary_path.stat().st_size
+        guard["evidence"] = summary
+        write_json(path, report)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "check 0 is not successful"
+        ):
+            self.report()
+
     def test_rejects_tau_execution_on_a_different_gateway_binary(self) -> None:
         path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
         report = json.loads(path.read_text(encoding="utf-8"))
@@ -788,6 +980,13 @@ class FullStudyTest(unittest.TestCase):
     def test_accepts_remote_fast_runtime_without_qwen(self) -> None:
         identity = runtime_identity()
         del identity["components"]["qwen"]
+        identity["gpu_ownership"]["expected_components"] = ["asr", "fish"]
+        del identity["gpu_ownership"]["component_roots"]["qwen"]
+        identity["gpu_ownership"]["processes"] = [
+            process
+            for process in identity["gpu_ownership"]["processes"]
+            if process["component"] != "qwen"
+        ]
         REPORT.validate_runtime_identity(
             identity,
             requires_local_fast=False,
