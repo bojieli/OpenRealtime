@@ -209,6 +209,16 @@ end of a multi-day serial chain instead of at launch.
 `scripts/test_study_interpreter_pinning.sh` enforces this and runs inside the
 launcher preflight.
 
+The chain's ten seams are string-matched, not structural: each queue publishes
+a completion marker with `echo` and its successor requires that exact line with
+`grep -Fx`. A reworded marker links nothing, and the chain would halt at that
+seam mid-run with the predecessor reporting success.
+`scripts/test_study_queue_chain.sh` reads the launcher as the source of truth
+for chain membership and checks every seam statically: each queue publishes a
+marker, each successor requires the marker its own watched predecessor
+publishes, and no queue is launched before the queue it waits on. It also runs
+inside the launcher preflight.
+
 For operational progress during the multi-day run, use:
 
 ```bash
