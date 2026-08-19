@@ -442,37 +442,54 @@ def aggregate_agent_metrics(
 ) -> dict[str, Any]:
     metrics = list(domain_metrics.values())
 
-    def mean_present(key: str) -> float | None:
-        values = [metric[key] for metric in metrics if metric.get(key) is not None]
-        return sum(values) / len(values) if values else None
+    def is_number(value: Any) -> bool:
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+    # An equal-domain mean is only that if every domain contributed one. A
+    # domain that scored nothing arrives here either with the metric absent or
+    # with it set to None, because tau2 reports an empty population as NaN and
+    # finite_json rewrites that as None. Dropping such a domain from both the
+    # numerator and the denominator published a mean over whichever domains
+    # happened to report as though it covered the matrix -- a domain that ran
+    # no trials at all could leave a perfect score standing. Publish None
+    # instead, which the study's completeness gate refuses to release.
+    def mean_over_every_domain(key: str) -> float | None:
+        values = [metric.get(key) for metric in metrics]
+        if not values or not all(is_number(value) for value in values):
+            return None
+        return sum(values) / len(values)
 
     pass_keys = sorted(
         {key for metric in metrics for key in metric.get("pass_hat_ks", {})},
         key=int,
     )
+    pass_hat_ks: dict[str, Any] = {}
+    for key in pass_keys:
+        values = [metric.get("pass_hat_ks", {}).get(key) for metric in metrics]
+        pass_hat_ks[key] = (
+            sum(values) / len(values)
+            if values and all(is_number(value) for value in values)
+            else None
+        )
     result: dict[str, Any] = {
         "aggregation": "equal-domain arithmetic mean; count fields are sums",
-        "avg_reward": mean_present("avg_reward"),
-        "pass_hat_ks": {
-            key: sum(
-                metric["pass_hat_ks"][key]
-                for metric in metrics
-                if key in metric["pass_hat_ks"]
-            )
-            / sum(key in metric["pass_hat_ks"] for metric in metrics)
-            for key in pass_keys
-        },
-        "avg_agent_cost": mean_present("avg_agent_cost"),
+        "avg_reward": mean_over_every_domain("avg_reward"),
+        "pass_hat_ks": pass_hat_ks,
+        "avg_agent_cost": mean_over_every_domain("avg_agent_cost"),
     }
     excluded = {"avg_reward", "pass_hat_ks", "avg_agent_cost"}
     for key in sorted(set().union(*(metric.keys() for metric in metrics)) - excluded):
-        values = [metric.get(key, 0) for metric in metrics]
+        # A domain that never recorded a counter is not a domain that counted
+        # zero, so it cannot be summed in as one.
+        values = [metric.get(key) for metric in metrics]
         if all(isinstance(value, dict) for value in values):
             result[key] = sum_nested_counts(values)
         elif all(
             isinstance(value, int) and not isinstance(value, bool) for value in values
         ):
             result[key] = sum(values)
+        else:
+            result[key] = None
     return result
 
 

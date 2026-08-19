@@ -157,7 +157,7 @@ class AggregationTest(unittest.TestCase):
                 "retail": {
                     "avg_reward": 1.0,
                     "pass_hat_ks": {"1": 1.0},
-                    "avg_agent_cost": None,
+                    "avg_agent_cost": 3.0,
                     "total_simulations": 3,
                     "agent_errors_by_severity": {"critical": 2},
                 },
@@ -165,11 +165,49 @@ class AggregationTest(unittest.TestCase):
         )
         self.assertEqual(aggregate["avg_reward"], 0.75)
         self.assertEqual(aggregate["pass_hat_ks"], {"1": 0.75})
-        self.assertEqual(aggregate["avg_agent_cost"], 1.0)
+        self.assertEqual(aggregate["avg_agent_cost"], 2.0)
         self.assertEqual(aggregate["total_simulations"], 5)
         self.assertEqual(
             aggregate["agent_errors_by_severity"], {"critical": 2, "minor": 1}
         )
+
+    def test_refuses_to_mean_over_a_domain_that_scored_nothing(self) -> None:
+        """A domain that scored nothing must not leave a perfect score standing.
+
+        tau2 reports an empty population as NaN and finite_json rewrites that
+        as None, so a domain that ran no trials used to drop out of both the
+        numerator and the denominator of an "equal-domain arithmetic mean".
+        Publishing None instead lets the study's completeness gate refuse it.
+        """
+        aggregate = REPORT.aggregate_agent_metrics(
+            {
+                "airline": {"avg_reward": 1.0, "pass_hat_ks": {"1": 1.0}},
+                "retail": {"avg_reward": 1.0, "pass_hat_ks": {"1": 1.0}},
+                "telecom": {"avg_reward": None, "pass_hat_ks": {}},
+            }
+        )
+        self.assertIsNone(aggregate["avg_reward"])
+        self.assertEqual(aggregate["pass_hat_ks"], {"1": None})
+
+    def test_refuses_to_mean_over_a_domain_that_omitted_the_metric(self) -> None:
+        aggregate = REPORT.aggregate_agent_metrics(
+            {
+                "airline": {"avg_reward": 1.0, "avg_agent_cost": 2.0},
+                "retail": {"avg_reward": 1.0},
+            }
+        )
+        self.assertEqual(aggregate["avg_reward"], 1.0)
+        self.assertIsNone(aggregate["avg_agent_cost"])
+
+    def test_refuses_to_sum_a_counter_a_domain_never_recorded(self) -> None:
+        """A domain that recorded no counter is not a domain that counted zero."""
+        aggregate = REPORT.aggregate_agent_metrics(
+            {
+                "airline": {"avg_reward": 1.0, "total_simulations": 50},
+                "retail": {"avg_reward": 1.0},
+            }
+        )
+        self.assertIsNone(aggregate["total_simulations"])
 
 
 class RuntimeEvidenceTest(unittest.TestCase):
