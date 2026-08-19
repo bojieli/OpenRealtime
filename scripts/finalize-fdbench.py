@@ -126,6 +126,28 @@ def validate_result(result_path: Path, result: dict[str, Any]) -> Path:
         or result.get("status") != "completed"
     ):
         raise ValueError(f"{result_path} is not a completed pinned FD-Bench result")
+
+    # The lines below, and the trace assembly in main(), index these fields
+    # directly. A runner that stopped part-way through writing a result leaves
+    # them absent, and an unattended study has to record an auditable refusal
+    # naming the offending file rather than die with a bare KeyError -- possibly
+    # only after several hundred other results have already been rewritten.
+    if not isinstance(result.get("output_wav"), str) or not result["output_wav"]:
+        raise ValueError(f"{result_path} recorded no output audio path")
+    sample = result.get("sample")
+    if not isinstance(sample, dict):
+        raise ValueError(f"{result_path} recorded no sample")
+    if not isinstance(sample.get("cell"), str) or not sample["cell"]:
+        raise ValueError(f"{result_path} sample recorded no cell")
+    if not isinstance(sample.get("input_segments"), list):
+        raise ValueError(f"{result_path} sample recorded no input segments")
+    try:
+        int(sample["conversation"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError(
+            f"{result_path} sample recorded no conversation number"
+        ) from error
+
     output_path = Path(result["output_wav"])
     if not output_path.is_absolute():
         output_path = Path.cwd() / output_path

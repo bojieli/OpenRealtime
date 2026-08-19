@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+import wave
 
 
 SCRIPT = Path(__file__).with_name("finalize-fdbench.py")
@@ -43,3 +45,89 @@ class EvidenceTreeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ValidateResultTest(unittest.TestCase):
+    """Drive validate_result over a complete result, then remove one fact."""
+
+    def setUp(self) -> None:
+        self.directory = Path(tempfile.mkdtemp())
+        self.audio = self.directory / "conversation_1.wav"
+        with wave.open(str(self.audio), "wb") as sink:
+            sink.setnchannels(1)
+            sink.setsampwidth(2)
+            sink.setframerate(16000)
+            sink.writeframes(b"\x00\x01" * 160)
+        self.addCleanup(
+            lambda: [item.unlink() for item in self.directory.iterdir()]
+            and self.directory.rmdir()
+        )
+
+    def result(self, **overrides) -> dict:
+        record = {
+            "schema_version": "1.0.0",
+            "benchmark": "FD-Bench",
+            "revision": FINALIZE.BENCHMARK_REVISION,
+            "dataset_revision": FINALIZE.DATASET_REVISION,
+            "status": "completed",
+            "output_wav": str(self.audio),
+            "output_sha256": hashlib.sha256(self.audio.read_bytes()).hexdigest(),
+            "sample": {
+                "cell": "cell-a",
+                "conversation": 1,
+                "input_segments": [{"start": 0, "end": 10}],
+            },
+        }
+        record.update(overrides)
+        return record
+
+    def validate(self, record: dict) -> Path:
+        return FINALIZE.validate_result(self.directory / "result.json", record)
+
+    def test_accepts_a_complete_result(self) -> None:
+        self.assertEqual(self.validate(self.result()), self.audio)
+
+    def refuses(self, record: dict, message: str) -> None:
+        with self.assertRaises(ValueError) as caught:
+            self.validate(record)
+        self.assertIn(message, str(caught.exception))
+
+    def test_refuses_a_result_that_recorded_no_output_path(self) -> None:
+        record = self.result()
+        del record["output_wav"]
+        self.refuses(record, "recorded no output audio path")
+
+    def test_refuses_a_result_that_recorded_no_sample(self) -> None:
+        record = self.result()
+        del record["sample"]
+        self.refuses(record, "recorded no sample")
+
+    def test_refuses_a_sample_that_recorded_no_cell(self) -> None:
+        record = self.result()
+        del record["sample"]["cell"]
+        self.refuses(record, "sample recorded no cell")
+
+    def test_refuses_a_sample_that_recorded_no_input_segments(self) -> None:
+        record = self.result()
+        del record["sample"]["input_segments"]
+        self.refuses(record, "sample recorded no input segments")
+
+    def test_refuses_a_sample_that_recorded_no_conversation_number(self) -> None:
+        record = self.result()
+        del record["sample"]["conversation"]
+        self.refuses(record, "sample recorded no conversation number")
+
+    def test_refuses_a_sample_whose_conversation_number_is_not_a_number(self) -> None:
+        record = self.result()
+        record["sample"]["conversation"] = "first"
+        self.refuses(record, "sample recorded no conversation number")
+
+    def test_refuses_a_result_that_recorded_no_output_hash(self) -> None:
+        record = self.result()
+        del record["output_sha256"]
+        self.refuses(record, "output audio identity does not match")
+
+    def test_refuses_an_incomplete_result_before_reading_its_sample(self) -> None:
+        record = self.result(status="running")
+        del record["sample"]
+        self.refuses(record, "is not a completed pinned FD-Bench result")
