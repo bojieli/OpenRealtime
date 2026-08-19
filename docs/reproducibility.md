@@ -132,6 +132,18 @@ manifest, verifies every listed size and SHA-256 digest, and repeats the full Go
 quality gates. The native and human-study rows are deliberately `not_run`; see
 the technical report and prospective human-study protocol in `docs/research/`.
 
+Run it at the released revision, tag `v1.0.0`, where all 41 pinned files verify
+byte-for-byte. The release manifest pins four documents that keep evolving on
+the main line — `PLAN.md`, `docs/experiments.md`, `docs/metrics.md`, and
+`docs/openai-realtime-compatibility.md` — so on a later revision both the
+manifest comparison and `release verify` report those four as changed. That is
+post-release drift of narrative text, not evidence: the other 37 pinned files
+are traces, reports, fixtures, schemas, and generated code, and they must never
+change after publication on any revision.
+`release/published_evidence_test.go` enforces exactly that split continuously,
+so a modified released trace or report fails immediately on the main line
+rather than only at the release revision.
+
 ## M7 stable v1.0.0 release
 
 Run:
