@@ -216,6 +216,16 @@ disk headroom. This status file never scores partial populations and cannot
 declare completion: only a complete report from `report-full-study.py` can set
 `publication_complete`.
 
+Queue liveness distinguishes existence from progress. Each queue reports its
+kernel `state` alongside `progressing`, because a supervisor that has been
+stopped (`T`) or left unreaped (`Z`) keeps its pid and answers an existence
+check while advancing nothing. The study is one serial dependency chain, so
+such a supervisor silently blocks every queue behind it. A non-complete queue
+whose supervisor is stopped or unreaped raises a warning and moves the monitor
+to `attention`; resume it with `kill -CONT` and confirm the state returns to
+`S` or `R`. Terminal supervisor loss is still reported separately as a queue
+with no matching live process.
+
 After the long-running serial benchmark queue completes, run:
 
 ```bash

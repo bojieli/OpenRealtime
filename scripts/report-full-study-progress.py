@@ -17,6 +17,19 @@ import shutil
 from typing import Any
 
 
+# Kernel process states in which a supervisor still holds its pid but can never
+# advance. The study is one serial dependency chain, so a stopped or unreaped
+# supervisor silently blocks every queue behind it while an existence check
+# alone still reports it as live.
+STALLED_PROCESS_STATES = {
+    "T": "stopped",
+    "t": "in tracing stop",
+    "Z": "an unreaped zombie",
+    "X": "dead",
+    "x": "dead",
+}
+
+
 QUEUE_SPECS = (
     (
         "primary",
@@ -188,6 +201,12 @@ def external_progress(root: Path, specification: dict[str, Any]) -> dict[str, An
 
 
 def process_alive(pid: int | None) -> bool:
+    """Report whether pid still exists.
+
+    Existence is weaker than progress: a stopped or unreaped supervisor keeps
+    its pid and answers this check, so callers that supervise a queue must also
+    consult process_state.
+    """
     if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
         return False
     try:
@@ -195,6 +214,21 @@ def process_alive(pid: int | None) -> bool:
     except OSError:
         return False
     return True
+
+
+def process_state(pid: int | None) -> str | None:
+    """Return the single-character kernel state for pid, or None if unreadable."""
+    if not process_alive(pid):
+        return None
+    try:
+        status = (Path("/proc") / str(pid) / "status").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in status.splitlines():
+        if line.startswith("State:"):
+            fields = line.split()
+            return fields[1] if len(fields) >= 2 else None
+    return None
 
 
 def process_matches(pid: int | None, expected_script: str) -> bool:
@@ -226,11 +260,14 @@ def queue_progress(root: Path) -> list[dict[str, Any]]:
             log = ""
         complete = completion_marker in log.splitlines()
         alive = process_alive(pid)
+        state = process_state(pid)
         result.append(
             {
                 "id": queue_id,
                 "pid": pid,
                 "alive": alive,
+                "state": state,
+                "progressing": alive and state not in STALLED_PROCESS_STATES,
                 "identity_matches": alive and process_matches(pid, expected_script),
                 "complete": complete,
             }
@@ -299,11 +336,16 @@ def build_progress(root: Path, manifest_path: Path) -> dict[str, Any]:
     publication = read_json(publication_path)
     warnings = []
     for queue in queues:
-        if (not queue["alive"] or not queue["identity_matches"]) and not queue[
-            "complete"
-        ]:
+        if queue["complete"]:
+            continue
+        if not queue["alive"] or not queue["identity_matches"]:
             warnings.append(
                 f"queue {queue['id']} has no matching live process and is not complete"
+            )
+        elif not queue["progressing"]:
+            warnings.append(
+                f"queue {queue['id']} supervisor {queue['pid']} is "
+                f"{STALLED_PROCESS_STATES[queue['state']]} and cannot advance the study"
             )
     for benchmark, progress in external.items():
         if progress["terminal_failures"]:

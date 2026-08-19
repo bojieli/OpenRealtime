@@ -112,6 +112,54 @@ class ProgressTest(unittest.TestCase):
         self.assertIn("terminal failures", report["warnings"][0])
         self.assertEqual(report["external"]["full_duplex_bench_v3"]["observed"], 3)
 
+    def queue_report(self, state: str | None, complete: bool = False) -> dict:
+        """Build a report for one queue whose supervisor is in the given state."""
+        directory = self.root / ".runtime/benchmark-runs/queue-v1"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "queue.pid").write_text("4242\n", encoding="utf-8")
+        (directory / "queue.log").write_text(
+            "done\n" if complete else "working\n", encoding="utf-8"
+        )
+        REPORT.QUEUE_SPECS = (("primary", "queue-v1", "queue.sh", "done"),)
+        original_alive = REPORT.process_alive
+        original_state = REPORT.process_state
+        original_matches = REPORT.process_matches
+        REPORT.process_alive = lambda pid: state is not None
+        REPORT.process_state = lambda pid: state
+        REPORT.process_matches = lambda pid, script: state is not None
+        self.addCleanup(setattr, REPORT, "process_alive", original_alive)
+        self.addCleanup(setattr, REPORT, "process_state", original_state)
+        self.addCleanup(setattr, REPORT, "process_matches", original_matches)
+        return self.report()
+
+    def test_stopped_supervisor_is_not_reported_as_progressing(self) -> None:
+        report = self.queue_report("T")
+        queue = report["queues"][0]
+        self.assertTrue(queue["alive"])
+        self.assertTrue(queue["identity_matches"])
+        self.assertFalse(queue["progressing"])
+        self.assertEqual(report["status"], "attention")
+        self.assertIn("is stopped", report["warnings"][0])
+        self.assertIn("4242", report["warnings"][0])
+
+    def test_zombie_supervisor_is_not_reported_as_progressing(self) -> None:
+        report = self.queue_report("Z")
+        self.assertFalse(report["queues"][0]["progressing"])
+        self.assertIn("unreaped zombie", report["warnings"][0])
+
+    def test_sleeping_supervisor_raises_no_warning(self) -> None:
+        report = self.queue_report("S")
+        self.assertTrue(report["queues"][0]["progressing"])
+        self.assertEqual(report["status"], "running")
+        self.assertEqual(report["warnings"], [])
+
+    def test_completed_queue_needs_no_live_supervisor(self) -> None:
+        report = self.queue_report(None, complete=True)
+        queue = report["queues"][0]
+        self.assertTrue(queue["complete"])
+        self.assertFalse(queue["progressing"])
+        self.assertEqual(report["warnings"], [])
+
     def test_only_authoritative_publication_report_completes_monitor(self) -> None:
         write_json(
             self.root / ".runtime/benchmark-runs/full-study-v1/report.json",
