@@ -955,6 +955,35 @@ class FullStudyTest(unittest.TestCase):
         ):
             self.report()
 
+    def test_rejects_an_unsampled_gpu_ownership_interval(self) -> None:
+        path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
+        report = json.loads(path.read_text(encoding="utf-8"))
+        guard = report["execution_evidence"][0]["gpu_ownership_guards"][0]
+        summary_path = self.root / guard["path"]
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        log_path = self.root / summary["log"]["path"]
+        records = [
+            json.loads(line)
+            for line in log_path.read_text(encoding="utf-8").splitlines()
+        ]
+        records[-1]["recorded_at"] = "2026-01-01T01:00:00Z"
+        log_path.write_text(
+            "".join(
+                json.dumps(record, separators=(",", ":")) + "\n" for record in records
+            ),
+            encoding="utf-8",
+        )
+        summary["completed_at"] = records[-1]["recorded_at"]
+        summary["log"]["sha256"] = REPORT.sha256_file(log_path)
+        summary["log"]["bytes"] = log_path.stat().st_size
+        write_json(summary_path, summary)
+        guard["sha256"] = REPORT.sha256_file(summary_path)
+        guard["bytes"] = summary_path.stat().st_size
+        guard["evidence"] = summary
+        write_json(path, report)
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "unsampled interval"):
+            self.report()
+
     def test_rejects_tau_execution_on_a_different_gateway_binary(self) -> None:
         path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
         report = json.loads(path.read_text(encoding="utf-8"))

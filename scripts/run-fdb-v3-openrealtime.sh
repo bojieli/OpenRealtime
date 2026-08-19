@@ -28,6 +28,8 @@ run_context="${run_root}/run-context.json"
 invocation_index="$(jq '.invocations | length - 1' "${run_context}")"
 gpu_guard_stem="${run_root}/gpu-ownership-invocation-${invocation_index}"
 export OPENREALTIME_GPU_OWNERSHIP_SUMMARY="${gpu_guard_stem}.summary.json"
+OPENREALTIME_GPU_OWNERSHIP_INTERVAL_SECONDS=5 \
+OPENREALTIME_GPU_OWNERSHIP_CAPTURE_TIMEOUT_SECONDS=15 \
 "${repository_root}/scripts/run-with-local-gpu-ownership-guard.sh" \
   "${gpu_guard_stem}" -- /usr/local/go/bin/go run ./cmd/fdbv3bench run \
   --dataset-root "${dataset_root}" \

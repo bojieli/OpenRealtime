@@ -104,6 +104,16 @@ def read_json(path: Path, label: str) -> dict[str, Any]:
     return value
 
 
+def parse_utc_timestamp(value: Any, label: str) -> datetime:
+    require(isinstance(value, str) and bool(value), f"{label} timestamp is absent")
+    try:
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise StudyIncompleteError(f"{label} timestamp is invalid: {value}") from error
+    require(timestamp.tzinfo is not None, f"{label} timestamp has no timezone")
+    return timestamp.astimezone(timezone.utc)
+
+
 def resolve(root: Path, value: str) -> Path:
     path = Path(value)
     if not path.is_absolute():
@@ -393,6 +403,7 @@ def validate_gpu_ownership_snapshot(
 ) -> None:
     require(isinstance(value, dict), f"{label} GPU ownership snapshot is absent")
     require_equal(value.get("schema_version"), "1.0.0", f"{label} GPU schema")
+    parse_utc_timestamp(value.get("captured_at"), f"{label} GPU capture")
     require_equal(value.get("exclusive"), True, f"{label} GPU exclusivity")
     require_equal(value.get("host_boot_id"), host_boot_id, f"{label} GPU host boot")
     expected = gpu_component_names(requires_local_fast)
@@ -548,6 +559,16 @@ def validate_gpu_ownership_guard(
     except (OSError, json.JSONDecodeError) as error:
         raise StudyIncompleteError(f"cannot parse {label} log: {error}") from error
     require_equal(len(records), checks + 2, f"{label} log record count")
+    record_times = [
+        parse_utc_timestamp(record.get("recorded_at"), f"{label} record {index}")
+        for index, record in enumerate(records)
+        if isinstance(record, dict)
+    ]
+    require_equal(len(record_times), len(records), f"{label} object records")
+    require(
+        all(later >= earlier for earlier, later in zip(record_times, record_times[1:])),
+        f"{label} record times are not monotonic",
+    )
     require(
         isinstance(records[0], dict)
         and records[0].get("type") == "guard.started"
@@ -594,6 +615,15 @@ def validate_gpu_ownership_guard(
             requires_local_fast=requires_local_fast,
             label=check_label,
         )
+        captured_at = parse_utc_timestamp(
+            snapshot.get("captured_at"), f"{check_label} ownership capture"
+        )
+        require(
+            0
+            <= (record_times[index + 1] - captured_at).total_seconds()
+            <= capture_timeout,
+            f"{check_label} capture time is inconsistent",
+        )
         if first_snapshot is None:
             first_snapshot = snapshot
         else:
@@ -614,6 +644,14 @@ def validate_gpu_ownership_guard(
                 f"{check_label} stable GPU process identity",
             )
     assert first_snapshot is not None
+    maximum_gap = interval + capture_timeout + 1
+    require(
+        all(
+            (later - earlier).total_seconds() <= maximum_gap
+            for earlier, later in zip(record_times, record_times[1:])
+        ),
+        f"{label} contains an unsampled interval",
+    )
     require_equal(
         summary.get("component_roots"),
         first_snapshot.get("component_roots"),

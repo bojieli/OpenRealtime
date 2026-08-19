@@ -272,6 +272,8 @@ for cell in "${cells[@]}"; do
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] start ${cell}/${domain} (${expected_tasks} tasks)" | tee -a "${log_file}"
 
     gpu_guard_stem="${log_dir}/${domain}.gpu-ownership"
+    OPENREALTIME_GPU_OWNERSHIP_INTERVAL_SECONDS=5 \
+    OPENREALTIME_GPU_OWNERSHIP_CAPTURE_TIMEOUT_SECONDS=15 \
     "${repository_root}/scripts/run-with-local-gpu-ownership-guard.sh" \
       "${gpu_guard_stem}" -- env \
       OPENAI_REALTIME_API_KEY="${OPENREALTIME_GATEWAY_TOKEN}" \

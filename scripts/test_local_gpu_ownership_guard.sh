@@ -57,6 +57,19 @@ jq -e '
   .expected_components == ["asr","fish"] and .gpu_uuids == ["GPU-test"]
 ' "${good_stem}.summary.json" >/dev/null
 
+failure_stem="${temporary}/command-failure"
+set +e
+"${repository_root}/scripts/run-with-local-gpu-ownership-guard.sh" \
+  "${failure_stem}" -- bash -c 'exit 23'
+failure_status=$?
+set -e
+if [[ "${failure_status}" != 23 ]]; then
+  echo "measured command status was not preserved: ${failure_status}" >&2
+  exit 1
+fi
+jq -e '.status == "complete" and .checks >= 1' \
+  "${failure_stem}.summary.json" >/dev/null
+
 printf 'GPU-test, 11, 10\nGPU-test, 21, 20\n' >"${rows}"
 bad_stem="${temporary}/bad"
 bad_command_completed="${temporary}/bad-command-completed"
