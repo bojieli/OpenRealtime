@@ -785,6 +785,16 @@ class FullStudyTest(unittest.TestCase):
         ):
             self.report()
 
+    def test_accepts_remote_fast_runtime_without_qwen(self) -> None:
+        identity = runtime_identity()
+        del identity["components"]["qwen"]
+        REPORT.validate_runtime_identity(
+            identity,
+            requires_local_fast=False,
+            expected_gateway_sha256="a" * 64,
+            label="remote-fast",
+        )
+
     def test_rejects_tau_source_revision_change(self) -> None:
         path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
         report = json.loads(path.read_text(encoding="utf-8"))
