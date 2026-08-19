@@ -257,11 +257,21 @@ published as success. WER, CPPL, and the subjective GPT score remain explicitly 
 evaluated because the released non-Moshi path does not produce their required
 inputs. The output is `.runtime/benchmark-runs/full-study-v1/report.json`; any
 missing population, terminal failure, retry-provenance violation, hash
-mismatch, or evaluator gap prevents that file from being published.
+mismatch, or evaluator gap prevents that file from being published. As a final
+invariant the panel itself may not carry a null: panel values are copied out of
+upstream artifacts, so a field a runner never wrote would otherwise be
+published as a result. The single exception is the official exact evaluation's
+response-quality aggregate, which this gate independently requires to be
+empty because that evaluation produces no LLM score.
 
 The evidence panel commits to raw outputs as deterministic
 `path\0size\0sha256` trees. The terminal reporter directly rehashes all FDB
-v1.5 and FDB v3 result/audio files. FD-Bench avoids a redundant scan of its
+v1.5 and FDB v3 result/audio files. Every scored audio artifact must arrive
+with the SHA-256 its runner recorded: a tree entry with no declared hash would
+still be committed, and would still look authoritative in the panel, while
+being bound to nothing. A tau-Voice archive must likewise record how many
+infrastructure attempts failed, so that a run with nothing retained is
+distinguishable from a run that never wrote the count. FD-Bench avoids a redundant scan of its
 much larger audio corpus: the mandatory Silero finalizer already verifies each
 WAV against its result record and now emits separate raw-result and audio tree
 roots during that pass; the terminal gate validates and retains both roots.

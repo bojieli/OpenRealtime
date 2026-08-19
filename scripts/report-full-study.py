@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from collections.abc import Iterator
 from datetime import datetime, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 from typing import Any
 
@@ -187,6 +189,54 @@ def artifact(root: Path, path: Path) -> dict[str, Any]:
         "sha256": sha256_file(path),
         "bytes": path.stat().st_size,
     }
+
+
+PERMITTED_NULL_PANEL_FIELDS = frozenset(
+    {
+        # The official exact evaluation carries no LLM response score by design;
+        # validate_fdbv3_evaluation requires that field to be empty, so the panel
+        # reports the absence rather than inventing a number for it.
+        "evidence_panel.full_duplex_bench_v3.evaluations.exact.by_metric.response_qual",
+    }
+)
+
+
+def null_panel_fields(value: Any, path: str = "") -> Iterator[tuple[str, str]]:
+    """Yield (reported path, index-free path) for every null inside value."""
+    if value is None:
+        yield path, re.sub(r"\[\d+\]", "[]", path)
+    elif isinstance(value, dict):
+        for key, child in value.items():
+            yield from null_panel_fields(child, f"{path}.{key}" if path else str(key))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from null_panel_fields(child, f"{path}[{index}]")
+
+
+def require_no_unexplained_nulls(report: dict[str, Any]) -> None:
+    """Refuse a panel that presents absent evidence as a published null.
+
+    Panel values are copied out of upstream artifacts, so a field a runner never
+    wrote arrives here as None and would be published as a result. Only fields
+    this gate explicitly requires to be empty are allowed to be null.
+    """
+    for reported, normalized in null_panel_fields(report):
+        require(
+            normalized in PERMITTED_NULL_PANEL_FIELDS,
+            f"evidence panel field has no value: {reported}",
+        )
+
+
+def declared_sha256(container: dict[str, Any], key: str, label: str) -> str:
+    """Return a recorded SHA-256, refusing an absent or malformed one.
+
+    artifact_tree compares a file against its recorded hash only when a hash was
+    recorded, so an omitted hash silently unbinds that artifact from the
+    evidence commitment while the tree root still looks authoritative.
+    """
+    value = container.get(key)
+    require(valid_sha256(value), f"{label} did not record a valid {key}")
+    return value
 
 
 def artifact_tree(
@@ -988,9 +1038,16 @@ def validate_tau_artifact_archive(
     require_equal(
         attempts.get("successful"), expected_tasks, f"{label} successful attempts"
     )
+    failed_infrastructure = attempts.get("failed_infrastructure")
+    require(
+        isinstance(failed_infrastructure, int)
+        and not isinstance(failed_infrastructure, bool)
+        and failed_infrastructure >= 0,
+        f"{label} did not record its failed infrastructure attempts",
+    )
     require_equal(
         attempts.get("total"),
-        attempts.get("successful", 0) + attempts.get("failed_infrastructure", 0),
+        attempts["successful"] + failed_infrastructure,
         f"{label} total attempts",
     )
     require_equal(
@@ -1665,7 +1722,14 @@ def validate_fdb15(
             f"FDB1.5 {item['trial_id']} successful attempt",
         )
         output_path = resolve(root, item.get("output_wav", ""))
-        output_entries.append((output_path, item.get("output_sha256")))
+        output_entries.append(
+            (
+                output_path,
+                declared_sha256(
+                    item, "output_sha256", f"FDB1.5 {item['trial_id']} output audio"
+                ),
+            )
+        )
         result_entries.append(
             (output_path.parent / f"result_{item['condition']}.json", None)
         )
@@ -1975,7 +2039,16 @@ def validate_fdbv3(
             sample["metadata_sha256"],
             f"FDBv3 {sample['example_id']} metadata hash",
         )
-        output_entries.append((output_path, evidence.get("output_sha256")))
+        output_entries.append(
+            (
+                output_path,
+                declared_sha256(
+                    evidence,
+                    "output_sha256",
+                    f"FDBv3 {sample['example_id']} output audio",
+                ),
+            )
+        )
         result_entries.append((result_path, None))
     output_tree = artifact_tree(root, output_entries, label="FDBv3 output audio")
     result_tree = artifact_tree(root, result_entries, label="FDBv3 raw results")
@@ -2322,7 +2395,7 @@ def build_report(root: Path, manifest_path: Path) -> dict[str, Any]:
         "terminal reporter orchestration revision",
     )
     require_equal(reporter_clean, True, "terminal reporter clean source")
-    return {
+    report = {
         "schema_version": "1.0.0",
         "status": "complete",
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -2348,6 +2421,8 @@ def build_report(root: Path, manifest_path: Path) -> dict[str, Any]:
             "metric_authority": "each panel retains its pinned benchmark and upstream scorer semantics",
         },
     }
+    require_no_unexplained_nulls(report)
+    return report
 
 
 def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:

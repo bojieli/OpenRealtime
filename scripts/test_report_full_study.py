@@ -859,6 +859,54 @@ class FullStudyTest(unittest.TestCase):
                 ):
                     self.report()
 
+    def test_rejects_fdb15_audio_without_a_declared_hash(self) -> None:
+        path = self.fixture.paths["fdb15_run"]
+        run = json.loads(path.read_text(encoding="utf-8"))
+        for item in run["completed"]:
+            del item["output_sha256"]
+            (self.root / item["output_wav"]).write_bytes(b"tampered audio")
+        write_json(path, run)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "did not record a valid output_sha256"
+        ):
+            self.report()
+
+    def test_rejects_fdbv3_audio_without_a_declared_hash(self) -> None:
+        for result in self.root.rglob("result_openrealtime.json"):
+            document = json.loads(result.read_text(encoding="utf-8"))
+            del document["openrealtime"]["output_sha256"]
+            write_json(result, document)
+            (result.parent / "output_openrealtime.wav").write_bytes(b"tampered audio")
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "did not record a valid output_sha256"
+        ):
+            self.report()
+
+    def test_rejects_an_archive_without_its_failed_attempt_count(self) -> None:
+        for archive in self.root.rglob("raw-artifacts-archive.json"):
+            document = json.loads(archive.read_text(encoding="utf-8"))
+            del document["attempts"]["failed_infrastructure"]
+            write_json(archive, document)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "failed infrastructure attempts"
+        ):
+            self.report()
+
+    def test_rejects_a_panel_field_that_carries_no_value(self) -> None:
+        path = self.fixture.paths["fd_metric"]
+        metric = json.loads(path.read_text(encoding="utf-8"))
+        del metric["counts"]
+        write_json(path, metric)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "evidence panel field has no value"
+        ):
+            self.report()
+
+    def test_permits_only_the_declared_empty_panel_field(self) -> None:
+        report = self.report()
+        nulls = {path for path, _ in REPORT.null_panel_fields(report)}
+        self.assertEqual(nulls, set(REPORT.PERMITTED_NULL_PANEL_FIELDS))
+
     def test_rejects_an_external_trial_over_its_lifetime_attempt_budget(self) -> None:
         path = self.fixture.paths["fdb15_run"]
         run = json.loads(path.read_text(encoding="utf-8"))
