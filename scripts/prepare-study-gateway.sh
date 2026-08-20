@@ -15,14 +15,18 @@ if [[ ! -f "${manifest}" ]]; then
   echo "study runtime manifest is missing: ${manifest}" >&2
   exit 1
 fi
-if ! jq -e '
-  .schema_version == "1.0.0" and
-  (.source_revision | type == "string" and test("^[0-9a-f]{40}$")) and
-  (.binary_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
-  .build.go == "/usr/local/go/bin/go" and
-  .build.command == "go build -trimpath -buildvcs=false ./cmd/realtimegateway" and
-  (.runtime_path | type == "string" and startswith(".runtime/"))
-' "${manifest}" >/dev/null; then
+# An empty manifest makes `jq -e` exit 0 for any filter, so a zero-byte file
+# would read as a valid frozen-runtime declaration.
+if ! jq -en --slurpfile manifest "${manifest}" '
+  ($manifest | length) == 1 and
+  ($manifest[0] |
+    .schema_version == "1.0.0" and
+    (.source_revision | type == "string" and test("^[0-9a-f]{40}$")) and
+    (.binary_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+    .build.go == "/usr/local/go/bin/go" and
+    .build.command == "go build -trimpath -buildvcs=false ./cmd/realtimegateway" and
+    (.runtime_path | type == "string" and startswith(".runtime/")))
+' >/dev/null; then
   echo "study runtime manifest is invalid: ${manifest}" >&2
   exit 1
 fi

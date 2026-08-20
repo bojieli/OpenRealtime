@@ -39,7 +39,8 @@ source_revision="$(git -C "${repository_root}" rev-parse HEAD)"
 
 "${repository_root}/scripts/prepare-tau-voice.sh"
 
-gateway_health="$(curl --fail --silent --show-error http://127.0.0.1:8765/healthz)" || {
+gateway_health="$("${repository_root}/scripts/fetch-json-endpoint.sh" \
+  http://127.0.0.1:8765/healthz "gateway /healthz")" || {
   echo "OpenRealtime gateway is not healthy" >&2
   exit 1
 }
@@ -154,9 +155,12 @@ jq -n \
 record_gpu_guard() {
   local summary="$1"
   local relative summary_sha256 summary_bytes evidence
-  if [[ ! -f "${summary}" ]] || ! jq -e \
-    '.schema_version == "1.0.0" and .status == "complete" and .checks > 0' \
-    "${summary}" >/dev/null; then
+  # An empty summary makes `jq -e` exit 0 for every filter, so a GPU guard that
+  # recorded nothing would read as a complete one.
+  if [[ ! -f "${summary}" ]] || ! jq -en --slurpfile guard "${summary}" \
+    '($guard | length) == 1 and ($guard[0] |
+     .schema_version == "1.0.0" and .status == "complete" and .checks > 0)' \
+    >/dev/null; then
     echo "GPU ownership summary is missing or incomplete: ${summary}" >&2
     return 1
   fi
@@ -227,17 +231,18 @@ transport_model="$(jq -r '.transport.compatibility_model' "${matrix}")"
 transport_base_url="$(jq -r '.transport.base_url' "${matrix}")"
 transport_ping_interval="$(jq -r '.transport.ping_interval_seconds' "${matrix}")"
 transport_ping_timeout="$(jq -r '.transport.ping_timeout_seconds' "${matrix}")"
-if ! jq -e \
+if ! jq -en --slurpfile declared "${matrix}" \
   --argjson retries "${infrastructure_retries}" \
-  '.reporting.auto_resume_infrastructure_interruptions == true and
+  '($declared | length) == 1 and ($declared[0] |
+   .reporting.auto_resume_infrastructure_interruptions == true and
    .reporting.infrastructure_retry_policy.maximum_retries == $retries and
    .reporting.infrastructure_retry_policy.maximum_attempts == ($retries + 1) and
    .reporting.infrastructure_retry_policy.retry_delay_seconds == .benchmark.infrastructure_retry_delay_seconds and
    .reporting.infrastructure_retry_policy.seed_reused == true and
    .reporting.infrastructure_retry_policy.scope == "exceptions_only" and
    .reporting.infrastructure_retry_policy.semantic_outcomes_retried == false and
-   .reporting.infrastructure_retry_policy.attempt_artifacts == "preserved"' \
-  "${matrix}" >/dev/null; then
+   .reporting.infrastructure_retry_policy.attempt_artifacts == "preserved")' \
+  >/dev/null; then
   echo "matrix infrastructure retry policy is inconsistent" >&2
   exit 1
 fi
@@ -255,7 +260,8 @@ for cell in "${cells[@]}"; do
   registry_relative="$(jq -r --arg cell "${cell}" '.cells[] | select(.id == $cell) | .voice_registry' "${matrix}")"
   registry="${repository_root}/${registry_relative}"
 
-  voices="$(curl --fail --silent --show-error http://127.0.0.1:8081/v1/audio/voices?names_only=true)"
+  voices="$("${repository_root}/scripts/fetch-json-endpoint.sh" \
+    "http://127.0.0.1:8081/v1/audio/voices?names_only=true" "fish voice registry")"
   while IFS= read -r voice; do
     if ! jq -e --arg voice "${voice}" '.uploaded_voice_names | index($voice) != null' <<<"${voices}" >/dev/null; then
       echo "cell ${cell} requires unregistered Fish voice ${voice}" >&2
@@ -324,7 +330,8 @@ for cell in "${cells[@]}"; do
   done < <(jq -r '.benchmark.domains[] | [.name,(.tasks|tostring)] | @tsv' "${matrix}")
 done
 
-gateway_health_final="$(curl --fail --silent --show-error http://127.0.0.1:8765/healthz)"
+gateway_health_final="$("${repository_root}/scripts/fetch-json-endpoint.sh" \
+  http://127.0.0.1:8765/healthz "gateway /healthz")"
 runtime_identity_final="$("${repository_root}/scripts/capture-local-runtime-identity.sh")"
 source_revision_final="$(git -C "${repository_root}" rev-parse HEAD)"
 if [[ -n "$(git -C "${repository_root}" status --porcelain=v1 --untracked-files=normal)" ]]; then

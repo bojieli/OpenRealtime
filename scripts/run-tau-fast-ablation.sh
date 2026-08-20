@@ -54,7 +54,8 @@ start_fast_profile() {
     "${repository_root}/scripts/local-cascade.sh" start
 
   local health
-  health="$(curl --fail --silent --show-error http://127.0.0.1:8765/healthz)"
+  health="$("${repository_root}/scripts/fetch-json-endpoint.sh" \
+    http://127.0.0.1:8765/healthz "gateway /healthz")"
   if ! jq -e \
     --arg provider "${provider}" \
     --arg model "${model}" '

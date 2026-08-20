@@ -20,7 +20,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-gateway_health="$(curl --fail --silent --show-error http://127.0.0.1:8765/healthz)"
+gateway_health="$("${repository_root}/scripts/fetch-json-endpoint.sh" \
+  http://127.0.0.1:8765/healthz "gateway /healthz")"
 runtime_identity="$("${repository_root}/scripts/capture-local-runtime-identity.sh")"
 revision="$(git -C "${repository_root}" rev-parse HEAD)"
 expected_gateway_sha256="${OPENREALTIME_GATEWAY_SHA256:-}"
@@ -59,10 +60,13 @@ if [[ "${action}" == start ]]; then
       runtime_identity_start:$runtime_identity
     }')"
   if [[ -f "${output}" ]]; then
-    if ! jq -e \
+    # An empty context file makes `jq -e` exit 0 for every filter, so a
+    # zero-byte prior context would read as a compatible one and be appended to.
+    if ! jq -en --slurpfile context "${output}" \
       --arg benchmark "${benchmark}" \
-      '.schema_version == "1.0.0" and .benchmark == $benchmark and
-       (.invocations | type == "array")' "${output}" >/dev/null; then
+      '($context | length) == 1 and ($context[0] |
+       .schema_version == "1.0.0" and .benchmark == $benchmark and
+       (.invocations | type == "array"))' >/dev/null; then
       echo "prior benchmark run context is incompatible: ${output}" >&2
       exit 1
     fi
@@ -92,14 +96,15 @@ else
     echo "benchmark run context is missing: ${output}" >&2
     exit 1
   fi
-  if ! jq -e \
+  if ! jq -en --slurpfile context "${output}" \
     --arg benchmark "${benchmark}" \
     --argjson runtime_identity "${runtime_identity}" \
-    '.schema_version == "1.0.0" and .benchmark == $benchmark and
+    '($context | length) == 1 and ($context[0] |
+     .schema_version == "1.0.0" and .benchmark == $benchmark and
      .status == "running" and .invocations[-1].status == "running" and
      .invocations[-1].runtime_identity_start.host_boot_id == $runtime_identity.host_boot_id and
-     .invocations[-1].runtime_identity_start.components == $runtime_identity.components' \
-    "${output}" >/dev/null; then
+     .invocations[-1].runtime_identity_start.components == $runtime_identity.components)' \
+    >/dev/null; then
     echo "benchmark runtime identity changed before completion" >&2
     exit 1
   fi
@@ -112,10 +117,11 @@ else
     echo "OpenRealtime source revision changed during the benchmark invocation" >&2
     exit 1
   fi
-  if [[ -n "${expected_gateway_sha256}" ]] && ! jq -e \
+  if [[ -n "${expected_gateway_sha256}" ]] && ! jq -en --slurpfile context "${output}" \
     --arg sha256 "${expected_gateway_sha256}" \
-    '.invocations[-1].study_gateway_sha256 == $sha256' \
-    "${output}" >/dev/null; then
+    '($context | length) == 1 and
+     $context[0].invocations[-1].study_gateway_sha256 == $sha256' \
+    >/dev/null; then
     echo "benchmark start was not bound to the current frozen gateway" >&2
     exit 1
   fi
@@ -132,10 +138,11 @@ else
       exit 1
       ;;
   esac
-  if ! jq -e \
-    '.schema_version == "1.0.0" and .status == "complete" and .checks > 0 and
+  if ! jq -en --slurpfile summary "${gpu_summary}" \
+    '($summary | length) == 1 and ($summary[0] |
+     .schema_version == "1.0.0" and .status == "complete" and .checks > 0 and
      (.log.path | type == "string") and (.log.sha256 | type == "string") and
-     (.log.bytes | type == "number")' "${gpu_summary}" >/dev/null; then
+     (.log.bytes | type == "number"))' >/dev/null; then
     echo "GPU ownership summary is invalid: ${gpu_summary}" >&2
     exit 1
   fi
@@ -148,11 +155,12 @@ else
       exit 1
       ;;
   esac
-  if [[ ! -f "${gpu_log}" ]] || ! jq -e \
+  if [[ ! -f "${gpu_log}" ]] || ! jq -en --slurpfile summary "${gpu_summary}" \
     --arg sha256 "$(sha256sum "${gpu_log}" | cut -d ' ' -f 1)" \
     --argjson bytes "$(stat -c %s "${gpu_log}")" \
-    '.log.sha256 == $sha256 and .log.bytes == $bytes' \
-    "${gpu_summary}" >/dev/null; then
+    '($summary | length) == 1 and
+     ($summary[0].log.sha256 == $sha256 and $summary[0].log.bytes == $bytes)' \
+    >/dev/null; then
     echo "GPU ownership log does not match its summary" >&2
     exit 1
   fi

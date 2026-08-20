@@ -60,7 +60,8 @@ start_asr_profile() {
     return 1
   fi
   local gateway_health
-  gateway_health="$(curl --fail --silent --show-error http://127.0.0.1:8765/healthz)"
+  gateway_health="$("${repository_root}/scripts/fetch-json-endpoint.sh" \
+    http://127.0.0.1:8765/healthz "gateway /healthz")"
   if ! jq -e \
     --arg model "${model}" '
     .asr.model == $model and

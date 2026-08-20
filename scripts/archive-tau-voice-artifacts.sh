@@ -103,7 +103,9 @@ while IFS=$'\t' read -r cell domain tasks; do
   archive="${experiment}/raw-artifacts.tar.zst"
   evidence="${experiment}/raw-artifacts-archive.json"
   if [[ -f "${archive}" && -f "${evidence}" ]]; then
-    if ! jq -e \
+    # An empty evidence file makes `jq -e` exit 0 for every filter, so a
+    # zero-byte archive record would read as a fully reconciled one.
+    if ! jq -en --slurpfile evidence "${evidence}" \
       --arg matrix_id "${matrix_id}" \
       --arg matrix_sha256 "${matrix_sha256}" \
       --arg cell "${cell}" \
@@ -111,7 +113,8 @@ while IFS=$'\t' read -r cell domain tasks; do
       --argjson expected_simulations "${expected_simulations}" \
       --argjson maximum_attempts "${maximum_attempts}" \
       --argjson retry_delay_seconds "${retry_delay_seconds}" \
-      '.schema_version == "1.0.0" and
+      '($evidence | length) == 1 and ($evidence[0] |
+       .schema_version == "1.0.0" and
        .matrix.id == $matrix_id and .matrix.sha256 == $matrix_sha256 and
        .population.cell == $cell and .population.domain == $domain and
        .source.path == "artifacts" and .source.files > 0 and .source.bytes > 0 and
@@ -125,8 +128,8 @@ while IFS=$'\t' read -r cell domain tasks; do
        .attempts.retry_scope == "exceptions_only" and
        .attempts.semantic_outcomes_retried == false and
        .archive.path == "raw-artifacts.tar.zst" and
-       .archive.format == "deterministic-pax-tar+zstd"' \
-      "${evidence}" >/dev/null; then
+       .archive.format == "deterministic-pax-tar+zstd")' \
+      >/dev/null; then
       echo "tau raw-artifact archive metadata is inconsistent: ${evidence}" >&2
       exit 1
     fi
@@ -188,17 +191,21 @@ while IFS=$'\t' read -r cell domain tasks; do
         simulation_id="$(basename "$(dirname "${status}")")"
         simulation_id="${simulation_id#sim_}"
         if [[ ! -f "${experiment}/simulations/${simulation_id}.json" ]] || \
-          ! jq -e --arg id "${simulation_id}" '.simulation_index[] | select(.id == $id)' \
-            "${experiment}/results.json" >/dev/null; then
+          ! jq -en --slurpfile results "${experiment}/results.json" \
+            --arg id "${simulation_id}" \
+            '($results | length) == 1 and
+             ([$results[0].simulation_index[]? | select(.id == $id)] | length) > 0' \
+            >/dev/null; then
           echo "used tau attempt is not the indexed scoring simulation: ${status}" >&2
           exit 1
         fi
       elif [[ "${state}" == "failed" ]]; then
-        if ! jq -e \
-          '.reason == "infrastructure_error" and
+        if ! jq -en --slurpfile attempt "${status}" \
+          '($attempt | length) == 1 and ($attempt[0] |
+           .reason == "infrastructure_error" and
            (.error | type == "string" and length > 0) and
-           (.error_type | type == "string" and length > 0)' \
-          "${status}" >/dev/null; then
+           (.error_type | type == "string" and length > 0))' \
+          >/dev/null; then
           echo "failed tau attempt is not typed infrastructure evidence: ${status}" >&2
           exit 1
         fi

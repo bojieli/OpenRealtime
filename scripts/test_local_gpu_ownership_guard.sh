@@ -52,10 +52,13 @@ export OPENREALTIME_GPU_OWNERSHIP_INTERVAL_SECONDS=1
 good_stem="${temporary}/good"
 "${repository_root}/scripts/run-with-local-gpu-ownership-guard.sh" \
   "${good_stem}" -- bash -c 'sleep 2.2'
-jq -e '
+# Assert through --slurpfile: a guard that wrote an empty summary would satisfy
+# `jq -e FILTER FILE` for any filter, so this test would pass vacuously.
+jq -en --slurpfile summary "${good_stem}.summary.json" '
+  ($summary | length) == 1 and ($summary[0] |
   .status == "complete" and .checks >= 2 and
-  .expected_components == ["asr","fish"] and .gpu_uuids == ["GPU-test"]
-' "${good_stem}.summary.json" >/dev/null
+  .expected_components == ["asr","fish"] and .gpu_uuids == ["GPU-test"])
+' >/dev/null
 
 failure_stem="${temporary}/command-failure"
 set +e
@@ -67,8 +70,9 @@ if [[ "${failure_status}" != 23 ]]; then
   echo "measured command status was not preserved: ${failure_status}" >&2
   exit 1
 fi
-jq -e '.status == "complete" and .checks >= 1' \
-  "${failure_stem}.summary.json" >/dev/null
+jq -en --slurpfile summary "${failure_stem}.summary.json" \
+  '($summary | length) == 1 and
+   ($summary[0] | .status == "complete" and .checks >= 1)' >/dev/null
 
 printf 'GPU-test, 11, 10\nGPU-test, 21, 20\n' >"${rows}"
 bad_stem="${temporary}/bad"
@@ -88,6 +92,8 @@ if [[ -e "${bad_command_completed}" ]]; then
   echo "measured command was not stopped when GPU ownership failed" >&2
   exit 1
 fi
+# `-s` is safe against the empty-file hole: slurp reads no input as [] and the
+# filter still runs, so an empty log yields false rather than "no output".
 jq -e -s 'any(.[]; .type == "guard.check" and .status == "violation")' \
   "${bad_stem}.jsonl" >/dev/null
 

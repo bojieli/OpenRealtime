@@ -59,8 +59,10 @@ for component in gateway asr fish qwen; do
 done
 
 if jq -e '.components.qwen != null' <<<"${identity}" >/dev/null; then
-  qwen_version="$(curl --fail --silent --max-time 3 http://127.0.0.1:8000/version)"
-  qwen_models="$(curl --fail --silent --max-time 3 http://127.0.0.1:8000/v1/models)"
+  qwen_version="$("${repository_root}/scripts/fetch-json-endpoint.sh" \
+    http://127.0.0.1:8000/version "qwen /version" 3)"
+  qwen_models="$("${repository_root}/scripts/fetch-json-endpoint.sh" \
+    http://127.0.0.1:8000/v1/models "qwen /v1/models" 3)"
   if ! jq -e '.version | type == "string" and length > 0' <<<"${qwen_version}" >/dev/null; then
     echo "Qwen vLLM version endpoint is invalid" >&2
     exit 1

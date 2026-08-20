@@ -20,7 +20,11 @@ while true; do
     --repository-root "${repository_root}" \
     --manifest "${repository_root}/benchmarks/full-study-v1.json" \
     --output "${output}"; then
-    if jq -e '.publication_complete == true' "${output}" >/dev/null; then
+    # An empty progress report makes `jq -e` exit 0 for any filter, which would
+    # stop the monitor by declaring the study published.
+    if jq -en --slurpfile progress "${output}" \
+      '($progress | length) == 1 and $progress[0].publication_complete == true' \
+      >/dev/null; then
       echo "full study publication is complete; monitor stopped"
       exit 0
     fi

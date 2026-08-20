@@ -62,10 +62,22 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# `jq -e FILTER FILE` exits 0 when FILE is EMPTY: the filter never runs, so jq
+# reports "no output produced" rather than false. The guard log is created empty
+# and appended to, so the readiness check used to pass on the very first poll --
+# declaring exclusive GPU ownership verified before the monitor had written a
+# single check. Slurp the file and require a real ok record.
+guard_check_ok() {
+  jq -en --slurpfile records "$1" \
+    '($records | length) > 0 and
+     ([$records[] | select(.type == "guard.check" and .status == "ok")] | length) > 0' \
+    >/dev/null 2>&1
+}
+
 "${repository_root}/scripts/monitor-local-gpu-ownership.sh" "${log}" &
 monitor_pid=$!
 for _ in $(seq 1 100); do
-  if [[ -f "${log}" ]] && jq -e 'select(.type == "guard.check" and .status == "ok")' "${log}" >/dev/null 2>&1; then
+  if [[ -f "${log}" ]] && guard_check_ok "${log}"; then
     break
   fi
   if ! kill -0 "${monitor_pid}" 2>/dev/null; then
@@ -75,7 +87,7 @@ for _ in $(seq 1 100); do
   fi
   sleep 0.1
 done
-if ! jq -e 'select(.type == "guard.check" and .status == "ok")' "${log}" >/dev/null 2>&1; then
+if ! guard_check_ok "${log}"; then
   echo "GPU ownership guard did not produce its initial check" >&2
   exit 1
 fi

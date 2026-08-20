@@ -41,6 +41,8 @@ while IFS=$'\t' read -r persona voice seed style_tag; do
     "${endpoint}/v1/audio/speech" \
     -o "${wav_path}"
 
+  # The upload receipt is recorded as evidence, so an empty or non-JSON response
+  # must be named here rather than surfacing as an opaque jq parse error below.
   upload_response="$(curl --fail --silent --show-error \
     -F "audio_sample=@${wav_path};type=audio/wav" \
     -F "consent=${consent}" \
@@ -48,6 +50,11 @@ while IFS=$'\t' read -r persona voice seed style_tag; do
     -F "ref_text=${request_text}" \
     -F "speaker_description=${style_tag}" \
     "${endpoint}/v1/audio/voices")"
+  if ! jq -e 'type == "object" and (keys | length) > 0' <<<"${upload_response}" \
+    >/dev/null 2>&1; then
+    echo "fish voice upload did not return a JSON object: ${voice}" >&2
+    exit 1
+  fi
   sha256="$(sha256sum "${wav_path}" | cut -d ' ' -f 1)"
   bytes="$(stat -c '%s' "${wav_path}")"
   jq -nc \
@@ -72,7 +79,8 @@ jq -n \
   '{schema_version:"1.0.0",generated_at:$generated_at,endpoint:$endpoint,registry_sha256:$registry_sha256,provenance_sha256:$provenance_sha256,entries:$entries}' \
   >"${receipt}"
 
-registered="$(curl --fail --silent --show-error "${endpoint}/v1/audio/voices?names_only=true")"
+registered="$("${repository_root}/scripts/fetch-json-endpoint.sh" \
+  "${endpoint}/v1/audio/voices?names_only=true" "fish voice registry")"
 while IFS= read -r voice; do
   if ! jq -e --arg voice "${voice}" '.uploaded_voice_names | index($voice) != null' <<<"${registered}" >/dev/null; then
     echo "Fish Audio did not retain uploaded voice ${voice}" >&2
