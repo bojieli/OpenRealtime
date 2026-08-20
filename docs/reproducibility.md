@@ -9,6 +9,18 @@ redistributable audio fixture before any engine optimization.
 - Go 1.25 or newer
 - `curl` for the pinned specification provenance check
 
+The checkpoint scripts resolve the required Go toolchain through
+`scripts/go-toolchain.sh`: an explicit `OPENREALTIME_GO_BIN` wins, then
+`/usr/local/go/bin/go`, then `PATH`. This keeps a host with an older system
+`go` from failing at the first `go.mod` parse. For manual commands, source the
+helper and invoke the returned path:
+
+```bash
+source scripts/go-toolchain.sh
+go_bin="$(openrealtime_go_bin)"
+"$go_bin" build -trimpath -o artifacts/openrealtime ./cmd/openrealtime
+```
+
 ## One-command reproduction
 
 From the repository root:

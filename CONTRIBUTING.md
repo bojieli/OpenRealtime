@@ -5,12 +5,18 @@ behavior, and effect on the evidence are inspectable.
 
 ## Development setup
 
-Install Go 1.25 or newer, then run:
+Install Go 1.25 or newer, then run the gates. The scripts resolve the required
+toolchain from `OPENREALTIME_GO_BIN`, `/usr/local/go/bin/go`, or `PATH`; use the
+same helper for ad-hoc commands when an older system `go` comes first on
+`PATH`:
 
 ```bash
-go test -race ./...
-go vet ./...
-test -z "$(gofmt -l .)"
+source scripts/go-toolchain.sh
+go_bin="$(openrealtime_go_bin)"
+"$go_bin" test -race ./...
+"$go_bin" vet ./...
+gofmt_bin="$(dirname "$go_bin")/gofmt"
+test -z "$("$gofmt_bin" -l .)"
 ```
 
 Run `./scripts/reproduce_m7.sh` before submitting. It includes every earlier
