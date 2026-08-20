@@ -16,12 +16,14 @@ artifacts/openrealtime conformance all \
   >"$run_root/conformance.json"
 cmp "$run_root/conformance.json" tests/golden/m7-conformance.json
 
-go build -o "$run_root/reference-example" ./examples/v1/reference
-go run ./examples/v1/reference >"$run_root/example.json"
+source "$repo_root/scripts/go-toolchain.sh"
+go_bin="$(openrealtime_go_bin)"
+"$go_bin" build -o "$run_root/reference-example" ./examples/v1/reference
+"$go_bin" run ./examples/v1/reference >"$run_root/example.json"
 cmp "$run_root/example.json" tests/golden/m7-reference-example.json
 
-go test -race ./...
-go vet ./...
+"$go_bin" test -race ./...
+"$go_bin" vet ./...
 unformatted="$(gofmt -l .)"
 if [[ -n "$unformatted" ]]; then
   echo "unformatted Go files:" >&2

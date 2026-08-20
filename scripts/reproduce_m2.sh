@@ -3,13 +3,15 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
+source "$repo_root/scripts/go-toolchain.sh"
+go_bin="$(openrealtime_go_bin)"
 
 mkdir -p artifacts
 run_root="$(mktemp -d "$repo_root/artifacts/m2-reproduce.XXXXXX")"
 trap 'rm -rf "$run_root"' EXIT
 
-go mod download
-go build -trimpath -ldflags='-s -w' -o artifacts/openrealtime ./cmd/openrealtime
+"$go_bin" mod download
+"$go_bin" build -trimpath -ldflags='-s -w' -o artifacts/openrealtime ./cmd/openrealtime
 ./scripts/check_openai_realtime_spec.sh
 
 artifacts/openrealtime benchmark m1 \
@@ -39,8 +41,8 @@ artifacts/openrealtime benchmark m2 \
 cmp "$run_root/m2/report.json" benchmarks/m2/reference/report.json
 cmp "$run_root/m2/ablation.html" benchmarks/m2/reference/ablation.html
 
-go test -race ./...
-go vet ./...
+"$go_bin" test -race ./...
+"$go_bin" vet ./...
 unformatted="$(gofmt -l .)"
 if [[ -n "$unformatted" ]]; then
   echo "unformatted Go files:" >&2

@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$repo_root/scripts/go-toolchain.sh"
+go_bin="$(openrealtime_go_bin)"
 revision="2186421dca0cca7c1e67caa7739005e8b1ccc4dd"
 source_sha256="542299d304cdeb78deff4172b3790d52c7e7e75fb2b517e9c2787c52f1424acc"
 source_url="https://github.com/openai/openai-openapi/blob/${revision}/openapi.json"
@@ -13,7 +15,7 @@ curl --fail --silent --show-error --location "$raw_url" \
   --output "$temporary_dir/openapi.json"
 
 cd "$repo_root"
-go run ./cmd/specsync \
+"$go_bin" run ./cmd/specsync \
   --source "$temporary_dir/openapi.json" \
   --source-url "$source_url" \
   --revision "$revision" \
