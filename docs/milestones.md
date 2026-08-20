@@ -250,7 +250,8 @@ pin the v0.1.0 release and run the same public conformance suite.
   Qwen instruct→Gemini 3.5 Flash medium/high thinking
 - Control: M4-style independent foreground/background advice
 - Compatibility: experimental internals first; stable replacement requires
-  `api/v2`
+  `api/v2`; the proposal is written in `docs/api-v2-proposal.md` and is not
+  implemented
 
 ## M10 — Joint responsiveness–intelligence study
 

@@ -1011,8 +1011,14 @@ reward 1.0. The trial also records superseded/failed background work and
 preserved failure cases. The same-family Gemini-fast matrix and typed
 content-only/independent slow-context projections are implemented and queued
 as complete controls; every condition retains one canonical store and differs
-only in the declared provider view. Canonical stable-partial effects, broader
-audible repair integration, and an `api/v2` proposal remain.
+only in the declared provider view. Canonical stable-partial effects and broader
+audible repair integration remain. The `api/v2` proposal is written in
+`docs/api-v2-proposal.md`: the pilot's 34 error-terminated runs are all
+unresolved spoken identifiers, the agent already requests letter-by-letter
+spelling in 33 of them, and three cases show it holding the correct
+characters without joining them into a token, so the contract cannot express
+how a token was spoken and cannot type a repair attempt. Nothing in the
+proposal is implemented.
 
 Deliverables:
 

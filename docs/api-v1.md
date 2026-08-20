@@ -11,6 +11,9 @@ a separate `api/v2` contract and migration guide after live validation. This is
 a Go import-path version for OpenRealtime components; it does not imply an
 OpenAI Realtime protocol revision.
 
+`docs/api-v2-proposal.md` records what the M10 pilot showed this contract
+cannot express. It is a proposal only; nothing in it is implemented.
+
 ## Compatibility promise
 
 The project may add optional capabilities, new concrete adapters, helper
