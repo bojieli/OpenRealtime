@@ -310,6 +310,9 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 	}
 	var systemInstructions []string
 	systemInstructions = append(systemInstructions, request.Invocation.Instruction)
+	if len(trajectory.PendingRepairs(request.Trajectory)) > 0 {
+		systemInstructions = append(systemInstructions, continuation.PendingRepairInstruction)
+	}
 	if len(request.Invocation.Capabilities) > 0 {
 		encoded, err := json.Marshal(request.Invocation.Capabilities)
 		if err != nil {
@@ -351,7 +354,14 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 			result.Contents = appendGeminiContent(result.Contents, content)
 		}
 	}
-	if adapter.descriptor.Phase == trajectory.PhaseSlow && isModelOutputItem(lastSemanticKind) {
+	if len(trajectory.PendingRepairs(request.Trajectory)) > 0 {
+		part, _ := json.Marshal(map[string]string{"text": continuation.PendingRepairPrompt})
+		result.Contents = appendGeminiContent(result.Contents, geminiContent{
+			Role: "user", Parts: []json.RawMessage{part},
+		})
+	}
+	if adapter.descriptor.Phase == trajectory.PhaseSlow && isModelOutputItem(lastSemanticKind) &&
+		len(trajectory.PendingRepairs(request.Trajectory)) == 0 {
 		part, _ := json.Marshal(map[string]string{"text": "Please finish the task."})
 		result.Contents = appendGeminiContent(result.Contents, geminiContent{
 			Role: "user", Parts: []json.RawMessage{part},
@@ -383,7 +393,7 @@ func compilePortableItem(item trajectory.Item) (geminiContent, bool, error) {
 	role := "user"
 	switch item.Kind {
 	case trajectory.KindObservation:
-		part["text"] = item.Content
+		part["text"] = continuation.ObservationContent(item)
 	case trajectory.KindReasoning:
 		role = "model"
 		part["text"] = "[Internal working state from an earlier continuation; not user-visible]\n" + item.Content

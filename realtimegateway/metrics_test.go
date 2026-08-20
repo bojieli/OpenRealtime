@@ -9,6 +9,7 @@ import (
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/asrbuffer"
 	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -25,6 +26,24 @@ func TestRuntimeMetricsSnapshotIsCumulativeAndContentFree(t *testing.T) {
 		ASRProviderAdvances: 7, ASRFinalizations: 2,
 	}) {
 		t.Fatalf("unexpected runtime metrics: %#v", got)
+	}
+}
+
+func TestRepairMetricsCountCommittedLifecycleItems(t *testing.T) {
+	t.Parallel()
+	metrics := &RuntimeMetrics{}
+	session := &session{config: Config{RuntimeMetrics: metrics}}
+	session.recordCommittedRuntime(eventloop.Batch{Items: []trajectory.Item{
+		{Kind: trajectory.KindRepair, Repair: &trajectory.RepairState{Status: trajectory.RepairRequired}},
+		{Kind: trajectory.KindRepair, Repair: &trajectory.RepairState{Status: trajectory.RepairResolved}},
+	}})
+	got := metrics.Snapshot()
+	if got.RepairsRequired != 1 || got.RepairsResolved != 1 {
+		t.Fatalf("committed repair metrics = %#v", got)
+	}
+	session.recordCommittedRuntime(eventloop.Batch{})
+	if after := metrics.Snapshot(); after.RepairsRequired != 1 || after.RepairsResolved != 1 {
+		t.Fatalf("empty/failed batch changed repair metrics = %#v", after)
 	}
 }
 

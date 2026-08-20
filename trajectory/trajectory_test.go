@@ -158,3 +158,96 @@ func TestToolProposalCannotReceiveResultOrBecomeCallByIDReuse(t *testing.T) {
 		t.Fatal("executable call reused a proposal ID")
 	}
 }
+
+func TestPlayedInvalidationCreatesAndResolvesTypedRepair(t *testing.T) {
+	t.Parallel()
+	store := NewStore()
+	if err := store.AppendBatch([]Item{
+		{ID: "user", Kind: KindObservation, SourceRevision: 1, Producer: Producer{Phase: PhaseUser}, Content: "request"},
+		{ID: "fast", Kind: KindAssistant, SourceRevision: 1, Producer: Producer{Phase: PhaseFast}, Content: "provisional answer"},
+		{ID: "queued", Kind: KindAssistantState, Producer: Producer{Phase: PhaseRuntime}, AssistantState: &AssistantState{AssistantItemID: "fast", Visibility: VisibilityQueued}},
+		{ID: "played", Kind: KindAssistantState, Producer: Producer{Phase: PhaseRuntime}, AssistantState: &AssistantState{AssistantItemID: "fast", Visibility: VisibilityPlayed, PlayedAudioMS: 120}},
+		{ID: "updated", Kind: KindObservation, SourceRevision: 2, Producer: Producer{Phase: PhaseUser}, Content: "updated request"},
+		{ID: "required", Kind: KindRepair, SourceRevision: 2, CausalParentIDs: []string{"fast"}, Producer: Producer{Phase: PhaseRuntime}, Repair: &RepairState{TargetAssistantItemID: "fast", Status: RepairRequired, PlayedAudioMS: 120}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pending := PendingRepairs(store.Snapshot())
+	if len(pending) != 1 || pending[0].TargetAssistantItemID != "fast" || pending[0].PlayedAudioMS != 120 {
+		t.Fatalf("pending repairs = %#v", pending)
+	}
+	if err := store.Append(Item{ID: "bad-cancel", Kind: KindAssistantState, Producer: Producer{Phase: PhaseRuntime}, AssistantState: &AssistantState{AssistantItemID: "fast", Visibility: VisibilityCancelled}}); err == nil {
+		t.Fatal("played content was erased while its repair was pending")
+	}
+	if err := store.AppendBatch([]Item{
+		{ID: "correction", Kind: KindAssistant, SourceRevision: 2, Producer: Producer{Phase: PhaseSlow}, Content: "Correction: the updated answer is different."},
+		{ID: "resolved", Kind: KindRepair, SourceRevision: 2, CausalParentIDs: []string{"fast", "correction"}, Producer: Producer{Phase: PhaseRuntime}, Repair: &RepairState{TargetAssistantItemID: "fast", Status: RepairResolved, RepairAssistantItemID: "correction"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if pending := PendingRepairs(store.Snapshot()); len(pending) != 0 {
+		t.Fatalf("resolved repair remained pending: %#v", pending)
+	}
+}
+
+func TestRepairLifecycleRejectsUnplayedAndUnmatchedTransitions(t *testing.T) {
+	t.Parallel()
+	store := NewStore()
+	if err := store.Append(Item{ID: "assistant", Kind: KindAssistant, Producer: Producer{Phase: PhaseFast}, Content: "answer"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(Item{ID: "required", Kind: KindRepair, Producer: Producer{Phase: PhaseRuntime}, Repair: &RepairState{TargetAssistantItemID: "assistant", Status: RepairRequired, PlayedAudioMS: 10}}); err == nil {
+		t.Fatal("unplayed assistant content created a repair obligation")
+	}
+	if err := store.Append(Item{ID: "correction", Kind: KindAssistant, Producer: Producer{Phase: PhaseSlow}, Content: "correction"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(Item{ID: "resolved", Kind: KindRepair, Producer: Producer{Phase: PhaseRuntime}, Repair: &RepairState{TargetAssistantItemID: "assistant", Status: RepairResolved, RepairAssistantItemID: "correction"}}); err == nil {
+		t.Fatal("repair resolved without a required transition")
+	}
+}
+
+func TestStoreEnforcesTypedSupersessionProvenance(t *testing.T) {
+	t.Parallel()
+	store := NewStore()
+	if err := store.Append(Item{
+		ID: "first", Kind: KindObservation, SourceRevision: 1,
+		Producer: Producer{Phase: PhaseUser}, Content: "partial",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	metadata := &EventMetadata{
+		EventID: "event-2", Type: "asr.stable_partial", Source: "asr", Channel: "voice",
+		SupersedesRevision: 1,
+	}
+	if err := store.Append(Item{
+		ID: "missing-cause", Kind: KindObservation, SourceRevision: 2,
+		Producer: Producer{Phase: PhaseUser}, Content: "extended", Event: metadata,
+	}); err == nil {
+		t.Fatal("supersession without its causal target was accepted")
+	}
+	if err := store.Append(Item{
+		ID: "second", Kind: KindObservation, SourceRevision: 2,
+		CausalParentIDs: []string{"first"}, Producer: Producer{Phase: PhaseUser},
+		Content: "extended", Event: metadata,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(Item{
+		ID: "assistant", Kind: KindAssistant, SourceRevision: 2,
+		Producer: Producer{Phase: PhaseSlow}, Content: "answer",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(Item{
+		ID: "fake-supersession", Kind: KindAssistantState,
+		Producer:       Producer{Phase: PhaseRuntime},
+		AssistantState: &AssistantState{AssistantItemID: "assistant", Visibility: VisibilityQueued},
+		Event: &EventMetadata{
+			EventID: "event-3", Type: "speech.queued", Source: "tts", Channel: "voice",
+			SupersedesRevision: 1,
+		},
+	}); err == nil {
+		t.Fatal("non-observation event claimed observation supersession")
+	}
+}

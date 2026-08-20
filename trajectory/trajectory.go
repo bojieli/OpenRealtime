@@ -31,6 +31,10 @@ const (
 	KindReasoning      Kind = "reasoning"
 	KindAssistant      Kind = "assistant"
 	KindAssistantState Kind = "assistant_state"
+	// KindRepair records a typed obligation created when later canonical
+	// evidence invalidates assistant audio that was already heard, and its
+	// eventual resolution by a later committed assistant item.
+	KindRepair Kind = "repair"
 	// KindToolProposal is structured model working state without execution
 	// authority. It lets a fast continuation express which capability it needs
 	// without creating a side effect or satisfying a later ToolResult.
@@ -91,6 +95,24 @@ type ToolResult struct {
 type AssistantState struct {
 	AssistantItemID string     `json:"assistant_item_id"`
 	Visibility      Visibility `json:"visibility"`
+	PlayedAudioMS   uint64     `json:"played_audio_ms,omitempty"`
+}
+
+type RepairStatus string
+
+const (
+	RepairRequired RepairStatus = "required"
+	RepairResolved RepairStatus = "resolved"
+)
+
+// RepairState is runtime-authored lifecycle data. Required repairs target an
+// already-played assistant item. Resolution names the later committed
+// assistant item that explicitly carries the correction.
+type RepairState struct {
+	TargetAssistantItemID string       `json:"target_assistant_item_id"`
+	Status                RepairStatus `json:"status"`
+	RepairAssistantItemID string       `json:"repair_assistant_item_id,omitempty"`
+	PlayedAudioMS         uint64       `json:"played_audio_ms,omitempty"`
 }
 
 // EventMetadata preserves where and when an externally produced event
@@ -99,12 +121,13 @@ type AssistantState struct {
 // Routing priority is intentionally absent: it is runtime control metadata,
 // not model-visible conversation content.
 type EventMetadata struct {
-	EventID       string `json:"event_id"`
-	Type          string `json:"type"`
-	Source        string `json:"source"`
-	Channel       string `json:"channel"`
-	OccurredNS    uint64 `json:"occurred_ns"`
-	CorrelationID string `json:"correlation_id,omitempty"`
+	EventID            string `json:"event_id"`
+	Type               string `json:"type"`
+	Source             string `json:"source"`
+	Channel            string `json:"channel"`
+	OccurredNS         uint64 `json:"occurred_ns"`
+	CorrelationID      string `json:"correlation_id,omitempty"`
+	SupersedesRevision uint64 `json:"supersedes_revision,omitempty"`
 }
 
 // Item is an immutable unit in the canonical trajectory.
@@ -128,6 +151,7 @@ type Item struct {
 	ToolCall          *ToolCall       `json:"tool_call,omitempty"`
 	ToolResult        *ToolResult     `json:"tool_result,omitempty"`
 	AssistantState    *AssistantState `json:"assistant_state,omitempty"`
+	Repair            *RepairState    `json:"repair,omitempty"`
 	Event             *EventMetadata  `json:"event,omitempty"`
 	ProviderStateType string          `json:"provider_state_type,omitempty"`
 	ProviderState     json.RawMessage `json:"provider_state,omitempty"`
@@ -155,6 +179,61 @@ type PendingToolCall struct {
 type MatchedToolResult struct {
 	Pending PendingToolCall
 	Result  ToolResult
+}
+
+type PendingRepair struct {
+	TargetAssistantItemID string
+	RequiredItemID        string
+	PlayedAudioMS         uint64
+}
+
+// PendingRepairs resolves the append-only repair lifecycle in canonical order.
+func PendingRepairs(snapshot Snapshot) []PendingRepair {
+	pending := make(map[string]PendingRepair)
+	var order []string
+	for _, item := range snapshot.Items {
+		if item.Kind != KindRepair || item.Repair == nil {
+			continue
+		}
+		switch item.Repair.Status {
+		case RepairRequired:
+			if _, exists := pending[item.Repair.TargetAssistantItemID]; !exists {
+				order = append(order, item.Repair.TargetAssistantItemID)
+			}
+			pending[item.Repair.TargetAssistantItemID] = PendingRepair{
+				TargetAssistantItemID: item.Repair.TargetAssistantItemID,
+				RequiredItemID:        item.ID, PlayedAudioMS: item.Repair.PlayedAudioMS,
+			}
+		case RepairResolved:
+			delete(pending, item.Repair.TargetAssistantItemID)
+		}
+	}
+	result := make([]PendingRepair, 0, len(pending))
+	for _, target := range order {
+		if repair, exists := pending[target]; exists {
+			result = append(result, repair)
+		}
+	}
+	return result
+}
+
+// BatchIntroducesPendingRepair reports whether repair events in one safe-point
+// batch leave a newly required repair unresolved. It is used to select a
+// slow-only continuation without inspecting assistant or transcript text.
+func BatchIntroducesPendingRepair(items []Item) bool {
+	pending := make(map[string]bool)
+	for _, item := range items {
+		if item.Kind != KindRepair || item.Repair == nil {
+			continue
+		}
+		pending[item.Repair.TargetAssistantItemID] = item.Repair.Status == RepairRequired
+	}
+	for _, required := range pending {
+		if required {
+			return true
+		}
+	}
+	return false
 }
 
 // AssistantVisibility resolves append-only assistant-state transitions in a
@@ -265,6 +344,7 @@ type Store struct {
 	toolCalls        map[string]string
 	toolResults      map[string]struct{}
 	assistantStates  map[string]Visibility
+	pendingRepairs   map[string]string
 	hasMonotonicTime bool
 	lastNS           uint64
 }
@@ -277,6 +357,7 @@ func NewStore() *Store {
 		toolCalls:       make(map[string]string),
 		toolResults:     make(map[string]struct{}),
 		assistantStates: make(map[string]Visibility),
+		pendingRepairs:  make(map[string]string),
 	}
 }
 
@@ -324,6 +405,7 @@ func (store *Store) appendBatch(expectedVersion *uint64, items []Item) error {
 	store.toolCalls = clone.toolCalls
 	store.toolResults = clone.toolResults
 	store.assistantStates = clone.assistantStates
+	store.pendingRepairs = clone.pendingRepairs
 	store.hasMonotonicTime = clone.hasMonotonicTime
 	store.lastNS = clone.lastNS
 	return nil
@@ -373,6 +455,9 @@ func (store *Store) appendLocked(item Item) error {
 		}
 		seenParent[parent] = struct{}{}
 	}
+	if err := store.validateSupersessionLocked(item); err != nil {
+		return err
+	}
 	if err := store.validateKindLocked(item); err != nil {
 		return err
 	}
@@ -405,7 +490,7 @@ func validateCommon(item Item) error {
 			return errors.New("event metadata requires event ID, type, source, and channel")
 		}
 		switch item.Kind {
-		case KindObservation, KindToolResult, KindAssistantState:
+		case KindObservation, KindToolResult, KindAssistantState, KindRepair:
 		default:
 			return fmt.Errorf("event metadata is not valid on %s", item.Kind)
 		}
@@ -422,6 +507,9 @@ func (store *Store) validateKindLocked(item Item) error {
 		payloadCount++
 	}
 	if item.AssistantState != nil {
+		payloadCount++
+	}
+	if item.Repair != nil {
 		payloadCount++
 	}
 	switch item.Kind {
@@ -449,6 +537,13 @@ func (store *Store) validateKindLocked(item Item) error {
 			return errors.New("assistant_state requires exactly one state payload")
 		}
 		if err := store.transitionAssistantLocked(*item.AssistantState); err != nil {
+			return err
+		}
+	case KindRepair:
+		if item.Repair == nil || payloadCount != 1 || item.Content != "" || item.Visibility != "" {
+			return errors.New("repair requires exactly one repair payload")
+		}
+		if err := store.transitionRepairLocked(item); err != nil {
 			return err
 		}
 	case KindToolProposal:
@@ -544,7 +639,107 @@ func (store *Store) transitionAssistantLocked(state AssistantState) error {
 	if !allowed {
 		return fmt.Errorf("invalid assistant visibility transition %s -> %s", current, state.Visibility)
 	}
+	if state.Visibility != VisibilityPlayed && state.PlayedAudioMS != 0 {
+		return errors.New("played audio duration is valid only on a played transition")
+	}
 	store.assistantStates[state.AssistantItemID] = state.Visibility
+	return nil
+}
+
+func (store *Store) validateSupersessionLocked(item Item) error {
+	if item.Event == nil || item.Event.SupersedesRevision == 0 {
+		return nil
+	}
+	if item.Kind != KindObservation {
+		return errors.New("only an observation may supersede an observation revision")
+	}
+	if item.SourceRevision == 0 || item.Event.SupersedesRevision >= item.SourceRevision {
+		return errors.New("observation supersession must name an older positive source revision")
+	}
+	supersededID := ""
+	for index := len(store.items) - 1; index >= 0; index-- {
+		candidate := store.items[index]
+		if candidate.Kind == KindObservation && candidate.SourceRevision == item.Event.SupersedesRevision {
+			supersededID = candidate.ID
+			break
+		}
+	}
+	if supersededID == "" {
+		return fmt.Errorf("observation supersedes unknown source revision %d", item.Event.SupersedesRevision)
+	}
+	if !slices.Contains(item.CausalParentIDs, supersededID) {
+		return fmt.Errorf("observation supersession must causally reference item %q", supersededID)
+	}
+	return nil
+}
+
+func (store *Store) transitionRepairLocked(item Item) error {
+	repair := *item.Repair
+	if strings.TrimSpace(repair.TargetAssistantItemID) == "" {
+		return errors.New("repair target assistant item is required")
+	}
+	targetIndex, targetExists := store.byID[repair.TargetAssistantItemID]
+	if !targetExists || store.items[targetIndex].Kind != KindAssistant {
+		return errors.New("repair target must name a preceding assistant item")
+	}
+	target := store.items[targetIndex]
+	switch repair.Status {
+	case RepairRequired:
+		if store.assistantStates[repair.TargetAssistantItemID] != VisibilityPlayed {
+			return errors.New("repair may be required only for played assistant content")
+		}
+		if item.SourceRevision == 0 || item.SourceRevision <= target.SourceRevision {
+			return errors.New("required repair must name the later canonical source revision that invalidated the target")
+		}
+		knownObservation := false
+		for _, candidate := range store.items {
+			if candidate.Kind == KindObservation && candidate.SourceRevision == item.SourceRevision {
+				knownObservation = true
+				break
+			}
+		}
+		if !knownObservation {
+			return errors.New("required repair source revision must match a preceding canonical observation")
+		}
+		if !slices.Contains(item.CausalParentIDs, repair.TargetAssistantItemID) {
+			return errors.New("required repair must causally reference its target assistant item")
+		}
+		if repair.PlayedAudioMS == 0 {
+			return errors.New("required repair must record positive played audio duration")
+		}
+		if repair.RepairAssistantItemID != "" {
+			return errors.New("required repair cannot name a resolving assistant item")
+		}
+		if _, exists := store.pendingRepairs[repair.TargetAssistantItemID]; exists {
+			return fmt.Errorf("assistant item %q already has a pending repair", repair.TargetAssistantItemID)
+		}
+		store.pendingRepairs[repair.TargetAssistantItemID] = item.ID
+	case RepairResolved:
+		requiredID, exists := store.pendingRepairs[repair.TargetAssistantItemID]
+		if !exists {
+			return fmt.Errorf("assistant item %q has no pending repair", repair.TargetAssistantItemID)
+		}
+		if repair.PlayedAudioMS != 0 {
+			return errors.New("resolved repair cannot replace the recorded playback duration")
+		}
+		index, exists := store.byID[repair.RepairAssistantItemID]
+		if !exists || store.items[index].Kind != KindAssistant || repair.RepairAssistantItemID == repair.TargetAssistantItemID {
+			return errors.New("resolved repair must name a distinct preceding assistant item")
+		}
+		required := store.items[store.byID[requiredID]]
+		correction := store.items[index]
+		if correction.Producer.Phase != PhaseSlow || correction.SourceRevision != item.SourceRevision ||
+			item.SourceRevision < required.SourceRevision {
+			return errors.New("resolved repair must name an authoritative slow assistant from the repair source revision or later")
+		}
+		if !slices.Contains(item.CausalParentIDs, repair.TargetAssistantItemID) ||
+			!slices.Contains(item.CausalParentIDs, repair.RepairAssistantItemID) {
+			return errors.New("resolved repair must causally reference both the target and correction")
+		}
+		delete(store.pendingRepairs, repair.TargetAssistantItemID)
+	default:
+		return fmt.Errorf("unknown repair status %q", repair.Status)
+	}
 	return nil
 }
 
@@ -556,6 +751,7 @@ func (store *Store) cloneLocked() *Store {
 		toolCalls:        make(map[string]string, len(store.toolCalls)),
 		toolResults:      make(map[string]struct{}, len(store.toolResults)),
 		assistantStates:  make(map[string]Visibility, len(store.assistantStates)),
+		pendingRepairs:   make(map[string]string, len(store.pendingRepairs)),
 		hasMonotonicTime: store.hasMonotonicTime,
 		lastNS:           store.lastNS,
 	}
@@ -573,6 +769,9 @@ func (store *Store) cloneLocked() *Store {
 	}
 	for key, value := range store.assistantStates {
 		clone.assistantStates[key] = value
+	}
+	for key, value := range store.pendingRepairs {
+		clone.pendingRepairs[key] = value
 	}
 	return clone
 }
@@ -601,6 +800,10 @@ func cloneItem(item Item) Item {
 	if item.AssistantState != nil {
 		copy := *item.AssistantState
 		item.AssistantState = &copy
+	}
+	if item.Repair != nil {
+		copy := *item.Repair
+		item.Repair = &copy
 	}
 	if item.Event != nil {
 		copy := *item.Event

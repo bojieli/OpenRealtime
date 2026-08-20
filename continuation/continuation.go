@@ -17,6 +17,22 @@ import (
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
+// PendingRepairInstruction is injected by provider adapters only while the
+// canonical trajectory contains an unresolved typed audible-repair obligation.
+// It is runtime policy, not text-authored workflow state.
+const PendingRepairInstruction = "Runtime repair obligation: assistant audio from an earlier branch was heard before newer canonical evidence invalidated it. Explicitly correct the audible claim before continuing; do not pretend it was never said."
+
+const PendingRepairPrompt = "Apply the pending audible-repair obligation now."
+
+// ObservationContent renders typed ASR supersession into provider-visible
+// context without exposing revision counters or inferring control from text.
+func ObservationContent(item trajectory.Item) string {
+	if item.Event != nil && item.Event.SupersedesRevision != 0 {
+		return "Updated user speech revision; replace the earlier partial observation with this text:\n" + item.Content
+	}
+	return item.Content
+}
+
 // ErrPreempted marks a cooperative resource preemption. Runtimes may resume a
 // continuation from the interrupted canonical prefix at the next safe point.
 var ErrPreempted = errors.New("continuation preempted at resource safe point")

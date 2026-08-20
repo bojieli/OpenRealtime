@@ -57,6 +57,47 @@ func TestCoordinatorBatchesStructuredEventsInArrivalOrder(t *testing.T) {
 	}
 }
 
+func TestObservationSupersessionRequiresOlderKnownRevision(t *testing.T) {
+	t.Parallel()
+	store := trajectory.NewStore()
+	coordinator, err := New(Config{Store: store, MaxPendingEvents: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := observationEvent("stable prefix", PriorityRoutine)
+	first.SourceRevision = 4
+	if _, err := coordinator.Submit(first); err != nil {
+		t.Fatal(err)
+	}
+	firstBatch, err := coordinator.RunNext(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := observationEvent("extended stable prefix", PriorityRoutine)
+	second.SourceRevision = 7
+	second.SupersedesRevision = 4
+	if _, err := coordinator.Submit(second); err != nil {
+		t.Fatal(err)
+	}
+	secondBatch, err := coordinator.RunNext(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondBatch.Items[0].Event.SupersedesRevision != 4 || len(secondBatch.Items[0].CausalParentIDs) != 1 ||
+		secondBatch.Items[0].CausalParentIDs[0] != firstBatch.Items[0].ID {
+		t.Fatalf("supersession causality = %#v", secondBatch.Items[0])
+	}
+	unknown := observationEvent("bad", PriorityRoutine)
+	unknown.SourceRevision = 9
+	unknown.SupersedesRevision = 8
+	if _, err := coordinator.Submit(unknown); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := coordinator.RunNext(context.Background()); err == nil {
+		t.Fatal("unknown superseded revision was accepted")
+	}
+}
+
 func TestTypedInterruptCancelsAtSafePointWithoutContentRouting(t *testing.T) {
 	t.Parallel()
 	store := trajectory.NewStore()
@@ -212,6 +253,73 @@ func TestCoordinatorReservesIngressCapacityForInterrupts(t *testing.T) {
 	}
 	if _, err := coordinator.Submit(interrupt); !errors.Is(err, ErrQueueFull) {
 		t.Fatalf("full queue did not apply backpressure: %v", err)
+	}
+}
+
+func TestPlayedInvalidationAndRepairCrossOneSafePointInOrder(t *testing.T) {
+	t.Parallel()
+	store := trajectory.NewStore()
+	if err := store.AppendBatch([]trajectory.Item{
+		{ID: "user", Kind: trajectory.KindObservation, SourceRevision: 1, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "request"},
+		{ID: "old", Kind: trajectory.KindAssistant, SourceRevision: 1, Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "old answer"},
+		{ID: "queued", Kind: trajectory.KindAssistantState, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, AssistantState: &trajectory.AssistantState{AssistantItemID: "old", Visibility: trajectory.VisibilityQueued}},
+		{ID: "updated", Kind: trajectory.KindObservation, SourceRevision: 2, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "updated request"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	coordinator, err := New(Config{Store: store, MaxPendingEvents: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := coordinator.Submit(Event{
+		Type: "conversation.item.truncated", Source: "client", Channel: "voice", Priority: PriorityRoutine,
+		Kind: trajectory.KindAssistantState, AssistantState: &trajectory.AssistantState{AssistantItemID: "old", Visibility: trajectory.VisibilityPlayed, PlayedAudioMS: 90},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := coordinator.Submit(Event{
+		Type: "speech.repair_required", Source: "commit-horizon", Channel: "voice", Priority: PriorityRoutine,
+		Kind: trajectory.KindRepair, SourceRevision: 2,
+		Repair: &trajectory.RepairState{TargetAssistantItemID: "old", Status: trajectory.RepairRequired, PlayedAudioMS: 90},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	batch, err := coordinator.RunNext(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batch.Items) != 2 || batch.Items[0].Kind != trajectory.KindAssistantState || batch.Items[1].Kind != trajectory.KindRepair ||
+		len(trajectory.PendingRepairs(store.Snapshot())) != 1 || !trajectory.BatchIntroducesPendingRepair(batch.Items) {
+		t.Fatalf("repair batch = %#v", batch.Items)
+	}
+}
+
+func TestSubmitBatchAdmissionIsAtomicUnderBackpressure(t *testing.T) {
+	t.Parallel()
+	store := trajectory.NewStore()
+	coordinator, err := New(Config{Store: store, MaxPendingEvents: 3, ReservedInterruptEvents: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := coordinator.Submit(observationEvent("already queued", PriorityRoutine)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = coordinator.SubmitBatch([]Event{
+		observationEvent("would fit alone", PriorityRoutine),
+		observationEvent("would cross routine reserve", PriorityRoutine),
+	})
+	if !errors.Is(err, ErrQueueFull) {
+		t.Fatalf("atomic batch backpressure = %v", err)
+	}
+	if coordinator.Pending() != 1 {
+		t.Fatalf("part of a rejected batch entered ingress: pending=%d", coordinator.Pending())
+	}
+	batch, err := coordinator.RunNext(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batch.Items) != 1 || batch.Items[0].Content != "already queued" {
+		t.Fatalf("rejected batch changed canonical input: %#v", batch.Items)
 	}
 }
 

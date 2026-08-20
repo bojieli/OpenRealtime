@@ -230,8 +230,16 @@ func (runtime *cognitionRuntime) Process(ctx context.Context, batch eventloop.Ba
 			toolResult = true
 		}
 	}
-	if !observation && !toolResult {
+	if !observation && !toolResult && !trajectory.BatchIntroducesPendingRepair(batch.Items) {
 		return nil
+	}
+	// A late tool result or repair obligation resumes from the latest canonical
+	// observation already in the store. Its older causal source remains on the
+	// result/repair item, but new output must not be labeled as an old branch.
+	for _, item := range runtime.store.Snapshot().Items {
+		if item.Kind == trajectory.KindObservation {
+			sourceRevision = max(sourceRevision, item.SourceRevision)
+		}
 	}
 	processor, err := runtime.newProcessor(sourceRevision)
 	if err != nil {

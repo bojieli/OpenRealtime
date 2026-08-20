@@ -68,16 +68,17 @@ func NewRunner(config RunnerConfig) (*Runner, error) {
 
 // RunResult identifies the items appended for one continuation.
 type RunResult struct {
-	InvocationID  string                `json:"invocation_id"`
-	StartVersion  uint64                `json:"start_version"`
-	EndVersion    uint64                `json:"end_version"`
-	AppendedIDs   []string              `json:"appended_ids"`
-	AssistantText string                `json:"assistant_text,omitempty"`
-	ToolProposals []trajectory.ToolCall `json:"tool_proposals,omitempty"`
-	ToolCalls     []trajectory.ToolCall `json:"tool_calls,omitempty"`
-	Completion    Completion            `json:"completion"`
-	Committed     bool                  `json:"committed"`
-	Interrupted   bool                  `json:"interrupted,omitempty"`
+	InvocationID   string                `json:"invocation_id"`
+	SourceRevision uint64                `json:"source_revision,omitempty"`
+	StartVersion   uint64                `json:"start_version"`
+	EndVersion     uint64                `json:"end_version"`
+	AppendedIDs    []string              `json:"appended_ids"`
+	AssistantText  string                `json:"assistant_text,omitempty"`
+	ToolProposals  []trajectory.ToolCall `json:"tool_proposals,omitempty"`
+	ToolCalls      []trajectory.ToolCall `json:"tool_calls,omitempty"`
+	Completion     Completion            `json:"completion"`
+	Committed      bool                  `json:"committed"`
+	Interrupted    bool                  `json:"interrupted,omitempty"`
 }
 
 type bufferedSegment struct {
@@ -222,7 +223,7 @@ func (runner *Runner) run(
 	interrupted := providerErr != nil || ctx.Err() != nil
 	items := runner.buildItems(instruction, invocationID, descriptor, invocation, segments, completion, interrupted)
 	result := RunResult{
-		InvocationID: invocationID, StartVersion: before.Version,
+		InvocationID: invocationID, SourceRevision: invocation.SourceRevision, StartVersion: before.Version,
 		Completion: completion, Interrupted: interrupted,
 	}
 	for _, segment := range segments {

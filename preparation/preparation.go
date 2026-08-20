@@ -70,12 +70,20 @@ func Fingerprint(input Input) (string, error) {
 			// Provider adapters skip media visibility transitions.
 			continue
 		}
+		if item.Kind == trajectory.KindRepair {
+			// Provider adapters represent only the resolved pending-repair state,
+			// not each operational lifecycle transition.
+			continue
+		}
 		if item.Kind == trajectory.KindAssistant && assistantVisibility[item.ID] == trajectory.VisibilityCancelled {
 			continue
 		}
 		projected := semanticItem{
 			Kind: item.Kind, Content: item.Content, ProviderStateType: item.ProviderStateType,
 			ProviderState: slices.Clone(item.ProviderState),
+		}
+		if item.Kind == trajectory.KindObservation {
+			projected.Content = continuation.ObservationContent(item)
 		}
 		if _, cancelled := cancelledInvocations[item.InvocationID]; cancelled {
 			projected.ProviderStateType = ""
@@ -92,6 +100,12 @@ func Fingerprint(input Input) (string, error) {
 			projected.ToolResult = &result
 		}
 		projection.Items = append(projection.Items, projected)
+	}
+	if len(trajectory.PendingRepairs(input.Request.Trajectory)) > 0 {
+		projection.Items = append(projection.Items, semanticItem{
+			Kind:    trajectory.KindRepair,
+			Content: continuation.PendingRepairInstruction + "\n" + continuation.PendingRepairPrompt,
+		})
 	}
 	encoded, err := json.Marshal(projection)
 	if err != nil {

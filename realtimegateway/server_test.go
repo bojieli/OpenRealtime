@@ -57,6 +57,7 @@ func TestHealthReportsConfiguredContinuationProfiles(t *testing.T) {
 		} `json:"asr"`
 		SlowContext interleave.SlowContextPolicy `json:"slow_context"`
 		Preparation PreparationPolicy            `json:"preparation_policy"`
+		Observation ObservationPolicy            `json:"observation_policy"`
 		Runtime     RuntimeMetricsSnapshot       `json:"runtime"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
@@ -66,6 +67,7 @@ func TestHealthReportsConfiguredContinuationProfiles(t *testing.T) {
 		body.Fast.EffectiveToolAuthority() != continuation.ToolAuthorityPropose || body.Slow.Model != "gemini-slow" ||
 		body.ASR.Model != "qwen-asr" || body.ASR.ProviderChunkMS != 200 || body.SlowContext != interleave.SlowContextContentOnly ||
 		body.Preparation != PreparationEndpointOnly ||
+		body.Observation != ObservationEndpointOnly ||
 		body.ASR.ProviderMaxChunkMS != 200 || body.ASR.Strategy != "fixed" ||
 		body.Runtime.ASRInputFrames != 9 || body.Runtime.ASRProviderAdvances != 3 {
 		t.Fatalf("unexpected health body: %#v", body)
@@ -112,6 +114,18 @@ func TestPreparationPolicyIsExplicitAndClosed(t *testing.T) {
 	}
 }
 
+func TestObservationPolicyIsExplicitAndClosed(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{"endpoint-only", "STABLE-PARTIAL"} {
+		if _, err := ParseObservationPolicy(value); err != nil {
+			t.Fatalf("parse %q: %v", value, err)
+		}
+	}
+	if _, err := ParseObservationPolicy("semantic-router"); err == nil {
+		t.Fatal("undeclared observation policy was accepted")
+	}
+}
+
 func TestServerDefaultsToContinuousPreparation(t *testing.T) {
 	t.Parallel()
 	server, err := New(Config{
@@ -123,6 +137,9 @@ func TestServerDefaultsToContinuousPreparation(t *testing.T) {
 	}
 	if server.config.PreparationPolicy != PreparationContinuous {
 		t.Fatalf("default preparation policy = %q", server.config.PreparationPolicy)
+	}
+	if server.config.ObservationPolicy != ObservationEndpointOnly {
+		t.Fatalf("default observation policy = %q", server.config.ObservationPolicy)
 	}
 	server.config.PreparationPolicy = PreparationEndpointOnly
 	session, err := newSession(context.Background(), nil, server.config, "")
@@ -137,6 +154,154 @@ func TestServerDefaultsToContinuousPreparation(t *testing.T) {
 		t.Fatal("endpoint-only policy allocated a private continuation chain")
 	}
 	session.cancel(errors.New("test complete"))
+}
+
+func TestStablePartialPolicyPromotesOnlyChangedTypedStableText(t *testing.T) {
+	t.Parallel()
+	fast := &scriptedProvider{
+		descriptor: continuation.Descriptor{
+			Provider: "fake-fast", Model: "fast", Phase: trajectory.PhaseFast,
+			Effort: continuation.EffortMinimal, Streaming: true,
+			ToolAuthority: continuation.ToolAuthorityPropose,
+		},
+		scripts: []providerScript{{}, {}},
+	}
+	slow := &scriptedProvider{
+		descriptor: continuation.Descriptor{
+			Provider: "fake-slow", Model: "slow", Phase: trajectory.PhaseSlow,
+			Effort: continuation.EffortHigh, Streaming: true,
+			ToolAuthority: continuation.ToolAuthorityExecute, ExecutableTools: true,
+		},
+		scripts: []providerScript{{}, {}},
+	}
+	server, err := New(Config{
+		PerceptionFactory: func() (v1.PerceptionProvider, error) { return &finalOnlyASR{}, nil },
+		FastProvider:      fast, SlowProvider: slow, SpeechProvider: fakeSpeech{},
+		PreparationPolicy: PreparationEndpointOnly,
+		ObservationPolicy: ObservationStablePartial,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := newSession(context.Background(), nil, server.config, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.cancel(errors.New("test complete"))
+	utterance := &utteranceState{itemID: "user-item", sampleRate: 8_000}
+
+	if err := session.observeRevision(utterance, v1.PerceptionRevision{
+		StableText: "check", UnstableText: " ord",
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	first, err := session.coordinator.RunNext(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Items) != 1 || first.Items[0].Content != "check" || first.Items[0].Event.Type != "asr.stable_partial" {
+		t.Fatalf("first stable observation = %#v", first.Items)
+	}
+	if err := session.observeRevision(utterance, v1.PerceptionRevision{
+		StableText: "check", UnstableText: " order",
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	if session.coordinator.Pending() != 0 {
+		t.Fatal("an unstable-suffix-only change became canonical")
+	}
+	if err := session.observeRevision(utterance, v1.PerceptionRevision{
+		StableText: "check order",
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	second, err := session.coordinator.RunNext(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Items) != 1 || second.Items[0].Content != "check order" ||
+		second.Items[0].SourceRevision <= first.Items[0].SourceRevision {
+		t.Fatalf("extended stable observation = %#v", second.Items)
+	}
+	if second.Items[0].Event.SupersedesRevision != first.Items[0].SourceRevision {
+		t.Fatalf("stable supersession provenance = %#v", second.Items[0].Event)
+	}
+	linked := false
+	for _, parent := range second.Items[0].CausalParentIDs {
+		linked = linked || parent == first.Items[0].ID
+	}
+	if !linked {
+		t.Fatalf("extended stable observation did not causally reference %q: %#v", first.Items[0].ID, second.Items[0].CausalParentIDs)
+	}
+	if err := session.observeRevision(utterance, v1.PerceptionRevision{
+		StableText: "check order", Final: true,
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	if session.coordinator.Pending() != 0 || fast.count() != 2 || slow.count() != 2 {
+		t.Fatalf("identical endpoint reran cognition: pending=%d fast=%d slow=%d", session.coordinator.Pending(), fast.count(), slow.count())
+	}
+}
+
+func TestLaterStablePartialCancelsOlderCanonicalWorkAtProviderBoundary(t *testing.T) {
+	t.Parallel()
+	fast := &cancelFirstProvider{
+		descriptor: continuation.Descriptor{
+			Provider: "fake-fast", Model: "fast", Phase: trajectory.PhaseFast,
+			Effort: continuation.EffortMinimal, Streaming: true,
+			ToolAuthority: continuation.ToolAuthorityPropose,
+		},
+		started: make(chan struct{}),
+	}
+	slow := &scriptedProvider{
+		descriptor: continuation.Descriptor{
+			Provider: "fake-slow", Model: "slow", Phase: trajectory.PhaseSlow,
+			Effort: continuation.EffortHigh, Streaming: true,
+			ToolAuthority: continuation.ToolAuthorityExecute, ExecutableTools: true,
+		},
+		scripts: []providerScript{{}},
+	}
+	server, err := New(Config{
+		PerceptionFactory: func() (v1.PerceptionProvider, error) { return &finalOnlyASR{}, nil },
+		FastProvider:      fast, SlowProvider: slow, SpeechProvider: fakeSpeech{},
+		PreparationPolicy: PreparationEndpointOnly,
+		ObservationPolicy: ObservationStablePartial,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := newSession(context.Background(), nil, server.config, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.cancel(errors.New("test complete"))
+	utterance := &utteranceState{itemID: "user-item", sampleRate: 8_000}
+	if err := session.observeRevision(utterance, v1.PerceptionRevision{StableText: "book a flight"}, false); err != nil {
+		t.Fatal(err)
+	}
+	firstDone := make(chan error, 1)
+	go func() {
+		_, runErr := session.coordinator.RunNext(context.Background())
+		firstDone <- runErr
+	}()
+	<-fast.started
+	if err := session.observeRevision(utterance, v1.PerceptionRevision{StableText: "book a flight tomorrow"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if runErr := <-firstDone; !errors.Is(runErr, preparation.ErrSuperseded) {
+		t.Fatalf("older stable branch was not superseded: %v", runErr)
+	}
+	if _, err := session.coordinator.RunNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if fast.count() != 2 || slow.count() != 1 {
+		t.Fatalf("superseded branch leaked into slow: fast=%d slow=%d", fast.count(), slow.count())
+	}
+	for _, item := range session.store.Snapshot().Items {
+		if item.Kind == trajectory.KindToolCall {
+			t.Fatalf("superseded branch exposed a side effect: %#v", item)
+		}
+	}
 }
 
 func TestContinuousPreparationUsesPrivateProviderClass(t *testing.T) {
@@ -243,6 +408,34 @@ type scriptedProvider struct {
 	mu         sync.Mutex
 	scripts    []providerScript
 	requests   []continuation.Request
+}
+
+type cancelFirstProvider struct {
+	descriptor continuation.Descriptor
+	started    chan struct{}
+	mu         sync.Mutex
+	requests   []continuation.Request
+}
+
+func (provider *cancelFirstProvider) Descriptor() continuation.Descriptor { return provider.descriptor }
+
+func (provider *cancelFirstProvider) Continue(ctx context.Context, request continuation.Request, _ continuation.Emit) (continuation.Completion, error) {
+	provider.mu.Lock()
+	provider.requests = append(provider.requests, request)
+	count := len(provider.requests)
+	provider.mu.Unlock()
+	if count == 1 {
+		close(provider.started)
+		<-ctx.Done()
+		return continuation.Completion{}, context.Cause(ctx)
+	}
+	return continuation.Completion{StopReason: "stop"}, nil
+}
+
+func (provider *cancelFirstProvider) count() int {
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	return len(provider.requests)
 }
 
 func (provider *scriptedProvider) Descriptor() continuation.Descriptor { return provider.descriptor }

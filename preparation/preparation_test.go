@@ -125,6 +125,54 @@ func TestFingerprintProjectsWhatTheUserActuallyHeard(t *testing.T) {
 	}
 }
 
+func TestFingerprintMirrorsSupersessionAndPendingRepairPolicy(t *testing.T) {
+	t.Parallel()
+	plain := preparedInput("updated request", 2)
+	plainFingerprint, err := Fingerprint(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	superseding := plain
+	superseding.Request.Trajectory.Items = append([]trajectory.Item(nil), plain.Request.Trajectory.Items...)
+	superseding.Request.Trajectory.Items[0].Event = &trajectory.EventMetadata{SupersedesRevision: 1}
+	supersedingFingerprint, err := Fingerprint(superseding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if supersedingFingerprint == plainFingerprint {
+		t.Fatal("typed observation supersession did not change provider-visible fingerprint")
+	}
+
+	pending := superseding
+	pending.Request.Trajectory.Items = append(append([]trajectory.Item(nil), superseding.Request.Trajectory.Items...),
+		trajectory.Item{ID: "old-answer", Kind: trajectory.KindAssistant, SourceRevision: 1, Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "old audible answer", Visibility: trajectory.VisibilityPlayed},
+		trajectory.Item{ID: "correction", Kind: trajectory.KindAssistant, SourceRevision: 2, Producer: trajectory.Producer{Phase: trajectory.PhaseSlow}, Content: "Correction: updated answer.", Visibility: trajectory.VisibilityPrepared},
+		trajectory.Item{ID: "required", Kind: trajectory.KindRepair, SourceRevision: 2, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, Repair: &trajectory.RepairState{TargetAssistantItemID: "old-answer", Status: trajectory.RepairRequired, PlayedAudioMS: 80}},
+	)
+	pending.Request.Trajectory.Version = uint64(len(pending.Request.Trajectory.Items))
+	pendingFingerprint, err := Fingerprint(pending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved := pending
+	resolved.Request.Trajectory.Items = append(append([]trajectory.Item(nil), pending.Request.Trajectory.Items...), trajectory.Item{
+		ID: "resolved", Kind: trajectory.KindRepair, SourceRevision: 2,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
+		Repair: &trajectory.RepairState{
+			TargetAssistantItemID: "old-answer", Status: trajectory.RepairResolved,
+			RepairAssistantItemID: "correction",
+		},
+	})
+	resolved.Request.Trajectory.Version++
+	resolvedFingerprint, err := Fingerprint(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolvedFingerprint == pendingFingerprint {
+		t.Fatal("resolving the pending repair did not remove provider-visible repair policy")
+	}
+}
+
 func TestManagerCancelsAndCoalescesToLatestExactInput(t *testing.T) {
 	t.Parallel()
 	provider := &latestProvider{started: make(chan string, 4)}

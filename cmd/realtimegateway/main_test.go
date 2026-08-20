@@ -41,6 +41,16 @@ func TestPreparationPolicyRejectsImplicitRouting(t *testing.T) {
 	}
 }
 
+func TestObservationPolicyRejectsImplicitRouting(t *testing.T) {
+	t.Parallel()
+	if _, err := realtimegateway.ParseObservationPolicy("stable-partial"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := realtimegateway.ParseObservationPolicy("auto"); err == nil {
+		t.Fatal("implicit observation routing was accepted")
+	}
+}
+
 func TestMakeFastProviderProfiles(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

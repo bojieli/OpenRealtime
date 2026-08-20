@@ -203,3 +203,28 @@ func TestBuildRequestExcludesAssistantCancelledBeforePlayback(t *testing.T) {
 		t.Fatalf("surrounding observations were lost: %s", encoded)
 	}
 }
+
+func TestBuildRequestInjectsPendingAudibleRepairObligation(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{APIKey: "secret", Model: "gemini-test", Phase: trajectory.PhaseSlow, Effort: continuation.EffortHigh})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(),
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			{ID: "user", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "updated request"},
+			{ID: "fast", Kind: trajectory.KindAssistant, Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "old audible answer"},
+			{ID: "played", Kind: trajectory.KindAssistantState, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, AssistantState: &trajectory.AssistantState{AssistantItemID: "fast", Visibility: trajectory.VisibilityPlayed, PlayedAudioMS: 80}},
+			{ID: "required", Kind: trajectory.KindRepair, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, Repair: &trajectory.RepairState{TargetAssistantItemID: "fast", Status: trajectory.RepairRequired, PlayedAudioMS: 80}},
+		}},
+		Invocation: continuation.Invocation{Instruction: "Continue."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(body.SystemInstruction)
+	if !strings.Contains(string(encoded), continuation.PendingRepairInstruction) {
+		t.Fatalf("pending repair policy missing: %s", encoded)
+	}
+}

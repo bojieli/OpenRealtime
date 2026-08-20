@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -117,6 +118,156 @@ func TestSlowSafePointSupersedesOnlyFastSpeech(t *testing.T) {
 	defer scheduler.mu.Unlock()
 	if len(scheduler.outstanding) != 1 || scheduler.outstanding[slow.ID].Phase != trajectory.PhaseSlow {
 		t.Fatalf("outstanding speech = %#v", scheduler.outstanding)
+	}
+}
+
+func TestEmittedFastSpeechWaitsForPlaybackBoundaryAndRequiresRepair(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	store := trajectory.NewStore()
+	if err := store.AppendBatch([]trajectory.Item{
+		{ID: "user", Kind: trajectory.KindObservation, SourceRevision: 1, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "request"},
+		{ID: "fast-item", Kind: trajectory.KindAssistant, SourceRevision: 1, Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "old answer"},
+		{ID: "queued", Kind: trajectory.KindAssistantState, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, AssistantState: &trajectory.AssistantState{AssistantItemID: "fast-item", Visibility: trajectory.VisibilityQueued}},
+		{ID: "updated", Kind: trajectory.KindObservation, SourceRevision: 2, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "updated request"},
+		{ID: "correction", Kind: trajectory.KindAssistant, SourceRevision: 2, Producer: trajectory.Producer{Phase: trajectory.PhaseSlow}, Content: "Correction: new answer."},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	session := &session{
+		ctx: ctx, store: store, sendChannel: make(chan []byte, 8),
+		wireAssistantItems: map[string][]string{"wire-item": {"fast-item"}},
+		wireSpeechJobs:     make(map[string]speechJob),
+	}
+	coordinator, err := eventloop.New(eventloop.Config{Store: store, MaxPendingEvents: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.coordinator = coordinator
+	scheduler := newSpeechScheduler(session, fakeSpeech{})
+	session.speech = scheduler
+	job := speechJob{ID: "job", SourceRevision: 1, Phase: trajectory.PhaseFast, AssistantIDs: []string{"fast-item"}}
+	session.wireSpeechJobs["wire-item"] = job
+	scheduler.mu.Lock()
+	scheduler.outstanding[job.ID] = job
+	scheduler.activeJobID = job.ID
+	scheduler.activeSent = true
+	scheduler.mu.Unlock()
+	if got := scheduler.SupersedeBefore(2); len(got) != 0 {
+		t.Fatalf("possibly played content was classified as cancellable: %v", got)
+	}
+	scheduler.BindRepairBefore(2, []string{"correction"})
+	if err := session.truncate(truncateEvent{ItemID: "wire-item", ContentIndex: 0, AudioEndMS: 90}); err != nil {
+		t.Fatal(err)
+	}
+	batch, err := coordinator.RunNext(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batch.Items) != 3 || batch.Items[0].AssistantState.Visibility != trajectory.VisibilityPlayed ||
+		batch.Items[1].Repair.Status != trajectory.RepairRequired || batch.Items[2].Repair.Status != trajectory.RepairResolved {
+		t.Fatalf("played repair lifecycle = %#v", batch.Items)
+	}
+	if len(trajectory.PendingRepairs(store.Snapshot())) != 0 || trajectory.AssistantVisibility(store.Snapshot())["fast-item"] != trajectory.VisibilityPlayed {
+		t.Fatalf("played history or repair state was lost: %#v", store.Snapshot())
+	}
+}
+
+func TestDeliveredFastSpeechRemainsRepairableAfterOrdinarySlowSupersession(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	session := &session{ctx: ctx}
+	scheduler := newSpeechScheduler(session, fakeSpeech{})
+	if err := scheduler.Enqueue(speechJob{
+		Phase: trajectory.PhaseFast, SourceRevision: 1, Text: "old answer", AssistantIDs: []string{"fast-item"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	job := <-scheduler.queue
+	scheduler.mu.Lock()
+	scheduler.activeJobID = job.ID
+	scheduler.activePhase = trajectory.PhaseFast
+	scheduler.mu.Unlock()
+	scheduler.noteAudioDelivery(job.ID)
+	if got := scheduler.SupersedeFast(); len(got) != 0 {
+		t.Fatalf("possibly delivered fast speech was cancelled as unplayed: %v", got)
+	}
+	if got := scheduler.SupersedeBefore(2); len(got) != 0 {
+		t.Fatalf("delivered speech was cancelled after a later revision: %v", got)
+	}
+	if invalidation, ok := scheduler.prepareInvalidatedPlayback(job.ID, []string{"fast-item"}); !ok ||
+		invalidation.InvalidatedByRevision != 2 {
+		t.Fatalf("delivered branch lost later repair provenance: %#v, %v", invalidation, ok)
+	}
+}
+
+func TestPlaybackBeforeCorrectionResolvesExactlyOnceWhenSlowCommits(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	store := trajectory.NewStore()
+	if err := store.AppendBatch([]trajectory.Item{
+		{ID: "user", Kind: trajectory.KindObservation, SourceRevision: 1, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "request"},
+		{ID: "fast-item", Kind: trajectory.KindAssistant, SourceRevision: 1, Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "old answer"},
+		{ID: "queued", Kind: trajectory.KindAssistantState, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, AssistantState: &trajectory.AssistantState{AssistantItemID: "fast-item", Visibility: trajectory.VisibilityQueued}},
+		{ID: "updated", Kind: trajectory.KindObservation, SourceRevision: 2, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "updated request"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	session := &session{
+		ctx: ctx, store: store, sendChannel: make(chan []byte, 8),
+		wireAssistantItems: map[string][]string{"wire-item": {"fast-item"}},
+		wireSpeechJobs:     make(map[string]speechJob),
+	}
+	coordinator, err := eventloop.New(eventloop.Config{Store: store, MaxPendingEvents: 16})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.coordinator = coordinator
+	scheduler := newSpeechScheduler(session, fakeSpeech{})
+	session.speech = scheduler
+	job := speechJob{ID: "job", SourceRevision: 1, Phase: trajectory.PhaseFast, AssistantIDs: []string{"fast-item"}}
+	session.wireSpeechJobs["wire-item"] = job
+	scheduler.mu.Lock()
+	scheduler.outstanding[job.ID] = job
+	scheduler.activeJobID = job.ID
+	scheduler.activeSent = true
+	scheduler.mu.Unlock()
+	scheduler.SupersedeBefore(2)
+	if err := session.truncate(truncateEvent{ItemID: "wire-item", ContentIndex: 0, AudioEndMS: 70}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := coordinator.RunNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if pending := trajectory.PendingRepairs(store.Snapshot()); len(pending) != 1 {
+		t.Fatalf("playback did not create one pending repair: %#v", pending)
+	}
+	snapshot := store.Snapshot()
+	if err := store.Append(trajectory.Item{
+		ID: "correction", Kind: trajectory.KindAssistant, SourceRevision: 2,
+		MonotonicNS: snapshot.Items[len(snapshot.Items)-1].MonotonicNS + 1,
+		Producer:    trajectory.Producer{Phase: trajectory.PhaseSlow}, Content: "Correction: updated answer.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	bindings := scheduler.BindRepairBefore(2, []string{"correction"})
+	if len(bindings) != 1 {
+		t.Fatalf("slow correction did not claim the pending repair once: %#v", bindings)
+	}
+	if err := session.queueRepairResolutions(bindings); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := coordinator.RunNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if pending := trajectory.PendingRepairs(store.Snapshot()); len(pending) != 0 {
+		t.Fatalf("slow correction left repair pending: %#v", pending)
+	}
+	if duplicate := scheduler.BindRepairBefore(2, []string{"correction"}); len(duplicate) != 0 {
+		t.Fatalf("resolved repair was queued twice: %#v", duplicate)
 	}
 }
 

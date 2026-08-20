@@ -141,6 +141,10 @@ func cloneProjectedItem(item trajectory.Item) trajectory.Item {
 		state := *item.AssistantState
 		item.AssistantState = &state
 	}
+	if item.Repair != nil {
+		repair := *item.Repair
+		item.Repair = &repair
+	}
 	if item.Event != nil {
 		event := *item.Event
 		item.Event = &event

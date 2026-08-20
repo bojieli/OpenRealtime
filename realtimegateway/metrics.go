@@ -26,6 +26,8 @@ type RuntimeMetrics struct {
 	asrFinalizeElapsedNS    atomic.Uint64
 	asrFinalizeMaxElapsedNS atomic.Uint64
 	asrFinalizations        atomic.Uint64
+	repairsRequired         atomic.Uint64
+	repairsResolved         atomic.Uint64
 	fast                    continuationProviderMetrics
 	slow                    continuationProviderMetrics
 	fastPreparation         continuationProviderMetrics
@@ -47,6 +49,8 @@ type RuntimeMetricsSnapshot struct {
 	ASRFinalizeElapsedNS    uint64                              `json:"asr_finalize_elapsed_ns"`
 	ASRFinalizeMaxElapsedNS uint64                              `json:"asr_finalize_maximum_elapsed_ns"`
 	ASRFinalizations        uint64                              `json:"asr_finalizations"`
+	RepairsRequired         uint64                              `json:"repairs_required"`
+	RepairsResolved         uint64                              `json:"repairs_resolved"`
 	Fast                    ContinuationProviderMetricsSnapshot `json:"fast"`
 	Slow                    ContinuationProviderMetricsSnapshot `json:"slow"`
 	FastPreparation         ContinuationProviderMetricsSnapshot `json:"fast_preparation"`
@@ -71,6 +75,8 @@ func (metrics *RuntimeMetrics) Snapshot() RuntimeMetricsSnapshot {
 		ASRFinalizeElapsedNS:    metrics.asrFinalizeElapsedNS.Load(),
 		ASRFinalizeMaxElapsedNS: metrics.asrFinalizeMaxElapsedNS.Load(),
 		ASRFinalizations:        metrics.asrFinalizations.Load(),
+		RepairsRequired:         metrics.repairsRequired.Load(),
+		RepairsResolved:         metrics.repairsResolved.Load(),
 		Fast:                    metrics.fast.snapshot(),
 		Slow:                    metrics.slow.snapshot(),
 		FastPreparation:         metrics.fastPreparation.snapshot(),

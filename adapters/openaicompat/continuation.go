@@ -448,6 +448,9 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 	// prompts; replaying every fast/slow control instruction grows context and
 	// presents contradictory phase policies on long conversations.
 	instructions := []string{request.Invocation.Instruction}
+	if len(trajectory.PendingRepairs(request.Trajectory)) > 0 {
+		instructions = append(instructions, continuation.PendingRepairInstruction)
+	}
 	assistantVisibility := trajectory.AssistantVisibility(request.Trajectory)
 	cancelledInvocations := trajectory.CancelledAssistantInvocations(request.Trajectory)
 	nativeInvocations := make(map[string]chatMessage)
@@ -507,6 +510,9 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 			result.Messages = append(result.Messages, message)
 		}
 	}
+	if len(trajectory.PendingRepairs(request.Trajectory)) > 0 {
+		result.Messages = append(result.Messages, chatMessage{Role: "user", Content: continuation.PendingRepairPrompt})
+	}
 	if len(result.Messages) == 1 && result.Messages[0].Role == "system" {
 		return chatRequest{}, errors.New("OpenAI-compatible continuation requires at least one observation or prior model item")
 	}
@@ -529,7 +535,7 @@ func isModelOutputItem(kind trajectory.Kind) bool {
 func compilePortableItem(item trajectory.Item) (chatMessage, bool, error) {
 	switch item.Kind {
 	case trajectory.KindObservation:
-		return chatMessage{Role: "user", Content: item.Content}, true, nil
+		return chatMessage{Role: "user", Content: continuation.ObservationContent(item)}, true, nil
 	case trajectory.KindReasoning:
 		return chatMessage{Role: "assistant", Content: "[Internal working state from an earlier continuation; not user-visible]\n" + item.Content}, true, nil
 	case trajectory.KindAssistant:

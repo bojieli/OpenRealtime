@@ -96,3 +96,46 @@ func TestEventProcessorRunsFastSlowThenResumesSlowFromToolEvent(t *testing.T) {
 		t.Fatalf("unexpected canonical continuation sequence: %v", runs)
 	}
 }
+
+func TestRepairObligationRunsSlowOnlyFromLatestObservation(t *testing.T) {
+	t.Parallel()
+	store := trajectory.NewStore()
+	if err := store.AppendBatch([]trajectory.Item{
+		{ID: "user", Kind: trajectory.KindObservation, SourceRevision: 7, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "updated request"},
+		{ID: "fast-answer", Kind: trajectory.KindAssistant, SourceRevision: 6, Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "old audible answer"},
+		{ID: "queued", Kind: trajectory.KindAssistantState, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, AssistantState: &trajectory.AssistantState{AssistantItemID: "fast-answer", Visibility: trajectory.VisibilityQueued}},
+		{ID: "played", Kind: trajectory.KindAssistantState, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, AssistantState: &trajectory.AssistantState{AssistantItemID: "fast-answer", Visibility: trajectory.VisibilityPlayed, PlayedAudioMS: 60}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fast := &sequenceProvider{descriptor: descriptor("fast", trajectory.PhaseFast, false)}
+	slow := &sequenceProvider{
+		descriptor: descriptor("slow", trajectory.PhaseSlow, false),
+		scripts:    []providerScript{{events: []continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Correction: use the updated answer."}}}},
+	}
+	engine, err := New(Config{Store: store, FastProvider: fast, SlowProvider: slow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	processor, err := NewProcessor(ProcessorConfig{Engine: engine})
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinator, err := eventloop.New(eventloop.Config{Store: store, Processor: processor, MaxPendingEvents: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := coordinator.Submit(eventloop.Event{
+		Type: "speech.repair_required", Source: "commit-horizon", Channel: "voice", Priority: eventloop.PriorityRoutine,
+		Kind: trajectory.KindRepair, SourceRevision: 7,
+		Repair: &trajectory.RepairState{TargetAssistantItemID: "fast-answer", Status: trajectory.RepairRequired, PlayedAudioMS: 60},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := coordinator.RunNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(fast.Requests()) != 0 || len(slow.Requests()) != 1 || slow.Requests()[0].Invocation.SourceRevision != 7 {
+		t.Fatalf("repair routing used stale or fast work: fast=%d slow=%#v", len(fast.Requests()), slow.Requests())
+	}
+}

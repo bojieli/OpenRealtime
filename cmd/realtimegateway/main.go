@@ -55,6 +55,7 @@ type options struct {
 	slowTokens      int
 	slowPace        time.Duration
 	preparation     string
+	observation     string
 	slowContext     string
 	ttsURL          string
 	ttsModel        string
@@ -86,6 +87,7 @@ func run(arguments []string) error {
 	flags.IntVar(&config.slowTokens, "slow-max-tokens", 2048, "slow continuation output-token limit")
 	flags.DurationVar(&config.slowPace, "slow-preparation-min-interval", 0, "content-independent speculative slow launch interval")
 	flags.StringVar(&config.preparation, "preparation-policy", "continuous", "cognitive preparation policy: continuous or endpoint-only")
+	flags.StringVar(&config.observation, "observation-policy", "endpoint-only", "canonical observation policy: endpoint-only or stable-partial")
 	flags.StringVar(&config.slowContext, "slow-context", "canonical", "slow context policy: canonical, content-only, or independent")
 	flags.StringVar(&config.ttsURL, "tts-url", "http://127.0.0.1:8081/v1/audio/speech", "local Fish Audio OpenAI-compatible speech endpoint")
 	flags.StringVar(&config.ttsModel, "tts-model", openaitts.DefaultModel, "Fish Audio model identity")
@@ -137,6 +139,10 @@ func serve(config options) error {
 	if err != nil {
 		return err
 	}
+	observationPolicy, err := realtimegateway.ParseObservationPolicy(config.observation)
+	if err != nil {
+		return err
+	}
 	slow, err := gemini.New(gemini.Config{
 		APIKey: geminiKey, Model: config.slowModel, Endpoint: config.slowEndpoint,
 		Phase: trajectory.PhaseSlow, Effort: slowEffort,
@@ -177,6 +183,7 @@ func serve(config options) error {
 		FastProvider:      fast, SlowProvider: slow, SpeechProvider: speech,
 		FastMaxTokens: config.fastTokens, SlowMaxTokens: config.slowTokens,
 		SlowPreparationMin: config.slowPace, PreparationPolicy: preparationPolicy,
+		ObservationPolicy: observationPolicy,
 		SlowContextPolicy: slowContext,
 		ValidateWire:      config.validateWire,
 	})

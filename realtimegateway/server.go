@@ -33,6 +33,7 @@ type Config struct {
 	MaxSlowInvocations  int
 	SlowPreparationMin  time.Duration
 	PreparationPolicy   PreparationPolicy
+	ObservationPolicy   ObservationPolicy
 	SlowContextPolicy   interleave.SlowContextPolicy
 	MaxAudioFrameBytes  int
 	MaxPendingEvents    int
@@ -77,6 +78,9 @@ func New(config Config) (*Server, error) {
 	if config.PreparationPolicy == "" {
 		config.PreparationPolicy = PreparationContinuous
 	}
+	if config.ObservationPolicy == "" {
+		config.ObservationPolicy = ObservationEndpointOnly
+	}
 	if config.RuntimeMetrics == nil {
 		config.RuntimeMetrics = &RuntimeMetrics{}
 	}
@@ -107,6 +111,11 @@ func New(config Config) (*Server, error) {
 		return nil, err
 	}
 	config.PreparationPolicy = preparationPolicy
+	observationPolicy, err := ParseObservationPolicy(string(config.ObservationPolicy))
+	if err != nil {
+		return nil, err
+	}
+	config.ObservationPolicy = observationPolicy
 	return &Server{config: config}, nil
 }
 
@@ -128,6 +137,7 @@ func (server *Server) Handler() http.Handler {
 				}(),
 			},
 			"preparation_policy": server.config.PreparationPolicy,
+			"observation_policy": server.config.ObservationPolicy,
 			"slow_context":       server.config.SlowContextPolicy,
 			"runtime":            server.config.RuntimeMetrics.Snapshot(),
 			"fast":               server.config.FastProvider.Descriptor(),

@@ -83,6 +83,7 @@ type session struct {
 	pendingInvocations map[string]*pendingInvocation
 	wireAssistantMu    sync.Mutex
 	wireAssistantItems map[string][]string
+	wireSpeechJobs     map[string]speechJob
 }
 
 func newSession(parent context.Context, connection *websocket.Conn, config Config, requestedModel string) (*session, error) {
@@ -99,6 +100,7 @@ func newSession(parent context.Context, connection *websocket.Conn, config Confi
 		store: trajectory.NewStore(), pendingCalls: make(map[string]pendingCall),
 		pendingInvocations: make(map[string]*pendingInvocation),
 		wireAssistantItems: make(map[string][]string),
+		wireSpeechJobs:     make(map[string]speechJob),
 	}
 	result.id = result.nextID("sess")
 	result.conversationID = result.nextID("conv")
@@ -386,9 +388,9 @@ func (session *session) interrupt(reason string) error {
 }
 
 func (session *session) cancelAssistantSpeech(assistantIDs []string, source string, priority eventloop.Priority) error {
-	var failures []error
+	events := make([]eventloop.Event, 0, len(assistantIDs))
 	for _, assistantID := range assistantIDs {
-		_, err := session.coordinator.Submit(eventloop.Event{
+		events = append(events, eventloop.Event{
 			Type: "speech.cancelled", Source: source, Channel: "voice",
 			Priority: priority, Kind: trajectory.KindAssistantState,
 			Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
@@ -396,13 +398,15 @@ func (session *session) cancelAssistantSpeech(assistantIDs []string, source stri
 				AssistantItemID: assistantID, Visibility: trajectory.VisibilityCancelled,
 			},
 		})
-		if err == nil {
-			session.signalCognition()
-		} else {
-			failures = append(failures, fmt.Errorf("record cancellation for assistant %q: %w", assistantID, err))
-		}
 	}
-	return errors.Join(failures...)
+	if len(events) == 0 {
+		return nil
+	}
+	if _, err := session.coordinator.SubmitBatch(events); err != nil {
+		return fmt.Errorf("record %d assistant cancellations: %w", len(events), err)
+	}
+	session.signalCognition()
+	return nil
 }
 
 func (session *session) truncate(truncate truncateEvent) error {
@@ -411,19 +415,76 @@ func (session *session) truncate(truncate truncateEvent) error {
 	}
 	session.wireAssistantMu.Lock()
 	assistantIDs := slices.Clone(session.wireAssistantItems[truncate.ItemID])
+	job, hasJob := session.wireSpeechJobs[truncate.ItemID]
 	session.wireAssistantMu.Unlock()
+	var invalidation speechInvalidation
+	invalidated := false
+	if hasJob && truncate.AudioEndMS > 0 {
+		invalidation, invalidated = session.speech.prepareInvalidatedPlayback(job.ID, assistantIDs)
+	} else if hasJob {
+		session.speech.discardInvalidation(job.ID)
+	}
+	events := make([]eventloop.Event, 0, len(assistantIDs)*3)
 	for _, assistantID := range assistantIDs {
-		if _, err := session.coordinator.Submit(eventloop.Event{
+		visibility := trajectory.VisibilityCancelled
+		playedMS := uint64(0)
+		if truncate.AudioEndMS > 0 {
+			visibility = trajectory.VisibilityPlayed
+			playedMS = uint64(truncate.AudioEndMS)
+		}
+		events = append(events, eventloop.Event{
 			Type: "conversation.item.truncated", Source: "realtime-client", Channel: "voice",
 			Priority: eventloop.PriorityRoutine, Kind: trajectory.KindAssistantState,
 			AssistantState: &trajectory.AssistantState{
-				AssistantItemID: assistantID, Visibility: trajectory.VisibilityCancelled,
+				AssistantItemID: assistantID, Visibility: visibility, PlayedAudioMS: playedMS,
 			},
-		}); err != nil {
+		})
+		if invalidated && playedMS > 0 {
+			events = append(events, eventloop.Event{
+				Type: "speech.repair_required", Source: "commit-horizon", Channel: "voice",
+				Priority: eventloop.PriorityRoutine, Kind: trajectory.KindRepair,
+				SourceRevision: invalidation.InvalidatedByRevision,
+				Repair: &trajectory.RepairState{
+					TargetAssistantItemID: assistantID, Status: trajectory.RepairRequired,
+					PlayedAudioMS: playedMS,
+				},
+			})
+			if len(invalidation.RepairAssistantIDs) > 0 {
+				events = append(events, eventloop.Event{
+					Type: "speech.repair_resolved", Source: "slow-continuation", Channel: "voice",
+					Priority: eventloop.PriorityRoutine, Kind: trajectory.KindRepair,
+					SourceRevision: invalidation.RepairSourceRevision,
+					Repair: &trajectory.RepairState{
+						TargetAssistantItemID: assistantID, Status: trajectory.RepairResolved,
+						RepairAssistantItemID: invalidation.RepairAssistantIDs[0],
+					},
+				})
+			}
+		}
+	}
+	if len(events) > 0 {
+		if _, err := session.coordinator.SubmitBatch(events); err != nil {
+			if invalidated {
+				session.speech.abortInvalidatedPlayback(job.ID)
+			}
 			return err
 		}
 		session.signalCognition()
 	}
+	if invalidated {
+		if len(invalidation.RepairAssistantIDs) > 0 {
+			session.speech.finishRepairResolution(job.ID, true)
+		} else if err := session.queueRepairResolutions(session.speech.markRepairRequiredQueued(job.ID)); err != nil {
+			return err
+		}
+	}
+	if hasJob {
+		session.speech.discardDelivery(job.ID)
+	}
+	session.wireAssistantMu.Lock()
+	delete(session.wireAssistantItems, truncate.ItemID)
+	delete(session.wireSpeechJobs, truncate.ItemID)
+	session.wireAssistantMu.Unlock()
 	return session.send(event("conversation.item.truncated", session.nextID("event"), map[string]any{
 		"item_id": truncate.ItemID, "content_index": 0, "audio_end_ms": truncate.AudioEndMS,
 	}))
@@ -433,32 +494,86 @@ func (session *session) PublishAssistant(phase trajectory.Phase, result continua
 	if strings.TrimSpace(result.AssistantText) == "" {
 		return nil
 	}
+	assistantIDs := resultAssistantIDs(session.store, result)
+	var repairBindings []repairBinding
 	if phase == trajectory.PhaseSlow {
+		repairBindings = session.speech.BindRepairBefore(result.SourceRevision, assistantIDs)
 		if err := session.cancelAssistantSpeech(session.speech.SupersedeFast(), "slow-continuation", eventloop.PriorityRoutine); err != nil {
+			session.abortRepairBindings(repairBindings)
 			return err
 		}
 	}
-	assistantIDs := resultAssistantIDs(session.store, result)
 	job := speechJob{
-		Phase: phase, Text: result.AssistantText, AssistantIDs: assistantIDs,
+		Phase: phase, SourceRevision: result.SourceRevision,
+		Text: result.AssistantText, AssistantIDs: assistantIDs,
 		Usage: result.Completion.Usage,
 	}
-	if err := session.speech.Enqueue(job); err != nil {
-		return err
-	}
+	queueEvents := make([]eventloop.Event, 0, len(assistantIDs))
 	for _, assistantID := range assistantIDs {
-		if _, err := session.coordinator.Submit(eventloop.Event{
+		queueEvents = append(queueEvents, eventloop.Event{
 			Type: "speech.queued", Source: "fish-audio", Channel: "voice",
 			Priority: eventloop.PriorityRoutine, Kind: trajectory.KindAssistantState,
 			AssistantState: &trajectory.AssistantState{
 				AssistantItemID: assistantID, Visibility: trajectory.VisibilityQueued,
 			},
-		}); err != nil {
+		})
+	}
+	if len(queueEvents) > 0 {
+		if _, err := session.coordinator.SubmitBatch(queueEvents); err != nil {
+			session.abortRepairBindings(repairBindings)
 			return err
 		}
 		session.signalCognition()
 	}
+	// Queue-state events must enter coordinator ingress before the scheduler can
+	// emit audio. A client playback boundary is therefore ordered after queued,
+	// even though both commit at later safe points.
+	if err := session.speech.Enqueue(job); err != nil {
+		cancelErr := session.cancelAssistantSpeech(assistantIDs, "speech-enqueue", eventloop.PriorityRoutine)
+		session.abortRepairBindings(repairBindings)
+		return errors.Join(err, cancelErr)
+	}
+	if phase == trajectory.PhaseSlow {
+		if err := session.queueRepairResolutions(repairBindings); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func (session *session) queueRepairResolutions(bindings []repairBinding) error {
+	if len(bindings) == 0 {
+		return nil
+	}
+	events := make([]eventloop.Event, 0)
+	for _, binding := range bindings {
+		for _, target := range binding.TargetAssistantIDs {
+			events = append(events, eventloop.Event{
+				Type: "speech.repair_resolved", Source: "slow-continuation", Channel: "voice",
+				Priority: eventloop.PriorityRoutine, Kind: trajectory.KindRepair,
+				SourceRevision: binding.RepairSourceRevision,
+				Repair: &trajectory.RepairState{
+					TargetAssistantItemID: target, Status: trajectory.RepairResolved,
+					RepairAssistantItemID: binding.RepairAssistantItemID,
+				},
+			})
+		}
+	}
+	if _, err := session.coordinator.SubmitBatch(events); err != nil {
+		session.abortRepairBindings(bindings)
+		return err
+	}
+	for _, binding := range bindings {
+		session.speech.finishRepairResolution(binding.JobID, true)
+	}
+	session.signalCognition()
+	return nil
+}
+
+func (session *session) abortRepairBindings(bindings []repairBinding) {
+	for _, binding := range bindings {
+		session.speech.finishRepairResolution(binding.JobID, false)
+	}
 }
 
 func (session *session) PublishToolCalls(invocation string, calls []trajectory.ToolCall, usage *continuation.Usage) error {
@@ -611,7 +726,8 @@ func (session *session) cognitionLoop() {
 			return
 		case <-session.cognition:
 			for session.coordinator.Pending() > 0 {
-				_, err := session.coordinator.RunNext(session.ctx)
+				batch, err := session.coordinator.RunNext(session.ctx)
+				session.recordCommittedRuntime(batch)
 				if err == nil || errors.Is(err, eventloop.ErrInterrupted) || errors.Is(err, context.Canceled) {
 					continue
 				}
@@ -620,6 +736,23 @@ func (session *session) cognitionLoop() {
 				}
 				session.sendError("provider_error", err.Error())
 			}
+		}
+	}
+}
+
+func (session *session) recordCommittedRuntime(batch eventloop.Batch) {
+	if session.config.RuntimeMetrics == nil {
+		return
+	}
+	for _, item := range batch.Items {
+		if item.Kind != trajectory.KindRepair || item.Repair == nil {
+			continue
+		}
+		switch item.Repair.Status {
+		case trajectory.RepairRequired:
+			session.config.RuntimeMetrics.repairsRequired.Add(1)
+		case trajectory.RepairResolved:
+			session.config.RuntimeMetrics.repairsResolved.Add(1)
 		}
 	}
 }

@@ -203,6 +203,7 @@ case "${action}" in
         --fast-endpoint "${OPENREALTIME_FAST_ENDPOINT:-}" \
         --slow-effort "${OPENREALTIME_SLOW_EFFORT:-high}" \
         --preparation-policy "${OPENREALTIME_PREPARATION_POLICY:-continuous}" \
+        --observation-policy "${OPENREALTIME_OBSERVATION_POLICY:-endpoint-only}" \
         --slow-context "${OPENREALTIME_SLOW_CONTEXT_POLICY:-canonical}"
     ;;
   stop)

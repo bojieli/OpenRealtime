@@ -44,20 +44,22 @@ const (
 // ToolResults is deliberately a batch: one slow invocation's complete set of
 // outstanding calls crosses the synchronization boundary atomically.
 type Event struct {
-	EventID        string
-	Type           string
-	Source         string
-	Channel        string
-	CorrelationID  string
-	Priority       Priority
-	Kind           trajectory.Kind
-	OccurredNS     uint64
-	SourceRevision uint64
-	InvocationID   string
-	Producer       trajectory.Producer
-	Content        string
-	ToolResults    []trajectory.ToolResult
-	AssistantState *trajectory.AssistantState
+	EventID            string
+	Type               string
+	Source             string
+	Channel            string
+	CorrelationID      string
+	Priority           Priority
+	Kind               trajectory.Kind
+	OccurredNS         uint64
+	SourceRevision     uint64
+	SupersedesRevision uint64
+	InvocationID       string
+	Producer           trajectory.Producer
+	Content            string
+	ToolResults        []trajectory.ToolResult
+	AssistantState     *trajectory.AssistantState
+	Repair             *trajectory.RepairState
 }
 
 // Batch is the exact event group committed before one processor invocation.
@@ -152,42 +154,77 @@ func New(config Config) (*Coordinator, error) {
 // the event itself enters the trajectory only after that work reaches a safe
 // point.
 func (coordinator *Coordinator) Submit(event Event) (string, error) {
-	if err := validateEvent(event); err != nil {
+	ids, err := coordinator.SubmitBatch([]Event{event})
+	if err != nil {
 		return "", err
 	}
-	event = cloneEvent(event)
+	return ids[0], nil
+}
+
+// SubmitBatch validates and queues one inseparable ingress group. Either every
+// event is admitted in the supplied order or none is. This is used for media
+// commitment lifecycles whose played/repair transitions must never be split by
+// queue backpressure.
+func (coordinator *Coordinator) SubmitBatch(events []Event) ([]string, error) {
+	if len(events) == 0 {
+		return nil, errors.New("event batch must not be empty")
+	}
+	events = slices.Clone(events)
+	for index := range events {
+		if err := validateEvent(events[index]); err != nil {
+			return nil, fmt.Errorf("event %d: %w", index, err)
+		}
+		events[index] = cloneEvent(events[index])
+	}
 	coordinator.idMu.Lock()
-	if event.EventID == "" {
-		event.EventID = coordinator.nextID("event")
+	for index := range events {
+		if events[index].EventID == "" {
+			events[index].EventID = coordinator.nextID("event")
+		}
 	}
 	coordinator.idMu.Unlock()
-	if strings.TrimSpace(event.EventID) == "" {
-		return "", errors.New("event ID generator returned an empty ID")
+	for _, event := range events {
+		if strings.TrimSpace(event.EventID) == "" {
+			return nil, errors.New("event ID generator returned an empty ID")
+		}
 	}
 
 	coordinator.mu.Lock()
-	limit := coordinator.maxPending
-	if event.Priority == PriorityRoutine {
-		limit -= coordinator.reserved
+	batchIDs := make(map[string]struct{}, len(events))
+	for index, event := range events {
+		limit := coordinator.maxPending
+		if event.Priority == PriorityRoutine {
+			limit -= coordinator.reserved
+		}
+		if len(coordinator.pending)+index >= limit {
+			coordinator.mu.Unlock()
+			return nil, ErrQueueFull
+		}
+		if _, duplicate := coordinator.eventIDs[event.EventID]; duplicate {
+			coordinator.mu.Unlock()
+			return nil, fmt.Errorf("duplicate event ID %q", event.EventID)
+		}
+		if _, duplicate := batchIDs[event.EventID]; duplicate {
+			coordinator.mu.Unlock()
+			return nil, fmt.Errorf("duplicate event ID %q", event.EventID)
+		}
+		batchIDs[event.EventID] = struct{}{}
 	}
-	if len(coordinator.pending) >= limit {
-		coordinator.mu.Unlock()
-		return "", ErrQueueFull
-	}
-	if _, duplicate := coordinator.eventIDs[event.EventID]; duplicate {
-		coordinator.mu.Unlock()
-		return "", fmt.Errorf("duplicate event ID %q", event.EventID)
-	}
-	coordinator.eventIDs[event.EventID] = struct{}{}
-	coordinator.nextSequence++
-	coordinator.pending = append(coordinator.pending, queuedEvent{sequence: coordinator.nextSequence, event: event})
+	ids := make([]string, len(events))
+	shouldInterrupt := false
 	cancel := coordinator.activeCancel
-	shouldInterrupt := event.Priority == PriorityInterrupt && cancel != nil
+	for index, event := range events {
+		coordinator.eventIDs[event.EventID] = struct{}{}
+		coordinator.nextSequence++
+		coordinator.pending = append(coordinator.pending, queuedEvent{sequence: coordinator.nextSequence, event: event})
+		ids[index] = event.EventID
+		shouldInterrupt = shouldInterrupt || event.Priority == PriorityInterrupt
+	}
 	coordinator.mu.Unlock()
-	if shouldInterrupt {
+	if shouldInterrupt && cancel != nil {
 		cancel(ErrInterrupted)
 	}
-	return event.EventID, nil
+	return ids, nil
 }
 
 // RunNext drains the currently pending events in arrival order, commits them
@@ -344,6 +381,7 @@ func (coordinator *Coordinator) compile(snapshot trajectory.Snapshot, events []E
 		metadata := &trajectory.EventMetadata{
 			EventID: event.EventID, Type: event.Type, Source: event.Source,
 			Channel: event.Channel, OccurredNS: event.OccurredNS, CorrelationID: event.CorrelationID,
+			SupersedesRevision: event.SupersedesRevision,
 		}
 		switch event.Kind {
 		case trajectory.KindObservation:
@@ -352,7 +390,20 @@ func (coordinator *Coordinator) compile(snapshot trajectory.Snapshot, events []E
 				SourceRevision: event.SourceRevision, Producer: event.Producer,
 				Content: event.Content, Event: metadata,
 			}
-			item.CausalParentIDs = directParents(parentID)
+			supersededID := ""
+			if event.SupersedesRevision != 0 {
+				for index := len(all) - 1; index >= 0; index-- {
+					if all[index].Kind == trajectory.KindObservation &&
+						all[index].SourceRevision == event.SupersedesRevision {
+						supersededID = all[index].ID
+						break
+					}
+				}
+				if supersededID == "" {
+					return nil, fmt.Errorf("observation supersedes unknown source revision %d", event.SupersedesRevision)
+				}
+			}
+			item.CausalParentIDs = directParents(parentID, supersededID)
 			items = append(items, item)
 			all = append(all, item)
 			parentID = item.ID
@@ -364,6 +415,17 @@ func (coordinator *Coordinator) compile(snapshot trajectory.Snapshot, events []E
 				AssistantState: &state, Event: metadata,
 			}
 			item.CausalParentIDs = directParents(parentID, state.AssistantItemID)
+			items = append(items, item)
+			all = append(all, item)
+			parentID = item.ID
+		case trajectory.KindRepair:
+			repair := *event.Repair
+			item := trajectory.Item{
+				ID: nextItemID(), Kind: trajectory.KindRepair, MonotonicNS: nextNS(),
+				SourceRevision: event.SourceRevision, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
+				Repair: &repair, Event: metadata,
+			}
+			item.CausalParentIDs = directParents(parentID, repair.TargetAssistantItemID, repair.RepairAssistantItemID)
 			items = append(items, item)
 			all = append(all, item)
 			parentID = item.ID
@@ -425,11 +487,17 @@ func validateEvent(event Event) error {
 	}
 	switch event.Kind {
 	case trajectory.KindObservation:
-		if strings.TrimSpace(event.Content) == "" || event.Producer.Phase == "" || len(event.ToolResults) != 0 || event.AssistantState != nil {
+		if strings.TrimSpace(event.Content) == "" || event.Producer.Phase == "" || len(event.ToolResults) != 0 || event.AssistantState != nil || event.Repair != nil {
 			return errors.New("observation event requires content and producer only")
 		}
+		if event.SupersedesRevision >= event.SourceRevision && event.SupersedesRevision != 0 {
+			return errors.New("observation supersession must name an older source revision")
+		}
 	case trajectory.KindToolResult:
-		if event.InvocationID == "" || len(event.ToolResults) == 0 || event.Content != "" || event.AssistantState != nil {
+		if event.SupersedesRevision != 0 {
+			return errors.New("tool-result event cannot supersede an observation")
+		}
+		if event.InvocationID == "" || len(event.ToolResults) == 0 || event.Content != "" || event.AssistantState != nil || event.Repair != nil {
 			return errors.New("tool-result event requires invocation ID and a non-empty result batch")
 		}
 		for index, result := range event.ToolResults {
@@ -443,8 +511,18 @@ func validateEvent(event Event) error {
 			}
 		}
 	case trajectory.KindAssistantState:
-		if event.AssistantState == nil || event.Content != "" || len(event.ToolResults) != 0 {
+		if event.SupersedesRevision != 0 {
+			return errors.New("assistant-state event cannot supersede an observation")
+		}
+		if event.AssistantState == nil || event.Content != "" || len(event.ToolResults) != 0 || event.Repair != nil {
 			return errors.New("assistant-state event requires one state transition")
+		}
+	case trajectory.KindRepair:
+		if event.SupersedesRevision != 0 {
+			return errors.New("repair event cannot supersede an observation")
+		}
+		if event.Repair == nil || event.Content != "" || len(event.ToolResults) != 0 || event.AssistantState != nil {
+			return errors.New("repair event requires one repair transition")
 		}
 	default:
 		return fmt.Errorf("external event cannot directly append trajectory kind %q", event.Kind)
@@ -476,6 +554,10 @@ func cloneEvent(event Event) Event {
 	if event.AssistantState != nil {
 		copy := *event.AssistantState
 		event.AssistantState = &copy
+	}
+	if event.Repair != nil {
+		copy := *event.Repair
+		event.Repair = &copy
 	}
 	return event
 }

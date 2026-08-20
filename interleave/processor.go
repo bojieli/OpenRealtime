@@ -60,8 +60,15 @@ func (processor *Processor) Process(ctx context.Context, batch eventloop.Batch) 
 			hasToolResult = true
 		}
 	}
+	for _, item := range processor.engine.store.Snapshot().Items {
+		if item.Kind == trajectory.KindObservation {
+			sourceRevision = max(sourceRevision, item.SourceRevision)
+		}
+	}
 	if !hasObservation && !hasToolResult {
-		return nil
+		if !trajectory.BatchIntroducesPendingRepair(batch.Items) {
+			return nil
+		}
 	}
 	request := Request{SourceRevision: sourceRevision}
 	var failures []error

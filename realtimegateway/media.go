@@ -22,6 +22,8 @@ type utteranceState struct {
 	sourceSample      uint64
 	sampleRate        uint32
 	lastText          string
+	lastCanonicalText string
+	lastCanonicalRev  uint64
 	providerRuns      uint64
 	providerFailures  uint64
 	providerElapsedNS uint64
@@ -174,8 +176,14 @@ func (session *session) observeRevision(utterance *utteranceState, revision v1.P
 		utterance.lastText = text
 	}
 	if !final {
+		if session.config.ObservationPolicy == ObservationStablePartial &&
+			strings.TrimSpace(revision.StableText) != "" && revision.StableText != utterance.lastCanonicalText {
+			return session.submitCanonicalObservation(utterance, revisionID, revision.StableText, "asr.stable_partial")
+		}
 		return nil
 	}
+	duplicateCanonical := session.config.ObservationPolicy == ObservationStablePartial &&
+		text == utterance.lastCanonicalText
 	if strings.TrimSpace(text) != "" && utterance.preparation != nil {
 		// Final stability is a distinct scheduler opportunity even when Qwen's
 		// text bytes equal the last partial revision. The semantic fingerprint
@@ -187,7 +195,11 @@ func (session *session) observeRevision(utterance *utteranceState, revision v1.P
 		if err != nil {
 			return fmt.Errorf("commit prepared continuation: %w", err)
 		}
-		session.cognitive.AttachPreparation(revisionID, chain)
+		if duplicateCanonical {
+			chain.Cancel(preparation.ErrSuperseded)
+		} else {
+			session.cognitive.AttachPreparation(revisionID, chain)
+		}
 	} else if strings.TrimSpace(text) == "" {
 		closePreparedTurn(utterance, errors.New("empty final transcript"))
 	}
@@ -206,15 +218,47 @@ func (session *session) observeRevision(utterance *utteranceState, revision v1.P
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
+	if duplicateCanonical {
+		session.speech.FinalizeSource(utterance.lastCanonicalRev)
+		return nil
+	}
+	if err := session.submitCanonicalObservation(utterance, revisionID, text, "asr.endpoint"); err != nil {
+		return err
+	}
+	session.speech.FinalizeSource(revisionID)
+	return nil
+}
+
+func (session *session) submitCanonicalObservation(
+	utterance *utteranceState,
+	revisionID uint64,
+	text string,
+	eventType string,
+) error {
+	if utterance.lastCanonicalRev != 0 {
+		// A later promoted revision requests a provider safe point immediately.
+		// Interrupted output may remain as non-executable audit history, but its
+		// tool calls are dropped by the continuation runner before commit.
+		session.coordinator.Interrupt(preparation.ErrSuperseded)
+		if err := session.cancelAssistantSpeech(
+			session.speech.SupersedeBefore(revisionID),
+			"asr-revision", eventloop.PriorityRoutine,
+		); err != nil {
+			return err
+		}
+	}
 	if _, err := session.coordinator.Submit(eventloop.Event{
-		Type: "asr.endpoint", Source: "qwen3-asr", Channel: "voice",
+		Type: eventType, Source: "qwen3-asr", Channel: "voice",
 		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindObservation,
 		OccurredNS: uint64(time.Since(session.origin)), SourceRevision: revisionID,
-		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: text,
+		SupersedesRevision: utterance.lastCanonicalRev,
+		Producer:           trajectory.Producer{Phase: trajectory.PhaseUser}, Content: text,
 		CorrelationID: utterance.itemID,
 	}); err != nil {
 		return err
 	}
+	utterance.lastCanonicalText = text
+	utterance.lastCanonicalRev = revisionID
 	session.signalCognition()
 	return nil
 }
