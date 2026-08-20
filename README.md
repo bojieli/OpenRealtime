@@ -92,7 +92,9 @@ exact commit; proposal-versus-execute tool authority; canonical continuation;
 exact tool-trajectory scoring; and a priority/capacity admission governor. A
 single-owner asynchronous event loop now adds source-versus-commit provenance,
 typed interruption, stale-prefix rejection, atomic external tool results, and
-cancellation-aware audible-history projection. A
+cancellation-aware audible-history projection. The post-freeze gateway also has
+an opt-in typed stable-partial commit policy and an append-only audible-repair
+lifecycle for played content invalidated by a later ASR revision. A
 standard `/v1/realtime` gateway now composes the live services, resumes slow
 directly from standard function results, bounds fast speech as a micro-turn,
 and emits paced 100 ms Fish audio. It passes 12/12 selected cases in the pinned
@@ -111,12 +113,23 @@ quality. These runs do not establish a latency/cost distribution or
 native-model parity. See the
 [live cascade design and evidence](docs/live-cascade.md).
 
-The gateway exposes two closed, content-independent preparation policies.
+The gateway exposes two independent closed policies. Preparation policy
 `continuous` admits private latest-wins fast→slow work on typed changed ASR
-revisions; `endpoint-only` admits no continuation work until server VAD commits
-the final ASR observation. Both then enter the identical canonical fast→slow
-event loop and tool-result resumption path. This is an internal experimental
-control and adds no Realtime wire events or model-authored routing decision.
+revisions; preparation policy `endpoint-only` admits no private continuation
+work before server VAD finalization. Canonical observation policy
+`endpoint-only` is the compatibility default and admits only the final ASR
+observation. The post-freeze `stable-partial` observation policy additionally
+promotes only changed, non-empty provider-typed `StableText`; unstable suffixes
+never become canonical. A promoted revision causally supersedes the previous
+one, cooperatively cancels older provider/media work, and an identical final
+transcript does not rerun cognition. Tools still execute only from committed
+slow calls. These internal policies add no Realtime wire event or
+model-authored routing decision.
+
+The frozen M8–M10 study uses canonical `endpoint-only` observations. The
+`stable-partial` mode and its played-audio repair path are post-freeze,
+opt-in, and currently unmeasured; no running benchmark result is attributed to
+them.
 
 M10 full-benchmark execution is in progress. The first long τ control launched
 before the executable freeze is retained as pilot evidence and is excluded

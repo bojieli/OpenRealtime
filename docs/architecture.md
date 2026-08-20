@@ -142,6 +142,14 @@ performs no fuzzy transcript match or semantic difficulty routing.
 Speculative TTS is still outside this measured path. Audio commitment,
 continuous input during output, interruption, and repair remain M3 boundaries.
 
+Canonical admission is configured independently. Compatibility/default
+`endpoint-only` promotes only the terminal ASR transcript. The opt-in
+post-freeze `stable-partial` policy also promotes changed non-empty
+provider-typed `StableText`, never the unstable suffix. Each promotion carries
+typed supersession provenance and cancels older provider/unplayed-media work at
+safe points; an identical endpoint is coalesced. The frozen M8–M10 executable
+uses endpoint-only canonical observations, so this newer policy is unmeasured.
+
 For the endpoint-only trigger control, the media path deliberately allocates no
 private chain. It continues incremental ASR, commits the same final typed
 observation, and then uses the ordinary event-loop-owned canonical transition.
@@ -155,7 +163,8 @@ controller distinguishes prepared, queued, and observed-played samples, bounds
 both lookahead regions, and treats played samples as immutable history. A
 directed interruption yields; listener backchannels and side speech do not
 stop playback. Candidate invalidation after playback creates a mandatory repair
-obligation that prevents clean closure until recorded.
+obligation that prevents clean closure until a distinct committed slow
+correction resolves it.
 
 OpenAI cancellation, output-buffer clearing, and conversation-item truncation
 are emitted at the observed playback boundary. Input append events remain
@@ -221,6 +230,11 @@ Assistant playback state is also append-only. Provider projections omit
 assistant content cancelled before playback and invalidate opaque state from
 that invocation, preventing unheard speech from reappearing as shared memory.
 Played content remains immutable and can only be corrected by a later segment.
+In the live gateway, later canonical evidence cancels unplayed media. A positive
+client playback boundary atomically appends played visibility and a typed repair
+requirement; pending repair invokes slow only from the newest observation and is
+resolved by naming its committed correction. This lifecycle stays internal to
+the trajectory and adds no Realtime wire event.
 
 This continuation contract is experimental. Stable `api/v1` continues to expose
 the historical five provider roles; replacing them requires a versioned
@@ -240,6 +254,11 @@ continuation. An explicit admission governor reserves interactive capacity for
 perception, final fast fallback, and TTS, while fast preparation is speculative
 and a local slow model would be background work. Scheduling class and cost come
 from deployment provenance, never transcript content.
+
+Post-freeze deployments may independently opt into canonical stable-partial
+admission. That path can begin authoritative fast→slow work before endpoint, but
+tool execution still follows only a committed slow call and played invalidation
+still follows the typed repair contract above.
 
 A generic per-stage temporal pacer can limit speculative slow launch frequency.
 It does not decide whether slow reasoning is semantically needed: every fast

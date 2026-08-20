@@ -1011,8 +1011,15 @@ reward 1.0. The trial also records superseded/failed background work and
 preserved failure cases. The same-family Gemini-fast matrix and typed
 content-only/independent slow-context projections are implemented and queued
 as complete controls; every condition retains one canonical store and differs
-only in the declared provider view. Canonical stable-partial effects and broader
-audible repair integration remain. The `api/v2` proposal is written in
+only in the declared provider view. Post-freeze, canonical stable-partial effects
+and broader audible repair integration are implemented behind an independent,
+opt-in observation policy. Eligibility uses only changed non-empty provider-typed
+stable text; later revisions carry causal supersession provenance, cancel older
+provider/unplayed-media work, and do not rerun cognition for an identical final
+transcript. Played invalidation creates a typed required/resolved repair
+obligation and routes correction through slow only. Only committed slow calls
+execute. This path is unmeasured and the frozen M8–M10 executable remains
+endpoint-only. The `api/v2` proposal is written in
 `docs/api-v2-proposal.md`: the pilot's 34 error-terminated runs are all
 unresolved spoken identifiers, the agent already requests letter-by-letter
 spelling in 33 of them, and three cases show it holding the correct

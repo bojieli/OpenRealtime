@@ -39,7 +39,9 @@ never inferred by matching transcript text.
    `tool_proposal` items and have no result channel.
 8. **Acoustic truth is semantic truth.** Played assistant content is immutable.
    Content cancelled before playback is absent from later provider context,
-   including opaque native state that may contain it.
+   including opaque native state that may contain it. Later evidence that
+   invalidates played content creates a typed repair obligation until a
+   committed slow correction resolves it.
 
 ## Events, opportunities, and trajectory items
 
@@ -57,7 +59,9 @@ A tick is therefore not an event that must enter conversation history and not
 a command to restart the pipeline. It lets persistent ASR consume available
 audio and lets revision-safe preparation advance if there is new semantic
 evidence. A stable partial or endpoint can be submitted as a canonical
-observation according to the declared turn/stability policy. Tool results and
+observation according to the declared turn/stability policy. The gateway default
+admits only endpoints; its opt-in post-freeze mode admits only provider-typed
+stable text and never an unstable suffix. Tool results, repair obligations, and
 directed interruptions wake the event loop without waiting for a tick.
 
 ## The state machine
@@ -73,7 +77,7 @@ concurrent producers
                                                     ▼
                                       atomic event-batch commit (CAS)
                                                     │
-                          observation? ─────────────┼──── tool result?
+                          observation? ─────────────┼──── tool result / repair?
                               │                     │          │
                               ▼                     │          ▼
                      fast continuation              │   slow continuation
@@ -91,9 +95,10 @@ concurrent producers
 There is no `answer/ask/yield/stop/present_slow` cognitive router. For a
 response-eligible observation, the policy is simply fast then one slow
 continuation. For a completed tool-result event, it is slow continuation only.
-For a playback-state event, no model is invoked. Ordinary assistant text
-expresses an answer, question, or acknowledgement; the media controller owns
-floor yielding and stopping.
+For a newly required audible repair, it is also slow continuation only from the
+latest observation. For a playback-state event or repair resolution, no model is
+invoked. Ordinary assistant text expresses an answer, question, acknowledgement,
+or explicit correction; the media controller owns floor yielding and stopping.
 
 ## One safe-point transition
 
@@ -185,7 +190,10 @@ irreversible effect.
 Model commitment and playback commitment are different boundaries. A completed
 assistant item begins `prepared`; TTS may move it through `queued` to `played`.
 Prepared or queued content can be cancelled. Played content cannot be removed
-from history and later reasoning must correct it explicitly.
+from history. If a later canonical ASR revision invalidates it, playback
+confirmation and `repair: required` enter one atomic ingress batch. Pending
+repair policy remains provider-visible until a distinct committed slow assistant
+item is bound by `repair: resolved`; repair never reruns fast.
 
 Provider compilers resolve the append-only playback transitions before each
 request. Cancelled-before-playback assistant text and provider-native state from
@@ -197,9 +205,11 @@ Fish fragments are coalesced into 100 ms wire frames and paced against their
 encoded duration. A committed slow assistant or tool call invalidates queued
 and active fast-only media without cancelling slow media. The already emitted
 prefix is handled by normal Realtime playback/truncation events and is never
-rewritten. This prevents an authoritative tool result from waiting behind a
-large provisional client-side audio buffer without introducing a semantic
-router.
+rewritten. Unplayed invalidated media is cancelled. A positive client-reported
+playback boundary preserves the old assistant item and creates the internal
+repair lifecycle above, with no new Realtime wire event. This prevents an
+authoritative tool result from waiting behind a large provisional client-side
+audio buffer without introducing a semantic router.
 
 ## Latency path
 
@@ -232,8 +242,8 @@ but it remains separate from the OpenAI-compatible connection.
 
 ## Implementation map
 
-- `trajectory`: immutable items, visibility projection, exact tool-result
-  matching, and versioned atomic append.
+- `trajectory`: immutable items, supersession/repair invariants, visibility
+  projection, exact tool-result matching, and versioned atomic append.
 - `eventloop`: structured ingress queue, routine/interrupt handling, one active
   transition, an explicit queue bound with reserved interrupt capacity, event
   provenance, and atomic batch commit. A full class allocation returns
@@ -243,7 +253,8 @@ but it remains separate from the OpenAI-compatible connection.
   authority, and the observation/tool-result cognitive transition.
 - `preparation`: private latest-wins work and exact provider-visible
   fingerprints.
-- `speech`: prepared/queued/played/cancelled media commitment.
+- `speech`: prepared/queued/played/cancelled media commitment and typed repair
+  binding.
 - `realtimegateway`: standard Realtime transport, persistent acoustic/media
   state, exact external result batching, phase-authority speech supersession,
   and 100 ms paced Fish audio projection.

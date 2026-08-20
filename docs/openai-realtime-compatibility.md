@@ -19,15 +19,19 @@ or server event types. Asynchronous transcription, response cancellation,
 output-buffer clearing, item truncation, ordinary function calls/results, and
 audio/transcript deltas already provide the observable wire behavior. Fast and
 slow phase identity, reasoning lifecycle, event priority, trajectory versions,
-and preparation fingerprints remain internal trace data.
+preparation fingerprints, observation supersession, and audible-repair
+obligations remain internal trace data.
 
 In particular, an input transcription may complete independently of response
 events, so the internal runtime correlates it by item/event identity instead of
 assuming arrival order. When output is interrupted, OpenRealtime projects the
 actual playback boundary through the existing cancel/clear/truncate lifecycle;
 content cancelled before playback is excluded from later internal provider
-context. This preserves compatibility while keeping acoustic and cognitive
-history synchronized.
+context. If a later canonical ASR revision invalidates content the client reports
+as played, the internal trajectory records a typed repair obligation and keeps
+it active until a committed slow assistant item supplies the correction. No
+repair event is added to the OpenAI Realtime wire. This preserves compatibility
+while keeping acoustic and cognitive history synchronized.
 
 ## Implemented gateway subset
 
@@ -49,6 +53,14 @@ The `continuous` versus `endpoint-only` preparation setting is also internal.
 It controls whether typed partial transcripts may start private work; standard
 server VAD and transcription events still define the public lifecycle, and the
 same response/function-call events expose the post-endpoint result.
+
+Canonical observation policy is separate. Its compatibility default,
+`endpoint-only`, admits only the final transcript. The opt-in post-freeze
+`stable-partial` mode may admit changed non-empty provider-typed `StableText`
+before endpoint, without promoting `UnstableText`. Later promoted revisions
+carry typed supersession provenance and cancel older work at provider/media safe
+points. The frozen benchmark executable uses `endpoint-only`; stable-partial
+behavior is not part of its reported evidence.
 
 External tools use the ordinary protocol sequence: the slow continuation emits
 standard function-call response items; the client sends one

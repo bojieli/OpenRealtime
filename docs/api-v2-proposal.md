@@ -120,13 +120,18 @@ Existing capability negotiation already carries this; the constants are the
 only addition. A v1 provider adapted into a v2 runtime declares none of them
 and behaves exactly as it does today.
 
-## Declined: making the stable partial canonical
+## No v2 change: making the stable partial canonical
 
 M9 also lists canonical stable-partial effects. That is a commit-policy change
 inside the engine -- whether a declared stable partial may take tool effects
 before endpoint -- and `docs/canonical-trajectory.md` already states it must
 preserve the same causal and authority invariants. It needs no contract
-change, so it does not belong in `v2`.
+change, so it does not belong in `v2`. The gateway now implements that policy
+post-freeze as the opt-in `stable-partial` observation mode. Eligibility comes
+only from provider-typed `StableText`; later revisions carry typed supersession
+provenance, and only committed slow calls execute. The frozen M8–M10 executable
+remains endpoint-only, so this implementation is unmeasured and does not alter
+the evidence motivating the v2 spoken-form proposal.
 
 ## What this proposal does not claim
 

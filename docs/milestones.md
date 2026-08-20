@@ -242,7 +242,12 @@ pin the v1.0.0 release and run the same public conformance suite.
   common agent policy, and cancellation-aware audible-history projection
 - Gateway: standard tool results resume slow from the exact extended canonical
   prefix without rerunning fast; a slow safe point supersedes only unplayed
-  fast media without content routing
+  fast media without content routing. Post-freeze, the opt-in
+  `stable-partial` observation policy promotes only provider-typed stable text,
+  preserves typed supersession causality, cancels older work, and coalesces an
+  identical endpoint. Played media invalidated by a later promoted revision
+  creates an append-only required/resolved repair obligation; repair runs slow
+  only, and only committed slow calls execute
 - Target: fast and slow models continue one trajectory containing observations,
   reusable reasoning, assistant content, proposals, executable calls, and
   results
@@ -252,6 +257,9 @@ pin the v1.0.0 release and run the same public conformance suite.
 - Compatibility: experimental internals first; stable replacement requires
   `api/v2`; the proposal is written in `docs/api-v2-proposal.md` and is not
   implemented
+- Evidence boundary: canonical stable-partial admission and the gateway repair
+  lifecycle are implemented but opt-in and unmeasured. The frozen M8–M10 study
+  retains canonical `endpoint-only` observations
 
 ## M10 — Joint responsiveness–intelligence study
 

@@ -57,6 +57,14 @@ Canonical-trajectory comparisons additionally report:
 - Claims of tool completion without a causal completed result.
 - Successful resumption after user, ASR, or tool interruption.
 
+The live gateway exposes committed `repairs_required` and `repairs_resolved`
+counters in `/healthz`. They count canonical repair transitions after atomic
+event-batch commit, not attempted queue submissions. A required repair records a
+positive client-reported playback duration, the invalidating canonical source
+revision, and the played assistant target; a resolution names the distinct
+committed slow assistant item that carries the correction. Raw words are not
+part of these counters.
+
 “First audio” and “first semantic audio” are separate. A benchmark annotation
 must state why an output is substantive or a backchannel. Exploratory automatic
 classification must be checked against blinded human labels before supporting
@@ -106,6 +114,10 @@ fast/slow calls and private fast/slow preparation calls. Classification comes
 from the typed execution path that owns the call, never transcript content.
 Each class separately reports starts, completion/failure/cancellation, events,
 tokens, and provider/first-event time; no subtraction of nested timers is used.
+The same health document reports preparation policy and canonical observation
+policy independently. The frozen study uses `endpoint-only` canonical
+observations; post-freeze `stable-partial` and repair counts must not be mixed
+into those populations.
 
 Tool metrics distinguish non-executable proposals from authoritative calls.
 Proposal count is not tool-call success, and a result counts only when it is

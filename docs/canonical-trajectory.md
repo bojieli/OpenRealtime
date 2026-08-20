@@ -60,6 +60,7 @@ The internal append-only store has these semantic item kinds:
 | `reasoning` | Reusable fast or slow working state | No |
 | `assistant` | Ordinary assistant content with commit state | Becomes audible only through speech policy |
 | `assistant_state` | Prepared/queued/played/cancelled transition | No |
+| `repair` | Required/resolved lifecycle for played content invalidated by later canonical evidence | No |
 | `tool_proposal` | Structured fast-model working state | **No** |
 | `tool_call` | Authorized slow-model request | Yes, through the tool runtime |
 | `tool_result` | Terminal result of one `tool_call` | No |
@@ -92,6 +93,13 @@ fields. This is an internal representation, not an OpenAI Realtime event.
     a safe point never falsifies when an external event actually happened.
 11. All results for the executable calls emitted by one slow invocation cross
     the asynchronous boundary as one complete identity-checked batch.
+12. A superseding observation names an older known source revision and causally
+    references that observation. Tool, repair, and media events cannot claim
+    observation supersession.
+13. A repair may be required only for played assistant content and must name a
+    later known canonical observation. Resolution names a distinct committed
+    slow assistant item from that repair revision or later. Required and
+    resolved transitions are append-only and identity matched.
 
 ## Fast continuation and tool awareness
 
@@ -197,9 +205,19 @@ bypasses, cancellation disposition, exact replay versus fallback, tokens when
 available, and no model content.
 
 This is continuous thinking while listening without speculative side effects.
-A later condition may make a declared stable partial canonical before endpoint
-and permit its tool effects or speech earlier, but that is a distinct commit
-policy and must preserve the same causal and authority invariants.
+It is independent of canonical observation admission. The gateway now exposes a
+second closed policy: compatibility/default `endpoint-only` admits only the
+terminal ASR observation, while opt-in `stable-partial` also admits a changed,
+non-empty provider-typed `StableText`. `UnstableText`, transcript keywords, and
+model confidence never determine eligibility. A later promoted revision names
+the exact prior source revision it supersedes, preserves that causal edge,
+requests a provider safe point, and invalidates older unplayed media. An exact
+final duplicate does not rerun cognition. Executable effects remain restricted
+to tool calls that reach a committed slow-model safe point.
+
+`stable-partial` was implemented after the frozen M8–M10 executable. It is
+opt-in and unmeasured; every frozen study population retains canonical
+`endpoint-only` observations.
 
 ## Cadence and asynchronous events
 
@@ -233,16 +251,18 @@ active continuation reaches its boundary. Priority is never inferred from
 words in a transcript.
 
 Pre-endpoint preparation is itself a closed temporal policy, not a routing
-decision. Under `continuous`, changed typed ASR revisions may drive the private
-latest-wins chain. Under the endpoint-only experimental control, they cannot
-invoke either continuation provider. In both cases the final ASR observation
-is committed once and selects the same `fast → slow` canonical transition;
-complete tool-result batches select the same slow-only resumption transition.
+decision. Under preparation `continuous`, changed typed ASR revisions may drive
+the private latest-wins chain. Under preparation `endpoint-only`, they cannot
+invoke either continuation provider privately. This setting does not decide
+which observations are canonical; the independent observation policy above does.
+Every admitted observation selects the same `fast → slow` canonical transition,
+and complete tool-result batches select the same slow-only resumption transition.
 
 For a canonical observation the cognitive transition is `fast → slow`; for a
-complete tool-result batch it is `slow`; for playback state alone it is empty.
-Those are the only reference routing rules. Event occurrence metadata is
-retained even when canonical ordering places the event after the
+complete tool-result batch it is `slow`; for a newly required audible repair it
+is `slow`; for playback state or repair resolution alone it is empty. Repair
+never reruns fast. Those are the only reference routing rules. Event occurrence
+metadata is retained even when canonical ordering places the event after the
 completed/interrupted model prefix that was active when it occurred.
 
 ## Co-located resource admission
@@ -278,9 +298,16 @@ prepared → queued → played
 ```
 
 The slow continuation inherits what has already been heard. It may replace
-unplayed content. If later reasoning contradicts played content, it must append
-an explicit correction. The current live benchmark starts TTS only after a
-canonical model safe point; speculative TTS remains a separate experiment.
+unplayed content. When a later promoted ASR revision invalidates a branch whose
+audio may have crossed the wire, the client playback boundary determines the
+disposition: zero played duration remains cancellable, while a positive duration
+appends `assistant_state: played` and `repair: required` atomically. A pending
+repair injects a fixed runtime correction instruction and invokes slow only from
+the latest canonical observation. Its later committed assistant correction is
+named by `repair: resolved`. If the correction already exists when playback is
+reported, required and resolved may cross one atomic event batch without an
+extra continuation. The current live benchmark starts TTS only after a canonical
+model safe point; speculative TTS remains a separate experiment.
 
 The persistent gateway makes that replacement rule operational. Fast output is
 a bounded spoken micro-turn, not an unconstrained answer queued ahead of slow
@@ -301,7 +328,9 @@ Cancelled-before-playback assistant text is removed from every later provider
 projection, including opaque native state from the same invocation that may
 embed the cancelled text. Prepared, queued, and played content remains visible;
 the operational queued/played transitions themselves do not inflate semantic
-fingerprints.
+fingerprints. Repair transitions are likewise operational; only whether an
+obligation remains pending changes the provider-visible request and preparation
+fingerprint.
 
 ## Provider-boundary compatibility
 
@@ -322,9 +351,10 @@ retain only assistant/tool history and timing/token metadata.
 ## Protocol and observability boundary
 
 The public OpenAI Realtime client/server protocol is unchanged. Canonical
-items, preparation attempts, scheduling classes, and continuation lifecycle are
-internal. Existing text, audio, cancellation, and function-call events carry
-observable behavior.
+items, preparation attempts, scheduling classes, observation supersession,
+repair obligations, and continuation lifecycle are internal. Existing text,
+audio, cancellation, truncation, and function-call events carry observable
+behavior.
 
 `realtimegateway` implements this projection at `/v1/realtime`: session/audio
 events enter the canonical runtime, slow calls leave as standard function-call

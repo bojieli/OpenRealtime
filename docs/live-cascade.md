@@ -30,13 +30,22 @@ cannot invoke fast or slow. The final transcript still becomes the same typed
 result loop. The policy is selected per deployment, never from transcript
 content or a model decision.
 
+Canonical observation admission is a separate closed policy. The compatibility
+default, `endpoint-only`, keeps effects endpoint-gated. The opt-in post-freeze
+`stable-partial` mode also promotes changed non-empty provider-typed
+`StableText`; it never promotes the unstable suffix. Each later promotion names
+and causally supersedes the prior canonical revision, cancels older provider and
+unplayed media work, and coalesces an identical final transcript. Only a slow
+tool call that reaches canonical commit may execute. This mode is not used by or
+measured in the frozen M8–M10 study.
+
 The persistent gateway path is:
 
 ```text
 8 kHz G.711 mu-law or 24 kHz PCM Realtime input
   → acoustic VAD with prefix/silence hysteresis
   → persistent Qwen3-ASR with 200 ms provider buffering
-  → response-eligible canonical observation
+  → response-eligible endpoint or typed-stable canonical observation
   → Qwen fast spoken micro-turn + unconditional Gemini slow continuation
   → standard function-call events
   → exact complete tool-result batch → slow-only resumption
@@ -250,6 +259,9 @@ controls whose typed provider projections never fork the canonical store.
 `OPENREALTIME_PREPARATION_POLICY` defaults to `continuous`; `endpoint-only`
 disables all partial-revision continuation work while retaining the identical
 canonical event loop after VAD finalization.
+`OPENREALTIME_OBSERVATION_POLICY` defaults to `endpoint-only`; the independent
+`stable-partial` option changes canonical admission without enabling or
+disabling private preparation. `/healthz` reports both policies.
 The same health document exposes cumulative session, input-frame, ASR provider
 advance, fast/slow continuation, and Fish speech counters. Continuation and
 speech aggregates separate completion, failure, and cooperative cancellation;
@@ -258,7 +270,8 @@ aggregates selected by typed execution provenance;
 ASR aggregates separately measure stateful advance and endpoint-finalization
 attempts, failures, and elapsed time. The other aggregates record streamed
 event/chunk counts, tokens or source samples, and cumulative/maximum provider
-and first-event timing. Matrix runners preserve both the start and final health
+and first-event timing. Committed audible repair requirements and resolutions
+have separate counters. Matrix runners preserve both the start and final health
 snapshots, keeping provider work measurable without extending the standard
 Realtime event vocabulary.
 
@@ -296,8 +309,9 @@ Qwen3-ASR 0.6B versus the official 1.7B streaming model, with every benchmark
 and cognitive variable held fixed. It is a post-baseline ablation, not an
 automatic fallback or input-dependent router.
 
-The gateway has no answer/ask/yield/status router. A final ASR observation runs
-fast once and slow once. A complete external function-result batch resumes the
+The gateway has no answer/ask/yield/status router. Every observation admitted by
+the configured canonical policy runs fast once and slow once. A complete
+external function-result batch resumes the
 slow continuation directly from the exact extended canonical prefix; fast is
 not rerun. No process-local agent or advice object owns the resumption. Both
 phases see the same session instruction and tool definitions. Fast call-shaped
@@ -316,6 +330,15 @@ The speech scheduler separates semantic and acoustic commitment:
   media, while user VAD interrupts all unplayed speech; and
 - played text remains visible to later continuations and can only be corrected,
   never erased.
+
+When a later canonical ASR revision invalidates audio that may have crossed the
+wire, `conversation.item.truncate` supplies the actual playback boundary. Zero
+played duration stays cancellable. Positive duration atomically records played
+visibility plus a typed repair obligation. Pending repair policy invokes slow
+only from the newest observation; its distinct committed correction resolves the
+obligation. If that correction already exists, requirement and resolution can
+commit together without another model call. The repair lifecycle is internal and
+adds no Realtime event.
 
 This supersession rule depends only on phase authority and playback state. It
 does not inspect transcript/model text or benchmark identity.
@@ -540,9 +563,9 @@ finite resource guard are necessary.
 
 - Pre-endpoint preparation is text-only; speculative TTS is not yet part of
   this measured path.
-- Slow reasoning now runs privately before endpoint, but tool effects and
-  speech remain endpoint-gated. The runner does not yet canonicalize a declared
-  stable partial and permit its effects while the utterance continues.
+- The post-freeze gateway can canonicalize provider-typed stable partials and
+  repair played audio invalidated by their later revisions, but this opt-in path
+  has no benchmark population yet. Frozen results remain endpoint-only.
 - Immediate slow preparation discarded 42 superseded chains and recorded one
   failed chain in the primary passing run. A one-second temporal-pacing
   ablation reduced slow launches from 43 to 12 once, but interval sweeps,
