@@ -354,13 +354,23 @@ completed launcher attempt. A complete attempt records clean source at both
 boundaries and matching initial/final OpenRealtime revisions; the terminal
 report rejects any complete population lacking that evidence.
 
-## Post-hoc analysis of completed populations
+## Post-hoc analysis of recorded populations
 
-Three read-only tools describe completed populations. None participates in
-scoring, none writes into a population, and each refuses an incomplete or
-unscored input rather than reporting around it. They exist because the
-publication gate reports counts and means, and three properties of the pilot
-are invisible in both.
+Three read-only tools describe recorded populations. None participates in
+scoring, none writes into a population, and each refuses an unscored or
+internally inconsistent input rather than reporting around it. They exist
+because the publication gate reports counts and means, and three properties of
+the pilot are invisible in both.
+
+Each tool reports the scope of what it read. `results.json` records the task
+list and `num_trials` a run was launched with, so a population that stopped
+early -- or has not finished yet -- states its own shortfall, and the tools
+reconcile that declaration against what the population holds. Completeness is
+the agreement of three counts: the declared scope, the simulation index, and
+the files on disk. The first two are assertions inside `results.json`; only the
+third is the population a tool actually reads, so an index naming fifty entries
+over six files would otherwise pass as a whole cell. A population declaring no
+scope reports `declared: false` and claims no completeness at all.
 
 Failure mechanism, rather than a termination-reason count:
 
@@ -395,8 +405,13 @@ scripts/paired-task-inference.py --baseline PATH --treatment PATH
 ```
 
 Pairing is by task, not by trial, so this applies at one trial per task. On the
-two airline populations the canonical condition scores +9.5 points, which reads
-as a win, but only 14 of 42 paired tasks are discordant, the exact sign test
-gives p = 0.42, and the bootstrap interval spans zero. The output states its
-own scope: it bounds task-sampling variation and not run-to-run variation,
+two airline populations the canonical condition leads by roughly ten points,
+which reads as a win, but fewer than a third of paired tasks are discordant,
+the exact sign test clears p = 0.2, and the bootstrap interval spans zero. The
+size of that lead is itself unsettled: the canonical cell was still being
+written, and its margin moved from +0.095 over 42 paired tasks to +0.133 over
+45 as the run progressed. That is why each side reports its own completeness
+beside the interval -- quoting a difference from a growing cell invites the
+reader to treat it as a finished one. The output also states the limit of the
+estimator: it bounds task-sampling variation and not run-to-run variation,
 which needs repeated trials the current matrices do not run.
