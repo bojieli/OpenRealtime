@@ -220,9 +220,12 @@ type streamEnvelope struct {
 		FinishReason *string         `json:"finish_reason"`
 	} `json:"choices"`
 	Usage *struct {
-		PromptTokens           int64 `json:"prompt_tokens"`
-		CompletionTokens       int64 `json:"completion_tokens"`
-		TotalTokens            int64 `json:"total_tokens"`
+		PromptTokens       int64 `json:"prompt_tokens"`
+		CompletionTokens   int64 `json:"completion_tokens"`
+		TotalTokens        int64 `json:"total_tokens"`
+		PromptTokenDetails *struct {
+			CachedTokens int64 `json:"cached_tokens"`
+		} `json:"prompt_tokens_details,omitempty"`
 		CompletionTokenDetails *struct {
 			ReasoningTokens int64 `json:"reasoning_tokens"`
 		} `json:"completion_tokens_details,omitempty"`
@@ -315,6 +318,10 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 			completion.Usage = continuation.Usage{
 				InputTokens: envelope.Usage.PromptTokens, OutputTokens: envelope.Usage.CompletionTokens,
 				TotalTokens: envelope.Usage.TotalTokens,
+			}
+			if envelope.Usage.PromptTokenDetails != nil {
+				completion.Usage.CachedInputTokens = envelope.Usage.PromptTokenDetails.CachedTokens
+				completion.Usage.CachedInputTokensReported = true
 			}
 			if envelope.Usage.CompletionTokenDetails != nil {
 				completion.Usage.ReasoningTokens = envelope.Usage.CompletionTokenDetails.ReasoningTokens

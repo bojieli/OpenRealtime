@@ -149,10 +149,12 @@ type Event struct {
 // Usage contains provider-reported token accounting. Zero fields are valid
 // when a provider does not expose a category.
 type Usage struct {
-	InputTokens     int64 `json:"input_tokens,omitempty"`
-	OutputTokens    int64 `json:"output_tokens,omitempty"`
-	ReasoningTokens int64 `json:"reasoning_tokens,omitempty"`
-	TotalTokens     int64 `json:"total_tokens,omitempty"`
+	InputTokens               int64 `json:"input_tokens,omitempty"`
+	CachedInputTokens         int64 `json:"cached_input_tokens,omitempty"`
+	CachedInputTokensReported bool  `json:"cached_input_tokens_reported,omitempty"`
+	OutputTokens              int64 `json:"output_tokens,omitempty"`
+	ReasoningTokens           int64 `json:"reasoning_tokens,omitempty"`
+	TotalTokens               int64 `json:"total_tokens,omitempty"`
 }
 
 // Completion is terminal provider metadata. ProviderState is an opaque native

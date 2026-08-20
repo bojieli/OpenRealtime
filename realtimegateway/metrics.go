@@ -104,6 +104,8 @@ type ContinuationProviderMetricsSnapshot struct {
 	CumulativeElapsedNS    uint64 `json:"cumulative_elapsed_ns"`
 	MaximumElapsedNS       uint64 `json:"maximum_elapsed_ns"`
 	InputTokens            uint64 `json:"input_tokens"`
+	CachedInputTokens      uint64 `json:"cached_input_tokens"`
+	CachedInputReports     uint64 `json:"cached_input_reports"`
 	OutputTokens           uint64 `json:"output_tokens"`
 	ReasoningTokens        uint64 `json:"reasoning_tokens"`
 	TotalTokens            uint64 `json:"total_tokens"`
@@ -121,6 +123,8 @@ type continuationProviderMetrics struct {
 	cumulativeElapsedNS    atomic.Uint64
 	maximumElapsedNS       atomic.Uint64
 	inputTokens            atomic.Uint64
+	cachedInputTokens      atomic.Uint64
+	cachedInputReports     atomic.Uint64
 	outputTokens           atomic.Uint64
 	reasoningTokens        atomic.Uint64
 	totalTokens            atomic.Uint64
@@ -136,6 +140,8 @@ func (metrics *continuationProviderMetrics) snapshot() ContinuationProviderMetri
 		CumulativeElapsedNS:    metrics.cumulativeElapsedNS.Load(),
 		MaximumElapsedNS:       metrics.maximumElapsedNS.Load(),
 		InputTokens:            metrics.inputTokens.Load(),
+		CachedInputTokens:      metrics.cachedInputTokens.Load(),
+		CachedInputReports:     metrics.cachedInputReports.Load(),
 		OutputTokens:           metrics.outputTokens.Load(),
 		ReasoningTokens:        metrics.reasoningTokens.Load(),
 		TotalTokens:            metrics.totalTokens.Load(),
@@ -159,6 +165,10 @@ func (metrics *continuationProviderMetrics) finish(
 		updateMaximum(&metrics.maximumFirstEventNS, firstElapsed)
 	}
 	addPositive(&metrics.inputTokens, usage.InputTokens)
+	addPositive(&metrics.cachedInputTokens, usage.CachedInputTokens)
+	if usage.CachedInputTokensReported {
+		metrics.cachedInputReports.Add(1)
+	}
 	addPositive(&metrics.outputTokens, usage.OutputTokens)
 	addPositive(&metrics.reasoningTokens, usage.ReasoningTokens)
 	addPositive(&metrics.totalTokens, usage.TotalTokens)

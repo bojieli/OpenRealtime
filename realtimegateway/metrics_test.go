@@ -60,7 +60,7 @@ func TestMeasuredContinuationProviderCountsActualWorkAndUsage(t *testing.T) {
 				{Kind: continuation.EventAssistantDelta, Text: "answer"},
 			},
 			usage: continuation.Usage{
-				InputTokens: 10, OutputTokens: 4, ReasoningTokens: 2, TotalTokens: 14,
+				InputTokens: 10, CachedInputTokens: 6, CachedInputTokensReported: true, OutputTokens: 4, ReasoningTokens: 2, TotalTokens: 14,
 			},
 		}},
 	}
@@ -75,7 +75,7 @@ func TestMeasuredContinuationProviderCountsActualWorkAndUsage(t *testing.T) {
 	}
 	got := metrics.snapshot()
 	if events != 2 || got.Invocations != 1 || got.Completed != 1 || got.Failed != 0 || got.Cancelled != 0 ||
-		got.Events != 2 || got.FirstEventCount != 1 || got.InputTokens != 10 || got.OutputTokens != 4 ||
+		got.Events != 2 || got.FirstEventCount != 1 || got.InputTokens != 10 || got.CachedInputTokens != 6 || got.CachedInputReports != 1 || got.OutputTokens != 4 ||
 		got.ReasoningTokens != 2 || got.TotalTokens != 14 {
 		t.Fatalf("unexpected continuation metrics: %#v", got)
 	}

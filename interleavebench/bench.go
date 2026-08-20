@@ -129,6 +129,8 @@ type Summary struct {
 	SlowFirstFromTaskMS MetricSummary `json:"slow_first_from_task_ms"`
 	TotalToolCalls      int           `json:"total_tool_calls"`
 	InputTokens         int64         `json:"input_tokens"`
+	CachedInputTokens   int64         `json:"cached_input_tokens"`
+	CachedInputReports  int           `json:"cached_input_reports"`
 	OutputTokens        int64         `json:"output_tokens"`
 	ReasoningTokens     int64         `json:"reasoning_tokens"`
 }
@@ -280,6 +282,10 @@ func summarizeResults(results []TaskResult, passed int) Summary {
 		firstSlowRecorded := false
 		for _, invocation := range result.Invocations {
 			summary.InputTokens += invocation.Usage.InputTokens
+			summary.CachedInputTokens += invocation.Usage.CachedInputTokens
+			if invocation.Usage.CachedInputTokensReported {
+				summary.CachedInputReports++
+			}
 			summary.OutputTokens += invocation.Usage.OutputTokens
 			summary.ReasoningTokens += invocation.Usage.ReasoningTokens
 			switch invocation.Phase {

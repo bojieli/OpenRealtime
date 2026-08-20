@@ -145,10 +145,11 @@ type geminiResponse struct {
 		FinishReason string        `json:"finishReason"`
 	} `json:"candidates"`
 	UsageMetadata struct {
-		PromptTokenCount     int64 `json:"promptTokenCount"`
-		CandidatesTokenCount int64 `json:"candidatesTokenCount"`
-		ThoughtsTokenCount   int64 `json:"thoughtsTokenCount"`
-		TotalTokenCount      int64 `json:"totalTokenCount"`
+		PromptTokenCount        int64  `json:"promptTokenCount"`
+		CachedContentTokenCount *int64 `json:"cachedContentTokenCount"`
+		CandidatesTokenCount    int64  `json:"candidatesTokenCount"`
+		ThoughtsTokenCount      int64  `json:"thoughtsTokenCount"`
+		TotalTokenCount         int64  `json:"totalTokenCount"`
 	} `json:"usageMetadata"`
 	Error *struct {
 		Code    int    `json:"code"`
@@ -223,6 +224,10 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 			OutputTokens:    envelope.UsageMetadata.CandidatesTokenCount,
 			ReasoningTokens: envelope.UsageMetadata.ThoughtsTokenCount,
 			TotalTokens:     envelope.UsageMetadata.TotalTokenCount,
+		}
+		if envelope.UsageMetadata.CachedContentTokenCount != nil {
+			completion.Usage.CachedInputTokens = *envelope.UsageMetadata.CachedContentTokenCount
+			completion.Usage.CachedInputTokensReported = true
 		}
 		for _, candidate := range envelope.Candidates {
 			if candidate.FinishReason != "" {

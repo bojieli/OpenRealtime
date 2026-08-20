@@ -569,7 +569,11 @@ finite resource guard are necessary.
 - Immediate slow preparation discarded 42 superseded chains and recorded one
   failed chain in the primary passing run. A one-second temporal-pacing
   ablation reduced slow launches from 43 to 12 once, but interval sweeps,
-  repetitions, token/currency cost, and prefix reuse remain unmeasured.
+  repetitions, token/currency cost, and prefix reuse remain unmeasured. The
+  post-freeze adapters now preserve provider-reported cached-input tokens in
+  continuation usage, Realtime usage, and the disjoint health counters. The
+  frozen M8–M10 executable predates that field, so those populations cannot be
+  relabeled as cache-reuse measurements.
 - The Qwen-ASR demo uses a development Flask server; a production deployment
   needs an equivalent hardened service without changing the adapter contract.
 - The governor records logical admission, not device utilization or memory

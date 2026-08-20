@@ -34,7 +34,7 @@ func TestAdapterStreamsReasoningContentAndToolCall(t *testing.T) {
 		_, _ = writer.Write([]byte("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"I will check.\"},\"finish_reason\":null}]}\n\n"))
 		_, _ = writer.Write([]byte("data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"key\\\":\"}}]},\"finish_reason\":null}]}\n\n"))
 		_, _ = writer.Write([]byte("data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"x\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n"))
-		_, _ = writer.Write([]byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":5,\"total_tokens\":14,\"completion_tokens_details\":{\"reasoning_tokens\":2}}}\n\n"))
+		_, _ = writer.Write([]byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":5,\"total_tokens\":14,\"prompt_tokens_details\":{\"cached_tokens\":6},\"completion_tokens_details\":{\"reasoning_tokens\":2}}}\n\n"))
 		_, _ = writer.Write([]byte("data: [DONE]\n\n"))
 	}))
 	defer server.Close()
@@ -73,7 +73,7 @@ func TestAdapterStreamsReasoningContentAndToolCall(t *testing.T) {
 		events[2].ToolCall == nil || string(events[2].ToolCall.Arguments) != `{"key":"x"}` {
 		t.Fatalf("unexpected events: %#v", events)
 	}
-	if completion.StopReason != "tool_calls" || completion.Usage.ReasoningTokens != 2 || completion.Usage.TotalTokens != 14 {
+	if completion.StopReason != "tool_calls" || completion.Usage.CachedInputTokens != 6 || !completion.Usage.CachedInputTokensReported || completion.Usage.ReasoningTokens != 2 || completion.Usage.TotalTokens != 14 {
 		t.Fatalf("unexpected completion: %#v", completion)
 	}
 	if completion.ProviderStateType != ProviderStateType || !strings.Contains(string(completion.ProviderState), `"provider":"vllm"`) ||

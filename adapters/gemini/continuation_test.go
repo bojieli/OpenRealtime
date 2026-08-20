@@ -19,7 +19,7 @@ func TestAdapterStreamsTextAndPreservesSignature(t *testing.T) {
 			t.Error("missing API key header")
 		}
 		writer.Header().Set("Content-Type", "text/event-stream")
-		_, _ = writer.Write([]byte("data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"hello\",\"thoughtSignature\":\"opaque\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":3,\"candidatesTokenCount\":1,\"totalTokenCount\":4}}\n\n"))
+		_, _ = writer.Write([]byte("data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"hello\",\"thoughtSignature\":\"opaque\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":3,\"cachedContentTokenCount\":2,\"candidatesTokenCount\":1,\"totalTokenCount\":4}}\n\n"))
 	}))
 	defer server.Close()
 	adapter, err := New(Config{
@@ -44,7 +44,7 @@ func TestAdapterStreamsTextAndPreservesSignature(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if text.String() != "hello" || completion.StopReason != "STOP" || completion.Usage.TotalTokens != 4 {
+	if text.String() != "hello" || completion.StopReason != "STOP" || completion.Usage.CachedInputTokens != 2 || !completion.Usage.CachedInputTokensReported || completion.Usage.TotalTokens != 4 {
 		t.Fatalf("unexpected response: text=%q completion=%#v", text.String(), completion)
 	}
 	if completion.ProviderStateType != ProviderStateType || !strings.Contains(string(completion.ProviderState), "thoughtSignature") {

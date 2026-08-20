@@ -113,7 +113,11 @@ The live gateway additionally keeps disjoint provider aggregates for canonical
 fast/slow calls and private fast/slow preparation calls. Classification comes
 from the typed execution path that owns the call, never transcript content.
 Each class separately reports starts, completion/failure/cancellation, events,
-tokens, and provider/first-event time; no subtraction of nested timers is used.
+input, cached-input, output, reasoning, and total tokens, and provider/first-
+event time; no subtraction of nested timers is used. Cached-input tokens are
+provider-reported reuse, not a cache hit inferred from repeated text. A separate
+report count distinguishes an observed zero-token miss from an endpoint that
+exposed no cached-token category; neither is evidence that a cache was disabled.
 The same health document reports preparation policy and canonical observation
 policy independently. The frozen study uses `endpoint-only` canonical
 observations; post-freeze `stable-partial` and repair counts must not be mixed

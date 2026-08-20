@@ -146,6 +146,7 @@ func responseObject(id, status, conversationID string, output []map[string]any, 
 	}
 	if usage != nil {
 		input := max(usage.InputTokens, 0)
+		cachedInput := min(max(usage.CachedInputTokens, 0), input)
 		outputTokens := max(usage.OutputTokens, 0)
 		if outputTokens == 0 {
 			outputTokens = 1
@@ -155,8 +156,8 @@ func responseObject(id, status, conversationID string, output []map[string]any, 
 			"total_tokens": total, "input_tokens": input, "output_tokens": outputTokens,
 			"input_token_details": map[string]any{
 				"text_tokens": input, "audio_tokens": 0, "image_tokens": 0,
-				"cached_tokens":         0,
-				"cached_tokens_details": map[string]any{"text_tokens": 0, "audio_tokens": 0, "image_tokens": 0},
+				"cached_tokens":         cachedInput,
+				"cached_tokens_details": map[string]any{"text_tokens": cachedInput, "audio_tokens": 0, "image_tokens": 0},
 			},
 			"output_token_details": map[string]any{"text_tokens": outputTokens, "audio_tokens": 0},
 		}
