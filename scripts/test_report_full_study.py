@@ -946,6 +946,51 @@ class FullStudyTest(unittest.TestCase):
         write_json(report_path, report)
         return report_path, interrupted_run
 
+    def add_interrupted_guard_violation(self, interrupted_run: Path) -> Path:
+        log_path = (
+            interrupted_run.parent
+            / "control/airline.gpu-ownership.jsonl"
+        )
+        identity = runtime_identity()
+        snapshot = identity["gpu_ownership"]
+        snapshot["captured_at"] = "2025-12-31T23:59:05Z"
+        records = [
+            {
+                "type": "guard.started",
+                "status": "running",
+                "recorded_at": "2025-12-31T23:59:00Z",
+                "interval_seconds": 5,
+                "capture_timeout_seconds": 15,
+            },
+            {
+                "type": "guard.check",
+                "status": "ok",
+                "recorded_at": "2025-12-31T23:59:05Z",
+                "ownership": snapshot,
+            },
+            {
+                "type": "guard.check",
+                "status": "violation",
+                "recorded_at": "2025-12-31T23:59:10Z",
+                "error": "GPU compute process 99 is not registered",
+            },
+            {
+                "type": "guard.completed",
+                "status": "failed",
+                "recorded_at": "2025-12-31T23:59:10Z",
+                "exit_status": 1,
+            },
+        ]
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(
+            "".join(
+                json.dumps(record, separators=(",", ":")) + "\n"
+                for record in records
+            ),
+            encoding="utf-8",
+        )
+        return log_path
+
     def test_accepts_only_the_complete_exact_population(self) -> None:
         report = self.report()
         self.assertEqual(report["status"], "complete")
@@ -980,6 +1025,21 @@ class FullStudyTest(unittest.TestCase):
             history["segments"][0]["interpreted_status"],
             "stopped_before_resume_with_unfinalized_status",
         )
+
+    def test_pins_and_discloses_an_interrupted_terminal_guard_violation(self) -> None:
+        _, interrupted_run = self.prepend_tau_interruption()
+        guard_log = self.add_interrupted_guard_violation(interrupted_run)
+        report = self.report()
+        history = report["evidence_panel"]["tau_voice"]["matrices"][0][
+            "execution_history"
+        ]
+        self.assertEqual(history["unregistered_gpu_process_violations"], 1)
+        interruption = history["segments"][0][
+            "unrecorded_terminal_guard_logs"
+        ][0]
+        self.assertEqual(interruption["completion_status"], "failed")
+        self.assertEqual(interruption["successful_checks"], 1)
+        self.assertEqual(interruption["log"], REPORT.artifact(self.root, guard_log))
 
     def test_rejects_a_resumed_tau_matrix_with_source_revision_drift(self) -> None:
         report_path, interrupted_run = self.prepend_tau_interruption()
