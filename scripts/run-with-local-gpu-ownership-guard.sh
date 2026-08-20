@@ -62,11 +62,11 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# `jq -e FILTER FILE` exits 0 when FILE is EMPTY: the filter never runs, so jq
-# reports "no output produced" rather than false. The guard log is created empty
-# and appended to, so the readiness check used to pass on the very first poll --
-# declaring exclusive GPU ownership verified before the monitor had written a
-# single check. Slurp the file and require a real ok record.
+# A stale or externally truncated guard log can be empty. With plain `jq -e`
+# that would report success without evaluating the filter; slurp the file and
+# require a real successful check. The monitor normally writes its first JSON
+# record atomically, but the readiness check must remain fail-closed if that
+# invariant is ever weakened or a stale artifact is presented.
 guard_check_ok() {
   jq -en --slurpfile records "$1" \
     '($records | length) > 0 and

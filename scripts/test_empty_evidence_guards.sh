@@ -53,8 +53,9 @@ fi
 verdict() { if "$@" >/dev/null 2>&1; then echo accept; else echo refuse; fi; }
 
 # --- scripts/run-with-local-gpu-ownership-guard.sh: guard readiness ----------
-# An empty log used to mean "exclusive GPU ownership verified", letting a scored
-# benchmark start before the monitor had written a single check.
+# A stale or truncated log must never mean "exclusive GPU ownership verified";
+# this check protects the readiness boundary even though the current monitor
+# normally writes its first record atomically.
 eval "$(sed -n '/^guard_check_ok()/,/^}/p' \
   "${repository_root}/scripts/run-with-local-gpu-ownership-guard.sh")"
 printf '{"type":"guard.check","status":"ok"}\n' >"${temporary}/guard-ok.jsonl"
