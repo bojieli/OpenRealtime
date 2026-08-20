@@ -110,4 +110,44 @@ if verify_chain "${fixture_root}" 2>/dev/null; then
   exit 1
 fi
 
+# Every regression suite in scripts/ must be invoked by the launcher preflight.
+# A suite that exists but gates nothing protects nothing, and its absence from
+# the preflight is invisible: the launch still succeeds, the suite still passes
+# when run by hand, and only an unguarded defect reaching a multi-day run reveals
+# that nothing ever ran it. This is the same absence-read-as-success shape the
+# suites themselves exist to catch, so assert coverage rather than assume it.
+verify_preflight_covers_every_suite() {
+  local root="$1"
+  local launcher="${root}/scripts/launch-full-study-queues.sh"
+  local missing=() present=0 suite name
+  for suite in "${root}"/scripts/test_*.sh; do
+    [[ -f "${suite}" ]] || continue
+    present=$((present + 1))
+    name="${suite##*/}"
+    grep -q "scripts/${name}\"" "${launcher}" || missing+=("${name}")
+  done
+  if (( present == 0 )); then
+    echo "no regression suites found; the glob or the layout changed" >&2
+    return 1
+  fi
+  if (( ${#missing[@]} > 0 )); then
+    printf 'suite not invoked by the launcher preflight: %s\n' "${missing[@]}" >&2
+    return 1
+  fi
+  return 0
+}
+
+if ! verify_preflight_covers_every_suite "${repository_root}"; then
+  echo "the launcher preflight does not run every regression suite" >&2
+  exit 1
+fi
+# Negative control: a suite the preflight does not name must be caught. Without
+# this, a broken glob would report success for every revision.
+cp "${repository_root}/scripts/test_study_queue_chain.sh" \
+  "${fixture_root}/scripts/test_never_gated_probe.sh"
+if verify_preflight_covers_every_suite "${fixture_root}" 2>/dev/null; then
+  echo "an ungated suite went undetected" >&2
+  exit 1
+fi
+
 echo "full-study queue chain tests pass"

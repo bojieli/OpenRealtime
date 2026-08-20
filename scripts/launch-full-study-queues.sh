@@ -36,6 +36,7 @@ fi
 "${repository_root}/scripts/test_full_study_freshness.sh" >/dev/null
 "${repository_root}/scripts/test_study_interpreter_pinning.sh" >/dev/null
 "${repository_root}/scripts/test_study_queue_chain.sh" >/dev/null
+"${repository_root}/scripts/test_empty_evidence_guards.sh" >/dev/null
 "${repository_root}/scripts/check-full-study-freshness.sh" \
   "${repository_root}/benchmarks/full-study-v1.json" "${repository_root}" >/dev/null
 
