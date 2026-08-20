@@ -353,3 +353,50 @@ validated simulation files, but it cannot overwrite a failed, interrupted, or
 completed launcher attempt. A complete attempt records clean source at both
 boundaries and matching initial/final OpenRealtime revisions; the terminal
 report rejects any complete population lacking that evidence.
+
+## Post-hoc analysis of completed populations
+
+Three read-only tools describe completed populations. None participates in
+scoring, none writes into a population, and each refuses an incomplete or
+unscored input rather than reporting around it. They exist because the
+publication gate reports counts and means, and three properties of the pilot
+are invisible in both.
+
+Failure mechanism, rather than a termination-reason count:
+
+```bash
+scripts/classify-tau-voice-failures.py --population PATH [--population PATH ...]
+```
+
+About 10.7% of pilot simulations end at the tau2 environment-error budget
+(`max_errors = 10`). All of them are unresolved spoken identifiers, so a mean
+they lowered looks exactly like one a policy difference lowered. The classifier
+names a mechanism only from evidence in the record and reports `unclassified`
+otherwise. A failure filed under the nearest plausible bucket is worse than one
+left unnamed.
+
+Response-latency tails, rather than a mean latency:
+
+```bash
+scripts/analyze-tau-voice-tails.py --population PATH [--population PATH ...]
+```
+
+Median response latency is 1.40 s in all four pilot populations while p90 is
+about 9 s. The worst observation is a 106.4 s silence, with no agent tool call
+during the gap, in a task that still scored reward 1.0 -- so reward cannot see
+it. Latency is measured on the harness tick clock rather than wall time, and a
+population mixing two tick durations is refused instead of averaged across two
+clocks.
+
+How much of a paired difference survives task sampling:
+
+```bash
+scripts/paired-task-inference.py --baseline PATH --treatment PATH
+```
+
+Pairing is by task, not by trial, so this applies at one trial per task. On the
+two airline populations the canonical condition scores +9.5 points, which reads
+as a win, but only 14 of 42 paired tasks are discordant, the exact sign test
+gives p = 0.42, and the bootstrap interval spans zero. The output states its
+own scope: it bounds task-sampling variation and not run-to-run variation,
+which needs repeated trials the current matrices do not run.
