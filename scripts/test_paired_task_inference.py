@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import subprocess
 import sys
 import unittest
@@ -246,6 +247,31 @@ class ComparisonTest(unittest.TestCase):
                 scope = payload[side]["scope"]
                 self.assertFalse(scope["declared"])
                 self.assertNotIn("complete", scope)
+
+    def test_sign_test_is_exact_mcnemar_on_binary_rewards(self):
+        """The discordant pairs form a 2x2 off-diagonal; the test is McNemar's.
+
+        Checked against an independent formulation over every (b, c) up to 25
+        rather than a handful of tabulated values, so an off-by-one in the tail
+        cannot survive by matching at the points that were written down.
+        """
+
+        def mcnemar_exact(better: int, worse: int) -> float:
+            total = better + worse
+            tail = sum(math.comb(total, k) for k in range(0, min(better, worse) + 1))
+            return min(1.0, 2 * tail / 2**total)
+
+        module = load_module()
+        for better in range(26):
+            for worse in range(26):
+                if better + worse == 0:
+                    continue
+                with self.subTest(better=better, worse=worse):
+                    self.assertAlmostEqual(
+                        module.binomial_two_sided_p(better, better + worse),
+                        mcnemar_exact(better, worse),
+                        places=12,
+                    )
 
 
 if __name__ == "__main__":

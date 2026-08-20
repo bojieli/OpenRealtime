@@ -404,7 +404,9 @@ How much of a paired difference survives task sampling:
 scripts/paired-task-inference.py --baseline PATH --treatment PATH
 ```
 
-Pairing is by task, not by trial, so this applies at one trial per task. On the
+Pairing is by task, not by trial, so this applies at one trial per task. Rewards
+in these populations are binary, so the discordant pairs are the off-diagonal of
+a 2x2 table and the exact sign test is exactly McNemar's exact test. On the
 two airline populations the canonical condition leads by roughly ten points,
 which reads as a win, but fewer than a third of paired tasks are discordant,
 the exact sign test clears p = 0.2, and the bootstrap interval spans zero. The

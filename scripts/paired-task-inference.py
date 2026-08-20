@@ -130,6 +130,11 @@ def load_rewards(directory: Path) -> tuple[dict[str, float], dict[str, Any]]:
 def binomial_two_sided_p(successes: int, trials: int) -> float:
     """Exact two-sided sign-test p-value under p = 1/2.
 
+    tau2 rewards in these populations are binary, so the discordant pairs this
+    is applied to are the off-diagonal of a 2x2 table and the result is exactly
+    McNemar's exact test. Naming that is worth a line: it tells a reader the
+    comparison is a standard one rather than something invented here.
+
     Computed with exact rationals so a small tail is not lost to floating
     point, then converted once at the end.
     """
