@@ -667,6 +667,15 @@ func (store *Store) validateSupersessionLocked(item Item) error {
 	if supersededID == "" {
 		return fmt.Errorf("observation supersedes unknown source revision %d", item.Event.SupersedesRevision)
 	}
+	for index := len(store.items) - 1; index >= 0; index-- {
+		if store.items[index].Kind != KindObservation {
+			continue
+		}
+		if store.items[index].SourceRevision != item.Event.SupersedesRevision {
+			return errors.New("observation supersession must name the latest canonical observation")
+		}
+		break
+	}
 	if !slices.Contains(item.CausalParentIDs, supersededID) {
 		return fmt.Errorf("observation supersession must causally reference item %q", supersededID)
 	}
@@ -691,14 +700,7 @@ func (store *Store) transitionRepairLocked(item Item) error {
 		if item.SourceRevision == 0 || item.SourceRevision <= target.SourceRevision {
 			return errors.New("required repair must name the later canonical source revision that invalidated the target")
 		}
-		knownObservation := false
-		for _, candidate := range store.items {
-			if candidate.Kind == KindObservation && candidate.SourceRevision == item.SourceRevision {
-				knownObservation = true
-				break
-			}
-		}
-		if !knownObservation {
+		if !store.hasObservationRevisionLocked(item.SourceRevision) {
 			return errors.New("required repair source revision must match a preceding canonical observation")
 		}
 		if !slices.Contains(item.CausalParentIDs, repair.TargetAssistantItemID) {
@@ -722,6 +724,9 @@ func (store *Store) transitionRepairLocked(item Item) error {
 		if repair.PlayedAudioMS != 0 {
 			return errors.New("resolved repair cannot replace the recorded playback duration")
 		}
+		if !store.hasObservationRevisionLocked(item.SourceRevision) {
+			return errors.New("resolved repair source revision must match a preceding canonical observation")
+		}
 		index, exists := store.byID[repair.RepairAssistantItemID]
 		if !exists || store.items[index].Kind != KindAssistant || repair.RepairAssistantItemID == repair.TargetAssistantItemID {
 			return errors.New("resolved repair must name a distinct preceding assistant item")
@@ -741,6 +746,15 @@ func (store *Store) transitionRepairLocked(item Item) error {
 		return fmt.Errorf("unknown repair status %q", repair.Status)
 	}
 	return nil
+}
+
+func (store *Store) hasObservationRevisionLocked(sourceRevision uint64) bool {
+	for _, item := range store.items {
+		if item.Kind == KindObservation && item.SourceRevision == sourceRevision {
+			return true
+		}
+	}
+	return false
 }
 
 func (store *Store) cloneLocked() *Store {

@@ -234,6 +234,16 @@ func TestStoreEnforcesTypedSupersessionProvenance(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.Append(Item{
+		ID: "stale-branch", Kind: KindObservation, SourceRevision: 3,
+		CausalParentIDs: []string{"first"}, Producer: Producer{Phase: PhaseUser},
+		Content: "stale branch", Event: &EventMetadata{
+			EventID: "event-stale", Type: "asr.stable_partial", Source: "asr", Channel: "voice",
+			SupersedesRevision: 1,
+		},
+	}); err == nil {
+		t.Fatal("supersession skipped the latest canonical observation")
+	}
+	if err := store.Append(Item{
 		ID: "assistant", Kind: KindAssistant, SourceRevision: 2,
 		Producer: Producer{Phase: PhaseSlow}, Content: "answer",
 	}); err != nil {
