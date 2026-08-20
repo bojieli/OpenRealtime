@@ -148,7 +148,7 @@ go run ./cmd/openrealtime release build --root . \
 A `cmp` or `release verify` failure that you did not intend means an evidence
 artifact moved, and that is the one signal this manifest exists to carry.
 
-## M7 stable v1.0.0 release
+## M7 stable v0.1.0 release
 
 Run:
 

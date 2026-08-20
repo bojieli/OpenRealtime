@@ -42,7 +42,7 @@ behavior remain part of the comparison.
 
 ## Status
 
-M0 through M7 are complete. The stable component API is v1.0.0 and the complete
+M0 through M7 are complete. The stable component API is v0.1.0 and the complete
 OpenAI protocol/provider conformance suite passes.
 The repository contains a generated conformance layer for every event in the
 pinned OpenAI Realtime OpenAPI specification, deterministic 24 kHz PCM replay, an original
@@ -216,7 +216,7 @@ To reproduce and verify the M6 benchmark release:
 ./scripts/reproduce_m6.sh
 ```
 
-To reproduce the complete stable v1.0.0 release:
+To reproduce the complete stable v0.1.0 release:
 
 ```bash
 ./scripts/reproduce_m7.sh

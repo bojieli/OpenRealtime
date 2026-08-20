@@ -1,7 +1,7 @@
 # Stable component API v1
 
 Import `github.com/bojieli/OpenRealtime/api/v1`. The semantic import path and
-`v1.Version == "1.0.0"` freeze the component contract independently from the
+`v1.Version == "0.1.0"` freeze the component contract independently from the
 experimental engine packages.
 
 Plan version 0.2 includes an implemented experimental canonical-trajectory
