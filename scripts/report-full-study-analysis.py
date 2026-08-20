@@ -323,82 +323,143 @@ def review_coverage(directory: Path, label: str) -> dict[str, int]:
     return counts
 
 
-def summarize_gpu_telemetry(root: Path, declaration: Any, label: str) -> dict[str, Any]:
-    path = verify_artifact(root, declaration, label)
+def parse_timestamp(value: Any, label: str) -> datetime:
+    require(isinstance(value, str) and bool(value), f"{label} is absent")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise FullStudyAnalysisError(f"{label} is invalid") from error
+    require(parsed.tzinfo is not None, f"{label} has no timezone")
+    return parsed
+
+
+def summarize_gpu_telemetry_segments(
+    root: Path, declarations: list[Any], label: str
+) -> dict[str, Any]:
+    require(bool(declarations), f"{label} declarations are absent")
     by_gpu: dict[str, dict[str, Any]] = {}
-    with path.open("r", encoding="utf-8", newline="") as stream:
-        reader = csv.DictReader(stream)
-        require_equal(tuple(reader.fieldnames or ()), GPU_COLUMNS, f"{label} columns")
-        for row_number, row in enumerate(reader, start=2):
-            require(None not in row, f"{label} row {row_number} has extra columns")
-            index = str(row.get("index", "")).strip()
-            name = str(row.get("name", "")).strip()
-            timestamp = str(row.get("timestamp", "")).strip()
-            require(
-                index and name and timestamp, f"{label} row {row_number} is incomplete"
+    segments = []
+    gpu_identity: dict[str, str] | None = None
+    previous_end: datetime | None = None
+    for segment_index, declaration in enumerate(declarations):
+        segment_label = f"{label} segment {segment_index}"
+        path = verify_artifact(root, declaration, segment_label)
+        row_times = []
+        segment_gpus: dict[str, str] = {}
+        rows = 0
+        with path.open("r", encoding="utf-8", newline="") as stream:
+            reader = csv.DictReader(stream)
+            require_equal(
+                tuple(reader.fieldnames or ()), GPU_COLUMNS, f"{segment_label} columns"
             )
-            try:
-                datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-            except ValueError as error:
-                raise FullStudyAnalysisError(
-                    f"{label} row {row_number} timestamp is invalid"
-                ) from error
-            numeric = {}
-            for field in (
-                "memory_used_mib",
-                "utilization_gpu_percent",
-                "power_draw_watts",
-            ):
+            for row_number, row in enumerate(reader, start=2):
+                require(
+                    None not in row,
+                    f"{segment_label} row {row_number} has extra columns",
+                )
+                index = str(row.get("index", "")).strip()
+                name = str(row.get("name", "")).strip()
+                timestamp = str(row.get("timestamp", "")).strip()
+                require(
+                    index and name and timestamp,
+                    f"{segment_label} row {row_number} is incomplete",
+                )
+                row_times.append(
+                    parse_timestamp(
+                        timestamp, f"{segment_label} row {row_number} timestamp"
+                    )
+                )
+                numeric = {}
+                for field in (
+                    "memory_used_mib",
+                    "utilization_gpu_percent",
+                    "power_draw_watts",
+                ):
+                    try:
+                        numeric[field] = float(str(row[field]).strip())
+                    except (TypeError, ValueError) as error:
+                        raise FullStudyAnalysisError(
+                            f"{segment_label} row {row_number} {field} is invalid"
+                        ) from error
+                    require(
+                        math.isfinite(numeric[field]) and numeric[field] >= 0,
+                        f"{segment_label} row {row_number} {field} is invalid",
+                    )
+                require(
+                    numeric["utilization_gpu_percent"] <= 100,
+                    f"{segment_label} row {row_number} utilization exceeds 100 percent",
+                )
+                load_values = str(row.get("loadavg", "")).split("/")
+                require(
+                    len(load_values) == 3,
+                    f"{segment_label} row {row_number} loadavg is invalid",
+                )
                 try:
-                    numeric[field] = float(str(row[field]).strip())
-                except (TypeError, ValueError) as error:
+                    load = [float(value) for value in load_values]
+                except ValueError as error:
                     raise FullStudyAnalysisError(
-                        f"{label} row {row_number} {field} is invalid"
+                        f"{segment_label} row {row_number} loadavg is invalid"
                     ) from error
                 require(
-                    math.isfinite(numeric[field]) and numeric[field] >= 0,
-                    f"{label} row {row_number} {field} is invalid",
+                    all(math.isfinite(value) and value >= 0 for value in load),
+                    f"{segment_label} row {row_number} loadavg is invalid",
                 )
+                require(
+                    index not in segment_gpus or segment_gpus[index] == name,
+                    f"{segment_label} GPU {index} changes name",
+                )
+                segment_gpus[index] = name
+                entry = by_gpu.setdefault(
+                    index,
+                    {
+                        "name": name,
+                        "memory_used_mib": [],
+                        "utilization_gpu_percent": [],
+                        "power_draw_watts": [],
+                        "loadavg_1m": [],
+                        "loadavg_5m": [],
+                        "loadavg_15m": [],
+                    },
+                )
+                require_equal(
+                    entry["name"], name, f"{segment_label} GPU {index} name"
+                )
+                for field, value in numeric.items():
+                    entry[field].append(value)
+                entry["loadavg_1m"].append(load[0])
+                entry["loadavg_5m"].append(load[1])
+                entry["loadavg_15m"].append(load[2])
+                rows += 1
+        require(bool(row_times), f"{segment_label} contains no telemetry samples")
+        require(
+            all(later >= earlier for earlier, later in zip(row_times, row_times[1:])),
+            f"{segment_label} timestamps are not monotonic",
+        )
+        if gpu_identity is None:
+            gpu_identity = segment_gpus
+        else:
+            require_equal(segment_gpus, gpu_identity, f"{segment_label} GPU identity")
+        started_at = min(row_times)
+        completed_at = max(row_times)
+        if previous_end is not None:
             require(
-                numeric["utilization_gpu_percent"] <= 100,
-                f"{label} row {row_number} utilization exceeds 100 percent",
+                started_at > previous_end,
+                f"{segment_label} overlaps prior GPU telemetry",
             )
-            load_values = str(row.get("loadavg", "")).split("/")
-            require(
-                len(load_values) == 3, f"{label} row {row_number} loadavg is invalid"
-            )
-            try:
-                load = [float(value) for value in load_values]
-            except ValueError as error:
-                raise FullStudyAnalysisError(
-                    f"{label} row {row_number} loadavg is invalid"
-                ) from error
-            require(
-                all(math.isfinite(value) and value >= 0 for value in load),
-                f"{label} row {row_number} loadavg is invalid",
-            )
-            entry = by_gpu.setdefault(
-                index,
-                {
-                    "name": name,
-                    "memory_used_mib": [],
-                    "utilization_gpu_percent": [],
-                    "power_draw_watts": [],
-                    "loadavg_1m": [],
-                    "loadavg_5m": [],
-                    "loadavg_15m": [],
-                },
-            )
-            require_equal(entry["name"], name, f"{label} GPU {index} name")
-            for field, value in numeric.items():
-                entry[field].append(value)
-            entry["loadavg_1m"].append(load[0])
-            entry["loadavg_5m"].append(load[1])
-            entry["loadavg_15m"].append(load[2])
+        previous_end = completed_at
+        segments.append(
+            {
+                "artifact": artifact(root, path),
+                "started_at": started_at.isoformat().replace("+00:00", "Z"),
+                "completed_at": completed_at.isoformat().replace("+00:00", "Z"),
+                "rows": rows,
+            }
+        )
     require(bool(by_gpu), f"{label} contains no telemetry samples")
     return {
-        "artifact": artifact(root, path),
+        "aggregation": "all non-overlapping invocation telemetry segments",
         "sampling_interval_seconds": 5,
+        "segments": segments,
         "gpus": {
             index: {
                 "name": values["name"],
@@ -411,6 +472,10 @@ def summarize_gpu_telemetry(root: Path, declaration: Any, label: str) -> dict[st
             for index, values in sorted(by_gpu.items())
         },
     }
+
+
+def summarize_gpu_telemetry(root: Path, declaration: Any, label: str) -> dict[str, Any]:
+    return summarize_gpu_telemetry_segments(root, [declaration], label)
 
 
 def runtime_summary(runtime: Any, label: str) -> dict[str, Any]:
@@ -523,6 +588,288 @@ def runtime_summary(runtime: Any, label: str) -> dict[str, Any]:
         ),
         "cache_reuse": cache,
     }
+
+
+def cumulative_runtime_delta(
+    start: dict[str, Any], final: dict[str, Any], path: str = "runtime"
+) -> dict[str, Any]:
+    """Subtract additive gateway counters across a stable process lifetime."""
+    result = {}
+    for key, final_value in final.items():
+        if key.startswith("maximum_") or "_maximum_" in key:
+            continue
+        start_value = start.get(key)
+        field_path = f"{path}.{key}"
+        if isinstance(final_value, dict):
+            require(
+                isinstance(start_value, dict),
+                f"{field_path} is missing from the initial runtime snapshot",
+            )
+            result[key] = cumulative_runtime_delta(start_value, final_value, field_path)
+            continue
+        require(
+            type(final_value) in (int, float)
+            and type(start_value) in (int, float),
+            f"{field_path} must be numeric in both runtime snapshots",
+        )
+        require(
+            final_value >= start_value,
+            f"{field_path} decreased from {start_value} to {final_value}",
+        )
+        result[key] = final_value - start_value
+    return result
+
+
+def analyze_execution_history(
+    root: Path,
+    execution: Any,
+    terminal_history: Any,
+    label: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Bind resumed matrix segments and aggregate their counter/telemetry envelope."""
+    require(
+        isinstance(execution, list) and bool(execution),
+        f"{label} execution evidence is absent",
+    )
+    require(
+        isinstance(terminal_history, dict),
+        f"{label} terminal execution history is absent",
+    )
+    terminal_segments = terminal_history.get("segments")
+    require(
+        isinstance(terminal_segments, list),
+        f"{label} terminal execution segments are absent",
+    )
+    require_equal(
+        len(execution), terminal_history.get("invocations"), f"{label} invocations"
+    )
+    require_equal(
+        len(terminal_segments), len(execution), f"{label} terminal segment count"
+    )
+    projected_fields = {
+        "status": "status",
+        "selected_cell": "selected_cell",
+        "started_at": "started_at",
+        "completed_at": "completed_at",
+        "openrealtime_revision": "openrealtime_revision",
+        "openrealtime_revision_final": "openrealtime_revision_final",
+        "source_worktree_clean_start": "source_worktree_clean_start",
+        "source_worktree_clean_final": "source_worktree_clean_final",
+        "runtime_identity": "runtime_identity",
+        "runtime_identity_final": "runtime_identity_final",
+        "gateway_health_start": "gateway_health",
+        "gateway_health_final": "gateway_health_final",
+        "gpu_ownership_guards": "gpu_ownership_guards",
+    }
+    revisions = set()
+    reference_boot = None
+    reference_components = None
+    reference_gpu_uuids = None
+    first_runtime = None
+    final_runtime = None
+    telemetry = []
+    periods = []
+    complete_indices = []
+    for index, (entry, terminal_segment) in enumerate(
+        zip(execution, terminal_segments)
+    ):
+        segment_label = f"{label} execution segment {index}"
+        require(isinstance(entry, dict), f"{segment_label} is invalid")
+        require(
+            isinstance(terminal_segment, dict),
+            f"{segment_label} terminal projection is invalid",
+        )
+        path_value = entry.get("path")
+        require(
+            isinstance(path_value, str) and bool(path_value),
+            f"{segment_label} run path is absent",
+        )
+        run_path = resolve(root, path_value)
+        run = read_json(run_path, f"{segment_label} run")
+        require_equal(
+            sha256_file(run_path), entry.get("sha256"), f"{segment_label} run SHA-256"
+        )
+        require_equal(
+            terminal_segment.get("run"),
+            artifact(root, run_path),
+            f"{segment_label} terminal run artifact",
+        )
+        for report_field, run_field in projected_fields.items():
+            require_equal(
+                entry.get(report_field),
+                run.get(run_field),
+                f"{segment_label} projected {report_field}",
+            )
+        require_equal(entry.get("selected_cell"), None, f"{segment_label} scope")
+        started_at = parse_timestamp(entry.get("started_at"), f"{segment_label} start")
+        revision = entry.get("openrealtime_revision")
+        require(
+            isinstance(revision, str) and len(revision) == 40,
+            f"{segment_label} source revision is invalid",
+        )
+        revisions.add(revision)
+        require_equal(
+            entry.get("source_worktree_clean_start"),
+            True,
+            f"{segment_label} clean start",
+        )
+        identity = entry.get("runtime_identity")
+        require(isinstance(identity, dict), f"{segment_label} identity is absent")
+        boot = identity.get("host_boot_id")
+        components = identity.get("components")
+        ownership = identity.get("gpu_ownership")
+        require(isinstance(boot, str) and bool(boot), f"{segment_label} boot is absent")
+        require(
+            isinstance(components, dict) and bool(components),
+            f"{segment_label} components are absent",
+        )
+        require(
+            isinstance(ownership, dict)
+            and isinstance(ownership.get("gpu_uuids"), list)
+            and bool(ownership["gpu_uuids"]),
+            f"{segment_label} GPU identity is absent",
+        )
+        if reference_boot is None:
+            reference_boot = boot
+            reference_components = components
+            reference_gpu_uuids = ownership["gpu_uuids"]
+        else:
+            require_equal(boot, reference_boot, f"{segment_label} resumed boot")
+            require_equal(
+                components, reference_components, f"{segment_label} resumed components"
+            )
+            require_equal(
+                ownership["gpu_uuids"],
+                reference_gpu_uuids,
+                f"{segment_label} resumed GPU identity",
+            )
+        health_start = entry.get("gateway_health_start")
+        require(
+            isinstance(health_start, dict)
+            and isinstance(health_start.get("runtime"), dict),
+            f"{segment_label} initial gateway counters are absent",
+        )
+        if first_runtime is None:
+            first_runtime = health_start["runtime"]
+
+        telemetry_declaration = entry.get("gpu_telemetry")
+        require(
+            isinstance(telemetry_declaration, dict),
+            f"{segment_label} GPU telemetry is absent",
+        )
+        require_equal(
+            terminal_segment.get("gpu_telemetry"),
+            telemetry_declaration,
+            f"{segment_label} terminal GPU telemetry",
+        )
+        telemetry.append(telemetry_declaration)
+        status = entry.get("status")
+        require_equal(
+            terminal_segment.get("recorded_status"),
+            status,
+            f"{segment_label} terminal status",
+        )
+        if status == "complete":
+            complete_indices.append(index)
+            finished_at = parse_timestamp(
+                entry.get("completed_at"), f"{segment_label} completion"
+            )
+            require_equal(
+                entry.get("openrealtime_revision_final"),
+                revision,
+                f"{segment_label} final revision",
+            )
+            require_equal(
+                entry.get("source_worktree_clean_final"),
+                True,
+                f"{segment_label} clean completion",
+            )
+            final_identity = entry.get("runtime_identity_final")
+            require(isinstance(final_identity, dict), f"{segment_label} final identity")
+            require_equal(
+                final_identity.get("host_boot_id"), boot, f"{segment_label} final boot"
+            )
+            require_equal(
+                final_identity.get("components"),
+                components,
+                f"{segment_label} final components",
+            )
+            final_health = entry.get("gateway_health_final")
+            require(
+                isinstance(final_health, dict)
+                and isinstance(final_health.get("runtime"), dict),
+                f"{segment_label} final gateway counters are absent",
+            )
+            final_runtime = final_health["runtime"]
+        else:
+            require(
+                status in {"running", "interrupted"},
+                f"{segment_label} has invalid pre-resume status {status!r}",
+            )
+            finished_at = parse_timestamp(
+                run.get("stopped_at"), f"{segment_label} stop"
+            )
+        require(finished_at >= started_at, f"{segment_label} ends before it starts")
+        periods.append((started_at, finished_at))
+
+    require_equal(len(revisions), 1, f"{label} source revision count")
+    require_equal(complete_indices, [len(execution) - 1], f"{label} final completion")
+    require(
+        all(
+            later[0] > earlier[0] and earlier[1] <= later[0]
+            for earlier, later in zip(periods, periods[1:])
+        ),
+        f"{label} execution segments overlap or are out of order",
+    )
+    require_equal(
+        terminal_history.get("source_revision"),
+        next(iter(revisions)),
+        f"{label} terminal source revision",
+    )
+    require_equal(
+        terminal_history.get("host_boot_id"), reference_boot, f"{label} terminal boot"
+    )
+    require_equal(
+        terminal_history.get("gpu_uuids"),
+        reference_gpu_uuids,
+        f"{label} terminal GPU identity",
+    )
+    require_equal(
+        terminal_history.get("resumed"), len(execution) > 1, f"{label} resumed flag"
+    )
+    require_equal(
+        terminal_history.get("interrupted_invocations"),
+        len(execution) - 1,
+        f"{label} interruption count",
+    )
+    assert first_runtime is not None and final_runtime is not None
+    delta = cumulative_runtime_delta(first_runtime, final_runtime)
+    if len(execution) == 1:
+        require_equal(
+            execution[0].get("gateway_runtime_delta"),
+            delta,
+            f"{label} single-invocation runtime delta",
+        )
+    compute = runtime_summary(delta, label)
+    compute["measurement_scope"] = (
+        "provider counters from the first compatible invocation start through the "
+        "final resumed invocation completion; provider-boundary elapsed time is not "
+        "GPU kernel time"
+    )
+    compute["execution_history"] = terminal_history
+    gpu = summarize_gpu_telemetry_segments(root, telemetry, f"{label} GPU telemetry")
+    gpu["measurement_scope"] = (
+        "all non-overlapping telemetry segments in the disclosed execution history"
+    )
+    gpu["execution_history"] = {
+        "invocations": len(execution),
+        "resumed": len(execution) > 1,
+        "interrupted_invocations": len(execution) - 1,
+        "unregistered_gpu_process_violations": terminal_history.get(
+            "unregistered_gpu_process_violations"
+        ),
+    }
+    return compute, gpu
 
 
 def cell_metrics(
@@ -743,16 +1090,11 @@ def analyze_matrix(root: Path, panel: dict[str, Any]) -> dict[str, Any]:
         f"{matrix_id} terminal cells",
     )
 
-    complete_runs = [
-        item
-        for item in report.get("execution_evidence", [])
-        if item.get("status") == "complete" and item.get("selected_cell") is None
-    ]
-    require_equal(len(complete_runs), 1, f"{matrix_id} complete all-cell run")
-    execution = complete_runs[0]
-    compute = runtime_summary(execution.get("gateway_runtime_delta"), matrix_id)
-    gpu = summarize_gpu_telemetry(
-        root, execution.get("gpu_telemetry"), f"{matrix_id} GPU telemetry"
+    compute, gpu = analyze_execution_history(
+        root,
+        report.get("execution_evidence"),
+        panel.get("execution_history"),
+        matrix_id,
     )
 
     population_summaries = []

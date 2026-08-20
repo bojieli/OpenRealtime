@@ -121,6 +121,35 @@ class Fixture:
             },
         }
 
+    @staticmethod
+    def zero_runtime(value):
+        if isinstance(value, dict):
+            return {key: Fixture.zero_runtime(item) for key, item in value.items()}
+        if type(value) in (int, float):
+            return 0
+        raise TypeError(f"cannot zero runtime value {value!r}")
+
+    @staticmethod
+    def runtime_identity() -> dict:
+        return {
+            "host_boot_id": "fixture-boot",
+            "components": {
+                "gateway": {
+                    "pid": 10,
+                    "proc_start_time_ticks": "100",
+                    "executable_sha256": "a" * 64,
+                    "command_sha256": "b" * 64,
+                },
+                "asr": {
+                    "pid": 20,
+                    "proc_start_time_ticks": "200",
+                    "executable_sha256": "c" * 64,
+                    "command_sha256": "d" * 64,
+                },
+            },
+            "gpu_ownership": {"gpu_uuids": ["GPU-fixture"]},
+        }
+
     def matrix(
         self, name: str, *, reward: float, latency: float, cost: float, tokens: int
     ) -> dict:
@@ -209,6 +238,69 @@ class Fixture:
             "2026-01-01T00:00:00Z,0,Test GPU,1000,50,100,1/2/3\n",
             encoding="utf-8",
         )
+        runtime = self.runtime(tokens)
+        runtime_start = self.zero_runtime(runtime)
+        identity = self.runtime_identity()
+        run_path = report_path.parent / "invocations/all-cells/attempt/run.json"
+        write_json(
+            run_path,
+            {
+                "status": "complete",
+                "selected_cell": None,
+                "started_at": "2026-01-01T00:00:00Z",
+                "completed_at": "2026-01-01T00:00:02Z",
+                "openrealtime_revision": "c" * 40,
+                "openrealtime_revision_final": "c" * 40,
+                "source_worktree_clean_start": True,
+                "source_worktree_clean_final": True,
+                "runtime_identity": identity,
+                "runtime_identity_final": identity,
+                "gateway_health": {"runtime": runtime_start},
+                "gateway_health_final": {"runtime": runtime},
+                "gpu_ownership_guards": [],
+            },
+        )
+        execution = {
+            "path": str(run_path.relative_to(self.root)),
+            "sha256": ANALYSIS.sha256_file(run_path),
+            "status": "complete",
+            "selected_cell": None,
+            "started_at": "2026-01-01T00:00:00Z",
+            "completed_at": "2026-01-01T00:00:02Z",
+            "openrealtime_revision": "c" * 40,
+            "openrealtime_revision_final": "c" * 40,
+            "source_worktree_clean_start": True,
+            "source_worktree_clean_final": True,
+            "runtime_identity": identity,
+            "runtime_identity_final": identity,
+            "gateway_health_start": {"runtime": runtime_start},
+            "gateway_health_final": {"runtime": runtime},
+            "gateway_runtime_delta": runtime,
+            "gpu_ownership_guards": [],
+            "gpu_telemetry": self.pin(gpu_path),
+        }
+        execution_history = {
+            "invocations": 1,
+            "resumed": False,
+            "interrupted_invocations": 0,
+            "completed_invocations": 1,
+            "source_revision": "c" * 40,
+            "host_boot_id": "fixture-boot",
+            "gpu_uuids": ["GPU-fixture"],
+            "unregistered_gpu_process_violations": 0,
+            "segments": [
+                {
+                    "run": self.pin(run_path),
+                    "recorded_status": "complete",
+                    "interpreted_status": "complete",
+                    "started_at": "2026-01-01T00:00:00Z",
+                    "completed_at": "2026-01-01T00:00:02Z",
+                    "completed_guard_summaries": 0,
+                    "unrecorded_terminal_guard_logs": [],
+                    "gpu_telemetry": self.pin(gpu_path),
+                }
+            ],
+        }
         write_json(
             report_path,
             {
@@ -218,14 +310,7 @@ class Fixture:
                     "sha256": ANALYSIS.sha256_file(matrix_path),
                     "selected_cells": [cell["id"] for cell in cells],
                 },
-                "execution_evidence": [
-                    {
-                        "status": "complete",
-                        "selected_cell": None,
-                        "gateway_runtime_delta": self.runtime(tokens),
-                        "gpu_telemetry": self.pin(gpu_path),
-                    }
-                ],
+                "execution_evidence": [execution],
                 "cells": report_cells,
             },
         )
@@ -235,6 +320,7 @@ class Fixture:
             "report": self.pin(report_path),
             "population": 2,
             "infrastructure_errors": 0,
+            "execution_history": execution_history,
             "cells": terminal_cells,
         }
 
@@ -291,6 +377,90 @@ class FullStudyAnalysisTest(unittest.TestCase):
             exhaustive=True,
         )
 
+    def resume_first_matrix(self) -> tuple[Path, Path]:
+        full = json.loads(self.fixture.full_report.read_text(encoding="utf-8"))
+        panel = full["evidence_panel"]["tau_voice"]["matrices"][0]
+        report_path = self.root / panel["report"]["path"]
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        final_entry = report["execution_evidence"][0]
+        final_entry["gateway_runtime_delta"] = self.fixture.runtime(100)
+        earlier_run = (
+            report_path.parent / "invocations/all-cells/earlier/run.json"
+        )
+        earlier_gpu = earlier_run.with_name("gpu.csv")
+        earlier_gpu.parent.mkdir(parents=True, exist_ok=True)
+        earlier_gpu.write_text(
+            "timestamp,index,name,memory_used_mib,utilization_gpu_percent,"
+            "power_draw_watts,loadavg\n"
+            "2025-12-31T23:59:00Z,0,Test GPU,900,40,90,1/2/3\n",
+            encoding="utf-8",
+        )
+        identity = self.fixture.runtime_identity()
+        runtime_start = self.fixture.zero_runtime(self.fixture.runtime(200))
+        earlier_payload = {
+            "status": "running",
+            "selected_cell": None,
+            "started_at": "2025-12-31T23:59:00Z",
+            "stopped_at": "2025-12-31T23:59:59Z",
+            "openrealtime_revision": "c" * 40,
+            "source_worktree_clean_start": True,
+            "runtime_identity": identity,
+            "gateway_health": {"runtime": runtime_start},
+            "gpu_ownership_guards": [],
+        }
+        write_json(earlier_run, earlier_payload)
+        earlier_gpu_pin = self.fixture.pin(earlier_gpu)
+        earlier_entry = {
+            "path": str(earlier_run.relative_to(self.root)),
+            "sha256": ANALYSIS.sha256_file(earlier_run),
+            "status": "running",
+            "selected_cell": None,
+            "started_at": earlier_payload["started_at"],
+            "completed_at": None,
+            "openrealtime_revision": "c" * 40,
+            "openrealtime_revision_final": None,
+            "source_worktree_clean_start": True,
+            "source_worktree_clean_final": None,
+            "runtime_identity": identity,
+            "runtime_identity_final": None,
+            "gateway_health_start": earlier_payload["gateway_health"],
+            "gateway_health_final": None,
+            "gpu_ownership_guards": [],
+            "gpu_telemetry": earlier_gpu_pin,
+        }
+        report["execution_evidence"] = [earlier_entry, final_entry]
+        write_json(report_path, report)
+        history = panel["execution_history"]
+        history["invocations"] = 2
+        history["resumed"] = True
+        history["interrupted_invocations"] = 1
+        history["unregistered_gpu_process_violations"] = 1
+        history["segments"].insert(
+            0,
+            {
+                "run": self.fixture.pin(earlier_run),
+                "recorded_status": "running",
+                "interpreted_status": "stopped_before_resume_with_unfinalized_status",
+                "started_at": earlier_payload["started_at"],
+                "stopped_at": earlier_payload["stopped_at"],
+                "completed_guard_summaries": 0,
+                "unrecorded_terminal_guard_logs": [
+                    {
+                        "violations": [
+                            {
+                                "recorded_at": earlier_payload["stopped_at"],
+                                "error": "foreign GPU process",
+                            }
+                        ]
+                    }
+                ],
+                "gpu_telemetry": earlier_gpu_pin,
+            },
+        )
+        panel["report"] = self.fixture.pin(report_path)
+        write_json(self.fixture.full_report, full)
+        return report_path, earlier_run
+
     def test_publishes_complete_native_frontiers_and_limits(self) -> None:
         report = self.build()
         self.assertEqual(report["status"], "complete")
@@ -315,6 +485,45 @@ class FullStudyAnalysisTest(unittest.TestCase):
             baseline["metrics"]["trajectory_consistency"]["review_coverage_rate"],
             1.0,
         )
+
+    def test_aggregates_resumed_counter_and_gpu_segments(self) -> None:
+        self.resume_first_matrix()
+        report = self.build()
+        matrix = report["tau_voice"]["matrices"]["matrix-baseline"]
+        self.assertEqual(
+            matrix["runtime"]["continuation_totals"]["total_tokens"], 200
+        )
+        self.assertTrue(matrix["runtime"]["execution_history"]["resumed"])
+        self.assertEqual(len(matrix["gpu_telemetry"]["segments"]), 2)
+        self.assertEqual(
+            matrix["gpu_telemetry"]["execution_history"][
+                "unregistered_gpu_process_violations"
+            ],
+            1,
+        )
+
+    def test_refuses_resumed_execution_source_drift(self) -> None:
+        report_path, earlier_run = self.resume_first_matrix()
+        run = json.loads(earlier_run.read_text(encoding="utf-8"))
+        run["openrealtime_revision"] = "d" * 40
+        write_json(earlier_run, run)
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report["execution_evidence"][0]["openrealtime_revision"] = "d" * 40
+        report["execution_evidence"][0]["sha256"] = ANALYSIS.sha256_file(
+            earlier_run
+        )
+        write_json(report_path, report)
+        full = json.loads(self.fixture.full_report.read_text(encoding="utf-8"))
+        panel = full["evidence_panel"]["tau_voice"]["matrices"][0]
+        panel["execution_history"]["segments"][0]["run"] = self.fixture.pin(
+            earlier_run
+        )
+        panel["report"] = self.fixture.pin(report_path)
+        write_json(self.fixture.full_report, full)
+        with self.assertRaisesRegex(
+            ANALYSIS.FullStudyAnalysisError, "source revision count"
+        ):
+            self.build()
 
     def test_refuses_a_partial_terminal_report(self) -> None:
         payload = json.loads(self.fixture.full_report.read_text(encoding="utf-8"))

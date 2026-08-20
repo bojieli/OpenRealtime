@@ -326,17 +326,34 @@ class Fixture:
         tau_guard = self.gpu_guard(
             tau_run.parent / "control/airline.gpu-ownership.summary.json"
         )
+        tau_gpu = tau_run.with_name("gpu.csv")
+        tau_gpu.write_text(
+            "timestamp,index,name,memory_used_mib,utilization_gpu_percent,"
+            "power_draw_watts,loadavg\n"
+            "2026-01-01T00:00:00Z,0,Test GPU,1000,50,100,1/2/3\n",
+            encoding="utf-8",
+        )
+        tau_gpu_pin = {
+            "path": self.relative(tau_gpu),
+            "sha256": REPORT.sha256_file(tau_gpu),
+            "bytes": tau_gpu.stat().st_size,
+        }
         tau_execution = {
             "path": self.relative(tau_run),
             "status": "complete",
             "selected_cell": None,
+            "started_at": "2026-01-01T00:00:00Z",
+            "completed_at": "2026-01-01T00:00:03Z",
             "openrealtime_revision": "c" * 40,
             "openrealtime_revision_final": "c" * 40,
             "source_worktree_clean_start": True,
             "source_worktree_clean_final": True,
             "runtime_identity": runtime_identity(),
             "runtime_identity_final": runtime_identity(),
+            "gateway_health_start": {"runtime": {}},
+            "gateway_health_final": {"runtime": {}},
             "gpu_ownership_guards": [tau_guard],
+            "gpu_telemetry": tau_gpu_pin,
         }
         write_json(
             tau_run,
@@ -345,8 +362,15 @@ class Fixture:
                 **{
                     key: value
                     for key, value in tau_execution.items()
-                    if key not in {"path", "sha256"}
+                    if key
+                    not in {
+                        "path",
+                        "sha256",
+                        "gateway_health_start",
+                        "gpu_telemetry",
+                    }
                 },
+                "gateway_health": tau_execution["gateway_health_start"],
             },
         )
         tau_execution["sha256"] = REPORT.sha256_file(tau_run)
@@ -865,6 +889,63 @@ class FullStudyTest(unittest.TestCase):
         with mock.patch.object(REPORT, "git_source_state", return_value=source_state):
             return REPORT.build_report(self.root, self.fixture.paths["study"])
 
+    def prepend_tau_interruption(self) -> tuple[Path, Path]:
+        final_run = self.fixture.paths["tau_run"]
+        report_path = final_run.parents[3] / "report.json"
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        final_entry = report["execution_evidence"][0]
+        interrupted_run = (
+            final_run.parents[1] / "earlier-interrupted" / "run.json"
+        )
+        interrupted_gpu = interrupted_run.with_name("gpu.csv")
+        interrupted_gpu.parent.mkdir(parents=True, exist_ok=True)
+        interrupted_gpu.write_text(
+            "timestamp,index,name,memory_used_mib,utilization_gpu_percent,"
+            "power_draw_watts,loadavg\n"
+            "2025-12-31T23:59:00Z,0,Test GPU,1000,40,90,1/2/3\n",
+            encoding="utf-8",
+        )
+        payload = {
+            "matrix_sha256": json.loads(final_run.read_text(encoding="utf-8"))[
+                "matrix_sha256"
+            ],
+            "status": "running",
+            "selected_cell": None,
+            "started_at": "2025-12-31T23:59:00Z",
+            "stopped_at": "2025-12-31T23:59:59Z",
+            "openrealtime_revision": "c" * 40,
+            "source_worktree_clean_start": True,
+            "runtime_identity": runtime_identity(),
+            "gateway_health": {"runtime": {}},
+            "gpu_ownership_guards": [],
+        }
+        write_json(interrupted_run, payload)
+        interrupted_entry = {
+            "path": self.fixture.relative(interrupted_run),
+            "sha256": REPORT.sha256_file(interrupted_run),
+            "status": "running",
+            "selected_cell": None,
+            "started_at": payload["started_at"],
+            "completed_at": None,
+            "openrealtime_revision": payload["openrealtime_revision"],
+            "openrealtime_revision_final": None,
+            "source_worktree_clean_start": True,
+            "source_worktree_clean_final": None,
+            "runtime_identity": payload["runtime_identity"],
+            "runtime_identity_final": None,
+            "gateway_health_start": payload["gateway_health"],
+            "gateway_health_final": None,
+            "gpu_ownership_guards": [],
+            "gpu_telemetry": {
+                "path": self.fixture.relative(interrupted_gpu),
+                "sha256": REPORT.sha256_file(interrupted_gpu),
+                "bytes": interrupted_gpu.stat().st_size,
+            },
+        }
+        report["execution_evidence"] = [interrupted_entry, final_entry]
+        write_json(report_path, report)
+        return report_path, interrupted_run
+
     def test_accepts_only_the_complete_exact_population(self) -> None:
         report = self.report()
         self.assertEqual(report["status"], "complete")
@@ -885,6 +966,54 @@ class FullStudyTest(unittest.TestCase):
         self.assertEqual(
             report["interpretation"]["aggregation"], "none across benchmark families"
         )
+
+    def test_accepts_and_discloses_a_source_stable_resumed_tau_matrix(self) -> None:
+        self.prepend_tau_interruption()
+        report = self.report()
+        history = report["evidence_panel"]["tau_voice"]["matrices"][0][
+            "execution_history"
+        ]
+        self.assertTrue(history["resumed"])
+        self.assertEqual(history["invocations"], 2)
+        self.assertEqual(history["interrupted_invocations"], 1)
+        self.assertEqual(
+            history["segments"][0]["interpreted_status"],
+            "stopped_before_resume_with_unfinalized_status",
+        )
+
+    def test_rejects_a_resumed_tau_matrix_with_source_revision_drift(self) -> None:
+        report_path, interrupted_run = self.prepend_tau_interruption()
+        run = json.loads(interrupted_run.read_text(encoding="utf-8"))
+        run["openrealtime_revision"] = "d" * 40
+        write_json(interrupted_run, run)
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report["execution_evidence"][0]["openrealtime_revision"] = "d" * 40
+        report["execution_evidence"][0]["sha256"] = REPORT.sha256_file(
+            interrupted_run
+        )
+        write_json(report_path, report)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "resumed source revision count"
+        ):
+            self.report()
+
+    def test_rejects_a_resumed_tau_matrix_with_process_drift(self) -> None:
+        report_path, interrupted_run = self.prepend_tau_interruption()
+        run = json.loads(interrupted_run.read_text(encoding="utf-8"))
+        run["runtime_identity"]["components"]["gateway"][
+            "proc_start_time_ticks"
+        ] = "101"
+        write_json(interrupted_run, run)
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report["execution_evidence"][0]["runtime_identity"] = run[
+            "runtime_identity"
+        ]
+        report["execution_evidence"][0]["sha256"] = REPORT.sha256_file(
+            interrupted_run
+        )
+        write_json(report_path, report)
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "resumed processes"):
+            self.report()
 
     def test_rejects_terminal_failures_even_with_a_completed_row(self) -> None:
         path = self.fixture.paths["fdb15_run"]
@@ -1530,7 +1659,8 @@ class FullStudyTest(unittest.TestCase):
         report["execution_evidence"].append(report["execution_evidence"][0])
         write_json(path, report)
         with self.assertRaisesRegex(
-            REPORT.StudyIncompleteError, "source-stable invocation count"
+            REPORT.StudyIncompleteError,
+            "execution segments overlap|complete execution count",
         ):
             self.report()
 

@@ -1267,6 +1267,423 @@ def validate_tau_artifact_archive(
     }
 
 
+def validate_interrupted_gpu_guard_log(
+    root: Path,
+    path: Path,
+    *,
+    components: dict[str, Any],
+    host_boot_id: str,
+    requires_local_fast: bool,
+    label: str,
+) -> dict[str, Any]:
+    """Pin and validate a guard log whose summary was never recorded.
+
+    A process-level interruption can stop the matrix wrapper after the guard
+    has written its append-only terminal record but before ``record_gpu_guard``
+    adds the summary to ``run.json``.  Silently dropping that log would hide
+    both clean checks and the reason for the interruption.  This validator
+    accepts only a structurally complete append-only log and publishes any
+    terminal violation verbatim.
+    """
+    try:
+        records = [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+        ]
+    except (OSError, json.JSONDecodeError) as error:
+        raise StudyIncompleteError(f"cannot parse {label}: {error}") from error
+    require(len(records) >= 3, f"{label} has no complete guard interval")
+    require(
+        all(isinstance(record, dict) for record in records),
+        f"{label} contains a non-object record",
+    )
+    times = [
+        parse_utc_timestamp(record.get("recorded_at"), f"{label} record {index}")
+        for index, record in enumerate(records)
+    ]
+    require(
+        all(later >= earlier for earlier, later in zip(times, times[1:])),
+        f"{label} record times are not monotonic",
+    )
+    start = records[0]
+    end = records[-1]
+    require(
+        start.get("type") == "guard.started" and start.get("status") == "running",
+        f"{label} start record is invalid",
+    )
+    interval = start.get("interval_seconds")
+    capture_timeout = start.get("capture_timeout_seconds")
+    require_equal(
+        interval,
+        GPU_OWNERSHIP_CONTRACT["sampling_interval_seconds"],
+        f"{label} frozen sampling interval",
+    )
+    require_equal(
+        capture_timeout,
+        GPU_OWNERSHIP_CONTRACT["capture_timeout_seconds"],
+        f"{label} frozen capture timeout",
+    )
+    require(end.get("type") == "guard.completed", f"{label} has no completion")
+    checks = records[1:-1]
+    require(bool(checks), f"{label} contains no ownership checks")
+    first_snapshot: dict[str, Any] | None = None
+    ok_checks = 0
+    violations = []
+    for index, record in enumerate(checks):
+        check_label = f"{label} check {index}"
+        require_equal(record.get("type"), "guard.check", f"{check_label} type")
+        status = record.get("status")
+        if status == "ok":
+            snapshot = record.get("ownership")
+            validate_gpu_ownership_snapshot(
+                snapshot,
+                components=components,
+                host_boot_id=host_boot_id,
+                requires_local_fast=requires_local_fast,
+                label=check_label,
+            )
+            captured_at = parse_utc_timestamp(
+                snapshot.get("captured_at"), f"{check_label} ownership capture"
+            )
+            require(
+                0 <= (times[index + 1] - captured_at).total_seconds() <= capture_timeout,
+                f"{check_label} capture time is inconsistent",
+            )
+            if first_snapshot is None:
+                first_snapshot = snapshot
+            else:
+                for field in (
+                    "host_boot_id",
+                    "expected_components",
+                    "component_roots",
+                    "gpu_uuids",
+                ):
+                    require_equal(
+                        snapshot.get(field),
+                        first_snapshot.get(field),
+                        f"{check_label} stable {field}",
+                    )
+                require_equal(
+                    gpu_process_identity(snapshot["processes"]),
+                    gpu_process_identity(first_snapshot["processes"]),
+                    f"{check_label} stable GPU process identity",
+                )
+            ok_checks += 1
+        elif status == "violation":
+            error = record.get("error")
+            require(
+                isinstance(error, str) and bool(error),
+                f"{check_label} violation has no error",
+            )
+            violations.append(
+                {"recorded_at": record["recorded_at"], "error": error}
+            )
+        else:
+            raise StudyIncompleteError(f"{check_label} has invalid status {status!r}")
+    require(ok_checks > 0, f"{label} contains no successful ownership check")
+    maximum_gap = interval + capture_timeout + 1
+    require(
+        all(
+            (later - earlier).total_seconds() <= maximum_gap
+            for earlier, later in zip(times, times[1:])
+        ),
+        f"{label} contains an unsampled interval",
+    )
+    if violations:
+        require_equal(len(violations), 1, f"{label} violation count")
+        require_equal(checks[-1].get("status"), "violation", f"{label} final check")
+        require_equal(end.get("status"), "failed", f"{label} completion status")
+        require_equal(end.get("exit_status"), 1, f"{label} completion exit status")
+    else:
+        require_equal(end.get("status"), "complete", f"{label} completion status")
+        require_equal(end.get("exit_status"), 0, f"{label} completion exit status")
+    return {
+        "log": artifact(root, path),
+        "started_at": start["recorded_at"],
+        "completed_at": end["recorded_at"],
+        "completion_status": end["status"],
+        "exit_status": end["exit_status"],
+        "checks": len(checks),
+        "successful_checks": ok_checks,
+        "violations": violations,
+    }
+
+
+def validate_tau_execution_history(
+    root: Path,
+    *,
+    matrix_id: str,
+    matrix_sha256: str,
+    execution: Any,
+    cell_ids: list[str],
+    domain_names: list[str],
+    requires_local_fast: bool,
+    expected_gateway_sha256: str,
+) -> tuple[dict[str, Any], list[str]]:
+    """Validate one complete execution or a compatible interrupted/resumed chain."""
+    require(
+        isinstance(execution, list) and bool(execution),
+        f"{matrix_id} execution evidence is absent",
+    )
+    expected_run_root = (
+        root / ".runtime/benchmark-runs/tau-voice" / matrix_id / "invocations"
+    ).resolve()
+    projected_fields = {
+        "status": "status",
+        "selected_cell": "selected_cell",
+        "started_at": "started_at",
+        "completed_at": "completed_at",
+        "openrealtime_revision": "openrealtime_revision",
+        "openrealtime_revision_final": "openrealtime_revision_final",
+        "source_worktree_clean_start": "source_worktree_clean_start",
+        "source_worktree_clean_final": "source_worktree_clean_final",
+        "runtime_identity": "runtime_identity",
+        "runtime_identity_final": "runtime_identity_final",
+        "gateway_health_start": "gateway_health",
+        "gateway_health_final": "gateway_health_final",
+        "gpu_ownership_guards": "gpu_ownership_guards",
+    }
+    segments = []
+    revisions: set[str] = set()
+    reference_boot: str | None = None
+    reference_components: dict[str, Any] | None = None
+    reference_gpu_uuids: list[str] | None = None
+    for index, entry in enumerate(execution):
+        label = f"{matrix_id} execution segment {index}"
+        require(isinstance(entry, dict), f"{label} is invalid")
+        run_path_value = entry.get("path")
+        require(
+            isinstance(run_path_value, str) and bool(run_path_value),
+            f"{label} run path is absent",
+        )
+        run_path = resolve(root, run_path_value)
+        try:
+            run_path.relative_to(expected_run_root)
+        except ValueError as error:
+            raise StudyIncompleteError(
+                f"{label} run artifact is outside its matrix invocation root"
+            ) from error
+        require_equal(run_path.name, "run.json", f"{label} run filename")
+        run_payload = read_json(run_path, f"{label} run artifact")
+        require_equal(
+            sha256_file(run_path), entry.get("sha256"), f"{label} run SHA-256"
+        )
+        require_equal(
+            run_payload.get("matrix_sha256"), matrix_sha256, f"{label} matrix SHA-256"
+        )
+        require(
+            "selected_cell" in entry,
+            f"{label} did not record which cell it ran",
+        )
+        require_equal(entry["selected_cell"], None, f"{label} all-cell scope")
+        started_at = parse_utc_timestamp(entry.get("started_at"), f"{label} start")
+        revision = entry.get("openrealtime_revision")
+        require(
+            isinstance(revision, str)
+            and len(revision) == 40
+            and all(character in "0123456789abcdef" for character in revision),
+            f"{label} source revision is invalid",
+        )
+        revisions.add(revision)
+        require_equal(entry.get("source_worktree_clean_start"), True, f"{label} clean start")
+        start_identity = entry.get("runtime_identity")
+        validate_runtime_identity(
+            start_identity,
+            requires_local_fast=requires_local_fast,
+            expected_gateway_sha256=expected_gateway_sha256,
+            label=f"{label} start",
+        )
+        boot = start_identity["host_boot_id"]
+        components = start_identity["components"]
+        gpu_uuids = start_identity["gpu_ownership"]["gpu_uuids"]
+        if reference_boot is None:
+            reference_boot = boot
+            reference_components = components
+            reference_gpu_uuids = gpu_uuids
+        else:
+            require_equal(boot, reference_boot, f"{label} resumed host boot")
+            require_equal(components, reference_components, f"{label} resumed processes")
+            require_equal(gpu_uuids, reference_gpu_uuids, f"{label} resumed GPU identity")
+
+        run_directory = Path(run_path_value).parent
+        expected_guard_paths = {
+            (
+                run_directory / cell_id / f"{domain}.gpu-ownership.summary.json"
+            ).as_posix()
+            for cell_id in cell_ids
+            for domain in domain_names
+        }
+        guards = entry.get("gpu_ownership_guards")
+        require(isinstance(guards, list), f"{label} GPU ownership guards are absent")
+        require(
+            all(
+                isinstance(item, dict) and isinstance(item.get("path"), str)
+                for item in guards
+            ),
+            f"{label} GPU ownership guard paths are invalid",
+        )
+        guard_paths = [item["path"] for item in guards]
+        require_equal(len(guard_paths), len(set(guard_paths)), f"{label} unique guards")
+        require(
+            set(guard_paths) <= expected_guard_paths,
+            f"{label} contains a guard outside its matrix population",
+        )
+        declared_logs = set()
+        for guard_index, guard in enumerate(guards):
+            validate_gpu_ownership_guard(
+                root,
+                guard,
+                components=components,
+                host_boot_id=boot,
+                requires_local_fast=requires_local_fast,
+                label=f"{label} GPU ownership guard {guard_index}",
+            )
+            log_path = guard.get("evidence", {}).get("log", {}).get("path")
+            require(isinstance(log_path, str) and bool(log_path), f"{label} guard log")
+            declared_logs.add(resolve(root, log_path))
+
+        orphan_logs = []
+        for log_path in sorted(run_path.parent.rglob("*.gpu-ownership.jsonl")):
+            if log_path.resolve() in declared_logs:
+                continue
+            relative_log = display_path(root, log_path)
+            implied_summary = (
+                relative_log.removesuffix(".jsonl") + ".summary.json"
+            )
+            require(
+                implied_summary in expected_guard_paths,
+                f"{label} has an unexpected unrecorded guard log {relative_log}",
+            )
+            orphan_logs.append(
+                validate_interrupted_gpu_guard_log(
+                    root,
+                    log_path,
+                    components=components,
+                    host_boot_id=boot,
+                    requires_local_fast=requires_local_fast,
+                    label=f"{label} unrecorded GPU guard {relative_log}",
+                )
+            )
+
+        telemetry = entry.get("gpu_telemetry")
+        require(isinstance(telemetry, dict), f"{label} GPU telemetry is absent")
+        telemetry_path = resolve(root, telemetry.get("path", ""))
+        require_equal(telemetry_path.parent, run_path.parent, f"{label} telemetry root")
+        require_equal(telemetry_path.name, "gpu.csv", f"{label} telemetry filename")
+        require_equal(
+            artifact(root, telemetry_path), telemetry, f"{label} GPU telemetry pin"
+        )
+
+        status = entry.get("status")
+        if status == "complete":
+            finished_at = parse_utc_timestamp(
+                entry.get("completed_at"), f"{label} completion"
+            )
+            require_equal(entry.get("source_worktree_clean_final"), True, f"{label} clean completion")
+            require_equal(
+                entry.get("openrealtime_revision_final"),
+                revision,
+                f"{label} source revision at completion",
+            )
+            final_identity = entry.get("runtime_identity_final")
+            validate_runtime_identity(
+                final_identity,
+                requires_local_fast=requires_local_fast,
+                expected_gateway_sha256=expected_gateway_sha256,
+                label=f"{label} final",
+            )
+            require_equal(final_identity["host_boot_id"], boot, f"{label} runtime boot")
+            require_equal(final_identity["components"], components, f"{label} runtime processes")
+            require_equal(
+                set(guard_paths),
+                expected_guard_paths,
+                f"{label} GPU ownership guard coverage",
+            )
+            require_equal(orphan_logs, [], f"{label} unrecorded guard logs")
+            interpreted_status = "complete"
+            terminal_field = "completed_at"
+        else:
+            require(
+                status in {"running", "interrupted"},
+                f"{label} has inadmissible pre-resume status {status!r}",
+            )
+            stopped_value = run_payload.get("stopped_at")
+            finished_at = parse_utc_timestamp(stopped_value, f"{label} stop")
+            require(entry.get("completed_at") is None, f"{label} has a completion time")
+            require(entry.get("runtime_identity_final") is None, f"{label} has a final identity")
+            require(entry.get("openrealtime_revision_final") is None, f"{label} has a final revision")
+            require(entry.get("source_worktree_clean_final") is None, f"{label} has a final clean-state claim")
+            interpreted_status = (
+                "stopped_before_resume_with_unfinalized_status"
+                if status == "running"
+                else "interrupted_before_resume"
+            )
+            terminal_field = "stopped_at"
+        for report_field, run_field in projected_fields.items():
+            require_equal(
+                entry.get(report_field),
+                run_payload.get(run_field),
+                f"{label} projected {report_field}",
+            )
+        require(finished_at >= started_at, f"{label} ends before it starts")
+        segments.append(
+            {
+                "run": artifact(root, run_path),
+                "recorded_status": status,
+                "interpreted_status": interpreted_status,
+                "started_at": entry["started_at"],
+                terminal_field: (
+                    entry["completed_at"]
+                    if terminal_field == "completed_at"
+                    else run_payload["stopped_at"]
+                ),
+                "completed_guard_summaries": len(guards),
+                "unrecorded_terminal_guard_logs": orphan_logs,
+                "gpu_telemetry": telemetry,
+                "_started": started_at,
+                "_finished": finished_at,
+            }
+        )
+
+    require_equal(len(revisions), 1, f"{matrix_id} resumed source revision count")
+    ordered = sorted(segments, key=lambda segment: segment["_started"])
+    require_equal(segments, ordered, f"{matrix_id} execution chronology")
+    require(
+        all(
+            later["_started"] > earlier["_started"]
+            and earlier["_finished"] <= later["_started"]
+            for earlier, later in zip(segments, segments[1:])
+        ),
+        f"{matrix_id} execution segments overlap or are out of order",
+    )
+    complete = [segment for segment in segments if segment["recorded_status"] == "complete"]
+    require_equal(len(complete), 1, f"{matrix_id} complete execution count")
+    require_equal(segments[-1], complete[0], f"{matrix_id} final completed execution")
+    public_segments = [
+        {key: value for key, value in segment.items() if not key.startswith("_")}
+        for segment in segments
+    ]
+    violations = sum(
+        len(log["violations"])
+        for segment in public_segments
+        for log in segment["unrecorded_terminal_guard_logs"]
+    )
+    return (
+        {
+            "invocations": len(public_segments),
+            "resumed": len(public_segments) > 1,
+            "interrupted_invocations": len(public_segments) - 1,
+            "completed_invocations": 1,
+            "source_revision": next(iter(revisions)),
+            "host_boot_id": reference_boot,
+            "gpu_uuids": reference_gpu_uuids,
+            "unregistered_gpu_process_violations": violations,
+            "segments": public_segments,
+        },
+        sorted(revisions),
+    )
+
+
 def validate_tau_matrix(
     root: Path,
     matrix_specification: dict[str, Any],
@@ -1505,176 +1922,19 @@ def validate_tau_matrix(
         * matrix["benchmark"]["num_trials"]
     )
     require_equal(total_simulations, expected_total, f"{matrix_id} total population")
-    execution = report.get("execution_evidence")
-    require(isinstance(execution, list), f"{matrix_id} execution evidence is absent")
-    require_equal(len(execution), 1, f"{matrix_id} source-stable invocation count")
-    complete_runs = [item for item in execution if item.get("status") == "complete"]
-    require_equal(len(complete_runs), 1, f"{matrix_id} complete execution count")
-    require_equal(
-        complete_runs[0].get("selected_cell"),
-        None,
-        f"{matrix_id} all-cell execution",
-    )
     requires_local_fast = matrix.get("runtime_requirements", {}).get(
         "requires_local_fast", True
     )
-    for index, complete_run in enumerate(complete_runs):
-        execution_label = f"{matrix_id} complete execution {index}"
-        run_path_value = complete_run.get("path")
-        require(
-            isinstance(run_path_value, str) and bool(run_path_value),
-            f"{execution_label} run path is absent",
-        )
-        run_path = resolve(root, run_path_value)
-        expected_run_root = (
-            root / ".runtime/benchmark-runs/tau-voice" / matrix_id / "invocations"
-        ).resolve()
-        try:
-            run_path.relative_to(expected_run_root)
-        except ValueError as error:
-            raise StudyIncompleteError(
-                f"{execution_label} run artifact is outside its matrix invocation root"
-            ) from error
-        require_equal(run_path.name, "run.json", f"{execution_label} run filename")
-        run_payload = read_json(run_path, f"{execution_label} run artifact")
-        require_equal(
-            sha256_file(run_path),
-            complete_run.get("sha256"),
-            f"{execution_label} run SHA-256",
-        )
-        require_equal(
-            run_payload.get("matrix_sha256"),
-            matrix_specification["sha256"],
-            f"{execution_label} run matrix SHA-256",
-        )
-        revision = complete_run.get("openrealtime_revision")
-        require(
-            isinstance(revision, str)
-            and len(revision) == 40
-            and all(character in "0123456789abcdef" for character in revision),
-            f"{execution_label} source revision is invalid",
-        )
-        require_equal(
-            complete_run.get("source_worktree_clean_start"),
-            True,
-            f"{execution_label} clean source at start",
-        )
-        require_equal(
-            complete_run.get("source_worktree_clean_final"),
-            True,
-            f"{execution_label} clean source at completion",
-        )
-        require_equal(
-            complete_run.get("openrealtime_revision_final"),
-            revision,
-            f"{execution_label} source revision at completion",
-        )
-        start_identity = complete_run.get("runtime_identity")
-        final_identity = complete_run.get("runtime_identity_final")
-        validate_runtime_identity(
-            start_identity,
-            requires_local_fast=requires_local_fast,
-            expected_gateway_sha256=expected_gateway_sha256,
-            label=f"{execution_label} start",
-        )
-        validate_runtime_identity(
-            final_identity,
-            requires_local_fast=requires_local_fast,
-            expected_gateway_sha256=expected_gateway_sha256,
-            label=f"{execution_label} final",
-        )
-        require_equal(
-            start_identity.get("host_boot_id"),
-            final_identity.get("host_boot_id"),
-            f"{execution_label} runtime boot",
-        )
-        require_equal(
-            start_identity.get("components"),
-            final_identity.get("components"),
-            f"{execution_label} runtime processes",
-        )
-        # A recorded null means "this run covered the whole matrix", so an
-        # absent key silently claims coverage the runner never asserted.
-        # Require the field, then allow its null.
-        require(
-            "selected_cell" in complete_run,
-            f"{execution_label} did not record which cell it ran",
-        )
-        selected_cell = complete_run["selected_cell"]
-        require(
-            selected_cell is None or selected_cell in cell_ids,
-            f"{execution_label} selected cell is invalid",
-        )
-        covered_cells = [selected_cell] if selected_cell is not None else cell_ids
-        run_directory = Path(run_path_value).parent
-        expected_guard_paths = {
-            (
-                run_directory / cell_id / f"{domain}.gpu-ownership.summary.json"
-            ).as_posix()
-            for cell_id in covered_cells
-            for domain in domains
-        }
-        guards = complete_run.get("gpu_ownership_guards")
-        require(
-            isinstance(guards, list),
-            f"{execution_label} GPU ownership guards are absent",
-        )
-        require(
-            all(
-                isinstance(item, dict) and isinstance(item.get("path"), str)
-                for item in guards
-            ),
-            f"{execution_label} GPU ownership guard paths are invalid",
-        )
-        require_equal(
-            {item["path"] for item in guards},
-            expected_guard_paths,
-            f"{execution_label} GPU ownership guard coverage",
-        )
-        require_equal(
-            len(guards),
-            len(expected_guard_paths),
-            f"{execution_label} unique GPU ownership guards",
-        )
-        for guard_index, guard in enumerate(guards):
-            validate_gpu_ownership_guard(
-                root,
-                guard,
-                components=start_identity["components"],
-                host_boot_id=start_identity["host_boot_id"],
-                requires_local_fast=requires_local_fast,
-                label=f"{execution_label} GPU ownership guard {guard_index}",
-            )
-        projected_fields = {
-            "status": "status",
-            "selected_cell": "selected_cell",
-            "started_at": "started_at",
-            "completed_at": "completed_at",
-            "openrealtime_revision": "openrealtime_revision",
-            "openrealtime_revision_final": "openrealtime_revision_final",
-            "source_worktree_clean_start": "source_worktree_clean_start",
-            "source_worktree_clean_final": "source_worktree_clean_final",
-            "runtime_identity": "runtime_identity",
-            "runtime_identity_final": "runtime_identity_final",
-            "gateway_health_start": "gateway_health",
-            "gateway_health_final": "gateway_health_final",
-            "gpu_ownership_guards": "gpu_ownership_guards",
-        }
-        for report_field, run_field in projected_fields.items():
-            require_equal(
-                complete_run.get(report_field),
-                run_payload.get(run_field),
-                f"{execution_label} projected {report_field}",
-            )
-    revisions = sorted(
-        {
-            item["openrealtime_revision"]
-            for item in complete_runs
-            if isinstance(item.get("openrealtime_revision"), str)
-            and item["openrealtime_revision"]
-        }
+    execution_history, revisions = validate_tau_execution_history(
+        root,
+        matrix_id=matrix_id,
+        matrix_sha256=matrix_specification["sha256"],
+        execution=report.get("execution_evidence"),
+        cell_ids=cell_ids,
+        domain_names=list(domains),
+        requires_local_fast=requires_local_fast,
+        expected_gateway_sha256=expected_gateway_sha256,
     )
-    require(revisions, f"{matrix_id} complete execution has no source revision")
     return {
         "matrix_id": matrix_id,
         "matrix": artifact(root, matrix_path),
@@ -1683,6 +1943,7 @@ def validate_tau_matrix(
         "infrastructure_errors": infrastructure_errors,
         "termination_reasons": dict(sorted(termination_reasons.items())),
         "openrealtime_revisions": revisions,
+        "execution_history": execution_history,
         "raw_artifact_archives": raw_artifact_archives,
         "cells": cell_panel,
     }
@@ -2957,6 +3218,7 @@ def build_report(
                         "changes": [
                             "represent native undefined tau interaction metrics by name instead of null",
                             "reject terminal tau infrastructure-error simulations",
+                            "validate and disclose provenance-compatible interrupted and resumed tau invocations",
                         ],
                     }
                     if correction
