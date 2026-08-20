@@ -386,7 +386,10 @@ class Fixture:
                                 }
                             }
                         },
-                        "overall": {"agent_metrics": {"avg_reward": 1.0}},
+                        "overall": {
+                            "agent_metrics": {"avg_reward": 1.0},
+                            "interaction_metrics": {},
+                        },
                     }
                 },
             },
@@ -1355,6 +1358,25 @@ class FullStudyTest(unittest.TestCase):
         self.assertNotIn("SIR_pct", panel["metrics"])
         self.assertIn("SIR_pct", panel["not_measured"])
 
+    def test_publishes_an_undefined_tau_interaction_metric_by_name(self) -> None:
+        path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
+        report = json.loads(path.read_text(encoding="utf-8"))
+        report["cells"]["control"]["overall"]["interaction_metrics"] = {
+            "response_latency_mean": 0.2,
+            "selectivity_backchannel": None,
+        }
+        write_json(path, report)
+        panel = self.report()["evidence_panel"]["tau_voice"]["matrices"][0][
+            "cells"
+        ]["control"]["overall"]
+        self.assertEqual(panel["interaction_metrics"], {"response_latency_mean": 0.2})
+        self.assertEqual(
+            panel["interaction_metrics_not_measured"],
+            {
+                "selectivity_backchannel": REPORT.TAU_UNDEFINED_INTERACTION_REASON
+            },
+        )
+
     def test_permits_only_the_declared_empty_panel_field(self) -> None:
         report = self.report()
         nulls = {path for path, _ in REPORT.null_panel_fields(report)}
@@ -1448,6 +1470,20 @@ class FullStudyTest(unittest.TestCase):
         write_json(path, report)
         with self.assertRaisesRegex(
             REPORT.StudyIncompleteError, "termination population"
+        ):
+            self.report()
+
+    def test_rejects_a_terminal_tau_infrastructure_error(self) -> None:
+        path = self.root / ".runtime/benchmark-runs/tau-voice/tau-mini/report.json"
+        report = json.loads(path.read_text(encoding="utf-8"))
+        population = report["cells"]["control"]["domains"]["airline"][
+            "population"
+        ]
+        population["infrastructure_errors"] = 1
+        population["termination_reasons"] = {"infrastructure_error": 1}
+        write_json(path, report)
+        with self.assertRaisesRegex(
+            REPORT.StudyIncompleteError, "terminal infrastructure errors"
         ):
             self.report()
 
@@ -1680,6 +1716,51 @@ class FullStudyTest(unittest.TestCase):
             "terminal reporter clean source",
         ):
             self.report(("c" * 40, False))
+
+    def test_requires_an_explicit_clean_postfreeze_reporter_correction(self) -> None:
+        reporter_root = self.root / "reporter"
+        reporter_root.mkdir()
+        states = [("c" * 40, True), ("d" * 40, True)]
+        with mock.patch.object(REPORT, "git_source_state", side_effect=states):
+            with self.assertRaisesRegex(
+                REPORT.StudyIncompleteError, "explicit reporting-correction flag"
+            ):
+                REPORT.build_report(
+                    self.root,
+                    self.fixture.paths["study"],
+                    reporter_source_root=reporter_root,
+                )
+
+    def test_discloses_a_postfreeze_reporting_only_correction(self) -> None:
+        reporter_root = self.root / "reporter"
+        reporter_root.mkdir()
+        states = [("c" * 40, True), ("d" * 40, True)]
+        with mock.patch.object(REPORT, "git_source_state", side_effect=states):
+            report = REPORT.build_report(
+                self.root,
+                self.fixture.paths["study"],
+                reporter_source_root=reporter_root,
+                allow_postfreeze_reporting_correction=True,
+            )
+        reporter = report["study"]["terminal_reporter"]
+        self.assertEqual(reporter["source_revision"], "d" * 40)
+        self.assertEqual(reporter["mode"], "postfreeze-reporting-correction")
+        self.assertFalse(reporter["correction_scope"]["benchmark_execution_changed"])
+
+    def test_rejects_a_dirty_postfreeze_correction_reporter(self) -> None:
+        reporter_root = self.root / "reporter"
+        reporter_root.mkdir()
+        states = [("c" * 40, True), ("d" * 40, False)]
+        with mock.patch.object(REPORT, "git_source_state", side_effect=states):
+            with self.assertRaisesRegex(
+                REPORT.StudyIncompleteError, "correction reporter clean source"
+            ):
+                REPORT.build_report(
+                    self.root,
+                    self.fixture.paths["study"],
+                    reporter_source_root=reporter_root,
+                    allow_postfreeze_reporting_correction=True,
+                )
 
     def test_rejects_external_run_without_the_frozen_gateway_declaration(self) -> None:
         path = self.fixture.paths["fd_context"]

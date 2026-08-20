@@ -199,6 +199,35 @@ unrelated colocated workload from silently changing latency or memory pressure.
 The earlier `matrix-v1` population is a preserved pre-freeze pilot and is
 intentionally absent from the full-study manifest.
 
+After the terminal report reaches `status: complete`, publish the post-hoc
+native-metric and Pareto analysis with:
+
+```bash
+python3 scripts/report-full-study-analysis.py --repository-root .
+```
+
+The analyzer refuses a partial terminal report, terminal tau infrastructure
+errors, population/hash drift, missing GPU telemetry, changed preregistered
+ablation definitions, or a matrix omitted from the seven declared analyses. It
+reports separate tau frontiers over native task, interaction, checked-action,
+review-consistency, provider-work, and priced-cost-proxy axes. It does not
+invent a cross-benchmark score, provider-billed cost, semantic-audio label, or
+run-to-run confidence interval. The frozen executable predates explicit cached-
+input counters and typed audible repair, so those remain named measurement
+limits instead of being reconstructed after the fact.
+
+If the frozen reporter itself refuses only because its publication schema
+cannot represent a native undefined tau interaction field, do not edit or rerun
+any benchmark population. After every benchmark queue has terminated, run the
+clean corrected reporter from its committed worktree against the still-clean
+frozen orchestration root with
+`--allow-postfreeze-reporting-correction`. The output discloses both source
+revisions, hashes the exact reporter script, states that benchmark execution and
+native scores were unchanged, represents undefined native metrics by name, and
+tightens terminal infrastructure-error rejection. The flag is refused when the
+reporter revision is not different, when either source is dirty, or when it is
+omitted for a cross-revision reporting run.
+
 Each completed τ matrix then runs:
 
 ```bash

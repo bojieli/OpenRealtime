@@ -445,6 +445,16 @@ composite score. Report per-domain and `control`/`regular` cells before any
 aggregate. Use the upstream interaction metric implementation on uploaded
 tick trajectories rather than locally redefining its windows.
 
+Once the fail-closed full-study panel is complete,
+`scripts/report-full-study-analysis.py` binds every expanded trajectory back to
+that panel and the frozen ablation-definition hashes. It publishes the seven
+declared comparisons separately for `control` and `regular` speech. A frontier
+is descriptive nondominance over observed native point estimates; missing
+native values make that panel explicitly `not_measured` rather than silently
+dropping an axis or condition. Matrix-pair provider counters and GPU samples
+are explanatory compute evidence, not per-cell device-kernel time. The priced
+agent cost remains tau's compatibility proxy, not a provider invoice.
+
 `scripts/report-tau-voice-matrix.sh` is the publication gate. It refuses to
 score a cell until every declared task/trial pair is present exactly once and
 the metadata, simulation index, files, domain, seed, speech complexity, tick

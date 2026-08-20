@@ -66,6 +66,15 @@ def arguments() -> argparse.Namespace:
     )
     parser.add_argument("--repository-root", type=Path, default=Path.cwd())
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--allow-postfreeze-reporting-correction",
+        action="store_true",
+        help=(
+            "allow clean reporting-only code from a different revision to "
+            "analyze an unchanged frozen orchestration root, with both revisions "
+            "and the reporter hash disclosed in the output"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -307,6 +316,10 @@ PERMITTED_NULL_PANEL_FIELDS = frozenset(
     }
 )
 
+TAU_UNDEFINED_INTERACTION_REASON = (
+    "the native tau interaction scorer reported no defined value for this population"
+)
+
 
 def null_panel_fields(value: Any, path: str = "") -> Iterator[tuple[str, str]]:
     """Yield (reported path, index-free path) for every null inside value."""
@@ -332,6 +345,23 @@ def require_no_unexplained_nulls(report: dict[str, Any]) -> None:
             normalized in PERMITTED_NULL_PANEL_FIELDS,
             f"evidence panel field has no value: {reported}",
         )
+
+
+def publish_tau_overall(overall: dict[str, Any], label: str) -> dict[str, Any]:
+    """Publish native undefined interaction metrics by name, never as zero/null."""
+    interaction = overall.get("interaction_metrics")
+    require(isinstance(interaction, dict), f"{label} recorded no interaction metrics")
+    measured = {name: value for name, value in interaction.items() if value is not None}
+    not_measured = {
+        name: TAU_UNDEFINED_INTERACTION_REASON
+        for name, value in interaction.items()
+        if value is None
+    }
+    return {
+        **overall,
+        "interaction_metrics": measured,
+        "interaction_metrics_not_measured": not_measured,
+    }
 
 
 def declared_population(specification: dict[str, Any], label: str) -> int:
@@ -1416,6 +1446,17 @@ def validate_tau_matrix(
                 errors,
                 f"{matrix_id}/{cell_id}/{domain_name} infrastructure reconciliation",
             )
+            # Every declared task has one successful terminal attempt in the
+            # archive ledger. A terminal infrastructure-error simulation would
+            # either displace that successful result or add a second terminal
+            # outcome for the same task. Tau's aggregate scorer may skip such
+            # rows, but a publication gate must not call that exact population
+            # complete.
+            require_equal(
+                errors,
+                0,
+                f"{matrix_id}/{cell_id}/{domain_name} terminal infrastructure errors",
+            )
             raw_artifact_archives.append(
                 validate_tau_artifact_archive(
                     root,
@@ -1455,7 +1496,7 @@ def validate_tau_matrix(
             "simulations": cell_simulations,
             "infrastructure_errors": cell_errors,
             "termination_reasons": dict(sorted(cell_termination_reasons.items())),
-            "overall": overall,
+            "overall": publish_tau_overall(overall, f"{matrix_id}/{cell_id}"),
         }
 
     expected_total = (
@@ -2791,7 +2832,13 @@ def require_preregistered_declarations(manifest: dict[str, Any]) -> None:
     )
 
 
-def build_report(root: Path, manifest_path: Path) -> dict[str, Any]:
+def build_report(
+    root: Path,
+    manifest_path: Path,
+    *,
+    reporter_source_root: Path | None = None,
+    allow_postfreeze_reporting_correction: bool = False,
+) -> dict[str, Any]:
     manifest = read_json(manifest_path, "full study manifest")
     require_equal(manifest.get("schema_version"), "1.0.0", "study manifest schema")
     require_equal(manifest.get("status"), "preregistered", "study manifest status")
@@ -2854,6 +2901,34 @@ def build_report(root: Path, manifest_path: Path) -> dict[str, Any]:
         "terminal reporter orchestration revision",
     )
     require_equal(reporter_clean, True, "terminal reporter clean source")
+    reporter_code_root = (
+        root.resolve()
+        if reporter_source_root is None
+        else reporter_source_root.resolve()
+    )
+    if reporter_code_root == root.resolve():
+        reporter_code_revision, reporter_code_clean = reporter_revision, reporter_clean
+    else:
+        reporter_code_revision, reporter_code_clean = git_source_state(
+            reporter_code_root
+        )
+    correction = reporter_code_revision != orchestration_revision
+    if correction:
+        require(
+            allow_postfreeze_reporting_correction,
+            "terminal reporter code revision differs from the frozen orchestration; "
+            "the explicit reporting-correction flag is required",
+        )
+        require_equal(
+            reporter_code_clean, True, "post-freeze correction reporter clean source"
+        )
+    else:
+        require(
+            not allow_postfreeze_reporting_correction,
+            "post-freeze reporting correction was requested but reporter and "
+            "orchestration revisions are identical",
+        )
+    reporter_script = Path(__file__).resolve()
     report = {
         "schema_version": "1.0.0",
         "status": "complete",
@@ -2866,6 +2941,28 @@ def build_report(root: Path, manifest_path: Path) -> dict[str, Any]:
             "gateway_executable_sha256": gateway_sha256,
             "orchestration_revision": orchestration_revision,
             "source_worktree_clean": reporter_clean,
+            "terminal_reporter": {
+                "source_revision": reporter_code_revision,
+                "source_worktree_clean": reporter_code_clean,
+                "script": artifact(root, reporter_script),
+                "mode": (
+                    "postfreeze-reporting-correction"
+                    if correction
+                    else "frozen-orchestration"
+                ),
+                "correction_scope": (
+                    {
+                        "benchmark_execution_changed": False,
+                        "native_scores_changed": False,
+                        "changes": [
+                            "represent native undefined tau interaction metrics by name instead of null",
+                            "reject terminal tau infrastructure-error simulations",
+                        ],
+                    }
+                    if correction
+                    else "none"
+                ),
+            },
             "publication_policy": policy,
         },
         "evidence_panel": {
@@ -2904,7 +3001,12 @@ def main() -> int:
         output = root / ".runtime/benchmark-runs/full-study-v1/report.json"
     elif not output.is_absolute():
         output = root / output
-    report = build_report(root, manifest_path)
+    report = build_report(
+        root,
+        manifest_path,
+        reporter_source_root=Path(__file__).resolve().parent.parent,
+        allow_postfreeze_reporting_correction=args.allow_postfreeze_reporting_correction,
+    )
     atomic_write_json(output.resolve(), report)
     print(f"full voice study report complete: {output.resolve()}")
     return 0
