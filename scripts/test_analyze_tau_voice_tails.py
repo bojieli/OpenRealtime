@@ -33,7 +33,13 @@ def conversation(gaps: list[int], duration=0.2) -> list[dict]:
     return ticks
 
 
-def write_population(root: Path, name: str, simulations: list[dict]) -> Path:
+def write_population(
+    root: Path,
+    name: str,
+    simulations: list[dict],
+    tasks: int | None = None,
+    trials: int | None = None,
+) -> Path:
     directory = root / name
     (directory / "simulations").mkdir(parents=True)
     index = []
@@ -51,7 +57,12 @@ def write_population(root: Path, name: str, simulations: list[dict]) -> Path:
         (directory / "simulations" / f"{identifier}.json").write_text(
             json.dumps(simulation)
         )
-    (directory / "results.json").write_text(json.dumps({"simulation_index": index}))
+    results: dict = {"simulation_index": index}
+    if tasks is not None:
+        results["tasks"] = [{"id": str(number)} for number in range(tasks)]
+    if trials is not None:
+        results["info"] = {"num_trials": trials}
+    (directory / "results.json").write_text(json.dumps(results))
     return directory
 
 
@@ -190,6 +201,41 @@ class TailAnalysisTest(unittest.TestCase):
                 latency["max"],
             ]
             self.assertEqual(ordered, sorted(ordered))
+
+    def test_partial_population_reports_its_shortfall(self):
+        """A latency tail measured over 12% of a cell must say so."""
+        with TemporaryDirectory() as temporary:
+            population = write_population(
+                Path(temporary),
+                "aborted",
+                [{"ticks": conversation([2]), "duration": 1.0} for _ in range(6)],
+                tasks=50,
+                trials=1,
+            )
+            code, payload, stderr = run(population)
+            self.assertEqual(code, 0, stderr)
+            scope = payload["populations"][0]["scope"]
+            self.assertTrue(scope["declared"])
+            self.assertEqual(scope["declared_simulations"], 50)
+            self.assertEqual(scope["simulations_on_disk"], 6)
+            self.assertFalse(scope["complete"])
+
+    def test_unindexed_simulation_file_is_refused(self):
+        """A file no entry names would never be read; the counts must not agree."""
+        with TemporaryDirectory() as temporary:
+            population = write_population(
+                Path(temporary),
+                "extra",
+                [{"ticks": conversation([2]), "duration": 1.0}],
+                tasks=1,
+                trials=1,
+            )
+            (population / "simulations" / "orphan.json").write_text(
+                json.dumps({"ticks": conversation([2]), "duration": 1.0})
+            )
+            code, _, stderr = run(population)
+            self.assertEqual(code, 1)
+            self.assertIn("unindexed simulation orphan.json", stderr)
 
 
 if __name__ == "__main__":

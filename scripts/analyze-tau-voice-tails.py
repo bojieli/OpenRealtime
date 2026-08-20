@@ -49,6 +49,68 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def reconcile_index(index: list[dict[str, Any]], directory: Path) -> None:
+    """Reconcile an index against the files it names, in both directions.
+
+    The index is an assertion inside ``results.json``; the files under
+    ``simulations/`` are the population these tools actually read. An entry
+    naming an absent file is broken bookkeeping, and a file no entry names is
+    evidence nothing would ever score -- either way the counts stop agreeing,
+    so neither can be reported as a whole cell. Checking here rather than at
+    each read means an entry whose file is never opened cannot slip past.
+    """
+    named = set()
+    for entry in index:
+        identifier = entry.get("id")
+        if not isinstance(identifier, str) or not identifier:
+            raise TailAnalysisError(f"{directory}: an index entry declares no id")
+        named.add(identifier)
+    present = {path.stem for path in (directory / "simulations").glob("*.json")}
+    for identifier in sorted(named - present):
+        raise TailAnalysisError(f"{directory}: missing simulation {identifier}.json")
+    for identifier in sorted(present - named):
+        raise TailAnalysisError(f"{directory}: unindexed simulation {identifier}.json")
+
+
+def declared_scope(payload: dict[str, Any], directory: Path) -> dict[str, Any]:
+    """What the population says it set out to run, versus what it actually holds.
+
+    ``results.json`` records the task list and trial count the run was launched
+    with, so a population that stopped early states its own shortfall. Reporting
+    a partial cell without that fact would describe 12% of a cell in the same
+    shape as a complete one.
+
+    Three counts have to agree, not two. The declared scope and the simulation
+    index are both assertions inside ``results.json``; only the files under
+    ``simulations/`` are the population these tools actually read. An index that
+    lists fifty entries over six files on disk would otherwise report a complete
+    cell, so completeness is the agreement of all three.
+    """
+    tasks = payload.get("tasks")
+    info = payload.get("info") or {}
+    trials = info.get("num_trials")
+    indexed = len(payload.get("simulation_index") or [])
+    on_disk = len(list((directory / "simulations").glob("*.json")))
+    scope: dict[str, Any] = {
+        "simulations_indexed": indexed,
+        "simulations_on_disk": on_disk,
+    }
+    if not isinstance(tasks, list) or not tasks or not isinstance(trials, int):
+        # Without a declared scope there is nothing to reconcile the counts
+        # against; say so rather than implying completeness never asserted.
+        scope["declared"] = False
+        return scope
+    expected = len(tasks) * trials
+    scope.update(
+        declared=True,
+        declared_tasks=len(tasks),
+        declared_trials_per_task=trials,
+        declared_simulations=expected,
+        complete=expected == indexed == on_disk,
+    )
+    return scope
+
+
 def quantile(ordered: list[float], fraction: float) -> float:
     """Nearest-rank quantile of an already sorted, non-empty sample."""
     if not ordered:
@@ -145,6 +207,9 @@ def summarize(directory: Path) -> dict[str, Any]:
     index = payload.get("simulation_index")
     if not isinstance(index, list) or not index:
         raise TailAnalysisError(f"{directory}: results.json declares no simulations")
+    if not (directory / "simulations").is_dir():
+        raise TailAnalysisError(f"{directory}: no simulations directory")
+    reconcile_index(index, directory)
 
     every_latency: list[float] = []
     per_simulation_p90: list[float] = []
@@ -180,6 +245,7 @@ def summarize(directory: Path) -> dict[str, Any]:
     return {
         "population": directory.name,
         "simulations_declared": len(index),
+        "scope": declared_scope(payload, directory),
         "simulations_measured": simulations_read,
         "unanswered_user_turns": unanswered_total,
         "response_latency_seconds": distribution(every_latency),

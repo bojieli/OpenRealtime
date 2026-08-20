@@ -21,7 +21,13 @@ def load_module():
     return module
 
 
-def write_population(root: Path, name: str, rewards: dict[str, object]) -> Path:
+def write_population(
+    root: Path,
+    name: str,
+    rewards: dict[str, object],
+    tasks: int | None = None,
+    trials: int | None = None,
+) -> Path:
     directory = root / name
     (directory / "simulations").mkdir(parents=True)
     index = [
@@ -34,7 +40,12 @@ def write_population(root: Path, name: str, rewards: dict[str, object]) -> Path:
         }
         for position, (task, reward) in enumerate(rewards.items())
     ]
-    (directory / "results.json").write_text(json.dumps({"simulation_index": index}))
+    results: dict = {"simulation_index": index}
+    if tasks is not None:
+        results["tasks"] = [{"id": str(number)} for number in range(tasks)]
+    if trials is not None:
+        results["info"] = {"num_trials": trials}
+    (directory / "results.json").write_text(json.dumps(results))
     return directory
 
 
@@ -162,9 +173,7 @@ class ComparisonTest(unittest.TestCase):
                 }
             )
             (baseline / "results.json").write_text(json.dumps(results))
-            code, _, stderr = run(
-                baseline, write_population(root, "treat", {"a": 1.0})
-            )
+            code, _, stderr = run(baseline, write_population(root, "treat", {"a": 1.0}))
             self.assertEqual(code, 1)
             self.assertIn("repeated-trial estimator", stderr)
 
@@ -183,9 +192,7 @@ class ComparisonTest(unittest.TestCase):
             root = Path(temporary)
             baseline = write_population(root, "base", {"a": 1.0})
             (baseline / "results.json").write_text("")
-            code, _, stderr = run(
-                baseline, write_population(root, "treat", {"a": 1.0})
-            )
+            code, _, stderr = run(baseline, write_population(root, "treat", {"a": 1.0}))
             self.assertEqual(code, 1)
             self.assertIn("empty", stderr)
 
@@ -209,6 +216,36 @@ class ComparisonTest(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             scope = report["comparison"]["inference_scope"]
             self.assertIn("does not bound run-to-run variation", scope)
+
+    def test_each_side_reports_its_own_completeness(self):
+        """A difference over a growing cell must not read as a finished one."""
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            baseline = write_population(
+                root, "base", {"a": 0.0, "b": 1.0}, tasks=2, trials=1
+            )
+            treatment = write_population(
+                root, "treat", {"a": 1.0, "b": 1.0}, tasks=50, trials=1
+            )
+            code, payload, stderr = run(baseline, treatment)
+            self.assertEqual(code, 0, stderr)
+            self.assertTrue(payload["baseline"]["scope"]["complete"])
+            treated = payload["treatment"]["scope"]
+            self.assertFalse(treated["complete"])
+            self.assertEqual(treated["declared_simulations"], 50)
+            self.assertEqual(treated["simulations_indexed"], 2)
+
+    def test_population_without_declared_scope_claims_no_completeness(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            baseline = write_population(root, "base", {"a": 0.0})
+            treatment = write_population(root, "treat", {"a": 1.0})
+            code, payload, stderr = run(baseline, treatment)
+            self.assertEqual(code, 0, stderr)
+            for side in ("baseline", "treatment"):
+                scope = payload[side]["scope"]
+                self.assertFalse(scope["declared"])
+                self.assertNotIn("complete", scope)
 
 
 if __name__ == "__main__":

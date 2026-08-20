@@ -54,7 +54,37 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_rewards(directory: Path) -> dict[str, float]:
+def declared_scope(payload: dict[str, Any], directory: Path) -> dict[str, Any]:
+    """What the population says it set out to run, versus what it actually holds.
+
+    ``results.json`` records the task list and trial count the run was launched
+    with, so a population that stopped early -- or has not finished yet --
+    states its own shortfall. A paired difference computed over a growing cell
+    is not wrong, but it is not the comparison a reader will assume it is, so
+    each side reports its own completeness alongside the interval.
+    """
+    tasks = payload.get("tasks")
+    info = payload.get("info") or {}
+    trials = info.get("num_trials")
+    indexed = len(payload.get("simulation_index") or [])
+    scope: dict[str, Any] = {"simulations_indexed": indexed}
+    if not isinstance(tasks, list) or not tasks or not isinstance(trials, int):
+        # Without a declared scope there is nothing to reconcile against; say so
+        # rather than implying a completeness that was never asserted.
+        scope["declared"] = False
+        return scope
+    expected = len(tasks) * trials
+    scope.update(
+        declared=True,
+        declared_tasks=len(tasks),
+        declared_trials_per_task=trials,
+        declared_simulations=expected,
+        complete=indexed == expected,
+    )
+    return scope
+
+
+def load_rewards(directory: Path) -> tuple[dict[str, float], dict[str, Any]]:
     """Map task to reward, refusing anything that is not a scored population."""
     results = directory / "results.json"
     if not results.is_file():
@@ -94,7 +124,7 @@ def load_rewards(directory: Path) -> dict[str, float]:
         rewards[key] = float(reward)
     if not rewards:
         raise PairedInferenceError(f"{directory}: no task scored")
-    return rewards
+    return rewards, declared_scope(payload, directory)
 
 
 def binomial_two_sided_p(successes: int, trials: int) -> float:
@@ -106,9 +136,7 @@ def binomial_two_sided_p(successes: int, trials: int) -> float:
     if trials == 0:
         raise PairedInferenceError("sign test over zero discordant pairs")
     half = Fraction(1, 2)
-    weights = [
-        math.comb(trials, k) * half**trials for k in range(trials + 1)
-    ]
+    weights = [math.comb(trials, k) * half**trials for k in range(trials + 1)]
     observed = weights[successes]
     total = sum(weight for weight in weights if weight <= observed)
     return float(min(Fraction(1), total))
@@ -189,8 +217,8 @@ def compare(baseline: dict[str, float], treatment: dict[str, float]) -> dict[str
 def main() -> int:
     arguments = parse_args()
     try:
-        baseline = load_rewards(arguments.baseline)
-        treatment = load_rewards(arguments.treatment)
+        baseline, baseline_scope = load_rewards(arguments.baseline)
+        treatment, treatment_scope = load_rewards(arguments.treatment)
         comparison = compare(baseline, treatment)
     except PairedInferenceError as error:
         print(f"paired inference refused: {error}", file=sys.stderr)
@@ -202,11 +230,13 @@ def main() -> int:
             "label": arguments.baseline_label,
             "population": arguments.baseline.name,
             "scored_tasks": len(baseline),
+            "scope": baseline_scope,
         },
         "treatment": {
             "label": arguments.treatment_label,
             "population": arguments.treatment.name,
             "scored_tasks": len(treatment),
+            "scope": treatment_scope,
         },
         "comparison": comparison,
     }

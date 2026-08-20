@@ -63,8 +63,8 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_population(directory: Path) -> tuple[list[dict[str, Any]], Path]:
-    """Read a population's index, refusing anything that is not complete."""
+def load_population(directory: Path) -> tuple[dict[str, Any], Path]:
+    """Read a population's results, refusing anything that is not readable."""
     results = directory / "results.json"
     if not results.is_file():
         raise ClassificationError(f"{directory}: no results.json")
@@ -77,7 +77,72 @@ def load_population(directory: Path) -> tuple[list[dict[str, Any]], Path]:
     simulations = directory / "simulations"
     if not simulations.is_dir():
         raise ClassificationError(f"{directory}: no simulations directory")
-    return index, simulations
+    reconcile_index(index, directory)
+    return payload, simulations
+
+
+def reconcile_index(index: list[dict[str, Any]], directory: Path) -> None:
+    """Reconcile an index against the files it names, in both directions.
+
+    The index is an assertion inside ``results.json``; the files under
+    ``simulations/`` are the population these tools actually read. An entry
+    naming an absent file is broken bookkeeping, and a file no entry names is
+    evidence nothing would ever score -- either way the counts stop agreeing,
+    so neither can be reported as a whole cell. Checking here rather than at
+    each read means an entry whose file is never opened cannot slip past.
+    """
+    named = set()
+    for entry in index:
+        identifier = entry.get("id")
+        if not isinstance(identifier, str) or not identifier:
+            raise ClassificationError(f"{directory}: an index entry declares no id")
+        named.add(identifier)
+    present = {path.stem for path in (directory / "simulations").glob("*.json")}
+    for identifier in sorted(named - present):
+        raise ClassificationError(f"{directory}: missing simulation {identifier}.json")
+    for identifier in sorted(present - named):
+        raise ClassificationError(
+            f"{directory}: unindexed simulation {identifier}.json"
+        )
+
+
+def declared_scope(payload: dict[str, Any], directory: Path) -> dict[str, Any]:
+    """What the population says it set out to run, versus what it actually holds.
+
+    ``results.json`` records the task list and trial count the run was launched
+    with, so a population that stopped early states its own shortfall. Reporting
+    a partial cell without that fact would describe 12% of a cell in the same
+    shape as a complete one.
+
+    Three counts have to agree, not two. The declared scope and the simulation
+    index are both assertions inside ``results.json``; only the files under
+    ``simulations/`` are the population these tools actually read. An index that
+    lists fifty entries over six files on disk would otherwise report a complete
+    cell, so completeness is the agreement of all three.
+    """
+    tasks = payload.get("tasks")
+    info = payload.get("info") or {}
+    trials = info.get("num_trials")
+    indexed = len(payload.get("simulation_index") or [])
+    on_disk = len(list((directory / "simulations").glob("*.json")))
+    scope: dict[str, Any] = {
+        "simulations_indexed": indexed,
+        "simulations_on_disk": on_disk,
+    }
+    if not isinstance(tasks, list) or not tasks or not isinstance(trials, int):
+        # Without a declared scope there is nothing to reconcile the counts
+        # against; say so rather than implying completeness never asserted.
+        scope["declared"] = False
+        return scope
+    expected = len(tasks) * trials
+    scope.update(
+        declared=True,
+        declared_tasks=len(tasks),
+        declared_trials_per_task=trials,
+        declared_simulations=expected,
+        complete=expected == indexed == on_disk,
+    )
+    return scope
 
 
 def tool_calls(simulation: dict[str, Any]) -> list[dict[str, Any]]:
@@ -165,12 +230,12 @@ def classify(simulation: dict[str, Any], reason: str) -> dict[str, Any]:
 
     if unjoined:
         mechanism = "spelled_token_not_reassembled"
-        evidence = (
-            f"agent forwarded {len(unjoined)} spelled-out argument(s) verbatim"
-        )
+        evidence = f"agent forwarded {len(unjoined)} spelled-out argument(s) verbatim"
     elif len(distinct) > 1:
         mechanism = "identifier_variant_search"
-        evidence = f"{len(distinct)} distinct identifier values over {len(values)} calls"
+        evidence = (
+            f"{len(distinct)} distinct identifier values over {len(values)} calls"
+        )
     else:
         mechanism = "identifier_not_varied"
         evidence = f"the same identifier {values[0]!r} was retried {len(values)} times"
@@ -187,7 +252,8 @@ def classify(simulation: dict[str, Any], reason: str) -> dict[str, Any]:
 
 
 def summarize(directory: Path) -> dict[str, Any]:
-    index, simulations = load_population(directory)
+    payload, simulations = load_population(directory)
+    index = payload["simulation_index"]
     reasons: Counter[str] = Counter()
     mechanisms: Counter[str] = Counter()
     repair_requested = 0
@@ -233,6 +299,7 @@ def summarize(directory: Path) -> dict[str, Any]:
     return {
         "population": directory.name,
         "simulations": simulations_total,
+        "scope": declared_scope(payload, directory),
         "scored_simulations": len(scored),
         "mean_reward_scored": (sum(scored) / len(scored)) if scored else None,
         "termination_reasons": dict(sorted(reasons.items())),

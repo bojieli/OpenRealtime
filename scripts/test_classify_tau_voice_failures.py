@@ -23,7 +23,13 @@ def tick(agent_calls=None, agent_results=None, agent_text=None, user_text=None):
     }
 
 
-def write_population(root: Path, name: str, simulations: list[dict]) -> Path:
+def write_population(
+    root: Path,
+    name: str,
+    simulations: list[dict],
+    tasks: int | None = None,
+    trials: int | None = None,
+) -> Path:
     directory = root / name
     (directory / "simulations").mkdir(parents=True)
     index = []
@@ -43,7 +49,12 @@ def write_population(root: Path, name: str, simulations: list[dict]) -> Path:
         (directory / "simulations" / f"{identifier}.json").write_text(
             json.dumps(simulation)
         )
-    (directory / "results.json").write_text(json.dumps({"simulation_index": index}))
+    results: dict = {"simulation_index": index}
+    if tasks is not None:
+        results["tasks"] = [{"id": str(number)} for number in range(tasks)]
+    if trials is not None:
+        results["info"] = {"num_trials": trials}
+    (directory / "results.json").write_text(json.dumps(results))
     return directory
 
 
@@ -98,7 +109,10 @@ class ClassifierTest(unittest.TestCase):
             calls = [
                 tick(
                     agent_calls=[
-                        {"name": "get_user", "arguments": {"user_id": f"raj_sanchez_{n}"}}
+                        {
+                            "name": "get_user",
+                            "arguments": {"user_id": f"raj_sanchez_{n}"},
+                        }
                     ],
                     agent_results=[{"error": True, "content": "Error: User not found"}],
                 )
@@ -156,7 +170,9 @@ class ClassifierTest(unittest.TestCase):
             )
             code, report, stderr = run(population)
             self.assertEqual(code, 0, stderr)
-            self.assertEqual(report["populations"][0]["mechanisms"], {"unclassified": 1})
+            self.assertEqual(
+                report["populations"][0]["mechanisms"], {"unclassified": 1}
+            )
 
     def test_successful_runs_are_not_classified_as_failures(self):
         with TemporaryDirectory() as temporary:
@@ -241,6 +257,73 @@ class ClassifierTest(unittest.TestCase):
             code, _, stderr = run(population)
             self.assertEqual(code, 1)
             self.assertIn("declares no simulations", stderr)
+
+    def test_partial_population_reports_its_shortfall(self):
+        """A cell that stopped early must not read like a cell that finished."""
+        with TemporaryDirectory() as temporary:
+            population = write_population(
+                Path(temporary),
+                "aborted",
+                [{"termination_reason": "user_stop"} for _ in range(6)],
+                tasks=50,
+                trials=1,
+            )
+            code, payload, stderr = run(population)
+            self.assertEqual(code, 0, stderr)
+            scope = payload["populations"][0]["scope"]
+            self.assertTrue(scope["declared"])
+            self.assertEqual(scope["declared_simulations"], 50)
+            self.assertEqual(scope["simulations_on_disk"], 6)
+            self.assertFalse(scope["complete"])
+
+    def test_complete_population_says_so(self):
+        with TemporaryDirectory() as temporary:
+            population = write_population(
+                Path(temporary),
+                "whole",
+                [{"termination_reason": "user_stop"} for _ in range(3)],
+                tasks=3,
+                trials=1,
+            )
+            code, payload, stderr = run(population)
+            self.assertEqual(code, 0, stderr)
+            scope = payload["populations"][0]["scope"]
+            self.assertTrue(scope["complete"])
+            self.assertEqual(scope["declared_simulations"], 3)
+
+    def test_index_agreeing_with_scope_cannot_vouch_for_missing_files(self):
+        """The index is an assertion; only the files are the population.
+
+        An index listing every declared simulation over a directory holding
+        fewer of them is exactly the shape a two-count check calls complete.
+        """
+        with TemporaryDirectory() as temporary:
+            population = write_population(
+                Path(temporary),
+                "hollow",
+                [{"termination_reason": "user_stop"} for _ in range(4)],
+                tasks=4,
+                trials=1,
+            )
+            (population / "simulations" / "sim3.json").unlink()
+            code, payload, stderr = run(population)
+            self.assertEqual(code, 1, stderr)
+            self.assertIn("sim3", stderr)
+
+    def test_population_without_declared_scope_claims_no_completeness(self):
+        """Absent a declaration there is nothing to reconcile; say so."""
+        with TemporaryDirectory() as temporary:
+            population = write_population(
+                Path(temporary),
+                "undeclared",
+                [{"termination_reason": "user_stop"}],
+            )
+            code, payload, stderr = run(population)
+            self.assertEqual(code, 0, stderr)
+            scope = payload["populations"][0]["scope"]
+            self.assertFalse(scope["declared"])
+            self.assertNotIn("complete", scope)
+            self.assertEqual(scope["simulations_on_disk"], 1)
 
 
 if __name__ == "__main__":
