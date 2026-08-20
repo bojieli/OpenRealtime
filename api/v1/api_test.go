@@ -27,7 +27,7 @@ func TestStableTimingAndOverflowValidation(t *testing.T) {
 
 func TestVersionAndDescriptorAreStable(t *testing.T) {
 	t.Parallel()
-	if Version != "0.1.0" {
+	if Version != "1.0.0" {
 		t.Fatalf("unexpected API version %q", Version)
 	}
 	releaseVersion, err := os.ReadFile("../../VERSION")

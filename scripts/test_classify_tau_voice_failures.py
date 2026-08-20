@@ -234,6 +234,28 @@ class ClassifierTest(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("missing simulation", stderr)
 
+    def test_unindexed_simulation_file_is_refused(self):
+        with TemporaryDirectory() as temporary:
+            population = write_population(
+                Path(temporary), "extra", [{"termination_reason": "user_stop"}]
+            )
+            (population / "simulations" / "orphan.json").write_text("{}")
+            code, _, stderr = run(population)
+            self.assertEqual(code, 1)
+            self.assertIn("unindexed simulation", stderr)
+
+    def test_duplicate_simulation_id_is_refused(self):
+        with TemporaryDirectory() as temporary:
+            population = write_population(
+                Path(temporary), "duplicate", [{"termination_reason": "user_stop"}]
+            )
+            results = json.loads((population / "results.json").read_text())
+            results["simulation_index"].append(dict(results["simulation_index"][0]))
+            (population / "results.json").write_text(json.dumps(results))
+            code, _, stderr = run(population)
+            self.assertEqual(code, 1)
+            self.assertIn("duplicate simulation id", stderr)
+
     def test_untyped_termination_reason_is_refused(self):
         with TemporaryDirectory() as temporary:
             population = write_population(

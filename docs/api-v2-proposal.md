@@ -12,16 +12,19 @@ fourth.
 
 ## The evidence
 
-Across four pilot populations (319 simulations), 34 runs ended in
+Across the three complete pre-freeze pilot populations and the first complete
+frozen canonical airline cell (328 simulations), 34 runs ended in
 `too_many_errors` -- the tau2 environment-error budget, `max_errors = 10`.
 Every one is the agent failing to resolve a spoken alphanumeric identifier.
-Classified by `scripts/classify-tau-voice-failures.py`:
+This is post-hoc mechanism evidence, not a causal comparison between the pilot
+and frozen runtimes. Classified by
+`scripts/classify-tau-voice-failures.py`:
 
-| Mechanism | Count |
+| Recorded outcome/mechanism | Count |
 | --- | --- |
-| `identifier_variant_search` | 31 |
-| `spelled_token_not_reassembled` | 3 |
-| `infrastructure_error` (excluded from scoring) | 18 |
+| `too_many_errors`: `identifier_variant_search` | 31 |
+| `too_many_errors`: `spelled_token_not_reassembled` | 3 |
+| `infrastructure_error` (separate; excluded from scoring) | 18 |
 
 The agent asked the user to spell the identifier letter by letter in 33 of the
 34 error-terminated runs, so this is not a missing repair strategy. Repair runs

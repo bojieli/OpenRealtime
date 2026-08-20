@@ -148,7 +148,7 @@ go run ./cmd/openrealtime release build --root . \
 A `cmp` or `release verify` failure that you did not intend means an evidence
 artifact moved, and that is the one signal this manifest exists to carry.
 
-## M7 stable v0.1.0 release
+## M7 stable v1.0.0 release
 
 Run:
 
@@ -360,7 +360,7 @@ Three read-only tools describe recorded populations. None participates in
 scoring, none writes into a population, and each refuses an unscored or
 internally inconsistent input rather than reporting around it. They exist
 because the publication gate reports counts and means, and three properties of
-the pilot are invisible in both.
+the recorded populations are invisible in both.
 
 Each tool reports the scope of what it read. `results.json` records the task
 list and `num_trials` a run was launched with, so a population that stopped
@@ -378,12 +378,13 @@ Failure mechanism, rather than a termination-reason count:
 scripts/classify-tau-voice-failures.py --population PATH [--population PATH ...]
 ```
 
-About 10.7% of pilot simulations end at the tau2 environment-error budget
-(`max_errors = 10`). All of them are unresolved spoken identifiers, so a mean
-they lowered looks exactly like one a policy difference lowered. The classifier
-names a mechanism only from evidence in the record and reports `unclassified`
-otherwise. A failure filed under the nearest plausible bucket is worse than one
-left unnamed.
+Across the three complete pre-freeze pilot populations and the first complete
+frozen canonical airline cell, 34/328 simulations (10.4%) end at the tau2
+environment-error budget (`max_errors = 10`). All 34 are unresolved spoken
+identifiers. This is post-hoc mechanism evidence, not a causal comparison
+between runtimes. The classifier names a mechanism only from evidence in the
+record and reports `unclassified` otherwise. A failure filed under the nearest
+plausible bucket is worse than one left unnamed.
 
 Response-latency tails, rather than a mean latency:
 
@@ -391,8 +392,8 @@ Response-latency tails, rather than a mean latency:
 scripts/analyze-tau-voice-tails.py --population PATH [--population PATH ...]
 ```
 
-Median response latency is 1.40 s in all four pilot populations while p90 is
-about 9 s. The worst observation is a 106.4 s silence, with no agent tool call
+Median response latency is 1.40 s in all four analyzed populations while p90 is
+9.0–9.6 s. The worst observation is a 106.4 s silence, with no agent tool call
 during the gap, in a task that still scored reward 1.0 -- so reward cannot see
 it. Latency is measured on the harness tick clock rather than wall time, and a
 population mixing two tick durations is refused instead of averaged across two
@@ -405,15 +406,15 @@ scripts/paired-task-inference.py --baseline PATH --treatment PATH
 ```
 
 Pairing is by task, not by trial, so this applies at one trial per task. Rewards
-in these populations are binary, so the discordant pairs are the off-diagonal of
-a 2x2 table and the exact sign test is exactly McNemar's exact test. On the
-two airline populations the canonical condition leads by roughly ten points,
-which reads as a win, but fewer than a third of paired tasks are discordant,
-the exact sign test clears p = 0.2, and the bootstrap interval spans zero. The
-size of that lead is itself unsettled: the canonical cell was still being
-written, and its margin moved from +0.095 over 42 paired tasks to +0.133 over
-45 as the run progressed. That is why each side reports its own completeness
-beside the interval -- quoting a difference from a growing cell invites the
-reader to treat it as a finished one. The output also states the limit of the
-estimator: it bounds task-sampling variation and not run-to-run variation,
+in these populations are binary, so the discordant pairs are the off-diagonal
+of a 2x2 table and the exact sign test is exactly McNemar's exact test. As a
+mechanics check, the complete pre-freeze pilot airline cell and complete frozen
+canonical airline cell differ by +0.14 over 50 paired tasks; 12 discordant
+tasks improve and 5 worsen, exact McNemar p = 0.1435, and the task-bootstrap
+interval is [-0.02, +0.30]. The interval spans zero. The two cells have
+different runtime provenance, so this number is explicitly non-causal and must
+not be presented as a condition effect. The tool proves population bookkeeping
+and task pairing only; its output requires callers to establish matching model,
+prompt, runtime, and source provenance separately. It also states the limit of
+the estimator: it bounds task-sampling variation and not run-to-run variation,
 which needs repeated trials the current matrices do not run.

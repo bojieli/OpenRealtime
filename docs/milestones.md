@@ -196,7 +196,7 @@ participant results remain blocked, visible, and unclaimed.
 
 | Requirement | Evidence |
 | --- | --- |
-| Versioned component API | Independent semantic import path `api/v1`, version 0.1.0 |
+| Versioned component API | Independent semantic import path `api/v1`, version 1.0.0 |
 | Stable adapters | Five provider roles bridged in `adapters/reference/v1` |
 | Protocol conformance | All 133 registry definitions, 178 schemas, 66 unique names, and strict fault probes |
 | Provider conformance | Descriptor, capability, cancellation, revision, PCM, decision, and deliberation checks |
@@ -205,7 +205,7 @@ participant results remain blocked, visible, and unclaimed.
 
 Research internals remain explicitly experimental; breaking stable provider
 changes require a new `api/v2` semantic import path. Downstream consumers can
-pin the v0.1.0 release and run the same public conformance suite.
+pin the v1.0.0 release and run the same public conformance suite.
 
 ## M8 — Live local microturn cascade
 

@@ -237,6 +237,18 @@ class TailAnalysisTest(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("unindexed simulation orphan.json", stderr)
 
+    def test_duplicate_simulation_id_is_refused(self):
+        with TemporaryDirectory() as temporary:
+            population = write_population(
+                Path(temporary), "duplicate", [{"ticks": conversation([2])}]
+            )
+            results = json.loads((population / "results.json").read_text())
+            results["simulation_index"].append(dict(results["simulation_index"][0]))
+            (population / "results.json").write_text(json.dumps(results))
+            code, _, stderr = run(population)
+            self.assertEqual(code, 1)
+            self.assertIn("duplicate simulation id", stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

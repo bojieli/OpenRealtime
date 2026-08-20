@@ -19,6 +19,9 @@ Both tests are exact or resampled rather than normal-approximate, because a
 reward distribution concentrated at 0 and 1 is not normal at these sizes.
 
 Read-only. It reads archived populations and never participates in scoring.
+It proves task pairing and population bookkeeping, but it cannot prove that two
+systems have comparable model, prompt, runtime, or source provenance; callers
+must establish those facts from the corresponding matrix/run artifacts.
 """
 
 from __future__ import annotations
@@ -67,7 +70,11 @@ def declared_scope(payload: dict[str, Any], directory: Path) -> dict[str, Any]:
     info = payload.get("info") or {}
     trials = info.get("num_trials")
     indexed = len(payload.get("simulation_index") or [])
-    scope: dict[str, Any] = {"simulations_indexed": indexed}
+    on_disk = len(list((directory / "simulations").glob("*.json")))
+    scope: dict[str, Any] = {
+        "simulations_indexed": indexed,
+        "simulations_on_disk": on_disk,
+    }
     if not isinstance(tasks, list) or not tasks or not isinstance(trials, int):
         # Without a declared scope there is nothing to reconcile against; say so
         # rather than implying a completeness that was never asserted.
@@ -79,7 +86,7 @@ def declared_scope(payload: dict[str, Any], directory: Path) -> dict[str, Any]:
         declared_tasks=len(tasks),
         declared_trials_per_task=trials,
         declared_simulations=expected,
-        complete=indexed == expected,
+        complete=indexed == on_disk == expected,
     )
     return scope
 
@@ -95,6 +102,10 @@ def load_rewards(directory: Path) -> tuple[dict[str, float], dict[str, Any]]:
     index = payload.get("simulation_index")
     if not isinstance(index, list) or not index:
         raise PairedInferenceError(f"{directory}: declares no simulations")
+    simulations = directory / "simulations"
+    if not simulations.is_dir():
+        raise PairedInferenceError(f"{directory}: no simulations directory")
+    reconcile_index(index, directory)
 
     rewards: dict[str, float] = {}
     for entry in index:
@@ -121,10 +132,41 @@ def load_rewards(directory: Path) -> tuple[dict[str, float], dict[str, Any]]:
             raise PairedInferenceError(
                 f"{directory}: task {key!r} has non-numeric reward {reward!r}"
             )
-        rewards[key] = float(reward)
+        numeric_reward = float(reward)
+        if numeric_reward not in (0.0, 1.0):
+            raise PairedInferenceError(
+                f"{directory}: task {key!r} has non-binary reward "
+                f"{numeric_reward!r}; exact McNemar inference requires binary outcomes"
+            )
+        rewards[key] = numeric_reward
     if not rewards:
         raise PairedInferenceError(f"{directory}: no task scored")
     return rewards, declared_scope(payload, directory)
+
+
+def reconcile_index(index: list[dict[str, Any]], directory: Path) -> None:
+    """Require a one-to-one identity match between the index and files."""
+    named: set[str] = set()
+    for entry in index:
+        identifier = entry.get("id")
+        if not isinstance(identifier, str) or not identifier:
+            raise PairedInferenceError(f"{directory}: an index entry declares no id")
+        if identifier in named:
+            raise PairedInferenceError(
+                f"{directory}: duplicate simulation id {identifier!r}"
+            )
+        named.add(identifier)
+    present = {path.stem for path in (directory / "simulations").glob("*.json")}
+    missing = sorted(named - present)
+    if missing:
+        raise PairedInferenceError(
+            f"{directory}: missing simulation {missing[0]}.json"
+        )
+    unindexed = sorted(present - named)
+    if unindexed:
+        raise PairedInferenceError(
+            f"{directory}: unindexed simulation {unindexed[0]}.json"
+        )
 
 
 def binomial_two_sided_p(successes: int, trials: int) -> float:
@@ -176,9 +218,18 @@ def paired_bootstrap(
 
 
 def compare(baseline: dict[str, float], treatment: dict[str, float]) -> dict[str, Any]:
-    shared = sorted(set(baseline) & set(treatment))
+    baseline_tasks = set(baseline)
+    treatment_tasks = set(treatment)
+    shared = sorted(baseline_tasks & treatment_tasks)
     if not shared:
         raise PairedInferenceError("the two conditions share no task")
+    if baseline_tasks != treatment_tasks:
+        baseline_only = sorted(baseline_tasks - treatment_tasks)
+        treatment_only = sorted(treatment_tasks - baseline_tasks)
+        raise PairedInferenceError(
+            "the two conditions do not have the same scored task set "
+            f"(baseline-only={baseline_only!r}, treatment-only={treatment_only!r})"
+        )
 
     differences = [treatment[task] - baseline[task] for task in shared]
     better = sum(1 for value in differences if value > 0)
@@ -203,8 +254,8 @@ def compare(baseline: dict[str, float], treatment: dict[str, float]) -> dict[str
 
     return {
         "paired_tasks": len(shared),
-        "baseline_only_tasks": sorted(set(baseline) - set(treatment)),
-        "treatment_only_tasks": sorted(set(treatment) - set(baseline)),
+        "baseline_only_tasks": [],
+        "treatment_only_tasks": [],
         "baseline_mean": sum(baseline[task] for task in shared) / len(shared),
         "treatment_mean": sum(treatment[task] for task in shared) / len(shared),
         "mean_difference": mean_difference,
@@ -215,6 +266,12 @@ def compare(baseline: dict[str, float], treatment: dict[str, float]) -> dict[str
             "bounds task-sampling variation over one fixed-order trial per task; "
             "it does not bound run-to-run variation, which requires repeated "
             "trials that these matrices do not run"
+        ),
+        "comparability_scope": (
+            "proves task pairing and population bookkeeping only; callers must "
+            "separately establish matching model, prompt, runtime, and source "
+            "provenance from matrix and run artifacts before making a causal "
+            "condition claim"
         ),
     }
 

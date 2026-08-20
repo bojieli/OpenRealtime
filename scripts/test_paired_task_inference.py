@@ -47,6 +47,8 @@ def write_population(
     if trials is not None:
         results["info"] = {"num_trials": trials}
     (directory / "results.json").write_text(json.dumps(results))
+    for entry in index:
+        (directory / "simulations" / f"{entry['id']}.json").write_text("{}")
     return directory
 
 
@@ -117,21 +119,16 @@ class BootstrapTest(unittest.TestCase):
 
 
 class ComparisonTest(unittest.TestCase):
-    def test_pairs_by_task_and_reports_unpaired_tasks(self):
+    def test_refuses_unpaired_tasks_instead_of_selecting_the_intersection(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             baseline = write_population(
                 root, "base", {"a": 1.0, "b": 0.0, "c": 1.0, "extra": 1.0}
             )
             treatment = write_population(root, "treat", {"a": 1.0, "b": 1.0, "c": 1.0})
-            code, report, stderr = run(baseline, treatment)
-            self.assertEqual(code, 0, stderr)
-            comparison = report["comparison"]
-            self.assertEqual(comparison["paired_tasks"], 3)
-            self.assertEqual(comparison["baseline_only_tasks"], ["extra"])
-            self.assertEqual(comparison["treatment_only_tasks"], [])
-            # The unpaired task must not move the paired baseline mean.
-            self.assertAlmostEqual(comparison["baseline_mean"], 2 / 3)
+            code, _, stderr = run(baseline, treatment)
+            self.assertEqual(code, 1)
+            self.assertIn("same scored task set", stderr)
 
     def test_all_tied_reports_no_p_value_rather_than_one(self):
         with TemporaryDirectory() as temporary:
@@ -147,17 +144,26 @@ class ComparisonTest(unittest.TestCase):
             self.assertEqual(sign_test["discordant_pairs"], 0)
             self.assertIn("no evidence", sign_test["note"])
 
-    def test_null_reward_is_dropped_not_scored_as_zero(self):
+    def test_null_reward_is_not_scored_as_zero_or_silently_unpaired(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             code, report, stderr = run(
                 write_population(root, "base", {"a": 1.0, "b": None}),
                 write_population(root, "treat", {"a": 1.0, "b": 1.0}),
             )
-            self.assertEqual(code, 0, stderr)
-            comparison = report["comparison"]
-            self.assertEqual(comparison["paired_tasks"], 1)
-            self.assertAlmostEqual(comparison["mean_difference"], 0.0)
+            self.assertEqual(code, 1)
+            self.assertEqual(report, {})
+            self.assertIn("same scored task set", stderr)
+
+    def test_non_binary_reward_is_refused_for_exact_mcnemar_inference(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            code, _, stderr = run(
+                write_population(root, "base", {"a": 0.5}),
+                write_population(root, "treat", {"a": 1.0}),
+            )
+            self.assertEqual(code, 1)
+            self.assertIn("non-binary reward", stderr)
 
     def test_repeated_trials_are_refused_not_silently_dropped(self):
         with TemporaryDirectory() as temporary:
@@ -174,6 +180,7 @@ class ComparisonTest(unittest.TestCase):
                 }
             )
             (baseline / "results.json").write_text(json.dumps(results))
+            (baseline / "simulations" / "sim1.json").write_text("{}")
             code, _, stderr = run(baseline, write_population(root, "treat", {"a": 1.0}))
             self.assertEqual(code, 1)
             self.assertIn("repeated-trial estimator", stderr)
@@ -217,6 +224,8 @@ class ComparisonTest(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             scope = report["comparison"]["inference_scope"]
             self.assertIn("does not bound run-to-run variation", scope)
+            comparability = report["comparison"]["comparability_scope"]
+            self.assertIn("must separately establish", comparability)
 
     def test_each_side_reports_its_own_completeness(self):
         """A difference over a growing cell must not read as a finished one."""
@@ -235,6 +244,7 @@ class ComparisonTest(unittest.TestCase):
             self.assertFalse(treated["complete"])
             self.assertEqual(treated["declared_simulations"], 50)
             self.assertEqual(treated["simulations_indexed"], 2)
+            self.assertEqual(treated["simulations_on_disk"], 2)
 
     def test_population_without_declared_scope_claims_no_completeness(self):
         with TemporaryDirectory() as temporary:
@@ -247,6 +257,38 @@ class ComparisonTest(unittest.TestCase):
                 scope = payload[side]["scope"]
                 self.assertFalse(scope["declared"])
                 self.assertNotIn("complete", scope)
+
+    def test_index_and_simulation_files_must_match_in_both_directions(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            treatment = write_population(root, "treat", {"a": 1.0})
+
+            baseline = write_population(root, "missing", {"a": 1.0})
+            (baseline / "simulations" / "sim0.json").unlink()
+            code, _, stderr = run(baseline, treatment)
+            self.assertEqual(code, 1)
+            self.assertIn("missing simulation", stderr)
+
+            baseline = write_population(root, "unindexed", {"a": 1.0})
+            (baseline / "simulations" / "orphan.json").write_text("{}")
+            code, _, stderr = run(baseline, treatment)
+            self.assertEqual(code, 1)
+            self.assertIn("unindexed simulation", stderr)
+
+    def test_duplicate_simulation_id_is_refused(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            baseline = write_population(root, "base", {"a": 1.0})
+            payload = json.loads((baseline / "results.json").read_text())
+            duplicate = dict(payload["simulation_index"][0])
+            duplicate["task_id"] = "b"
+            payload["simulation_index"].append(duplicate)
+            (baseline / "results.json").write_text(json.dumps(payload))
+            code, _, stderr = run(
+                baseline, write_population(root, "treat", {"a": 1.0, "b": 1.0})
+            )
+            self.assertEqual(code, 1)
+            self.assertIn("duplicate simulation id", stderr)
 
     def test_sign_test_is_exact_mcnemar_on_binary_rewards(self):
         """The discordant pairs form a 2x2 off-diagonal; the test is McNemar's.

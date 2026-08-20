@@ -64,6 +64,10 @@ def reconcile_index(index: list[dict[str, Any]], directory: Path) -> None:
         identifier = entry.get("id")
         if not isinstance(identifier, str) or not identifier:
             raise TailAnalysisError(f"{directory}: an index entry declares no id")
+        if identifier in named:
+            raise TailAnalysisError(
+                f"{directory}: duplicate simulation id {identifier!r}"
+            )
         named.add(identifier)
     present = {path.stem for path in (directory / "simulations").glob("*.json")}
     for identifier in sorted(named - present):
