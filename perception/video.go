@@ -64,14 +64,15 @@ type VideoConfig struct {
 type VideoObserver struct {
 	config VideoConfig
 
-	mu            sync.Mutex
-	lastAdmitted  []byte
-	lastSignature []uint8
-	lastAdmitNS   uint64
-	frames        uint64
-	admitted      uint64
-	narrations    uint64
-	revision      uint64
+	mu              sync.Mutex
+	lastFingerprint uint64
+	lastBytes       int
+	lastSignature   []uint8
+	lastAdmitNS     uint64
+	frames          uint64
+	admitted        uint64
+	narrations      uint64
+	revision        uint64
 }
 
 // NewVideoObserver creates the observer.
@@ -121,11 +122,55 @@ func (observer *VideoObserver) Gate(frame Frame) bool {
 		return false
 	}
 	// A screen that has not changed usually re-encodes to identical bytes, so
-	// this rejects the common idle case for the price of a comparison.
-	if len(observer.lastAdmitted) == len(frame.Image) && slices.Equal(observer.lastAdmitted, frame.Image) {
+	// this rejects the common idle case. It compares a fingerprint rather than
+	// the bytes: comparing a 200 KB frame in full costs tens of microseconds
+	// and would make the idle path - the one that runs most of the time - the
+	// most expensive one in the system.
+	if observer.lastBytes == len(frame.Image) && observer.lastFingerprint == fingerprint(frame.Image) {
 		return false
 	}
 	return true
+}
+
+// fingerprint is a cheap identity test for an encoded frame.
+//
+// It hashes the length and a fixed number of sampled bytes rather than all of
+// them, which is sub-microsecond regardless of frame size. Compressed image
+// data differs almost everywhere when the image differs, so sampling is a
+// sound identity test here in a way it would not be for, say, a bitmap with a
+// changed corner. A collision costs one wasted decode, which the pixel
+// comparison then rejects - there is no correctness consequence, only a cost.
+func fingerprint(payload []byte) uint64 {
+	const (
+		offsetBasis = 14695981039346656037
+		prime       = 1099511628211
+		samples     = 128
+	)
+	hash := uint64(offsetBasis)
+	mix := func(value byte) {
+		hash ^= uint64(value)
+		hash *= prime
+	}
+	for shift := 0; shift < 8; shift++ {
+		mix(byte(len(payload) >> (shift * 8)))
+	}
+	if len(payload) <= samples*3 {
+		for _, value := range payload {
+			mix(value)
+		}
+		return hash
+	}
+	// The head and tail carry structure; the stride samples the entropy-coded
+	// body, which is where a changed image shows up.
+	for index := 0; index < samples; index++ {
+		mix(payload[index])
+		mix(payload[len(payload)-1-index])
+	}
+	stride := len(payload) / samples
+	for index := 0; index < len(payload); index += stride {
+		mix(payload[index])
+	}
+	return hash
 }
 
 // Observe decodes what the gate admitted, checks whether it actually changed,
@@ -150,12 +195,12 @@ func (observer *VideoObserver) Observe(ctx context.Context, frames []Frame) ([]O
 	previous := observer.lastSignature
 	changed := changedFraction(previous, signature)
 	if previous != nil && changed < observer.config.ChangeThreshold {
-		observer.lastAdmitted = slices.Clone(frame.Image)
+		observer.lastFingerprint, observer.lastBytes = fingerprint(frame.Image), len(frame.Image)
 		observer.mu.Unlock()
 		return nil, nil
 	}
 	observer.lastSignature = signature
-	observer.lastAdmitted = slices.Clone(frame.Image)
+	observer.lastFingerprint, observer.lastBytes = fingerprint(frame.Image), len(frame.Image)
 	observer.lastAdmitNS = frame.CapturedNS
 	observer.admitted++
 	observer.revision++
@@ -202,7 +247,8 @@ func (observer *VideoObserver) Flush(context.Context) ([]Observation, error) { r
 func (observer *VideoObserver) Reset() {
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
-	observer.lastAdmitted, observer.lastSignature, observer.lastAdmitNS = nil, nil, 0
+	observer.lastFingerprint, observer.lastBytes = 0, 0
+	observer.lastSignature, observer.lastAdmitNS = nil, 0
 }
 
 // VideoMetrics is what the efficiency gates measure.

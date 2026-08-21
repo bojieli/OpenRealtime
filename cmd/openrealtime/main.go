@@ -34,6 +34,8 @@ func run(arguments []string, stdout, stderr io.Writer) error {
 		return runConformance(arguments[1:], stdout)
 	case "probe":
 		return runProbe(arguments[1:], stdout)
+	case "efficiency":
+		return runEfficiency(arguments[1:], stdout)
 	case "version":
 		fmt.Fprintln(stdout, version())
 		return nil
@@ -52,6 +54,7 @@ commands:
   serve         run the OpenRealtime server
   probe         drive a running server through one turn and report it
   conformance   verify protocol and component conformance
+  efficiency    measure the costs the design claims are small
   version       print the version
 
 run "openrealtime <command> -h" for a command's flags`
