@@ -543,3 +543,39 @@ func TestConfirmParsingRejectsUnknownRequirements(t *testing.T) {
 		t.Fatalf("an unset requirement means never, got %q %v", confirm, err)
 	}
 }
+
+// Cancelling twice is a normal race - the speech planner finishing and a
+// supersession noticing it are different goroutines - and the ledger says so by
+// not erroring. But a caller that recorded a cancellation for the second one
+// would submit a visibility transition that already happened, and the log
+// refuses cancelled after cancelled. So only the call that actually moved the
+// commitment reports it.
+func TestCancellingTwiceReportsTheCommitmentOnce(t *testing.T) {
+	ledger := action.NewLedger()
+	speech, err := action.NewSpeech(action.SpeechConfig{
+		Provider: fakeSpeechProvider{rate: 24000, chunks: 1, bytes: 4800},
+		Sink:     &recordingSink{}, Ledger: ledger,
+	})
+	if err != nil {
+		t.Fatalf("new speech: %v", err)
+	}
+	if err := speech.Enqueue(action.Utterance{
+		ID: "one", Text: "hello", Phase: trajectory.PhaseFast,
+		AssistantItemIDs: []string{"assistant-1"},
+	}, "voice"); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	first, _ := speech.Cancel("superseded")
+	if len(first) != 1 || first[0].ID != "one" {
+		t.Fatalf("the first cancellation reports the commitment: %+v", first)
+	}
+	second, _ := speech.Cancel("superseded again")
+	if len(second) != 0 {
+		t.Fatalf("a second cancellation has nothing to report: %+v", second)
+	}
+	third, _ := speech.CancelMatching("and again", func(action.Utterance) bool { return true })
+	if len(third) != 0 {
+		t.Fatalf("a matching cancellation has nothing to report either: %+v", third)
+	}
+}

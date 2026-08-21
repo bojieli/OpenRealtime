@@ -225,29 +225,50 @@ func (speech *Speech) Cancel(reason string) (cancelled []Commitment, heard bool)
 		cancel(fmt.Errorf("speech cancelled: %s", reason))
 	}
 	if activeID != "" {
-		crossed, err := speech.config.Ledger.Cancel(activeID, reason)
-		if err == nil {
-			heard = crossed
-			if !crossed {
-				if commitment, exists := speech.config.Ledger.Lookup(activeID); exists {
-					cancelled = append(cancelled, commitment)
-				}
-			}
+		crossed, stopped := speech.stop(activeID, reason)
+		heard = crossed
+		if stopped != nil {
+			cancelled = append(cancelled, *stopped)
 		}
 	}
 	for {
 		select {
 		case queued := <-speech.queue:
-			if _, err := speech.config.Ledger.Cancel(queued.utterance.ID, reason); err != nil {
-				continue
-			}
-			if commitment, exists := speech.config.Ledger.Lookup(queued.utterance.ID); exists {
-				cancelled = append(cancelled, commitment)
+			if _, stopped := speech.stop(queued.utterance.ID, reason); stopped != nil {
+				cancelled = append(cancelled, *stopped)
 			}
 		default:
 			return cancelled, heard
 		}
 	}
+}
+
+// stop cancels one commitment and reports what this call actually did.
+//
+// The distinction it draws is between "cancelled by me" and "already
+// terminal", which the ledger deliberately does not treat as an error -
+// cancelling something twice is a normal race between the speech planner
+// finishing and a supersession noticing. But a caller that recorded a
+// cancellation for it anyway would submit a second cancelled transition for an
+// assistant item already cancelled, and the log refuses that: the visibility
+// lifecycle is append-only and cancelled does not follow cancelled.
+//
+// It returns the commitment only when this call moved it, so nothing downstream
+// records a transition that already happened.
+func (speech *Speech) stop(id, reason string) (crossed bool, cancelled *Commitment) {
+	before, exists := speech.config.Ledger.Lookup(id)
+	if !exists || before.State.Terminal() {
+		return before.State.Crossed(), nil
+	}
+	crossed, err := speech.config.Ledger.Cancel(id, reason)
+	if err != nil || crossed {
+		return crossed, nil
+	}
+	commitment, exists := speech.config.Ledger.Lookup(id)
+	if !exists {
+		return false, nil
+	}
+	return false, &commitment
 }
 
 // CancelMatching stops the utterance in flight and every queued utterance that
@@ -281,13 +302,13 @@ func (speech *Speech) CancelMatching(reason string, match func(Utterance) bool) 
 		if cancel != nil {
 			cancel(fmt.Errorf("speech cancelled: %s", reason))
 		}
-		if crossed, err := speech.config.Ledger.Cancel(activeID, reason); err == nil {
+		crossed, stopped := speech.stop(activeID, reason)
+		switch {
+		case stopped != nil:
+			cancelled = append(cancelled, *stopped)
+		case crossed:
 			if commitment, exists := speech.config.Ledger.Lookup(activeID); exists {
-				if crossed {
-					heard = append(heard, commitment)
-				} else {
-					cancelled = append(cancelled, commitment)
-				}
+				heard = append(heard, commitment)
 			}
 		}
 	}
@@ -300,11 +321,8 @@ func (speech *Speech) CancelMatching(reason string, match func(Utterance) bool) 
 				keep = append(keep, queued)
 				continue
 			}
-			if _, err := speech.config.Ledger.Cancel(queued.utterance.ID, reason); err != nil {
-				continue
-			}
-			if commitment, exists := speech.config.Ledger.Lookup(queued.utterance.ID); exists {
-				cancelled = append(cancelled, commitment)
+			if _, stopped := speech.stop(queued.utterance.ID, reason); stopped != nil {
+				cancelled = append(cancelled, *stopped)
 			}
 		default:
 			for _, queued := range keep {
