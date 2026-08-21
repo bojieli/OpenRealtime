@@ -64,32 +64,40 @@ func (session *session) Observation(_ context.Context, observation perception.Ob
 	})
 }
 
+// A turn is announced the same way whichever modality carries it. What differs
+// is the content part: an audio turn opens one whose transcript accumulates
+// beside the samples, and a text turn opens one that is the answer itself.
 func (session *session) SpeechBegin(ctx context.Context, utterance action.Utterance) error {
 	session.settingsMu.RLock()
 	format, voice := session.settings.outputFormat, session.settings.voice
 	session.settingsMu.RUnlock()
+	text := session.textOnly()
 
 	responseID := session.nextID("resp")
 	itemID := session.nextID("item")
 	session.itemsMu.Lock()
 	session.utterances[utterance.ID] = &wireUtterance{
-		responseID: responseID, itemID: itemID, format: format, voice: voice,
+		responseID: responseID, itemID: itemID, format: format, voice: voice, text: "", textOnly: text,
 	}
 	session.itemsMu.Unlock()
 
 	if err := session.send(event("response.created", session.nextID("event"), map[string]any{
-		"response": responseObject(responseID, "in_progress", session.conversationID, nil, nil, format, voice),
+		"response": responseObject(responseID, "in_progress", session.conversationID, nil, nil, format, voice, session.outputModalities()),
 	})); err != nil {
 		return err
 	}
 	if err := session.send(event("response.output_item.added", session.nextID("event"), map[string]any{
-		"response_id": responseID, "output_index": 0, "item": assistantItem(itemID, "in_progress", ""),
+		"response_id": responseID, "output_index": 0, "item": assistantItem(itemID, "in_progress", "", text),
 	})); err != nil {
 		return err
 	}
+	part := map[string]any{"type": "audio", "transcript": ""}
+	if text {
+		part = map[string]any{"type": "text", "text": ""}
+	}
 	if err := session.send(event("response.content_part.added", session.nextID("event"), map[string]any{
 		"response_id": responseID, "item_id": itemID, "output_index": 0, "content_index": 0,
-		"part": map[string]any{"type": "audio", "transcript": ""},
+		"part": part,
 	})); err != nil {
 		return err
 	}
@@ -97,7 +105,8 @@ func (session *session) SpeechBegin(ctx context.Context, utterance action.Uttera
 	return nil
 }
 
-// SpeechText renders one transcript delta.
+// SpeechText renders one text delta: a transcript of the audio in an audio
+// turn, and the answer itself in a text one.
 func (session *session) SpeechText(_ context.Context, utterance action.Utterance, delta string) error {
 	if delta == "" {
 		return nil
@@ -111,7 +120,11 @@ func (session *session) SpeechText(_ context.Context, utterance action.Utterance
 	if wire == nil {
 		return fmt.Errorf("transcript for an unannounced utterance %q", utterance.ID)
 	}
-	return session.send(event("response.output_audio_transcript.delta", session.nextID("event"), map[string]any{
+	eventType := "response.output_audio_transcript.delta"
+	if wire.textOnly {
+		eventType = "response.output_text.delta"
+	}
+	return session.send(event(eventType, session.nextID("event"), map[string]any{
 		"response_id": wire.responseID, "item_id": wire.itemID, "output_index": 0, "content_index": 0,
 		"delta": delta,
 	}))
@@ -166,8 +179,8 @@ func (session *session) SpeechEnd(_ context.Context, utterance action.Utterance,
 	if !outcome.Completed {
 		status, itemStatus = "cancelled", "incomplete"
 	}
-	terminal := assistantItem(wire.itemID, itemStatus, wire.text)
-	for _, message := range []map[string]any{
+	terminal := assistantItem(wire.itemID, itemStatus, wire.text, wire.textOnly)
+	messages := []map[string]any{
 		event("response.output_audio.done", session.nextID("event"), map[string]any{
 			"response_id": wire.responseID, "item_id": wire.itemID, "output_index": 0, "content_index": 0,
 		}),
@@ -179,15 +192,31 @@ func (session *session) SpeechEnd(_ context.Context, utterance action.Utterance,
 			"response_id": wire.responseID, "item_id": wire.itemID, "output_index": 0, "content_index": 0,
 			"part": map[string]any{"type": "audio", "transcript": wire.text},
 		}),
-		event("response.output_item.done", session.nextID("event"), map[string]any{
-			"response_id": wire.responseID, "output_index": 0, "item": terminal,
-		}),
-	} {
+	}
+	if wire.textOnly {
+		// No audio was produced, so nothing announces the end of audio. A
+		// client that saw response.output_audio.done on a text turn would be
+		// told about a stream it never received.
+		messages = []map[string]any{
+			event("response.output_text.done", session.nextID("event"), map[string]any{
+				"response_id": wire.responseID, "item_id": wire.itemID, "output_index": 0, "content_index": 0,
+				"text": wire.text,
+			}),
+			event("response.content_part.done", session.nextID("event"), map[string]any{
+				"response_id": wire.responseID, "item_id": wire.itemID, "output_index": 0, "content_index": 0,
+				"part": map[string]any{"type": "text", "text": wire.text},
+			}),
+		}
+	}
+	messages = append(messages, event("response.output_item.done", session.nextID("event"), map[string]any{
+		"response_id": wire.responseID, "output_index": 0, "item": terminal,
+	}))
+	for _, message := range messages {
 		if err := session.send(message); err != nil {
 			return err
 		}
 	}
-	done := responseObject(wire.responseID, status, session.conversationID, []map[string]any{terminal}, nil, wire.format, wire.voice)
+	done := responseObject(wire.responseID, status, session.conversationID, []map[string]any{terminal}, nil, wire.format, wire.voice, session.outputModalities())
 	if status == "cancelled" {
 		done["status_details"] = map[string]any{"type": "cancelled", "reason": "turn_detected"}
 	}
@@ -205,7 +234,7 @@ func (session *session) ToolCalls(_ context.Context, calls binding.ToolCallEvent
 
 	responseID := session.nextID("resp")
 	if err := session.send(event("response.created", session.nextID("event"), map[string]any{
-		"response": responseObject(responseID, "in_progress", session.conversationID, nil, nil, format, voice),
+		"response": responseObject(responseID, "in_progress", session.conversationID, nil, nil, format, voice, session.outputModalities()),
 	})); err != nil {
 		return err
 	}
@@ -238,7 +267,7 @@ func (session *session) ToolCalls(_ context.Context, calls binding.ToolCallEvent
 		output = append(output, completed)
 	}
 	return session.send(event("response.done", session.nextID("event"), map[string]any{
-		"response": responseObject(responseID, "completed", session.conversationID, output, calls.Usage, format, voice),
+		"response": responseObject(responseID, "completed", session.conversationID, output, calls.Usage, format, voice, session.outputModalities()),
 	}))
 }
 

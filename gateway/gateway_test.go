@@ -245,6 +245,39 @@ func (client *client) speak() {
 	}
 }
 
+// configureText asks for a text session: the same conversation with a
+// different output boundary.
+func (client *client) configureText() {
+	client.t.Helper()
+	client.send(map[string]any{
+		"type": "session.update",
+		"session": map[string]any{
+			"type": "realtime", "output_modalities": []string{"text"},
+			"audio": map[string]any{
+				"input": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
+			},
+		},
+	})
+}
+
+// refusingSpeech fails if anything asks it to synthesise. It is how a test
+// says "no audio was produced" rather than "no audio was observed".
+type refusingSpeech struct{}
+
+func (refusingSpeech) Descriptor() v1.Descriptor {
+	return v1.Descriptor{Name: "refusing", Version: "1", Capabilities: v1.Capabilities{}}
+}
+
+func (refusingSpeech) Synthesize(context.Context, v1.SpeechPlan) ([]v1.SpeechChunk, error) {
+	return nil, errors.New("a text session must not synthesise")
+}
+
+func (refusingSpeech) Stream(context.Context, v1.SpeechPlan, func(v1.SpeechChunk) error) error {
+	return errors.New("a text session must not synthesise")
+}
+
+func contains(haystack, needle string) bool { return strings.Contains(haystack, needle) }
+
 func (client *client) configurePCM16(extension map[string]any) {
 	session := map[string]any{
 		"type": "realtime",

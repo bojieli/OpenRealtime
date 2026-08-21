@@ -97,6 +97,10 @@ type wireUtterance struct {
 	frameBytes int
 	sourceRate uint32
 	text       string
+	// textOnly records which modality this turn was announced in, so its end
+	// is rendered the same way its beginning was even if the session is
+	// reconfigured mid-turn.
+	textOnly bool
 }
 
 func newSession(parent context.Context, connection *websocket.Conn, config Config, requestedModel string) (*session, error) {
@@ -138,6 +142,24 @@ func newSession(parent context.Context, connection *websocket.Conn, config Confi
 
 func (session *session) nextID(prefix string) string {
 	return fmt.Sprintf("%s_%012d", prefix, session.sequence.Add(1))
+}
+
+// textOnly reports whether this session's output is text rather than audio.
+//
+// It is read where a turn is rendered rather than where it is decided,
+// because the binding produces a turn either way: what changes is whether
+// anything synthesises it and which content part carries it on the wire.
+func (session *session) textOnly() bool {
+	session.settingsMu.RLock()
+	defer session.settingsMu.RUnlock()
+	return len(session.settings.modalities) == 1 && session.settings.modalities[0] == "text"
+}
+
+// outputModalities is what a response object declares it produced.
+func (session *session) outputModalities() []string {
+	session.settingsMu.RLock()
+	defer session.settingsMu.RUnlock()
+	return slices.Clone(session.settings.modalities)
 }
 
 func (session *session) bindingSettings() binding.Settings {
@@ -388,8 +410,18 @@ func (session *session) update(update sessionUpdateBody) error {
 		current.instruction = *update.Instructions
 	}
 	if update.OutputModalities != nil {
-		if len(update.OutputModalities) != 1 || update.OutputModalities[0] != "audio" {
-			return errors.New("this deployment produces audio output only")
+		// Audio or text, one of them. A client that wants text is not asking
+		// for less of the same thing: a computer-use agent wants the function
+		// calls and the reasoning, and synthesising an answer nobody listens
+		// to spends a GPU on nothing. Refusing it made this server unusable
+		// for exactly the clients the extension exists for.
+		if len(update.OutputModalities) != 1 {
+			return errors.New("output_modalities must name exactly one of audio or text")
+		}
+		switch update.OutputModalities[0] {
+		case "audio", "text":
+		default:
+			return fmt.Errorf("output modality must be audio or text, got %q", update.OutputModalities[0])
 		}
 		current.modalities = slices.Clone(update.OutputModalities)
 	}

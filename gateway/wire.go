@@ -176,15 +176,18 @@ func event(eventType, eventID string, fields map[string]any) map[string]any {
 
 func responseObject(
 	id, status, conversationID string, output []map[string]any,
-	usage *continuation.Usage, outputFormat audioFormat, voice string,
+	usage *continuation.Usage, outputFormat audioFormat, voice string, modalities []string,
 ) map[string]any {
 	if output == nil {
 		output = []map[string]any{}
 	}
+	if len(modalities) == 0 {
+		modalities = []string{"audio"}
+	}
 	result := map[string]any{
 		"object": "realtime.response", "id": id, "status": status,
 		"output": output, "conversation_id": conversationID,
-		"output_modalities": []string{"audio"}, "max_output_tokens": "inf",
+		"output_modalities": modalities, "max_output_tokens": "inf",
 		"audio": map[string]any{"output": map[string]any{"format": outputFormat, "voice": voice}},
 	}
 	if usage != nil {
@@ -208,10 +211,19 @@ func responseObject(
 	return result
 }
 
-func assistantItem(id, status, transcript string) map[string]any {
+// assistantItem renders one assistant turn as a conversation item.
+//
+// The content part names what the turn actually carried. An audio turn's text
+// is a transcript of samples the client received; a text turn's text is the
+// turn, and calling it a transcript would describe audio that does not exist.
+func assistantItem(id, status, text string, textOnly bool) map[string]any {
+	content := map[string]any{"type": "output_audio", "transcript": text}
+	if textOnly {
+		content = map[string]any{"type": "output_text", "text": text}
+	}
 	return map[string]any{
 		"id": id, "object": "realtime.item", "type": "message", "status": status,
-		"role": "assistant", "content": []map[string]any{{"type": "output_audio", "transcript": transcript}},
+		"role": "assistant", "content": []map[string]any{content},
 	}
 }
 

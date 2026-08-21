@@ -194,6 +194,12 @@ func (runtime *runtime) publishAssistant(ctx context.Context, result continuatio
 		Phase: items[0].Producer.Phase, SourceRevision: result.SourceRevision,
 		AssistantItemIDs: ids,
 	}
+	if runtime.textOnly() {
+		// No synthesiser, no pacing, no duplex state: a text turn is delivered
+		// the moment it is written. It crosses the same commit boundary, which
+		// is the whole reason the boundary is one boundary for every output.
+		return runtime.emitText(ctx, utterance, authority)
+	}
 	// The queued transition is committed before audio can be emitted, so the
 	// log's account of what the world heard never runs ahead of the world.
 	events := make([]eventloop.Event, 0, len(ids))

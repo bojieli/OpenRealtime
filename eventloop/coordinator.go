@@ -127,6 +127,7 @@ type Coordinator struct {
 
 	committedBatches atomic.Uint64
 	deferredBatches  atomic.Uint64
+	refusedEvents    atomic.Uint64
 	wakeups          atomic.Uint64
 	parallelRuns     atomic.Uint64
 }
@@ -316,7 +317,7 @@ func (coordinator *Coordinator) Commit() (Batch, error) {
 	coordinator.pending = nil
 	coordinator.mu.Unlock()
 
-	batch, err := coordinator.commit(queued)
+	batch, refused, err := coordinator.commitAdmissible(queued)
 	if err != nil {
 		if errors.Is(err, trajectory.ErrVersionConflict) {
 			coordinator.requeue(queued)
@@ -325,11 +326,53 @@ func (coordinator *Coordinator) Commit() (Batch, error) {
 		}
 		return Batch{}, err
 	}
+	if len(refused) > 0 {
+		coordinator.refusedEvents.Add(uint64(len(refused)))
+		coordinator.forget(refused)
+	}
 	coordinator.committedBatches.Add(1)
 	coordinator.mu.Lock()
 	coordinator.deferred = append(coordinator.deferred, batch)
 	coordinator.mu.Unlock()
 	return batch, nil
+}
+
+// commitAdmissible commits everything in the group the log will accept, and
+// reports what it would not.
+//
+// One inadmissible event must not cost the others. A batch is a group of things
+// that happened rather than a proposition: a visibility transition a concurrent
+// path already made says nothing about the observation queued beside it, and
+// the previous behaviour - fail the append, forget every event in the group -
+// dropped valid committed work to punish an invalid neighbour. That is a
+// silent loss of exactly the kind the loop's invariant exists to prevent, and
+// it is worse than the offending event, because the observation that vanished
+// was the one carrying the user's words.
+//
+// A refused event is dropped rather than retried: the store rejected it on the
+// canonical state, so it will be rejected again, and re-queueing it forever is
+// how a loop stops making progress. It is counted, because an event the log
+// refuses is a defect somewhere and a number that climbs is how it is found.
+func (coordinator *Coordinator) commitAdmissible(queued []queuedEvent) (Batch, []queuedEvent, error) {
+	var refused []queuedEvent
+	admissible := queued
+	for {
+		batch, err := coordinator.commit(admissible)
+		if err == nil {
+			return batch, refused, nil
+		}
+		var item *trajectory.ItemError
+		if !errors.As(err, &item) || len(admissible) <= 1 {
+			return Batch{}, nil, err
+		}
+		// The store names the item it refused, and compile emits items in event
+		// order, so the offending event is the one at that position. A
+		// tool-result event compiles to several items, which only moves the
+		// boundary later - never before the event that caused it.
+		index := min(item.Index, len(admissible)-1)
+		refused = append(refused, admissible[index])
+		admissible = slices.Concat(admissible[:index:index], admissible[index+1:])
+	}
 }
 
 func (coordinator *Coordinator) run(parent context.Context, committed Batch) (Batch, error) {
@@ -433,10 +476,14 @@ func (coordinator *Coordinator) Deferral() (Deferral, bool) {
 type Metrics struct {
 	CommittedBatches uint64 `json:"committed_batches"`
 	DeferredBatches  uint64 `json:"deferred_batches"`
-	Wakeups          uint64 `json:"wakeups"`
-	ParallelRuns     uint64 `json:"parallel_runs"`
-	PendingEvents    int    `json:"pending_events"`
-	UnactedBatches   int    `json:"unacted_batches"`
+	// RefusedEvents counts events the log would not accept. It should be zero;
+	// a number that climbs is a defect in whoever produced them, and the
+	// events committed alongside them survived.
+	RefusedEvents  uint64 `json:"refused_events"`
+	Wakeups        uint64 `json:"wakeups"`
+	ParallelRuns   uint64 `json:"parallel_runs"`
+	PendingEvents  int    `json:"pending_events"`
+	UnactedBatches int    `json:"unacted_batches"`
 }
 
 func (coordinator *Coordinator) Metrics() Metrics {
@@ -446,6 +493,7 @@ func (coordinator *Coordinator) Metrics() Metrics {
 	return Metrics{
 		CommittedBatches: coordinator.committedBatches.Load(),
 		DeferredBatches:  coordinator.deferredBatches.Load(),
+		RefusedEvents:    coordinator.refusedEvents.Load(),
 		Wakeups:          coordinator.wakeups.Load(),
 		ParallelRuns:     coordinator.parallelRuns.Load(),
 		PendingEvents:    pending, UnactedBatches: unacted,

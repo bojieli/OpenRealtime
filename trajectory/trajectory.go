@@ -207,6 +207,27 @@ type PendingRepair struct {
 	PlayedAudioMS         uint64
 }
 
+// ItemError names which item of a batch the store refused, and why.
+//
+// The index is what makes the refusal actionable rather than fatal. A batch is
+// a group of things that happened, not a proposition: one event being
+// inadmissible - a visibility transition that a concurrent path already made,
+// a supersession whose target is gone - says nothing about the others, and a
+// caller that could only see "the batch failed" had no choice but to drop
+// every event in it, including the ones the log would have accepted.
+type ItemError struct {
+	Index int
+	ID    string
+	Kind  Kind
+	Err   error
+}
+
+func (failure *ItemError) Error() string {
+	return fmt.Sprintf("trajectory item %d (%s %s): %v", failure.Index, failure.Kind, failure.ID, failure.Err)
+}
+
+func (failure *ItemError) Unwrap() error { return failure.Err }
+
 // PendingRepairs resolves the append-only repair lifecycle in canonical order.
 func PendingRepairs(snapshot Snapshot) []PendingRepair {
 	pending := make(map[string]PendingRepair)
@@ -445,7 +466,7 @@ func (store *Store) appendBatch(expectedVersion *uint64, tolerate func(Item) boo
 	for index := range items {
 		item := cloneItem(items[index])
 		if err := clone.appendLocked(item); err != nil {
-			return fmt.Errorf("trajectory item %d: %w", index, err)
+			return &ItemError{Index: index, ID: items[index].ID, Kind: items[index].Kind, Err: err}
 		}
 	}
 	store.items = clone.items

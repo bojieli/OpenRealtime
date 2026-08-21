@@ -484,3 +484,92 @@ func TestDeferredRoutineWorkDoesNotInheritParallelAdmission(t *testing.T) {
 	default:
 	}
 }
+
+// One inadmissible event must not cost the others.
+//
+// A batch is a group of things that happened, not a proposition. Before this,
+// a single event the log refused failed the whole append and every event in
+// the group was forgotten - so a visibility transition that a concurrent path
+// had already made could take the observation carrying the user's words down
+// with it, silently, which is the loss the loop's invariant exists to prevent.
+func TestARefusedEventDoesNotTakeItsBatchWithIt(t *testing.T) {
+	test := newHarness(t, nil)
+
+	// Seed an assistant item and cancel it, so a second cancellation of the
+	// same item is a transition the log will refuse.
+	if err := test.store.AppendBatch([]trajectory.Item{
+		{
+			ID: "obs-1", Kind: trajectory.KindObservation, MonotonicNS: 1, SourceRevision: 1,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "hello",
+		},
+		{
+			ID: "assistant-1", Kind: trajectory.KindAssistant, MonotonicNS: 2, SourceRevision: 1,
+			CausalParentIDs: []string{"obs-1"}, InvocationID: "inv-1",
+			Producer: trajectory.Producer{
+				Phase: trajectory.PhaseFast, SpeechAuthority: "voice",
+			},
+			Content: "hi", Visibility: trajectory.VisibilityPrepared,
+		},
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	cancelled := func() eventloop.Event {
+		return eventloop.Event{
+			Type: "speech.cancelled", Source: "action", Channel: "voice",
+			Priority: eventloop.PriorityRoutine, Kind: trajectory.KindAssistantState,
+			AssistantState: &trajectory.AssistantState{
+				AssistantItemID: "assistant-1", Visibility: trajectory.VisibilityCancelled,
+			},
+		}
+	}
+	if _, err := test.coordinator.Submit(cancelled()); err != nil {
+		t.Fatalf("first cancellation: %v", err)
+	}
+	if _, err := test.coordinator.RunNext(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	// Now the duplicate, batched with an observation that is perfectly valid.
+	if _, err := test.coordinator.SubmitBatch([]eventloop.Event{
+		cancelled(), observation(2, "the endpoint said something else"),
+	}); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	batch, err := test.coordinator.RunNext(context.Background())
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(batch.Items) != 1 || batch.Items[0].Kind != trajectory.KindObservation {
+		t.Fatalf("the admissible event must survive its neighbour: %+v", batch.Items)
+	}
+	if batch.Items[0].Content != "the endpoint said something else" {
+		t.Fatalf("unexpected content %q", batch.Items[0].Content)
+	}
+	if got := test.coordinator.Metrics().RefusedEvents; got != 1 {
+		t.Fatalf("a refused event must be counted, got %d", got)
+	}
+	// And it is dropped rather than retried: the log rejected it on canonical
+	// state, so it would be rejected again forever.
+	if got := test.coordinator.Pending(); got != 0 {
+		t.Fatalf("a refused event must not be requeued, %d pending", got)
+	}
+}
+
+// A whole batch that cannot commit for a reason no single item explains is
+// still a failure, not a silent partial success.
+func TestAVersionConflictStillRequeuesTheWholeBatch(t *testing.T) {
+	test := newHarness(t, nil)
+	if _, err := test.coordinator.Submit(observation(1, "hello")); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	// Move the store underneath the pending commit.
+	if err := test.store.AppendBatch([]trajectory.Item{{
+		ID: "obs-x", Kind: trajectory.KindObservation, MonotonicNS: 1, SourceRevision: 9,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "interleaved",
+	}}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if got := test.coordinator.Pending(); got != 1 {
+		t.Fatalf("expected the event still pending, got %d", got)
+	}
+}
