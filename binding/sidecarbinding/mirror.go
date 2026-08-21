@@ -59,7 +59,12 @@ func (runtime *runtime) mirrorMessage(message sidecar.Message) error {
 			return nil
 		}
 		return runtime.commitUserSpeech(message.Text)
+	case sidecar.TypeTextDelta:
+		return runtime.forwardText(message.Text)
 	case sidecar.TypeTextDone:
+		if err := runtime.forwardRemainingText(message.Text); err != nil {
+			return err
+		}
 		return runtime.commitModelSpeech(message.Text)
 	case sidecar.TypeOutputAudio:
 		return runtime.forwardAudio(message)
@@ -128,26 +133,65 @@ func (runtime *runtime) commitModelSpeech(text string) error {
 	return err
 }
 
+// forwardText delivers one transcript delta, opening the turn if the model
+// spoke before it made a sound. Text and audio can arrive in either order, and
+// whichever comes first is what starts the turn.
+func (runtime *runtime) forwardText(delta string) error {
+	if strings.TrimSpace(delta) == "" {
+		return nil
+	}
+	utterance, err := runtime.currentUtterance()
+	if err != nil {
+		return err
+	}
+	runtime.stateMu.Lock()
+	runtime.spokenText += delta
+	runtime.stateMu.Unlock()
+	return runtime.sink.SpeechText(runtime.ctx, utterance, delta)
+}
+
+// forwardRemainingText sends whatever a terminal text frame carries that the
+// deltas did not. A sidecar may stream deltas, send only the whole text at the
+// end, or both, and the client should see the turn exactly once either way.
+func (runtime *runtime) forwardRemainingText(whole string) error {
+	runtime.stateMu.Lock()
+	streamed := runtime.spokenText
+	runtime.stateMu.Unlock()
+	if strings.TrimSpace(whole) == "" || streamed == whole {
+		return nil
+	}
+	if strings.HasPrefix(whole, streamed) {
+		return runtime.forwardText(strings.TrimPrefix(whole, streamed))
+	}
+	return runtime.forwardText(whole)
+}
+
+// currentUtterance returns the turn in progress, opening one if needed.
+func (runtime *runtime) currentUtterance() (action.Utterance, error) {
+	runtime.stateMu.Lock()
+	if runtime.utterance != nil {
+		utterance := *runtime.utterance
+		runtime.stateMu.Unlock()
+		return utterance, nil
+	}
+	utterance := action.Utterance{
+		ID: fmt.Sprintf("%s_speech_%d", runtime.spec.Name, runtime.sequence.Add(1)),
+	}
+	runtime.utterance = &utterance
+	runtime.spokenText = ""
+	runtime.stateMu.Unlock()
+	return utterance, runtime.sink.SpeechBegin(runtime.ctx, utterance)
+}
+
 func (runtime *runtime) forwardAudio(message sidecar.Message) error {
 	rate := runtime.ready.OutputRate
 	if rate <= 0 {
 		rate = 24_000
 	}
-	runtime.stateMu.Lock()
-	if runtime.utterance == nil {
-		utterance := action.Utterance{
-			ID: fmt.Sprintf("%s_speech_%d", runtime.spec.Name, runtime.sequence.Add(1)),
-		}
-		runtime.utterance = &utterance
-		runtime.stateMu.Unlock()
-		if err := runtime.sink.SpeechBegin(runtime.ctx, utterance); err != nil {
-			return err
-		}
-		runtime.stateMu.Lock()
+	utterance, err := runtime.currentUtterance()
+	if err != nil {
+		return err
 	}
-	utterance := *runtime.utterance
-	runtime.stateMu.Unlock()
-
 	frame := action.Frame{
 		PCM16LE: message.Payload, SampleRateHz: uint32(rate),
 		Duration: time.Duration(len(message.Payload)/2) * time.Second / time.Duration(rate),
@@ -162,6 +206,7 @@ func (runtime *runtime) finishTurn() error {
 	runtime.stateMu.Lock()
 	utterance := runtime.utterance
 	runtime.utterance = nil
+	runtime.spokenText = ""
 	runtime.stateMu.Unlock()
 	if utterance == nil {
 		return nil

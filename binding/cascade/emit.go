@@ -22,7 +22,13 @@ import (
 type speechSink struct{ runtime *runtime }
 
 func (sink speechSink) Begin(ctx context.Context, utterance action.Utterance) error {
-	return sink.runtime.sink.SpeechBegin(ctx, utterance)
+	// A planned utterance knows its whole text before the first frame, so the
+	// transcript is delivered at the announcement. A binding whose model
+	// streams text and audio together delivers it as it arrives instead.
+	if err := sink.runtime.sink.SpeechBegin(ctx, utterance); err != nil {
+		return err
+	}
+	return sink.runtime.sink.SpeechText(ctx, utterance, utterance.Text)
 }
 
 func (sink speechSink) Audio(ctx context.Context, utterance action.Utterance, frame action.Frame) error {

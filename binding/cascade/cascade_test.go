@@ -141,6 +141,7 @@ type recordingSink struct {
 	transcripts  []binding.TranscriptEvent
 	utterances   []action.Utterance
 	frames       int
+	spoken       []string
 	toolCalls    []binding.ToolCallEvent
 	observations []perception.Observation
 	failures     []binding.ErrorEvent
@@ -166,6 +167,13 @@ func (sink *recordingSink) SpeechBegin(_ context.Context, utterance action.Utter
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
 	sink.utterances = append(sink.utterances, utterance)
+	return nil
+}
+
+func (sink *recordingSink) SpeechText(_ context.Context, _ action.Utterance, delta string) error {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	sink.spoken = append(sink.spoken, delta)
 	return nil
 }
 
@@ -196,11 +204,7 @@ func (sink *recordingSink) Failed(_ context.Context, event binding.ErrorEvent) {
 func (sink *recordingSink) spokenTexts() []string {
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
-	texts := make([]string, 0, len(sink.utterances))
-	for _, utterance := range sink.utterances {
-		texts = append(texts, utterance.Text)
-	}
-	return texts
+	return append([]string(nil), sink.spoken...)
 }
 
 // --- helpers ----------------------------------------------------------------

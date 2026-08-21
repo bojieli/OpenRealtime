@@ -64,7 +64,7 @@ func (session *session) Observation(_ context.Context, observation perception.Ob
 	})
 }
 
-func (session *session) SpeechBegin(_ context.Context, utterance action.Utterance) error {
+func (session *session) SpeechBegin(ctx context.Context, utterance action.Utterance) error {
 	session.settingsMu.RLock()
 	format, voice := session.settings.outputFormat, session.settings.voice
 	session.settingsMu.RUnlock()
@@ -73,7 +73,7 @@ func (session *session) SpeechBegin(_ context.Context, utterance action.Utteranc
 	itemID := session.nextID("item")
 	session.itemsMu.Lock()
 	session.utterances[utterance.ID] = &wireUtterance{
-		responseID: responseID, itemID: itemID, format: format, voice: voice, text: utterance.Text,
+		responseID: responseID, itemID: itemID, format: format, voice: voice,
 	}
 	session.itemsMu.Unlock()
 
@@ -93,9 +93,27 @@ func (session *session) SpeechBegin(_ context.Context, utterance action.Utteranc
 	})); err != nil {
 		return err
 	}
+	_ = ctx
+	return nil
+}
+
+// SpeechText renders one transcript delta.
+func (session *session) SpeechText(_ context.Context, utterance action.Utterance, delta string) error {
+	if delta == "" {
+		return nil
+	}
+	session.itemsMu.Lock()
+	wire := session.utterances[utterance.ID]
+	if wire != nil {
+		wire.text += delta
+	}
+	session.itemsMu.Unlock()
+	if wire == nil {
+		return fmt.Errorf("transcript for an unannounced utterance %q", utterance.ID)
+	}
 	return session.send(event("response.output_audio_transcript.delta", session.nextID("event"), map[string]any{
-		"response_id": responseID, "item_id": itemID, "output_index": 0, "content_index": 0,
-		"delta": utterance.Text,
+		"response_id": wire.responseID, "item_id": wire.itemID, "output_index": 0, "content_index": 0,
+		"delta": delta,
 	}))
 }
 

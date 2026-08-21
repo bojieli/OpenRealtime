@@ -22,11 +22,15 @@ import (
 	"github.com/bojieli/OpenRealtime/asrbuffer"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/cascade"
+	"github.com/bojieli/OpenRealtime/binding/duplex"
+	"github.com/bojieli/OpenRealtime/binding/omni"
+	"github.com/bojieli/OpenRealtime/binding/sidecarbinding"
 	"github.com/bojieli/OpenRealtime/binding/upstream"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/gateway"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/sidecar"
 	"github.com/bojieli/OpenRealtime/trajectory"
 	webrtcadapter "github.com/bojieli/OpenRealtime/transport/webrtc"
 	"github.com/pion/webrtc/v4"
@@ -82,13 +86,17 @@ type serveOptions struct {
 
 	webrtcListen string
 	webrtcSTUN   string
+
+	sidecarCommand string
+	sidecarAddress string
+	sidecarFloor   string
 }
 
 func runServe(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime serve", flag.ContinueOnError)
 	var options serveOptions
 	flags.StringVar(&options.listen, "listen", "127.0.0.1:8765", "HTTP and WebSocket listen address")
-	flags.StringVar(&options.binding, "binding", "cascade", "voice stack: cascade or upstream")
+	flags.StringVar(&options.binding, "binding", "cascade", "voice stack: cascade, upstream, omni, or duplex")
 	flags.StringVar(&options.model, "model", "openrealtime", "compatibility model identifier reported to clients")
 	flags.StringVar(&options.tokenEnv, "token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token; empty disables authentication")
 	flags.DurationVar(&options.requestTimeout, "request-timeout", 2*time.Minute, "per-request provider timeout")
@@ -133,6 +141,9 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.BoolVar(&options.validateWire, "validate-wire", true, "validate every protocol event against the pinned schema")
 	flags.StringVar(&options.webrtcListen, "webrtc-listen", "", "additional WebRTC listen address; empty disables the adapter")
 	flags.StringVar(&options.webrtcSTUN, "webrtc-stun", "", "comma-separated STUN servers for the WebRTC adapter")
+	flags.StringVar(&options.sidecarCommand, "sidecar", "", "command that runs the model sidecar for the omni and duplex bindings")
+	flags.StringVar(&options.sidecarAddress, "sidecar-address", "", "connect to a running sidecar as tcp:host:port or unix:/path")
+	flags.StringVar(&options.sidecarFloor, "floor", "", "who decides endpoints: engine or model; empty selects the binding's default")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -205,8 +216,12 @@ func buildBinding(options serveOptions) (binding.Binding, error) {
 		return buildCascade(options, policies)
 	case "upstream":
 		return buildUpstream(options)
+	case "omni":
+		return buildSidecarBinding(options, "omni")
+	case "duplex":
+		return buildSidecarBinding(options, "duplex")
 	default:
-		return nil, fmt.Errorf("binding must be cascade or upstream, got %q", options.binding)
+		return nil, fmt.Errorf("binding must be cascade, upstream, omni, or duplex, got %q", options.binding)
 	}
 }
 
@@ -428,4 +443,44 @@ func startWebRTC(options serveOptions, serveError chan error) (*http.Server, err
 	}
 	go func() { serveError <- server.ListenAndServe() }()
 	return server, nil
+}
+
+// buildSidecarBinding configures a model that lives behind a process boundary.
+//
+// The floor flag is the F5 comparison made available on the command line: an
+// Omni model defaults to the engine's floor because voice activity detection
+// mis-endpoints on spelled identifiers, and a duplex model defaults to its own
+// because turn-taking is in its weights. Either can be flipped, which is what
+// makes the claim measurable rather than asserted.
+func buildSidecarBinding(options serveOptions, name string) (binding.Binding, error) {
+	if strings.TrimSpace(options.sidecarCommand) == "" && strings.TrimSpace(options.sidecarAddress) == "" {
+		return nil, fmt.Errorf("the %s binding needs -sidecar or -sidecar-address", name)
+	}
+	slow, err := buildSlow(options)
+	if err != nil {
+		return nil, fmt.Errorf("configure the slow provider: %w", err)
+	}
+	config := sidecarbinding.Config{
+		Sidecar: sidecar.Config{
+			Command: strings.Fields(options.sidecarCommand),
+			Address: options.sidecarAddress,
+			Logf: func(format string, values ...any) {
+				fmt.Fprintf(os.Stderr, format+"\n", values...)
+			},
+		},
+		Instructions: options.instruction, Slow: slow, SlowMaxTokens: options.slowTokens,
+	}
+	floor := strings.ToLower(strings.TrimSpace(options.sidecarFloor))
+	switch name {
+	case "omni":
+		if floor == "model" {
+			return omni.NewWithModelFloor(config)
+		}
+		return omni.New(config)
+	default:
+		if floor == "engine" {
+			return duplex.NewWithEngineFloor(config)
+		}
+		return duplex.New(config)
+	}
 }

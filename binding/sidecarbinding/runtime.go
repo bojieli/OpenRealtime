@@ -54,12 +54,13 @@ type runtime struct {
 	acoustic    *perception.EnergyGate
 	utteranceID string
 
-	stateMu   sync.Mutex
-	utterance *action.Utterance
-	answer    string
-	pending   map[string]*pendingInvocation
-	callOwner map[string]string
-	callNames map[string]string
+	stateMu    sync.Mutex
+	utterance  *action.Utterance
+	spokenText string
+	answer     string
+	pending    map[string]*pendingInvocation
+	callOwner  map[string]string
+	callNames  map[string]string
 }
 
 type pendingInvocation struct {

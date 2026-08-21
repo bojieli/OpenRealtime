@@ -76,6 +76,14 @@ func (runtime *runtime) mirrorEvent(eventType string, raw []byte) error {
 		return runtime.commitUserSpeech(decoded.Transcript)
 	case "response.output_audio.delta":
 		return runtime.forwardAudio(raw)
+	case "response.output_audio_transcript.delta":
+		var decoded struct {
+			Delta string `json:"delta"`
+		}
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			return err
+		}
+		return runtime.forwardText(decoded.Delta)
 	case "response.output_audio_transcript.done":
 		var decoded struct {
 			Transcript string `json:"transcript"`
@@ -146,6 +154,36 @@ func (runtime *runtime) commitRemoteAssistant(text string) error {
 	return err
 }
 
+// forwardText delivers one transcript delta from the remote, opening the turn
+// if the remote produced words before sound.
+func (runtime *runtime) forwardText(delta string) error {
+	if strings.TrimSpace(delta) == "" {
+		return nil
+	}
+	utterance, err := runtime.currentUtterance("")
+	if err != nil {
+		return err
+	}
+	return runtime.sink.SpeechText(runtime.ctx, utterance, delta)
+}
+
+// currentUtterance returns the turn in progress, opening one if needed.
+func (runtime *runtime) currentUtterance(itemID string) (action.Utterance, error) {
+	runtime.stateMu.Lock()
+	if runtime.utterance != nil {
+		utterance := *runtime.utterance
+		runtime.stateMu.Unlock()
+		return utterance, nil
+	}
+	if strings.TrimSpace(itemID) == "" {
+		itemID = "upstream_turn"
+	}
+	utterance := action.Utterance{ID: itemID}
+	runtime.utterance = &utterance
+	runtime.stateMu.Unlock()
+	return utterance, runtime.sink.SpeechBegin(runtime.ctx, utterance)
+}
+
 func (runtime *runtime) forwardAudio(raw []byte) error {
 	var decoded struct {
 		ItemID string `json:"item_id"`
@@ -158,20 +196,10 @@ func (runtime *runtime) forwardAudio(raw []byte) error {
 	if err != nil || len(payload) == 0 {
 		return err
 	}
-	runtime.stateMu.Lock()
-	if runtime.utterance == nil {
-		utterance := action.Utterance{ID: decoded.ItemID}
-		runtime.utterance = &utterance
-		runtime.stateMu.Unlock()
-		if err := runtime.sink.SpeechBegin(runtime.ctx, utterance); err != nil {
-			return err
-		}
-	} else {
-		runtime.stateMu.Unlock()
+	utterance, err := runtime.currentUtterance(decoded.ItemID)
+	if err != nil {
+		return err
 	}
-	runtime.stateMu.Lock()
-	utterance := *runtime.utterance
-	runtime.stateMu.Unlock()
 	frame := action.Frame{PCM16LE: payload, SampleRateHz: 24_000}
 	frame.Duration = pcmDuration(len(payload), frame.SampleRateHz)
 	if err := runtime.duplex.AgentAudioHandedOff(utterance.ID, frame.Duration); err != nil {

@@ -57,6 +57,7 @@ type collectingSink struct {
 	mu          sync.Mutex
 	transcripts []binding.TranscriptEvent
 	audioFrames int
+	spoken      []string
 	toolCalls   []binding.ToolCallEvent
 	activity    []binding.ActivityEvent
 	failures    []binding.ErrorEvent
@@ -76,6 +77,13 @@ func (sink *collectingSink) Transcript(_ context.Context, event binding.Transcri
 }
 func (sink *collectingSink) Observation(context.Context, perception.Observation) error { return nil }
 func (sink *collectingSink) SpeechBegin(context.Context, action.Utterance) error       { return nil }
+func (sink *collectingSink) SpeechText(_ context.Context, _ action.Utterance, delta string) error {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	sink.spoken = append(sink.spoken, delta)
+	return nil
+}
+
 func (sink *collectingSink) SpeechAudio(context.Context, action.Utterance, action.Frame) error {
 	sink.mu.Lock()
 	defer sink.mu.Unlock()

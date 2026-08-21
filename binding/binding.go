@@ -132,8 +132,12 @@ type Sink interface {
 	// Observation reports what an observer perceived, so a client can display
 	// and audit it. It is optional and purely outbound.
 	Observation(context.Context, perception.Observation) error
-	// SpeechBegin, SpeechAudio, and SpeechEnd carry paced agent audio.
+	// SpeechBegin, SpeechText, SpeechAudio, and SpeechEnd carry one spoken
+	// turn. Text is delivered separately from the announcement because a
+	// binding that streams - a model producing text and audio together -
+	// does not know what it is about to say when the turn opens.
 	SpeechBegin(context.Context, action.Utterance) error
+	SpeechText(context.Context, action.Utterance, string) error
 	SpeechAudio(context.Context, action.Utterance, action.Frame) error
 	SpeechEnd(context.Context, action.Utterance, action.Outcome) error
 	// ToolCalls hands authoritative calls to the client for execution.
