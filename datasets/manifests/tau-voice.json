@@ -5,12 +5,19 @@
   "locally_executed": true,
   "benchmark": {
     "name": "tau-Voice",
-    "display_name": "τ-Voice",
+    "display_name": "\u03c4-Voice",
     "paper_url": "https://arxiv.org/abs/2603.13686",
     "paper_task_count": 278,
-    "domains": ["airline", "retail", "telecom"],
+    "domains": [
+      "airline",
+      "retail",
+      "telecom"
+    ],
     "primary_task_metric": "pass^1",
-    "speech_conditions": ["control", "regular"],
+    "speech_conditions": [
+      "control",
+      "regular"
+    ],
     "default_tick_duration_seconds": 0.2
   },
   "source": {
@@ -40,7 +47,7 @@
     ]
   },
   "local_integration": {
-    "patch": "benchmarks/tau-voice/patches/0001-local-openai-fish-audio.patch",
+    "patch": "datasets/patches/0001-local-openai-fish-audio.patch",
     "patch_sha256": "f34fe88d5ca6342a272b7f64b13da690acb390ef9b30b951b9c6d97466d301ac",
     "preparation_script": "scripts/prepare-tau-voice.sh",
     "wire_protocol_changed": false,
@@ -62,7 +69,8 @@
       "benchmark_tasks_run": 2,
       "benchmark_simulations_completed": 3,
       "checked_result": "benchmarks/results/tau-voice-openrealtime-smoke-2026-08-18.json"
-    }
+    },
+    "runner": "bench/tauvoice (openrealtime bench tau-voice)"
   },
   "interaction_metrics": [
     "response_latency_mean",
@@ -76,9 +84,18 @@
   ],
   "published_context": {
     "text_reasoning_pass_percent": 85,
-    "voice_control_pass_percent_range": [31, 51],
-    "voice_regular_pass_percent_range": [26, 38],
-    "voice_to_text_capability_retention_percent_range": [30, 45]
+    "voice_control_pass_percent_range": [
+      31,
+      51
+    ],
+    "voice_regular_pass_percent_range": [
+      26,
+      38
+    ],
+    "voice_to_text_capability_retention_percent_range": [
+      30,
+      45
+    ]
   },
   "redistributed": false,
   "status": "full_control_running_regular_and_follow_on_benchmarks_queued",

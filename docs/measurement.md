@@ -58,9 +58,34 @@ which is the signal that a model is too small for the job.
 | FD-Bench | 6,147 conversations, 77.2 h | endpointing and timing at scale. F1, F4, F5 |
 | DynaCU-Bench | 100 dynamic + 50 static | video observation, action grounding. F1, F3, F7 |
 
-DynaCU-Bench stays in the AOI repository. OpenRealtime ships a runner and uses
-it as a functional release gate — that video observation and action grounding
-work end to end — not as a copied suite.
+τ-Voice and DynaCU-Bench stay in their own repositories, and OpenRealtime
+ships a runner for each rather than a copy. The environments own the domains,
+the databases, the user simulator, and the reward function; a reimplementation
+would produce a benchmark that agreed with this project rather than with the
+published one.
+
+τ-Voice needs no bridge to run here. tau2's audio-native path speaks the OpenAI
+Realtime protocol over a configurable base URL, and OpenRealtime is a strict
+superset of it, so pointing the benchmark at the server is a flag and the wire
+is unmodified in both directions:
+
+```sh
+scripts/prepare-tau-voice.sh
+openrealtime bench tau-voice -verify
+openrealtime bench tau-voice -condition regular -out regular.json
+```
+
+The runner refuses before it spends hours rather than after: a checkout at the
+wrong revision, an unapplied patch, an interpreter without tau2's audio
+dependencies, or a missing credential each fail in seconds. What it cannot
+refuse in advance it records honestly — a restricted run is reported incomplete
+however well it scores, and a simulation that never reached evaluation is
+incomplete rather than failed, because scoring a dead endpoint zero is how
+infrastructure trouble becomes a published capability claim.
+
+DynaCU-Bench doubles as a functional release gate — that video observation and
+action grounding work end to end — which is a narrower question than the suite
+answers and gets a yes or no in seconds.
 
 ## Reporting rules
 

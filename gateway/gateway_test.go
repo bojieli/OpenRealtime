@@ -26,13 +26,22 @@ import (
 
 // --- doubles ----------------------------------------------------------------
 
-type staticASR struct{ text string }
+type staticASR struct {
+	text string
+	// block, when set, holds the recogniser until it is closed. It stands in
+	// for a recogniser under GPU contention - long enough for a client
+	// keepalive to give up on the connection.
+	block chan struct{}
+}
 
 func (staticASR) Descriptor() v1.Descriptor {
 	return v1.Descriptor{Name: "static", Version: "1", Capabilities: v1.Capabilities{}}
 }
 
-func (staticASR) PushFrame(context.Context, v1.AudioFrame) ([]v1.PerceptionRevision, error) {
+func (asr staticASR) PushFrame(context.Context, v1.AudioFrame) ([]v1.PerceptionRevision, error) {
+	if asr.block != nil {
+		<-asr.block
+	}
 	return nil, nil
 }
 
@@ -110,8 +119,15 @@ type client struct {
 
 func startServer(t *testing.T, fastProvider, slowProvider *scripted, transcript string) *httptest.Server {
 	t.Helper()
+	return startServerWithASR(t, fastProvider, slowProvider, staticASR{text: transcript})
+}
+
+func startServerWithASR(
+	t *testing.T, fastProvider, slowProvider *scripted, asr staticASR,
+) *httptest.Server {
+	t.Helper()
 	bind, err := cascade.New(cascade.Config{
-		Perception: func() (v1.PerceptionProvider, error) { return staticASR{text: transcript}, nil },
+		Perception: func() (v1.PerceptionProvider, error) { return asr, nil },
 		Fast:       fastProvider, Slow: slowProvider, Speech: toneSpeech{},
 	})
 	if err != nil {
@@ -419,5 +435,66 @@ func TestBearerTokenIsRequiredWhenConfigured(t *testing.T) {
 		HTTPHeader: map[string][]string{"Authorization": {"Bearer secret"}},
 	}); err != nil {
 		t.Fatalf("authenticated dial: %v", err)
+	}
+}
+
+// Two concurrent sessions must be distinguishable. Deriving the identity from
+// a session's own item counter names every session in the process
+// sess_000000000001, which makes a log useless and anything keyed on the
+// identifier wrong.
+func TestConcurrentSessionsGetDistinctIdentities(t *testing.T) {
+	server := startServer(t, fast(), slow(), "hello")
+
+	seen := map[string]bool{}
+	for index := 0; index < 4; index++ {
+		client := dial(t, server)
+		created := client.await("session.created", 5*time.Second)
+		id, _ := created["session"].(map[string]any)["id"].(string)
+		if id == "" {
+			t.Fatal("session.created must carry an identifier")
+		}
+		if seen[id] {
+			t.Fatalf("session identifier %q was reused", id)
+		}
+		seen[id] = true
+	}
+}
+
+// A handler that waits on a model must not keep the socket from answering
+// pings. The WebSocket library answers them from inside Read, so a session
+// that handled events on the read goroutine would be dropped by any client
+// with a keepalive whenever a provider was slow - a fault the system under
+// test then gets blamed for.
+func TestASlowProviderDoesNotStallTheConnection(t *testing.T) {
+	release := make(chan struct{})
+	server := startServerWithASR(t, fast(), slow(), staticASR{text: "hello", block: release})
+	t.Cleanup(func() { close(release) })
+
+	client := dial(t, server)
+	client.await("session.created", 5*time.Second)
+
+	// Audio reaches the recogniser, which is now blocked. Before the handler
+	// ran on its own goroutine this held the read loop, and the library
+	// answers pings from inside Read.
+	client.send(map[string]any{
+		"type": "input_audio_buffer.append", "audio": pcm16Tone(2400),
+	})
+
+	// A pong is only processed by a concurrent reader, so the client runs one
+	// while it waits - the same shape a real client has.
+	reading := make(chan struct{})
+	go func() {
+		defer close(reading)
+		for {
+			if _, _, err := client.connection.Read(context.Background()); err != nil {
+				return
+			}
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.connection.Ping(ctx); err != nil {
+		t.Fatalf("the connection must answer a ping while the recogniser is busy: %v", err)
 	}
 }

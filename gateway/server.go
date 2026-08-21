@@ -16,10 +16,12 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/bojieli/OpenRealtime/binding"
@@ -28,6 +30,17 @@ import (
 )
 
 // Config configures the server.
+// sessionSequence names sessions uniquely within a process.
+//
+// It lives on the server rather than the session because a session's own item
+// counter starts at zero, so deriving an identity from it would name every
+// session in the process the same thing.
+var sessionSequence atomic.Uint64
+
+func (config Config) nextSessionID() string {
+	return fmt.Sprintf("sess_%012d", sessionSequence.Add(1))
+}
+
 type Config struct {
 	// Binding provides session runtimes. It is the only thing the gateway
 	// needs to know about how conversation actually happens.

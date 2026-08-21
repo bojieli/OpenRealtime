@@ -20,9 +20,8 @@ openrealtime bench fdb --limit 4           # a suite against it
 | `bench fdb` | FDB v1.5 | overlap: yielding to interruptions, holding through backchannels |
 | `bench fdbv3` | FDB v3 | tool use under disfluent speech, including spelled identifiers |
 | `bench fdbench` | FD-Bench | endpointing and response timing at scale |
-
-τ-Voice and DynaCU-Bench run through their own environments; see
-[measurement.md](measurement.md).
+| `bench tau-voice` | τ-Voice | tool-use success under voice, against a live environment |
+| `bench dynacu` | DynaCU | video observation and action grounding, as a release gate |
 
 ## Cells and pairing
 
@@ -102,6 +101,44 @@ single number would hide the trade.
 It also separates *premature* from *overrun*: an answer that begins while the
 person is mid-turn is an endpointing failure, while one that runs past the gap
 and is then cut short is what barge-in is for. They have different causes.
+
+**τ-Voice** is the one suite the harness does not own. tau2-bench has the
+domains, the databases, the user simulator, and the reward function, and a
+reimplementation would produce a benchmark that agreed with this project rather
+than with the published one. So `bench tau-voice` is a runner: it pins the
+environment to a revision, points it at a running server, and turns what comes
+back into the same report every other suite produces.
+
+Pointing it at OpenRealtime takes no bridge. tau2's audio-native path speaks
+the OpenAI Realtime protocol over a configurable base URL, and OpenRealtime is
+a strict superset of that protocol, so the endpoint is a flag and the wire is
+unmodified in both directions. It is the protocol claim tested by something
+that has never heard of this project.
+
+```sh
+scripts/prepare-tau-voice.sh              # pin, patch, and check the checkout
+openrealtime bench tau-voice -verify      # confirm before spending hours
+openrealtime bench tau-voice -condition regular -out regular.json
+```
+
+Two conditions carry the measurement. **Control** is clean synthesised speech
+and **regular** carries the disfluencies, backchannels, and non-directed audio
+a deployed system actually receives; between them sit ablations that hold one
+group of effects constant, so a system that loses ground can be told *which*
+part of realistic speech it lost to. A number from control alone describes a
+recording studio.
+
+Task success is only half of it. `-interaction-metrics` runs tau2's own
+turn-taking computation — response and yield latency, response and yield rate,
+the three selectivity measures — because a system can pass every task while
+talking over the caller throughout, and nothing in a pass rate would say so.
+
+Two behaviours in the runner are worth knowing about. A restricted run — one
+domain, a task limit, named task IDs — is reported **incomplete** no matter how
+well it scores, because it is not the declared suite. And a simulation that
+never reached evaluation is recorded as incomplete rather than as a failure: an
+endpoint that was down is not a benchmark result, and scoring it zero is how
+infrastructure trouble becomes a published capability claim.
 
 ## Adding a suite
 

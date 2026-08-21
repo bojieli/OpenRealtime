@@ -17,14 +17,31 @@ import (
 // failure, because the pinned base registry cannot know about them by
 // construction. It reports whether the message was an extension event at all,
 // so an actually unknown type still gets the base protocol's error.
-func (session *session) handleExtension(input []byte) (bool, error) {
+// isExtensionEvent reports whether an event belongs to the OpenRealtime
+// extension rather than to the base protocol.
+//
+// The check is on the read goroutine because routing has to happen before
+// decoding: the pinned base registry cannot know about extension events by
+// construction, so handing one to it first would make every extension event an
+// invalid one.
+func isExtensionEvent(input []byte) bool {
 	var envelope struct {
 		Type string `json:"type"`
 	}
 	if err := json.Unmarshal(input, &envelope); err != nil {
+		return false
+	}
+	return strings.HasPrefix(envelope.Type, "openrealtime.")
+}
+
+func (session *session) handleExtension(input []byte) (bool, error) {
+	if !isExtensionEvent(input) {
 		return false, nil
 	}
-	if !strings.HasPrefix(envelope.Type, "openrealtime.") {
+	var envelope struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(input, &envelope); err != nil {
 		return false, nil
 	}
 	session.settingsMu.RLock()

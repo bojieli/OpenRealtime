@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/bojieli/OpenRealtime/bench/fdb"
 	"github.com/bojieli/OpenRealtime/bench/fdbench"
 	"github.com/bojieli/OpenRealtime/bench/fdbv3"
+	"github.com/bojieli/OpenRealtime/bench/tauvoice"
 )
 
 // runBench executes one suite against a running server.
@@ -28,7 +30,7 @@ import (
 // users get is not a measurement of anything.
 func runBench(arguments []string, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: openrealtime bench <fdb|fdbv3|fdbench|dynacu> [flags]")
+		return errors.New("usage: openrealtime bench <fdb|fdbv3|fdbench|tau-voice|dynacu> [flags]")
 	}
 	suite := strings.ToLower(strings.TrimSpace(arguments[0]))
 	switch suite {
@@ -38,6 +40,8 @@ func runBench(arguments []string, output io.Writer) error {
 		return runFDBench(arguments[1:], output)
 	case "fdbv3", "fdb-v3":
 		return runFDBv3(arguments[1:], output)
+	case "tau-voice", "tauvoice", "tau":
+		return runTauVoice(arguments[1:], output)
 	case "dynacu", "computer-use":
 		return runDynaCU(arguments[1:], output)
 	default:
@@ -430,5 +434,152 @@ func runDynaCU(arguments []string, output io.Writer) error {
 		return errors.New("the computer-use gate did not pass")
 	}
 	fmt.Fprintln(output, "\ngate passed")
+	return nil
+}
+
+// runTauVoice runs the tau-Voice suite against a running endpoint.
+//
+// The environment is tau2-bench's, pinned and prepared by
+// scripts/prepare-tau-voice.sh. This command points it at OpenRealtime, waits
+// - a full cell is hours, not minutes - and turns what comes back into the
+// same report every other suite produces.
+func runTauVoice(arguments []string, output io.Writer) error {
+	flags := flag.NewFlagSet("openrealtime bench tau-voice", flag.ContinueOnError)
+	var (
+		tau2Dir    string
+		endpoint   string
+		model      string
+		domain     string
+		condition  string
+		userModel  string
+		python     string
+		tokenEnv   string
+		synthesis  string
+		ttsURL     string
+		ttsModel   string
+		ttsVoice   string
+		runPrefix  string
+		out        string
+		trials     int
+		limit      int
+		cadence    float64
+		cellName   string
+		varyFactor string
+		varyLevel  string
+		timeout    time.Duration
+		verifyOnly bool
+		metrics    bool
+	)
+	flags.StringVar(&tau2Dir, "tau2", ".runtime/tau2-bench", "prepared tau2-bench checkout")
+	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
+	flags.StringVar(&model, "model", "", "model to request")
+	flags.StringVar(&domain, "domain", "", "restrict to one domain (airline, retail, telecom)")
+	flags.StringVar(&condition, "condition", "control", "speech condition: control, regular, or an ablation")
+	flags.StringVar(&userModel, "user-model", "gpt-4.1", "model behind the simulated caller")
+	flags.StringVar(&tokenEnv, "token-env", "OPENREALTIME_TOKEN",
+		"environment variable holding the bearer token the agent presents")
+	flags.StringVar(&synthesis, "synthesis", "fish_audio",
+		"voice for the simulated caller: fish_audio (local) or elevenlabs")
+	flags.StringVar(&ttsURL, "synthesis-url", "", "local speech endpoint for the caller's voice")
+	flags.StringVar(&ttsModel, "synthesis-model", "", "speech model for the caller's voice")
+	flags.StringVar(&ttsVoice, "synthesis-voice", "", "voice identity for the simulated caller")
+	flags.StringVar(&python, "python", "",
+		"interpreter with tau2 installed; empty prefers the checkout's own .venv")
+	flags.StringVar(&runPrefix, "run-prefix", "openrealtime", "names the tau2 runs, and resumes one that exists")
+	flags.StringVar(&out, "out", "", "write the result to this path as JSON")
+	flags.IntVar(&trials, "trials", 1, "repeat each task this many times")
+	flags.IntVar(&limit, "limit", 0, "stop after this many tasks per domain")
+	flags.Float64Var(&cadence, "cadence", 0.2, "trigger cadence in seconds, matching factor F4")
+	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
+	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F2")
+	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
+	flags.DurationVar(&timeout, "task-timeout", 10*time.Minute, "how long one simulation may take")
+	flags.BoolVar(&verifyOnly, "verify", false, "check the environment and exit without running")
+	flags.BoolVar(&metrics, "interaction-metrics", true, "also compute tau2's turn-taking metrics")
+	flags.SetOutput(output)
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	cell, err := resolveCell(cellName, varyFactor, varyLevel)
+	if err != nil {
+		return err
+	}
+	speech, err := tauvoice.ParseCondition(condition)
+	if err != nil {
+		return err
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	config := tauvoice.Config{
+		Tau2Dir: tau2Dir, Endpoint: endpoint, Model: model, Domain: domain,
+		Condition: speech, Trials: trials, Limit: limit, UserModel: userModel,
+		Cadence: cadence, Timeout: timeout, Cell: cell, Python: python, TokenEnv: tokenEnv,
+		SynthesisProvider: synthesis, SynthesisEndpoint: ttsURL,
+		SynthesisModel: ttsModel, SynthesisVoice: ttsVoice,
+		RunPrefix: runPrefix,
+		Logf:      func(format string, args ...any) { fmt.Fprintf(output, format+"\n", args...) },
+	}
+	if verifyOnly {
+		if err := config.Verify(ctx); err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "tau2-bench at %s is prepared and pinned to %s\n",
+			tau2Dir, tauvoice.PinnedRevision)
+		return nil
+	}
+
+	result, err := tauvoice.Run(ctx, config)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(output)
+	fmt.Fprintf(output, "cell       : %s\n", result.Cell.Describe())
+	fmt.Fprintf(output, "condition  : %s\n", speech)
+	fmt.Fprintf(output, "provenance : %s\n", result.Provenance)
+	fmt.Fprintf(output, "tasks      : %d completed, %d failed, of %d expected\n",
+		result.Summary.Completed, result.Summary.Failed, result.Expected)
+	fmt.Fprintf(output, "pass^1     : %.1f%% (%d passed)\n",
+		result.Summary.PassRate*100, result.Summary.Passed)
+
+	if metrics {
+		// Turn-taking is the half of tau-Voice that task success cannot see: a
+		// system can pass every task while talking over the caller throughout.
+		domains := tauvoice.Domains
+		if strings.TrimSpace(domain) != "" {
+			domains = []string{domain}
+		}
+		for _, name := range domains {
+			runName := fmt.Sprintf("%s-%s-%s", runPrefix, name, speech)
+			computed, err := tauvoice.InteractionMetrics(ctx, config, runName)
+			if err != nil {
+				fmt.Fprintf(output, "interaction metrics for %s unavailable: %v\n", name, err)
+				continue
+			}
+			fmt.Fprintf(output, "\ninteraction metrics (%s):\n", name)
+			names := make([]string, 0, len(computed))
+			for metric := range computed {
+				names = append(names, metric)
+			}
+			sort.Strings(names)
+			for _, metric := range names {
+				fmt.Fprintf(output, "  %-44s %.3f\n", metric, computed[metric])
+			}
+		}
+	}
+
+	if reportErr := result.Reportable(); reportErr != nil {
+		fmt.Fprintf(output, "\nNOT REPORTABLE: %v\n", reportErr)
+	} else {
+		fmt.Fprintln(output, "\nreportable")
+	}
+	if strings.TrimSpace(out) != "" {
+		if err := result.Write(out); err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "written to %s\n", out)
+	}
 	return nil
 }

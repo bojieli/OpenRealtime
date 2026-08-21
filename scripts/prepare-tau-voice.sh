@@ -51,8 +51,13 @@ else
   exit 1
 fi
 
+# The environment is part of the preparation, not part of the verification.
+# tau2's voice path pulls dependencies a system interpreter does not have -
+# PortAudio bindings among them - and without them every simulation ends in an
+# infrastructure error that says nothing about the system under test.
+uv --directory "${tau2_directory}" sync --extra voice --extra dev
+
 if [[ "${verify}" == true ]]; then
-  uv --directory "${tau2_directory}" sync --extra voice --extra dev
   PYTHONPATH="${tau2_directory}/src" uv --directory "${tau2_directory}" run ruff check \
     src/tau2/agent/base/voice.py \
     src/tau2/agent/discrete_time_audio_native_agent.py \
@@ -77,3 +82,7 @@ fi
 
 echo "tau-Voice checkout: ${tau2_directory}"
 echo "revision: ${TAU2_REVISION}"
+echo "interpreter: ${tau2_directory}/.venv/bin/python"
+echo
+echo "Confirm before spending hours on a cell:"
+echo "  openrealtime bench tau-voice -verify -tau2 ${tau2_directory}"

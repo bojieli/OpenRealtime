@@ -62,7 +62,14 @@ type session struct {
 
 	sequence    atomic.Uint64
 	sendChannel chan []byte
-	wait        sync.WaitGroup
+	// events carries decoded client events to the handler goroutine. The read
+	// loop must never run a handler itself: the WebSocket library answers
+	// pings from inside Read, so a handler that waits on a model keeps the
+	// socket from answering, and a client with a keepalive drops a session
+	// that is working perfectly well. The buffer is deep enough to ride out a
+	// slow provider call without the read loop blocking on the send.
+	events chan queuedEvent
+	wait   sync.WaitGroup
 
 	settingsMu sync.RWMutex
 	settings   settings
@@ -96,10 +103,16 @@ func newSession(parent context.Context, connection *websocket.Conn, config Confi
 	result := &session{
 		ctx: ctx, cancel: cancel, connection: connection, config: config, model: model,
 		validator: protocol.NewValidator(), sendChannel: make(chan []byte, 512),
+		events:  make(chan queuedEvent, 512),
 		sources: make(map[string]*videoSource), utterances: make(map[string]*wireUtterance),
 		callNames: make(map[string]string),
 	}
-	result.id = result.nextID("sess")
+	// The session's own identity comes from the server, not from its item
+	// counter: every session's counter starts at zero, so deriving it here
+	// would name every session in the process sess_000000000001. Two
+	// concurrent sessions would then be indistinguishable in the logs, and
+	// anything that keys on the identifier would confuse them outright.
+	result.id = config.nextSessionID()
 	result.conversationID = result.nextID("conv")
 	result.settings = settings{
 		inputFormat: audioFormat{Type: formatPCMU}, outputFormat: audioFormat{Type: formatPCMU},
@@ -134,8 +147,9 @@ func (session *session) bindingSettings() binding.Settings {
 
 // Run drives the connection until it closes.
 func (session *session) Run() error {
-	session.wait.Add(1)
+	session.wait.Add(2)
 	go session.writerLoop()
+	go session.handlerLoop()
 	if err := session.send(session.sessionEvent("session.created")); err != nil {
 		session.cancel(err)
 		session.wait.Wait()
@@ -167,6 +181,24 @@ func (session *session) writerLoop() {
 	}
 }
 
+// queuedEvent is one decoded client event on its way to the handler.
+//
+// Extension events carry their raw bytes because they are routed by a
+// different decoder; base events carry the decoded message, so validation
+// stays on the read goroutine where its errors are cheap and ordered.
+type queuedEvent struct {
+	extension []byte
+	message   protocol.Message
+}
+
+// readLoop decodes client events and hands them to the handler.
+//
+// It does no conversational work itself, and that is the point. The WebSocket
+// library answers pings from inside Read, so any handler that waits on a model
+// - a recogniser under GPU contention, a reasoner mid-turn - would keep this
+// loop out of Read for as long as the wait lasts. A client with a twenty
+// second keepalive then drops a session that is working perfectly well, which
+// is a fault the system under test gets blamed for.
 func (session *session) readLoop() error {
 	for {
 		messageType, input, err := session.connection.Read(session.ctx)
@@ -180,9 +212,9 @@ func (session *session) readLoop() error {
 		// Extension events are routed before the base protocol sees them. The
 		// pinned registry cannot know about them by construction, so handing
 		// them to it first would make every extension event an invalid one.
-		if handled, extensionErr := session.handleExtension(input); handled {
-			if extensionErr != nil {
-				session.sendError("invalid_request_error", extensionErr.Error())
+		if isExtensionEvent(input) {
+			if err := session.enqueue(queuedEvent{extension: input}); err != nil {
+				return err
 			}
 			continue
 		}
@@ -197,8 +229,48 @@ func (session *session) readLoop() error {
 				continue
 			}
 		}
-		if err := session.handleClientEvent(message); err != nil {
-			session.sendError("invalid_request_error", err.Error())
+		if err := session.enqueue(queuedEvent{message: message}); err != nil {
+			return err
+		}
+	}
+}
+
+// enqueue hands one event to the handler goroutine.
+//
+// The send can block when the handler is behind, which is deliberate: dropping
+// audio frames would silently corrupt every measurement taken through this
+// server, and an unbounded queue would turn a slow provider into an
+// out-of-memory. Blocking is the honest option, and the buffer is deep enough
+// that a single slow call does not reach it.
+func (session *session) enqueue(event queuedEvent) error {
+	select {
+	case session.events <- event:
+		return nil
+	case <-session.ctx.Done():
+		return context.Cause(session.ctx)
+	}
+}
+
+// handlerLoop runs client events in the order they arrived.
+//
+// One goroutine, not a pool: the protocol is a sequence, and two audio frames
+// applied concurrently are two frames applied in an arbitrary order.
+func (session *session) handlerLoop() {
+	defer session.wait.Done()
+	for {
+		select {
+		case <-session.ctx.Done():
+			return
+		case event := <-session.events:
+			if event.extension != nil {
+				if _, err := session.handleExtension(event.extension); err != nil {
+					session.sendError("invalid_request_error", err.Error())
+				}
+				continue
+			}
+			if err := session.handleClientEvent(event.message); err != nil {
+				session.sendError("invalid_request_error", err.Error())
+			}
 		}
 	}
 }
