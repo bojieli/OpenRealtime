@@ -62,6 +62,7 @@ type serveOptions struct {
 	fastModel    string
 	fastTokenEnv string
 	fastTokens   int
+	fastVision   bool
 
 	slowProvider string
 	slowURL      string
@@ -69,6 +70,7 @@ type serveOptions struct {
 	slowTokenEnv string
 	slowEffort   string
 	slowTokens   int
+	slowVision   bool
 
 	ttsURL   string
 	ttsModel string
@@ -142,6 +144,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.fastModel, "fast-model", "qwen-fast", "fast model identity")
 	flags.StringVar(&options.fastTokenEnv, "fast-token-env", "OPENREALTIME_FAST_API_KEY", "environment variable holding the fast model credential")
 	flags.IntVar(&options.fastTokens, "fast-max-tokens", 96, "fast spoken turn output-token limit")
+	flags.BoolVar(&options.fastVision, "fast-sees", false,
+		"the fast model accepts images; false withholds them, which a text-only model requires")
 
 	flags.StringVar(&options.slowProvider, "slow-provider", "gemini", "slow provider: gemini or openai-compatible")
 	flags.StringVar(&options.slowURL, "slow-url", openaicompat.DefaultBaseURL, "slow model base URL when it is OpenAI-compatible")
@@ -149,6 +153,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.slowTokenEnv, "slow-token-env", "GEMINI_API_KEY", "environment variable holding the slow model credential")
 	flags.StringVar(&options.slowEffort, "slow-effort", "high", "slow reasoning effort: minimal, low, medium, or high")
 	flags.IntVar(&options.slowTokens, "slow-max-tokens", 2048, "slow continuation output-token limit")
+	flags.BoolVar(&options.slowVision, "slow-sees", false,
+		"the slow model accepts images; ignored for gemini, which always can")
 
 	flags.StringVar(&options.ttsURL, "tts-url", "http://127.0.0.1:8081/v1/audio/speech", "speech synthesis endpoint")
 	flags.StringVar(&options.ttsModel, "tts-model", openaitts.DefaultModel, "speech model identity")
@@ -533,6 +539,7 @@ func buildFast(options serveOptions) (continuation.Provider, error) {
 			Provider: "openai-compatible", Phase: trajectory.PhaseFast, Effort: continuation.EffortMinimal,
 			ToolAuthority: continuation.ToolAuthorityPropose, SpeechAuthority: continuation.SpeechAuthorityVoice,
 			ThinkingMode: openaicompat.ThinkingDisabled, DisableReasoningCapture: true,
+			Vision:         options.fastVision,
 			RequestTimeout: options.requestTimeout,
 		})
 	case "gemini":
@@ -570,6 +577,7 @@ func buildSlow(options serveOptions) (continuation.Provider, error) {
 			APIKey: os.Getenv(options.slowTokenEnv), Model: options.slowModel, BaseURL: options.slowURL,
 			Provider: "openai-compatible", Phase: trajectory.PhaseSlow, Effort: effort,
 			ToolAuthority: continuation.ToolAuthorityExecute, SpeechAuthority: continuation.SpeechAuthoritySilent,
+			Vision:         options.slowVision,
 			RequestTimeout: options.requestTimeout,
 		})
 	default:

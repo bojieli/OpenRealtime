@@ -367,76 +367,126 @@ func runFDBv3(arguments []string, output io.Writer) error {
 	return nil
 }
 
-// runDynaCU is the computer-use functional release gate.
+// runDynaCU runs DynaCU-Bench against a running server.
 //
-// It answers one question - does video observation and action grounding work
-// end to end, over the protocol, with nothing faked - and it answers it in
-// seconds without a dataset, a GPU, or a network.
+// The benchmark stays in the AOI repository and this points it at an endpoint.
+// Nothing about what a task is, or whether it passed, is decided here.
 func runDynaCU(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench dynacu", flag.ContinueOnError)
 	var (
-		endpoint    string
-		tokenEnv    string
-		model       string
-		out         string
-		instruction string
-		interval    time.Duration
-		timeout     time.Duration
-		verbose     bool
+		endpoint      string
+		tokenEnv      string
+		model         string
+		aoiDir        string
+		out           string
+		category      string
+		difficulty    string
+		taskIDs       string
+		limit         int
+		maxSteps      int
+		stepInterval  time.Duration
+		withoutImages bool
+		withoutList   bool
+		resume        bool
+		python        string
+		timeout       time.Duration
+		verify        bool
+		cellName      string
+		vary          string
+		level         string
 	)
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
 	flags.StringVar(&tokenEnv, "token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token")
-	flags.StringVar(&model, "model", "", "model to request")
+	flags.StringVar(&model, "model", "openrealtime", "model to request")
+	flags.StringVar(&aoiDir, "aoi-dir", defaultAOIDir(), "prepared AOI checkout; see scripts/prepare-dynacu.sh")
 	flags.StringVar(&out, "out", "", "write the result to this path as JSON")
-	flags.StringVar(&instruction, "instruction", "", "what the user asks for; empty uses the default")
-	flags.DurationVar(&interval, "frame-interval", 350*time.Millisecond, "how often a frame is sent")
-	flags.DurationVar(&timeout, "timeout", 90*time.Second, "how long the attempt may take")
-	flags.BoolVar(&verbose, "verbose", true, "print what the agent observed and did")
+	flags.StringVar(&category, "category", "", "restrict to one category, e.g. A_podcast or S_static")
+	flags.StringVar(&difficulty, "difficulty", "", "restrict to easy, medium, or hard")
+	flags.StringVar(&taskIDs, "tasks", "", "comma-separated task IDs, for reproducing one row")
+	flags.IntVar(&limit, "limit", 0, "cap the task count; any cap makes the cell incomplete")
+	flags.IntVar(&maxSteps, "max-steps", 15, "steps one task's agent loop may take")
+	flags.DurationVar(&stepInterval, "step-interval", 2*time.Second, "how long the agent observes between actions")
+	flags.BoolVar(&withoutImages, "no-images", false, "withhold screenshots, leaving audio and the element list")
+	flags.BoolVar(&withoutList, "no-page-elements", false, "withhold the interactive-element list")
+	flags.BoolVar(&resume, "resume", false, "continue an interrupted run rather than starting again")
+	flags.StringVar(&python, "python", "", "interpreter with the AOI dependencies; empty prefers the checkout's own")
+	flags.DurationVar(&timeout, "timeout", 6*time.Hour, "bound on the whole run")
+	flags.BoolVar(&verify, "verify", false, "check the environment and exit without running")
+	flags.StringVar(&cellName, "cell", "reference", "name of the measured cell")
+	flags.StringVar(&vary, "vary", "", "factor this cell varies from the reference")
+	flags.StringVar(&level, "level", "", "level of the varied factor")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
 
+	cell, err := resolveCell(cellName, vary, level)
+	if err != nil {
+		return err
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	progress := func(string) {}
-	if verbose {
-		progress = func(line string) { fmt.Fprintln(output, line) }
-	}
-	outcome, runErr := dynacu.Run(ctx, dynacu.Options{
-		Endpoint: endpoint, Token: os.Getenv(tokenEnv), Model: model,
-		Instruction: instruction, FrameInterval: interval, Timeout: timeout,
-		Progress: progress,
-	})
-	result := dynacu.AsResult(bench.Reference(), outcome, runErr)
 
+	config := dynacu.Config{
+		AOIDir: aoiDir, Endpoint: endpoint, Model: model, TokenEnv: tokenEnv,
+		Category: category, Difficulty: difficulty, Limit: limit,
+		MaxSteps: maxSteps, StepInterval: stepInterval,
+		WithoutImages: withoutImages, WithoutPageElements: withoutList,
+		Resume: resume, Python: python, Timeout: timeout, Cell: cell,
+		Logf: func(format string, args ...any) {
+			fmt.Fprintf(output, format+"\n", args...)
+		},
+	}
+	if trimmed := strings.TrimSpace(taskIDs); trimmed != "" {
+		config.TaskIDs = strings.Split(trimmed, ",")
+	}
+
+	if verify {
+		// Refusing in seconds beats refusing after six hours of browser
+		// automation, which is the whole reason this exists as its own flag.
+		if err := config.Verify(ctx); err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "dynacu: ready at revision %s\n", dynacu.PinnedRevision)
+		return nil
+	}
+
+	result, runErr := dynacu.Run(ctx, config)
+	if runErr != nil && len(result.Tasks) == 0 {
+		return runErr
+	}
 	fmt.Fprintln(output)
-	fmt.Fprintf(output, "negotiated video and computer use : %v\n", outcome.Negotiated)
-	fmt.Fprintf(output, "observed the screen               : %v\n", outcome.Observed)
-	if outcome.ObservedText != "" {
-		fmt.Fprintf(output, "  %q\n", outcome.ObservedText)
+	fmt.Fprintf(output, "suite      : %s (%d tasks declared)\n", result.Suite, result.Expected)
+	fmt.Fprintf(output, "completed  : %d\n", result.Summary.Completed)
+	fmt.Fprintf(output, "invalid    : %d\n", result.Summary.Failed)
+	fmt.Fprintf(output, "passed     : %d\n", result.Summary.Passed)
+	if result.Summary.Complete {
+		fmt.Fprintf(output, "pass rate  : %.3f\n", result.Summary.PassRate)
+	} else {
+		fmt.Fprintf(output, "incomplete : %s\n", result.Summary.Incompleteness)
 	}
-	fmt.Fprintf(output, "acted                             : %v\n", outcome.Acted)
-	fmt.Fprintf(output, "grounded the action               : %v (%s)\n", outcome.Grounded, outcome.FinalState)
-	if outcome.MissDistance > 0 {
-		fmt.Fprintf(output, "  closest click was %.0f px from the target\n", outcome.MissDistance)
-	}
-	if outcome.Failure != "" {
-		fmt.Fprintf(output, "failure                           : %s\n", outcome.Failure)
+	fmt.Fprintln(output, "\nby category:")
+	breakdown := dynacu.Breakdown(result)
+	for _, category := range dynacu.Categories {
+		summary, present := breakdown[category]
+		if !present {
+			continue
+		}
+		fmt.Fprintf(output, "  %-12s %2d/%2d passed  (%d invalid)\n",
+			category, summary.Passed, summary.Completed, summary.Invalid)
 	}
 	if strings.TrimSpace(out) != "" {
 		if err := result.Write(out); err != nil {
 			return err
 		}
+		fmt.Fprintf(output, "\nwritten to %s\n", out)
 	}
-	if runErr != nil {
-		return runErr
-	}
-	if !outcome.Passed() {
-		return errors.New("the computer-use gate did not pass")
-	}
-	fmt.Fprintln(output, "\ngate passed")
-	return nil
+	return runErr
+}
+
+// defaultAOIDir is where scripts/prepare-dynacu.sh puts the checkout.
+func defaultAOIDir() string {
+	return filepath.Join(".runtime", "dynacu-bench", "aoi")
 }
 
 // runTauVoice runs the tau-Voice suite against a running endpoint.

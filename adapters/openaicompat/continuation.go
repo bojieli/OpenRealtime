@@ -71,6 +71,11 @@ type Config struct {
 	// An unset value means voice; the fast/slow arrangement is what sets a
 	// provider silent, and it does so explicitly.
 	SpeechAuthority continuation.SpeechAuthority
+	// Vision declares that the served model accepts images. It defaults to
+	// false because an OpenAI-compatible endpoint serves whatever it was
+	// pointed at, and handing an image to a text-only model fails the turn
+	// outright rather than degrading it.
+	Vision bool
 	// AllowTools is a compatibility alias for ToolAuthorityExecute.
 	AllowTools              bool
 	ThinkingMode            ThinkingMode
@@ -157,7 +162,7 @@ func New(config Config) (*Adapter, error) {
 		Provider: config.Provider, Model: config.Model, Phase: config.Phase,
 		Effort: config.Effort, Streaming: true, NativeStateType: ProviderStateType,
 		RetainsToolCalls: true, ToolAuthority: config.ToolAuthority,
-		SpeechAuthority: config.SpeechAuthority,
+		SpeechAuthority: config.SpeechAuthority, Vision: config.Vision,
 		ExecutableTools: config.ToolAuthority == continuation.ToolAuthorityExecute,
 	}
 	if err := continuation.ValidateDescriptor(descriptor); err != nil {
@@ -235,8 +240,8 @@ type contentImage struct {
 // continuation: retention is bounded on purpose, and a model that gets the
 // narration without the image is in exactly the state this design expects
 // once the window has passed.
-func attachMedia(item trajectory.Item, media continuation.MediaResolver) []contentPart {
-	if media == nil || item.Observation == nil || len(item.Observation.Media) == 0 {
+func attachMedia(item trajectory.Item, media continuation.MediaResolver, vision bool) []contentPart {
+	if !vision || media == nil || item.Observation == nil || len(item.Observation.Media) == 0 {
 		return nil
 	}
 	var parts []contentPart
@@ -580,7 +585,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 		if _, consumed := consumedInvocations[item.InvocationID]; modelItem && consumed && item.InvocationID != "" {
 			continue
 		}
-		message, ok, err := compilePortableItem(item, request.Media)
+		message, ok, err := compilePortableItem(item, request.Media, request.Descriptor.Vision)
 		if err != nil {
 			return chatRequest{}, err
 		}
@@ -610,14 +615,14 @@ func isModelOutputItem(kind trajectory.Kind) bool {
 		kind == trajectory.KindToolProposal || kind == trajectory.KindToolCall
 }
 
-func compilePortableItem(item trajectory.Item, media continuation.MediaResolver) (chatMessage, bool, error) {
+func compilePortableItem(item trajectory.Item, media continuation.MediaResolver, vision bool) (chatMessage, bool, error) {
 	switch item.Kind {
 	case trajectory.KindObservation:
 		message := chatMessage{Role: "user", Content: continuation.ObservationContent(item)}
 		// An observation may carry images an observer retained. A model that
 		// can see should see them while they exist: reasoning about a screen
 		// and clicking on one are different tasks.
-		if parts := attachMedia(item, media); len(parts) > 0 {
+		if parts := attachMedia(item, media, vision); len(parts) > 0 {
 			message.Parts = append([]contentPart{{Type: "text", Text: message.Content}}, parts...)
 			message.Content = ""
 		}

@@ -155,6 +155,15 @@ type Descriptor struct {
 	RetainsToolCalls bool             `json:"retains_tool_calls"`
 	ToolAuthority    ToolAuthority    `json:"tool_authority,omitempty"`
 	SpeechAuthority  SpeechAuthority  `json:"speech_authority,omitempty"`
+	// Vision declares that this provider can be given images.
+	//
+	// It is a property of the provider rather than of the runtime, and it is
+	// declared rather than probed, because the failure is asymmetric: handing
+	// an image to a text-only model is a hard error that fails the turn, and
+	// withholding one from a model that could have used it costs only what the
+	// narration does not carry. So the default is that it cannot see, and a
+	// deployment serving a multimodal model says so.
+	Vision bool `json:"vision,omitempty"`
 	// ExecutableTools is retained in report JSON for compatibility with the
 	// first experimental evidence schema. New code must use ToolAuthority.
 	ExecutableTools bool `json:"executable_tools"`

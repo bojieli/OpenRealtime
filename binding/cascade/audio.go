@@ -56,6 +56,23 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 		runtime.speechStartNS = now
 		runtime.lastStable, runtime.lastCanonical = "", 0
 	}
+	if manual {
+		// The client owns the buffer. What it appended is the turn, whether or
+		// not the gate thinks any of it was speech - a client that sends two
+		// seconds of a quiet page and commits is declaring a turn, and gating
+		// its audio away would answer a turn it never got to make.
+		admittedByClient := frame.PCM16LE
+		if result.Started {
+			admittedByClient = result.Audio
+		}
+		result.Audio = admittedByClient
+		if runtime.utteranceID == "" {
+			runtime.utteranceID = idFor("item", runtime.sequence.Add(1))
+			runtime.speechStartNS = now
+			runtime.lastStable, runtime.lastCanonical = "", 0
+			started = true
+		}
+	}
 	utteranceID := runtime.utteranceID
 	admitted := result.Audio
 	var due bool

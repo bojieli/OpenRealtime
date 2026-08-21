@@ -59,7 +59,8 @@ which is the signal that a model is too small for the job.
 | DynaCU-Bench | 100 dynamic + 50 static | video observation, action grounding. F1, F3, F7 |
 
 τ-Voice and DynaCU-Bench stay in their own repositories, and OpenRealtime
-ships a runner for each rather than a copy. The environments own the domains,
+ships a runner for each rather than a copy (`scripts/prepare-tau-voice.sh` and
+`scripts/prepare-dynacu.sh` pin and verify the checkouts). The environments own the domains,
 the databases, the user simulator, and the reward function; a reimplementation
 would produce a benchmark that agreed with this project rather than with the
 published one.
@@ -83,9 +84,20 @@ however well it scores, and a simulation that never reached evaluation is
 incomplete rather than failed, because scoring a dead endpoint zero is how
 infrastructure trouble becomes a published capability claim.
 
-DynaCU-Bench doubles as a functional release gate — that video observation and
+DynaCU-Bench needs no bridge either, and for the same reason: its own GA
+Realtime baseline takes the websocket base as an argument, so a strict superset
+of that protocol is a value for it.
+
+```sh
+scripts/prepare-dynacu.sh
+openrealtime bench dynacu -verify
+openrealtime bench dynacu -out results/dynacu.json
+```
+
+A subset of it is also the functional release gate — that video observation and
 action grounding work end to end — which is a narrower question than the suite
-answers and gets a yes or no in seconds.
+answers: `openrealtime bench dynacu -category S_static -limit 5` is minutes
+rather than hours and is reported incomplete, because it is.
 
 ## Reporting rules
 

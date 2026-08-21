@@ -21,7 +21,7 @@ openrealtime bench fdb --limit 4           # a suite against it
 | `bench fdbv3` | FDB v3 | tool use under disfluent speech, including spelled identifiers |
 | `bench fdbench` | FD-Bench | endpointing and response timing at scale |
 | `bench tau-voice` | τ-Voice | tool-use success under voice, against a live environment |
-| `bench dynacu` | DynaCU | video observation and action grounding, as a release gate |
+| `bench dynacu` | DynaCU-Bench | dynamic computer use: audio and visual perception, action grounding |
 
 Every suite here plays a recording at the system. For conversations where both
 sides are live — a support call, an interview, an argument over a large
@@ -152,6 +152,49 @@ well it scores, because it is not the declared suite. And a simulation that
 never reached evaluation is recorded as incomplete rather than as a failure: an
 endpoint that was down is not a benchmark result, and scoring it zero is how
 infrastructure trouble becomes a published capability claim.
+
+## DynaCU-Bench
+
+150 browser tasks: 100 dynamic ones across ten categories that a
+screenshot-only agent cannot solve — podcasts, meetings, video, carousels,
+live dashboards, transient UI, phone calls, interviews, collaborative editing,
+games — and a static 50 that any agent should, which is the control saying
+whether perception cost anything where there was nothing to perceive.
+
+It is the second suite the harness does not own. The AOI repository has the
+task pages, the Playwright environment that serves them, the audio injected
+into them, and the evaluator that decides whether a task passed; a
+reimplementation would produce a benchmark that agreed with this project rather
+than with the published one. So `bench dynacu` is a runner: it pins the
+environment to a revision, points it at a running server, and turns what comes
+back into the same report shape every other suite produces.
+
+```sh
+scripts/prepare-dynacu.sh                  # clone, pin, and check the environment
+openrealtime serve &
+openrealtime bench dynacu -verify          # confirm before spending hours
+openrealtime bench dynacu -out results/dynacu.json
+```
+
+Pointing it at OpenRealtime needs no bridge, for the same reason τ-Voice does
+not. The suite's own GA Realtime baseline is already provider-agnostic — its
+websocket base, credential, and image support are constructor arguments,
+because OpenAI and xAI both speak that protocol — and OpenRealtime is a strict
+superset of it, so it is a third value for the same argument. Nothing in the
+benchmark is patched and nothing in it knows this project exists.
+
+That is also what makes it a test of the protocol rather than of our adapter.
+Running it found four things a client written against the official API needs
+and this server did not have: text output, client-declared turns, images
+attached to a message, and one response per turn. Each of those is now a
+capability rather than a workaround, and the benchmark is unmodified.
+
+The report breaks out the eleven categories rather than averaging them, and
+counts **invalid** separately from **failed**: a task where every model call
+failed says something about the endpoint and nothing about the agent, and
+scoring it zero is how infrastructure trouble becomes a published capability
+claim. A restricted run — one category, a task limit, named task IDs — is
+reported incomplete however well it scores.
 
 ## Adding a suite
 

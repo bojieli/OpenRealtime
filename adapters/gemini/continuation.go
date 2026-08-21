@@ -102,6 +102,10 @@ func New(config Config) (*Adapter, error) {
 		Effort: config.Effort, Streaming: true, NativeStateType: ProviderStateType,
 		RetainsToolCalls: true, ToolAuthority: config.ToolAuthority,
 		SpeechAuthority: config.SpeechAuthority,
+		// Every Gemini model this adapter targets is multimodal, so the
+		// capability is a property of the provider rather than something a
+		// deployment has to remember to declare.
+		Vision:          true,
 		ExecutableTools: config.ToolAuthority == continuation.ToolAuthorityExecute,
 	}
 	if err := continuation.ValidateDescriptor(descriptor); err != nil {

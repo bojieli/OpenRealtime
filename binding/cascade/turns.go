@@ -44,16 +44,19 @@ func (runtime *runtime) CommitAudio(ctx context.Context) error {
 				"set turn_detection to null in session.update to declare turns yourself")
 	}
 	runtime.audioMu.Lock()
-	if runtime.acoustic == nil {
-		runtime.audioMu.Unlock()
-		return errors.New("the input audio buffer is empty")
-	}
-	endMS, stopped := runtime.acoustic.ForceStop()
 	utteranceID := runtime.utteranceID
+	endMS := 0
+	if runtime.acoustic != nil {
+		// The gate's own opinion about where the turn ended is discarded here
+		// - the client just gave one - but its sample accounting is not, so
+		// the committed item still knows how much audio it covers.
+		endMS, _ = runtime.acoustic.ForceStop()
+	}
 	pending := runtime.pending
 	runtime.pending = nil
+	runtime.utteranceID = ""
 	runtime.audioMu.Unlock()
-	if !stopped || utteranceID == "" {
+	if utteranceID == "" {
 		return errors.New("the input audio buffer is empty")
 	}
 	// The acknowledgement comes first, because it names the item every later
