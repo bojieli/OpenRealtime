@@ -1217,6 +1217,60 @@ class FullStudyTest(unittest.TestCase):
         with self.assertRaisesRegex(REPORT.StudyIncompleteError, "orphan exit"):
             self.report()
 
+    def test_accepts_a_quarantined_unguarded_orphan_result(self) -> None:
+        self.prepend_tau_orphan()
+        queue_v3 = self.root / ".runtime/benchmark-runs/full-study-recovery-queue-v3"
+        plan_path = queue_v3 / "unguarded-result-quarantine-plan.json"
+        execution_path = queue_v3 / "unguarded-result-quarantine.json"
+        exit_path = queue_v3 / "orphan-exit.json"
+        moved_path = (
+            queue_v3
+            / "quarantined-results/simulations/population/sim-unguarded.json"
+        )
+        moved_path.parent.mkdir(parents=True, exist_ok=True)
+        moved_path.write_text('{"id":"sim-unguarded"}\n', encoding="utf-8")
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        plan["guard_gaps"] = [
+            {
+                "started_after": "2025-12-31T23:58:05Z",
+                "ended_before": "2025-12-31T23:58:15Z",
+            }
+        ]
+        plan["simulations"] = [{"id": "sim-unguarded"}]
+        write_json(plan_path, plan)
+        execution = json.loads(execution_path.read_text(encoding="utf-8"))
+        execution["plan"] = REPORT.artifact(self.root, plan_path)
+        execution["quarantined_simulations"] = 1
+        execution["moved"] = [
+            {
+                "from": "/results/population/simulations/sim-unguarded.json",
+                "to": str(moved_path),
+                "sha256_before_move": REPORT.sha256_file(moved_path),
+                "bytes_before_move": moved_path.stat().st_size,
+            }
+        ]
+        execution["updated_results"] = [
+            {
+                "path": "/results/population/results.json",
+                "entries_before": 1,
+                "entries_after": 0,
+            }
+        ]
+        write_json(execution_path, execution)
+        orphan_exit = json.loads(exit_path.read_text(encoding="utf-8"))
+        orphan_exit["simulations_before_quarantine"] = 1
+        write_json(exit_path, orphan_exit)
+        report = self.report()
+        history = report["evidence_panel"]["tau_voice"]["matrices"][0][
+            "execution_history"
+        ]
+        self.assertEqual(history["quarantined_unguarded_results"], 1)
+        self.assertEqual(history["gpu_ownership_gaps"], 1)
+        recovery = history["segments"][0]["orphan_recovery"]
+        self.assertEqual(
+            recovery["quarantined_result_ids"], ["sim-unguarded"]
+        )
+
     def test_accepts_only_the_complete_exact_population(self) -> None:
         report = self.report()
         self.assertEqual(report["status"], "complete")
