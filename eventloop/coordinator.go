@@ -159,6 +159,24 @@ func New(config Config) (*Coordinator, error) {
 	}, nil
 }
 
+// SetGate installs the deferral policy after construction.
+//
+// The gate needs the coordinator as its waker and the coordinator needs the
+// gate, which is a genuine cycle rather than an accident of ordering. Breaking
+// it with a setter is honest about that; the alternative is a lazily resolved
+// indirection that hides when deferral actually becomes active.
+func (coordinator *Coordinator) SetGate(gate Gate) {
+	coordinator.mu.Lock()
+	coordinator.gate = gate
+	coordinator.mu.Unlock()
+}
+
+func (coordinator *Coordinator) currentGate() Gate {
+	coordinator.mu.Lock()
+	defer coordinator.mu.Unlock()
+	return coordinator.gate
+}
+
 // Signal fires whenever there is work to do: an event arrived, or a wake-up
 // released work that a gate had deferred. It is level-triggered with a depth
 // of one, so a driver that always drains to idle after receiving cannot miss
@@ -328,8 +346,8 @@ func (coordinator *Coordinator) run(parent context.Context, committed Batch) (Ba
 	}
 	coordinator.mu.Unlock()
 
-	if coordinator.gate != nil {
-		admitted, reason := coordinator.gate.AdmitRun(parent, work)
+	if gate := coordinator.currentGate(); gate != nil {
+		admitted, reason := gate.AdmitRun(parent, work)
 		if !admitted {
 			coordinator.markDeferred(reason)
 			return committed, fmt.Errorf("%w: %s", ErrDeferred, reason)
