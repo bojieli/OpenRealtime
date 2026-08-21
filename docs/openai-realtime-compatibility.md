@@ -44,12 +44,25 @@ while keeping acoustic and cognitive history synchronized.
 
 ## Implemented gateway subset
 
-`cmd/realtimegateway` serves a persistent WebSocket using only standard events.
-It accepts `session.update`, `input_audio_buffer.append`,
-`input_audio_buffer.clear`, `conversation.item.create` for function outputs,
+The `gateway` package, served by `openrealtime serve`, serves a persistent
+WebSocket using only standard events. It accepts eight of the eleven GA
+Realtime client events: `session.update`, `input_audio_buffer.append`,
+`input_audio_buffer.clear`, `output_audio_buffer.clear`,
+`conversation.item.create` for both function outputs and typed messages,
 `conversation.item.truncate`, `response.create`, and `response.cancel`.
-Automatic server VAD owns input commitment; explicit
-`input_audio_buffer.commit` is therefore not part of this initial profile.
+
+The other three are refused, and the refusal says which reason applies rather
+than reporting "unsupported event" — a client author can act on the first,
+and cannot on the second.
+
+| Event | Why |
+| --- | --- |
+| `input_audio_buffer.commit` | server VAD owns input commitment here, so the buffer commits at the endpoint and an explicit commit would have nothing to do |
+| `conversation.item.delete` | the conversation is an append-only trajectory: content that reached the world cannot be un-reached, so it is superseded rather than removed |
+| `conversation.item.retrieve` | not served; a client that negotiated `observations` receives what the agent perceived as it happens |
+
+The session continues after any of them. A refusal is an answer, not a
+disconnection.
 
 The server emits the standard session update, error, speech start/stop,
 conversation item/transcription, response, audio/transcript, function-call,

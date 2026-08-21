@@ -126,9 +126,17 @@ func startServerWithASR(
 	t *testing.T, fastProvider, slowProvider *scripted, asr staticASR,
 ) *httptest.Server {
 	t.Helper()
+	return startServerWithSpeech(t, fastProvider, slowProvider, asr, toneSpeech{})
+}
+
+func startServerWithSpeech(
+	t *testing.T, fastProvider, slowProvider *scripted, asr staticASR,
+	speech v1.StreamingSpeechProvider,
+) *httptest.Server {
+	t.Helper()
 	bind, err := cascade.New(cascade.Config{
 		Perception: func() (v1.PerceptionProvider, error) { return asr, nil },
-		Fast:       fastProvider, Slow: slowProvider, Speech: toneSpeech{},
+		Fast:       fastProvider, Slow: slowProvider, Speech: speech,
 	})
 	if err != nil {
 		t.Fatalf("new cascade: %v", err)

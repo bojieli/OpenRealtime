@@ -319,9 +319,64 @@ func (session *session) handleClientEvent(message protocol.Message) error {
 		return session.runtime.Cancel(session.ctx, "client response cancellation")
 	case protocol.EventInputAudioBufferClear:
 		return session.send(event("input_audio_buffer.cleared", session.nextID("event"), nil))
+	case protocol.EventOutputAudioBufferClear:
+		// A client asking to stop hearing the agent is a cancellation, which
+		// the runtime already has a name for. It matters most over WebRTC,
+		// where audio the client has buffered keeps playing after the events
+		// stop, so a client that wants silence has to be able to ask for it.
+		return session.onOutputBufferClear()
 	default:
-		return fmt.Errorf("unsupported Realtime client event %q", message.Type())
+		return session.unsupported(message.Type())
 	}
+}
+
+// unsupported explains a standard event this deployment does not implement.
+//
+// The explanation is the point. "Unsupported event" tells a client author
+// nothing they can act on, and two of these are refused for a structural
+// reason rather than because nobody got to them: an append-only trajectory has
+// no delete, and server VAD owning commitment is what makes an explicit commit
+// meaningless here. A client that knows which of those it hit can do something
+// about it.
+func (session *session) unsupported(eventType protocol.EventType) error {
+	switch eventType {
+	case protocol.EventInputAudioBufferCommit:
+		return errors.New("this deployment runs server VAD, which owns input commitment: " +
+			"the buffer commits at the endpoint and an explicit commit would have nothing to do")
+	case protocol.EventConversationItemDelete:
+		return errors.New("the conversation is an append-only trajectory and has no delete: " +
+			"content that reached the world cannot be un-reached, so it is superseded rather than removed")
+	case protocol.EventConversationItemRetrieve:
+		return errors.New("this deployment does not serve item retrieval; " +
+			"a client that negotiated observations receives what the agent perceived as it happens")
+	default:
+		return fmt.Errorf("unsupported Realtime client event %q", eventType)
+	}
+}
+
+// onOutputBufferClear stops agent audio at the client's request.
+//
+// The acknowledgement names the response it cleared, because that is what the
+// event carries and a client tracking responses needs to know which one
+// stopped. With nothing playing there is no response to name, and refusing is
+// the honest answer: a client that asked to stop hearing something it was not
+// hearing has a bug worth seeing.
+func (session *session) onOutputBufferClear() error {
+	session.itemsMu.Lock()
+	responseID := ""
+	for _, utterance := range session.utterances {
+		responseID = utterance.responseID
+	}
+	session.itemsMu.Unlock()
+	if responseID == "" {
+		return errors.New("there is no agent audio to clear: no response is in progress")
+	}
+	if err := session.runtime.Cancel(session.ctx, "client cleared the output audio buffer"); err != nil {
+		return err
+	}
+	return session.send(event("output_audio_buffer.cleared", session.nextID("event"), map[string]any{
+		"response_id": responseID,
+	}))
 }
 
 func (session *session) update(update sessionUpdateBody) error {
