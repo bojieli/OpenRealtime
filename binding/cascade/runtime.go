@@ -169,7 +169,11 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		AgentInstruction: cognition.Compose(bind.config.AgentInstruction, result.settings.Instruction),
 		FastMaxTokens:    bind.config.FastMaxTokens, SlowMaxTokens: bind.config.SlowMaxTokens,
 		RequireSilentSlow: true, RetainReasoning: true,
-		Now: now, NextID: nextID,
+		// Without this a provider that can see gets the narration and nothing
+		// else, which is enough to reason about a screen and not enough to
+		// click on one.
+		Media: resolveMedia(media),
+		Now:   now, NextID: nextID,
 	})
 	if err != nil {
 		cancel(err)
@@ -315,6 +319,19 @@ func (runtime *runtime) Status() binding.Status {
 		Policies: runtime.policyReport(), Observers: runtime.observerNames(),
 		Fast: fast.Provider + "/" + fast.Model, Slow: slow.Provider + "/" + slow.Model,
 		Speech: runtime.config.Speech.Descriptor().Name,
+	}
+}
+
+// resolveMedia adapts the session's media store to what a provider adapter
+// asks for: the bytes and their type, without the trajectory reference the
+// store keeps for its own accounting.
+func resolveMedia(store *session.MediaStore) continuation.MediaResolver {
+	return func(handle string) (continuation.Media, error) {
+		media, err := store.Resolve(handle)
+		if err != nil {
+			return continuation.Media{}, err
+		}
+		return continuation.Media{MIMEType: media.Ref.MIMEType, Bytes: media.Bytes}, nil
 	}
 }
 

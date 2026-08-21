@@ -54,16 +54,30 @@ type scripted struct {
 	mu         sync.Mutex
 	turns      [][]continuation.Event
 	calls      int
+	requests   []continuation.Request
+}
+
+// lastRequest is what the provider was actually asked, so a test can check
+// what reached it rather than what was meant to.
+func (provider *scripted) lastRequest(t *testing.T) continuation.Request {
+	t.Helper()
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	if len(provider.requests) == 0 {
+		t.Fatal("the provider was never invoked")
+	}
+	return provider.requests[len(provider.requests)-1]
 }
 
 func (provider *scripted) Descriptor() continuation.Descriptor { return provider.descriptor }
 
 func (provider *scripted) Continue(
-	_ context.Context, _ continuation.Request, emit continuation.Emit,
+	_ context.Context, request continuation.Request, emit continuation.Emit,
 ) (continuation.Completion, error) {
 	provider.mu.Lock()
 	index := provider.calls
 	provider.calls++
+	provider.requests = append(provider.requests, request)
 	var events []continuation.Event
 	if index < len(provider.turns) {
 		events = provider.turns[index]

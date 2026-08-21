@@ -62,9 +62,17 @@ half-listens to it.
 
 It accepts nine of the eleven GA Realtime client events: `session.update`, `input_audio_buffer.append`,
 `input_audio_buffer.clear`, `output_audio_buffer.clear`,
-`input_audio_buffer.commit`, `conversation.item.create` for both function
-outputs and typed messages, `conversation.item.truncate`, `response.create`,
-and `response.cancel`.
+`input_audio_buffer.commit`, `conversation.item.create` for function outputs
+and for messages carrying text, images, or both, `conversation.item.truncate`,
+`response.create`, and `response.cancel`.
+
+An `input_image` attached to a message is not a video source. A source is a
+stream the server gates, which is what the extension's video events are for; an
+image in a message is content of the turn, shown once because the client chose
+to show it, and gating it could discard the only thing the turn was about. It
+is retained outside the trajectory and referenced by handle from the
+observation, so a provider that can see resolves it and one that cannot reads
+the text and never pays for the bytes.
 
 The other two are refused, and the refusal says why rather than reporting
 "unsupported event" — one of them is structural and no client can work around

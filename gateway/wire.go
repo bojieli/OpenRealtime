@@ -2,12 +2,17 @@ package gateway
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	imagelib "image"
+	_ "image/jpeg"
+	_ "image/png"
 	"strings"
 
 	"github.com/bojieli/OpenRealtime/action"
+	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -183,6 +188,70 @@ type wireContent struct {
 	Type       string `json:"type"`
 	Text       string `json:"text"`
 	Transcript string `json:"transcript"`
+	// ImageURL carries an input_image, which clients send as a data URI.
+	ImageURL string `json:"image_url"`
+	// Detail is the model-side resolution hint. It is decoded so a client
+	// that sends it is not refused, and ignored: what an adapter does with an
+	// image is the adapter's business.
+	Detail string `json:"detail,omitempty"`
+}
+
+// images decodes whatever pictures a content array carries.
+//
+// Clients send them as data URIs, which is what the official SDKs produce, and
+// a bare base64 payload is accepted too because some clients send that. A
+// content part that is neither is a client error worth reporting rather than
+// an image worth guessing at.
+func (item conversationItemCreateEvent) images(limit int) ([]binding.Image, error) {
+	var images []binding.Image
+	for _, content := range item.Item.Content {
+		if content.Type != "input_image" && strings.TrimSpace(content.ImageURL) == "" {
+			continue
+		}
+		payload, mime, err := decodeImageURL(content.ImageURL)
+		if err != nil {
+			return nil, err
+		}
+		if limit > 0 && len(payload) > limit {
+			return nil, fmt.Errorf("attached image of %d bytes exceeds the %d byte limit", len(payload), limit)
+		}
+		image := binding.Image{Bytes: payload, MIMEType: mime}
+		if config, _, err := imagelib.DecodeConfig(bytes.NewReader(payload)); err == nil {
+			image.Width, image.Height = config.Width, config.Height
+		}
+		images = append(images, image)
+	}
+	return images, nil
+}
+
+func decodeImageURL(value string) ([]byte, string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, "", errors.New("an input_image requires image data")
+	}
+	mime := "image/jpeg"
+	if strings.HasPrefix(value, "data:") {
+		comma := strings.Index(value, ",")
+		if comma < 0 {
+			return nil, "", errors.New("an input_image data URI requires a comma")
+		}
+		header := value[len("data:"):comma]
+		value = value[comma+1:]
+		if !strings.HasSuffix(header, ";base64") {
+			return nil, "", errors.New("an input_image data URI must be base64")
+		}
+		if declared := strings.TrimSuffix(header, ";base64"); declared != "" {
+			mime = declared
+		}
+	}
+	payload, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return nil, "", errors.New("input_image data is not valid base64")
+	}
+	if len(payload) == 0 {
+		return nil, "", errors.New("an input_image requires image data")
+	}
+	return payload, mime, nil
 }
 
 // text returns whatever text a content array carries, whichever field it is

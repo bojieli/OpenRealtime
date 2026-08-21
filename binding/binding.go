@@ -132,6 +132,23 @@ type TextInput struct {
 	ItemID string `json:"item_id"`
 	Role   string `json:"role"`
 	Text   string `json:"text"`
+	// Images are pictures the client attached to this turn.
+	//
+	// They are not a video source. A source is a stream the server gates,
+	// which is what the extension's video events are for; an image in a
+	// message is content of the turn, shown once because the client chose to
+	// show it, and gating it could discard the only thing the turn was about.
+	// So it is retained and referenced from the observation rather than
+	// offered to an observer.
+	Images []Image `json:"images,omitempty"`
+}
+
+// Image is one picture attached to a turn.
+type Image struct {
+	Bytes    []byte `json:"-"`
+	MIMEType string `json:"mime_type"`
+	Width    int    `json:"width,omitempty"`
+	Height   int    `json:"height,omitempty"`
 }
 
 // Truncation reports client-side playback truncation: the client stopped

@@ -412,9 +412,46 @@ func (runtime *runtime) Text(ctx context.Context, input binding.TextInput) error
 		// context, and it must not be able to act like a request.
 		authority = trajectory.AuthorityObserver
 	}
+	text := strings.TrimSpace(input.Text)
+	media, err := runtime.retain(input.Images)
+	if err != nil {
+		return err
+	}
+	if text == "" && len(media) > 0 {
+		// An observation carries text by construction, because text is what
+		// survives after the images are pruned. A picture with nothing said
+		// about it still gets a line saying it arrived, so the trajectory has
+		// something to hang the handle on.
+		text = "The user attached an image."
+	}
 	observation := perception.Observation{
-		Text: input.Text, Observer: "client", Source: "text",
-		Authority: authority, Final: true,
+		Text: text, Observer: "client", Source: "text",
+		Authority: authority, Media: media, Final: true,
 	}
 	return runtime.commitObservation(ctx, observation)
+}
+
+// retain stores pictures a client attached and returns handles to them.
+//
+// The trajectory references media rather than inlining it, because Snapshot is
+// copied for every continuation request and an inlined screenshot would be
+// copied with it. An adapter that can see resolves the handle; one that cannot
+// reads the text and never pays for the bytes.
+func (runtime *runtime) retain(images []binding.Image) ([]trajectory.MediaRef, error) {
+	if len(images) == 0 {
+		return nil, nil
+	}
+	refs := make([]trajectory.MediaRef, 0, len(images))
+	for _, image := range images {
+		reference, err := runtime.media.Retain(trajectory.MediaRef{
+			MIMEType: image.MIMEType, Source: "message",
+			Width: image.Width, Height: image.Height,
+			CapturedNS: runtime.scheduler.NowNS(),
+		}, image.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("retain attached image: %w", err)
+		}
+		refs = append(refs, reference)
+	}
+	return refs, nil
 }

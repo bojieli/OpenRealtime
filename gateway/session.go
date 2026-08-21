@@ -602,9 +602,16 @@ func (session *session) onItemCreate(create conversationItemCreateEvent) error {
 // is the same participant as a client speaking, and the difference is the
 // transport rather than the provenance.
 func (session *session) onTextMessage(create conversationItemCreateEvent) error {
+	session.settingsMu.RLock()
+	limit := session.settings.limits.MaxFrameBytes
+	session.settingsMu.RUnlock()
+	images, err := create.images(limit)
+	if err != nil {
+		return err
+	}
 	text := create.text()
-	if strings.TrimSpace(text) == "" {
-		return errors.New("a message item requires text content")
+	if strings.TrimSpace(text) == "" && len(images) == 0 {
+		return errors.New("a message item requires text or image content")
 	}
 	role := strings.TrimSpace(create.Item.Role)
 	if role == "" {
@@ -623,7 +630,7 @@ func (session *session) onTextMessage(create conversationItemCreateEvent) error 
 		return err
 	}
 	return session.runtime.Text(session.ctx, binding.TextInput{
-		ItemID: itemID, Role: role, Text: text,
+		ItemID: itemID, Role: role, Text: text, Images: images,
 	})
 }
 
