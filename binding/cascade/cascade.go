@@ -102,6 +102,19 @@ type Config struct {
 	// driving.
 	Tools []action.ToolSpec
 
+	// Confirmer authorizes actions whose declared requirement is "always".
+	// Nil denies them, which is the right default and a real one: an action a
+	// developer marked as needing explicit authorization does not execute
+	// because nobody was there to authorize it.
+	Confirmer action.Confirmer
+	// ConfirmPolicy answers the "policy" requirement. Nil reads "policy" as
+	// "always", which denies without a confirmer - so a deployment that
+	// declares tools requiring a policy and supplies none gets tools that
+	// cannot run, rather than tools that run unpoliced.
+	ConfirmPolicy action.PolicyDecision
+	// ActionAudit receives every dispatch attempt and outcome.
+	ActionAudit func(action.Record)
+
 	// Governor admits speculative preparation against the same compute budget
 	// as everything else. A speculation that starves the foreground turn has
 	// spent the latency it was trying to save, so preparation runs at the

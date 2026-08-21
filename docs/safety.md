@@ -50,6 +50,29 @@ infers from a tool's name or arguments:
 An unattended deployment refuses everything above `never`. An action nobody can
 authorise should not happen because nobody was asked.
 
+### What `policy` means for computer use
+
+Every action in the `computer.*` namespace that changes anything — click,
+double-click, drag, type, key, scroll — declares `policy`. Move, screenshot,
+and wait declare `never`.
+
+The policy the server supplies is the **declared target**: an action is
+admitted when it names a video source the target owns, and refused otherwise.
+That is the same fence the dispatcher enforces on coordinates, stated once as
+a confirmation answer, and it is deliberately narrower than "yes" — a tool that
+declares `always` is a different question and this does not answer it.
+
+Getting that wrong is not a safe failure. With no policy supplied, `policy`
+reads as `always`, and `always` with no confirmer denies — so a deployment that
+turned computer use on would get an agent that can move the pointer and take
+screenshots and can never press anything. A capability that cannot be
+exercised is not a safe capability, it is a broken one, and it looks like a
+broken model rather than a configuration nobody could satisfy.
+
+`-computer-confirm always` is therefore refused at startup rather than at
+dispatch: this server has no confirmer to offer, so every action would be
+denied, and failing at the flag says so where it can be read.
+
 ## 3. Observed content is data, forever
 
 An agent that narrates screen text into its own context is an obvious injection

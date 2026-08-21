@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/bojieli/OpenRealtime/action"
+	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 // Prefix is the namespace every action name carries.
@@ -213,6 +214,45 @@ func (target Target) Owns(source string) bool { return slices.Contains(target.So
 // defaults, and they err toward asking. An unattended deployment that declares
 // no confirmer refuses everything above `never`, which is the correct failure
 // for an action nobody can authorize.
+// TargetPolicy answers the "policy" confirmation requirement for a declared
+// target.
+//
+// This is what "policy" means here, and it is worth being exact about, because
+// the alternative was worse than it looked. Every clicking, typing, and
+// scrolling action in the namespace declares "policy" by default; with no
+// policy supplied the requirement reads as "always", and with no confirmer
+// supplied "always" denies - so a deployment that turned computer use on got
+// an agent that could move the pointer and take screenshots and could never
+// press anything. A capability that cannot be exercised is not a safe
+// capability, it is a broken one.
+//
+// The fence that actually bounds the blast radius is the declared target: an
+// action names a video source, the target owns a fixed set of sources, and the
+// dispatcher refuses anything outside them. So the policy admits an action
+// that lands inside the declared context and nothing else. A deployment that
+// wants a human in the loop declares "always" and supplies a confirmer, which
+// is a different requirement rather than a stricter reading of this one.
+func TargetPolicy(target Target) action.PolicyDecision {
+	sources := slices.Clone(target.Sources)
+	return func(call trajectory.ToolCall) bool {
+		if !strings.HasPrefix(call.Name, "computer.") {
+			return false
+		}
+		var arguments struct {
+			Source string `json:"source"`
+		}
+		if err := json.Unmarshal(call.Arguments, &arguments); err != nil {
+			return false
+		}
+		source := strings.TrimSpace(arguments.Source)
+		if source == "" {
+			// Only computer.wait takes no source, and it changes nothing.
+			return call.Name == Wait
+		}
+		return slices.Contains(sources, source)
+	}
+}
+
 func Specs(target Target, dispatcher action.Dispatcher, overrides map[string]action.Confirm) ([]action.ToolSpec, error) {
 	if err := target.Validate(); err != nil {
 		return nil, err

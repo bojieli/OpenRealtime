@@ -422,7 +422,7 @@ func buildCascade(options serveOptions, policies interaction.Policies) (binding.
 	if err != nil {
 		return nil, err
 	}
-	tools, err := buildComputerUse(options)
+	computer, err := buildComputerUse(options)
 	if err != nil {
 		return nil, err
 	}
@@ -432,7 +432,15 @@ func buildCascade(options serveOptions, policies interaction.Policies) (binding.
 	}
 	return cascade.New(cascade.Config{
 		ClientToolTimeout: options.clientToolTimeout,
-		Observers:         observers, DefaultObservers: defaults, Tools: tools,
+		Observers:         observers, DefaultObservers: defaults, Tools: computer.specs,
+		ConfirmPolicy: computer.policy,
+		// Every executed action is already a trajectory item with causal
+		// parents. This is the operational mirror of that, so an operator
+		// reading logs can see a refusal without reading a transcript.
+		ActionAudit: func(record action.Record) {
+			fmt.Fprintf(os.Stderr, "tool-dispatch %s %s target=%s confirmed=%t executed=%t error=%q\n",
+				record.Name, record.CallID, record.Target, record.Confirmed, record.Executed, record.Error)
+		},
 		Perception: func() (v1.PerceptionProvider, error) {
 			recogniser, err := qwenasr.New(qwenasr.Config{
 				BaseURL: options.asrURL, Model: options.asrModel,
@@ -695,9 +703,19 @@ func buildSidecarBinding(options serveOptions, name string) (binding.Binding, er
 // with a declared coordinate space, and an action naming anything else is
 // refused before it reaches the browser. There is no ambient-desktop option,
 // and that is not an omission.
-func buildComputerUse(options serveOptions) ([]action.ToolSpec, error) {
+// computerUseTools is the server-side computer-use surface plus the answer to
+// its own confirmation requirement. The two are returned together because they
+// are not separable: the namespace declares "policy" on every action that
+// changes anything, and a namespace with no policy behind it is a namespace
+// whose actions all deny.
+type computerUseTools struct {
+	specs  []action.ToolSpec
+	policy action.PolicyDecision
+}
+
+func buildComputerUse(options serveOptions) (computerUseTools, error) {
 	if !options.computerUse {
-		return nil, nil
+		return computerUseTools{}, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -705,11 +723,11 @@ func buildComputerUse(options serveOptions) ([]action.ToolSpec, error) {
 		DevToolsURL: options.browserURL, TargetURL: options.browserTarget,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("connect the computer-use target: %w", err)
+		return computerUseTools{}, fmt.Errorf("connect the computer-use target: %w", err)
 	}
 	width, height, err := surface.Viewport(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("read the target viewport: %w", err)
+		return computerUseTools{}, fmt.Errorf("read the target viewport: %w", err)
 	}
 	target := computeruse.Target{
 		Name: "browser", Sources: []string{"screen"}, Width: width, Height: height,
@@ -722,20 +740,35 @@ func buildComputerUse(options serveOptions) ([]action.ToolSpec, error) {
 		},
 	})
 	if err != nil {
-		return nil, err
+		return computerUseTools{}, err
 	}
 	var overrides map[string]action.Confirm
 	if declared := strings.TrimSpace(options.computerConfirm); declared != "" {
 		confirm, err := action.ParseConfirm(declared)
 		if err != nil {
-			return nil, err
+			return computerUseTools{}, err
+		}
+		if confirm == action.ConfirmAlways {
+			// Refusing here rather than at dispatch is the point. Nothing in
+			// this binary can answer an "always" requirement, so accepting the
+			// flag would bring up a server whose agent silently cannot press
+			// anything - which looks like a broken model rather than a
+			// configuration nobody could satisfy.
+			return computerUseTools{}, errors.New(
+				"-computer-confirm always needs a confirmer, and this server has none to offer: " +
+					"every action would be denied at dispatch. Use policy, which admits actions inside the " +
+					"declared target, or never, which admits them unconditionally")
 		}
 		overrides = make(map[string]action.Confirm, len(computeruse.Names()))
 		for _, name := range computeruse.Names() {
 			overrides[name] = confirm
 		}
 	}
-	return computeruse.Specs(target, dispatcher, overrides)
+	specs, err := computeruse.Specs(target, dispatcher, overrides)
+	if err != nil {
+		return computerUseTools{}, err
+	}
+	return computerUseTools{specs: specs, policy: computeruse.TargetPolicy(target)}, nil
 }
 
 // buildLogger configures structured logging.

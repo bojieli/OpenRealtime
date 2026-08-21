@@ -224,3 +224,56 @@ func TestWaitIsBounded(t *testing.T) {
 		t.Fatalf("unexpected output %s", result.Output)
 	}
 }
+
+// Every action in the namespace that changes anything declares "policy" by
+// default. If the policy denies, the agent can move the pointer and take
+// screenshots and can never press anything - which is not a safe deployment,
+// it is a broken one. So the fence has to be the declared target, and it has
+// to actually admit work inside it.
+func TestTargetPolicyAdmitsActionsInsideTheDeclaredTarget(t *testing.T) {
+	target := computeruse.Target{
+		Name: "browser", Sources: []string{"screen"}, Width: 1280, Height: 800,
+	}
+	policy := computeruse.TargetPolicy(target)
+
+	for _, admitted := range []trajectory.ToolCall{
+		{CallID: "c1", Name: computeruse.Click, Arguments: json.RawMessage(`{"source":"screen","x":10,"y":10}`)},
+		{CallID: "c2", Name: computeruse.Type, Arguments: json.RawMessage(`{"source":"screen","text":"hello"}`)},
+		{CallID: "c3", Name: computeruse.Wait, Arguments: json.RawMessage(`{"duration_ms":100}`)},
+	} {
+		if !policy(admitted) {
+			t.Fatalf("an action inside the declared target must be admitted: %s", admitted.Name)
+		}
+	}
+
+	for _, refused := range []trajectory.ToolCall{
+		{CallID: "d1", Name: computeruse.Click, Arguments: json.RawMessage(`{"source":"camera","x":10,"y":10}`)},
+		{CallID: "d2", Name: computeruse.Click, Arguments: json.RawMessage(`{"x":10,"y":10}`)},
+		{CallID: "d3", Name: "transfer_funds", Arguments: json.RawMessage(`{"source":"screen"}`)},
+		{CallID: "d4", Name: computeruse.Click, Arguments: json.RawMessage(`not json`)},
+	} {
+		if policy(refused) {
+			t.Fatalf("an action outside the declared target must be refused: %s", refused.Name)
+		}
+	}
+}
+
+// The whole point of a policy is that it is narrower than "yes". A tool that
+// declares "always" is a different requirement and this must not answer it.
+func TestTargetPolicyDoesNotAnswerAnAlwaysRequirement(t *testing.T) {
+	target := computeruse.Target{
+		Name: "browser", Sources: []string{"screen"}, Width: 1280, Height: 800,
+	}
+	dispatcher, _ := newDispatcher(t)
+	specs, err := computeruse.Specs(target, dispatcher, map[string]action.Confirm{
+		computeruse.Click: action.ConfirmAlways,
+	})
+	if err != nil {
+		t.Fatalf("specs: %v", err)
+	}
+	for _, spec := range specs {
+		if spec.Name == computeruse.Click && spec.Confirm != action.ConfirmAlways {
+			t.Fatalf("an explicit override must survive, got %q", spec.Confirm)
+		}
+	}
+}

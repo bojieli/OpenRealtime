@@ -189,6 +189,8 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 
 	tools, err := action.NewTools(action.ToolsConfig{
 		Registry: result.registry, Ledger: result.ledger, Store: result.store,
+		Confirmer: bind.config.Confirmer, Policy: bind.config.ConfirmPolicy,
+		Audit: bind.config.ActionAudit,
 	})
 	if err != nil {
 		cancel(err)
