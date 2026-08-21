@@ -94,6 +94,11 @@ B-O-B-1-2" has to become `track_order(order_id="BOB12")`, and reassembling a
 spelled identifier from speech is a distinct failure from not knowing which
 tool to call. The report says which one happened.
 
+Argument comparison normalises case and the punctuation a recogniser sprinkles
+through a spelled identifier — `BOB-12` is the same order as `BOB12` — but not
+whitespace. `B O B 1 2` is not `BOB12`: a real API would reject it, and a
+scorer that accepted it would report the reassembly working when it was not.
+
 The agent is offered the union of every tool in the dataset, not the one the
 task expects. Handing it exactly the right tool would measure whether it can
 call the only tool available.
@@ -105,7 +110,10 @@ single number would hide the trade.
 
 It also separates *premature* from *overrun*: an answer that begins while the
 person is mid-turn is an endpointing failure, while one that runs past the gap
-and is then cut short is what barge-in is for. They have different causes.
+and is then cut short is what barge-in is for. They have different causes, and
+both appear in the metrics — `premature_turns`, `overrun_turns`, and the total
+`overlap_ms` — because a single overlap number would hide which one a
+deployment has. Only premature turns fail a conversation.
 
 **τ-Voice** is the one suite the harness does not own. tau2-bench has the
 domains, the databases, the user simulator, and the reward function, and a

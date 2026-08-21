@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/bojieli/OpenRealtime/bench"
 )
@@ -267,9 +268,17 @@ func score(expected []ExpectedCall, observed []observedCall) (names, arguments i
 //
 // Comparison is on the values the annotation names, not on the whole object: a
 // model that supplies an extra optional argument has not got the call wrong.
-// Values are normalised for case, spaces, and the punctuation that speech
-// recognition sprinkles through spelled identifiers, because "B-O-B-1-2"
-// arriving as "BOB-12" is the same identifier and "BO B12" is not.
+// Values are normalised for case and for the punctuation speech recognition
+// sprinkles through spelled identifiers, because "B-O-B-1-2" arriving as
+// "BOB-12" is the same identifier.
+//
+// Whitespace is *not* normalised away, and that is the load-bearing part.
+// Reassembling a spelled identifier from speech is the distinct failure this
+// suite exists to separate from not knowing which tool to call: an agent that
+// hears "B O B 1 2" and sends order_id="B O B 1 2" has not got the identifier,
+// and a real API would reject it. A scorer that stripped the spaces would mark
+// that call correct and report the reassembly as working - which is exactly
+// the failure mode this project identified, scored as its own absence.
 func argumentsMatch(expected, observed json.RawMessage) bool {
 	var want, got map[string]any
 	if json.Unmarshal(expected, &want) != nil {
@@ -290,14 +299,27 @@ func argumentsMatch(expected, observed json.RawMessage) bool {
 	return true
 }
 
+// normalise lowercases, drops the punctuation a recogniser adds, and collapses
+// runs of whitespace - but keeps a word boundary a boundary. "Morgan  Smith"
+// and "Morgan Smith" are the same passenger; "BOB12" and "B O B 1 2" are not
+// the same order.
 func normalise(value string) string {
 	var builder strings.Builder
+	space := false
 	for _, symbol := range strings.ToLower(value) {
-		switch symbol {
-		case ' ', '-', '.', ',', '_', '\'', '"':
-		default:
-			builder.WriteRune(symbol)
+		switch {
+		case symbol == '-' || symbol == '.' || symbol == ',' || symbol == '_' ||
+			symbol == '\'' || symbol == '"':
+			continue
+		case unicode.IsSpace(symbol):
+			space = builder.Len() > 0
+			continue
 		}
+		if space {
+			builder.WriteRune(' ')
+			space = false
+		}
+		builder.WriteRune(symbol)
 	}
 	return builder.String()
 }

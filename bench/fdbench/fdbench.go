@@ -201,12 +201,22 @@ func runConversation(ctx context.Context, options Options, conversation Conversa
 		return outcome
 	}
 	outcome.Completed = true
+	score(&outcome, transcript, conversation.Turns, float64(options.LatencyBudget.Milliseconds()))
+	return outcome
+}
 
-	budget := float64(options.LatencyBudget.Milliseconds())
+// score reduces one played conversation to its reading.
+//
+// It is separated from playing the conversation because the reading is the
+// part that has to be right and the part that can be checked without a server:
+// three numbers in tension - latency, whether the agent began over the top of
+// the person, and whether it answered at all - and no single number that could
+// stand for them.
+func score(outcome *bench.TaskOutcome, transcript bench.Transcript, turns []Turn, budget float64) {
 	var latencies []float64
 	answered, premature, overrun, missed := 0, 0, 0, 0
 	overlapMS := 0.0
-	for index, turn := range conversation.Turns {
+	for index, turn := range turns {
 		// Audio during a turn is the agent and the person talking at once, and
 		// there are two quite different reasons for it. Either the agent was
 		// already speaking when the person started - an answer running past
@@ -228,8 +238,8 @@ func runConversation(ctx context.Context, options Options, conversation Conversa
 		// the person has moved on, and a reply is not a late answer to the
 		// previous thing, it is an interruption of the next.
 		windowEnd := turn.EndMS + budget
-		if index+1 < len(conversation.Turns) {
-			windowEnd = min(windowEnd, conversation.Turns[index+1].StartMS)
+		if index+1 < len(turns) {
+			windowEnd = min(windowEnd, turns[index+1].StartMS)
 		}
 		latency, found := transcript.FirstAudioAfter(turn.EndMS)
 		if found && turn.EndMS+latency <= windowEnd {
@@ -241,9 +251,16 @@ func runConversation(ctx context.Context, options Options, conversation Conversa
 	}
 
 	outcome.Metrics = map[string]float64{
-		"turns":           float64(len(conversation.Turns)),
-		"answered":        float64(answered),
+		"turns":    float64(len(turns)),
+		"answered": float64(answered),
+		// Premature and overrun are reported apart because they have different
+		// causes and different fixes: one is an endpointing failure and the
+		// other is what barge-in exists for. Computing the distinction and
+		// then reporting one number would hide which one a deployment has,
+		// which is the thing this separation was made for.
 		"premature_turns": float64(premature),
+		"overrun_turns":   float64(overrun),
+		"overlap_ms":      overlapMS,
 		"missed_turns":    float64(missed),
 	}
 	if len(latencies) > 0 {
@@ -256,7 +273,6 @@ func runConversation(ctx context.Context, options Options, conversation Conversa
 	// counted against it: an answer that runs into the next turn and is then
 	// cut short is what barge-in is for, and it is measured separately.
 	outcome.Passed = missed == 0 && premature == 0
-	return outcome
 }
 
 // Conditions lists what a dataset root contains, so a run can name its
