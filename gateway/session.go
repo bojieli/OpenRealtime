@@ -465,6 +465,8 @@ func (session *session) send(value map[string]any) error {
 }
 
 func (session *session) sendError(code, message string) {
+	session.config.Logger.Warn("session error",
+		"session", session.id, "code", code, "message", message)
 	_ = session.send(event("error", session.nextID("event"), map[string]any{
 		"error": map[string]any{"type": "invalid_request_error", "code": code, "message": message},
 	}))

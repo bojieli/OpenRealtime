@@ -27,6 +27,7 @@ func runProbe(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime probe", flag.ContinueOnError)
 	var (
 		url       string
+		transport string
 		tokenEnv  string
 		wavPath   string
 		realTime  bool
@@ -34,6 +35,7 @@ func runProbe(arguments []string, output io.Writer) error {
 		silenceMS int
 	)
 	flags.StringVar(&url, "url", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
+	flags.StringVar(&transport, "transport", "websocket", "how to connect: websocket or webrtc")
 	flags.StringVar(&tokenEnv, "token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token")
 	flags.StringVar(&wavPath, "audio", "", "16-bit PCM WAV file to speak; a generated tone is used when empty")
 	flags.BoolVar(&realTime, "realtime", true, "stream at the audio's own rate rather than as fast as possible")
@@ -50,6 +52,15 @@ func runProbe(arguments []string, output io.Writer) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+
+	if strings.EqualFold(strings.TrimSpace(transport), "webrtc") {
+		result, err := probeWebRTC(ctx, url, samples, realTime, output)
+		if err != nil {
+			return err
+		}
+		return reportProbe(result, output)
+	}
+
 	client, err := realtimeclient.Dial(ctx, realtimeclient.Config{
 		URL: url, Token: os.Getenv(tokenEnv),
 	})
@@ -94,27 +105,47 @@ func runProbe(arguments []string, output io.Writer) error {
 
 	select {
 	case result := <-results:
-		fmt.Fprintln(output)
-		fmt.Fprintf(output, "transcript : %s\n", result.transcript)
-		fmt.Fprintf(output, "spoken     : %s\n", strings.Join(result.spoken, " | "))
-		fmt.Fprintf(output, "audio      : %.2f s in %d frames\n", result.audioSeconds, result.audioFrames)
-		fmt.Fprintf(output, "first audio: %s after the endpoint\n", result.firstAudio.Round(time.Millisecond))
-		if len(result.toolCalls) > 0 {
-			fmt.Fprintf(output, "tool calls : %s\n", strings.Join(result.toolCalls, ", "))
-		}
-		if result.err != nil {
-			return result.err
-		}
-		if result.transcript == "" {
-			return errors.New("the server produced no transcript")
-		}
-		if len(result.spoken) == 0 {
-			return errors.New("the server produced no speech")
-		}
-		return nil
+		return reportProbe(result, output)
 	case <-ctx.Done():
 		return errors.New("the turn did not complete before the timeout")
 	}
+}
+
+// appendTranscript joins successive utterances into what was actually said.
+func appendTranscript(existing, next string) string {
+	next = strings.TrimSpace(next)
+	if next == "" {
+		return existing
+	}
+	if existing == "" {
+		return next
+	}
+	return existing + " " + next
+}
+
+// reportProbe prints what happened and decides whether it counts as working.
+func reportProbe(result probeResult, output io.Writer) error {
+	fmt.Fprintln(output)
+	fmt.Fprintf(output, "transcript : %s\n", result.transcript)
+	fmt.Fprintf(output, "spoken     : %s\n", strings.Join(result.spoken, " | "))
+	fmt.Fprintf(output, "audio      : %.2f s in %d frames\n", result.audioSeconds, result.audioFrames)
+	fmt.Fprintf(output, "first audio: %s after the endpoint\n", result.firstAudio.Round(time.Millisecond))
+	if len(result.toolCalls) > 0 {
+		fmt.Fprintf(output, "tool calls : %s\n", strings.Join(result.toolCalls, ", "))
+	}
+	if result.err != nil {
+		return result.err
+	}
+	if result.transcript == "" {
+		return errors.New("the server produced no transcript")
+	}
+	if len(result.spoken) == 0 {
+		return errors.New("the server produced no speech")
+	}
+	if result.audioFrames == 0 {
+		return errors.New("the server produced no audio")
+	}
+	return nil
 }
 
 type probeResult struct {
@@ -149,7 +180,10 @@ func collectProbe(ctx context.Context, client *realtimeclient.Client, output io.
 					Transcript string `json:"transcript"`
 				}
 				_ = event.Decode(&decoded)
-				result.transcript = decoded.Transcript
+				// A recording usually contains several utterances. Reporting
+				// only the last one makes a working session look like a broken
+				// recogniser.
+				result.transcript = appendTranscript(result.transcript, decoded.Transcript)
 			case "response.output_audio_transcript.delta":
 				var decoded struct {
 					Delta string `json:"delta"`

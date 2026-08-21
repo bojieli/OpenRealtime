@@ -72,13 +72,23 @@ type Adapter struct {
 
 // New validates the configuration and builds the media engine.
 //
-// The media engine registers exactly one codec: G.711 mu-law. Browsers all
-// support it, it needs no encoder library and therefore no cgo, and its
-// payload is byte-identical to what the protocol already carries as
-// audio/pcmu - so audio crosses this adapter without being transcoded at all.
-// The trade is telephony bandwidth, which is what the base protocol's own
-// g711_ulaw mode accepts; a deployment that needs wideband audio should use an
-// RTC provider, which is what that path is for.
+// Two codecs are registered, and the asymmetry between them is deliberate.
+//
+// Inbound, a browser sends Opus at 48 kHz, and this adapter decodes it with a
+// pure-Go decoder. That direction matters most: it carries the user's voice
+// into speech recognition, where bandwidth is accuracy.
+//
+// Outbound, the adapter sends G.711 mu-law. There is no pure-Go Opus encoder,
+// and the alternative - writing one, or taking a cgo dependency on libopus -
+// trades a static binary and a verifiable build for a codec nobody here can
+// check against a reference. Mu-law is 8 kHz telephony quality for synthesised
+// speech, which is a real cost stated plainly rather than hidden: a deployment
+// that needs wideband output should use an RTC provider, which is what that
+// path is for.
+//
+// Registering both lets each direction pick what it can actually do, which is
+// ordinary RTP: a sender chooses among the negotiated payload types, and
+// nothing requires the two directions to agree.
 func New(config Config) (*Adapter, error) {
 	if strings.TrimSpace(config.Endpoint) == "" {
 		return nil, errors.New("a WebRTC adapter requires a protocol endpoint")
@@ -93,13 +103,24 @@ func New(config Config) (*Adapter, error) {
 		config.Logf = func(string, ...any) {}
 	}
 	engine := &webrtc.MediaEngine{}
-	if err := engine.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType: webrtc.MimeTypePCMU, ClockRate: 8000, Channels: 1,
+	for _, codec := range []webrtc.RTPCodecParameters{
+		{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2,
+				SDPFmtpLine: "minptime=10;useinbandfec=1",
+			},
+			PayloadType: 111,
 		},
-		PayloadType: 0,
-	}, webrtc.RTPCodecTypeAudio); err != nil {
-		return nil, fmt.Errorf("register audio codec: %w", err)
+		{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType: webrtc.MimeTypePCMU, ClockRate: 8000, Channels: 1,
+			},
+			PayloadType: 0,
+		},
+	} {
+		if err := engine.RegisterCodec(codec, webrtc.RTPCodecTypeAudio); err != nil {
+			return nil, fmt.Errorf("register %s: %w", codec.MimeType, err)
+		}
 	}
 	registry := &interceptor.Registry{}
 	if err := webrtc.RegisterDefaultInterceptors(engine, registry); err != nil {

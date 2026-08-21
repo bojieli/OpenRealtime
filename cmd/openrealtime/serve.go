@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -88,6 +89,9 @@ type serveOptions struct {
 	instruction  string
 	validateWire bool
 
+	logFormat string
+	logLevel  string
+
 	webrtcListen string
 	webrtcSTUN   string
 
@@ -154,6 +158,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.BoolVar(&options.toolProgress, "tool-progress", false, "let a completed tool result trigger a short spoken status")
 	flags.StringVar(&options.instruction, "instructions", "", "agent instruction composed ahead of every phase instruction")
 	flags.BoolVar(&options.validateWire, "validate-wire", true, "validate every protocol event against the pinned schema")
+	flags.StringVar(&options.logFormat, "log-format", "text", "structured log format: text or json")
+	flags.StringVar(&options.logLevel, "log-level", "info", "log level: debug, info, warn, or error")
 	flags.StringVar(&options.webrtcListen, "webrtc-listen", "", "additional WebRTC listen address; empty disables the adapter")
 	flags.StringVar(&options.webrtcSTUN, "webrtc-stun", "", "comma-separated STUN servers for the WebRTC adapter")
 	flags.BoolVar(&options.computerUse, "computer-use", false, "declare the computer.* tools against a browser target")
@@ -182,6 +188,10 @@ func serve(options serveOptions, output io.Writer) error {
 	if strings.TrimSpace(options.listen) == "" {
 		return errors.New("a listen address is required")
 	}
+	logger, err := buildLogger(options)
+	if err != nil {
+		return err
+	}
 	bind, err := buildBinding(options)
 	if err != nil {
 		return err
@@ -189,6 +199,7 @@ func serve(options serveOptions, output io.Writer) error {
 	server, err := gateway.New(gateway.Config{
 		Binding: bind, Token: os.Getenv(options.tokenEnv), Model: options.model,
 		TranscriptionModel: options.asrModel, ValidateWire: options.validateWire,
+		Logger: logger,
 	})
 	if err != nil {
 		return err
@@ -615,4 +626,35 @@ func buildComputerUse(options serveOptions) ([]action.ToolSpec, error) {
 		}
 	}
 	return computeruse.Specs(target, dispatcher, overrides)
+}
+
+// buildLogger configures structured logging.
+//
+// Text by default because a person reading a terminal is the common case, and
+// JSON when something is going to collect it. Neither ever carries
+// conversation content: a log that leaked what was said would be a worse
+// problem than having no log.
+func buildLogger(options serveOptions) (*slog.Logger, error) {
+	var level slog.Level
+	switch strings.ToLower(strings.TrimSpace(options.logLevel)) {
+	case "debug":
+		level = slog.LevelDebug
+	case "", "info":
+		level = slog.LevelInfo
+	case "warn", "warning":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		return nil, fmt.Errorf("log level must be debug, info, warn, or error, got %q", options.logLevel)
+	}
+	handlerOptions := &slog.HandlerOptions{Level: level}
+	switch strings.ToLower(strings.TrimSpace(options.logFormat)) {
+	case "json":
+		return slog.New(slog.NewJSONHandler(os.Stderr, handlerOptions)), nil
+	case "", "text":
+		return slog.New(slog.NewTextHandler(os.Stderr, handlerOptions)), nil
+	default:
+		return nil, fmt.Errorf("log format must be text or json, got %q", options.logFormat)
+	}
 }

@@ -233,17 +233,24 @@ func TestAdapterConnectsMediaAndEventsThroughTheProtocol(t *testing.T) {
 	client.waitConnected(t)
 	<-endpoint.ready
 
-	// The adapter owns the media format because it terminates media.
+	// The adapter owns the media format because it terminates media, and the
+	// two directions differ because the codecs do: full-bandwidth PCM into
+	// speech recognition, mu-law back out.
 	configured := endpoint.waitFor(t, func(event map[string]any) bool {
 		return event["type"] == "session.update"
 	}, "the adapter must configure the protocol session")
 	audio := configured["session"].(map[string]any)["audio"].(map[string]any)
-	format := audio["input"].(map[string]any)["format"].(map[string]any)
-	if format["type"] != "audio/pcmu" {
-		t.Fatalf("expected the adapter to negotiate mu-law, got %v", format)
+	input := audio["input"].(map[string]any)["format"].(map[string]any)
+	if input["type"] != "audio/pcm" || input["rate"].(float64) != 24000 {
+		t.Fatalf("inbound audio must reach the session at full rate, got %v", input)
+	}
+	output := audio["output"].(map[string]any)["format"].(map[string]any)
+	if output["type"] != "audio/pcmu" {
+		t.Fatalf("outbound audio is mu-law, got %v", output)
 	}
 
-	// Inbound RTP crosses to the protocol without being transcoded.
+	// Inbound mu-law is expanded to the session's rate rather than being
+	// pushed onto it as a second format.
 	payload := make([]byte, 160)
 	for index := range payload {
 		payload[index] = 0x7F
@@ -258,12 +265,14 @@ func TestAdapterConnectsMediaAndEventsThroughTheProtocol(t *testing.T) {
 	}, "inbound audio must reach the protocol")
 	decoded, err := base64.StdEncoding.DecodeString(appended["audio"].(string))
 	if err != nil || len(decoded) == 0 {
-		t.Fatalf("inbound audio must be mu-law bytes: %v", err)
+		t.Fatalf("inbound audio must decode: %v", err)
 	}
-	for _, sample := range decoded {
-		if sample != 0x7F {
-			t.Fatal("audio must cross the adapter unchanged")
-		}
+	if len(decoded)%2 != 0 {
+		t.Fatal("PCM16 must arrive as whole samples")
+	}
+	// 160 mu-law samples at 8 kHz become 480 samples at 24 kHz.
+	if len(decoded) != 160*3*2 {
+		t.Fatalf("expected 480 samples at the session rate, got %d bytes", len(decoded))
 	}
 }
 

@@ -16,8 +16,11 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
@@ -44,6 +47,10 @@ type Config struct {
 	ValidateWire bool
 	// Metrics is optional operational telemetry.
 	Metrics *Metrics
+	// Logger receives structured operational events. It never receives
+	// conversation content: a log that leaked what was said would be a worse
+	// problem than having no log.
+	Logger *slog.Logger
 }
 
 // Server serves /v1/realtime and /healthz.
@@ -68,6 +75,9 @@ func New(config Config) (*Server, error) {
 	}
 	if config.Metrics == nil {
 		config.Metrics = &Metrics{}
+	}
+	if config.Logger == nil {
+		config.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	config.Token = strings.TrimSpace(config.Token)
 	return &Server{config: config}, nil
@@ -118,18 +128,27 @@ func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	}
 	connection.SetReadLimit(int64(server.config.MaxAudioFrameBytes) * 2)
 	server.config.Metrics.sessionsStarted.Add(1)
+	started := time.Now()
 	session, err := newSession(request.Context(), connection, server.config, request.URL.Query().Get("model"))
 	if err != nil {
 		server.config.Metrics.sessionsFailed.Add(1)
+		server.config.Logger.Error("session initialisation failed",
+			"binding", server.config.Binding.Name(), "error", err)
 		_ = connection.Close(websocket.StatusInternalError, "session initialisation failed")
 		return
 	}
+	server.config.Logger.Info("session started",
+		"session", session.id, "binding", server.config.Binding.Name(), "model", session.model)
 	if err := session.Run(); err != nil {
 		server.config.Metrics.sessionsFailed.Add(1)
+		server.config.Logger.Error("session failed",
+			"session", session.id, "duration", time.Since(started), "error", err)
 		_ = connection.Close(websocket.StatusInternalError, "session failed")
 		return
 	}
 	server.config.Metrics.sessionsCompleted.Add(1)
+	server.config.Logger.Info("session completed",
+		"session", session.id, "duration", time.Since(started))
 	_ = connection.Close(websocket.StatusNormalClosure, "session closed")
 }
 

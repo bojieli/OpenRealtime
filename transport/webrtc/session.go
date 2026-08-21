@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/bojieli/OpenRealtime/realtimeclient"
+	"github.com/pion/opus"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 )
@@ -64,6 +66,7 @@ func (session *session) prepare() error {
 		}
 		session.pumpInbound(remote)
 	})
+
 	session.connection.OnDataChannel(func(channel *webrtc.DataChannel) {
 		if channel.Label() != EventChannel {
 			return
@@ -102,12 +105,17 @@ func (session *session) connect(ctx context.Context) error {
 	// The adapter owns the media format because it terminates media. This is
 	// the one event it originates rather than forwards, and the reason is that
 	// the client's audio never touches the protocol connection at all.
+	//
+	// The two directions differ because the codecs do. Inbound Opus is decoded
+	// to 24 kHz PCM and sent as audio/pcm, so speech recognition sees the full
+	// bandwidth the browser captured. Outbound stays mu-law, which the adapter
+	// forwards without transcoding.
 	if err := client.Send(ctx, map[string]any{
 		"type": "session.update",
 		"session": map[string]any{
 			"type": "realtime",
 			"audio": map[string]any{
-				"input":  map[string]any{"format": map[string]any{"type": "audio/pcmu"}},
+				"input":  map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
 				"output": map[string]any{"format": map[string]any{"type": "audio/pcmu"}},
 			},
 		},
@@ -130,13 +138,27 @@ func (session *session) connect(ctx context.Context) error {
 	return nil
 }
 
-// pumpInbound forwards received RTP payloads to the protocol.
+// pumpInbound decodes what the browser sent and forwards it to the protocol.
 //
-// No transcoding happens: the RTP payload for PCMU is mu-law bytes, and
-// audio/pcmu on the protocol is the same mu-law bytes. The adapter carries
-// them across unchanged, which is both faster and one fewer place for audio to
-// be quietly altered.
+// Whichever codec was negotiated, what reaches the protocol is 24 kHz PCM:
+// Opus is decoded, mu-law is expanded and upsampled. Doing the conversion here
+// rather than pushing a second format onto the session keeps the engine
+// working in one rate, and a rate that changes underneath an acoustic gate is
+// a bug that looks like a slow model.
 func (session *session) pumpInbound(remote *webrtc.TrackRemote) {
+	codec := strings.ToLower(remote.Codec().MimeType)
+	var decoder *opus.Decoder
+	if strings.Contains(codec, "opus") {
+		created, err := opus.NewDecoderWithOutput(inboundRate, 1)
+		if err != nil {
+			session.adapter.config.Logf("create the Opus decoder: %v", err)
+			return
+		}
+		decoder = &created
+	}
+	session.adapter.config.Logf("receiving %s", remote.Codec().MimeType)
+
+	samples := make([]int16, inboundRate/10)
 	for {
 		packet, _, err := remote.ReadRTP()
 		if err != nil {
@@ -145,14 +167,64 @@ func (session *session) pumpInbound(remote *webrtc.TrackRemote) {
 		if len(packet.Payload) == 0 || session.closed.Load() {
 			continue
 		}
+		var pcm []byte
+		if decoder != nil {
+			count, decodeErr := decoder.DecodeToInt16(packet.Payload, samples)
+			if decodeErr != nil || count == 0 {
+				continue
+			}
+			pcm = encodePCM16(samples[:count])
+		} else {
+			pcm = expandMuLaw(packet.Payload)
+		}
+		if len(pcm) == 0 {
+			continue
+		}
 		if err := session.client.Send(context.Background(), map[string]any{
 			"type":  "input_audio_buffer.append",
-			"audio": base64.StdEncoding.EncodeToString(packet.Payload),
+			"audio": base64.StdEncoding.EncodeToString(pcm),
 		}); err != nil {
 			session.adapter.config.Logf("forward inbound audio: %v", err)
 			return
 		}
 	}
+}
+
+// inboundRate is the rate everything inside the session works in.
+const inboundRate = 24_000
+
+func encodePCM16(samples []int16) []byte {
+	encoded := make([]byte, len(samples)*2)
+	for index, sample := range samples {
+		encoded[index*2] = byte(uint16(sample))
+		encoded[index*2+1] = byte(uint16(sample) >> 8)
+	}
+	return encoded
+}
+
+// expandMuLaw decodes G.711 and upsamples it to the session rate.
+//
+// Repeating each sample three times is not a good resampler, and it does not
+// have to be: this path exists for a client that could not negotiate Opus, and
+// the bandwidth it is missing was never in the signal to begin with.
+func expandMuLaw(payload []byte) []byte {
+	const ratio = inboundRate / 8000
+	expanded := make([]byte, 0, len(payload)*2*ratio)
+	for _, encoded := range payload {
+		value := ^encoded
+		mantissa := int(value & 0x0f)
+		exponent := uint((value >> 4) & 0x07)
+		sample := ((mantissa << 3) + 0x84) << exponent
+		sample -= 0x84
+		if value&0x80 != 0 {
+			sample = -sample
+		}
+		low, high := byte(uint16(int16(sample))), byte(uint16(int16(sample))>>8)
+		for repeat := 0; repeat < ratio; repeat++ {
+			expanded = append(expanded, low, high)
+		}
+	}
+	return expanded
 }
 
 // pumpOutbound routes protocol events: audio to the media track, everything

@@ -50,9 +50,10 @@ type runtime struct {
 	settingsMu sync.RWMutex
 	settings   binding.Settings
 
-	audioMu     sync.Mutex
-	acoustic    *perception.EnergyGate
-	utteranceID string
+	audioMu      sync.Mutex
+	acoustic     *perception.EnergyGate
+	acousticRate uint32
+	utteranceID  string
 
 	stateMu    sync.Mutex
 	utterance  *action.Utterance
@@ -103,12 +104,6 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		cancel(err)
 		return nil, err
 	}
-	gate, err := perception.NewEnergyGate(bind.config.Gate, uint32(bind.config.InputRate))
-	if err != nil {
-		cancel(err)
-		return nil, err
-	}
-	result.acoustic = gate
 
 	model, err := sidecar.Dial(ctx, bind.config.Sidecar, sidecar.Message{
 		SampleRate:   bind.config.InputRate,
@@ -227,6 +222,17 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 		return nil
 	}
 	runtime.audioMu.Lock()
+	// The gate is built from the rate that actually arrives: its thresholds
+	// are in samples, so one built for the wrong rate waits silently for the
+	// wrong amount of time rather than failing.
+	if runtime.acoustic == nil || runtime.acousticRate != frame.SampleRateHz {
+		gate, gateErr := perception.NewEnergyGate(runtime.config.Gate, frame.SampleRateHz)
+		if gateErr != nil {
+			runtime.audioMu.Unlock()
+			return gateErr
+		}
+		runtime.acoustic, runtime.acousticRate = gate, frame.SampleRateHz
+	}
 	result, err := runtime.acoustic.Push(frame.PCM16LE)
 	if err != nil {
 		runtime.audioMu.Unlock()

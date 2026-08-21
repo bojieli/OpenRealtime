@@ -28,11 +28,12 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 		return errors.New("audio path requires an audio frame")
 	}
 	runtime.audioMu.Lock()
-	if runtime.acoustic == nil {
+	acoustic, err := runtime.acousticFor(frame.SampleRateHz)
+	if err != nil {
 		runtime.audioMu.Unlock()
-		return errors.New("acoustic gate is not configured")
+		return err
 	}
-	result, err := runtime.acoustic.Push(frame.PCM16LE)
+	result, err := acoustic.Push(frame.PCM16LE)
 	if err != nil {
 		runtime.audioMu.Unlock()
 		return err

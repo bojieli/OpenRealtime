@@ -55,6 +55,7 @@ type runtime struct {
 
 	audioMu       sync.Mutex
 	acoustic      *perception.EnergyGate
+	acousticRate  uint32
 	pending       []perception.Frame
 	lastObserveNS uint64
 	utteranceID   string
@@ -200,10 +201,6 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		cancel(err)
 		return nil, err
 	}
-	if err := result.resetAcoustic(); err != nil {
-		cancel(err)
-		return nil, err
-	}
 
 	result.wait.Add(2)
 	go func() {
@@ -278,17 +275,33 @@ func (runtime *runtime) applyTools(specs []action.ToolSpec) error {
 	return runtime.registry.Replace(combined)
 }
 
+// resetAcoustic drops the gate so the next frame rebuilds it.
+//
+// The gate is built from the rate of the audio that actually arrives rather
+// than from a constant. Its thresholds are in samples, so a gate built for the
+// wrong rate does not fail loudly - it silently waits three times too long for
+// an endpoint, which is exactly the kind of bug that looks like a slow model.
 func (runtime *runtime) resetAcoustic() error {
-	settings := runtime.Settings()
 	runtime.audioMu.Lock()
 	defer runtime.audioMu.Unlock()
-	gate, err := perception.NewEnergyGate(settings.Gate, 24_000)
-	if err != nil {
-		return err
-	}
-	runtime.acoustic = gate
+	runtime.acoustic, runtime.acousticRate = nil, 0
 	runtime.pending = nil
 	return nil
+}
+
+// acousticFor returns a gate matching the incoming sample rate, building one
+// on the first frame and rebuilding it if the rate ever changes.
+func (runtime *runtime) acousticFor(rate uint32) (*perception.EnergyGate, error) {
+	if runtime.acoustic != nil && runtime.acousticRate == rate {
+		return runtime.acoustic, nil
+	}
+	settings := runtime.Settings()
+	gate, err := perception.NewEnergyGate(settings.Gate, rate)
+	if err != nil {
+		return nil, err
+	}
+	runtime.acoustic, runtime.acousticRate = gate, rate
+	return gate, nil
 }
 
 // Video reports that this cascade session has no video observer configured.
