@@ -41,6 +41,10 @@ const (
 	KindToolProposal Kind = "tool_proposal"
 	KindToolCall     Kind = "tool_call"
 	KindToolResult   Kind = "tool_result"
+	// KindToolPlaceholder marks an executable call that was in flight when the
+	// trajectory was interrupted. Its eventual result supersedes it, so an
+	// interrupted prefix stays well-formed instead of trailing off.
+	KindToolPlaceholder Kind = "tool_placeholder"
 )
 
 // Phase identifies the continuation profile that produced an item.
@@ -128,6 +132,13 @@ type EventMetadata struct {
 	OccurredNS         uint64 `json:"occurred_ns"`
 	CorrelationID      string `json:"correlation_id,omitempty"`
 	SupersedesRevision uint64 `json:"supersedes_revision,omitempty"`
+	// BatchID, BatchIndex, and BatchSize mark items committed together at one
+	// safe point. A model handed four events attends to the last one unless the
+	// group is legible as a group, so the marker is part of the log rather than
+	// a rendering convention: every compiler sees the same boundary.
+	BatchID    string `json:"batch_id,omitempty"`
+	BatchIndex int    `json:"batch_index,omitempty"`
+	BatchSize  int    `json:"batch_size,omitempty"`
 }
 
 // Item is an immutable unit in the canonical trajectory.
@@ -138,23 +149,25 @@ type EventMetadata struct {
 // default. ProviderStateType prevents one adapter from interpreting another
 // provider's state as native.
 type Item struct {
-	ID                string          `json:"id"`
-	Kind              Kind            `json:"kind"`
-	MonotonicNS       uint64          `json:"monotonic_ns"`
-	CausalParentIDs   []string        `json:"causal_parent_ids,omitempty"`
-	SourceRevision    uint64          `json:"source_revision,omitempty"`
-	InvocationID      string          `json:"invocation_id,omitempty"`
-	Producer          Producer        `json:"producer"`
-	Content           string          `json:"content,omitempty"`
-	Interrupted       bool            `json:"interrupted,omitempty"`
-	Visibility        Visibility      `json:"visibility,omitempty"`
-	ToolCall          *ToolCall       `json:"tool_call,omitempty"`
-	ToolResult        *ToolResult     `json:"tool_result,omitempty"`
-	AssistantState    *AssistantState `json:"assistant_state,omitempty"`
-	Repair            *RepairState    `json:"repair,omitempty"`
-	Event             *EventMetadata  `json:"event,omitempty"`
-	ProviderStateType string          `json:"provider_state_type,omitempty"`
-	ProviderState     json.RawMessage `json:"provider_state,omitempty"`
+	ID                string           `json:"id"`
+	Kind              Kind             `json:"kind"`
+	MonotonicNS       uint64           `json:"monotonic_ns"`
+	CausalParentIDs   []string         `json:"causal_parent_ids,omitempty"`
+	SourceRevision    uint64           `json:"source_revision,omitempty"`
+	InvocationID      string           `json:"invocation_id,omitempty"`
+	Producer          Producer         `json:"producer"`
+	Content           string           `json:"content,omitempty"`
+	Interrupted       bool             `json:"interrupted,omitempty"`
+	Visibility        Visibility       `json:"visibility,omitempty"`
+	ToolCall          *ToolCall        `json:"tool_call,omitempty"`
+	ToolResult        *ToolResult      `json:"tool_result,omitempty"`
+	ToolPlaceholder   *ToolPlaceholder `json:"tool_placeholder,omitempty"`
+	Observation       *ObservationMeta `json:"observation,omitempty"`
+	AssistantState    *AssistantState  `json:"assistant_state,omitempty"`
+	Repair            *RepairState     `json:"repair,omitempty"`
+	Event             *EventMetadata   `json:"event,omitempty"`
+	ProviderStateType string           `json:"provider_state_type,omitempty"`
+	ProviderState     json.RawMessage  `json:"provider_state,omitempty"`
 }
 
 // Snapshot is an immutable copy of a trajectory prefix. Version is the number
@@ -343,6 +356,7 @@ type Store struct {
 	toolProposals    map[string]struct{}
 	toolCalls        map[string]string
 	toolResults      map[string]struct{}
+	toolPlaceholders map[string]struct{}
 	assistantStates  map[string]Visibility
 	pendingRepairs   map[string]string
 	hasMonotonicTime bool
@@ -352,12 +366,13 @@ type Store struct {
 // NewStore creates an empty trajectory.
 func NewStore() *Store {
 	return &Store{
-		byID:            make(map[string]int),
-		toolProposals:   make(map[string]struct{}),
-		toolCalls:       make(map[string]string),
-		toolResults:     make(map[string]struct{}),
-		assistantStates: make(map[string]Visibility),
-		pendingRepairs:  make(map[string]string),
+		byID:             make(map[string]int),
+		toolProposals:    make(map[string]struct{}),
+		toolCalls:        make(map[string]string),
+		toolResults:      make(map[string]struct{}),
+		toolPlaceholders: make(map[string]struct{}),
+		assistantStates:  make(map[string]Visibility),
+		pendingRepairs:   make(map[string]string),
 	}
 }
 
@@ -404,6 +419,7 @@ func (store *Store) appendBatch(expectedVersion *uint64, items []Item) error {
 	store.toolProposals = clone.toolProposals
 	store.toolCalls = clone.toolCalls
 	store.toolResults = clone.toolResults
+	store.toolPlaceholders = clone.toolPlaceholders
 	store.assistantStates = clone.assistantStates
 	store.pendingRepairs = clone.pendingRepairs
 	store.hasMonotonicTime = clone.hasMonotonicTime
@@ -499,6 +515,9 @@ func validateCommon(item Item) error {
 }
 
 func (store *Store) validateKindLocked(item Item) error {
+	if item.Kind != KindObservation && item.Observation != nil {
+		return fmt.Errorf("observation provenance is not valid on %s", item.Kind)
+	}
 	payloadCount := 0
 	if item.ToolCall != nil {
 		payloadCount++
@@ -512,10 +531,24 @@ func (store *Store) validateKindLocked(item Item) error {
 	if item.Repair != nil {
 		payloadCount++
 	}
+	if item.ToolPlaceholder != nil {
+		payloadCount++
+	}
 	switch item.Kind {
-	case KindInstruction, KindObservation:
+	case KindInstruction:
+		if strings.TrimSpace(item.Content) == "" || payloadCount != 0 || item.Visibility != "" || item.Observation != nil {
+			return fmt.Errorf("%s requires content and no typed payload or visibility", item.Kind)
+		}
+	case KindObservation:
 		if strings.TrimSpace(item.Content) == "" || payloadCount != 0 || item.Visibility != "" {
 			return fmt.Errorf("%s requires content and no typed payload or visibility", item.Kind)
+		}
+		if item.Observation != nil {
+			if err := item.Observation.validate(item.Producer); err != nil {
+				return err
+			}
+		} else if item.Producer.Phase == PhaseObserver {
+			return errors.New("observer-phase observation requires observation provenance")
 		}
 	case KindReasoning:
 		if strings.TrimSpace(item.Content) == "" && len(item.ProviderState) == 0 {
@@ -574,6 +607,13 @@ func (store *Store) validateKindLocked(item Item) error {
 			return fmt.Errorf("tool call ID %q conflicts with a non-executable proposal", item.ToolCall.CallID)
 		}
 		store.toolCalls[item.ToolCall.CallID] = item.ToolCall.Name
+	case KindToolPlaceholder:
+		if item.ToolPlaceholder == nil || payloadCount != 1 || item.Content != "" || item.Visibility != "" {
+			return errors.New("tool_placeholder requires exactly one placeholder payload")
+		}
+		if err := store.acceptToolPlaceholderLocked(*item.ToolPlaceholder); err != nil {
+			return err
+		}
 	case KindToolResult:
 		if item.ToolResult == nil || payloadCount != 1 || item.Content != "" || item.Visibility != "" {
 			return errors.New("tool_result requires exactly one result payload")
@@ -621,6 +661,31 @@ func (store *Store) acceptToolResultLocked(result ToolResult) error {
 		return errors.New("tool result requires exactly one valid JSON output or error")
 	}
 	store.toolResults[result.CallID] = struct{}{}
+	delete(store.toolPlaceholders, result.CallID)
+	return nil
+}
+
+// acceptToolPlaceholderLocked admits one placeholder for an executable call
+// that is still outstanding. A placeholder is not terminal: the call remains
+// unsatisfied and its eventual result still commits and supersedes it.
+func (store *Store) acceptToolPlaceholderLocked(placeholder ToolPlaceholder) error {
+	if err := placeholder.validate(); err != nil {
+		return err
+	}
+	name, exists := store.toolCalls[placeholder.CallID]
+	if !exists {
+		return fmt.Errorf("tool placeholder references unknown call %q", placeholder.CallID)
+	}
+	if name != placeholder.Name {
+		return fmt.Errorf("tool placeholder name %q does not match call name %q", placeholder.Name, name)
+	}
+	if _, done := store.toolResults[placeholder.CallID]; done {
+		return fmt.Errorf("tool call %q already has a terminal result", placeholder.CallID)
+	}
+	if _, duplicate := store.toolPlaceholders[placeholder.CallID]; duplicate {
+		return fmt.Errorf("tool call %q already has a placeholder", placeholder.CallID)
+	}
+	store.toolPlaceholders[placeholder.CallID] = struct{}{}
 	return nil
 }
 
@@ -764,6 +829,7 @@ func (store *Store) cloneLocked() *Store {
 		toolProposals:    make(map[string]struct{}, len(store.toolProposals)),
 		toolCalls:        make(map[string]string, len(store.toolCalls)),
 		toolResults:      make(map[string]struct{}, len(store.toolResults)),
+		toolPlaceholders: make(map[string]struct{}, len(store.toolPlaceholders)),
 		assistantStates:  make(map[string]Visibility, len(store.assistantStates)),
 		pendingRepairs:   make(map[string]string, len(store.pendingRepairs)),
 		hasMonotonicTime: store.hasMonotonicTime,
@@ -780,6 +846,9 @@ func (store *Store) cloneLocked() *Store {
 	}
 	for key := range store.toolResults {
 		clone.toolResults[key] = struct{}{}
+	}
+	for key := range store.toolPlaceholders {
+		clone.toolPlaceholders[key] = struct{}{}
 	}
 	for key, value := range store.assistantStates {
 		clone.assistantStates[key] = value
@@ -819,6 +888,11 @@ func cloneItem(item Item) Item {
 		copy := *item.Repair
 		item.Repair = &copy
 	}
+	if item.ToolPlaceholder != nil {
+		copy := *item.ToolPlaceholder
+		item.ToolPlaceholder = &copy
+	}
+	item.Observation = cloneObservationMeta(item.Observation)
 	if item.Event != nil {
 		copy := *item.Event
 		item.Event = &copy
