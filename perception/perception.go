@@ -268,3 +268,51 @@ func (set *Set) Reset() {
 		observer.Reset()
 	}
 }
+
+// Factory creates one observer for one session.
+//
+// Observers hold per-session state - what the screen looked like a moment ago,
+// which recogniser is mid-utterance - so they cannot be shared between
+// sessions. The declared name and kind let a binding report what it supports
+// without constructing anything, which is what negotiation needs before a
+// session exists.
+type Factory struct {
+	Name string
+	Kind FrameKind
+	New  func(Retainer) (Observer, error)
+}
+
+// Validate rejects an unusable factory.
+func (factory Factory) Validate() error {
+	if strings.TrimSpace(factory.Name) == "" {
+		return errors.New("an observer factory requires a name")
+	}
+	if factory.New == nil {
+		return fmt.Errorf("observer factory %q has no constructor", factory.Name)
+	}
+	switch factory.Kind {
+	case FrameAudio, FrameImage:
+		return nil
+	default:
+		return fmt.Errorf("observer factory %q must declare an audio or image kind", factory.Name)
+	}
+}
+
+// VideoFactory builds a per-session video observer from one configuration.
+func VideoFactory(config VideoConfig) Factory {
+	name := config.Name
+	if strings.TrimSpace(name) == "" {
+		name = "video"
+	}
+	return Factory{
+		Name: name, Kind: FrameImage,
+		New: func(retainer Retainer) (Observer, error) {
+			session := config
+			session.Name = name
+			if session.AttachKeyframes {
+				session.Retainer = retainer
+			}
+			return NewVideoObserver(session)
+		},
+	}
+}

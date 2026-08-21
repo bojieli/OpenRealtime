@@ -16,6 +16,7 @@ import (
 	"github.com/bojieli/OpenRealtime/adapters/gemini"
 	"github.com/bojieli/OpenRealtime/adapters/openaicompat"
 	"github.com/bojieli/OpenRealtime/adapters/openaitts"
+	"github.com/bojieli/OpenRealtime/adapters/openaivision"
 	"github.com/bojieli/OpenRealtime/adapters/qwenasr"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/asrbuffer"
@@ -25,6 +26,7 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/gateway"
 	"github.com/bojieli/OpenRealtime/interaction"
+	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -61,6 +63,13 @@ type serveOptions struct {
 	upstreamURL      string
 	upstreamModel    string
 	upstreamTokenEnv string
+
+	observers      string
+	components     string
+	narrator       string
+	visionURL      string
+	visionModel    string
+	visionTokenEnv string
 
 	rollout      string
 	cadence      time.Duration
@@ -105,6 +114,12 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.upstreamModel, "upstream-model", "", "remote model identity")
 	flags.StringVar(&options.upstreamTokenEnv, "upstream-token-env", "OPENAI_API_KEY", "environment variable holding the remote credential")
 
+	flags.StringVar(&options.observers, "observers", "audio", "observer set: audio, audio+video, or video")
+	flags.StringVar(&options.components, "observer-components", "narration", "video observer components: keyframe+narration, narration, or keyframe")
+	flags.StringVar(&options.narrator, "narrator", "session", "narrator composition: session or dedicated")
+	flags.StringVar(&options.visionURL, "vision-url", openaivision.DefaultBaseURL, "vision model base URL used for narration")
+	flags.StringVar(&options.visionModel, "vision-model", "", "vision model identity; required when a video observer is enabled")
+	flags.StringVar(&options.visionTokenEnv, "vision-token-env", "OPENREALTIME_VISION_API_KEY", "environment variable holding the vision model credential")
 	flags.StringVar(&options.rollout, "rollout", "fast+slow", "cognition rollout: fast-only, fast+slow, or endpointed-slow-only")
 	flags.DurationVar(&options.cadence, "trigger-cadence", interaction.DefaultCadence, "trigger cadence")
 	flags.StringVar(&options.observation, "observation-policy", "endpoint-only", "canonical observation policy: endpoint-only or stable-partial")
@@ -208,7 +223,12 @@ func buildCascade(options serveOptions, policies interaction.Policies) (binding.
 	if err != nil {
 		return nil, err
 	}
+	observers, err := buildObservers(options)
+	if err != nil {
+		return nil, err
+	}
 	return cascade.New(cascade.Config{
+		Observers: observers,
 		Perception: func() (v1.PerceptionProvider, error) {
 			recogniser, err := qwenasr.New(qwenasr.Config{
 				BaseURL: options.asrURL, Model: options.asrModel,
@@ -306,4 +326,54 @@ func parseEffort(value string) (continuation.Effort, error) {
 	default:
 		return "", fmt.Errorf("reasoning effort must be minimal, low, medium, or high, got %q", value)
 	}
+}
+
+// buildObservers composes the session's perception.
+//
+// The observer set and its components are measured factors, so they are flags
+// rather than build-time choices: a cell of the measurement matrix is a
+// command line.
+func buildObservers(options serveOptions) ([]perception.Factory, error) {
+	set, err := perception.ParseObserverSet(options.observers)
+	if err != nil {
+		return nil, err
+	}
+	if set == perception.SetAudioOnly {
+		return nil, nil
+	}
+	components, err := perception.ParseComponents(options.components)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(options.visionModel) == "" {
+		return nil, errors.New("a video observer needs -vision-model: narration is what it produces")
+	}
+	vision, err := openaivision.New(openaivision.Config{
+		BaseURL: options.visionURL, Model: options.visionModel,
+		APIKey: os.Getenv(options.visionTokenEnv), RequestTimeout: options.requestTimeout,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var narrator perception.Narrator
+	switch strings.ToLower(strings.TrimSpace(options.narrator)) {
+	case "session", "":
+		narrator, err = perception.NewSessionNarrator(vision)
+	case "dedicated":
+		narrator, err = perception.NewDedicatedNarrator(vision)
+	default:
+		return nil, fmt.Errorf("narrator must be session or dedicated, got %q", options.narrator)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if components == perception.ComponentKeyframeOnly {
+		// Keyframe-only is a measurement level, not a working configuration:
+		// it asks what images are worth with no persistent text at all.
+		narrator = perception.StaticNarrator{Text: "A new screen state was captured."}
+	}
+	return []perception.Factory{perception.VideoFactory(perception.VideoConfig{
+		Narrator:        narrator,
+		AttachKeyframes: components != perception.ComponentNarrationOnly,
+	})}, nil
 }

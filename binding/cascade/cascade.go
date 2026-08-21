@@ -13,6 +13,7 @@ package cascade
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -79,10 +80,12 @@ type Config struct {
 	Policies          interaction.Policies
 	ObservationPolicy ObservationPolicy
 
-	// Observers extends the default set. The audio observer is always
-	// present; a video observer is added by the protocol layer when a client
-	// negotiates video input.
-	Observers []perception.Observer
+	// Observers extends the default set with one factory per additional
+	// observer. The audio observer is always present. Factories rather than
+	// instances because an observer holds per-session state: two sessions
+	// sharing one video observer would each see the other's screen as
+	// unchanged.
+	Observers []perception.Factory
 
 	MaxPendingEvents int
 	MediaRetention   session.MediaConfig
@@ -127,6 +130,11 @@ func New(config Config) (*Binding, error) {
 	if config.Policies.Validate() != nil {
 		config.Policies = interaction.Defaults()
 	}
+	for index, factory := range config.Observers {
+		if err := factory.Validate(); err != nil {
+			return nil, fmt.Errorf("observer %d: %w", index, err)
+		}
+	}
 	return &Binding{config: config}, nil
 }
 
@@ -143,10 +151,14 @@ func (bind *Binding) Ownership() binding.Ownership {
 }
 
 // Capabilities reports what a cascade session supports.
+//
+// Video is reported from the configured observer set rather than from a build
+// flag, so a deployment that did not configure a video observer negotiates
+// honestly instead of accepting frames it will discard.
 func (bind *Binding) Capabilities() binding.Capabilities {
 	video := false
-	for _, observer := range bind.config.Observers {
-		if observer.Accepts(perception.Frame{Kind: perception.FrameImage, Source: "screen"}) {
+	for _, factory := range bind.config.Observers {
+		if factory.Kind == perception.FrameImage {
 			video = true
 		}
 	}

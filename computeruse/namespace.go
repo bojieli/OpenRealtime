@@ -1,0 +1,240 @@
+// Package computeruse defines the standard computer-use action vocabulary.
+//
+// It is the most portable piece of this project's design. It depends on
+// nothing except function calling, which every Realtime implementation already
+// has, so it is proposed as a specification in its own right rather than
+// documented as ours - another implementation can adopt the vocabulary without
+// adopting anything else here.
+//
+// Actions add no protocol. The result of an action is the next screen, and the
+// screen already arrives through the video stream, so a tool output stays text
+// and the visual consequence flows back through perception exactly as it does
+// for a human. No image is ever carried in a function result.
+package computeruse
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+
+	"github.com/bojieli/OpenRealtime/action"
+)
+
+// Prefix is the namespace every action name carries.
+const Prefix = "computer."
+
+// Action names.
+const (
+	Click       = "computer.click"
+	DoubleClick = "computer.double_click"
+	Move        = "computer.move"
+	Drag        = "computer.drag"
+	Type        = "computer.type"
+	Key         = "computer.key"
+	Scroll      = "computer.scroll"
+	Screenshot  = "computer.screenshot"
+	Wait        = "computer.wait"
+)
+
+// Names lists the vocabulary in specification order.
+func Names() []string {
+	return []string{Click, DoubleClick, Move, Drag, Type, Key, Scroll, Screenshot, Wait}
+}
+
+// IsAction reports whether a tool name is in the namespace.
+func IsAction(name string) bool { return strings.HasPrefix(name, Prefix) }
+
+// Definition is one action's schema and its default consequence declaration.
+type Definition struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
+	// DefaultConfirm is what a deployment gets if it declares nothing. It is a
+	// starting point a developer overrides, never an inference the runtime
+	// makes about a particular call.
+	DefaultConfirm action.Confirm `json:"default_confirm"`
+}
+
+// sourceProperty is repeated by every action that touches a screen: an action
+// is meaningless without the coordinate space the model actually saw.
+const sourceProperty = `"source":{"type":"string","description":"the declared video source this action targets"}`
+
+func coordinate(name, description string) string {
+	return fmt.Sprintf(`%q:{"type":"integer","minimum":0,"description":%q}`, name, description)
+}
+
+// Definitions returns the complete vocabulary.
+//
+// The schemas are strict - additionalProperties false, required fields listed -
+// because an action with a misread argument is an action on the wrong thing,
+// and a permissive schema turns that into a silent failure.
+func Definitions() []Definition {
+	object := func(properties, required string) json.RawMessage {
+		return json.RawMessage(fmt.Sprintf(
+			`{"type":"object","properties":{%s},"required":[%s],"additionalProperties":false}`,
+			properties, required))
+	}
+	return []Definition{
+		{
+			Name:        Click,
+			Description: "Click a point on a declared video source.",
+			Parameters: object(
+				sourceProperty+","+
+					coordinate("x", "horizontal pixel from the left edge")+","+
+					coordinate("y", "vertical pixel from the top edge")+","+
+					`"button":{"type":"string","enum":["left","right","middle"],"description":"mouse button, left by default"}`,
+				`"source","x","y"`),
+			DefaultConfirm: action.ConfirmPolicy,
+		},
+		{
+			Name:        DoubleClick,
+			Description: "Double-click a point on a declared video source.",
+			Parameters: object(
+				sourceProperty+","+coordinate("x", "horizontal pixel from the left edge")+","+
+					coordinate("y", "vertical pixel from the top edge"),
+				`"source","x","y"`),
+			DefaultConfirm: action.ConfirmPolicy,
+		},
+		{
+			Name:        Move,
+			Description: "Move the pointer to a point on a declared video source without clicking.",
+			Parameters: object(
+				sourceProperty+","+coordinate("x", "horizontal pixel from the left edge")+","+
+					coordinate("y", "vertical pixel from the top edge"),
+				`"source","x","y"`),
+			DefaultConfirm: action.ConfirmNever,
+		},
+		{
+			Name:        Drag,
+			Description: "Press at one point, move to another, and release.",
+			Parameters: object(
+				sourceProperty+","+
+					coordinate("from_x", "starting horizontal pixel")+","+
+					coordinate("from_y", "starting vertical pixel")+","+
+					coordinate("to_x", "ending horizontal pixel")+","+
+					coordinate("to_y", "ending vertical pixel"),
+				`"source","from_x","from_y","to_x","to_y"`),
+			DefaultConfirm: action.ConfirmPolicy,
+		},
+		{
+			Name:        Type,
+			Description: "Type literal text into whatever currently has focus.",
+			Parameters: object(
+				sourceProperty+`,"text":{"type":"string","description":"literal text to type"}`,
+				`"source","text"`),
+			DefaultConfirm: action.ConfirmPolicy,
+		},
+		{
+			Name:        Key,
+			Description: "Press a key combination.",
+			Parameters: object(
+				sourceProperty+`,"keys":{"type":"array","items":{"type":"string"},"minItems":1,"description":"key names pressed together, such as [\"ctrl\",\"s\"]"}`,
+				`"source","keys"`),
+			DefaultConfirm: action.ConfirmPolicy,
+		},
+		{
+			Name:        Scroll,
+			Description: "Scroll at a point on a declared video source.",
+			Parameters: object(
+				sourceProperty+","+
+					coordinate("x", "horizontal pixel from the left edge")+","+
+					coordinate("y", "vertical pixel from the top edge")+","+
+					`"delta_x":{"type":"integer","description":"horizontal scroll amount"},`+
+					`"delta_y":{"type":"integer","description":"vertical scroll amount"}`,
+				`"source","x","y"`),
+			DefaultConfirm: action.ConfirmNever,
+		},
+		{
+			Name:           Screenshot,
+			Description:    "Request a fresh frame from a declared video source.",
+			Parameters:     object(sourceProperty, `"source"`),
+			DefaultConfirm: action.ConfirmNever,
+		},
+		{
+			Name:        Wait,
+			Description: "Wait for the screen to settle before observing again.",
+			Parameters: object(
+				`"duration_ms":{"type":"integer","minimum":0,"maximum":10000,"description":"how long to wait"}`,
+				`"duration_ms"`),
+			DefaultConfirm: action.ConfirmNever,
+		},
+	}
+}
+
+// Lookup returns one definition.
+func Lookup(name string) (Definition, bool) {
+	for _, definition := range Definitions() {
+		if definition.Name == name {
+			return definition, true
+		}
+	}
+	return Definition{}, false
+}
+
+// Target is a declared context an action may act on.
+//
+// Blast radius is bounded by construction: an action names a video source, and
+// a source is bound to a target that a deployment declared - a browser context
+// or a virtual display, never an ambient desktop by default.
+type Target struct {
+	// Name identifies the context, and is what appears in a confirmation
+	// prompt and in the audit record.
+	Name string `json:"name"`
+	// Sources are the declared video sources this target owns.
+	Sources []string `json:"sources"`
+	// Width and Height are the coordinate space, used to reject an action that
+	// lands outside the screen the model saw.
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+// Validate rejects an unusable target.
+func (target Target) Validate() error {
+	if strings.TrimSpace(target.Name) == "" {
+		return errors.New("a computer-use target requires a name")
+	}
+	if len(target.Sources) == 0 {
+		return fmt.Errorf("target %q declares no video sources", target.Name)
+	}
+	if target.Width <= 0 || target.Height <= 0 {
+		return fmt.Errorf("target %q requires a positive coordinate space", target.Name)
+	}
+	return nil
+}
+
+// Owns reports whether this target owns a source.
+func (target Target) Owns(source string) bool { return slices.Contains(target.Sources, source) }
+
+// Specs renders the vocabulary as declared tools for one target.
+//
+// A deployment overrides the confirmation requirements it wants; these are the
+// defaults, and they err toward asking. An unattended deployment that declares
+// no confirmer refuses everything above `never`, which is the correct failure
+// for an action nobody can authorize.
+func Specs(target Target, dispatcher action.Dispatcher, overrides map[string]action.Confirm) ([]action.ToolSpec, error) {
+	if err := target.Validate(); err != nil {
+		return nil, err
+	}
+	if dispatcher == nil {
+		return nil, errors.New("computer-use tools require a dispatcher")
+	}
+	specs := make([]action.ToolSpec, 0, len(Definitions()))
+	for _, definition := range Definitions() {
+		confirm := definition.DefaultConfirm
+		if override, exists := overrides[definition.Name]; exists {
+			parsed, err := action.ParseConfirm(string(override))
+			if err != nil {
+				return nil, fmt.Errorf("tool %q: %w", definition.Name, err)
+			}
+			confirm = parsed
+		}
+		specs = append(specs, action.ToolSpec{
+			Name: definition.Name, Description: definition.Description,
+			Parameters: slices.Clone(definition.Parameters), Confirm: confirm,
+			Target: target.Name, Dispatcher: dispatcher,
+		})
+	}
+	return specs, nil
+}

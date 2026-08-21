@@ -124,7 +124,15 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		return nil, err
 	}
 	result.audio = audio
-	observers := append([]perception.Observer{audio}, bind.config.Observers...)
+	observers := []perception.Observer{audio}
+	for _, factory := range bind.config.Observers {
+		observer, err := factory.New(media)
+		if err != nil {
+			cancel(err)
+			return nil, fmt.Errorf("start observer %q: %w", factory.Name, err)
+		}
+		observers = append(observers, observer)
+	}
 	set, err := perception.NewSet(observers...)
 	if err != nil {
 		cancel(err)
