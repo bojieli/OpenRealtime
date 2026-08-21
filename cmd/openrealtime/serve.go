@@ -30,6 +30,7 @@ import (
 	"github.com/bojieli/OpenRealtime/gateway"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/policymodel"
 	"github.com/bojieli/OpenRealtime/sidecar"
 	"github.com/bojieli/OpenRealtime/trajectory"
 	webrtcadapter "github.com/bojieli/OpenRealtime/transport/webrtc"
@@ -87,6 +88,12 @@ type serveOptions struct {
 	webrtcListen string
 	webrtcSTUN   string
 
+	policyURL      string
+	policyModel    string
+	policyTokenEnv string
+	policyGuided   bool
+	policies       string
+
 	sidecarCommand string
 	sidecarAddress string
 	sidecarFloor   string
@@ -141,6 +148,11 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.BoolVar(&options.validateWire, "validate-wire", true, "validate every protocol event against the pinned schema")
 	flags.StringVar(&options.webrtcListen, "webrtc-listen", "", "additional WebRTC listen address; empty disables the adapter")
 	flags.StringVar(&options.webrtcSTUN, "webrtc-stun", "", "comma-separated STUN servers for the WebRTC adapter")
+	flags.StringVar(&options.policies, "policy-models", "none", "policy models to enable: none, backchannel, turn-projection, or both")
+	flags.StringVar(&options.policyURL, "policy-url", policymodel.DefaultBaseURL, "policy model base URL")
+	flags.StringVar(&options.policyModel, "policy-model", "", "policy model identity; required when a policy model is enabled")
+	flags.StringVar(&options.policyTokenEnv, "policy-token-env", "OPENREALTIME_POLICY_API_KEY", "environment variable holding the policy model credential")
+	flags.BoolVar(&options.policyGuided, "policy-guided-choice", true, "ask the policy server to constrain decoding to the enumerated options")
 	flags.StringVar(&options.sidecarCommand, "sidecar", "", "command that runs the model sidecar for the omni and duplex bindings")
 	flags.StringVar(&options.sidecarAddress, "sidecar-address", "", "connect to a running sidecar as tcp:host:port or unix:/path")
 	flags.StringVar(&options.sidecarFloor, "floor", "", "who decides endpoints: engine or model; empty selects the binding's default")
@@ -235,7 +247,62 @@ func buildPolicies(options serveOptions) (interaction.Policies, error) {
 	}
 	policies.Rollout = rollout
 	policies.Trigger = interaction.NewFixedCadenceTrigger(options.cadence)
+	if err := applyPolicyModels(&policies, options); err != nil {
+		return interaction.Policies{}, err
+	}
 	return policies, nil
+}
+
+// applyPolicyModels installs the small models that make the two judgement
+// calls the rules are brittle at.
+//
+// They are additive: with none configured, backchannel is off and projection
+// falls back to silence-only endpointing. The system runs either way; it is
+// simply less alive without them, and that is the trade a deployment gets to
+// make rather than one the build makes for it.
+func applyPolicyModels(policies *interaction.Policies, options serveOptions) error {
+	wanted := strings.ToLower(strings.TrimSpace(options.policies))
+	backchannel := wanted == "backchannel" || wanted == "both"
+	projection := wanted == "turn-projection" || wanted == "projection" || wanted == "both"
+	switch wanted {
+	case "", "none", "backchannel", "turn-projection", "projection", "both":
+	default:
+		return fmt.Errorf("policy models must be none, backchannel, turn-projection, or both, got %q", options.policies)
+	}
+	if !backchannel && !projection {
+		return nil
+	}
+	if strings.TrimSpace(options.policyModel) == "" {
+		return errors.New("enabling a policy model needs -policy-model")
+	}
+	decider, err := policymodel.New(policymodel.Config{
+		BaseURL: options.policyURL, Model: options.policyModel,
+		APIKey: os.Getenv(options.policyTokenEnv), GuidedChoice: options.policyGuided,
+	})
+	if err != nil {
+		return err
+	}
+	if backchannel {
+		policy, err := interaction.NewModelBackchannel(decider, interaction.BackchannelOptions{})
+		if err != nil {
+			return err
+		}
+		policies.Backchannel = policy
+	}
+	if projection {
+		policy, err := interaction.NewModelProjection(decider, interaction.ProjectionOptions{})
+		if err != nil {
+			return err
+		}
+		policies.TurnProjection = policy
+		// The floor consults the projection, so installing one without
+		// rebuilding the floor would leave it unused - which is the kind of
+		// silent no-op a measured factor must never be.
+		policies.Floor = interaction.NewEngineFloor(interaction.EngineFloorOptions{
+			Projection: policy,
+		})
+	}
+	return nil
 }
 
 func buildCascade(options serveOptions, policies interaction.Policies) (binding.Binding, error) {
