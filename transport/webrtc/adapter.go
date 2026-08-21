@@ -57,6 +57,21 @@ type Config struct {
 	ConnectTimeout time.Duration
 	// SessionTimeout bounds one whole session. Zero means no bound.
 	SessionTimeout time.Duration
+	// AllowedOrigins are the web origins permitted to POST an offer here.
+	//
+	// Empty is the default and means no cross-origin request is answered,
+	// which is the current behaviour and the right one for a server-to-server
+	// deployment. It is a list rather than a switch because this endpoint has
+	// no credential of its own and starting a session is all it does: a
+	// wildcard would let any page anyone visits open a session against any
+	// adapter their browser can route to. The literal "*" is accepted for
+	// local development and says what it is.
+	//
+	// It exists because the SDK's WebRTC transport only runs in a browser, and
+	// a browser is always on a different origin from the adapter - the adapter
+	// is a port on a server and the application is a site. Without this, an
+	// unmodified official client cannot reach this endpoint at all.
+	AllowedOrigins []string
 	// Logf receives operational messages. Nil discards them.
 	Logf func(string, ...any)
 }
@@ -148,6 +163,7 @@ func (adapter *Adapter) Metrics() Metrics {
 func (adapter *Adapter) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/realtime", adapter.offer)
+	mux.HandleFunc("OPTIONS /v1/realtime", adapter.preflight)
 	mux.HandleFunc("GET /healthz", func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(writer).Encode(map[string]any{
@@ -158,7 +174,69 @@ func (adapter *Adapter) Handler() http.Handler {
 	return mux
 }
 
+// allowedOrigin reports the value to echo for a request's Origin, or empty if
+// this origin may not post here.
+//
+// The origin is echoed rather than answered with a wildcard, and Vary: Origin
+// goes with it, because an intermediary that cached one origin's answer for
+// another would hand out a permission nobody granted.
+func (adapter *Adapter) allowedOrigin(origin string) string {
+	if origin == "" {
+		return ""
+	}
+	for _, allowed := range adapter.config.AllowedOrigins {
+		if allowed == "*" || strings.EqualFold(strings.TrimSpace(allowed), origin) {
+			return origin
+		}
+	}
+	return ""
+}
+
+func (adapter *Adapter) writeCORS(writer http.ResponseWriter, request *http.Request) bool {
+	writer.Header().Add("Vary", "Origin")
+	origin := adapter.allowedOrigin(request.Header.Get("Origin"))
+	if origin == "" {
+		return false
+	}
+	writer.Header().Set("Access-Control-Allow-Origin", origin)
+	return true
+}
+
+// preflight answers the OPTIONS a browser sends before an offer.
+//
+// The SDP body and the bearer credential both make the offer a request no
+// browser will send without asking first, so an adapter that does not answer
+// this is an adapter no browser can reach from anywhere but its own origin.
+func (adapter *Adapter) preflight(writer http.ResponseWriter, request *http.Request) {
+	if !adapter.writeCORS(writer, request) {
+		http.Error(writer, "cross-origin requests are not allowed by this adapter",
+			http.StatusForbidden)
+		return
+	}
+	writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	// The requested headers are echoed rather than enumerated. A client sends
+	// its own alongside the two this endpoint needs - OpenAI's SDK adds an
+	// X-OpenAI-Agents-SDK telemetry header - and a server cannot know in
+	// advance what every client will identify itself with. Listing a fixed set
+	// means the preflight fails for reasons that have nothing to do with what
+	// the request is allowed to do, which is how this endpoint stayed
+	// unreachable from a browser.
+	//
+	// Echoing is safe here because the decision that matters was already made:
+	// this responds only for an origin the operator named, and headers cannot
+	// widen what that origin is permitted to do.
+	requested := request.Header.Get("Access-Control-Request-Headers")
+	if strings.TrimSpace(requested) == "" {
+		requested = "Content-Type, Authorization"
+	}
+	writer.Header().Add("Vary", "Access-Control-Request-Headers")
+	writer.Header().Set("Access-Control-Allow-Headers", requested)
+	writer.Header().Set("Access-Control-Max-Age", "600")
+	writer.WriteHeader(http.StatusNoContent)
+}
+
 func (adapter *Adapter) offer(writer http.ResponseWriter, request *http.Request) {
+	adapter.writeCORS(writer, request)
 	body, err := io.ReadAll(io.LimitReader(request.Body, 1<<20))
 	if err != nil || len(body) == 0 {
 		http.Error(writer, "an SDP offer is required", http.StatusBadRequest)

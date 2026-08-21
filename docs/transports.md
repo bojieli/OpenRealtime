@@ -46,6 +46,32 @@ A client POSTs an SDP offer to `/v1/realtime` with `Content-Type:
 application/sdp` and receives an answer. Protocol events travel on a data
 channel named `oai-events`, which is what Realtime clients already expect.
 
+### Reaching the adapter from a browser
+
+The SDP exchange carries a bearer credential and an `application/sdp` body, so
+a browser will not send it cross-origin without asking first. The adapter
+answers that preflight only for origins an operator named:
+
+```sh
+openrealtime serve -webrtc-listen 127.0.0.1:8766 \
+  -webrtc-allow-origin https://your-app.example.com
+```
+
+Empty is the default and answers no browser, which is right for a
+server-to-server deployment. It is a list rather than a switch because this
+endpoint has no credential of its own and starting a session is all it does: a
+wildcard would let any page a user visits open a session against any adapter
+their browser can route to. `*` is accepted for local development.
+
+This is not an optional convenience. A browser is always on a different origin
+from the adapter - the adapter is a port on a server and the application is a
+site - and OpenAI's own SDK only speaks WebRTC from a browser. Without it, an
+unmodified official client cannot reach this endpoint at all.
+
+The requested headers are echoed rather than enumerated, because a client sends
+its own alongside the two the exchange needs and a server cannot know in
+advance what every client will identify itself with.
+
 ### Large events: chunk framing
 
 One data channel message carries one protocol event, as text. That is the whole

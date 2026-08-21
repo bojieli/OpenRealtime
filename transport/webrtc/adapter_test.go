@@ -247,6 +247,19 @@ func (client *browser) received() []map[string]any {
 	return append([]map[string]any(nil), client.events...)
 }
 
+func startAdapterWithOrigins(t *testing.T, endpoint *protocolServer, origins ...string) *httptest.Server {
+	t.Helper()
+	bridge, err := adapter.New(adapter.Config{
+		Endpoint: endpoint.url(), Model: "test", AllowedOrigins: origins,
+	})
+	if err != nil {
+		t.Fatalf("new adapter: %v", err)
+	}
+	server := httptest.NewServer(bridge.Handler())
+	t.Cleanup(server.Close)
+	return server
+}
+
 func startAdapter(t *testing.T, endpoint *protocolServer) *httptest.Server {
 	t.Helper()
 	bridge, err := adapter.New(adapter.Config{Endpoint: endpoint.url(), Model: "test"})
@@ -693,5 +706,80 @@ func TestOutboundEventsAreChunkedOnlyWhenTheyMustBe(t *testing.T) {
 			t.Fatal("the chunked observation and the small event did not both arrive")
 		case <-time.After(10 * time.Millisecond):
 		}
+	}
+}
+
+// The adapter answers a browser only for an origin the operator named. It is
+// the difference between a browser client being able to reach it at all and
+// not, and between that and any page on the internet being able to open a
+// session against it.
+func TestTheAdapterAnswersOnlyTheOriginsItWasGiven(t *testing.T) {
+	t.Parallel()
+	allowed := "https://app.example.com"
+	endpoint := newProtocolServer(t)
+	server := startAdapterWithOrigins(t, endpoint, allowed)
+
+	preflight := func(origin string) *http.Response {
+		t.Helper()
+		request, err := http.NewRequest(http.MethodOptions, server.URL+"/v1/realtime", nil)
+		if err != nil {
+			t.Fatalf("build the preflight: %v", err)
+		}
+		request.Header.Set("Origin", origin)
+		request.Header.Set("Access-Control-Request-Method", "POST")
+		request.Header.Set("Access-Control-Request-Headers", "content-type,authorization,x-openai-agents-sdk")
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatalf("preflight: %v", err)
+		}
+		t.Cleanup(func() { response.Body.Close() })
+		return response
+	}
+
+	answered := preflight(allowed)
+	if answered.StatusCode != http.StatusNoContent {
+		t.Fatalf("a named origin must be answered, got %d", answered.StatusCode)
+	}
+	if got := answered.Header.Get("Access-Control-Allow-Origin"); got != allowed {
+		t.Fatalf("expected the origin echoed, got %q", got)
+	}
+	// A client's own headers cannot be enumerated in advance, so what it asks
+	// for is what it is allowed - including the SDK's telemetry header, which
+	// is what made this endpoint unreachable from a browser.
+	if got := answered.Header.Get("Access-Control-Allow-Headers"); !strings.Contains(got, "x-openai-agents-sdk") {
+		t.Fatalf("the requested headers must be answered, got %q", got)
+	}
+	if got := answered.Header.Get("Vary"); !strings.Contains(got, "Origin") {
+		t.Fatalf("an origin-dependent answer must vary on Origin, got %q", got)
+	}
+
+	refused := preflight("https://not-your-app.example.com")
+	if refused.StatusCode == http.StatusNoContent {
+		t.Fatal("an origin nobody named must not be answered")
+	}
+	if got := refused.Header.Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("a refused origin must not be granted anything, got %q", got)
+	}
+}
+
+func TestAnAdapterWithNoAllowedOriginsAnswersNoBrowser(t *testing.T) {
+	t.Parallel()
+	endpoint := newProtocolServer(t)
+	server := startAdapter(t, endpoint)
+	request, err := http.NewRequest(http.MethodOptions, server.URL+"/v1/realtime", nil)
+	if err != nil {
+		t.Fatalf("build the preflight: %v", err)
+	}
+	request.Header.Set("Origin", "https://app.example.com")
+	request.Header.Set("Access-Control-Request-Method", "POST")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	defer response.Body.Close()
+	// The default is a server-to-server deployment, where no browser should be
+	// able to open a session and nothing needs to.
+	if response.Header.Get("Access-Control-Allow-Origin") != "" {
+		t.Fatal("the default must grant no origin anything")
 	}
 }

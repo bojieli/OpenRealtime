@@ -103,6 +103,7 @@ type serveOptions struct {
 
 	webrtcListen string
 	webrtcSTUN   string
+	webrtcOrigin string
 
 	gpuCapacity    int
 	policyURL      string
@@ -186,6 +187,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.logLevel, "log-level", "info", "log level: debug, info, warn, or error")
 	flags.StringVar(&options.webrtcListen, "webrtc-listen", "", "additional WebRTC listen address; empty disables the adapter")
 	flags.StringVar(&options.webrtcSTUN, "webrtc-stun", "", "comma-separated STUN servers for the WebRTC adapter")
+	flags.StringVar(&options.webrtcOrigin, "webrtc-allow-origin", "",
+		"comma-separated web origins allowed to POST an SDP offer, or \"*\"; empty allows none, which is right unless a browser on another origin has to reach the adapter")
 	flags.BoolVar(&options.computerUse, "computer-use", false, "declare the computer.* tools against a browser target")
 	flags.StringVar(&options.browserURL, "browser-devtools-url", "http://127.0.0.1:9222", "browser DevTools endpoint for computer use")
 	flags.StringVar(&options.browserTarget, "browser-target", "", "connect directly to a known page WebSocket instead of discovering one")
@@ -696,10 +699,11 @@ func startWebRTC(options serveOptions, serveError chan error) (*http.Server, err
 		iceServers = append(iceServers, webrtc.ICEServer{URLs: []string{server}})
 	}
 	adapter, err := webrtcadapter.New(webrtcadapter.Config{
-		Endpoint:   "ws://" + options.listen + "/v1/realtime",
-		Token:      os.Getenv(options.tokenEnv),
-		Model:      options.model,
-		ICEServers: iceServers,
+		Endpoint:       "ws://" + options.listen + "/v1/realtime",
+		Token:          os.Getenv(options.tokenEnv),
+		Model:          options.model,
+		ICEServers:     iceServers,
+		AllowedOrigins: splitList(options.webrtcOrigin),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("configure the WebRTC adapter: %w", err)
@@ -867,4 +871,16 @@ func demoHandler(enabled bool) http.Handler {
 		return nil
 	}
 	return browserdemo.Handler()
+}
+
+// splitList turns a comma-separated flag into a list, dropping empties so a
+// trailing comma does not become an origin nobody meant to allow.
+func splitList(value string) []string {
+	var result []string
+	for _, entry := range strings.Split(value, ",") {
+		if trimmed := strings.TrimSpace(entry); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }
