@@ -106,7 +106,10 @@ taken in, a dangerous tool declared, and nothing happens. See
 | [Transports](docs/transports.md) | WebSocket, WebRTC, LiveKit |
 | [Safety](docs/safety.md) | authority, confirmation, injection, blast radius |
 | [Operations](docs/operations.md) | health, metrics, logs, failure behaviour, support policy |
+| [Deployment](deploy/README.md) | the container, the release binaries, colocated model serving |
 | [Measurement](docs/measurement.md) | what is measured, and what is claimed |
+| [The benchmark harness](docs/benchmarks.md) | running a suite, reading a cell, adding one |
+| [Efficiency](docs/efficiency.md) | what each part of the loop costs |
 
 ## What this claims, and what it does not
 
