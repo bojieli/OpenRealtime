@@ -54,15 +54,26 @@ func merge(batches []Batch) Batch {
 		EndVersion:   batches[len(batches)-1].EndVersion,
 		Triage:       TriageQueue,
 	}
+	// Parallel is the one triage that does not survive being mixed. A batch is
+	// offered to the parallel branch only because it can be handled without
+	// disturbing the work in flight, and that is a property of the whole batch
+	// rather than of one event in it: merging a deferred routine batch into a
+	// parallel one would run the routine work alongside the active continuation
+	// and past the deferral that was holding it. So parallel requires unanimity,
+	// while cancel - which stops the work in flight rather than joining it -
+	// still dominates.
+	parallel := true
 	for index, batch := range batches {
 		merged.Events = append(merged.Events, batch.Events...)
 		merged.Items = append(merged.Items, batch.Items...)
 		merged.Deferred = merged.Deferred || batch.Deferred || index < len(batches)-1
 		if batch.Triage == TriageCancel {
 			merged.Triage = TriageCancel
-		} else if batch.Triage == TriageParallel && merged.Triage != TriageCancel {
-			merged.Triage = TriageParallel
 		}
+		parallel = parallel && batch.Triage == TriageParallel
+	}
+	if parallel && merged.Triage != TriageCancel {
+		merged.Triage = TriageParallel
 	}
 	return merged
 }

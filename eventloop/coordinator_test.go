@@ -443,3 +443,44 @@ func TestQueueFullReservesInterruptCapacity(t *testing.T) {
 		t.Fatalf("reserved interrupt capacity must remain: %v", err)
 	}
 }
+
+// A parallel batch is admitted by construction: the loop offers one only when
+// it can be handled without disturbing the work in flight, and the shipped
+// deferral policy lets it through for that reason. A routine batch that a
+// policy is already holding must not inherit that exemption by being merged
+// with one - which is what happens when a quick question arrives while a tool
+// result waits for the agent to stop speaking.
+func TestDeferredRoutineWorkDoesNotInheritParallelAdmission(t *testing.T) {
+	var admitted []eventloop.Batch
+	test := newHarness(t, eventloop.GateFunc(func(_ context.Context, batch eventloop.Batch) (bool, string) {
+		if batch.Triage == eventloop.TriageParallel {
+			return true, ""
+		}
+		return false, "agent audio is reaching the user"
+	}))
+
+	if _, err := test.coordinator.Submit(observation(1, "the tool came back")); err != nil {
+		t.Fatalf("submit routine: %v", err)
+	}
+	if _, err := test.coordinator.RunNext(context.Background()); !errors.Is(err, eventloop.ErrDeferred) {
+		t.Fatalf("expected the routine batch to be deferred, got %v", err)
+	}
+
+	quick := observation(2, "what time is it")
+	quick.Priority = eventloop.PriorityParallel
+	if _, err := test.coordinator.Submit(quick); err != nil {
+		t.Fatalf("submit parallel: %v", err)
+	}
+	if _, err := test.coordinator.RunNext(context.Background()); !errors.Is(err, eventloop.ErrDeferred) {
+		t.Fatalf("a batch carrying deferred routine work must stay deferred, got %v", err)
+	}
+	if got := test.coordinator.Unacted(); got != 2 {
+		t.Fatalf("both batches must remain committed and unacted, got %d", got)
+	}
+	select {
+	case batch := <-test.batches:
+		admitted = append(admitted, batch)
+		t.Fatalf("nothing should have run, got a batch of %d items", len(admitted[0].Items))
+	default:
+	}
+}
