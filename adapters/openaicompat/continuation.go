@@ -8,6 +8,7 @@ package openaicompat
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -186,11 +187,76 @@ type chatStreamOptions struct {
 }
 
 type chatMessage struct {
-	Role             string         `json:"role"`
+	Role string `json:"role"`
+	// Content and Parts are alternatives: a message carries either plain text
+	// or the structured content array that images require. Exactly one is
+	// serialised, because a server given both has to guess.
 	Content          string         `json:"content,omitempty"`
+	Parts            []contentPart  `json:"-"`
 	ReasoningContent string         `json:"reasoning_content,omitempty"`
 	ToolCalls        []chatToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string         `json:"tool_call_id,omitempty"`
+}
+
+// MarshalJSON emits the structured form when there are parts.
+func (message chatMessage) MarshalJSON() ([]byte, error) {
+	type plain chatMessage
+	if len(message.Parts) == 0 {
+		return json.Marshal(plain(message))
+	}
+	structured := struct {
+		Role             string         `json:"role"`
+		Content          []contentPart  `json:"content"`
+		ReasoningContent string         `json:"reasoning_content,omitempty"`
+		ToolCalls        []chatToolCall `json:"tool_calls,omitempty"`
+		ToolCallID       string         `json:"tool_call_id,omitempty"`
+	}{
+		Role: message.Role, Content: message.Parts,
+		ReasoningContent: message.ReasoningContent,
+		ToolCalls:        message.ToolCalls, ToolCallID: message.ToolCallID,
+	}
+	return json.Marshal(structured)
+}
+
+// contentPart is one element of a structured message body.
+type contentPart struct {
+	Type     string        `json:"type"`
+	Text     string        `json:"text,omitempty"`
+	ImageURL *contentImage `json:"image_url,omitempty"`
+}
+
+type contentImage struct {
+	URL string `json:"url"`
+}
+
+// attachMedia resolves an observation's handles into image parts.
+//
+// A handle that no longer resolves is skipped rather than failing the
+// continuation: retention is bounded on purpose, and a model that gets the
+// narration without the image is in exactly the state this design expects
+// once the window has passed.
+func attachMedia(item trajectory.Item, media continuation.MediaResolver) []contentPart {
+	if media == nil || item.Observation == nil || len(item.Observation.Media) == 0 {
+		return nil
+	}
+	var parts []contentPart
+	for _, reference := range item.Observation.Media {
+		resolved, err := media(reference.Handle)
+		if err != nil || len(resolved.Bytes) == 0 {
+			continue
+		}
+		mimeType := resolved.MIMEType
+		if mimeType == "" {
+			mimeType = reference.MIMEType
+		}
+		parts = append(parts, contentPart{
+			Type: "image_url",
+			ImageURL: &contentImage{
+				URL: "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(resolved.Bytes),
+			},
+		})
+	}
+	return parts
 }
 
 type chatTool struct {
@@ -514,7 +580,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 		if _, consumed := consumedInvocations[item.InvocationID]; modelItem && consumed && item.InvocationID != "" {
 			continue
 		}
-		message, ok, err := compilePortableItem(item)
+		message, ok, err := compilePortableItem(item, request.Media)
 		if err != nil {
 			return chatRequest{}, err
 		}
@@ -544,10 +610,18 @@ func isModelOutputItem(kind trajectory.Kind) bool {
 		kind == trajectory.KindToolProposal || kind == trajectory.KindToolCall
 }
 
-func compilePortableItem(item trajectory.Item) (chatMessage, bool, error) {
+func compilePortableItem(item trajectory.Item, media continuation.MediaResolver) (chatMessage, bool, error) {
 	switch item.Kind {
 	case trajectory.KindObservation:
-		return chatMessage{Role: "user", Content: continuation.ObservationContent(item)}, true, nil
+		message := chatMessage{Role: "user", Content: continuation.ObservationContent(item)}
+		// An observation may carry images an observer retained. A model that
+		// can see should see them while they exist: reasoning about a screen
+		// and clicking on one are different tasks.
+		if parts := attachMedia(item, media); len(parts) > 0 {
+			message.Parts = append([]contentPart{{Type: "text", Text: message.Content}}, parts...)
+			message.Content = ""
+		}
+		return message, true, nil
 	case trajectory.KindReasoning:
 		return chatMessage{Role: "assistant", Content: "[Internal working state from an earlier continuation; not user-visible]\n" + item.Content}, true, nil
 	case trajectory.KindAssistant:

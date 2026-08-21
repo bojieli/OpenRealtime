@@ -31,9 +31,13 @@ type Config struct {
 	BaseURL string
 	Model   string
 	APIKey  string
-	// MaxOutputTokens bounds the narration. It is small on purpose: a
-	// narration that runs long is a narration that has started describing
-	// rather than recording.
+	// MaxOutputTokens bounds the narration.
+	//
+	// It is generous rather than tight, and that is a correction: a reasoning
+	// model spends this budget on thinking before it writes anything, so a
+	// limit sized for the output alone truncates the narration mid-sentence
+	// and looks like a model that cannot describe a screen. The prompt is
+	// what keeps narration short; this only stops it running away.
 	MaxOutputTokens int
 	RequestTimeout  time.Duration
 	HTTPClient      *http.Client
@@ -58,7 +62,7 @@ func New(config Config) (*Client, error) {
 	}
 	config.BaseURL = strings.TrimRight(config.BaseURL, "/")
 	if config.MaxOutputTokens <= 0 {
-		config.MaxOutputTokens = 160
+		config.MaxOutputTokens = 2048
 	}
 	if config.RequestTimeout <= 0 {
 		config.RequestTimeout = 30 * time.Second

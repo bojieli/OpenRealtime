@@ -78,6 +78,7 @@ type serveOptions struct {
 	observers      string
 	components     string
 	narrator       string
+	narration      string
 	visionURL      string
 	visionModel    string
 	visionTokenEnv string
@@ -151,6 +152,7 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.observers, "observers", "audio", "observer set: audio, audio+video, or video")
 	flags.StringVar(&options.components, "observer-components", "narration", "video observer components: keyframe+narration, narration, or keyframe")
 	flags.StringVar(&options.narrator, "narrator", "session", "narrator composition: session or dedicated")
+	flags.StringVar(&options.narration, "narration", "describe", "narration style: describe, or actionable to include control positions for computer use")
 	flags.StringVar(&options.visionURL, "vision-url", openaivision.DefaultBaseURL, "vision model base URL used for narration")
 	flags.StringVar(&options.visionModel, "vision-model", "", "vision model identity; required when a video observer is enabled")
 	flags.StringVar(&options.visionTokenEnv, "vision-token-env", "OPENREALTIME_VISION_API_KEY", "environment variable holding the vision model credential")
@@ -516,15 +518,26 @@ func buildObservers(options serveOptions) ([]perception.Factory, error) {
 	if err != nil {
 		return nil, err
 	}
-	var narrator perception.Narrator
+	prompt := ""
+	switch strings.ToLower(strings.TrimSpace(options.narration)) {
+	case "", "describe":
+	case "actionable":
+		prompt = perception.ActionableNarrationPrompt
+	default:
+		return nil, fmt.Errorf("narration must be describe or actionable, got %q", options.narration)
+	}
+	label := "session"
 	switch strings.ToLower(strings.TrimSpace(options.narrator)) {
 	case "session", "":
-		narrator, err = perception.NewSessionNarrator(vision)
 	case "dedicated":
-		narrator, err = perception.NewDedicatedNarrator(vision)
+		label = "dedicated"
 	default:
 		return nil, fmt.Errorf("narrator must be session or dedicated, got %q", options.narrator)
 	}
+	var narrator perception.Narrator
+	narrator, err = perception.NewNarrator(perception.NarratorConfig{
+		Vision: vision, Prompt: prompt, Label: label,
+	})
 	if err != nil {
 		return nil, err
 	}

@@ -290,6 +290,17 @@ func (runtime *runtime) Video(context.Context, perception.Frame) error {
 	return fmt.Errorf("%w: video input over the %s binding", binding.ErrUnsupported, runtime.spec.Name)
 }
 
+// Text injects something the client typed into the model's context.
+func (runtime *runtime) Text(_ context.Context, input binding.TextInput) error {
+	role := input.Role
+	if role == "" {
+		role = "user"
+	}
+	return runtime.model.Send(sidecar.Message{
+		Type: sidecar.TypeText, Role: role, Text: input.Text,
+	})
+}
+
 // CreateResponse asks the model for a turn now.
 func (runtime *runtime) CreateResponse(context.Context) error {
 	return runtime.model.Send(sidecar.Message{Type: sidecar.TypeRespond})

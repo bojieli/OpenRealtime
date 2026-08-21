@@ -67,8 +67,12 @@ type Config struct {
 	// that no continuation here will ever exercise.
 	ExternalFast    bool
 	RetainReasoning bool
-	Now             func() uint64
-	NextID          func(prefix string) string
+	// Media resolves attachments an observer retained, for providers that can
+	// see. Without it a model gets the narration and nothing else, which is
+	// enough to reason about a screen and not enough to click on one.
+	Media  continuation.MediaResolver
+	Now    func() uint64
+	NextID func(prefix string) string
 }
 
 // Engine runs continuations over one canonical trajectory.
@@ -158,7 +162,7 @@ func New(config Config) (*Engine, error) {
 	}
 	runner, err := continuation.NewRunner(continuation.RunnerConfig{
 		Store: config.Store, Now: config.Now, NextID: config.NextID,
-		RetainReasoning: config.RetainReasoning,
+		RetainReasoning: config.RetainReasoning, Media: config.Media,
 	})
 	if err != nil {
 		return nil, err

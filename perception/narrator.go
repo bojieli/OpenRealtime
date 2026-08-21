@@ -21,6 +21,31 @@ const DefaultNarrationPrompt = "Describe what this screen shows, as a short fact
 	"State what is on screen and what a person could do next: the application, the visible state, any dialog, error, or confirmation, and the text of anything that asks for a decision. Quote on-screen text exactly when it carries a value, an identifier, or an amount.\n\n" +
 	"Two or three sentences at most. Do not speculate about what is not visible, do not describe layout or colour for its own sake, and do not address the user. If nothing meaningful has changed, reply with exactly: no change."
 
+// ActionableNarrationPrompt is the narration a computer-use session wants.
+//
+// It asks for the same persistent text as the default prompt and adds the one
+// thing an agent cannot get any other way: where the controls are. That is not
+// a workaround for weak models. Narration is the value precisely because it
+// turns a screen into something that survives and can be acted on, and a
+// description that says a Confirm button exists without saying where it is has
+// done half the job - the agent is left inferring a coordinate from pixels,
+// which is a different and much harder skill than reading a screen.
+//
+// Positions are stated in the source's own coordinate space, which is the
+// space computer-use actions are expressed in, so no conversion is needed
+// anywhere.
+const ActionableNarrationPrompt = "Describe this screen for an agent that cannot see it and must act on it.\n\n" +
+	"State what is on screen: the application, the visible state, any dialog, error, or confirmation, and " +
+	"the text of anything that asks for a decision. Quote on-screen text exactly when it carries a value, " +
+	"an identifier, or an amount.\n\n" +
+	"Then list every control a person could click, one per line, as:\n" +
+	"  CONTROL: <label> at (<x>, <y>)\n" +
+	"where x and y locate the centre of the control on a 0 to 1000 scale across the image: x=0 is the " +
+	"left edge, x=1000 the right edge, y=0 the top, y=1000 the bottom. Use that scale and not pixels - " +
+	"the image you are shown may have been resized, and a fraction of the image is the same wherever it " +
+	"was resized to. Estimate as accurately as you can; an agent will click exactly there.\n\n" +
+	"Do not speculate about what is not visible. If nothing meaningful has changed, reply with exactly: no change."
+
 // Image is one frame handed to a vision model.
 type Image struct {
 	Bytes    []byte

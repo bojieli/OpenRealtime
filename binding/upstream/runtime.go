@@ -254,6 +254,22 @@ func (runtime *runtime) Video(context.Context, perception.Frame) error {
 	return fmt.Errorf("%w: video input over an upstream binding", binding.ErrUnsupported)
 }
 
+// Text forwards something the client typed to the remote, which owns the
+// conversation the user is having.
+func (runtime *runtime) Text(ctx context.Context, input binding.TextInput) error {
+	role := input.Role
+	if role == "" {
+		role = "user"
+	}
+	return runtime.remote.Send(ctx, map[string]any{
+		"type": "conversation.item.create",
+		"item": map[string]any{
+			"type": "message", "role": role,
+			"content": []map[string]any{{"type": "input_text", "text": input.Text}},
+		},
+	})
+}
+
 // CreateResponse asks the remote to respond now.
 func (runtime *runtime) CreateResponse(ctx context.Context) error {
 	return runtime.remote.Send(ctx, map[string]any{"type": "response.create"})

@@ -320,3 +320,22 @@ func observationChannel(observation perception.Observation) string {
 	}
 	return "observation"
 }
+
+// Text commits something the client typed.
+//
+// It travels the same path speech does - a canonical observation through the
+// event loop - so a typed turn and a spoken one are the same thing to
+// everything downstream. Only the observer differs, and it says so.
+func (runtime *runtime) Text(ctx context.Context, input binding.TextInput) error {
+	authority := trajectory.AuthorityUser
+	if input.Role == "system" {
+		// A system message from a client is not the user talking. It is
+		// context, and it must not be able to act like a request.
+		authority = trajectory.AuthorityObserver
+	}
+	observation := perception.Observation{
+		Text: input.Text, Observer: "client", Source: "text",
+		Authority: authority, Final: true,
+	}
+	return runtime.commitObservation(ctx, observation)
+}

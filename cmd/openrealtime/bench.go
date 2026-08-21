@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	"github.com/bojieli/OpenRealtime/bench/dynacu"
 	"github.com/bojieli/OpenRealtime/bench/fdb"
 	"github.com/bojieli/OpenRealtime/bench/fdbench"
 	"github.com/bojieli/OpenRealtime/bench/fdbv3"
@@ -27,7 +28,7 @@ import (
 // users get is not a measurement of anything.
 func runBench(arguments []string, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: openrealtime bench <fdb|fdbv3|fdbench> [flags]")
+		return errors.New("usage: openrealtime bench <fdb|fdbv3|fdbench|dynacu> [flags]")
 	}
 	suite := strings.ToLower(strings.TrimSpace(arguments[0]))
 	switch suite {
@@ -37,6 +38,8 @@ func runBench(arguments []string, output io.Writer) error {
 		return runFDBench(arguments[1:], output)
 	case "fdbv3", "fdb-v3":
 		return runFDBv3(arguments[1:], output)
+	case "dynacu", "computer-use":
+		return runDynaCU(arguments[1:], output)
 	default:
 		return fmt.Errorf("unknown suite %q", suite)
 	}
@@ -355,5 +358,77 @@ func runFDBv3(arguments []string, output io.Writer) error {
 		}
 		fmt.Fprintf(output, "written to %s\n", out)
 	}
+	return nil
+}
+
+// runDynaCU is the computer-use functional release gate.
+//
+// It answers one question - does video observation and action grounding work
+// end to end, over the protocol, with nothing faked - and it answers it in
+// seconds without a dataset, a GPU, or a network.
+func runDynaCU(arguments []string, output io.Writer) error {
+	flags := flag.NewFlagSet("openrealtime bench dynacu", flag.ContinueOnError)
+	var (
+		endpoint    string
+		tokenEnv    string
+		model       string
+		out         string
+		instruction string
+		interval    time.Duration
+		timeout     time.Duration
+		verbose     bool
+	)
+	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
+	flags.StringVar(&tokenEnv, "token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token")
+	flags.StringVar(&model, "model", "", "model to request")
+	flags.StringVar(&out, "out", "", "write the result to this path as JSON")
+	flags.StringVar(&instruction, "instruction", "", "what the user asks for; empty uses the default")
+	flags.DurationVar(&interval, "frame-interval", 350*time.Millisecond, "how often a frame is sent")
+	flags.DurationVar(&timeout, "timeout", 90*time.Second, "how long the attempt may take")
+	flags.BoolVar(&verbose, "verbose", true, "print what the agent observed and did")
+	flags.SetOutput(output)
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	progress := func(string) {}
+	if verbose {
+		progress = func(line string) { fmt.Fprintln(output, line) }
+	}
+	outcome, runErr := dynacu.Run(ctx, dynacu.Options{
+		Endpoint: endpoint, Token: os.Getenv(tokenEnv), Model: model,
+		Instruction: instruction, FrameInterval: interval, Timeout: timeout,
+		Progress: progress,
+	})
+	result := dynacu.AsResult(bench.Reference(), outcome, runErr)
+
+	fmt.Fprintln(output)
+	fmt.Fprintf(output, "negotiated video and computer use : %v\n", outcome.Negotiated)
+	fmt.Fprintf(output, "observed the screen               : %v\n", outcome.Observed)
+	if outcome.ObservedText != "" {
+		fmt.Fprintf(output, "  %q\n", outcome.ObservedText)
+	}
+	fmt.Fprintf(output, "acted                             : %v\n", outcome.Acted)
+	fmt.Fprintf(output, "grounded the action               : %v (%s)\n", outcome.Grounded, outcome.FinalState)
+	if outcome.MissDistance > 0 {
+		fmt.Fprintf(output, "  closest click was %.0f px from the target\n", outcome.MissDistance)
+	}
+	if outcome.Failure != "" {
+		fmt.Fprintf(output, "failure                           : %s\n", outcome.Failure)
+	}
+	if strings.TrimSpace(out) != "" {
+		if err := result.Write(out); err != nil {
+			return err
+		}
+	}
+	if runErr != nil {
+		return runErr
+	}
+	if !outcome.Passed() {
+		return errors.New("the computer-use gate did not pass")
+	}
+	fmt.Fprintln(output, "\ngate passed")
 	return nil
 }

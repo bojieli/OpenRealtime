@@ -235,7 +235,7 @@ func (session *session) handleClientEvent(message protocol.Message) error {
 		if err := message.Unmarshal(&create); err != nil {
 			return err
 		}
-		return session.onToolResult(create)
+		return session.onItemCreate(create)
 	case protocol.EventResponseCreate:
 		return session.runtime.CreateResponse(session.ctx)
 	case protocol.EventResponseCancel:
@@ -379,9 +379,18 @@ func (session *session) onTruncate(truncate truncateEvent) error {
 	}))
 }
 
-func (session *session) onToolResult(create conversationItemCreateEvent) error {
+// onItemCreate accepts what a client can add to the conversation directly.
+//
+// Two shapes matter: a tool result, and a typed message. The second is how a
+// client that is not speaking - a text client, a harness, a computer-use
+// driver - says something, and refusing it would make the protocol
+// voice-only in a way the base protocol is not.
+func (session *session) onItemCreate(create conversationItemCreateEvent) error {
+	if create.Item.Type == "message" {
+		return session.onTextMessage(create)
+	}
 	if create.Item.Type != "function_call_output" || strings.TrimSpace(create.Item.CallID) == "" {
-		return errors.New("conversation.item.create currently accepts function_call_output items")
+		return errors.New("conversation.item.create accepts message and function_call_output items")
 	}
 	session.itemsMu.Lock()
 	name := session.callNames[create.Item.CallID]
@@ -397,6 +406,37 @@ func (session *session) onToolResult(create conversationItemCreateEvent) error {
 		return err
 	}
 	return session.runtime.ToolResult(session.ctx, encodeToolResult(create.Item.CallID, name, create.Item.Output))
+}
+
+// onTextMessage commits a typed message as an observation.
+//
+// It carries user authority, because it is the user talking: a client typing
+// is the same participant as a client speaking, and the difference is the
+// transport rather than the provenance.
+func (session *session) onTextMessage(create conversationItemCreateEvent) error {
+	text := create.text()
+	if strings.TrimSpace(text) == "" {
+		return errors.New("a message item requires text content")
+	}
+	role := strings.TrimSpace(create.Item.Role)
+	if role == "" {
+		role = "user"
+	}
+	if role != "user" && role != "system" {
+		return fmt.Errorf("a client may add user or system messages, not %q", role)
+	}
+	itemID := create.Item.ID
+	if itemID == "" {
+		itemID = session.nextID("item")
+	}
+	if err := session.send(event("conversation.item.created", session.nextID("event"), map[string]any{
+		"previous_item_id": nil, "item": userAudioItem(itemID, text),
+	})); err != nil {
+		return err
+	}
+	return session.runtime.Text(session.ctx, binding.TextInput{
+		ItemID: itemID, Role: role, Text: text,
+	})
 }
 
 func (session *session) sessionEvent(eventType string) map[string]any {

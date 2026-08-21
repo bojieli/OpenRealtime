@@ -33,6 +33,7 @@ type Runner struct {
 	now             func() uint64
 	nextID          func(string) string
 	retainReasoning bool
+	media           MediaResolver
 }
 
 // RunnerConfig supplies dependencies. Now must return monotonic nanoseconds.
@@ -43,6 +44,8 @@ type RunnerConfig struct {
 	Now             func() uint64
 	NextID          func(prefix string) string
 	RetainReasoning bool
+	// Media resolves attachments for adapters that can use them.
+	Media MediaResolver
 }
 
 // NewRunner creates an experimental continuation runner.
@@ -62,7 +65,7 @@ func NewRunner(config RunnerConfig) (*Runner, error) {
 	}
 	return &Runner{
 		store: config.Store, now: config.Now, nextID: config.NextID,
-		retainReasoning: config.RetainReasoning,
+		retainReasoning: config.RetainReasoning, media: config.Media,
 	}, nil
 }
 
@@ -178,7 +181,7 @@ func (runner *Runner) run(
 	prefix.Version++
 	request := Request{
 		InvocationID: invocationID, Descriptor: descriptor,
-		Trajectory: prefix, Invocation: invocation,
+		Trajectory: prefix, Invocation: invocation, Media: runner.media,
 	}
 
 	var segments []bufferedSegment

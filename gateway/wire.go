@@ -135,11 +135,35 @@ type truncateEvent struct {
 type conversationItemCreateEvent struct {
 	Type string `json:"type"`
 	Item struct {
-		ID     string `json:"id"`
-		Type   string `json:"type"`
-		CallID string `json:"call_id"`
-		Output string `json:"output"`
+		ID      string        `json:"id"`
+		Type    string        `json:"type"`
+		Role    string        `json:"role"`
+		CallID  string        `json:"call_id"`
+		Output  string        `json:"output"`
+		Content []wireContent `json:"content"`
 	} `json:"item"`
+}
+
+type wireContent struct {
+	Type       string `json:"type"`
+	Text       string `json:"text"`
+	Transcript string `json:"transcript"`
+}
+
+// text returns whatever text a content array carries, whichever field it is
+// in. A client sending input_text and one sending a transcript are saying the
+// same thing.
+func (item conversationItemCreateEvent) text() string {
+	var parts []string
+	for _, content := range item.Item.Content {
+		for _, candidate := range []string{content.Text, content.Transcript} {
+			if strings.TrimSpace(candidate) != "" {
+				parts = append(parts, candidate)
+				break
+			}
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 func event(eventType, eventID string, fields map[string]any) map[string]any {

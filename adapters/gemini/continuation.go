@@ -5,6 +5,7 @@ package gemini
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -356,7 +357,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 		if _, consumed := consumedInvocations[item.InvocationID]; modelItem && consumed && item.InvocationID != "" {
 			continue
 		}
-		content, ok, err := compilePortableItem(item)
+		content, ok, err := compilePortableItem(item, request.Media)
 		if err != nil {
 			return geminiRequest{}, err
 		}
@@ -398,12 +399,20 @@ func isModelOutputItem(kind trajectory.Kind) bool {
 		kind == trajectory.KindToolProposal || kind == trajectory.KindToolCall
 }
 
-func compilePortableItem(item trajectory.Item) (geminiContent, bool, error) {
+func compilePortableItem(
+	item trajectory.Item, media continuation.MediaResolver,
+) (geminiContent, bool, error) {
 	part := make(map[string]any)
 	role := "user"
+	var attachments []json.RawMessage
 	switch item.Kind {
 	case trajectory.KindObservation:
 		part["text"] = continuation.ObservationContent(item)
+		// An observation may carry images an observer retained. Narration is
+		// what survives after they are pruned, but while they exist a model
+		// that can see should see them: reasoning about a screen and clicking
+		// on one are different tasks, and only the second needs pixels.
+		attachments = attachMedia(item, media)
 	case trajectory.KindReasoning:
 		role = "model"
 		part["text"] = "[Internal working state from an earlier continuation; not user-visible]\n" + item.Content
@@ -451,7 +460,41 @@ func compilePortableItem(item trajectory.Item) (geminiContent, bool, error) {
 	if err != nil {
 		return geminiContent{}, false, err
 	}
-	return geminiContent{Role: role, Parts: []json.RawMessage{raw}}, true, nil
+	return geminiContent{Role: role, Parts: append([]json.RawMessage{raw}, attachments...)}, true, nil
+}
+
+// attachMedia resolves an observation's handles into inline parts.
+//
+// A handle that no longer resolves is skipped rather than failing the
+// continuation: retention is bounded on purpose, and a model that gets the
+// narration without the image is in exactly the state this design expects
+// after the window has passed.
+func attachMedia(item trajectory.Item, media continuation.MediaResolver) []json.RawMessage {
+	if media == nil || item.Observation == nil || len(item.Observation.Media) == 0 {
+		return nil
+	}
+	var parts []json.RawMessage
+	for _, reference := range item.Observation.Media {
+		resolved, err := media(reference.Handle)
+		if err != nil || len(resolved.Bytes) == 0 {
+			continue
+		}
+		mimeType := resolved.MIMEType
+		if mimeType == "" {
+			mimeType = reference.MIMEType
+		}
+		encoded, err := json.Marshal(map[string]any{
+			"inlineData": map[string]any{
+				"mimeType": mimeType,
+				"data":     base64.StdEncoding.EncodeToString(resolved.Bytes),
+			},
+		})
+		if err != nil {
+			continue
+		}
+		parts = append(parts, encoded)
+	}
+	return parts
 }
 
 // appendGeminiContent preserves each part byte-for-byte while coalescing

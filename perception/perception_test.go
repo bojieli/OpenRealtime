@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -450,5 +451,71 @@ func TestObservationValidationRejectsForgedProvenance(t *testing.T) {
 	speech := perception.Observation{Text: "hello", Observer: "audio", Authority: trajectory.AuthorityUser}
 	if speech.Meta() != nil {
 		t.Fatal("plain user speech needs no extra provenance")
+	}
+}
+
+// A vision model is shown an image that may have been resized on the way, so
+// it is asked for a fraction of the image rather than a pixel. Converting that
+// back into the source's declared space is the observer's job, because the
+// observer is the only party that knows the geometry.
+func TestControlPositionsAreGroundedInTheSourceSpace(t *testing.T) {
+	narration := "A confirmation dialog is open.\n" +
+		"CONTROL: CANCEL at (445, 622)\n" +
+		"CONTROL: CONFIRM at (617, 622)\n"
+	observer, err := perception.NewVideoObserver(perception.VideoConfig{
+		Narrator: perception.StaticNarrator{Text: narration}, Cadence: 0,
+	})
+	if err != nil {
+		t.Fatalf("new observer: %v", err)
+	}
+	frame := imageFrame(encodeFrame(t, color.Gray{Y: 20}, image.Rect(0, 0, 0, 0)), 0)
+	frame.Width, frame.Height = 1280, 720
+	observations, err := observer.Observe(context.Background(), []perception.Frame{frame})
+	if err != nil {
+		t.Fatalf("observe: %v", err)
+	}
+	if len(observations) != 1 {
+		t.Fatalf("expected one observation, got %d", len(observations))
+	}
+	text := observations[0].Text
+	// 445/1000 of 1280 is 569; 622/1000 of 720 is 447.
+	if !strings.Contains(text, "CONTROL: CANCEL at (569, 447)") {
+		t.Fatalf("cancel was not grounded:\n%s", text)
+	}
+	if !strings.Contains(text, "CONTROL: CONFIRM at (789, 447)") {
+		t.Fatalf("confirm was not grounded:\n%s", text)
+	}
+	if !strings.Contains(text, "A confirmation dialog is open.") {
+		t.Fatal("the rest of the narration must survive untouched")
+	}
+}
+
+func TestNarrationWithoutControlsIsUntouched(t *testing.T) {
+	narration := "A settings page is open with a list of options."
+	observer, _ := perception.NewVideoObserver(perception.VideoConfig{
+		Narrator: perception.StaticNarrator{Text: narration}, Cadence: 0,
+	})
+	frame := imageFrame(encodeFrame(t, color.Gray{Y: 30}, image.Rect(0, 0, 0, 0)), 0)
+	frame.Width, frame.Height = 800, 600
+	observations, err := observer.Observe(context.Background(), []perception.Frame{frame})
+	if err != nil {
+		t.Fatalf("observe: %v", err)
+	}
+	if observations[0].Text != narration {
+		t.Fatalf("unexpected rewrite: %q", observations[0].Text)
+	}
+}
+
+func TestOutOfRangeControlPositionsAreClamped(t *testing.T) {
+	observer, _ := perception.NewVideoObserver(perception.VideoConfig{
+		Narrator: perception.StaticNarrator{Text: "CONTROL: EDGE at (1010, 1200)"}, Cadence: 0,
+	})
+	frame := imageFrame(encodeFrame(t, color.Gray{Y: 40}, image.Rect(0, 0, 0, 0)), 0)
+	frame.Width, frame.Height = 100, 200
+	observations, _ := observer.Observe(context.Background(), []perception.Frame{frame})
+	// Clamped rather than dropped: a model that said 1010 meant the right
+	// edge, and losing the line would lose a control the agent needs.
+	if !strings.Contains(observations[0].Text, "CONTROL: EDGE at (99, 199)") {
+		t.Fatalf("unexpected clamping: %q", observations[0].Text)
 	}
 }

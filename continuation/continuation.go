@@ -212,12 +212,30 @@ type Invocation struct {
 	MaxOutputTokens int              `json:"max_output_tokens,omitempty"`
 }
 
+// Media is an attachment resolved from a trajectory handle.
+type Media struct {
+	MIMEType string
+	Bytes    []byte
+}
+
+// MediaResolver turns a handle on a trajectory item into the bytes behind it.
+//
+// The trajectory carries handles rather than bytes because Snapshot is copied
+// for every continuation request. An adapter that can use images calls this;
+// one that cannot never does, and neither pays for the other's needs. A handle
+// whose retention window has passed returns an error, which is an ordinary
+// outcome rather than a failure: the persistent text is what survives.
+type MediaResolver func(handle string) (Media, error)
+
 // Request is the immutable provider input assembled by Runner.
 type Request struct {
 	InvocationID string              `json:"invocation_id"`
 	Descriptor   Descriptor          `json:"descriptor"`
 	Trajectory   trajectory.Snapshot `json:"trajectory"`
 	Invocation   Invocation          `json:"invocation"`
+	// Media resolves attachments referenced by trajectory items. It is nil
+	// when the runtime retains none.
+	Media MediaResolver `json:"-"`
 }
 
 // EventKind identifies streamed provider output.

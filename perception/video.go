@@ -8,7 +8,9 @@ import (
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -211,6 +213,7 @@ func (observer *VideoObserver) Observe(ctx context.Context, frames []Frame) ([]O
 	if err != nil {
 		return nil, fmt.Errorf("narrate %s frame: %w", frame.Source, err)
 	}
+	text = groundControls(text, frame.Width, frame.Height)
 	if strings.TrimSpace(text) == "" {
 		// Nothing worth saying is a normal outcome for a gate that admitted a
 		// change the narrator judged uninteresting.
@@ -320,3 +323,51 @@ func changedFraction(previous, current []uint8) float64 {
 }
 
 var _ Observer = (*VideoObserver)(nil)
+
+// controlPattern matches the control lines an actionable narration produces.
+var controlPattern = regexp.MustCompile(`(?i)CONTROL:\s*(.+?)\s+at\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)`)
+
+// groundControls rewrites scale-free control positions into the source's own
+// pixel space.
+//
+// A vision model is asked for coordinates on a fixed 0-1000 scale rather than
+// in pixels, because the image it was shown may have been resized on the way -
+// and it was, in the case that motivated this: a model reported coordinates
+// exactly 1.5 times too large because its input had been scaled to 1920x1080.
+// An agent clicking those numbers lands nowhere near the control, having done
+// everything right.
+//
+// The conversion belongs here rather than in the model's answer because the
+// observer is the only party that knows the declared geometry of the source,
+// which is the space computer-use actions are expressed in.
+func groundControls(text string, width, height int) string {
+	if width <= 0 || height <= 0 || !strings.Contains(strings.ToUpper(text), "CONTROL:") {
+		return text
+	}
+	return controlPattern.ReplaceAllStringFunc(text, func(match string) string {
+		parts := controlPattern.FindStringSubmatch(match)
+		if len(parts) != 4 {
+			return match
+		}
+		x, xErr := strconv.Atoi(parts[2])
+		y, yErr := strconv.Atoi(parts[3])
+		if xErr != nil || yErr != nil {
+			return match
+		}
+		// Clamp rather than reject: a model that says 1010 meant the right
+		// edge, and refusing the whole line would lose a control the agent
+		// needs.
+		return fmt.Sprintf("CONTROL: %s at (%d, %d)", parts[1],
+			clamp(x*width/1000, 0, width-1), clamp(y*height/1000, 0, height-1))
+	})
+}
+
+func clamp(value, low, high int) int {
+	if value < low {
+		return low
+	}
+	if value > high {
+		return high
+	}
+	return value
+}

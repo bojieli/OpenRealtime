@@ -111,6 +111,17 @@ type ErrorEvent struct {
 	Message string `json:"message"`
 }
 
+// TextInput is something a client typed rather than said.
+//
+// It is the same participant either way: a text client and a voice client are
+// both the user, and the difference is the transport rather than the
+// provenance.
+type TextInput struct {
+	ItemID string `json:"item_id"`
+	Role   string `json:"role"`
+	Text   string `json:"text"`
+}
+
 // Truncation reports client-side playback truncation: the client stopped
 // playing an item after a known amount of audio.
 type Truncation struct {
@@ -160,6 +171,8 @@ type Runtime interface {
 	// returns ErrUnsupported, which the protocol layer reports as a
 	// negotiation failure rather than swallowing.
 	Video(context.Context, perception.Frame) error
+	// Text delivers something the client typed.
+	Text(context.Context, TextInput) error
 	// ToolResult accepts a client-executed function result.
 	ToolResult(context.Context, trajectory.ToolResult) error
 	// CreateResponse asks for a response now.
