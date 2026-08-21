@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"math/rand"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -167,4 +168,129 @@ func TestVideoIsRefusedWhenTheBindingHasNoVideoObserver(t *testing.T) {
 		t.Fatal("limits are only stated for a capability that was enabled")
 	}
 	_ = context.Background()
+}
+
+// noiseFrame encodes a JPEG of at least minimumBytes.
+//
+// Noise rather than a pattern because the point is size: a compressible image
+// would need dimensions far past the declared maximum to reach a useful byte
+// count, and the two limits are independent.
+func noiseFrame(t *testing.T, minimumBytes int) (string, int, int) {
+	t.Helper()
+	random := rand.New(rand.NewSource(1))
+	for edge := 128; edge <= 1280; edge *= 2 {
+		canvas := image.NewGray(image.Rect(0, 0, edge, edge))
+		for index := range canvas.Pix {
+			canvas.Pix[index] = uint8(random.Intn(256))
+		}
+		var buffer bytes.Buffer
+		if err := jpeg.Encode(&buffer, canvas, &jpeg.Options{Quality: 98}); err != nil {
+			t.Fatalf("encode: %v", err)
+		}
+		if buffer.Len() >= minimumBytes {
+			return base64.StdEncoding.EncodeToString(buffer.Bytes()), edge, edge
+		}
+	}
+	t.Fatalf("could not reach %d bytes within the declared dimension limit", minimumBytes)
+	return "", 0, 0
+}
+
+func startBoundedVideoServer(t *testing.T, maxFrameBytes int) *httptest.Server {
+	t.Helper()
+	bind, err := cascade.New(cascade.Config{
+		Perception: func() (v1.PerceptionProvider, error) { return staticASR{text: "what is on screen"}, nil },
+		Fast:       fast(), Slow: slow(), Speech: toneSpeech{},
+		Observers: []perception.Factory{perception.VideoFactory(perception.VideoConfig{
+			Narrator: perception.StaticNarrator{Text: "a screen"}, Cadence: 0,
+		})},
+	})
+	if err != nil {
+		t.Fatalf("new cascade: %v", err)
+	}
+	server, err := gateway.New(gateway.Config{
+		Binding: bind, ValidateWire: true,
+		// Small enough that the audio bound alone could never carry a frame,
+		// which is the condition the read limit used to be derived from.
+		MaxAudioFrameBytes: 4096,
+		VideoLimits:        openrealtime.Limits{MaxFrameBytes: maxFrameBytes},
+	})
+	if err != nil {
+		t.Fatalf("new gateway: %v", err)
+	}
+	http := httptest.NewServer(server.Handler())
+	t.Cleanup(http.Close)
+	return http
+}
+
+// A frame within the advertised limit has to arrive whole. The read limit sits
+// below the protocol, so getting it wrong does not refuse the frame - it drops
+// the connection, and the client is left without even an error to act on.
+func TestAFrameWithinTheAdvertisedLimitIsCarriedWhole(t *testing.T) {
+	const maxFrameBytes = 512 << 10
+	server := startBoundedVideoServer(t, maxFrameBytes)
+	client := dial(t, server)
+	client.await("session.created", 5*time.Second)
+	client.configurePCM16(map[string]any{
+		"version": openrealtime.Version, "supports": []string{"video.input", "observations"},
+	})
+	updated := client.await("session.updated", 5*time.Second)
+	limits := updated["session"].(map[string]any)["openrealtime"].(map[string]any)["video"].(map[string]any)
+	if int(limits["max_frame_bytes"].(float64)) != maxFrameBytes {
+		t.Fatalf("the server must advertise the limit it enforces: %v", limits)
+	}
+
+	frame, width, height := noiseFrame(t, 8*(1<<10)+1)
+	if base64.StdEncoding.DecodedLen(len(frame)) > maxFrameBytes {
+		t.Fatalf("the test frame must be legal: %d bytes", base64.StdEncoding.DecodedLen(len(frame)))
+	}
+	client.send(map[string]any{
+		"type": openrealtime.EventVideoSourceUpdate, "source": "screen",
+		"state": "active", "width": width, "height": height,
+	})
+	client.send(map[string]any{
+		"type": openrealtime.EventVideoFrameAppend, "source": "screen",
+		"frame": frame, "timestamp_ms": 1000,
+	})
+	observation := client.await(openrealtime.EventObservationAdded, 5*time.Second)
+	if observation["source"] != "screen" {
+		t.Fatalf("unexpected observation %v", observation)
+	}
+}
+
+// An oversized frame is a client that forgot to downscale, and the useful
+// answer is the protocol's own error on a session that stays up.
+func TestAnOversizedFrameIsRefusedWithoutClosingTheSession(t *testing.T) {
+	const maxFrameBytes = 32 << 10
+	server := startBoundedVideoServer(t, maxFrameBytes)
+	client := dial(t, server)
+	client.await("session.created", 5*time.Second)
+	client.configurePCM16(map[string]any{
+		"version": openrealtime.Version, "supports": []string{"video.input", "observations"},
+	})
+	client.await("session.updated", 5*time.Second)
+	client.send(map[string]any{
+		"type": openrealtime.EventVideoSourceUpdate, "source": "screen",
+		"state": "active", "width": 320, "height": 240,
+	})
+
+	// The size check runs before the image is ever decoded, so the payload
+	// only has to be the wrong size rather than a real picture.
+	oversized := make([]byte, maxFrameBytes+1024)
+	client.send(map[string]any{
+		"type": openrealtime.EventVideoFrameAppend, "source": "screen",
+		"frame": base64.StdEncoding.EncodeToString(oversized),
+	})
+	failure := client.await("error", 5*time.Second)
+	message := failure["error"].(map[string]any)["message"].(string)
+	if !strings.Contains(message, "exceeds") {
+		t.Fatalf("expected a frame-size error, got %q", message)
+	}
+
+	// The session is still usable, which is the whole difference between an
+	// error and a read limit.
+	client.send(map[string]any{
+		"type": openrealtime.EventVideoFrameAppend, "source": "screen",
+		"frame": screenFrame(t, 20, image.Rect(60, 60, 260, 200)),
+	})
+	client.await(openrealtime.EventObservationAdded, 5*time.Second)
 }

@@ -112,6 +112,28 @@ func DefaultLimits() Limits {
 	return Limits{Format: "jpeg", FPSCap: 3, MaxDimension: 1280, MaxFrameBytes: 4 << 20}
 }
 
+// frameEnvelopeBytes allows for everything in a frame event that is not the
+// image: the type, the source name, the timestamp, and the JSON around them.
+// It is generous because being wrong in this direction costs a few kilobytes
+// of headroom, and being wrong in the other closes a connection.
+const frameEnvelopeBytes = 1 << 12
+
+// MaxTransportBytes is the largest wire message a legal frame event occupies:
+// the image base64-encoded, plus the envelope around it.
+//
+// It exists because a transport that bounds an inbound message below this
+// number does not reject an oversized frame, it drops the connection - the
+// bound is enforced before any of the protocol's own validation runs, so the
+// client gets a closed socket where it should have got an error it could act
+// on. Every transport that carries this protocol sizes its own limit from
+// here rather than from a constant that has to be kept in step by hand.
+func (limits Limits) MaxTransportBytes() int {
+	if limits.MaxFrameBytes <= 0 {
+		return 0
+	}
+	return base64.StdEncoding.EncodedLen(limits.MaxFrameBytes) + frameEnvelopeBytes
+}
+
 // Negotiate resolves what a session will actually run.
 //
 // A capability the server cannot provide is simply absent from the enabled
@@ -119,6 +141,17 @@ func DefaultLimits() Limits {
 // binding with no video observer gets a working voice session and can see that
 // video is not enabled.
 func Negotiate(request Request, supported []Feature) (Response, error) {
+	return NegotiateWithLimits(request, supported, DefaultLimits())
+}
+
+// NegotiateWithLimits resolves a session against a deployment's own video
+// bounds rather than the shipped ones.
+//
+// A deployment that carries larger frames than the default has to advertise
+// the number it will actually accept: a client conforms to what negotiation
+// told it, so a limit that lives anywhere other than the negotiated response
+// is a limit the client discovers by being rejected.
+func NegotiateWithLimits(request Request, supported []Feature, limits Limits) (Response, error) {
 	if request.Version != Version {
 		return Response{}, fmt.Errorf("unsupported openrealtime version %d, this server speaks %d", request.Version, Version)
 	}
@@ -134,8 +167,11 @@ func Negotiate(request Request, supported []Feature) (Response, error) {
 	}
 	response := Response{Version: Version, Enabled: enabled}
 	if slices.Contains(enabled, FeatureVideoInput) {
-		limits := DefaultLimits()
-		response.Video = &limits
+		declared := limits
+		if declared.MaxFrameBytes <= 0 {
+			declared.MaxFrameBytes = DefaultLimits().MaxFrameBytes
+		}
+		response.Video = &declared
 	}
 	return response, nil
 }

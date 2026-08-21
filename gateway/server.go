@@ -57,6 +57,15 @@ type Config struct {
 	TranscriptionModel string
 	// MaxAudioFrameBytes bounds one inbound audio frame.
 	MaxAudioFrameBytes int
+	// VideoLimits are the video bounds this deployment advertises at
+	// negotiation and enforces on every frame. The zero value selects the
+	// shipped defaults.
+	//
+	// They are configuration rather than a constant because the connection's
+	// read limit is derived from them: the two numbers have to move together
+	// or the transport starts refusing frames the protocol just promised to
+	// accept.
+	VideoLimits openrealtime.Limits
 	// ValidateWire checks every base-protocol event in both directions against
 	// the pinned schema. It is on by default: a compatibility claim that is
 	// not continuously checked is a compatibility claim that decays.
@@ -89,6 +98,19 @@ func New(config Config) (*Server, error) {
 	if config.MaxAudioFrameBytes <= 0 {
 		config.MaxAudioFrameBytes = 1 << 20
 	}
+	defaults := openrealtime.DefaultLimits()
+	if strings.TrimSpace(config.VideoLimits.Format) == "" {
+		config.VideoLimits.Format = defaults.Format
+	}
+	if config.VideoLimits.FPSCap <= 0 {
+		config.VideoLimits.FPSCap = defaults.FPSCap
+	}
+	if config.VideoLimits.MaxDimension <= 0 {
+		config.VideoLimits.MaxDimension = defaults.MaxDimension
+	}
+	if config.VideoLimits.MaxFrameBytes <= 0 {
+		config.VideoLimits.MaxFrameBytes = defaults.MaxFrameBytes
+	}
 	if config.Metrics == nil {
 		config.Metrics = &Metrics{}
 	}
@@ -113,6 +135,41 @@ func (server *Server) Handler() http.Handler {
 		mux.Handle("GET /demo/", http.StripPrefix("/demo", server.config.Demo))
 	}
 	return mux
+}
+
+// readLimit bounds one inbound message at the largest thing this deployment
+// can legally be sent.
+//
+// The limit is enforced by the WebSocket layer, below any of the protocol's
+// own validation, and exceeding it closes the connection rather than
+// producing an error the client can act on. So it is derived from the
+// advertised bounds rather than chosen: a read limit under the frame size
+// negotiation just promised would turn a legal frame into a dropped session,
+// and the client would have no way to learn why.
+//
+// It is fixed for the life of the connection rather than raised when video is
+// negotiated. Raising it on negotiation would be tighter for a voice-only
+// session, but session.update is handled off the read goroutine, so a client
+// that declared video and immediately sent a frame could race its own
+// negotiation and lose the connection to it. Whether the binding can carry
+// video at all is known before the connection is accepted, which gives the
+// same precision with no window to race.
+//
+// The headroom above the largest legal frame is what makes an oversized one
+// answerable. A client that forgot to downscale is the common mistake, and
+// the useful reply is the protocol's own "frame of N bytes exceeds the M byte
+// limit" - which the session can only produce for a message it was allowed to
+// finish reading. A quarter over the legal maximum covers that mistake and
+// still refuses anything that is not one.
+const frameReadHeadroom = 5
+
+func (server *Server) readLimit() int64 {
+	limit := int64(server.config.MaxAudioFrameBytes) * 2
+	if server.config.Binding.Capabilities().Video {
+		legal := int64(server.config.VideoLimits.MaxTransportBytes())
+		limit = max(limit, legal*frameReadHeadroom/4)
+	}
+	return limit
 }
 
 func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
@@ -149,7 +206,7 @@ func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	if err != nil {
 		return
 	}
-	connection.SetReadLimit(int64(server.config.MaxAudioFrameBytes) * 2)
+	connection.SetReadLimit(server.readLimit())
 	server.config.Metrics.sessionsStarted.Add(1)
 	started := time.Now()
 	session, err := newSession(request.Context(), connection, server.config, request.URL.Query().Get("model"))

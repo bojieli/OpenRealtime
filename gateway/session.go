@@ -118,7 +118,7 @@ func newSession(parent context.Context, connection *websocket.Conn, config Confi
 		inputFormat: audioFormat{Type: formatPCMU}, outputFormat: audioFormat{Type: formatPCMU},
 		voice: "alloy", modalities: []string{"audio"},
 		gate:   perception.DefaultGateConfig(),
-		limits: openrealtime.DefaultLimits(),
+		limits: config.VideoLimits,
 	}
 	runtime, err := config.Binding.Start(ctx, binding.Options{
 		Sink: result, Settings: result.bindingSettings(), SessionID: result.id,
@@ -375,7 +375,8 @@ func (session *session) update(update sessionUpdateBody) error {
 		return err
 	}
 	if update.OpenRealtime != nil {
-		response, err := openrealtime.Negotiate(*update.OpenRealtime, session.supportedFeatures())
+		response, err := openrealtime.NegotiateWithLimits(
+			*update.OpenRealtime, session.supportedFeatures(), session.config.VideoLimits)
 		if err != nil {
 			return err
 		}
