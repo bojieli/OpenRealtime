@@ -734,8 +734,23 @@ func (store *Store) transitionAssistantLocked(state AssistantState) error {
 		allowed = state.Visibility == VisibilityQueued || state.Visibility == VisibilityPlayed || state.Visibility == VisibilityCancelled
 	case VisibilityQueued:
 		allowed = state.Visibility == VisibilityPlayed || state.Visibility == VisibilityCancelled
+	case VisibilityPlayed:
+		// Played is reported twice by design, from two authorities. The server
+		// reports it when playout finishes, and the client reports it again
+		// when it says where playback actually stopped - and the client is the
+		// authority on what a person heard, which is the whole reason
+		// truncation is a client event. The second report refines the
+		// duration; it does not contradict the first.
+		//
+		// Rejecting it was not a harmless strictness. The refusal failed the
+		// whole batch commit, so an ordinary barge-in reported by a
+		// well-behaved client destroyed the session it happened in.
+		allowed = state.Visibility == VisibilityPlayed
 	}
 	if !allowed {
+		// Cancelled after played stays refused: audio that reached somebody
+		// cannot be un-heard, and a trajectory that allowed the claim would
+		// let a repair obligation disappear.
 		return fmt.Errorf("invalid assistant visibility transition %s -> %s", current, state.Visibility)
 	}
 	if state.Visibility != VisibilityPlayed && state.PlayedAudioMS != 0 {

@@ -261,3 +261,82 @@ func TestStoreEnforcesTypedSupersessionProvenance(t *testing.T) {
 		t.Fatal("non-observation event claimed observation supersession")
 	}
 }
+
+// A barge-in is reported twice, by two authorities: the server when playout
+// finishes, and the client when it says where playback actually stopped. The
+// second report is the one that knows what a person heard.
+//
+// Refusing it was not harmless strictness - the refusal failed the whole batch
+// commit, so an ordinary barge-in from a well-behaved client destroyed the
+// session it happened in.
+func TestTheClientMayRefineAPlayedDuration(t *testing.T) {
+	store := NewStore()
+	if err := store.AppendBatch([]Item{{
+		ID: "assistant-1", Kind: KindAssistant, MonotonicNS: 1, SourceRevision: 1,
+		Producer: Producer{
+			Phase: PhaseFast, SpeechAuthority: "voice",
+		},
+		Content: "the balance is forty dollars",
+	}}); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+
+	// The server finishes playout and says so.
+	if err := store.AppendBatch([]Item{{
+		ID: "state-1", Kind: KindAssistantState, MonotonicNS: 2, SourceRevision: 1,
+		Producer: Producer{Phase: PhaseFast},
+		AssistantState: &AssistantState{
+			AssistantItemID: "assistant-1",
+			Visibility:      VisibilityPlayed, PlayedAudioMS: 5000,
+		},
+	}}); err != nil {
+		t.Fatalf("server played transition: %v", err)
+	}
+
+	// The client then reports that playback stopped a second in.
+	if err := store.AppendBatch([]Item{{
+		ID: "state-2", Kind: KindAssistantState, MonotonicNS: 3, SourceRevision: 1,
+		Producer: Producer{Phase: PhaseFast},
+		AssistantState: &AssistantState{
+			AssistantItemID: "assistant-1",
+			Visibility:      VisibilityPlayed, PlayedAudioMS: 1200,
+		},
+	}}); err != nil {
+		t.Fatalf("the client must be able to refine what was heard: %v", err)
+	}
+}
+
+// Audio that reached somebody cannot be un-heard. Allowing the claim would let
+// a repair obligation disappear.
+func TestPlayedAudioCannotBecomeCancelled(t *testing.T) {
+	store := NewStore()
+	if err := store.AppendBatch([]Item{{
+		ID: "assistant-1", Kind: KindAssistant, MonotonicNS: 1, SourceRevision: 1,
+		Producer: Producer{
+			Phase: PhaseFast, SpeechAuthority: "voice",
+		},
+		Content: "the balance is forty dollars",
+	}}); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+	if err := store.AppendBatch([]Item{{
+		ID: "state-1", Kind: KindAssistantState, MonotonicNS: 2, SourceRevision: 1,
+		Producer: Producer{Phase: PhaseFast},
+		AssistantState: &AssistantState{
+			AssistantItemID: "assistant-1",
+			Visibility:      VisibilityPlayed, PlayedAudioMS: 5000,
+		},
+	}}); err != nil {
+		t.Fatalf("played transition: %v", err)
+	}
+	err := store.AppendBatch([]Item{{
+		ID: "state-2", Kind: KindAssistantState, MonotonicNS: 3, SourceRevision: 1,
+		Producer: Producer{Phase: PhaseFast},
+		AssistantState: &AssistantState{
+			AssistantItemID: "assistant-1", Visibility: VisibilityCancelled,
+		},
+	}})
+	if err == nil {
+		t.Fatal("played audio must not be able to become cancelled")
+	}
+}
