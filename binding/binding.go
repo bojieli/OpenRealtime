@@ -165,6 +165,21 @@ type Truncation struct {
 // protocol events is the gateway's job, and a benchmark harness or a test
 // implements the same interface without a socket in sight.
 type Sink interface {
+	// TurnBegin and TurnEnd bracket everything one rollout produced.
+	//
+	// They exist because a response is a turn, not an output kind. The
+	// protocol's contract is one response per response.create, carrying every
+	// output item the turn produced - text, audio, and function calls
+	// together, indexed within it - and a client that has been told a
+	// response is done stops reading. Rendering each output kind as its own
+	// response would end the turn, from the client's point of view, at
+	// whichever kind happened to come first.
+	//
+	// A turn that produces nothing announces nothing: the brackets are
+	// declared here and the response is opened lazily by whatever first
+	// crosses into the world.
+	TurnBegin(context.Context) error
+	TurnEnd(context.Context) error
 	// Activity reports the acoustic gate's view of the user.
 	Activity(context.Context, ActivityEvent) error
 	// Transcript reports committed user speech.

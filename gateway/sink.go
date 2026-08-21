@@ -8,6 +8,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 )
@@ -69,30 +70,38 @@ func (session *session) Observation(_ context.Context, observation perception.Ob
 	})
 }
 
-// A turn is announced the same way whichever modality carries it. What differs
-// is the content part: an audio turn opens one whose transcript accumulates
-// beside the samples, and a text turn opens one that is the answer itself.
+// SpeechBegin adds this turn's spoken output item to the response.
+//
+// The response itself is opened by whatever crosses into the world first,
+// which may be this or may be a function call: one response carries the whole
+// turn, and the client is told it is done once.
 func (session *session) SpeechBegin(ctx context.Context, utterance action.Utterance) error {
 	session.settingsMu.RLock()
 	format, voice := session.settings.outputFormat, session.settings.voice
 	session.settingsMu.RUnlock()
 	text := session.textOnly()
 
-	responseID := session.nextID("resp")
+	// Claimed before the response is opened, not after. Opening it publishes
+	// the response to every other goroutine, and a rollout finishing in that
+	// window would find nothing outstanding and close a turn whose first
+	// output had not been announced yet.
+	session.startedSpeaking()
+	responseID, index, _, err := session.openOutput()
+	if err != nil {
+		session.finishedSpeaking()
+		return err
+	}
 	itemID := session.nextID("item")
 	session.itemsMu.Lock()
 	session.utterances[utterance.ID] = &wireUtterance{
-		responseID: responseID, itemID: itemID, format: format, voice: voice, text: "", textOnly: text,
+		responseID: responseID, itemID: itemID, format: format, voice: voice,
+		text: "", textOnly: text, outputIndex: index,
 	}
 	session.itemsMu.Unlock()
 
-	if err := session.send(event("response.created", session.nextID("event"), map[string]any{
-		"response": responseObject(responseID, "in_progress", session.conversationID, nil, nil, format, voice, session.outputModalities()),
-	})); err != nil {
-		return err
-	}
 	if err := session.send(event("response.output_item.added", session.nextID("event"), map[string]any{
-		"response_id": responseID, "output_index": 0, "item": assistantItem(itemID, "in_progress", "", text),
+		"response_id": responseID, "output_index": index,
+		"item": assistantItem(itemID, "in_progress", "", text),
 	})); err != nil {
 		return err
 	}
@@ -101,7 +110,7 @@ func (session *session) SpeechBegin(ctx context.Context, utterance action.Uttera
 		part = map[string]any{"type": "text", "text": ""}
 	}
 	if err := session.send(event("response.content_part.added", session.nextID("event"), map[string]any{
-		"response_id": responseID, "item_id": itemID, "output_index": 0, "content_index": 0,
+		"response_id": responseID, "item_id": itemID, "output_index": index, "content_index": 0,
 		"part": part,
 	})); err != nil {
 		return err
@@ -130,8 +139,8 @@ func (session *session) SpeechText(_ context.Context, utterance action.Utterance
 		eventType = "response.output_text.delta"
 	}
 	return session.send(event(eventType, session.nextID("event"), map[string]any{
-		"response_id": wire.responseID, "item_id": wire.itemID, "output_index": 0, "content_index": 0,
-		"delta": delta,
+		"response_id": wire.responseID, "item_id": wire.itemID,
+		"output_index": wire.outputIndex, "content_index": 0, "delta": delta,
 	}))
 }
 
@@ -167,7 +176,8 @@ func (session *session) SpeechAudio(_ context.Context, utterance action.Utteranc
 	}
 	session.config.Metrics.audioFramesOut.Add(1)
 	return session.send(event("response.output_audio.delta", session.nextID("event"), map[string]any{
-		"response_id": wire.responseID, "item_id": wire.itemID, "output_index": 0, "content_index": 0,
+		"response_id": wire.responseID, "item_id": wire.itemID,
+		"output_index": wire.outputIndex, "content_index": 0,
 		"delta": base64.StdEncoding.EncodeToString(encoded),
 	}))
 }
@@ -180,21 +190,23 @@ func (session *session) SpeechEnd(_ context.Context, utterance action.Utterance,
 	if wire == nil {
 		return nil
 	}
-	status, itemStatus := "completed", "completed"
+	itemStatus := "completed"
 	if !outcome.Completed {
-		status, itemStatus = "cancelled", "incomplete"
+		itemStatus = "incomplete"
 	}
 	terminal := assistantItem(wire.itemID, itemStatus, wire.text, wire.textOnly)
 	messages := []map[string]any{
 		event("response.output_audio.done", session.nextID("event"), map[string]any{
-			"response_id": wire.responseID, "item_id": wire.itemID, "output_index": 0, "content_index": 0,
+			"response_id": wire.responseID, "item_id": wire.itemID,
+			"output_index": wire.outputIndex, "content_index": 0,
 		}),
 		event("response.output_audio_transcript.done", session.nextID("event"), map[string]any{
-			"response_id": wire.responseID, "item_id": wire.itemID, "output_index": 0, "content_index": 0,
-			"transcript": wire.text,
+			"response_id": wire.responseID, "item_id": wire.itemID,
+			"output_index": wire.outputIndex, "content_index": 0, "transcript": wire.text,
 		}),
 		event("response.content_part.done", session.nextID("event"), map[string]any{
-			"response_id": wire.responseID, "item_id": wire.itemID, "output_index": 0, "content_index": 0,
+			"response_id": wire.responseID, "item_id": wire.itemID,
+			"output_index": wire.outputIndex, "content_index": 0,
 			"part": map[string]any{"type": "audio", "transcript": wire.text},
 		}),
 	}
@@ -204,50 +216,51 @@ func (session *session) SpeechEnd(_ context.Context, utterance action.Utterance,
 		// told about a stream it never received.
 		messages = []map[string]any{
 			event("response.output_text.done", session.nextID("event"), map[string]any{
-				"response_id": wire.responseID, "item_id": wire.itemID, "output_index": 0, "content_index": 0,
-				"text": wire.text,
+				"response_id": wire.responseID, "item_id": wire.itemID,
+				"output_index": wire.outputIndex, "content_index": 0, "text": wire.text,
 			}),
 			event("response.content_part.done", session.nextID("event"), map[string]any{
-				"response_id": wire.responseID, "item_id": wire.itemID, "output_index": 0, "content_index": 0,
+				"response_id": wire.responseID, "item_id": wire.itemID,
+				"output_index": wire.outputIndex, "content_index": 0,
 				"part": map[string]any{"type": "text", "text": wire.text},
 			}),
 		}
 	}
 	messages = append(messages, event("response.output_item.done", session.nextID("event"), map[string]any{
-		"response_id": wire.responseID, "output_index": 0, "item": terminal,
+		"response_id": wire.responseID, "output_index": wire.outputIndex, "item": terminal,
 	}))
 	for _, message := range messages {
 		if err := session.send(message); err != nil {
 			return err
 		}
 	}
-	done := responseObject(wire.responseID, status, session.conversationID, []map[string]any{terminal}, nil, wire.format, wire.voice, session.outputModalities())
-	if status == "cancelled" {
-		done["status_details"] = map[string]any{"type": "cancelled", "reason": "turn_detected"}
-	}
-	return session.send(event("response.done", session.nextID("event"), map[string]any{"response": done}))
+	session.recordOutput(terminal, outcome.Completed)
+	session.finishedSpeaking()
+	return session.closeIfComplete(context.Background())
 }
 
 // ToolCalls hands authoritative calls to the client as ordinary function
 // calling. Computer-use actions travel this same path and add no protocol.
+//
+// They are output items of the turn that produced them, not a turn of their
+// own: a client that was told the response was done before the calls arrived
+// would have stopped reading exactly where the work was.
 func (session *session) ToolCalls(_ context.Context, calls binding.ToolCallEvent) error {
 	session.config.Metrics.toolCallsOut.Add(uint64(len(calls.Calls)))
 	session.recordCallNames(calls.Calls)
-	session.settingsMu.RLock()
-	format, voice := session.settings.outputFormat, session.settings.voice
-	session.settingsMu.RUnlock()
-
-	responseID := session.nextID("resp")
-	if err := session.send(event("response.created", session.nextID("event"), map[string]any{
-		"response": responseObject(responseID, "in_progress", session.conversationID, nil, nil, format, voice, session.outputModalities()),
-	})); err != nil {
+	responseID, _, _, err := session.openOutput()
+	if err != nil {
 		return err
 	}
-	output := make([]map[string]any, 0, len(calls.Calls))
-	for index, call := range calls.Calls {
+	// The first call took the index openOutput handed out; the rest claim
+	// their own. Every one of them is an output item of this turn.
+	session.rewindOutputIndex()
+	for _, call := range calls.Calls {
+		index := session.claimOutputIndex()
 		itemID := session.nextID("item")
 		if err := session.send(event("response.output_item.added", session.nextID("event"), map[string]any{
-			"response_id": responseID, "output_index": index, "item": functionCallItem(itemID, "in_progress", call),
+			"response_id": responseID, "output_index": index,
+			"item": functionCallItem(itemID, "in_progress", call),
 		})); err != nil {
 			return err
 		}
@@ -269,11 +282,10 @@ func (session *session) ToolCalls(_ context.Context, calls binding.ToolCallEvent
 		})); err != nil {
 			return err
 		}
-		output = append(output, completed)
+		session.recordOutput(completed, true)
 	}
-	return session.send(event("response.done", session.nextID("event"), map[string]any{
-		"response": responseObject(responseID, "completed", session.conversationID, output, calls.Usage, format, voice, session.outputModalities()),
-	}))
+	session.recordUsage(calls.Usage)
+	return nil
 }
 
 func (session *session) Failed(_ context.Context, failure binding.ErrorEvent) {
@@ -290,3 +302,160 @@ func hasFeature(response openrealtime.Response, feature openrealtime.Feature) bo
 }
 
 var _ binding.Sink = (*session)(nil)
+
+// A response is a turn.
+//
+// The protocol's contract is one response per response.create, carrying every
+// output item the turn produced, indexed within it. A client that has been
+// told a response is done stops reading it, so rendering each output kind as
+// its own response ends the turn - from the client's point of view - at
+// whichever kind happened to come first. An agent that spoke and then called a
+// tool would have its calls arrive after the client had already moved on.
+//
+// When the turn is over is not when the rollout returns. Speech is
+// deliberately asynchronous: the rollout decides what to say, hands it to the
+// planner, and returns while the audio is still being paced out over seconds.
+// So a response closes when both are done - the rollout has finished planning
+// and every utterance it opened has finished playing - which is what the
+// outstanding count is for. Closing at the rollout's return would tell a client
+// the turn was complete while it was still receiving the audio.
+//
+// The response is opened by whatever crosses into the world first, so a turn
+// that produced nothing announces nothing: a deferred batch with no plan is
+// not a response with no output.
+
+// TurnBegin declares that a rollout is about to run.
+func (session *session) TurnBegin(context.Context) error {
+	session.responseMu.Lock()
+	defer session.responseMu.Unlock()
+	session.planning = true
+	return nil
+}
+
+// TurnEnd reports that the rollout finished planning. The response closes here
+// only if nothing it started is still playing.
+func (session *session) TurnEnd(ctx context.Context) error {
+	session.responseMu.Lock()
+	session.planning = false
+	session.responseMu.Unlock()
+	return session.closeIfComplete(ctx)
+}
+
+// closeIfComplete ends the response once the rollout has finished planning and
+// every utterance it opened has finished.
+func (session *session) closeIfComplete(context.Context) error {
+	session.responseMu.Lock()
+	current := session.response
+	if current == nil || session.planning || session.outstanding > 0 {
+		session.responseMu.Unlock()
+		return nil
+	}
+	session.response = nil
+	session.responseMu.Unlock()
+
+	session.settingsMu.RLock()
+	format, voice := session.settings.outputFormat, session.settings.voice
+	session.settingsMu.RUnlock()
+	status := "completed"
+	if current.cancelled {
+		status = "cancelled"
+	}
+	done := responseObject(current.id, status, session.conversationID, current.output,
+		current.usage, format, voice, session.outputModalities())
+	if current.cancelled {
+		done["status_details"] = map[string]any{"type": "cancelled", "reason": "turn_detected"}
+	}
+	return session.send(event("response.done", session.nextID("event"), map[string]any{"response": done}))
+}
+
+// openOutput returns the response this turn's output belongs to, creating it
+// on the first thing that crosses into the world.
+func (session *session) openOutput() (string, int, bool, error) {
+	session.responseMu.Lock()
+	created := false
+	if session.response == nil {
+		session.response = &wireResponse{id: session.nextID("resp")}
+		created = true
+	}
+	current := session.response
+	index := current.nextIndex
+	current.nextIndex++
+	id := current.id
+	session.responseMu.Unlock()
+
+	if !created {
+		return id, index, false, nil
+	}
+	session.settingsMu.RLock()
+	format, voice := session.settings.outputFormat, session.settings.voice
+	session.settingsMu.RUnlock()
+	if err := session.send(event("response.created", session.nextID("event"), map[string]any{
+		"response": responseObject(id, "in_progress", session.conversationID, nil, nil,
+			format, voice, session.outputModalities()),
+	})); err != nil {
+		return "", 0, true, err
+	}
+	return id, index, true, nil
+}
+
+// claimOutputIndex takes the next output slot in the open response.
+// rewindOutputIndex gives back the slot openOutput reserved, for a caller that
+// numbers its own items.
+func (session *session) rewindOutputIndex() {
+	session.responseMu.Lock()
+	defer session.responseMu.Unlock()
+	if session.response != nil && session.response.nextIndex > 0 {
+		session.response.nextIndex--
+	}
+}
+
+func (session *session) claimOutputIndex() int {
+	session.responseMu.Lock()
+	defer session.responseMu.Unlock()
+	if session.response == nil {
+		return 0
+	}
+	index := session.response.nextIndex
+	session.response.nextIndex++
+	return index
+}
+
+// recordOutput remembers a completed item so response.done can list it.
+func (session *session) recordOutput(item map[string]any, completed bool) {
+	session.responseMu.Lock()
+	defer session.responseMu.Unlock()
+	if session.response == nil {
+		return
+	}
+	session.response.output = append(session.response.output, item)
+	if !completed {
+		session.response.cancelled = true
+	}
+}
+
+func (session *session) recordUsage(usage *continuation.Usage) {
+	if usage == nil {
+		return
+	}
+	session.responseMu.Lock()
+	defer session.responseMu.Unlock()
+	if session.response != nil {
+		session.response.usage = usage
+	}
+}
+
+// startedSpeaking and finishedSpeaking track output the turn is still
+// producing after the rollout that planned it returned.
+func (session *session) startedSpeaking() {
+	session.responseMu.Lock()
+	defer session.responseMu.Unlock()
+	session.outstanding++
+}
+
+func (session *session) finishedSpeaking() {
+	session.responseMu.Lock()
+	if session.outstanding > 0 {
+		session.outstanding--
+	}
+	session.responseMu.Unlock()
+}

@@ -155,6 +155,9 @@ type recordingSink struct {
 	failures     []binding.ErrorEvent
 }
 
+func (sink *recordingSink) TurnBegin(context.Context) error { return nil }
+func (sink *recordingSink) TurnEnd(context.Context) error   { return nil }
+
 func (sink *recordingSink) Activity(context.Context, binding.ActivityEvent) error { return nil }
 
 func (sink *recordingSink) Transcript(_ context.Context, event binding.TranscriptEvent) error {

@@ -48,6 +48,20 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	revision := runtime.latestRevision(batch)
 	var failures []error
 
+	// Everything this rollout produces belongs to one turn, and the client is
+	// told the turn is done once. Bracketing here rather than around each
+	// output kind is what makes that true: a turn that speaks and then calls a
+	// tool is one response with two output items, not two responses of which
+	// the client stops reading after the first.
+	if err := runtime.sink.TurnBegin(ctx); err != nil {
+		return err
+	}
+	defer func() {
+		if err := runtime.sink.TurnEnd(ctx); err != nil {
+			runtime.fail("sink_error", err)
+		}
+	}()
+
 	for iteration := 0; iteration < maxRolloutIterations; iteration++ {
 		cause.SlowInvocations = runtime.engine.SlowInvocations(revision)
 		plan := runtime.policies.Rollout.Plan(interaction.RolloutInput{

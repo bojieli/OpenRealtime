@@ -131,6 +131,9 @@ type collectingSink struct {
 	failures    []binding.ErrorEvent
 }
 
+func (sink *collectingSink) TurnBegin(context.Context) error { return nil }
+func (sink *collectingSink) TurnEnd(context.Context) error   { return nil }
+
 func (sink *collectingSink) Activity(context.Context, binding.ActivityEvent) error { return nil }
 func (sink *collectingSink) Transcript(_ context.Context, event binding.TranscriptEvent) error {
 	sink.mu.Lock()

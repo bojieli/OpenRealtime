@@ -15,6 +15,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/perception"
 	protocol "github.com/bojieli/OpenRealtime/protocol/openai"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
@@ -88,18 +89,38 @@ type session struct {
 	itemsMu    sync.Mutex
 	utterances map[string]*wireUtterance
 	callNames  map[string]string
+
+	responseMu sync.Mutex
+	// response is the turn currently producing output. One response carries
+	// the whole turn: text, audio, and function calls, indexed within it.
+	response *wireResponse
+	// planning is true while a rollout is deciding what this turn produces;
+	// outstanding counts utterances it started that are still playing. The
+	// response closes when both say the turn is over.
+	planning    bool
+	outstanding int
+}
+
+// wireResponse is one turn as the protocol renders it.
+type wireResponse struct {
+	id        string
+	nextIndex int
+	output    []map[string]any
+	usage     *continuation.Usage
+	cancelled bool
 }
 
 type wireUtterance struct {
-	responseID string
-	itemID     string
-	format     audioFormat
-	voice      string
-	encoder    *outputEncoder
-	buffer     []byte
-	frameBytes int
-	sourceRate uint32
-	text       string
+	responseID  string
+	itemID      string
+	format      audioFormat
+	voice       string
+	encoder     *outputEncoder
+	buffer      []byte
+	frameBytes  int
+	sourceRate  uint32
+	text        string
+	outputIndex int
 	// textOnly records which modality this turn was announced in, so its end
 	// is rendered the same way its beginning was even if the session is
 	// reconfigured mid-turn.

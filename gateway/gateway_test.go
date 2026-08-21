@@ -227,6 +227,17 @@ func (client *client) await(eventType string, timeout time.Duration) map[string]
 	}
 }
 
+// messages returns every event of one type the client received, in order.
+func (client *client) messages(eventType string) []map[string]any {
+	var found []map[string]any
+	for _, message := range client.received {
+		if observed, _ := message["type"].(string); observed == eventType {
+			found = append(found, message)
+		}
+	}
+	return found
+}
+
 func (client *client) seen() string {
 	types := make([]string, 0, len(client.received))
 	for _, message := range client.received {

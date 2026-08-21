@@ -53,6 +53,20 @@ paced, because a turn nobody hears takes no time and cannot be talked over. It
 is what a computer-use client wants, and refusing it made this server unusable
 for exactly the clients the extension exists for.
 
+**A response is a turn.** One `response.create` produces one response, and it
+carries every output item the turn produced — spoken or written content and
+function calls together, indexed within it. A client that has been told a
+response is done stops reading it, so an agent that speaks and then calls a
+tool has to be one response with two items rather than two responses of which
+the client sees only the first. The response closes when the rollout has
+finished planning *and* every utterance it started has finished playing, which
+are not the same moment: speech is paced out over seconds after the rollout
+returns.
+
+Function call arguments arrive as a JSON-encoded **string**, not an object —
+`{"arguments": "{\"path\":\"notes.txt\"}"}` — which is what the official API
+does and what every client executing a tool has to unwrap.
+
 Turn detection is **server VAD or the client's own**. Setting
 `turn_detection` to `null` in `session.update` is a client taking the floor:
 silence stops ending turns, `input_audio_buffer.commit` says where a turn
