@@ -64,7 +64,7 @@ policy that cannot be swapped cannot be measured:
 | Policy | Decides | Default |
 | --- | --- | --- |
 | Trigger | when a decision opportunity opens | fixed 200 ms cadence |
-| Preparation | whether to speculatively pre-start before the endpoint | continuous |
+| Preparation | whether to speculatively pre-start before the endpoint | off (`-preparation continuous` to enable) |
 | Rollout | when each cognition provider fires; whether slow supersedes | fast then slow |
 | Floor | when the user has finished; who holds the turn | engine, 500 ms silence |
 | Barge-in | whether user speech over agent output cancels it | immediate |
@@ -73,6 +73,38 @@ policy that cannot be swapped cannot be measured:
 | Backchannel | whether to say "mm-hm" while the user speaks | off |
 | Turn projection | anticipating the end of a turn before silence confirms it | silence only |
 | Deferral | whether committed work may be acted on now | by duplex state |
+| Overlap | what user speech over agent output is | unclassified |
+
+Each of these is consulted on the live path, and the ones that need a model
+degrade to a rule when none is configured. Four of them are worth stating
+concretely, because "named policy" and "policy that changes what happens" are
+not the same claim:
+
+- **Turn projection** reaches the conversation through the floor. When it
+  projects an ending, the runtime closes the acoustic gate and the turn ends
+  before silence confirms it. Only a *projected* endpoint does this; an
+  ordinary one is the gate's, so the two are never counted together — a
+  projection that was wrong cut the user off, and a late endpoint only cost
+  latency.
+- **Backchannel** decides off the audio path, because a model call that made
+  the recogniser wait would trade what makes a system feel alive for what makes
+  it feel slow. A continuer it chooses is spoken, carries no assistant item, and
+  does not trigger barge-in against itself.
+- **Preparation** starts a continuation while the user is still talking,
+  against what perception has heard so far. Nothing it produces is committed,
+  spoken, or dispatched: the work is adopted at the endpoint only if the
+  canonical observation says the same thing, and discarded otherwise. That is
+  what makes it a latency policy — being wrong costs tokens and nothing else.
+- **Repair** is reached when a later observation invalidates something the user
+  already heard. The obligation is recorded in the ledger, raised into the
+  trajectory at the next safe point, put to the slow provider as an
+  instruction, and discharged against the correction it produces.
+
+Two policies can contradict each other, and the runtime refuses the pair rather
+than picking one: `stable-partial` observation with a deferral policy that
+waits for the user to stop speaking would hold every partial until the endpoint
+and buy nothing. A runtime that silently overrode one of them would report a
+configuration it was not running.
 
 ## The session core
 

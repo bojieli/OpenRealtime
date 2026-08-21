@@ -47,10 +47,46 @@ between turns.
 
 ```sh
 -trigger-cadence 200ms        # 50, 100, 200, 400, 800 are the measured levels
--observation-policy stable-partial   # commit a stable prefix before the endpoint
+-observation-policy stable-partial   # answer a stable prefix before the endpoint
 -rollout endpointed-slow-only # what a conventional agent does
 -tool-progress                # a spoken status when a tool result lands
+-preparation continuous       # speculate before the endpoint; costs tokens
+-barge-in sustained           # hold the floor briefly instead of yielding at once
 ```
+
+`-observation-policy stable-partial` also changes the deferral policy, because
+it has to: answering a partial means acting while the user is still speaking,
+and the shipped deferral waits for them to stop. The server composes the pair;
+the binding refuses the incoherent one rather than picking a side.
+
+`-preparation continuous` starts a fast and a slow continuation on every
+changed revision. Nothing it produces is committed, spoken, or dispatched — it
+is adopted at the endpoint only if the canonical observation says the same
+thing the speculation answered, and discarded otherwise. That makes it safe to
+be wrong about and expensive to be wrong about, which is why it is off by
+default. `-preparation-slow-pace` bounds how often the slow provider may be
+speculatively started.
+
+## Policy models
+
+```sh
+openrealtime serve \
+  -policy-models backchannel,turn-projection,overlap \
+  -policy-model qwen-3b -policy-url http://127.0.0.1:8002/v1
+```
+
+Each is a small model with a short prompt and an enumerated output, and each
+degrades to a rule when unconfigured: backchannel to off, turn projection to
+silence-only endpointing, overlap classification to unclassified. They are
+admitted at interactive class when `-compute-capacity` is set.
+
+Turn projection reaches the conversation through the floor: a projection ends
+the turn before silence does, and the endpoint is recorded as projected so that
+cutting someone off and answering late are never averaged together.
+
+Backchannel decides off the audio path — a model call that made the recogniser
+wait would trade what makes a system feel alive for what makes it feel slow —
+and one decision is in flight at a time.
 
 ## Adding video
 

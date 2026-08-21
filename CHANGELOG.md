@@ -76,6 +76,67 @@ interaction control plane — and everything below is what that made possible.
 - **A distroless container** that runs as a non-root user and contains the
   server binary and the certificate roots and nothing else.
 
+### Fixed before release
+
+An audit against the plan found one recurring defect: policies that were
+constructed, validated, named in the health report, and exposed as flags — and
+never consulted at runtime. A measured factor that is a silent no-op cannot
+measure anything, so each of these is now wired to the live path with a test
+that fails when it is unwired.
+
+- **The repair lifecycle.** Nothing created a repair obligation, so
+  `RepairInstruction` never fired and audible repair never happened. Content
+  the user heard and a later observation invalidated is now recorded in the
+  ledger, raised into the trajectory at the next safe point, put to the slow
+  provider as an instruction, and resolved against the correction.
+- **Turn projection.** The floor policy was never consulted, so
+  `-policy-models=turn-projection` changed nothing. A projected endpoint now
+  closes the turn before silence confirms it, and only a projected one does —
+  an ordinary endpoint stays the acoustic gate's.
+- **Backchannel.** The policy was never consulted, so
+  `-policy-models=backchannel` changed nothing. A chosen continuer is now
+  spoken, off the audio path, carrying no assistant item, and does not trigger
+  barge-in against itself.
+- **Preparation.** `Prepare()` was called and its decision discarded. A
+  continuation is now genuinely generated before the endpoint against an
+  uncommitted observation, committed to nothing, and adopted only if the
+  endpoint says the same thing. It is opt-in (`-preparation continuous`),
+  because it is the one policy that spends tokens rather than reorders work.
+- **Computer use could not press anything.** Every action in the namespace that
+  changes something declares `confirm: policy`; with no policy supplied that
+  reads as `always`, and `always` with no confirmer denies. The declared target
+  is now the policy, `-computer-confirm always` is refused at startup rather
+  than denying silently at dispatch, and a `Confirmer` can be supplied.
+- **Observers were per deployment, not per session.** They are now selected in
+  the session extension (`observers`, answered with `available_observers`), and
+  factor F3's video-only level genuinely runs no recogniser instead of being
+  audio+video under another name.
+- **The declared video rate cap was not enforced**, and the video observer's
+  sampling interval keyed on client-supplied capture times — so a client that
+  sent no timestamps had no rate limit at all. Both now hold server-side.
+- **The admission governor was never constructed.** Policy models, narration,
+  and speculative preparation now compete under one budget when
+  `-compute-capacity` is set.
+- **Deferred routine work could ride out on a parallel batch** and bypass the
+  deferral gate. A merged batch is parallel only when every part of it is.
+- **Two policies that cancel out are refused rather than silently reconciled**:
+  `stable-partial` observation with a deferral that waits for the endpoint held
+  every partial until the endpoint and bought nothing.
+
+Two defects in the measurement harness itself, which are the more serious kind
+because they would have produced published numbers that were wrong:
+
+- **FDB v3 scored an unreassembled identifier as correct.** Value comparison
+  stripped whitespace, so an agent that heard the caller spell it out and sent
+  `order_id="B O B 1 2"` matched the expected `BOB12`. Reassembling a spelled
+  identifier is the distinct failure this suite exists to separate from not
+  knowing which tool to call, and the scorer was reporting it as absent.
+  Punctuation is still normalised away; a word boundary is now a word boundary.
+- **FD-Bench computed the premature/overrun distinction and did not report
+  it.** An answer begun mid-turn and an answer that ran into the next turn have
+  different causes and different fixes; both are now in the metrics, with the
+  overlap duration.
+
 ### What is not claimed
 
 The measurement program in `docs/measurement.md` runs continuously after
