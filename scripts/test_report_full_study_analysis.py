@@ -284,6 +284,9 @@ class Fixture:
             "resumed": False,
             "interrupted_invocations": 0,
             "completed_invocations": 1,
+            "orphaned_invocations": 0,
+            "quarantined_unguarded_results": 0,
+            "gpu_ownership_gaps": 0,
             "source_revision": "c" * 40,
             "host_boot_id": "fixture-boot",
             "gpu_uuids": ["GPU-fixture"],
@@ -501,6 +504,39 @@ class FullStudyAnalysisTest(unittest.TestCase):
             ],
             1,
         )
+
+    def test_uses_orphan_exit_time_and_disclosed_recovery_counts(self) -> None:
+        report_path, earlier_run = self.resume_first_matrix()
+        run = json.loads(earlier_run.read_text(encoding="utf-8"))
+        run.pop("stopped_at", None)
+        write_json(earlier_run, run)
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report["execution_evidence"][0]["sha256"] = ANALYSIS.sha256_file(earlier_run)
+        write_json(report_path, report)
+        full = json.loads(self.fixture.full_report.read_text(encoding="utf-8"))
+        panel = full["evidence_panel"]["tau_voice"]["matrices"][0]
+        history = panel["execution_history"]
+        history["orphaned_invocations"] = 1
+        history["quarantined_unguarded_results"] = 1
+        history["gpu_ownership_gaps"] = 2
+        segment = history["segments"][0]
+        segment["run"] = self.fixture.pin(earlier_run)
+        segment["interpreted_status"] = "orphaned_after_wrapper_loss_rerun_under_guard"
+        segment.pop("stopped_at", None)
+        segment["orphaned_at"] = "2025-12-31T23:59:59Z"
+        segment["orphan_recovery"] = {
+            "quarantined_unguarded_results": 1,
+            "guard_gaps": [{}, {}],
+        }
+        panel["report"] = self.fixture.pin(report_path)
+        write_json(self.fixture.full_report, full)
+        result = self.build()
+        execution = result["tau_voice"]["matrices"]["matrix-baseline"]["runtime"][
+            "execution_history"
+        ]
+        self.assertEqual(execution["orphaned_invocations"], 1)
+        self.assertEqual(execution["quarantined_unguarded_results"], 1)
+        self.assertEqual(execution["gpu_ownership_gaps"], 2)
 
     def test_refuses_resumed_execution_source_drift(self) -> None:
         report_path, earlier_run = self.resume_first_matrix()

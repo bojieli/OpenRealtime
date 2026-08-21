@@ -806,8 +806,13 @@ def analyze_execution_history(
                 status in {"running", "interrupted"},
                 f"{segment_label} has invalid pre-resume status {status!r}",
             )
+            terminal_value = terminal_segment.get("stopped_at")
+            if terminal_value is None:
+                terminal_value = terminal_segment.get("orphaned_at")
+            if terminal_value is None:
+                terminal_value = run.get("stopped_at")
             finished_at = parse_timestamp(
-                run.get("stopped_at"), f"{segment_label} stop"
+                terminal_value, f"{segment_label} stop or orphan exit"
             )
         require(finished_at >= started_at, f"{segment_label} ends before it starts")
         periods.append((started_at, finished_at))
@@ -842,6 +847,30 @@ def analyze_execution_history(
         len(execution) - 1,
         f"{label} interruption count",
     )
+    orphaned_segments = [
+        segment for segment in terminal_segments if "orphan_recovery" in segment
+    ]
+    require_equal(
+        terminal_history.get("orphaned_invocations"),
+        len(orphaned_segments),
+        f"{label} orphaned invocation count",
+    )
+    require_equal(
+        terminal_history.get("quarantined_unguarded_results"),
+        sum(
+            segment["orphan_recovery"].get("quarantined_unguarded_results", 0)
+            for segment in orphaned_segments
+        ),
+        f"{label} quarantined result count",
+    )
+    require_equal(
+        terminal_history.get("gpu_ownership_gaps"),
+        sum(
+            len(segment["orphan_recovery"].get("guard_gaps", []))
+            for segment in orphaned_segments
+        ),
+        f"{label} GPU ownership gap count",
+    )
     assert first_runtime is not None and final_runtime is not None
     delta = cumulative_runtime_delta(first_runtime, final_runtime)
     if len(execution) == 1:
@@ -865,6 +894,11 @@ def analyze_execution_history(
         "invocations": len(execution),
         "resumed": len(execution) > 1,
         "interrupted_invocations": len(execution) - 1,
+        "orphaned_invocations": terminal_history.get("orphaned_invocations"),
+        "quarantined_unguarded_results": terminal_history.get(
+            "quarantined_unguarded_results"
+        ),
+        "gpu_ownership_gaps": terminal_history.get("gpu_ownership_gaps"),
         "unregistered_gpu_process_violations": terminal_history.get(
             "unregistered_gpu_process_violations"
         ),

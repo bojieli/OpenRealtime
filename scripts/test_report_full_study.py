@@ -991,6 +991,232 @@ class FullStudyTest(unittest.TestCase):
         )
         return log_path
 
+    def write_guard_log(
+        self, path: Path, *, started_at: str, check_at: str, completed: bool
+    ) -> Path:
+        snapshot = runtime_identity()["gpu_ownership"]
+        snapshot["captured_at"] = check_at
+        records = [
+            {
+                "type": "guard.started",
+                "status": "running",
+                "recorded_at": started_at,
+                "interval_seconds": 5,
+                "capture_timeout_seconds": 15,
+            },
+            {
+                "type": "guard.check",
+                "status": "ok",
+                "recorded_at": check_at,
+                "ownership": snapshot,
+            },
+        ]
+        if completed:
+            records.append(
+                {
+                    "type": "guard.completed",
+                    "status": "complete",
+                    "recorded_at": check_at,
+                    "exit_status": 0,
+                }
+            )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "".join(
+                json.dumps(record, separators=(",", ":")) + "\n"
+                for record in records
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    def prepend_tau_orphan(self) -> tuple[Path, Path]:
+        final_run = self.fixture.paths["tau_run"]
+        report_path = final_run.parents[3] / "report.json"
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        final_entry = report["execution_evidence"][0]
+        orphan_run = final_run.parents[1] / "orphaned" / "run.json"
+        orphan_gpu = orphan_run.with_name("gpu.csv")
+        orphan_gpu.parent.mkdir(parents=True, exist_ok=True)
+        orphan_gpu.write_text(
+            "timestamp,index,name,memory_used_mib,utilization_gpu_percent,"
+            "power_draw_watts,loadavg\n"
+            "2025-12-31T23:58:00Z,0,Test GPU,1000,40,90,1/2/3\n",
+            encoding="utf-8",
+        )
+        payload = {
+            "matrix_sha256": json.loads(final_run.read_text(encoding="utf-8"))[
+                "matrix_sha256"
+            ],
+            "status": "running",
+            "selected_cell": None,
+            "started_at": "2025-12-31T23:58:00Z",
+            "openrealtime_revision": "c" * 40,
+            "source_worktree_clean_start": True,
+            "runtime_identity": runtime_identity(),
+            "gateway_health": {"runtime": {}},
+            "gpu_ownership_guards": [],
+        }
+        write_json(orphan_run, payload)
+        original_log = self.write_guard_log(
+            orphan_run.parent / "control/airline.gpu-ownership.jsonl",
+            started_at="2025-12-31T23:58:00Z",
+            check_at="2025-12-31T23:58:05Z",
+            completed=False,
+        )
+        queue_v2 = self.root / ".runtime/benchmark-runs/full-study-recovery-queue-v2"
+        queue_v3 = self.root / ".runtime/benchmark-runs/full-study-recovery-queue-v3"
+        queue_v2.mkdir(parents=True, exist_ok=True)
+        queue_v3.mkdir(parents=True, exist_ok=True)
+        baseline = queue_v2 / "orphan-reattach-baseline.json"
+        write_json(
+            baseline,
+            {
+                "schema_version": "1.0.0",
+                "type": "orphaned_tau_reattach_baseline",
+                "process": {
+                    "pid": 123,
+                    "proc_start_time_ticks": "456",
+                    "cmdline_sha256": "e" * 64,
+                },
+            },
+        )
+        prior_log = self.write_guard_log(
+            queue_v2 / "orphan-reattached.gpu-ownership.jsonl",
+            started_at="2025-12-31T23:58:10Z",
+            check_at="2025-12-31T23:58:15Z",
+            completed=False,
+        )
+        monitor_log = self.write_guard_log(
+            queue_v3 / "orphan-reattached.gpu-ownership.jsonl",
+            started_at="2025-12-31T23:58:20Z",
+            check_at="2025-12-31T23:58:25Z",
+            completed=False,
+        )
+        plan = queue_v3 / "unguarded-result-quarantine-plan.json"
+        write_json(
+            plan,
+            {
+                "schema_version": "1.0.0",
+                "type": "unguarded_tau_result_quarantine_plan",
+                "guard_intervals": [
+                    {
+                        "log": REPORT.artifact(self.root, original_log),
+                        "first_ok": "2025-12-31T23:58:05Z",
+                        "last_ok": "2025-12-31T23:58:05Z",
+                    },
+                    {
+                        "log": REPORT.artifact(self.root, prior_log),
+                        "first_ok": "2025-12-31T23:58:15Z",
+                        "last_ok": "2025-12-31T23:58:15Z",
+                    },
+                    {
+                        "log": REPORT.artifact(self.root, monitor_log),
+                        "first_ok": "2025-12-31T23:58:25Z",
+                        "last_ok": "2025-12-31T23:58:25Z",
+                    },
+                ],
+                "guard_gaps": [],
+                "simulations": [],
+            },
+        )
+        execution = queue_v3 / "unguarded-result-quarantine.json"
+        write_json(
+            execution,
+            {
+                "schema_version": "1.0.0",
+                "type": "unguarded_tau_result_quarantine",
+                "plan": REPORT.artifact(self.root, plan),
+                "quarantined_simulations": 0,
+                "moved": [],
+                "updated_results": [],
+            },
+        )
+        final_snapshot = runtime_identity()["gpu_ownership"]
+        final_snapshot["captured_at"] = "2025-12-31T23:58:26Z"
+        with monitor_log.open("a", encoding="utf-8") as stream:
+            for record in (
+                {
+                    "type": "guard.check",
+                    "status": "ok",
+                    "recorded_at": "2025-12-31T23:58:26Z",
+                    "ownership": final_snapshot,
+                },
+                {
+                    "type": "guard.completed",
+                    "status": "complete",
+                    "recorded_at": "2025-12-31T23:58:26Z",
+                    "exit_status": 0,
+                },
+            ):
+                stream.write(json.dumps(record, separators=(",", ":")) + "\n")
+        write_json(
+            queue_v3 / "orphan-exit.json",
+            {
+                "schema_version": "1.0.0",
+                "type": "orphaned_tau_exit",
+                "recorded_at": "2025-12-31T23:58:30Z",
+                "pid": 123,
+                "simulations_before_quarantine": 0,
+                "simulations_after_quarantine": 0,
+                "quarantine_plan": self.fixture.relative(plan),
+                "quarantine_execution": self.fixture.relative(execution),
+                "reattached_gpu_evidence": self.fixture.relative(monitor_log),
+            },
+        )
+        orphan_entry = {
+            "path": self.fixture.relative(orphan_run),
+            "sha256": REPORT.sha256_file(orphan_run),
+            "status": "running",
+            "selected_cell": None,
+            "started_at": payload["started_at"],
+            "completed_at": None,
+            "openrealtime_revision": payload["openrealtime_revision"],
+            "openrealtime_revision_final": None,
+            "source_worktree_clean_start": True,
+            "source_worktree_clean_final": None,
+            "runtime_identity": payload["runtime_identity"],
+            "runtime_identity_final": None,
+            "gateway_health_start": payload["gateway_health"],
+            "gateway_health_final": None,
+            "gpu_ownership_guards": [],
+            "gpu_telemetry": {
+                "path": self.fixture.relative(orphan_gpu),
+                "sha256": REPORT.sha256_file(orphan_gpu),
+                "bytes": orphan_gpu.stat().st_size,
+            },
+        }
+        report["execution_evidence"] = [orphan_entry, final_entry]
+        write_json(report_path, report)
+        return report_path, orphan_run
+
+    def test_accepts_and_discloses_an_orphaned_tau_recovery(self) -> None:
+        self.prepend_tau_orphan()
+        report = self.report()
+        history = report["evidence_panel"]["tau_voice"]["matrices"][0][
+            "execution_history"
+        ]
+        self.assertEqual(history["orphaned_invocations"], 1)
+        self.assertEqual(history["quarantined_unguarded_results"], 0)
+        self.assertEqual(history["gpu_ownership_gaps"], 0)
+        segment = history["segments"][0]
+        self.assertEqual(
+            segment["interpreted_status"],
+            "orphaned_after_wrapper_loss_rerun_under_guard",
+        )
+        self.assertEqual(segment["orphaned_at"], "2025-12-31T23:58:30Z")
+        self.assertEqual(len(segment["unfinalized_guard_logs"]), 1)
+        self.assertEqual(segment["orphan_recovery"]["process"]["pid"], 123)
+
+    def test_rejects_an_orphaned_tau_run_without_recovery_evidence(self) -> None:
+        _, orphan_run = self.prepend_tau_orphan()
+        (
+            self.root
+            / ".runtime/benchmark-runs/full-study-recovery-queue-v3/orphan-exit.json"
+        ).unlink()
+        with self.assertRaisesRegex(REPORT.StudyIncompleteError, "orphan exit"):
+            self.report()
+
     def test_accepts_only_the_complete_exact_population(self) -> None:
         report = self.report()
         self.assertEqual(report["status"], "complete")

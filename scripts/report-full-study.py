@@ -239,6 +239,22 @@ def read_json(path: Path, label: str) -> dict[str, Any]:
     return value
 
 
+def read_json_lines(path: Path, label: str) -> list[dict[str, Any]]:
+    if not path.is_file():
+        raise StudyIncompleteError(f"{label} is missing: {path}")
+    try:
+        records = [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    except (OSError, json.JSONDecodeError) as error:
+        raise StudyIncompleteError(f"cannot read {label} {path}: {error}") from error
+    if not all(isinstance(record, dict) for record in records):
+        raise StudyIncompleteError(f"{label} must contain only JSON objects: {path}")
+    return records
+
+
 def parse_utc_timestamp(value: Any, label: str) -> datetime:
     require(isinstance(value, str) and bool(value), f"{label} timestamp is absent")
     try:
@@ -305,6 +321,26 @@ def artifact(root: Path, path: Path) -> dict[str, Any]:
         "sha256": sha256_file(path),
         "bytes": path.stat().st_size,
     }
+
+
+def validate_artifact_prefix(
+    root: Path, path: Path, declaration: Any, label: str
+) -> None:
+    """Validate a hash captured before an append-only file grew."""
+    require(isinstance(declaration, dict), f"{label} declaration is absent")
+    require_equal(
+        declaration.get("path"), display_path(root, path), f"{label} pinned path"
+    )
+    size = declaration.get("bytes")
+    digest = declaration.get("sha256")
+    require(isinstance(size, int) and size > 0, f"{label} pinned byte count")
+    require(valid_sha256(digest), f"{label} pinned SHA-256")
+    require(path.is_file(), f"{label} is missing: {path}")
+    require(path.stat().st_size >= size, f"{label} shrank after pinning")
+    hasher = hashlib.sha256()
+    with path.open("rb") as stream:
+        hasher.update(stream.read(size))
+    require_equal(hasher.hexdigest(), digest, f"{label} pinned prefix SHA-256")
 
 
 PERMITTED_NULL_PANEL_FIELDS = frozenset(
@@ -1409,6 +1445,314 @@ def validate_interrupted_gpu_guard_log(
     }
 
 
+def validate_unfinalized_gpu_guard_log(
+    root: Path,
+    path: Path,
+    *,
+    components: dict[str, Any],
+    host_boot_id: str,
+    requires_local_fast: bool,
+    label: str,
+) -> dict[str, Any]:
+    """Pin a structurally valid guard log whose supervisor was lost.
+
+    Unlike an interrupted log, this log has no terminal ``guard.completed``
+    record.  It is evidence only through its final successful check; any
+    later uncovered interval must be disclosed and handled separately.
+    """
+    try:
+        records = [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+        ]
+    except (OSError, json.JSONDecodeError) as error:
+        raise StudyIncompleteError(f"cannot parse {label}: {error}") from error
+    require(len(records) >= 2, f"{label} has no guard checks")
+    require(
+        all(isinstance(record, dict) for record in records),
+        f"{label} contains a non-object record",
+    )
+    times = [
+        parse_utc_timestamp(record.get("recorded_at"), f"{label} record {index}")
+        for index, record in enumerate(records)
+    ]
+    require(
+        all(later >= earlier for earlier, later in zip(times, times[1:])),
+        f"{label} record times are not monotonic",
+    )
+    start = records[0]
+    require(
+        start.get("type") == "guard.started" and start.get("status") == "running",
+        f"{label} start record is invalid",
+    )
+    interval = start.get("interval_seconds")
+    capture_timeout = start.get("capture_timeout_seconds")
+    require_equal(
+        interval,
+        GPU_OWNERSHIP_CONTRACT["sampling_interval_seconds"],
+        f"{label} frozen sampling interval",
+    )
+    require_equal(
+        capture_timeout,
+        GPU_OWNERSHIP_CONTRACT["capture_timeout_seconds"],
+        f"{label} frozen capture timeout",
+    )
+    require(
+        all(record.get("type") == "guard.check" for record in records[1:]),
+        f"{label} contains a terminal record",
+    )
+    first_snapshot: dict[str, Any] | None = None
+    for index, record in enumerate(records[1:]):
+        check_label = f"{label} check {index}"
+        require_equal(record.get("status"), "ok", f"{check_label} status")
+        snapshot = record.get("ownership")
+        validate_gpu_ownership_snapshot(
+            snapshot,
+            components=components,
+            host_boot_id=host_boot_id,
+            requires_local_fast=requires_local_fast,
+            label=check_label,
+        )
+        captured_at = parse_utc_timestamp(
+            snapshot.get("captured_at"), f"{check_label} ownership capture"
+        )
+        require(
+            0 <= (times[index + 1] - captured_at).total_seconds() <= capture_timeout,
+            f"{check_label} capture time is inconsistent",
+        )
+        if first_snapshot is None:
+            first_snapshot = snapshot
+        else:
+            for field in (
+                "host_boot_id",
+                "expected_components",
+                "component_roots",
+                "gpu_uuids",
+            ):
+                require_equal(
+                    snapshot.get(field),
+                    first_snapshot.get(field),
+                    f"{check_label} stable {field}",
+                )
+            require_equal(
+                gpu_process_identity(snapshot["processes"]),
+                gpu_process_identity(first_snapshot["processes"]),
+                f"{check_label} stable GPU process identity",
+            )
+    maximum_gap = interval + capture_timeout + 1
+    require(
+        all(
+            (later - earlier).total_seconds() <= maximum_gap
+            for earlier, later in zip(times, times[1:])
+        ),
+        f"{label} contains an unsampled interval before supervisor loss",
+    )
+    return {
+        "log": artifact(root, path),
+        "started_at": start["recorded_at"],
+        "last_check_at": records[-1]["recorded_at"],
+        "completion_status": "unfinalized_supervisor_lost",
+        "checks": len(records) - 1,
+        "successful_checks": len(records) - 1,
+        "violations": [],
+    }
+
+
+def validate_orphan_recovery(
+    root: Path,
+    *,
+    run_path: Path,
+    entry: dict[str, Any],
+    components: dict[str, Any],
+    host_boot_id: str,
+    requires_local_fast: bool,
+    label: str,
+) -> dict[str, Any]:
+    """Validate evidence for a benchmark orphaned by wrapper loss.
+
+    The orphan itself is not rewritten.  A recovery supervisor must prove its
+    exit, reattach GPU ownership checks, quarantine any terminal result that
+    completed during an uncovered interval, and rerun that result later.
+    """
+    queue_v2 = root / ".runtime/benchmark-runs/full-study-recovery-queue-v2"
+    queue_v3 = root / ".runtime/benchmark-runs/full-study-recovery-queue-v3"
+    baseline_path = queue_v2 / "orphan-reattach-baseline.json"
+    exit_path = queue_v3 / "orphan-exit.json"
+    plan_path = queue_v3 / "unguarded-result-quarantine-plan.json"
+    execution_path = queue_v3 / "unguarded-result-quarantine.json"
+    for path, name in (
+        (baseline_path, "reattach baseline"),
+        (exit_path, "orphan exit"),
+        (plan_path, "quarantine plan"),
+        (execution_path, "quarantine execution"),
+    ):
+        require(path.is_file(), f"{label} {name} is missing: {path}")
+    baseline = read_json(baseline_path, f"{label} reattach baseline")
+    orphan_exit = read_json(exit_path, f"{label} orphan exit")
+    plan = read_json(plan_path, f"{label} quarantine plan")
+    execution = read_json(execution_path, f"{label} quarantine execution")
+
+    require_equal(
+        baseline.get("type"),
+        "orphaned_tau_reattach_baseline",
+        f"{label} baseline type",
+    )
+    baseline_process = baseline.get("process")
+    require(isinstance(baseline_process, dict), f"{label} baseline process")
+    baseline_pid = baseline_process.get("pid")
+    require(isinstance(baseline_pid, int) and baseline_pid > 0, f"{label} baseline PID")
+    require(
+        isinstance(baseline_process.get("proc_start_time_ticks"), str)
+        and baseline_process["proc_start_time_ticks"].isdigit(),
+        f"{label} baseline process start",
+    )
+    require(
+        isinstance(baseline_process.get("cmdline_sha256"), str)
+        and len(baseline_process["cmdline_sha256"]) == 64,
+        f"{label} baseline command hash",
+    )
+
+    require_equal(orphan_exit.get("type"), "orphaned_tau_exit", f"{label} exit type")
+    require_equal(orphan_exit.get("pid"), baseline_pid, f"{label} exit PID")
+    finished_at = parse_utc_timestamp(
+        orphan_exit.get("recorded_at"), f"{label} orphan exit"
+    )
+    require(
+        finished_at > parse_utc_timestamp(entry.get("started_at"), f"{label} start"),
+        f"{label} orphan exit precedes invocation start",
+    )
+    require_equal(
+        resolve(root, orphan_exit.get("quarantine_plan", "")), plan_path,
+        f"{label} exit plan path",
+    )
+    require_equal(
+        resolve(root, orphan_exit.get("quarantine_execution", "")), execution_path,
+        f"{label} exit execution path",
+    )
+    monitor_path = resolve(root, orphan_exit.get("reattached_gpu_evidence", ""))
+    monitor = validate_interrupted_gpu_guard_log(
+        root,
+        monitor_path,
+        components=components,
+        host_boot_id=host_boot_id,
+        requires_local_fast=requires_local_fast,
+        label=f"{label} reattached GPU guard",
+    )
+
+    require_equal(
+        execution.get("plan"), artifact(root, plan_path), f"{label} execution plan pin"
+    )
+    simulations = plan.get("simulations")
+    require(isinstance(simulations, list), f"{label} quarantine simulation list")
+    quarantined = execution.get("quarantined_simulations")
+    require_equal(quarantined, len(simulations), f"{label} quarantine count")
+    before = orphan_exit.get("simulations_before_quarantine")
+    after = orphan_exit.get("simulations_after_quarantine")
+    require(
+        isinstance(before, int) and isinstance(after, int) and before >= after,
+        f"{label} quarantine population counts",
+    )
+    require_equal(before - after, len(simulations), f"{label} quarantine delta")
+    moved = execution.get("moved")
+    require(isinstance(moved, list), f"{label} moved evidence")
+    quarantine_root = queue_v3 / "quarantined-results"
+    for moved_index, item in enumerate(moved):
+        require(isinstance(item, dict), f"{label} moved item {moved_index}")
+        destination = Path(item.get("to", ""))
+        require(destination.exists(), f"{label} moved item {moved_index} is missing")
+        try:
+            destination.resolve().relative_to(quarantine_root.resolve())
+        except ValueError as error:
+            raise StudyIncompleteError(
+                f"{label} moved item {moved_index} is outside quarantine"
+            ) from error
+        digest = item.get("sha256_before_move")
+        if digest is not None:
+            require(destination.is_file(), f"{label} moved file {moved_index}")
+            require_equal(
+                sha256_file(destination), digest, f"{label} moved file {moved_index} hash"
+            )
+    updated = execution.get("updated_results")
+    require(isinstance(updated, list), f"{label} resume-index updates")
+    removed = 0
+    for update in updated:
+        require(isinstance(update, dict), f"{label} resume-index update")
+        entries_before = update.get("entries_before")
+        entries_after = update.get("entries_after")
+        require(
+            isinstance(entries_before, int)
+            and isinstance(entries_after, int)
+            and entries_before > entries_after,
+            f"{label} resume-index update counts",
+        )
+        removed += entries_before - entries_after
+    require_equal(removed, len(simulations), f"{label} resume-index removal count")
+
+    intervals = plan.get("guard_intervals")
+    require(isinstance(intervals, list) and intervals, f"{label} guard intervals")
+    validated_intervals = []
+    covers_run_log = False
+    for interval_index, interval in enumerate(intervals):
+        require(isinstance(interval, dict), f"{label} guard interval {interval_index}")
+        declaration = interval.get("log")
+        require(isinstance(declaration, dict), f"{label} guard interval {interval_index} log")
+        log_path = resolve(root, declaration.get("path", ""))
+        require(log_path.is_file(), f"{label} guard interval {interval_index} is missing")
+        records = read_json_lines(log_path, f"{label} guard interval {interval_index}")
+        completed = bool(
+            records and records[-1].get("type") == "guard.completed"
+        )
+        validator = (
+            validate_interrupted_gpu_guard_log
+            if completed
+            else validate_unfinalized_gpu_guard_log
+        )
+        validated = validator(
+            root,
+            log_path,
+            components=components,
+            host_boot_id=host_boot_id,
+            requires_local_fast=requires_local_fast,
+            label=f"{label} guard interval {interval_index}",
+        )
+        validate_artifact_prefix(
+            root,
+            log_path,
+            declaration,
+            f"{label} guard interval {interval_index} pin",
+        )
+        validated_intervals.append(validated)
+        try:
+            log_path.resolve().relative_to(run_path.parent.resolve())
+            covers_run_log = True
+        except ValueError:
+            pass
+    require(covers_run_log, f"{label} recovery does not cover the orphaned run log")
+    gaps = plan.get("guard_gaps")
+    require(isinstance(gaps, list), f"{label} guard gap list")
+
+    return {
+        "baseline": artifact(root, baseline_path),
+        "orphan_exit": artifact(root, exit_path),
+        "orphaned_at": orphan_exit["recorded_at"],
+        "process": {
+            "pid": baseline_pid,
+            "proc_start_time_ticks": baseline_process["proc_start_time_ticks"],
+            "cmdline_sha256": baseline_process["cmdline_sha256"],
+        },
+        "reattached_gpu_guard": monitor,
+        "guard_intervals": validated_intervals,
+        "guard_gaps": gaps,
+        "quarantine_plan": artifact(root, plan_path),
+        "quarantine_execution": artifact(root, execution_path),
+        "quarantined_unguarded_results": len(simulations),
+        "quarantined_result_ids": [
+            item.get("id") for item in simulations if isinstance(item, dict)
+        ],
+        "moved_evidence": moved,
+    }
+
+
 def validate_tau_execution_history(
     root: Path,
     *,
@@ -1542,7 +1886,14 @@ def validate_tau_execution_history(
             require(isinstance(log_path, str) and bool(log_path), f"{label} guard log")
             declared_logs.add(resolve(root, log_path))
 
-        orphan_logs = []
+        status = entry.get("status")
+        potentially_orphaned = (
+            status == "running"
+            and entry.get("completed_at") is None
+            and run_payload.get("stopped_at") is None
+        )
+        unrecorded_terminal_logs = []
+        unfinalized_logs = []
         for log_path in sorted(run_path.parent.rglob("*.gpu-ownership.jsonl")):
             if log_path.resolve() in declared_logs:
                 continue
@@ -1554,16 +1905,28 @@ def validate_tau_execution_history(
                 implied_summary in expected_guard_paths,
                 f"{label} has an unexpected unrecorded guard log {relative_log}",
             )
-            orphan_logs.append(
-                validate_interrupted_gpu_guard_log(
-                    root,
-                    log_path,
-                    components=components,
-                    host_boot_id=boot,
-                    requires_local_fast=requires_local_fast,
-                    label=f"{label} unrecorded GPU guard {relative_log}",
+            if potentially_orphaned:
+                unfinalized_logs.append(
+                    validate_unfinalized_gpu_guard_log(
+                        root,
+                        log_path,
+                        components=components,
+                        host_boot_id=boot,
+                        requires_local_fast=requires_local_fast,
+                        label=f"{label} unfinalized GPU guard {relative_log}",
+                    )
                 )
-            )
+            else:
+                unrecorded_terminal_logs.append(
+                    validate_interrupted_gpu_guard_log(
+                        root,
+                        log_path,
+                        components=components,
+                        host_boot_id=boot,
+                        requires_local_fast=requires_local_fast,
+                        label=f"{label} unrecorded GPU guard {relative_log}",
+                    )
+                )
 
         telemetry = entry.get("gpu_telemetry")
         require(isinstance(telemetry, dict), f"{label} GPU telemetry is absent")
@@ -1574,7 +1937,7 @@ def validate_tau_execution_history(
             artifact(root, telemetry_path), telemetry, f"{label} GPU telemetry pin"
         )
 
-        status = entry.get("status")
+        orphan_recovery = None
         if status == "complete":
             finished_at = parse_utc_timestamp(
                 entry.get("completed_at"), f"{label} completion"
@@ -1599,26 +1962,46 @@ def validate_tau_execution_history(
                 expected_guard_paths,
                 f"{label} GPU ownership guard coverage",
             )
-            require_equal(orphan_logs, [], f"{label} unrecorded guard logs")
+            require_equal(unrecorded_terminal_logs, [], f"{label} unrecorded guard logs")
+            require_equal(unfinalized_logs, [], f"{label} unfinalized guard logs")
             interpreted_status = "complete"
             terminal_field = "completed_at"
+            terminal_value = entry["completed_at"]
         else:
             require(
                 status in {"running", "interrupted"},
                 f"{label} has inadmissible pre-resume status {status!r}",
             )
-            stopped_value = run_payload.get("stopped_at")
-            finished_at = parse_utc_timestamp(stopped_value, f"{label} stop")
             require(entry.get("completed_at") is None, f"{label} has a completion time")
             require(entry.get("runtime_identity_final") is None, f"{label} has a final identity")
             require(entry.get("openrealtime_revision_final") is None, f"{label} has a final revision")
             require(entry.get("source_worktree_clean_final") is None, f"{label} has a final clean-state claim")
-            interpreted_status = (
-                "stopped_before_resume_with_unfinalized_status"
-                if status == "running"
-                else "interrupted_before_resume"
-            )
-            terminal_field = "stopped_at"
+            if potentially_orphaned:
+                orphan_recovery = validate_orphan_recovery(
+                    root,
+                    run_path=run_path,
+                    entry=entry,
+                    components=components,
+                    host_boot_id=boot,
+                    requires_local_fast=requires_local_fast,
+                    label=label,
+                )
+                finished_at = parse_utc_timestamp(
+                    orphan_recovery["orphaned_at"], f"{label} orphan exit"
+                )
+                interpreted_status = "orphaned_after_wrapper_loss_rerun_under_guard"
+                terminal_field = "orphaned_at"
+                terminal_value = orphan_recovery["orphaned_at"]
+            else:
+                stopped_value = run_payload.get("stopped_at")
+                finished_at = parse_utc_timestamp(stopped_value, f"{label} stop")
+                interpreted_status = (
+                    "stopped_before_resume_with_unfinalized_status"
+                    if status == "running"
+                    else "interrupted_before_resume"
+                )
+                terminal_field = "stopped_at"
+                terminal_value = run_payload["stopped_at"]
         for report_field, run_field in projected_fields.items():
             require_equal(
                 entry.get(report_field),
@@ -1626,24 +2009,22 @@ def validate_tau_execution_history(
                 f"{label} projected {report_field}",
             )
         require(finished_at >= started_at, f"{label} ends before it starts")
-        segments.append(
-            {
-                "run": artifact(root, run_path),
-                "recorded_status": status,
-                "interpreted_status": interpreted_status,
-                "started_at": entry["started_at"],
-                terminal_field: (
-                    entry["completed_at"]
-                    if terminal_field == "completed_at"
-                    else run_payload["stopped_at"]
-                ),
-                "completed_guard_summaries": len(guards),
-                "unrecorded_terminal_guard_logs": orphan_logs,
-                "gpu_telemetry": telemetry,
-                "_started": started_at,
-                "_finished": finished_at,
-            }
-        )
+        segment = {
+            "run": artifact(root, run_path),
+            "recorded_status": status,
+            "interpreted_status": interpreted_status,
+            "started_at": entry["started_at"],
+            terminal_field: terminal_value,
+            "completed_guard_summaries": len(guards),
+            "unrecorded_terminal_guard_logs": unrecorded_terminal_logs,
+            "unfinalized_guard_logs": unfinalized_logs,
+            "gpu_telemetry": telemetry,
+            "_started": started_at,
+            "_finished": finished_at,
+        }
+        if orphan_recovery is not None:
+            segment["orphan_recovery"] = orphan_recovery
+        segments.append(segment)
 
     require_equal(len(revisions), 1, f"{matrix_id} resumed source revision count")
     ordered = sorted(segments, key=lambda segment: segment["_started"])
@@ -1668,12 +2049,25 @@ def validate_tau_execution_history(
         for segment in public_segments
         for log in segment["unrecorded_terminal_guard_logs"]
     )
+    orphaned = [
+        segment for segment in public_segments if "orphan_recovery" in segment
+    ]
+    quarantined = sum(
+        segment["orphan_recovery"]["quarantined_unguarded_results"]
+        for segment in orphaned
+    )
+    guard_gaps = sum(
+        len(segment["orphan_recovery"]["guard_gaps"]) for segment in orphaned
+    )
     return (
         {
             "invocations": len(public_segments),
             "resumed": len(public_segments) > 1,
             "interrupted_invocations": len(public_segments) - 1,
             "completed_invocations": 1,
+            "orphaned_invocations": len(orphaned),
+            "quarantined_unguarded_results": quarantined,
+            "gpu_ownership_gaps": guard_gaps,
             "source_revision": next(iter(revisions)),
             "host_boot_id": reference_boot,
             "gpu_uuids": reference_gpu_uuids,
