@@ -28,6 +28,8 @@ import (
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
+	webrtcadapter "github.com/bojieli/OpenRealtime/transport/webrtc"
+	"github.com/pion/webrtc/v4"
 )
 
 type serveOptions struct {
@@ -77,6 +79,9 @@ type serveOptions struct {
 	toolProgress bool
 	instruction  string
 	validateWire bool
+
+	webrtcListen string
+	webrtcSTUN   string
 }
 
 func runServe(arguments []string, output io.Writer) error {
@@ -126,6 +131,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.BoolVar(&options.toolProgress, "tool-progress", false, "let a completed tool result trigger a short spoken status")
 	flags.StringVar(&options.instruction, "instructions", "", "agent instruction composed ahead of every phase instruction")
 	flags.BoolVar(&options.validateWire, "validate-wire", true, "validate every protocol event against the pinned schema")
+	flags.StringVar(&options.webrtcListen, "webrtc-listen", "", "additional WebRTC listen address; empty disables the adapter")
+	flags.StringVar(&options.webrtcSTUN, "webrtc-stun", "", "comma-separated STUN servers for the WebRTC adapter")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -157,10 +164,24 @@ func serve(options serveOptions, output io.Writer) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	serveError := make(chan error, 1)
+	serveError := make(chan error, 2)
 	go func() { serveError <- httpServer.ListenAndServe() }()
 	fmt.Fprintf(output, "OpenRealtime %s listening on http://%s/v1/realtime\n", bind.Name(), options.listen)
 	fmt.Fprintf(output, "  health   http://%s/healthz\n", options.listen)
+
+	var webrtcServer *http.Server
+	if strings.TrimSpace(options.webrtcListen) != "" {
+		webrtcServer, err = startWebRTC(options, serveError)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "  webrtc   http://%s/v1/realtime (SDP offer)\n", options.webrtcListen)
+		defer func() {
+			shutdown, cancel := context.WithTimeout(context.Background(), options.shutdownTimeout)
+			defer cancel()
+			_ = webrtcServer.Shutdown(shutdown)
+		}()
+	}
 	select {
 	case err := <-serveError:
 		if errors.Is(err, http.ErrServerClosed) {
@@ -376,4 +397,35 @@ func buildObservers(options serveOptions) ([]perception.Factory, error) {
 		Narrator:        narrator,
 		AttachKeyframes: components != perception.ComponentNarrationOnly,
 	})}, nil
+}
+
+// startWebRTC brings up the transport adapter.
+//
+// It connects to this server's own protocol endpoint over a real WebSocket
+// rather than reaching into it, which is the whole point: the adapter is a
+// client, and running it in the same process changes nothing about that.
+func startWebRTC(options serveOptions, serveError chan error) (*http.Server, error) {
+	var iceServers []webrtc.ICEServer
+	for _, server := range strings.Split(options.webrtcSTUN, ",") {
+		server = strings.TrimSpace(server)
+		if server == "" {
+			continue
+		}
+		iceServers = append(iceServers, webrtc.ICEServer{URLs: []string{server}})
+	}
+	adapter, err := webrtcadapter.New(webrtcadapter.Config{
+		Endpoint:   "ws://" + options.listen + "/v1/realtime",
+		Token:      os.Getenv(options.tokenEnv),
+		Model:      options.model,
+		ICEServers: iceServers,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("configure the WebRTC adapter: %w", err)
+	}
+	server := &http.Server{
+		Addr: options.webrtcListen, Handler: adapter.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() { serveError <- server.ListenAndServe() }()
+	return server, nil
 }

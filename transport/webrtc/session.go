@@ -1,0 +1,308 @@
+package webrtc
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/bojieli/OpenRealtime/realtimeclient"
+	"github.com/pion/webrtc/v4"
+	"github.com/pion/webrtc/v4/pkg/media"
+)
+
+// session is one bridged connection: a peer connection on one side, a protocol
+// client on the other.
+type session struct {
+	adapter    *Adapter
+	connection *webrtc.PeerConnection
+	model      string
+
+	client *realtimeclient.Client
+	track  *webrtc.TrackLocalStaticSample
+
+	eventsMu sync.Mutex
+	events   *webrtc.DataChannel
+
+	closed atomic.Bool
+	done   chan struct{}
+	once   sync.Once
+}
+
+// prepare wires the peer connection before the offer is applied.
+func (session *session) prepare() error {
+	track, err := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{
+		MimeType: webrtc.MimeTypePCMU, ClockRate: 8000, Channels: 1,
+	}, "audio", "openrealtime")
+	if err != nil {
+		return fmt.Errorf("create audio track: %w", err)
+	}
+	sender, err := session.connection.AddTrack(track)
+	if err != nil {
+		return fmt.Errorf("add audio track: %w", err)
+	}
+	session.track = track
+	// Reading the sender drains RTCP. Without it the receiver's reports pile
+	// up and the transport stops adapting, which shows up as audio that gets
+	// steadily worse rather than as an error.
+	go func() {
+		buffer := make([]byte, 1500)
+		for {
+			if _, _, err := sender.Read(buffer); err != nil {
+				return
+			}
+		}
+	}()
+
+	session.connection.OnTrack(func(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
+		if remote.Kind() != webrtc.RTPCodecTypeAudio {
+			return
+		}
+		session.pumpInbound(remote)
+	})
+	session.connection.OnDataChannel(func(channel *webrtc.DataChannel) {
+		if channel.Label() != EventChannel {
+			return
+		}
+		session.eventsMu.Lock()
+		session.events = channel
+		session.eventsMu.Unlock()
+		channel.OnMessage(func(message webrtc.DataChannelMessage) {
+			session.forwardToProtocol(message.Data)
+		})
+	})
+	session.connection.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		session.adapter.config.Logf("webrtc connection state %s", state)
+		switch state {
+		case webrtc.PeerConnectionStateFailed, webrtc.PeerConnectionStateClosed,
+			webrtc.PeerConnectionStateDisconnected:
+			session.close()
+		}
+	})
+	return nil
+}
+
+// connect opens the protocol connection and starts the two pumps.
+func (session *session) connect(ctx context.Context) error {
+	client, err := realtimeclient.Dial(ctx, realtimeclient.Config{
+		URL:         session.adapter.config.Endpoint,
+		Token:       session.adapter.config.Token,
+		Model:       session.model,
+		DialTimeout: session.adapter.config.ConnectTimeout,
+	})
+	if err != nil {
+		return fmt.Errorf("connect to the protocol endpoint: %w", err)
+	}
+	session.client = client
+
+	// The adapter owns the media format because it terminates media. This is
+	// the one event it originates rather than forwards, and the reason is that
+	// the client's audio never touches the protocol connection at all.
+	if err := client.Send(ctx, map[string]any{
+		"type": "session.update",
+		"session": map[string]any{
+			"type": "realtime",
+			"audio": map[string]any{
+				"input":  map[string]any{"format": map[string]any{"type": "audio/pcmu"}},
+				"output": map[string]any{"format": map[string]any{"type": "audio/pcmu"}},
+			},
+		},
+	}); err != nil {
+		_ = client.Close()
+		return fmt.Errorf("configure the protocol session: %w", err)
+	}
+	go session.pumpOutbound(ctx)
+	if timeout := session.adapter.config.SessionTimeout; timeout > 0 {
+		go func() {
+			timer := time.NewTimer(timeout)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				session.close()
+			case <-session.done:
+			}
+		}()
+	}
+	return nil
+}
+
+// pumpInbound forwards received RTP payloads to the protocol.
+//
+// No transcoding happens: the RTP payload for PCMU is mu-law bytes, and
+// audio/pcmu on the protocol is the same mu-law bytes. The adapter carries
+// them across unchanged, which is both faster and one fewer place for audio to
+// be quietly altered.
+func (session *session) pumpInbound(remote *webrtc.TrackRemote) {
+	for {
+		packet, _, err := remote.ReadRTP()
+		if err != nil {
+			return
+		}
+		if len(packet.Payload) == 0 || session.closed.Load() {
+			continue
+		}
+		if err := session.client.Send(context.Background(), map[string]any{
+			"type":  "input_audio_buffer.append",
+			"audio": base64.StdEncoding.EncodeToString(packet.Payload),
+		}); err != nil {
+			session.adapter.config.Logf("forward inbound audio: %v", err)
+			return
+		}
+	}
+}
+
+// pumpOutbound routes protocol events: audio to the media track, everything
+// else to the data channel, unchanged.
+func (session *session) pumpOutbound(ctx context.Context) {
+	defer session.close()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event, open := <-session.client.Events():
+			if !open {
+				return
+			}
+			if event.Type == "response.output_audio.delta" {
+				session.playAudio(event.Raw)
+				continue
+			}
+			session.forwardToClient(event.Raw)
+		}
+	}
+}
+
+// playAudio repacketises a protocol audio delta onto the track.
+//
+// The protocol delivers audio already paced in wall-clock terms; RTP needs it
+// in packets of a fixed duration. Handing the whole delta to the track as one
+// sample would make the pacer emit a burst, so it is split here at the
+// packetisation interval.
+func (session *session) playAudio(raw []byte) {
+	var decoded struct {
+		Delta string `json:"delta"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return
+	}
+	payload, err := base64.StdEncoding.DecodeString(decoded.Delta)
+	if err != nil || len(payload) == 0 {
+		return
+	}
+	// mu-law is one byte per sample at 8 kHz.
+	samplesPerPacket := int(8000 * session.adapter.config.PacketDuration / time.Second)
+	if samplesPerPacket <= 0 {
+		samplesPerPacket = 160
+	}
+	for offset := 0; offset < len(payload); offset += samplesPerPacket {
+		end := min(offset+samplesPerPacket, len(payload))
+		chunk := payload[offset:end]
+		duration := time.Duration(len(chunk)) * time.Second / 8000
+		if err := session.track.WriteSample(media.Sample{Data: chunk, Duration: duration}); err != nil {
+			session.adapter.config.Logf("write audio sample: %v", err)
+			return
+		}
+	}
+}
+
+// forwardToClient sends one protocol event to the browser verbatim.
+func (session *session) forwardToClient(raw []byte) {
+	session.eventsMu.Lock()
+	channel := session.events
+	session.eventsMu.Unlock()
+	if channel == nil || channel.ReadyState() != webrtc.DataChannelStateOpen {
+		return
+	}
+	if err := channel.SendText(string(raw)); err != nil {
+		session.adapter.config.Logf("forward event to client: %v", err)
+	}
+}
+
+// forwardToProtocol sends one client event to the endpoint.
+//
+// Audio format changes are dropped rather than forwarded: the client's audio
+// is on the RTP track, so its opinion about the protocol connection's audio
+// format would break the media path without meaning anything. Everything else
+// crosses unchanged, which is what keeps the adapter from being able to
+// express anything a plain WebSocket client cannot.
+func (session *session) forwardToProtocol(raw []byte) {
+	if session.closed.Load() || session.client == nil {
+		return
+	}
+	sanitised, err := stripAudioFormat(raw)
+	if err != nil {
+		session.adapter.config.Logf("client event: %v", err)
+		return
+	}
+	if err := session.client.Send(context.Background(), json.RawMessage(sanitised)); err != nil {
+		session.adapter.config.Logf("forward client event: %v", err)
+	}
+}
+
+func stripAudioFormat(raw []byte) ([]byte, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, errors.New("client event is not a JSON object")
+	}
+	var eventType string
+	if err := json.Unmarshal(envelope["type"], &eventType); err != nil {
+		return nil, errors.New("client event has no type")
+	}
+	if eventType != "session.update" {
+		return raw, nil
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(envelope["session"], &body); err != nil {
+		return raw, nil
+	}
+	audio, present := body["audio"]
+	if !present {
+		return raw, nil
+	}
+	var audioBody map[string]json.RawMessage
+	if err := json.Unmarshal(audio, &audioBody); err != nil {
+		return raw, nil
+	}
+	for _, direction := range []string{"input", "output"} {
+		section, exists := audioBody[direction]
+		if !exists {
+			continue
+		}
+		var sectionBody map[string]json.RawMessage
+		if err := json.Unmarshal(section, &sectionBody); err != nil {
+			continue
+		}
+		delete(sectionBody, "format")
+		encoded, err := json.Marshal(sectionBody)
+		if err != nil {
+			continue
+		}
+		audioBody[direction] = encoded
+	}
+	encodedAudio, err := json.Marshal(audioBody)
+	if err != nil {
+		return raw, nil
+	}
+	body["audio"] = encodedAudio
+	encodedBody, err := json.Marshal(body)
+	if err != nil {
+		return raw, nil
+	}
+	envelope["session"] = encodedBody
+	return json.Marshal(envelope)
+}
+
+func (session *session) close() {
+	session.once.Do(func() {
+		session.closed.Store(true)
+		close(session.done)
+		if session.client != nil {
+			_ = session.client.Close()
+		}
+		_ = session.connection.Close()
+	})
+}
