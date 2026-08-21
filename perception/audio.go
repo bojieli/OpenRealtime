@@ -79,6 +79,25 @@ func (gate *EnergyGate) SilenceNS() uint64 {
 	return gate.silence * uint64(time.Second) / uint64(gate.sampleRate)
 }
 
+// ForceStop ends the current utterance immediately and reports where it
+// ended, whether or not the silence hysteresis was satisfied.
+//
+// It exists for turn projection: a policy that anticipates the end of a turn
+// before silence confirms it has to be able to close the turn, and a gate that
+// could only be closed by its own threshold would make the projection an
+// opinion nobody could act on. It reports false when there was no utterance
+// open, so a projection that arrives just after an ordinary endpoint is a
+// no-op rather than a second endpoint.
+func (gate *EnergyGate) ForceStop() (endMS int, stopped bool) {
+	if !gate.speaking {
+		return 0, false
+	}
+	gate.speaking = false
+	gate.silence = 0
+	gate.prefix = nil
+	return samplesToMS(gate.total, gate.sampleRate), true
+}
+
 // Push advances the gate over one block of PCM16 audio.
 func (gate *EnergyGate) Push(pcm16 []byte) (GateResult, error) {
 	if len(pcm16) == 0 || len(pcm16)%2 != 0 {

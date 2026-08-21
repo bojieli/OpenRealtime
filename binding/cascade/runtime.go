@@ -50,6 +50,9 @@ type runtime struct {
 
 	sequence atomic.Uint64
 	revision atomic.Uint64
+	// continuing is true while a backchannel decision is in flight, so one
+	// turn does not accumulate a model call per revision.
+	continuing inFlight
 
 	settingsMu sync.RWMutex
 	settings   binding.Settings

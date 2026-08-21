@@ -137,6 +137,12 @@ func (runtime *runtime) considerBargeIn(
 		evidence = runtime.policies.Overlap.Classify(classify, decision)
 		cancel()
 	}
+	if runtime.speech.ActiveIsContinuer() {
+		// The overlap is the agent's own continuer. Cancelling it because the
+		// user kept talking would be the agent interrupting itself for having
+		// said it was listening.
+		return nil
+	}
 	outcome := runtime.policies.BargeIn.Decide(interaction.BargeInInput{
 		Context: decision, OverlapNS: overlapNS, Evidence: evidence,
 	})
@@ -213,6 +219,18 @@ func (runtime *runtime) observeAudio(ctx context.Context, frames []perception.Fr
 			if err := runtime.considerBargeIn(ctx, revision, overlap); err != nil {
 				return err
 			}
+		}
+		// A continuer is decided about here because here is where the words
+		// are: a policy that only saw the acoustic envelope could not tell a
+		// finished thought from a pause for breath.
+		runtime.backchannel(ctx, decision)
+		// The floor policy may end the turn before silence confirms it. It is
+		// asked before the trigger, because a projected endpoint makes the
+		// rest of this revision's processing part of the next turn.
+		if projected, err := runtime.projectEndpoint(ctx, decision); err != nil {
+			return err
+		} else if projected {
+			return nil
 		}
 		// Preparation is consulted on every revision. It decides whether work
 		// starts before the endpoint; it never decides what gets committed.

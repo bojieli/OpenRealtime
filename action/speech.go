@@ -21,6 +21,13 @@ type Utterance struct {
 	Phase            trajectory.Phase `json:"phase,omitempty"`
 	SourceRevision   uint64           `json:"source_revision,omitempty"`
 	AssistantItemIDs []string         `json:"assistant_item_ids,omitempty"`
+	// Continuer marks a listener backchannel rather than a turn: a short "mm-hm"
+	// the agent chose to emit while the user is still speaking. It is audio
+	// reaching the user like any other, so it crosses the same commit boundary
+	// - but it is not the agent taking the floor, and treating the user's
+	// continuing speech over it as a barge-in would have the agent interrupt
+	// itself for saying it was listening.
+	Continuer bool `json:"continuer,omitempty"`
 }
 
 // Frame is one paced block of audio.
@@ -315,6 +322,19 @@ func (speech *Speech) activeCommitment() string {
 	speech.mu.Lock()
 	defer speech.mu.Unlock()
 	return speech.activeID
+}
+
+// ActiveIsContinuer reports whether the audio reaching the user right now is a
+// listener backchannel rather than a turn.
+//
+// Barge-in needs it. A continuer is overlap the agent chose to produce while
+// the user was speaking, so the user carrying on is not an interruption of
+// anything - and a barge-in policy that could not tell the difference would
+// have the agent cancel itself for saying it was listening.
+func (speech *Speech) ActiveIsContinuer() bool {
+	speech.mu.Lock()
+	defer speech.mu.Unlock()
+	return speech.activeID != "" && speech.active.Continuer
 }
 
 // Close stops accepting work and cancels what is queued.
