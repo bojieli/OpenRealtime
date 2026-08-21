@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -336,12 +337,60 @@ func collectClosure(schemas map[string]any, roots []string) (map[string]any, err
 		if err := rewriteRefs(copyValue, refs); err != nil {
 			return nil, fmt.Errorf("component %s: %w", name, err)
 		}
+		admitDeclaredNulls(copyValue)
 		result[name] = copyValue
 		for ref := range refs {
 			queue = append(queue, ref)
 		}
 	}
 	return result, nil
+}
+
+// admitDeclaredNulls lets a schema accept the null its own default declares.
+//
+// The source specification contradicts itself in a handful of places. A field
+// is given "type": "object" and, in the same object, "default": null and a
+// description that says in words it can be set to null to turn the feature
+// off. The API behaves as the description says: it accepts null, it returns
+// null, and OpenAI's own published examples of session.created show null in
+// exactly these fields - as does the session.update their own SDK sends on
+// every connection.
+//
+// Converted to JSON Schema without that reconciliation, the type wins and the
+// default becomes unrepresentable, which makes a validator built from this
+// bundle stricter than the API it is a description of. A server using it then
+// rejects OpenAI's own client while claiming to be compatible with it, which
+// is a worse failure than not validating at all: the check that exists to stop
+// compatibility decaying is itself the thing that breaks it.
+//
+// The rule is deliberately narrow and mechanical: a schema that declares null
+// as its default accepts null. It reads the spec's own statement rather than
+// adding a judgement of ours, it applies wherever the source says it, and the
+// result is visible in the pinned artifact rather than hidden in a validator.
+func admitDeclaredNulls(value any) {
+	switch current := value.(type) {
+	case map[string]any:
+		defaultValue, declared := current["default"]
+		if declared && defaultValue == nil {
+			switch existing := current["type"].(type) {
+			case string:
+				if existing != "null" {
+					current["type"] = []any{existing, "null"}
+				}
+			case []any:
+				if !slices.ContainsFunc(existing, func(entry any) bool { return entry == "null" }) {
+					current["type"] = append(append([]any{}, existing...), "null")
+				}
+			}
+		}
+		for _, child := range current {
+			admitDeclaredNulls(child)
+		}
+	case []any:
+		for _, child := range current {
+			admitDeclaredNulls(child)
+		}
+	}
 }
 
 func rewriteRefs(value any, refs map[string]struct{}) error {

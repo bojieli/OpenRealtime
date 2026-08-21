@@ -6697,7 +6697,10 @@
               "$ref": "#/$defs/NoiseReductionType"
             }
           },
-          "type": "object"
+          "type": [
+            "object",
+            "null"
+          ]
         },
         "input_audio_transcription": {
           "anyOf": [
@@ -7088,7 +7091,10 @@
                       "$ref": "#/$defs/NoiseReductionType"
                     }
                   },
-                  "type": "object"
+                  "type": [
+                    "object",
+                    "null"
+                  ]
                 },
                 "transcription": {
                   "$ref": "#/$defs/AudioTranscription",
@@ -7313,7 +7319,10 @@
                       "$ref": "#/$defs/NoiseReductionType"
                     }
                   },
-                  "type": "object"
+                  "type": [
+                    "object",
+                    "null"
+                  ]
                 },
                 "transcription": {
                   "$ref": "#/$defs/AudioTranscriptionResponse",
@@ -7574,7 +7583,10 @@
               "$ref": "#/$defs/NoiseReductionType"
             }
           },
-          "type": "object"
+          "type": [
+            "object",
+            "null"
+          ]
         },
         "input_audio_transcription": {
           "$ref": "#/$defs/AudioTranscription",
@@ -7628,7 +7640,10 @@
                       "$ref": "#/$defs/NoiseReductionType"
                     }
                   },
-                  "type": "object"
+                  "type": [
+                    "object",
+                    "null"
+                  ]
                 },
                 "transcription": {
                   "$ref": "#/$defs/AudioTranscription",
