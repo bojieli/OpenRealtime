@@ -108,6 +108,39 @@ alone, both sides drift into being the assistant — the *customer* opens with
 continue an empty conversation, and it has nothing to say. The cue is delivered
 to the opening side alone, never reaches the other, and never becomes a turn.
 
+**Check substance before anything else.** Turn counts are not evidence that a
+conversation happened. An interview here once reported four passes while one
+side had contributed half a second of noise: its counterpart's every utterance
+was answered with a grunt, so turns alternated perfectly and overlap was
+negligible. Both of those checks were true and neither meant anything. Every
+scenario now requires each side to have said something before the rest of its
+checks are worth reading.
+
 Every check states why it matters, and a failing run prints that reason. A
 scenario that fails should say what the system failed to do, not that assertion
 four returned false.
+
+## Running it locally
+
+Two agents means two sessions, and two sessions means two concurrent
+recognition streams. That is worth knowing before pointing this at a
+development recogniser: the Qwen3-ASR demo server drives one vLLM engine
+client from its request handler with no locking, and two interleaved sessions
+crash its engine core with
+
+```
+ValueError: b'\x00\x00' is not a valid EngineCoreRequestType
+```
+
+after which every request hangs rather than failing. A serialising proxy in
+front of it is enough — each chunk is tens of milliseconds against a 200 ms
+cadence, so serialising two streams costs latency and not correctness. A
+production recogniser will not need one.
+
+The scenarios are also demanding of the model playing a part. A session
+instruction is composed ahead of the phase instruction, which frames the model
+as the voice of a helpful agent, and a small local model does not always hold
+a role against it — a customer that drifts into offering to look up its own
+complaint is the characteristic failure. That is a finding about the
+configuration rather than a fault in the harness, and it is visible in the
+transcript rather than hidden behind a pass.
