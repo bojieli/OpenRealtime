@@ -8,7 +8,7 @@ readonly PATCH_SHA256="f34fe88d5ca6342a272b7f64b13da690acb390ef9b30b951b9c6d9746
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 tau2_directory="${TAU2_DIR:-${repository_root}/.runtime/tau2-bench}"
-patch_file="${repository_root}/benchmarks/tau-voice/patches/0001-local-openai-fish-audio.patch"
+patch_file="${repository_root}/datasets/patches/0001-local-openai-fish-audio.patch"
 verify=false
 
 actual_patch_sha256="$(sha256sum "${patch_file}" | cut -d ' ' -f 1)"

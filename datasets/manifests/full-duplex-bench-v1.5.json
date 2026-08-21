@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0.0",
+  "retrieved_at": "2026-08-17T21:09:41+08:00",
+  "benchmark": "Full-Duplex-Bench v1.5",
+  "upstream_repository": "https://github.com/DanielLin94144/Full-Duplex-Bench",
+  "upstream_revision": "3e799c45a045256f47d5f1c9cda90157e2d2ec9e",
+  "dataset_page": "https://drive.google.com/drive/folders/1ReqGkU-oGC1CCm_U9boPqH5jRt0PNJAs",
+  "redistributed": false,
+  "license_observation": {
+    "repository": "CC BY-NC 4.0 at the pinned root LICENSE",
+    "dataset": "The pinned v1_v1.5/dataset/README.md declares v1.5 synthetic data MIT",
+    "note": "This is an artifact inventory, not legal advice. The archives remain external."
+  },
+  "archives": [
+    {
+      "scenario": "background_speech",
+      "file_id": "1W63k1BlQ0QCgvYCb_8YJNqFfUhBwI97W",
+      "bytes": 24649756,
+      "sha256": "4dd2c23b3e03fe01ae36e2572bff1bc2679469f419741fc259f99fbc32d0a1d1",
+      "documented_samples": 100,
+      "observed_complete_samples": 100
+    },
+    {
+      "scenario": "talking_to_other",
+      "file_id": "1Jh6ER4AUmqGgEZBTV0pcbDaMMQIWA7Kt",
+      "bytes": 28699879,
+      "sha256": "2029a0687190a3bc9a9ec65ec620f484d831cb9dcdacb025a46e16a39cf62bc1",
+      "documented_samples": 100,
+      "observed_complete_samples": 100
+    },
+    {
+      "scenario": "user_backchannel",
+      "file_id": "1EGwCd9CdGuh8jeqwPENzbBs5FSEgnYL3",
+      "bytes": 23179469,
+      "sha256": "abe3f1765b542e1b3c47b90f2d18a24d5203e392a78f2b7c90474fac06a69bb9",
+      "documented_samples": 99,
+      "observed_complete_samples": 98,
+      "discrepancy": "The valid official archive contains 98 sample directories, one fewer than its README table."
+    },
+    {
+      "scenario": "user_interruption",
+      "file_id": "1wqYcYS4-30W2YMc3TfeMeoiaW9PLf4yT",
+      "bytes": 151353771,
+      "sha256": "0560418f1d02e9d73a6136b24efac803daa63a2056d3f0d539a901fe9a70912e",
+      "documented_samples": 200,
+      "observed_complete_samples": 200
+    }
+  ],
+  "observed_complete_samples": 498
+}

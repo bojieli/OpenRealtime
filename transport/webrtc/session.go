@@ -29,6 +29,13 @@ type session struct {
 
 	eventsMu sync.Mutex
 	events   *webrtc.DataChannel
+	// pending holds events the endpoint produced before the data channel
+	// finished opening. The adapter dials the endpoint as soon as the peer
+	// connection is established, but SCTP negotiation completes some
+	// milliseconds later, and an endpoint that greets a new session emits into
+	// exactly that window. Dropping those would strand a client waiting for
+	// session.created with no error to explain the wait.
+	pending [][]byte
 
 	closed atomic.Bool
 	done   chan struct{}
@@ -74,6 +81,7 @@ func (session *session) prepare() error {
 		session.eventsMu.Lock()
 		session.events = channel
 		session.eventsMu.Unlock()
+		channel.OnOpen(func() { session.flushPending() })
 		channel.OnMessage(func(message webrtc.DataChannelMessage) {
 			session.forwardToProtocol(message.Data)
 		})
@@ -281,16 +289,63 @@ func (session *session) playAudio(raw []byte) {
 	}
 }
 
+// maxPendingEvents bounds what is held for a data channel that has not opened.
+//
+// The window this covers is milliseconds, so the limit is generous by design;
+// reaching it means the channel is never going to open, and at that point the
+// session is over and holding more events helps nobody.
+const maxPendingEvents = 256
+
 // forwardToClient sends one protocol event to the browser verbatim.
+//
+// Order is preserved across the not-yet-open window: an event queued before
+// the channel opened is sent before anything that arrives after, because the
+// protocol's meaning depends on its sequence.
 func (session *session) forwardToClient(raw []byte) {
 	session.eventsMu.Lock()
 	channel := session.events
-	session.eventsMu.Unlock()
-	if channel == nil || channel.ReadyState() != webrtc.DataChannelStateOpen {
+	if channel == nil || channel.ReadyState() != webrtc.DataChannelStateOpen ||
+		len(session.pending) > 0 {
+		queued := len(session.pending) < maxPendingEvents
+		if queued {
+			session.pending = append(session.pending, append([]byte(nil), raw...))
+		}
+		session.eventsMu.Unlock()
+		if !queued {
+			session.adapter.config.Logf(
+				"dropping event: the data channel has not opened after %d queued events",
+				maxPendingEvents)
+		}
+		// The channel may have opened between the check and the append, which
+		// would leave the queue with nobody to flush it.
+		if channel != nil && channel.ReadyState() == webrtc.DataChannelStateOpen {
+			session.flushPending()
+		}
 		return
 	}
+	session.eventsMu.Unlock()
 	if err := channel.SendText(string(raw)); err != nil {
 		session.adapter.config.Logf("forward event to client: %v", err)
+	}
+}
+
+// flushPending sends everything queued before the data channel opened.
+func (session *session) flushPending() {
+	for {
+		session.eventsMu.Lock()
+		channel := session.events
+		if channel == nil || channel.ReadyState() != webrtc.DataChannelStateOpen ||
+			len(session.pending) == 0 {
+			session.eventsMu.Unlock()
+			return
+		}
+		raw := session.pending[0]
+		session.pending = session.pending[1:]
+		session.eventsMu.Unlock()
+		if err := channel.SendText(string(raw)); err != nil {
+			session.adapter.config.Logf("forward queued event to client: %v", err)
+			return
+		}
 	}
 }
 

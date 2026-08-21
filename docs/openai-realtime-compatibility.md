@@ -161,7 +161,7 @@ Run `./scripts/check_openai_realtime_spec.sh` to refetch the pinned source,
 verify its cryptographic hash, regenerate into a temporary directory, and
 compare both committed generated outputs byte-for-byte.
 
-Run `openrealtime conformance protocol` (or `./scripts/reproduce_m7.sh`) to
+Run `openrealtime conformance protocol` (or `./scripts/check.sh`) to
 audit all registry/schema links, compile the entire nested closure, confirm the
 profile/direction counts, and exercise unknown-type, wrong-direction,
 wrong-profile, and missing-required-field rejection.

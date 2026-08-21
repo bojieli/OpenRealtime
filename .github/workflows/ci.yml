@@ -1,0 +1,95 @@
+name: ci
+
+# The gate that runs on every change is the same script a contributor runs
+# locally. A CI configuration that grows its own list of steps drifts from the
+# local one, and then "it passes on my machine" becomes a true statement about
+# a different set of checks.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+
+      - name: Verification gate
+        env:
+          OPENREALTIME_GO_BIN: ${{ github.workspace }}/go-bin/go
+        run: |
+          mkdir -p go-bin && ln -sf "$(command -v go)" go-bin/go
+          ./scripts/check.sh
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+
+      # Release binaries are built on every change, not only on a tag: a build
+      # that is only exercised at release time is a build that breaks at
+      # release time, which is the worst moment to find out.
+      - name: Cross-platform release build
+        env:
+          OPENREALTIME_GO_BIN: ${{ github.workspace }}/go-bin/go
+        run: |
+          mkdir -p go-bin && ln -sf "$(command -v go)" go-bin/go
+          ./scripts/build-release.sh dist
+
+      # Reproducibility is a property of the build, so it is checked like any
+      # other property rather than asserted in the documentation.
+      - name: Builds are reproducible
+        env:
+          OPENREALTIME_GO_BIN: ${{ github.workspace }}/go-bin/go
+        run: |
+          ./scripts/build-release.sh dist-again
+          for binary in dist/openrealtime-*; do
+            name="$(basename "$binary")"
+            cmp "$binary" "dist-again/$name" \
+              || { echo "$name is not reproducible" >&2; exit 1; }
+          done
+          echo "all binaries reproduced byte for byte"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openrealtime-binaries
+          path: |
+            dist/openrealtime-*
+            dist/SHA256SUMS-*.txt
+
+  sidecars:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # The sidecar library is what a non-Go model implementation depends on,
+      # so its wire framing is checked here even though nothing in the Go tree
+      # imports it.
+      - name: Sidecar library
+        run: |
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet pytest
+          python -m compileall -q sidecars
+          python -m pytest sidecars -q || test $? -eq 5

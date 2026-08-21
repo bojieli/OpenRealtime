@@ -323,7 +323,11 @@ func TestNonAudioEventsAreForwardedVerbatimInBothDirections(t *testing.T) {
 		return event["type"] == "session.update"
 	}, "adapter did not connect")
 
-	// Server to client.
+	// Server to client. This is sent as soon as the endpoint is up, which is
+	// deliberately inside the window where the peer connection is established
+	// but SCTP has not finished opening the data channel. An endpoint that
+	// greets a session emits exactly there, so an adapter that dropped what it
+	// could not send yet would strand a client waiting for session.created.
 	endpoint.send <- map[string]any{
 		"type":     "conversation.item.input_audio_transcription.completed",
 		"event_id": "e1", "item_id": "item_1", "transcript": "hello there",

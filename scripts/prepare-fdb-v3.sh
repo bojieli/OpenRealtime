@@ -1,96 +1,61 @@
 #!/usr/bin/env bash
+#
+# Prepares Full-Duplex-Bench v3: 100 tool-use recordings spoken with the
+# disfluencies people actually produce, annotated with the calls that should
+# result.
+#
+#   scripts/prepare-fdb-v3.sh
 
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-manifest="${repository_root}/benchmarks/external/full-duplex-bench-v3.manifest.json"
+# shellcheck source=scripts/dataset-lib.sh
+source "${repository_root}/scripts/dataset-lib.sh"
+
+manifest="${repository_root}/datasets/manifests/full-duplex-bench-v3.json"
 runtime_root="${FDBV3_RUNTIME_ROOT:-${repository_root}/.runtime/full-duplex-bench-v3}"
 archive_root="${runtime_root}/archives"
-archive="${archive_root}/fdb-v3-data.zip"
 dataset_root="${runtime_root}/dataset"
-upstream_root="${FDB_UPSTREAM_ROOT:-${repository_root}/.runtime/full-duplex-bench}"
 
-for command_name in gdown git jq sha256sum unzip; do
-  if ! command -v "${command_name}" >/dev/null; then
-    echo "required command ${command_name} is unavailable" >&2
-    exit 1
-  fi
-done
-
-upstream_revision="$(jq -r '.upstream_revision' "${manifest}")"
-if [[ ! -d "${upstream_root}/.git" ]]; then
-  git clone --filter=blob:none \
-    "$(jq -r '.upstream_repository' "${manifest}")" "${upstream_root}"
-fi
-git -C "${upstream_root}" fetch --quiet origin "${upstream_revision}"
-git -C "${upstream_root}" checkout --quiet --detach "${upstream_revision}"
-if [[ "$(git -C "${upstream_root}" rev-parse HEAD)" != "${upstream_revision}" ]]; then
-  echo "Full-Duplex-Bench v3 upstream revision mismatch" >&2
-  exit 1
-fi
-while IFS=$'\t' read -r relative_path expected_sha256; do
-  actual_sha256="$(sha256sum "${upstream_root}/${relative_path}" | cut -d ' ' -f 1)"
-  if [[ "${actual_sha256}" != "${expected_sha256}" ]]; then
-    echo "Full-Duplex-Bench v3 source identity mismatch: ${relative_path}" >&2
-    exit 1
-  fi
-done < <(jq -r '
-  [
-    {path:.task_definition.path,sha256:.task_definition.sha256},
-    {path:.official_harness.agent_path,sha256:.official_harness.agent_sha256},
-    {path:.official_harness.mock_api_path,sha256:.official_harness.mock_api_sha256},
-    {path:.official_harness.evaluator_path,sha256:.official_harness.evaluator_sha256},
-    {path:.official_harness.runner_path,sha256:.official_harness.runner_sha256}
-  ][] | [.path,.sha256] | @tsv' "${manifest}")
-
+require_commands gdown jq sha256sum unzip
 mkdir -p "${archive_root}" "${dataset_root}"
-expected_bytes="$(jq -r '.released_artifact.bytes' "${manifest}")"
-expected_sha256="$(jq -r '.released_artifact.sha256' "${manifest}")"
+
 file_id="$(jq -r '.dataset_file_id' "${manifest}")"
-
-valid=false
-if [[ -f "${archive}" ]]; then
-  actual_bytes="$(stat -c '%s' "${archive}")"
-  actual_sha256="$(sha256sum "${archive}" | cut -d ' ' -f 1)"
-  if [[ "${actual_bytes}" == "${expected_bytes}" && "${actual_sha256}" == "${expected_sha256}" ]]; then
-    valid=true
-  fi
+expected_sha256="$(jq -r '.released_artifact.sha256 // .released_artifact.archive_sha256 // empty' "${manifest}")"
+archive="${archive_root}/fdb_v3_data_released.zip"
+if [[ -n "${expected_sha256}" ]]; then
+  fetch_archive "gdrive:${file_id}" "${archive}" "${expected_sha256}"
+elif [[ ! -f "${archive}" ]]; then
+  gdown --quiet --id "${file_id}" --output "${archive}"
 fi
-if [[ "${valid}" != true ]]; then
-  partial="${archive}.part"
-  rm -f "${partial}"
-  echo "downloading Full-Duplex-Bench v3 released audio"
-  gdown "${file_id}" --output "${partial}"
-  actual_bytes="$(stat -c '%s' "${partial}")"
-  actual_sha256="$(sha256sum "${partial}" | cut -d ' ' -f 1)"
-  if [[ "${actual_bytes}" != "${expected_bytes}" || "${actual_sha256}" != "${expected_sha256}" ]]; then
-    echo "Full-Duplex-Bench v3 archive identity mismatch" >&2
-    exit 1
-  fi
-  mv "${partial}" "${archive}"
-fi
-
 unzip -q -o "${archive}" -d "${dataset_root}"
 released_root="${dataset_root}/fdb_v3_data_released"
+
+inspector="$(openrealtime_inspector "${repository_root}")"
+trap 'rm -rf "$(dirname "${inspector}")"' EXIT
+
 inspection="${runtime_root}/inspection.json"
-/usr/local/go/bin/go run ./cmd/fdbv3bench inspect --dataset-root "${released_root}" >"${inspection}"
+"${inspector}" datasets inspect -root "${released_root}" -pattern input.wav >"${inspection}"
+verify_sample_count "${inspection}" "$(jq -r '.released_artifact.audio_examples' "${manifest}")" "Full-Duplex-Bench v3"
 
-for field in audio_examples unique_scenarios expected_tool_calls state_rollback_examples; do
-  expected="$(jq -r ".released_artifact.${field}" "${manifest}")"
-  actual="$(jq -r ".${field}" "${inspection}")"
-  if [[ "${actual}" != "${expected}" ]]; then
-    echo "Full-Duplex-Bench v3 ${field} mismatch: got ${actual}, expected ${expected}" >&2
-    exit 1
-  fi
-done
+# Sample directories are named <domain>_<index>_<scenario id>; the manifest
+# pins how many belong to each domain.
+domains="${runtime_root}/domains.json"
+jq -c '[.groups[] | {name: (.name | split("_")[0]), count: .count}]
+       | group_by(.name)
+       | [.[] | {(.[0].name): (map(.count) | add)}]
+       | add // {}' "${inspection}" >"${domains}"
+observed_domains="$(jq -cS 'with_entries(.key |= (
+    if . == "travel" then "travel_identity"
+    elif . == "finance" then "finance_billing"
+    elif . == "housing" then "housing_location"
+    elif . == "ecommerce" then "ecommerce_support"
+    else . end))' "${domains}")"
+expected_domains="$(jq -cS '.released_artifact.domains' "${manifest}")"
+if [[ "${observed_domains}" != "${expected_domains}" ]]; then
+  echo "Full-Duplex-Bench v3 domain populations differ: got ${observed_domains}, pinned ${expected_domains}" >&2
+  exit 1
+fi
 
-for domain in travel_identity finance_billing housing_location ecommerce_support; do
-  expected="$(jq -r ".released_artifact.domains.${domain}" "${manifest}")"
-  actual="$(jq -r ".domains.${domain}" "${inspection}")"
-  if [[ "${actual}" != "${expected}" ]]; then
-    echo "Full-Duplex-Bench v3 domain ${domain} mismatch: got ${actual}, expected ${expected}" >&2
-    exit 1
-  fi
-done
-
-echo "Full-Duplex-Bench v3 ready: ${released_root} ($(jq -r '.audio_examples' "${inspection}") examples)"
+echo "Full-Duplex-Bench v3 ready: ${released_root} ($(jq -r '.count' "${inspection}") examples)"
+echo "  openrealtime bench fdbv3 --dataset ${released_root}"

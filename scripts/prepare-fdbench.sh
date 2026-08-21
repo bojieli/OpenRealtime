@@ -1,99 +1,43 @@
 #!/usr/bin/env bash
+#
+# Prepares FD-Bench: 6,147 conversations across synthesiser, difficulty, and
+# noise partitions, with sample-accurate turn boundaries.
+#
+#   scripts/prepare-fdbench.sh
+#
+# The partitions are not interchangeable and the benchmark runner requires one
+# to be named: a result from the clean set says nothing about the 0 dB set.
 
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-manifest="${repository_root}/benchmarks/external/fd-bench.manifest.json"
+# shellcheck source=scripts/dataset-lib.sh
+source "${repository_root}/scripts/dataset-lib.sh"
+
+manifest="${repository_root}/datasets/manifests/fd-bench.json"
 runtime_root="${FDBENCH_RUNTIME_ROOT:-${repository_root}/.runtime/fd-bench}"
 archive_root="${runtime_root}/archives"
 dataset_root="${runtime_root}/dataset"
-upstream_root="${runtime_root}/upstream"
 
-cd "${repository_root}"
-
-for command_name in curl git jq sha256sum tar; do
-  if ! command -v "${command_name}" >/dev/null; then
-    echo "required command ${command_name} is unavailable" >&2
-    exit 1
-  fi
-done
-
+require_commands curl jq sha256sum tar
 mkdir -p "${archive_root}" "${dataset_root}"
+
+dataset_repository="$(jq -r '.dataset_repository' "${manifest}")"
 dataset_revision="$(jq -r '.dataset_revision' "${manifest}")"
-expected_archive_count="$(jq '.expected_archive_count' "${manifest}")"
-manifest_archive_count="$(jq '.archives | length' "${manifest}")"
-if [[ "${manifest_archive_count}" != "${expected_archive_count}" ]]; then
-  echo "FD-Bench manifest contains ${manifest_archive_count} archives; expected ${expected_archive_count}" >&2
-  exit 1
-fi
 
-while IFS=$'\t' read -r cell remote_path expected_bytes expected_sha256; do
-  archive="${archive_root}/${cell}.tgz"
-  valid=false
-  if [[ -f "${archive}" ]]; then
-    actual_bytes="$(stat -c '%s' "${archive}")"
-    actual_sha256="$(sha256sum "${archive}" | cut -d ' ' -f 1)"
-    if [[ "${actual_bytes}" == "${expected_bytes}" && "${actual_sha256}" == "${expected_sha256}" ]]; then
-      valid=true
-    fi
-  fi
-  if [[ "${valid}" != true ]]; then
-    partial="${archive}.part"
-    rm -f "${partial}"
-    echo "downloading ${cell}"
-    curl --fail --location --retry 4 \
-      --output "${partial}" \
-      "https://huggingface.co/datasets/pengyizhou/FD-Bench-Audio-Input/resolve/${dataset_revision}/${remote_path}"
-    actual_bytes="$(stat -c '%s' "${partial}")"
-    actual_sha256="$(sha256sum "${partial}" | cut -d ' ' -f 1)"
-    if [[ "${actual_bytes}" != "${expected_bytes}" || "${actual_sha256}" != "${expected_sha256}" ]]; then
-      echo "${cell} archive identity mismatch" >&2
-      exit 1
-    fi
-    mv "${partial}" "${archive}"
-  fi
-  tar -xzf "${archive}" -C "${dataset_root}"
-done < <(jq -r '.archives[] | [.cell,.path,(.bytes|tostring),.sha256] | @tsv' "${manifest}")
+while IFS=$'\t' read -r path expected_sha256; do
+  archive="${archive_root}/$(basename "${path}")"
+  fetch_archive "${dataset_repository}/resolve/${dataset_revision}/${path}" "${archive}" "${expected_sha256}"
+  tar -xf "${archive}" -C "${dataset_root}"
+done < <(jq -r '.archives[] | [.path,.sha256] | @tsv' "${manifest}")
 
-upstream_revision="$(jq -r '.upstream_revision' "${manifest}")"
-if [[ ! -d "${upstream_root}/.git" ]]; then
-  git clone --filter=blob:none "$(jq -r '.upstream_repository' "${manifest}")" "${upstream_root}"
-fi
-git -C "${upstream_root}" fetch --quiet origin "${upstream_revision}"
-git -C "${upstream_root}" checkout --quiet --detach "${upstream_revision}"
-if [[ "$(git -C "${upstream_root}" rev-parse HEAD)" != "${upstream_revision}" ]]; then
-  echo "FD-Bench upstream revision mismatch" >&2
-  exit 1
-fi
-while IFS=$'\t' read -r relative_path expected_sha256; do
-  actual_sha256="$(sha256sum "${upstream_root}/${relative_path}" | cut -d ' ' -f 1)"
-  if [[ "${actual_sha256}" != "${expected_sha256}" ]]; then
-    echo "FD-Bench source identity mismatch: ${relative_path}" >&2
-    exit 1
-  fi
-done < <(jq -r '.source_files | to_entries[] | [.key,.value] | @tsv' "${manifest}")
+inspector="$(openrealtime_inspector "${repository_root}")"
+trap 'rm -rf "$(dirname "${inspector}")"' EXIT
 
 inspection="${runtime_root}/inspection.json"
-/usr/local/go/bin/go run ./cmd/fdbench inspect --dataset-root "${dataset_root}" >"${inspection}"
-expected_cells="$(jq '.expected_cell_count' "${manifest}")"
-expected_samples="$(jq '.expected_released_conversations' "${manifest}")"
-actual_cells="$(jq '.cells | length' "${inspection}")"
-actual_samples="$(jq '.samples' "${inspection}")"
-if [[ "${actual_cells}" != "${expected_cells}" || "${actual_samples}" != "${expected_samples}" ]]; then
-  echo "discovered ${actual_cells} FD-Bench cells/${actual_samples} conversations; expected ${expected_cells}/${expected_samples}" >&2
-  exit 1
-fi
-expected_populations="$(jq -cS '.expected_cell_populations' "${manifest}")"
-actual_populations="$(jq -cS '.cells | with_entries(.value = .value.samples)' "${inspection}")"
-if [[ "${actual_populations}" != "${expected_populations}" ]]; then
-  echo "FD-Bench per-cell population differs from the pinned release" >&2
-  exit 1
-fi
-expected_missing="$(jq -cS '.known_missing_conversation_ids_by_cell' "${manifest}")"
-actual_missing="$(jq -cS '.cells | with_entries(select(.value.missing_conversation_ids != null) | .value = .value.missing_conversation_ids)' "${inspection}")"
-if [[ "${actual_missing}" != "${expected_missing}" ]]; then
-  echo "FD-Bench missing-conversation map differs from the pinned release" >&2
-  exit 1
-fi
+"${inspector}" datasets inspect -root "${dataset_root}" -pattern '*.wav' >"${inspection}"
+verify_sample_count "${inspection}" "$(jq -r '.expected_released_conversations' "${manifest}")" "FD-Bench"
+verify_group_counts "${inspection}" "$(jq -c '.expected_cell_populations' "${manifest}")" "FD-Bench"
 
-echo "FD-Bench ready: ${dataset_root} (${actual_cells} cells, ${actual_samples} conversations)"
+echo "FD-Bench ready: ${dataset_root} ($(jq -r '.count' "${inspection}") conversations)"
+echo "  openrealtime bench fdbench --list"

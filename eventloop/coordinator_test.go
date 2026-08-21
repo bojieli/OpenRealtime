@@ -216,7 +216,9 @@ func TestBatchMarkersAppearOnlyForRealBatches(t *testing.T) {
 func TestParallelEventRunsAlongsideWorkInFlight(t *testing.T) {
 	store := trajectory.NewStore()
 	release := make(chan struct{})
-	started := make(chan struct{})
+	// Buffered: the processor signals without blocking, so an unbuffered
+	// channel would lose the signal whenever it runs before the test parks.
+	started := make(chan struct{}, 1)
 	var mainRuns, parallelRuns atomic.Int64
 	var counter, clock atomic.Uint64
 	coordinator, err := eventloop.New(eventloop.Config{
@@ -279,7 +281,9 @@ func TestParallelEventRunsAlongsideWorkInFlight(t *testing.T) {
 func TestRoutineEventWaitsForWorkInFlight(t *testing.T) {
 	store := trajectory.NewStore()
 	release := make(chan struct{})
-	started := make(chan struct{})
+	// Buffered: the processor signals without blocking, so an unbuffered
+	// channel would lose the signal whenever it runs before the test parks.
+	started := make(chan struct{}, 1)
 	var counter, clock atomic.Uint64
 	coordinator, err := eventloop.New(eventloop.Config{
 		Store: store, MaxPendingEvents: 16,
@@ -376,7 +380,9 @@ func TestObserverAuthorityObservationCommitsThroughIngress(t *testing.T) {
 
 func TestInterruptCancelsTheRunInFlight(t *testing.T) {
 	store := trajectory.NewStore()
-	started := make(chan struct{})
+	// Buffered: the processor signals without blocking, so an unbuffered
+	// channel would lose the signal whenever it runs before the test parks.
+	started := make(chan struct{}, 1)
 	var counter, clock atomic.Uint64
 	coordinator, err := eventloop.New(eventloop.Config{
 		Store: store, MaxPendingEvents: 16, ReservedInterruptEvents: 4,

@@ -40,6 +40,8 @@ func run(arguments []string, stdout, stderr io.Writer) error {
 		return runBench(arguments[1:], stdout)
 	case "compare":
 		return runCompare(arguments[1:], stdout)
+	case "datasets":
+		return runDatasets(arguments[1:], stdout)
 	case "version":
 		fmt.Fprintln(stdout, version())
 		return nil
@@ -61,6 +63,7 @@ commands:
   efficiency    measure the costs the design claims are small
   bench         run a measurement suite against a running server
   compare       read two saved cells and report the pairing
+  datasets      inventory a prepared benchmark dataset
   version       print the version
 
 run "openrealtime <command> -h" for a command's flags`
