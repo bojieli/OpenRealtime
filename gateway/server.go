@@ -47,6 +47,9 @@ type Config struct {
 	Binding binding.Binding
 	// Token, when set, is the bearer token required on the upgrade request.
 	Token string
+	// Demo, when set, is served at /demo. It is nil unless an operator asks
+	// for it, because a page is not part of a realtime server's job.
+	Demo http.Handler
 	// Model is the compatibility model identifier reported to clients.
 	Model string
 	// TranscriptionModel is reported in the session object so a client can see
@@ -102,6 +105,13 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", server.health)
 	mux.HandleFunc("GET /metrics", server.metrics)
 	mux.Handle("GET /v1/realtime", server)
+	// The demo is opt-in. A production server has no business serving a page,
+	// and one that appeared on every deployment would be surface nobody asked
+	// for; but with it enabled, trying the system out is one command.
+	if server.config.Demo != nil {
+		mux.Handle("GET /demo", server.config.Demo)
+		mux.Handle("GET /demo/", http.StripPrefix("/demo", server.config.Demo))
+	}
 	return mux
 }
 

@@ -31,6 +31,7 @@ import (
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/computeruse/browser"
 	"github.com/bojieli/OpenRealtime/continuation"
+	browserdemo "github.com/bojieli/OpenRealtime/examples/browser"
 	"github.com/bojieli/OpenRealtime/gateway"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
@@ -89,6 +90,7 @@ type serveOptions struct {
 	toolProgress bool
 	instruction  string
 	validateWire bool
+	demo         bool
 
 	logFormat string
 	logLevel  string
@@ -162,6 +164,7 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.BoolVar(&options.toolProgress, "tool-progress", false, "let a completed tool result trigger a short spoken status")
 	flags.StringVar(&options.instruction, "instructions", "", "agent instruction composed ahead of every phase instruction")
 	flags.BoolVar(&options.validateWire, "validate-wire", true, "validate every protocol event against the pinned schema")
+	flags.BoolVar(&options.demo, "demo", false, "serve the browser demo at /demo")
 	flags.StringVar(&options.logFormat, "log-format", "text", "structured log format: text or json")
 	flags.StringVar(&options.logLevel, "log-level", "info", "log level: debug, info, warn, or error")
 	flags.StringVar(&options.webrtcListen, "webrtc-listen", "", "additional WebRTC listen address; empty disables the adapter")
@@ -205,7 +208,7 @@ func serve(options serveOptions, output io.Writer) error {
 	server, err := gateway.New(gateway.Config{
 		Binding: bind, Token: os.Getenv(options.tokenEnv), Model: options.model,
 		TranscriptionModel: options.asrModel, ValidateWire: options.validateWire,
-		Logger: logger,
+		Logger: logger, Demo: demoHandler(options.demo),
 	})
 	if err != nil {
 		return err
@@ -701,4 +704,15 @@ func buildLogger(options serveOptions) (*slog.Logger, error) {
 	default:
 		return nil, fmt.Errorf("log format must be text or json, got %q", options.logFormat)
 	}
+}
+
+// demoHandler returns the browser demo when an operator asked for it.
+//
+// Off by default: a realtime server's job is one protocol on one port, and a
+// page that appears on every deployment is surface nobody asked for.
+func demoHandler(enabled bool) http.Handler {
+	if !enabled {
+		return nil
+	}
+	return browserdemo.Handler()
 }

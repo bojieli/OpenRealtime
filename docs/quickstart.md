@@ -38,7 +38,18 @@ Point it at a local model instead if you would rather run everything yourself:
 
 The probe drives one turn over the protocol and prints what happened: the
 transcript, what the agent said, how much audio came back, and how long after
-the endpoint the first frame arrived. Give it a recording with `-audio file.wav`
+the endpoint the first frame arrived.
+
+## Talk to it
+
+```sh
+./openrealtime serve -demo -webrtc-listen 127.0.0.1:8766
+```
+
+Open `http://127.0.0.1:8765/demo`. The page is embedded in the binary, so
+there is nothing else to install, and `-demo` is off by default because a
+realtime server's job is one protocol on one port. See
+[../examples/browser/README.md](../examples/browser/README.md). Give it a recording with `-audio file.wav`
 to say something real.
 
 Health and metrics are HTTP:

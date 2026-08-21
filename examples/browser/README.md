@@ -4,15 +4,16 @@ A voice session in a browser, in one HTML file with no build step and no
 dependencies.
 
 ```sh
-# One terminal: the server, with the WebRTC adapter enabled.
-openrealtime serve --webrtc-listen 127.0.0.1:8766
-
-# Another: serve this directory over HTTP.
-python3 -m http.server 8080 --directory examples/browser
+openrealtime serve -demo -webrtc-listen 127.0.0.1:8766
 ```
 
-Open `http://127.0.0.1:8080/` and press Connect. Point it somewhere else with
-`?adapter=http://host:port/v1/realtime`.
+Open `http://127.0.0.1:8765/demo` and press Connect. Point it somewhere else
+with `?adapter=http://host:port/v1/realtime`.
+
+The page is embedded in the binary, so there is nothing to serve separately —
+but `-demo` is off by default. A realtime server's job is one protocol on one
+port, and a page that appeared on every deployment would be surface nobody
+asked for.
 
 Browsers require a secure context for microphone access. `127.0.0.1` counts as
 one; any other host needs HTTPS.
