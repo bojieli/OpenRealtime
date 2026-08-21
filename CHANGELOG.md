@@ -64,7 +64,11 @@ interaction control plane — and everything below is what that made possible.
   claims carry distributions, and negative results publish.
 - **Five suites**: FDB v1.5, FDB v3, and FD-Bench run here; τ-Voice and
   DynaCU-Bench stay in their own environments and OpenRealtime ships a runner
-  for each.
+  for each. Both runners point the published environment at a running server
+  and patch nothing in it: those benchmarks speak the OpenAI Realtime protocol
+  over a configurable base URL, and this is a strict superset of it, so the
+  endpoint is an argument. What they measure is therefore the protocol claim
+  rather than an adapter written to agree with us.
 - **Dataset preparation** that verifies every archive against a pinned digest
   and every partition against a pinned population.
 
@@ -136,6 +140,31 @@ because they would have produced published numbers that were wrong:
   it.** An answer begun mid-turn and an answer that ran into the next turn have
   different causes and different fixes; both are now in the metrics, with the
   overlap duration.
+
+### What running the benchmarks unmodified found
+
+DynaCU-Bench drives 150 real browser tasks with an unmodified official-API
+client, which exercises paths no test written here had thought to. Five
+compatibility defects came out of pointing it at the server, and each is now a
+capability rather than a workaround:
+
+- **A response was not a turn.** Every output kind was rendered as its own
+  response, so an agent that spoke and then called a tool produced two of them
+  and a client that stops reading at the first `response.done` — which the
+  protocol says it may — never saw the calls. One `response.create` now
+  produces one response carrying every output item, closing when the rollout
+  has finished *and* every utterance it started has finished playing.
+- **Text output was refused.** `output_modalities: ["text"]` failed the session
+  update, so the whole class of clients the video and computer-use extension
+  exists for could not open a session at all.
+- **Turn detection could only be the server's.** A client sending
+  `turn_detection: null` had it ignored and `input_audio_buffer.commit`
+  refused, so a client driving its own turns could not work here.
+- **An image attached to a turn was dropped**, and the cognition engine had no
+  media resolver, so even retained media was invisible to every provider — an
+  agent handed a screen acted on one it had never seen.
+- **Vision was not a declared property.** A text-only fast model was handed the
+  screenshots and returned "is not a multimodal model" on every step.
 
 ### What is not claimed
 
