@@ -30,6 +30,7 @@ class MessageType:
     HELLO = "hello"
     AUDIO = "audio"
     TEXT = "text"
+    COMMIT = "commit"
     RESPOND = "respond"
     INTERRUPT = "interrupt"
     TOOL_RESULT = "tool_result"

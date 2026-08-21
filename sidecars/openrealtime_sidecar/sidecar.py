@@ -93,6 +93,15 @@ class Sidecar:
     def on_audio(self, pcm16: bytes) -> None:
         """Receive input audio. Override in a sidecar that listens."""
 
+    def on_commit(self) -> None:
+        """The client declared its turn over rather than waiting for silence.
+
+        Only meaningful to a model that owns its own floor: it is a signal that
+        the person has stopped, from the side that knows. A model whose floor
+        the engine keeps has nothing to do here - the engine ended the turn
+        before sending this - so the default is to ignore it.
+        """
+
     def on_text(self, text: str, role: str) -> None:
         """Receive injected text.
 
@@ -198,6 +207,8 @@ class Sidecar:
                         # An interrupted turn still ends: the engine is waiting
                         # for a boundary, not for completion.
                         self.turn_done()
+                elif message.type == MessageType.COMMIT:
+                    self.on_commit()
                 elif message.type == MessageType.TEXT:
                     self.on_text(message.text, str(message.get("role", "user")))
                 elif message.type == MessageType.TOOL_RESULT:

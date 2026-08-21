@@ -275,3 +275,26 @@ func main() {
 	}
 }
 `
+
+// A client that took the floor declares where its turn ended, and that
+// declaration reaches a model that owns its own floor. It carries nothing, and
+// a sidecar that does not implement it ignores it rather than failing the
+// session, because the engine has already ended the turn by the time it
+// arrives.
+func TestCommitIsCarriedAndCarriesNothing(t *testing.T) {
+	message := sidecar.Message{Type: sidecar.TypeCommit}
+	if err := message.Validate(); err != nil {
+		t.Fatalf("a commit needs no fields: %v", err)
+	}
+	var buffer bytes.Buffer
+	if err := sidecar.NewWriter(&buffer).Write(message); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	decoded, err := sidecar.NewReader(&buffer).Read()
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if decoded.Type != sidecar.TypeCommit {
+		t.Fatalf("unexpected type %q", decoded.Type)
+	}
+}

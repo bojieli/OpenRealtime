@@ -80,6 +80,7 @@ a partial implementation useful rather than broken.
 | `hello` | — | open the session (§2) |
 | `audio` | PCM16 | input audio at the declared `sample_rate` |
 | `text` | — | inject `text` with a `role`, without asking for a turn |
+| `commit` | — | the client declared its turn over rather than waiting for silence |
 | `respond` | — | produce a turn now |
 | `interrupt` | — | stop generating at the next safe point |
 | `tool_result` | — | the outcome of a call the model requested |
@@ -87,6 +88,13 @@ a partial implementation useful rather than broken.
 
 `audio` MUST be handled without waiting for a turn in flight. A sidecar that
 queued audio behind generation would hear the past.
+
+`commit` is only meaningful to a sidecar whose model owns its own floor. A
+client that turned server voice-activity detection off is saying where its turn
+ended; a model that decides that for itself may act on the declaration, and one
+whose floor the engine keeps can ignore it, because the engine has already
+ended the turn before the message was sent. A sidecar that does not implement
+it MUST ignore it rather than failing the session.
 
 `interrupt` is cooperative. Nothing can safely kill a model mid-forward-pass, so
 a generation loop is expected to check between chunks.
