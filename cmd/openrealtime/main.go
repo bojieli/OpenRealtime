@@ -36,6 +36,10 @@ func run(arguments []string, stdout, stderr io.Writer) error {
 		return runProbe(arguments[1:], stdout)
 	case "efficiency":
 		return runEfficiency(arguments[1:], stdout)
+	case "bench":
+		return runBench(arguments[1:], stdout)
+	case "compare":
+		return runCompare(arguments[1:], stdout)
 	case "version":
 		fmt.Fprintln(stdout, version())
 		return nil
@@ -55,6 +59,8 @@ commands:
   probe         drive a running server through one turn and report it
   conformance   verify protocol and component conformance
   efficiency    measure the costs the design claims are small
+  bench         run a measurement suite against a running server
+  compare       read two saved cells and report the pairing
   version       print the version
 
 run "openrealtime <command> -h" for a command's flags`

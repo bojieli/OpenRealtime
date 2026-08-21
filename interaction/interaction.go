@@ -71,7 +71,10 @@ type Policies struct {
 	Repair         Repair
 	Backchannel    Backchannel
 	TurnProjection TurnProjection
-	Deferral       Deferral
+	// Overlap says what user speech over agent output is. It only matters
+	// with a barge-in policy that waits long enough to ask.
+	Overlap  OverlapClassifier
+	Deferral Deferral
 }
 
 // Defaults returns the shipped policy set: fixed 200 ms triggering, continuous
@@ -89,6 +92,7 @@ func Defaults() Policies {
 		Repair:         NewAudibleRepair(),
 		Backchannel:    NoBackchannel{},
 		TurnProjection: VADOnlyProjection{},
+		Overlap:        UnclassifiedOverlap{},
 		Deferral:       NewDuplexDeferral(DeferralOptions{}),
 	}
 }
@@ -112,6 +116,7 @@ func (policies Policies) Validate() error {
 	check("repair", policies.Repair)
 	check("backchannel", policies.Backchannel)
 	check("turn_projection", policies.TurnProjection)
+	check("overlap", policies.Overlap)
 	check("deferral", policies.Deferral)
 	if len(missing) > 0 {
 		return fmt.Errorf("interaction policies are unset: %s", strings.Join(missing, ", "))
@@ -131,6 +136,7 @@ type Report struct {
 	Repair         string `json:"repair"`
 	Backchannel    string `json:"backchannel"`
 	TurnProjection string `json:"turn_projection"`
+	Overlap        string `json:"overlap"`
 	Deferral       string `json:"deferral"`
 }
 
@@ -146,7 +152,8 @@ func (policies Policies) Report() Report {
 		Rollout: name(policies.Rollout), Floor: name(policies.Floor),
 		BargeIn: name(policies.BargeIn), Commitment: name(policies.Commitment),
 		Repair: name(policies.Repair), Backchannel: name(policies.Backchannel),
-		TurnProjection: name(policies.TurnProjection), Deferral: name(policies.Deferral),
+		TurnProjection: name(policies.TurnProjection), Overlap: name(policies.Overlap),
+		Deferral: name(policies.Deferral),
 	}
 }
 

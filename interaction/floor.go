@@ -227,6 +227,13 @@ func (policy sustainedBargeIn) Decide(input BargeInInput) BargeInDecision {
 	if input.Evidence == OverlapBackchannel || input.Evidence == OverlapSide {
 		return BargeInDecision{Reason: "overlap is not directed at the agent"}
 	}
+	// The hold is a maximum, not a minimum. It exists to give a classifier
+	// time to say what the overlap is; once something has said "this is
+	// directed at you", waiting out the rest of it is just talking over
+	// somebody who is already interrupting.
+	if input.Evidence == OverlapDirected {
+		return BargeInDecision{Cancel: true, Reason: "classified as directed speech"}
+	}
 	if input.OverlapNS < uint64(policy.hold.Nanoseconds()) {
 		return BargeInDecision{Reason: "overlap has not been sustained"}
 	}

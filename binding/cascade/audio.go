@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/eventloop"
@@ -75,35 +76,83 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 			runtime.fail("asr_provider_error", err)
 		}
 	}
+	if !started && !stopped {
+		// A barge-in policy that waits needs its deadline driven by something.
+		// Revisions are too slow and too irregular to be that something: a
+		// recogniser's first partial can be half a second away, and a policy
+		// whose timeout only fires when words happen to arrive is not a
+		// timeout. Frames arrive every 100 ms whatever the recogniser is
+		// doing, so the deadline is checked here.
+		state := runtime.duplex.Snapshot()
+		if state.Overlapping() {
+			overlap := now - state.UserSpeechStartedNS
+			if err := runtime.considerBargeIn(ctx, interaction.Revision{}, overlap); err != nil {
+				return err
+			}
+		}
+	}
 	if stopped {
 		return runtime.onUserSpeechStopped(ctx, utteranceID, result.AudioEndMS, now)
 	}
 	return nil
 }
 
-// onUserSpeechStarted applies the barge-in policy. The decision is the
-// interaction plane's; carrying it out - cancelling speech, recording what was
-// heard, interrupting cognition - is here.
+// onUserSpeechStarted applies the barge-in policy at the moment sound begins.
+//
+// At this instant there are no words yet, so there is nothing to classify: an
+// immediate policy decides here and a policy that waits decides later, as
+// revisions arrive. Both are the interaction plane's decision; carrying it out
+// is here.
 func (runtime *runtime) onUserSpeechStarted(ctx context.Context, utteranceID string, startMS int) error {
-	state := runtime.duplex.Snapshot()
-	decision := runtime.policies.BargeIn.Decide(interaction.BargeInInput{
-		Context: interaction.Context{NowNS: runtime.scheduler.NowNS(), Duplex: state},
-	})
-	if decision.Cancel {
-		runtime.coordinator.Interrupt(fmt.Errorf("%s: %w", decision.Reason, eventloop.ErrInterrupted))
-		cancelled, heard := runtime.speech.Cancel(decision.Reason)
-		if err := runtime.recordCancellations(cancelled, "barge-in", eventloop.PriorityInterrupt); err != nil {
-			return err
-		}
-		if heard {
-			// Something was already audible. The repair policy decides what
-			// that costs; the duplex state records that playback has stopped.
-			runtime.duplex.AgentAudioStopped(runtime.scheduler.NowNS())
-		}
+	if err := runtime.considerBargeIn(ctx, interaction.Revision{}, 0); err != nil {
+		return err
 	}
 	return runtime.sink.Activity(ctx, binding.ActivityEvent{
 		Started: true, ItemID: utteranceID, AudioStartMS: startMS,
 	})
+}
+
+// considerBargeIn asks whether the overlap in progress should stop the agent.
+//
+// It is called once when sound starts and again on every revision while the
+// overlap continues, which is what makes a waiting policy useful: the first
+// call has no words, and by the third there is usually enough to tell an
+// interruption from someone saying "mm-hm".
+func (runtime *runtime) considerBargeIn(
+	ctx context.Context, revision interaction.Revision, overlapNS uint64,
+) error {
+	state := runtime.duplex.Snapshot()
+	if !state.Overlapping() {
+		return nil
+	}
+	decision := interaction.Context{
+		NowNS: runtime.scheduler.NowNS(), Duplex: state, Revision: revision,
+	}
+	evidence := interaction.OverlapEvidence("")
+	if !revision.Empty() {
+		// Classification is bounded hard. A barge-in decision that arrives
+		// after the user has finished their sentence is not a decision.
+		classify, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
+		evidence = runtime.policies.Overlap.Classify(classify, decision)
+		cancel()
+	}
+	outcome := runtime.policies.BargeIn.Decide(interaction.BargeInInput{
+		Context: decision, OverlapNS: overlapNS, Evidence: evidence,
+	})
+	if !outcome.Cancel {
+		return nil
+	}
+	runtime.coordinator.Interrupt(fmt.Errorf("%s: %w", outcome.Reason, eventloop.ErrInterrupted))
+	cancelled, heard := runtime.speech.Cancel(outcome.Reason)
+	if err := runtime.recordCancellations(cancelled, "barge-in", eventloop.PriorityInterrupt); err != nil {
+		return err
+	}
+	if heard {
+		// Something was already audible. The repair policy decides what that
+		// costs; the duplex state records that playback has stopped.
+		runtime.duplex.AgentAudioStopped(runtime.scheduler.NowNS())
+	}
+	return nil
 }
 
 func (runtime *runtime) onUserSpeechStopped(ctx context.Context, utteranceID string, endMS int, now uint64) error {
@@ -155,6 +204,14 @@ func (runtime *runtime) observeAudio(ctx context.Context, frames []perception.Fr
 		}
 		decision := interaction.Context{
 			NowNS: runtime.scheduler.NowNS(), Duplex: runtime.duplex.Snapshot(), Revision: revision,
+		}
+		// A waiting barge-in policy decides here rather than at onset, because
+		// this is the first point at which there are words to classify.
+		if decision.Duplex.Overlapping() {
+			overlap := decision.NowNS - decision.Duplex.UserSpeechStartedNS
+			if err := runtime.considerBargeIn(ctx, revision, overlap); err != nil {
+				return err
+			}
 		}
 		// Preparation is consulted on every revision. It decides whether work
 		// starts before the endpoint; it never decides what gets committed.

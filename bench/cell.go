@@ -1,0 +1,154 @@
+package bench
+
+import (
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+)
+
+// Factor names one axis the measurement program varies.
+type Factor string
+
+const (
+	FactorBinding    Factor = "F1"
+	FactorCognition  Factor = "F2"
+	FactorObservers  Factor = "F3"
+	FactorCadence    Factor = "F4"
+	FactorFloor      Factor = "F5"
+	FactorSlowModel  Factor = "F6"
+	FactorComponents Factor = "F7"
+	FactorPolicy     Factor = "F8"
+)
+
+// Description is what a factor varies, for reports that a person reads.
+func (factor Factor) Description() string {
+	switch factor {
+	case FactorBinding:
+		return "binding"
+	case FactorCognition:
+		return "cognition rollout"
+	case FactorObservers:
+		return "observer set"
+	case FactorCadence:
+		return "trigger cadence"
+	case FactorFloor:
+		return "floor source"
+	case FactorSlowModel:
+		return "slow model and effort"
+	case FactorComponents:
+		return "observer components"
+	case FactorPolicy:
+		return "policy models"
+	default:
+		return string(factor)
+	}
+}
+
+// Reference is the configuration every paired cell is measured against.
+//
+// A full cross-product of eight factors is both infeasible and
+// uninterpretable. Paired cells that change exactly one factor are what make a
+// difference attributable to that factor rather than to the seven others that
+// also moved.
+func Reference() Cell {
+	return Cell{
+		Name: "reference",
+		Levels: map[Factor]string{
+			FactorBinding:    "cascade",
+			FactorCognition:  "fast+slow",
+			FactorObservers:  "audio",
+			FactorCadence:    "200ms",
+			FactorFloor:      "engine",
+			FactorSlowModel:  "hosted-high",
+			FactorComponents: "narration",
+			FactorPolicy:     "none",
+		},
+	}
+}
+
+// Cell is one measured configuration.
+type Cell struct {
+	// Name is how the cell appears in a report.
+	Name string `json:"name"`
+	// Levels is the complete configuration, including the factors that did not
+	// change. A cell that recorded only its differences could not be compared
+	// against a reference that later moved.
+	Levels map[Factor]string `json:"levels"`
+	// Varies names the factors that differ from the reference. It is derived
+	// rather than declared, so it cannot disagree with the levels.
+	Varies []Factor `json:"varies,omitempty"`
+}
+
+// Vary produces a paired cell that changes exactly one factor.
+func Vary(factor Factor, level string) (Cell, error) {
+	reference := Reference()
+	if _, known := reference.Levels[factor]; !known {
+		return Cell{}, fmt.Errorf("unknown factor %q", factor)
+	}
+	if strings.TrimSpace(level) == "" {
+		return Cell{}, errors.New("a level is required")
+	}
+	cell := Cell{
+		Name:   fmt.Sprintf("%s=%s", factor, level),
+		Levels: make(map[Factor]string, len(reference.Levels)),
+	}
+	for name, value := range reference.Levels {
+		cell.Levels[name] = value
+	}
+	if cell.Levels[factor] == level {
+		return Cell{}, fmt.Errorf("%s is already %q in the reference cell", factor, level)
+	}
+	cell.Levels[factor] = level
+	cell.Varies = []Factor{factor}
+	return cell, nil
+}
+
+// Compare reports which factors differ between two cells.
+//
+// It is what a report uses to say what a comparison is actually comparing.
+// Two cells that differ in three factors are not a measurement of any one of
+// them, and this is what makes that visible rather than assumed.
+func Compare(left, right Cell) []Factor {
+	var differences []Factor
+	for factor, value := range left.Levels {
+		if right.Levels[factor] != value {
+			differences = append(differences, factor)
+		}
+	}
+	for factor, value := range right.Levels {
+		if _, present := left.Levels[factor]; !present && value != "" {
+			differences = append(differences, factor)
+		}
+	}
+	sort.Slice(differences, func(left, right int) bool {
+		return differences[left] < differences[right]
+	})
+	return differences
+}
+
+// Paired reports whether two cells differ in exactly one factor.
+func Paired(left, right Cell) (Factor, bool) {
+	differences := Compare(left, right)
+	if len(differences) != 1 {
+		return "", false
+	}
+	return differences[0], true
+}
+
+// ID is a stable identity for the cell's configuration.
+func (cell Cell) ID() string { return Fingerprint(cell.Levels) }
+
+// Describe renders the cell for a person.
+func (cell Cell) Describe() string {
+	factors := make([]Factor, 0, len(cell.Levels))
+	for factor := range cell.Levels {
+		factors = append(factors, factor)
+	}
+	sort.Slice(factors, func(left, right int) bool { return factors[left] < factors[right] })
+	parts := make([]string, 0, len(factors))
+	for _, factor := range factors {
+		parts = append(parts, fmt.Sprintf("%s=%s", factor, cell.Levels[factor]))
+	}
+	return strings.Join(parts, " ")
+}

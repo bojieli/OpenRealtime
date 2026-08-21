@@ -221,3 +221,88 @@ func (policy *modelProjection) Project(decision Context) Projection {
 	policy.mu.Unlock()
 	return result
 }
+
+// OverlapClassifier says what overlapping user speech is.
+//
+// Barge-in already takes typed evidence, and until now nothing produced it:
+// every overlap arrived unclassified and the immediate policy treated all of
+// it as the user taking the floor. That is the safe failure - stopping when
+// somebody says "mm-hm" is annoying, talking over a real interruption is
+// worse - but it is a failure, and the overlap suite measures exactly how
+// often it happens.
+//
+// Classification needs words, and words arrive a few hundred milliseconds
+// after the sound does. So this is only useful with a barge-in policy that
+// waits: the sustained policy holds the floor briefly, and this decides what
+// to do with that time.
+type OverlapClassifier interface {
+	Named
+	Classify(context.Context, Context) OverlapEvidence
+}
+
+// UnclassifiedOverlap is the rule fallback: say nothing, and let barge-in
+// treat the overlap as directed speech.
+type UnclassifiedOverlap struct{}
+
+func (UnclassifiedOverlap) Name() string { return "unclassified" }
+
+func (UnclassifiedOverlap) Classify(context.Context, Context) OverlapEvidence { return "" }
+
+type modelOverlapClassifier struct {
+	decider Decider
+
+	mu      sync.Mutex
+	lastRev uint64
+	last    OverlapEvidence
+}
+
+// NewModelOverlapClassifier classifies overlap with a policy model.
+func NewModelOverlapClassifier(decider Decider) (OverlapClassifier, error) {
+	if decider == nil {
+		return nil, fmt.Errorf("an overlap classifier requires a decider")
+	}
+	return &modelOverlapClassifier{decider: decider}, nil
+}
+
+func (policy *modelOverlapClassifier) Name() string { return "model:" + policy.decider.Name() }
+
+// Classify decides what the overlapping speech is.
+//
+// It answers from what has been heard so far and nothing else, for the same
+// reason turn projection does: a classifier that needed the rest of the
+// utterance could not run while the utterance was happening, which is the only
+// time its answer is worth anything.
+func (policy *modelOverlapClassifier) Classify(ctx context.Context, decision Context) OverlapEvidence {
+	if decision.Revision.Empty() {
+		return ""
+	}
+	policy.mu.Lock()
+	if policy.lastRev == decision.Revision.ID {
+		cached := policy.last
+		policy.mu.Unlock()
+		return cached
+	}
+	policy.mu.Unlock()
+
+	outcome, err := policy.decider.Decide(ctx, Decision{
+		Prompt: "An agent is speaking. The person has started speaking over it. Decide what they are doing.\n\n" +
+			"Answer directed_speech when they are addressing the agent - interrupting, correcting, or asking " +
+			"something new. Answer listener_backchannel for a short continuer that shows they are listening, " +
+			"such as mm-hm, right, yeah, or okay, with nothing else in it. Answer side_speech when they are " +
+			"clearly talking to somebody else. Answer ambiguous_speech when there is not enough to tell.\n\n" +
+			"A continuer is short. Anything with a question or a new subject in it is directed speech.",
+		Options: []string{
+			string(OverlapDirected), string(OverlapBackchannel),
+			string(OverlapSide), string(OverlapAmbiguous),
+		},
+		Evidence: "What they have said so far: " + decision.Revision.Text(),
+	})
+	evidence := OverlapEvidence("")
+	if err == nil {
+		evidence = OverlapEvidence(outcome.Option)
+	}
+	policy.mu.Lock()
+	policy.lastRev, policy.last = decision.Revision.ID, evidence
+	policy.mu.Unlock()
+	return evidence
+}

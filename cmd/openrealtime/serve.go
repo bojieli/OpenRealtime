@@ -100,6 +100,8 @@ type serveOptions struct {
 	policyTokenEnv string
 	policyGuided   bool
 	policies       string
+	bargeIn        string
+	bargeInHold    time.Duration
 
 	computerUse     bool
 	browserURL      string
@@ -166,7 +168,9 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.browserURL, "browser-devtools-url", "http://127.0.0.1:9222", "browser DevTools endpoint for computer use")
 	flags.StringVar(&options.browserTarget, "browser-target", "", "connect directly to a known page WebSocket instead of discovering one")
 	flags.StringVar(&options.computerConfirm, "computer-confirm", "", "override every computer.* confirmation requirement: never, policy, or always")
-	flags.StringVar(&options.policies, "policy-models", "none", "policy models to enable: none, backchannel, turn-projection, or both")
+	flags.StringVar(&options.policies, "policy-models", "none", "comma-separated policy models: backchannel, turn-projection, overlap, all, or none")
+	flags.StringVar(&options.bargeIn, "barge-in", "immediate", "barge-in policy: immediate, sustained, or never")
+	flags.DurationVar(&options.bargeInHold, "barge-in-hold", 300*time.Millisecond, "how long a sustained barge-in policy holds the floor before yielding")
 	flags.StringVar(&options.policyURL, "policy-url", policymodel.DefaultBaseURL, "policy model base URL")
 	flags.StringVar(&options.policyModel, "policy-model", "", "policy model identity; required when a policy model is enabled")
 	flags.StringVar(&options.policyTokenEnv, "policy-token-env", "OPENREALTIME_POLICY_API_KEY", "environment variable holding the policy model credential")
@@ -270,6 +274,17 @@ func buildPolicies(options serveOptions) (interaction.Policies, error) {
 	}
 	policies.Rollout = rollout
 	policies.Trigger = interaction.NewFixedCadenceTrigger(options.cadence)
+	switch strings.ToLower(strings.TrimSpace(options.bargeIn)) {
+	case "", "immediate":
+		policies.BargeIn = interaction.NewImmediateBargeIn()
+	case "sustained":
+		policies.BargeIn = interaction.NewSustainedBargeIn(options.bargeInHold)
+	case "never":
+		policies.BargeIn = interaction.NewNeverBargeIn()
+	default:
+		return interaction.Policies{}, fmt.Errorf(
+			"barge-in must be immediate, sustained, or never, got %q", options.bargeIn)
+	}
 	if err := applyPolicyModels(&policies, options); err != nil {
 		return interaction.Policies{}, err
 	}
@@ -284,15 +299,24 @@ func buildPolicies(options serveOptions) (interaction.Policies, error) {
 // simply less alive without them, and that is the trade a deployment gets to
 // make rather than one the build makes for it.
 func applyPolicyModels(policies *interaction.Policies, options serveOptions) error {
-	wanted := strings.ToLower(strings.TrimSpace(options.policies))
-	backchannel := wanted == "backchannel" || wanted == "both"
-	projection := wanted == "turn-projection" || wanted == "projection" || wanted == "both"
-	switch wanted {
-	case "", "none", "backchannel", "turn-projection", "projection", "both":
-	default:
-		return fmt.Errorf("policy models must be none, backchannel, turn-projection, or both, got %q", options.policies)
+	var backchannel, projection, overlap bool
+	for _, name := range strings.Split(strings.ToLower(strings.TrimSpace(options.policies)), ",") {
+		switch strings.TrimSpace(name) {
+		case "", "none":
+		case "backchannel":
+			backchannel = true
+		case "turn-projection", "projection":
+			projection = true
+		case "overlap":
+			overlap = true
+		case "all", "both":
+			backchannel, projection, overlap = true, true, true
+		default:
+			return fmt.Errorf(
+				"policy models must be backchannel, turn-projection, overlap, all, or none, got %q", name)
+		}
 	}
-	if !backchannel && !projection {
+	if !backchannel && !projection && !overlap {
 		return nil
 	}
 	if strings.TrimSpace(options.policyModel) == "" {
@@ -311,6 +335,13 @@ func applyPolicyModels(policies *interaction.Policies, options serveOptions) err
 			return err
 		}
 		policies.Backchannel = policy
+	}
+	if overlap {
+		policy, err := interaction.NewModelOverlapClassifier(decider)
+		if err != nil {
+			return err
+		}
+		policies.Overlap = policy
 	}
 	if projection {
 		policy, err := interaction.NewModelProjection(decider, interaction.ProjectionOptions{})

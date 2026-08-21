@@ -87,3 +87,50 @@ numbers.
 These are release gates rather than comparative claims, and each has a
 published number against a declared reference machine. See
 [efficiency.md](efficiency.md).
+
+## Overlap: what the harness found while it was being built
+
+The first FDB v1.5 recording that ran exposed a gap, and it is worth recording
+because it is what a measurement program is supposed to do.
+
+The shipped barge-in policy yields on any user speech over agent output. That
+is the safe failure — stopping when somebody says "mm-hm" is annoying, talking
+over a real interruption is worse — but the backchannel category measures
+exactly how often it happens, and it fails all of them.
+
+`interaction.BargeIn` already accepted typed overlap evidence. Nothing produced
+it. So an overlap classifier was added: a policy model answering one enumerated
+question about the partial transcript, directed against backchannel against
+side speech. Two further problems surfaced immediately:
+
+1. **The sustained policy ignored evidence during its hold.** The hold exists
+   to give a classifier time to answer, so once something says "this is
+   directed at you", waiting out the rest of it is talking over somebody who is
+   already interrupting. The hold is now a maximum, not a minimum.
+2. **The hold was never actually driven.** It was re-evaluated only when a
+   recogniser revision arrived, and a first partial can be half a second away.
+   A timeout that only fires when words happen to arrive is not a timeout. It
+   is now checked on the audio path, where frames arrive every 100 ms whatever
+   the recogniser is doing.
+
+### The trade, measured
+
+Two recordings per condition against the live stack — a smoke measurement, not
+a published cell, and the harness refuses to report it as one:
+
+| Configuration | Interruption: yield latency | Backchannel: held the floor |
+| --- | --- | --- |
+| `immediate` | ~195 ms | 0 of 2 |
+| `sustained 400ms` + overlap classifier | ~665 ms | 2 of 2 |
+
+Roughly 470 ms of extra talking-over, in exchange for not stopping when the
+user was only signalling that they were still listening.
+
+The floor on the classified path is not the hold and not the model — it is how
+long the recogniser takes to produce its first partial. Classifying overlap
+needs words, and words arrive when they arrive.
+
+**`immediate` remains the default.** It is the safer failure, and the
+alternative is a documented configuration with a number attached rather than a
+recommendation. Which one is right depends on whether a deployment's users
+backchannel, which is what the full cells will say.

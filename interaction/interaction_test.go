@@ -222,6 +222,17 @@ func TestBargeInRespectsTypedOverlapEvidence(t *testing.T) {
 	if !late.Cancel {
 		t.Fatal("a sustained overlap must cancel")
 	}
+
+	// The hold is a maximum, not a minimum: once something has said the
+	// overlap is directed, waiting out the rest of it is talking over somebody
+	// who is already interrupting.
+	classified := sustained.Decide(interaction.BargeInInput{
+		Context: interaction.Context{Duplex: overlap}, OverlapNS: uint64(50 * time.Millisecond),
+		Evidence: interaction.OverlapDirected,
+	})
+	if !classified.Cancel {
+		t.Fatal("directed evidence must yield the floor without waiting out the hold")
+	}
 }
 
 func TestCommitmentRefusesToVoiceSilentProducers(t *testing.T) {
