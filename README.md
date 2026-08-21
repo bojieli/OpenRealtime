@@ -99,6 +99,7 @@ taken in, a dangerous tool declared, and nothing happens. See
 | | |
 | --- | --- |
 | [Quickstart](docs/quickstart.md) | run it, check it, connect to it |
+| [The developer console](console/README.md) | both transports, video, and tools on your own machine |
 | [Architecture](docs/architecture.md) | the four subsystems and why they are separate |
 | [Bindings](docs/bindings/README.md) | which voice stack, and what each one owns |
 | [The OpenRealtime Protocol](docs/protocol/openrealtime-1.md) | normative spec for video, observations, and computer use |

@@ -88,6 +88,25 @@ plumbing of its own: `getUserMedia` and `RTCPeerConnection` handle echo
 cancellation, jitter, and loss concealment, which is the whole point of the
 WebRTC adapter.
 
+## The developer console
+
+One command on your own machine, pointed at the server:
+
+```sh
+openrealtime console -webrtc http://127.0.0.1:8766/v1/realtime
+```
+
+Open `http://127.0.0.1:8767`. It speaks both transports against the same
+server, shares your screen or camera, shows every event in both directions, and
+gives the session tools that run in your own working directory — with
+confirmation for anything that changes a file or runs a command.
+
+It runs locally rather than on the server for three reasons that all follow from
+where it sits: a browser only grants a microphone in a secure context and
+`127.0.0.1` is one, so nothing needs a certificate; the credential stays in
+that process instead of the page; and tools can reach your files, which a
+browser cannot. See [the console](../console/README.md).
+
 ## Connect an existing Realtime client
 
 An official client connects unchanged. Point it at
