@@ -3,6 +3,7 @@ package webrtc_test
 import (
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -38,6 +39,9 @@ func newProtocolServer(t *testing.T) *protocolServer {
 		if err != nil {
 			return
 		}
+		// A real gateway sizes this from the video limits it advertises. The
+		// default would refuse a screen frame long before the protocol saw it.
+		connection.SetReadLimit(16 << 20)
 		defer connection.CloseNow()
 		ctx := request.Context()
 		endpoint.once.Do(func() { close(endpoint.ready) })
@@ -108,11 +112,26 @@ type browser struct {
 	events   []map[string]any
 	audio    int
 	audioLen int
+	partial  [][]byte
+	chunks   int
 }
 
 func newBrowser(t *testing.T) *browser {
+	return newBrowserWithMaxMessageSize(t, 0)
+}
+
+// newBrowserWithMaxMessageSize builds a client that advertises a specific SCTP
+// maximum, which is how the peers that make chunking necessary behave: two
+// pion peers negotiate a gigabyte and would never chunk anything, so a test
+// that used the default would be testing the wrong peer.
+func newBrowserWithMaxMessageSize(t *testing.T, maxMessageSize uint32) *browser {
 	t.Helper()
-	connection, err := pion.NewPeerConnection(pion.Configuration{})
+	settings := pion.SettingEngine{}
+	if maxMessageSize > 0 {
+		settings.SetSCTPMaxMessageSize(maxMessageSize)
+	}
+	api := pion.NewAPI(pion.WithSettingEngine(settings))
+	connection, err := api.NewPeerConnection(pion.Configuration{})
 	if err != nil {
 		t.Fatalf("new peer connection: %v", err)
 	}
@@ -143,8 +162,22 @@ func newBrowser(t *testing.T) *browser {
 		t.Fatalf("create data channel: %v", err)
 	}
 	channel.OnMessage(func(message pion.DataChannelMessage) {
+		payload := message.Data
+		if !message.IsString {
+			// Binary is a chunk of an event rather than an event. A client
+			// that ignored these would simply not see anything too large for
+			// one SCTP message, which is what happens today.
+			client.mu.Lock()
+			client.chunks++
+			client.mu.Unlock()
+			complete := client.reassemble(message.Data)
+			if complete == nil {
+				return
+			}
+			payload = complete
+		}
 		var decoded map[string]any
-		if json.Unmarshal(message.Data, &decoded) == nil {
+		if json.Unmarshal(payload, &decoded) == nil {
 			client.mu.Lock()
 			client.events = append(client.events, decoded)
 			client.mu.Unlock()
@@ -509,6 +542,156 @@ func TestAdapterExpressesNothingAPlainClientCannot(t *testing.T) {
 			// The extension's client events are equally expressible over
 			// WebSocket, but the adapter must not be the one inventing them.
 			t.Fatalf("the adapter originated an extension event %q", observed)
+		}
+	}
+}
+
+// The chunk framing, written out by hand rather than shared with the adapter.
+//
+// A client implements this from the transport documentation, so a test that
+// called the adapter's own helpers would only prove they are self-consistent.
+const (
+	testChunkHeader  = 14
+	testChunkPayload = 16 << 10
+)
+
+func (client *browser) sendChunked(t *testing.T, identifier uint32, event map[string]any) {
+	t.Helper()
+	encoded, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	count := (len(encoded) + testChunkPayload - 1) / testChunkPayload
+	for index := 0; index < count; index++ {
+		start := index * testChunkPayload
+		end := min(start+testChunkPayload, len(encoded))
+		frame := make([]byte, testChunkHeader+(end-start))
+		copy(frame[0:4], []byte("ORTC"))
+		frame[4] = 1
+		if index == count-1 {
+			frame[5] = 1
+		}
+		binary.BigEndian.PutUint32(frame[6:10], identifier)
+		binary.BigEndian.PutUint16(frame[10:12], uint16(index))
+		binary.BigEndian.PutUint16(frame[12:14], uint16(count))
+		copy(frame[testChunkHeader:], encoded[start:end])
+		if err := client.channel.Send(frame); err != nil {
+			t.Fatalf("send chunk %d: %v", index, err)
+		}
+	}
+}
+
+func (client *browser) reassemble(frame []byte) []byte {
+	if len(frame) < testChunkHeader || string(frame[0:4]) != "ORTC" {
+		return nil
+	}
+	index := int(binary.BigEndian.Uint16(frame[10:12]))
+	count := int(binary.BigEndian.Uint16(frame[12:14]))
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.partial == nil {
+		client.partial = make([][]byte, count)
+	}
+	if index < len(client.partial) {
+		client.partial[index] = append([]byte(nil), frame[testChunkHeader:]...)
+	}
+	for _, chunk := range client.partial {
+		if chunk == nil {
+			return nil
+		}
+	}
+	var complete []byte
+	for _, chunk := range client.partial {
+		complete = append(complete, chunk...)
+	}
+	client.partial = nil
+	return complete
+}
+
+// A screen frame is larger than one SCTP message on every peer in the field,
+// so the transport has to carry it in pieces and hand the protocol back the
+// one event it would have received over a WebSocket.
+func TestALargeVideoFrameCrossesTheDataChannelWhole(t *testing.T) {
+	endpoint := newProtocolServer(t)
+	server := startAdapter(t, endpoint)
+	client := newBrowser(t)
+	client.connect(t, server)
+	client.waitConnected(t)
+	waitOpen(t, client.channel)
+
+	// Three hundred kilobytes of base64: a modest screen at a modest quality,
+	// and roughly five times what the most conservative peer takes whole.
+	image := strings.Repeat("QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVoK", 8500)
+	client.sendChunked(t, 1, map[string]any{
+		"type": "openrealtime.input_video_frame.append", "source": "screen",
+		"frame": image, "timestamp_ms": 1000,
+	})
+
+	event := endpoint.waitFor(t, func(event map[string]any) bool {
+		return event["type"] == "openrealtime.input_video_frame.append"
+	}, "the frame never reached the protocol endpoint")
+	if event["frame"] != image {
+		t.Fatalf("the frame arrived with %d of %d characters",
+			len(event["frame"].(string)), len(image))
+	}
+	if event["source"] != "screen" {
+		t.Fatalf("the event lost its source: %v", event)
+	}
+}
+
+// The same framing in the other direction, against a peer that advertises the
+// smallest maximum in the field, plus the guarantee that goes with it: a
+// message the peer can take whole is still sent whole, so a client that never
+// implements reassembly sees exactly what it sees today.
+func TestOutboundEventsAreChunkedOnlyWhenTheyMustBe(t *testing.T) {
+	endpoint := newProtocolServer(t)
+	server := startAdapter(t, endpoint)
+	client := newBrowserWithMaxMessageSize(t, 65536)
+	client.connect(t, server)
+	client.waitConnected(t)
+	waitOpen(t, client.channel)
+	<-endpoint.ready
+
+	long := strings.Repeat("an observation of a very busy screen. ", 20000)
+	endpoint.send <- map[string]any{
+		"type": "openrealtime.observation.added", "observation_id": "obs_1",
+		"observer": "video", "source": "screen", "text": long,
+	}
+	endpoint.send <- map[string]any{"type": "response.done", "event_id": "event_1"}
+
+	deadline := time.After(15 * time.Second)
+	for {
+		var observation, done map[string]any
+		for _, event := range client.received() {
+			switch event["type"] {
+			case "openrealtime.observation.added":
+				observation = event
+			case "response.done":
+				done = event
+			}
+		}
+		if observation != nil && done != nil {
+			if observation["text"] != long {
+				t.Fatalf("the observation arrived with %d of %d characters",
+					len(observation["text"].(string)), len(long))
+			}
+			client.mu.Lock()
+			chunks := client.chunks
+			client.mu.Unlock()
+			if chunks == 0 {
+				t.Fatal("the observation was larger than the peer accepts, so it had to be chunked")
+			}
+			// The small event crossed as one text message rather than as a
+			// chunk of its own, which is what keeps existing clients working.
+			if chunks > (len(long)/testChunkPayload)+2 {
+				t.Fatalf("%d chunks for one large event and one small one", chunks)
+			}
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("the chunked observation and the small event did not both arrive")
+		case <-time.After(10 * time.Millisecond):
 		}
 	}
 }

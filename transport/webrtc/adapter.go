@@ -186,7 +186,7 @@ func (adapter *Adapter) Start(ctx context.Context, offer, model string) (string,
 	}
 	session := &session{
 		adapter: adapter, connection: connection, model: model,
-		done: make(chan struct{}),
+		done: make(chan struct{}), inbound: newReassembler(),
 	}
 	if err := session.prepare(); err != nil {
 		_ = connection.Close()

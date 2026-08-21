@@ -46,6 +46,68 @@ A client POSTs an SDP offer to `/v1/realtime` with `Content-Type:
 application/sdp` and receives an answer. Protocol events travel on a data
 channel named `oai-events`, which is what Realtime clients already expect.
 
+### Large events: chunk framing
+
+One data channel message carries one protocol event, as text. That is the whole
+of the framing for a voice session, and a client that only speaks voice needs
+nothing else on this page.
+
+Video does not fit in it. SCTP negotiates a maximum message size and each peer
+advertises its own; the smallest in the field is Safari's 64 KiB, well under a
+single screen frame, which is base64 and therefore a third larger again than
+the image it carries. A peer that sends past that maximum does not get a
+truncated message — the write is refused and the frame never leaves, so the
+failure looks like video silently not working.
+
+So a message too large for one SCTP message is carried as a sequence of
+**binary** chunk frames:
+
+```text
+byte  0..3   "ORTC"
+byte  4      version, currently 1
+byte  5      flags; bit 0 set on the final chunk
+byte  6..9   message identifier, uint32 big-endian
+byte 10..11  chunk index,  uint16 big-endian
+byte 12..13  chunk count,  uint16 big-endian
+byte 14..    payload: this chunk's slice of the UTF-8 event
+```
+
+Concatenating the payloads in index order gives back exactly the event a
+WebSocket client would have sent or received. Three properties are worth
+stating, because each of them is a decision:
+
+- **Text means an event, binary means a chunk of one.** The two cannot be
+  confused, and no content inspection decides which is which.
+- **Chunking is below the protocol, not part of it.** The reassembled bytes are
+  an ordinary event, so the adapter remains a plain protocol client and rule 3
+  still holds.
+- **A message that fits is still sent whole.** The threshold is the size SCTP
+  actually negotiated rather than a constant, so nothing a client can already
+  receive changes shape. A client that ignores binary messages behaves exactly
+  as it did before this existed: it does not see events too large for one
+  message, which is what happened anyway.
+
+Reassembly is bounded — 8 MiB per message and four partial messages in flight —
+because it is memory a peer controls.
+
+### Frame size and the read limit
+
+The video limits a session advertises at negotiation are a promise the
+transport has to be able to keep. A WebSocket read limit below the largest
+legal frame does not refuse an oversized frame: it is enforced beneath the
+protocol, so it closes the connection, and the client gets a dropped session
+where it should have got an error naming the limit it exceeded.
+
+So the gateway sizes its read limit from `max_frame_bytes` rather than from a
+constant, with headroom above it. The headroom is what makes an oversized frame
+answerable — a client that forgot to downscale gets
+
+```text
+video frame of 5242880 bytes exceeds the 4194304 byte limit
+```
+
+on a session that stays up, instead of a disconnection it has to guess at.
+
 ### Codecs, and an honest limitation
 
 The two directions do not share a codec, because they do not have the same

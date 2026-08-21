@@ -36,6 +36,11 @@ type session struct {
 	// exactly that window. Dropping those would strand a client waiting for
 	// session.created with no error to explain the wait.
 	pending [][]byte
+	// inbound rebuilds messages the client had to chunk, and outbound names
+	// the ones this side chunks. Video is the reason both exist: a screen
+	// frame does not fit in one SCTP message on every peer.
+	inbound  *reassembler
+	outbound atomic.Uint32
 
 	closed atomic.Bool
 	done   chan struct{}
@@ -83,7 +88,7 @@ func (session *session) prepare() error {
 		session.eventsMu.Unlock()
 		channel.OnOpen(func() { session.flushPending() })
 		channel.OnMessage(func(message webrtc.DataChannelMessage) {
-			session.forwardToProtocol(message.Data)
+			session.receiveFromClient(message)
 		})
 	})
 	session.connection.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
@@ -324,7 +329,7 @@ func (session *session) forwardToClient(raw []byte) {
 		return
 	}
 	session.eventsMu.Unlock()
-	if err := channel.SendText(string(raw)); err != nil {
+	if err := session.sendToClient(channel, raw); err != nil {
 		session.adapter.config.Logf("forward event to client: %v", err)
 	}
 }
@@ -342,7 +347,7 @@ func (session *session) flushPending() {
 		raw := session.pending[0]
 		session.pending = session.pending[1:]
 		session.eventsMu.Unlock()
-		if err := channel.SendText(string(raw)); err != nil {
+		if err := session.sendToClient(channel, raw); err != nil {
 			session.adapter.config.Logf("forward queued event to client: %v", err)
 			return
 		}
@@ -432,4 +437,56 @@ func (session *session) close() {
 		}
 		_ = session.connection.Close()
 	})
+}
+
+// receiveFromClient routes one data channel message.
+//
+// Text is a protocol event and binary is a chunk of one. Keeping the two
+// apart by message kind rather than by inspecting content means a client that
+// never chunks is unaffected by any of this, and a malformed chunk cannot be
+// mistaken for an event.
+func (session *session) receiveFromClient(message webrtc.DataChannelMessage) {
+	if message.IsString {
+		session.forwardToProtocol(message.Data)
+		return
+	}
+	complete, err := session.inbound.accept(message.Data)
+	if err != nil {
+		session.adapter.config.Logf("client chunk: %v", err)
+		return
+	}
+	if complete == nil {
+		return
+	}
+	session.forwardToProtocol(complete)
+}
+
+// sendToClient writes one protocol event to the data channel, chunking it only
+// when the peer could not take it whole.
+//
+// The threshold is the size SCTP actually negotiated rather than a constant,
+// so nothing a client can already receive changes shape: a message that fits
+// is still one text message. What changes is that a message that does not fit
+// now has a way across instead of being refused by the write.
+func (session *session) sendToClient(channel *webrtc.DataChannel, raw []byte) error {
+	negotiated := session.negotiatedMessageBytes()
+	if wholeMessageFits(len(raw), negotiated) {
+		return channel.SendText(string(raw))
+	}
+	identifier := session.outbound.Add(1)
+	for _, frame := range splitChunks(identifier, raw, chunkPayloadFor(negotiated)) {
+		if err := channel.Send(frame); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// negotiatedMessageBytes is the largest message this peer will accept.
+func (session *session) negotiatedMessageBytes() uint32 {
+	transport := session.connection.SCTP()
+	if transport == nil {
+		return 0
+	}
+	return transport.GetCapabilities().MaxMessageSize
 }
