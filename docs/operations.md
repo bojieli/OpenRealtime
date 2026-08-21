@@ -92,10 +92,27 @@ conversation supports.
 | `omni` / `duplex` | one model process per session, or one shared | use `-sidecar-address` to share an expensive model rather than loading it per session |
 | `upstream` | one outbound WebSocket, plus the reasoner | the lightest to run; the remote does the work |
 
-All model work competes under one admission governor with three classes:
-interactive above speculative preparation above background. Policy models are
-admitted at interactive class, because they compete for the same GPU rather
-than existing beside it.
+All local model work can compete under one admission governor with three
+classes: interactive above speculative preparation above background. Policy
+models are admitted at interactive class, video narration at background, and
+speculative preparation in between — they compete for the same GPU rather than
+existing beside it.
+
+```sh
+openrealtime serve -compute-capacity 8
+```
+
+It is **off by default**, and that is a deliberate refusal rather than an
+oversight: the unit is abstract, the right number depends on the machine and
+the models, and a governor with a made-up capacity would throttle a deployment
+that was perfectly healthy. A deployment that is contending states its own
+number; one whose providers are hosted competes for nothing local and should
+leave it off.
+
+With it on, watch the class timings. A speculative class whose wait time climbs
+is preparation that will not be ready by the endpoint, which costs tokens and
+saves no latency — turn it off with `-preparation endpoint-only` or raise the
+capacity.
 
 ## Failure behaviour
 

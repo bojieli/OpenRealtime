@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"strings"
 	"sync/atomic"
+	"time"
 
+	"github.com/bojieli/OpenRealtime/admission"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -75,12 +77,16 @@ type Vision interface {
 // model is a supported alternative rather than a fallback nobody planned for.
 // Which one is in use is a session-level composition and a measurable factor.
 type ModelNarrator struct {
-	vision Vision
-	prompt string
-	label  string
+	vision   Vision
+	prompt   string
+	label    string
+	governor *admission.Governor
+	class    admission.Class
+	deadline time.Duration
 
 	narrations atomic.Uint64
 	suppressed atomic.Uint64
+	unadmitted atomic.Uint64
 }
 
 // NarratorConfig configures a model narrator.
@@ -91,6 +97,22 @@ type NarratorConfig struct {
 	// Label distinguishes a session narrator from a dedicated one in reports.
 	// It records the composition, not the model.
 	Label string
+	// Governor admits narration against the same compute budget as everything
+	// else. Video narration is a new class competing for the same GPU as the
+	// recogniser, the fast model, and the synthesiser, so it belongs under the
+	// same governor rather than beside it - a narrator with its own private
+	// budget is a narrator that can starve the voice.
+	//
+	// Nil means unadmitted, which is correct for a deployment whose vision
+	// model is hosted elsewhere and therefore competes for nothing local.
+	Governor *admission.Governor
+	// Class defaults to background: a screen description is worth having and
+	// never worth delaying a spoken turn for.
+	Class admission.Class
+	// Deadline bounds how long a narration may wait for capacity. Zero selects
+	// two seconds; a description of a screen that has since changed is not
+	// worth the tokens.
+	Deadline time.Duration
 }
 
 // NewSessionNarrator narrates with the session's own model.
@@ -114,7 +136,16 @@ func NewNarrator(config NarratorConfig) (*ModelNarrator, error) {
 	if strings.TrimSpace(config.Label) == "" {
 		config.Label = "model"
 	}
-	return &ModelNarrator{vision: config.Vision, prompt: config.Prompt, label: config.Label}, nil
+	if config.Class == 0 {
+		config.Class = admission.ClassBackground
+	}
+	if config.Deadline <= 0 {
+		config.Deadline = 2 * time.Second
+	}
+	return &ModelNarrator{
+		vision: config.Vision, prompt: config.Prompt, label: config.Label,
+		governor: config.Governor, class: config.Class, deadline: config.Deadline,
+	}, nil
 }
 
 // Name reports the composition and the model behind it.
@@ -141,6 +172,20 @@ func (narrator *ModelNarrator) Narrate(
 	if len(images) == 0 {
 		return "", nil
 	}
+	if narrator.governor != nil {
+		lease, err := narrator.governor.Acquire(ctx, admission.Request{
+			Class: narrator.class, Cost: 1, Preemptible: true,
+			Deadline: time.Now().Add(narrator.deadline), Label: "narration",
+		})
+		if err != nil {
+			// Narration that cannot get compute is narration that did not
+			// happen. It is not a session failure: the screen will be sampled
+			// again, and describing a stale one would be worse than silence.
+			narrator.unadmitted.Add(1)
+			return "", nil
+		}
+		defer lease.Release()
+	}
 	text, err := narrator.vision.Describe(ctx, images, narrator.prompt)
 	if err != nil {
 		return "", err
@@ -162,11 +207,15 @@ func (narrator *ModelNarrator) Narrate(
 type NarratorMetrics struct {
 	Narrations uint64 `json:"narrations"`
 	Suppressed uint64 `json:"suppressed"`
+	// Unadmitted counts narrations the governor refused. A number that climbs
+	// says the deployment is trying to see more than its GPU can describe.
+	Unadmitted uint64 `json:"unadmitted"`
 }
 
 func (narrator *ModelNarrator) Metrics() NarratorMetrics {
 	return NarratorMetrics{
 		Narrations: narrator.narrations.Load(), Suppressed: narrator.suppressed.Load(),
+		Unadmitted: narrator.unadmitted.Load(),
 	}
 }
 

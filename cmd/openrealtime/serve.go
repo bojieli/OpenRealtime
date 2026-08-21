@@ -20,6 +20,7 @@ import (
 	"github.com/bojieli/OpenRealtime/adapters/openaitts"
 	"github.com/bojieli/OpenRealtime/adapters/openaivision"
 	"github.com/bojieli/OpenRealtime/adapters/qwenasr"
+	"github.com/bojieli/OpenRealtime/admission"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/asrbuffer"
 	"github.com/bojieli/OpenRealtime/binding"
@@ -101,6 +102,7 @@ type serveOptions struct {
 	webrtcListen string
 	webrtcSTUN   string
 
+	gpuCapacity    int
 	policyURL      string
 	policyModel    string
 	policyTokenEnv string
@@ -185,6 +187,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.policies, "policy-models", "none", "comma-separated policy models: backchannel, turn-projection, overlap, all, or none")
 	flags.StringVar(&options.bargeIn, "barge-in", "immediate", "barge-in policy: immediate, sustained, or never")
 	flags.DurationVar(&options.bargeInHold, "barge-in-hold", 300*time.Millisecond, "how long a sustained barge-in policy holds the floor before yielding")
+	flags.IntVar(&options.gpuCapacity, "compute-capacity", 0,
+		"abstract units of local model capacity; 0 leaves narration, policy models, and preparation unadmitted")
 	flags.StringVar(&options.policyURL, "policy-url", policymodel.DefaultBaseURL, "policy model base URL")
 	flags.StringVar(&options.policyModel, "policy-model", "", "policy model identity; required when a policy model is enabled")
 	flags.StringVar(&options.policyTokenEnv, "policy-token-env", "OPENREALTIME_POLICY_API_KEY", "environment variable holding the policy model credential")
@@ -262,13 +266,17 @@ func serve(options serveOptions, output io.Writer) error {
 }
 
 func buildBinding(options serveOptions) (binding.Binding, error) {
-	policies, err := buildPolicies(options)
+	governor, err := buildGovernor(options)
+	if err != nil {
+		return nil, err
+	}
+	policies, err := buildPolicies(options, governor)
 	if err != nil {
 		return nil, err
 	}
 	switch strings.ToLower(strings.TrimSpace(options.binding)) {
 	case "cascade", "":
-		return buildCascade(options, policies)
+		return buildCascade(options, policies, governor)
 	case "upstream":
 		return buildUpstream(options)
 	case "omni":
@@ -280,7 +288,35 @@ func buildBinding(options serveOptions) (binding.Binding, error) {
 	}
 }
 
-func buildPolicies(options serveOptions) (interaction.Policies, error) {
+// buildGovernor creates the one compute budget everything local shares.
+//
+// A deployment that runs its recogniser, its fast model, its synthesiser, its
+// narrator, and its policy model on one GPU has one resource, and giving each
+// of them a private budget is how a screen description ends up delaying a
+// spoken turn. One governor, declared classes, cooperative preemption.
+//
+// It is off by default because it cannot be sized for you: the unit is
+// abstract, the right number depends on the machine and the models, and a
+// governor with a made-up capacity would throttle a deployment that was
+// perfectly healthy. A deployment that is contending states its own number.
+func buildGovernor(options serveOptions) (*admission.Governor, error) {
+	if options.gpuCapacity <= 0 {
+		return nil, nil
+	}
+	reserved := options.gpuCapacity / 2
+	if reserved < 1 {
+		reserved = 1
+	}
+	governor, err := admission.NewGovernor(admission.Config{
+		Capacity: options.gpuCapacity, ReservedInteractive: reserved,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("configure the compute governor: %w", err)
+	}
+	return governor, nil
+}
+
+func buildPolicies(options serveOptions, governor *admission.Governor) (interaction.Policies, error) {
 	policies := interaction.Defaults()
 	rollout, err := interaction.ParseRollout(options.rollout, interaction.RolloutOptions{
 		ToolResultProgress: options.toolProgress,
@@ -323,7 +359,7 @@ func buildPolicies(options serveOptions) (interaction.Policies, error) {
 			AllowWhileUserSpeaking: true,
 		})
 	}
-	if err := applyPolicyModels(&policies, options); err != nil {
+	if err := applyPolicyModels(&policies, options, governor); err != nil {
 		return interaction.Policies{}, err
 	}
 	return policies, nil
@@ -336,7 +372,9 @@ func buildPolicies(options serveOptions) (interaction.Policies, error) {
 // falls back to silence-only endpointing. The system runs either way; it is
 // simply less alive without them, and that is the trade a deployment gets to
 // make rather than one the build makes for it.
-func applyPolicyModels(policies *interaction.Policies, options serveOptions) error {
+func applyPolicyModels(
+	policies *interaction.Policies, options serveOptions, governor *admission.Governor,
+) error {
 	var backchannel, projection, overlap bool
 	for _, name := range strings.Split(strings.ToLower(strings.TrimSpace(options.policies)), ",") {
 		switch strings.TrimSpace(name) {
@@ -363,6 +401,10 @@ func applyPolicyModels(policies *interaction.Policies, options serveOptions) err
 	decider, err := policymodel.New(policymodel.Config{
 		BaseURL: options.policyURL, Model: options.policyModel,
 		APIKey: os.Getenv(options.policyTokenEnv), GuidedChoice: options.policyGuided,
+		// Interactive: above speculative preparation, below the foreground
+		// continuation. A backchannel that arrives after the moment for it has
+		// passed is worse than no backchannel.
+		Governor: governor, Class: admission.ClassInteractive,
 	})
 	if err != nil {
 		return err
@@ -397,7 +439,9 @@ func applyPolicyModels(policies *interaction.Policies, options serveOptions) err
 	return nil
 }
 
-func buildCascade(options serveOptions, policies interaction.Policies) (binding.Binding, error) {
+func buildCascade(
+	options serveOptions, policies interaction.Policies, governor *admission.Governor,
+) (binding.Binding, error) {
 	fast, err := buildFast(options)
 	if err != nil {
 		return nil, fmt.Errorf("configure the fast provider: %w", err)
@@ -418,7 +462,7 @@ func buildCascade(options serveOptions, policies interaction.Policies) (binding.
 	if err != nil {
 		return nil, err
 	}
-	observers, err := buildObservers(options)
+	observers, err := buildObservers(options, governor)
 	if err != nil {
 		return nil, err
 	}
@@ -433,6 +477,7 @@ func buildCascade(options serveOptions, policies interaction.Policies) (binding.
 	return cascade.New(cascade.Config{
 		ClientToolTimeout: options.clientToolTimeout,
 		Observers:         observers, DefaultObservers: defaults, Tools: computer.specs,
+		Governor:      governor,
 		ConfirmPolicy: computer.policy,
 		// Every executed action is already a trajectory item with causal
 		// parents. This is the operational mirror of that, so an operator
@@ -569,7 +614,7 @@ func defaultObserverSet(configured string) ([]string, error) {
 	}
 }
 
-func buildObservers(options serveOptions) ([]perception.Factory, error) {
+func buildObservers(options serveOptions, governor *admission.Governor) ([]perception.Factory, error) {
 	set, err := perception.ParseObserverSet(options.observers)
 	if err != nil {
 		return nil, err
@@ -610,6 +655,9 @@ func buildObservers(options serveOptions) ([]perception.Factory, error) {
 	var narrator perception.Narrator
 	narrator, err = perception.NewNarrator(perception.NarratorConfig{
 		Vision: vision, Prompt: prompt, Label: label,
+		// Background: a description of the screen is worth having and never
+		// worth delaying a spoken turn for.
+		Governor: governor, Class: admission.ClassBackground,
 	})
 	if err != nil {
 		return nil, err
