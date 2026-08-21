@@ -23,6 +23,11 @@ openrealtime bench fdb --limit 4           # a suite against it
 | `bench tau-voice` | τ-Voice | tool-use success under voice, against a live environment |
 | `bench dynacu` | DynaCU | video observation and action grounding, as a release gate |
 
+Every suite here plays a recording at the system. For conversations where both
+sides are live — a support call, an interview, an argument over a large
+document — see [simulation.md](simulation.md), which connects two agents ear to
+mouth and checks what happened between them.
+
 ## Cells and pairing
 
 A run measures one **cell**: a complete configuration, including the factors

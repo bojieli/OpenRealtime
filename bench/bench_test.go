@@ -210,3 +210,40 @@ func TestTranscriptReadsAConversation(t *testing.T) {
 		t.Fatal("there is no audio after the conversation ended")
 	}
 }
+
+// A count rendered as a duration is not a smaller mistake than a wrong number:
+// it is a number that means nothing and looks like it means something.
+func TestDistributionsCarryTheirUnit(t *testing.T) {
+	result := bench.Result{
+		Suite: "units", Cell: bench.Reference(), Expected: 2,
+		Provenance: bench.Capture().Complete(),
+		Tasks: []bench.TaskOutcome{
+			{ID: "a", Completed: true, Passed: true, Metrics: map[string]float64{
+				"response_latency_ms": 120, "missed_turns": 2, "agent_cost_usd": 0.01,
+			}},
+			{ID: "b", Completed: true, Passed: true, Metrics: map[string]float64{
+				"response_latency_ms": 240, "missed_turns": 4, "agent_cost_usd": 0.03,
+			}},
+		},
+	}
+	result.Finish()
+
+	expected := map[string]string{
+		"response_latency_ms": "ms", "missed_turns": "count", "agent_cost_usd": "usd",
+	}
+	for metric, unit := range expected {
+		distribution, present := result.Summary.Distributions[metric]
+		if !present {
+			t.Fatalf("%s is missing from the summary", metric)
+		}
+		if distribution.Unit != unit {
+			t.Errorf("%s must be %q, got %q", metric, unit, distribution.Unit)
+		}
+	}
+	if formatted := result.Summary.Distributions["missed_turns"].Format(3); strings.Contains(formatted, "ms") {
+		t.Fatalf("a count must not be rendered as a duration, got %q", formatted)
+	}
+	if formatted := result.Summary.Distributions["response_latency_ms"].Format(180); formatted != "180 ms" {
+		t.Fatalf("a duration must carry its unit, got %q", formatted)
+	}
+}

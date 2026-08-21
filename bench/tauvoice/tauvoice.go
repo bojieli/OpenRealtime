@@ -120,6 +120,20 @@ type Config struct {
 	// UserModel is the simulator behind the person. It is part of the
 	// measurement, not an implementation detail, so it is recorded.
 	UserModel string
+	// UserModelURL points the simulator at an OpenAI-compatible endpoint.
+	// Setting it is what makes a run fully local: the caller, the agent, the
+	// recogniser, and the voice all become models on this machine, and the
+	// result stops depending on somebody else's API being up, priced, and
+	// unchanged.
+	UserModelURL string
+	// UserModelThinking leaves a reasoning model's thinking mode on. It is off
+	// by default because a user simulator that emits its deliberation into the
+	// conversation is playing a different part than the benchmark intends.
+	UserModelThinking bool
+	// HallucinationRetries is tau2's re-roll when it judges the simulator to
+	// have hallucinated. The check itself calls a model, so a run that is
+	// meant to be local sets it to zero.
+	HallucinationRetries int
 	// RunPrefix names the tau2 runs this cell produces. tau2 writes them under
 	// data/simulations/ in its own checkout, keyed by name, and resumes a run
 	// whose name already exists - which is how an interrupted 278-task cell
@@ -384,6 +398,8 @@ func (config *Config) runDomain(ctx context.Context, domain, runName string) ([]
 		"--speech-complexity", string(config.Condition),
 		"--tick-duration", fmt.Sprintf("%g", config.Cadence),
 		"--user-llm", config.UserModel,
+		"--user-llm-args", config.userModelArgs(),
+		"--hallucination-retries", fmt.Sprint(max(0, config.HallucinationRetries)),
 		"--voice-synthesis-provider", config.SynthesisProvider,
 	}
 	if config.SynthesisProvider == "fish_audio" {
@@ -457,6 +473,32 @@ func (config *Config) runDomain(ctx context.Context, domain, runName string) ([]
 			"but something after them failed:\n%s", waitErr, tail)
 	}
 	return outcomes, nil
+}
+
+// userModelArgs is the JSON tau2 passes through to the simulator's provider.
+//
+// It carries the endpoint when one is configured, which is how a local model
+// stands in for the hosted default, and it turns thinking off unless asked
+// otherwise - a caller who narrates their reasoning aloud is not the caller
+// the benchmark describes.
+func (config *Config) userModelArgs() string {
+	arguments := map[string]any{"temperature": 0.0}
+	if url := strings.TrimSpace(config.UserModelURL); url != "" {
+		arguments["api_base"] = url
+		// LiteLLM insists on a credential for an OpenAI-compatible provider
+		// even when the endpoint ignores it.
+		arguments["api_key"] = "local"
+	}
+	if !config.UserModelThinking {
+		arguments["extra_body"] = map[string]any{
+			"chat_template_kwargs": map[string]any{"enable_thinking": false},
+		}
+	}
+	encoded, err := json.Marshal(arguments)
+	if err != nil {
+		return `{"temperature":0.0}`
+	}
+	return string(encoded)
 }
 
 // simulationDir is where tau2 writes a named run.

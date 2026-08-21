@@ -11,20 +11,62 @@ import (
 	"strings"
 )
 
-// Distribution summarises a latency sample.
+// Distribution summarises a sample.
 //
 // It exists because a mean is not a latency claim. A system with a 200 ms mean
 // and a 4 s ninety-ninth percentile is a system people notice being slow, and
 // reporting the mean alone describes something nobody is using.
+//
+// The unit is carried rather than assumed. Suites report counts alongside
+// durations - turns taken, turns missed, calls made - and a percentile of a
+// count rendered as "2 ms" is not a smaller mistake than a wrong number, it is
+// a number that means nothing and looks like it means something.
 type Distribution struct {
 	Count int     `json:"count"`
-	Min   float64 `json:"min_ms"`
-	P50   float64 `json:"p50_ms"`
-	P90   float64 `json:"p90_ms"`
-	P95   float64 `json:"p95_ms"`
-	P99   float64 `json:"p99_ms"`
-	Max   float64 `json:"max_ms"`
-	Mean  float64 `json:"mean_ms"`
+	Unit  string  `json:"unit"`
+	Min   float64 `json:"min"`
+	P50   float64 `json:"p50"`
+	P90   float64 `json:"p90"`
+	P95   float64 `json:"p95"`
+	P99   float64 `json:"p99"`
+	Max   float64 `json:"max"`
+	Mean  float64 `json:"mean"`
+}
+
+// UnitOf infers a metric's unit from its name.
+//
+// Naming is the convention the suites already follow - a duration ends in _ms
+// - so the unit is derived from it rather than declared twice and allowed to
+// disagree with itself.
+func UnitOf(metric string) string {
+	switch {
+	case strings.HasSuffix(metric, "_ms"):
+		return "ms"
+	case strings.HasSuffix(metric, "_s"):
+		return "s"
+	case strings.HasSuffix(metric, "_usd"):
+		return "usd"
+	case strings.HasSuffix(metric, "_ratio"), strings.HasSuffix(metric, "_rate"):
+		return "ratio"
+	default:
+		return "count"
+	}
+}
+
+// Format renders one value with its unit, for a report a person reads.
+func (distribution Distribution) Format(value float64) string {
+	switch distribution.Unit {
+	case "ms":
+		return fmt.Sprintf("%.0f ms", value)
+	case "s":
+		return fmt.Sprintf("%.2f s", value)
+	case "usd":
+		return fmt.Sprintf("$%.4f", value)
+	case "ratio":
+		return fmt.Sprintf("%.1f%%", value*100)
+	default:
+		return fmt.Sprintf("%.3g", value)
+	}
 }
 
 // Summarise builds a distribution from milliseconds.
@@ -131,7 +173,9 @@ func (result *Result) Finish() {
 		}
 	}
 	for name, values := range samples {
-		summary.Distributions[name] = Summarise(values)
+		distribution := Summarise(values)
+		distribution.Unit = UnitOf(name)
+		summary.Distributions[name] = distribution
 	}
 	if summary.Completed > 0 {
 		summary.PassRate = float64(summary.Passed) / float64(summary.Completed)

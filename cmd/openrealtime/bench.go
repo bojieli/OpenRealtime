@@ -281,8 +281,10 @@ func runFDBench(arguments []string, output io.Writer) error {
 		if !present {
 			continue
 		}
-		fmt.Fprintf(output, "  %-24s p50 %.0f  p95 %.0f  max %.0f\n",
-			name, distribution.P50, distribution.P95, distribution.Max)
+		fmt.Fprintf(output, "  %-24s p50 %-8s p95 %-8s max %s\n", name,
+			distribution.Format(distribution.P50),
+			distribution.Format(distribution.P95),
+			distribution.Format(distribution.Max))
 	}
 	if reportErr := result.Reportable(); reportErr != nil {
 		fmt.Fprintf(output, "\nNOT REPORTABLE: %v\n", reportErr)
@@ -458,6 +460,9 @@ func runTauVoice(arguments []string, output io.Writer) error {
 		ttsURL     string
 		ttsModel   string
 		ttsVoice   string
+		userURL    string
+		thinking   bool
+		halluRetry int
 		runPrefix  string
 		out        string
 		trials     int
@@ -476,6 +481,12 @@ func runTauVoice(arguments []string, output io.Writer) error {
 	flags.StringVar(&domain, "domain", "", "restrict to one domain (airline, retail, telecom)")
 	flags.StringVar(&condition, "condition", "control", "speech condition: control, regular, or an ablation")
 	flags.StringVar(&userModel, "user-model", "gpt-4.1", "model behind the simulated caller")
+	flags.StringVar(&userURL, "user-model-url", "",
+		"OpenAI-compatible endpoint for the caller's model; set it to run fully locally")
+	flags.BoolVar(&thinking, "user-model-thinking", false,
+		"leave a reasoning caller's thinking mode on")
+	flags.IntVar(&halluRetry, "hallucination-retries", 0,
+		"tau2 re-rolls when it judges the caller to have hallucinated; the check calls a model")
 	flags.StringVar(&tokenEnv, "token-env", "OPENREALTIME_TOKEN",
 		"environment variable holding the bearer token the agent presents")
 	flags.StringVar(&synthesis, "synthesis", "fish_audio",
@@ -515,6 +526,7 @@ func runTauVoice(arguments []string, output io.Writer) error {
 	config := tauvoice.Config{
 		Tau2Dir: tau2Dir, Endpoint: endpoint, Model: model, Domain: domain,
 		Condition: speech, Trials: trials, Limit: limit, UserModel: userModel,
+		UserModelURL: userURL, UserModelThinking: thinking, HallucinationRetries: halluRetry,
 		Cadence: cadence, Timeout: timeout, Cell: cell, Python: python, TokenEnv: tokenEnv,
 		SynthesisProvider: synthesis, SynthesisEndpoint: ttsURL,
 		SynthesisModel: ttsModel, SynthesisVoice: ttsVoice,
