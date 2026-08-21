@@ -4,15 +4,16 @@ Import `github.com/bojieli/OpenRealtime/api/v1`. The semantic import path and
 `v1.Version == "1.0.0"` freeze the component contract independently from the
 experimental engine packages.
 
-Plan version 0.2 includes an implemented experimental canonical-trajectory
-continuation design, but it does not change this API. The existing fast-decision
-and deliberation roles remain the supported M4 boundary. Replacing them requires
-a separate `api/v2` contract and migration guide after live validation. This is
-a Go import-path version for OpenRealtime components; it does not imply an
-OpenAI Realtime protocol revision.
+This is a Go import-path version for OpenRealtime components; it does not imply
+an OpenAI Realtime protocol revision, and it is separate from the protocol
+versions in [protocol/openrealtime-1.md](protocol/openrealtime-1.md) and
+[sidecar-protocol-1.md](sidecar-protocol-1.md).
 
-`docs/api-v2-proposal.md` records what the M10 pilot showed this contract
-cannot express. It is a proposal only; nothing in it is implemented.
+The v1.0 architecture introduced its own extension points - `Binding`,
+`Observer`, `Narrator`, `Vision`, `Decider`, and `computeruse.Surface` - which
+carry the same promise from v1.0 without living in this package. They are new
+interfaces in new packages rather than changes here, which is what kept this
+contract untouched through the restructuring.
 
 ## Compatibility promise
 
@@ -23,9 +24,9 @@ meaning; or add a method to an existing v1 interface. Such a change requires
 `api/v2` and a migration guide. Security fixes may reject inputs that were
 always invalid under the documented invariants.
 
-The unversioned `engine`, scheduler, experiment, and internal packages remain
-research surfaces and do not carry this promise. Provider implementations
-should depend on `api/v1`, not the experimental packages.
+Packages outside the versioned extension points do not carry this promise.
+Provider implementations should depend on `api/v1` and on the documented
+extension interfaces, not on runtime internals.
 
 ## Provider roles
 

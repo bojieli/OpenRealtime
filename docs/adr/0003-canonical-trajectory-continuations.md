@@ -164,4 +164,5 @@ runs remain published, including a wrong-call recovery that exposed the old
 coarse scorer and a six-call identifier loop stopped by the invocation bound.
 These are exploratory implementation results, not the comparative-study
 conclusion. See
-[live-cascade.md](../live-cascade.md).
+[architecture.md](../architecture.md). The second cognition boundary was added
+later; see [ADR-0006](0006-two-cognition-boundaries.md).

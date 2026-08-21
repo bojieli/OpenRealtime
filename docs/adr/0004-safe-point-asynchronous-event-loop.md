@@ -89,4 +89,10 @@ specify how upstream producers react to returned backpressure.
   protocol.
 
 The complete operational contract is in
-[safe-point-event-loop.md](../safe-point-event-loop.md).
+[architecture.md](../architecture.md).
+
+Amended at v1.0: the loop gained the state this decision described but could
+not represent. Committing an event and acting on it are now separate steps, a
+deferral records what it is waiting for, and every deferral condition declares
+the transition that releases it. It also gained a parallel branch, so a quick
+question can be answered without waiting for work in flight.

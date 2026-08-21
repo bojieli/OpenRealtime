@@ -1,310 +1,126 @@
 # OpenRealtime
 
-**Microturn Realtime Intelligence Engine**
+> An open, self-hostable implementation of the OpenAI Realtime API that runs
+> any voice stack, adds a background reasoner, and extends the protocol —
+> minimally and compatibly — to realtime video and computer use.
 
-OpenRealtime is an open research project investigating a specific question:
+```sh
+go build -o openrealtime ./cmd/openrealtime
+./openrealtime serve
+./openrealtime probe
+```
 
-> Can an incremental, modular speech system combine the responsiveness of native realtime interaction with the intelligence of a high-reasoning, tool-using agent?
+That is a working `/v1/realtime` on localhost, running fully locally, with
+nothing to sign up for.
 
-The project is not intended to be another configurable ASR–LLM–TTS wrapper. Its primary outputs are a falsifiable research program, a reproducible benchmark suite, an instrumented reference engine, and evidence about when microturn scheduling works—and when it does not.
+## What it is
 
-The working idea has two orthogonal parts. Microturn scheduling lets streaming ASR, language generation, and TTS advance before a VAD-defined turn has ended. Heterogeneous interleaved thinking lets a low-latency model speak first and a higher-reasoning model continue the same canonical trajectory—including earlier reasoning, audible assistant content, tool calls, and tool results. Together they target high responsiveness and high intelligence without treating fast and slow models as separate agents.
+**It is the Realtime API.** An official client connects unchanged. Every event
+in both directions is validated against the pinned OpenAI schema on every
+session, because a compatibility claim that is not continuously checked is a
+compatibility claim that decays.
 
-## Target architecture
+**It runs any voice stack.** A cascade of recogniser, language model, and
+synthesiser; a speech-to-speech Omni model; a full-duplex interaction model; or
+a remote Realtime endpoint. Four bindings, one runtime.
+
+**It makes any of them smarter.** A background reasoner shares one trajectory
+with the foreground model — reasoning and calling tools while the voice keeps
+talking. A single-model server cannot do this by construction: there is no
+second model, and no shared log to put one on.
+
+**It sees and acts.** The OpenRealtime Protocol adds realtime video and
+computer use over the same session, as a strict backward-compatible superset:
+three events and two object extensions, on a base protocol with 66 wire names.
+
+## The idea
+
+Most of what makes a voice agent feel good is not in any of its models. A
+recogniser knows nothing about turn-taking, a language model knows nothing
+about the conversation's timing, and a synthesiser knows nothing at all. So
+this system separates **what happens** from **when it happens**, and makes the
+second one a set of named, swappable policies:
 
 ```text
-continuous audio → incremental perception → microturn/event scheduler
-                                             │
-                                             ▼
-                                  one canonical trajectory
-                                  ├── fast continuation
-                                  ├── slow continuation
-                                  ├── fast tool proposals (never executable)
-                                  ├── slow tool calls/results
-                                  └── assistant content → streaming TTS
+Perception  →  gate the world into sparse, persistent text
+Cognition   →  read the log, append to the log
+Action      →  pace commitments back out into the world
+Interaction →  decide when each of those happens
 ```
 
-A 200 ms tick is a decision opportunity, not a command to restart every model. ASR and model sessions retain incremental state; event arrivals such as recognition revisions, user interruption, tool completion, or slow continuation may trigger work between ticks. Fast and slow inference append successive segments to one trajectory rather than exchanging an advisory summary. Both see the real tool schemas: fast calls become non-executable proposals, while only slow calls reach the tool runtime.
+Two rules define the division of labour between the models:
 
-Concurrent sources do not mutate that trajectory directly. One safe-point
-event loop commits structured event batches, model continuations, and complete
-tool-result batches with versioned atomic transactions. Routine events wait for
-the next boundary; a trusted typed interruption requests cancellation. No
-keyword router or model-authored goal/status machine controls the transition.
+> **The fast provider cannot call tools. The slow provider cannot speak.**
 
-The comparative study keeps three categories distinct: endpoint/VAD-triggered
-online speech models, persistent short-block interaction models such as Moshi
-or Thinking Machines Lab Interaction Models, and this modular microturn
-cascade. GPT-Live is the principal product-level continuous-voice comparison;
-LiveKit is not used as its proxy. Matching one latency number is not treated as
-architectural parity; tool quality, overlap, prosody, repair, compute, and tail
-behavior remain part of the comparison.
+Fast answers the question the user actually asked, immediately. Slow reasons
+and acts, concurrently, and a fast continuation voices what it produced. Both
+are properties of the provider descriptor rather than routing decisions,
+enforced where output commits — so a fast provider's tool call is recorded as a
+non-executable proposal and can never become an effect.
 
-## Status
+## Bindings
 
-M0 through M7 are complete. The stable component API is v1.0.0 and the complete
-OpenAI protocol/provider conformance suite passes.
-The repository contains a generated conformance layer for every event in the
-pinned OpenAI Realtime OpenAPI specification, deterministic 24 kHz PCM replay, an original
-redistributable audio fixture, and causal trace validation. The core Go build
-has no Python dependency; optional live Qwen and SGLang-Omni model sidecars use
-their own Python environments. M1 adds production-shaped component contracts, a
-deterministic endpointed control, exact stage/queue reconciliation, and a
-self-contained timeline. Its simulated timings are instrumentation evidence,
-not deployed performance claims.
+| Binding | Perception | Fast | Slow | Action | Floor |
+| --- | --- | --- | --- | --- | --- |
+| `cascade` | engine | engine | engine | engine | engine |
+| `omni` | model | model | **engine** | model | engine |
+| `duplex` | model | model | **engine** | model | model |
+| `upstream` | remote | remote | **engine** | remote | remote or engine |
 
-M2 adds fixed and revision-triggered schedulers, immutable stable-prefix
-semantics, explicit candidate supersession/cancellation, stale-result rejection,
-and paired latency attribution against B0.
+The slow column never varies — that is the whole differentiator. See
+[bindings](docs/bindings/README.md).
 
-M3 adds streaming speech chunks, bounded prepared/queued horizons, irreversible
-played history, explicit invalidation repair, continuous input during output,
-and schema-valid OpenAI cancellation/clear/truncation traces.
+## Transports
 
-M4 adds goal/revision-scoped asynchronous deliberation, truthful progress
-claims, cancellation and failure handling, stale callback rejection, and a
-symbolic latency/quality/compute frontier. This remains a reproducible
-historical baseline. The plan now targets a canonical-trajectory continuation
-interface in which fast and slow models generate successive portions of one
-rollout rather than separate foreground decisions and slow advice.
+WebSocket is the only entrance to a session. A WebRTC adapter and a LiveKit
+agent participant sit above it and speak it like any other client, so a browser
+gets echo cancellation, jitter buffering, and loss concealment without the
+server growing a second way in. If an adapter could express something a plain
+WebSocket client cannot, that would be a defect — and there is a test that says
+so. See [transports](docs/transports.md).
 
-M5 adds the OpenAI Translation session lifecycle, 200 ms PCM16 translation
-frames, append-only simultaneous-translation policies, and a GA Realtime rapid
-audio game. Both key-free demonstrations publish latency, symbolic task quality,
-failures, compute units, and protocol-valid causal traces.
+## Safety
 
-M6 adds deterministic paired-bootstrap analysis, explicit comparability groups,
-evidence-scoped claims and counterexamples, a prospective human-study protocol,
-and a SHA-256-verified `openrealtime-benchmarks-v0.1.0` release. Native and
-participant comparisons are honestly marked not run.
+- A fast provider's tool call is structurally non-executable, checked again at
+  the point of effect.
+- Confirmation is a developer's declaration per tool, never an inference, and
+  an unattended deployment refuses what it cannot get authorised.
+- Screen text is data forever: the log refuses to record it as user speech, and
+  providers see it fenced with a standing instruction that it is a quotation.
+- Computer-use actions are bounded by a declared target and a declared
+  coordinate space. There is no ambient-desktop option.
 
-M7 freezes `api/v1`, ships versioned reference adapters and a maintained direct
-consumer example, and audits all 133 OpenAI profile/direction definitions plus
-their 178-definition schema closure. The suite verifies 66 unique wire names,
-strict direction/profile/required-field faults, provider cancellation, revision
-and PCM continuity, and deliberation closure.
+`computeruse/injection` is the release gate: a compromised screen, both models
+taken in, a dangerous tool declared, and nothing happens. See
+[safety](docs/safety.md).
 
-M8/M9 are in progress. The repository now has experimental stateful Qwen3-ASR,
-local vLLM Qwen, Gemini 3.5 Flash, and Fish S2-Pro adapters; a 50 ms scheduler
-with 200 ms provider buffering; exact-match latest-revision fast→slow private
-preparation; a content-independent slow-launch pacer whose wait is bypassed by
-exact commit; proposal-versus-execute tool authority; canonical continuation;
-exact tool-trajectory scoring; and a priority/capacity admission governor. A
-single-owner asynchronous event loop now adds source-versus-commit provenance,
-typed interruption, stale-prefix rejection, atomic external tool results, and
-cancellation-aware audible-history projection. The post-freeze gateway also has
-an opt-in typed stable-partial commit policy and an append-only audible-repair
-lifecycle for played content invalidated by a later ASR revision. A
-standard `/v1/realtime` gateway now composes the live services, resumes slow
-directly from standard function results, bounds fast speech as a micro-turn,
-and emits paced 100 ms Fish audio. It passes 12/12 selected cases in the pinned
-official τ provider suite. In a one-task exploratory τ airline pair, the
-bounded/superseding media condition retained 2/2 required tool reads, improved
-reward from 0 to 1, and reduced duration by 29.5%; this is not a full benchmark
-score. A
-real co-located audio-to-audio tool trial committed and replayed both prepared
-stages, had zero additional endpoint-time fast delay, made one fast proposal
-and one independently authorized slow call, and returned the correct grounded
-answer. Same-fixture endpointed and fast-only controls, exact call/result
-scoring, failed runs, and discarded work remain published. The single-sample
-controls expose stage movement, and a one-second pacing ablation reduced
-speculative slow launches from 43 to 12 once without changing exact task
-quality. These runs do not establish a latency/cost distribution or
-native-model parity. See the
-[live cascade design and evidence](docs/live-cascade.md).
+## Documentation
 
-The gateway exposes two independent closed policies. Preparation policy
-`continuous` admits private latest-wins fast→slow work on typed changed ASR
-revisions; preparation policy `endpoint-only` admits no private continuation
-work before server VAD finalization. Canonical observation policy
-`endpoint-only` is the compatibility default and admits only the final ASR
-observation. The post-freeze `stable-partial` observation policy additionally
-promotes only changed, non-empty provider-typed `StableText`; unstable suffixes
-never become canonical. A promoted revision causally supersedes the previous
-one, cooperatively cancels older provider/media work, and an identical final
-transcript does not rerun cognition. Tools still execute only from committed
-slow calls. These internal policies add no Realtime wire event or
-model-authored routing decision.
+| | |
+| --- | --- |
+| [Quickstart](docs/quickstart.md) | run it, check it, connect to it |
+| [Architecture](docs/architecture.md) | the four subsystems and why they are separate |
+| [Bindings](docs/bindings/README.md) | which voice stack, and what each one owns |
+| [The OpenRealtime Protocol](docs/protocol/openrealtime-1.md) | normative spec for video, observations, and computer use |
+| [The sidecar protocol](docs/sidecar-protocol-1.md) | the process boundary for models not written in Go |
+| [Transports](docs/transports.md) | WebSocket, WebRTC, LiveKit |
+| [Safety](docs/safety.md) | authority, confirmation, injection, blast radius |
+| [Operations](docs/operations.md) | health, metrics, logs, failure behaviour, support policy |
+| [Measurement](docs/measurement.md) | what is measured, and what is claimed |
 
-The frozen M8–M10 study uses canonical `endpoint-only` observations. The
-`stable-partial` mode and its played-audio repair path are post-freeze,
-opt-in, and currently unmeasured; no running benchmark result is attributed to
-them.
+## What this claims, and what it does not
 
-M10 full-benchmark execution is in progress. The first long τ control launched
-before the executable freeze is retained as pilot evidence and is excluded
-from causal comparisons. When it finishes, the queue reproduces the gateway
-from source revision `3048160ee444c69941d6d4e12ddc47cea789afd0`, verifies
-executable SHA-256
-`2168fe5a7b5dbef6051a6983a9148f0cc84434a64284b59cfd699f491a3d5df2`,
-requires continuous exclusive GPU process-ancestry evidence, and starts the
-publishable canonical baseline. A transient foreign compute process invalidates
-the entire scored invocation rather than becoming unrecorded latency noise.
-That condition runs all 278
-public τ-Voice tasks in both control and regular speech, then all 498
-FDB v1.5 overlap recordings and all 100 released FDB v3 tool-use recordings.
-The FDB runners use the standard OpenAI Realtime adapter against the local
-endpoint; FDB v3 sends real function-call outputs and waits for the terminal
-post-result response. A subsequent complete paired τ matrix changes only
-Qwen3-ASR 0.6B to 1.7B, motivated by a preserved identifier-transcription
-failure. A final queue runs the separate FD-Bench release: 13 source archives
-expanding to 21 audio conditions, 6,147 released conversations, 77.2184 hours
-of input, upstream-compatible 16 kHz timestamps, and exact Silero-VAD settings.
-After that corpus completes, a paired full τ matrix changes only the fast
-continuation from local no-thinking Qwen to Gemini 3.5 Flash at minimal
-thinking, retaining Gemini high-thinking slow continuation. No incomplete cell
-is reported as a benchmark score. A strict report queue then proves exact
-task/trial populations and invokes the pinned upstream scorers. Behind that
-gate, complete 50/100/400/800 ms matrices isolate trigger cadence around the
-200 ms baseline, followed by a complete medium-versus-high Gemini slow-effort
-comparison. Native architectural context names GPT-Live and Thinking Machines
-Lab Interaction Models; neither is relabeled as an executed local cell without
-a public callable endpoint. Complete content-only and independent context
-controls then test the canonical handoff using typed trajectory projections;
-they remain one-store benchmark controls, not production routing modes. The
-revision-event and bounded adaptive-ASR populations follow, then a complete
-endpoint-only preparation population isolates the benefit of pre-endpoint
-cognition with the same models, prompts, tools, VAD, and post-endpoint path.
-The terminal queue then evaluates
-[`benchmarks/full-study-v1.json`](benchmarks/full-study-v1.json) with a
-fail-closed reporter. It requires all 14 frozen tau-Voice matrix reports, the
-paired preparation report, the complete FDB v1.5 summary, both official FDB v3
-evaluations, and all 21 FD-Bench timing reports. It emits a benchmark-specific
-evidence panel only after exact population, hash, evaluator-coverage, and
-terminal-failure checks pass; it does not synthesize a private score across
-incommensurate suites. Every matrix declares the same gateway source and
-executable hash. Every completed τ invocation and external run context must
-prove the same gateway executable and unchanged start-to-final process
-identity; a mixed-runtime population is rejected.
+v1.0 ships on **functional completeness plus verified correctness**. The
+README says what the system *supports* and what has been *verified*. It makes
+no claim that one configuration beats another.
 
-## Start here
+Comparative claims are gated separately, on the [measurement
+program](docs/measurement.md), which runs continuously after launch and
+publishes each cell as it completes. Shipping before the most interesting
+claims are provable is a deliberate trade: a system nobody can run is not
+evidence of anything.
 
-Read [PLAN.md](PLAN.md) for the complete research questions, architecture,
-experimental design, milestones, and contribution roadmap. The focused
-[canonical trajectory design](docs/canonical-trajectory.md) specifies how
-microturn timing, asynchronous events, fast/slow continuation, tools, and
-speech commitment fit together without changing the external Realtime wire
-protocol. The normative synchronization state machine is in the
-[safe-point event-loop design](docs/safe-point-event-loop.md).
+## Licence
 
-To reproduce the M0 timing trace from a clean checkout:
-
-```bash
-./scripts/reproduce_m0.sh
-```
-
-To reproduce the 30-trial M1 endpointed reference condition:
-
-```bash
-./scripts/reproduce_m1.sh
-```
-
-To reproduce the paired M2 cadence ablation:
-
-```bash
-./scripts/reproduce_m2.sh
-```
-
-To reproduce the M3 duplex and repair scenarios:
-
-```bash
-./scripts/reproduce_m3.sh
-```
-
-To reproduce the M4 fast/slow comparison:
-
-```bash
-./scripts/reproduce_m4.sh
-```
-
-To reproduce the M5 demonstrations:
-
-```bash
-./scripts/reproduce_m5.sh
-```
-
-To reproduce and verify the M6 benchmark release:
-
-```bash
-./scripts/reproduce_m6.sh
-```
-
-To reproduce the complete stable v1.0.0 release:
-
-```bash
-./scripts/reproduce_m7.sh
-```
-
-These scripts create isolated build artifacts, validate every emitted message
-against the official protocol schemas, check trace causality, compare the
-result byte-for-byte with the checked-in golden files, and run race, test,
-vet, and formatting gates. See
-[docs/reproducibility.md](docs/reproducibility.md) for the expected output and
-manual commands.
-
-## OpenAI Realtime compatibility
-
-`protocol/openai` is generated from a pinned revision of OpenAI's official
-OpenAPI 3.1 specification. It covers GA Realtime, transcription, translation,
-and legacy beta event profiles. Wire messages are never renamed or wrapped;
-the optional OpenRealtime research trace stores the complete message in a
-separate timing envelope.
-
-```bash
-go run ./cmd/openrealtime protocol inventory
-go run ./cmd/openrealtime protocol validate \
-  --profile realtime --direction client path/to/events.jsonl
-```
-
-See [docs/openai-realtime-compatibility.md](docs/openai-realtime-compatibility.md)
-for precise coverage and the update policy.
-
-Stable adapter authors should start with [docs/api-v1.md](docs/api-v1.md) and
-the compiled [v1 reference example](examples/v1/reference/main.go).
-
-## External live-provider benchmark
-
-The no-Python `cmd/livebench` runner streams pinned Full-Duplex-Bench v1.5
-audio at wall-clock speed through exact OpenAI, Gemini, or explicitly cascaded
-Groq profiles. It produces aligned WAVs, hashes, secret-free traces, resumable
-atomic manifests, offline rescoring, and paired bootstrap summaries.
-
-The 2026-08-17–18 run completed the entire 498-trial official overlap
-population plus an 80-trial paired sensitivity cell on Gemini 3.1 Flash Live,
-with 578 unique outputs and no terminal failure. GPT-4o and Groq live cells are
-marked unavailable with their observed reason; historical GPT-4o paper results
-remain separate from local measurements. Pinned published FDB-v3 tool-use
-tables add context without being represented as local runs. GPT-Live—not
-LiveKit—is the continuous-voice comparison target. Read the
-[live-provider report](docs/research/live-provider-benchmark-2026-08.md) and
-[external benchmark instructions](benchmarks/external/README.md).
-
-τ-Voice is pinned as the primary M10 joint intelligence/interaction benchmark.
-Its standard OpenAI adapter targets the implemented local endpoint, and Fish
-Audio replaces ElevenLabs for local caller synthesis in a verified pinned
-patch. The gateway passes the 12 selected cases in the official upstream
-OpenAI-provider suite. One paired airline-task smoke improved reward from 0 to
-1 while reducing duration by 29.5%; it is exploratory evidence, not a complete
-τ-Voice score. See the [τ-Voice evaluation plan](benchmarks/tau-voice/README.md).
-The capability-by-capability comparison with GPT-Live and Thinking Machines
-Lab is in the
-[interaction-model audit](docs/research/gpt-live-tml-capability-audit-2026-08.md).
-
-## Principles
-
-- Research claims must be measurable and falsifiable.
-- The 200 ms microturn is an experimental reference point, not a universal constant.
-- A trigger opens an opportunity; it does not require stateless ASR, LLM, and TTS reinference.
-- Fast and slow models are compute phases of one agent and must consume one canonical trajectory.
-- Tool capability awareness is shared even when execution authority is restricted to the slow continuation.
-- Latency, interaction quality, intelligence, cost, and failure behavior must be evaluated together.
-- Native speech-to-speech models are legitimate baselines and optional components, not opponents to be dismissed.
-- Provider adapters exist to support experiments; model aggregation is outside the project scope.
-- Reproducibility and inspectable timing traces are part of the product.
-
-## License
-
-Code is licensed under Apache-2.0, documentation under CC BY 4.0, and original
-project fixtures under CC0-1.0. Third-party benchmark data is not redistributed.
-See [LICENSES.md](LICENSES.md) and
-[ADR-0002](docs/adr/0002-licensing-and-artifact-provenance.md).
+Apache 2.0. See [LICENSE](LICENSE), [LICENSES.md](LICENSES.md) for dependency
+provenance, and [CONTRIBUTING.md](CONTRIBUTING.md).

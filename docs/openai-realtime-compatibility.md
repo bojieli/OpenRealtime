@@ -7,20 +7,29 @@
 - Generated definitions: 133 across four profiles and two directions
 - Unique wire event names: 66
 
-This document describes schema and codec coverage. The repository also contains
-a focused live `/v1/realtime` server for the canonical local cascade. It is a
-strict, schema-validated subset rather than an implementation of every decoded
-Realtime feature; unsupported standard client events return a standard error.
+This document describes schema and codec coverage. The server implements a
+strict, schema-validated subset rather than every decoded Realtime feature;
+an unsupported standard client event returns a standard error and the session
+continues.
+
+Every event in both directions is validated against this pinned schema on every
+session by default (`-validate-wire`). A compatibility claim that is not
+continuously checked is a compatibility claim that decays, so the check runs in
+production rather than only in tests.
+
+The OpenRealtime Protocol extends this surface additively and only after
+negotiation; see [protocol/openrealtime-1.md](protocol/openrealtime-1.md). A
+client that never mentions it gets an ordinary Realtime session, and the server
+never volunteers the key.
 
 ## Internal synchronization does not change the wire
 
-The experimental canonical trajectory and safe-point event loop add no client
-or server event types. Asynchronous transcription, response cancellation,
+The canonical trajectory and the safe-point event loop add no client or server
+event types. Asynchronous transcription, response cancellation,
 output-buffer clearing, item truncation, ordinary function calls/results, and
-audio/transcript deltas already provide the observable wire behavior. Fast and
-slow phase identity, reasoning lifecycle, event priority, trajectory versions,
-preparation fingerprints, observation supersession, and audible-repair
-obligations remain internal trace data.
+audio/transcript deltas already provide the observable wire behavior. Fast and slow phase identity, reasoning
+lifecycle, event priority, trajectory versions, observation supersession, and
+audible-repair obligations remain internal.
 
 In particular, an input transcription may complete independently of response
 events, so the internal runtime correlates it by item/event identity instead of
