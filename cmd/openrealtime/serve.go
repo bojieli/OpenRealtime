@@ -24,6 +24,7 @@ import (
 	"github.com/bojieli/OpenRealtime/asrbuffer"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/cascade"
+	"github.com/bojieli/OpenRealtime/binding/clientcalls"
 	"github.com/bojieli/OpenRealtime/binding/duplex"
 	"github.com/bojieli/OpenRealtime/binding/omni"
 	"github.com/bojieli/OpenRealtime/binding/sidecarbinding"
@@ -114,6 +115,8 @@ type serveOptions struct {
 	sidecarCommand string
 	sidecarAddress string
 	sidecarFloor   string
+
+	clientToolTimeout time.Duration
 }
 
 func runServe(arguments []string, output io.Writer) error {
@@ -182,6 +185,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.BoolVar(&options.policyGuided, "policy-guided-choice", true, "ask the policy server to constrain decoding to the enumerated options")
 	flags.StringVar(&options.sidecarCommand, "sidecar", "", "command that runs the model sidecar for the omni and duplex bindings")
 	flags.StringVar(&options.sidecarAddress, "sidecar-address", "", "connect to a running sidecar as tcp:host:port or unix:/path")
+	flags.DurationVar(&options.clientToolTimeout, "client-tool-timeout", clientcalls.DefaultTimeout,
+		"how long a client has to return a result for a tool it executes; a negative value waits forever")
 	flags.StringVar(&options.sidecarFloor, "floor", "", "who decides endpoints: engine or model; empty selects the binding's default")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
@@ -394,7 +399,8 @@ func buildCascade(options serveOptions, policies interaction.Policies) (binding.
 		return nil, err
 	}
 	return cascade.New(cascade.Config{
-		Observers: observers, Tools: tools,
+		ClientToolTimeout: options.clientToolTimeout,
+		Observers:         observers, Tools: tools,
 		Perception: func() (v1.PerceptionProvider, error) {
 			recogniser, err := qwenasr.New(qwenasr.Config{
 				BaseURL: options.asrURL, Model: options.asrModel,
@@ -425,6 +431,7 @@ func buildUpstream(options serveOptions) (binding.Binding, error) {
 		URL: options.upstreamURL, Model: options.upstreamModel,
 		Token: os.Getenv(options.upstreamTokenEnv), Slow: slow,
 		SlowMaxTokens: options.slowTokens, AgentInstruction: options.instruction,
+		ClientToolTimeout: options.clientToolTimeout,
 	})
 }
 
@@ -610,6 +617,7 @@ func buildSidecarBinding(options serveOptions, name string) (binding.Binding, er
 			},
 		},
 		Instructions: options.instruction, Slow: slow, SlowMaxTokens: options.slowTokens,
+		ClientToolTimeout: options.clientToolTimeout,
 	}
 	floor := strings.ToLower(strings.TrimSpace(options.sidecarFloor))
 	switch name {

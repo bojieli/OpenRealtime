@@ -159,15 +159,9 @@ func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunRes
 		remote = append(remote, call)
 	}
 	if len(remote) > 0 {
-		runtime.stateMu.Lock()
-		pending := &pendingInvocation{results: make(map[string]trajectory.ToolResult)}
-		for _, call := range result.ToolCalls {
-			pending.calls = append(pending.calls, call)
-			runtime.callOwner[call.CallID] = result.InvocationID
-			runtime.callNames[call.CallID] = call.Name
+		if err := runtime.clientCalls.Track(result.InvocationID, result.ToolCalls); err != nil {
+			return false, err
 		}
-		runtime.pending[result.InvocationID] = pending
-		runtime.stateMu.Unlock()
 		if err := runtime.sink.ToolCalls(ctx, binding.ToolCallEvent{
 			InvocationID: result.InvocationID, Calls: remote,
 		}); err != nil {
@@ -182,13 +176,7 @@ func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunRes
 		return false, err
 	}
 	if len(remote) > 0 {
-		runtime.stateMu.Lock()
-		if pending := runtime.pending[result.InvocationID]; pending != nil {
-			for _, one := range results {
-				pending.results[one.CallID] = one
-			}
-		}
-		runtime.stateMu.Unlock()
+		runtime.clientCalls.Hold(result.InvocationID, results)
 		return false, nil
 	}
 	if err := runtime.engine.AppendToolResults(result.InvocationID, results); err != nil {
@@ -200,53 +188,34 @@ func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunRes
 // ToolResult accepts a client-executed result for a call the background
 // reasoner issued.
 func (runtime *runtime) ToolResult(_ context.Context, result trajectory.ToolResult) error {
-	if strings.TrimSpace(result.CallID) == "" {
-		return errors.New("a tool result requires a call ID")
-	}
-	runtime.stateMu.Lock()
-	invocationID, known := runtime.callOwner[result.CallID]
-	if !known {
-		runtime.stateMu.Unlock()
-		return fmt.Errorf("tool result references unknown call %q", result.CallID)
-	}
-	pending := runtime.pending[invocationID]
-	if pending == nil {
-		runtime.stateMu.Unlock()
-		return fmt.Errorf("tool result references a completed invocation %q", invocationID)
-	}
-	if _, duplicate := pending.results[result.CallID]; duplicate {
-		runtime.stateMu.Unlock()
-		return fmt.Errorf("duplicate tool result for call %q", result.CallID)
-	}
-	result.Name = runtime.callNames[result.CallID]
-	pending.results[result.CallID] = result
-	complete := len(pending.results) == len(pending.calls) && !pending.dispatched
-	var ordered []trajectory.ToolResult
-	if complete {
-		pending.dispatched = true
-		for _, call := range pending.calls {
-			ordered = append(ordered, pending.results[call.CallID])
-		}
-	}
-	runtime.stateMu.Unlock()
-	if !complete {
-		return nil
-	}
+	return runtime.clientCalls.Result(result)
+}
+
+// commitToolResults appends a batch every call in which now has a result,
+// whether the client answered them or the deadline did.
+func (runtime *runtime) commitToolResults(invocationID string, results []trajectory.ToolResult) error {
 	_, err := runtime.coordinator.Submit(eventloop.Event{
 		Type: "tool.results", Source: "client", Channel: "tool",
 		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindToolResult,
-		InvocationID: invocationID, ToolResults: ordered,
+		InvocationID: invocationID, ToolResults: results,
 	})
-	if err != nil {
-		return err
+	return err
+}
+
+// reportUnanswered tells the client what its own silence cost. The model
+// already knows - it has results saying the calls failed - and the client is
+// the one part of the system that would otherwise never find out that the work
+// it was asked for never came back.
+func (runtime *runtime) reportUnanswered(invocationID string, unanswered []trajectory.ToolCall) {
+	names := make([]string, 0, len(unanswered))
+	for _, call := range unanswered {
+		names = append(names, call.Name)
 	}
-	runtime.stateMu.Lock()
-	delete(runtime.pending, invocationID)
-	for _, call := range pending.calls {
-		delete(runtime.callOwner, call.CallID)
-	}
-	runtime.stateMu.Unlock()
-	return nil
+	runtime.sink.Failed(runtime.ctx, binding.ErrorEvent{
+		Code: "tool_result_timeout",
+		Message: fmt.Sprintf("invocation %s: no result for %s, and the call has been failed",
+			invocationID, strings.Join(names, ", ")),
+	})
 }
 
 func (runtime *runtime) latestRevision(batch eventloop.Batch) uint64 {

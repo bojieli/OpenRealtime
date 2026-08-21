@@ -106,6 +106,18 @@ than existing beside it.
   does not exit after goodbye is killed rather than left holding a GPU.
 - **A client sends a malformed event.** It gets an `error` and the session
   continues. A bad event is a client mistake, not a connection failure.
+- **A client never returns a tool result.** The Realtime protocol puts tool
+  execution on the client, so between emitting a call and receiving its result
+  the session is waiting on something it does not control. After
+  `-client-tool-timeout` (two minutes by default, matching the provider request
+  timeout) the unanswered calls are failed, the batch commits, and the client
+  gets a `tool_result_timeout` error. Without the deadline that branch of the
+  conversation never advances again and nothing says so.
+
+  A client whose work legitimately runs longer returns a result immediately
+  saying the work started, and reports the outcome as a message when it
+  finishes. That keeps the model's view accurate at every moment, which holding
+  the batch open does not.
 - **Backpressure.** Ingress is bounded, with capacity reserved for interrupts
   so a routine burst cannot stop a barge-in from being heard.
 

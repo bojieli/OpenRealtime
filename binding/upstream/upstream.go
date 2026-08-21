@@ -61,6 +61,10 @@ type Config struct {
 	Scheduler        clock.Scheduler
 	// HandoffTimeout bounds how long a slow answer waits to be voiced.
 	HandoffTimeout time.Duration
+	// ClientToolTimeout bounds how long a client has to return results for
+	// the tools it executes. Zero selects the default; negative disables the
+	// deadline, which only a harness driving results by hand should do.
+	ClientToolTimeout time.Duration
 }
 
 // Binding connects to a remote Realtime endpoint.

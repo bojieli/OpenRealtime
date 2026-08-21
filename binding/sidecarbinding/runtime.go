@@ -10,6 +10,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/binding/clientcalls"
 	"github.com/bojieli/OpenRealtime/cognition"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/eventloop"
@@ -55,19 +56,11 @@ type runtime struct {
 	acousticRate uint32
 	utteranceID  string
 
-	stateMu    sync.Mutex
-	utterance  *action.Utterance
-	spokenText string
-	answer     string
-	pending    map[string]*pendingInvocation
-	callOwner  map[string]string
-	callNames  map[string]string
-}
-
-type pendingInvocation struct {
-	calls      []trajectory.ToolCall
-	results    map[string]trajectory.ToolResult
-	dispatched bool
+	stateMu     sync.Mutex
+	utterance   *action.Utterance
+	spokenText  string
+	answer      string
+	clientCalls *clientcalls.Tracker
 }
 
 func newRuntime(parent context.Context, bind *Binding, options binding.Options) (*runtime, error) {
@@ -88,9 +81,16 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		duplex: session.NewDuplex(session.DuplexConfig{Scheduler: bind.config.Scheduler}),
 		ledger: action.NewLedger(), registry: action.NewRegistry(),
 		ctx: ctx, cancel: cancel, settings: binding.CloneSettings(options.Settings),
-		pending:   make(map[string]*pendingInvocation),
-		callOwner: make(map[string]string), callNames: make(map[string]string),
 	}
+	tracker, err := clientcalls.New(clientcalls.Config{
+		Timeout: bind.config.ClientToolTimeout, Scheduler: bind.config.Scheduler,
+		Commit: result.commitToolResults, Expired: result.reportUnanswered,
+	})
+	if err != nil {
+		cancel(err)
+		return nil, err
+	}
+	result.clientCalls = tracker
 	prefix := strings.TrimSpace(options.SessionID)
 	if prefix == "" {
 		prefix = bind.spec.Name
@@ -330,6 +330,7 @@ func (runtime *runtime) Close(_ context.Context, cause error) error {
 	runtime.cancel(cause)
 	err := runtime.model.Close()
 	runtime.duplex.Close()
+	runtime.clientCalls.Close()
 	runtime.wait.Wait()
 	return err
 }

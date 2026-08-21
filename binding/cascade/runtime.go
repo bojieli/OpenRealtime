@@ -11,6 +11,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/binding/clientcalls"
 	"github.com/bojieli/OpenRealtime/cognition"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/eventloop"
@@ -63,15 +64,7 @@ type runtime struct {
 	lastCanonical uint64
 	speechStartNS uint64
 
-	callsMu     sync.Mutex
-	callOwner   map[string]string
-	invocations map[string]*clientInvocation
-}
-
-type clientInvocation struct {
-	calls      []trajectory.ToolCall
-	results    map[string]trajectory.ToolResult
-	dispatched bool
+	clientCalls *clientcalls.Tracker
 }
 
 func newRuntime(parent context.Context, bind *Binding, options binding.Options) (*runtime, error) {
@@ -94,10 +87,17 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		ledger:   action.NewLedger(),
 		registry: action.NewRegistry(),
 		ctx:      ctx, cancel: cancel,
-		settings:    binding.CloneSettings(options.Settings),
-		callOwner:   make(map[string]string),
-		invocations: make(map[string]*clientInvocation),
+		settings: binding.CloneSettings(options.Settings),
 	}
+	tracker, err := clientcalls.New(clientcalls.Config{
+		Timeout: bind.config.ClientToolTimeout, Scheduler: scheduler,
+		Commit: result.commitToolResults, Expired: result.reportUnanswered,
+	})
+	if err != nil {
+		cancel(err)
+		return nil, err
+	}
+	result.clientCalls = tracker
 	if result.settings.Gate.SilenceDurationMS == 0 {
 		result.settings.Gate = perception.DefaultGateConfig()
 	}
@@ -341,6 +341,7 @@ func (runtime *runtime) Close(ctx context.Context, cause error) error {
 	runtime.speech.Close("session closed")
 	runtime.gate.Close()
 	runtime.duplex.Close()
+	runtime.clientCalls.Close()
 	runtime.wait.Wait()
 	return nil
 }

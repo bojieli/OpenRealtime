@@ -278,7 +278,7 @@ func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunRes
 		// outstanding set includes calls this process is not executing. The
 		// local results wait for the client's, which the tool-result path
 		// assembles.
-		runtime.holdLocalResults(result.InvocationID, results)
+		runtime.clientCalls.Hold(result.InvocationID, results)
 		return false, nil
 	}
 	if err := runtime.engine.AppendToolResults(result.InvocationID, results); err != nil {
@@ -288,19 +288,9 @@ func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunRes
 }
 
 func (runtime *runtime) sendToClient(ctx context.Context, result continuation.RunResult, calls []trajectory.ToolCall) error {
-	runtime.callsMu.Lock()
-	if _, duplicate := runtime.invocations[result.InvocationID]; duplicate {
-		runtime.callsMu.Unlock()
-		return fmt.Errorf("duplicate tool invocation %q", result.InvocationID)
+	if err := runtime.clientCalls.Track(result.InvocationID, result.ToolCalls); err != nil {
+		return err
 	}
-	pending := &clientInvocation{results: make(map[string]trajectory.ToolResult)}
-	for _, call := range result.ToolCalls {
-		pending.calls = append(pending.calls, call)
-		runtime.callOwner[call.CallID] = result.InvocationID
-	}
-	runtime.invocations[result.InvocationID] = pending
-	runtime.callsMu.Unlock()
-
 	var usage *continuation.Usage
 	if strings.TrimSpace(result.AssistantText) == "" {
 		usage = &result.Completion.Usage
@@ -310,16 +300,30 @@ func (runtime *runtime) sendToClient(ctx context.Context, result continuation.Ru
 	})
 }
 
-func (runtime *runtime) holdLocalResults(invocationID string, results []trajectory.ToolResult) {
-	runtime.callsMu.Lock()
-	defer runtime.callsMu.Unlock()
-	pending, exists := runtime.invocations[invocationID]
-	if !exists {
-		return
+// commitToolResults appends a batch every call in which now has a result,
+// whether the client answered them or the deadline did.
+func (runtime *runtime) commitToolResults(invocationID string, results []trajectory.ToolResult) error {
+	_, err := runtime.coordinator.Submit(eventloop.Event{
+		Type: "tool.results", Source: "client", Channel: "tool",
+		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindToolResult,
+		InvocationID: invocationID, ToolResults: results,
+	})
+	return err
+}
+
+// reportUnanswered tells the client what its own silence cost.
+//
+// The model already knows - it has results saying the calls failed - and the
+// client is the one part of the system that would otherwise have no way to
+// find out that the work it was asked for never came back.
+func (runtime *runtime) reportUnanswered(invocationID string, unanswered []trajectory.ToolCall) {
+	names := make([]string, 0, len(unanswered))
+	for _, call := range unanswered {
+		names = append(names, call.Name)
 	}
-	for _, result := range results {
-		pending.results[result.CallID] = result
-	}
+	runtime.fail("tool_result_timeout", fmt.Errorf(
+		"invocation %s: no result for %s, and the call has been failed",
+		invocationID, strings.Join(names, ", ")))
 }
 
 // ToolResult accepts a client-executed function result. The batch is committed
@@ -327,64 +331,7 @@ func (runtime *runtime) holdLocalResults(invocationID string, results []trajecto
 // partial batch would leave the model looking at a call with no result and no
 // way to tell whether one is coming.
 func (runtime *runtime) ToolResult(_ context.Context, result trajectory.ToolResult) error {
-	if strings.TrimSpace(result.CallID) == "" {
-		return errors.New("a tool result requires a call ID")
-	}
-	runtime.callsMu.Lock()
-	invocationID, known := runtime.callOwner[result.CallID]
-	if !known {
-		runtime.callsMu.Unlock()
-		return fmt.Errorf("tool result references unknown call %q", result.CallID)
-	}
-	pending := runtime.invocations[invocationID]
-	if pending == nil {
-		runtime.callsMu.Unlock()
-		return fmt.Errorf("tool result references a completed invocation %q", invocationID)
-	}
-	if _, duplicate := pending.results[result.CallID]; duplicate {
-		runtime.callsMu.Unlock()
-		return fmt.Errorf("duplicate tool result for call %q", result.CallID)
-	}
-	for _, call := range pending.calls {
-		if call.CallID == result.CallID {
-			result.Name = call.Name
-		}
-	}
-	pending.results[result.CallID] = result
-	complete := len(pending.results) == len(pending.calls) && !pending.dispatched
-	if complete {
-		pending.dispatched = true
-	}
-	ordered := make([]trajectory.ToolResult, 0, len(pending.calls))
-	if complete {
-		for _, call := range pending.calls {
-			ordered = append(ordered, pending.results[call.CallID])
-		}
-	}
-	runtime.callsMu.Unlock()
-	if !complete {
-		return nil
-	}
-	_, err := runtime.coordinator.Submit(eventloop.Event{
-		Type: "tool.results", Source: "client", Channel: "tool",
-		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindToolResult,
-		InvocationID: invocationID, ToolResults: ordered,
-	})
-	if err != nil {
-		runtime.callsMu.Lock()
-		if current := runtime.invocations[invocationID]; current == pending {
-			current.dispatched = false
-		}
-		runtime.callsMu.Unlock()
-		return err
-	}
-	runtime.callsMu.Lock()
-	delete(runtime.invocations, invocationID)
-	for _, call := range pending.calls {
-		delete(runtime.callOwner, call.CallID)
-	}
-	runtime.callsMu.Unlock()
-	return nil
+	return runtime.clientCalls.Result(result)
 }
 
 // CreateResponse asks for a response now. It exists for clients that drive

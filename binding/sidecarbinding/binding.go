@@ -70,7 +70,11 @@ type Config struct {
 	Scheduler        clock.Scheduler
 	// HandoffTimeout bounds how long a completed answer waits to be voiced.
 	HandoffTimeout time.Duration
-	Logf           func(string, ...any)
+	// ClientToolTimeout bounds how long a client has to return results for
+	// the tools it executes. Zero selects the default; negative disables the
+	// deadline, which only a harness driving results by hand should do.
+	ClientToolTimeout time.Duration
+	Logf              func(string, ...any)
 }
 
 // Binding is a sidecar-backed voice stack.

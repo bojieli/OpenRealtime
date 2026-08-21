@@ -97,6 +97,10 @@ type Config struct {
 	MaxPendingEvents int
 	MediaRetention   session.MediaConfig
 	Scheduler        clock.Scheduler
+	// ClientToolTimeout bounds how long a client has to return results for
+	// the tools it executes. Zero selects the default; negative disables the
+	// deadline, which only a harness driving results by hand should do.
+	ClientToolTimeout time.Duration
 	// AgentInstruction is the deployment's own instruction.
 	AgentInstruction string
 }
