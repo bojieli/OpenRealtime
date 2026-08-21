@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -9,8 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/conformance"
+	"github.com/bojieli/OpenRealtime/sidecar"
 )
 
 // runConformance verifies what the server claims about the wire.
@@ -20,12 +23,20 @@ import (
 // compatibility claim about CI.
 func runConformance(arguments []string, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: openrealtime conformance <protocol|extension|all> [-out path]")
+		return errors.New("usage: openrealtime conformance <protocol|extension|sidecar|all> [-out path]")
 	}
 	suite := strings.ToLower(strings.TrimSpace(arguments[0]))
 	flags := flag.NewFlagSet("openrealtime conformance "+suite, flag.ContinueOnError)
-	var out string
+	var (
+		out              string
+		sidecarAddress   string
+		sidecarSeconds   float64
+		sidecarTurnLimit time.Duration
+	)
 	flags.StringVar(&out, "out", "", "write the report to this path as JSON")
+	flags.StringVar(&sidecarAddress, "address", "", "connect to a running sidecar as tcp:host:port or unix:/path")
+	flags.Float64Var(&sidecarSeconds, "speech-seconds", 1.5, "how much audio to send before asking for a turn")
+	flags.DurationVar(&sidecarTurnLimit, "turn-timeout", 120*time.Second, "how long one turn may take")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments[1:]); err != nil {
 		return err
@@ -48,6 +59,24 @@ func runConformance(arguments []string, output io.Writer) error {
 		if !report.Passed {
 			return errors.New("extension conformance failed")
 		}
+	case "sidecar":
+		// Everything after the flags is the command that runs the sidecar, so
+		// a sidecar can be verified exactly as the engine will run it.
+		report := sidecar.RunConformance(context.Background(), sidecar.ConformanceOptions{
+			Config: sidecar.Config{
+				Command: flags.Args(), Address: sidecarAddress,
+				Logf: func(format string, values ...any) {
+					fmt.Fprintf(os.Stderr, format+"\n", values...)
+				},
+			},
+			SpeechSeconds: sidecarSeconds, TurnTimeout: sidecarTurnLimit,
+		})
+		reports["sidecar"] = report
+		if !report.Passed {
+			encoded, _ := json.MarshalIndent(reports, "", "  ")
+			fmt.Fprintln(output, string(encoded))
+			return errors.New("sidecar conformance failed")
+		}
 	case "all":
 		protocolReport, err := conformance.RunProtocol()
 		if err != nil {
@@ -60,7 +89,7 @@ func runConformance(arguments []string, output io.Writer) error {
 			return errors.New("conformance failed")
 		}
 	default:
-		return fmt.Errorf("conformance suite must be protocol, extension, or all, got %q", suite)
+		return fmt.Errorf("conformance suite must be protocol, extension, sidecar, or all, got %q", suite)
 	}
 
 	encoded, err := json.MarshalIndent(reports, "", "  ")
