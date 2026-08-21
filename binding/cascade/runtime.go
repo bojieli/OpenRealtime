@@ -68,6 +68,10 @@ type runtime struct {
 	speechStartNS uint64
 
 	clientCalls *clientcalls.Tracker
+
+	// prepared holds speculative continuations that have been generated and
+	// committed to nothing.
+	prepared *preparations
 }
 
 func newRuntime(parent context.Context, bind *Binding, options binding.Options) (*runtime, error) {
@@ -91,6 +95,7 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		registry: action.NewRegistry(),
 		ctx:      ctx, cancel: cancel,
 		settings: binding.CloneSettings(options.Settings),
+		prepared: newPreparations(),
 	}
 	tracker, err := clientcalls.New(clientcalls.Config{
 		Timeout: bind.config.ClientToolTimeout, Scheduler: scheduler,
@@ -341,6 +346,7 @@ func (runtime *runtime) Close(ctx context.Context, cause error) error {
 		cause = errors.New("session closed")
 	}
 	runtime.cancel(cause)
+	runtime.discardPreparations()
 	runtime.speech.Close("session closed")
 	runtime.gate.Close()
 	runtime.duplex.Close()

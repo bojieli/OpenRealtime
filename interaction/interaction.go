@@ -77,14 +77,21 @@ type Policies struct {
 	Deferral Deferral
 }
 
-// Defaults returns the shipped policy set: fixed 200 ms triggering, continuous
-// preparation, fast then slow with slow silent, an engine-owned floor,
-// immediate barge-in, commit-on-complete, audible repair, no policy models,
-// and deferral by duplex state.
+// Defaults returns the shipped policy set: fixed 200 ms triggering, no
+// speculative preparation, fast then slow with slow silent, an engine-owned
+// floor, immediate barge-in, commit-on-complete, audible repair, no policy
+// models, and deferral by duplex state.
+//
+// Preparation defaults to off because it is the one policy here that spends
+// something. Every other default is a decision about when work already
+// happening should happen; continuous preparation starts a continuation per
+// changed revision, most of which the endpoint will contradict and discard.
+// That is a real capability and a real token cost, so it is a deployment's
+// choice rather than the shape a session takes by not saying anything.
 func Defaults() Policies {
 	return Policies{
 		Trigger:        NewFixedCadenceTrigger(DefaultCadence),
-		Preparation:    NewContinuousPreparation(0),
+		Preparation:    NewEndpointPreparation(),
 		Rollout:        NewFastThenSlowRollout(RolloutOptions{}),
 		Floor:          NewEngineFloor(EngineFloorOptions{}),
 		BargeIn:        NewImmediateBargeIn(),

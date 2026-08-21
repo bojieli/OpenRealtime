@@ -99,7 +99,7 @@ func (runner *Runner) Run(
 	invocation Invocation,
 	observer StreamObserver,
 ) (RunResult, error) {
-	return runner.run(ctx, provider, invocation, nil, observer)
+	return runner.run(ctx, provider, invocation, nil, observer, nil)
 }
 
 // RunProjected invokes a provider over an explicit experimental projection,
@@ -115,7 +115,7 @@ func (runner *Runner) RunProjected(
 	if projection == nil {
 		return RunResult{}, errors.New("projected continuation requires a projection")
 	}
-	return runner.run(ctx, provider, invocation, projection, observer)
+	return runner.run(ctx, provider, invocation, projection, observer, nil)
 }
 
 func (runner *Runner) run(
@@ -124,6 +124,7 @@ func (runner *Runner) run(
 	invocation Invocation,
 	projection TrajectoryProjection,
 	observer StreamObserver,
+	prepared *Prepared,
 ) (RunResult, error) {
 	if provider == nil {
 		return RunResult{}, errors.New("continuation provider is required")
@@ -177,6 +178,16 @@ func (runner *Runner) run(
 		}
 	}
 	prefix := providerPrefix
+	if prepared != nil && prepared.provisional.ID != "" {
+		// The provisional observation is what makes preparation possible at
+		// all: at this instant the user is still talking, so nothing about
+		// this turn is in the canonical log yet. It is shown to the provider
+		// and appended to nothing, and adoption later checks that the endpoint
+		// said the same thing.
+		prefix.Items = append(prefix.Items, prepared.provisional)
+		prefix.Version++
+		visibleInstruction.CausalParentIDs = []string{prepared.provisional.ID}
+	}
 	prefix.Items = append(prefix.Items, visibleInstruction)
 	prefix.Version++
 	request := Request{
@@ -244,7 +255,26 @@ func (runner *Runner) run(
 	commitItems := make([]trajectory.Item, 0, len(items)+1)
 	commitItems = append(commitItems, instruction)
 	commitItems = append(commitItems, items...)
-	if err := runner.store.AppendBatchAt(before.Version, commitItems); err != nil {
+	if prepared != nil {
+		// A prepared continuation stops here. Nothing has been appended, so it
+		// has no speech sink and no tool authority until it is adopted at a
+		// real safe point - which is exactly what makes it safe to be wrong
+		// about, and what makes preparation a latency policy rather than a
+		// correctness one.
+		prepared.result = result
+		prepared.items = commitItems
+		prepared.baseVersion = before.Version
+		return result, providerErr
+	}
+	if err := runner.commit(&result, before.Version, commitItems); err != nil {
+		return result, errors.Join(providerErr, err)
+	}
+	return result, providerErr
+}
+
+// commit appends one continuation's output as a version-checked transaction.
+func (runner *Runner) commit(result *RunResult, expectedVersion uint64, items []trajectory.Item) error {
+	if err := runner.store.AppendBatchAt(expectedVersion, items); err != nil {
 		result.Interrupted = true
 		result.ToolProposals = nil
 		result.ToolCalls = nil
@@ -252,14 +282,15 @@ func (runner *Runner) run(
 		if errors.Is(err, trajectory.ErrVersionConflict) {
 			err = errors.Join(ErrStalePrefix, err)
 		}
-		return result, errors.Join(providerErr, fmt.Errorf("commit continuation safe point: %w", err))
+		return fmt.Errorf("commit continuation safe point: %w", err)
 	}
 	result.Committed = true
-	for _, item := range commitItems {
+	result.AppendedIDs = nil
+	for _, item := range items {
 		result.AppendedIDs = append(result.AppendedIDs, item.ID)
 	}
 	result.EndVersion = runner.store.Snapshot().Version
-	return result, providerErr
+	return nil
 }
 
 func validateProjection(canonical, projected trajectory.Snapshot) error {
@@ -409,4 +440,95 @@ func validateCompletion(completion Completion, descriptor Descriptor) error {
 		return fmt.Errorf("completion state type %q does not match descriptor %q", completion.ProviderStateType, descriptor.NativeStateType)
 	}
 	return nil
+}
+
+// Prepared is a continuation that has been generated and not committed.
+//
+// Speculative preparation is a latency policy, and it is only safe to be a
+// latency policy because prepared work is private by construction: it has no
+// speech sink and no tool authority until it is adopted at a real safe point.
+// Being wrong therefore costs tokens and nothing else - which is the property
+// that lets the decision to prepare be made on evidence that is still changing.
+type Prepared struct {
+	provisional trajectory.Item
+	result      RunResult
+	items       []trajectory.Item
+	baseVersion uint64
+	adopted     bool
+}
+
+// ProvisionalText is what the preparation was generated against. Adoption is
+// only sound when the canonical record of the turn says the same thing.
+func (prepared *Prepared) ProvisionalText() string {
+	if prepared == nil {
+		return ""
+	}
+	return prepared.provisional.Content
+}
+
+// Ready reports whether the preparation produced output worth adopting.
+func (prepared *Prepared) Ready() bool {
+	return prepared != nil && !prepared.adopted && len(prepared.items) > 1 && !prepared.result.Interrupted
+}
+
+// Prepare generates a continuation against the canonical prefix plus one
+// uncommitted observation, and appends nothing.
+//
+// The provisional observation carries what perception has heard so far. It is
+// not committed, cannot be committed by this call, and never becomes part of
+// the log: only the model's answer does, and only if Adopt accepts it.
+func (runner *Runner) Prepare(
+	ctx context.Context,
+	provider Provider,
+	invocation Invocation,
+	provisional trajectory.Item,
+	observer StreamObserver,
+) (*Prepared, error) {
+	if strings.TrimSpace(provisional.ID) == "" || provisional.Kind != trajectory.KindObservation {
+		return nil, errors.New("preparation requires a provisional observation item")
+	}
+	if strings.TrimSpace(provisional.Content) == "" {
+		return nil, errors.New("a provisional observation requires text")
+	}
+	prepared := &Prepared{provisional: provisional}
+	if _, err := runner.run(ctx, provider, invocation, nil, observer, prepared); err != nil {
+		return nil, err
+	}
+	if !prepared.Ready() {
+		return nil, errors.New("preparation produced nothing to adopt")
+	}
+	return prepared, nil
+}
+
+// Adopt commits prepared output at the current safe point.
+//
+// It restamps commit time, because commit time is when something entered the
+// log rather than when it was generated, and a prepared item still carrying
+// its generation time would make the log's clock run backwards. Everything
+// else - the instruction, the output, the provenance - is exactly what the
+// provider produced, so an adopted continuation is indistinguishable from one
+// that was run at this instant except in having been faster.
+func (runner *Runner) Adopt(prepared *Prepared) (RunResult, error) {
+	if !prepared.Ready() {
+		return RunResult{}, errors.New("this preparation cannot be adopted")
+	}
+	snapshot := runner.store.Snapshot()
+	if snapshot.Version < prepared.baseVersion {
+		return RunResult{}, errors.New("the trajectory is shorter than the prefix this preparation was generated against")
+	}
+	items := slices.Clone(prepared.items)
+	now := runner.now()
+	for index := range items {
+		items[index].MonotonicNS = now
+	}
+	if len(snapshot.Items) > 0 {
+		items[0].CausalParentIDs = []string{snapshot.Items[len(snapshot.Items)-1].ID}
+	}
+	result := prepared.result
+	result.StartVersion = snapshot.Version
+	if err := runner.commit(&result, snapshot.Version, items); err != nil {
+		return result, err
+	}
+	prepared.adopted = true
+	return result, nil
 }

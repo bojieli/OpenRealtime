@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/action"
+	"github.com/bojieli/OpenRealtime/admission"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/continuation"
@@ -94,6 +95,15 @@ type Config struct {
 	// should not have to know the coordinate space of a browser the server is
 	// driving.
 	Tools []action.ToolSpec
+
+	// Governor admits speculative preparation against the same compute budget
+	// as everything else. A speculation that starves the foreground turn has
+	// spent the latency it was trying to save, so preparation runs at the
+	// speculative class - below the voice, above nothing.
+	//
+	// Nil means preparation is unadmitted, which is correct for a deployment
+	// whose providers are hosted and compete for no local capacity.
+	Governor *admission.Governor
 
 	MaxPendingEvents int
 	MediaRetention   session.MediaConfig

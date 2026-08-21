@@ -67,6 +67,13 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 	runtime.audioMu.Unlock()
 
 	if started {
+		// A new turn makes any speculation from the previous one an answer to
+		// the wrong sentence. Discarding here rather than at the endpoint is
+		// deliberate: the endpoint only *submits* the canonical observation,
+		// and the safe point that might adopt a preparation runs afterwards on
+		// the event loop - so discarding at the endpoint would throw the work
+		// away a moment before the only thing that could use it.
+		runtime.discardPreparations()
 		runtime.duplex.UserSpeechStarted(now)
 		if err := runtime.onUserSpeechStarted(ctx, utteranceID, result.AudioStartMS); err != nil {
 			return err
@@ -234,7 +241,7 @@ func (runtime *runtime) observeAudio(ctx context.Context, frames []perception.Fr
 		}
 		// Preparation is consulted on every revision. It decides whether work
 		// starts before the endpoint; it never decides what gets committed.
-		runtime.policies.Preparation.Prepare(decision)
+		runtime.prepare(ctx, decision)
 		opportunity := runtime.policies.Trigger.Next(decision)
 		if err := runtime.sink.Transcript(ctx, binding.TranscriptEvent{
 			ItemID: runtime.currentUtterance(), Text: observation.Text,

@@ -85,13 +85,15 @@ type serveOptions struct {
 	visionModel    string
 	visionTokenEnv string
 
-	rollout      string
-	cadence      time.Duration
-	observation  string
-	toolProgress bool
-	instruction  string
-	validateWire bool
-	demo         bool
+	rollout         string
+	preparation     string
+	preparationPace time.Duration
+	cadence         time.Duration
+	observation     string
+	toolProgress    bool
+	instruction     string
+	validateWire    bool
+	demo            bool
 
 	logFormat string
 	logLevel  string
@@ -162,6 +164,10 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.visionModel, "vision-model", "", "vision model identity; required when a video observer is enabled")
 	flags.StringVar(&options.visionTokenEnv, "vision-token-env", "OPENREALTIME_VISION_API_KEY", "environment variable holding the vision model credential")
 	flags.StringVar(&options.rollout, "rollout", "fast+slow", "cognition rollout: fast-only, fast+slow, or endpointed-slow-only")
+	flags.StringVar(&options.preparation, "preparation", "endpoint-only",
+		"speculative preparation: endpoint-only or continuous")
+	flags.DurationVar(&options.preparationPace, "preparation-slow-pace", time.Second,
+		"how often continuous preparation may speculatively start the slow provider; 0 is unbounded")
 	flags.DurationVar(&options.cadence, "trigger-cadence", interaction.DefaultCadence, "trigger cadence")
 	flags.StringVar(&options.observation, "observation-policy", "endpoint-only", "canonical observation policy: endpoint-only or stable-partial")
 	flags.BoolVar(&options.toolProgress, "tool-progress", false, "let a completed tool result trigger a short spoken status")
@@ -284,6 +290,15 @@ func buildPolicies(options serveOptions) (interaction.Policies, error) {
 	}
 	policies.Rollout = rollout
 	policies.Trigger = interaction.NewFixedCadenceTrigger(options.cadence)
+	switch strings.ToLower(strings.TrimSpace(options.preparation)) {
+	case "", "endpoint-only", "none", "off":
+		policies.Preparation = interaction.NewEndpointPreparation()
+	case "continuous":
+		policies.Preparation = interaction.NewContinuousPreparation(options.preparationPace)
+	default:
+		return interaction.Policies{}, fmt.Errorf(
+			"preparation must be endpoint-only or continuous, got %q", options.preparation)
+	}
 	switch strings.ToLower(strings.TrimSpace(options.bargeIn)) {
 	case "", "immediate":
 		policies.BargeIn = interaction.NewImmediateBargeIn()

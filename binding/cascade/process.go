@@ -95,6 +95,12 @@ func (runtime *runtime) runStep(
 ) (bool, error) {
 	switch step.Kind {
 	case interaction.StepFast:
+		// A preparation that answered this exact sentence is adopted rather
+		// than regenerated. It is the same continuation, produced earlier.
+		if result, adopted := runtime.adopt(trajectory.PhaseFast, canonicalText(
+			runtime.store.Snapshot(), request.SourceRevision)); adopted {
+			return true, runtime.publishAssistant(ctx, result)
+		}
 		result, err := runtime.engine.RunFast(ctx, request, nil)
 		if publishErr := runtime.publishAssistant(ctx, result); publishErr != nil {
 			return false, errors.Join(err, publishErr)
@@ -116,7 +122,12 @@ func (runtime *runtime) runStep(
 func (runtime *runtime) runSlow(
 	ctx context.Context, request cognition.Request, cause *interaction.Cause,
 ) (bool, error) {
-	result, err := runtime.engine.RunSlow(ctx, request, nil)
+	result, adopted := runtime.adopt(trajectory.PhaseSlow, canonicalText(
+		runtime.store.Snapshot(), request.SourceRevision))
+	var err error
+	if !adopted {
+		result, err = runtime.engine.RunSlow(ctx, request, nil)
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			// Work in flight was interrupted. Any executable call it had

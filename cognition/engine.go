@@ -222,6 +222,46 @@ func (engine *Engine) RunVoice(ctx context.Context, request Request, observer St
 	}, observer)
 }
 
+// PrepareFast generates a fast continuation before the endpoint, against a
+// provisional observation that is not in the log.
+//
+// The result appends nothing. It has no speech sink and no tool authority
+// until Adopt commits it, which is what makes speculating on evidence that is
+// still changing a latency decision rather than a correctness one.
+func (engine *Engine) PrepareFast(
+	ctx context.Context, request Request, provisional trajectory.Item,
+) (*continuation.Prepared, error) {
+	if engine.config.ExternalFast {
+		return nil, ErrExternalFast
+	}
+	return engine.runner.Prepare(ctx, engine.config.Fast, continuation.Invocation{
+		Instruction: engine.instruction(engine.fastPrompt, request), SourceRevision: request.SourceRevision,
+		Capabilities: slices.Clone(engine.capabilities), Tools: engine.proposalTools(),
+		MaxOutputTokens: engine.config.FastMaxTokens,
+	}, provisional, nil)
+}
+
+// PrepareSlow generates a slow continuation before the endpoint.
+//
+// Its tool calls are prepared and uncommitted like everything else, so a
+// speculation that turns out to answer a sentence the user never finished
+// dispatches nothing. Only adoption puts a call into the log, and only a call
+// in the log has execution authority.
+func (engine *Engine) PrepareSlow(
+	ctx context.Context, request Request, provisional trajectory.Item,
+) (*continuation.Prepared, error) {
+	return engine.runner.Prepare(ctx, engine.config.Slow, continuation.Invocation{
+		Instruction: engine.instruction(engine.slowPrompt, request), SourceRevision: request.SourceRevision,
+		Capabilities: slices.Clone(engine.capabilities), Tools: engine.executableTools(),
+		MaxOutputTokens: engine.config.SlowMaxTokens,
+	}, provisional, nil)
+}
+
+// Adopt commits prepared output at a real safe point.
+func (engine *Engine) Adopt(prepared *continuation.Prepared) (continuation.RunResult, error) {
+	return engine.runner.Adopt(prepared)
+}
+
 // RunSlow performs exactly one higher-reasoning continuation and stops at its
 // terminal safe point. If it emitted calls, the action plane executes them and
 // their results are appended before the next call.
