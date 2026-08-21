@@ -11,6 +11,8 @@ import (
 	_ "image/png"
 	"strings"
 
+	"github.com/bojieli/OpenRealtime/perception"
+
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/continuation"
@@ -117,11 +119,37 @@ func (format *flexibleAudioFormat) UnmarshalJSON(input []byte) error {
 	return nil
 }
 
+// wireTurnDetection is a client's turn-detection request.
+//
+// The numbers are pointers for the same reason TurnDetectionSet exists one
+// level up: absent and zero are different requests. A client that names a
+// detector and none of its parameters is asking for the deployment's, and
+// reading that as zero produces a gate with no silence duration - which the
+// gate refuses, so the session fails on a field the client never set. OpenAI's
+// own SDK sends exactly that: a type and nothing else.
 type wireTurnDetection struct {
-	Type              string  `json:"type"`
-	Threshold         float64 `json:"threshold"`
-	PrefixPaddingMS   int     `json:"prefix_padding_ms"`
-	SilenceDurationMS int     `json:"silence_duration_ms"`
+	Type              string   `json:"type"`
+	Threshold         *float64 `json:"threshold"`
+	PrefixPaddingMS   *int     `json:"prefix_padding_ms"`
+	SilenceDurationMS *int     `json:"silence_duration_ms"`
+}
+
+// gate resolves what the client asked for against the deployment's defaults.
+func (turn *wireTurnDetection) gate() perception.GateConfig {
+	resolved := perception.DefaultGateConfig()
+	if turn == nil {
+		return resolved
+	}
+	if turn.Threshold != nil {
+		resolved.Threshold = *turn.Threshold
+	}
+	if turn.PrefixPaddingMS != nil {
+		resolved.PrefixPaddingMS = *turn.PrefixPaddingMS
+	}
+	if turn.SilenceDurationMS != nil {
+		resolved.SilenceDurationMS = *turn.SilenceDurationMS
+	}
+	return resolved
 }
 
 type wireTool struct {

@@ -583,3 +583,101 @@ func TestASlowProviderDoesNotStallTheConnection(t *testing.T) {
 		t.Fatalf("the connection must answer a ping while the recogniser is busy: %v", err)
 	}
 }
+
+// The two things an unmodified official client sends that this server used to
+// refuse. Both were found by running OpenAI's own SDK against it; both had
+// gone unnoticed because nothing ever had.
+func TestTheSessionAnOfficialClientSendsIsAccepted(t *testing.T) {
+	t.Parallel()
+	server := startServer(t,
+		fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Fine."}}),
+		slow([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Fine."}}),
+		"hello")
+	client := dial(t, server)
+	client.await("session.created", 5*time.Second)
+
+	// This is what @openai/agents-realtime puts on the wire on every
+	// connection: a null noise_reduction, which OpenAI's own specification
+	// documents as the way to turn it off, and semantic_vad, which is a
+	// detector this server does not have.
+	client.send(map[string]any{
+		"type": "session.update",
+		"session": map[string]any{
+			"type":         "realtime",
+			"instructions": "Be brief.",
+			"audio": map[string]any{
+				"input": map[string]any{
+					"format":          map[string]any{"type": "audio/pcm", "rate": 24000},
+					"noise_reduction": nil,
+					"transcription":   map[string]any{"model": "gpt-4o-mini-transcribe"},
+					"turn_detection":  map[string]any{"type": "semantic_vad"},
+				},
+				"output": map[string]any{
+					"format": map[string]any{"type": "audio/pcm", "rate": 24000}, "speed": 1,
+				},
+			},
+		},
+	})
+
+	updated := client.await("session.updated", 5*time.Second)
+	session := updated["session"].(map[string]any)
+	if session["instructions"] != "Be brief." {
+		t.Fatalf("the rest of the session must be applied, not discarded: %v", session["instructions"])
+	}
+	// A detector the server does not have falls back to the one it does, and
+	// says so. Nothing is hidden: the client can read what is in force.
+	detection := session["audio"].(map[string]any)["input"].(map[string]any)["turn_detection"].(map[string]any)
+	if detection["type"] != "server_vad" {
+		t.Fatalf("expected the detector actually in force, got %v", detection["type"])
+	}
+	// And it falls back to working settings rather than to zeroes, which the
+	// acoustic gate refuses outright.
+	if silence, _ := detection["silence_duration_ms"].(float64); silence <= 0 {
+		t.Fatalf("the fallback must produce a usable gate, got %v", detection)
+	}
+}
+
+// A client that names a detector without naming its parameters is asking for
+// the deployment's, not for zero.
+func TestTurnDetectionParametersAreOptional(t *testing.T) {
+	t.Parallel()
+	server := startServer(t,
+		fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Fine."}}),
+		slow([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Fine."}}),
+		"hello")
+	client := dial(t, server)
+	client.await("session.created", 5*time.Second)
+	client.send(map[string]any{
+		"type": "session.update",
+		"session": map[string]any{
+			"type": "realtime",
+			"audio": map[string]any{
+				"input": map[string]any{"turn_detection": map[string]any{"type": "server_vad"}},
+			},
+		},
+	})
+	updated := client.await("session.updated", 5*time.Second)
+	detection := updated["session"].(map[string]any)["audio"].(map[string]any)["input"].(map[string]any)["turn_detection"].(map[string]any)
+	if silence, _ := detection["silence_duration_ms"].(float64); silence <= 0 {
+		t.Fatalf("unspecified parameters must resolve to the deployment's: %v", detection)
+	}
+
+	// One the client did specify is honoured, so the defaults fill gaps rather
+	// than overriding intent.
+	client.send(map[string]any{
+		"type": "session.update",
+		"session": map[string]any{
+			"type": "realtime",
+			"audio": map[string]any{
+				"input": map[string]any{"turn_detection": map[string]any{
+					"type": "server_vad", "silence_duration_ms": 900,
+				}},
+			},
+		},
+	})
+	updated = client.await("session.updated", 5*time.Second)
+	detection = updated["session"].(map[string]any)["audio"].(map[string]any)["input"].(map[string]any)["turn_detection"].(map[string]any)
+	if silence, _ := detection["silence_duration_ms"].(float64); silence != 900 {
+		t.Fatalf("a specified parameter must be honoured, got %v", detection)
+	}
+}

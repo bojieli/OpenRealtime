@@ -493,13 +493,25 @@ func (session *session) update(update sessionUpdateBody) error {
 			current.manualTurns = true
 		case turn.Type == "server_vad":
 			current.manualTurns = false
-			current.gate = perception.GateConfig{
-				Threshold: turn.Threshold, PrefixPaddingMS: turn.PrefixPaddingMS,
-				SilenceDurationMS: turn.SilenceDurationMS,
-			}
+			current.gate = turn.gate()
 		default:
-			return fmt.Errorf(
-				"turn detection must be server_vad or null, got %q", turn.Type)
+			// A detector this deployment does not have. Refusing the event
+			// would be the strict reading, and it is the wrong one: it
+			// discards the instructions, the tools, and the audio formats
+			// that arrived in the same session.update, so a client whose
+			// default is a detector we lack cannot configure a session at
+			// all. OpenAI's own SDK defaults to semantic_vad, which made that
+			// exactly the case for every unmodified official client.
+			//
+			// So the session runs on the detector this server does have, and
+			// nothing is hidden: session.updated reports turn_detection as
+			// server_vad with the settings actually in force, so a client that
+			// asked for something else can see it did not get it. An
+			// unsupported option is a capability difference, and the way this
+			// project answers those elsewhere is to provide what it can and
+			// say what that was.
+			current.manualTurns = false
+			current.gate = turn.gate()
 		}
 	}
 	if _, err := current.inputFormat.sampleRate(); err != nil {
