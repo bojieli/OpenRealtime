@@ -39,6 +39,10 @@ type Config struct {
 	Phase         trajectory.Phase
 	Effort        continuation.Effort
 	ToolAuthority continuation.ToolAuthority
+	// SpeechAuthority declares whether this provider's output may be voiced.
+	// An unset value means voice; the fast/slow arrangement is what sets a
+	// provider silent, and it does so explicitly.
+	SpeechAuthority continuation.SpeechAuthority
 	// AllowTools is a compatibility alias for ToolAuthorityExecute.
 	AllowTools      bool
 	IncludeThoughts bool
@@ -96,6 +100,7 @@ func New(config Config) (*Adapter, error) {
 		Provider: "google", Model: config.Model, Phase: config.Phase,
 		Effort: config.Effort, Streaming: true, NativeStateType: ProviderStateType,
 		RetainsToolCalls: true, ToolAuthority: config.ToolAuthority,
+		SpeechAuthority: config.SpeechAuthority,
 		ExecutableTools: config.ToolAuthority == continuation.ToolAuthorityExecute,
 	}
 	if err := continuation.ValidateDescriptor(descriptor); err != nil {
