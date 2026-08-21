@@ -45,8 +45,15 @@ while keeping acoustic and cognitive history synchronized.
 ## Implemented gateway subset
 
 The `gateway` package, served by `openrealtime serve`, serves a persistent
-WebSocket using only standard events. It accepts eight of the eleven GA
-Realtime client events: `session.update`, `input_audio_buffer.append`,
+WebSocket using only standard events. Output is **audio or text**, one of them,
+selected by `output_modalities`. A text session is the same conversation with a
+different output boundary: same observations, same two cognition providers,
+same rollout, same commitment policy — nothing is synthesised and nothing is
+paced, because a turn nobody hears takes no time and cannot be talked over. It
+is what a computer-use client wants, and refusing it made this server unusable
+for exactly the clients the extension exists for.
+
+It accepts eight of the eleven GA Realtime client events: `session.update`, `input_audio_buffer.append`,
 `input_audio_buffer.clear`, `output_audio_buffer.clear`,
 `conversation.item.create` for both function outputs and typed messages,
 `conversation.item.truncate`, `response.create`, and `response.cancel`.
