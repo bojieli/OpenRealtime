@@ -65,6 +65,28 @@ const (
 	ToolAuthorityExecute ToolAuthority = "execute"
 )
 
+// SpeechAuthority separates producing an answer from being heard saying it.
+//
+// The fast/slow arrangement rests on two rules, and this is the second of
+// them: the slow provider cannot speak. Its output appends to the trajectory
+// and a fast continuation voices it, which removes the race where slow
+// contradicts something fast has already said, and lets fast condense a long
+// written answer into something worth listening to.
+//
+// It is a property of the provider descriptor rather than a routing decision,
+// and it is enforced where output commits: the runner records it on every
+// item's producer, and the action plane refuses to voice silent content.
+type SpeechAuthority string
+
+const (
+	// SpeechAuthorityVoice permits assistant content to cross the speech
+	// commit boundary. It is the default: a provider that is configured
+	// without an opinion is a provider whose answers are meant to be heard.
+	SpeechAuthorityVoice SpeechAuthority = "voice"
+	// SpeechAuthoritySilent appends assistant content that is never voiced.
+	SpeechAuthoritySilent SpeechAuthority = "silent"
+)
+
 // Descriptor identifies one configured continuation provider.
 type Descriptor struct {
 	Provider         string           `json:"provider"`
@@ -75,6 +97,7 @@ type Descriptor struct {
 	NativeStateType  string           `json:"native_state_type,omitempty"`
 	RetainsToolCalls bool             `json:"retains_tool_calls"`
 	ToolAuthority    ToolAuthority    `json:"tool_authority,omitempty"`
+	SpeechAuthority  SpeechAuthority  `json:"speech_authority,omitempty"`
 	// ExecutableTools is retained in report JSON for compatibility with the
 	// first experimental evidence schema. New code must use ToolAuthority.
 	ExecutableTools bool `json:"executable_tools"`
@@ -91,6 +114,17 @@ func (descriptor Descriptor) EffectiveToolAuthority() ToolAuthority {
 		return ToolAuthorityExecute
 	}
 	return ToolAuthorityNone
+}
+
+// EffectiveSpeechAuthority resolves an unset value to voice. Silence is the
+// constraint an arrangement imposes, not the state a provider falls into by
+// omission: a single-provider deployment that never declared anything should
+// answer out loud rather than run mute.
+func (descriptor Descriptor) EffectiveSpeechAuthority() SpeechAuthority {
+	if descriptor.SpeechAuthority == SpeechAuthoritySilent {
+		return SpeechAuthoritySilent
+	}
+	return SpeechAuthorityVoice
 }
 
 // Capability describes what the overall agent can do. Fast models receive the
@@ -200,6 +234,11 @@ func ValidateDescriptor(descriptor Descriptor) error {
 	}
 	if descriptor.ExecutableTools && descriptor.EffectiveToolAuthority() != ToolAuthorityExecute {
 		return errors.New("legacy executable_tools conflicts with non-executing tool authority")
+	}
+	switch descriptor.SpeechAuthority {
+	case "", SpeechAuthorityVoice, SpeechAuthoritySilent:
+	default:
+		return fmt.Errorf("unsupported speech authority %q", descriptor.SpeechAuthority)
 	}
 	return nil
 }

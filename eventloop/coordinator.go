@@ -1,17 +1,7 @@
-// Package eventloop serializes asynchronous external events into one canonical
-// trajectory and invokes cognition only at safe points.
-//
-// Event sources may run concurrently. They submit typed observations, complete
-// tool-result batches, or media commitment transitions. The coordinator is the
-// sole external-event commit owner. Routine events wait while cognition is in
-// flight; an explicitly typed interrupt cooperatively cancels that work and is
-// committed at the next provider-supported boundary. No text pattern matching
-// or model-authored workflow state is involved.
 package eventloop
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -25,54 +15,22 @@ import (
 )
 
 var (
-	ErrIdle        = errors.New("event coordinator has no pending events")
-	ErrBusy        = errors.New("event coordinator is already processing a batch")
+	// ErrIdle means there is nothing committed or pending to act upon.
+	ErrIdle = errors.New("event coordinator has no pending events")
+	// ErrBusy means a run is already in flight and this one cannot join it.
+	ErrBusy = errors.New("event coordinator is already processing a batch")
+	// ErrInterrupted is the cancellation cause for an interrupting event.
 	ErrInterrupted = errors.New("event processing interrupted by an urgent event")
-	ErrQueueFull   = errors.New("event coordinator pending queue is full")
+	// ErrQueueFull means ingress capacity is exhausted.
+	ErrQueueFull = errors.New("event coordinator pending queue is full")
+	// ErrDeferred means the batch was committed but a gate declined to act on
+	// it now. It is an ordinary outcome, not a failure: the events remain
+	// committed and a later wake-up runs them.
+	ErrDeferred = errors.New("event batch committed and deferred by policy")
 )
 
-// Priority is supplied by a trusted event source or a semantic/acoustic
-// classifier. The coordinator never derives it from words in event content.
-type Priority string
-
-const (
-	PriorityRoutine   Priority = "routine"
-	PriorityInterrupt Priority = "interrupt"
-)
-
-// Event is one external occurrence. EventID is assigned on Submit when empty.
-// ToolResults is deliberately a batch: one slow invocation's complete set of
-// outstanding calls crosses the synchronization boundary atomically.
-type Event struct {
-	EventID            string
-	Type               string
-	Source             string
-	Channel            string
-	CorrelationID      string
-	Priority           Priority
-	Kind               trajectory.Kind
-	OccurredNS         uint64
-	SourceRevision     uint64
-	SupersedesRevision uint64
-	InvocationID       string
-	Producer           trajectory.Producer
-	Content            string
-	ToolResults        []trajectory.ToolResult
-	AssistantState     *trajectory.AssistantState
-	Repair             *trajectory.RepairState
-}
-
-// Batch is the exact event group committed before one processor invocation.
-type Batch struct {
-	Events       []Event
-	Items        []trajectory.Item
-	StartVersion uint64
-	EndVersion   uint64
-}
-
-// Processor advances cognition from a committed event batch. Implementations
-// may run fast then slow continuation over the same trajectory. The context is
-// cancelled when an interrupt event arrives; the processor must stop at its
+// Processor advances cognition from a committed event batch. The context is
+// cancelled when an interrupting event arrives; the processor must stop at its
 // next safe boundary.
 type Processor interface {
 	Process(context.Context, Batch) error
@@ -84,9 +42,42 @@ func (function ProcessorFunc) Process(ctx context.Context, batch Batch) error {
 	return function(ctx, batch)
 }
 
+// Gate decides whether committed work may be acted upon now.
+//
+// This is the conditional half of the invariant. A gate that declines does not
+// consume the events: they stay committed and unacted, and whoever declined
+// owes a Wake when its condition clears. The gate sees the batch and nothing
+// else — the duplex state, admission leases, and provider backpressure it
+// consults are its own, because they are interaction policy rather than event
+// loop mechanism.
+type Gate interface {
+	AdmitRun(context.Context, Batch) (bool, string)
+}
+
+type GateFunc func(context.Context, Batch) (bool, string)
+
+func (function GateFunc) AdmitRun(ctx context.Context, batch Batch) (bool, string) {
+	return function(ctx, batch)
+}
+
+// Deferral records why committed work is waiting and what must happen next. It
+// is operational telemetry: a deferral with no matching wake-up is the bug
+// this type exists to make visible.
+type Deferral struct {
+	Reason       string `json:"reason"`
+	Events       int    `json:"events"`
+	Items        int    `json:"items"`
+	SinceNS      uint64 `json:"since_ns"`
+	StartVersion uint64 `json:"start_version"`
+	EndVersion   uint64 `json:"end_version"`
+}
+
 type Config struct {
 	Store     *trajectory.Store
 	Processor Processor
+	// Gate is optional. Without one, every committed batch runs immediately,
+	// which is the correct behaviour for a runtime that has no reason to wait.
+	Gate Gate
 	// MaxPendingEvents is a required hard ingress bound.
 	MaxPendingEvents int
 	// ReservedInterruptEvents protects capacity from routine-event bursts. It
@@ -101,25 +92,43 @@ type queuedEvent struct {
 	event    Event
 }
 
-// Coordinator owns ingress ordering, safe-point batches, and interruption of
-// the current processor invocation. Model output still commits through the
-// continuation runner's version-checked transaction.
+// Coordinator owns ingress ordering, safe-point commits, deferral bookkeeping,
+// and interruption of the current processor invocation. Model output still
+// commits through the continuation runner's own version-checked transaction.
 type Coordinator struct {
 	mu   sync.Mutex
 	idMu sync.Mutex
 
-	store        *trajectory.Store
-	processor    Processor
-	now          func() uint64
-	nextID       func(string) string
+	store     *trajectory.Store
+	processor Processor
+	gate      Gate
+	now       func() uint64
+	nextID    func(string) string
+
 	pending      []queuedEvent
 	eventIDs     map[string]struct{}
 	nextSequence uint64
+
+	// deferred holds committed batches that no run has yet acted upon. This is
+	// the state that "committed but not yet acted upon" required and that the
+	// loop previously could not represent at all.
+	deferred     []Batch
+	deferReason  string
+	deferSinceNS uint64
+
 	active       bool
 	activeEpoch  uint64
 	activeCancel context.CancelCauseFunc
-	maxPending   int
-	reserved     int
+	parallel     int
+
+	signal     chan struct{}
+	maxPending int
+	reserved   int
+
+	committedBatches atomic.Uint64
+	deferredBatches  atomic.Uint64
+	wakeups          atomic.Uint64
+	parallelRuns     atomic.Uint64
 }
 
 func New(config Config) (*Coordinator, error) {
@@ -143,16 +152,45 @@ func New(config Config) (*Coordinator, error) {
 		}
 	}
 	return &Coordinator{
-		store: config.Store, processor: config.Processor, now: config.Now,
-		nextID: config.NextID, eventIDs: make(map[string]struct{}),
+		store: config.Store, processor: config.Processor, gate: config.Gate,
+		now: config.Now, nextID: config.NextID, eventIDs: make(map[string]struct{}),
+		signal:     make(chan struct{}, 1),
 		maxPending: config.MaxPendingEvents, reserved: config.ReservedInterruptEvents,
 	}, nil
 }
 
-// Submit validates and queues an event without waiting for cognition. An
-// interrupt event cooperatively cancels the active processor immediately, but
-// the event itself enters the trajectory only after that work reaches a safe
-// point.
+// Signal fires whenever there is work to do: an event arrived, or a wake-up
+// released work that a gate had deferred. It is level-triggered with a depth
+// of one, so a driver that always drains to idle after receiving cannot miss
+// an edge.
+func (coordinator *Coordinator) Signal() <-chan struct{} { return coordinator.signal }
+
+func (coordinator *Coordinator) notify() {
+	select {
+	case coordinator.signal <- struct{}{}:
+	default:
+	}
+}
+
+// Wake declares that a deferral condition has cleared.
+//
+// Every condition a gate defers on owes exactly one of these: playback
+// completion, the end of a user turn, an admission lease, relief from provider
+// backpressure. If deferred work exists, it signals a run. Calling it when
+// nothing is waiting is a no-op, which is what lets callers wake
+// unconditionally on a state transition rather than checking first.
+func (coordinator *Coordinator) Wake(reason string) {
+	coordinator.mu.Lock()
+	waiting := len(coordinator.deferred) > 0 || len(coordinator.pending) > 0
+	coordinator.mu.Unlock()
+	if !waiting {
+		return
+	}
+	coordinator.wakeups.Add(1)
+	coordinator.notify()
+}
+
+// Submit validates and queues an event without waiting for cognition.
 func (coordinator *Coordinator) Submit(event Event) (string, error) {
 	ids, err := coordinator.SubmitBatch([]Event{event})
 	if err != nil {
@@ -162,9 +200,9 @@ func (coordinator *Coordinator) Submit(event Event) (string, error) {
 }
 
 // SubmitBatch validates and queues one inseparable ingress group. Either every
-// event is admitted in the supplied order or none is. This is used for media
-// commitment lifecycles whose played/repair transitions must never be split by
-// queue backpressure.
+// event is admitted in the supplied order or none is. Media commitment
+// lifecycles rely on this: their played and repair transitions must never be
+// split by queue backpressure.
 func (coordinator *Coordinator) SubmitBatch(events []Event) ([]string, error) {
 	if len(events) == 0 {
 		return nil, errors.New("event batch must not be empty")
@@ -224,59 +262,196 @@ func (coordinator *Coordinator) SubmitBatch(events []Event) ([]string, error) {
 	if shouldInterrupt && cancel != nil {
 		cancel(ErrInterrupted)
 	}
+	coordinator.notify()
 	return ids, nil
 }
 
-// RunNext drains the currently pending events in arrival order, commits them
-// atomically, and invokes Processor once. Events submitted while Processor is
-// running remain queued for the next call. Only one RunNext may be active.
+// RunNext commits everything pending and, if policy admits it, acts on that
+// batch together with anything a previous gate deferred.
+//
+// The two halves are deliberately not separable from the caller's side: commit
+// happens on every call, whatever the gate decides, which is what makes commit
+// unconditional in practice rather than only in principle. When the gate
+// declines, the committed batch is returned alongside ErrDeferred so a caller
+// can observe what it committed without being able to lose it.
 func (coordinator *Coordinator) RunNext(parent context.Context) (Batch, error) {
 	if parent == nil {
 		return Batch{}, errors.New("event processor context must not be nil")
 	}
-	coordinator.mu.Lock()
-	if coordinator.active {
-		coordinator.mu.Unlock()
-		return Batch{}, ErrBusy
+	committed, commitErr := coordinator.Commit()
+	if commitErr != nil && !errors.Is(commitErr, ErrIdle) {
+		return Batch{}, commitErr
 	}
+	return coordinator.run(parent, committed)
+}
+
+// Commit drains the pending ingress queue and appends it atomically. It never
+// consults the gate: an external event enters the trajectory the moment it
+// arrives, whatever the conversational state.
+func (coordinator *Coordinator) Commit() (Batch, error) {
+	coordinator.mu.Lock()
 	if len(coordinator.pending) == 0 {
 		coordinator.mu.Unlock()
 		return Batch{}, ErrIdle
 	}
-	queued := append([]queuedEvent(nil), coordinator.pending...)
+	queued := slices.Clone(coordinator.pending)
 	coordinator.pending = nil
-	ctx, cancel := context.WithCancelCause(parent)
-	coordinator.active = true
-	coordinator.activeEpoch++
-	epoch := coordinator.activeEpoch
-	coordinator.activeCancel = cancel
 	coordinator.mu.Unlock()
 
-	batch, commitErr := coordinator.commit(queued)
-	if commitErr != nil {
-		coordinator.finish(epoch)
-		if errors.Is(commitErr, trajectory.ErrVersionConflict) {
+	batch, err := coordinator.commit(queued)
+	if err != nil {
+		if errors.Is(err, trajectory.ErrVersionConflict) {
 			coordinator.requeue(queued)
 		} else {
 			coordinator.forget(queued)
 		}
-		return Batch{}, commitErr
+		return Batch{}, err
 	}
+	coordinator.committedBatches.Add(1)
+	coordinator.mu.Lock()
+	coordinator.deferred = append(coordinator.deferred, batch)
+	coordinator.mu.Unlock()
+	return batch, nil
+}
+
+func (coordinator *Coordinator) run(parent context.Context, committed Batch) (Batch, error) {
+	coordinator.mu.Lock()
+	if len(coordinator.deferred) == 0 {
+		coordinator.mu.Unlock()
+		return Batch{}, ErrIdle
+	}
+	work := merge(coordinator.deferred)
+	parallelBranch := work.Triage == TriageParallel && coordinator.active
+	if coordinator.active && !parallelBranch {
+		coordinator.mu.Unlock()
+		return committed, ErrBusy
+	}
+	coordinator.mu.Unlock()
+
+	if coordinator.gate != nil {
+		admitted, reason := coordinator.gate.AdmitRun(parent, work)
+		if !admitted {
+			coordinator.markDeferred(reason)
+			return committed, fmt.Errorf("%w: %s", ErrDeferred, reason)
+		}
+	}
+
+	coordinator.mu.Lock()
+	// Re-check under the lock: another run may have claimed the work while the
+	// gate was deciding.
+	if len(coordinator.deferred) == 0 {
+		coordinator.mu.Unlock()
+		return Batch{}, ErrIdle
+	}
+	work = merge(coordinator.deferred)
+	parallelBranch = work.Triage == TriageParallel && coordinator.active
+	if coordinator.active && !parallelBranch {
+		coordinator.mu.Unlock()
+		return committed, ErrBusy
+	}
+	coordinator.deferred = nil
+	coordinator.deferReason = ""
+	coordinator.deferSinceNS = 0
+	ctx, cancel := context.WithCancelCause(parent)
+	var epoch uint64
+	if parallelBranch {
+		coordinator.parallel++
+		coordinator.parallelRuns.Add(1)
+	} else {
+		coordinator.active = true
+		coordinator.activeEpoch++
+		epoch = coordinator.activeEpoch
+		coordinator.activeCancel = cancel
+	}
+	coordinator.mu.Unlock()
+
 	var processErr error
 	if coordinator.processor != nil {
-		processErr = coordinator.processor.Process(ctx, batch)
+		processErr = coordinator.processor.Process(ctx, work)
 	}
 	if cause := context.Cause(ctx); cause != nil {
 		processErr = errors.Join(processErr, cause)
 	}
-	coordinator.finish(epoch)
-	return batch, processErr
+	if parallelBranch {
+		coordinator.mu.Lock()
+		coordinator.parallel--
+		coordinator.mu.Unlock()
+	} else {
+		coordinator.finish(epoch)
+	}
+	cancel(nil)
+	return work, processErr
+}
+
+// markDeferred returns work to the deferred set and records why.
+func (coordinator *Coordinator) markDeferred(reason string) {
+	if strings.TrimSpace(reason) == "" {
+		reason = "unspecified policy deferral"
+	}
+	coordinator.deferredBatches.Add(1)
+	coordinator.mu.Lock()
+	defer coordinator.mu.Unlock()
+	coordinator.deferReason = reason
+	if coordinator.deferSinceNS == 0 {
+		coordinator.deferSinceNS = coordinator.now()
+	}
+}
+
+// Deferral describes the committed work currently waiting for a wake-up.
+func (coordinator *Coordinator) Deferral() (Deferral, bool) {
+	coordinator.mu.Lock()
+	defer coordinator.mu.Unlock()
+	if len(coordinator.deferred) == 0 {
+		return Deferral{}, false
+	}
+	work := merge(coordinator.deferred)
+	return Deferral{
+		Reason: coordinator.deferReason, Events: len(work.Events), Items: len(work.Items),
+		SinceNS: coordinator.deferSinceNS, StartVersion: work.StartVersion, EndVersion: work.EndVersion,
+	}, true
+}
+
+// Metrics is operational telemetry with no model input in it.
+type Metrics struct {
+	CommittedBatches uint64 `json:"committed_batches"`
+	DeferredBatches  uint64 `json:"deferred_batches"`
+	Wakeups          uint64 `json:"wakeups"`
+	ParallelRuns     uint64 `json:"parallel_runs"`
+	PendingEvents    int    `json:"pending_events"`
+	UnactedBatches   int    `json:"unacted_batches"`
+}
+
+func (coordinator *Coordinator) Metrics() Metrics {
+	coordinator.mu.Lock()
+	pending, unacted := len(coordinator.pending), len(coordinator.deferred)
+	coordinator.mu.Unlock()
+	return Metrics{
+		CommittedBatches: coordinator.committedBatches.Load(),
+		DeferredBatches:  coordinator.deferredBatches.Load(),
+		Wakeups:          coordinator.wakeups.Load(),
+		ParallelRuns:     coordinator.parallelRuns.Load(),
+		PendingEvents:    pending, UnactedBatches: unacted,
+	}
 }
 
 func (coordinator *Coordinator) Pending() int {
 	coordinator.mu.Lock()
 	defer coordinator.mu.Unlock()
 	return len(coordinator.pending)
+}
+
+// Unacted reports how many committed batches are waiting to be acted upon.
+func (coordinator *Coordinator) Unacted() int {
+	coordinator.mu.Lock()
+	defer coordinator.mu.Unlock()
+	return len(coordinator.deferred)
+}
+
+// Runnable reports whether a call to RunNext would do anything.
+func (coordinator *Coordinator) Runnable() bool {
+	coordinator.mu.Lock()
+	defer coordinator.mu.Unlock()
+	return len(coordinator.pending) > 0 || len(coordinator.deferred) > 0
 }
 
 func (coordinator *Coordinator) Active() bool {
@@ -289,7 +464,6 @@ func (coordinator *Coordinator) Active() bool {
 // point without fabricating a model-visible trajectory item. It is used for
 // operational signals such as the acoustic start of user speech: the final
 // transcript is submitted later as the authoritative observation event.
-// Calling Interrupt while idle is a no-op.
 func (coordinator *Coordinator) Interrupt(cause error) {
 	if cause == nil {
 		cause = ErrInterrupted
@@ -304,17 +478,22 @@ func (coordinator *Coordinator) Interrupt(cause error) {
 
 func (coordinator *Coordinator) finish(epoch uint64) {
 	coordinator.mu.Lock()
-	defer coordinator.mu.Unlock()
+	waiting := len(coordinator.deferred) > 0 || len(coordinator.pending) > 0
 	if coordinator.active && coordinator.activeEpoch == epoch {
 		coordinator.active = false
 		coordinator.activeCancel = nil
+	}
+	coordinator.mu.Unlock()
+	if waiting {
+		coordinator.notify()
 	}
 }
 
 func (coordinator *Coordinator) requeue(events []queuedEvent) {
 	coordinator.mu.Lock()
-	defer coordinator.mu.Unlock()
-	coordinator.pending = append(append([]queuedEvent(nil), events...), coordinator.pending...)
+	coordinator.pending = append(slices.Clone(events), coordinator.pending...)
+	coordinator.mu.Unlock()
+	coordinator.notify()
 }
 
 func (coordinator *Coordinator) forget(events []queuedEvent) {
@@ -327,237 +506,43 @@ func (coordinator *Coordinator) forget(events []queuedEvent) {
 
 func (coordinator *Coordinator) commit(queued []queuedEvent) (Batch, error) {
 	slices.SortStableFunc(queued, func(left, right queuedEvent) int {
-		if left.sequence < right.sequence {
+		switch {
+		case left.sequence < right.sequence:
 			return -1
-		}
-		if left.sequence > right.sequence {
+		case left.sequence > right.sequence:
 			return 1
+		default:
+			return 0
 		}
-		return 0
 	})
 	events := make([]Event, len(queued))
+	triage := TriageQueue
 	for index := range queued {
 		events[index] = cloneEvent(queued[index].event)
+		switch TriageOf(events[index].Priority) {
+		case TriageCancel:
+			triage = TriageCancel
+		case TriageParallel:
+			if triage != TriageCancel {
+				triage = TriageParallel
+			}
+		}
 	}
 	snapshot := coordinator.store.Snapshot()
 	items, err := coordinator.compile(snapshot, events)
 	if err != nil {
 		return Batch{}, err
 	}
+	coordinator.idMu.Lock()
+	batchID := coordinator.nextID("batch")
+	coordinator.idMu.Unlock()
+	markBatch(batchID, items)
 	if err := coordinator.store.AppendBatchAt(snapshot.Version, items); err != nil {
 		return Batch{}, fmt.Errorf("commit external event batch: %w", err)
 	}
 	committed := coordinator.store.Snapshot()
 	return Batch{
-		Events: events, Items: append([]trajectory.Item(nil), committed.Items[snapshot.Version:]...),
-		StartVersion: snapshot.Version, EndVersion: committed.Version,
+		Events: events, Items: slices.Clone(committed.Items[snapshot.Version:]),
+		StartVersion: snapshot.Version, EndVersion: committed.Version, Triage: triage,
 	}, nil
-}
-
-func (coordinator *Coordinator) compile(snapshot trajectory.Snapshot, events []Event) ([]trajectory.Item, error) {
-	all := append([]trajectory.Item(nil), snapshot.Items...)
-	items := make([]trajectory.Item, 0, len(events))
-	lastNS := uint64(0)
-	parentID := ""
-	if len(all) > 0 {
-		lastNS = all[len(all)-1].MonotonicNS
-		parentID = all[len(all)-1].ID
-	}
-	nextNS := func() uint64 {
-		value := coordinator.now()
-		if value < lastNS {
-			value = lastNS
-		}
-		lastNS = value
-		return value
-	}
-	nextItemID := func() string {
-		coordinator.idMu.Lock()
-		defer coordinator.idMu.Unlock()
-		return coordinator.nextID("event-item")
-	}
-
-	for _, event := range events {
-		metadata := &trajectory.EventMetadata{
-			EventID: event.EventID, Type: event.Type, Source: event.Source,
-			Channel: event.Channel, OccurredNS: event.OccurredNS, CorrelationID: event.CorrelationID,
-			SupersedesRevision: event.SupersedesRevision,
-		}
-		switch event.Kind {
-		case trajectory.KindObservation:
-			item := trajectory.Item{
-				ID: nextItemID(), Kind: trajectory.KindObservation, MonotonicNS: nextNS(),
-				SourceRevision: event.SourceRevision, Producer: event.Producer,
-				Content: event.Content, Event: metadata,
-			}
-			supersededID := ""
-			if event.SupersedesRevision != 0 {
-				for index := len(all) - 1; index >= 0; index-- {
-					if all[index].Kind == trajectory.KindObservation &&
-						all[index].SourceRevision == event.SupersedesRevision {
-						supersededID = all[index].ID
-						break
-					}
-				}
-				if supersededID == "" {
-					return nil, fmt.Errorf("observation supersedes unknown source revision %d", event.SupersedesRevision)
-				}
-			}
-			item.CausalParentIDs = directParents(parentID, supersededID)
-			items = append(items, item)
-			all = append(all, item)
-			parentID = item.ID
-		case trajectory.KindAssistantState:
-			state := *event.AssistantState
-			item := trajectory.Item{
-				ID: nextItemID(), Kind: trajectory.KindAssistantState, MonotonicNS: nextNS(),
-				SourceRevision: event.SourceRevision, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
-				AssistantState: &state, Event: metadata,
-			}
-			item.CausalParentIDs = directParents(parentID, state.AssistantItemID)
-			items = append(items, item)
-			all = append(all, item)
-			parentID = item.ID
-		case trajectory.KindRepair:
-			repair := *event.Repair
-			item := trajectory.Item{
-				ID: nextItemID(), Kind: trajectory.KindRepair, MonotonicNS: nextNS(),
-				SourceRevision: event.SourceRevision, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
-				Repair: &repair, Event: metadata,
-			}
-			item.CausalParentIDs = directParents(parentID, repair.TargetAssistantItemID, repair.RepairAssistantItemID)
-			items = append(items, item)
-			all = append(all, item)
-			parentID = item.ID
-		case trajectory.KindToolResult:
-			compiled, err := coordinator.compileToolResults(all, parentID, nextNS, nextItemID, event, metadata)
-			if err != nil {
-				return nil, err
-			}
-			items = append(items, compiled...)
-			all = append(all, compiled...)
-			parentID = compiled[len(compiled)-1].ID
-		}
-	}
-	return items, nil
-}
-
-func (coordinator *Coordinator) compileToolResults(
-	all []trajectory.Item,
-	parentID string,
-	nextNS func() uint64,
-	nextItemID func() string,
-	event Event,
-	metadata *trajectory.EventMetadata,
-) ([]trajectory.Item, error) {
-	matched, err := trajectory.MatchToolResultBatch(
-		trajectory.Snapshot{Version: uint64(len(all)), Items: all},
-		event.InvocationID,
-		event.ToolResults,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	items := make([]trajectory.Item, 0, len(matched))
-	for _, pair := range matched {
-		metadataCopy := *metadata
-		result := pair.Result
-		item := trajectory.Item{
-			ID: nextItemID(), Kind: trajectory.KindToolResult, MonotonicNS: nextNS(),
-			CausalParentIDs: directParents(parentID, pair.Pending.ItemID),
-			SourceRevision:  pair.Pending.SourceRevision, InvocationID: event.InvocationID,
-			Producer: trajectory.Producer{Phase: trajectory.PhaseTool}, ToolResult: &result,
-			Event: &metadataCopy,
-		}
-		items = append(items, item)
-		parentID = item.ID
-	}
-	return items, nil
-}
-
-func validateEvent(event Event) error {
-	if strings.TrimSpace(event.Type) == "" || strings.TrimSpace(event.Source) == "" || strings.TrimSpace(event.Channel) == "" {
-		return errors.New("event type, source, and channel are required")
-	}
-	switch event.Priority {
-	case PriorityRoutine, PriorityInterrupt:
-	default:
-		return fmt.Errorf("unsupported event priority %q", event.Priority)
-	}
-	switch event.Kind {
-	case trajectory.KindObservation:
-		if strings.TrimSpace(event.Content) == "" || event.Producer.Phase == "" || len(event.ToolResults) != 0 || event.AssistantState != nil || event.Repair != nil {
-			return errors.New("observation event requires content and producer only")
-		}
-		if event.SupersedesRevision >= event.SourceRevision && event.SupersedesRevision != 0 {
-			return errors.New("observation supersession must name an older source revision")
-		}
-	case trajectory.KindToolResult:
-		if event.SupersedesRevision != 0 {
-			return errors.New("tool-result event cannot supersede an observation")
-		}
-		if event.InvocationID == "" || len(event.ToolResults) == 0 || event.Content != "" || event.AssistantState != nil || event.Repair != nil {
-			return errors.New("tool-result event requires invocation ID and a non-empty result batch")
-		}
-		for index, result := range event.ToolResults {
-			if strings.TrimSpace(result.CallID) == "" || strings.TrimSpace(result.Name) == "" {
-				return fmt.Errorf("tool result %d requires call ID and name", index)
-			}
-			hasOutput := len(result.Output) > 0
-			hasError := strings.TrimSpace(result.Error) != ""
-			if hasOutput == hasError || hasOutput && !json.Valid(result.Output) {
-				return fmt.Errorf("tool result %d requires exactly one valid JSON output or error", index)
-			}
-		}
-	case trajectory.KindAssistantState:
-		if event.SupersedesRevision != 0 {
-			return errors.New("assistant-state event cannot supersede an observation")
-		}
-		if event.AssistantState == nil || event.Content != "" || len(event.ToolResults) != 0 || event.Repair != nil {
-			return errors.New("assistant-state event requires one state transition")
-		}
-	case trajectory.KindRepair:
-		if event.SupersedesRevision != 0 {
-			return errors.New("repair event cannot supersede an observation")
-		}
-		if event.Repair == nil || event.Content != "" || len(event.ToolResults) != 0 || event.AssistantState != nil {
-			return errors.New("repair event requires one repair transition")
-		}
-	default:
-		return fmt.Errorf("external event cannot directly append trajectory kind %q", event.Kind)
-	}
-	return nil
-}
-
-func directParents(ids ...string) []string {
-	var result []string
-	seen := make(map[string]struct{}, len(ids))
-	for _, id := range ids {
-		if id == "" {
-			continue
-		}
-		if _, duplicate := seen[id]; duplicate {
-			continue
-		}
-		seen[id] = struct{}{}
-		result = append(result, id)
-	}
-	return result
-}
-
-func cloneEvent(event Event) Event {
-	event.ToolResults = append([]trajectory.ToolResult(nil), event.ToolResults...)
-	for index := range event.ToolResults {
-		event.ToolResults[index].Output = slices.Clone(event.ToolResults[index].Output)
-	}
-	if event.AssistantState != nil {
-		copy := *event.AssistantState
-		event.AssistantState = &copy
-	}
-	if event.Repair != nil {
-		copy := *event.Repair
-		event.Repair = &copy
-	}
-	return event
 }

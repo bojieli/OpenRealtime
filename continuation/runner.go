@@ -330,6 +330,7 @@ func (runner *Runner) buildItems(
 	producer := trajectory.Producer{
 		Phase: descriptor.Phase, Provider: descriptor.Provider, Model: descriptor.Model,
 		ReasoningEffort: string(descriptor.Effort),
+		SpeechAuthority: string(descriptor.EffectiveSpeechAuthority()),
 	}
 	parentID := instruction.ID
 	var items []trajectory.Item

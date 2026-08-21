@@ -1,339 +1,439 @@
-package eventloop
+package eventloop_test
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
-func TestCoordinatorBatchesStructuredEventsInArrivalOrder(t *testing.T) {
-	t.Parallel()
-	store := trajectory.NewStore()
-	var processed Batch
-	coordinator, err := New(Config{
-		Store: store, MaxPendingEvents: 16,
-		Now: func() uint64 { return 20 },
-		Processor: ProcessorFunc(func(_ context.Context, batch Batch) error {
-			processed = batch
+type harness struct {
+	store       *trajectory.Store
+	coordinator *eventloop.Coordinator
+	runs        atomic.Int64
+	batches     chan eventloop.Batch
+}
+
+func newHarness(t *testing.T, gate eventloop.Gate) *harness {
+	t.Helper()
+	result := &harness{store: trajectory.NewStore(), batches: make(chan eventloop.Batch, 32)}
+	var counter atomic.Uint64
+	var clock atomic.Uint64
+	coordinator, err := eventloop.New(eventloop.Config{
+		Store: result.store, Gate: gate, MaxPendingEvents: 32, ReservedInterruptEvents: 4,
+		Now:    func() uint64 { return clock.Add(1) },
+		NextID: func(prefix string) string { return prefix + "-" + strconv.FormatUint(counter.Add(1), 10) },
+		Processor: eventloop.ProcessorFunc(func(_ context.Context, batch eventloop.Batch) error {
+			result.runs.Add(1)
+			result.batches <- batch
 			return nil
 		}),
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("new coordinator: %v", err)
 	}
-	firstID, err := coordinator.Submit(Event{
-		Type: "asr.revision", Source: "qwen3-asr", Channel: "voice",
-		Priority: PriorityRoutine, Kind: trajectory.KindObservation, OccurredNS: 10,
-		SourceRevision: 1, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "hello",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	secondID, err := coordinator.Submit(Event{
+	result.coordinator = coordinator
+	return result
+}
+
+func observation(revision uint64, text string) eventloop.Event {
+	return eventloop.Event{
 		Type: "asr.endpoint", Source: "qwen3-asr", Channel: "voice",
-		Priority: PriorityRoutine, Kind: trajectory.KindObservation, OccurredNS: 15,
-		SourceRevision: 2, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "hello there",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	batch, err := coordinator.RunNext(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if batch.StartVersion != 0 || batch.EndVersion != 2 || processed.EndVersion != 2 || len(batch.Items) != 2 {
-		t.Fatalf("unexpected batch: %#v", batch)
-	}
-	if batch.Items[0].Event.EventID != firstID || batch.Items[1].Event.EventID != secondID ||
-		batch.Items[0].Event.OccurredNS != 10 || batch.Items[0].MonotonicNS != 20 {
-		t.Fatalf("source/commit timing was not preserved: %#v", batch.Items)
-	}
-	if len(batch.Items[1].CausalParentIDs) != 1 || batch.Items[1].CausalParentIDs[0] != batch.Items[0].ID {
-		t.Fatalf("batch is not causally ordered: %#v", batch.Items)
+		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindObservation,
+		SourceRevision: revision, Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+		Content: text,
 	}
 }
 
-func TestObservationSupersessionRequiresOlderKnownRevision(t *testing.T) {
-	t.Parallel()
-	store := trajectory.NewStore()
-	coordinator, err := New(Config{Store: store, MaxPendingEvents: 8})
-	if err != nil {
-		t.Fatal(err)
+// The third row of the deferral table is the one with no natural trigger: the
+// agent stops speaking, the user is silent, and a committed tool result sits
+// unacted. Without an explicit wake-up it waits forever.
+func TestDeferredWorkRunsOnWakeUp(t *testing.T) {
+	var agentSpeaking atomic.Bool
+	agentSpeaking.Store(true)
+	test := newHarness(t, eventloop.GateFunc(func(_ context.Context, _ eventloop.Batch) (bool, string) {
+		if agentSpeaking.Load() {
+			return false, "agent speaking"
+		}
+		return true, ""
+	}))
+
+	if _, err := test.coordinator.Submit(observation(1, "what is my balance")); err != nil {
+		t.Fatalf("submit: %v", err)
 	}
-	first := observationEvent("stable prefix", PriorityRoutine)
-	first.SourceRevision = 4
-	if _, err := coordinator.Submit(first); err != nil {
-		t.Fatal(err)
+	batch, err := test.coordinator.RunNext(context.Background())
+	if !errors.Is(err, eventloop.ErrDeferred) {
+		t.Fatalf("expected deferral, got %v", err)
 	}
-	firstBatch, err := coordinator.RunNext(context.Background())
-	if err != nil {
-		t.Fatal(err)
+	if len(batch.Items) != 1 {
+		t.Fatalf("commit must happen even when the run is deferred, got %d items", len(batch.Items))
 	}
-	second := observationEvent("extended stable prefix", PriorityRoutine)
-	second.SourceRevision = 7
-	second.SupersedesRevision = 4
-	if _, err := coordinator.Submit(second); err != nil {
-		t.Fatal(err)
+	if test.store.Snapshot().Version != 1 {
+		t.Fatal("deferred event must still be committed to the trajectory")
 	}
-	secondBatch, err := coordinator.RunNext(context.Background())
-	if err != nil {
-		t.Fatal(err)
+	if test.runs.Load() != 0 {
+		t.Fatal("deferred batch must not reach the processor")
 	}
-	if secondBatch.Items[0].Event.SupersedesRevision != 4 || len(secondBatch.Items[0].CausalParentIDs) != 1 ||
-		secondBatch.Items[0].CausalParentIDs[0] != firstBatch.Items[0].ID {
-		t.Fatalf("supersession causality = %#v", secondBatch.Items[0])
+	deferral, waiting := test.coordinator.Deferral()
+	if !waiting || deferral.Reason != "agent speaking" || deferral.Events != 1 {
+		t.Fatalf("expected a recorded deferral, got %+v waiting=%v", deferral, waiting)
 	}
-	unknown := observationEvent("bad", PriorityRoutine)
-	unknown.SourceRevision = 9
-	unknown.SupersedesRevision = 8
-	if _, err := coordinator.Submit(unknown); err != nil {
-		t.Fatal(err)
+
+	// Playback completes. The wake-up is what starts the run the deferral owed.
+	agentSpeaking.Store(false)
+	test.coordinator.Wake("playback complete")
+	select {
+	case <-test.coordinator.Signal():
+	default:
+		t.Fatal("wake-up must signal the driver")
 	}
-	if _, err := coordinator.RunNext(context.Background()); err == nil {
-		t.Fatal("unknown superseded revision was accepted")
+	if _, err := test.coordinator.RunNext(context.Background()); err != nil {
+		t.Fatalf("run after wake-up: %v", err)
+	}
+	if test.runs.Load() != 1 {
+		t.Fatalf("expected one run after the wake-up, got %d", test.runs.Load())
+	}
+	if _, waiting := test.coordinator.Deferral(); waiting {
+		t.Fatal("acted work must leave the deferred set")
 	}
 }
 
-func TestTypedInterruptCancelsAtSafePointWithoutContentRouting(t *testing.T) {
-	t.Parallel()
+// Deferral must accumulate rather than replace: three events deferred across
+// three commits are all handed to the run that eventually happens.
+func TestDeferredBatchesAccumulateAndMergeInCommitOrder(t *testing.T) {
+	var admit atomic.Bool
+	test := newHarness(t, eventloop.GateFunc(func(_ context.Context, _ eventloop.Batch) (bool, string) {
+		if admit.Load() {
+			return true, ""
+		}
+		return false, "user speaking"
+	}))
+	for index := 1; index <= 3; index++ {
+		if _, err := test.coordinator.Submit(observation(uint64(index), fmt.Sprintf("part %d", index))); err != nil {
+			t.Fatalf("submit %d: %v", index, err)
+		}
+		if _, err := test.coordinator.RunNext(context.Background()); !errors.Is(err, eventloop.ErrDeferred) {
+			t.Fatalf("expected deferral %d, got %v", index, err)
+		}
+	}
+	if got := test.coordinator.Unacted(); got != 3 {
+		t.Fatalf("expected three unacted batches, got %d", got)
+	}
+	admit.Store(true)
+	test.coordinator.Wake("endpoint")
+	batch, err := test.coordinator.RunNext(context.Background())
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(batch.Events) != 3 || len(batch.Items) != 3 {
+		t.Fatalf("expected all deferred work in one run, got %d events %d items", len(batch.Events), len(batch.Items))
+	}
+	if !batch.Deferred {
+		t.Fatal("merged batch must declare that it carried deferred work")
+	}
+	for index, item := range batch.Items {
+		if item.Content != fmt.Sprintf("part %d", index+1) {
+			t.Fatalf("item %d out of commit order: %q", index, item.Content)
+		}
+	}
+}
+
+func TestCommitIsUnconditionalUnderEveryGateAnswer(t *testing.T) {
+	test := newHarness(t, eventloop.GateFunc(func(_ context.Context, _ eventloop.Batch) (bool, string) {
+		return false, "never admits"
+	}))
+	for index := 1; index <= 5; index++ {
+		if _, err := test.coordinator.Submit(observation(uint64(index), "text")); err != nil {
+			t.Fatalf("submit: %v", err)
+		}
+		if _, err := test.coordinator.RunNext(context.Background()); !errors.Is(err, eventloop.ErrDeferred) {
+			t.Fatalf("expected deferral, got %v", err)
+		}
+	}
+	if version := test.store.Snapshot().Version; version != 5 {
+		t.Fatalf("every committed event must be in the log, got version %d", version)
+	}
+	if test.runs.Load() != 0 {
+		t.Fatal("no run should have happened")
+	}
+}
+
+func TestWakeWithoutDeferredWorkIsANoOp(t *testing.T) {
+	test := newHarness(t, nil)
+	test.coordinator.Wake("playback complete")
+	select {
+	case <-test.coordinator.Signal():
+		t.Fatal("wake-up with nothing waiting must not signal")
+	default:
+	}
+	if test.coordinator.Metrics().Wakeups != 0 {
+		t.Fatal("a no-op wake-up must not be counted")
+	}
+}
+
+func TestBatchMarkersAppearOnlyForRealBatches(t *testing.T) {
+	test := newHarness(t, nil)
+	if _, err := test.coordinator.SubmitBatch([]eventloop.Event{
+		observation(1, "first"), observation(2, "second"),
+	}); err != nil {
+		t.Fatalf("submit batch: %v", err)
+	}
+	batch, err := test.coordinator.RunNext(context.Background())
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(batch.Items) != 2 {
+		t.Fatalf("expected two items, got %d", len(batch.Items))
+	}
+	for index, item := range batch.Items {
+		if item.Event.BatchSize != 2 || item.Event.BatchIndex != index || item.Event.BatchID == "" {
+			t.Fatalf("item %d is not legible as part of a batch: %+v", index, item.Event)
+		}
+	}
+
+	if _, err := test.coordinator.Submit(observation(3, "alone")); err != nil {
+		t.Fatalf("submit single: %v", err)
+	}
+	single, err := test.coordinator.RunNext(context.Background())
+	if err != nil {
+		t.Fatalf("run single: %v", err)
+	}
+	if single.Items[0].Event.BatchID != "" || single.Items[0].Event.BatchSize != 0 {
+		t.Fatalf("one event is not a batch: %+v", single.Items[0].Event)
+	}
+}
+
+// A parallel-triaged event answers a quick question without waiting for the
+// work in flight and without cancelling it.
+func TestParallelEventRunsAlongsideWorkInFlight(t *testing.T) {
 	store := trajectory.NewStore()
+	release := make(chan struct{})
 	started := make(chan struct{})
-	var once sync.Once
-	coordinator, err := New(Config{
-		Store: store, MaxPendingEvents: 16, ReservedInterruptEvents: 1,
-		Processor: ProcessorFunc(func(ctx context.Context, _ Batch) error {
-			waited := false
-			once.Do(func() {
-				waited = true
-				close(started)
-			})
-			if waited {
-				<-ctx.Done()
-				return ctx.Err()
+	var mainRuns, parallelRuns atomic.Int64
+	var counter, clock atomic.Uint64
+	coordinator, err := eventloop.New(eventloop.Config{
+		Store: store, MaxPendingEvents: 16, ReservedInterruptEvents: 2,
+		Now:    func() uint64 { return clock.Add(1) },
+		NextID: func(prefix string) string { return prefix + "-" + strconv.FormatUint(counter.Add(1), 10) },
+		Processor: eventloop.ProcessorFunc(func(ctx context.Context, batch eventloop.Batch) error {
+			if batch.Triage == eventloop.TriageParallel {
+				parallelRuns.Add(1)
+				return nil
 			}
-			return nil
+			mainRuns.Add(1)
+			close(started)
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return context.Cause(ctx)
+			}
 		}),
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("new coordinator: %v", err)
 	}
-	if _, err := coordinator.Submit(observationEvent("normal input", PriorityRoutine)); err != nil {
-		t.Fatal(err)
+
+	if _, err := coordinator.Submit(observation(1, "do the long thing")); err != nil {
+		t.Fatalf("submit: %v", err)
 	}
-	type outcome struct {
-		batch Batch
-		err   error
-	}
-	done := make(chan outcome, 1)
+	var wait sync.WaitGroup
+	wait.Add(1)
 	go func() {
-		batch, runErr := coordinator.RunNext(context.Background())
-		done <- outcome{batch: batch, err: runErr}
+		defer wait.Done()
+		if _, err := coordinator.RunNext(context.Background()); err != nil {
+			t.Errorf("main run: %v", err)
+		}
 	}()
 	<-started
-	// The content contains no stop keyword. Its trusted event type and priority,
-	// not pattern matching, carry interruption semantics.
-	interrupt := observationEvent("new directed speech", PriorityInterrupt)
-	interrupt.Type = "user.interrupt"
-	if _, err := coordinator.Submit(interrupt); err != nil {
-		t.Fatal(err)
+
+	quick := observation(2, "what time is it")
+	quick.Priority = eventloop.PriorityParallel
+	if _, err := coordinator.Submit(quick); err != nil {
+		t.Fatalf("submit parallel: %v", err)
 	}
-	first := <-done
-	if !errors.Is(first.err, ErrInterrupted) || first.batch.EndVersion != 1 {
-		t.Fatalf("active batch did not end at an interrupt safe point: batch=%#v err=%v", first.batch, first.err)
+	if _, err := coordinator.RunNext(context.Background()); err != nil {
+		t.Fatalf("parallel run: %v", err)
 	}
-	if coordinator.Pending() != 1 || store.Snapshot().Version != 1 {
-		t.Fatalf("interrupt entered trajectory before safe point: pending=%d snapshot=%#v", coordinator.Pending(), store.Snapshot())
+	if parallelRuns.Load() != 1 {
+		t.Fatalf("expected the parallel branch to run, got %d", parallelRuns.Load())
 	}
-	second, err := coordinator.RunNext(context.Background())
-	if err != nil || second.EndVersion != 2 || second.Items[0].Event.Type != "user.interrupt" {
-		t.Fatalf("interrupt was not processed next: batch=%#v err=%v", second, err)
+	if mainRuns.Load() != 1 {
+		t.Fatal("the parallel branch must not have started a second main run")
+	}
+	close(release)
+	wait.Wait()
+	if coordinator.Metrics().ParallelRuns != 1 {
+		t.Fatal("parallel runs must be counted")
 	}
 }
 
-func TestOperationalInterruptDoesNotFabricateTrajectoryItem(t *testing.T) {
-	t.Parallel()
+func TestRoutineEventWaitsForWorkInFlight(t *testing.T) {
 	store := trajectory.NewStore()
+	release := make(chan struct{})
 	started := make(chan struct{})
-	coordinator, err := New(Config{
-		Store: store, MaxPendingEvents: 4, ReservedInterruptEvents: 1,
-		Processor: ProcessorFunc(func(ctx context.Context, _ Batch) error {
-			close(started)
-			<-ctx.Done()
-			return ctx.Err()
+	var counter, clock atomic.Uint64
+	coordinator, err := eventloop.New(eventloop.Config{
+		Store: store, MaxPendingEvents: 16,
+		Now:    func() uint64 { return clock.Add(1) },
+		NextID: func(prefix string) string { return prefix + "-" + strconv.FormatUint(counter.Add(1), 10) },
+		Processor: eventloop.ProcessorFunc(func(ctx context.Context, _ eventloop.Batch) error {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			<-release
+			return nil
 		}),
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("new coordinator: %v", err)
 	}
-	if _, err := coordinator.Submit(observationEvent("hello", PriorityRoutine)); err != nil {
-		t.Fatal(err)
+	if _, err := coordinator.Submit(observation(1, "first")); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	go func() { _, _ = coordinator.RunNext(context.Background()) }()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("processor never started")
+	}
+	if _, err := coordinator.Submit(observation(2, "second")); err != nil {
+		t.Fatalf("submit second: %v", err)
+	}
+	if _, err := coordinator.RunNext(context.Background()); !errors.Is(err, eventloop.ErrBusy) {
+		t.Fatalf("expected ErrBusy for a routine event, got %v", err)
+	}
+	if version := store.Snapshot().Version; version != 2 {
+		t.Fatalf("the busy event must still be committed, got version %d", version)
+	}
+	close(release)
+}
+
+func TestToolPlaceholderEventCommitsAgainstItsCall(t *testing.T) {
+	test := newHarness(t, nil)
+	if err := test.store.AppendBatch([]trajectory.Item{
+		{
+			ID: "obs-1", Kind: trajectory.KindObservation, MonotonicNS: 1, SourceRevision: 1,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "pay the invoice",
+		},
+		{
+			ID: "call-1", Kind: trajectory.KindToolCall, MonotonicNS: 2, CausalParentIDs: []string{"obs-1"},
+			SourceRevision: 1, InvocationID: "inv-1", Producer: trajectory.Producer{Phase: trajectory.PhaseSlow},
+			ToolCall: &trajectory.ToolCall{CallID: "c1", Name: "pay", Arguments: json.RawMessage(`{"id":"1"}`)},
+		},
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := test.coordinator.Submit(eventloop.Event{
+		Type: "tool.interrupted", Source: "runtime", Channel: "tool",
+		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindToolPlaceholder, InvocationID: "inv-1",
+		ToolPlaceholder: &trajectory.ToolPlaceholder{CallID: "c1", Name: "pay", Reason: "interrupted"},
+	}); err != nil {
+		t.Fatalf("submit placeholder: %v", err)
+	}
+	batch, err := test.coordinator.RunNext(context.Background())
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !batch.Contains(trajectory.KindToolPlaceholder) {
+		t.Fatal("expected a committed placeholder")
+	}
+	if pending := trajectory.UnresolvedToolCalls(test.store.Snapshot()); len(pending) != 0 {
+		t.Fatalf("placeholder must account for the outstanding call, got %d", len(pending))
+	}
+}
+
+func TestObserverAuthorityObservationCommitsThroughIngress(t *testing.T) {
+	test := newHarness(t, nil)
+	event := observation(1, "A confirmation dialog appeared.")
+	event.Type = "video.observation"
+	event.Source = "video-observer"
+	event.Producer = trajectory.Producer{Phase: trajectory.PhaseObserver, Provider: "video"}
+	event.Observation = &trajectory.ObservationMeta{
+		Observer: "video", Source: "screen", Authority: trajectory.AuthorityObserver,
+		Media: []trajectory.MediaRef{{Handle: "frame-1", MIMEType: "image/jpeg", Width: 1280, Height: 720}},
+	}
+	if _, err := test.coordinator.Submit(event); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	batch, err := test.coordinator.RunNext(context.Background())
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got := trajectory.AuthorityOf(batch.Items[0]); got != trajectory.AuthorityObserver {
+		t.Fatalf("expected observer authority through ingress, got %q", got)
+	}
+}
+
+func TestInterruptCancelsTheRunInFlight(t *testing.T) {
+	store := trajectory.NewStore()
+	started := make(chan struct{})
+	var counter, clock atomic.Uint64
+	coordinator, err := eventloop.New(eventloop.Config{
+		Store: store, MaxPendingEvents: 16, ReservedInterruptEvents: 4,
+		Now:    func() uint64 { return clock.Add(1) },
+		NextID: func(prefix string) string { return prefix + "-" + strconv.FormatUint(counter.Add(1), 10) },
+		Processor: eventloop.ProcessorFunc(func(ctx context.Context, _ eventloop.Batch) error {
+			close(started)
+			<-ctx.Done()
+			return context.Cause(ctx)
+		}),
+	})
+	if err != nil {
+		t.Fatalf("new coordinator: %v", err)
+	}
+	if _, err := coordinator.Submit(observation(1, "long")); err != nil {
+		t.Fatalf("submit: %v", err)
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, runErr := coordinator.RunNext(context.Background())
-		done <- runErr
+		_, err := coordinator.RunNext(context.Background())
+		done <- err
 	}()
 	<-started
-	coordinator.Interrupt(errors.New("acoustic speech start"))
-	if runErr := <-done; runErr == nil {
-		t.Fatal("operational interrupt did not cancel the active processor")
+	urgent := observation(2, "stop")
+	urgent.Priority = eventloop.PriorityInterrupt
+	if _, err := coordinator.Submit(urgent); err != nil {
+		t.Fatalf("submit interrupt: %v", err)
 	}
-	snapshot := store.Snapshot()
-	if len(snapshot.Items) != 1 || snapshot.Items[0].Kind != trajectory.KindObservation {
-		t.Fatalf("operational interrupt changed canonical trajectory: %#v", snapshot.Items)
+	select {
+	case err := <-done:
+		if !errors.Is(err, eventloop.ErrInterrupted) {
+			t.Fatalf("expected interruption, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("interrupt did not cancel the run")
 	}
 }
 
-func TestToolResultsCrossSafePointAsOneCompleteBatch(t *testing.T) {
-	t.Parallel()
+func TestQueueFullReservesInterruptCapacity(t *testing.T) {
 	store := trajectory.NewStore()
-	if err := store.AppendBatch([]trajectory.Item{
-		{ID: "user", Kind: trajectory.KindObservation, MonotonicNS: 1, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "compare"},
-		{ID: "call-a-item", Kind: trajectory.KindToolCall, MonotonicNS: 2, CausalParentIDs: []string{"user"}, InvocationID: "slow-1", Producer: trajectory.Producer{Phase: trajectory.PhaseSlow}, ToolCall: &trajectory.ToolCall{CallID: "call-a", Name: "read_a", Arguments: json.RawMessage(`{}`)}},
-		{ID: "call-b-item", Kind: trajectory.KindToolCall, MonotonicNS: 3, CausalParentIDs: []string{"call-a-item"}, InvocationID: "slow-1", Producer: trajectory.Producer{Phase: trajectory.PhaseSlow}, ToolCall: &trajectory.ToolCall{CallID: "call-b", Name: "read_b", Arguments: json.RawMessage(`{}`)}},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	var now uint64 = 3
-	coordinator, err := New(Config{Store: store, MaxPendingEvents: 16, Now: func() uint64 { now++; return now }})
-	if err != nil {
-		t.Fatal(err)
-	}
-	partial := toolResultEvent([]trajectory.ToolResult{{CallID: "call-a", Name: "read_a", Output: json.RawMessage(`{"value":2}`)}})
-	if _, err := coordinator.Submit(partial); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := coordinator.RunNext(context.Background()); err == nil {
-		t.Fatal("partial tool result event was accepted")
-	}
-	if store.Snapshot().Version != 3 || coordinator.Pending() != 0 {
-		t.Fatalf("invalid result event changed state: pending=%d snapshot=%#v", coordinator.Pending(), store.Snapshot())
-	}
-	complete := toolResultEvent([]trajectory.ToolResult{
-		{CallID: "call-b", Name: "read_b", Output: json.RawMessage(`{"value":1}`)},
-		{CallID: "call-a", Name: "read_a", Output: json.RawMessage(`{"value":2}`)},
-	})
-	if _, err := coordinator.Submit(complete); err != nil {
-		t.Fatal(err)
-	}
-	batch, err := coordinator.RunNext(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(batch.Items) != 2 || batch.Items[0].ToolResult.Name != "read_a" || batch.Items[1].ToolResult.Name != "read_b" {
-		t.Fatalf("results were not committed atomically in call order: %#v", batch.Items)
-	}
-	if len(batch.Items[0].CausalParentIDs) != 2 || batch.Items[0].Event.Type != "tool.results" {
-		t.Fatalf("tool result causality/event provenance missing: %#v", batch.Items[0])
-	}
-}
-
-func TestCoordinatorReservesIngressCapacityForInterrupts(t *testing.T) {
-	t.Parallel()
-	coordinator, err := New(Config{
-		Store: trajectory.NewStore(), MaxPendingEvents: 2, ReservedInterruptEvents: 1,
+	coordinator, err := eventloop.New(eventloop.Config{
+		Store: store, MaxPendingEvents: 4, ReservedInterruptEvents: 2,
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("new coordinator: %v", err)
 	}
-	if _, err := coordinator.Submit(observationEvent("routine", PriorityRoutine)); err != nil {
-		t.Fatal(err)
+	for index := 0; index < 2; index++ {
+		if _, err := coordinator.Submit(observation(uint64(index+1), "text")); err != nil {
+			t.Fatalf("submit %d: %v", index, err)
+		}
 	}
-	if _, err := coordinator.Submit(observationEvent("another routine", PriorityRoutine)); !errors.Is(err, ErrQueueFull) {
-		t.Fatalf("routine event consumed interrupt reserve: %v", err)
+	if _, err := coordinator.Submit(observation(3, "text")); !errors.Is(err, eventloop.ErrQueueFull) {
+		t.Fatalf("expected routine backpressure, got %v", err)
 	}
-	interrupt := observationEvent("directed interruption", PriorityInterrupt)
-	interrupt.Type = "user.interrupt"
-	if _, err := coordinator.Submit(interrupt); err != nil {
-		t.Fatalf("interrupt could not use reserved capacity: %v", err)
-	}
-	if _, err := coordinator.Submit(interrupt); !errors.Is(err, ErrQueueFull) {
-		t.Fatalf("full queue did not apply backpressure: %v", err)
-	}
-}
-
-func TestPlayedInvalidationAndRepairCrossOneSafePointInOrder(t *testing.T) {
-	t.Parallel()
-	store := trajectory.NewStore()
-	if err := store.AppendBatch([]trajectory.Item{
-		{ID: "user", Kind: trajectory.KindObservation, SourceRevision: 1, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "request"},
-		{ID: "old", Kind: trajectory.KindAssistant, SourceRevision: 1, Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "old answer"},
-		{ID: "queued", Kind: trajectory.KindAssistantState, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, AssistantState: &trajectory.AssistantState{AssistantItemID: "old", Visibility: trajectory.VisibilityQueued}},
-		{ID: "updated", Kind: trajectory.KindObservation, SourceRevision: 2, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "updated request"},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	coordinator, err := New(Config{Store: store, MaxPendingEvents: 8})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := coordinator.Submit(Event{
-		Type: "conversation.item.truncated", Source: "client", Channel: "voice", Priority: PriorityRoutine,
-		Kind: trajectory.KindAssistantState, AssistantState: &trajectory.AssistantState{AssistantItemID: "old", Visibility: trajectory.VisibilityPlayed, PlayedAudioMS: 90},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := coordinator.Submit(Event{
-		Type: "speech.repair_required", Source: "commit-horizon", Channel: "voice", Priority: PriorityRoutine,
-		Kind: trajectory.KindRepair, SourceRevision: 2,
-		Repair: &trajectory.RepairState{TargetAssistantItemID: "old", Status: trajectory.RepairRequired, PlayedAudioMS: 90},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	batch, err := coordinator.RunNext(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(batch.Items) != 2 || batch.Items[0].Kind != trajectory.KindAssistantState || batch.Items[1].Kind != trajectory.KindRepair ||
-		len(trajectory.PendingRepairs(store.Snapshot())) != 1 || !trajectory.BatchIntroducesPendingRepair(batch.Items) {
-		t.Fatalf("repair batch = %#v", batch.Items)
-	}
-}
-
-func TestSubmitBatchAdmissionIsAtomicUnderBackpressure(t *testing.T) {
-	t.Parallel()
-	store := trajectory.NewStore()
-	coordinator, err := New(Config{Store: store, MaxPendingEvents: 3, ReservedInterruptEvents: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := coordinator.Submit(observationEvent("already queued", PriorityRoutine)); err != nil {
-		t.Fatal(err)
-	}
-	_, err = coordinator.SubmitBatch([]Event{
-		observationEvent("would fit alone", PriorityRoutine),
-		observationEvent("would cross routine reserve", PriorityRoutine),
-	})
-	if !errors.Is(err, ErrQueueFull) {
-		t.Fatalf("atomic batch backpressure = %v", err)
-	}
-	if coordinator.Pending() != 1 {
-		t.Fatalf("part of a rejected batch entered ingress: pending=%d", coordinator.Pending())
-	}
-	batch, err := coordinator.RunNext(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(batch.Items) != 1 || batch.Items[0].Content != "already queued" {
-		t.Fatalf("rejected batch changed canonical input: %#v", batch.Items)
-	}
-}
-
-func observationEvent(content string, priority Priority) Event {
-	return Event{
-		Type: "user.input", Source: "user", Channel: "voice", Priority: priority,
-		Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: content,
-	}
-}
-
-func toolResultEvent(results []trajectory.ToolResult) Event {
-	return Event{
-		Type: "tool.results", Source: "tau-orchestrator", Channel: "tool",
-		Priority: PriorityRoutine, Kind: trajectory.KindToolResult,
-		InvocationID: "slow-1", ToolResults: results,
+	urgent := observation(3, "text")
+	urgent.Priority = eventloop.PriorityInterrupt
+	if _, err := coordinator.Submit(urgent); err != nil {
+		t.Fatalf("reserved interrupt capacity must remain: %v", err)
 	}
 }
