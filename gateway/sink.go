@@ -248,15 +248,19 @@ func (session *session) SpeechEnd(_ context.Context, utterance action.Utterance,
 func (session *session) ToolCalls(_ context.Context, calls binding.ToolCallEvent) error {
 	session.config.Metrics.toolCallsOut.Add(uint64(len(calls.Calls)))
 	session.recordCallNames(calls.Calls)
-	responseID, _, _, err := session.openOutput()
+	responseID, first, _, err := session.openOutput()
 	if err != nil {
 		return err
 	}
-	// The first call took the index openOutput handed out; the rest claim
-	// their own. Every one of them is an output item of this turn.
-	session.rewindOutputIndex()
-	for _, call := range calls.Calls {
-		index := session.claimOutputIndex()
+	// The first call takes the index openOutput already handed out and the
+	// rest claim their own. Giving it back and re-claiming would be a race:
+	// a concurrent utterance opening the same response could take the slot in
+	// between, and two output items would carry the same index.
+	for offset, call := range calls.Calls {
+		index := first
+		if offset > 0 {
+			index = session.claimOutputIndex()
+		}
 		itemID := session.nextID("item")
 		if err := session.send(event("response.output_item.added", session.nextID("event"), map[string]any{
 			"response_id": responseID, "output_index": index,
@@ -371,44 +375,38 @@ func (session *session) closeIfComplete(context.Context) error {
 // openOutput returns the response this turn's output belongs to, creating it
 // on the first thing that crosses into the world.
 func (session *session) openOutput() (string, int, bool, error) {
+	// The announcement happens under the same lock that installs the response,
+	// because response.created has to be the first event of the response it
+	// announces. Two output paths can open one turn - a spoken answer and the
+	// calls that follow it, on different goroutines - and if the lock were
+	// released between installing and announcing, the second path could put
+	// its first item on the wire ahead of the response it belongs to.
 	session.responseMu.Lock()
-	created := false
+	defer session.responseMu.Unlock()
 	if session.response == nil {
 		session.response = &wireResponse{id: session.nextID("resp")}
-		created = true
+		session.settingsMu.RLock()
+		format, voice := session.settings.outputFormat, session.settings.voice
+		session.settingsMu.RUnlock()
+		id := session.response.id
+		if err := session.send(event("response.created", session.nextID("event"), map[string]any{
+			"response": responseObject(id, "in_progress", session.conversationID, nil, nil,
+				format, voice, session.outputModalities()),
+		})); err != nil {
+			session.response = nil
+			return "", 0, true, err
+		}
+		index := session.response.nextIndex
+		session.response.nextIndex++
+		return id, index, true, nil
 	}
 	current := session.response
 	index := current.nextIndex
 	current.nextIndex++
-	id := current.id
-	session.responseMu.Unlock()
-
-	if !created {
-		return id, index, false, nil
-	}
-	session.settingsMu.RLock()
-	format, voice := session.settings.outputFormat, session.settings.voice
-	session.settingsMu.RUnlock()
-	if err := session.send(event("response.created", session.nextID("event"), map[string]any{
-		"response": responseObject(id, "in_progress", session.conversationID, nil, nil,
-			format, voice, session.outputModalities()),
-	})); err != nil {
-		return "", 0, true, err
-	}
-	return id, index, true, nil
+	return current.id, index, false, nil
 }
 
 // claimOutputIndex takes the next output slot in the open response.
-// rewindOutputIndex gives back the slot openOutput reserved, for a caller that
-// numbers its own items.
-func (session *session) rewindOutputIndex() {
-	session.responseMu.Lock()
-	defer session.responseMu.Unlock()
-	if session.response != nil && session.response.nextIndex > 0 {
-		session.response.nextIndex--
-	}
-}
-
 func (session *session) claimOutputIndex() int {
 	session.responseMu.Lock()
 	defer session.responseMu.Unlock()
