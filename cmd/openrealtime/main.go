@@ -32,6 +32,8 @@ func run(arguments []string, stdout, stderr io.Writer) error {
 		return runServe(arguments[1:], stdout)
 	case "conformance":
 		return runConformance(arguments[1:], stdout)
+	case "probe":
+		return runProbe(arguments[1:], stdout)
 	case "version":
 		fmt.Fprintln(stdout, version())
 		return nil
@@ -48,6 +50,7 @@ const usageText = `usage: openrealtime <command> [flags]
 
 commands:
   serve         run the OpenRealtime server
+  probe         drive a running server through one turn and report it
   conformance   verify protocol and component conformance
   version       print the version
 

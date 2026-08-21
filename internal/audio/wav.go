@@ -1,4 +1,10 @@
-// Package audio implements the small, deterministic PCM boundary used by replay.
+// Package audio implements a small, deterministic PCM WAV boundary.
+//
+// It reads uncompressed PCM16 in whatever rate and channel count a file
+// happens to carry, and converts to the mono 16-bit form everything inside the
+// runtime uses. Being strict about the container and permissive about the
+// rate is deliberate: a fixture recorded at 44.1 kHz is a normal thing to be
+// handed, and refusing it would push resampling onto every caller.
 package audio
 
 import (
@@ -11,11 +17,14 @@ import (
 )
 
 const (
+	// OpenAIPCMSampleRate is the rate the Realtime wire uses for audio/pcm.
 	OpenAIPCMSampleRate = uint32(24_000)
+	// PCM16BytesPerSample is the size of one sample in one channel.
 	PCM16BytesPerSample = uint16(2)
 	MonoChannels        = uint16(1)
 )
 
+// Metadata describes a decoded file.
 type Metadata struct {
 	SampleRateHz    uint32
 	Channels        uint16
@@ -24,139 +33,144 @@ type Metadata struct {
 	DataLengthBytes uint64
 }
 
+// DurationNS is the playing time of the decoded audio.
 func (metadata Metadata) DurationNS() uint64 {
+	if metadata.SampleRateHz == 0 {
+		return 0
+	}
 	return metadata.SampleCount * 1_000_000_000 / uint64(metadata.SampleRateHz)
 }
 
-type PCM16MonoReader struct {
-	file      *os.File
-	metadata  Metadata
-	remaining uint64
+// Decoded is mono PCM16 plus what it came from.
+type Decoded struct {
+	Metadata Metadata
+	// PCM16LE is mono, little-endian, at Metadata.SampleRateHz.
+	PCM16LE []byte
 }
 
-func OpenPCM16Mono(path string) (*PCM16MonoReader, error) {
-	file, err := os.Open(path)
+// ReadFile decodes a WAV file into mono PCM16.
+func ReadFile(path string) (Decoded, error) {
+	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("open WAV: %w", err)
+		return Decoded{}, fmt.Errorf("open WAV: %w", err)
 	}
-	reader, err := parse(file)
-	if err != nil {
-		file.Close()
-		return nil, fmt.Errorf("parse WAV: %w", err)
-	}
-	return reader, nil
+	return Decode(raw)
 }
 
-func parse(file *os.File) (*PCM16MonoReader, error) {
-	var header [12]byte
-	if _, err := io.ReadFull(file, header[:]); err != nil {
-		return nil, err
+// Decode parses a WAV container from memory.
+func Decode(raw []byte) (Decoded, error) {
+	if len(raw) < 12 || string(raw[0:4]) != "RIFF" || string(raw[8:12]) != "WAVE" {
+		return Decoded{}, errors.New("expected a RIFF/WAVE container")
 	}
-	if string(header[0:4]) != "RIFF" || string(header[8:12]) != "WAVE" {
-		return nil, errors.New("expected RIFF/WAVE container")
-	}
-
 	var metadata Metadata
 	foundFormat := false
-	for {
-		var chunkHeader [8]byte
-		if _, err := io.ReadFull(file, chunkHeader[:]); err != nil {
-			return nil, fmt.Errorf("read chunk header: %w", err)
+	offset := 12
+	for offset+8 <= len(raw) {
+		chunkID := string(raw[offset : offset+4])
+		chunkSize := int(binary.LittleEndian.Uint32(raw[offset+4 : offset+8]))
+		body := offset + 8
+		if chunkSize < 0 || body+chunkSize > len(raw) {
+			// A truncated final chunk is common in recordings that were cut
+			// short. Taking what is there beats refusing the file.
+			chunkSize = len(raw) - body
 		}
-		chunkID := string(chunkHeader[0:4])
-		chunkSize := uint64(binary.LittleEndian.Uint32(chunkHeader[4:8]))
 		switch chunkID {
 		case "fmt ":
 			if chunkSize < 16 {
-				return nil, errors.New("WAV fmt chunk is shorter than 16 bytes")
+				return Decoded{}, errors.New("WAV fmt chunk is shorter than 16 bytes")
 			}
-			var format [16]byte
-			if _, err := io.ReadFull(file, format[:]); err != nil {
-				return nil, fmt.Errorf("read fmt chunk: %w", err)
-			}
-			if binary.LittleEndian.Uint16(format[0:2]) != 1 {
-				return nil, errors.New("only uncompressed PCM WAV is supported")
+			format := raw[body : body+16]
+			if encoding := binary.LittleEndian.Uint16(format[0:2]); encoding != 1 && encoding != 0xFFFE {
+				return Decoded{}, fmt.Errorf("only uncompressed PCM WAV is supported, got encoding %d", encoding)
 			}
 			metadata.Channels = binary.LittleEndian.Uint16(format[2:4])
 			metadata.SampleRateHz = binary.LittleEndian.Uint32(format[4:8])
 			metadata.BitsPerSample = binary.LittleEndian.Uint16(format[14:16])
-			if err := skipChunkRemainder(file, chunkSize-16); err != nil {
-				return nil, err
-			}
 			foundFormat = true
 		case "data":
 			if !foundFormat {
-				return nil, errors.New("WAV data chunk precedes fmt chunk")
+				return Decoded{}, errors.New("WAV data chunk precedes fmt chunk")
 			}
-			if metadata.Channels != MonoChannels || metadata.BitsPerSample != 16 {
-				return nil, fmt.Errorf(
-					"OpenAI PCM input requires mono 16-bit audio; got %d channels and %d bits",
-					metadata.Channels,
-					metadata.BitsPerSample,
-				)
+			if metadata.BitsPerSample != 16 {
+				return Decoded{}, fmt.Errorf("PCM16 audio is required, got %d bits per sample", metadata.BitsPerSample)
 			}
-			if metadata.SampleRateHz != OpenAIPCMSampleRate {
-				return nil, fmt.Errorf(
-					"OpenAI PCM input requires %d Hz; got %d Hz",
-					OpenAIPCMSampleRate,
-					metadata.SampleRateHz,
-				)
+			if metadata.Channels == 0 {
+				return Decoded{}, errors.New("WAV declares no channels")
 			}
-			if chunkSize%uint64(PCM16BytesPerSample) != 0 {
-				return nil, errors.New("PCM data length is not sample-aligned")
+			if metadata.SampleRateHz == 0 {
+				return Decoded{}, errors.New("WAV declares no sample rate")
 			}
-			metadata.DataLengthBytes = chunkSize
-			metadata.SampleCount = chunkSize / uint64(PCM16BytesPerSample)
-			return &PCM16MonoReader{file: file, metadata: metadata, remaining: chunkSize}, nil
-		default:
-			if err := skipChunkRemainder(file, chunkSize); err != nil {
-				return nil, err
-			}
+			payload := raw[body : body+chunkSize]
+			mono := downmix(payload, metadata.Channels)
+			metadata.DataLengthBytes = uint64(len(mono))
+			metadata.SampleCount = uint64(len(mono) / int(PCM16BytesPerSample))
+			return Decoded{Metadata: metadata, PCM16LE: mono}, nil
 		}
+		offset = body + chunkSize + chunkSize%2
 	}
+	return Decoded{}, errors.New("WAV contains no data chunk")
 }
 
-func skipChunkRemainder(reader io.Seeker, length uint64) error {
-	padded := length + length%2
-	if padded > uint64(^uint64(0)>>1) {
-		return errors.New("WAV chunk is too large")
+// downmix averages interleaved channels into one.
+func downmix(payload []byte, channels uint16) []byte {
+	if channels == 1 {
+		return payload
 	}
-	if _, err := reader.Seek(int64(padded), io.SeekCurrent); err != nil {
-		return fmt.Errorf("skip WAV chunk: %w", err)
+	stride := int(channels) * int(PCM16BytesPerSample)
+	frames := len(payload) / stride
+	mono := make([]byte, frames*int(PCM16BytesPerSample))
+	for frame := 0; frame < frames; frame++ {
+		total := 0
+		for channel := 0; channel < int(channels); channel++ {
+			offset := frame*stride + channel*int(PCM16BytesPerSample)
+			total += int(int16(binary.LittleEndian.Uint16(payload[offset:])))
+		}
+		binary.LittleEndian.PutUint16(mono[frame*2:], uint16(int16(total/int(channels))))
 	}
-	return nil
+	return mono
 }
 
-func (reader *PCM16MonoReader) Metadata() Metadata {
-	return reader.metadata
+// PCM16MonoReader streams a decoded file in fixed frames.
+type PCM16MonoReader struct {
+	decoded Decoded
+	offset  int
 }
 
+// OpenPCM16Mono decodes a file for framed reading.
+func OpenPCM16Mono(path string) (*PCM16MonoReader, error) {
+	decoded, err := ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return &PCM16MonoReader{decoded: decoded}, nil
+}
+
+// Metadata describes the open file.
+func (reader *PCM16MonoReader) Metadata() Metadata { return reader.decoded.Metadata }
+
+// ReadFrame fills buffer with the next samples, returning io.EOF at the end.
 func (reader *PCM16MonoReader) ReadFrame(buffer []byte) (int, error) {
 	if len(buffer) == 0 || len(buffer)%int(PCM16BytesPerSample) != 0 {
 		return 0, errors.New("frame buffer must contain a positive whole number of PCM16 samples")
 	}
-	if reader.remaining == 0 {
+	if reader.offset >= len(reader.decoded.PCM16LE) {
 		return 0, io.EOF
 	}
-	requested := uint64(len(buffer))
-	if requested > reader.remaining {
-		requested = reader.remaining
-	}
-	read, err := io.ReadFull(reader.file, buffer[:requested])
-	reader.remaining -= uint64(read)
-	if errors.Is(err, io.ErrUnexpectedEOF) {
-		return read, errors.New("WAV data chunk ended before its declared length")
-	}
-	if err != nil {
-		return read, err
-	}
-	return read, nil
+	copied := copy(buffer, reader.decoded.PCM16LE[reader.offset:])
+	reader.offset += copied
+	return copied, nil
 }
 
-func (reader *PCM16MonoReader) Close() error {
-	return reader.file.Close()
-}
+// Close exists so callers can treat the reader like a file handle.
+func (reader *PCM16MonoReader) Close() error { return nil }
 
+// GenerateFixture writes a deterministic two-tone WAV.
+//
+// It is the smallest thing that exercises the whole audio path with a known
+// answer: two bursts separated by silence, at a fixed rate, hashing to a
+// stable digest. Reproduction scripts assert that digest so a decode change
+// that silently alters audio is caught by the fixture rather than by a
+// benchmark result three steps later.
 func GenerateFixture(path string) ([32]byte, error) {
 	const durationMilliseconds = 1_000
 	sampleCount := uint32(OpenAIPCMSampleRate) * durationMilliseconds / 1_000
