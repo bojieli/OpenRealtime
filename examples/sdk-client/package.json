@@ -1,0 +1,13 @@
+{
+  "name": "openrealtime-sdk-client",
+  "private": true,
+  "type": "module",
+  "description": "OpenAI's own Realtime client, unmodified, against an OpenRealtime server.",
+  "dependencies": {
+    "@openai/agents-realtime": "^0.17.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

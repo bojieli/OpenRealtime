@@ -22,6 +22,37 @@ negotiation; see [protocol/openrealtime-1.md](protocol/openrealtime-1.md). A
 client that never mentions it gets an ordinary Realtime session, and the server
 never volunteers the key.
 
+## Checked against OpenAI's own client
+
+The schema check runs on every session, but a schema is a description of an
+API rather than the API, and the two can disagree. So the suite also runs the
+published `@openai/agents-realtime` package - unmodified, configured as its own
+documentation says - through a tool-using turn on both transports. See
+[examples/sdk-client](../examples/sdk-client/README.md); `go test
+./examples/sdk-client/` runs it, and skips where npm's dependencies are absent.
+
+It found two places where this server was stricter than the API it describes,
+and both are now reconciled:
+
+**`noise_reduction: null`.** The source specification gives the field
+`"type": "object"`, `"default": null`, and a description stating it can be set
+to null to turn the feature off. Converted to JSON Schema the type won and the
+default became unrepresentable, so a validator built from it rejected the null
+OpenAI's own API returns and OpenAI's own client sends. The generator now emits
+`["object", "null"]` wherever the specification declares null as the default -
+a mechanical rule reading the specification's own statement, visible in the
+pinned artifact rather than hidden in the validator. It applies to five fields,
+all of them noise reduction.
+
+**Unsupported turn detection is a fallback, not a rejection.** A client may ask
+for a detector this deployment does not have; the SDK's default is
+`semantic_vad`. Refusing the event would discard the instructions, tools, and
+audio formats that arrived with it, so the session runs on the detector the
+deployment has. `session.updated` reports `server_vad` with the settings
+actually in force, so a client can see it did not get what it asked for.
+Parameters a client leaves unset resolve to the deployment's rather than to
+zero.
+
 ## Internal synchronization does not change the wire
 
 The canonical trajectory and the safe-point event loop add no client or server

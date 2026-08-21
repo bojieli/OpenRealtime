@@ -99,6 +99,7 @@ taken in, a dangerous tool declared, and nothing happens. See
 | | |
 | --- | --- |
 | [Quickstart](docs/quickstart.md) | run it, check it, connect to it |
+| [OpenAI's own client](examples/sdk-client/README.md) | the compatibility claim, checked by the published SDK |
 | [The developer console](console/README.md) | both transports, video, and tools on your own machine |
 | [Architecture](docs/architecture.md) | the four subsystems and why they are separate |
 | [Bindings](docs/bindings/README.md) | which voice stack, and what each one owns |

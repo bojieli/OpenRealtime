@@ -9,3 +9,9 @@ bin/
 dist/
 artifacts/
 .runtime/
+
+# The official-SDK example installs its client from npm and builds a browser
+# bundle from it. Neither is ours to vendor: the point of that example is that
+# the client is the published package rather than a copy of it.
+examples/sdk-client/node_modules/
+examples/sdk-client/dist/
