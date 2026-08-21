@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/internal/clock"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -52,6 +53,17 @@ type VideoConfig struct {
 	// one strong model regresses when handed a keyframe stream, through
 	// image-token dilution.
 	AttachKeyframes bool
+	// Now is the monotonic clock the sampling interval is measured against.
+	// Zero selects the system clock.
+	//
+	// It is deliberately not the frame's own capture time. A capture time is
+	// whatever the client chose to write in the event, and the sampling
+	// interval is a bound on what this server will spend: a client that sends
+	// no timestamps would otherwise disable the cadence entirely, and one that
+	// sends the same timestamp on every frame would disable the observer. The
+	// gate answers "how often am I willing to decode", which is a question
+	// about this process rather than about the sender.
+	Now func() uint64
 }
 
 // VideoObserver watches a video source and commits what changed.
@@ -94,6 +106,10 @@ func NewVideoObserver(config VideoConfig) (*VideoObserver, error) {
 	if config.Narrator == nil {
 		return nil, errors.New("a video observer requires a narrator: narration is the value, not keyframe selection")
 	}
+	if config.Now == nil {
+		system := clock.NewSystem()
+		config.Now = system.NowNS
+	}
 	if config.AttachKeyframes && config.Retainer == nil {
 		return nil, errors.New("attaching keyframes requires a media store to retain them")
 	}
@@ -116,11 +132,11 @@ func (observer *VideoObserver) Gate(frame Frame) bool {
 	if len(frame.Image) == 0 {
 		return false
 	}
+	now := observer.config.Now()
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
 	observer.frames++
-	if observer.lastAdmitNS != 0 && frame.CapturedNS != 0 &&
-		frame.CapturedNS-observer.lastAdmitNS < uint64(observer.config.Cadence.Nanoseconds()) {
+	if observer.admitted != 0 && now-observer.lastAdmitNS < uint64(observer.config.Cadence.Nanoseconds()) {
 		return false
 	}
 	// A screen that has not changed usually re-encodes to identical bytes, so
@@ -203,7 +219,7 @@ func (observer *VideoObserver) Observe(ctx context.Context, frames []Frame) ([]O
 	}
 	observer.lastSignature = signature
 	observer.lastFingerprint, observer.lastBytes = fingerprint(frame.Image), len(frame.Image)
-	observer.lastAdmitNS = frame.CapturedNS
+	observer.lastAdmitNS = observer.config.Now()
 	observer.admitted++
 	observer.revision++
 	revision := observer.revision
@@ -252,6 +268,7 @@ func (observer *VideoObserver) Reset() {
 	defer observer.mu.Unlock()
 	observer.lastFingerprint, observer.lastBytes = 0, 0
 	observer.lastSignature, observer.lastAdmitNS = nil, 0
+	observer.admitted = 0
 }
 
 // VideoMetrics is what the efficiency gates measure.

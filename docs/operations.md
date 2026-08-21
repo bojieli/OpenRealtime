@@ -54,6 +54,7 @@ would be a worse problem than having no metrics endpoint.
 | `sessions_started` / `sessions_completed` / `sessions_failed` | session lifecycle |
 | `audio_frames_in` / `audio_frames_out` | media volume in both directions |
 | `video_frames_in` | frames accepted from clients, before gating |
+| `video_frames_dropped` | frames refused by the negotiated rate cap. A number that climbs says a client is not conforming to the limits it was told at negotiation. |
 | `tool_calls_out` | authoritative calls handed to clients |
 
 ## Logs

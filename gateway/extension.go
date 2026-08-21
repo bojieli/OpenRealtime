@@ -100,6 +100,7 @@ func (session *session) appendVideoFrame(appendEvent openrealtime.VideoFrameAppe
 	if err != nil {
 		return err
 	}
+	arrived := time.Now()
 	session.sourcesMu.Lock()
 	source, declared := session.sources[appendEvent.Source]
 	if !declared {
@@ -112,6 +113,18 @@ func (session *session) appendVideoFrame(appendEvent openrealtime.VideoFrameAppe
 		session.sourcesMu.Unlock()
 		return nil
 	}
+	// The rate cap is declared at negotiation, so it has to be enforced here:
+	// a limit a client is told about and the server does not apply is not a
+	// limit, and the cost of a frame that arrives too soon is paid before any
+	// observer's gate gets to reject it. Excess is dropped rather than
+	// refused, because a client that sends a little fast is conforming badly
+	// rather than misbehaving, and failing its session over pacing would be a
+	// worse answer than sampling it.
+	if !source.admits(arrived, limits.FPSCap) {
+		session.sourcesMu.Unlock()
+		session.config.Metrics.videoFramesDropped.Add(1)
+		return nil
+	}
 	source.index++
 	frame := perception.Frame{
 		Kind: perception.FrameImage, Source: appendEvent.Source, Index: source.index,
@@ -119,10 +132,32 @@ func (session *session) appendVideoFrame(appendEvent openrealtime.VideoFrameAppe
 	}
 	session.sourcesMu.Unlock()
 	session.config.Metrics.videoFramesIn.Add(1)
+	// Capture time is the client's if it supplied one and arrival time
+	// otherwise. It is never left at zero: downstream this is the only
+	// timestamp an observation carries, and an observation with no time in it
+	// cannot be ordered against the speech it is supposed to accompany.
+	frame.CapturedNS = uint64(arrived.UnixNano())
 	if appendEvent.TimestampMS > 0 {
 		frame.CapturedNS = uint64(appendEvent.TimestampMS) * uint64(time.Millisecond)
 	}
 	return session.runtime.Video(session.ctx, frame)
+}
+
+// admits applies the declared frame-rate cap to one source.
+//
+// The cap is a floor on the interval rather than a count in a window: a window
+// lets a client send a whole second's worth in a burst and then wait, which
+// costs exactly what the cap exists to bound.
+func (source *videoSource) admits(arrived time.Time, cap int) bool {
+	if cap <= 0 {
+		return true
+	}
+	interval := time.Second / time.Duration(cap)
+	if !source.lastAdmitted.IsZero() && arrived.Sub(source.lastAdmitted) < interval {
+		return false
+	}
+	source.lastAdmitted = arrived
+	return true
 }
 
 func mimeFor(format string) string {

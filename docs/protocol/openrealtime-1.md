@@ -95,7 +95,7 @@ conform rather than discover them by being rejected.
 | Field | Meaning |
 | --- | --- |
 | `format` | encoded image format the server accepts: `jpeg`, `png`, or `webp` |
-| `fps_cap` | frames per second per source above which frames MAY be discarded |
+| `fps_cap` | frames per second per source above which frames MAY be discarded. A server that states a cap SHOULD enforce it: a limit a client is told about and the server does not apply is not a limit. |
 | `max_dimension` | maximum pixels on either edge of a declared source |
 | `max_frame_bytes` | maximum decoded size of one frame, optional |
 

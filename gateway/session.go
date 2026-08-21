@@ -39,6 +39,8 @@ type videoSource struct {
 	width  int
 	height int
 	index  uint64
+	// lastAdmitted is when this source last passed the declared rate cap.
+	lastAdmitted time.Time
 }
 
 // session is one client connection.

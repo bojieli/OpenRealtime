@@ -12,6 +12,7 @@ import (
 	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	"github.com/bojieli/OpenRealtime/internal/clock"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -287,9 +288,15 @@ func TestVideoObserverNarratesOnlyRealChange(t *testing.T) {
 	}
 }
 
+// TestVideoCadenceLimitsSampling drives the sampling interval from the
+// observer's own clock rather than from the timestamps on the frames, which is
+// what the observer actually reads. A client's capture time cannot be trusted
+// to bound what this server spends.
 func TestVideoCadenceLimitsSampling(t *testing.T) {
+	simulated := clock.NewVirtual(uint64(time.Second))
 	observer, err := perception.NewVideoObserver(perception.VideoConfig{
 		Narrator: perception.StaticNarrator{Text: "screen"}, Cadence: 333 * time.Millisecond,
+		Now: simulated.NowNS,
 	})
 	if err != nil {
 		t.Fatalf("new observer: %v", err)
@@ -299,11 +306,49 @@ func TestVideoCadenceLimitsSampling(t *testing.T) {
 	if _, err := observer.Observe(context.Background(), []perception.Frame{imageFrame(base, uint64(time.Second))}); err != nil {
 		t.Fatalf("observe: %v", err)
 	}
+	if _, err := simulated.AdvanceNS(uint64(100 * time.Millisecond)); err != nil {
+		t.Fatalf("advance: %v", err)
+	}
 	if observer.Gate(imageFrame(changed, uint64(time.Second+100*time.Millisecond))) {
 		t.Fatal("a frame inside the sampling interval must be rejected")
 	}
+	if _, err := simulated.AdvanceNS(uint64(300 * time.Millisecond)); err != nil {
+		t.Fatalf("advance: %v", err)
+	}
 	if !observer.Gate(imageFrame(changed, uint64(time.Second+400*time.Millisecond))) {
 		t.Fatal("a frame after the sampling interval must be admitted")
+	}
+}
+
+// TestVideoCadenceIgnoresClientTimestamps is the defect this arrangement
+// exists to prevent: a client that sends no timestamp at all, or the same one
+// on every frame, must not be able to switch the sampling interval off or jam
+// it shut.
+func TestVideoCadenceIgnoresClientTimestamps(t *testing.T) {
+	simulated := clock.NewVirtual(0)
+	observer, err := perception.NewVideoObserver(perception.VideoConfig{
+		Narrator: perception.StaticNarrator{Text: "screen"}, Cadence: 333 * time.Millisecond,
+		Now: simulated.NowNS,
+	})
+	if err != nil {
+		t.Fatalf("new observer: %v", err)
+	}
+	base := encodeFrame(t, color.Gray{Y: 20}, image.Rect(0, 0, 0, 0))
+	changed := encodeFrame(t, color.Gray{Y: 20}, image.Rect(60, 60, 260, 200))
+	if _, err := observer.Observe(context.Background(), []perception.Frame{imageFrame(base, 0)}); err != nil {
+		t.Fatalf("observe: %v", err)
+	}
+	// No timestamps, no elapsed time: the interval still holds.
+	for attempt := 0; attempt < 5; attempt++ {
+		if observer.Gate(imageFrame(changed, 0)) {
+			t.Fatal("an untimestamped burst must not bypass the sampling interval")
+		}
+	}
+	if _, err := simulated.AdvanceNS(uint64(400 * time.Millisecond)); err != nil {
+		t.Fatalf("advance: %v", err)
+	}
+	if !observer.Gate(imageFrame(changed, 0)) {
+		t.Fatal("an untimestamped frame after the interval must be admitted")
 	}
 }
 

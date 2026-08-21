@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/internal/clock"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -161,13 +162,19 @@ func measureIdleSource(seconds float64, width, height int, fps float64) (sourceC
 		return sourceCost{}, err
 	}
 	narrator := &countingNarrator{}
+	// The observer measures its sampling interval against a clock rather than
+	// against the timestamps a client wrote, so a simulated minute needs a
+	// simulated clock: run in real time and the whole minute would arrive in
+	// microseconds and the cadence would reject all of it.
+	simulated := clock.NewVirtual(0)
 	observer, err := perception.NewVideoObserver(perception.VideoConfig{
 		Narrator: narrator, Cadence: time.Duration(float64(time.Second) / fps),
+		Now: simulated.NowNS,
 	})
 	if err != nil {
 		return sourceCost{}, err
 	}
-	return runSource(observer, narrator, seconds, fps, func(int) ([]byte, error) {
+	return runSource(observer, narrator, simulated, seconds, fps, func(int) ([]byte, error) {
 		// An idle screen re-encodes to identical bytes, which is exactly the
 		// case the cheap gate exists for.
 		return frame, nil
@@ -177,19 +184,21 @@ func measureIdleSource(seconds float64, width, height int, fps float64) (sourceC
 // measureActiveSource is the other end: a screen that changes every sample.
 func measureActiveSource(seconds float64, width, height int, fps float64) (sourceCost, error) {
 	narrator := &countingNarrator{}
+	simulated := clock.NewVirtual(0)
 	observer, err := perception.NewVideoObserver(perception.VideoConfig{
 		Narrator: narrator, Cadence: time.Duration(float64(time.Second) / fps),
+		Now: simulated.NowNS,
 	})
 	if err != nil {
 		return sourceCost{}, err
 	}
-	return runSource(observer, narrator, seconds, fps, func(index int) ([]byte, error) {
+	return runSource(observer, narrator, simulated, seconds, fps, func(index int) ([]byte, error) {
 		return encodeScreen(width, height, index, true)
 	})
 }
 
 func runSource(
-	observer *perception.VideoObserver, narrator *countingNarrator,
+	observer *perception.VideoObserver, narrator *countingNarrator, simulated *clock.Virtual,
 	seconds, fps float64, frameFor func(int) ([]byte, error),
 ) (sourceCost, error) {
 	count := int(seconds * fps)
@@ -201,6 +210,9 @@ func runSource(
 	for index := 0; index < count; index++ {
 		payload, err := frameFor(index)
 		if err != nil {
+			return sourceCost{}, err
+		}
+		if err := simulated.AdvanceToNS(uint64(index) * interval); err != nil {
 			return sourceCost{}, err
 		}
 		frame := perception.Frame{

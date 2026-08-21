@@ -11,30 +11,36 @@ type Metrics struct {
 	sessionsFailed    atomic.Uint64
 	audioFramesIn     atomic.Uint64
 	videoFramesIn     atomic.Uint64
-	audioFramesOut    atomic.Uint64
-	toolCallsOut      atomic.Uint64
+	// videoFramesDropped counts frames refused by the declared rate cap. It is
+	// the number that says whether a client is conforming to the limits the
+	// server stated at negotiation.
+	videoFramesDropped atomic.Uint64
+	audioFramesOut     atomic.Uint64
+	toolCallsOut       atomic.Uint64
 }
 
 // MetricsSnapshot is a consistent-enough view for reporting.
 type MetricsSnapshot struct {
-	SessionsStarted   uint64 `json:"sessions_started"`
-	SessionsCompleted uint64 `json:"sessions_completed"`
-	SessionsFailed    uint64 `json:"sessions_failed"`
-	AudioFramesIn     uint64 `json:"audio_frames_in"`
-	VideoFramesIn     uint64 `json:"video_frames_in"`
-	AudioFramesOut    uint64 `json:"audio_frames_out"`
-	ToolCallsOut      uint64 `json:"tool_calls_out"`
+	SessionsStarted    uint64 `json:"sessions_started"`
+	SessionsCompleted  uint64 `json:"sessions_completed"`
+	SessionsFailed     uint64 `json:"sessions_failed"`
+	AudioFramesIn      uint64 `json:"audio_frames_in"`
+	VideoFramesIn      uint64 `json:"video_frames_in"`
+	VideoFramesDropped uint64 `json:"video_frames_dropped"`
+	AudioFramesOut     uint64 `json:"audio_frames_out"`
+	ToolCallsOut       uint64 `json:"tool_calls_out"`
 }
 
 // Snapshot reads the counters.
 func (metrics *Metrics) Snapshot() MetricsSnapshot {
 	return MetricsSnapshot{
-		SessionsStarted:   metrics.sessionsStarted.Load(),
-		SessionsCompleted: metrics.sessionsCompleted.Load(),
-		SessionsFailed:    metrics.sessionsFailed.Load(),
-		AudioFramesIn:     metrics.audioFramesIn.Load(),
-		VideoFramesIn:     metrics.videoFramesIn.Load(),
-		AudioFramesOut:    metrics.audioFramesOut.Load(),
-		ToolCallsOut:      metrics.toolCallsOut.Load(),
+		SessionsStarted:    metrics.sessionsStarted.Load(),
+		SessionsCompleted:  metrics.sessionsCompleted.Load(),
+		SessionsFailed:     metrics.sessionsFailed.Load(),
+		AudioFramesIn:      metrics.audioFramesIn.Load(),
+		VideoFramesIn:      metrics.videoFramesIn.Load(),
+		VideoFramesDropped: metrics.videoFramesDropped.Load(),
+		AudioFramesOut:     metrics.audioFramesOut.Load(),
+		ToolCallsOut:       metrics.toolCallsOut.Load(),
 	}
 }
