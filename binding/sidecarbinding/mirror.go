@@ -1,0 +1,406 @@
+package sidecarbinding
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/bojieli/OpenRealtime/action"
+	"github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/cognition"
+	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/eventloop"
+	"github.com/bojieli/OpenRealtime/interaction"
+	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/sidecar"
+	"github.com/bojieli/OpenRealtime/trajectory"
+)
+
+const maxRolloutIterations = 16
+
+// mirror reads the sidecar and does two things with what it produces:
+// forwards it to the client, and commits what matters to the canonical
+// trajectory so the background reasoner sees the conversation the model is
+// having. The second half is the entire point of the binding.
+func (runtime *runtime) mirror() {
+	for message := range runtime.model.Frames() {
+		if err := runtime.mirrorMessage(message); err != nil {
+			runtime.sink.Failed(runtime.ctx, binding.ErrorEvent{
+				Code: "sidecar_error", Message: err.Error(),
+			})
+		}
+	}
+	if err := runtime.model.Err(); err != nil {
+		runtime.sink.Failed(runtime.ctx, binding.ErrorEvent{
+			Code: "sidecar_closed", Message: err.Error(),
+		})
+	}
+}
+
+func (runtime *runtime) mirrorMessage(message sidecar.Message) error {
+	switch message.Type {
+	case sidecar.TypeSpeechStarted:
+		if runtime.spec.Floor != binding.OwnerModel {
+			return nil
+		}
+		runtime.duplex.UserSpeechStarted(runtime.scheduler.NowNS())
+		return runtime.sink.Activity(runtime.ctx, binding.ActivityEvent{Started: true})
+	case sidecar.TypeSpeechStopped:
+		if runtime.spec.Floor != binding.OwnerModel {
+			return nil
+		}
+		runtime.duplex.UserSpeechStopped(runtime.scheduler.NowNS())
+		return runtime.sink.Activity(runtime.ctx, binding.ActivityEvent{Stopped: true})
+	case sidecar.TypeTranscript:
+		if !message.Final {
+			return nil
+		}
+		return runtime.commitUserSpeech(message.Text)
+	case sidecar.TypeTextDone:
+		return runtime.commitModelSpeech(message.Text)
+	case sidecar.TypeOutputAudio:
+		return runtime.forwardAudio(message)
+	case sidecar.TypeTurnDone:
+		return runtime.finishTurn()
+	case sidecar.TypeToolCall:
+		return runtime.modelToolCall(message)
+	case sidecar.TypeError:
+		runtime.sink.Failed(runtime.ctx, binding.ErrorEvent{
+			Code: "sidecar_" + firstNonEmpty(message.Code, "error"), Message: message.Message(),
+		})
+		return nil
+	default:
+		return nil
+	}
+}
+
+// commitUserSpeech records what the model heard as a canonical observation.
+func (runtime *runtime) commitUserSpeech(text string) error {
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+	observation := perception.Observation{
+		Text: text, Observer: "sidecar", Source: "microphone",
+		Authority: trajectory.AuthorityUser, Final: true,
+	}
+	runtime.audioMu.Lock()
+	utteranceID := runtime.utteranceID
+	runtime.audioMu.Unlock()
+	if err := runtime.sink.Transcript(runtime.ctx, binding.TranscriptEvent{
+		ItemID: utteranceID, Text: text, Final: true,
+	}); err != nil {
+		return err
+	}
+	if err := runtime.sink.Observation(runtime.ctx, observation); err != nil {
+		return err
+	}
+	_, err := runtime.coordinator.Submit(eventloop.Event{
+		Type: "sidecar.transcript", Source: "sidecar", Channel: "voice",
+		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindObservation,
+		SourceRevision: runtime.nextRevision(), Producer: observation.Producer(), Content: text,
+	})
+	return err
+}
+
+// commitModelSpeech records what the model said.
+//
+// It is committed with observer authority, not as an assistant item: the
+// background reasoner did not produce this text and must not mistake it for
+// its own prior reasoning, and a mirrored voice opening a turn would have the
+// reasoner answering the model instead of the person.
+func (runtime *runtime) commitModelSpeech(text string) error {
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+	observation := perception.Observation{
+		Text: "The voice model said: " + text, Observer: "sidecar-voice", Source: "assistant",
+		Authority: trajectory.AuthorityObserver, Final: true,
+	}
+	_, err := runtime.coordinator.Submit(eventloop.Event{
+		Type: "sidecar.assistant", Source: "sidecar-voice", Channel: "voice",
+		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindObservation,
+		SourceRevision: runtime.nextRevision(), Producer: observation.Producer(),
+		Content: observation.Text, Observation: observation.Meta(),
+	})
+	return err
+}
+
+func (runtime *runtime) forwardAudio(message sidecar.Message) error {
+	rate := runtime.ready.OutputRate
+	if rate <= 0 {
+		rate = 24_000
+	}
+	runtime.stateMu.Lock()
+	if runtime.utterance == nil {
+		utterance := action.Utterance{
+			ID: fmt.Sprintf("%s_speech_%d", runtime.spec.Name, runtime.sequence.Add(1)),
+		}
+		runtime.utterance = &utterance
+		runtime.stateMu.Unlock()
+		if err := runtime.sink.SpeechBegin(runtime.ctx, utterance); err != nil {
+			return err
+		}
+		runtime.stateMu.Lock()
+	}
+	utterance := *runtime.utterance
+	runtime.stateMu.Unlock()
+
+	frame := action.Frame{
+		PCM16LE: message.Payload, SampleRateHz: uint32(rate),
+		Duration: time.Duration(len(message.Payload)/2) * time.Second / time.Duration(rate),
+	}
+	if err := runtime.duplex.AgentAudioHandedOff(utterance.ID, frame.Duration); err != nil {
+		return err
+	}
+	return runtime.sink.SpeechAudio(runtime.ctx, utterance, frame)
+}
+
+func (runtime *runtime) finishTurn() error {
+	runtime.stateMu.Lock()
+	utterance := runtime.utterance
+	runtime.utterance = nil
+	runtime.stateMu.Unlock()
+	if utterance == nil {
+		return nil
+	}
+	return runtime.sink.SpeechEnd(runtime.ctx, *utterance, action.Outcome{Completed: true})
+}
+
+// modelToolCall reports that the model asked for a call.
+//
+// It is refused. The model is the fast provider, and the fast provider cannot
+// call tools - that boundary does not change because the provider happens to
+// live in another process. The refusal goes back as a tool result so the model
+// sees why rather than waiting.
+func (runtime *runtime) modelToolCall(message sidecar.Message) error {
+	runtime.config.Logf("sidecar model proposed %q; only the background reasoner may execute tools", message.Name)
+	return runtime.model.Send(sidecar.Message{
+		Type: sidecar.TypeToolResult, CallID: message.CallID,
+		Error: "the fast provider has no execution authority; the background reasoner performs tool calls",
+	})
+}
+
+// Process runs the background reasoner over the mirrored conversation.
+func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) error {
+	cause := interaction.Cause{
+		Observation: batch.Contains(trajectory.KindObservation),
+		ToolResult:  batch.Contains(trajectory.KindToolResult),
+		Parallel:    batch.Triage == eventloop.TriageParallel,
+	}
+	if !cause.Observation && !cause.ToolResult {
+		return nil
+	}
+	if cause.Observation && !batchHasUserSpeech(batch) && !cause.ToolResult {
+		return nil
+	}
+	revision := runtime.latestRevision(batch)
+	var failures []error
+
+	for iteration := 0; iteration < maxRolloutIterations; iteration++ {
+		cause.SlowInvocations = runtime.engine.SlowInvocations(revision)
+		plan := runtime.policies.Rollout.Plan(interaction.RolloutInput{
+			Context: interaction.Context{
+				NowNS: runtime.scheduler.NowNS(), Duplex: runtime.duplex.Snapshot(),
+			},
+			Cause: cause,
+		})
+		if len(plan) == 0 {
+			return errors.Join(failures...)
+		}
+		request := cognition.Request{SourceRevision: revision}
+		cause.Observation, cause.ToolResult, cause.SlowCommitted = false, false, false
+
+		for _, step := range plan {
+			switch step.Kind {
+			case interaction.StepSlow:
+				result, err := runtime.engine.RunSlow(ctx, request, nil)
+				if err != nil {
+					return errors.Join(append(failures, err)...)
+				}
+				if len(result.ToolCalls) > 0 {
+					dispatched, dispatchErr := runtime.dispatch(ctx, result)
+					if dispatchErr != nil {
+						return errors.Join(append(failures, dispatchErr)...)
+					}
+					cause.ToolResult = dispatched
+					if !dispatched {
+						return errors.Join(failures...)
+					}
+					continue
+				}
+				if strings.TrimSpace(result.AssistantText) != "" {
+					cause.SlowCommitted = true
+					runtime.stateMu.Lock()
+					runtime.answer = strings.TrimSpace(result.AssistantText)
+					runtime.stateMu.Unlock()
+				}
+			case interaction.StepVoice:
+				if err := runtime.handOff(); err != nil {
+					return errors.Join(append(failures, err)...)
+				}
+			default:
+				return errors.Join(append(failures,
+					fmt.Errorf("%s cannot run a %s step: the model owns the voice", runtime.spec.Name, step.Kind))...)
+			}
+		}
+		if !cause.SlowCommitted && !cause.ToolResult {
+			return errors.Join(failures...)
+		}
+	}
+	return errors.Join(failures...)
+}
+
+// handOff gives the model the completed answer to say.
+//
+// Where the sidecar declares text injection, the answer becomes context and
+// the model speaks it on its next turn - which is the closest thing to
+// splicing a second model into a stack that owns its own voice. Where it does
+// not, the same text is sent as an explicit instruction followed by a respond
+// request. The second path always works, which is why the binding ships
+// whatever the research into the first one concludes.
+func (runtime *runtime) handOff() error {
+	runtime.stateMu.Lock()
+	answer := runtime.answer
+	runtime.answer = ""
+	runtime.stateMu.Unlock()
+	if answer == "" {
+		return nil
+	}
+	text := "The background reasoner has completed the answer. Say this, briefly and naturally, " +
+		"preserving every fact and identifier exactly, and add nothing:\n\n" + answer
+	if err := runtime.model.Send(sidecar.Message{
+		Type: sidecar.TypeText, Role: "system", Text: text,
+	}); err != nil {
+		return err
+	}
+	if runtime.ready.Has(sidecar.CapabilityTextInjection) && runtime.spec.FullDuplex {
+		// A full-duplex model decides for itself when to say what it now
+		// knows. Demanding a turn would take back the floor it owns.
+		return nil
+	}
+	return runtime.model.Send(sidecar.Message{Type: sidecar.TypeRespond})
+}
+
+func batchHasUserSpeech(batch eventloop.Batch) bool {
+	for _, item := range batch.Items {
+		if item.Kind == trajectory.KindObservation && trajectory.AuthorityOf(item) == trajectory.AuthorityUser {
+			return true
+		}
+	}
+	return false
+}
+
+func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunResult) (bool, error) {
+	var local, remote []trajectory.ToolCall
+	for _, call := range result.ToolCalls {
+		call.Arguments = slices.Clone(call.Arguments)
+		spec, declared := runtime.registry.Lookup(call.Name)
+		if declared && spec.Dispatcher != nil {
+			local = append(local, call)
+			continue
+		}
+		remote = append(remote, call)
+	}
+	if len(remote) > 0 {
+		runtime.stateMu.Lock()
+		pending := &pendingInvocation{results: make(map[string]trajectory.ToolResult)}
+		for _, call := range result.ToolCalls {
+			pending.calls = append(pending.calls, call)
+			runtime.callOwner[call.CallID] = result.InvocationID
+			runtime.callNames[call.CallID] = call.Name
+		}
+		runtime.pending[result.InvocationID] = pending
+		runtime.stateMu.Unlock()
+		if err := runtime.sink.ToolCalls(ctx, binding.ToolCallEvent{
+			InvocationID: result.InvocationID, Calls: remote,
+		}); err != nil {
+			return false, err
+		}
+	}
+	if len(local) == 0 {
+		return false, nil
+	}
+	results, err := runtime.tools.DispatchAll(ctx, local)
+	if err != nil {
+		return false, err
+	}
+	if len(remote) > 0 {
+		runtime.stateMu.Lock()
+		if pending := runtime.pending[result.InvocationID]; pending != nil {
+			for _, one := range results {
+				pending.results[one.CallID] = one
+			}
+		}
+		runtime.stateMu.Unlock()
+		return false, nil
+	}
+	if err := runtime.engine.AppendToolResults(result.InvocationID, results); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ToolResult accepts a client-executed result for a call the reasoner issued.
+func (runtime *runtime) ToolResult(_ context.Context, result trajectory.ToolResult) error {
+	if strings.TrimSpace(result.CallID) == "" {
+		return errors.New("a tool result requires a call ID")
+	}
+	runtime.stateMu.Lock()
+	invocationID, known := runtime.callOwner[result.CallID]
+	if !known {
+		runtime.stateMu.Unlock()
+		return fmt.Errorf("tool result references unknown call %q", result.CallID)
+	}
+	pending := runtime.pending[invocationID]
+	if pending == nil {
+		runtime.stateMu.Unlock()
+		return fmt.Errorf("tool result references a completed invocation %q", invocationID)
+	}
+	if _, duplicate := pending.results[result.CallID]; duplicate {
+		runtime.stateMu.Unlock()
+		return fmt.Errorf("duplicate tool result for call %q", result.CallID)
+	}
+	result.Name = runtime.callNames[result.CallID]
+	pending.results[result.CallID] = result
+	complete := len(pending.results) == len(pending.calls) && !pending.dispatched
+	var ordered []trajectory.ToolResult
+	if complete {
+		pending.dispatched = true
+		for _, call := range pending.calls {
+			ordered = append(ordered, pending.results[call.CallID])
+		}
+	}
+	runtime.stateMu.Unlock()
+	if !complete {
+		return nil
+	}
+	if _, err := runtime.coordinator.Submit(eventloop.Event{
+		Type: "tool.results", Source: "client", Channel: "tool",
+		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindToolResult,
+		InvocationID: invocationID, ToolResults: ordered,
+	}); err != nil {
+		return err
+	}
+	runtime.stateMu.Lock()
+	delete(runtime.pending, invocationID)
+	for _, call := range pending.calls {
+		delete(runtime.callOwner, call.CallID)
+	}
+	runtime.stateMu.Unlock()
+	return nil
+}
+
+func (runtime *runtime) latestRevision(batch eventloop.Batch) uint64 {
+	revision := batch.SourceRevision()
+	for _, item := range runtime.store.Snapshot().Items {
+		if item.Kind == trajectory.KindObservation {
+			revision = max(revision, item.SourceRevision)
+		}
+	}
+	return revision
+}
+
+var _ eventloop.Processor = (*runtime)(nil)
