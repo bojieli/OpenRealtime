@@ -28,6 +28,14 @@ const maxRolloutIterations = 16
 // Process executes the interaction plane's rollout plan for one committed
 // batch. It is the only place cognition runs.
 func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) error {
+	// An obligation the ledger is holding becomes visible to the model here,
+	// at the first safe point after the evidence that created it committed.
+	// Raising it earlier is not possible - the log refuses a repair whose
+	// target is not yet recorded as played - and raising it later would let a
+	// turn answer the user while still owing them a correction.
+	if err := runtime.raiseRepairs(); err != nil {
+		runtime.fail("repair_error", err)
+	}
 	cause := interaction.Cause{
 		Observation:   batch.Contains(trajectory.KindObservation),
 		ToolResult:    batch.Contains(trajectory.KindToolResult),
@@ -132,6 +140,13 @@ func (runtime *runtime) runSlow(
 		return dispatched, nil
 	}
 	if strings.TrimSpace(result.AssistantText) != "" {
+		// The correction, if one was owed, is this. Recording that here rather
+		// than when it is spoken is deliberate: the slow provider is the one
+		// that was instructed to correct, and a fast utterance voicing it is a
+		// rendering of the correction rather than the correction itself.
+		if err := runtime.resolveRepairs(result); err != nil {
+			runtime.fail("repair_error", err)
+		}
 		cause.SlowCommitted = true
 		return true, nil
 	}

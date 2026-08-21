@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -141,12 +142,43 @@ func New(config Config) (*Binding, error) {
 	if config.Policies.Validate() != nil {
 		config.Policies = interaction.Defaults()
 	}
+	if err := validateObservationAgainstDeferral(config.ObservationPolicy, config.Policies.Deferral); err != nil {
+		return nil, err
+	}
 	for index, factory := range config.Observers {
 		if err := factory.Validate(); err != nil {
 			return nil, fmt.Errorf("observer %d: %w", index, err)
 		}
 	}
 	return &Binding{config: config}, nil
+}
+
+// validateObservationAgainstDeferral refuses a pair of policies that cancel
+// each other out.
+//
+// The stable-partial policy exists to let the agent start answering before the
+// user has finished, and that is the whole of its value. A deferral policy
+// that waits for the user to stop speaking holds every one of those partials
+// until the endpoint, where the final observation arrives anyway - so the
+// configuration costs an extra committed observation and a supersession and
+// buys exactly nothing.
+//
+// Refusing is better than quietly picking one. Both policies are measured
+// factors, and a runtime that silently overrode one of them would report a
+// configuration it was not running - which is the failure this project keeps
+// pointing at everywhere else.
+func validateObservationAgainstDeferral(observation ObservationPolicy, deferral interaction.Deferral) error {
+	if observation != ObservationStablePartial || deferral == nil {
+		return nil
+	}
+	if !slices.Contains(deferral.Conditions(), session.UserSpeechStopped) {
+		return nil
+	}
+	return fmt.Errorf(
+		"the %s observation policy admits partials before the endpoint, but the %q deferral policy defers "+
+			"every run until the user stops speaking, so nothing would ever act on one: either configure a "+
+			"deferral that allows running while the user is speaking, or use the %s observation policy",
+		ObservationStablePartial, deferral.Name(), ObservationEndpointOnly)
 }
 
 // Name is the binding's stable identifier.

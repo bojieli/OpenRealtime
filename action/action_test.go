@@ -279,16 +279,74 @@ func TestCancelMatchingLeavesUnrelatedSpeechAlone(t *testing.T) {
 	}
 	_ = speech.Enqueue(action.Utterance{ID: "fast", Text: "one", Phase: trajectory.PhaseFast}, "voice")
 	_ = speech.Enqueue(action.Utterance{ID: "other", Text: "two", Phase: trajectory.PhaseSlow}, "voice")
-	cancelled := speech.CancelMatching("superseded", func(utterance action.Utterance) bool {
+	cancelled, heard := speech.CancelMatching("superseded", func(utterance action.Utterance) bool {
 		return utterance.Phase == trajectory.PhaseFast
 	})
 	if len(cancelled) != 1 || cancelled[0].ID != "fast" {
 		t.Fatalf("expected only the fast utterance cancelled, got %+v", cancelled)
 	}
+	if len(heard) != 0 {
+		t.Fatalf("nothing was emitted, so nothing can be owed a repair, got %+v", heard)
+	}
 	commitment, _ := ledger.Lookup("other")
 	if commitment.State == action.StateCancelled {
 		t.Fatal("unrelated queued speech must survive")
 	}
+}
+
+// Supersession has two outcomes and they are not the same outcome. Speech that
+// nobody heard is cancelled and can be forgotten; speech that reached the user
+// cannot be, and comes back as something a repair is owed for.
+func TestCancelMatchingReportsWhatWasAlreadyHeard(t *testing.T) {
+	ledger := action.NewLedger()
+	sink := &recordingSink{}
+	speech, err := action.NewSpeech(action.SpeechConfig{
+		Provider: fakeSpeechProvider{rate: 24000, chunks: 10, bytes: 4800},
+		Sink:     sink, Ledger: ledger, FrameDuration: 20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new speech: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go speech.Run(ctx)
+
+	if err := speech.Enqueue(action.Utterance{
+		ID: "heard", Text: "the order is for twelve", Phase: trajectory.PhaseFast,
+		SourceRevision: 1, AssistantItemIDs: []string{"assistant-1"},
+	}, "voice"); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	waitFor(t, func() bool {
+		commitment, exists := ledger.Lookup("heard")
+		return exists && commitment.State.Crossed()
+	}, "the utterance never reached the world")
+
+	cancelled, heard := speech.CancelMatching("superseded", func(utterance action.Utterance) bool {
+		return utterance.SourceRevision < 2
+	})
+	if len(cancelled) != 0 {
+		t.Fatalf("audio that was already playing cannot be reported as cancelled, got %+v", cancelled)
+	}
+	if len(heard) != 1 || heard[0].ID != "heard" {
+		t.Fatalf("expected the playing utterance reported as heard, got %+v", heard)
+	}
+	obligation, created := ledger.Invalidate(heard[0].ID, 2)
+	if !created || len(obligation.AssistantItemIDs) != 1 {
+		t.Fatalf("invalidating heard content must create an obligation, got %+v", obligation)
+	}
+}
+
+func waitFor(t *testing.T, condition func() bool, message string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal(message)
 }
 
 func seedCall(t *testing.T, store *trajectory.Store, callID, name string) {

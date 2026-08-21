@@ -318,6 +318,52 @@ func (ledger *Ledger) Lookup(id string) (Commitment, bool) {
 	return *commitment, true
 }
 
+// Crossed returns every commitment that reached the world and matches the
+// supplied predicate.
+//
+// It is Cancellable's mirror, and the pair is the whole vocabulary the commit
+// boundary offers: what can still be stopped, and what can only be repaired.
+// Supersession needs both - it stops what nobody heard and owes a correction
+// for what somebody did.
+func (ledger *Ledger) Crossed(match func(Commitment) bool) []Commitment {
+	ledger.mu.Lock()
+	defer ledger.mu.Unlock()
+	var result []Commitment
+	for _, id := range ledger.order {
+		commitment := ledger.commitments[id]
+		if !commitment.State.Crossed() {
+			continue
+		}
+		if match != nil && !match(*commitment) {
+			continue
+		}
+		result = append(result, *commitment)
+	}
+	return result
+}
+
+// Truncated records what the client says was actually heard.
+//
+// The server knows what it sent and when; only the client knows where playback
+// stopped. That makes the client authoritative on the one number a repair
+// decision turns on, and a repair raised later must use the honest figure
+// rather than the server's optimistic one.
+func (ledger *Ledger) Truncated(id string, playedMS uint64) bool {
+	ledger.mu.Lock()
+	defer ledger.mu.Unlock()
+	commitment, exists := ledger.commitments[id]
+	if !exists || !commitment.State.Crossed() {
+		return false
+	}
+	commitment.PlayedMS = playedMS
+	for index := range ledger.obligations {
+		if ledger.obligations[index].CommitmentID == id && !ledger.obligations[index].Resolved {
+			ledger.obligations[index].PlayedMS = playedMS
+		}
+	}
+	return true
+}
+
 // Cancellable returns every commitment that has not yet crossed the boundary
 // and that matches the supplied predicate. It is how barge-in and supersession
 // find what they may still stop.

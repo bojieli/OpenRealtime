@@ -295,6 +295,19 @@ func buildPolicies(options serveOptions) (interaction.Policies, error) {
 		return interaction.Policies{}, fmt.Errorf(
 			"barge-in must be immediate, sustained, or never, got %q", options.bargeIn)
 	}
+	// The stable-partial observation policy exists to answer before the user
+	// has finished, so it needs a deferral policy that will act before the user
+	// has finished. Composing the pair here rather than leaving the operator to
+	// discover the contradiction is the whole reason this function exists: the
+	// binding refuses the incoherent pair, and a flag that produced a refusal
+	// would be a flag nobody could use.
+	if partial, err := cascade.ParseObservationPolicy(options.observation); err != nil {
+		return interaction.Policies{}, err
+	} else if partial == cascade.ObservationStablePartial {
+		policies.Deferral = interaction.NewDuplexDeferral(interaction.DeferralOptions{
+			AllowWhileUserSpeaking: true,
+		})
+	}
 	if err := applyPolicyModels(&policies, options); err != nil {
 		return interaction.Policies{}, err
 	}

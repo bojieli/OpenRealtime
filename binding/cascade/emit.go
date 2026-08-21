@@ -8,7 +8,6 @@ import (
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/eventloop"
-	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -98,17 +97,12 @@ func (runtime *runtime) Truncate(ctx context.Context, truncation binding.Truncat
 			return err
 		}
 	}
-	if playedMS == 0 {
-		return nil
-	}
-	decision := runtime.policies.Repair.Decide(interaction.RepairInput{
-		Context: interaction.Context{
-			NowNS: runtime.scheduler.NowNS(), Duplex: runtime.duplex.Snapshot(),
-			Phase: commitment.Phase,
-		},
-		PlayedAudioMS: playedMS, TargetPhase: commitment.Phase,
-	})
-	_ = decision
+	// The client is authoritative on how much was heard, so its number
+	// replaces the server's. It is not a repair on its own - stopping playback
+	// invalidates nothing - but it is the figure the repair policy will decide
+	// on if later evidence does invalidate this content, and deciding on the
+	// server's optimistic duration would over-report what the user was told.
+	runtime.ledger.Truncated(truncation.ItemID, playedMS)
 	_ = ctx
 	return nil
 }

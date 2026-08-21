@@ -108,6 +108,7 @@ type Speech struct {
 	mu           sync.Mutex
 	epoch        uint64
 	activeID     string
+	active       Utterance
 	activeCancel context.CancelCauseFunc
 	closed       bool
 }
@@ -242,16 +243,48 @@ func (speech *Speech) Cancel(reason string) (cancelled []Commitment, heard bool)
 	}
 }
 
-// CancelMatching stops queued utterances that match a predicate, leaving the
-// rest alone. Fast supersession uses it: slow output crossing a semantic safe
-// point must not wait behind stale fast audio, but unrelated queued speech is
-// not stale.
-func (speech *Speech) CancelMatching(reason string, match func(Utterance) bool) []Commitment {
+// CancelMatching stops the utterance in flight and every queued utterance that
+// matches a predicate, leaving the rest alone. Supersession uses it: work
+// derived from a prefix that newer evidence replaced is stale, but unrelated
+// queued speech is not.
+//
+// It returns two sets and the difference between them is the whole point.
+// Cancelled never reached the world and can simply be forgotten. Heard did
+// reach it, wholly or in part, and cannot be taken back - a repair is damage
+// limitation rather than reversal - so it is handed back for the repair policy
+// to decide about rather than being classified here.
+//
+// It does not bump the epoch, unlike Cancel: an epoch bump invalidates every
+// queued utterance, and the point of a predicate is that some of them survive.
+func (speech *Speech) CancelMatching(reason string, match func(Utterance) bool) (cancelled, heard []Commitment) {
 	if match == nil {
-		cancelled, _ := speech.Cancel(reason)
-		return cancelled
+		cancelled, crossed := speech.Cancel(reason)
+		if crossed {
+			if commitment, exists := speech.config.Ledger.Lookup(speech.activeCommitment()); exists {
+				heard = append(heard, commitment)
+			}
+		}
+		return cancelled, heard
 	}
-	var cancelled []Commitment
+
+	speech.mu.Lock()
+	activeID, active, cancel := speech.activeID, speech.active, speech.activeCancel
+	speech.mu.Unlock()
+	if activeID != "" && match(active) {
+		if cancel != nil {
+			cancel(fmt.Errorf("speech cancelled: %s", reason))
+		}
+		if crossed, err := speech.config.Ledger.Cancel(activeID, reason); err == nil {
+			if commitment, exists := speech.config.Ledger.Lookup(activeID); exists {
+				if crossed {
+					heard = append(heard, commitment)
+				} else {
+					cancelled = append(cancelled, commitment)
+				}
+			}
+		}
+	}
+
 	var keep []queuedUtterance
 	for {
 		select {
@@ -273,9 +306,15 @@ func (speech *Speech) CancelMatching(reason string, match func(Utterance) bool) 
 				default:
 				}
 			}
-			return cancelled
+			return cancelled, heard
 		}
 	}
+}
+
+func (speech *Speech) activeCommitment() string {
+	speech.mu.Lock()
+	defer speech.mu.Unlock()
+	return speech.activeID
 }
 
 // Close stops accepting work and cancels what is queued.
@@ -303,11 +342,13 @@ func (speech *Speech) emit(parent context.Context, utterance Utterance) {
 	speech.mu.Lock()
 	speech.activeCancel = cancel
 	speech.activeID = utterance.ID
+	speech.active = utterance
 	speech.mu.Unlock()
 	defer func() {
 		speech.mu.Lock()
 		speech.activeCancel = nil
 		speech.activeID = ""
+		speech.active = Utterance{}
 		speech.mu.Unlock()
 		cancel(nil)
 	}()

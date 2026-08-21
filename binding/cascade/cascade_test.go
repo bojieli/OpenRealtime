@@ -105,7 +105,12 @@ func newSlow(turns ...[]continuation.Event) *scriptedProvider {
 	}
 }
 
-type toneSpeech struct{ chunks int }
+type toneSpeech struct {
+	chunks int
+	// silent produces no audio at all, which is how a test arranges for an
+	// utterance to be decided and never heard.
+	silent bool
+}
 
 func (toneSpeech) Descriptor() v1.Descriptor {
 	return v1.Descriptor{Name: "tone", Version: "1", Capabilities: v1.Capabilities{}}
@@ -116,6 +121,9 @@ func (toneSpeech) Synthesize(context.Context, v1.SpeechPlan) ([]v1.SpeechChunk, 
 }
 
 func (speech toneSpeech) Stream(ctx context.Context, plan v1.SpeechPlan, emit func(v1.SpeechChunk) error) error {
+	if speech.silent {
+		return errors.New("no audio available")
+	}
 	chunks := speech.chunks
 	if chunks == 0 {
 		chunks = 1

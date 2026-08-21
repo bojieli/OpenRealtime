@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/interaction"
@@ -284,15 +285,19 @@ func (runtime *runtime) commitObservation(ctx context.Context, observation perce
 
 	if supersedes != 0 {
 		// A promoted revision replaces an earlier partial. Work derived from
-		// the older prefix is stale, so it is interrupted and any speech it
-		// produced that has not been heard is cancelled.
+		// the older prefix is stale, so it is interrupted, speech it produced
+		// that nobody heard is cancelled, and speech somebody did hear is
+		// recorded as owing a repair. Those are the only two outcomes there
+		// are: audio that reached the user cannot be taken back, so the honest
+		// move is to owe a correction rather than to pretend it was cancelled.
 		runtime.coordinator.Interrupt(errors.New("superseded by a newer canonical observation"))
-		cancelled := runtime.speech.CancelMatching("superseded by a newer observation", func(utterance actionUtterance) bool {
+		cancelled, _ := runtime.speech.CancelMatching("superseded by a newer observation", func(utterance actionUtterance) bool {
 			return utterance.SourceRevision < revision
 		})
 		if err := runtime.recordCancellations(cancelled, "asr-revision", eventloop.PriorityRoutine); err != nil {
 			return err
 		}
+		runtime.owe(revision)
 	}
 	if err := runtime.sink.Observation(ctx, observation); err != nil {
 		return err
@@ -305,6 +310,28 @@ func (runtime *runtime) commitObservation(ctx context.Context, observation perce
 		CorrelationID: runtime.currentUtterance(),
 	})
 	return err
+}
+
+// owe records that later evidence invalidated content the user already heard.
+//
+// It stops at the ledger. The trajectory item that makes the obligation
+// visible to the model is raised at the next safe point instead, because the
+// log will only accept a required repair once the assistant content it targets
+// is recorded as played and the observation that invalidated it is committed -
+// and neither of those has happened yet at the instant the supersession is
+// noticed.
+func (runtime *runtime) owe(byRevision uint64) {
+	// The ledger is asked rather than the speech planner, because "was it
+	// heard" is a question about the commit boundary and not about what is
+	// currently playing. An utterance that finished a moment ago is exactly as
+	// unrecoverable as one still in flight, and a cancellation path that only
+	// saw the second would miss the common case.
+	for _, commitment := range runtime.ledger.Crossed(func(commitment action.Commitment) bool {
+		return commitment.Kind == action.KindSpeech &&
+			commitment.SourceRevision != 0 && commitment.SourceRevision < byRevision
+	}) {
+		runtime.ledger.Invalidate(commitment.ID, byRevision)
+	}
 }
 
 func observationEventType(observation perception.Observation) string {
