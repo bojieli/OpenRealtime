@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -72,6 +73,11 @@ type runtime struct {
 	// prepared holds speculative continuations that have been generated and
 	// committed to nothing.
 	prepared *preparations
+
+	observerMu sync.RWMutex
+	// selected is this session's observer set by name. Nil selects them all,
+	// which is the binding's documented default.
+	selected map[string]struct{}
 }
 
 func newRuntime(parent context.Context, bind *Binding, options binding.Options) (*runtime, error) {
@@ -148,6 +154,14 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		return nil, err
 	}
 	result.observers = set
+	selection := result.settings.Observers
+	if len(selection) == 0 {
+		selection = bind.config.DefaultObservers
+	}
+	if err := result.selectObservers(selection); err != nil {
+		cancel(err)
+		return nil, err
+	}
 
 	engine, err := cognition.New(cognition.Config{
 		Store: result.store, Fast: bind.config.Fast, Slow: bind.config.Slow,
@@ -222,12 +236,80 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 	return result, nil
 }
 
+// selectObservers narrows this session's perception to the named set.
+//
+// Selection is per session rather than per deployment, which is what makes the
+// observer set a factor rather than a build-time choice: one server, two
+// sessions, one difference between them. An empty selection is the binding's
+// default set, which is every observer the deployment configured.
+func (runtime *runtime) selectObservers(names []string) error {
+	if len(names) == 0 {
+		runtime.observerMu.Lock()
+		runtime.selected = nil
+		runtime.observerMu.Unlock()
+		return nil
+	}
+	available := runtime.observers.Names()
+	selected := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if !slices.Contains(available, name) {
+			return fmt.Errorf("unknown observer %q (available: %s)", name, strings.Join(available, ", "))
+		}
+		selected[name] = struct{}{}
+	}
+	runtime.observerMu.Lock()
+	runtime.selected = selected
+	runtime.observerMu.Unlock()
+	return nil
+}
+
+// observing reports whether one observer is part of this session's set.
+func (runtime *runtime) observing(name string) bool {
+	runtime.observerMu.RLock()
+	defer runtime.observerMu.RUnlock()
+	if runtime.selected == nil {
+		return true
+	}
+	_, chosen := runtime.selected[name]
+	return chosen
+}
+
+// activeObservers is the selected subset that accepts a frame.
+func (runtime *runtime) activeObservers(frame perception.Frame) []perception.Observer {
+	matched := runtime.observers.For(frame)
+	active := make([]perception.Observer, 0, len(matched))
+	for _, observer := range matched {
+		if runtime.observing(observer.Name()) {
+			active = append(active, observer)
+		}
+	}
+	return active
+}
+
+// observerNames reports the session's perception, for evidence and health.
+func (runtime *runtime) observerNames() []string {
+	runtime.observerMu.RLock()
+	defer runtime.observerMu.RUnlock()
+	names := make([]string, 0, len(runtime.observers.Names()))
+	for _, name := range runtime.observers.Names() {
+		if runtime.selected == nil {
+			names = append(names, name)
+			continue
+		}
+		if _, chosen := runtime.selected[name]; chosen {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // Status reports what this session is running.
 func (runtime *runtime) Status() binding.Status {
 	fast, slow := runtime.engine.Descriptors()
 	return binding.Status{
 		Binding: runtime.binding.Name(), Ownership: runtime.binding.Ownership(),
-		Policies: runtime.policies.Report(), Observers: runtime.observers.Names(),
+		Policies: runtime.policies.Report(), Observers: runtime.observerNames(),
 		Fast: fast.Provider + "/" + fast.Model, Slow: slow.Provider + "/" + slow.Model,
 		Speech: runtime.config.Speech.Descriptor().Name,
 	}
@@ -246,6 +328,13 @@ func (runtime *runtime) Update(_ context.Context, settings binding.Settings) err
 		return errors.New("cannot change session configuration during active speech")
 	}
 	if err := runtime.applyTools(settings.Tools); err != nil {
+		return err
+	}
+	selection := settings.Observers
+	if len(selection) == 0 {
+		selection = runtime.config.DefaultObservers
+	}
+	if err := runtime.selectObservers(selection); err != nil {
 		return err
 	}
 	runtime.settingsMu.Lock()
@@ -319,7 +408,7 @@ func (runtime *runtime) Video(ctx context.Context, frame perception.Frame) error
 	if err := frame.Validate(); err != nil {
 		return err
 	}
-	matched := runtime.observers.For(frame)
+	matched := runtime.activeObservers(frame)
 	if len(matched) == 0 {
 		return fmt.Errorf("%w: video input", binding.ErrUnsupported)
 	}

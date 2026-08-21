@@ -90,6 +90,12 @@ type Config struct {
 	// unchanged.
 	Observers []perception.Factory
 
+	// DefaultObservers is the binding's documented default set, by name. Empty
+	// selects every configured observer. A session that names its own set
+	// overrides it, which is what makes the set a per-session factor rather
+	// than a property of the process.
+	DefaultObservers []string
+
 	// Tools are server-side tools every session declares, on top of whatever a
 	// client declares for itself. Computer use arrives this way: a client
 	// should not have to know the coordinate space of a browser the server is
@@ -203,6 +209,25 @@ func (bind *Binding) Ownership() binding.Ownership {
 	}
 }
 
+// ObserverNames is every observer a session here may select from.
+//
+// The audio observer is always in the list because a cascade's recogniser is
+// the binding, but it is selectable: a task with no speech in it should not
+// pay for speech recognition, and factor F3's video-only level is exactly that
+// question. A level that silently ran the audio observer anyway would be the
+// same experiment as audio+video wearing a different name.
+func (bind *Binding) ObserverNames() []string {
+	names := make([]string, 0, len(bind.config.Observers)+1)
+	names = append(names, audioObserverName)
+	for _, factory := range bind.config.Observers {
+		names = append(names, factory.Name)
+	}
+	return names
+}
+
+// audioObserverName is the recogniser's name in an observer selection.
+const audioObserverName = "audio"
+
 // Capabilities reports what a cascade session supports.
 //
 // Video is reported from the configured observer set rather than from a build
@@ -217,6 +242,7 @@ func (bind *Binding) Capabilities() binding.Capabilities {
 	}
 	return binding.Capabilities{
 		Video: video, ComputerUse: true, Observations: true, FastSlow: true,
+		Observers: bind.ObserverNames(),
 	}
 }
 

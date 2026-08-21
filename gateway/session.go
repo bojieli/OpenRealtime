@@ -32,6 +32,9 @@ type settings struct {
 	gate         perception.GateConfig
 	extension    openrealtime.Response
 	limits       openrealtime.Limits
+	// observers is the perception this session selected. Empty selects the
+	// binding's default set.
+	observers []string
 }
 
 type videoSource struct {
@@ -143,7 +146,7 @@ func (session *session) bindingSettings() binding.Settings {
 	return binding.Settings{
 		Instruction: session.settings.instruction, Tools: slices.Clone(session.settings.tools),
 		Voice: session.settings.voice, Modalities: slices.Clone(session.settings.modalities),
-		Gate: session.settings.gate,
+		Gate: session.settings.gate, Observers: slices.Clone(session.settings.observers),
 	}
 }
 
@@ -377,12 +380,14 @@ func (session *session) update(update sessionUpdateBody) error {
 		return err
 	}
 	if update.OpenRealtime != nil {
-		response, err := openrealtime.NegotiateWithLimits(
-			*update.OpenRealtime, session.supportedFeatures(), session.config.VideoLimits)
+		response, err := openrealtime.NegotiateSession(
+			*update.OpenRealtime, session.supportedFeatures(), session.config.VideoLimits,
+			session.config.Binding.Capabilities().Observers)
 		if err != nil {
 			return err
 		}
 		current.extension = response
+		current.observers = slices.Clone(response.Observers)
 		if response.Video != nil {
 			current.limits = *response.Video
 		}

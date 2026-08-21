@@ -44,7 +44,8 @@ A client declares support inside `session.update`:
 { "type": "session.update", "session": {
     "openrealtime": {
       "version": 1,
-      "supports": ["video.input", "observations", "computer_use"] }}}
+      "supports": ["video.input", "observations", "computer_use"],
+      "observers": ["audio", "video"] }}}
 ```
 
 A server that implements this protocol confirms inside `session.updated`:
@@ -54,6 +55,8 @@ A server that implements this protocol confirms inside `session.updated`:
     "openrealtime": {
       "version": 1,
       "enabled": ["video.input", "observations"],
+      "observers": ["audio", "video"],
+      "available_observers": ["audio", "video"],
       "video": { "format": "jpeg", "fps_cap": 3, "max_dimension": 1280 } }}}
 ```
 
@@ -87,7 +90,31 @@ A server that implements this protocol confirms inside `session.updated`:
 | `observations` | §4, the observation event |
 | `computer_use` | §5, the `computer.*` tool namespace. Adds no events; negotiated so a client can discover whether the server honours the namespace before declaring the tools. |
 
-### 2.3 Video limits
+### 2.3 Observers
+
+Perception is selected per session, by observer name, inside the same object.
+It is a field rather than a fourth event, so the wire surface is unchanged.
+
+| Field | Direction | Meaning |
+| --- | --- | --- |
+| `observers` | client → server | the observer set this session wants |
+| `observers` | server → client | the observer set this session will actually run |
+| `available_observers` | server → client | every observer this deployment could select from |
+
+- A client that sends no `observers` gets the server's default set, and the
+  server MUST state what that turned out to be. A client cannot choose a set it
+  cannot see, so a server SHOULD send `available_observers` whenever it has
+  more than one.
+- An observer the server does not have MUST be dropped from the answer rather
+  than failing the session, exactly as an unsupported capability is.
+- A selection naming *nothing* the server has MUST be rejected with an `error`
+  event. Silently substituting the default would give the client a session
+  running perception it did not ask for and did not know about.
+- Observer names are a server's own vocabulary. `audio` and `video` are the
+  conventional names for speech recognition and screen narration; nothing here
+  reserves them.
+
+### 2.4 Video limits
 
 When `video.input` is enabled the server MUST state its limits, so a client can
 conform rather than discover them by being rejected.

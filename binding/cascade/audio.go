@@ -79,7 +79,12 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 			return err
 		}
 	}
-	if len(batch) > 0 {
+	if len(batch) > 0 && runtime.observing(audioObserverName) {
+		// A session that deselected the audio observer still runs the acoustic
+		// gate - it answers "is the user speaking", which every interaction
+		// policy reads - but it runs no recogniser. That is what factor F3's
+		// video-only level asks for, and a level that quietly recognised
+		// speech anyway would be the audio+video level under another name.
 		if err := runtime.observeAudio(ctx, batch, silenceNS); err != nil {
 			runtime.fail("asr_provider_error", err)
 		}
@@ -171,9 +176,14 @@ func (runtime *runtime) considerBargeIn(
 
 func (runtime *runtime) onUserSpeechStopped(ctx context.Context, utteranceID string, endMS int, now uint64) error {
 	runtime.duplex.UserSpeechStopped(now)
-	observations, flushErr := runtime.audio.Flush(ctx)
-	durationMS := runtime.audio.DurationMS()
-	runtime.audio.Reset()
+	var observations []perception.Observation
+	var flushErr error
+	durationMS := uint64(0)
+	if runtime.observing(audioObserverName) {
+		observations, flushErr = runtime.audio.Flush(ctx)
+		durationMS = runtime.audio.DurationMS()
+		runtime.audio.Reset()
+	}
 	runtime.policies.Trigger.Reset()
 	runtime.policies.Preparation.Reset()
 	runtime.audioMu.Lock()

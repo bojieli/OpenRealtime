@@ -114,6 +114,31 @@ func RunExtension() ExtensionReport {
 	)
 	record("an unknown capability name is refused", err != nil, fmt.Sprint(err))
 
+	// Perception is negotiated inside the object that already exists, so the
+	// wire surface is unchanged: a client that names nothing gets the
+	// binding's default set and can read what that turned out to be.
+	perception, err := openrealtime.NegotiateSession(
+		openrealtime.Request{Version: openrealtime.Version}, openrealtime.Features(),
+		openrealtime.DefaultLimits(), []string{"audio", "video"},
+	)
+	record("a client that names no observers is told which ones it got",
+		err == nil && len(perception.Observers) == 2 && len(perception.AvailableObservers) == 2,
+		fmt.Sprintf("%+v err=%v", perception, err))
+
+	chosen, err := openrealtime.NegotiateSession(
+		openrealtime.Request{Version: openrealtime.Version, Observers: []string{"video", "video"}},
+		openrealtime.Features(), openrealtime.DefaultLimits(), []string{"audio", "video"},
+	)
+	record("a named observer set is honoured and deduplicated",
+		err == nil && len(chosen.Observers) == 1 && chosen.Observers[0] == "video",
+		fmt.Sprintf("%+v err=%v", chosen.Observers, err))
+
+	_, err = openrealtime.NegotiateSession(
+		openrealtime.Request{Version: openrealtime.Version, Observers: []string{"lidar"}},
+		openrealtime.Features(), openrealtime.DefaultLimits(), []string{"audio", "video"},
+	)
+	record("an observer set naming nothing this deployment has is refused", err != nil, fmt.Sprint(err))
+
 	// Geometry is what makes a computer-use coordinate well-defined.
 	active := openrealtime.VideoSourceUpdate{Source: "screen", State: openrealtime.SourceActive}
 	record("an active source without geometry is refused", active.Validate() != nil, "")

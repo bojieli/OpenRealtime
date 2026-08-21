@@ -83,6 +83,16 @@ const (
 type Request struct {
 	Version  int       `json:"version"`
 	Supports []Feature `json:"supports,omitempty"`
+	// Observers selects the session's perception, by observer name. Empty
+	// selects the binding's documented default set.
+	//
+	// It lives inside the extension object that already exists rather than
+	// becoming a fourth event, so the wire surface is unchanged: three events
+	// and two extended objects. And it is per session rather than per
+	// deployment because that is what makes the observer set a measurable
+	// factor - two sessions against one server can differ in exactly this and
+	// nothing else, which is the shape every cell of the matrix needs.
+	Observers []string `json:"observers,omitempty"`
 }
 
 // Response is what the server echoes inside session.updated.
@@ -94,6 +104,14 @@ type Response struct {
 	Version int       `json:"version"`
 	Enabled []Feature `json:"enabled"`
 	Video   *Limits   `json:"video,omitempty"`
+	// Observers is the perception this session will actually run. It is
+	// answered rather than echoed: a client that asked for an observer this
+	// deployment does not have gets a working session and a list it can read,
+	// exactly as it does for a capability it asked for and did not get.
+	Observers []string `json:"observers,omitempty"`
+	// AvailableObservers is everything this deployment could select from, so a
+	// client can choose without guessing at names.
+	AvailableObservers []string `json:"available_observers,omitempty"`
 }
 
 // Limits are the server's declared bounds on video input. They are stated at
@@ -152,6 +170,19 @@ func Negotiate(request Request, supported []Feature) (Response, error) {
 // told it, so a limit that lives anywhere other than the negotiated response
 // is a limit the client discovers by being rejected.
 func NegotiateWithLimits(request Request, supported []Feature, limits Limits) (Response, error) {
+	return NegotiateSession(request, supported, limits, nil)
+}
+
+// NegotiateSession resolves capabilities and perception together.
+//
+// Observers are resolved the same way capabilities are: what the deployment
+// has and the client asked for is enabled, what it asked for and the
+// deployment does not have is absent from the answer rather than fatal. A
+// client that names nothing gets the binding's default set, which is every
+// observer the deployment configured.
+func NegotiateSession(
+	request Request, supported []Feature, limits Limits, available []string,
+) (Response, error) {
 	if request.Version != Version {
 		return Response{}, fmt.Errorf("unsupported openrealtime version %d, this server speaks %d", request.Version, Version)
 	}
@@ -166,6 +197,29 @@ func NegotiateWithLimits(request Request, supported []Feature, limits Limits) (R
 		}
 	}
 	response := Response{Version: Version, Enabled: enabled}
+	if len(available) > 0 {
+		response.AvailableObservers = slices.Clone(available)
+		response.Observers = slices.Clone(available)
+	}
+	if len(request.Observers) > 0 {
+		selected := make([]string, 0, len(request.Observers))
+		for _, name := range request.Observers {
+			name = strings.TrimSpace(name)
+			if name == "" || slices.Contains(selected, name) {
+				continue
+			}
+			if len(available) > 0 && !slices.Contains(available, name) {
+				continue
+			}
+			selected = append(selected, name)
+		}
+		if len(selected) == 0 {
+			return Response{}, fmt.Errorf(
+				"none of the requested observers exist here (available: %s)",
+				strings.Join(available, ", "))
+		}
+		response.Observers = selected
+	}
 	if slices.Contains(enabled, FeatureVideoInput) {
 		declared := limits
 		if declared.MaxFrameBytes <= 0 {

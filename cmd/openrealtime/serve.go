@@ -426,9 +426,13 @@ func buildCascade(options serveOptions, policies interaction.Policies) (binding.
 	if err != nil {
 		return nil, err
 	}
+	defaults, err := defaultObserverSet(options.observers)
+	if err != nil {
+		return nil, err
+	}
 	return cascade.New(cascade.Config{
 		ClientToolTimeout: options.clientToolTimeout,
-		Observers:         observers, Tools: tools,
+		Observers:         observers, DefaultObservers: defaults, Tools: tools,
 		Perception: func() (v1.PerceptionProvider, error) {
 			recogniser, err := qwenasr.New(qwenasr.Config{
 				BaseURL: options.asrURL, Model: options.asrModel,
@@ -534,6 +538,29 @@ func parseEffort(value string) (continuation.Effort, error) {
 // The observer set and its components are measured factors, so they are flags
 // rather than build-time choices: a cell of the measurement matrix is a
 // command line.
+// defaultObserverSet turns the configured level of factor F3 into the
+// binding's default selection.
+//
+// The video-only level has to actually remove the recogniser. Before this, it
+// added a video observer and left the audio one running, so it was the
+// audio+video level with a different name on the report - a factor level that
+// silently equals another level cannot measure anything.
+func defaultObserverSet(configured string) ([]string, error) {
+	set, err := perception.ParseObserverSet(configured)
+	if err != nil {
+		return nil, err
+	}
+	switch set {
+	case perception.SetVideoOnly:
+		return []string{"video"}, nil
+	default:
+		// Audio-only and audio+video are both "everything this deployment
+		// configured", because the deployment only configures a video observer
+		// for the second one.
+		return nil, nil
+	}
+}
+
 func buildObservers(options serveOptions) ([]perception.Factory, error) {
 	set, err := perception.ParseObserverSet(options.observers)
 	if err != nil {

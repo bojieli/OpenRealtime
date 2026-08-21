@@ -226,6 +226,10 @@ type Capabilities struct {
 	// binding must support it - it is the differentiator - but a degraded
 	// deployment may have it configured off.
 	FastSlow bool `json:"fast_slow"`
+	// Observers names the perception a session may select from. A client
+	// cannot choose an observer set without knowing what the names are, and a
+	// deployment's set is a configuration rather than a constant.
+	Observers []string `json:"observers,omitempty"`
 }
 
 // Options configures one session.
