@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/adapters/gemini"
 	"github.com/bojieli/OpenRealtime/adapters/openaicompat"
 	"github.com/bojieli/OpenRealtime/adapters/openaitts"
@@ -26,6 +27,8 @@ import (
 	"github.com/bojieli/OpenRealtime/binding/omni"
 	"github.com/bojieli/OpenRealtime/binding/sidecarbinding"
 	"github.com/bojieli/OpenRealtime/binding/upstream"
+	"github.com/bojieli/OpenRealtime/computeruse"
+	"github.com/bojieli/OpenRealtime/computeruse/browser"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/gateway"
 	"github.com/bojieli/OpenRealtime/interaction"
@@ -94,6 +97,11 @@ type serveOptions struct {
 	policyGuided   bool
 	policies       string
 
+	computerUse     bool
+	browserURL      string
+	browserTarget   string
+	computerConfirm string
+
 	sidecarCommand string
 	sidecarAddress string
 	sidecarFloor   string
@@ -148,6 +156,10 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.BoolVar(&options.validateWire, "validate-wire", true, "validate every protocol event against the pinned schema")
 	flags.StringVar(&options.webrtcListen, "webrtc-listen", "", "additional WebRTC listen address; empty disables the adapter")
 	flags.StringVar(&options.webrtcSTUN, "webrtc-stun", "", "comma-separated STUN servers for the WebRTC adapter")
+	flags.BoolVar(&options.computerUse, "computer-use", false, "declare the computer.* tools against a browser target")
+	flags.StringVar(&options.browserURL, "browser-devtools-url", "http://127.0.0.1:9222", "browser DevTools endpoint for computer use")
+	flags.StringVar(&options.browserTarget, "browser-target", "", "connect directly to a known page WebSocket instead of discovering one")
+	flags.StringVar(&options.computerConfirm, "computer-confirm", "", "override every computer.* confirmation requirement: never, policy, or always")
 	flags.StringVar(&options.policies, "policy-models", "none", "policy models to enable: none, backchannel, turn-projection, or both")
 	flags.StringVar(&options.policyURL, "policy-url", policymodel.DefaultBaseURL, "policy model base URL")
 	flags.StringVar(&options.policyModel, "policy-model", "", "policy model identity; required when a policy model is enabled")
@@ -330,8 +342,12 @@ func buildCascade(options serveOptions, policies interaction.Policies) (binding.
 	if err != nil {
 		return nil, err
 	}
+	tools, err := buildComputerUse(options)
+	if err != nil {
+		return nil, err
+	}
 	return cascade.New(cascade.Config{
-		Observers: observers,
+		Observers: observers, Tools: tools,
 		Perception: func() (v1.PerceptionProvider, error) {
 			recogniser, err := qwenasr.New(qwenasr.Config{
 				BaseURL: options.asrURL, Model: options.asrModel,
@@ -550,4 +566,53 @@ func buildSidecarBinding(options serveOptions, name string) (binding.Binding, er
 		}
 		return duplex.New(config)
 	}
+}
+
+// buildComputerUse declares the action vocabulary against a real target.
+//
+// Blast radius is bounded by construction: the target is a browser context
+// with a declared coordinate space, and an action naming anything else is
+// refused before it reaches the browser. There is no ambient-desktop option,
+// and that is not an omission.
+func buildComputerUse(options serveOptions) ([]action.ToolSpec, error) {
+	if !options.computerUse {
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	surface, err := browser.Connect(ctx, browser.Config{
+		DevToolsURL: options.browserURL, TargetURL: options.browserTarget,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("connect the computer-use target: %w", err)
+	}
+	width, height, err := surface.Viewport(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read the target viewport: %w", err)
+	}
+	target := computeruse.Target{
+		Name: "browser", Sources: []string{"screen"}, Width: width, Height: height,
+	}
+	dispatcher, err := computeruse.NewDispatcher(computeruse.DispatcherConfig{
+		Target: target, Surface: surface,
+		Audit: func(record computeruse.Record) {
+			fmt.Fprintf(os.Stderr, "computer-use %s %s source=%s error=%q\n",
+				record.Name, record.CallID, record.Source, record.Error)
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var overrides map[string]action.Confirm
+	if declared := strings.TrimSpace(options.computerConfirm); declared != "" {
+		confirm, err := action.ParseConfirm(declared)
+		if err != nil {
+			return nil, err
+		}
+		overrides = make(map[string]action.Confirm, len(computeruse.Names()))
+		for _, name := range computeruse.Names() {
+			overrides[name] = confirm
+		}
+	}
+	return computeruse.Specs(target, dispatcher, overrides)
 }

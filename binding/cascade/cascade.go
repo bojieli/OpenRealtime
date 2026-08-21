@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/action"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/continuation"
@@ -86,6 +87,12 @@ type Config struct {
 	// sharing one video observer would each see the other's screen as
 	// unchanged.
 	Observers []perception.Factory
+
+	// Tools are server-side tools every session declares, on top of whatever a
+	// client declares for itself. Computer use arrives this way: a client
+	// should not have to know the coordinate space of a browser the server is
+	// driving.
+	Tools []action.ToolSpec
 
 	MaxPendingEvents int
 	MediaRetention   session.MediaConfig

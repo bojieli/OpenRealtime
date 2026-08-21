@@ -256,8 +256,26 @@ func (runtime *runtime) Settings() binding.Settings {
 	return binding.CloneSettings(runtime.settings)
 }
 
+// applyTools installs the client's declared tools alongside the server's own.
+//
+// A server-side tool wins on a name collision. A client that declared a tool
+// the server also provides is describing something it cannot execute, and the
+// declaration that comes with a dispatcher is the one that can actually
+// happen.
 func (runtime *runtime) applyTools(specs []action.ToolSpec) error {
-	return runtime.registry.Replace(specs)
+	combined := make([]action.ToolSpec, 0, len(specs)+len(runtime.config.Tools))
+	server := make(map[string]struct{}, len(runtime.config.Tools))
+	for _, spec := range runtime.config.Tools {
+		server[spec.Name] = struct{}{}
+		combined = append(combined, spec)
+	}
+	for _, spec := range specs {
+		if _, shadowed := server[spec.Name]; shadowed {
+			continue
+		}
+		combined = append(combined, spec)
+	}
+	return runtime.registry.Replace(combined)
 }
 
 func (runtime *runtime) resetAcoustic() error {
