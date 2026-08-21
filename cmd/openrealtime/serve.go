@@ -637,12 +637,13 @@ func buildObservers(options serveOptions, governor *admission.Governor) ([]perce
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(options.visionModel) == "" {
-		return nil, errors.New("a video observer needs -vision-model: narration is what it produces")
+	label, visionURL, visionModel, tokenEnv, err := narratorComposition(options)
+	if err != nil {
+		return nil, err
 	}
 	vision, err := openaivision.New(openaivision.Config{
-		BaseURL: options.visionURL, Model: options.visionModel,
-		APIKey: os.Getenv(options.visionTokenEnv), RequestTimeout: options.requestTimeout,
+		BaseURL: visionURL, Model: visionModel,
+		APIKey: os.Getenv(tokenEnv), RequestTimeout: options.requestTimeout,
 	})
 	if err != nil {
 		return nil, err
@@ -654,14 +655,6 @@ func buildObservers(options serveOptions, governor *admission.Governor) ([]perce
 		prompt = perception.ActionableNarrationPrompt
 	default:
 		return nil, fmt.Errorf("narration must be describe or actionable, got %q", options.narration)
-	}
-	label := "session"
-	switch strings.ToLower(strings.TrimSpace(options.narrator)) {
-	case "session", "":
-	case "dedicated":
-		label = "dedicated"
-	default:
-		return nil, fmt.Errorf("narrator must be session or dedicated, got %q", options.narrator)
 	}
 	var narrator perception.Narrator
 	narrator, err = perception.NewNarrator(perception.NarratorConfig{
@@ -682,6 +675,46 @@ func buildObservers(options serveOptions, governor *admission.Governor) ([]perce
 		Narrator:        narrator,
 		AttachKeyframes: components != perception.ComponentNarrationOnly,
 	})}, nil
+}
+
+// narratorComposition resolves which model narrates, and what to call it.
+//
+// The two levels of this factor were a label until now: both asked for
+// -vision-model and both pointed at whatever it named, so a report could say
+// "session" about a separate model nobody in the session was using. A level
+// that is a string rather than a difference measures nothing.
+//
+// A session narrator is the session's own model narrating as a side-output.
+// That is the configuration the measured result used and the one that avoids
+// putting a second model in the loop, so it takes the fast provider's endpoint
+// and model rather than asking for them again. It requires that provider to be
+// able to see, because a model that cannot is not narrating anything: the
+// deployment wanted the dedicated level and should say so.
+func narratorComposition(options serveOptions) (label, url, model, tokenEnv string, err error) {
+	switch strings.ToLower(strings.TrimSpace(options.narrator)) {
+	case "session", "":
+		if !options.fastVision {
+			return "", "", "", "", errors.New(
+				"a session narrator is the session's own model narrating as a side-output, and " +
+					"this one is configured as text-only: pass -fast-sees if it can see, or " +
+					"-narrator dedicated with -vision-model to use a separate one")
+		}
+		if strings.ToLower(strings.TrimSpace(options.fastProvider)) == "gemini" {
+			return "", "", "", "", errors.New(
+				"a session narrator needs an OpenAI-compatible fast provider; " +
+					"use -narrator dedicated with -vision-model")
+		}
+		return "session", options.fastURL, options.fastModel, options.fastTokenEnv, nil
+	case "dedicated":
+		if strings.TrimSpace(options.visionModel) == "" {
+			return "", "", "", "", errors.New(
+				"a dedicated narrator needs -vision-model: narration is what a video observer produces")
+		}
+		return "dedicated", options.visionURL, options.visionModel, options.visionTokenEnv, nil
+	default:
+		return "", "", "", "", fmt.Errorf(
+			"narrator must be session or dedicated, got %q", options.narrator)
+	}
 }
 
 // startWebRTC brings up the transport adapter.

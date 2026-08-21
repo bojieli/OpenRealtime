@@ -91,11 +91,26 @@ and one decision is in flight at a time.
 ## Adding video
 
 ```sh
+# A session narrator: the session's own model narrates as a side-output, which
+# is the configuration the measured result used and the one that avoids putting
+# a second model in the loop. It takes the fast provider's endpoint and model,
+# so there is nothing else to name - but that model has to be able to see.
+openrealtime serve \
+  -observers audio+video -fast-sees \
+  -observer-components keyframe+narration
+
+# A dedicated narrator: a separate vision-language model. Required for a
+# binding whose own model cannot see, which `duplex` cannot by construction.
 openrealtime serve \
   -observers audio+video \
-  -vision-model your-vlm \
+  -narrator dedicated -vision-model your-vlm \
   -observer-components keyframe+narration
 ```
+
+`-fast-sees` and `-slow-sees` declare that a model accepts images. They default
+to off, and the asymmetry is why: handing an image to a text-only model fails
+the turn outright, while withholding one from a model that could have used it
+costs only what the narration does not carry.
 
 A client must negotiate `video.input` before sending frames, and must declare a
 source's geometry before sending any. See the

@@ -19,6 +19,8 @@ func defaultOptions() serveOptions {
 		preparation: "endpoint-only", preparationPace: time.Second,
 		bargeIn: "immediate", bargeInHold: 300 * time.Millisecond,
 		observation: "endpoint-only", observers: "audio", policies: "none",
+		narrator: "session", fastProvider: "openai-compatible",
+		visionTokenEnv: "OPENREALTIME_VISION_API_KEY",
 	}
 }
 
@@ -235,5 +237,54 @@ func TestServeRejectsFlagsItCannotHonour(t *testing.T) {
 		if err := runServe(arguments, &output); err == nil {
 			t.Fatalf("expected %v to be refused", arguments)
 		}
+	}
+}
+
+// Factor F7's narrator composition was a label: both levels asked for
+// -vision-model and both used whatever it named, so a report could say
+// "session" about a separate model nobody in the session was using.
+func TestNarratorCompositionNamesTheModelThatActuallyNarrates(t *testing.T) {
+	options := defaultOptions()
+	options.narrator = "session"
+	options.fastURL = "http://127.0.0.1:8000/v1"
+	options.fastModel = "qwen-vl"
+	options.fastTokenEnv = "FAST_KEY"
+	options.fastProvider = "openai-compatible"
+	options.visionModel = "some-other-model"
+
+	// A session narrator is the session's own model, so it must not quietly
+	// use the dedicated one that happens to be configured beside it.
+	options.fastVision = true
+	label, url, model, tokenEnv, err := narratorComposition(options)
+	if err != nil {
+		t.Fatalf("session: %v", err)
+	}
+	if label != "session" || model != "qwen-vl" || url != options.fastURL || tokenEnv != "FAST_KEY" {
+		t.Fatalf("a session narrator is the session's own model: %q %q %q %q", label, url, model, tokenEnv)
+	}
+
+	// And a model that cannot see is not narrating anything, so asking for it
+	// is refused rather than silently producing nothing.
+	options.fastVision = false
+	if _, _, _, _, err := narratorComposition(options); err == nil {
+		t.Fatal("a text-only fast model cannot be the session narrator")
+	}
+
+	options.narrator = "dedicated"
+	label, url, model, tokenEnv, err = narratorComposition(options)
+	if err != nil {
+		t.Fatalf("dedicated: %v", err)
+	}
+	if label != "dedicated" || model != "some-other-model" || tokenEnv != options.visionTokenEnv {
+		t.Fatalf("a dedicated narrator is the one named: %q %q %q %q", label, url, model, tokenEnv)
+	}
+
+	options.visionModel = ""
+	if _, _, _, _, err := narratorComposition(options); err == nil {
+		t.Fatal("a dedicated narrator with no model must be refused")
+	}
+	options.narrator = "telepathy"
+	if _, _, _, _, err := narratorComposition(options); err == nil {
+		t.Fatal("an unknown narrator composition must be refused")
 	}
 }
