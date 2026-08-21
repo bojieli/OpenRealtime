@@ -302,6 +302,34 @@ func (runtime *runtime) Text(_ context.Context, input binding.TextInput) error {
 }
 
 // CreateResponse asks the model for a turn now.
+// CommitAudio ends the turn where the client says it ended.
+//
+// A model that owns its own floor is told the turn is over and decides for
+// itself what to do about it; one whose floor the engine keeps has its
+// acoustic gate closed here, which is the same endpoint silence would have
+// produced, arriving when the client said so instead.
+func (runtime *runtime) CommitAudio(ctx context.Context) error {
+	if runtime.spec.Floor == binding.OwnerModel {
+		return runtime.model.Send(sidecar.Message{Type: sidecar.TypeCommit})
+	}
+	runtime.audioMu.Lock()
+	utteranceID := runtime.utteranceID
+	stopped := false
+	if runtime.acoustic != nil {
+		_, stopped = runtime.acoustic.ForceStop()
+	}
+	runtime.audioMu.Unlock()
+	if !stopped || utteranceID == "" {
+		return errors.New("the input audio buffer is empty")
+	}
+	if err := runtime.sink.Activity(ctx, binding.ActivityEvent{
+		Committed: true, ItemID: utteranceID,
+	}); err != nil {
+		return err
+	}
+	return runtime.model.Send(sidecar.Message{Type: sidecar.TypeCommit})
+}
+
 func (runtime *runtime) CreateResponse(context.Context) error {
 	return runtime.model.Send(sidecar.Message{Type: sidecar.TypeRespond})
 }

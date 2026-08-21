@@ -98,6 +98,18 @@ func (gate *EnergyGate) ForceStop() (endMS int, stopped bool) {
 	return samplesToMS(gate.total, gate.sampleRate), true
 }
 
+// Reopen continues an utterance the gate has just closed.
+//
+// It exists for the session whose client owns turn detection: the gate's
+// silence threshold is still the right answer to "is the user audible", and
+// the wrong answer to "has the turn ended", so the first is kept and the
+// second is discarded. Sample accounting is untouched, so the turn's eventual
+// end is still measured from its real beginning.
+func (gate *EnergyGate) Reopen() {
+	gate.speaking = true
+	gate.silence = 0
+}
+
 // Push advances the gate over one block of PCM16 audio.
 func (gate *EnergyGate) Push(pcm16 []byte) (GateResult, error) {
 	if len(pcm16) == 0 || len(pcm16)%2 != 0 {

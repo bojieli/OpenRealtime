@@ -176,10 +176,6 @@ func TestUnimplementedStandardEventsExplainThemselves(t *testing.T) {
 		contains string
 	}{
 		{
-			event:    map[string]any{"type": "input_audio_buffer.commit", "event_id": "c1"},
-			contains: "server VAD",
-		},
-		{
 			event: map[string]any{
 				"type": "conversation.item.delete", "event_id": "c2", "item_id": "item_1",
 			},

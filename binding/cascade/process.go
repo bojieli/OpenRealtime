@@ -366,13 +366,6 @@ func (runtime *runtime) ToolResult(_ context.Context, result trajectory.ToolResu
 	return runtime.clientCalls.Result(result)
 }
 
-// CreateResponse asks for a response now. It exists for clients that drive
-// turns explicitly rather than relying on the engine's floor.
-func (runtime *runtime) CreateResponse(context.Context) error {
-	runtime.coordinator.Wake("client requested a response")
-	return nil
-}
-
 // Cancel cancels response generation in flight.
 func (runtime *runtime) Cancel(_ context.Context, reason string) error {
 	if strings.TrimSpace(reason) == "" {

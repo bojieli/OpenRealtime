@@ -211,7 +211,8 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		return nil, err
 	}
 	result.coordinator = coordinator
-	gate, err := interaction.Bind(policies.Deferral, result.duplex, coordinator)
+	gate, err := interaction.Bind(
+		deferralFor(policies.Deferral, result.settings.ManualTurns), result.duplex, coordinator)
 	if err != nil {
 		cancel(err)
 		return nil, err
@@ -311,10 +312,20 @@ func (runtime *runtime) Status() binding.Status {
 	fast, slow := runtime.engine.Descriptors()
 	return binding.Status{
 		Binding: runtime.binding.Name(), Ownership: runtime.binding.Ownership(),
-		Policies: runtime.policies.Report(), Observers: runtime.observerNames(),
+		Policies: runtime.policyReport(), Observers: runtime.observerNames(),
 		Fast: fast.Provider + "/" + fast.Model, Slow: slow.Provider + "/" + slow.Model,
 		Speech: runtime.config.Speech.Descriptor().Name,
 	}
+}
+
+// policyReport is the policy set this session is actually running, which is
+// not always the one it was configured with: a client that took the floor
+// replaced the deferral policy, and a report that named the configured one
+// would describe a session nobody is having.
+func (runtime *runtime) policyReport() interaction.Report {
+	report := runtime.policies.Report()
+	report.Deferral = deferralFor(runtime.policies.Deferral, runtime.manualTurns()).Name()
+	return report
 }
 
 // Trajectory returns the canonical log.
@@ -338,6 +349,19 @@ func (runtime *runtime) Update(_ context.Context, settings binding.Settings) err
 	}
 	if err := runtime.selectObservers(selection); err != nil {
 		return err
+	}
+	if settings.ManualTurns != runtime.manualTurns() {
+		// Turn detection changed hands. The gate has to be rebound, because
+		// which policy defers and which transitions wake it are both decided
+		// by who owns the floor.
+		runtime.gate.Close()
+		gate, err := interaction.Bind(
+			deferralFor(runtime.policies.Deferral, settings.ManualTurns), runtime.duplex, runtime.coordinator)
+		if err != nil {
+			return err
+		}
+		runtime.gate = gate
+		runtime.coordinator.SetGate(gate)
 	}
 	runtime.settingsMu.Lock()
 	runtime.settings = settings

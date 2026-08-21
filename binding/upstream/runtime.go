@@ -271,6 +271,16 @@ func (runtime *runtime) Text(ctx context.Context, input binding.TextInput) error
 }
 
 // CreateResponse asks the remote to respond now.
+// CommitAudio forwards the client's turn declaration to the remote.
+//
+// This binding's floor belongs to whatever is at the other end of the socket,
+// so a commit is not something to interpret here - it is something to pass on,
+// exactly as the client sent it. The remote answers with its own
+// input_audio_buffer.committed, which the mirror renders.
+func (runtime *runtime) CommitAudio(ctx context.Context) error {
+	return runtime.remote.Send(ctx, map[string]any{"type": "input_audio_buffer.commit"})
+}
+
 func (runtime *runtime) CreateResponse(ctx context.Context) error {
 	return runtime.remote.Send(ctx, map[string]any{"type": "response.create"})
 }

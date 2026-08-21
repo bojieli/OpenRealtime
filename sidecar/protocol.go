@@ -49,6 +49,11 @@ const (
 	// respond. It is how a background reasoner's answer reaches a model that
 	// owns its own voice.
 	TypeText MessageType = "text"
+	// TypeCommit closes the input audio buffer: the client has declared its
+	// turn over rather than waiting for silence. A sidecar whose model owns
+	// its own floor decides for itself what to do about that; one that does
+	// not can ignore it, because the engine has already ended the turn.
+	TypeCommit MessageType = "commit"
 	// TypeRespond asks the model to produce a turn now.
 	TypeRespond MessageType = "respond"
 	// TypeInterrupt stops generation at the model's next safe point.
@@ -222,7 +227,7 @@ func (message Message) Validate() error {
 		if strings.TrimSpace(message.Message()) == "" {
 			return errors.New("an error requires a message")
 		}
-	case TypeRespond, TypeInterrupt, TypeBye, TypeSpeechStarted, TypeSpeechStopped,
+	case TypeCommit, TypeRespond, TypeInterrupt, TypeBye, TypeSpeechStarted, TypeSpeechStopped,
 		TypeTextDone, TypeTurnDone, TypeLog:
 	default:
 		return fmt.Errorf("unknown sidecar message type %q", message.Type)

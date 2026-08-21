@@ -17,6 +17,11 @@ import (
 // decided here.
 
 func (session *session) Activity(_ context.Context, activity binding.ActivityEvent) error {
+	if activity.Committed {
+		return session.send(event("input_audio_buffer.committed", session.nextID("event"), map[string]any{
+			"item_id": activity.ItemID, "previous_item_id": nil,
+		}))
+	}
 	if activity.Started {
 		return session.send(event("input_audio_buffer.speech_started", session.nextID("event"), map[string]any{
 			"audio_start_ms": activity.AudioStartMS, "item_id": activity.ItemID,

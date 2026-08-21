@@ -245,6 +245,25 @@ func (client *client) speak() {
 	}
 }
 
+// configureManualTurns switches server voice-activity detection off: the
+// client will say where its turns end.
+func (client *client) configureManualTurns() {
+	client.t.Helper()
+	client.send(map[string]any{
+		"type": "session.update",
+		"session": map[string]any{
+			"type": "realtime",
+			"audio": map[string]any{
+				"input": map[string]any{
+					"format":         map[string]any{"type": "audio/pcm", "rate": 24000},
+					"turn_detection": nil,
+				},
+				"output": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
+			},
+		},
+	})
+}
+
 // configureText asks for a text session: the same conversation with a
 // different output boundary.
 func (client *client) configureText() {

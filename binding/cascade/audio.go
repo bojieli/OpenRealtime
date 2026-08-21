@@ -29,6 +29,7 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 	if frame.Kind != perception.FrameAudio {
 		return errors.New("audio path requires an audio frame")
 	}
+	manual := runtime.manualTurns()
 	runtime.audioMu.Lock()
 	acoustic, err := runtime.acousticFor(frame.SampleRateHz)
 	if err != nil {
@@ -42,6 +43,14 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 	}
 	now := runtime.scheduler.NowNS()
 	started, stopped := result.Started, result.Stopped
+	if manual && stopped {
+		// The client owns the floor. Silence is not an endpoint here; it is
+		// silence, and the turn ends when the client says so. The gate has
+		// already closed itself, so it is reopened on the next audible frame
+		// and this turn continues.
+		stopped = false
+		runtime.acoustic.Reopen()
+	}
 	if started {
 		runtime.utteranceID = idFor("item", runtime.sequence.Add(1))
 		runtime.speechStartNS = now
@@ -120,6 +129,12 @@ func (runtime *runtime) onUserSpeechStarted(ctx context.Context, utteranceID str
 	if err := runtime.considerBargeIn(ctx, interaction.Revision{}, 0); err != nil {
 		return err
 	}
+	if runtime.manualTurns() {
+		// Voice-activity events describe a detector the client turned off.
+		// Reporting them anyway would tell a client that took the floor what
+		// the server thinks it is doing.
+		return nil
+	}
 	return runtime.sink.Activity(ctx, binding.ActivityEvent{
 		Started: true, ItemID: utteranceID, AudioStartMS: startMS,
 	})
@@ -190,10 +205,12 @@ func (runtime *runtime) onUserSpeechStopped(ctx context.Context, utteranceID str
 	runtime.pending, runtime.lastObserveNS = nil, 0
 	runtime.audioMu.Unlock()
 
-	if err := runtime.sink.Activity(ctx, binding.ActivityEvent{
-		Stopped: true, ItemID: utteranceID, AudioEndMS: endMS,
-	}); err != nil {
-		return err
+	if !runtime.manualTurns() {
+		if err := runtime.sink.Activity(ctx, binding.ActivityEvent{
+			Stopped: true, ItemID: utteranceID, AudioEndMS: endMS,
+		}); err != nil {
+			return err
+		}
 	}
 	if flushErr != nil {
 		runtime.fail("asr_provider_error", flushErr)

@@ -40,6 +40,41 @@ type wireAudioInput struct {
 	Format        flexibleAudioFormat `json:"format"`
 	Transcription json.RawMessage     `json:"transcription"`
 	TurnDetection *wireTurnDetection  `json:"turn_detection"`
+	// TurnDetectionSet distinguishes an explicit null from an absent field.
+	// They mean opposite things: absent leaves turn detection as it was, and
+	// null is the client taking the floor.
+	TurnDetectionSet bool `json:"-"`
+}
+
+// UnmarshalJSON records whether turn_detection was present at all.
+func (input *wireAudioInput) UnmarshalJSON(data []byte) error {
+	type plain wireAudioInput
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	_, present := fields["turn_detection"]
+	*input = wireAudioInput(decoded)
+	input.TurnDetectionSet = present
+	return nil
+}
+
+// turnDetection renders the session's turn detection, which is an object when
+// the server owns it and null when the client does.
+func turnDetection(current settings) any {
+	if current.manualTurns {
+		return nil
+	}
+	return map[string]any{
+		"type": "server_vad", "threshold": current.gate.Threshold,
+		"prefix_padding_ms":   current.gate.PrefixPaddingMS,
+		"silence_duration_ms": current.gate.SilenceDurationMS,
+		"create_response":     true, "interrupt_response": true,
+	}
 }
 
 type wireAudioOutput struct {

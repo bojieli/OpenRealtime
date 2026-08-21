@@ -53,18 +53,25 @@ paced, because a turn nobody hears takes no time and cannot be talked over. It
 is what a computer-use client wants, and refusing it made this server unusable
 for exactly the clients the extension exists for.
 
-It accepts eight of the eleven GA Realtime client events: `session.update`, `input_audio_buffer.append`,
-`input_audio_buffer.clear`, `output_audio_buffer.clear`,
-`conversation.item.create` for both function outputs and typed messages,
-`conversation.item.truncate`, `response.create`, and `response.cancel`.
+Turn detection is **server VAD or the client's own**. Setting
+`turn_detection` to `null` in `session.update` is a client taking the floor:
+silence stops ending turns, `input_audio_buffer.commit` says where a turn
+ended, and the server stops creating responses until `response.create` asks
+for one. Both halves have to hold or the client gets a session that
+half-listens to it.
 
-The other three are refused, and the refusal says which reason applies rather
-than reporting "unsupported event" — a client author can act on the first,
-and cannot on the second.
+It accepts nine of the eleven GA Realtime client events: `session.update`, `input_audio_buffer.append`,
+`input_audio_buffer.clear`, `output_audio_buffer.clear`,
+`input_audio_buffer.commit`, `conversation.item.create` for both function
+outputs and typed messages, `conversation.item.truncate`, `response.create`,
+and `response.cancel`.
+
+The other two are refused, and the refusal says why rather than reporting
+"unsupported event" — one of them is structural and no client can work around
+it, which is worth saying out loud.
 
 | Event | Why |
 | --- | --- |
-| `input_audio_buffer.commit` | server VAD owns input commitment here, so the buffer commits at the endpoint and an explicit commit would have nothing to do |
 | `conversation.item.delete` | the conversation is an append-only trajectory: content that reached the world cannot be un-reached, so it is superseded rather than removed |
 | `conversation.item.retrieve` | not served; a client that negotiated `observations` receives what the agent perceived as it happens |
 

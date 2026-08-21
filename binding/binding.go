@@ -76,6 +76,12 @@ type Settings struct {
 	Voice       string                `json:"voice,omitempty"`
 	Modalities  []string              `json:"modalities,omitempty"`
 	Gate        perception.GateConfig `json:"gate"`
+	// ManualTurns reports that the client turned server voice-activity
+	// detection off and will declare its own turns. A binding must then stop
+	// endpointing on silence and stop creating responses of its own: the
+	// client owns the floor, and answering a turn it has not finished
+	// declaring is the engine overruling the side it delegated to.
+	ManualTurns bool `json:"manual_turns,omitempty"`
 	// Observers names the observer set for this session. Empty selects the
 	// binding's documented default set.
 	Observers []string `json:"observers,omitempty"`
@@ -89,10 +95,16 @@ type TranscriptEvent struct {
 	DurationSec float64 `json:"duration_seconds,omitempty"`
 }
 
-// ActivityEvent reports the acoustic gate's view of the user.
+// ActivityEvent reports what happened to the input buffer.
+//
+// Started and Stopped are the acoustic gate's view of the user, which only a
+// session whose floor the engine owns has to report: a client running its own
+// turn detection is not being told about voice activity, it is declaring it.
+// Committed is that client's declaration coming back acknowledged.
 type ActivityEvent struct {
 	Started      bool   `json:"started"`
 	Stopped      bool   `json:"stopped"`
+	Committed    bool   `json:"committed,omitempty"`
 	ItemID       string `json:"item_id"`
 	AudioStartMS int    `json:"audio_start_ms,omitempty"`
 	AudioEndMS   int    `json:"audio_end_ms,omitempty"`
@@ -175,6 +187,13 @@ type Runtime interface {
 	Text(context.Context, TextInput) error
 	// ToolResult accepts a client-executed function result.
 	ToolResult(context.Context, trajectory.ToolResult) error
+	// CommitAudio closes the input audio buffer and commits what it holds.
+	//
+	// It is what a client running its own turn detection sends instead of
+	// waiting for silence. A binding whose floor is the engine's has nothing
+	// to do here and says so; one that has taken the client's declaration
+	// ends the turn where the client said it ended.
+	CommitAudio(context.Context) error
 	// CreateResponse asks for a response now.
 	CreateResponse(context.Context) error
 	// Cancel cancels response generation in flight.

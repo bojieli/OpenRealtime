@@ -37,6 +37,10 @@ type Waiting struct {
 	Repair      bool `json:"repair"`
 	// Parallel marks a batch the loop may run alongside work in flight.
 	Parallel bool `json:"parallel"`
+	// Requested reports that the client has asked for a response. It is only
+	// meaningful to a policy that waits for one: a session running server VAD
+	// creates responses itself and never consults it.
+	Requested bool `json:"requested,omitempty"`
 	// Backpressure is the deployment's optional signal that providers are
 	// under load. It is unconstrained by default: throttling a conversation to
 	// save tokens is a deployment decision, not something a runtime assumes.
@@ -122,6 +126,35 @@ func (policy duplexDeferral) Admit(waiting Waiting) (bool, string) {
 	return true, ""
 }
 
+// clientDriven waits for the client to ask.
+//
+// It is what turn detection being off actually means. A client that switches
+// server VAD off has taken the floor: it decides when its turn ended and when
+// it wants an answer, and a server that kept creating responses on its own
+// would be answering turns the client had not finished declaring.
+//
+// Nothing is lost by waiting. Commit stays unconditional - every observation
+// enters the trajectory as it arrives - and the wake-up this policy owes is
+// the client's own response.create, which is the one condition here that is
+// not a duplex transition.
+type clientDriven struct{}
+
+// NewClientDriven runs only when the client asks. It is selected for a session
+// whose client turned server VAD off, not configured as a measurement level:
+// which side owns the floor is the client's declaration, not a factor.
+func NewClientDriven() Deferral { return clientDriven{} }
+
+func (clientDriven) Name() string { return "client-driven" }
+
+func (clientDriven) Conditions() []session.TransitionKind { return nil }
+
+func (clientDriven) Admit(waiting Waiting) (bool, string) {
+	if waiting.Requested {
+		return true, ""
+	}
+	return false, "waiting for the client to request a response"
+}
+
 // AlwaysRun admits everything immediately. It is correct for a runtime with no
 // audio at all - a text client, or a benchmark harness driving turns - where
 // there is nothing to talk over.
@@ -141,6 +174,7 @@ type Gate struct {
 
 	mu           sync.Mutex
 	backpressure bool
+	requested    bool
 }
 
 // Waker is the part of the event loop a gate needs: something to tell that a
@@ -207,6 +241,20 @@ func (gate *Gate) SetBackpressure(under bool) {
 	}
 }
 
+// RequestResponse records that the client asked for a response, and wakes the
+// loop so a policy waiting for one can run.
+//
+// It is the wake-up that the client-driven condition owes, and it is the only
+// one that does not come from a duplex transition - which is why it is here
+// rather than wired by Bind: a client is not a state machine this package can
+// subscribe to.
+func (gate *Gate) RequestResponse() {
+	gate.mu.Lock()
+	gate.requested = true
+	gate.mu.Unlock()
+	gate.waker.Wake("client requested a response")
+}
+
 // Name reports the bound policy.
 func (gate *Gate) Name() string { return gate.policy.Name() }
 
@@ -215,8 +263,18 @@ func (gate *Gate) AdmitRun(_ context.Context, batch eventloop.Batch) (bool, stri
 	waiting := WaitingFrom(batch, gate.duplex.Snapshot())
 	gate.mu.Lock()
 	waiting.Backpressure = gate.backpressure
+	waiting.Requested = gate.requested
 	gate.mu.Unlock()
-	return gate.policy.Admit(waiting)
+	admitted, reason := gate.policy.Admit(waiting)
+	if admitted && waiting.Requested {
+		// A request is consumed by the run it released. Leaving it set would
+		// turn one response.create into a standing permission, and every
+		// observation after it would answer itself.
+		gate.mu.Lock()
+		gate.requested = false
+		gate.mu.Unlock()
+	}
+	return admitted, reason
 }
 
 var _ eventloop.Gate = (*Gate)(nil)

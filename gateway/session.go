@@ -30,8 +30,11 @@ type settings struct {
 	voice        string
 	modalities   []string
 	gate         perception.GateConfig
-	extension    openrealtime.Response
-	limits       openrealtime.Limits
+	// manualTurns records that the client turned server VAD off and will
+	// declare its own turns.
+	manualTurns bool
+	extension   openrealtime.Response
+	limits      openrealtime.Limits
 	// observers is the perception this session selected. Empty selects the
 	// binding's default set.
 	observers []string
@@ -169,6 +172,7 @@ func (session *session) bindingSettings() binding.Settings {
 		Instruction: session.settings.instruction, Tools: slices.Clone(session.settings.tools),
 		Voice: session.settings.voice, Modalities: slices.Clone(session.settings.modalities),
 		Gate: session.settings.gate, Observers: slices.Clone(session.settings.observers),
+		ManualTurns: session.settings.manualTurns,
 	}
 }
 
@@ -341,6 +345,8 @@ func (session *session) handleClientEvent(message protocol.Message) error {
 		return session.runtime.Cancel(session.ctx, "client response cancellation")
 	case protocol.EventInputAudioBufferClear:
 		return session.send(event("input_audio_buffer.cleared", session.nextID("event"), nil))
+	case protocol.EventInputAudioBufferCommit:
+		return session.onAudioCommit()
 	case protocol.EventOutputAudioBufferClear:
 		// A client asking to stop hearing the agent is a cancellation, which
 		// the runtime already has a name for. It matters most over WebRTC,
@@ -362,9 +368,6 @@ func (session *session) handleClientEvent(message protocol.Message) error {
 // about it.
 func (session *session) unsupported(eventType protocol.EventType) error {
 	switch eventType {
-	case protocol.EventInputAudioBufferCommit:
-		return errors.New("this deployment runs server VAD, which owns input commitment: " +
-			"the buffer commits at the endpoint and an explicit commit would have nothing to do")
 	case protocol.EventConversationItemDelete:
 		return errors.New("the conversation is an append-only trajectory and has no delete: " +
 			"content that reached the world cannot be un-reached, so it is superseded rather than removed")
@@ -374,6 +377,15 @@ func (session *session) unsupported(eventType protocol.EventType) error {
 	default:
 		return fmt.Errorf("unsupported Realtime client event %q", eventType)
 	}
+}
+
+// onAudioCommit closes the input buffer at the client's request.
+//
+// It is the other half of turn detection being off: a client that took the
+// floor has to be able to say where a turn ended, and the acknowledgement
+// names the item so the transcript that follows can be correlated with it.
+func (session *session) onAudioCommit() error {
+	return session.runtime.CommitAudio(session.ctx)
 }
 
 // onOutputBufferClear stops agent audio at the client's request.
@@ -450,14 +462,23 @@ func (session *session) update(update sessionUpdateBody) error {
 	if update.Audio.Output.Voice != "" {
 		current.voice = update.Audio.Output.Voice
 	}
-	if update.Audio.Input.TurnDetection != nil {
+	if update.Audio.Input.TurnDetectionSet {
 		turn := update.Audio.Input.TurnDetection
-		if turn.Type != "server_vad" {
-			return errors.New("this deployment requires server_vad turn detection")
-		}
-		current.gate = perception.GateConfig{
-			Threshold: turn.Threshold, PrefixPaddingMS: turn.PrefixPaddingMS,
-			SilenceDurationMS: turn.SilenceDurationMS,
+		switch {
+		case turn == nil:
+			// Explicit null. The client is taking the floor: it will commit
+			// the input buffer and ask for responses itself, and the server
+			// stops ending turns on silence.
+			current.manualTurns = true
+		case turn.Type == "server_vad":
+			current.manualTurns = false
+			current.gate = perception.GateConfig{
+				Threshold: turn.Threshold, PrefixPaddingMS: turn.PrefixPaddingMS,
+				SilenceDurationMS: turn.SilenceDurationMS,
+			}
+		default:
+			return fmt.Errorf(
+				"turn detection must be server_vad or null, got %q", turn.Type)
 		}
 	}
 	if _, err := current.inputFormat.sampleRate(); err != nil {
@@ -631,14 +652,9 @@ func (session *session) sessionEvent(eventType string) map[string]any {
 		"tools": tools, "tool_choice": "auto", "max_output_tokens": "inf",
 		"audio": map[string]any{
 			"input": map[string]any{
-				"format":        current.inputFormat,
-				"transcription": map[string]any{"model": session.config.TranscriptionModel},
-				"turn_detection": map[string]any{
-					"type": "server_vad", "threshold": current.gate.Threshold,
-					"prefix_padding_ms":   current.gate.PrefixPaddingMS,
-					"silence_duration_ms": current.gate.SilenceDurationMS,
-					"create_response":     true, "interrupt_response": true,
-				},
+				"format":         current.inputFormat,
+				"transcription":  map[string]any{"model": session.config.TranscriptionModel},
+				"turn_detection": turnDetection(current),
 			},
 			"output": map[string]any{"format": current.outputFormat, "voice": current.voice, "speed": 1},
 		},
