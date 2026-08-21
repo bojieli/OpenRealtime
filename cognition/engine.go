@@ -60,9 +60,15 @@ type Config struct {
 	// RequireSilentSlow enforces the second cognition boundary at
 	// construction. A single-provider arrangement sets it false.
 	RequireSilentSlow bool
-	RetainReasoning   bool
-	Now               func() uint64
-	NextID            func(prefix string) string
+	// ExternalFast declares that the fast provider lives outside this engine -
+	// a remote Realtime endpoint, or a model that owns its own voice. The
+	// engine then refuses to run fast or voicing continuations rather than
+	// producing a second voice, and it does not check a fast tool authority
+	// that no continuation here will ever exercise.
+	ExternalFast    bool
+	RetainReasoning bool
+	Now             func() uint64
+	NextID          func(prefix string) string
 }
 
 // Engine runs continuations over one canonical trajectory.
@@ -108,7 +114,7 @@ func New(config Config) (*Engine, error) {
 		return nil, errors.New("slow provider must be configured silent: its output is voiced by a fast continuation")
 	}
 	if config.Catalog != nil {
-		if fast.EffectiveToolAuthority() != continuation.ToolAuthorityPropose {
+		if !config.ExternalFast && fast.EffectiveToolAuthority() != continuation.ToolAuthorityPropose {
 			return nil, errors.New("fast provider needs proposal authority when tools are declared")
 		}
 		if slow.EffectiveToolAuthority() != continuation.ToolAuthorityExecute {
@@ -165,6 +171,11 @@ func New(config Config) (*Engine, error) {
 	}, nil
 }
 
+// ErrExternalFast means the caller asked this engine to run a continuation
+// whose provider lives outside it. The binding that declared the fast provider
+// external owns the voice, and running one here would produce a second.
+var ErrExternalFast = errors.New("the fast provider is external to this engine")
+
 // Request binds one continuation to the perception revision it answers.
 type Request struct {
 	SourceRevision uint64
@@ -182,6 +193,9 @@ func (engine *Engine) Descriptors() (fast, slow continuation.Descriptor) {
 // complete capability and tool definitions; its descriptor is what makes any
 // call it emits a non-executable proposal.
 func (engine *Engine) RunFast(ctx context.Context, request Request, observer StreamObserver) (continuation.RunResult, error) {
+	if engine.config.ExternalFast {
+		return continuation.RunResult{}, ErrExternalFast
+	}
 	return engine.run(ctx, engine.config.Fast, trajectory.PhaseFast, continuation.Invocation{
 		Instruction: engine.instruction(engine.fastPrompt, request), SourceRevision: request.SourceRevision,
 		Capabilities: slices.Clone(engine.capabilities), Tools: engine.proposalTools(),
@@ -192,6 +206,9 @@ func (engine *Engine) RunFast(ctx context.Context, request Request, observer Str
 // RunVoice runs the fast provider over what slow has already committed. It is
 // the step that exists because slow cannot speak.
 func (engine *Engine) RunVoice(ctx context.Context, request Request, observer StreamObserver) (continuation.RunResult, error) {
+	if engine.config.ExternalFast {
+		return continuation.RunResult{}, ErrExternalFast
+	}
 	return engine.run(ctx, engine.config.Fast, trajectory.PhaseFast, continuation.Invocation{
 		Instruction: engine.instruction(engine.voicePrompt, request), SourceRevision: request.SourceRevision,
 		Capabilities: slices.Clone(engine.capabilities),
