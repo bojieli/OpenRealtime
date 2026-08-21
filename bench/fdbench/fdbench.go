@@ -1,0 +1,277 @@
+// Package fdbench runs FD-Bench, the endpointing and timing suite.
+//
+// Each conversation is a recording of a person speaking in several turns, with
+// the exact sample offsets of every turn alongside it. Between turns there is
+// a gap where a reply belongs. That makes three things measurable without a
+// judge model and without any interpretation:
+//
+//	response latency  how long after a turn ends the agent starts speaking
+//	prematurity       whether it started while the person was still talking
+//	missed turns      whether it answered at all before the next turn began
+//
+// Those three are in tension, which is the point of measuring them together. A
+// system tuned for latency starts talking over people; one tuned to never
+// interrupt waits so long that the conversation stops working. A single number
+// would hide the trade, so this reports all three.
+package fdbench
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/bojieli/OpenRealtime/bench"
+)
+
+// SampleRate is the rate the dataset's offsets are expressed in.
+const SampleRate = 24_000
+
+// Turn is one span of user speech.
+type Turn struct {
+	StartMS float64
+	EndMS   float64
+}
+
+// Conversation is one recording and its annotations.
+type Conversation struct {
+	ID        string
+	Condition string
+	AudioPath string
+	Turns     []Turn
+}
+
+type rawTurn struct {
+	Start int64 `json:"start"`
+	End   int64 `json:"end"`
+}
+
+// Load reads conversations from one or more conditions.
+//
+// The dataset is partitioned by synthesiser, difficulty, and noise level, and
+// those are not interchangeable: a result from the clean set says nothing
+// about the 0 dB set. Conditions are therefore selected explicitly rather than
+// merged.
+func Load(root string, conditions []string, limit int) ([]Conversation, error) {
+	if len(conditions) == 0 {
+		return nil, errors.New("a condition is required: the dataset's partitions do not merge")
+	}
+	var conversations []Conversation
+	for _, condition := range conditions {
+		directory := filepath.Join(root, condition)
+		entries, err := os.ReadDir(directory)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", directory, err)
+		}
+		var names []string
+		for _, entry := range entries {
+			if strings.HasSuffix(entry.Name(), ".wav") {
+				names = append(names, strings.TrimSuffix(entry.Name(), ".wav"))
+			}
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			conversation, err := loadConversation(directory, condition, name)
+			if err != nil {
+				return nil, err
+			}
+			conversations = append(conversations, conversation)
+			if limit > 0 && len(conversations) >= limit {
+				return conversations, nil
+			}
+		}
+	}
+	return conversations, nil
+}
+
+// Count reports how many conversations a set of conditions contains, which is
+// what a cell's expected task count must be.
+func Count(root string, conditions []string) (int, error) {
+	total := 0
+	for _, condition := range conditions {
+		entries, err := os.ReadDir(filepath.Join(root, condition))
+		if err != nil {
+			return 0, err
+		}
+		for _, entry := range entries {
+			if strings.HasSuffix(entry.Name(), ".wav") {
+				total++
+			}
+		}
+	}
+	return total, nil
+}
+
+func loadConversation(directory, condition, name string) (Conversation, error) {
+	payload, err := os.ReadFile(filepath.Join(directory, name+".timestamps"))
+	if err != nil {
+		return Conversation{}, fmt.Errorf("read timestamps for %s: %w", name, err)
+	}
+	var raw []rawTurn
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return Conversation{}, fmt.Errorf("decode timestamps for %s: %w", name, err)
+	}
+	if len(raw) == 0 {
+		return Conversation{}, fmt.Errorf("%s has no annotated turns", name)
+	}
+	conversation := Conversation{
+		ID: condition + "/" + name, Condition: condition,
+		AudioPath: filepath.Join(directory, name+".wav"),
+	}
+	for _, turn := range raw {
+		conversation.Turns = append(conversation.Turns, Turn{
+			StartMS: float64(turn.Start) * 1000 / SampleRate,
+			EndMS:   float64(turn.End) * 1000 / SampleRate,
+		})
+	}
+	return conversation, nil
+}
+
+// Options configures a run.
+type Options struct {
+	Root       string
+	Conditions []string
+	Endpoint   string
+	Token      string
+	Model      string
+	Cell       bench.Cell
+	Limit      int
+	// LatencyBudget is how long after a turn ends a reply may take before it
+	// counts as late. Zero selects 2 s, which is roughly where a person starts
+	// wondering whether the line dropped.
+	LatencyBudget time.Duration
+	Timeout       time.Duration
+	Progress      func(string)
+}
+
+// Run executes the suite.
+func Run(ctx context.Context, options Options) (bench.Result, error) {
+	if options.LatencyBudget <= 0 {
+		options.LatencyBudget = 2 * time.Second
+	}
+	if options.Timeout <= 0 {
+		options.Timeout = 5 * time.Minute
+	}
+	conversations, err := Load(options.Root, options.Conditions, options.Limit)
+	if err != nil {
+		return bench.Result{}, err
+	}
+	if len(conversations) == 0 {
+		return bench.Result{}, errors.New("the selected conditions contain no conversations")
+	}
+	expected, err := Count(options.Root, options.Conditions)
+	if err != nil {
+		return bench.Result{}, err
+	}
+
+	result := bench.Result{
+		Suite: "fd-bench", Cell: options.Cell, Provenance: bench.Capture(), Expected: expected,
+	}
+	for index, conversation := range conversations {
+		if options.Progress != nil {
+			options.Progress(fmt.Sprintf("[%d/%d] %s", index+1, len(conversations), conversation.ID))
+		}
+		result.Tasks = append(result.Tasks, runConversation(ctx, options, conversation))
+	}
+	result.Finish()
+	return result, nil
+}
+
+func runConversation(ctx context.Context, options Options, conversation Conversation) bench.TaskOutcome {
+	outcome := bench.TaskOutcome{
+		ID:    conversation.ID,
+		Notes: map[string]string{"condition": conversation.Condition},
+	}
+	transcript, err := bench.Play(ctx, bench.SessionConfig{
+		Endpoint: options.Endpoint, Token: options.Token, Model: options.Model,
+		Instructions: "You are a helpful voice assistant. Reply briefly to each thing the person says.",
+		Realtime:     true, Timeout: options.Timeout,
+	}, conversation.AudioPath)
+	if err != nil {
+		outcome.Error = err.Error()
+		return outcome
+	}
+	if transcript.Failure != "" {
+		outcome.Error = transcript.Failure
+		return outcome
+	}
+	outcome.Completed = true
+
+	budget := float64(options.LatencyBudget.Milliseconds())
+	var latencies []float64
+	answered, premature, overrun, missed := 0, 0, 0, 0
+	overlapMS := 0.0
+	for index, turn := range conversation.Turns {
+		// Audio during a turn is the agent and the person talking at once, and
+		// there are two quite different reasons for it. Either the agent was
+		// already speaking when the person started - an answer running past
+		// the gap, which barge-in should cut short - or it began speaking
+		// while the person was mid-turn, which is a genuine endpointing
+		// failure. Counting them together would hide which one a deployment
+		// has.
+		during := transcript.AudioBetween(turn.StartMS, turn.EndMS)
+		if during > 0 {
+			overlapMS += during
+			const lookback = 200.0
+			if transcript.AudioBetween(turn.StartMS-lookback, turn.StartMS) > 0 {
+				overrun++
+			} else {
+				premature++
+			}
+		}
+		// The window for a reply closes when the next turn begins: after that
+		// the person has moved on, and a reply is not a late answer to the
+		// previous thing, it is an interruption of the next.
+		windowEnd := turn.EndMS + budget
+		if index+1 < len(conversation.Turns) {
+			windowEnd = min(windowEnd, conversation.Turns[index+1].StartMS)
+		}
+		latency, found := transcript.FirstAudioAfter(turn.EndMS)
+		if found && turn.EndMS+latency <= windowEnd {
+			answered++
+			latencies = append(latencies, latency)
+			continue
+		}
+		missed++
+	}
+
+	outcome.Metrics = map[string]float64{
+		"turns":           float64(len(conversation.Turns)),
+		"answered":        float64(answered),
+		"premature_turns": float64(premature),
+		"missed_turns":    float64(missed),
+	}
+	if len(latencies) > 0 {
+		distribution := bench.Summarise(latencies)
+		outcome.Metrics["response_latency_ms"] = distribution.P50
+		outcome.Metrics["response_latency_p95_ms"] = distribution.P95
+	}
+	// A conversation passes when every turn got an answer and none of them was
+	// begun over the top of the person still speaking. An overrun is not
+	// counted against it: an answer that runs into the next turn and is then
+	// cut short is what barge-in is for, and it is measured separately.
+	outcome.Passed = missed == 0 && premature == 0
+	return outcome
+}
+
+// Conditions lists what a dataset root contains, so a run can name its
+// partition rather than guessing at one.
+func Conditions(root string) ([]string, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+	var conditions []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			conditions = append(conditions, entry.Name())
+		}
+	}
+	sort.Strings(conditions)
+	return conditions, nil
+}

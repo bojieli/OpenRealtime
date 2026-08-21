@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 )
 
@@ -64,6 +65,7 @@ func Decode(raw []byte) (Decoded, error) {
 	}
 	var metadata Metadata
 	foundFormat := false
+	encoding := uint16(1)
 	offset := 12
 	for offset+8 <= len(raw) {
 		chunkID := string(raw[offset : offset+4])
@@ -80,7 +82,8 @@ func Decode(raw []byte) (Decoded, error) {
 				return Decoded{}, errors.New("WAV fmt chunk is shorter than 16 bytes")
 			}
 			format := raw[body : body+16]
-			if encoding := binary.LittleEndian.Uint16(format[0:2]); encoding != 1 && encoding != 0xFFFE {
+			encoding = binary.LittleEndian.Uint16(format[0:2])
+			if encoding != 1 && encoding != 3 && encoding != 0xFFFE {
 				return Decoded{}, fmt.Errorf("only uncompressed PCM WAV is supported, got encoding %d", encoding)
 			}
 			metadata.Channels = binary.LittleEndian.Uint16(format[2:4])
@@ -91,16 +94,17 @@ func Decode(raw []byte) (Decoded, error) {
 			if !foundFormat {
 				return Decoded{}, errors.New("WAV data chunk precedes fmt chunk")
 			}
-			if metadata.BitsPerSample != 16 {
-				return Decoded{}, fmt.Errorf("PCM16 audio is required, got %d bits per sample", metadata.BitsPerSample)
-			}
 			if metadata.Channels == 0 {
 				return Decoded{}, errors.New("WAV declares no channels")
 			}
 			if metadata.SampleRateHz == 0 {
 				return Decoded{}, errors.New("WAV declares no sample rate")
 			}
-			payload := raw[body : body+chunkSize]
+			payload, err := toPCM16(raw[body:body+chunkSize], metadata.BitsPerSample, encoding)
+			if err != nil {
+				return Decoded{}, err
+			}
+			metadata.BitsPerSample = 16
 			mono := downmix(payload, metadata.Channels)
 			metadata.DataLengthBytes = uint64(len(mono))
 			metadata.SampleCount = uint64(len(mono) / int(PCM16BytesPerSample))
@@ -109,6 +113,61 @@ func Decode(raw []byte) (Decoded, error) {
 		offset = body + chunkSize + chunkSize%2
 	}
 	return Decoded{}, errors.New("WAV contains no data chunk")
+}
+
+// toPCM16 converts a sample format to signed 16-bit.
+//
+// Recordings in the wild are 16-bit integer, 24-bit integer, 32-bit integer,
+// or 32-bit float, and refusing three of those would push conversion onto
+// every caller for no reason: the arithmetic is four lines and the result is
+// exact for everything but the low bits, which are below the noise floor of
+// anything this system will hear.
+func toPCM16(payload []byte, bits uint16, encoding uint16) ([]byte, error) {
+	switch {
+	case bits == 16 && encoding != 3:
+		return payload, nil
+	case bits == 32 && encoding == 3:
+		return convert(payload, 4, func(word []byte) int16 {
+			bits := binary.LittleEndian.Uint32(word)
+			value := math.Float32frombits(bits)
+			return clampToInt16(float64(value) * 32767)
+		}), nil
+	case bits == 32:
+		return convert(payload, 4, func(word []byte) int16 {
+			return int16(int32(binary.LittleEndian.Uint32(word)) >> 16)
+		}), nil
+	case bits == 24:
+		return convert(payload, 3, func(word []byte) int16 {
+			value := int32(word[0]) | int32(word[1])<<8 | int32(int8(word[2]))<<16
+			return int16(value >> 8)
+		}), nil
+	case bits == 8:
+		// 8-bit WAV is unsigned by definition.
+		return convert(payload, 1, func(word []byte) int16 {
+			return int16(int(word[0])-128) << 8
+		}), nil
+	default:
+		return nil, fmt.Errorf("unsupported WAV sample format: %d bits, encoding %d", bits, encoding)
+	}
+}
+
+func convert(payload []byte, stride int, decode func([]byte) int16) []byte {
+	count := len(payload) / stride
+	converted := make([]byte, count*2)
+	for index := 0; index < count; index++ {
+		binary.LittleEndian.PutUint16(converted[index*2:], uint16(decode(payload[index*stride:])))
+	}
+	return converted
+}
+
+func clampToInt16(value float64) int16 {
+	if value > 32767 {
+		return 32767
+	}
+	if value < -32768 {
+		return -32768
+	}
+	return int16(value)
 }
 
 // downmix averages interleaved channels into one.

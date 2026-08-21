@@ -240,11 +240,12 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 }
 
 type recorder struct {
-	mu         sync.Mutex
-	started    time.Time
-	moments    []Moment
-	playbackMS float64
-	failure    string
+	mu                 sync.Mutex
+	started            time.Time
+	moments            []Moment
+	playbackMS         float64
+	playbackFinishedAt time.Time
+	failure            string
 }
 
 func (recorder *recorder) at() float64 {
@@ -262,6 +263,7 @@ func (recorder *recorder) playbackDone(milliseconds float64) {
 	recorder.mu.Lock()
 	defer recorder.mu.Unlock()
 	recorder.playbackMS = milliseconds
+	recorder.playbackFinishedAt = time.Now()
 }
 
 func (recorder *recorder) snapshot() Transcript {
@@ -279,29 +281,43 @@ func (recorder *recorder) snapshot() Transcript {
 // "Quiet after playback" rather than "a fixed number of responses": a suite
 // recording may contain one turn or five, and counting responses would make
 // the driver suite-specific.
+//
+// Quiet is measured from the later of playback ending and the last event,
+// which matters more than it sounds. Arming a timer only when an event arrives
+// means a session that produces nothing after playback never arms it at all,
+// and every task in that cell fails with a timeout - which looks like the
+// system hanging rather than the harness waiting.
 func (recorder *recorder) collect(
 	ctx context.Context, client *realtimeclient.Client, config SessionConfig,
 ) Transcript {
-	idle := time.NewTimer(time.Hour)
-	defer idle.Stop()
 	const quietFor = 3 * time.Second
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	lastEvent := time.Now()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return recorder.snapshot()
-		case <-idle.C:
-			return recorder.snapshot()
+		case <-ticker.C:
+			recorder.mu.Lock()
+			finishedAt := recorder.playbackFinishedAt
+			recorder.mu.Unlock()
+			if finishedAt.IsZero() {
+				continue
+			}
+			since := finishedAt
+			if lastEvent.After(since) {
+				since = lastEvent
+			}
+			if time.Since(since) >= quietFor {
+				return recorder.snapshot()
+			}
 		case event, open := <-client.Events():
 			if !open {
 				return recorder.snapshot()
 			}
-			recorder.mu.Lock()
-			playbackFinished := recorder.playbackMS > 0
-			recorder.mu.Unlock()
-			if playbackFinished {
-				idle.Reset(quietFor)
-			}
+			lastEvent = time.Now()
 			recorder.handle(ctx, client, config, event)
 		}
 	}
@@ -343,13 +359,22 @@ func (recorder *recorder) handle(
 		recorder.add(Moment{Kind: MomentResponseDone})
 	case "response.function_call_arguments.done":
 		var decoded struct {
-			CallID    string          `json:"call_id"`
-			Name      string          `json:"name"`
-			Arguments json.RawMessage `json:"arguments"`
+			CallID string `json:"call_id"`
+			Name   string `json:"name"`
+			// The protocol carries arguments as a JSON *string*, not as an
+			// object. Decoding it as raw JSON and handing that to a suite
+			// gives every suite a quoted blob that will never match anything
+			// it compares against - which looks like a model that always gets
+			// arguments wrong.
+			Arguments string `json:"arguments"`
 		}
 		_ = event.Decode(&decoded)
 		recorder.add(Moment{Kind: MomentToolCall, Name: decoded.Name})
-		recorder.answer(ctx, client, config, decoded.CallID, decoded.Name, decoded.Arguments)
+		arguments := json.RawMessage(decoded.Arguments)
+		if !json.Valid(arguments) {
+			arguments = json.RawMessage(`{}`)
+		}
+		recorder.answer(ctx, client, config, decoded.CallID, decoded.Name, arguments)
 	case "error":
 		var decoded struct {
 			Error struct {
