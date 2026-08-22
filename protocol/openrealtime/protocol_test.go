@@ -232,3 +232,51 @@ func TestParseFeatureAcceptsOnlyWhatThisVersionDefines(t *testing.T) {
 		t.Fatal("a near-miss must be refused rather than corrected")
 	}
 }
+
+// A selection nothing will honour is refused rather than confirmed.
+//
+// Only a binding that runs its own perception has observers to select from.
+// The others - the ones whose model owns its perception - advertise none, and
+// used to accept whatever a client named because the filter that rejects
+// unknown names was skipped when there was nothing to compare against. The
+// client got its own list back as the negotiated set, complete with names that
+// exist nowhere, and believed it had enabled something.
+func TestObserversAreRefusedWhereNoneCanBeSelected(t *testing.T) {
+	_, err := openrealtime.NegotiateSession(
+		openrealtime.Request{Version: openrealtime.Version, Observers: []string{"video"}},
+		nil, openrealtime.Limits{}, nil)
+	if err == nil {
+		t.Fatal("a binding with no observers must refuse a selection rather than confirm it")
+	}
+	if !strings.Contains(err.Error(), "no selectable observers") {
+		t.Fatalf("the refusal must say why, got %v", err)
+	}
+}
+
+// An invented name is refused even where observers do exist, which is the
+// case that always worked and has to keep working.
+func TestAnInventedObserverIsRefused(t *testing.T) {
+	_, err := openrealtime.NegotiateSession(
+		openrealtime.Request{Version: openrealtime.Version, Observers: []string{"invented"}},
+		nil, openrealtime.Limits{}, []string{"audio", "video"})
+	if err == nil {
+		t.Fatal("an observer that exists nowhere must be refused")
+	}
+	if !strings.Contains(err.Error(), "audio, video") {
+		t.Fatalf("the refusal must name what is available, got %v", err)
+	}
+}
+
+// And a client that names a subset of what exists still gets exactly that
+// subset - the filtering this fix tightened must not have become all-or-none.
+func TestASubsetOfAvailableObserversIsHonoured(t *testing.T) {
+	response, err := openrealtime.NegotiateSession(
+		openrealtime.Request{Version: openrealtime.Version, Observers: []string{"audio", "invented"}},
+		nil, openrealtime.Limits{}, []string{"audio", "video"})
+	if err != nil {
+		t.Fatalf("a partly-recognised selection is honoured, not refused: %v", err)
+	}
+	if len(response.Observers) != 1 || response.Observers[0] != "audio" {
+		t.Fatalf("the answer must carry what was actually enabled, got %v", response.Observers)
+	}
+}

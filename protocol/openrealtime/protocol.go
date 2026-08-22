@@ -180,6 +180,12 @@ func NegotiateWithLimits(request Request, supported []Feature, limits Limits) (R
 // deployment does not have is absent from the answer rather than fatal. A
 // client that names nothing gets the binding's default set, which is every
 // observer the deployment configured.
+//
+// Asking for observers where there are none is fatal, not empty. A binding
+// that offers no selectable perception - which is every binding whose model
+// owns its own - cannot honour a selection, and answering one back would
+// confirm a set that nothing will ever act on. The client would believe it
+// had turned something on.
 func NegotiateSession(
 	request Request, supported []Feature, limits Limits, available []string,
 ) (Response, error) {
@@ -208,12 +214,17 @@ func NegotiateSession(
 			if name == "" || slices.Contains(selected, name) {
 				continue
 			}
-			if len(available) > 0 && !slices.Contains(available, name) {
+			if !slices.Contains(available, name) {
 				continue
 			}
 			selected = append(selected, name)
 		}
 		if len(selected) == 0 {
+			if len(available) == 0 {
+				return Response{}, fmt.Errorf(
+					"this binding has no selectable observers, so %q cannot be enabled",
+					strings.Join(request.Observers, ", "))
+			}
 			return Response{}, fmt.Errorf(
 				"none of the requested observers exist here (available: %s)",
 				strings.Join(available, ", "))
