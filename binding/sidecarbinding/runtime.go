@@ -82,6 +82,13 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		ledger: action.NewLedger(), registry: action.NewRegistry(),
 		ctx: ctx, cancel: cancel, settings: binding.CloneSettings(options.Settings),
 	}
+	if result.settings.Gate.SilenceDurationMS == 0 {
+		// The session said nothing about endpointing, so the deployment's
+		// configuration stands. A session that did say something is answered
+		// with what it asked for: the engine holds this floor, so the client's
+		// endpointing parameters are ones it can actually honour.
+		result.settings.Gate = bind.config.Gate
+	}
 	tracker, err := clientcalls.New(clientcalls.Config{
 		Timeout: bind.config.ClientToolTimeout, Scheduler: bind.config.Scheduler,
 		Commit: result.commitToolResults, Expired: result.reportUnanswered,
@@ -200,9 +207,26 @@ func (runtime *runtime) Update(_ context.Context, settings binding.Settings) err
 	if err := runtime.registry.Replace(settings.Tools); err != nil {
 		return err
 	}
+	if settings.Gate.SilenceDurationMS == 0 {
+		settings.Gate = runtime.config.Gate
+	}
 	runtime.settingsMu.Lock()
+	changed := runtime.settings.Gate != settings.Gate
 	runtime.settings = settings
 	runtime.settingsMu.Unlock()
+	if changed {
+		// The gate is built once and reused, so new endpointing parameters
+		// would otherwise be accepted, reported back, and never reach the
+		// thing that decides when a turn ended. Dropping it here rebuilds it
+		// from the new settings on the next frame.
+		//
+		// Deliberately not under settingsMu: Audio takes audioMu and then
+		// reads the settings, so taking them in the other order here is how
+		// this deadlocks.
+		runtime.audioMu.Lock()
+		runtime.acoustic, runtime.acousticRate = nil, 0
+		runtime.audioMu.Unlock()
+	}
 	return nil
 }
 
@@ -226,7 +250,7 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 	// are in samples, so one built for the wrong rate waits silently for the
 	// wrong amount of time rather than failing.
 	if runtime.acoustic == nil || runtime.acousticRate != frame.SampleRateHz {
-		gate, gateErr := perception.NewEnergyGate(runtime.config.Gate, frame.SampleRateHz)
+		gate, gateErr := perception.NewEnergyGate(runtime.Settings().Gate, frame.SampleRateHz)
 		if gateErr != nil {
 			runtime.audioMu.Unlock()
 			return gateErr
