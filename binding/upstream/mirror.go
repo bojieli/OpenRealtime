@@ -113,6 +113,32 @@ func (runtime *runtime) mirrorEvent(eventType string, raw []byte) error {
 			return err
 		}
 		return runtime.commitRemoteAssistant(decoded.Transcript)
+	case "conversation.item.input_audio_transcription.failed":
+		// The remote could not make out what the user said. It still answers,
+		// because it heard the audio natively - but the transcript is the only
+		// evidence this side gets, so without one the reasoner never sees the
+		// turn at all. The binding's whole contribution silently skips it, and
+		// the client renders an agent replying to nothing.
+		//
+		// Nothing here can recover the words. Saying so is the entire fix: an
+		// unreported failure and a turn the reasoner had nothing to add to
+		// look identical from outside.
+		var decoded struct {
+			Error struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		_ = json.Unmarshal(raw, &decoded)
+		message := decoded.Error.Message
+		if strings.TrimSpace(message) == "" {
+			message = "the remote could not transcribe what the user said"
+		}
+		runtime.sink.Failed(runtime.ctx, binding.ErrorEvent{
+			Code:    "upstream_transcription_failed",
+			Message: message + ": the background reasoner did not see this turn",
+		})
+		return nil
 	case "response.done":
 		return runtime.finishRemoteResponse()
 	case "error":

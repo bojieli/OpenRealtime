@@ -198,3 +198,65 @@ func TestAPreGAEndpointsTextReachesTheClient(t *testing.T) {
 		return false
 	}, "a pre-GA endpoint's text must be renamed onto the event the mirror handles")
 }
+
+// A transcription the remote could not make out is reported.
+//
+// The remote owns perception here, so its transcript is the only evidence this
+// side gets. Without one the reasoner never sees the turn - and the reasoner is
+// the whole of what this binding adds. The remote still answers, because it
+// heard the audio natively, so the client renders an agent replying to nothing
+// and nothing anywhere says why.
+//
+// Nothing can recover the words. Saying so is the entire fix: an unreported
+// failure and a turn the reasoner had nothing to add to look identical from
+// outside.
+func TestATranscriptionTheRemoteCouldNotMakeOutIsReported(t *testing.T) {
+	remote := newFakeRemote(t)
+	bind, err := upstream.New(upstream.Config{
+		URL: remote.url(), Slow: &scriptedSlow{}, Model: "remote-model",
+	})
+	if err != nil {
+		t.Fatalf("new upstream: %v", err)
+	}
+	sink := &collectingSink{}
+	runtime, err := bind.Start(context.Background(), binding.Options{
+		Sink: sink, SessionID: "test",
+	})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() { _ = runtime.Close(context.Background(), nil) })
+	<-remote.ready
+
+	remote.emit(map[string]any{
+		"type": "conversation.item.input_audio_transcription.failed", "item_id": "item_1",
+		"error": map[string]any{"code": "audio_unintelligible", "message": "could not transcribe"},
+	})
+
+	waitFor(t, func() bool {
+		sink.mu.Lock()
+		defer sink.mu.Unlock()
+		for _, failure := range sink.failures {
+			if failure.Code == "upstream_transcription_failed" {
+				return true
+			}
+		}
+		return false
+	}, "a turn the reasoner will never see must not pass in silence")
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	for _, failure := range sink.failures {
+		if failure.Code != "upstream_transcription_failed" {
+			continue
+		}
+		// The person needs to know their words were lost; the operator needs
+		// to know which half of the binding stopped working.
+		if !strings.Contains(failure.Message, "could not transcribe") {
+			t.Fatalf("the report must carry what the remote said, got %q", failure.Message)
+		}
+		if !strings.Contains(failure.Message, "background reasoner") {
+			t.Fatalf("the report must say what was lost, got %q", failure.Message)
+		}
+	}
+}
