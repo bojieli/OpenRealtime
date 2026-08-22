@@ -23,7 +23,8 @@ Add a second boundary, symmetric with the first:
 
 > The fast provider cannot call tools. The slow provider cannot speak.
 
-Slow's output appends to the trajectory, and a fast continuation voices it.
+Slow's output appends to the trajectory as background state, and the next fast
+turn speaks from it in its own words.
 Both boundaries are properties of the provider descriptor, validated once at
 construction and recorded on every item the provider produces, so the action
 plane decides what may be voiced from the committed log rather than from a

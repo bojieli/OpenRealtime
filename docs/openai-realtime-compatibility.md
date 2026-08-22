@@ -149,15 +149,23 @@ paced, because a turn nobody hears takes no time and cannot be talked over. It
 is what a computer-use client wants, and refusing it made this server unusable
 for exactly the clients the extension exists for.
 
-**A response is a turn.** One `response.create` produces one response, and it
-carries every output item the turn produced — spoken or written content and
-function calls together, indexed within it. A client that has been told a
-response is done stops reading it, so an agent that speaks and then calls a
-tool has to be one response with two items rather than two responses of which
-the client sees only the first. The response closes when the rollout has
-finished planning *and* every utterance it started has finished playing, which
-are not the same moment: speech is paced out over seconds after the rollout
-returns.
+**A response is one thing the agent did, not the whole turn.** One
+`response.create` produces one response, and it carries every output item that
+*it* produced — spoken or written content and function calls, indexed within
+it. The response closes when what opened it has finished planning *and* every
+utterance it started has finished playing, which are not the same moment:
+speech is paced out over seconds after planning returns.
+
+A turn can span several of them, and normally does. The voice answers in one
+response; the background reasoner's tool calls arrive in another, and what it
+found is spoken in a third, once the gate lets anything be heard. Nothing is
+lost by that. Audio reaches the client on the audio channel rather than inside
+a response envelope, and a client executing a tool reads `function_call` items
+as they arrive — a response being done means that response has no more items,
+not that the session has stopped producing them. An earlier version of this
+document claimed the opposite, and the claim was wrong: it would require
+holding a response open across an unbounded deliberation, so the first answer
+could not complete until the last one did.
 
 Function call arguments arrive as a JSON-encoded **string**, not an object —
 `{"arguments": "{\"path\":\"notes.txt\"}"}` — which is what the official API

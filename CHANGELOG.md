@@ -2,6 +2,63 @@
 
 ## Unreleased
 
+### Cognition
+
+- **A question the voice can answer is answered once.** The rollout ran the
+  background reasoner on every observation, so a turn needing no deliberation
+  produced a second answer nobody asked for — and the step that read it back
+  spoke it. Whether a turn needs deliberation is now the fast phase's
+  judgement, handed on with a control marker that is stripped before any item
+  is committed, so it reaches neither the trajectory nor the user.
+- **Slow's result is background state, not an assistant turn.** Every item
+  records whether its producer could be heard, and the projection into a
+  provider discarded that, so a written result arrived as an ordinary assistant
+  message — indistinguishable from what the agent had actually said. A voicing
+  step told to "say the answer the reasoning continuation just produced" had no
+  referent for it and recited the earlier spoken turn back instead, word for
+  word, including the truncation from its own token limit. It is now projected
+  as what it is, in every dialect.
+- **The voicing step is gone.** Nothing is asked to recite what another
+  provider wrote. The voice reads the same trajectory and answers in its own
+  words, which is the only kind of spoken turn there is.
+- **The fast provider is told what the agent can do and given nothing to
+  execute.** It was handed the full tool definitions while its authority was to
+  propose, so it spent a ninety-six token budget emitting JSON that could not
+  run — and left the dead air its own instruction forbids. It gets the
+  capability list and the escalation marker instead. A call it emits anyway is
+  still recorded as a non-executable proposal rather than failing the turn.
+
+### The event loop
+
+- **Every completion re-enters the loop.** Locally dispatched tool results were
+  appended straight to the trajectory, and a finished slow chain was acted on
+  where it happened, so neither passed the gate that decides when the agent may
+  be heard. Both now travel as events, exactly as a client-executed result
+  already did. A signal event opens a safe point without appending anything,
+  because what it refers to is already in the log.
+- **Deliberation is never deferred for silence.** The gate holds what will be
+  heard; it must not hold what will only be thought, or the background reasoner
+  could not reason while the voice is talking, which is what it is for.
+- **A superseded turn is a cancellation, not a failure.** Two of the three
+  interrupt paths marked themselves as interruptions and the third did not, so
+  a turn replaced by newer evidence was reported to the client as an error.
+
+### Compatibility
+
+- **A response is one thing the agent did, not the whole turn.** The
+  compatibility document claimed a turn had to be a single response, on the
+  grounds that a client stops reading a finished one. That is not what a client
+  does — audio arrives on the audio channel and function calls are read as they
+  arrive — and the claim would require holding a response open across an
+  unbounded deliberation. Corrected, with the test that encoded it.
+
+### Removed
+
+- `AppendBatchAfter`, `AppendToolResults`, `ErrSlowMaySpeak`,
+  `ErrFastMayExecute`, and the `ValidateArrangement` the last two named in
+  their documentation: none had a caller, and the last three described a check
+  that does not exist. The arrangement is enforced at engine construction.
+
 ### Realtime endpoints
 
 - **`providers -role upstream -probe NAME` contacts an endpoint for real**,

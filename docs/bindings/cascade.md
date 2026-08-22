@@ -38,8 +38,9 @@ between turns.
 3. The floor decides the turn ended. A canonical observation commits.
 4. The deferral gate decides whether to act now. If the agent is still audible,
    the observation waits and playback completion wakes it.
-5. The rollout plans: fast answers immediately, slow reasons and acts, and a
-   fast step voices what slow produced.
+5. The rollout plans: fast answers immediately. If fast hands the turn on, slow
+   reasons and acts; what it finds re-enters as its own event, and the voice
+   speaks again when the gate lets it.
 6. Authoritative calls go to whoever executes them — in-process when a
    dispatcher is declared, to the client otherwise.
 

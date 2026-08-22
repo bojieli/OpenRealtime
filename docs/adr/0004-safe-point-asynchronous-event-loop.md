@@ -34,9 +34,8 @@ Adopt one provider-neutral event-loop state machine:
    processing reaches a provider-supported safe point.
 5. Every model continuation computes from an immutable version and atomically
    publishes only if that version remains current.
-6. A batch containing a new observation runs fast then slow once. A
-   tool-result-only batch resumes slow directly. Media-state-only batches run
-   neither.
+6. A batch containing a new observation runs fast. A tool-result-only batch
+   resumes slow directly. Media-state-only batches run neither.
 7. Tool calls execute only after a slow call commits. All results for one call
    batch cross back as one exact, identity-checked transaction.
 8. Event occurrence time and canonical commit time are retained separately.
@@ -90,6 +89,14 @@ specify how upstream producers react to returned backpressure.
 
 The complete operational contract is in
 [architecture.md](../architecture.md).
+
+Amended after v1.0: slow no longer runs on every observation. Whether a turn
+needs deliberation is the fast phase's judgement, expressed as a control marker
+that never reaches the trajectory or the user; a turn the voice can answer
+outright is answered once, which is what stops a simple question being
+processed - and heard - twice. Every completion travels back as an event
+rather than being acted on where it happened, so the gate decides when anything
+is heard, and one turn may therefore span several responses.
 
 Amended at v1.0: the loop gained the state this decision described but could
 not represent. Committing an event and acting on it are now separate steps, a

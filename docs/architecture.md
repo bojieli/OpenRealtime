@@ -65,7 +65,7 @@ policy that cannot be swapped cannot be measured:
 | --- | --- | --- |
 | Trigger | when a decision opportunity opens | fixed 200 ms cadence |
 | Preparation | whether to speculatively pre-start before the endpoint | off (`-preparation continuous` to enable) |
-| Rollout | when each cognition provider fires; whether slow supersedes | fast then slow |
+| Rollout | when each cognition provider fires; whether slow runs at all | fast, then slow when fast asks |
 | Floor | when the user has finished; who holds the turn | engine, 500 ms silence |
 | Barge-in | whether user speech over agent output cancels it | immediate |
 | Commitment | how much to emit before certainty | complete safe points only |
@@ -141,12 +141,20 @@ and enforced where output commits. A fast provider's emitted call becomes a
 the dispatcher re-checks the trajectory before any effect, so a proposal cannot
 become an action however it is routed.
 
-The second rule costs a short extra hop and buys three things: fast is always
-the last writer before audio, so slow can no longer contradict something
-already said; fast can condense a long written answer into something worth
-listening to, which is a different job from producing it; and the division of
-labour is legible — one model owns what the user hears, one owns what the
-system does.
+The second rule is what makes the division of labour legible: one model owns
+what the user hears, one owns what the system does. Slow's output is not an
+assistant turn at all. It is recorded as background state and projected to
+every provider as such, so nothing can mistake a written result for something
+the user was told — and the next fast turn answers *from* it rather than
+reciting it. Fast is therefore always the last writer before audio, and slow
+cannot contradict, or repeat, something already said.
+
+Whether slow runs is fast's judgement, not a rule. A turn the voice can answer
+outright is answered once and ends there; a turn that needs a capability or
+real reasoning is handed on with a control marker that is stripped before any
+item is committed, so it reaches neither the trajectory nor the user. That is
+what keeps a simple question from being answered twice — by construction,
+rather than by noticing the duplicate afterwards.
 
 ## Bindings declare ownership
 

@@ -60,7 +60,7 @@ Two rules define the division of labour between the models:
 > **The fast provider cannot call tools. The slow provider cannot speak.**
 
 Fast answers the question the user actually asked, immediately. Slow reasons
-and acts, concurrently, and a fast continuation voices what it produced. Both
+and acts, concurrently, and the voice says what it found. Both
 are properties of the provider descriptor rather than routing decisions,
 enforced where output commits — so a fast provider's tool call is recorded as a
 non-executable proposal and can never become an effect.
