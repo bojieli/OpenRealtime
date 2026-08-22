@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -189,14 +190,14 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 // boundary every other binding holds.
 func (runtime *runtime) configureRemote() error {
 	settings := runtime.Settings()
-	return runtime.remote.Send(runtime.ctx,
-		sessionUpdate(remoteInstruction(settings.Instruction), settings.ManualTurns))
+	return runtime.remote.Send(runtime.ctx, sessionUpdate(
+		remoteInstruction(settings.Instruction), settings.ManualTurns, settings.Modalities))
 }
 
 // sessionUpdate builds the session declaration. It is shared with the
 // session-instruction handoff, which is the same event carrying different
 // text.
-func sessionUpdate(instruction string, manualTurns bool) map[string]any {
+func sessionUpdate(instruction string, manualTurns bool, modalities []string) map[string]any {
 	input := map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}}
 	if manualTurns {
 		// The client took the floor, and the remote is the side that holds it
@@ -207,17 +208,24 @@ func sessionUpdate(instruction string, manualTurns bool) map[string]any {
 		// silence while the client believed it had stopped that.
 		input["turn_detection"] = nil
 	}
-	return map[string]any{
-		"type": "session.update",
-		"session": map[string]any{
-			"type":         "realtime",
-			"instructions": instruction,
-			"audio": map[string]any{
-				"input":  input,
-				"output": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
-			},
+	update := map[string]any{
+		"type":         "realtime",
+		"instructions": instruction,
+		"audio": map[string]any{
+			"input":  input,
+			"output": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
 		},
 	}
+	if len(modalities) > 0 {
+		// The remote speaks this protocol and would honour this, so not
+		// telling it leaves it synthesising a full audio response for a client
+		// that asked for text - billed as audio output, sent over the network,
+		// and decoded and dropped on this side. Unlike the other bindings,
+		// where a text session merely wastes local synthesis, here the waste
+		// is the provider's meter and the client is the one paying it.
+		update["output_modalities"] = slices.Clone(modalities)
+	}
+	return map[string]any{"type": "session.update", "session": update}
 }
 
 // dialRealtime opens an ordinary Realtime WebSocket.

@@ -51,6 +51,24 @@ Video input and computer use are reported as unsupported. The base protocol
 gives no way to ask a remote endpoint whether it accepts them, and reporting
 honestly is better than forwarding events the remote will reject.
 
+## What the remote is told
+
+The remote speaks this protocol, so a client's declarations are forwarded to it
+rather than interpreted here. Three travel on every `session.update` the
+binding sends, not only the first — a hand-off re-sends the session to carry an
+answer, and one sent without them would undo the client's choices as a side
+effect of speaking:
+
+| Declaration | Why it is forwarded |
+| --- | --- |
+| `instructions` | Composed with this binding's own, which tell the remote a reasoner will hand it answers to say. |
+| `turn_detection: null` | The remote holds the floor here, so it is the side that has to stop ending turns on silence. |
+| `output_modalities` | A remote told nothing synthesises a full audio response for a client that asked for text — billed as audio output, sent over the network, and dropped on arrival. |
+
+The modality is the one where the cost is the provider's meter rather than a
+local GPU, which is why it is forwarded here and not on the bindings that
+synthesise locally.
+
 ## Resource guidance
 
 Nothing local runs the voice. An upstream session holds one WebSocket to the

@@ -84,6 +84,27 @@ func (runtime *runtime) mirrorEvent(eventType string, raw []byte) error {
 			return err
 		}
 		return runtime.forwardText(decoded.Delta)
+	case "response.output_text.delta":
+		// A text session's output arrives on its own events, and until the
+		// modality reached the remote there were never any to handle. Routing
+		// them to the same pair as the spoken transcript is what makes a
+		// text-only upstream session produce anything at all: forwarding the
+		// declaration without this would trade wasted audio for silence.
+		var decoded struct {
+			Delta string `json:"delta"`
+		}
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			return err
+		}
+		return runtime.forwardText(decoded.Delta)
+	case "response.output_text.done":
+		var decoded struct {
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			return err
+		}
+		return runtime.commitRemoteAssistant(decoded.Text)
 	case "response.output_audio_transcript.done":
 		var decoded struct {
 			Transcript string `json:"transcript"`
@@ -222,7 +243,7 @@ func (runtime *runtime) finishRemoteResponse() error {
 		settings := runtime.Settings()
 		base := remoteInstruction(settings.Instruction)
 		if err := runtime.remote.Send(runtime.ctx,
-			sessionUpdate(base, settings.ManualTurns)); err != nil {
+			sessionUpdate(base, settings.ManualTurns, settings.Modalities)); err != nil {
 			return err
 		}
 	}

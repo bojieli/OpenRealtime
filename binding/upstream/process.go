@@ -165,7 +165,7 @@ func (runtime *runtime) handOffBySessionInstruction(ctx context.Context, answer 
 	// detector out would hand the floor back to the remote as a side effect of
 	// saying something.
 	if err := runtime.remote.Send(ctx, sessionUpdate(
-		base+"\n\n"+handoffDirective+answer, settings.ManualTurns)); err != nil {
+		base+"\n\n"+handoffDirective+answer, settings.ManualTurns, settings.Modalities)); err != nil {
 		return err
 	}
 	runtime.stateMu.Lock()
