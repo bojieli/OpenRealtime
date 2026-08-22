@@ -46,6 +46,11 @@ func runProbe(arguments []string, output io.Writer) error {
 		return err
 	}
 
+	// Whether the audio was ours matters to every failure below: a generated
+	// tone cannot produce a transcript from a working recogniser, so the same
+	// silence means something different depending on where the audio came
+	// from.
+	generated := strings.TrimSpace(wavPath) == ""
 	samples, err := probeAudio(wavPath, silenceMS)
 	if err != nil {
 		return err
@@ -58,7 +63,7 @@ func runProbe(arguments []string, output io.Writer) error {
 		if err != nil {
 			return err
 		}
-		return reportProbe(result, output)
+		return reportProbe(result, generated, output)
 	}
 
 	client, err := realtimeclient.Dial(ctx, realtimeclient.Config{
@@ -105,8 +110,11 @@ func runProbe(arguments []string, output io.Writer) error {
 
 	select {
 	case result := <-results:
-		return reportProbe(result, output)
+		return reportProbe(result, generated, output)
 	case <-ctx.Done():
+		if generated {
+			return errors.New("the turn did not complete before the timeout: " + generatedToneAdvice)
+		}
 		return errors.New("the turn did not complete before the timeout")
 	}
 }
@@ -124,7 +132,7 @@ func appendTranscript(existing, next string) string {
 }
 
 // reportProbe prints what happened and decides whether it counts as working.
-func reportProbe(result probeResult, output io.Writer) error {
+func reportProbe(result probeResult, generated bool, output io.Writer) error {
 	fmt.Fprintln(output)
 	fmt.Fprintf(output, "transcript : %s\n", result.transcript)
 	fmt.Fprintf(output, "spoken     : %s\n", strings.Join(result.spoken, " | "))
@@ -137,6 +145,9 @@ func reportProbe(result probeResult, output io.Writer) error {
 		return result.err
 	}
 	if result.transcript == "" {
+		if generated {
+			return errors.New("the server produced no transcript: " + generatedToneAdvice)
+		}
 		return errors.New("the server produced no transcript")
 	}
 	if len(result.spoken) == 0 {
@@ -232,11 +243,26 @@ func collectProbe(ctx context.Context, client *realtimeclient.Client, output io.
 	}
 }
 
+// generatedToneAdvice is what to tell someone whose probe produced nothing
+// while the server was working correctly.
+//
+// The generated tone opens the acoustic gate, which is all it was ever
+// intended to do - and against a real recogniser that is not enough. A tone
+// contains no speech, so a recogniser that is working returns an empty
+// transcript, no observation is committed, no turn runs, and the probe reports
+// no transcript, no speech and no audio. The healthier the recogniser, the
+// more reliably this fails: one that hallucinates a word from a pure tone
+// produces a turn, which is why the same probe can pass and fail against an
+// unchanged server.
+const generatedToneAdvice = "the audio was a generated tone, which opens the acoustic gate but " +
+	"contains no speech - a working recogniser returns nothing for it, and no turn follows. " +
+	"Pass -audio with a recording of someone speaking to probe the whole path."
+
 func probeAudio(path string, trailingSilenceMS int) ([]int16, error) {
 	var samples []int16
 	if strings.TrimSpace(path) == "" {
-		// A tone is loud enough to open the acoustic gate, which is all a
-		// connectivity check needs.
+		// Loud enough to open the acoustic gate. That is all it does: see
+		// generatedToneAdvice for why it cannot carry a turn on its own.
 		samples = make([]int16, 24_000)
 		for index := range samples {
 			samples[index] = int16(6000 * math.Sin(float64(index)*440*2*math.Pi/24_000))
