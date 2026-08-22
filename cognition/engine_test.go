@@ -175,8 +175,8 @@ func TestSlowIsSilentAndFastKnowsCapabilitiesWithoutTools(t *testing.T) {
 	if len(fast.seen.Invocation.Capabilities) == 0 {
 		t.Fatal("fast must know what the agent can do, or it will deny a capability the agent has")
 	}
-	if !strings.Contains(fast.seen.Invocation.Instruction, continuation.EscalationMarker) {
-		t.Fatalf("fast must be told how to hand the turn on: %q", fast.seen.Invocation.Instruction)
+	if !strings.Contains(fast.seen.Invocation.Instruction, continuation.CompletionMarker) {
+		t.Fatalf("fast must be told how to declare a turn finished: %q", fast.seen.Invocation.Instruction)
 	}
 }
 
@@ -260,5 +260,39 @@ func TestSlowInvocationsAreCountedFromCanonicalState(t *testing.T) {
 	}
 	if got := rebuilt.SlowInvocations(1); got != 2 {
 		t.Fatalf("the bound must survive a restart, got %d", got)
+	}
+}
+
+// liveCatalog is a catalogue whose contents change after the engine exists,
+// which is what a client declaring its tools in session.update looks like.
+type liveCatalog struct{ declared []continuation.Capability }
+
+func (c *liveCatalog) Capabilities() []continuation.Capability { return c.declared }
+func (c *liveCatalog) Tools() []continuation.ToolDefinition    { return nil }
+
+// A client declares its tools after the session exists, so a manifest captured
+// at construction is empty for exactly the sessions that have tools. Fast then
+// cannot know the agent can do anything - and since fast is what decides
+// whether the reasoner runs, the agent never acts at all.
+func TestTheCapabilityManifestIsReadWhenItIsAsked(t *testing.T) {
+	store := trajectory.NewStore()
+	seed(t, store)
+	catalog := &liveCatalog{}
+	fast := fastProvider(continuation.Event{Kind: continuation.EventAssistantDelta, Text: "one moment"})
+	engine, err := cognition.New(cognition.Config{
+		Store: store, Fast: fast, Slow: slowProvider(), Catalog: catalog, RequireSilentSlow: true,
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	// The session declares its tools only now.
+	catalog.declared = []continuation.Capability{
+		{Name: "get_balance", Description: "read a balance", Available: true},
+	}
+	if _, err := engine.RunFast(context.Background(), cognition.Request{SourceRevision: 1}, nil); err != nil {
+		t.Fatalf("run fast: %v", err)
+	}
+	if len(fast.seen.Invocation.Capabilities) != 1 {
+		t.Fatalf("fast must see what the session declared, got %+v", fast.seen.Invocation.Capabilities)
 	}
 }

@@ -36,6 +36,11 @@ const (
 	SignalBackgroundResult = "cognition.background_result"
 )
 
+// ReasonBackgroundResult names the fast step that speaks what the reasoner
+// left behind. A binding reads it to know that this turn ends the chain rather
+// than opening another one.
+const ReasonBackgroundResult = "the background reasoner finished"
+
 // Step is one action in a rollout plan.
 type Step struct {
 	Kind   StepKind `json:"kind"`
@@ -151,7 +156,7 @@ func (rollout fastThenSlowRollout) Plan(input RolloutInput) []Step {
 	case input.Cause.Observation:
 		steps = append(steps, Step{Kind: StepFast, Reason: "answer now"})
 	case input.Cause.BackgroundResult:
-		steps = append(steps, Step{Kind: StepFast, Reason: "the background reasoner finished"})
+		steps = append(steps, Step{Kind: StepFast, Reason: ReasonBackgroundResult})
 	case input.Cause.ToolResult && rollout.options.ToolResultProgress:
 		steps = append(steps, Step{Kind: StepFast, Reason: "report progress"})
 	}

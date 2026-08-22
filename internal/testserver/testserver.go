@@ -158,8 +158,8 @@ type scripted struct {
 	turns      [][]continuation.Event
 	calls      int
 	// handsOn makes this stand-in behave like a voice rather than a script: it
-	// hands the turn to the reasoner while the reasoner has produced nothing,
-	// and speaks once it has. Which turn that falls on depends on the
+	// leaves the turn open while the reasoner has produced nothing, and
+	// declares it finished once the reasoner has answered. Which turn that falls on depends on the
 	// transport and on what else opened a turn first, so deciding it from the
 	// conversation is the only way a fixed script cannot get wrong.
 	handsOn bool
@@ -210,9 +210,11 @@ func (provider *scripted) Continue(
 	if len(provider.turns) > 0 {
 		events = provider.turns[min(index, len(provider.turns)-1)]
 	}
-	if provider.handsOn && awaitingReasoner(request.Trajectory) {
+	// The voice declares a turn finished once the reasoner has answered; until
+	// then it leaves the marker off, which is what asks the reasoner to work.
+	if provider.handsOn && !awaitingReasoner(request.Trajectory) {
 		events = append(slices.Clone(events), continuation.Event{
-			Kind: continuation.EventAssistantDelta, Text: continuation.EscalationMarker,
+			Kind: continuation.EventAssistantDelta, Text: continuation.CompletionMarker,
 		})
 	}
 	for _, event := range events {

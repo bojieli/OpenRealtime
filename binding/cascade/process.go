@@ -109,7 +109,7 @@ func (runtime *runtime) runStep(
 ) error {
 	switch step.Kind {
 	case interaction.StepFast:
-		return runtime.runFast(ctx, request, turn)
+		return runtime.runFast(ctx, request, turn, step.Reason == interaction.ReasonBackgroundResult)
 	case interaction.StepSlow:
 		return runtime.runSlow(ctx, request)
 	default:
@@ -117,8 +117,14 @@ func (runtime *runtime) runStep(
 	}
 }
 
-// runFast speaks, and hands the turn on when the fast provider asks it to.
-func (runtime *runtime) runFast(ctx context.Context, request cognition.Request, turn *turnReport) error {
+// runFast speaks, and hands the turn on unless the voice declared it finished.
+//
+// A turn that is itself speaking a background result never hands on again. The
+// reasoner has just answered; asking it to answer once more is a loop, and the
+// next thing the user says opens the question again anyway.
+func (runtime *runtime) runFast(
+	ctx context.Context, request cognition.Request, turn *turnReport, speaksBackgroundResult bool,
+) error {
 	// A preparation that answered this exact sentence is adopted rather than
 	// regenerated. It is the same continuation, produced earlier.
 	result, adopted := runtime.adopt(trajectory.PhaseFast, canonicalText(
@@ -130,9 +136,12 @@ func (runtime *runtime) runFast(ctx context.Context, request cognition.Request, 
 	turn.record(result)
 	publishErr := runtime.publishAssistant(ctx, result)
 	var signalErr error
-	// A proposal is fast saying it needs a capability it cannot run, which is
-	// the same hand-off the marker makes explicit.
-	if result.Escalated || len(result.ToolProposals) > 0 {
+	// A turn the voice did not declare finished goes to the reasoner. So does
+	// one carrying a proposal, which is the voice naming a capability it
+	// cannot run. Silence from a small model means "not finished", because the
+	// alternative reading loses every capability the agent has the moment the
+	// marker is forgotten.
+	if !speaksBackgroundResult && (!result.Finished || len(result.ToolProposals) > 0) {
 		signalErr = runtime.signal(interaction.SignalEscalated)
 	}
 	return errors.Join(err, publishErr, signalErr)

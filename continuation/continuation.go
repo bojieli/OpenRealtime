@@ -42,33 +42,35 @@ const InternalStatePreamble = "[Internal working state from an earlier continuat
 // turn.
 const BackgroundResultHint = "[Background reasoner state, not conversation. Its tool-call chain has finished and left the written result below. The user has not been told any of it, and the agent has not said it. Answer from it in your own words; never read it out as written.]\n"
 
-// EscalationMarker is what a fast continuation emits to hand a turn to the
-// reasoning half.
+// CompletionMarker is what a fast continuation emits to say the turn is
+// finished and needs no deliberation.
 //
-// A fast provider holds the floor and cannot execute anything, so the only
-// judgement it owes about a hard turn is that it is one. It says so with this
-// marker rather than with a tool call, because a tool call from a provider
-// that cannot call tools spends a short budget on JSON, leaves the dead air
-// the fast phase exists to prevent, and cannot execute in any case.
+// The marker says "stop", not "continue", and that direction is the whole
+// point. A fast provider is a small model under a short budget being asked to
+// answer and to classify at the same time, and it does not reliably emit a
+// marker for either. The two ways of being wrong are not symmetric: a turn
+// that was finished but not marked costs one extra utterance, while a turn
+// that needed the reasoner and was not marked costs every capability the agent
+// has - it says "let me look that up" and then nothing happens, for ever. So
+// the absence of a marker means deliberate.
 //
-// The marker is control, not speech. StripEscalation removes it before any
-// item is committed, so it can never reach the trajectory, the speech commit
-// boundary, or the user.
-const EscalationMarker = "<<THINKING>>"
+// It is control, not speech. StripMarkers removes it before any item is
+// committed, so it can never reach the trajectory, the speech commit boundary,
+// or the user.
+const CompletionMarker = "<<DONE>>"
 
-// StripEscalation removes the escalation marker from a fast provider's output
-// and reports whether it was there.
+// StripMarkers removes the completion marker from a provider's output and
+// reports whether the turn was declared finished.
 //
 // It is tolerant about placement because a small model under a short budget
 // puts it where it likes, and about truncation because a budget that runs out
-// mid-marker still expressed the intent - the leading form is unambiguous
-// enough that nothing else produces it.
-func StripEscalation(content string) (string, bool) {
-	if index := strings.Index(content, EscalationMarker); index >= 0 {
-		return strings.TrimSpace(content[:index] + content[index+len(EscalationMarker):]), true
+// mid-marker still expressed the intent.
+func StripMarkers(content string) (string, bool) {
+	if index := strings.Index(content, CompletionMarker); index >= 0 {
+		return strings.TrimSpace(content[:index] + content[index+len(CompletionMarker):]), true
 	}
-	if index := strings.LastIndex(content, "<<THINKING"); index >= 0 &&
-		strings.HasPrefix(EscalationMarker, strings.TrimRight(content[index:], ">")) {
+	if index := strings.LastIndex(content, "<<DONE"); index >= 0 &&
+		strings.HasPrefix(CompletionMarker, strings.TrimRight(content[index:], ">")) {
 		return strings.TrimSpace(content[:index]), true
 	}
 	return content, false

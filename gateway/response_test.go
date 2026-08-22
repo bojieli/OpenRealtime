@@ -21,7 +21,7 @@ import (
 // each response ends once.
 func TestEveryOutputItemNamesTheResponseThatProducedIt(t *testing.T) {
 	server := startServer(t,
-		fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking." + continuation.EscalationMarker}}),
+		fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking."}}),
 		slow([]continuation.Event{{
 			Kind: continuation.EventToolCall,
 			ToolCall: &trajectory.ToolCall{
@@ -101,7 +101,7 @@ func TestEveryOutputItemNamesTheResponseThatProducedIt(t *testing.T) {
 // claim the same index.
 func TestOutputItemsAreIndexedWithinTheirResponse(t *testing.T) {
 	server := startServer(t,
-		fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking." + continuation.EscalationMarker}}),
+		fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking."}}),
 		slow([]continuation.Event{
 			{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
 				CallID: "call_1", Name: "get_balance", Arguments: json.RawMessage(`{"account":"A1"}`),

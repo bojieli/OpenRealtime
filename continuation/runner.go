@@ -82,10 +82,10 @@ type RunResult struct {
 	Completion     Completion            `json:"completion"`
 	Committed      bool                  `json:"committed"`
 	Interrupted    bool                  `json:"interrupted,omitempty"`
-	// Escalated reports that this continuation asked for deliberation. The
+	// Finished reports that this continuation declared the turn complete. The
 	// marker that carried it is stripped before any item is built, so it is
 	// visible here and nowhere else.
-	Escalated bool `json:"escalated,omitempty"`
+	Finished bool `json:"finished,omitempty"`
 }
 
 type bufferedSegment struct {
@@ -245,15 +245,15 @@ func (runner *Runner) run(
 		providerErr = err
 	}
 	interrupted := providerErr != nil || ctx.Err() != nil
-	// The escalation marker is control, not speech. It is removed here, before
+	// The completion marker is control, not speech. It is removed here, before
 	// items are built and before the assistant text is assembled, which is
 	// what makes it impossible for it to reach the trajectory, the speech
 	// commit boundary, or the user.
-	escalated := stripEscalation(segments)
+	finished := stripMarkers(segments)
 	items := runner.buildItems(instruction, invocationID, descriptor, invocation, segments, completion, interrupted)
 	result := RunResult{
 		InvocationID: invocationID, SourceRevision: invocation.SourceRevision, StartVersion: before.Version,
-		Completion: completion, Interrupted: interrupted, Escalated: escalated,
+		Completion: completion, Interrupted: interrupted, Finished: finished,
 	}
 	for _, segment := range segments {
 		if segment.kind == EventAssistantDelta {
@@ -367,25 +367,25 @@ func cloneInvocation(invocation Invocation) Invocation {
 	return invocation
 }
 
-// stripEscalation removes the escalation marker from every assistant segment
-// and reports whether any carried it. It applies to any provider rather than
-// only the one expected to emit it, so the marker is unspeakable by
-// construction instead of by the phase happening to be right.
-func stripEscalation(segments []bufferedSegment) bool {
-	escalated := false
+// stripMarkers removes the completion marker from every assistant segment and
+// reports whether any carried it. It applies to any provider rather than only
+// the one expected to emit it, so the marker is unspeakable by construction
+// instead of by the phase happening to be right.
+func stripMarkers(segments []bufferedSegment) bool {
+	finished := false
 	for index := range segments {
 		if segments[index].kind != EventAssistantDelta {
 			continue
 		}
-		stripped, found := StripEscalation(segments[index].text.String())
+		stripped, found := StripMarkers(segments[index].text.String())
 		if !found {
 			continue
 		}
-		escalated = true
+		finished = true
 		segments[index].text.Reset()
 		segments[index].text.WriteString(stripped)
 	}
-	return escalated
+	return finished
 }
 
 func (runner *Runner) buildItems(
@@ -432,6 +432,12 @@ func (runner *Runner) buildItems(
 			item.Kind = trajectory.KindReasoning
 			item.Content = segment.text.String()
 		case EventAssistantDelta:
+			// A turn whose whole content was the completion marker has nothing
+			// left once the marker is removed. The marker is control, so what
+			// remains is not an empty utterance to record - it is no utterance.
+			if strings.TrimSpace(segment.text.String()) == "" {
+				continue
+			}
 			item.Kind = trajectory.KindAssistant
 			item.Content = segment.text.String()
 			item.Visibility = trajectory.VisibilityPrepared

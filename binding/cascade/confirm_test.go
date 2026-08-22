@@ -37,7 +37,7 @@ func callPress(t *testing.T, config cascade.Config) (chan trajectory.ToolCall, b
 	t.Helper()
 	calls := make(chan trajectory.ToolCall, 4)
 	dispatcher := countingDispatcher{calls: calls}
-	config.Fast = newFast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Pressing." + continuation.EscalationMarker}})
+	config.Fast = newFast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Pressing."}})
 	config.Slow = newSlow([]continuation.Event{{
 		Kind: continuation.EventToolCall,
 		ToolCall: &trajectory.ToolCall{
@@ -91,7 +91,7 @@ func TestAnAlwaysRequirementIsNotAnsweredByThePolicy(t *testing.T) {
 	calls := make(chan trajectory.ToolCall, 4)
 	dispatcher := countingDispatcher{calls: calls}
 	runtime, _ := startSession(t, cascade.Config{
-		Fast: newFast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Pressing." + continuation.EscalationMarker}}),
+		Fast: newFast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Pressing."}}),
 		Slow: newSlow([]continuation.Event{{
 			Kind: continuation.EventToolCall,
 			ToolCall: &trajectory.ToolCall{
@@ -123,7 +123,7 @@ func TestAConfirmerAnswersAnAlwaysRequirement(t *testing.T) {
 	calls := make(chan trajectory.ToolCall, 4)
 	dispatcher := countingDispatcher{calls: calls}
 	runtime, _ := startSession(t, cascade.Config{
-		Fast: newFast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Pressing." + continuation.EscalationMarker}}),
+		Fast: newFast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Pressing."}}),
 		Slow: newSlow([]continuation.Event{{
 			Kind: continuation.EventToolCall,
 			ToolCall: &trajectory.ToolCall{

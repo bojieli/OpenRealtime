@@ -28,7 +28,7 @@ func TestTheTurnTheReasonerStartsReportsRunningOutOfRoom(t *testing.T) {
 	fast := newFast(
 		[]continuation.Event{{
 			Kind: continuation.EventAssistantDelta,
-			Text: "Let me check that." + continuation.EscalationMarker,
+			Text: "Let me check that.",
 		}},
 		[]continuation.Event{},
 	).stopping(continuation.Completion{StopReason: "length", ReasoningInContent: true})
