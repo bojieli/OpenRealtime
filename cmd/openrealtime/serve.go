@@ -129,6 +129,7 @@ type serveOptions struct {
 	sidecarCommand string
 	sidecarAddress string
 	sidecarFloor   string
+	sidecarVoice   string
 
 	clientToolTimeout time.Duration
 
@@ -274,6 +275,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.DurationVar(&options.clientToolTimeout, "client-tool-timeout", clientcalls.DefaultTimeout,
 		"how long a client has to return a result for a tool it executes; a negative value waits forever")
 	flags.StringVar(&options.sidecarFloor, "floor", "", "who decides endpoints: engine or model; empty selects the binding's default")
+	flags.StringVar(&options.sidecarVoice, "sidecar-voice", "",
+		"voice for a model that has more than one; empty leaves the choice to the model")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -578,6 +581,7 @@ func buildCascade(
 		},
 		ASRCadence: options.asrCadence,
 		Fast:       fast, Slow: slow, Speech: speech,
+		Voice:         options.ttsVoice,
 		FastMaxTokens: options.fastTokens, SlowMaxTokens: options.slowTokens,
 		Policies: policies, ObservationPolicy: observation,
 		AgentInstruction: options.instruction,
@@ -941,6 +945,7 @@ func buildSidecarBinding(options serveOptions, name string) (binding.Binding, er
 			},
 		},
 		Instructions: options.instruction, Slow: slow, SlowMaxTokens: options.slowTokens,
+		Voice:             options.sidecarVoice,
 		ClientToolTimeout: options.clientToolTimeout,
 	}
 	floor := strings.ToLower(strings.TrimSpace(options.sidecarFloor))

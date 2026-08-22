@@ -91,12 +91,27 @@ changed, and most clients never do:
 | `audio.output.speed` | Synthesis runs at the rate the speech provider produces. |
 | `audio.input.transcription.model` | The recogniser is the deployment's, named in `session.updated`. |
 | `reasoning` | Effort belongs to the provider the reasoner runs on, not to a session. |
+| `audio.output.voice` | Only on a binding that says it cannot honour one. A speech provider is built with its voice, and a speech plan carries text and nothing else, so `cascade` has no per-session voice to give; a binding forwarding to a model with several does, and takes it. |
 
 `tool_choice` is the one with teeth. A client that asks for no tools and
 receives tool calls is not looking at a cosmetic difference; it is looking at
 behaviour it explicitly turned off. The rest are quieter, and `reasoning` is
 quietest of all, because it is not echoed in `session.updated` at all — a
 client setting it has no field to read back.
+
+Two fields in the session object were stating a default rather than a fact,
+which is the same failure without a client to blame for it:
+
+- `audio.output.voice` was a name from a hosted catalogue on every deployment,
+  including ones synthesising with something else entirely. It is now the voice
+  the binding says is in force, and it is **omitted** where the binding cannot
+  say — a session forwarding to a remote provider does not know the voice that
+  provider will use, and an absent field says "not stated" rather than guessing.
+- `max_output_tokens` was `"inf"` unconditionally. `"inf"` is a claim, not a
+  placeholder: a turn cut short reports `max_output_tokens` as the reason it
+  stopped, and a client told in one breath that no limit exists and in the next
+  that a limit ended its turn has two facts that cannot both be true. It now
+  reports the limit actually enforced, and `"inf"` only where none is.
 
 Asking for what is already in force is not refused. A client that sends the
 server's own defaults back has asked for nothing it will not get, and answering

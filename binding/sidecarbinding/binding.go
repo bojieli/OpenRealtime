@@ -166,7 +166,13 @@ func (bind *Binding) Ownership() binding.Ownership {
 // on the model, and the sidecar protocol has no way to declare them yet, so
 // they are reported off rather than guessed at.
 func (bind *Binding) Capabilities() binding.Capabilities {
-	return binding.Capabilities{Observations: true, FastSlow: true}
+	// The model may have more than one voice and takes the session's choice,
+	// so unlike a synthesiser configured once at startup, this one is
+	// selectable.
+	return binding.Capabilities{
+		Observations: true, FastSlow: true,
+		Voice: binding.VoiceControl{Selectable: true, InForce: bind.config.Voice},
+	}
 }
 
 // Start opens a sidecar session.

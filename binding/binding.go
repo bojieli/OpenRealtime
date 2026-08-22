@@ -307,6 +307,35 @@ type Capabilities struct {
 	// cannot choose an observer set without knowing what the names are, and a
 	// deployment's set is a configuration rather than a constant.
 	Observers []string `json:"observers,omitempty"`
+	// Voice reports how this binding's voice is chosen.
+	Voice VoiceControl `json:"voice"`
+	// MaxOutputTokens is the limit this binding puts on one spoken turn, or
+	// zero where it imposes none and the model's own governs.
+	//
+	// A session reports it, and a turn that runs into it now says so:
+	// response.done carries max_output_tokens as the reason it stopped short.
+	// A session object claiming there is no maximum while one is in force
+	// makes that reason unintelligible - the client is told a limit it was
+	// told did not exist is what cut its turn off.
+	MaxOutputTokens int `json:"max_output_tokens,omitempty"`
+}
+
+// VoiceControl is how a session's voice is decided.
+//
+// Whether a client may choose one is a property of the binding, not of the
+// protocol: a binding that synthesises with a provider configured once at
+// startup has no per-session voice to give, while a binding that forwards to a
+// model with several does. The gateway cannot tell which it is holding, and
+// the failure from guessing is silent - a client names a voice, is told it got
+// it, and hears a different one, with no event anywhere saying otherwise.
+type VoiceControl struct {
+	// Selectable reports whether a session may name its own voice.
+	Selectable bool `json:"selectable"`
+	// InForce is the voice used when a session names none. Empty means the
+	// binding cannot say, which is the honest answer for one that forwards to
+	// a provider whose default is the provider's own - better than naming a
+	// voice nothing will use.
+	InForce string `json:"in_force,omitempty"`
 }
 
 // Options configures one session.

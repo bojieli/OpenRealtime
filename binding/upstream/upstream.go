@@ -201,6 +201,9 @@ func (bind *Binding) Ownership() binding.Ownership {
 // use depend on the remote, which the base protocol gives no way to ask about,
 // so they are reported off rather than guessed at.
 func (bind *Binding) Capabilities() binding.Capabilities {
+	// The remote owns the voice stack, and this binding does not forward a
+	// voice to it. Neither field can be filled in honestly: the session cannot
+	// choose, and the default belongs to the provider rather than to us.
 	return binding.Capabilities{Observations: true, FastSlow: true}
 }
 

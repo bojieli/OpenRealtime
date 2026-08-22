@@ -475,3 +475,42 @@ func transcriptionModelOf(raw json.RawMessage) string {
 	}
 	return config.Model
 }
+
+// outputAudioObject renders the output half of the session's audio settings.
+//
+// The voice is omitted when nothing can say what it is - a binding forwarding
+// to a remote provider does not know the voice that provider will use, and
+// naming one anyway would be a guess reported as a fact. An absent field says
+// "not stated", which is true; a present one says "this is what you will
+// hear", which had better be.
+func outputAudioObject(format audioFormat, voice string) map[string]any {
+	output := map[string]any{"format": format, "speed": 1}
+	if voice != "" {
+		output["voice"] = voice
+	}
+	return output
+}
+
+// inForce names the voice a refusal leaves the session with, when there is one
+// to name.
+func inForce(voice string) string {
+	if voice == "" {
+		return ""
+	}
+	return fmt.Sprintf(" and is %q", voice)
+}
+
+// maxOutputTokens renders the limit on one spoken turn.
+//
+// "inf" is the protocol's way of saying there is no maximum, and it is a claim
+// rather than a placeholder: a turn cut short reports max_output_tokens as its
+// reason, and a client told in one breath that no limit exists and in the next
+// that a limit ended its turn has been given two facts that cannot both be
+// true. Bindings that genuinely impose none - the ones whose model owns its
+// own budget - still report "inf", because for them it is accurate.
+func maxOutputTokens(limit int) any {
+	if limit <= 0 {
+		return "inf"
+	}
+	return limit
+}

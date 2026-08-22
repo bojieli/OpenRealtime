@@ -152,7 +152,11 @@ func newSession(parent context.Context, connection *websocket.Conn, config Confi
 	result.conversationID = result.nextID("conv")
 	result.settings = settings{
 		inputFormat: audioFormat{Type: formatPCMU}, outputFormat: audioFormat{Type: formatPCMU},
-		voice: "alloy", modalities: []string{"audio"},
+		// The voice is the binding's to state. A protocol default here would
+		// name a voice from a hosted catalogue on a deployment synthesising
+		// with something else entirely, which is a client told what it is
+		// hearing and told wrong.
+		voice: config.Binding.Capabilities().Voice.InForce, modalities: []string{"audio"},
 		gate:   perception.DefaultGateConfig(),
 		limits: config.VideoLimits,
 	}
@@ -493,7 +497,19 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 		current.outputFormat = update.Audio.Output.Format.audioFormat
 	}
 	if update.Audio.Output.Voice != "" {
-		current.voice = update.Audio.Output.Voice
+		if voice := session.config.Binding.Capabilities().Voice; voice.Selectable {
+			current.voice = update.Audio.Output.Voice
+		} else {
+			refused = append(refused, clientError{
+				code:  "unsupported_value",
+				param: "session.audio.output.voice",
+				message: fmt.Sprintf(
+					"voice %q is not supported: this binding's voice is fixed when its speech "+
+						"provider is created%s. The field was not applied and the rest of the "+
+						"session.update was.",
+					update.Audio.Output.Voice, inForce(voice.InForce)),
+			})
+		}
 	}
 
 	refused = append(refused, unappliedFields(update, session.config.TranscriptionModel)...)
@@ -724,14 +740,15 @@ func (session *session) sessionEvent(eventType string) map[string]any {
 	object := map[string]any{
 		"type": "realtime", "id": session.id, "object": "realtime.session", "model": session.model,
 		"output_modalities": current.modalities, "instructions": current.instruction,
-		"tools": tools, "tool_choice": "auto", "max_output_tokens": "inf",
+		"tools": tools, "tool_choice": "auto",
+		"max_output_tokens": maxOutputTokens(session.config.Binding.Capabilities().MaxOutputTokens),
 		"audio": map[string]any{
 			"input": map[string]any{
 				"format":         current.inputFormat,
 				"transcription":  map[string]any{"model": session.config.TranscriptionModel},
 				"turn_detection": turnDetection(current),
 			},
-			"output": map[string]any{"format": current.outputFormat, "voice": current.voice, "speed": 1},
+			"output": outputAudioObject(current.outputFormat, current.voice),
 		},
 	}
 	if current.extension.Version != 0 {

@@ -75,6 +75,12 @@ type Config struct {
 
 	// Speech synthesises what the fast provider says.
 	Speech v1.StreamingSpeechProvider
+	// Voice names the voice that synthesiser was built with. It is reported
+	// to clients and cannot be changed per session: a speech plan carries text
+	// and nothing else, so the voice is fixed when the provider is created.
+	// Naming it here is what lets a session be told the truth about what it is
+	// hearing instead of a protocol default nothing uses.
+	Voice string
 	// FrameDuration is the paced wire frame size.
 	FrameDuration time.Duration
 
@@ -254,7 +260,9 @@ func (bind *Binding) Capabilities() binding.Capabilities {
 		}
 	}
 	return binding.Capabilities{
-		Video: video, ComputerUse: true, Observations: true, FastSlow: true,
+		Voice:           binding.VoiceControl{InForce: bind.config.Voice},
+		MaxOutputTokens: bind.config.FastMaxTokens,
+		Video:           video, ComputerUse: true, Observations: true, FastSlow: true,
 		Observers: bind.ObserverNames(),
 	}
 }

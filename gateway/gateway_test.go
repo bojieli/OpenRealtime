@@ -187,6 +187,7 @@ func startServerWith(
 	bind, err := cascade.New(cascade.Config{
 		Perception: func() (v1.PerceptionProvider, error) { return asr, nil },
 		Fast:       fastProvider, Slow: slowProvider, Speech: speech,
+		Voice: "test-voice", FastMaxTokens: 512,
 	})
 	if err != nil {
 		t.Fatalf("new cascade: %v", err)
