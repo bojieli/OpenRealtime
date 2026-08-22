@@ -91,7 +91,7 @@ func TestBuildRequestReusesNativeStateAndCompilesToolResult(t *testing.T) {
 	}
 	encoded, _ := json.Marshal(body)
 	if strings.Count(string(encoded), "thoughtSignature") != 1 || !strings.Contains(string(encoded), "functionResponse") ||
-		!strings.Contains(string(encoded), "capability manifest") || !strings.Contains(string(encoded), "parametersJsonSchema") {
+		!strings.Contains(string(encoded), "complete set of capabilities") || !strings.Contains(string(encoded), "parametersJsonSchema") {
 		t.Fatalf("unexpected compiled request: %s", encoded)
 	}
 }

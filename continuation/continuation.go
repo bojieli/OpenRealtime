@@ -24,6 +24,66 @@ const PendingRepairInstruction = "Runtime repair obligation: assistant audio fro
 
 const PendingRepairPrompt = "Apply the pending audible-repair obligation now."
 
+// InternalStatePreamble fences reasoning retained from an earlier
+// continuation, so a provider reading it cannot mistake deliberation for
+// something the agent said.
+const InternalStatePreamble = "[Internal working state from an earlier continuation; not user-visible]\n"
+
+// BackgroundResultHint opens the runtime hint that carries what a provider
+// without speech authority produced.
+//
+// A provider that cannot be heard does not take turns in the conversation, so
+// its prose is not an assistant turn and must not be projected as one. It is
+// runtime state: the background reasoner's chain finished and left a written
+// result that the user has not been told. Rendering it as an assistant message
+// makes it indistinguishable from what the agent actually said, and a
+// continuation reading that cannot tell which turn the user heard - which is
+// how a written answer ends up recited back, word for word, as a second spoken
+// turn.
+const BackgroundResultHint = "[Background reasoner state, not conversation. Its tool-call chain has finished and left the written result below. The user has not been told any of it, and the agent has not said it. Answer from it in your own words; never read it out as written.]\n"
+
+// EscalationMarker is what a fast continuation emits to hand a turn to the
+// reasoning half.
+//
+// A fast provider holds the floor and cannot execute anything, so the only
+// judgement it owes about a hard turn is that it is one. It says so with this
+// marker rather than with a tool call, because a tool call from a provider
+// that cannot call tools spends a short budget on JSON, leaves the dead air
+// the fast phase exists to prevent, and cannot execute in any case.
+//
+// The marker is control, not speech. StripEscalation removes it before any
+// item is committed, so it can never reach the trajectory, the speech commit
+// boundary, or the user.
+const EscalationMarker = "<<THINKING>>"
+
+// StripEscalation removes the escalation marker from a fast provider's output
+// and reports whether it was there.
+//
+// It is tolerant about placement because a small model under a short budget
+// puts it where it likes, and about truncation because a budget that runs out
+// mid-marker still expressed the intent - the leading form is unambiguous
+// enough that nothing else produces it.
+func StripEscalation(content string) (string, bool) {
+	if index := strings.Index(content, EscalationMarker); index >= 0 {
+		return strings.TrimSpace(content[:index] + content[index+len(EscalationMarker):]), true
+	}
+	if index := strings.LastIndex(content, "<<THINKING"); index >= 0 &&
+		strings.HasPrefix(EscalationMarker, strings.TrimRight(content[index:], ">")) {
+		return strings.TrimSpace(content[:index]), true
+	}
+	return content, false
+}
+
+// ProducedSilently reports whether an item came from a provider that could not
+// be heard.
+//
+// It reads the authority recorded on the item at the moment output committed,
+// rather than any later configuration, so a projection decides what the user
+// was told from the log alone.
+func ProducedSilently(item trajectory.Item) bool {
+	return item.Producer.SpeechAuthority == string(SpeechAuthoritySilent)
+}
+
 // ObserverContentPrefix opens the block that observed content is rendered
 // inside. It is exported so a test can prove that observed text appears there
 // and nowhere else.

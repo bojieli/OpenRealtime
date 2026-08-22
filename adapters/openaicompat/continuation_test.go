@@ -125,7 +125,7 @@ func TestBuildRequestReusesOnlyMatchingNativeState(t *testing.T) {
 	}
 	encoded, _ := json.Marshal(body)
 	if strings.Count(string(encoded), "Need lookup.") != 1 || !strings.Contains(string(encoded), `"tool_call_id":"call-1"`) ||
-		!strings.Contains(string(encoded), "capability manifest") {
+		!strings.Contains(string(encoded), "complete set of capabilities") {
 		t.Fatalf("unexpected compiled request: %s", encoded)
 	}
 }
@@ -277,5 +277,104 @@ func TestBuildRequestRendersTypedObservationSupersession(t *testing.T) {
 	if len(body.Messages) != 3 || body.Messages[2].Content == "book a flight tomorrow" ||
 		!strings.Contains(body.Messages[2].Content, "replace the earlier partial observation") {
 		t.Fatalf("typed observation supersession was not rendered: %#v", body.Messages)
+	}
+}
+
+// TestBuildRequestMarksAnswersTheUserNeverHeard pins the distinction the whole
+// fast/slow arrangement rests on. Slow writes an answer it is not permitted to
+// speak and a fast continuation voices it; if both arrive as plain assistant
+// turns, the voicing step has no referent for "the answer the reasoning
+// continuation just produced" and echoes what was already said instead.
+func TestBuildRequestMarksAnswersTheUserNeverHeard(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		Model: "qwen-test", Provider: "vllm", Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortMinimal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "voice-current",
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			{ID: "user-1", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "what should I do this weekend?"},
+			{ID: "spoken", Kind: trajectory.KindAssistant, InvocationID: "inv-fast", Content: "SPOKEN-ANSWER", Producer: trajectory.Producer{
+				Phase: trajectory.PhaseFast, SpeechAuthority: string(continuation.SpeechAuthorityVoice),
+			}},
+			{ID: "written", Kind: trajectory.KindAssistant, InvocationID: "inv-slow", Content: "WRITTEN-ANSWER", Producer: trajectory.Producer{
+				Phase: trajectory.PhaseSlow, SpeechAuthority: string(continuation.SpeechAuthoritySilent),
+			}},
+		}},
+		Invocation: continuation.Invocation{Instruction: "Answer the user now."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var written, spoken, writtenRole, spokenRole string
+	for _, message := range body.Messages {
+		if strings.Contains(message.Content, "WRITTEN-ANSWER") {
+			written, writtenRole = message.Content, message.Role
+		}
+		if strings.Contains(message.Content, "SPOKEN-ANSWER") {
+			spoken, spokenRole = message.Content, message.Role
+		}
+	}
+	if written == "" || spoken == "" {
+		t.Fatalf("both answers must reach the provider, got %+v", body.Messages)
+	}
+	if writtenRole != "system" {
+		t.Fatalf("a result the user never heard was rendered as a %q turn: %q", writtenRole, written)
+	}
+	if !strings.HasPrefix(written, continuation.BackgroundResultHint) {
+		t.Fatalf("the background result reached the model unmarked: %q", written)
+	}
+	if spokenRole != "assistant" {
+		t.Fatalf("what the user actually heard was not an assistant turn: %q", spokenRole)
+	}
+	if strings.Contains(spoken, continuation.BackgroundResultHint) {
+		t.Fatalf("what the user actually heard was marked as background state: %q", spoken)
+	}
+}
+
+// TestBuildRequestMarksUnspokenRetainedState covers the same rule on the path
+// that bypasses the portable compile. A deployment whose fast and slow
+// providers are the same local model reaches slow's answer as retained native
+// state, and it is no more spoken for having been retained.
+func TestBuildRequestMarksUnspokenRetainedState(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		Model: "qwen-test", Provider: "vllm", Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortMinimal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, _ := json.Marshal(providerState{
+		Provider: "vllm", Model: "qwen-test",
+		Message: chatMessage{Role: "assistant", Content: "WRITTEN-ANSWER"},
+	})
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "voice-current",
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			{ID: "user-1", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "question"},
+			{ID: "written", Kind: trajectory.KindAssistant, InvocationID: "inv-slow", Content: "WRITTEN-ANSWER",
+				ProviderStateType: ProviderStateType, ProviderState: state, Producer: trajectory.Producer{
+					Phase: trajectory.PhaseSlow, SpeechAuthority: string(continuation.SpeechAuthoritySilent),
+				}},
+		}},
+		Invocation: continuation.Invocation{Instruction: "voice it"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hinted bool
+	for _, message := range body.Messages {
+		if message.Role == "system" && strings.HasPrefix(message.Content, continuation.BackgroundResultHint) {
+			hinted = true
+		}
+	}
+	if !hinted {
+		encoded, _ := json.Marshal(body)
+		t.Fatalf("retained state kept a background result indistinguishable from speech: %s", encoded)
 	}
 }

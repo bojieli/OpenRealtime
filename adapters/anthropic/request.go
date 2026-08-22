@@ -69,6 +69,18 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (messagesRequ
 		modelItem := isModelOutputItem(item.Kind)
 		if content, retained := native[item.InvocationID]; modelItem && retained && item.InvocationID != "" {
 			if _, already := consumed[item.InvocationID]; !already {
+				// Retained state is what this provider itself emitted, so it
+				// arrives already shaped as an assistant turn. An answer that
+				// was never spoken is not one, whichever path renders it.
+				if continuation.ProducedSilently(item) {
+					// Retained state keeps this provider's own shape, so the
+					// hint precedes it rather than rewriting it.
+					raw, err := textBlock(continuation.BackgroundResultHint)
+					if err != nil {
+						return messagesRequest{}, err
+					}
+					blocks = append(blocks, compiledBlock{role: "user", raw: raw})
+				}
 				for _, raw := range content {
 					blocks = append(blocks, compiledBlock{role: "assistant", raw: raw})
 				}
@@ -279,8 +291,7 @@ func compileItem(
 		}
 		return blocks, nil
 	case trajectory.KindReasoning:
-		raw, err := textBlock(
-			"[Internal working state from an earlier continuation; not user-visible]\n" + item.Content)
+		raw, err := textBlock(continuation.InternalStatePreamble + item.Content)
 		if err != nil {
 			return nil, err
 		}
@@ -288,6 +299,16 @@ func compileItem(
 	case trajectory.KindAssistant:
 		if strings.TrimSpace(item.Content) == "" {
 			return nil, nil
+		}
+		if continuation.ProducedSilently(item) {
+			// A provider that cannot be heard does not take turns. This
+			// dialect keeps system content out of the message list, so the
+			// hint rides where every other runtime hint here does.
+			raw, err := textBlock(continuation.BackgroundResultHint + item.Content)
+			if err != nil {
+				return nil, err
+			}
+			return []compiledBlock{{role: "user", raw: raw}}, nil
 		}
 		raw, err := textBlock(item.Content)
 		if err != nil {

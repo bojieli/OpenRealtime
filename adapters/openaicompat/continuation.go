@@ -662,7 +662,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 		if err != nil {
 			return chatRequest{}, fmt.Errorf("encode capability manifest: %w", err)
 		}
-		instructions = append(instructions, "The following is the complete capability manifest for this agent. Do not deny an available capability merely because another continuation phase executes it:\n"+string(encoded))
+		instructions = append(instructions, "The following is the complete set of capabilities this agent has. You cannot execute any of them yourself, and you are not given them as tools; the reasoning half executes, and may revise or reject what you propose. Never tell the user the agent lacks a capability that is listed here:\n"+string(encoded))
 	}
 	if len(instructions) > 0 {
 		result.Messages = append(result.Messages, chatMessage{Role: "system", Content: strings.Join(instructions, "\n\n")})
@@ -679,6 +679,14 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 		modelItem := isModelOutputItem(item.Kind)
 		if message, native := nativeInvocations[item.InvocationID]; modelItem && native && item.InvocationID != "" {
 			if _, consumed := consumedInvocations[item.InvocationID]; !consumed {
+				if continuation.ProducedSilently(item) {
+					// Retained state keeps this provider's own shape, tool
+					// calls included, so the hint precedes it rather than
+					// rewriting it.
+					result.Messages = append(result.Messages, chatMessage{
+						Role: "system", Content: continuation.BackgroundResultHint,
+					})
+				}
 				result.Messages = append(result.Messages, message)
 				consumedInvocations[item.InvocationID] = struct{}{}
 			}
@@ -730,8 +738,14 @@ func compilePortableItem(item trajectory.Item, media continuation.MediaResolver,
 		}
 		return message, true, nil
 	case trajectory.KindReasoning:
-		return chatMessage{Role: "assistant", Content: "[Internal working state from an earlier continuation; not user-visible]\n" + item.Content}, true, nil
+		return chatMessage{Role: "assistant", Content: continuation.InternalStatePreamble + item.Content}, true, nil
 	case trajectory.KindAssistant:
+		if continuation.ProducedSilently(item) {
+			// A provider that cannot be heard does not take turns. Its result
+			// is state the next spoken turn reads, and this dialect has a role
+			// that says exactly that.
+			return chatMessage{Role: "system", Content: continuation.BackgroundResultHint + item.Content}, true, nil
+		}
 		return chatMessage{Role: "assistant", Content: item.Content}, true, nil
 	case trajectory.KindToolProposal:
 		encoded, err := json.Marshal(map[string]any{

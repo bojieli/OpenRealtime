@@ -82,6 +82,10 @@ type RunResult struct {
 	Completion     Completion            `json:"completion"`
 	Committed      bool                  `json:"committed"`
 	Interrupted    bool                  `json:"interrupted,omitempty"`
+	// Escalated reports that this continuation asked for deliberation. The
+	// marker that carried it is stripped before any item is built, so it is
+	// visible here and nowhere else.
+	Escalated bool `json:"escalated,omitempty"`
 }
 
 type bufferedSegment struct {
@@ -207,7 +211,13 @@ func (runner *Runner) run(
 		if event.Kind == EventToolCall && descriptor.EffectiveToolAuthority() == ToolAuthorityNone {
 			return errors.New("continuation emitted a tool call without proposal or execution authority")
 		}
-		if event.Kind == EventToolCall {
+		// An undeclared name must never execute. It may still be recorded by a
+		// provider that cannot execute anything: the fast phase is offered no
+		// tools at all, so every call it emits is undeclared by construction,
+		// and failing the turn over one would let a stray call cost the user
+		// their answer. It becomes a non-executable proposal instead, which
+		// the dispatcher re-checks at the point of effect.
+		if event.Kind == EventToolCall && descriptor.EffectiveToolAuthority() == ToolAuthorityExecute {
 			if _, declared := declaredTools[event.ToolCall.Name]; !declared {
 				return fmt.Errorf("continuation emitted undeclared tool %q", event.ToolCall.Name)
 			}
@@ -235,10 +245,15 @@ func (runner *Runner) run(
 		providerErr = err
 	}
 	interrupted := providerErr != nil || ctx.Err() != nil
+	// The escalation marker is control, not speech. It is removed here, before
+	// items are built and before the assistant text is assembled, which is
+	// what makes it impossible for it to reach the trajectory, the speech
+	// commit boundary, or the user.
+	escalated := stripEscalation(segments)
 	items := runner.buildItems(instruction, invocationID, descriptor, invocation, segments, completion, interrupted)
 	result := RunResult{
 		InvocationID: invocationID, SourceRevision: invocation.SourceRevision, StartVersion: before.Version,
-		Completion: completion, Interrupted: interrupted,
+		Completion: completion, Interrupted: interrupted, Escalated: escalated,
 	}
 	for _, segment := range segments {
 		if segment.kind == EventAssistantDelta {
@@ -350,6 +365,27 @@ func cloneInvocation(invocation Invocation) Invocation {
 		invocation.Tools[index].Parameters = append(json.RawMessage(nil), invocation.Tools[index].Parameters...)
 	}
 	return invocation
+}
+
+// stripEscalation removes the escalation marker from every assistant segment
+// and reports whether any carried it. It applies to any provider rather than
+// only the one expected to emit it, so the marker is unspeakable by
+// construction instead of by the phase happening to be right.
+func stripEscalation(segments []bufferedSegment) bool {
+	escalated := false
+	for index := range segments {
+		if segments[index].kind != EventAssistantDelta {
+			continue
+		}
+		stripped, found := StripEscalation(segments[index].text.String())
+		if !found {
+			continue
+		}
+		escalated = true
+		segments[index].text.Reset()
+		segments[index].text.WriteString(stripped)
+	}
+	return escalated
 }
 
 func (runner *Runner) buildItems(

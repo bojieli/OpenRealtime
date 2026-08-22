@@ -320,6 +320,9 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 			if err := json.Unmarshal(item.ProviderState, &content); err != nil || content.Role == "" || len(content.Parts) == 0 {
 				return geminiRequest{}, fmt.Errorf("decode retained Gemini state on item %s", item.ID)
 			}
+			// Retained state is what this provider itself emitted, so it
+			// arrives already shaped as a model turn. An answer that was never
+			// spoken is not one, whichever path renders it.
 			nativeInvocations[item.InvocationID] = content
 		}
 	}
@@ -333,7 +336,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 		if err != nil {
 			return geminiRequest{}, fmt.Errorf("encode capability manifest: %w", err)
 		}
-		systemInstructions = append(systemInstructions, "The following is the complete capability manifest for this agent. Do not deny an available capability merely because another continuation phase executes it:\n"+string(encoded))
+		systemInstructions = append(systemInstructions, "The following is the complete set of capabilities this agent has. You cannot execute any of them yourself, and you are not given them as tools; the reasoning half executes, and may revise or reject what you propose. Never tell the user the agent lacks a capability that is listed here:\n"+string(encoded))
 	}
 	if len(systemInstructions) > 0 {
 		part, _ := json.Marshal(map[string]string{"text": strings.Join(systemInstructions, "\n\n")})
@@ -353,6 +356,17 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 		modelItem := isModelOutputItem(item.Kind)
 		if content, native := nativeInvocations[item.InvocationID]; modelItem && native && item.InvocationID != "" {
 			if _, consumed := consumedInvocations[item.InvocationID]; !consumed {
+				if continuation.ProducedSilently(item) {
+					// Retained state keeps this provider's own shape, so the
+					// hint precedes it rather than rewriting it.
+					hint, err := json.Marshal(map[string]string{"text": continuation.BackgroundResultHint})
+					if err != nil {
+						return geminiRequest{}, fmt.Errorf("encode background result hint: %w", err)
+					}
+					result.Contents = appendGeminiContent(result.Contents, geminiContent{
+						Role: "user", Parts: []json.RawMessage{hint},
+					})
+				}
 				result.Contents = appendGeminiContent(result.Contents, content)
 				consumedInvocations[item.InvocationID] = struct{}{}
 			}
@@ -419,8 +433,16 @@ func compilePortableItem(
 		attachments = attachMedia(item, media)
 	case trajectory.KindReasoning:
 		role = "model"
-		part["text"] = "[Internal working state from an earlier continuation; not user-visible]\n" + item.Content
+		part["text"] = continuation.InternalStatePreamble + item.Content
 	case trajectory.KindAssistant:
+		if continuation.ProducedSilently(item) {
+			// A provider that cannot be heard does not take turns. This
+			// dialect has no system role inside the conversation, so the hint
+			// rides where every other runtime hint here does, marked for what
+			// it is rather than presented as something the agent said.
+			part["text"] = continuation.BackgroundResultHint + item.Content
+			break
+		}
 		role = "model"
 		part["text"] = item.Content
 	case trajectory.KindToolProposal:
