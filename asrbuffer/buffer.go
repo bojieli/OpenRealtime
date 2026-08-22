@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"slices"
 	"sync"
@@ -132,6 +133,23 @@ func New(config Config) (*Buffer, error) {
 		maximumChunk: config.MaximumChunk,
 		maxFrame:     config.MaxInputFrameBytes,
 	}, nil
+}
+
+// Close releases the wrapped recogniser.
+//
+// The buffer is what the runtime holds, so it is what the runtime can close,
+// and a recogniser that owns a connection is unreachable behind it otherwise.
+// Delegating rather than implementing means a stateless provider still needs
+// nothing, and an abandoned utterance on a streaming one does not strand its
+// socket.
+func (buffer *Buffer) Close() error {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	closer, releases := buffer.provider.(io.Closer)
+	if !releases {
+		return nil
+	}
+	return closer.Close()
 }
 
 // Descriptor implements api/v1.PerceptionProvider. Buffering is deployment

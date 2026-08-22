@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"slices"
 	"strings"
@@ -313,9 +314,19 @@ func (observer *AudioObserver) Flush(ctx context.Context) ([]Observation, error)
 }
 
 // Reset drops the recogniser so the next utterance starts clean.
+//
+// A recogniser that holds a connection is closed on the way out. One
+// instance exists per utterance by design, so an abandoned utterance - the
+// speaker stops, the session ends, a barge-in discards the turn - would
+// otherwise strand a socket and the goroutine reading it for every utterance
+// the session ever had. A provider with nothing to release does not implement
+// the interface and is unaffected.
 func (observer *AudioObserver) Reset() {
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
+	if closer, releases := observer.provider.(io.Closer); releases {
+		_ = closer.Close()
+	}
 	observer.provider = nil
 	observer.frameIndex, observer.sampleOffset, observer.sampleRate = 0, 0, 0
 	observer.lastText, observer.lastStable = "", ""
