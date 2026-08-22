@@ -8,9 +8,11 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -712,15 +714,33 @@ func TestTheSessionAnOfficialClientSendsIsAccepted(t *testing.T) {
 		t.Fatalf("the session must be left with a usable gate, got %v", detection)
 	}
 
-	// And then the part that could not be honoured, by name. Quietly
+	// And then the parts that could not be honoured, each by name. Quietly
 	// substituting a different detector would leave the client believing it
-	// got the endpointing behaviour it asked for.
-	failure := client.await("error", 5*time.Second)["error"].(map[string]any)
+	// got the endpointing behaviour it asked for; the same is true of the
+	// recogniser, and this client asks for both. A session.update can carry
+	// more than one field this deployment does not apply, so each gets its own
+	// error rather than the first one standing for the rest.
+	refusals := map[string]map[string]any{}
+	for range 2 {
+		event, ok := client.awaitOptional("error", 5*time.Second)
+		if !ok {
+			break
+		}
+		failure, _ := event["error"].(map[string]any)
+		param, _ := failure["param"].(string)
+		refusals[param] = failure
+	}
+	failure, named := refusals["session.audio.input.turn_detection.type"]
+	if !named {
+		t.Fatalf("the detector this deployment does not have must be refused by name, saw %v",
+			slices.Collect(maps.Keys(refusals)))
+	}
+	if _, named := refusals["session.audio.input.transcription.model"]; !named {
+		t.Fatalf("the recogniser this deployment does not have must be refused by name, saw %v",
+			slices.Collect(maps.Keys(refusals)))
+	}
 	if failure["code"] != "unsupported_value" {
 		t.Fatalf("expected an unsupported-value error, got %v", failure)
-	}
-	if failure["param"] != "session.audio.input.turn_detection.type" {
-		t.Fatalf("the error must name the field it is about, got %v", failure["param"])
 	}
 	if failure["event_id"] != "event_from_the_client" {
 		t.Fatalf("the error must identify the request that caused it, got %v", failure["event_id"])

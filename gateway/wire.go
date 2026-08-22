@@ -387,3 +387,91 @@ func encodeToolResult(callID, name, output string) trajectory.ToolResult {
 	}
 	return trajectory.ToolResult{CallID: callID, Name: name, Output: raw}
 }
+
+// unappliedFields reports the session settings this deployment parses but does
+// not act on.
+//
+// The turn-detection refusal above explains the reasoning at length and these
+// follow it: everything else in the session.update applies, the field does
+// not, and the client is told by name. What that reasoning rules out is the
+// thing these fields were doing instead - being dropped in silence while
+// session.updated reports the value actually in force, so the only way to
+// discover the difference is to read a field back and notice it changed. Most
+// clients never read it back.
+//
+// tool_choice is the one with teeth. A client that asks for no tools and gets
+// tool calls anyway is not looking at a cosmetic difference; it is looking at
+// behaviour it explicitly turned off. The others are quieter, and reasoning is
+// quieter still, because it is not even echoed - a client setting it has no
+// field to read back at all.
+func unappliedFields(update sessionUpdateBody, transcriptionModel string) []clientError {
+	var refused []clientError
+	if choice := toolChoiceMode(update.ToolChoice); choice != "" && choice != "auto" {
+		refused = append(refused, clientError{
+			code:  "unsupported_value",
+			param: "session.tool_choice",
+			message: fmt.Sprintf(
+				"tool_choice %q is not supported: which model may call tools is an authority "+
+					"boundary here, not a per-session setting - the fast model proposes and "+
+					"cannot execute, the background reasoner executes. The field was not "+
+					"applied and the rest of the session.update was.", choice),
+		})
+	}
+	if speed := update.Audio.Output.Speed; speed != 0 && speed != 1 {
+		refused = append(refused, clientError{
+			code:  "unsupported_value",
+			param: "session.audio.output.speed",
+			message: fmt.Sprintf(
+				"speed %g is not supported: this deployment synthesises at the rate its speech "+
+					"provider produces. The field was not applied and the rest of the "+
+					"session.update was.", speed),
+		})
+	}
+	if model := transcriptionModelOf(update.Audio.Input.Transcription); model != "" && model != transcriptionModel {
+		refused = append(refused, clientError{
+			code:  "unsupported_value",
+			param: "session.audio.input.transcription.model",
+			message: fmt.Sprintf(
+				"transcription model %q is not supported: the recogniser is the deployment's "+
+					"(%s). The field was not applied and the rest of the session.update was.",
+				model, transcriptionModel),
+		})
+	}
+	if update.Reasoning != nil && len(*update.Reasoning) > 0 && string(*update.Reasoning) != "null" {
+		refused = append(refused, clientError{
+			code:  "unsupported_value",
+			param: "session.reasoning",
+			message: "reasoning is not configurable per session: effort belongs to the provider " +
+				"this deployment runs the background reasoner on. The field was not applied " +
+				"and the rest of the session.update was.",
+		})
+	}
+	return refused
+}
+
+// toolChoiceMode reads the string form of tool_choice. The object form names a
+// function, which is equally unsupported, so it reports the whole value.
+func toolChoiceMode(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var mode string
+	if err := json.Unmarshal(raw, &mode); err == nil {
+		return mode
+	}
+	return string(raw)
+}
+
+// transcriptionModelOf reads the model out of an input transcription config.
+func transcriptionModelOf(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var config struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(raw, &config); err != nil {
+		return ""
+	}
+	return config.Model
+}

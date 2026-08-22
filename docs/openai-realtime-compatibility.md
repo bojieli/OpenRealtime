@@ -79,6 +79,29 @@ turn after receiving one.
 Turn detection parameters a client leaves unset resolve to the deployment's
 rather than to zero.
 
+The same treatment covers every session field this server parses and does not
+act on, because a field dropped in silence is the substitution case wearing a
+different hat — `session.updated` reports the value actually in force, so the
+only way to discover the difference is to read the field back and notice it
+changed, and most clients never do:
+
+| Field | Why it is not applied |
+| --- | --- |
+| `tool_choice` | Which model may call tools is an authority boundary here, not a session setting: the fast model proposes and cannot execute, the reasoner executes. |
+| `audio.output.speed` | Synthesis runs at the rate the speech provider produces. |
+| `audio.input.transcription.model` | The recogniser is the deployment's, named in `session.updated`. |
+| `reasoning` | Effort belongs to the provider the reasoner runs on, not to a session. |
+
+`tool_choice` is the one with teeth. A client that asks for no tools and
+receives tool calls is not looking at a cosmetic difference; it is looking at
+behaviour it explicitly turned off. The rest are quieter, and `reasoning` is
+quietest of all, because it is not echoed in `session.updated` at all — a
+client setting it has no field to read back.
+
+Asking for what is already in force is not refused. A client that sends the
+server's own defaults back has asked for nothing it will not get, and answering
+that with errors would make the well-behaved clients the noisy ones.
+
 ## Internal synchronization does not change the wire
 
 The canonical trajectory and the safe-point event loop add no client or server

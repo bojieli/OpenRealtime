@@ -495,6 +495,35 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 	if update.Audio.Output.Voice != "" {
 		current.voice = update.Audio.Output.Voice
 	}
+
+	// Two fields this deployment decodes and nothing acts on. Accepting them
+	// silently is the failure this whole class of bug is made of: the client
+	// declares something, is not contradicted, and reasonably concludes it was
+	// honoured. tool_choice is the sharper of the two - a client asking the
+	// model not to call tools, and being told nothing, gets tools called.
+	//
+	// They are refused rather than dropped, by the same rule as an unsupported
+	// turn detector: everything else in the event applies and the field is
+	// named. When either becomes something a binding can honour, the refusal
+	// is what has to be deleted, which is a change somebody will notice
+	// needing to make.
+	if choice := strings.TrimSpace(string(update.ToolChoice)); choice != "" && choice != `"auto"` {
+		refused = append(refused, clientError{
+			code: "unsupported_value", param: "session.tool_choice",
+			message: fmt.Sprintf(
+				"tool_choice %s is not supported: this deployment always leaves the choice to the model. "+
+					"The field was not applied and the rest of the session.update was.", choice),
+		})
+	}
+	if speed := update.Audio.Output.Speed; speed != 0 && speed != 1 {
+		refused = append(refused, clientError{
+			code: "unsupported_value", param: "session.audio.output.speed",
+			message: fmt.Sprintf(
+				"speech speed %v is not supported: this deployment synthesises at the speech model's own rate. "+
+					"The field was not applied and the rest of the session.update was.", speed),
+		})
+	}
+	refused = append(refused, unappliedFields(update, session.config.TranscriptionModel)...)
 	if update.Audio.Input.TurnDetectionSet {
 		turn := update.Audio.Input.TurnDetection
 		switch {
