@@ -345,3 +345,22 @@ func TestAnUntypedSightFlagDefersToTheProvider(t *testing.T) {
 		t.Fatalf("a typed sight flag must decide: %v", declared)
 	}
 }
+
+// A recogniser advancing every 200ms must not inherit the budget of a model
+// that may legitimately think for a minute. When a local recogniser wedged,
+// every session against it went silent for as long as anyone would wait: no
+// turn, no error, nothing in the log until teardown.
+func TestTheRecogniserIsBoundedByItsOwnCadence(t *testing.T) {
+	const shared = 2 * time.Minute
+	if got := recogniserTimeout(200*time.Millisecond, shared); got >= shared {
+		t.Fatalf("a 200ms cadence must not wait a reasoning model's timeout, got %s", got)
+	}
+	// A very short cadence must not produce a bound a healthy provider trips on.
+	if got := recogniserTimeout(10*time.Millisecond, shared); got < 5*time.Second {
+		t.Fatalf("the floor must survive a short cadence, got %s", got)
+	}
+	// A long cadence must not quietly exceed the deployment's own limit.
+	if got := recogniserTimeout(time.Hour, shared); got != shared {
+		t.Fatalf("the shared timeout is still the ceiling, got %s", got)
+	}
+}

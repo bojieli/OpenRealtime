@@ -666,8 +666,42 @@ func buildRecogniser(options serveOptions) (func() (v1.PerceptionProvider, error
 		BaseURL:  options.override("asr-url", options.asrURL),
 		APIKey:   os.Getenv("OPENREALTIME_ASR_API_KEY"),
 		Language: options.language, PartialInterval: options.asrPartial,
-		RequestTimeout: options.requestTimeout,
+		RequestTimeout: recogniserTimeout(options.asrCadence, options.requestTimeout),
 	})
+}
+
+// recogniserTimeout bounds one advance of the recogniser.
+//
+// The shared provider timeout is sized for a reasoning model, which may
+// legitimately think for a minute. A streaming recogniser advancing every two
+// hundred milliseconds is a different kind of thing entirely, and giving it the
+// same budget means a recogniser that has stopped answering can consume two
+// minutes of a live conversation before anything is said about it - the client
+// hears nothing, the log says nothing, and the session simply produces no
+// turns. That failure was found in the field, not in a test: a local recogniser
+// wedged on a concurrent request and every session against it went quiet for as
+// long as anyone was willing to wait.
+//
+// The bound comes from the cadence rather than from a second knob, because the
+// cadence is already the statement of how often this provider is expected to
+// answer. A recogniser that has not answered in many multiples of its own
+// cadence is not slow; it is not answering. The floor keeps a very short
+// cadence from producing a bound that a healthy provider would trip on, and the
+// shared timeout still caps it so that configuring a long cadence cannot
+// quietly exceed the deployment's own limit.
+func recogniserTimeout(cadence, shared time.Duration) time.Duration {
+	const (
+		multiple = 20
+		floor    = 5 * time.Second
+	)
+	bound := time.Duration(multiple) * cadence
+	if bound < floor {
+		bound = floor
+	}
+	if shared > 0 && bound > shared {
+		bound = shared
+	}
+	return bound
 }
 
 // roleCredential resolves a model credential.
