@@ -18,6 +18,7 @@ const sources = new Map();
 let endpointAt = null;
 let firstAudioAt = null;
 let negotiated = null;
+let manualTurns = false;
 let levelTimer = null;
 
 const DEFAULT_INSTRUCTIONS =
@@ -140,6 +141,8 @@ async function disconnect(reason) {
   ui.elements.mic.disabled = true;
   ui.elements.screen.disabled = true;
   ui.elements.camera.disabled = true;
+  ui.elements.endTurn.disabled = true;
+  manualTurns = false;
   ui.setPressed(ui.elements.mic, false);
   ui.setPressed(ui.elements.screen, false);
   ui.setPressed(ui.elements.camera, false);
@@ -166,11 +169,23 @@ function handle(event) {
       ui.setStat("session", event.session?.id ?? "");
       break;
 
-    case "session.updated":
+    case "session.updated": {
+      // A session that took the floor is one the server will not endpoint for.
+      // It is read from what the server reports rather than from what was
+      // asked, because the two differ on a binding that refuses to hand the
+      // floor over - and a console that offered the control anyway would be
+      // offering to do something the session cannot do.
+      const detection = event.session?.audio?.input?.turn_detection;
+      manualTurns = detection === null;
+      ui.elements.endTurn.disabled = !manualTurns;
+      ui.setMediaState(manualTurns
+        ? "this session declares its own turns — press End turn when you have finished speaking"
+        : "");
       negotiated = event.session?.openrealtime ?? null;
       describeNegotiation(negotiated);
       for (const source of sources.values()) source.applyLimits(negotiated?.video);
       break;
+    }
 
     case "input_audio_buffer.speech_started":
       ui.setState("listening", "live");
@@ -422,6 +437,15 @@ ui.elements.mic.addEventListener("click", () => {
   ui.setPressed(ui.elements.mic, !muted);
   ui.elements.mic.textContent = muted ? "Microphone (muted)" : "Microphone";
   if (muted) ui.elements.level.style.width = "0";
+});
+
+ui.elements.endTurn.addEventListener("click", () => {
+  if (!manualTurns) return;
+  // Both halves. The commit says where the turn ended; without the request the
+  // server has been told a turn finished and not that anything should come of
+  // it, which is the whole point of taking the floor.
+  send({ type: "input_audio_buffer.commit" });
+  send({ type: "response.create" });
 });
 
 ui.elements.compose.addEventListener("submit", (submission) => {

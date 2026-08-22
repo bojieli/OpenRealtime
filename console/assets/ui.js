@@ -8,7 +8,7 @@ export const elements = {
   thumbs: $("thumbs"), toolList: $("tool-list"), toolsRoot: $("tools-root"),
   negotiated: $("negotiated"), sessionJson: $("session-json"),
   transport: $("transport"), connect: $("connect"), disconnect: $("disconnect"),
-  mic: $("mic"), screen: $("screen"), camera: $("camera"),
+  mic: $("mic"), screen: $("screen"), camera: $("camera"), endTurn: $("endturn"),
   compose: $("compose"), typed: $("typed"),
   confirm: $("confirm"), confirmName: $("confirm-name"),
   confirmArguments: $("confirm-arguments"), confirmRequirement: $("confirm-requirement"),

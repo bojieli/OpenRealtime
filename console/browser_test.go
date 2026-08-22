@@ -195,3 +195,31 @@ func TestTheConsoleShowsTheTextOfATextSession(t *testing.T) {
 		t.Fatalf("the browser run failed: %v", err)
 	}
 }
+
+// A session that takes the floor must be drivable, not merely declarable.
+//
+// turn_detection: null means the client will say where its turns end, and the
+// server then waits to be told. A console that can declare it from its session
+// editor and cannot send the two events that finish a turn leaves the session
+// hanging with audio flowing and nothing ever happening - which is what this
+// one did for as long as taking the floor has been possible.
+func TestTheConsoleCanDriveASessionThatTookTheFloor(t *testing.T) {
+	node, chromium := requireBrowser(t)
+	root := t.TempDir()
+	stack := testserver.Start(t, testserver.Config{Transcript: "a turn I ended myself"})
+	consoleURL := startConsoleServer(t, stack.ProtocolURL, stack.AdapterURL, root)
+
+	driver, err := filepath.Abs(filepath.Join("testdata", "manualturns.mjs"))
+	if err != nil {
+		t.Fatalf("locate the driver: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	command := exec.CommandContext(ctx, node, driver, consoleURL)
+	command.Env = append(os.Environ(), "CHROMIUM="+chromium, "CDP_PORT="+freePort(t))
+	output, err := command.CombinedOutput()
+	t.Log("\n" + string(output))
+	if err != nil {
+		t.Fatalf("the browser run failed: %v", err)
+	}
+}
