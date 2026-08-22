@@ -4,6 +4,16 @@
 
 ### Realtime endpoints
 
+- **`providers -role upstream -probe NAME` contacts an endpoint for real**,
+  using the same dial path the binding uses, and prints every server event it
+  sent back. A fake built from a vendor's documentation proves only that this
+  code does what the documentation was read to say; the endpoint itself is the
+  only thing that can prove the reading was right.
+- **Each entry records how far it has been checked** — `live-turn`,
+  `reachable`, or `documented` — and the listing prints it, so the table says
+  what is evidence and what is a careful reading rather than leaving that in a
+  paragraph.
+
 - **Five remote realtime endpoints behind the background reasoner**, resolved
   through the catalogue: OpenAI, xAI, Azure OpenAI, Alibaba's
   Qwen-Omni-Realtime, and Google's Gemini Live. `-upstream-provider` selects

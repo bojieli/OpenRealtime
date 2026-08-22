@@ -179,13 +179,51 @@ Agents already run their own agent loop, so putting this binding's reasoner
 behind one would be two orchestrators arguing over one conversation, not a
 seam. Use those products directly, or build the same stack with `cascade`.
 
-| Endpoint | Protocol | Hand-off | Notes |
-| --- | --- | --- | --- |
-| `openai` | Realtime | conversation item | The reference implementation |
-| `xai` | Realtime | conversation item | Documented as Realtime-compatible; reports user transcripts as `.updated` |
-| `azure-openai` | Realtime | conversation item | Same spec; credential in `api-key`, model is a deployment in the URL |
-| `qwen-omni` | Realtime (pre-GA names) | session instruction | Emits `response.audio.*`; conversation items are tool-results only |
-| `google` | **BidiGenerateContent** | conversation item | Not a Realtime dialect; translated into one |
+| Endpoint | Protocol | Hand-off | Verified | Notes |
+| --- | --- | --- | --- | --- |
+| `openai` | Realtime | conversation item | reachable | The reference implementation |
+| `xai` | Realtime | conversation item | reachable | Documented as Realtime-compatible; reports user transcripts as `.updated` |
+| `azure-openai` | Realtime | conversation item | documented | Same spec; credential in `api-key`, model is a deployment in the URL |
+| `qwen-omni` | Realtime (pre-GA names) | session instruction | reachable | Emits `response.audio.*`; conversation items are tool-results only |
+| `google` | **BidiGenerateContent** | conversation item | live-turn | Not a Realtime dialect; translated into one |
+
+### How far each one has actually been checked
+
+A fake server built from a vendor's documentation proves that this code does
+what the documentation was read to say. That is worth having, and it is not the
+same as working: it cannot catch a document that is wrong, a field a vendor
+quietly requires, or a name that changed last month. So the catalogue records
+the difference rather than leaving it in prose, and the listing prints it.
+
+- **`live-turn`** — a real session completed a turn against the vendor's own
+  endpoint, and its events arrived under the names this catalogue expects.
+- **`reachable`** — the real endpoint answered on this URL and evaluated a
+  credential sent this way, so the address and the authentication scheme are
+  confirmed against the vendor. No turn has been run, for want of a working
+  credential, so the event names and the hand-off remain as good as the
+  documentation and the fake.
+- **`documented`** — built from the specification and run against a fake, and
+  nothing else.
+
+Raising a level takes a credential and one command, which contacts the endpoint
+for real and prints every event name it sent back:
+
+```console
+$ openrealtime providers -role upstream -probe google
+google  (gemini-live)
+  endpoint  wss://generativelanguage.googleapis.com/ws/…BidiGenerateContent
+  model     gemini-2.5-flash-native-audio-latest
+  connected true
+  events received:
+    response.done                                        1
+    response.output_audio.delta                          6
+    response.output_audio_transcript.delta               1
+    response.output_audio_transcript.done                1
+  said      "probe ok."
+```
+
+If an endpoint sends something this catalogue does not expect, it appears in
+that list under its own name — which is exactly how a stale entry gets found.
 
 Two vendor differences turned out to matter enough to be modelled rather than
 assumed.
