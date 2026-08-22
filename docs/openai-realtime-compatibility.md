@@ -356,6 +356,16 @@ Switching on a status nobody has ever sent looks exactly like switching on one
 that cannot happen, so when a capability widens an existing field, grep for the
 field rather than the event name.
 
+The defence is cheaper than the audit and worth building in: **render the value,
+enumerate only the treatment**. A consumer that records whatever `status`
+arrives and enumerates only which statuses deserve a warning cannot be blinded
+by a new one — it shows something unfamiliar rather than nothing, which is a
+question somebody asks rather than an absence nobody notices. A consumer that
+enumerates the rendering instead reintroduces the same silence one layer down.
+The console does this: every status reaches its stats panel, and only
+`incomplete` and `failed` raise a notice, because `cancelled` is the user
+interrupting on purpose.
+
 The audit is cheap. Enumerate the events the server can emit, subtract the ones
 a consumer handles, and go through the remainder:
 
