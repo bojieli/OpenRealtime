@@ -118,6 +118,26 @@ capacity.
 
 - **A provider fails.** The session survives and the client sees an `error`
   event. A failed slow continuation does not end the conversation.
+- **A recogniser stops answering.** Perception is the one provider whose
+  silence produces no output at all: no transcript is finalised, so no
+  observation is committed, so nothing downstream runs and the client waits on
+  a turn that never arrives. The advance is bounded by the recogniser's own
+  cadence rather than by `-request-timeout`, so the session fails in seconds
+  with `asr_provider_error` naming the provider, rather than at the shared
+  two-minute deadline with nothing to read.
+
+  **Reachability is not liveness here.** A recogniser can accept connections
+  and answer a session-open request instantly while never answering a chunk
+  again — which is what a health check that only dials the port reports as
+  healthy. Check that a chunk round-trips, not that the port is open.
+
+  What is not yet visible is a recogniser getting *slower* before it stops.
+  `asrbuffer` measures `provider_elapsed_ns` and `provider_max_elapsed_ns` per
+  session and nothing reads them: there is no path from a binding's internals
+  to `/healthz`, because `binding.Binding` has no operational surface and
+  gaining one is a change to a versioned extension point. Until that is
+  decided, the observable signal is the failure rather than the degradation.
+
 - **A policy model fails or times out.** The policy falls back to its rule:
   backchannel to silence, projection to silence-only endpointing.
 - **A sidecar dies.** The session ends and the client is told. A sidecar that
