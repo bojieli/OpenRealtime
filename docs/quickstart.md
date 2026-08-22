@@ -14,9 +14,22 @@ they are:
 | Component | Default | Flag |
 | --- | --- | --- |
 | Streaming recogniser | `http://127.0.0.1:8001` | `-asr-provider`, `-asr-url` |
-| Fast model (OpenAI-compatible) | `http://127.0.0.1:8000/v1` | `-fast-provider`, `-fast-model` |
+| Fast model (vLLM) | `http://127.0.0.1:8000/v1` | `-fast-provider`, `-fast-model` |
 | Speech synthesis (OpenAI-compatible) | `http://127.0.0.1:8081/v1/audio/speech` | `-tts-provider`, `-tts-model` |
 | Background reasoner | Gemini | `-slow-provider`, `-slow-model` |
+
+`-fast-provider` defaults to `vllm` because that is what the port above
+usually is, and because vLLM can be asked to turn thinking off. A reasoning
+model with it left on writes its deliberation into the reply, and a fast turn
+has ninety-six tokens to spend — which it will spend thinking rather than
+answering. Point it at `openai-compatible` for any other endpoint that speaks
+Chat Completions; nothing vendor-specific is sent there, so a model that thinks
+will think.
+
+Reasoning that arrives inside a reply is never spoken whatever the provider —
+it is routed to the reasoning channel where it belongs — so the worst a
+misconfigured fast model costs is latency and a short answer, not an agent
+reading its own thoughts aloud.
 
 The background reasoner needs one credential:
 

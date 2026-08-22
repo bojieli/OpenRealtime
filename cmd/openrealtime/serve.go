@@ -177,7 +177,14 @@ func runServe(arguments []string, output io.Writer) error {
 		"ask a batch recogniser for a hypothesis this often by re-transcribing the utterance; "+
 			"0 recognises only at the endpoint, and a streaming recogniser ignores it")
 
-	flags.StringVar(&options.fastProvider, "fast-provider", "openai-compatible",
+	// vLLM rather than the generic entry, because the default endpoint below
+	// is vLLM's own port and the quickstart's local stack is vLLM. The
+	// difference is that vLLM can be asked to turn thinking off: a Qwen-class
+	// model with it left on writes its deliberation into the content field,
+	// and a fast budget of ninety-six tokens is spent on it before an answer
+	// is reached - so the default was not a slower voice, it was no voice.
+	// Point -fast-provider at openai-compatible for anything that is not vLLM.
+	flags.StringVar(&options.fastProvider, "fast-provider", "vllm",
 		"fast provider; openrealtime providers lists them")
 	flags.StringVar(&options.fastURL, "fast-url", openaicompat.DefaultBaseURL,
 		"fast model base URL; unset selects the provider's own")

@@ -436,6 +436,7 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 
 	completion := continuation.Completion{ProviderStateType: ProviderStateType}
 	var reasoning, content strings.Builder
+	var thinking thinkingFilter
 	pendingCalls := make(map[int]*pendingToolCall)
 	err = sse.Read(response.Body, maxSSEEvent, func(data []byte) error {
 		if bytes.Equal(bytes.TrimSpace(data), []byte("[DONE]")) {
@@ -485,9 +486,25 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 				}
 			}
 			if delta.Content != nil && *delta.Content != "" {
-				content.WriteString(*delta.Content)
-				if err := emit(continuation.Event{Kind: continuation.EventAssistantDelta, Text: *delta.Content}); err != nil {
-					return err
+				// A model that writes its reasoning into content is still
+				// reasoning. Routing it to the reasoning channel is what keeps
+				// the fast provider's deliberation from being spoken.
+				leakedReasoning, spoken := thinking.push(*delta.Content)
+				if leakedReasoning != "" && !adapter.config.DisableReasoningCapture {
+					reasoning.WriteString(leakedReasoning)
+					if err := emit(continuation.Event{
+						Kind: continuation.EventReasoningDelta, Text: leakedReasoning,
+					}); err != nil {
+						return err
+					}
+				}
+				if spoken != "" {
+					content.WriteString(spoken)
+					if err := emit(continuation.Event{
+						Kind: continuation.EventAssistantDelta, Text: spoken,
+					}); err != nil {
+						return err
+					}
 				}
 			}
 			for _, callDelta := range delta.ToolCalls {
@@ -504,6 +521,29 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 		}
 		return nil
 	})
+
+	// An unterminated block is the common case rather than an odd one: a short
+	// output budget runs out mid-deliberation and the closing tag never
+	// arrives. What was held back is still reasoning, and speaking it would
+	// say exactly the half of the thought that fit.
+	if heldReasoning, heldContent := thinking.flush(); heldReasoning != "" || heldContent != "" {
+		if heldReasoning != "" && !adapter.config.DisableReasoningCapture {
+			reasoning.WriteString(heldReasoning)
+			if emitErr := emit(continuation.Event{
+				Kind: continuation.EventReasoningDelta, Text: heldReasoning,
+			}); emitErr != nil && err == nil {
+				err = emitErr
+			}
+		}
+		if heldContent != "" {
+			content.WriteString(heldContent)
+			if emitErr := emit(continuation.Event{
+				Kind: continuation.EventAssistantDelta, Text: heldContent,
+			}); emitErr != nil && err == nil {
+				err = emitErr
+			}
+		}
+	}
 
 	message := chatMessage{Role: "assistant", Content: content.String(), ReasoningContent: reasoning.String()}
 	indices := make([]int, 0, len(pendingCalls))
