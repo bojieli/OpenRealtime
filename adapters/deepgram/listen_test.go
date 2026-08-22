@@ -1,0 +1,228 @@
+package deepgram
+
+import (
+	"context"
+	"encoding/binary"
+	"encoding/json"
+	"math"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	"github.com/coder/websocket"
+)
+
+// fakeDeepgram is a WebSocket that replays a scripted result stream. The
+// script is what the real service sends: interim hypotheses that get replaced,
+// then a final segment that settles.
+type fakeDeepgram struct {
+	server *httptest.Server
+	query  chan string
+	auth   chan string
+	audio  chan int
+}
+
+func newFakeDeepgram(t *testing.T, script []string) *fakeDeepgram {
+	t.Helper()
+	fake := &fakeDeepgram{
+		query: make(chan string, 1), auth: make(chan string, 1), audio: make(chan int, 64),
+	}
+	fake.server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		fake.query <- request.URL.RawQuery
+		fake.auth <- request.Header.Get("Authorization")
+		connection, err := websocket.Accept(writer, request, nil)
+		if err != nil {
+			t.Errorf("accept: %v", err)
+			return
+		}
+		defer connection.CloseNow()
+		index := 0
+		for {
+			kind, payload, err := connection.Read(request.Context())
+			if err != nil {
+				return
+			}
+			if kind == websocket.MessageBinary {
+				fake.audio <- len(payload)
+				if index < len(script) {
+					_ = connection.Write(request.Context(), websocket.MessageText, []byte(script[index]))
+					index++
+				}
+				continue
+			}
+			// A CloseStream flushes whatever is left and ends the stream,
+			// which is exactly the behaviour Finalize depends on.
+			for ; index < len(script); index++ {
+				_ = connection.Write(request.Context(), websocket.MessageText, []byte(script[index]))
+			}
+			_ = connection.Close(websocket.StatusNormalClosure, "stream closed")
+			return
+		}
+	}))
+	t.Cleanup(fake.server.Close)
+	return fake
+}
+
+func (fake *fakeDeepgram) url() string {
+	return "ws" + strings.TrimPrefix(fake.server.URL, "http")
+}
+
+func results(transcript string, final bool) string {
+	payload, _ := json.Marshal(map[string]any{
+		"type": "Results", "is_final": final,
+		"channel": map[string]any{"alternatives": []map[string]any{{"transcript": transcript}}},
+	})
+	return string(payload)
+}
+
+func tone(samples int) []byte {
+	pcm := make([]byte, samples*2)
+	for index := range samples {
+		binary.LittleEndian.PutUint16(pcm[index*2:], uint16(int16(math.Round(6000*math.Sin(float64(index)/6)))))
+	}
+	return pcm
+}
+
+func push(t *testing.T, listener *Listener, index uint64, offset uint64, samples int) []v1.PerceptionRevision {
+	t.Helper()
+	revisions, err := listener.PushFrame(context.Background(), v1.AudioFrame{
+		Index: index, SampleOffset: offset, SampleRateHz: 16_000, PCM16LE: tone(samples),
+	})
+	if err != nil {
+		t.Fatalf("push %d: %v", index, err)
+	}
+	return revisions
+}
+
+// Interim results are hypotheses; a final segment settles. The transcript the
+// runtime sees has to reflect that, or a corrected word would stay corrected
+// only until the next frame.
+func TestInterimResultsAreReplacedAndFinalSegmentsAccumulate(t *testing.T) {
+	t.Parallel()
+	fake := newFakeDeepgram(t, []string{
+		results("what is", false),
+		results("what is my", false),
+		results("what is my balance", true),
+		results("please", false),
+	})
+	listener, err := NewListener(ListenConfig{URL: fake.url(), APIKey: "secret", Model: "nova-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	push(t, listener, 0, 0, 800)
+	// The reader is a separate goroutine, so the first drain may be empty.
+	// What matters is where the transcript ends up, not which push carried it.
+	var text string
+	deadline := time.Now().Add(2 * time.Second)
+	offset := uint64(800)
+	for index := uint64(1); time.Now().Before(deadline); index++ {
+		for _, revision := range push(t, listener, index, offset, 800) {
+			if revision.Final {
+				t.Fatal("a mid-stream revision must not be marked final")
+			}
+			text = revision.UnstableText
+		}
+		offset += 800
+		if strings.Contains(text, "please") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if text != "what is my balance please" {
+		t.Fatalf("settled text plus the current hypothesis = %q", text)
+	}
+
+	final, err := listener.Finalize(context.Background(), offset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !final.Final || final.StableText != "what is my balance please" {
+		t.Fatalf("final revision: %+v", final)
+	}
+}
+
+// The audio format is declared from the first frame, so nothing is resampled
+// on the way in.
+func TestTheStreamDeclaresTheCallersOwnSampleRate(t *testing.T) {
+	t.Parallel()
+	fake := newFakeDeepgram(t, []string{results("hi", true)})
+	listener, err := NewListener(ListenConfig{URL: fake.url(), APIKey: "secret", Model: "nova-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	push(t, listener, 0, 0, 400)
+
+	query := <-fake.query
+	for _, want := range []string{
+		"encoding=linear16", "sample_rate=16000", "channels=1",
+		"interim_results=true", "model=nova-test",
+	} {
+		if !strings.Contains(query, want) {
+			t.Errorf("query %q is missing %q", query, want)
+		}
+	}
+	if auth := <-fake.auth; auth != "Token secret" {
+		t.Errorf("Deepgram authenticates with a Token header, got %q", auth)
+	}
+	if sent := <-fake.audio; sent != 800 {
+		t.Errorf("audio must reach the service unresampled, got %d bytes", sent)
+	}
+}
+
+func TestAReportedErrorFailsTheUtterance(t *testing.T) {
+	t.Parallel()
+	fake := newFakeDeepgram(t, []string{
+		`{"type":"Error","description":"unsupported encoding"}`,
+	})
+	listener, err := NewListener(ListenConfig{URL: fake.url(), APIKey: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	push(t, listener, 0, 0, 400)
+	time.Sleep(50 * time.Millisecond)
+	_, err = listener.Finalize(context.Background(), 400)
+	if err == nil || !strings.Contains(err.Error(), "unsupported encoding") {
+		t.Fatalf("a reported error must fail the utterance: %v", err)
+	}
+}
+
+func TestFramesMustBeContiguousAndAnEmptyUtteranceCannotFinalize(t *testing.T) {
+	t.Parallel()
+	fake := newFakeDeepgram(t, nil)
+	listener, err := NewListener(ListenConfig{URL: fake.url(), APIKey: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if _, err := listener.Finalize(context.Background(), 0); err == nil {
+		t.Fatal("an utterance with no audio must not be finalized")
+	}
+	push(t, listener, 0, 0, 400)
+	if _, err := listener.PushFrame(context.Background(), v1.AudioFrame{
+		Index: 7, SampleOffset: 400, SampleRateHz: 16_000, PCM16LE: tone(400),
+	}); err == nil {
+		t.Fatal("a frame out of sequence must be refused")
+	}
+	if _, err := listener.PushFrame(context.Background(), v1.AudioFrame{
+		Index: 1, SampleOffset: 400, SampleRateHz: 24_000, PCM16LE: tone(400),
+	}); err == nil {
+		t.Fatal("a sample-rate change mid-utterance must be refused")
+	}
+}
+
+func TestAMissingCredentialIsRefusedBeforeDialling(t *testing.T) {
+	t.Parallel()
+	if _, err := NewListener(ListenConfig{URL: "wss://example.invalid/v1/listen"}); err == nil {
+		t.Fatal("Deepgram requires a key")
+	}
+	if _, err := NewListener(ListenConfig{URL: "https://example.invalid", APIKey: "k"}); err == nil {
+		t.Fatal("a non-WebSocket URL must be refused")
+	}
+}
