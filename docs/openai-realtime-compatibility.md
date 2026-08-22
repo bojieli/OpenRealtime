@@ -137,6 +137,22 @@ It accepts nine of the eleven GA Realtime client events: `session.update`, `inpu
 and for messages carrying text, images, or both, `conversation.item.truncate`,
 `response.create`, and `response.cancel`.
 
+`output_audio_buffer.clear` is refused when nothing is playing, and the
+refusal is worth explaining because it exposes a client-side trap rather than
+creating one. The acknowledgement carries the response it cleared, so with no
+response in progress there is nothing to name, and a client that asked to stop
+hearing something it was not hearing has a bug it wants to see.
+
+The bug it usually has is measuring "the agent is speaking" by item identity.
+An item identifier outlives the sound: it is cleared on
+`response.output_audio.done`, which arrives after the last sample has played
+and never arrives at all if the response was cancelled. A client that unmutes a
+microphone and clears the output buffer whenever it holds an utterance
+identifier will therefore clear an empty buffer every time the person speaks
+after the agent has already finished. The honest measure is the playhead - the
+end of the last scheduled buffer, compared against the clock - because that is
+what "sound is still coming" actually means.
+
 An `input_image` attached to a message is not a video source. A source is a
 stream the server gates, which is what the extension's video events are for; an
 image in a message is content of the turn, shown once because the client chose
