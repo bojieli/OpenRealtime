@@ -54,6 +54,14 @@ func TestTheDemoIsServedAndIsTheRealPage(t *testing.T) {
 	if strings.Contains(page, `!== "completed"`) {
 		t.Error("a cancelled turn is the user interrupting on purpose, not a fault to report")
 	}
+
+	// Which statuses deserve a warning is a judgement about the ones we know.
+	// Whether a status is shown at all must not be, or the demo goes silent
+	// the day the server learns a new word - the same absence one layer down.
+	// This is the form client authors copy, so it is the form to get right.
+	if !strings.Contains(page, "connected · ${status}") {
+		t.Error("a status the demo predates must be shown, not decided to mean nothing")
+	}
 }
 
 func TestTheDemoServesOneFileAndNotADirectory(t *testing.T) {
