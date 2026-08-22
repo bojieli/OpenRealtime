@@ -186,7 +186,8 @@ benchmark is patched and nothing in it knows this project exists.
 That is also what makes it a test of the protocol rather than of our adapter.
 Running it found four things a client written against the official API needs
 and this server did not have: text output, client-declared turns, images
-attached to a message, and one response per turn. Each of those is now a
+attached to a message, and every output item naming the response that produced
+it rather than each output kind opening one of its own. Each of those is now a
 capability rather than a workaround, and the benchmark is unmodified.
 
 The report breaks out the eleven categories rather than averaging them, and

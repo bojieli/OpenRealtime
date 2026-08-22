@@ -307,22 +307,30 @@ func hasFeature(response openrealtime.Response, feature openrealtime.Feature) bo
 
 var _ binding.Sink = (*session)(nil)
 
-// A response is a turn.
+// A response is one thing the agent did, not the whole turn.
 //
-// The protocol's contract is one response per response.create, carrying every
-// output item the turn produced, indexed within it. A client that has been
-// told a response is done stops reading it, so rendering each output kind as
-// its own response ends the turn - from the client's point of view - at
-// whichever kind happened to come first. An agent that spoke and then called a
-// tool would have its calls arrive after the client had already moved on.
+// One rollout produces one response, carrying every output item that rollout
+// produced - spoken or written content and function calls, indexed within it.
+// A turn can span several, and normally does: the voice answers in one, the
+// background reasoner's tool calls arrive in another, and what it found is
+// spoken in a third once the gate lets anything be heard.
 //
-// When the turn is over is not when the rollout returns. Speech is
+// This comment used to argue the opposite - that a turn had to be a single
+// response, because a client told a response is done stops reading it. That
+// reasoning does not hold. Audio reaches a client on the audio channel rather
+// than inside a response envelope, and a client executing a tool reads
+// function_call items as they arrive; a response being done means that
+// response has no more items, not that the session has stopped producing them.
+// Held to, the rule would keep a response open across an unbounded
+// deliberation, so the first answer could not complete until the last one did.
+//
+// When a response is over is still not when the rollout returns. Speech is
 // deliberately asynchronous: the rollout decides what to say, hands it to the
 // planner, and returns while the audio is still being paced out over seconds.
-// So a response closes when both are done - the rollout has finished planning
-// and every utterance it opened has finished playing - which is what the
-// outstanding count is for. Closing at the rollout's return would tell a client
-// the turn was complete while it was still receiving the audio.
+// So a response closes when both are done - planning has finished and every
+// utterance it opened has finished playing - which is what the outstanding
+// count is for. Closing at the rollout's return would tell a client the
+// response was complete while it was still receiving the audio.
 //
 // The response is opened by whatever crosses into the world first, so a turn
 // that produced nothing announces nothing: a deferred batch with no plan is
