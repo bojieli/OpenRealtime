@@ -24,6 +24,13 @@ compatibility claim that decays.
 synthesiser; a speech-to-speech Omni model; a full-duplex interaction model; or
 a remote Realtime endpoint. Four bindings, one runtime.
 
+**On any provider.** Thirty language models, ten recognisers, and nine
+synthesisers resolve through one catalogue — OpenAI, Anthropic, Google, xAI,
+DeepSeek, Qwen, GLM, MiniMax, Kimi, Mistral, the marketplaces, and whatever is
+running on your own machine. `openrealtime providers` lists them, and
+`-probe` asks a provider what it serves rather than trusting a constant that
+went stale. See [providers](docs/providers.md).
+
 **It makes any of them smarter.** A background reasoner shares one trajectory
 with the foreground model — reasoning and calling tools while the voice keeps
 talking. A single-model server cannot do this by construction: there is no
@@ -99,6 +106,7 @@ taken in, a dangerous tool declared, and nothing happens. See
 | | |
 | --- | --- |
 | [Quickstart](docs/quickstart.md) | run it, check it, connect to it |
+| [Providers](docs/providers.md) | every model provider it runs on, and how to add one |
 | [OpenAI's own client](examples/sdk-client/README.md) | the compatibility claim, checked by the published SDK |
 | [The developer console](console/README.md) | both transports, video, and tools on your own machine |
 | [Architecture](docs/architecture.md) | the four subsystems and why they are separate |

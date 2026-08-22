@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+### Providers
+
+- **One catalogue for every model provider.** The new `providers` package is
+  the single place that knows how to reach a language model, a recogniser, or
+  a synthesiser, and the server resolves all four roles through it. Thirty
+  language providers, ten recognisers, and nine synthesisers; adding one is a
+  table entry plus, when the wire format is genuinely its own, an adapter.
+  See [providers](docs/providers.md).
+- **`openrealtime providers`** lists the catalogue for any role and shows
+  which credentials are present. `-probe NAME` asks a provider what it
+  actually serves, because a default model compiled into this repository is
+  the one part of an entry that goes stale.
+- **An Anthropic adapter** over the native Messages API. It is not a dialect
+  of Chat Completions, and three of its constraints are load-bearing: a turn
+  must end with a user message, every tool call must be answered in the very
+  next one, and thinking blocks must be replayed with their signatures.
+- **Provider dialects for OpenAI-compatible endpoints.** The reasoning switch
+  is spelled five different ways across vendors and the output-token limit two;
+  both are now declared per provider rather than assumed. An effort level an
+  endpoint has no word for is refused at construction instead of being answered
+  at a neighbouring one.
+- **Streaming recognition from Deepgram**, dialled at the caller's own sample
+  rate so nothing is resampled before it is recognised, and **batch
+  recognition** from OpenAI, Groq, ElevenLabs, Fireworks, SiliconFlow,
+  Mistral, and any local whisper server through one adapter. A batch endpoint
+  recognises once, at the endpoint of the utterance, and says so rather than
+  pretending to stream.
+- **Speech from Deepgram, ElevenLabs, and Cartesia**, sharing one adapter and
+  one streaming reader with the endpoints that speak OpenAI's speech route.
+
 ## v1.0.0
 
 The first release of the current architecture. The engine was rebuilt around

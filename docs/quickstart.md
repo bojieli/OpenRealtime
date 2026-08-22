@@ -13,9 +13,9 @@ they are:
 
 | Component | Default | Flag |
 | --- | --- | --- |
-| Streaming recogniser | `http://127.0.0.1:8001` | `-asr-url` |
-| Fast model (OpenAI-compatible) | `http://127.0.0.1:8000/v1` | `-fast-url`, `-fast-model` |
-| Speech synthesis (OpenAI-compatible) | `http://127.0.0.1:8081/v1/audio/speech` | `-tts-url`, `-tts-model` |
+| Streaming recogniser | `http://127.0.0.1:8001` | `-asr-provider`, `-asr-url` |
+| Fast model (OpenAI-compatible) | `http://127.0.0.1:8000/v1` | `-fast-provider`, `-fast-model` |
+| Speech synthesis (OpenAI-compatible) | `http://127.0.0.1:8081/v1/audio/speech` | `-tts-provider`, `-tts-model` |
 | Background reasoner | Gemini | `-slow-provider`, `-slow-model` |
 
 The background reasoner needs one credential:
@@ -29,6 +29,17 @@ Point it at a local model instead if you would rather run everything yourself:
 ```sh
 ./openrealtime serve -slow-provider openai-compatible -slow-model your-model
 ```
+
+Or at any of the others. Each provider knows its own endpoint, credential
+variable, and models, so selecting one is usually the whole configuration:
+
+```sh
+export ANTHROPIC_API_KEY=...
+./openrealtime serve -slow-provider anthropic
+```
+
+`./openrealtime providers` lists every provider for all three roles and shows
+which credentials are set. See [providers](providers.md).
 
 ## Check it works
 
