@@ -132,11 +132,20 @@ capacity.
   healthy. Check that a chunk round-trips, not that the port is open.
 
   What is not yet visible is a recogniser getting *slower* before it stops.
-  `asrbuffer` measures `provider_elapsed_ns` and `provider_max_elapsed_ns` per
-  session and nothing reads them: there is no path from a binding's internals
-  to `/healthz`, because `binding.Binding` has no operational surface and
-  gaining one is a change to a versioned extension point. Until that is
-  decided, the observable signal is the failure rather than the degradation.
+  `asrbuffer` measures `provider_elapsed_ns` and `provider_max_elapsed_ns`, and
+  `Buffer.ProviderRuntimeMetrics()` already returns them — its own comment says
+  "for process-level aggregation", so the accessor was built for this. Nothing
+  calls it. The consumer is not missing by design: it existed and was removed
+  with the rest of the legacy scaffolding in `72c67a2`.
+
+  Restoring it needs no interface change. `/healthz` reads `gateway.Config`,
+  which is a plain struct built with keyed literals, so an optional field
+  populated where the buffer is already constructed reaches it. The real cost
+  is elsewhere: the recogniser is a factory and there is one buffer per
+  utterance, so an aggregator has to fold each buffer's monotonic counters in
+  as it closes, and own that accumulator's lifetime and locking. That is the
+  work, and it is why this is written down rather than done. Until it is, the
+  observable signal is the failure rather than the degradation.
 
 - **A policy model fails or times out.** The policy falls back to its rule:
   backchannel to silence, projection to silence-only endpointing.
