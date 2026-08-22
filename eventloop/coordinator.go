@@ -603,8 +603,14 @@ func (coordinator *Coordinator) commit(queued []queuedEvent) (Batch, error) {
 	batchID := coordinator.nextID("batch")
 	coordinator.idMu.Unlock()
 	markBatch(batchID, items)
-	if err := coordinator.store.AppendBatchAt(snapshot.Version, items); err != nil {
-		return Batch{}, fmt.Errorf("commit external event batch: %w", err)
+	// A batch of signals appends nothing: what each refers to is already in
+	// the log. It still commits, because a safe point the loop must reconsider
+	// is exactly what a signal is, and dropping it here would lose the run it
+	// was raised to cause.
+	if len(items) > 0 {
+		if err := coordinator.store.AppendBatchAt(snapshot.Version, items); err != nil {
+			return Batch{}, fmt.Errorf("commit external event batch: %w", err)
+		}
 	}
 	committed := coordinator.store.Snapshot()
 	return Batch{

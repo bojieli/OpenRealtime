@@ -10,13 +10,18 @@ import (
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
-// A response is a turn, and a client that has been told the response is done
-// stops reading it. An agent that speaks and then calls a tool must therefore
-// produce one response with two output items - not a spoken response the
-// client sees finish, followed by calls it has already stopped waiting for.
-func TestOneTurnIsOneResponseCarryingEveryOutputItem(t *testing.T) {
+// A turn spans as many responses as the agent did things, and every output
+// item belongs to the response that produced it.
+//
+// The voice answers in one response and hands the work on; the reasoner's call
+// arrives in another. A client is not harmed by the split: audio reaches it on
+// the audio channel rather than inside a response envelope, and a client
+// executing a tool reads function_call items as they arrive. What it must be
+// able to rely on is that each item names the response it came from, and that
+// each response ends once.
+func TestEveryOutputItemNamesTheResponseThatProducedIt(t *testing.T) {
 	server := startServer(t,
-		fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking."}}),
+		fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking." + continuation.EscalationMarker}}),
 		slow([]continuation.Event{{
 			Kind: continuation.EventToolCall,
 			ToolCall: &trajectory.ToolCall{
@@ -43,13 +48,10 @@ func TestOneTurnIsOneResponseCarryingEveryOutputItem(t *testing.T) {
 	client.await("session.updated", 5*time.Second)
 	client.speak()
 
-	created := client.await("response.created", 10*time.Second)
-	response, _ := created["response"].(map[string]any)
-	responseID, _ := response["id"].(string)
-
 	call := client.await("response.function_call_arguments.done", 10*time.Second)
-	if got, _ := call["response_id"].(string); got != responseID {
-		t.Fatalf("the call belongs to the turn that produced it: %q vs %q", got, responseID)
+	callResponse, _ := call["response_id"].(string)
+	if callResponse == "" {
+		t.Fatal("a call must name the response that produced it")
 	}
 	if call["name"] != "get_balance" {
 		t.Fatalf("unexpected call %v", call["name"])
@@ -61,33 +63,37 @@ func TestOneTurnIsOneResponseCarryingEveryOutputItem(t *testing.T) {
 		t.Fatalf("arguments must be a JSON string, got %#v", call["arguments"])
 	}
 
-	done := client.await("response.done", 10*time.Second)
-	finished, _ := done["response"].(map[string]any)
-	if got, _ := finished["id"].(string); got != responseID {
-		t.Fatalf("the turn ends once: %q vs %q", got, responseID)
-	}
-	output, _ := finished["output"].([]any)
-	if len(output) < 2 {
-		t.Fatalf("the response must list every item it produced, got %d", len(output))
-	}
-	kinds := make([]string, 0, len(output))
-	indices := map[string]bool{}
-	for _, entry := range output {
-		item, _ := entry.(map[string]any)
-		kind, _ := item["type"].(string)
-		kinds = append(kinds, kind)
-		indices[kind] = true
-	}
-	if !indices["message"] || !indices["function_call"] {
-		t.Fatalf("expected a spoken item and a call, got %v", kinds)
+	// The response carrying the call lists it, and lists it once.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			t.Fatalf("the response carrying the call never finished: %s", client.seen())
+		}
+		done := client.await("response.done", 10*time.Second)
+		finished, _ := done["response"].(map[string]any)
+		id, _ := finished["id"].(string)
+		if id != callResponse {
+			continue
+		}
+		output, _ := finished["output"].([]any)
+		calls := 0
+		for _, entry := range output {
+			item, _ := entry.(map[string]any)
+			if kind, _ := item["type"].(string); kind == "function_call" {
+				calls++
+			}
+		}
+		if calls != 1 {
+			t.Fatalf("the response that produced the call must list it exactly once, got %d", calls)
+		}
+		break
 	}
 
-	// Exactly one response was created and exactly one was finished.
-	if got := strings.Count(client.seen(), "response.created"); got != 1 {
-		t.Fatalf("one turn is one response, got %d created", got)
-	}
-	if got := strings.Count(client.seen(), "response.done"); got != 1 {
-		t.Fatalf("one turn ends once, got %d done", got)
+	// Every response that opened also closed. A client waiting on one that
+	// never ends is the failure this guards.
+	if created, ended := strings.Count(client.seen(), "response.created"),
+		strings.Count(client.seen(), "response.done"); created != ended {
+		t.Fatalf("%d responses opened and %d closed: %s", created, ended, client.seen())
 	}
 }
 
@@ -95,7 +101,7 @@ func TestOneTurnIsOneResponseCarryingEveryOutputItem(t *testing.T) {
 // claim the same index.
 func TestOutputItemsAreIndexedWithinTheirResponse(t *testing.T) {
 	server := startServer(t,
-		fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking."}}),
+		fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking." + continuation.EscalationMarker}}),
 		slow([]continuation.Event{
 			{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
 				CallID: "call_1", Name: "get_balance", Arguments: json.RawMessage(`{"account":"A1"}`),

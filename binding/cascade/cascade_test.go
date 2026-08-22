@@ -319,7 +319,7 @@ func TestCascadeDeclaresEngineOwnershipOfEverything(t *testing.T) {
 // voices what slow produced.
 func TestTurnAnswersFastThenVoicesSlow(t *testing.T) {
 	fast := newFast(
-		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Let me check that."}},
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Let me check that." + continuation.EscalationMarker}},
 		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "You have forty dollars."}},
 	)
 	slow := newSlow([]continuation.Event{{
@@ -351,7 +351,7 @@ func TestTurnAnswersFastThenVoicesSlow(t *testing.T) {
 
 func TestSlowToolCallsReachTheClientAndResultsResumeTheTurn(t *testing.T) {
 	fast := newFast(
-		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking."}},
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking." + continuation.EscalationMarker}},
 		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "It is forty dollars."}},
 	)
 	slow := newSlow(
@@ -438,7 +438,7 @@ func TestFastProposalsNeverBecomeExecutableCalls(t *testing.T) {
 func TestServerSideToolsDispatchInProcess(t *testing.T) {
 	var dispatched int
 	fast := newFast(
-		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "One moment."}},
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "One moment." + continuation.EscalationMarker}},
 		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Done."}},
 	)
 	slow := newSlow(

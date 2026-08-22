@@ -16,16 +16,19 @@ import (
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
-const maxRolloutIterations = 16
-
 // Process runs the background reasoner over the mirrored conversation.
+//
+// It plans once and returns; what a step produces re-enters as its own event.
+// The remote owns the voice here, so the step that speaks is the hand-off
+// rather than a local fast turn - running one would be a second voice.
 func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) error {
 	cause := interaction.Cause{
-		Observation: batch.Contains(trajectory.KindObservation),
-		ToolResult:  batch.Contains(trajectory.KindToolResult),
-		Parallel:    batch.Triage == eventloop.TriageParallel,
+		Observation:      batch.Contains(trajectory.KindObservation),
+		ToolResult:       batch.Contains(trajectory.KindToolResult),
+		BackgroundResult: batch.Signalled(interaction.SignalBackgroundResult),
+		Parallel:         batch.Triage == eventloop.TriageParallel,
 	}
-	if !cause.Observation && !cause.ToolResult {
+	if !cause.Observation && !cause.ToolResult && !cause.BackgroundResult {
 		return nil
 	}
 	// Only the user's own speech opens a turn. The remote's voice is mirrored
@@ -35,65 +38,60 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		return nil
 	}
 	revision := runtime.latestRevision(batch)
+	cause.SlowInvocations = runtime.engine.SlowInvocations(revision)
+	plan := runtime.policies.Rollout.Plan(interaction.RolloutInput{
+		Context: interaction.Context{
+			NowNS: runtime.scheduler.NowNS(), Duplex: runtime.duplex.Snapshot(),
+		},
+		Cause: cause,
+	})
+	request := cognition.Request{SourceRevision: revision}
 	var failures []error
-
-	for iteration := 0; iteration < maxRolloutIterations; iteration++ {
-		cause.SlowInvocations = runtime.engine.SlowInvocations(revision)
-		plan := runtime.policies.Rollout.Plan(interaction.RolloutInput{
-			Context: interaction.Context{
-				NowNS: runtime.scheduler.NowNS(), Duplex: runtime.duplex.Snapshot(),
-			},
-			Cause: cause,
-		})
-		if len(plan) == 0 {
-			return errors.Join(failures...)
+	for _, step := range plan {
+		var err error
+		switch step.Kind {
+		case interaction.StepSlow:
+			err = runtime.runSlow(ctx, request)
+		case interaction.StepFast:
+			// The remote is the voice. Giving it the answer is what speaking
+			// means in this binding.
+			err = runtime.handOff(ctx)
+		default:
+			err = fmt.Errorf("upstream cannot run a %s step", step.Kind)
 		}
-		request := cognition.Request{SourceRevision: revision}
-		previous := cause
-		cause.Observation, cause.ToolResult, cause.SlowCommitted = false, false, false
-
-		for _, step := range plan {
-			switch step.Kind {
-			case interaction.StepSlow:
-				result, err := runtime.engine.RunSlow(ctx, request, nil)
-				if err != nil {
-					failures = append(failures, err)
-					return errors.Join(failures...)
-				}
-				if len(result.ToolCalls) > 0 {
-					dispatched, dispatchErr := runtime.dispatch(ctx, result)
-					if dispatchErr != nil {
-						failures = append(failures, dispatchErr)
-						return errors.Join(failures...)
-					}
-					cause.ToolResult = dispatched
-					if !dispatched {
-						return errors.Join(failures...)
-					}
-					continue
-				}
-				if strings.TrimSpace(result.AssistantText) != "" {
-					cause.SlowCommitted = true
-					runtime.rememberAnswer(result.AssistantText)
-				}
-			case interaction.StepVoice:
-				if err := runtime.handOff(ctx); err != nil {
-					failures = append(failures, err)
-					return errors.Join(failures...)
-				}
-			default:
-				// A fast step would be a second voice. The stand-in provider
-				// refuses to run, so this is defensive rather than reachable.
-				failures = append(failures, fmt.Errorf("upstream cannot run a %s step: the remote owns the voice", step.Kind))
-				return errors.Join(failures...)
-			}
+		if err != nil {
+			failures = append(failures, err)
+			break
 		}
-		if !cause.SlowCommitted && !cause.ToolResult {
-			return errors.Join(failures...)
-		}
-		_ = previous
 	}
 	return errors.Join(failures...)
+}
+
+// runSlow deliberates and acts. Its answer is remembered for the hand-off and
+// announced as a signal, so the loop decides when the remote is told.
+func (runtime *runtime) runSlow(ctx context.Context, request cognition.Request) error {
+	result, err := runtime.engine.RunSlow(ctx, request, nil)
+	if err != nil {
+		return err
+	}
+	if len(result.ToolCalls) > 0 {
+		return runtime.dispatch(ctx, result)
+	}
+	if strings.TrimSpace(result.AssistantText) != "" {
+		runtime.rememberAnswer(result.AssistantText)
+		return runtime.signal(interaction.SignalBackgroundResult)
+	}
+	return nil
+}
+
+// signal opens a safe point because a cognition phase finished. It appends
+// nothing: what it refers to is already in the trajectory.
+func (runtime *runtime) signal(eventType string) error {
+	_, err := runtime.coordinator.Submit(eventloop.Event{
+		Type: eventType, Source: "cognition", Channel: "cognition",
+		Priority: eventloop.PriorityRoutine, Kind: eventloop.KindSignal,
+	})
+	return err
 }
 
 func batchHasUserSpeech(batch eventloop.Batch) bool {
@@ -177,7 +175,7 @@ func (runtime *runtime) handOffBySessionInstruction(ctx context.Context, answer 
 // dispatch splits the slow provider's calls between local execution and the
 // client, exactly as the cascade does. The remote is never asked to execute a
 // call: it has no authority over these tools.
-func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunResult) (bool, error) {
+func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunResult) error {
 	var local, remote []trajectory.ToolCall
 	for _, call := range result.ToolCalls {
 		call.Arguments = slices.Clone(call.Arguments)
@@ -190,29 +188,27 @@ func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunRes
 	}
 	if len(remote) > 0 {
 		if err := runtime.clientCalls.Track(result.InvocationID, result.ToolCalls); err != nil {
-			return false, err
+			return err
 		}
 		if err := runtime.sink.ToolCalls(ctx, binding.ToolCallEvent{
 			InvocationID: result.InvocationID, Calls: remote,
 		}); err != nil {
-			return false, err
+			return err
 		}
 	}
 	if len(local) == 0 {
-		return false, nil
+		return nil
 	}
 	results, err := runtime.tools.DispatchAll(ctx, local)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if len(remote) > 0 {
 		runtime.clientCalls.Hold(result.InvocationID, results)
-		return false, nil
+		return nil
 	}
-	if err := runtime.engine.AppendToolResults(result.InvocationID, results); err != nil {
-		return false, err
-	}
-	return true, nil
+	// Locally dispatched results rejoin exactly where a client's do.
+	return runtime.commitToolResults(result.InvocationID, results)
 }
 
 // ToolResult accepts a client-executed result for a call the background

@@ -1,7 +1,6 @@
 package interaction
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -18,11 +17,23 @@ const (
 	// StepSlow runs the slow cognition provider. Its output appends and is
 	// never voiced directly.
 	StepSlow StepKind = "slow"
-	// StepVoice runs the fast provider for the sole purpose of voicing what
-	// slow has already committed. It exists because slow cannot speak: the
-	// short extra hop is what buys the removal of the race where slow
-	// contradicts something fast already said.
-	StepVoice StepKind = "voice"
+)
+
+// The signals a cognition phase raises when it finishes.
+//
+// Each opens a safe point so the loop reconsiders, and neither appends
+// anything: what they refer to is already in the trajectory. Travelling as
+// events is the whole point - it is what puts the decision of when to act back
+// in the one place that owns it, instead of in whichever step happened to
+// finish.
+const (
+	// SignalEscalated says the fast turn handed the work on. What it starts is
+	// deliberation, which is never heard, so the gate admits it at once.
+	SignalEscalated = "cognition.escalated"
+	// SignalBackgroundResult says a slow continuation finished and left a
+	// result nobody has spoken from. What it starts is a spoken turn, so it
+	// passes the gate exactly as any other spoken turn does.
+	SignalBackgroundResult = "cognition.background_result"
 )
 
 // Step is one action in a rollout plan.
@@ -40,15 +51,27 @@ func (step Step) Phase() trajectory.Phase {
 }
 
 // Cause is what opened the rollout: what arrived at the safe point.
+//
+// Every field is a fact about the committed batch, never about content. One
+// batch causes at most one spoken turn and at most one deliberation, and
+// anything either of them produces arrives later as its own batch - which is
+// what keeps this a policy over events rather than a private loop.
 type Cause struct {
 	Observation bool `json:"observation"`
 	ToolResult  bool `json:"tool_result"`
 	// PendingRepair is set when the batch left an unresolved audible-repair
-	// obligation, which is a reason to run slow even with nothing else new.
+	// obligation, which is a reason to deliberate even with nothing else new.
 	PendingRepair bool `json:"pending_repair"`
-	// SlowCommitted is set when the previous step in this turn was a slow
-	// continuation that produced assistant content nobody has voiced yet.
-	SlowCommitted bool `json:"slow_committed"`
+	// Escalated is set when the fast turn handed the work on: it named a
+	// capability it cannot execute, or said the turn needs deliberation.
+	//
+	// It is why slow does not run on every observation. A turn fast can answer
+	// outright is answered once, and the failure where a simple question is
+	// processed twice - and heard twice - cannot arise.
+	Escalated bool `json:"escalated"`
+	// BackgroundResult is set when a slow continuation finished and left a
+	// written result nobody has spoken from yet.
+	BackgroundResult bool `json:"background_result"`
 	// SlowInvocations is how many slow continuations this turn has already
 	// run, so a rollout can stop rather than loop.
 	SlowInvocations int `json:"slow_invocations"`
@@ -83,23 +106,18 @@ type RolloutOptions struct {
 	// fast provider can give one because it shares the trajectory and knows
 	// what came back. Whether it does is one of the levers F2 varies.
 	ToolResultProgress bool
-	// VoiceSlowOutput runs a fast step to voice what slow committed. Turning
-	// it off is what "slow-only, written" looks like, which is a legitimate
-	// configuration for a text client and a useful control condition.
-	VoiceSlowOutput bool
 }
 
 type fastThenSlowRollout struct {
 	options RolloutOptions
 }
 
-// NewFastThenSlowRollout is the reference arrangement: fast answers now, slow
-// reasons and acts, and a fast step voices what slow produced.
+// NewFastThenSlowRollout is the reference arrangement: fast answers now, and
+// deliberates only when fast asks it to.
 func NewFastThenSlowRollout(options RolloutOptions) Rollout {
 	if options.MaxSlowInvocations <= 0 {
 		options.MaxSlowInvocations = 8
 	}
-	options.VoiceSlowOutput = true
 	return fastThenSlowRollout{options: options}
 }
 
@@ -111,6 +129,13 @@ func (rollout fastThenSlowRollout) Name() string {
 	return name
 }
 
+// Plan answers one committed batch, and never re-plans what it produces.
+//
+// There is exactly one kind of spoken turn, and the fast provider is it. A
+// question is answered by a fast turn; a finished background result is spoken
+// by a fast turn reading the same trajectory. Nothing here asks a provider to
+// recite what another provider wrote, because a step that could would be a
+// second answer to a question that already had one.
 func (rollout fastThenSlowRollout) Plan(input RolloutInput) []Step {
 	if input.Cause.Parallel {
 		// A parallel branch answers the question that arrived and nothing
@@ -121,20 +146,23 @@ func (rollout fastThenSlowRollout) Plan(input RolloutInput) []Step {
 		}
 		return nil
 	}
-	if input.Cause.SlowCommitted {
-		return []Step{{Kind: StepVoice, Reason: "voice the slow continuation"}}
-	}
 	var steps []Step
-	if input.Cause.Observation {
+	switch {
+	case input.Cause.Observation:
 		steps = append(steps, Step{Kind: StepFast, Reason: "answer now"})
-	}
-	if input.Cause.ToolResult && rollout.options.ToolResultProgress {
+	case input.Cause.BackgroundResult:
+		steps = append(steps, Step{Kind: StepFast, Reason: "the background reasoner finished"})
+	case input.Cause.ToolResult && rollout.options.ToolResultProgress:
 		steps = append(steps, Step{Kind: StepFast, Reason: "report progress"})
 	}
 	if input.Cause.SlowInvocations >= rollout.options.MaxSlowInvocations {
 		return steps
 	}
-	if input.Cause.Observation || input.Cause.ToolResult || input.Cause.PendingRepair {
+	// Slow runs when it was asked for, when a result it is waiting on came
+	// back, or when a correction is owed. An observation alone is not a
+	// reason: whether the turn needs deliberation is fast's to judge, and it
+	// has just judged it.
+	if input.Cause.Escalated || input.Cause.ToolResult || input.Cause.PendingRepair {
 		steps = append(steps, Step{Kind: StepSlow, Reason: "reason and act"})
 	}
 	return steps
@@ -159,24 +187,13 @@ type slowOnlyRollout struct {
 	options RolloutOptions
 }
 
-// NewEndpointedSlowOnlyRollout runs only the slow provider and voices its
-// output. It is what a conventional agent does: correct, and with the dead air
-// that this project exists to remove.
+// NewEndpointedSlowOnlyRollout deliberates before saying anything. It is what
+// a conventional agent does: correct, and with the dead air that this project
+// exists to remove.
 func NewEndpointedSlowOnlyRollout(options RolloutOptions) Rollout {
 	if options.MaxSlowInvocations <= 0 {
 		options.MaxSlowInvocations = 8
 	}
-	// The voice step is the only way anything this rollout produces reaches
-	// the client: the slow provider is silent by construction, so its answer
-	// is committed to the trajectory and delivered by the fast step that reads
-	// it back. Without that step there is no output path at all - not quieter
-	// speech, no response - and a client that asked for one waits forever.
-	//
-	// Forced rather than defaulted, exactly as the fast+slow rollout forces
-	// it, because no caller has a reason for a rollout whose entire output is
-	// discarded. Tool execution is unaffected either way: the plan only
-	// consults this once slow has committed text.
-	options.VoiceSlowOutput = true
 	return slowOnlyRollout{options: options}
 }
 
@@ -186,11 +203,11 @@ func (rollout slowOnlyRollout) Plan(input RolloutInput) []Step {
 	if input.Cause.Parallel {
 		return nil
 	}
-	if input.Cause.SlowCommitted {
-		if !rollout.options.VoiceSlowOutput {
-			return nil
-		}
-		return []Step{{Kind: StepVoice, Reason: "voice the slow continuation"}}
+	// The control condition differs in one place: an observation goes straight
+	// to deliberation instead of being answered first. What speaks afterwards
+	// is the same fast turn, for the same reason.
+	if input.Cause.BackgroundResult {
+		return []Step{{Kind: StepFast, Reason: "the background reasoner finished"}}
 	}
 	if input.Cause.SlowInvocations >= rollout.options.MaxSlowInvocations {
 		return nil
@@ -214,12 +231,3 @@ func ParseRollout(value string, options RolloutOptions) (Rollout, error) {
 		return nil, fmt.Errorf("rollout must be fast-only, fast+slow, or endpointed-slow-only, got %q", value)
 	}
 }
-
-// ErrSlowMaySpeak reports a provider arrangement that would let the slow
-// provider be heard directly. It is returned by ValidateArrangement rather
-// than being silently corrected: a runtime that quietly muted a provider would
-// be running a different arrangement than the one it was configured with.
-var ErrSlowMaySpeak = errors.New("slow provider must not have voice authority")
-
-// ErrFastMayExecute reports a fast provider that could cause a side effect.
-var ErrFastMayExecute = errors.New("fast provider must not have executable-tool authority")

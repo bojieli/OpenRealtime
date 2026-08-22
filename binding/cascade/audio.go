@@ -359,7 +359,8 @@ func (runtime *runtime) commitObservation(ctx context.Context, observation perce
 		// recorded as owing a repair. Those are the only two outcomes there
 		// are: audio that reached the user cannot be taken back, so the honest
 		// move is to owe a correction rather than to pretend it was cancelled.
-		runtime.coordinator.Interrupt(errors.New("superseded by a newer canonical observation"))
+		runtime.coordinator.Interrupt(fmt.Errorf(
+			"superseded by a newer canonical observation: %w", eventloop.ErrInterrupted))
 		cancelled, _ := runtime.speech.CancelMatching("superseded by a newer observation", func(utterance actionUtterance) bool {
 			return utterance.SourceRevision < revision
 		})

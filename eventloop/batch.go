@@ -43,6 +43,15 @@ func (batch Batch) Contains(kind trajectory.Kind) bool {
 	return slices.ContainsFunc(batch.Items, func(item trajectory.Item) bool { return item.Kind == kind })
 }
 
+// Signalled reports whether the batch carries a signal of the given type. A
+// signal appends no item, so it is the one thing a batch is asked about by
+// name rather than by trajectory kind.
+func (batch Batch) Signalled(eventType string) bool {
+	return slices.ContainsFunc(batch.Events, func(event Event) bool {
+		return event.Kind == KindSignal && event.Type == eventType
+	})
+}
+
 // merge concatenates committed batches in commit order. It is how deferred
 // work rejoins the run it was waiting for.
 func merge(batches []Batch) Batch {
@@ -123,6 +132,9 @@ func (coordinator *Coordinator) compile(snapshot trajectory.Snapshot, events []E
 	}
 
 	for _, event := range events {
+		if event.Kind == KindSignal {
+			continue
+		}
 		metadata := &trajectory.EventMetadata{
 			EventID: event.EventID, Type: event.Type, Source: event.Source,
 			Channel: event.Channel, OccurredNS: event.OccurredNS, CorrelationID: event.CorrelationID,

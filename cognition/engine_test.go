@@ -130,7 +130,7 @@ func TestFastEmittedCallsCommitAsNonExecutableProposals(t *testing.T) {
 	}
 }
 
-func TestSlowOutputIsRecordedSilentAndVoicedByAFastStep(t *testing.T) {
+func TestSlowIsSilentAndFastKnowsCapabilitiesWithoutTools(t *testing.T) {
 	store := trajectory.NewStore()
 	seed(t, store)
 	fast := fastProvider(continuation.Event{Kind: continuation.EventAssistantDelta, Text: "You have forty dollars."})
@@ -139,7 +139,7 @@ func TestSlowOutputIsRecordedSilentAndVoicedByAFastStep(t *testing.T) {
 		Text: "The account balance is $40.00 as of the most recent statement.",
 	})
 	engine, err := cognition.New(cognition.Config{
-		Store: store, Fast: fast, Slow: slow, RequireSilentSlow: true,
+		Store: store, Fast: fast, Slow: slow, Catalog: catalog{}, RequireSilentSlow: true,
 	})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
@@ -164,15 +164,19 @@ func TestSlowOutputIsRecordedSilentAndVoicedByAFastStep(t *testing.T) {
 		t.Fatalf("the log must record that slow could not speak, got %q", slowAssistant.Producer.SpeechAuthority)
 	}
 
-	if _, err := engine.RunVoice(context.Background(), cognition.Request{SourceRevision: 1}, nil); err != nil {
-		t.Fatalf("run voice: %v", err)
+	// Fast is told what the agent can do, and given no tools to call: its
+	// authority is to hand the turn on, not to act.
+	if _, err := engine.RunFast(context.Background(), cognition.Request{SourceRevision: 1}, nil); err != nil {
+		t.Fatalf("run fast: %v", err)
 	}
-	// The voicing step sees the slow answer and gets no tools at all.
 	if len(fast.seen.Invocation.Tools) != 0 {
-		t.Fatal("the voicing step is not deciding anything and needs no tools")
+		t.Fatal("the fast provider cannot execute, so it is offered nothing to execute")
 	}
-	if !strings.Contains(fast.seen.Invocation.Instruction, "voicing an answer, not producing one") {
-		t.Fatalf("unexpected voice instruction: %q", fast.seen.Invocation.Instruction)
+	if len(fast.seen.Invocation.Capabilities) == 0 {
+		t.Fatal("fast must know what the agent can do, or it will deny a capability the agent has")
+	}
+	if !strings.Contains(fast.seen.Invocation.Instruction, continuation.EscalationMarker) {
+		t.Fatalf("fast must be told how to hand the turn on: %q", fast.seen.Invocation.Instruction)
 	}
 }
 
@@ -223,12 +227,6 @@ func TestPlaceholdersCloseOutInterruptedCalls(t *testing.T) {
 	}
 	if len(trajectory.UnresolvedToolCalls(store.Snapshot())) != 0 {
 		t.Fatal("the interrupted prefix must be well-formed")
-	}
-	// The result may still arrive and supersede the placeholder.
-	if err := engine.AppendToolResults("inv-1", []trajectory.ToolResult{
-		{CallID: "c1", Name: "get_balance", Output: json.RawMessage(`{"balance":40}`)},
-	}); err != nil {
-		t.Fatalf("late result: %v", err)
 	}
 }
 

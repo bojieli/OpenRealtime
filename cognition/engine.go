@@ -50,13 +50,12 @@ type Config struct {
 	// AgentInstruction is the deployment's own instruction, composed ahead of
 	// each phase instruction.
 	AgentInstruction string
-	// FastInstruction, SlowInstruction, and VoiceInstruction override the
+	// FastInstruction and SlowInstruction override the
 	// shipped phase instructions. Empty selects the shipped text.
-	FastInstruction  string
-	SlowInstruction  string
-	VoiceInstruction string
-	FastMaxTokens    int
-	SlowMaxTokens    int
+	FastInstruction string
+	SlowInstruction string
+	FastMaxTokens   int
+	SlowMaxTokens   int
 	// RequireSilentSlow enforces the second cognition boundary at
 	// construction. A single-provider arrangement sets it false.
 	RequireSilentSlow bool
@@ -82,7 +81,6 @@ type Engine struct {
 	capabilities []continuation.Capability
 	fastPrompt   string
 	slowPrompt   string
-	voicePrompt  string
 }
 
 // New validates the provider arrangement and creates an engine.
@@ -140,9 +138,6 @@ func New(config Config) (*Engine, error) {
 	if config.SlowInstruction == "" {
 		config.SlowInstruction = SlowInstruction
 	}
-	if config.VoiceInstruction == "" {
-		config.VoiceInstruction = VoiceInstruction
-	}
 	if config.Now == nil {
 		origin := time.Now()
 		config.Now = func() uint64 { return uint64(time.Since(origin)) }
@@ -169,9 +164,8 @@ func New(config Config) (*Engine, error) {
 	}
 	return &Engine{
 		config: config, runner: runner, capabilities: capabilities,
-		fastPrompt:  Compose(config.AgentInstruction, config.FastInstruction),
-		slowPrompt:  Compose(config.AgentInstruction, config.SlowInstruction),
-		voicePrompt: Compose(config.AgentInstruction, config.VoiceInstruction),
+		fastPrompt: Compose(config.AgentInstruction, config.FastInstruction),
+		slowPrompt: Compose(config.AgentInstruction, config.SlowInstruction),
 	}, nil
 }
 
@@ -202,22 +196,7 @@ func (engine *Engine) RunFast(ctx context.Context, request Request, observer Str
 	}
 	return engine.run(ctx, engine.config.Fast, trajectory.PhaseFast, continuation.Invocation{
 		Instruction: engine.instruction(engine.fastPrompt, request), SourceRevision: request.SourceRevision,
-		Capabilities: slices.Clone(engine.capabilities), Tools: engine.proposalTools(),
-		MaxOutputTokens: engine.config.FastMaxTokens,
-	}, observer)
-}
-
-// RunVoice runs the fast provider over what slow has already committed. It is
-// the step that exists because slow cannot speak.
-func (engine *Engine) RunVoice(ctx context.Context, request Request, observer StreamObserver) (continuation.RunResult, error) {
-	if engine.config.ExternalFast {
-		return continuation.RunResult{}, ErrExternalFast
-	}
-	return engine.run(ctx, engine.config.Fast, trajectory.PhaseFast, continuation.Invocation{
-		Instruction: engine.instruction(engine.voicePrompt, request), SourceRevision: request.SourceRevision,
-		Capabilities: slices.Clone(engine.capabilities),
-		// The voicing step gets no tool definitions at all. It is not deciding
-		// anything; it is saying what was decided.
+		Capabilities:    slices.Clone(engine.capabilities),
 		MaxOutputTokens: engine.config.FastMaxTokens,
 	}, observer)
 }
@@ -236,7 +215,7 @@ func (engine *Engine) PrepareFast(
 	}
 	return engine.runner.Prepare(ctx, engine.config.Fast, continuation.Invocation{
 		Instruction: engine.instruction(engine.fastPrompt, request), SourceRevision: request.SourceRevision,
-		Capabilities: slices.Clone(engine.capabilities), Tools: engine.proposalTools(),
+		Capabilities:    slices.Clone(engine.capabilities),
 		MaxOutputTokens: engine.config.FastMaxTokens,
 	}, provisional, nil)
 }
@@ -304,38 +283,6 @@ func (engine *Engine) run(
 	}
 	result, err := engine.runner.Run(ctx, provider, invocation, stream)
 	return result, errors.Join(err, observerErr)
-}
-
-// AppendToolResults commits one invocation's complete outstanding call set as
-// a single version-checked transaction. Results may arrive in any order;
-// canonical order follows the model's call order.
-func (engine *Engine) AppendToolResults(invocationID string, results []trajectory.ToolResult) error {
-	snapshot := engine.config.Store.Snapshot()
-	matched, err := trajectory.MatchToolResultBatch(snapshot, invocationID, results)
-	if err != nil {
-		return err
-	}
-	items := make([]trajectory.Item, 0, len(matched))
-	parentID := snapshot.Items[len(snapshot.Items)-1].ID
-	for _, pair := range matched {
-		parents := []string{parentID}
-		if pair.Pending.ItemID != parentID {
-			parents = append(parents, pair.Pending.ItemID)
-		}
-		result := pair.Result
-		item := trajectory.Item{
-			ID: engine.config.NextID("tool-result"), Kind: trajectory.KindToolResult,
-			MonotonicNS: engine.config.Now(), CausalParentIDs: parents,
-			SourceRevision: pair.Pending.SourceRevision, InvocationID: invocationID,
-			Producer: trajectory.Producer{Phase: trajectory.PhaseTool}, ToolResult: &result,
-		}
-		items = append(items, item)
-		parentID = item.ID
-	}
-	if err := engine.config.Store.AppendBatchAt(snapshot.Version, items); err != nil {
-		return fmt.Errorf("commit tool result batch for invocation %q: %w", invocationID, err)
-	}
-	return nil
 }
 
 // PlaceholderForInterrupted records a placeholder for every executable call
@@ -406,13 +353,6 @@ func (engine *Engine) executableTools() []continuation.ToolDefinition {
 		tools[index].Parameters = slices.Clone(tools[index].Parameters)
 	}
 	return tools
-}
-
-func (engine *Engine) proposalTools() []continuation.ToolDefinition {
-	if engine.config.Fast.Descriptor().EffectiveToolAuthority() != continuation.ToolAuthorityPropose {
-		return nil
-	}
-	return engine.executableTools()
 }
 
 func validateCapabilities(capabilities []continuation.Capability) error {

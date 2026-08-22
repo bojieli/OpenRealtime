@@ -134,9 +134,7 @@ func New(spec Spec, config Config) (*Binding, error) {
 // "who owns the floor" a single answer.
 func DefaultPolicies(spec Spec) interaction.Policies {
 	policies := interaction.Defaults()
-	policies.Rollout = interaction.NewEndpointedSlowOnlyRollout(interaction.RolloutOptions{
-		VoiceSlowOutput: true,
-	})
+	policies.Rollout = interaction.NewEndpointedSlowOnlyRollout(interaction.RolloutOptions{})
 	policies.Trigger = interaction.NewEndpointTrigger()
 	policies.Preparation = interaction.NewEndpointPreparation()
 	if spec.Floor == binding.OwnerModel {

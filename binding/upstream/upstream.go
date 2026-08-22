@@ -173,9 +173,7 @@ func defaultPolicies() interaction.Policies {
 	policies := interaction.Defaults()
 	// The remote is the fast provider. The engine's rollout must therefore run
 	// slow and hand the answer back, never run a second voice of its own.
-	policies.Rollout = interaction.NewEndpointedSlowOnlyRollout(interaction.RolloutOptions{
-		VoiceSlowOutput: true,
-	})
+	policies.Rollout = interaction.NewEndpointedSlowOnlyRollout(interaction.RolloutOptions{})
 	policies.Trigger = interaction.NewEndpointTrigger()
 	policies.Preparation = interaction.NewEndpointPreparation()
 	// The remote paces and cancels its own speech, so the engine does not

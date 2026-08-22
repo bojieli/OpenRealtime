@@ -91,24 +91,28 @@ func TestContinuousPreparationPacesOnlyTheSlowPhase(t *testing.T) {
 	}
 }
 
-func TestFastThenSlowVoicesSlowThroughAFastStep(t *testing.T) {
+func TestFastThenSlowRunsSlowOnlyWhenFastAsks(t *testing.T) {
 	rollout := interaction.NewFastThenSlowRollout(interaction.RolloutOptions{})
 	plan := rollout.Plan(interaction.RolloutInput{Cause: interaction.Cause{Observation: true}})
-	if len(plan) != 2 || plan[0].Kind != interaction.StepFast || plan[1].Kind != interaction.StepSlow {
-		t.Fatalf("an observation answers now and reasons after: %+v", plan)
+	if len(plan) != 1 || plan[0].Kind != interaction.StepFast {
+		t.Fatalf("a question fast can answer is answered once: %+v", plan)
 	}
-	voiced := rollout.Plan(interaction.RolloutInput{Cause: interaction.Cause{SlowCommitted: true}})
-	if len(voiced) != 1 || voiced[0].Kind != interaction.StepVoice {
-		t.Fatalf("slow output is voiced by a fast step: %+v", voiced)
+	escalated := rollout.Plan(interaction.RolloutInput{Cause: interaction.Cause{Escalated: true}})
+	if len(escalated) != 1 || escalated[0].Kind != interaction.StepSlow {
+		t.Fatalf("deliberation runs when fast hands the turn on: %+v", escalated)
 	}
-	if voiced[0].Phase() != trajectory.PhaseFast {
-		t.Fatal("the voicing step must run the fast provider")
+	spoken := rollout.Plan(interaction.RolloutInput{Cause: interaction.Cause{BackgroundResult: true}})
+	if len(spoken) != 1 || spoken[0].Kind != interaction.StepFast {
+		t.Fatalf("a finished background result is spoken by a fast turn: %+v", spoken)
+	}
+	if spoken[0].Phase() != trajectory.PhaseFast {
+		t.Fatal("the only phase that speaks is fast")
 	}
 	bounded := rollout.Plan(interaction.RolloutInput{
-		Cause: interaction.Cause{Observation: true, SlowInvocations: 8},
+		Cause: interaction.Cause{Escalated: true, SlowInvocations: 8},
 	})
-	if len(bounded) != 1 || bounded[0].Kind != interaction.StepFast {
-		t.Fatalf("the slow invocation bound must stop the loop: %+v", bounded)
+	if len(bounded) != 0 {
+		t.Fatalf("the slow invocation bound must stop the chain: %+v", bounded)
 	}
 }
 

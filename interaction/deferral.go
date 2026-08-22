@@ -37,6 +37,16 @@ type Waiting struct {
 	Repair      bool `json:"repair"`
 	// Parallel marks a batch the loop may run alongside work in flight.
 	Parallel bool `json:"parallel"`
+	// Deliberation marks a batch whose work is background reasoning: the fast
+	// turn handed one on, or a result the reasoner is waiting for came back.
+	//
+	// Nothing it does is heard, so no duplex state is a reason to hold it.
+	// Waiting for silence before starting to think is precisely what a
+	// background reasoner exists not to do: it reasons and calls tools while
+	// the voice is still talking, and a gate that deferred it would remove the
+	// concurrency the arrangement exists for. What that reasoning eventually
+	// produces is gated, because that is the part anyone hears.
+	Deliberation bool `json:"deliberation,omitempty"`
 	// Requested reports that the client has asked for a response. It is only
 	// meaningful to a policy that waits for one: a session running server VAD
 	// creates responses itself and never consults it.
@@ -50,11 +60,12 @@ type Waiting struct {
 // WaitingFrom reduces a committed batch to what a deferral policy may see.
 func WaitingFrom(batch eventloop.Batch, state session.Snapshot) Waiting {
 	return Waiting{
-		Duplex:      state,
-		Observation: batch.Contains(trajectory.KindObservation),
-		ToolResult:  batch.Contains(trajectory.KindToolResult),
-		Repair:      batch.Contains(trajectory.KindRepair),
-		Parallel:    batch.Triage == eventloop.TriageParallel,
+		Duplex:       state,
+		Observation:  batch.Contains(trajectory.KindObservation),
+		ToolResult:   batch.Contains(trajectory.KindToolResult),
+		Repair:       batch.Contains(trajectory.KindRepair),
+		Parallel:     batch.Triage == eventloop.TriageParallel,
+		Deliberation: batch.Signalled(SignalEscalated) || batch.Contains(trajectory.KindToolResult),
 	}
 }
 
@@ -112,6 +123,10 @@ func (policy duplexDeferral) Admit(waiting Waiting) (bool, string) {
 	// when it can be handled without disturbing the work in flight, and making
 	// it wait for silence would defeat the branch entirely.
 	if waiting.Parallel {
+		return true, ""
+	}
+	// Thinking is not speech. See Waiting.Deliberation.
+	if waiting.Deliberation {
 		return true, ""
 	}
 	if policy.options.DeferUnderBackpressure && waiting.Backpressure {

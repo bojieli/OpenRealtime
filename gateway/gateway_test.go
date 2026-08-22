@@ -420,7 +420,7 @@ func (client *client) configurePCM16(extension map[string]any) {
 
 func TestUnmodifiedRealtimeClientCompletesAVoiceTurn(t *testing.T) {
 	server := startServer(t,
-		fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking."}},
+		fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking." + continuation.EscalationMarker}},
 			[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Forty dollars."}}),
 		slow([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "The balance is $40.00."}}),
 		"what is my balance")
@@ -447,7 +447,7 @@ func TestUnmodifiedRealtimeClientCompletesAVoiceTurn(t *testing.T) {
 
 func TestFunctionCallingRoundTripsUnmodified(t *testing.T) {
 	server := startServer(t,
-		fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking."}},
+		fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking." + continuation.EscalationMarker}},
 			[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Forty dollars."}}),
 		slow([]continuation.Event{{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
 			CallID: "call_1", Name: "get_balance", Arguments: json.RawMessage(`{"account":"A1"}`),

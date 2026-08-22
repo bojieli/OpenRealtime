@@ -19,8 +19,6 @@ import (
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
-const maxRolloutIterations = 16
-
 // mirror reads the sidecar and does two things with what it produces:
 // forwards it to the client, and commits what matters to the canonical
 // trajectory so the background reasoner sees the conversation the model is
@@ -231,71 +229,74 @@ func (runtime *runtime) modelToolCall(message sidecar.Message) error {
 // Process runs the background reasoner over the mirrored conversation.
 func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) error {
 	cause := interaction.Cause{
-		Observation: batch.Contains(trajectory.KindObservation),
-		ToolResult:  batch.Contains(trajectory.KindToolResult),
-		Parallel:    batch.Triage == eventloop.TriageParallel,
+		Observation:      batch.Contains(trajectory.KindObservation),
+		ToolResult:       batch.Contains(trajectory.KindToolResult),
+		BackgroundResult: batch.Signalled(interaction.SignalBackgroundResult),
+		Parallel:         batch.Triage == eventloop.TriageParallel,
 	}
-	if !cause.Observation && !cause.ToolResult {
+	if !cause.Observation && !cause.ToolResult && !cause.BackgroundResult {
 		return nil
 	}
 	if cause.Observation && !batchHasUserSpeech(batch) && !cause.ToolResult {
 		return nil
 	}
 	revision := runtime.latestRevision(batch)
+	cause.SlowInvocations = runtime.engine.SlowInvocations(revision)
+	plan := runtime.policies.Rollout.Plan(interaction.RolloutInput{
+		Context: interaction.Context{
+			NowNS: runtime.scheduler.NowNS(), Duplex: runtime.duplex.Snapshot(),
+		},
+		Cause: cause,
+	})
+	request := cognition.Request{SourceRevision: revision}
 	var failures []error
-
-	for iteration := 0; iteration < maxRolloutIterations; iteration++ {
-		cause.SlowInvocations = runtime.engine.SlowInvocations(revision)
-		plan := runtime.policies.Rollout.Plan(interaction.RolloutInput{
-			Context: interaction.Context{
-				NowNS: runtime.scheduler.NowNS(), Duplex: runtime.duplex.Snapshot(),
-			},
-			Cause: cause,
-		})
-		if len(plan) == 0 {
-			return errors.Join(failures...)
+	for _, step := range plan {
+		var err error
+		switch step.Kind {
+		case interaction.StepSlow:
+			err = runtime.runSlow(ctx, request)
+		case interaction.StepFast:
+			// The model is the voice. Giving it the answer is what speaking
+			// means in this binding.
+			err = runtime.handOff()
+		default:
+			err = fmt.Errorf("%s cannot run a %s step: the model owns the voice", runtime.spec.Name, step.Kind)
 		}
-		request := cognition.Request{SourceRevision: revision}
-		cause.Observation, cause.ToolResult, cause.SlowCommitted = false, false, false
-
-		for _, step := range plan {
-			switch step.Kind {
-			case interaction.StepSlow:
-				result, err := runtime.engine.RunSlow(ctx, request, nil)
-				if err != nil {
-					return errors.Join(append(failures, err)...)
-				}
-				if len(result.ToolCalls) > 0 {
-					dispatched, dispatchErr := runtime.dispatch(ctx, result)
-					if dispatchErr != nil {
-						return errors.Join(append(failures, dispatchErr)...)
-					}
-					cause.ToolResult = dispatched
-					if !dispatched {
-						return errors.Join(failures...)
-					}
-					continue
-				}
-				if strings.TrimSpace(result.AssistantText) != "" {
-					cause.SlowCommitted = true
-					runtime.stateMu.Lock()
-					runtime.answer = strings.TrimSpace(result.AssistantText)
-					runtime.stateMu.Unlock()
-				}
-			case interaction.StepVoice:
-				if err := runtime.handOff(); err != nil {
-					return errors.Join(append(failures, err)...)
-				}
-			default:
-				return errors.Join(append(failures,
-					fmt.Errorf("%s cannot run a %s step: the model owns the voice", runtime.spec.Name, step.Kind))...)
-			}
-		}
-		if !cause.SlowCommitted && !cause.ToolResult {
-			return errors.Join(failures...)
+		if err != nil {
+			failures = append(failures, err)
+			break
 		}
 	}
 	return errors.Join(failures...)
+}
+
+// runSlow deliberates and acts. Its answer is remembered for the hand-off and
+// announced as a signal, so the loop decides when the model is told.
+func (runtime *runtime) runSlow(ctx context.Context, request cognition.Request) error {
+	result, err := runtime.engine.RunSlow(ctx, request, nil)
+	if err != nil {
+		return err
+	}
+	if len(result.ToolCalls) > 0 {
+		return runtime.dispatch(ctx, result)
+	}
+	if strings.TrimSpace(result.AssistantText) != "" {
+		runtime.stateMu.Lock()
+		runtime.answer = strings.TrimSpace(result.AssistantText)
+		runtime.stateMu.Unlock()
+		return runtime.signal(interaction.SignalBackgroundResult)
+	}
+	return nil
+}
+
+// signal opens a safe point because a cognition phase finished. It appends
+// nothing: what it refers to is already in the trajectory.
+func (runtime *runtime) signal(eventType string) error {
+	_, err := runtime.coordinator.Submit(eventloop.Event{
+		Type: eventType, Source: "cognition", Channel: "cognition",
+		Priority: eventloop.PriorityRoutine, Kind: eventloop.KindSignal,
+	})
+	return err
 }
 
 // handOff gives the model the completed answer to say.
@@ -338,7 +339,7 @@ func batchHasUserSpeech(batch eventloop.Batch) bool {
 	return false
 }
 
-func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunResult) (bool, error) {
+func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunResult) error {
 	var local, remote []trajectory.ToolCall
 	for _, call := range result.ToolCalls {
 		call.Arguments = slices.Clone(call.Arguments)
@@ -351,29 +352,27 @@ func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunRes
 	}
 	if len(remote) > 0 {
 		if err := runtime.clientCalls.Track(result.InvocationID, result.ToolCalls); err != nil {
-			return false, err
+			return err
 		}
 		if err := runtime.sink.ToolCalls(ctx, binding.ToolCallEvent{
 			InvocationID: result.InvocationID, Calls: remote,
 		}); err != nil {
-			return false, err
+			return err
 		}
 	}
 	if len(local) == 0 {
-		return false, nil
+		return nil
 	}
 	results, err := runtime.tools.DispatchAll(ctx, local)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if len(remote) > 0 {
 		runtime.clientCalls.Hold(result.InvocationID, results)
-		return false, nil
+		return nil
 	}
-	if err := runtime.engine.AppendToolResults(result.InvocationID, results); err != nil {
-		return false, err
-	}
-	return true, nil
+	// Locally dispatched results rejoin exactly where a client's do.
+	return runtime.commitToolResults(result.InvocationID, results)
 }
 
 // ToolResult accepts a client-executed result for a call the reasoner issued.

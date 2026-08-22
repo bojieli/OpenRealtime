@@ -66,6 +66,11 @@ func TriageOf(priority Priority) Triage {
 	}
 }
 
+// KindSignal marks an event that opens a safe point without appending
+// anything. It is the empty kind because it is the absence of a payload, not a
+// new kind of trajectory item.
+const KindSignal trajectory.Kind = ""
+
 // Event is one external occurrence. EventID is assigned on Submit when empty.
 // ToolResults is deliberately a batch: one slow invocation's complete set of
 // outstanding calls crosses the synchronization boundary atomically.
@@ -103,6 +108,17 @@ func validateEvent(event Event) error {
 		return fmt.Errorf("%s event cannot supersede an observation", event.Kind)
 	}
 	switch event.Kind {
+	case KindSignal:
+		// A signal appends nothing. It exists to open a safe point at which
+		// the loop reconsiders, because a cognition phase finished and left
+		// the trajectory in a state that may deserve a turn. What it refers to
+		// is already in the log - the continuation runner committed it in its
+		// own version-checked transaction - so appending anything here would
+		// record the same fact twice.
+		if event.Content != "" || len(event.ToolResults) != 0 || event.AssistantState != nil ||
+			event.Repair != nil || event.ToolPlaceholder != nil || event.Observation != nil {
+			return errors.New("signal event carries no trajectory payload")
+		}
 	case trajectory.KindObservation:
 		if strings.TrimSpace(event.Content) == "" || event.Producer.Phase == "" ||
 			len(event.ToolResults) != 0 || event.AssistantState != nil || event.Repair != nil || event.ToolPlaceholder != nil {

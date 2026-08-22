@@ -18,6 +18,7 @@ import (
 	"errors"
 	"math"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -81,7 +82,7 @@ func Start(t testing.TB, config Config) Stack {
 		Provider: "test", Model: "fast", Phase: trajectory.PhaseFast,
 		Effort: continuation.EffortMinimal, ToolAuthority: continuation.ToolAuthorityPropose,
 		SpeechAuthority: continuation.SpeechAuthorityVoice,
-	}, turns: fastTurns, spentBudgetThinking: config.FastSpendsBudgetThinking}
+	}, turns: fastTurns, handsOn: true, spentBudgetThinking: config.FastSpendsBudgetThinking}
 
 	slowTurns := [][]continuation.Event{
 		{{Kind: continuation.EventAssistantDelta, Text: "The notes say the deadline moved to Friday."}},
@@ -156,32 +157,75 @@ type scripted struct {
 	mu         sync.Mutex
 	turns      [][]continuation.Event
 	calls      int
+	// handsOn makes this stand-in behave like a voice rather than a script: it
+	// hands the turn to the reasoner while the reasoner has produced nothing,
+	// and speaks once it has. Which turn that falls on depends on the
+	// transport and on what else opened a turn first, so deciding it from the
+	// conversation is the only way a fixed script cannot get wrong.
+	handsOn bool
 	// spentBudgetThinking reports the completion a provider makes when it
 	// wrote its deliberation into the content field and the output limit is
 	// what stopped it.
 	spentBudgetThinking bool
 }
 
+// invocationsByPhase counts how many continuations this phase has already run
+// in this conversation.
+func invocationsByPhase(snapshot trajectory.Snapshot, phase trajectory.Phase) int {
+	seen := make(map[string]struct{})
+	for _, item := range snapshot.Items {
+		if item.Producer.Phase == phase && item.InvocationID != "" {
+			seen[item.InvocationID] = struct{}{}
+		}
+	}
+	return len(seen)
+}
+
+// awaitingReasoner reports that nothing silent has been written yet, which is
+// what "the reasoner has not answered" looks like in the log.
+func awaitingReasoner(snapshot trajectory.Snapshot) bool {
+	for _, item := range snapshot.Items {
+		if item.Kind == trajectory.KindAssistant && continuation.ProducedSilently(item) {
+			return false
+		}
+	}
+	return true
+}
+
 func (provider *scripted) Descriptor() continuation.Descriptor { return provider.descriptor }
 
 func (provider *scripted) Continue(
-	_ context.Context, _ continuation.Request, emit continuation.Emit,
+	_ context.Context, request continuation.Request, emit continuation.Emit,
 ) (continuation.Completion, error) {
-	provider.mu.Lock()
-	index := provider.calls
-	provider.calls++
+	// Which turn this is comes from the conversation, not from a counter on
+	// the provider. One server holds many sessions, and a counter shared
+	// between them starts the second session in the middle of the first
+	// session's script - so the scenario the test set up never happens.
+	//
+	// The script also runs out rather than cycling. A conversation is longer
+	// than any script, and wrapping round replays the first turn, which for a
+	// provider whose first turn calls a tool means calling it again.
+	index := invocationsByPhase(request.Trajectory, provider.descriptor.Phase)
 	var events []continuation.Event
 	if len(provider.turns) > 0 {
-		events = provider.turns[index%len(provider.turns)]
+		events = provider.turns[min(index, len(provider.turns)-1)]
 	}
-	provider.mu.Unlock()
+	if provider.handsOn && awaitingReasoner(request.Trajectory) {
+		events = append(slices.Clone(events), continuation.Event{
+			Kind: continuation.EventAssistantDelta, Text: continuation.EscalationMarker,
+		})
+	}
 	for _, event := range events {
 		if event.ToolCall != nil {
 			// A fresh identifier per invocation. A cycling script that reused
 			// one would be a duplicate call, which the trajectory refuses -
 			// correctly, and it would look like a client defect.
+			provider.mu.Lock()
+			provider.calls++
+			serial := provider.calls
+			provider.mu.Unlock()
 			call := *event.ToolCall
-			call.CallID = "call_scripted_" + strconv.Itoa(index)
+			call.CallID = "call_scripted_" + strconv.Itoa(serial)
 			event.ToolCall = &call
 		}
 		if err := emit(event); err != nil {

@@ -20,13 +20,15 @@ import (
 // type without importing action for one signature.
 type actionUtterance = action.Utterance
 
-// maxRolloutIterations bounds re-planning within one safe point. A rollout
-// that keeps asking for work is a bug in the policy, and a runaway loop in a
-// live session is worse than a truncated turn.
-const maxRolloutIterations = 16
-
 // Process executes the interaction plane's rollout plan for one committed
 // batch. It is the only place cognition runs.
+//
+// It plans once and returns. Everything a step produces - an escalation, a
+// finished background result, a tool result - re-enters as its own event, and
+// the loop decides when to act on it. A processor that chained its own steps
+// would be a second scheduler for the same conversation, running without the
+// gate that owns that decision, which is how a turn ends up spoken over
+// another one or answered twice.
 func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) error {
 	// An obligation the ledger is holding becomes visible to the model here,
 	// at the first safe point after the evidence that created it committed.
@@ -36,19 +38,26 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	if err := runtime.raiseRepairs(); err != nil {
 		runtime.fail("repair_error", err)
 	}
-	cause := interaction.Cause{
-		Observation:   batch.Contains(trajectory.KindObservation),
-		ToolResult:    batch.Contains(trajectory.KindToolResult),
-		PendingRepair: len(trajectory.PendingRepairs(runtime.store.Snapshot())) > 0,
-		Parallel:      batch.Triage == eventloop.TriageParallel,
-	}
-	if !cause.Observation && !cause.ToolResult && !cause.PendingRepair {
+	revision := runtime.latestRevision(batch)
+	plan := runtime.policies.Rollout.Plan(interaction.RolloutInput{
+		Context: interaction.Context{
+			NowNS: runtime.scheduler.NowNS(), Duplex: runtime.duplex.Snapshot(),
+		},
+		Cause: interaction.Cause{
+			Observation:      batch.Contains(trajectory.KindObservation),
+			Escalated:        batch.Signalled(interaction.SignalEscalated),
+			ToolResult:       batch.Contains(trajectory.KindToolResult),
+			PendingRepair:    len(trajectory.PendingRepairs(runtime.store.Snapshot())) > 0,
+			BackgroundResult: batch.Signalled(interaction.SignalBackgroundResult),
+			SlowInvocations:  runtime.engine.SlowInvocations(revision),
+			Parallel:         batch.Triage == eventloop.TriageParallel,
+		},
+	})
+	if len(plan) == 0 {
 		return nil
 	}
-	revision := runtime.latestRevision(batch)
-	var failures []error
 
-	// Everything this rollout produces belongs to one turn, and the client is
+	// Everything this plan produces belongs to one turn, and the client is
 	// told the turn is done once. Bracketing here rather than around each
 	// output kind is what makes that true: a turn that speaks and then calls a
 	// tool is one response with two output items, not two responses of which
@@ -63,84 +72,76 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		}
 	}()
 
-	for iteration := 0; iteration < maxRolloutIterations; iteration++ {
-		cause.SlowInvocations = runtime.engine.SlowInvocations(revision)
-		plan := runtime.policies.Rollout.Plan(interaction.RolloutInput{
-			Context: interaction.Context{
-				NowNS: runtime.scheduler.NowNS(), Duplex: runtime.duplex.Snapshot(),
-			},
-			Cause: cause,
-		})
-		if len(plan) == 0 {
-			break
+	request := cognition.Request{
+		SourceRevision: revision,
+		PendingRepair:  len(trajectory.PendingRepairs(runtime.store.Snapshot())) > 0,
+	}
+	var failures []error
+	for _, step := range plan {
+		select {
+		case <-ctx.Done():
+			return errors.Join(append(failures, context.Cause(ctx))...)
+		default:
 		}
-		request := cognition.Request{SourceRevision: revision, PendingRepair: cause.PendingRepair}
-		// Each iteration answers what the previous one produced, so the causes
-		// that opened this one are consumed here rather than replanned into a
-		// second answer.
-		cause.Observation, cause.ToolResult, cause.SlowCommitted = false, false, false
-
-		for _, step := range plan {
-			select {
-			case <-ctx.Done():
-				return errors.Join(append(failures, context.Cause(ctx))...)
-			default:
+		if err := runtime.runStep(ctx, step, request, turn); err != nil {
+			failures = append(failures, fmt.Errorf("%s step: %w", step.Kind, err))
+			if ctx.Err() != nil {
+				break
 			}
-			next, err := runtime.runStep(ctx, step, request, &cause, turn)
-			if err != nil {
-				failures = append(failures, fmt.Errorf("%s step: %w", step.Kind, err))
-				if ctx.Err() != nil {
-					return errors.Join(failures...)
-				}
-			}
-			if !next {
-				return errors.Join(failures...)
-			}
-		}
-		if !cause.SlowCommitted && !cause.ToolResult {
-			break
 		}
 	}
 	return errors.Join(failures...)
 }
 
-// runStep executes one rollout step and reports whether the rollout continues.
+// signal opens a safe point because a cognition phase finished. It appends
+// nothing: what it refers to is already in the trajectory.
+func (runtime *runtime) signal(eventType string) error {
+	_, err := runtime.coordinator.Submit(eventloop.Event{
+		Type: eventType, Source: "cognition", Channel: "cognition",
+		Priority: eventloop.PriorityRoutine, Kind: eventloop.KindSignal,
+	})
+	return err
+}
+
+// runStep executes one rollout step.
 func (runtime *runtime) runStep(
-	ctx context.Context, step interaction.Step, request cognition.Request, cause *interaction.Cause,
-	turn *turnReport,
-) (bool, error) {
+	ctx context.Context, step interaction.Step, request cognition.Request, turn *turnReport,
+) error {
 	switch step.Kind {
 	case interaction.StepFast:
-		// A preparation that answered this exact sentence is adopted rather
-		// than regenerated. It is the same continuation, produced earlier.
-		if result, adopted := runtime.adopt(trajectory.PhaseFast, canonicalText(
-			runtime.store.Snapshot(), request.SourceRevision)); adopted {
-			turn.record(result)
-			return true, runtime.publishAssistant(ctx, result)
-		}
-		result, err := runtime.engine.RunFast(ctx, request, nil)
-		turn.record(result)
-		if publishErr := runtime.publishAssistant(ctx, result); publishErr != nil {
-			return false, errors.Join(err, publishErr)
-		}
-		return err == nil, err
-	case interaction.StepVoice:
-		result, err := runtime.engine.RunVoice(ctx, request, nil)
-		turn.record(result)
-		if publishErr := runtime.publishAssistant(ctx, result); publishErr != nil {
-			return false, errors.Join(err, publishErr)
-		}
-		return err == nil, err
+		return runtime.runFast(ctx, request, turn)
 	case interaction.StepSlow:
-		return runtime.runSlow(ctx, request, cause)
+		return runtime.runSlow(ctx, request)
 	default:
-		return false, fmt.Errorf("unknown rollout step %q", step.Kind)
+		return fmt.Errorf("unknown rollout step %q", step.Kind)
 	}
 }
 
-func (runtime *runtime) runSlow(
-	ctx context.Context, request cognition.Request, cause *interaction.Cause,
-) (bool, error) {
+// runFast speaks, and hands the turn on when the fast provider asks it to.
+func (runtime *runtime) runFast(ctx context.Context, request cognition.Request, turn *turnReport) error {
+	// A preparation that answered this exact sentence is adopted rather than
+	// regenerated. It is the same continuation, produced earlier.
+	result, adopted := runtime.adopt(trajectory.PhaseFast, canonicalText(
+		runtime.store.Snapshot(), request.SourceRevision))
+	var err error
+	if !adopted {
+		result, err = runtime.engine.RunFast(ctx, request, nil)
+	}
+	turn.record(result)
+	publishErr := runtime.publishAssistant(ctx, result)
+	var signalErr error
+	// A proposal is fast saying it needs a capability it cannot run, which is
+	// the same hand-off the marker makes explicit.
+	if result.Escalated || len(result.ToolProposals) > 0 {
+		signalErr = runtime.signal(interaction.SignalEscalated)
+	}
+	return errors.Join(err, publishErr, signalErr)
+}
+
+// runSlow deliberates and acts. It never speaks: what it writes is recorded as
+// background state, and the signal it raises is what causes the voice to read
+// that state and say something of its own.
+func (runtime *runtime) runSlow(ctx context.Context, request cognition.Request) error {
 	result, adopted := runtime.adopt(trajectory.PhaseSlow, canonicalText(
 		runtime.store.Snapshot(), request.SourceRevision))
 	var err error
@@ -153,34 +154,25 @@ func (runtime *runtime) runSlow(
 			// already committed must be closed out so the prefix stays
 			// well-formed rather than dangling.
 			if _, placeholderErr := runtime.engine.PlaceholderForInterrupted("interrupted"); placeholderErr != nil {
-				return false, errors.Join(err, placeholderErr)
+				return errors.Join(err, placeholderErr)
 			}
 		}
-		return false, err
+		return err
 	}
 	if len(result.ToolCalls) > 0 {
-		dispatched, dispatchErr := runtime.dispatch(ctx, result)
-		if dispatchErr != nil {
-			return false, dispatchErr
-		}
-		// A locally dispatched batch appended its results, so the rollout
-		// continues from them. A client-executed batch stops here: the results
-		// arrive later as their own event and open their own safe point.
-		cause.ToolResult = dispatched
-		return dispatched, nil
+		return runtime.dispatch(ctx, result)
 	}
 	if strings.TrimSpace(result.AssistantText) != "" {
-		// The correction, if one was owed, is this. Recording that here rather
+		// The correction, if one was owed, is this. Recording it here rather
 		// than when it is spoken is deliberate: the slow provider is the one
-		// that was instructed to correct, and a fast utterance voicing it is a
-		// rendering of the correction rather than the correction itself.
+		// that was instructed to correct, and the voice saying so afterwards
+		// is a rendering of the correction rather than the correction itself.
 		if err := runtime.resolveRepairs(result); err != nil {
 			runtime.fail("repair_error", err)
 		}
-		cause.SlowCommitted = true
-		return true, nil
+		return runtime.signal(interaction.SignalBackgroundResult)
 	}
-	return false, nil
+	return nil
 }
 
 // publishAssistant applies the commitment policy to one continuation's output
@@ -301,7 +293,7 @@ func (runtime *runtime) recordCancellations(
 // dispatch splits an authoritative call batch between the tools this process
 // executes and the tools the client executes, and reports whether results were
 // appended here.
-func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunResult) (bool, error) {
+func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunResult) error {
 	var local, remote []trajectory.ToolCall
 	for _, call := range result.ToolCalls {
 		call.Arguments = slices.Clone(call.Arguments)
@@ -314,15 +306,15 @@ func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunRes
 	}
 	if len(remote) > 0 {
 		if err := runtime.sendToClient(ctx, result, remote); err != nil {
-			return false, err
+			return err
 		}
 	}
 	if len(local) == 0 {
-		return false, nil
+		return nil
 	}
 	results, err := runtime.tools.DispatchAll(ctx, local)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if len(remote) > 0 {
 		// A split batch cannot be appended atomically: the invocation's
@@ -330,12 +322,12 @@ func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunRes
 		// local results wait for the client's, which the tool-result path
 		// assembles.
 		runtime.clientCalls.Hold(result.InvocationID, results)
-		return false, nil
+		return nil
 	}
-	if err := runtime.engine.AppendToolResults(result.InvocationID, results); err != nil {
-		return false, err
-	}
-	return true, nil
+	// Locally dispatched results rejoin exactly where a client's do. Appending
+	// them here instead would resume the chain without the loop ever seeing
+	// that a tool came back, which is the one thing every completion owes it.
+	return runtime.commitToolResults(result.InvocationID, results)
 }
 
 func (runtime *runtime) sendToClient(ctx context.Context, result continuation.RunResult, calls []trajectory.ToolCall) error {
