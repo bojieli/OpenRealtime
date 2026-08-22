@@ -81,10 +81,29 @@ type Config struct {
 	ThinkingMode            ThinkingMode
 	ReasoningDeltaField     ReasoningDeltaField
 	DisableReasoningCapture bool
-	Temperature             *float64
-	Seed                    *int64
-	HTTPClient              *http.Client
-	RequestTimeout          time.Duration
+	// ReasoningControl selects the field this endpoint reads the reasoning
+	// switch from. Empty preserves the historical behaviour: nothing is sent
+	// under ThinkingAuto, and the vLLM chat-template form otherwise.
+	ReasoningControl ReasoningControl
+	// EffortNames maps portable effort onto this endpoint's vocabulary. Nil
+	// selects the identity mapping. An effort with no entry is rejected at
+	// construction rather than replaced with a nearby one.
+	EffortNames map[continuation.Effort]string
+	// DisabledEffort is the effort name that means "do not reason", for
+	// endpoints that spell the off switch as a level. Empty omits the field.
+	DisabledEffort string
+	// MaxTokensField names the output-limit field. Empty selects max_tokens.
+	MaxTokensField MaxTokensField
+	// Headers are extra request headers, such as the attribution headers
+	// OpenRouter asks callers to send.
+	Headers map[string]string
+	// ExtraBody adds provider-specific top-level request fields. It cannot
+	// overwrite a field this adapter owns.
+	ExtraBody      map[string]json.RawMessage
+	Temperature    *float64
+	Seed           *int64
+	HTTPClient     *http.Client
+	RequestTimeout time.Duration
 }
 
 // Adapter streams Chat Completions and preserves same-provider assistant state
@@ -149,6 +168,9 @@ func New(config Config) (*Adapter, error) {
 	default:
 		return nil, fmt.Errorf("unsupported reasoning delta field %q", config.ReasoningDeltaField)
 	}
+	if err := validateDialect(&config); err != nil {
+		return nil, err
+	}
 	if config.Temperature != nil && (*config.Temperature < 0 || *config.Temperature > 2) {
 		return nil, errors.New("temperature must be between 0 and 2")
 	}
@@ -175,16 +197,49 @@ func New(config Config) (*Adapter, error) {
 func (adapter *Adapter) Descriptor() continuation.Descriptor { return adapter.descriptor }
 
 type chatRequest struct {
-	Model              string            `json:"model"`
-	Messages           []chatMessage     `json:"messages"`
-	Stream             bool              `json:"stream"`
-	StreamOptions      chatStreamOptions `json:"stream_options"`
-	MaxTokens          int               `json:"max_tokens"`
-	Tools              []chatTool        `json:"tools,omitempty"`
-	ToolChoice         string            `json:"tool_choice,omitempty"`
-	ChatTemplateKwargs map[string]any    `json:"chat_template_kwargs,omitempty"`
-	Temperature        *float64          `json:"temperature,omitempty"`
-	Seed               *int64            `json:"seed,omitempty"`
+	Model         string            `json:"model"`
+	Messages      []chatMessage     `json:"messages"`
+	Stream        bool              `json:"stream"`
+	StreamOptions chatStreamOptions `json:"stream_options"`
+	Tools         []chatTool        `json:"tools,omitempty"`
+	ToolChoice    string            `json:"tool_choice,omitempty"`
+	Temperature   *float64          `json:"temperature,omitempty"`
+	Seed          *int64            `json:"seed,omitempty"`
+
+	// maxTokens is serialised under maxTokensField, which differs between an
+	// endpoint that predates OpenAI's reasoning models and one that does not.
+	maxTokens      int
+	maxTokensField MaxTokensField
+	// extra carries the reasoning switch and any profile extensions. They are
+	// merged last so a profile is visible in the encoded request exactly as it
+	// was configured.
+	extra map[string]json.RawMessage
+}
+
+// MarshalJSON renders the request with the profile's field names applied.
+func (request chatRequest) MarshalJSON() ([]byte, error) {
+	type plain chatRequest
+	encoded, err := json.Marshal(plain(request))
+	if err != nil {
+		return nil, err
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &object); err != nil {
+		return nil, err
+	}
+	limit, err := json.Marshal(request.maxTokens)
+	if err != nil {
+		return nil, err
+	}
+	field := request.maxTokensField
+	if field == "" {
+		field = MaxTokensLegacy
+	}
+	object[string(field)] = limit
+	for name, value := range request.extra {
+		object[name] = value
+	}
+	return json.Marshal(object)
 }
 
 type chatStreamOptions struct {
@@ -366,6 +421,9 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 	if adapter.config.APIKey != "" {
 		httpRequest.Header.Set("Authorization", "Bearer "+adapter.config.APIKey)
 	}
+	for name, value := range adapter.config.Headers {
+		httpRequest.Header.Set(name, value)
+	}
 	response, err := adapter.config.HTTPClient.Do(httpRequest)
 	if err != nil {
 		return continuation.Completion{}, fmt.Errorf("send OpenAI-compatible request: %w", err)
@@ -516,14 +574,17 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 	}
 	result := chatRequest{
 		Model: adapter.descriptor.Model, Stream: true,
-		StreamOptions: chatStreamOptions{IncludeUsage: true}, MaxTokens: maxTokens,
-		Temperature: adapter.config.Temperature, Seed: adapter.config.Seed,
+		StreamOptions: chatStreamOptions{IncludeUsage: true},
+		Temperature:   adapter.config.Temperature, Seed: adapter.config.Seed,
+		maxTokens: maxTokens, maxTokensField: adapter.config.MaxTokensField,
 	}
-	switch adapter.config.ThinkingMode {
-	case ThinkingEnabled:
-		result.ChatTemplateKwargs = map[string]any{"enable_thinking": true}
-	case ThinkingDisabled:
-		result.ChatTemplateKwargs = map[string]any{"enable_thinking": false}
+	reasoning, err := adapter.reasoningFields()
+	if err != nil {
+		return chatRequest{}, err
+	}
+	result.extra = reasoning
+	for name, value := range adapter.config.ExtraBody {
+		result.extra[name] = value
 	}
 
 	// Invocation.Instruction is the complete policy for this continuation.

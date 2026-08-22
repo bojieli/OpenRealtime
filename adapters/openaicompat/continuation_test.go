@@ -21,12 +21,18 @@ func TestAdapterStreamsReasoningContentAndToolCall(t *testing.T) {
 		if request.Header.Get("Authorization") != "Bearer secret" {
 			t.Error("missing bearer authorization")
 		}
-		var body chatRequest
+		var body map[string]json.RawMessage
 		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 			t.Error(err)
 		}
-		if !body.Stream || !body.StreamOptions.IncludeUsage || body.ChatTemplateKwargs["enable_thinking"] != false {
-			t.Errorf("unexpected request: %#v", body)
+		if string(body["stream"]) != "true" || !strings.Contains(string(body["stream_options"]), "\"include_usage\":true") {
+			t.Errorf("unexpected request: %v", body)
+		}
+		if string(body["chat_template_kwargs"]) != `{"enable_thinking":false}` {
+			t.Errorf("thinking was not disabled: %s", body["chat_template_kwargs"])
+		}
+		if string(body["max_tokens"]) != "32" {
+			t.Errorf("unexpected output limit: %s", body["max_tokens"])
 		}
 		writer.Header().Set("Content-Type", "text/event-stream")
 		_, _ = writer.Write([]byte("data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\n"))
