@@ -39,3 +39,19 @@ The engine's barge-in policy is off by default here. A model that owns its floor
 handles overlap itself, and the engine cancelling its speech would be the engine
 overruling the thing it delegated to. `-floor engine` flips both, which is the
 honest way to ask whether a duplex model's own floor beats a measured one.
+
+## Resource guidance
+
+A duplex session holds one full-duplex model in a sidecar process and one
+background reasoner. The model is the expensive half and the one that must stay
+warm: it is doing recognition, turn-taking, and synthesis at once, and it is
+answering in real time, so it wants a GPU to itself. The reasoner is not on the
+voice path and is the natural place for a hosted provider.
+
+As with `omni`, the model and the engine can be separate machines - point
+`-sidecar-address` at a running sidecar rather than spawning one, which is the
+right shape when a model is expensive to load and worth sharing between
+sessions.
+
+There is no recogniser and no synthesiser to budget for. That is the whole
+economy of this binding, and the reason its floor belongs to the model.

@@ -50,3 +50,17 @@ or digit strings.
 Video input and computer use are reported as unsupported. The base protocol
 gives no way to ask a remote endpoint whether it accepts them, and reporting
 honestly is better than forwarding events the remote will reject.
+
+## Resource guidance
+
+Nothing local runs the voice. An upstream session holds one WebSocket to the
+provider and one background reasoner, so a deployment with no GPU at all can
+serve it - which is the point of the binding, and why the quickstart reaches a
+working session in the same number of steps either way.
+
+What it costs instead is a credential and a round trip. The provider's latency
+is the floor on every turn, and it is not something the engine can page over:
+budget for the network rather than for capacity. The reasoner is the only
+component you choose the placement of, and hosting it near the provider rather
+than near the client is usually the wrong instinct - it is not on the voice
+path.

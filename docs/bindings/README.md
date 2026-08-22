@@ -35,6 +35,28 @@ by default. `-floor model` is the comparison.
 A full-duplex model has them in its weights, and the engine stops asking it to
 take turns.
 
+## Observers, and the default set
+
+Only `cascade` runs its own perception, so only `cascade` has observers a
+session can choose between. Its set is a deployment decision rather than a
+constant - `-observers` selects what the process configures, and a session that
+names nothing gets all of it:
+
+| Binding | Default set | Selectable per session |
+| --- | --- | --- |
+| `cascade` | `audio`, plus `video` when `-observers audio+video` configured it | yes, by name |
+| `omni` | the model's own perception | no |
+| `duplex` | the model's own perception | no |
+| `upstream` | the remote provider's own perception | no |
+
+A session selects with `openrealtime.observers` in `session.update`, and gets
+back the set that was actually enabled. Naming a subset of what exists gets
+that subset; naming something the deployment does not have drops it. Naming
+observers against a binding that has none is **refused**, not quietly accepted
+- the alternative is a client told it enabled video observation on a binding
+that will never produce one, which is indistinguishable from the feature
+working until someone notices nothing was ever observed.
+
 ## What every binding gets
 
 - The background reasoner over a shared trajectory, with tool execution.
