@@ -204,7 +204,12 @@ func (bind *Binding) Capabilities() binding.Capabilities {
 	// The remote owns the voice stack, and this binding does not forward a
 	// voice to it. Neither field can be filled in honestly: the session cannot
 	// choose, and the default belongs to the provider rather than to us.
-	return binding.Capabilities{Observations: true, FastSlow: true}
+	return binding.Capabilities{
+		Observations: true, FastSlow: true,
+		// The remote runs the floor, and it speaks this protocol: a client
+		// taking the floor is forwarded rather than interpreted.
+		ManualTurns: true,
+	}
 }
 
 // Start opens a session against the remote endpoint.

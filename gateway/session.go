@@ -520,6 +520,21 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 			// Explicit null. The client is taking the floor: it will commit
 			// the input buffer and ask for responses itself, and the server
 			// stops ending turns on silence.
+			//
+			// Only where there is a floor to give. A binding whose model owns
+			// the floor cannot hand over what it does not hold, and accepting
+			// the declaration anyway would leave the client waiting to be
+			// asked while the model answered on its own schedule.
+			if !session.config.Binding.Capabilities().ManualTurns {
+				refused = append(refused, clientError{
+					code:  "unsupported_value",
+					param: "session.audio.input.turn_detection",
+					message: "turn detection cannot be switched off on this binding: its model " +
+						"owns the floor and decides for itself when a turn ended. The field " +
+						"was not applied and the rest of the session.update was.",
+				})
+				break
+			}
 			current.manualTurns = true
 		case turn.Type == "server_vad":
 			current.manualTurns = false

@@ -264,7 +264,14 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 			return err
 		}
 		// The engine holds the floor for exactly this decision, so the turn
-		// ends when the engine says so rather than when the model guesses.
+		// ends when the engine says so rather than when the model guesses -
+		// unless the client took the floor, in which case the endpoint is
+		// still observed and reported but is not acted on. A client that
+		// declared its own turns and got a server-created one alongside them
+		// hears the agent answer twice.
+		if runtime.Settings().ManualTurns {
+			return nil
+		}
 		return runtime.model.Send(sidecar.Message{Type: sidecar.TypeRespond})
 	}
 	return nil

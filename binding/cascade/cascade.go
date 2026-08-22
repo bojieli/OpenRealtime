@@ -261,6 +261,7 @@ func (bind *Binding) Capabilities() binding.Capabilities {
 	}
 	return binding.Capabilities{
 		Voice:           binding.VoiceControl{InForce: bind.config.Voice},
+		ManualTurns:     true,
 		MaxOutputTokens: bind.config.FastMaxTokens,
 		Video:           video, ComputerUse: true, Observations: true, FastSlow: true,
 		Observers: bind.ObserverNames(),

@@ -219,8 +219,10 @@ func (runtime *runtime) finishRemoteResponse() error {
 	// one answer. Now that it has been said, give the instruction back, or the
 	// remote would keep being told to repeat it.
 	if restore {
-		base := remoteInstruction(runtime.Settings().Instruction)
-		if err := runtime.remote.Send(runtime.ctx, sessionUpdate(base)); err != nil {
+		settings := runtime.Settings()
+		base := remoteInstruction(settings.Instruction)
+		if err := runtime.remote.Send(runtime.ctx,
+			sessionUpdate(base, settings.ManualTurns)); err != nil {
 			return err
 		}
 	}

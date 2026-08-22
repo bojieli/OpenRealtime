@@ -91,6 +91,7 @@ changed, and most clients never do:
 | `audio.output.speed` | Synthesis runs at the rate the speech provider produces. |
 | `audio.input.transcription.model` | The recogniser is the deployment's, named in `session.updated`. |
 | `reasoning` | Effort belongs to the provider the reasoner runs on, not to a session. |
+| `audio.input.turn_detection: null` | Only on a binding whose model owns the floor. Taking the floor requires someone to hand it over, and `duplex` declares the model holds it. |
 | `audio.output.voice` | Only on a binding that says it cannot honour one. A speech provider is built with its voice, and a speech plan carries text and nothing else, so `cascade` has no per-session voice to give; a binding forwarding to a model with several does, and takes it. |
 
 `tool_choice` is the one with teeth. A client that asks for no tools and

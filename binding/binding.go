@@ -309,6 +309,14 @@ type Capabilities struct {
 	Observers []string `json:"observers,omitempty"`
 	// Voice reports how this binding's voice is chosen.
 	Voice VoiceControl `json:"voice"`
+	// ManualTurns reports whether this binding can hand the floor to the
+	// client - stop endpointing on silence, stop creating responses of its
+	// own, and wait to be asked.
+	//
+	// It is not universal. A binding whose model owns the floor cannot give
+	// away what it does not hold, and a client told it took the floor from one
+	// that did not is talking over an agent that never agreed to listen.
+	ManualTurns bool `json:"manual_turns"`
 	// MaxOutputTokens is the limit this binding puts on one spoken turn, or
 	// zero where it imposes none and the model's own governs.
 	//

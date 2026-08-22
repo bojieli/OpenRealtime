@@ -189,20 +189,31 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 // boundary every other binding holds.
 func (runtime *runtime) configureRemote() error {
 	settings := runtime.Settings()
-	return runtime.remote.Send(runtime.ctx, sessionUpdate(remoteInstruction(settings.Instruction)))
+	return runtime.remote.Send(runtime.ctx,
+		sessionUpdate(remoteInstruction(settings.Instruction), settings.ManualTurns))
 }
 
 // sessionUpdate builds the session declaration. It is shared with the
 // session-instruction handoff, which is the same event carrying different
 // text.
-func sessionUpdate(instruction string) map[string]any {
+func sessionUpdate(instruction string, manualTurns bool) map[string]any {
+	input := map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}}
+	if manualTurns {
+		// The client took the floor, and the remote is the side that holds it
+		// here. Forwarding the declaration is the whole of what this binding
+		// can do about it, and the whole of what it needs to do: the remote
+		// speaks this protocol, so a null detector means the same thing to it.
+		// Keeping it to ourselves would leave the remote ending turns on
+		// silence while the client believed it had stopped that.
+		input["turn_detection"] = nil
+	}
 	return map[string]any{
 		"type": "session.update",
 		"session": map[string]any{
 			"type":         "realtime",
 			"instructions": instruction,
 			"audio": map[string]any{
-				"input":  map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
+				"input":  input,
 				"output": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
 			},
 		},

@@ -158,8 +158,14 @@ func (runtime *runtime) handOff(ctx context.Context) error {
 // every later turn. finishRemoteResponse does the restoring, once the response
 // this handoff asked for has completed.
 func (runtime *runtime) handOffBySessionInstruction(ctx context.Context, answer string) error {
-	base := remoteInstruction(runtime.Settings().Instruction)
-	if err := runtime.remote.Send(ctx, sessionUpdate(base+"\n\n"+handoffDirective+answer)); err != nil {
+	settings := runtime.Settings()
+	base := remoteInstruction(settings.Instruction)
+	// The declaration travels with every session.update, not just the first.
+	// This one is borrowing the instruction to carry an answer; leaving the
+	// detector out would hand the floor back to the remote as a side effect of
+	// saying something.
+	if err := runtime.remote.Send(ctx, sessionUpdate(
+		base+"\n\n"+handoffDirective+answer, settings.ManualTurns)); err != nil {
 		return err
 	}
 	runtime.stateMu.Lock()

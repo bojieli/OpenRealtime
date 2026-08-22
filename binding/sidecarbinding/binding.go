@@ -172,6 +172,11 @@ func (bind *Binding) Capabilities() binding.Capabilities {
 	return binding.Capabilities{
 		Observations: true, FastSlow: true,
 		Voice: binding.VoiceControl{Selectable: true, InForce: bind.config.Voice},
+		// Only the engine can hand over a floor it holds. A full-duplex model
+		// owns its own, and that is the binding's whole ownership claim - the
+		// client cannot take it, and saying otherwise would be the engine
+		// promising on the model's behalf.
+		ManualTurns: bind.spec.Floor == binding.OwnerEngine,
 	}
 }
 
