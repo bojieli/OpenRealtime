@@ -13,8 +13,8 @@ the fast and the slow phase. A provider that would fail on the first session
 fails in CI instead.
 
 ```sh
-openrealtime providers            # the whole catalogue
-openrealtime providers -role asr  # one role
+openrealtime providers                 # the whole catalogue
+openrealtime providers -role upstream  # one role
 openrealtime providers -probe openai
 ```
 
@@ -168,6 +168,72 @@ A vendor that answers `200` with a JSON error body is caught rather than
 synthesised: playing an error message to the caller as noise is worse than
 failing.
 
+## Realtime endpoints (the `upstream` binding)
+
+`-binding upstream -upstream-provider`. These are remote realtime **model**
+APIs — an endpoint that already owns perception, a voice, and action, and lacks
+only a second model reasoning alongside it. That is what the binding adds.
+
+Agent platforms are deliberately absent. Deepgram's Voice Agent and ElevenLabs
+Agents already run their own agent loop, so putting this binding's reasoner
+behind one would be two orchestrators arguing over one conversation, not a
+seam. Use those products directly, or build the same stack with `cascade`.
+
+| Endpoint | Protocol | Hand-off | Notes |
+| --- | --- | --- | --- |
+| `openai` | Realtime | conversation item | The reference implementation |
+| `xai` | Realtime | conversation item | Documented as Realtime-compatible; reports user transcripts as `.updated` |
+| `azure-openai` | Realtime | conversation item | Same spec; credential in `api-key`, model is a deployment in the URL |
+| `qwen-omni` | Realtime (pre-GA names) | session instruction | Emits `response.audio.*`; conversation items are tool-results only |
+| `google` | **BidiGenerateContent** | conversation item | Not a Realtime dialect; translated into one |
+
+Two vendor differences turned out to matter enough to be modelled rather than
+assumed.
+
+**Event names.** OpenAI renamed `response.audio.delta` to
+`response.output_audio.delta` at general availability. An endpoint built
+against the earlier specification sends the same fields under the earlier
+names, so the catalogue carries a rename table and the mirror is untouched. A
+vendor whose only deviation is a spelling should not cost an adapter.
+
+**The hand-off.** Giving the reasoner's completed answer to the remote to say
+is the entire point of the binding, and the base protocol turned out not to be
+as portable as it looks. Injecting a conversation item is the natural form and
+every endpoint modelled on OpenAI's accepts it — but Qwen-Omni-Realtime accepts
+conversation items **only** for tool results, and its `response.create` takes no
+per-response instructions. There the session instruction is the only writable
+channel, so the answer goes in it and is taken back out when the response
+completes. An endpoint that supported neither could not host this binding at
+all, and declaring the channel is what makes that checkable rather than
+discovered live.
+
+### Gemini Live
+
+Gemini is not a dialect. BidiGenerateContent has no event `type` field —
+messages are discriminated by which top-level key is present — no conversation
+items, no session updates after the handshake, and it wants 16 kHz audio in
+while the Realtime wire carries 24 kHz. So
+[`adapters/geminilive`](../adapters/geminilive) is a translator: it speaks
+Gemini on one side and the Realtime protocol on the other, which keeps one
+runtime, one mirror, and one set of interaction policies.
+
+Three of its constraints shape the translation:
+
+- The **system instruction is settable only in the opening handshake**, so
+  setup is deferred until the caller's first `session.update` arrives, and
+  anything sent before that is held rather than dropped.
+- **Transcription streams with no completion event.** Text is accumulated and
+  reported when the turn completes, which is the point the Realtime protocol
+  reports the same thing.
+- **`interrupted` is not `turnComplete`.** An interruption means the model
+  stopped because the user carried on; what it managed to say is real, but the
+  user has not finished, so the accumulated user transcript keeps growing
+  rather than being committed as a turn. Conflating the two hands the reasoner
+  half a question.
+
+`MiniMax` is absent: it announced a realtime API but publishes no wire
+specification, and guessing at a protocol is not the same as supporting one.
+
 ## Narration
 
 `-vision-provider` selects the model a video observer narrates through. It
@@ -232,6 +298,13 @@ export OPENROUTER_API_KEY=...
 openrealtime serve \
   -fast-provider openrouter -fast-model openai/gpt-5.6-luna \
   -slow-provider openrouter -slow-model anthropic/claude-opus-5
+```
+
+A remote realtime endpoint behind the background reasoner:
+
+```sh
+export GEMINI_API_KEY=...
+openrealtime serve -binding upstream -upstream-provider gemini
 ```
 
 Adding a provider is a table entry in [`providers/`](../providers), plus an

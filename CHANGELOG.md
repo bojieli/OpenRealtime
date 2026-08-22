@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Realtime endpoints
+
+- **Five remote realtime endpoints behind the background reasoner**, resolved
+  through the catalogue: OpenAI, xAI, Azure OpenAI, Alibaba's
+  Qwen-Omni-Realtime, and Google's Gemini Live. `-upstream-provider` selects
+  one; `openrealtime providers -role upstream` lists them.
+- **A rename table for endpoints on the pre-GA event names.** OpenAI renamed
+  its audio events at general availability and several endpoints implement the
+  earlier spelling. That is now a catalogue entry rather than an adapter.
+- **The hand-off is a declared property of the endpoint.** Giving the reasoner's
+  answer to the remote to say is what this binding is for, and the base
+  protocol is not as portable as it looks: Qwen-Omni-Realtime reserves
+  conversation items for tool results and takes no per-response instructions,
+  so its answer travels in the session instruction and is taken back out
+  afterwards.
+- **Gemini Live is translated rather than forked.** BidiGenerateContent is not
+  a Realtime dialect - no event type field, no conversation items, no session
+  updates after the handshake, and 16 kHz audio in. `adapters/geminilive`
+  speaks it on one side and the Realtime protocol on the other, so the binding
+  keeps one runtime and one mirror. Verified against Google's live API, not
+  only against a fake.
+- Deepgram Voice Agent and ElevenLabs Agents are deliberately **not** here:
+  they are agent platforms that run their own loop, and this binding's reasoner
+  behind one would be two orchestrators on one conversation.
+
 ### Providers
 
 - **One catalogue for every model provider.** The new `providers` package is
