@@ -138,6 +138,7 @@ func reportProbe(result probeResult, generated bool, output io.Writer) error {
 	fmt.Fprintf(output, "spoken     : %s\n", strings.Join(result.spoken, " | "))
 	fmt.Fprintf(output, "audio      : %.2f s in %d frames\n", result.audioSeconds, result.audioFrames)
 	fmt.Fprintf(output, "first audio: %s after the endpoint\n", result.firstAudio.Round(time.Millisecond))
+	fmt.Fprintf(output, "responses  : %d\n", result.responses)
 	if len(result.toolCalls) > 0 {
 		fmt.Fprintf(output, "tool calls : %s\n", strings.Join(result.toolCalls, ", "))
 	}
@@ -159,7 +160,14 @@ func reportProbe(result probeResult, generated bool, output io.Writer) error {
 	return nil
 }
 
+// secondResponseGrace is how long a probe waits, after one complete response,
+// for the voiced background answer to arrive in a second one.
+const secondResponseGrace = 5 * time.Second
+
 type probeResult struct {
+	// responses counts the response.done events the turn produced. One and two
+	// are both correct; which one happens is a timing question.
+	responses    int
 	transcript   string
 	spoken       []string
 	toolCalls    []string
@@ -173,9 +181,15 @@ func collectProbe(ctx context.Context, client *realtimeclient.Client, output io.
 	var result probeResult
 	var endpoint time.Time
 	responses := 0
+	// settle is armed by the first complete response and bounds how long a
+	// second one is waited for. Nil until then, which makes it a channel that
+	// never fires.
+	var settle <-chan time.Time
 	for {
 		select {
 		case <-ctx.Done():
+			return result
+		case <-settle:
 			return result
 		case event, open := <-client.Events():
 			if !open {
@@ -224,10 +238,31 @@ func collectProbe(ctx context.Context, client *realtimeclient.Client, output io.
 				result.toolCalls = append(result.toolCalls, decoded.Name)
 			case "response.done":
 				responses++
-				// One response carries the fast answer; a second carries the
-				// voiced background answer. Two is the complete turn.
-				if responses >= 2 && result.audioFrames > 0 {
-					return result
+				result.responses = responses
+				// A turn is complete once a response has finished and audio
+				// came back. Whether the voiced background answer arrives in
+				// that same response or in a second one is a timing question:
+				// if the fast utterance is still playing when the rollout
+				// finishes planning, the response stays open and the voiced
+				// answer joins it; if playback finished first, the response
+				// closes and the answer opens another.
+				//
+				// This waited for two unconditionally, so on every turn that
+				// produced one it waited forever - a working stack, a complete
+				// turn, full audio, and a probe that never returned. Measured
+				// at one in two on a local pair of providers.
+				//
+				// So the first complete response ends the wait, and a short
+				// grace period gives a second one a chance to arrive, because
+				// seeing the reasoner's answer voiced is worth reporting even
+				// though it cannot be required.
+				if result.audioFrames > 0 {
+					if responses >= 2 {
+						return result
+					}
+					if settle == nil {
+						settle = time.After(secondResponseGrace)
+					}
 				}
 			case "error":
 				var decoded struct {
