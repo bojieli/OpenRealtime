@@ -99,15 +99,15 @@ if [[ "${count}" != "150" ]]; then
 fi
 echo "tasks declared: ${count}"
 
-missing=""
+missing_modules=""
 for module in playwright.sync_api websocket numpy PIL; do
   if ! PYTHONPATH="${checkout}" "${python_bin}" -c "import ${module}" >/dev/null 2>&1; then
-    missing="${missing} ${module}"
+    missing_modules="${missing_modules} ${module}"
   fi
 done
-if [[ -n "${missing}" ]]; then
+if [[ -n "${missing_modules}" ]]; then
   cat >&2 <<EOF
-the interpreter ${python_bin} cannot run the suite; missing:${missing}
+the interpreter ${python_bin} cannot run the suite; missing:${missing_modules}
 
   pip install -r ${checkout}/requirements.txt websocket-client
   ${python_bin} -m playwright install chromium
