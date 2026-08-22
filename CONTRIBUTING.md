@@ -66,6 +66,34 @@ Contributors certify that they have the right to submit their contribution and
 license it under the repository’s applicable license. Substantial architecture
 or protocol changes should start with an ADR in `docs/adr/`.
 
+### Break the check on purpose before you trust it
+
+A test that passes tells you two things and they are easy to confuse: that the
+code is right, or that the check never looked. Before relying on a new test or
+a new gate, **make the defect it describes and confirm it fails.** It costs one
+edit and a rerun, and it is the only check on a check anyone here has found
+that works.
+
+Four of these were caught in a single day, and none of them looked broken:
+
+- A mutation whose regex broke the syntax of the file it was testing, so the
+  build failed and the run read as the mutation surviving.
+- A source-grep test that called a page healthy while its own
+  `Content-Security-Policy` made it unreachable in any browser.
+- A skipped test standing in for a passed one, so a release gate reported a
+  compatibility claim it had never checked.
+- A refusal message naming a cause it had not verified, sending the reader past
+  the reason printed directly above it.
+
+The last one is the shape worth remembering: a diagnostic that asserts a cause
+it has not checked is the same defect as the code it was written to catch, and
+it costs more, because it is what someone consults after something else has
+already gone wrong.
+
+Assert on what a consumer actually received or rendered, never on what crossed
+the wire or what a file contains. A wire-level or source-level check agrees
+that nothing is wrong in exactly the cases where the user sees nothing at all.
+
 ## Benchmarks
 
 Performance pull requests must include the command, raw trace, hardware and
