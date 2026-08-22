@@ -56,8 +56,9 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	if err := runtime.sink.TurnBegin(ctx); err != nil {
 		return err
 	}
+	turn := &turnReport{}
 	defer func() {
-		if err := runtime.sink.TurnEnd(ctx); err != nil {
+		if err := runtime.sink.TurnEnd(ctx, turn.outcome()); err != nil {
 			runtime.fail("sink_error", err)
 		}
 	}()
@@ -85,7 +86,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 				return errors.Join(append(failures, context.Cause(ctx))...)
 			default:
 			}
-			next, err := runtime.runStep(ctx, step, request, &cause)
+			next, err := runtime.runStep(ctx, step, request, &cause, turn)
 			if err != nil {
 				failures = append(failures, fmt.Errorf("%s step: %w", step.Kind, err))
 				if ctx.Err() != nil {
@@ -106,6 +107,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 // runStep executes one rollout step and reports whether the rollout continues.
 func (runtime *runtime) runStep(
 	ctx context.Context, step interaction.Step, request cognition.Request, cause *interaction.Cause,
+	turn *turnReport,
 ) (bool, error) {
 	switch step.Kind {
 	case interaction.StepFast:
@@ -113,15 +115,18 @@ func (runtime *runtime) runStep(
 		// than regenerated. It is the same continuation, produced earlier.
 		if result, adopted := runtime.adopt(trajectory.PhaseFast, canonicalText(
 			runtime.store.Snapshot(), request.SourceRevision)); adopted {
+			turn.record(result)
 			return true, runtime.publishAssistant(ctx, result)
 		}
 		result, err := runtime.engine.RunFast(ctx, request, nil)
+		turn.record(result)
 		if publishErr := runtime.publishAssistant(ctx, result); publishErr != nil {
 			return false, errors.Join(err, publishErr)
 		}
 		return err == nil, err
 	case interaction.StepVoice:
 		result, err := runtime.engine.RunVoice(ctx, request, nil)
+		turn.record(result)
 		if publishErr := runtime.publishAssistant(ctx, result); publishErr != nil {
 			return false, errors.Join(err, publishErr)
 		}

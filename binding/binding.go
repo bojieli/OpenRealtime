@@ -175,11 +175,14 @@ type Sink interface {
 	// response would end the turn, from the client's point of view, at
 	// whichever kind happened to come first.
 	//
-	// A turn that produces nothing announces nothing: the brackets are
+	// A turn that produces nothing usually announces nothing: the brackets are
 	// declared here and the response is opened lazily by whatever first
-	// crosses into the world.
+	// crosses into the world. The exception is a turn that produced nothing
+	// because something went wrong, which TurnEnd reports - a client that
+	// asked for a response and is told neither what it got nor why is left
+	// waiting on something that is never coming.
 	TurnBegin(context.Context) error
-	TurnEnd(context.Context) error
+	TurnEnd(context.Context, TurnOutcome) error
 	// Activity reports the acoustic gate's view of the user.
 	Activity(context.Context, ActivityEvent) error
 	// Transcript reports committed user speech.
@@ -239,6 +242,29 @@ type Runtime interface {
 	// Close ends the session.
 	Close(context.Context, error) error
 }
+
+// TurnOutcome is why a turn ended, for the cases where that is not obvious
+// from what it produced.
+//
+// A turn that said something needs no explanation. One that said nothing needs
+// one, because silence is indistinguishable from working correctly and having
+// nothing to add - and the two want opposite reactions from whoever is
+// watching.
+type TurnOutcome struct {
+	// Incomplete reports that the turn stopped short of what it was doing.
+	Incomplete bool `json:"incomplete,omitempty"`
+	// Reason is the protocol's own vocabulary for why, so it can be reported
+	// on the wire without translation: max_output_tokens or content_filter.
+	Reason string `json:"reason,omitempty"`
+	// Detail is for the operator rather than the client. It names the thing to
+	// change, because the interesting failures here are configuration rather
+	// than faults.
+	Detail string `json:"detail,omitempty"`
+}
+
+// TurnIncompleteTokens is the protocol's reason for a turn cut short by the
+// output limit.
+const TurnIncompleteTokens = "max_output_tokens"
 
 // ErrUnsupported means a binding does not provide a capability at all.
 var ErrUnsupported = errors.New("capability not supported by this binding")

@@ -327,6 +327,12 @@ var _ binding.Sink = (*session)(nil)
 // The response is opened by whatever crosses into the world first, so a turn
 // that produced nothing announces nothing: a deferred batch with no plan is
 // not a response with no output.
+//
+// The exception is a turn that produced nothing because something went wrong.
+// That one opens a response in order to close it as incomplete, because the
+// two silences are not the same event: having nothing to add is the runtime
+// working, and being cut off mid-thought is a client left waiting for a turn
+// that is never coming.
 
 // TurnBegin declares that a rollout is about to run.
 func (session *session) TurnBegin(context.Context) error {
@@ -336,12 +342,24 @@ func (session *session) TurnBegin(context.Context) error {
 	return nil
 }
 
-// TurnEnd reports that the rollout finished planning. The response closes here
-// only if nothing it started is still playing.
-func (session *session) TurnEnd(ctx context.Context) error {
+// TurnEnd reports that the rollout finished planning, and why it stopped when
+// that is not evident from what it produced. The response closes here only if
+// nothing it started is still playing.
+func (session *session) TurnEnd(ctx context.Context, outcome binding.TurnOutcome) error {
 	session.responseMu.Lock()
 	session.planning = false
+	if outcome.Incomplete {
+		session.incomplete = &outcome
+	}
 	session.responseMu.Unlock()
+	if outcome.Detail != "" {
+		// The operator is who can act on this. A fast provider that spent its
+		// whole output budget deliberating produces a session that opens, says
+		// nothing, and closes - a configuration mistake with no symptom, which
+		// is the failure this line exists to remove.
+		session.config.Logger.Warn("turn produced no speech",
+			"session", session.id, "reason", outcome.Reason, "detail", outcome.Detail)
+	}
 	return session.closeIfComplete(ctx)
 }
 
@@ -350,9 +368,24 @@ func (session *session) TurnEnd(ctx context.Context) error {
 func (session *session) closeIfComplete(context.Context) error {
 	session.responseMu.Lock()
 	current := session.response
-	if current == nil || session.planning || session.outstanding > 0 {
+	if session.planning || session.outstanding > 0 {
 		session.responseMu.Unlock()
 		return nil
+	}
+	incomplete := session.incomplete
+	if current == nil && incomplete == nil {
+		session.responseMu.Unlock()
+		return nil
+	}
+	session.incomplete = nil
+	opened := false
+	if current == nil {
+		// Nothing crossed into the world, so no response was ever opened. One
+		// is opened now for the sole purpose of reporting that the turn was
+		// cut short: announcing it and completing it in the same breath is
+		// still the whole story, and it is more than silence was telling.
+		current = &wireResponse{id: session.nextID("resp")}
+		opened = true
 	}
 	session.response = nil
 	session.responseMu.Unlock()
@@ -361,13 +394,31 @@ func (session *session) closeIfComplete(context.Context) error {
 	format, voice := session.settings.outputFormat, session.settings.voice
 	session.settingsMu.RUnlock()
 	status := "completed"
+	if incomplete != nil {
+		status = "incomplete"
+	}
 	if current.cancelled {
 		status = "cancelled"
 	}
+	if opened {
+		if err := session.send(event("response.created", session.nextID("event"), map[string]any{
+			"response": responseObject(current.id, "in_progress", session.conversationID, nil, nil,
+				format, voice, session.outputModalities()),
+		})); err != nil {
+			return err
+		}
+	}
 	done := responseObject(current.id, status, session.conversationID, current.output,
 		current.usage, format, voice, session.outputModalities())
-	if current.cancelled {
+	switch {
+	case current.cancelled:
 		done["status_details"] = map[string]any{"type": "cancelled", "reason": "turn_detected"}
+	case incomplete != nil:
+		details := map[string]any{"type": "incomplete"}
+		if incomplete.Reason != "" {
+			details["reason"] = incomplete.Reason
+		}
+		done["status_details"] = details
 	}
 	return session.send(event("response.done", session.nextID("event"), map[string]any{"response": done}))
 }

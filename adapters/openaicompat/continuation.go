@@ -545,6 +545,7 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 		}
 	}
 
+	completion.ReasoningInContent = thinking.Leaked()
 	message := chatMessage{Role: "assistant", Content: content.String(), ReasoningContent: reasoning.String()}
 	indices := make([]int, 0, len(pendingCalls))
 	for index := range pendingCalls {

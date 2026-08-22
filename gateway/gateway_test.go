@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -51,10 +53,21 @@ func (asr staticASR) Finalize(context.Context, uint64) (v1.PerceptionRevision, e
 
 type scripted struct {
 	descriptor continuation.Descriptor
+	// completion is how this provider reports it stopped. The zero value is
+	// an ordinary stop; a test that cares about truncation sets it.
+	completion continuation.Completion
 	mu         sync.Mutex
 	turns      [][]continuation.Event
 	calls      int
 	requests   []continuation.Request
+}
+
+// stopping makes the provider report a particular completion, which is how a
+// test says "this provider ran out of room" rather than "this provider had
+// nothing to say".
+func (provider *scripted) stopping(completion continuation.Completion) *scripted {
+	provider.completion = completion
+	return provider
 }
 
 // lastRequest is what the provider was actually asked, so a test can check
@@ -87,6 +100,9 @@ func (provider *scripted) Continue(
 		if err := emit(event); err != nil {
 			return continuation.Completion{}, err
 		}
+	}
+	if provider.completion.StopReason != "" {
+		return provider.completion, nil
 	}
 	return continuation.Completion{StopReason: "stop"}, nil
 }
@@ -148,6 +164,24 @@ func startServerWithSpeech(
 	speech v1.StreamingSpeechProvider,
 ) *httptest.Server {
 	t.Helper()
+	return startServerWith(t, fastProvider, slowProvider, asr, speech, nil)
+}
+
+// startServerWithLogger captures what the operator would have seen, which is
+// the only place some failures are reported: a misconfiguration the client
+// cannot act on belongs in the log, not on the wire.
+func startServerWithLogger(
+	t *testing.T, fastProvider, slowProvider *scripted, logs io.Writer,
+) *httptest.Server {
+	t.Helper()
+	return startServerWith(t, fastProvider, slowProvider, staticASR{text: "hello"}, toneSpeech{}, logs)
+}
+
+func startServerWith(
+	t *testing.T, fastProvider, slowProvider *scripted, asr staticASR,
+	speech v1.StreamingSpeechProvider, logs io.Writer,
+) *httptest.Server {
+	t.Helper()
 	bind, err := cascade.New(cascade.Config{
 		Perception: func() (v1.PerceptionProvider, error) { return asr, nil },
 		Fast:       fastProvider, Slow: slowProvider, Speech: speech,
@@ -155,15 +189,35 @@ func startServerWithSpeech(
 	if err != nil {
 		t.Fatalf("new cascade: %v", err)
 	}
-	server, err := gateway.New(gateway.Config{
-		Binding: bind, Model: "openrealtime-test", ValidateWire: true,
-	})
+	config := gateway.Config{Binding: bind, Model: "openrealtime-test", ValidateWire: true}
+	if logs != nil {
+		config.Logger = slog.New(slog.NewTextHandler(logs, nil))
+	}
+	server, err := gateway.New(config)
 	if err != nil {
 		t.Fatalf("new gateway: %v", err)
 	}
 	http := httptest.NewServer(server.Handler())
 	t.Cleanup(http.Close)
 	return http
+}
+
+// syncBuffer collects log output from whichever goroutine wrote it.
+type syncBuffer struct {
+	mu      sync.Mutex
+	written strings.Builder
+}
+
+func (buffer *syncBuffer) Write(input []byte) (int, error) {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	return buffer.written.Write(input)
+}
+
+func (buffer *syncBuffer) String() string {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	return buffer.written.String()
 }
 
 func dial(t *testing.T, server *httptest.Server) *client {
@@ -223,6 +277,29 @@ func (client *client) await(eventType string, timeout time.Duration) map[string]
 		}
 		if observed == eventType {
 			return decoded
+		}
+	}
+}
+
+// awaitOptional reads until it sees eventType or the timeout expires, and
+// reports which happened. It is how a test asserts that something does not
+// arrive: await would fail on the read deadline instead.
+func (client *client) awaitOptional(eventType string, timeout time.Duration) (map[string]any, bool) {
+	client.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	for {
+		_, input, err := client.connection.Read(ctx)
+		if err != nil {
+			return nil, false
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(input, &decoded); err != nil {
+			client.t.Fatalf("decode: %v", err)
+		}
+		client.received = append(client.received, decoded)
+		if observed, _ := decoded["type"].(string); observed == eventType {
+			return decoded, true
 		}
 	}
 }

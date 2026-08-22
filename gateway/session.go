@@ -97,7 +97,10 @@ type session struct {
 	// planning is true while a rollout is deciding what this turn produces;
 	// outstanding counts utterances it started that are still playing. The
 	// response closes when both say the turn is over.
-	planning    bool
+	planning bool
+	// incomplete carries why the turn stopped, for a turn that stopped for a
+	// reason the client cannot infer from what it received.
+	incomplete  *binding.TurnOutcome
 	outstanding int
 }
 

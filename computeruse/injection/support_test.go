@@ -78,7 +78,7 @@ func (toneSpeech) Stream(_ context.Context, plan v1.SpeechPlan, emit func(v1.Spe
 type silentSink struct{}
 
 func (silentSink) TurnBegin(context.Context) error                            { return nil }
-func (silentSink) TurnEnd(context.Context) error                              { return nil }
+func (silentSink) TurnEnd(context.Context, binding.TurnOutcome) error         { return nil }
 func (silentSink) Activity(context.Context, binding.ActivityEvent) error      { return nil }
 func (silentSink) Transcript(context.Context, binding.TranscriptEvent) error  { return nil }
 func (silentSink) Observation(context.Context, perception.Observation) error  { return nil }

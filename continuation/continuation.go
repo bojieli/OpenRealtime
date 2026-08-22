@@ -279,10 +279,19 @@ type Usage struct {
 // model-turn representation, such as Gemini content with thought signatures.
 // The matching ProviderStateType prevents cross-provider reinterpretation.
 type Completion struct {
-	StopReason        string          `json:"stop_reason,omitempty"`
-	Usage             Usage           `json:"usage,omitempty"`
-	ProviderStateType string          `json:"provider_state_type,omitempty"`
-	ProviderState     json.RawMessage `json:"provider_state,omitempty"`
+	StopReason string `json:"stop_reason,omitempty"`
+	Usage      Usage  `json:"usage,omitempty"`
+	// ReasoningInContent reports that this provider wrote its deliberation
+	// into the content field rather than into a reasoning field of its own.
+	//
+	// It is a fact about how the provider is configured rather than about what
+	// it said, and it is the difference between a turn that had nothing to say
+	// and a turn that spent its whole output budget thinking. Without it that
+	// second case is silence with no cause attached, which is the same failure
+	// as saying the thought out loud, minus the evidence.
+	ReasoningInContent bool            `json:"reasoning_in_content,omitempty"`
+	ProviderStateType  string          `json:"provider_state_type,omitempty"`
+	ProviderState      json.RawMessage `json:"provider_state,omitempty"`
 }
 
 // Emit receives streamed provider events. Returning an error cancels the
