@@ -25,9 +25,22 @@ func TestTheDemoIsServedAndIsTheRealPage(t *testing.T) {
 		t.Fatalf("expected HTML, got %q", contentType)
 	}
 
-	// The demo is only worth shipping if it still speaks the protocol. A page
-	// that had drifted into referring to events the server does not send would
-	// be worse than no demo, because it looks like it works.
+	// What follows reads the page's source, so it can only speak about the
+	// shape of the code. It cannot say the demo works, and it once said so
+	// anyway: the page was served intact, its script parsed, every event name
+	// below was present, and its Content-Security-Policy forbade the one
+	// request it exists to make, so it could not reach an adapter in any
+	// documented configuration. This test called that healthy - while its own
+	// comment warned that a broken demo is worse than none because it looks
+	// like it works. It was describing itself.
+	//
+	// TestTheDemoHoldsAConversation is the one that answers "does it work",
+	// by running the page in a browser against a real adapter. This one
+	// answers the narrower question of whether the source still has the form
+	// a client author should copy, which a live test does not reach: the
+	// status-rendering branches below are checked here and nowhere else,
+	// because provoking each status from a live session would put recogniser
+	// timing inside a test about a page.
 	page := string(browser.Page)
 	for _, required := range []string{
 		"session.update",
