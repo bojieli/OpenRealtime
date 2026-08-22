@@ -310,6 +310,13 @@ try {
   // tempted to interrupt something that already finished: the utterance
   // identifier outlives the sound, and asking the server to clear audio that
   // is not playing earns a refusal the person then has to explain away.
+  // "Silent" is a precondition, not an assumption. The agent answers more than
+  // once now - the voice replies, the reasoner works, and the voice says what
+  // it found - so unmuting without waiting would be barge-in, which is a
+  // different thing entirely and correctly does send a clear.
+  await waitFor("the agent to finish responding", async () =>
+    ["connected", "listening"].includes(
+      await evaluate("document.getElementById('state').textContent")));
   await evaluate("document.getElementById('mic').click()");
   await waitFor("the gate to reopen", async () =>
     (await eventNames("in")).filter((name) => name.includes("speech_started")).length > 1);

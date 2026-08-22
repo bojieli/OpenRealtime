@@ -19,6 +19,11 @@ let endpointAt = null;
 let firstAudioAt = null;
 let negotiated = null;
 let manualTurns = false;
+// Whether the server still has a response open. The local player and the
+// server finish at different moments - audio is paced out here long after the
+// server emitted the last of it - and only the server can be asked to clear
+// what it is still holding.
+let responseOpen = false;
 let levelTimer = null;
 
 const DEFAULT_INSTRUCTIONS =
@@ -207,6 +212,7 @@ function handle(event) {
       break;
 
     case "response.created":
+      responseOpen = true;
       ui.setState("responding", "working");
       break;
 
@@ -240,6 +246,7 @@ function handle(event) {
       break;
 
     case "response.done":
+      responseOpen = false;
       // A turn that produced nothing says why, and this is the one place a
       // person is looking for the answer that did not arrive. Rendering it
       // where the reply would have been is the difference between "the agent
@@ -310,7 +317,13 @@ function interrupt() {
   const heard = player.playedMs();
   player.stop();
   if (!itemId) return;
-  send({ type: "output_audio_buffer.clear" });
+  // Only the first half is conditional. There is nothing to clear once the
+  // server has closed the response - it emitted the last of the audio some
+  // time ago, and asking anyway earns a refusal the person then has to have
+  // explained to them. What was heard is still a fact worth recording either
+  // way: the trajectory must not keep speech nobody received as something the
+  // agent said.
+  if (responseOpen) send({ type: "output_audio_buffer.clear" });
   send({ type: "conversation.item.truncate", item_id: itemId, content_index: 0, audio_end_ms: heard });
 }
 
