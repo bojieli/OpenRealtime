@@ -195,7 +195,14 @@ function handle(event) {
       ui.setState("responding", "working");
       break;
 
+    // What the agent is saying and what it is writing are the same thing to a
+    // reader, and they carry the same fields. A session that asked for text
+    // gets response.output_text.delta instead of the transcript of speech it
+    // did not ask for - and a client that only ever listened for the transcript
+    // sees a turn arrive completely empty. There was nothing to notice while
+    // text-only sessions did not exist; there is now.
     case "response.output_audio_transcript.delta":
+    case "response.output_text.delta":
       ui.appendTurn(event.item_id, "agent", event.delta, "agent");
       break;
 

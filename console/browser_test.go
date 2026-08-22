@@ -166,3 +166,32 @@ func TestTheConsoleReportsATurnThatProducedNothing(t *testing.T) {
 		t.Fatalf("the browser run failed: %v", err)
 	}
 }
+
+// A session that asked for text must show the text.
+//
+// The words of a text session arrive on response.output_text.delta rather than
+// on the transcript of speech it did not ask for, and a client that only ever
+// listened for the transcript renders an empty conversation while every event
+// arrives correctly. The same shape of gap the upstream mirror had, for the
+// same reason: nothing had to handle these events while text-only sessions did
+// not exist.
+func TestTheConsoleShowsTheTextOfATextSession(t *testing.T) {
+	node, chromium := requireBrowser(t)
+	root := t.TempDir()
+	stack := testserver.Start(t, testserver.Config{Transcript: "say something"})
+	consoleURL := startConsoleServer(t, stack.ProtocolURL, stack.AdapterURL, root)
+
+	driver, err := filepath.Abs(filepath.Join("testdata", "textonly.mjs"))
+	if err != nil {
+		t.Fatalf("locate the driver: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	command := exec.CommandContext(ctx, node, driver, consoleURL)
+	command.Env = append(os.Environ(), "CHROMIUM="+chromium, "CDP_PORT="+freePort(t))
+	output, err := command.CombinedOutput()
+	t.Log("\n" + string(output))
+	if err != nil {
+		t.Fatalf("the browser run failed: %v", err)
+	}
+}
