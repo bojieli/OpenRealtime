@@ -16,6 +16,8 @@ package upstream
 import (
 	"context"
 	"errors"
+	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -24,6 +26,7 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/internal/clock"
+	"github.com/bojieli/OpenRealtime/realtimeclient"
 	"github.com/bojieli/OpenRealtime/session"
 )
 
@@ -37,6 +40,16 @@ type Config struct {
 	Model string
 	// Header carries provider-specific headers.
 	Header http.Header
+	// EventAliases renames inbound server events onto the ones the mirror
+	// reads, for an endpoint that implements an older spelling of the spec.
+	EventAliases map[string]string
+	// Handoff selects how the reasoner's answer is given to the remote to
+	// say. Empty selects the conversation-item form.
+	Handoff Handoff
+	// Dial opens the connection. Empty selects a Realtime WebSocket client,
+	// which is what every endpoint that implements the protocol needs. An
+	// endpoint that does not - Gemini Live - supplies a translator here.
+	Dial Dialer
 
 	// Slow is the engine's background reasoner. It is the whole point of this
 	// binding and is therefore required, unlike every other component here.
@@ -67,6 +80,48 @@ type Config struct {
 	ClientToolTimeout time.Duration
 }
 
+// Handoff is how a completed answer reaches the remote's voice.
+//
+// It exists because the base protocol turned out not to be as portable as it
+// looked. Injecting a conversation item is the natural form and every endpoint
+// modelled on OpenAI's own accepts it - but Alibaba's Qwen-Omni-Realtime
+// accepts conversation.item.create only for tool results, and its
+// response.create takes no per-response instructions. On that endpoint the
+// session instruction is the only writable channel there is.
+//
+// So the mechanism is a declared property of the endpoint rather than an
+// assumption, in the same way a provider's reasoning switch is. An endpoint
+// that supports neither cannot host this binding at all, and saying which one
+// it supports is what makes that checkable.
+type Handoff string
+
+const (
+	// HandoffConversationItem appends a system message the remote reads as
+	// context, then asks for a response. It is the portable form.
+	HandoffConversationItem Handoff = "conversation-item"
+	// HandoffSessionInstruction rewrites the session instruction to carry the
+	// answer, asks for a response, and restores the instruction when the
+	// response completes. It is for an endpoint whose only writable channel
+	// is the session.
+	HandoffSessionInstruction Handoff = "session-instruction"
+)
+
+// Dialer opens a connection to a remote realtime endpoint.
+//
+// It is a function rather than a dialect enum so that translating a foreign
+// protocol into this one stays outside the binding. The binding's job is the
+// background reasoner; which wire format the remote happens to speak is not
+// something it should have opinions about.
+type Dialer func(ctx context.Context, config Config) (RemoteConn, error)
+
+// RemoteConn is the connection to whatever is at the other end.
+type RemoteConn interface {
+	Events() <-chan realtimeclient.Event
+	Err() error
+	Send(ctx context.Context, value any) error
+	Close() error
+}
+
 // Binding connects to a remote Realtime endpoint.
 type Binding struct {
 	config Config
@@ -89,6 +144,15 @@ func New(config Config) (*Binding, error) {
 	if config.HandoffTimeout <= 0 {
 		config.HandoffTimeout = 30 * time.Second
 	}
+	if config.Handoff == "" {
+		config.Handoff = HandoffConversationItem
+	}
+	switch config.Handoff {
+	case HandoffConversationItem, HandoffSessionInstruction:
+	default:
+		return nil, fmt.Errorf("unsupported upstream handoff %q", config.Handoff)
+	}
+	config.EventAliases = maps.Clone(config.EventAliases)
 	if config.Scheduler == nil {
 		config.Scheduler = clock.NewSystem()
 	}

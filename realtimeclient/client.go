@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -42,6 +43,19 @@ type Config struct {
 	ReadLimit int64
 	// DialTimeout bounds connection establishment.
 	DialTimeout time.Duration
+	// EventAliases renames inbound server events onto the names this project
+	// reads, which are OpenAI's current ones.
+	//
+	// Several endpoints implement the Realtime protocol as it stood before
+	// OpenAI renamed response.audio.delta to response.output_audio.delta at
+	// general availability. That is the entire difference for some of them, so
+	// it is a rename table rather than a second client: a vendor whose only
+	// deviation is a spelling should not cost an adapter.
+	//
+	// It renames the delivered event type and leaves the raw bytes untouched,
+	// because the raw bytes are what the endpoint actually sent and a caller
+	// decoding them should see the truth.
+	EventAliases map[string]string
 }
 
 // Event is one decoded server event, with its raw bytes retained so a caller
@@ -122,6 +136,7 @@ func Dial(ctx context.Context, config Config) (*Client, error) {
 		return nil, fmt.Errorf("dial Realtime endpoint: %w", err)
 	}
 	connection.SetReadLimit(config.ReadLimit)
+	config.EventAliases = maps.Clone(config.EventAliases)
 	client := &Client{
 		connection: connection, config: config, validator: protocol.NewValidator(),
 		events: make(chan Event, 256), done: make(chan struct{}),
@@ -188,6 +203,9 @@ func (client *Client) read(ctx context.Context) {
 		}
 		if err := json.Unmarshal(input, &envelope); err != nil {
 			continue
+		}
+		if renamed, aliased := client.config.EventAliases[envelope.Type]; aliased {
+			envelope.Type = renamed
 		}
 		if client.config.ValidateWire && !strings.HasPrefix(envelope.Type, "openrealtime.") {
 			message, decodeErr := protocol.Decode(input)

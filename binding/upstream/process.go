@@ -111,13 +111,19 @@ func (runtime *runtime) rememberAnswer(text string) {
 	runtime.answer = strings.TrimSpace(text)
 }
 
+// handoffDirective is what the remote is told to do with a completed answer.
+// It is identical whichever channel carries it, so the wording lives in one
+// place and a vendor difference stays a transport difference.
+const handoffDirective = "The background reasoner has completed the answer. Say this, briefly and " +
+	"naturally, preserving every fact and identifier exactly, and add nothing:\n\n"
+
 // handOff gives the remote the completed answer to say.
 //
-// This is the explicit hand-off: a conversation item the remote treats as
-// context, followed by a request to respond. It works against any
-// Realtime-compatible endpoint because it uses nothing but the base protocol,
-// which is what makes the upstream binding portable rather than tied to one
-// vendor's internals.
+// This is the explicit hand-off, and which channel carries it is a declared
+// property of the endpoint rather than an assumption. A conversation item is
+// the portable form and what every endpoint modelled on OpenAI's own accepts;
+// the session instruction is the fallback for an endpoint whose conversation
+// items are reserved for tool results.
 func (runtime *runtime) handOff(ctx context.Context) error {
 	runtime.stateMu.Lock()
 	answer := runtime.answer
@@ -128,20 +134,38 @@ func (runtime *runtime) handOff(ctx context.Context) error {
 	}
 	handoff, cancel := context.WithTimeout(ctx, runtime.config.HandoffTimeout)
 	defer cancel()
+	if runtime.config.Handoff == HandoffSessionInstruction {
+		return runtime.handOffBySessionInstruction(handoff, answer)
+	}
 	if err := runtime.remote.Send(handoff, map[string]any{
 		"type": "conversation.item.create",
 		"item": map[string]any{
 			"type": "message", "role": "system",
 			"content": []map[string]any{{
-				"type": "input_text",
-				"text": "The background reasoner has completed the answer. Say this, briefly and naturally, " +
-					"preserving every fact and identifier exactly, and add nothing:\n\n" + answer,
+				"type": "input_text", "text": handoffDirective + answer,
 			}},
 		},
 	}); err != nil {
 		return err
 	}
 	return runtime.remote.Send(handoff, map[string]any{"type": "response.create"})
+}
+
+// handOffBySessionInstruction carries the answer in the session instruction.
+//
+// The instruction is session state rather than a turn, so it has to be put
+// back: leaving it in place would have the remote repeat a stale answer on
+// every later turn. finishRemoteResponse does the restoring, once the response
+// this handoff asked for has completed.
+func (runtime *runtime) handOffBySessionInstruction(ctx context.Context, answer string) error {
+	base := remoteInstruction(runtime.Settings().Instruction)
+	if err := runtime.remote.Send(ctx, sessionUpdate(base+"\n\n"+handoffDirective+answer)); err != nil {
+		return err
+	}
+	runtime.stateMu.Lock()
+	runtime.restoreInstruction = true
+	runtime.stateMu.Unlock()
+	return runtime.remote.Send(ctx, map[string]any{"type": "response.create"})
 }
 
 // dispatch splits the slow provider's calls between local execution and the

@@ -212,7 +212,18 @@ func (runtime *runtime) finishRemoteResponse() error {
 	runtime.stateMu.Lock()
 	utterance := runtime.utterance
 	runtime.utterance = nil
+	restore := runtime.restoreInstruction
+	runtime.restoreInstruction = false
 	runtime.stateMu.Unlock()
+	// A session-instruction handoff borrowed the session instruction to carry
+	// one answer. Now that it has been said, give the instruction back, or the
+	// remote would keep being told to repeat it.
+	if restore {
+		base := remoteInstruction(runtime.Settings().Instruction)
+		if err := runtime.remote.Send(runtime.ctx, sessionUpdate(base)); err != nil {
+			return err
+		}
+	}
 	if utterance == nil {
 		return nil
 	}

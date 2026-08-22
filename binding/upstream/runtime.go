@@ -32,7 +32,7 @@ type runtime struct {
 	policies  interaction.Policies
 	scheduler clock.Scheduler
 
-	remote      *realtimeclient.Client
+	remote      RemoteConn
 	store       *trajectory.Store
 	duplex      *session.Duplex
 	coordinator *eventloop.Coordinator
@@ -53,6 +53,9 @@ type runtime struct {
 
 	stateMu   sync.Mutex
 	utterance *action.Utterance
+	// restoreInstruction marks that the session instruction currently carries
+	// a one-shot handoff and has to be put back when the response completes.
+	restoreInstruction bool
 	// answer holds the completed slow answer waiting to be handed off.
 	answer string
 	// clientCalls holds calls the remote must not see: they were issued by
@@ -97,10 +100,11 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 	}
 	now := func() uint64 { return bind.config.Scheduler.NowNS() }
 
-	remote, err := realtimeclient.Dial(ctx, realtimeclient.Config{
-		URL: bind.config.URL, Token: bind.config.Token, Model: bind.config.Model,
-		Header: bind.config.Header,
-	})
+	dial := bind.config.Dial
+	if dial == nil {
+		dial = dialRealtime
+	}
+	remote, err := dial(ctx, bind.config)
 	if err != nil {
 		cancel(err)
 		return nil, err
@@ -185,18 +189,32 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 // boundary every other binding holds.
 func (runtime *runtime) configureRemote() error {
 	settings := runtime.Settings()
-	update := map[string]any{
+	return runtime.remote.Send(runtime.ctx, sessionUpdate(remoteInstruction(settings.Instruction)))
+}
+
+// sessionUpdate builds the session declaration. It is shared with the
+// session-instruction handoff, which is the same event carrying different
+// text.
+func sessionUpdate(instruction string) map[string]any {
+	return map[string]any{
 		"type": "session.update",
 		"session": map[string]any{
 			"type":         "realtime",
-			"instructions": remoteInstruction(settings.Instruction),
+			"instructions": instruction,
 			"audio": map[string]any{
 				"input":  map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
 				"output": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
 			},
 		},
 	}
-	return runtime.remote.Send(runtime.ctx, update)
+}
+
+// dialRealtime opens an ordinary Realtime WebSocket.
+func dialRealtime(ctx context.Context, config Config) (RemoteConn, error) {
+	return realtimeclient.Dial(ctx, realtimeclient.Config{
+		URL: config.URL, Token: config.Token, Model: config.Model,
+		Header: config.Header, EventAliases: config.EventAliases,
+	})
 }
 
 func remoteInstruction(agent string) string {
