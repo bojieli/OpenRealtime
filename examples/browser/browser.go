@@ -30,11 +30,22 @@ func Handler() http.Handler {
 			return
 		}
 		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-		// The page talks to a WebSocket and a peer connection on the same
-		// origin and loads nothing from anywhere else, so it says so.
+		// The page loads nothing from anywhere else, so it says so - but it
+		// does connect elsewhere, and that is the whole of what it does. The
+		// SDP offer goes to an adapter that is a different origin in every
+		// documented configuration: the README points it with
+		// ?adapter=http://host:port/v1/realtime, and `serve -demo
+		// -webrtc-listen 127.0.0.1:8766` puts the page on one port and the
+		// adapter on another. connect-src 'self' forbade exactly that request,
+		// so the demo could not reach an adapter anywhere.
+		//
+		// http: and https: rather than a fixed origin, because the adapter's
+		// address is the one thing this page takes as a parameter. It loads no
+		// code from there and can do nothing with the answer but hand it to a
+		// peer connection.
 		writer.Header().Set("Content-Security-Policy",
 			"default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "+
-				"connect-src 'self' ws: wss:; media-src 'self' blob:")
+				"connect-src 'self' http: https: ws: wss:; media-src 'self' blob:")
 		writer.Header().Set("X-Content-Type-Options", "nosniff")
 		if request.Method == http.MethodHead {
 			return
