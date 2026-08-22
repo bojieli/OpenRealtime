@@ -349,6 +349,13 @@ anywhere, because nothing was wrong. Two unrelated capabilities, the same
 absence. Expect this of any capability that makes new events reachable, and run
 the audit when adding one rather than when something is reported.
 
+Not every ageing is a new event, and the subtraction below will not find the
+ones that are not. An incomplete turn added no event at all — it added a new
+*value* to `status` on `response.done`, which every consumer already handled.
+Switching on a status nobody has ever sent looks exactly like switching on one
+that cannot happen, so when a capability widens an existing field, grep for the
+field rather than the event name.
+
 The audit is cheap. Enumerate the events the server can emit, subtract the ones
 a consumer handles, and go through the remainder:
 
