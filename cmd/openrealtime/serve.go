@@ -38,6 +38,7 @@ import (
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/policymodel"
+	"github.com/bojieli/OpenRealtime/providers"
 	"github.com/bojieli/OpenRealtime/sidecar"
 	"github.com/bojieli/OpenRealtime/trajectory"
 	webrtcadapter "github.com/bojieli/OpenRealtime/transport/webrtc"
@@ -53,9 +54,12 @@ type serveOptions struct {
 	requestTimeout  time.Duration
 	shutdownTimeout time.Duration
 
-	asrURL     string
-	asrModel   string
-	asrCadence time.Duration
+	asrProvider string
+	asrURL      string
+	asrModel    string
+	language    string
+	asrCadence  time.Duration
+	asrPartial  time.Duration
 
 	fastProvider string
 	fastURL      string
@@ -72,9 +76,10 @@ type serveOptions struct {
 	slowTokens   int
 	slowVision   bool
 
-	ttsURL   string
-	ttsModel string
-	ttsVoice string
+	ttsProvider string
+	ttsURL      string
+	ttsModel    string
+	ttsVoice    string
 
 	upstreamURL      string
 	upstreamModel    string
@@ -84,6 +89,7 @@ type serveOptions struct {
 	components     string
 	narrator       string
 	narration      string
+	visionProvider string
 	visionURL      string
 	visionModel    string
 	visionTokenEnv string
@@ -124,6 +130,27 @@ type serveOptions struct {
 	sidecarFloor   string
 
 	clientToolTimeout time.Duration
+
+	// explicit records which flags the operator actually typed.
+	//
+	// It is what lets an endpoint default live in the provider catalogue
+	// rather than in a flag default. A flag default would silently override
+	// every catalogue entry - selecting Deepgram and getting a request sent to
+	// the local recogniser's address - which is the kind of configuration bug
+	// that looks like a broken provider.
+	explicit map[string]bool
+}
+
+// chose reports whether a flag was set on the command line.
+func (options serveOptions) chose(name string) bool { return options.explicit[name] }
+
+// override returns value only when its flag was typed, so an untyped flag
+// leaves the catalogue's endpoint in place.
+func (options serveOptions) override(name, value string) string {
+	if options.chose(name) {
+		return value
+	}
+	return ""
 }
 
 func runServe(arguments []string, output io.Writer) error {
@@ -136,29 +163,52 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.DurationVar(&options.requestTimeout, "request-timeout", 2*time.Minute, "per-request provider timeout")
 	flags.DurationVar(&options.shutdownTimeout, "shutdown-timeout", 15*time.Second, "graceful shutdown timeout")
 
-	flags.StringVar(&options.asrURL, "asr-url", qwenasr.DefaultBaseURL, "streaming recogniser base URL")
-	flags.StringVar(&options.asrModel, "asr-model", qwenasr.DefaultModel, "recogniser model identity")
+	flags.StringVar(&options.asrProvider, "asr-provider", "qwen-asr",
+		"recogniser provider; openrealtime providers lists them")
+	flags.StringVar(&options.asrURL, "asr-url", qwenasr.DefaultBaseURL,
+		"recogniser endpoint; unset selects the provider's own")
+	flags.StringVar(&options.asrModel, "asr-model", qwenasr.DefaultModel,
+		"recogniser model identity; unset selects the provider's default")
+	flags.StringVar(&options.language, "language", "",
+		"language hint for the recogniser and the synthesiser; empty lets each decide")
 	flags.DurationVar(&options.asrCadence, "asr-cadence", 200*time.Millisecond, "how often the recogniser is advanced")
+	flags.DurationVar(&options.asrPartial, "asr-partial-interval", 0,
+		"ask a batch recogniser for a hypothesis this often by re-transcribing the utterance; "+
+			"0 recognises only at the endpoint, and a streaming recogniser ignores it")
 
-	flags.StringVar(&options.fastProvider, "fast-provider", "openai-compatible", "fast provider: openai-compatible or gemini")
-	flags.StringVar(&options.fastURL, "fast-url", openaicompat.DefaultBaseURL, "fast model base URL")
-	flags.StringVar(&options.fastModel, "fast-model", "qwen-fast", "fast model identity")
-	flags.StringVar(&options.fastTokenEnv, "fast-token-env", "OPENREALTIME_FAST_API_KEY", "environment variable holding the fast model credential")
+	flags.StringVar(&options.fastProvider, "fast-provider", "openai-compatible",
+		"fast provider; openrealtime providers lists them")
+	flags.StringVar(&options.fastURL, "fast-url", openaicompat.DefaultBaseURL,
+		"fast model base URL; unset selects the provider's own")
+	flags.StringVar(&options.fastModel, "fast-model", "qwen-fast",
+		"fast model identity; unset selects the provider's small model")
+	flags.StringVar(&options.fastTokenEnv, "fast-token-env", "",
+		"environment variable holding the fast model credential; "+
+			"empty reads OPENREALTIME_FAST_API_KEY and then the provider's conventional variable")
 	flags.IntVar(&options.fastTokens, "fast-max-tokens", 96, "fast spoken turn output-token limit")
 	flags.BoolVar(&options.fastVision, "fast-sees", false,
 		"the fast model accepts images; false withholds them, which a text-only model requires")
 
-	flags.StringVar(&options.slowProvider, "slow-provider", "gemini", "slow provider: gemini or openai-compatible")
-	flags.StringVar(&options.slowURL, "slow-url", openaicompat.DefaultBaseURL, "slow model base URL when it is OpenAI-compatible")
-	flags.StringVar(&options.slowModel, "slow-model", gemini.DefaultModel, "slow model identity")
-	flags.StringVar(&options.slowTokenEnv, "slow-token-env", "GEMINI_API_KEY", "environment variable holding the slow model credential")
+	flags.StringVar(&options.slowProvider, "slow-provider", "gemini",
+		"slow provider; openrealtime providers lists them")
+	flags.StringVar(&options.slowURL, "slow-url", openaicompat.DefaultBaseURL,
+		"slow model base URL; unset selects the provider's own")
+	flags.StringVar(&options.slowModel, "slow-model", gemini.DefaultModel,
+		"slow model identity; unset selects the provider's large model")
+	flags.StringVar(&options.slowTokenEnv, "slow-token-env", "",
+		"environment variable holding the slow model credential; "+
+			"empty reads OPENREALTIME_SLOW_API_KEY and then the provider's conventional variable")
 	flags.StringVar(&options.slowEffort, "slow-effort", "high", "slow reasoning effort: minimal, low, medium, or high")
 	flags.IntVar(&options.slowTokens, "slow-max-tokens", 2048, "slow continuation output-token limit")
 	flags.BoolVar(&options.slowVision, "slow-sees", false,
 		"the slow model accepts images; ignored for gemini, which always can")
 
-	flags.StringVar(&options.ttsURL, "tts-url", "http://127.0.0.1:8081/v1/audio/speech", "speech synthesis endpoint")
-	flags.StringVar(&options.ttsModel, "tts-model", openaitts.DefaultModel, "speech model identity")
+	flags.StringVar(&options.ttsProvider, "tts-provider", "openai-compatible",
+		"speech provider; openrealtime providers lists them")
+	flags.StringVar(&options.ttsURL, "tts-url", "http://127.0.0.1:8081/v1/audio/speech",
+		"speech synthesis endpoint; unset selects the provider's own")
+	flags.StringVar(&options.ttsModel, "tts-model", openaitts.DefaultModel,
+		"speech model identity; unset selects the provider's default")
 	flags.StringVar(&options.ttsVoice, "tts-voice", "default", "speech voice or reference preset")
 
 	flags.StringVar(&options.upstreamURL, "upstream-url", "", "remote Realtime endpoint for the upstream binding")
@@ -169,7 +219,10 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.components, "observer-components", "narration", "video observer components: keyframe+narration, narration, or keyframe")
 	flags.StringVar(&options.narrator, "narrator", "session", "narrator composition: session or dedicated")
 	flags.StringVar(&options.narration, "narration", "describe", "narration style: describe, or actionable to include control positions for computer use")
-	flags.StringVar(&options.visionURL, "vision-url", openaivision.DefaultBaseURL, "vision model base URL used for narration")
+	flags.StringVar(&options.visionProvider, "vision-provider", "openai-compatible",
+		"narration provider; it must speak Chat Completions and serve a model that can see")
+	flags.StringVar(&options.visionURL, "vision-url", openaivision.DefaultBaseURL,
+		"vision model base URL used for narration; unset selects the provider's own")
 	flags.StringVar(&options.visionModel, "vision-model", "", "vision model identity; required when a video observer is enabled")
 	flags.StringVar(&options.visionTokenEnv, "vision-token-env", "OPENREALTIME_VISION_API_KEY", "environment variable holding the vision model credential")
 	flags.StringVar(&options.rollout, "rollout", "fast+slow", "cognition rollout: fast-only, fast+slow, or endpointed-slow-only")
@@ -214,6 +267,8 @@ func runServe(arguments []string, output io.Writer) error {
 	if flags.NArg() != 0 {
 		return errors.New("serve accepts flags only")
 	}
+	options.explicit = map[string]bool{}
+	flags.Visit(func(flag *flag.Flag) { options.explicit[flag.Name] = true })
 	return serve(options, output)
 }
 
@@ -459,10 +514,11 @@ func buildCascade(
 	if err != nil {
 		return nil, fmt.Errorf("configure the slow provider: %w", err)
 	}
-	speech, err := openaitts.New(openaitts.Config{
-		Endpoint: options.ttsURL, Model: options.ttsModel, Voice: options.ttsVoice,
-		BearerToken: os.Getenv("OPENREALTIME_TTS_API_KEY"), RequestTimeout: options.requestTimeout,
-		FallbackSampleRate: 24_000, OutputSampleRateHz: 24_000,
+	speech, err := providers.NewTTS(providers.TTSRequest{
+		Provider: options.ttsProvider, Model: options.override("tts-model", options.ttsModel),
+		Voice: options.ttsVoice, BaseURL: options.override("tts-url", options.ttsURL),
+		APIKey: os.Getenv("OPENREALTIME_TTS_API_KEY"), Language: options.language,
+		OutputSampleRateHz: 24_000, RequestTimeout: options.requestTimeout,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("configure speech synthesis: %w", err)
@@ -483,6 +539,10 @@ func buildCascade(
 	if err != nil {
 		return nil, err
 	}
+	recognise, err := buildRecogniser(options)
+	if err != nil {
+		return nil, fmt.Errorf("configure the recogniser: %w", err)
+	}
 	return cascade.New(cascade.Config{
 		ClientToolTimeout: options.clientToolTimeout,
 		Observers:         observers, DefaultObservers: defaults, Tools: computer.specs,
@@ -496,10 +556,7 @@ func buildCascade(
 				record.Name, record.CallID, record.Target, record.Confirmed, record.Executed, record.Error)
 		},
 		Perception: func() (v1.PerceptionProvider, error) {
-			recogniser, err := qwenasr.New(qwenasr.Config{
-				BaseURL: options.asrURL, Model: options.asrModel,
-				BearerToken: os.Getenv("OPENREALTIME_ASR_API_KEY"), RequestTimeout: options.requestTimeout,
-			})
+			recogniser, err := recognise()
 			if err != nil {
 				return nil, err
 			}
@@ -533,28 +590,22 @@ func buildUpstream(options serveOptions) (binding.Binding, error) {
 //
 // It is always silent-capable and always proposal-only: the fast provider
 // cannot call tools, and that is a property of the descriptor here rather than
-// a convention the prompt is trusted to follow.
+// a convention the prompt is trusted to follow. It also does not reason -
+// minimal effort with the provider's thinking switch turned off - because the
+// fast phase exists to answer the question that was actually asked, now.
 func buildFast(options serveOptions) (continuation.Provider, error) {
-	switch strings.ToLower(strings.TrimSpace(options.fastProvider)) {
-	case "openai-compatible", "vllm", "":
-		return openaicompat.New(openaicompat.Config{
-			APIKey: os.Getenv(options.fastTokenEnv), Model: options.fastModel, BaseURL: options.fastURL,
-			Provider: "openai-compatible", Phase: trajectory.PhaseFast, Effort: continuation.EffortMinimal,
-			ToolAuthority: continuation.ToolAuthorityPropose, SpeechAuthority: continuation.SpeechAuthorityVoice,
-			ThinkingMode: openaicompat.ThinkingDisabled, DisableReasoningCapture: true,
-			Vision:         options.fastVision,
-			RequestTimeout: options.requestTimeout,
-		})
-	case "gemini":
-		key := os.Getenv(options.slowTokenEnv)
-		return gemini.New(gemini.Config{
-			APIKey: key, Model: options.fastModel, Phase: trajectory.PhaseFast,
-			Effort: continuation.EffortMinimal, ToolAuthority: continuation.ToolAuthorityPropose,
-			SpeechAuthority: continuation.SpeechAuthorityVoice, RequestTimeout: options.requestTimeout,
-		})
-	default:
-		return nil, fmt.Errorf("fast provider must be openai-compatible or gemini, got %q", options.fastProvider)
-	}
+	return providers.NewLLM(providers.LLMRequest{
+		Provider: options.fastProvider,
+		Model:    modelOverride(options, "fast-model", options.fastModel, options.fastProvider, trajectory.PhaseFast),
+		BaseURL:  options.override("fast-url", options.fastURL),
+		APIKey:   roleCredential(options, "fast-token-env", options.fastTokenEnv, "OPENREALTIME_FAST_API_KEY"),
+		Phase:    trajectory.PhaseFast, Effort: continuation.EffortMinimal,
+		ToolAuthority:   continuation.ToolAuthorityPropose,
+		SpeechAuthority: continuation.SpeechAuthorityVoice,
+		Reason:          providers.ReasonOff,
+		Vision:          visionOverride(options, "fast-sees", options.fastVision),
+		RequestTimeout:  options.requestTimeout,
+	})
 }
 
 // buildSlow configures the background reasoner. It is always silent: its
@@ -564,28 +615,94 @@ func buildSlow(options serveOptions) (continuation.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch strings.ToLower(strings.TrimSpace(options.slowProvider)) {
-	case "gemini", "":
-		key := os.Getenv(options.slowTokenEnv)
-		if strings.TrimSpace(key) == "" {
-			return nil, fmt.Errorf("the slow provider needs a credential in %s", options.slowTokenEnv)
-		}
-		return gemini.New(gemini.Config{
-			APIKey: key, Model: options.slowModel, Phase: trajectory.PhaseSlow, Effort: effort,
-			ToolAuthority: continuation.ToolAuthorityExecute, SpeechAuthority: continuation.SpeechAuthoritySilent,
-			IncludeThoughts: false, RequestTimeout: options.requestTimeout,
-		})
-	case "openai-compatible", "vllm":
-		return openaicompat.New(openaicompat.Config{
-			APIKey: os.Getenv(options.slowTokenEnv), Model: options.slowModel, BaseURL: options.slowURL,
-			Provider: "openai-compatible", Phase: trajectory.PhaseSlow, Effort: effort,
-			ToolAuthority: continuation.ToolAuthorityExecute, SpeechAuthority: continuation.SpeechAuthoritySilent,
-			Vision:         options.slowVision,
-			RequestTimeout: options.requestTimeout,
-		})
-	default:
-		return nil, fmt.Errorf("slow provider must be gemini or openai-compatible, got %q", options.slowProvider)
+	return providers.NewLLM(providers.LLMRequest{
+		Provider: options.slowProvider,
+		Model:    modelOverride(options, "slow-model", options.slowModel, options.slowProvider, trajectory.PhaseSlow),
+		BaseURL:  options.override("slow-url", options.slowURL),
+		APIKey:   roleCredential(options, "slow-token-env", options.slowTokenEnv, "OPENREALTIME_SLOW_API_KEY"),
+		Phase:    trajectory.PhaseSlow, Effort: effort,
+		ToolAuthority:   continuation.ToolAuthorityExecute,
+		SpeechAuthority: continuation.SpeechAuthoritySilent,
+		Reason:          providers.ReasonOn,
+		Vision:          visionOverride(options, "slow-sees", options.slowVision),
+		RequestTimeout:  options.requestTimeout,
+	})
+}
+
+// buildRecogniser resolves perception.
+//
+// It returns a factory because a recogniser owns one utterance: a WebSocket to
+// Deepgram, a session on the local service, or a buffer being re-transcribed.
+// One instance shared across concurrent utterances would interleave them.
+func buildRecogniser(options serveOptions) (func() (v1.PerceptionProvider, error), error) {
+	return providers.NewASRFactory(providers.ASRRequest{
+		Provider: options.asrProvider,
+		Model:    options.override("asr-model", options.asrModel),
+		BaseURL:  options.override("asr-url", options.asrURL),
+		APIKey:   os.Getenv("OPENREALTIME_ASR_API_KEY"),
+		Language: options.language, PartialInterval: options.asrPartial,
+		RequestTimeout: options.requestTimeout,
+	})
+}
+
+// roleCredential resolves a model credential.
+//
+// Two sources, in the order an operator would expect: the variable they named
+// on the command line, then the role's own variable for running two profiles
+// of one vendor on separate keys. Returning empty is not a failure - it hands
+// the lookup to the catalogue, which is what makes `-slow-provider anthropic`
+// work with nothing but ANTHROPIC_API_KEY in the environment.
+//
+// An untyped flag deliberately contributes nothing. Its default names one
+// provider's variable, and reading that for whichever provider was actually
+// selected would send, say, a Gemini key to Anthropic and report it as an
+// authentication failure at the vendor rather than a configuration error here.
+func roleCredential(options serveOptions, flagName, namedEnv, roleEnv string) string {
+	if options.chose(flagName) {
+		return strings.TrimSpace(os.Getenv(namedEnv))
 	}
+	return strings.TrimSpace(os.Getenv(roleEnv))
+}
+
+// modelOverride resolves which model identity to send.
+//
+// A typed flag always wins. An untyped one is only meaningful for a provider
+// the catalogue has no default model for - the local servers, which serve
+// whatever they were started with - and there the flag's own default is this
+// project's local convention. For a provider that does name a default, an
+// untyped flag must contribute nothing, or selecting a new provider would
+// silently keep the previous one's model and fail at the vendor.
+func modelOverride(
+	options serveOptions, flagName, value, provider string, phase trajectory.Phase,
+) string {
+	if options.chose(flagName) {
+		return value
+	}
+	entry, err := providers.LookupLLM(provider)
+	if err != nil {
+		return ""
+	}
+	catalogued := entry.SlowModel
+	if phase == trajectory.PhaseFast {
+		catalogued = entry.FastModel
+	}
+	if catalogued != "" {
+		return ""
+	}
+	return value
+}
+
+// visionOverride reports an explicit sight declaration, or nil to take the
+// provider catalogue's.
+//
+// The flags default to false, and a false default that overrode the catalogue
+// would withhold images from every multimodal provider unless the operator
+// remembered a flag. So an untyped flag defers, and a typed one decides.
+func visionOverride(options serveOptions, flagName string, value bool) *bool {
+	if !options.chose(flagName) {
+		return nil
+	}
+	return &value
 }
 
 func parseEffort(value string) (continuation.Effort, error) {
@@ -637,13 +754,13 @@ func buildObservers(options serveOptions, governor *admission.Governor) ([]perce
 	if err != nil {
 		return nil, err
 	}
-	label, visionURL, visionModel, tokenEnv, err := narratorComposition(options)
+	label, narration, err := narratorComposition(options)
 	if err != nil {
 		return nil, err
 	}
-	vision, err := openaivision.New(openaivision.Config{
-		BaseURL: visionURL, Model: visionModel,
-		APIKey: os.Getenv(tokenEnv), RequestTimeout: options.requestTimeout,
+	vision, err := providers.NewVision(providers.VisionRequest{
+		Provider: narration.provider, Model: narration.model, BaseURL: narration.url,
+		APIKey: os.Getenv(narration.tokenEnv), RequestTimeout: options.requestTimeout,
 	})
 	if err != nil {
 		return nil, err
@@ -677,6 +794,14 @@ func buildObservers(options serveOptions, governor *admission.Governor) ([]perce
 	})}, nil
 }
 
+// narratorSource is which endpoint narrates.
+type narratorSource struct {
+	provider string
+	url      string
+	model    string
+	tokenEnv string
+}
+
 // narratorComposition resolves which model narrates, and what to call it.
 //
 // The two levels of this factor were a label until now: both asked for
@@ -690,29 +815,51 @@ func buildObservers(options serveOptions, governor *admission.Governor) ([]perce
 // and model rather than asking for them again. It requires that provider to be
 // able to see, because a model that cannot is not narrating anything: the
 // deployment wanted the dedicated level and should say so.
-func narratorComposition(options serveOptions) (label, url, model, tokenEnv string, err error) {
+func narratorComposition(options serveOptions) (string, narratorSource, error) {
 	switch strings.ToLower(strings.TrimSpace(options.narrator)) {
 	case "session", "":
-		if !options.fastVision {
-			return "", "", "", "", errors.New(
+		fast, err := providers.LookupLLM(options.fastProvider)
+		if err != nil {
+			return "", narratorSource{}, err
+		}
+		sees := fast.Vision
+		if options.chose("fast-sees") {
+			sees = options.fastVision
+		}
+		if !sees {
+			return "", narratorSource{}, errors.New(
 				"a session narrator is the session's own model narrating as a side-output, and " +
 					"this one is configured as text-only: pass -fast-sees if it can see, or " +
 					"-narrator dedicated with -vision-model to use a separate one")
 		}
-		if strings.ToLower(strings.TrimSpace(options.fastProvider)) == "gemini" {
-			return "", "", "", "", errors.New(
-				"a session narrator needs an OpenAI-compatible fast provider; " +
-					"use -narrator dedicated with -vision-model")
+		// The narrator client speaks Chat Completions and nothing else. A
+		// fast provider on another dialect can still run the session; it just
+		// cannot double as the narrator, and saying which flag fixes that is
+		// more use than a decode error on the first video frame.
+		if fast.Dialect != providers.DialectOpenAIChat {
+			return "", narratorSource{}, fmt.Errorf(
+				"a session narrator needs an OpenAI-compatible fast provider, and %q speaks %s; "+
+					"use -narrator dedicated with -vision-model", fast.Name, fast.Dialect)
 		}
-		return "session", options.fastURL, options.fastModel, options.fastTokenEnv, nil
+		return "session", narratorSource{
+			provider: options.fastProvider,
+			url:      options.override("fast-url", options.fastURL),
+			model:    modelOverride(options, "fast-model", options.fastModel, options.fastProvider, trajectory.PhaseFast),
+			tokenEnv: options.fastTokenEnv,
+		}, nil
 	case "dedicated":
 		if strings.TrimSpace(options.visionModel) == "" {
-			return "", "", "", "", errors.New(
+			return "", narratorSource{}, errors.New(
 				"a dedicated narrator needs -vision-model: narration is what a video observer produces")
 		}
-		return "dedicated", options.visionURL, options.visionModel, options.visionTokenEnv, nil
+		return "dedicated", narratorSource{
+			provider: options.visionProvider,
+			url:      options.override("vision-url", options.visionURL),
+			model:    options.visionModel,
+			tokenEnv: options.visionTokenEnv,
+		}, nil
 	default:
-		return "", "", "", "", fmt.Errorf(
+		return "", narratorSource{}, fmt.Errorf(
 			"narrator must be session or dedicated, got %q", options.narrator)
 	}
 }

@@ -251,40 +251,97 @@ func TestNarratorCompositionNamesTheModelThatActuallyNarrates(t *testing.T) {
 	options.fastTokenEnv = "FAST_KEY"
 	options.fastProvider = "openai-compatible"
 	options.visionModel = "some-other-model"
+	options.visionProvider = "openai-compatible"
+	// The endpoint and model are only overrides when they were typed, so the
+	// test has to say it typed them.
+	options.explicit = map[string]bool{"fast-url": true, "fast-model": true, "fast-sees": true}
 
 	// A session narrator is the session's own model, so it must not quietly
 	// use the dedicated one that happens to be configured beside it.
 	options.fastVision = true
-	label, url, model, tokenEnv, err := narratorComposition(options)
+	label, source, err := narratorComposition(options)
 	if err != nil {
 		t.Fatalf("session: %v", err)
 	}
-	if label != "session" || model != "qwen-vl" || url != options.fastURL || tokenEnv != "FAST_KEY" {
-		t.Fatalf("a session narrator is the session's own model: %q %q %q %q", label, url, model, tokenEnv)
+	if label != "session" || source.model != "qwen-vl" ||
+		source.url != options.fastURL || source.tokenEnv != "FAST_KEY" {
+		t.Fatalf("a session narrator is the session's own model: %q %+v", label, source)
 	}
 
 	// And a model that cannot see is not narrating anything, so asking for it
 	// is refused rather than silently producing nothing.
 	options.fastVision = false
-	if _, _, _, _, err := narratorComposition(options); err == nil {
+	if _, _, err := narratorComposition(options); err == nil {
 		t.Fatal("a text-only fast model cannot be the session narrator")
 	}
 
+	// A fast provider on another dialect cannot narrate either, and the
+	// refusal has to name the dialect rather than fail later on a frame.
+	seeing := options
+	seeing.fastVision = true
+	seeing.fastProvider = "anthropic"
+	if _, _, err := narratorComposition(seeing); err == nil {
+		t.Fatal("a non-Chat-Completions fast provider cannot be the session narrator")
+	}
+
 	options.narrator = "dedicated"
-	label, url, model, tokenEnv, err = narratorComposition(options)
+	label, source, err = narratorComposition(options)
 	if err != nil {
 		t.Fatalf("dedicated: %v", err)
 	}
-	if label != "dedicated" || model != "some-other-model" || tokenEnv != options.visionTokenEnv {
-		t.Fatalf("a dedicated narrator is the one named: %q %q %q %q", label, url, model, tokenEnv)
+	if label != "dedicated" || source.model != "some-other-model" ||
+		source.tokenEnv != options.visionTokenEnv {
+		t.Fatalf("a dedicated narrator is the one named: %q %+v", label, source)
 	}
 
 	options.visionModel = ""
-	if _, _, _, _, err := narratorComposition(options); err == nil {
+	if _, _, err := narratorComposition(options); err == nil {
 		t.Fatal("a dedicated narrator with no model must be refused")
 	}
 	options.narrator = "telepathy"
-	if _, _, _, _, err := narratorComposition(options); err == nil {
+	if _, _, err := narratorComposition(options); err == nil {
 		t.Fatal("an unknown narrator composition must be refused")
+	}
+}
+
+// A flag default names one provider's credential variable. Reading it for
+// whichever provider was actually selected would hand, say, a Gemini key to
+// Anthropic and surface as an authentication failure at the vendor rather than
+// a configuration error here.
+func TestAnUntypedCredentialFlagDoesNotLeakOneProvidersKeyToAnother(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "gemini-secret")
+	t.Setenv("OPENREALTIME_SLOW_API_KEY", "")
+	options := defaultOptions()
+	options.slowTokenEnv = "GEMINI_API_KEY"
+	if got := roleCredential(options, "slow-token-env", options.slowTokenEnv, "OPENREALTIME_SLOW_API_KEY"); got != "" {
+		t.Fatalf("an untyped flag must contribute nothing, got %q", got)
+	}
+
+	// Typing it is an instruction, and it is obeyed.
+	options.explicit = map[string]bool{"slow-token-env": true}
+	if got := roleCredential(options, "slow-token-env", options.slowTokenEnv, "OPENREALTIME_SLOW_API_KEY"); got != "gemini-secret" {
+		t.Fatalf("a named variable must be read, got %q", got)
+	}
+
+	// The role's own variable is for running two profiles of one vendor.
+	options.explicit = nil
+	t.Setenv("OPENREALTIME_SLOW_API_KEY", "role-secret")
+	if got := roleCredential(options, "slow-token-env", options.slowTokenEnv, "OPENREALTIME_SLOW_API_KEY"); got != "role-secret" {
+		t.Fatalf("the role variable must be read, got %q", got)
+	}
+}
+
+// The sight flags default to false. A false default that overrode the
+// catalogue would withhold images from every multimodal provider unless the
+// operator remembered a flag they had no reason to think they needed.
+func TestAnUntypedSightFlagDefersToTheProvider(t *testing.T) {
+	options := defaultOptions()
+	if visionOverride(options, "fast-sees", false) != nil {
+		t.Fatal("an untyped sight flag must defer to the provider catalogue")
+	}
+	options.explicit = map[string]bool{"fast-sees": true}
+	declared := visionOverride(options, "fast-sees", false)
+	if declared == nil || *declared {
+		t.Fatalf("a typed sight flag must decide: %v", declared)
 	}
 }

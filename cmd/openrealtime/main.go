@@ -46,6 +46,8 @@ func run(arguments []string, stdout, stderr io.Writer) error {
 		return runSimulate(arguments[1:], stdout)
 	case "datasets":
 		return runDatasets(arguments[1:], stdout)
+	case "providers":
+		return runProviders(arguments[1:], stdout)
 	case "version":
 		fmt.Fprintln(stdout, version())
 		return nil
@@ -70,6 +72,7 @@ commands:
   simulate      hold a conversation between two agents and check what happened
   compare       read two saved cells and report the pairing
   datasets      inventory a prepared benchmark dataset
+  providers     list the model providers this build can be pointed at
   version       print the version
 
 run "openrealtime <command> -h" for a command's flags`
