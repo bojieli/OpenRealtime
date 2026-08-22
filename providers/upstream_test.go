@@ -111,6 +111,13 @@ func TestQwenRenamesThePreGAAudioEvents(t *testing.T) {
 		"response.audio.delta":            "response.output_audio.delta",
 		"response.audio_transcript.delta": "response.output_audio_transcript.delta",
 		"response.audio_transcript.done":  "response.output_audio_transcript.done",
+		// The text pair renames for the same reason and was missing for a
+		// reason worth keeping a test about: nothing downstream handled a text
+		// response, so there was no name to rename onto, and the gap stayed
+		// invisible for exactly as long as the capability did. A rename table
+		// ages with the thing it feeds.
+		"response.text.delta": "response.output_text.delta",
+		"response.text.done":  "response.output_text.done",
 	} {
 		if entry.EventAliases[from] != to {
 			t.Errorf("alias %q = %q, want %q", from, entry.EventAliases[from], to)

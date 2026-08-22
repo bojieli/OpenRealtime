@@ -74,11 +74,19 @@ const (
 // difference: an endpoint built against the earlier specification sends the
 // same fields under the earlier names, so the mirror needs the names changed
 // and nothing else.
+//
+// The text pair is here for the same reason as the audio ones and was missing
+// for a reason worth remembering: nothing downstream handled a text response,
+// so there was no name for the table to rename it onto, and the gap was
+// invisible for exactly as long as the capability was. A rename table ages
+// with the thing it feeds.
 var preGANames = map[string]string{
 	"response.audio.delta":            "response.output_audio.delta",
 	"response.audio.done":             "response.output_audio.done",
 	"response.audio_transcript.delta": "response.output_audio_transcript.delta",
 	"response.audio_transcript.done":  "response.output_audio_transcript.done",
+	"response.text.delta":             "response.output_text.delta",
+	"response.text.done":              "response.output_text.done",
 }
 
 // upstreamCatalog is the realtime-endpoint catalogue.

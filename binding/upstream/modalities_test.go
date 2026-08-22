@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/providers"
 
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/upstream"
@@ -145,4 +146,55 @@ func declaresModality(message map[string]any, want string) bool {
 		}
 	}
 	return false
+}
+
+// A pre-GA endpoint's text reaches the client too.
+//
+// The rename table carried the four audio events and neither text one, and
+// that was invisible for exactly as long as nothing downstream handled a text
+// response: there was no name for the table to rename onto. Handling text made
+// the omission real in the same commit that made text possible, on the one
+// endpoint in the catalogue that speaks the older spelling.
+func TestAPreGAEndpointsTextReachesTheClient(t *testing.T) {
+	t.Setenv("DASHSCOPE_API_KEY", "test-key")
+	remote := newFakeRemote(t)
+	settings, err := providers.ResolveUpstream(providers.UpstreamRequest{
+		Provider: "qwen-omni", URL: remote.url(),
+	})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	bind, err := upstream.New(upstream.Config{
+		URL: settings.URL, Token: settings.Token, Model: settings.Model,
+		Header: settings.Header, EventAliases: settings.EventAliases,
+		Handoff: settings.Handoff, Slow: &scriptedSlow{},
+	})
+	if err != nil {
+		t.Fatalf("new upstream: %v", err)
+	}
+	sink := &collectingSink{}
+	runtime, err := bind.Start(context.Background(), binding.Options{
+		Sink: sink, SessionID: "test",
+		Settings: binding.Settings{Modalities: []string{"text"}},
+	})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() { _ = runtime.Close(context.Background(), nil) })
+	<-remote.ready
+
+	// The endpoint's own spelling, from before the GA rename.
+	remote.emit(map[string]any{"type": "response.text.delta", "delta": "Forty dollars."})
+	remote.emit(map[string]any{"type": "response.text.done", "text": "Forty dollars."})
+
+	waitFor(t, func() bool {
+		sink.mu.Lock()
+		defer sink.mu.Unlock()
+		for _, spoken := range sink.spoken {
+			if spoken == "Forty dollars." {
+				return true
+			}
+		}
+		return false
+	}, "a pre-GA endpoint's text must be renamed onto the event the mirror handles")
 }
