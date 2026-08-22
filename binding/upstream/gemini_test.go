@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/upstream"
@@ -157,5 +158,63 @@ func TestTheBindingRunsOverGeminiLiveThroughTheCatalogue(t *testing.T) {
 	sink.mu.Unlock()
 	if transcripts == 0 {
 		t.Fatal("the client must see what Gemini heard")
+	}
+}
+
+// The probe is what raises a verification level, so it has to work. Driving it
+// against the Gemini translator covers both halves at once: a foreign protocol
+// and the probe's own turn logic.
+func TestTheProbeCompletesATurnAgainstATranslatedEndpoint(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "test-key")
+	fake := newFakeGemini(t)
+	go func() {
+		<-fake.ready
+		// Answer the probe the way Gemini does: a transcript, then the turn
+		// ends.
+		fake.emit(map[string]any{"serverContent": map[string]any{
+			"outputTranscription": map[string]any{"text": "probe ok."},
+		}})
+		fake.emit(map[string]any{"serverContent": map[string]any{"turnComplete": true}})
+	}()
+
+	result := providers.ProbeUpstream(context.Background(), providers.UpstreamRequest{
+		Provider: "gemini", URL: fake.url(),
+	}, 10*time.Second)
+
+	if !result.Connected {
+		t.Fatalf("the probe did not connect: %s", result.Failure)
+	}
+	if result.Failure != "" {
+		t.Fatalf("probe failed: %s", result.Failure)
+	}
+	if result.Spoken != "probe ok." {
+		t.Errorf("the probe must report what the endpoint said, got %q", result.Spoken)
+	}
+	if result.Events["response.done"] != 1 {
+		t.Errorf("the probe must record the events it saw: %+v", result.Events)
+	}
+}
+
+// A refused endpoint has to be reported as a failure rather than a silent
+// success, or the probe would raise a verification level it never earned.
+func TestTheProbeReportsARefusal(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "test-key")
+	fake := newFakeGemini(t)
+	go func() {
+		<-fake.ready
+		fake.emit(map[string]any{"error": map[string]any{
+			"status": "PERMISSION_DENIED", "message": "no access to this model",
+		}})
+	}()
+
+	result := providers.ProbeUpstream(context.Background(), providers.UpstreamRequest{
+		Provider: "gemini", URL: fake.url(),
+	}, 10*time.Second)
+
+	if !result.Connected {
+		t.Fatal("the socket did open, and that is worth distinguishing from a refusal")
+	}
+	if !strings.Contains(result.Failure, "no access to this model") {
+		t.Fatalf("a refusal must be reported: %q", result.Failure)
 	}
 }

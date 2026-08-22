@@ -34,7 +34,38 @@ type Upstream struct {
 	Handoff upstream.Handoff
 	// AuthHeader overrides the Authorization: Bearer default.
 	AuthHeader string
+	// Verified records how far this entry has been checked against the real
+	// endpoint, as opposed to against a fake built from its documentation.
+	Verified Verification
 }
+
+// Verification is how much of an entry is known to be true.
+//
+// It exists because a fake server built from a vendor's documentation proves
+// only that this code does what the documentation was read to say. That is
+// worth having and it is not the same as working. Recording the difference in
+// the table - rather than in a paragraph that rots - keeps the listing honest
+// about which entries have actually been run.
+//
+// Raising a level requires a credential for that vendor and the probe command;
+// nobody should raise one from reading.
+type Verification string
+
+const (
+	// VerifiedLiveTurn means a real session completed a turn: the endpoint
+	// heard something, answered, and its events arrived under the names this
+	// catalogue expects.
+	VerifiedLiveTurn Verification = "live-turn"
+	// VerifiedReachable means the real endpoint answered on this URL and
+	// evaluated a credential sent this way - so the address and the
+	// authentication are right - but no turn has been run for want of a
+	// working credential. The event names and the hand-off are still only as
+	// good as the documentation.
+	VerifiedReachable Verification = "reachable"
+	// VerifiedDocumented means the entry is built from the vendor's
+	// specification and has been run against a fake, and nothing else.
+	VerifiedDocumented Verification = "documented"
+)
 
 // preGANames maps the Realtime protocol as it stood before OpenAI renamed its
 // audio events at general availability.
@@ -60,6 +91,9 @@ var upstreamCatalog = []Upstream{
 			Notes:  "The reference implementation: this project's mirror reads its current event names.",
 		},
 		Model: "gpt-realtime-2.1", Handoff: upstream.HandoffConversationItem,
+		// The handshake succeeds and the credential is evaluated; the account
+		// this was checked from has no credit, so no turn has been run.
+		Verified: VerifiedReachable,
 	},
 	{
 		Common: Common{
@@ -70,6 +104,9 @@ var upstreamCatalog = []Upstream{
 				"as .updated, which is aliased onto .completed here.",
 		},
 		Model: "grok-voice-latest", Handoff: upstream.HandoffConversationItem,
+		// The endpoint answers on this URL and reads this credential; the key
+		// available when it was checked was not valid.
+		Verified: VerifiedReachable,
 		EventAliases: map[string]string{
 			"conversation.item.input_audio_transcription.updated": "conversation.item.input_audio_transcription.completed",
 		},
@@ -83,6 +120,9 @@ var upstreamCatalog = []Upstream{
 				"wss://RESOURCE.openai.azure.com/openai/realtime?api-version=...&deployment=NAME.",
 		},
 		Handoff: upstream.HandoffConversationItem, ModelQuery: "deployment", AuthHeader: "api-key",
+		// Azure has no endpoint without a resource name, so there is nothing
+		// to reach without an account.
+		Verified: VerifiedDocumented,
 	},
 	{
 		Common: Common{
@@ -95,6 +135,9 @@ var upstreamCatalog = []Upstream{
 				"Mainland-China accounts use wss://dashscope.aliyuncs.com/api-ws/v1/realtime.",
 		},
 		Model: "qwen3.5-omni-flash-realtime", Handoff: upstream.HandoffSessionInstruction,
+		// Both regional endpoints answer on this path and read this
+		// credential; no key was available to run a turn.
+		Verified:     VerifiedReachable,
 		EventAliases: preGANames,
 	},
 	{
@@ -112,6 +155,8 @@ var upstreamCatalog = []Upstream{
 		// the native equivalent, so the strategy declared here is the portable
 		// one and the translator is what makes it mean something.
 		Handoff: upstream.HandoffConversationItem,
+		// The only entry here that has actually held a conversation.
+		Verified: VerifiedLiveTurn,
 	},
 }
 

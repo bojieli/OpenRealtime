@@ -128,3 +128,39 @@ func TestAnUnknownRealtimeEndpointNamesTheOnesThatExist(t *testing.T) {
 		t.Fatalf("an unknown endpoint must list the known ones, got %v", err)
 	}
 }
+
+// The verification column is a claim about evidence, so it has to be a value
+// that means something and it has to be justified by what the entry carries.
+//
+// The specific rule worth enforcing: an entry claiming a live turn must have a
+// default endpoint and model, because a turn cannot have been run without
+// both. Nothing here can prove a probe was actually run - only a person with a
+// credential can raise a level - but a claim that is impossible on its face
+// should not survive review.
+func TestTheVerificationClaimIsAValueAndIsNotImpossible(t *testing.T) {
+	t.Parallel()
+	for _, entry := range providers.Upstreams() {
+		switch entry.Verified {
+		case providers.VerifiedLiveTurn:
+			if entry.BaseURL == "" || entry.Model == "" {
+				t.Errorf("upstream %q claims a live turn but has no default %s",
+					entry.Name, missingPiece(entry))
+			}
+		case providers.VerifiedReachable:
+			if entry.BaseURL == "" {
+				t.Errorf("upstream %q claims to be reachable but has no endpoint to reach",
+					entry.Name)
+			}
+		case providers.VerifiedDocumented:
+		default:
+			t.Errorf("upstream %q has no verification level: %q", entry.Name, entry.Verified)
+		}
+	}
+}
+
+func missingPiece(entry providers.Upstream) string {
+	if entry.BaseURL == "" {
+		return "endpoint"
+	}
+	return "model"
+}
