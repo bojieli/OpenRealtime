@@ -134,6 +134,15 @@ all.
 It skips when Chromium or Node is missing, so the gate still runs offline on a
 machine with neither.
 
+The fake microphone plays a tone, which is enough to prove audio reaches the
+protocol and is all the committed test needs. A run against a real recogniser
+needs real speech, because a tone transcribes to nothing:
+
+```sh
+CONSOLE_FAKE_AUDIO=/path/to/speech.wav node console/testdata/browser.mjs \
+  http://127.0.0.1:8767/ websocket
+```
+
 ## Building on it
 
 The page is plain ES modules with no build step, one file per concern:

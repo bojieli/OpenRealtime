@@ -28,6 +28,11 @@ if (!CONSOLE_URL) {
 }
 
 const profile = mkdtempSync(join(tmpdir(), "openrealtime-console-"));
+// CONSOLE_FAKE_AUDIO plays a WAV file into the fake microphone instead of the
+// synthetic tone. The tone is enough to prove audio reaches the protocol, and
+// it is all the committed test needs; real speech is what a run against a real
+// recogniser needs, because a tone transcribes to nothing.
+const fakeAudio = process.env.CONSOLE_FAKE_AUDIO;
 const chromium = spawn(process.env.CHROMIUM ?? "chromium", [
   "--headless=new",
   `--remote-debugging-port=${PORT}`,
@@ -35,6 +40,7 @@ const chromium = spawn(process.env.CHROMIUM ?? "chromium", [
   "--disable-gpu",
   "--use-fake-device-for-media-stream",
   "--use-fake-ui-for-media-stream",
+  ...(fakeAudio ? [`--use-file-for-fake-audio-capture=${fakeAudio}%noloop`] : []),
   "--autoplay-policy=no-user-gesture-required",
   `--user-data-dir=${profile}`,
   "about:blank",
