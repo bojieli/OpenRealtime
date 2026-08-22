@@ -76,11 +76,10 @@ type Config struct {
 
 // Engine runs continuations over one canonical trajectory.
 type Engine struct {
-	config       Config
-	runner       *continuation.Runner
-	capabilities []continuation.Capability
-	fastPrompt   string
-	slowPrompt   string
+	config     Config
+	runner     *continuation.Runner
+	fastPrompt string
+	slowPrompt string
 }
 
 // New validates the provider arrangement and creates an engine.
@@ -148,12 +147,10 @@ func New(config Config) (*Engine, error) {
 			return prefix + "-" + strconv.FormatUint(counter.Add(1), 10)
 		}
 	}
-	capabilities := []continuation.Capability(nil)
 	if config.Catalog != nil {
-		capabilities = config.Catalog.Capabilities()
-	}
-	if err := validateCapabilities(capabilities); err != nil {
-		return nil, err
+		if err := validateCapabilities(config.Catalog.Capabilities()); err != nil {
+			return nil, err
+		}
 	}
 	runner, err := continuation.NewRunner(continuation.RunnerConfig{
 		Store: config.Store, Now: config.Now, NextID: config.NextID,
@@ -163,7 +160,7 @@ func New(config Config) (*Engine, error) {
 		return nil, err
 	}
 	return &Engine{
-		config: config, runner: runner, capabilities: capabilities,
+		config: config, runner: runner,
 		fastPrompt: Compose(config.AgentInstruction, config.FastInstruction),
 		slowPrompt: Compose(config.AgentInstruction, config.SlowInstruction),
 	}, nil
@@ -196,7 +193,7 @@ func (engine *Engine) RunFast(ctx context.Context, request Request, observer Str
 	}
 	return engine.run(ctx, engine.config.Fast, trajectory.PhaseFast, continuation.Invocation{
 		Instruction: engine.instruction(engine.fastPrompt, request), SourceRevision: request.SourceRevision,
-		Capabilities:    slices.Clone(engine.capabilities),
+		Capabilities:    engine.capabilityManifest(),
 		MaxOutputTokens: engine.config.FastMaxTokens,
 	}, observer)
 }
@@ -215,7 +212,7 @@ func (engine *Engine) PrepareFast(
 	}
 	return engine.runner.Prepare(ctx, engine.config.Fast, continuation.Invocation{
 		Instruction: engine.instruction(engine.fastPrompt, request), SourceRevision: request.SourceRevision,
-		Capabilities:    slices.Clone(engine.capabilities),
+		Capabilities:    engine.capabilityManifest(),
 		MaxOutputTokens: engine.config.FastMaxTokens,
 	}, provisional, nil)
 }
@@ -231,7 +228,7 @@ func (engine *Engine) PrepareSlow(
 ) (*continuation.Prepared, error) {
 	return engine.runner.Prepare(ctx, engine.config.Slow, continuation.Invocation{
 		Instruction: engine.instruction(engine.slowPrompt, request), SourceRevision: request.SourceRevision,
-		Capabilities: slices.Clone(engine.capabilities), Tools: engine.executableTools(),
+		Capabilities: engine.capabilityManifest(), Tools: engine.executableTools(),
 		MaxOutputTokens: engine.config.SlowMaxTokens,
 	}, provisional, nil)
 }
@@ -247,7 +244,7 @@ func (engine *Engine) Adopt(prepared *continuation.Prepared) (continuation.RunRe
 func (engine *Engine) RunSlow(ctx context.Context, request Request, observer StreamObserver) (continuation.RunResult, error) {
 	return engine.run(ctx, engine.config.Slow, trajectory.PhaseSlow, continuation.Invocation{
 		Instruction: engine.instruction(engine.slowPrompt, request), SourceRevision: request.SourceRevision,
-		Capabilities: slices.Clone(engine.capabilities), Tools: engine.executableTools(),
+		Capabilities: engine.capabilityManifest(), Tools: engine.executableTools(),
 		MaxOutputTokens: engine.config.SlowMaxTokens,
 	}, observer)
 }
@@ -342,6 +339,23 @@ func (engine *Engine) SlowInvocations(sourceRevision uint64) int {
 		invocations[item.InvocationID] = struct{}{}
 	}
 	return len(invocations)
+}
+
+// capabilityManifest is what the agent can do, read when it is asked rather
+// than when the engine was built.
+//
+// A client declares its tools in session.update, which arrives after the
+// runtime for that session exists. Capturing the manifest at construction
+// therefore froze it empty for every client-driven session, while the tool
+// definitions beside it were always read live - so the phase that executes
+// knew about the tools and the phase that talks to the user did not. That is
+// the exact case the manifest's own wording exists to prevent: denying a
+// capability the agent has because another phase is the one that runs it.
+func (engine *Engine) capabilityManifest() []continuation.Capability {
+	if engine.config.Catalog == nil {
+		return nil
+	}
+	return engine.config.Catalog.Capabilities()
 }
 
 func (engine *Engine) executableTools() []continuation.ToolDefinition {
