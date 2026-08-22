@@ -166,6 +166,17 @@ func NewEndpointedSlowOnlyRollout(options RolloutOptions) Rollout {
 	if options.MaxSlowInvocations <= 0 {
 		options.MaxSlowInvocations = 8
 	}
+	// The voice step is the only way anything this rollout produces reaches
+	// the client: the slow provider is silent by construction, so its answer
+	// is committed to the trajectory and delivered by the fast step that reads
+	// it back. Without that step there is no output path at all - not quieter
+	// speech, no response - and a client that asked for one waits forever.
+	//
+	// Forced rather than defaulted, exactly as the fast+slow rollout forces
+	// it, because no caller has a reason for a rollout whose entire output is
+	// discarded. Tool execution is unaffected either way: the plan only
+	// consults this once slow has committed text.
+	options.VoiceSlowOutput = true
 	return slowOnlyRollout{options: options}
 }
 
