@@ -22,7 +22,8 @@ func runProviders(arguments []string, output io.Writer) error {
 		baseURL string
 		timeout time.Duration
 	)
-	flags.StringVar(&role, "role", "all", "which catalogue to print: llm, asr, tts, or all")
+	flags.StringVar(&role, "role", "all",
+		"which catalogue to print: llm, asr, tts, upstream, or all")
 	flags.StringVar(&probe, "probe", "",
 		"ask a language-model provider what it serves, instead of printing the catalogue")
 	flags.StringVar(&baseURL, "url", "", "endpoint to probe; empty uses the provider's own")
@@ -59,9 +60,9 @@ func probeProvider(name, baseURL string, timeout time.Duration, output io.Writer
 func printCatalogue(role string, output io.Writer) error {
 	wanted := strings.ToLower(strings.TrimSpace(role))
 	switch wanted {
-	case "", "all", "llm", "asr", "tts":
+	case "", "all", "llm", "asr", "tts", "upstream":
 	default:
-		return fmt.Errorf("role must be llm, asr, tts, or all, got %q", role)
+		return fmt.Errorf("role must be llm, asr, tts, upstream, or all, got %q", role)
 	}
 	fmt.Fprintf(output,
 		"Provider catalogue, default models reviewed %s.\n"+
@@ -126,6 +127,20 @@ func printCatalogue(role string, output io.Writer) error {
 		}
 		_ = table.Flush()
 		printNotes(output, providersCommon(providers.TTSs(), func(entry providers.TTS) providers.Common {
+			return entry.Common
+		}))
+	}
+	if wanted == "" || wanted == "all" || wanted == "upstream" {
+		fmt.Fprintln(output, "\nrealtime endpoints  (-binding upstream -upstream-provider)")
+		table := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(table, "  NAME\tPROTOCOL\tMODEL\tHAND-OFF\tCREDENTIAL")
+		for _, entry := range providers.Upstreams() {
+			fmt.Fprintf(table, "  %s\t%s\t%s\t%s\t%s\n",
+				entry.Name, entry.Dialect, dash(entry.Model), entry.Handoff,
+				credentialState(entry.Common))
+		}
+		_ = table.Flush()
+		printNotes(output, providersCommon(providers.Upstreams(), func(entry providers.Upstream) providers.Common {
 			return entry.Common
 		}))
 	}

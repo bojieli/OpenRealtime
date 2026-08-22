@@ -81,6 +81,7 @@ type serveOptions struct {
 	ttsModel    string
 	ttsVoice    string
 
+	upstreamProvider string
 	upstreamURL      string
 	upstreamModel    string
 	upstreamTokenEnv string
@@ -211,9 +212,15 @@ func runServe(arguments []string, output io.Writer) error {
 		"speech model identity; unset selects the provider's default")
 	flags.StringVar(&options.ttsVoice, "tts-voice", "default", "speech voice or reference preset")
 
-	flags.StringVar(&options.upstreamURL, "upstream-url", "", "remote Realtime endpoint for the upstream binding")
-	flags.StringVar(&options.upstreamModel, "upstream-model", "", "remote model identity")
-	flags.StringVar(&options.upstreamTokenEnv, "upstream-token-env", "OPENAI_API_KEY", "environment variable holding the remote credential")
+	flags.StringVar(&options.upstreamProvider, "upstream-provider", "openai",
+		"remote realtime endpoint; openrealtime providers -role upstream lists them")
+	flags.StringVar(&options.upstreamURL, "upstream-url", "",
+		"remote realtime endpoint URL; unset selects the provider's own")
+	flags.StringVar(&options.upstreamModel, "upstream-model", "",
+		"remote model identity; unset selects the provider's default")
+	flags.StringVar(&options.upstreamTokenEnv, "upstream-token-env", "",
+		"environment variable holding the remote credential; "+
+			"empty reads OPENREALTIME_UPSTREAM_API_KEY and then the provider's conventional variable")
 
 	flags.StringVar(&options.observers, "observers", "audio", "observer set: audio, audio+video, or video")
 	flags.StringVar(&options.components, "observer-components", "narration", "video observer components: keyframe+narration, narration, or keyframe")
@@ -571,16 +578,23 @@ func buildCascade(
 }
 
 func buildUpstream(options serveOptions) (binding.Binding, error) {
-	if strings.TrimSpace(options.upstreamURL) == "" {
-		return nil, errors.New("the upstream binding requires -upstream-url")
-	}
 	slow, err := buildSlow(options)
 	if err != nil {
 		return nil, fmt.Errorf("configure the slow provider: %w", err)
 	}
+	settings, err := providers.ResolveUpstream(providers.UpstreamRequest{
+		Provider: options.upstreamProvider,
+		Model:    options.override("upstream-model", options.upstreamModel),
+		URL:      options.override("upstream-url", options.upstreamURL),
+		APIKey:   roleCredential(options, "upstream-token-env", options.upstreamTokenEnv, "OPENREALTIME_UPSTREAM_API_KEY"),
+	})
+	if err != nil {
+		return nil, err
+	}
 	return upstream.New(upstream.Config{
-		URL: options.upstreamURL, Model: options.upstreamModel,
-		Token: os.Getenv(options.upstreamTokenEnv), Slow: slow,
+		URL: settings.URL, Model: settings.Model, Token: settings.Token,
+		Header: settings.Header, EventAliases: settings.EventAliases,
+		Handoff: settings.Handoff, Dial: settings.Dial, Slow: slow,
 		SlowMaxTokens: options.slowTokens, AgentInstruction: options.instruction,
 		ClientToolTimeout: options.clientToolTimeout,
 	})
