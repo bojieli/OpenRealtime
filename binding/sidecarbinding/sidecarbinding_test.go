@@ -253,11 +253,19 @@ func TestOmniKeepsTheFloorInTheEngine(t *testing.T) {
 
 func TestDuplexGivesTheModelItsFloor(t *testing.T) {
 	binary, received := buildFakeSidecar(t)
+	// The reasoner has to actually produce an answer for this test to mean
+	// anything. With nothing to hand over there is nothing that could have
+	// demanded a turn, and the assertion below would hold no matter what the
+	// hand-off did.
+	slow := &scriptedSlow{turns: [][]continuation.Event{{
+		{Kind: continuation.EventAssistantDelta, Text: "The balance is $40.00."},
+	}}}
 	bind, err := duplex.New(duplex.Config{
 		Sidecar: sidecar.Config{
-			Command: []string{binary}, Environment: []string{"FAKE_SIDECAR_LOG=" + received},
+			Command:     []string{binary},
+			Environment: []string{"FAKE_SIDECAR_LOG=" + received, "FAKE_SIDECAR_DUPLEX=1"},
 		},
-		Slow: &scriptedSlow{},
+		Slow: slow,
 	})
 	if err != nil {
 		t.Fatalf("new duplex: %v", err)
@@ -289,6 +297,22 @@ func TestDuplexGivesTheModelItsFloor(t *testing.T) {
 			t.Fatalf("audio: %v", err)
 		}
 	}
+	// The answer reaches the model: a duplex model has no background reasoner
+	// of its own, and borrowing one is the whole of what this binding adds.
+	waitFor(t, func() bool {
+		for _, message := range sidecarReceived(t, received) {
+			text, isText := message["text"].(string)
+			if message["type"] == "text" && isText && strings.Contains(text, "$40.00") {
+				return true
+			}
+		}
+		return false
+	}, "the background reasoner's answer must be handed to the model")
+
+	// And it arrives as context rather than as an instruction to speak. The
+	// model decides for itself when to say what it now knows; demanding a turn
+	// would take back the floor it owns, which is the one thing this binding
+	// must never do.
 	time.Sleep(200 * time.Millisecond)
 	for _, message := range sidecarReceived(t, received) {
 		if message["type"] == "respond" {
@@ -396,6 +420,7 @@ func main() {
 		log, _ = os.Create(path)
 		defer log.Close()
 	}
+	heard := 0
 	send := func(header message, payload []byte) {
 		header.PayloadBytes = len(payload)
 		encoded, _ := json.Marshal(header)
@@ -423,6 +448,23 @@ func main() {
 		if log != nil && incoming.Type != "audio" {
 			log.Write(line)
 			log.Sync()
+		}
+		// A full-duplex model owns its floor, so it reports what it heard on
+		// its own initiative rather than when the engine asks. Nothing else in
+		// this fake would ever produce a transcript without a respond, and a
+		// duplex binding never sends one - so without this the reasoner would
+		// have no user speech to work over and every duplex assertion below
+		// would hold vacuously.
+		if incoming.Type == "audio" && os.Getenv("FAKE_SIDECAR_DUPLEX") != "" {
+			heard++
+			if heard == 3 {
+				send(message{Type: "speech_started"}, nil)
+			}
+			if heard == 6 {
+				send(message{Type: "transcript", Text: "what is my balance", Final: true}, nil)
+				send(message{Type: "speech_stopped"}, nil)
+			}
+			continue
 		}
 		switch incoming.Type {
 		case "hello":
