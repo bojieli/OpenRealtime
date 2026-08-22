@@ -174,6 +174,25 @@ export class Player extends EventTarget {
     return this.#utterance?.itemId ?? null;
   }
 
+  // speaking reports whether audio is still on its way to the speakers.
+  //
+  // It is not the same question as whether an utterance exists. The
+  // identifier outlives the sound: it is cleared when the server says the
+  // turn's audio is done, which arrives after the last sample has played and
+  // may never arrive at all if the response was cancelled. Interrupting on
+  // that asks the server to stop something that already stopped - which it
+  // correctly refuses, and the refusal is then noise a person has to explain
+  // to themselves.
+  //
+  // The playhead is the honest measure, because it is where the last
+  // scheduled buffer ends: ahead of the clock means sound is still coming.
+  speaking() {
+    if (!this.#context || !this.#utterance || this.#utterance.startedAt === null) {
+      return false;
+    }
+    return this.#playhead > this.#context.currentTime;
+  }
+
   // stop drops everything queued but not yet heard.
   stop() {
     for (const source of this.#sources) {

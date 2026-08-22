@@ -43,6 +43,11 @@ type Config struct {
 	ToolArguments string
 	// Narration is what the video observer reports for any frame.
 	Narration string
+	// FastSpendsBudgetThinking makes the fast provider return no assistant
+	// text, having written its deliberation into the content field and hit
+	// the output limit. It is what a thinking model on a short budget does,
+	// and it is the case a turn has to report rather than fall silent on.
+	FastSpendsBudgetThinking bool
 	// AllowedOrigins are the web origins the WebRTC adapter will answer.
 	AllowedOrigins []string
 }
@@ -65,14 +70,18 @@ func Start(t testing.TB, config Config) Stack {
 		config.Narration = "The screen shows an editor with a file open and a terminal below it."
 	}
 
+	fastTurns := [][]continuation.Event{
+		{{Kind: continuation.EventAssistantDelta, Text: "Let me look."}},
+		{{Kind: continuation.EventAssistantDelta, Text: "Here is what I found."}},
+	}
+	if config.FastSpendsBudgetThinking {
+		fastTurns = [][]continuation.Event{{}}
+	}
 	fast := &scripted{descriptor: continuation.Descriptor{
 		Provider: "test", Model: "fast", Phase: trajectory.PhaseFast,
 		Effort: continuation.EffortMinimal, ToolAuthority: continuation.ToolAuthorityPropose,
 		SpeechAuthority: continuation.SpeechAuthorityVoice,
-	}, turns: [][]continuation.Event{
-		{{Kind: continuation.EventAssistantDelta, Text: "Let me look."}},
-		{{Kind: continuation.EventAssistantDelta, Text: "Here is what I found."}},
-	}}
+	}, turns: fastTurns, spentBudgetThinking: config.FastSpendsBudgetThinking}
 
 	slowTurns := [][]continuation.Event{
 		{{Kind: continuation.EventAssistantDelta, Text: "The notes say the deadline moved to Friday."}},
@@ -147,6 +156,10 @@ type scripted struct {
 	mu         sync.Mutex
 	turns      [][]continuation.Event
 	calls      int
+	// spentBudgetThinking reports the completion a provider makes when it
+	// wrote its deliberation into the content field and the output limit is
+	// what stopped it.
+	spentBudgetThinking bool
 }
 
 func (provider *scripted) Descriptor() continuation.Descriptor { return provider.descriptor }
@@ -174,6 +187,9 @@ func (provider *scripted) Continue(
 		if err := emit(event); err != nil {
 			return continuation.Completion{}, err
 		}
+	}
+	if provider.spentBudgetThinking {
+		return continuation.Completion{StopReason: "length", ReasoningInContent: true}, nil
 	}
 	return continuation.Completion{StopReason: "stop"}, nil
 }

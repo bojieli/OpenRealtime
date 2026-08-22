@@ -305,6 +305,18 @@ try {
       /whole|in chunks/.test(measured["last frame"] ?? ""), measured["last frame"]);
   }
 
+  // Unmute with the agent silent, so the fake microphone's tone opens a turn
+  // while nothing is playing. That is the state in which a client can be
+  // tempted to interrupt something that already finished: the utterance
+  // identifier outlives the sound, and asking the server to clear audio that
+  // is not playing earns a refusal the person then has to explain away.
+  await evaluate("document.getElementById('mic').click()");
+  await waitFor("the gate to reopen", async () =>
+    (await eventNames("in")).filter((name) => name.includes("speech_started")).length > 1);
+  check("talking while the agent is silent interrupts nothing",
+    !(await eventNames("out")).some((name) => name.includes("output_audio_buffer.clear")),
+    JSON.stringify((await eventNames("out")).filter((n) => n.includes("output_audio"))));
+
   check("no errors were surfaced to the user", (await notices()).length === 0,
     JSON.stringify(await notices()));
   check("no uncaught exception during the session", pageErrors.length === 0, pageErrors.join("; "));

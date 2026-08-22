@@ -138,3 +138,31 @@ func TestTheConsoleWithoutToolsStillServesAWorkingPage(t *testing.T) {
 		t.Fatalf("expected the page, got %d", response.StatusCode)
 	}
 }
+
+// A turn that produces nothing must say so where a person is looking for the
+// answer. The server reports it twice - status "incomplete" on the wire and a
+// warning naming the knob in the log - and a client that throws the first away
+// leaves someone staring at a question that was simply never answered.
+func TestTheConsoleReportsATurnThatProducedNothing(t *testing.T) {
+	node, chromium := requireBrowser(t)
+	root := t.TempDir()
+	stack := testserver.Start(t, testserver.Config{
+		Transcript:               "say something",
+		FastSpendsBudgetThinking: true,
+	})
+	consoleURL := startConsoleServer(t, stack.ProtocolURL, stack.AdapterURL, root)
+
+	driver, err := filepath.Abs(filepath.Join("testdata", "incomplete.mjs"))
+	if err != nil {
+		t.Fatalf("locate the driver: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	command := exec.CommandContext(ctx, node, driver, consoleURL)
+	command.Env = append(os.Environ(), "CHROMIUM="+chromium, "CDP_PORT="+freePort(t))
+	output, err := command.CombinedOutput()
+	t.Log("\n" + string(output))
+	if err != nil {
+		t.Fatalf("the browser run failed: %v", err)
+	}
+}

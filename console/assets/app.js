@@ -218,6 +218,25 @@ function handle(event) {
       break;
 
     case "response.done":
+      // A turn that produced nothing says why, and this is the one place a
+      // person is looking for the answer that did not arrive. Rendering it
+      // where the reply would have been is the difference between "the agent
+      // ignored me" and "the output limit was reached"; the server's log
+      // names the knob, and a client only gets the reason.
+      //
+      // Only when the person would not otherwise know. A cancelled turn is
+      // barge-in - they interrupted, deliberately, and it is the most ordinary
+      // thing that happens in a voice session. Telling them something went
+      // wrong because they did the thing the system exists to support would
+      // make the console cry wolf on every interruption.
+      if (event.response?.status) {
+        const status = event.response.status;
+        const reason = event.response.status_details?.reason;
+        ui.setStat("last turn", reason ? `${status} · ${reason}` : status);
+        if (status === "incomplete" || status === "failed") {
+          ui.notice(`the turn produced no output — ${status}: ${reason ?? "no reason given"}`);
+        }
+      }
       ui.setState("connected", "live");
       break;
 
@@ -262,7 +281,9 @@ function describeNegotiation(extension) {
 // something the agent said, and every later turn reasons from a conversation
 // that did not happen.
 function interrupt() {
-  if (!player) return;
+  // Nothing to interrupt unless audio is actually still on its way. A person
+  // starting to talk while the agent is silent is just a person talking.
+  if (!player?.speaking()) return;
   const itemId = player.playingItem();
   const heard = player.playedMs();
   player.stop();
