@@ -65,7 +65,7 @@ check_module() {
 check_examples() {
   # The browser example is HTML and JavaScript, so what can be checked is that
   # it is served by a real handler and refers to events the protocol defines.
-  "${go_bin}" test -count=1 ./examples/... 2>/dev/null || true
+  # The Go tests themselves already ran under the root module, with -race.
   local missing=()
   for asset in examples/browser/index.html examples/browser/README.md; do
     [[ -f "${asset}" ]] || missing+=("${asset}")
@@ -74,6 +74,48 @@ check_examples() {
     echo "missing example assets: ${missing[*]}" >&2
     return 1
   fi
+}
+
+# check_official_client is the compatibility claim, and it is the one claim in
+# this gate that can quietly go unmade.
+#
+# Section 8 says an official OpenAI Realtime client completes a tool-using
+# session unmodified, over WebSocket and over WebRTC. The tests that establish
+# it need node, the SDK, and a browser, and they skip when those are absent -
+# at which point `go test` prints ok for a package that verified nothing, and
+# the gate that inherits it prints ok too. A release cut on that machine would
+# ship the claim untested with every stage green.
+#
+# So the skip is named rather than swallowed. An ordinary run says out loud
+# which claim was not made; a release run fails, because the one thing a
+# release gate may not do is report a claim it did not check.
+check_official_client() {
+  local output status
+  output="$("${go_bin}" test -count=1 -v -run 'TestTheOfficialSDKCompletesAToolUsingSession' \
+    ./examples/sdk-client/ 2>&1)" && status=0 || status=$?
+  if (( status != 0 )); then
+    echo "${output}" >&2
+    return 1
+  fi
+
+  local unverified=() transport
+  for transport in WebSocket WebRTC; do
+    grep -q -- "--- PASS: TestTheOfficialSDKCompletesAToolUsingSessionOver${transport}" \
+      <<<"${output}" || unverified+=("${transport}")
+  done
+  if (( ${#unverified[@]} == 0 )); then
+    echo "the official SDK completed a tool-using session over WebSocket and WebRTC"
+    return 0
+  fi
+
+  echo "NOT VERIFIED: the official OpenAI Realtime client over ${unverified[*]}" >&2
+  grep -E -- '--- SKIP|SKIP:|\.mjs' <<<"${output}" | sed 's/^/  /' >&2
+  echo "  install node and chromium, then run: (cd examples/sdk-client && npm install)" >&2
+  if [[ -n "${OPENREALTIME_RELEASE_GATE:-}" ]]; then
+    echo "  this is a release run, and section 8 requires this claim to be checked" >&2
+    return 1
+  fi
+  echo "  not fatal for an ordinary run; set OPENREALTIME_RELEASE_GATE=1 to require it" >&2
 }
 
 # check_protocol_conformance runs the wire-level suite against the pinned
@@ -109,6 +151,7 @@ done
 stage "protocol conformance" check_protocol_conformance
 stage "prompt-injection release gate" check_injection_gate
 stage "examples" check_examples
+stage "official Realtime client" check_official_client
 stage "shell scripts" check_shell
 
 printf '\n'
