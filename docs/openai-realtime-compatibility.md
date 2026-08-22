@@ -341,6 +341,14 @@ Making text-only sessions reachable on `upstream` did this three times in one
 day — to the mirror, to the console, and to the pre-GA rename table, which had
 no name to rename onto while nothing downstream handled text.
 
+It is not a property of that capability. Letting a client take the floor did the
+same thing to the console independently: it could declare `turn_detection: null`
+from its session editor and had no way to end a turn, so audio flowed, the
+server correctly waited to be told, and nothing happened — with no error
+anywhere, because nothing was wrong. Two unrelated capabilities, the same
+absence. Expect this of any capability that makes new events reachable, and run
+the audit when adding one rather than when something is reported.
+
 The audit is cheap. Enumerate the events the server can emit, subtract the ones
 a consumer handles, and go through the remainder:
 
