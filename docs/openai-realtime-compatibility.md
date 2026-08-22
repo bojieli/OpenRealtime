@@ -326,3 +326,42 @@ Run `openrealtime conformance protocol` (or `./scripts/check.sh`) to
 audit all registry/schema links, compile the entire nested closure, confirm the
 profile/direction counts, and exercise unknown-type, wrong-direction,
 wrong-profile, and missing-required-field rejection.
+
+## What conformance cannot see
+
+Every check above inspects the wire, and there is a class of defect where the
+wire is entirely correct. **A client is only written against the parts of a
+protocol that were reachable when it was written**, so making a capability
+reachable ages every consumer that predates it — each keeps handling the events
+that existed before and ignoring the ones that did not. Nothing fails, because
+nothing is wrong: the events are valid, correctly named, and correctly
+directed. They are simply not read, and the symptom is an absence.
+
+Making text-only sessions reachable on `upstream` did this three times in one
+day — to the mirror, to the console, and to the pre-GA rename table, which had
+no name to rename onto while nothing downstream handled text.
+
+The audit is cheap. Enumerate the events the server can emit, subtract the ones
+a consumer handles, and go through the remainder:
+
+```sh
+# the emitted set comes from the pinned registry; the handled set from the client
+grep -o 'case "[^"]*"' binding/upstream/mirror.go | sed 's/case "//;s/"//' | sort -u
+```
+
+The whole audit is in the second step, and the rule is **reachability, not
+coverage**. Most of the remainder is correctly unhandled — lifecycle events,
+acknowledgements of what this side sent, the `.done` twin of a delta already
+accumulated, capabilities this consumer never declares. Handling everything
+would bury the one case that matters under a dozen pointless ones, which is the
+same failure as a test that cannot fail. Ask of each: *can this consumer now
+receive this, and what happens if it does?*
+
+Two worked answers. `examples/browser/index.html` handles no text events and
+needs none: it declares no modalities, and no deployment flag can force text,
+so it cannot reach a text session. The `upstream` mirror ignores every function
+call event and should: this binding declares no tools to the remote, because
+the remote is the fast voice and has no execution authority.
+
+Assert on what the consumer rendered, never on what crossed the wire. A
+wire-only test agrees there is nothing wrong.
