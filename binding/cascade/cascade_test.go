@@ -49,10 +49,21 @@ func (asr *scriptedASR) Finalize(context.Context, uint64) (v1.PerceptionRevision
 
 type scriptedProvider struct {
 	descriptor continuation.Descriptor
+	// completion is how this provider reports it stopped. The zero value is an
+	// ordinary stop; a test that cares about truncation sets it.
+	completion continuation.Completion
 	mu         sync.Mutex
 	turns      [][]continuation.Event
 	calls      int
 	requests   []continuation.Request
+}
+
+// stopping makes the provider report a particular completion, which is how a
+// test says "this provider ran out of room" rather than "it had nothing to
+// say".
+func (provider *scriptedProvider) stopping(completion continuation.Completion) *scriptedProvider {
+	provider.completion = completion
+	return provider
 }
 
 func (provider *scriptedProvider) Descriptor() continuation.Descriptor { return provider.descriptor }
@@ -73,6 +84,9 @@ func (provider *scriptedProvider) Continue(
 		if err := emit(event); err != nil {
 			return continuation.Completion{}, err
 		}
+	}
+	if provider.completion.StopReason != "" {
+		return provider.completion, nil
 	}
 	return continuation.Completion{StopReason: "stop"}, nil
 }
@@ -146,6 +160,7 @@ func (speech toneSpeech) Stream(ctx context.Context, plan v1.SpeechPlan, emit fu
 
 type recordingSink struct {
 	mu           sync.Mutex
+	outcomes     []binding.TurnOutcome
 	transcripts  []binding.TranscriptEvent
 	utterances   []action.Utterance
 	frames       int
@@ -155,8 +170,20 @@ type recordingSink struct {
 	failures     []binding.ErrorEvent
 }
 
-func (sink *recordingSink) TurnBegin(context.Context) error                    { return nil }
-func (sink *recordingSink) TurnEnd(context.Context, binding.TurnOutcome) error { return nil }
+func (sink *recordingSink) TurnBegin(context.Context) error { return nil }
+func (sink *recordingSink) TurnEnd(_ context.Context, outcome binding.TurnOutcome) error {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	sink.outcomes = append(sink.outcomes, outcome)
+	return nil
+}
+
+// turnOutcomes is what the rollout reported about the turns it ran.
+func (sink *recordingSink) turnOutcomes() []binding.TurnOutcome {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	return append([]binding.TurnOutcome(nil), sink.outcomes...)
+}
 
 func (sink *recordingSink) Activity(context.Context, binding.ActivityEvent) error { return nil }
 
