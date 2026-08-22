@@ -223,6 +223,44 @@ func (reader *PCM16MonoReader) ReadFrame(buffer []byte) (int, error) {
 // Close exists so callers can treat the reader like a file handle.
 func (reader *PCM16MonoReader) Close() error { return nil }
 
+// EncodeWAVMono16 wraps mono PCM16LE in a canonical 44-byte WAV header.
+//
+// Batch transcription endpoints take a container rather than raw samples, so
+// something has to put the header on. It lives here because the decoder does
+// too, and a writer that disagreed with its own reader would be found by a
+// benchmark rather than by a test.
+func EncodeWAVMono16(pcm []byte, sampleRateHz uint32) ([]byte, error) {
+	if sampleRateHz == 0 {
+		return nil, errors.New("WAV sample rate must be positive")
+	}
+	if len(pcm)%2 != 0 {
+		return nil, errors.New("WAV payload must contain whole PCM16 samples")
+	}
+	if uint64(len(pcm)) > math.MaxUint32-36 {
+		return nil, errors.New("WAV payload exceeds the container size field")
+	}
+	encoded := make([]byte, 44, 44+len(pcm))
+	writeWAVHeader(encoded, sampleRateHz, uint32(len(pcm)))
+	return append(encoded, pcm...), nil
+}
+
+// writeWAVHeader fills a 44-byte canonical header in place.
+func writeWAVHeader(header []byte, sampleRateHz uint32, dataLength uint32) {
+	copy(header[0:4], "RIFF")
+	binary.LittleEndian.PutUint32(header[4:8], 36+dataLength)
+	copy(header[8:12], "WAVE")
+	copy(header[12:16], "fmt ")
+	binary.LittleEndian.PutUint32(header[16:20], 16)
+	binary.LittleEndian.PutUint16(header[20:22], 1)
+	binary.LittleEndian.PutUint16(header[22:24], MonoChannels)
+	binary.LittleEndian.PutUint32(header[24:28], sampleRateHz)
+	binary.LittleEndian.PutUint32(header[28:32], sampleRateHz*uint32(PCM16BytesPerSample))
+	binary.LittleEndian.PutUint16(header[32:34], PCM16BytesPerSample)
+	binary.LittleEndian.PutUint16(header[34:36], 16)
+	copy(header[36:40], "data")
+	binary.LittleEndian.PutUint32(header[40:44], dataLength)
+}
+
 // GenerateFixture writes a deterministic two-tone WAV.
 //
 // It is the smallest thing that exercises the whole audio path with a known
@@ -246,19 +284,7 @@ func GenerateFixture(path string) ([32]byte, error) {
 	}()
 
 	header := make([]byte, 44)
-	copy(header[0:4], "RIFF")
-	binary.LittleEndian.PutUint32(header[4:8], 36+dataLength)
-	copy(header[8:12], "WAVE")
-	copy(header[12:16], "fmt ")
-	binary.LittleEndian.PutUint32(header[16:20], 16)
-	binary.LittleEndian.PutUint16(header[20:22], 1)
-	binary.LittleEndian.PutUint16(header[22:24], MonoChannels)
-	binary.LittleEndian.PutUint32(header[24:28], OpenAIPCMSampleRate)
-	binary.LittleEndian.PutUint32(header[28:32], OpenAIPCMSampleRate*uint32(PCM16BytesPerSample))
-	binary.LittleEndian.PutUint16(header[32:34], PCM16BytesPerSample)
-	binary.LittleEndian.PutUint16(header[34:36], 16)
-	copy(header[36:40], "data")
-	binary.LittleEndian.PutUint32(header[40:44], dataLength)
+	writeWAVHeader(header, OpenAIPCMSampleRate, dataLength)
 	if _, err := file.Write(header); err != nil {
 		return [32]byte{}, fmt.Errorf("write fixture header: %w", err)
 	}

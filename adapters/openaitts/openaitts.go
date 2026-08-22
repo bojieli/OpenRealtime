@@ -24,7 +24,7 @@ import (
 	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
-	"github.com/bojieli/OpenRealtime/pcm"
+	"github.com/bojieli/OpenRealtime/internal/speechstream"
 )
 
 const (
@@ -359,111 +359,10 @@ func responseSampleRate(header http.Header, fallback uint32) (uint32, error) {
 }
 
 func (adapter *Adapter) consumePCM(body io.Reader, sourceRate uint32, candidateID string, consume func(v1.SpeechChunk) error) error {
-	resampler, err := pcm.NewResampler(sourceRate, adapter.config.OutputSampleRateHz)
-	if err != nil {
-		return fmt.Errorf("configure OpenAI TTS resampler: %w", err)
-	}
-	buffer := make([]byte, adapter.config.ReadBufferBytes)
-	var oddByte []byte
-	var heldSample []byte
-	var sourceBytes int64
-	var outputBytes int64
-	var sampleOffset uint64
-	var sequence uint64
-	emit := func(audio []byte, final bool) error {
-		if len(audio) == 0 || len(audio)%2 != 0 {
-			return errors.New("OpenAI TTS produced an invalid PCM16 chunk")
-		}
-		if int64(len(audio)) > adapter.config.MaxAudioBytes-outputBytes {
-			return fmt.Errorf("OpenAI TTS output exceeds %d bytes", adapter.config.MaxAudioBytes)
-		}
-		sequence++
-		chunk := v1.SpeechChunk{
-			ChunkID: fmt.Sprintf("%s-%06d", candidateID, sequence), CandidateID: candidateID,
-			SampleOffset: sampleOffset, SampleRateHz: adapter.config.OutputSampleRateHz,
-			PCM16LE: slices.Clone(audio), Final: final,
-		}
-		if err := consume(chunk); err != nil {
-			return fmt.Errorf("consume OpenAI TTS chunk: %w", err)
-		}
-		outputBytes += int64(len(audio))
-		sampleOffset += uint64(len(audio) / 2)
-		return nil
-	}
-	offer := func(audio []byte) error {
-		if len(audio) == 0 {
-			return nil
-		}
-		combined := make([]byte, 0, len(heldSample)+len(audio))
-		combined = append(combined, heldSample...)
-		combined = append(combined, audio...)
-		if len(combined) <= 2 {
-			heldSample = combined
-			return nil
-		}
-		cut := len(combined) - 2
-		if err := emit(combined[:cut], false); err != nil {
-			return err
-		}
-		heldSample = slices.Clone(combined[cut:])
-		return nil
-	}
-	feed := func(input []byte) error {
-		if len(input) == 0 {
-			return nil
-		}
-		if int64(len(input)) > adapter.config.MaxAudioBytes-sourceBytes {
-			return fmt.Errorf("OpenAI TTS response exceeds %d bytes", adapter.config.MaxAudioBytes)
-		}
-		sourceBytes += int64(len(input))
-		if len(oddByte) != 0 {
-			input = append(append([]byte(nil), oddByte...), input...)
-			oddByte = nil
-		}
-		if len(input)%2 != 0 {
-			oddByte = slices.Clone(input[len(input)-1:])
-			input = input[:len(input)-1]
-		}
-		if len(input) == 0 {
-			return nil
-		}
-		converted, err := resampler.Push(input)
-		if err != nil {
-			return fmt.Errorf("resample OpenAI TTS stream: %w", err)
-		}
-		return offer(converted)
-	}
-	for {
-		read, readErr := body.Read(buffer)
-		if read > 0 {
-			if err := feed(buffer[:read]); err != nil {
-				return err
-			}
-		}
-		if readErr != nil {
-			if !errors.Is(readErr, io.EOF) {
-				return fmt.Errorf("read OpenAI TTS stream: %w", readErr)
-			}
-			break
-		}
-	}
-	if len(oddByte) != 0 {
-		return errors.New("OpenAI TTS stream ended with a partial PCM16 sample")
-	}
-	if sourceBytes == 0 {
-		return errors.New("OpenAI TTS returned no audio")
-	}
-	terminal, err := resampler.Finalize()
-	if err != nil {
-		return fmt.Errorf("finalize OpenAI TTS resampler: %w", err)
-	}
-	if len(terminal) != 0 {
-		heldSample = append(heldSample, terminal...)
-	}
-	if len(heldSample) == 0 {
-		return errors.New("OpenAI TTS returned no complete output sample")
-	}
-	return emit(heldSample, true)
+	return speechstream.Consume(body, speechstream.Options{
+		Label: "OpenAI TTS", SourceRateHz: sourceRate, OutputRateHz: adapter.config.OutputSampleRateHz,
+		ReadBufferBytes: adapter.config.ReadBufferBytes, MaxAudioBytes: adapter.config.MaxAudioBytes,
+	}, candidateID, consume)
 }
 
 // Synthesize collects Stream output for consumers that require the stable
