@@ -109,8 +109,17 @@ check_official_client() {
   fi
 
   echo "NOT VERIFIED: the official OpenAI Realtime client over ${unverified[*]}" >&2
-  grep -E -- '--- SKIP|SKIP:|\.mjs' <<<"${output}" | sed 's/^/  /' >&2
-  echo "  install node and chromium, then run: (cd examples/sdk-client && npm install)" >&2
+  # The skip lines carry the cause. This used to assert one instead - install
+  # node and chromium - which was the case it was written for and not the only
+  # one: a bundle that fails to build skips too, on a machine that has both,
+  # and being told to install what is already installed sends the reader past
+  # the reason printed directly above it.
+  # -B2 because go test -v prints the reason on the lines before --- SKIP,
+  # and the reason is the whole point: the test name alone says a claim was
+  # not checked without saying what stopped it.
+  grep -E -B 2 -- '--- SKIP' <<<"${output}" | grep -v '^--$' | sed 's/^/  /' >&2
+  echo "  each skip above says what it needed; a missing SDK is fixed with" >&2
+  echo "  (cd examples/sdk-client && npm install)" >&2
   if [[ -n "${OPENREALTIME_RELEASE_GATE:-}" ]]; then
     echo "  this is a release run, and section 8 requires this claim to be checked" >&2
     return 1
