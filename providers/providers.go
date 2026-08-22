@@ -33,10 +33,11 @@ const Reviewed = "2026-08-22"
 type Role string
 
 const (
-	RoleLLM    Role = "llm"
-	RoleASR    Role = "asr"
-	RoleTTS    Role = "tts"
-	RoleVision Role = "vision"
+	RoleLLM      Role = "llm"
+	RoleASR      Role = "asr"
+	RoleTTS      Role = "tts"
+	RoleVision   Role = "vision"
+	RoleUpstream Role = "upstream"
 )
 
 // Dialect names the wire contract an adapter speaks.
@@ -55,6 +56,12 @@ const (
 	DialectAnthropicMessages Dialect = "anthropic-messages"
 	// DialectGemini is generativelanguage :streamGenerateContent.
 	DialectGemini Dialect = "gemini-generate-content"
+
+	// DialectOpenAIRealtime is the Realtime API over a WebSocket.
+	DialectOpenAIRealtime Dialect = "openai-realtime"
+	// DialectGeminiLive is BidiGenerateContent, which is not a Realtime
+	// dialect and is translated into one.
+	DialectGeminiLive Dialect = "gemini-live"
 
 	// DialectOpenAITranscriptions is /v1/audio/transcriptions.
 	DialectOpenAITranscriptions Dialect = "openai-transcriptions"
