@@ -11,12 +11,13 @@ node websocket.mjs ws://127.0.0.1:8765/v1/realtime
 ```text
 PASS  the official SDK connects to an OpenRealtime server
 PASS  the server completes the SDK's session handshake
-PASS  the server accepted the session the SDK configured
+PASS  the unsupported field is refused by name, not silently substituted
+PASS  nothing else in the session was refused
 PASS  the SDK's tool was called and executed by the SDK
 PASS  a response completed
 PASS  the SDK received the tool call on the event it expects
 PASS  speech came back as audio and as a transcript
-PASS  no protocol error was reported at any point
+PASS  the session completed a turn despite the error
 ```
 
 Nothing here is written against OpenRealtime. It is
@@ -89,8 +90,10 @@ specification declares null as the default.
 to `semantic_vad`. This server has server VAD, and refused the entire
 `session.update` — discarding the instructions, the tools, and the audio
 formats that arrived in the same event, so an unmodified client could not
-configure a session at all. It now runs on the detector it has and reports that
-in `session.updated`, where a client can see it did not get what it asked for.
+configure a session at all. Now everything else applies, the field does not,
+and an `error` names it with `param` and `code: unsupported_value`. The session
+stays open, and this example is what proves the SDK is fine with that: it
+completes the whole tool-using turn after receiving the error.
 
 **Turn detection parameters read as zero.** A client that names a detector
 without naming its numbers is asking for the deployment's. Reading absent as

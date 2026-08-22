@@ -44,14 +44,40 @@ a mechanical rule reading the specification's own statement, visible in the
 pinned artifact rather than hidden in the validator. It applies to five fields,
 all of them noise reduction.
 
-**Unsupported turn detection is a fallback, not a rejection.** A client may ask
-for a detector this deployment does not have; the SDK's default is
-`semantic_vad`. Refusing the event would discard the instructions, tools, and
-audio formats that arrived with it, so the session runs on the detector the
-deployment has. `session.updated` reports `server_vad` with the settings
-actually in force, so a client can see it did not get what it asked for.
-Parameters a client leaves unset resolve to the deployment's rather than to
-zero.
+**An unsupported field is refused by name, not by discarding the event.** A
+client may ask for a turn detector this deployment does not have; the SDK's
+default is `semantic_vad`. Three things could happen and only one of them is
+right.
+
+Refusing the whole `session.update` discards the instructions, the tools, and
+the audio formats that arrived in the same event, which left every unmodified
+official client unable to configure a session at all. Quietly substituting the
+detector this server does have is worse in a subtler way: the client asked for
+particular endpointing behaviour, did not get it, and would only find out by
+reading a field back and noticing it had changed.
+
+So everything else in the event applies, the unsupported field does not, and an
+`error` names it:
+
+```jsonc
+{ "type": "error",
+  "error": {
+    "type": "invalid_request_error",
+    "code": "unsupported_value",
+    "param": "session.audio.input.turn_detection.type",
+    "event_id": "<the client's own event_id, when it sent one>",
+    "message": "turn detection \"semantic_vad\" is not supported: ..." }}
+```
+
+The ordering is deliberate: `session.updated` is sent first, then the errors.
+A client told about an error before it has been told the update applied has
+every reason to read the first as the second failing. The session stays open —
+which the base protocol's own description of the error event says is the normal
+case, and which OpenAI's SDK is verified to handle: it completes a tool-using
+turn after receiving one.
+
+Turn detection parameters a client leaves unset resolve to the deployment's
+rather than to zero.
 
 ## Internal synchronization does not change the wire
 

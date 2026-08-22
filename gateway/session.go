@@ -321,7 +321,10 @@ func (session *session) handlerLoop() {
 				continue
 			}
 			if err := session.handleClientEvent(event.message); err != nil {
-				session.sendError("invalid_request_error", err.Error())
+				causedBy, _ := event.message.EventID()
+				session.sendClientError(clientError{
+					code: "invalid_request_error", message: err.Error(), causedBy: causedBy,
+				})
 			}
 		}
 	}
@@ -334,7 +337,8 @@ func (session *session) handleClientEvent(message protocol.Message) error {
 		if err := message.Unmarshal(&update); err != nil {
 			return err
 		}
-		return session.update(update.Session)
+		causedBy, _ := message.EventID()
+		return session.update(update.Session, causedBy)
 	case protocol.EventInputAudioBufferAppend:
 		var appendEvent audioAppendEvent
 		if err := message.Unmarshal(&appendEvent); err != nil {
@@ -434,10 +438,15 @@ func (session *session) onOutputBufferClear() error {
 	}))
 }
 
-func (session *session) update(update sessionUpdateBody) error {
+func (session *session) update(update sessionUpdateBody, causedBy string) error {
 	session.settingsMu.RLock()
 	current := session.settings
 	session.settingsMu.RUnlock()
+
+	// Fields this deployment cannot honour. They are collected rather than
+	// returned because they are not failures of the event: everything else in
+	// it applies, and the client hears about each one by name afterwards.
+	var refused []clientError
 
 	if update.Instructions != nil {
 		current.instruction = *update.Instructions
@@ -495,23 +504,32 @@ func (session *session) update(update sessionUpdateBody) error {
 			current.manualTurns = false
 			current.gate = turn.gate()
 		default:
-			// A detector this deployment does not have. Refusing the event
-			// would be the strict reading, and it is the wrong one: it
-			// discards the instructions, the tools, and the audio formats
-			// that arrived in the same session.update, so a client whose
-			// default is a detector we lack cannot configure a session at
-			// all. OpenAI's own SDK defaults to semantic_vad, which made that
-			// exactly the case for every unmodified official client.
+			// A detector this deployment does not have.
 			//
-			// So the session runs on the detector this server does have, and
-			// nothing is hidden: session.updated reports turn_detection as
-			// server_vad with the settings actually in force, so a client that
-			// asked for something else can see it did not get it. An
-			// unsupported option is a capability difference, and the way this
-			// project answers those elsewhere is to provide what it can and
-			// say what that was.
-			current.manualTurns = false
-			current.gate = turn.gate()
+			// The field is not applied and the client is told, by name, that
+			// it was not. What is deliberately not done is either of the two
+			// obvious alternatives. Refusing the whole event discards the
+			// instructions, the tools, and the audio formats that arrived in
+			// the same session.update - OpenAI's own SDK defaults to
+			// semantic_vad, so that left every unmodified official client
+			// unable to configure a session at all. Quietly substituting the
+			// detector this server does have is worse in a different way: the
+			// client asked for particular endpointing behaviour, did not get
+			// it, and a difference it could only discover by reading a field
+			// back and noticing it had changed is a difference most clients
+			// will not discover.
+			//
+			// So: everything else applies, this does not, and an error names
+			// the field. Turn detection stays whatever it already was, which
+			// for a new session is this deployment's default.
+			refused = append(refused, clientError{
+				code:  "unsupported_value",
+				param: "session.audio.input.turn_detection.type",
+				message: fmt.Sprintf(
+					"turn detection %q is not supported: this deployment ends turns with server_vad. "+
+						"The field was not applied and the rest of the session.update was; "+
+						"session.updated reports the detection actually in force.", turn.Type),
+			})
 		}
 	}
 	if _, err := current.inputFormat.sampleRate(); err != nil {
@@ -540,7 +558,19 @@ func (session *session) update(update sessionUpdateBody) error {
 	if err := session.runtime.Update(session.ctx, session.bindingSettings()); err != nil {
 		return err
 	}
-	return session.send(session.sessionEvent("session.updated"))
+	// The confirmation goes first. A client that sees an error before it has
+	// been told the update applied has every reason to read the error as the
+	// update failing, which is the misunderstanding this ordering exists to
+	// prevent: session.updated says what the session now is, and the errors
+	// that follow say which parts of the request did not contribute to it.
+	if err := session.send(session.sessionEvent("session.updated")); err != nil {
+		return err
+	}
+	for _, failure := range refused {
+		failure.causedBy = causedBy
+		session.sendClientError(failure)
+	}
+	return nil
 }
 
 // supportedFeatures is what this deployment can actually offer, which is the
@@ -727,12 +757,39 @@ func (session *session) send(value map[string]any) error {
 	}
 }
 
+// clientError is something the client should know about that does not end the
+// session. The base protocol's own description of the error event says as
+// much: most errors are recoverable and the session stays open.
+type clientError struct {
+	code    string
+	message string
+	// param names the field the problem is about, when it is about one. It is
+	// the difference between a client being told its request was wrong and
+	// being told which part of it was.
+	param string
+	// causedBy is the event_id the client put on the request, echoed so it can
+	// match the answer to the question. Clients are not required to send one.
+	causedBy string
+}
+
 func (session *session) sendError(code, message string) {
+	session.sendClientError(clientError{code: code, message: message})
+}
+
+func (session *session) sendClientError(failure clientError) {
 	session.config.Logger.Warn("session error",
-		"session", session.id, "code", code, "message", message)
-	_ = session.send(event("error", session.nextID("event"), map[string]any{
-		"error": map[string]any{"type": "invalid_request_error", "code": code, "message": message},
-	}))
+		"session", session.id, "code", failure.code,
+		"param", failure.param, "message", failure.message)
+	body := map[string]any{
+		"type": "invalid_request_error", "code": failure.code, "message": failure.message,
+	}
+	if failure.param != "" {
+		body["param"] = failure.param
+	}
+	if failure.causedBy != "" {
+		body["event_id"] = failure.causedBy
+	}
+	_ = session.send(event("error", session.nextID("event"), map[string]any{"error": body}))
 }
 
 func (session *session) recordCallNames(calls []trajectory.ToolCall) {

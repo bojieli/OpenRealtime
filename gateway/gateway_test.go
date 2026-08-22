@@ -601,7 +601,8 @@ func TestTheSessionAnOfficialClientSendsIsAccepted(t *testing.T) {
 	// documents as the way to turn it off, and semantic_vad, which is a
 	// detector this server does not have.
 	client.send(map[string]any{
-		"type": "session.update",
+		"type":     "session.update",
+		"event_id": "event_from_the_client",
 		"session": map[string]any{
 			"type":         "realtime",
 			"instructions": "Be brief.",
@@ -619,21 +620,76 @@ func TestTheSessionAnOfficialClientSendsIsAccepted(t *testing.T) {
 		},
 	})
 
+	// The confirmation comes first, and everything the deployment can honour
+	// is in it. A null noise_reduction is not an error at all.
 	updated := client.await("session.updated", 5*time.Second)
 	session := updated["session"].(map[string]any)
 	if session["instructions"] != "Be brief." {
 		t.Fatalf("the rest of the session must be applied, not discarded: %v", session["instructions"])
 	}
-	// A detector the server does not have falls back to the one it does, and
-	// says so. Nothing is hidden: the client can read what is in force.
 	detection := session["audio"].(map[string]any)["input"].(map[string]any)["turn_detection"].(map[string]any)
 	if detection["type"] != "server_vad" {
 		t.Fatalf("expected the detector actually in force, got %v", detection["type"])
 	}
-	// And it falls back to working settings rather than to zeroes, which the
-	// acoustic gate refuses outright.
 	if silence, _ := detection["silence_duration_ms"].(float64); silence <= 0 {
-		t.Fatalf("the fallback must produce a usable gate, got %v", detection)
+		t.Fatalf("the session must be left with a usable gate, got %v", detection)
+	}
+
+	// And then the part that could not be honoured, by name. Quietly
+	// substituting a different detector would leave the client believing it
+	// got the endpointing behaviour it asked for.
+	failure := client.await("error", 5*time.Second)["error"].(map[string]any)
+	if failure["code"] != "unsupported_value" {
+		t.Fatalf("expected an unsupported-value error, got %v", failure)
+	}
+	if failure["param"] != "session.audio.input.turn_detection.type" {
+		t.Fatalf("the error must name the field it is about, got %v", failure["param"])
+	}
+	if failure["event_id"] != "event_from_the_client" {
+		t.Fatalf("the error must identify the request that caused it, got %v", failure["event_id"])
+	}
+	if message, _ := failure["message"].(string); !strings.Contains(message, "semantic_vad") {
+		t.Fatalf("the error must say what was asked for, got %q", message)
+	}
+
+	// The session is still usable, which is what makes this an error about a
+	// field rather than a failure of the event.
+	client.speak()
+	client.await("input_audio_buffer.speech_started", 5*time.Second)
+	client.await("response.created", 10*time.Second)
+}
+
+// A supported detector produces no complaint at all. The loud error has to be
+// about the field being unsupported, not about turn detection being mentioned.
+func TestASupportedDetectorIsAcceptedSilently(t *testing.T) {
+	t.Parallel()
+	server := startServer(t,
+		fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Fine."}}),
+		slow([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Fine."}}),
+		"hello")
+	client := dial(t, server)
+	client.await("session.created", 5*time.Second)
+	client.send(map[string]any{
+		"type": "session.update",
+		"session": map[string]any{
+			"type": "realtime",
+			"audio": map[string]any{
+				"input": map[string]any{"turn_detection": map[string]any{"type": "server_vad"}},
+			},
+		},
+	})
+	client.await("session.updated", 5*time.Second)
+
+	// Nothing follows the confirmation, so the next thing the session produces
+	// is the turn rather than a complaint about it.
+	client.speak()
+	if event := client.await("input_audio_buffer.speech_started", 5*time.Second); event == nil {
+		t.Fatal("expected the session to proceed")
+	}
+	for _, seen := range client.received {
+		if seen["type"] == "error" {
+			t.Fatalf("a supported detector must produce no error: %v", seen)
+		}
 	}
 }
 

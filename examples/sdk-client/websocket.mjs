@@ -73,11 +73,15 @@ session.on("transport_event", (event) => {
     transcript.push(event.delta);
   }
 });
+const errors = [];
 session.on("error", (error) => {
-  // The SDK reports a protocol error here. Recording rather than throwing keeps
-  // the run going far enough to say what did and did not work.
-  failure = error?.error ?? error;
-  console.log(`  (session error: ${JSON.stringify(failure)?.slice(0, 300)})`);
+  // The SDK surfaces every server error here. Recording rather than throwing is
+  // the point of this test: an error about one field must not stop a session,
+  // and the only way to know the SDK agrees is to send it one and keep going.
+  const reported = error?.error?.error ?? error?.error ?? error;
+  errors.push(reported);
+  failure = reported;
+  console.log(`  (session error: ${JSON.stringify(reported)?.slice(0, 200)})`);
 });
 
 const deadline = (label, ms) => new Promise((_, reject) =>
@@ -105,10 +109,16 @@ try {
     [...seen].filter((type) => type.startsWith("session.")).join(", "));
 
   // The SDK sends its own session.update built from the agent: instructions,
-  // tools, modalities, audio formats. If the server rejected any of it, the
-  // error handler above would have fired.
-  check("the server accepted the session the SDK configured", failure === null,
-    failure ? JSON.stringify(failure).slice(0, 200) : "");
+  // tools, modalities, audio formats. All of that applies. What does not is
+  // semantic_vad, which this deployment does not have - and the server says so
+  // by name rather than substituting a detector the client did not ask for.
+  const unsupported = errors.filter((error) => error?.code === "unsupported_value");
+  check("the unsupported field is refused by name, not silently substituted",
+    unsupported.some((error) => error?.param === "session.audio.input.turn_detection.type"),
+    JSON.stringify(unsupported.map((error) => error?.param)));
+  check("nothing else in the session was refused",
+    errors.length === unsupported.length,
+    JSON.stringify(errors.filter((error) => error?.code !== "unsupported_value")));
 
   session.sendMessage(prompt);
 
@@ -123,8 +133,10 @@ try {
   check("speech came back as audio and as a transcript",
     audioBytes > 0 && transcript.length > 0,
     `${audioBytes} bytes of audio, ${transcript.join("").length} characters of transcript`);
-  check("no protocol error was reported at any point", failure === null,
-    failure ? JSON.stringify(failure).slice(0, 200) : "");
+  // The whole turn happened after the server reported that error, which is
+  // what makes it an error about a field rather than a failed session. If the
+  // SDK treated it as fatal, none of the checks above would have passed.
+  check("the session completed a turn despite the error", toolCalls > 0 && seen.has("response.done"));
 
   console.log(`\n  the agent said: ${transcript.join("").trim() || "(nothing)"}`);
 } catch (thrown) {
