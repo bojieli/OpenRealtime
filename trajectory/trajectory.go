@@ -414,7 +414,7 @@ func (store *Store) Append(item Item) error {
 // refer to earlier items in the same batch, which makes a completed model turn
 // publishable as one safe-point transaction.
 func (store *Store) AppendBatch(items []Item) error {
-	return store.appendBatch(nil, nil, items)
+	return store.appendBatch(nil, items)
 }
 
 // AppendBatchAt atomically appends every item only when the store is still at
@@ -422,44 +422,17 @@ func (store *Store) AppendBatch(items []Item) error {
 // producers: providers may compute concurrently from immutable snapshots, but
 // only output derived from the current prefix can enter the canonical log.
 func (store *Store) AppendBatchAt(expectedVersion uint64, items []Item) error {
-	return store.appendBatch(&expectedVersion, nil, items)
+	return store.appendBatch(&expectedVersion, items)
 }
 
-// AppendBatchAfter appends items when every item another writer committed
-// since expectedVersion is one this writer can tolerate being interleaved
-// ahead of its own output.
-//
-// Strict version checking exists to reject *stale* output — work derived from
-// a prefix that newer evidence has invalidated. A concurrently answered quick
-// question is a different situation: it advances the log without invalidating
-// the request the interleaved writer is still working on. Tolerate is how a
-// writer says which of the two it is looking at; a nil predicate tolerates
-// nothing and is exactly AppendBatchAt.
-func (store *Store) AppendBatchAfter(expectedVersion uint64, items []Item, tolerate func(Item) bool) error {
-	if tolerate == nil {
-		return store.appendBatch(&expectedVersion, nil, items)
-	}
-	return store.appendBatch(&expectedVersion, tolerate, items)
-}
-
-func (store *Store) appendBatch(expectedVersion *uint64, tolerate func(Item) bool, items []Item) error {
+func (store *Store) appendBatch(expectedVersion *uint64, items []Item) error {
 	if len(items) == 0 {
 		return errors.New("trajectory append batch is empty")
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	if expectedVersion != nil && *expectedVersion != uint64(len(store.items)) {
-		if tolerate == nil {
-			return fmt.Errorf("%w: expected %d, current %d", ErrVersionConflict, *expectedVersion, len(store.items))
-		}
-		if *expectedVersion > uint64(len(store.items)) {
-			return fmt.Errorf("%w: expected %d, current %d", ErrVersionConflict, *expectedVersion, len(store.items))
-		}
-		for _, interleaved := range store.items[*expectedVersion:] {
-			if !tolerate(interleaved) {
-				return fmt.Errorf("%w: item %q committed since version %d is not tolerable", ErrVersionConflict, interleaved.ID, *expectedVersion)
-			}
-		}
+		return fmt.Errorf("%w: expected %d, current %d", ErrVersionConflict, *expectedVersion, len(store.items))
 	}
 
 	clone := store.cloneLocked()
