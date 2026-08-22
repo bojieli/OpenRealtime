@@ -397,7 +397,7 @@ func (config *Config) runDomain(ctx context.Context, domain, runName string) ([]
 		"--audio-native-base-url", config.Endpoint,
 		"--speech-complexity", string(config.Condition),
 		"--tick-duration", fmt.Sprintf("%g", config.Cadence),
-		"--user-llm", config.UserModel,
+		"--user-llm", config.userModelName(),
 		"--user-llm-args", config.userModelArgs(),
 		"--hallucination-retries", fmt.Sprint(max(0, config.HallucinationRetries)),
 		"--voice-synthesis-provider", config.SynthesisProvider,
@@ -473,6 +473,23 @@ func (config *Config) runDomain(ctx context.Context, domain, runName string) ([]
 			"but something after them failed:\n%s", waitErr, tail)
 	}
 	return outcomes, nil
+}
+
+// userModelName is the simulator's model as LiteLLM needs to see it.
+//
+// LiteLLM routes by a provider prefix, not by the presence of api_base: an
+// unprefixed name is "LLM Provider NOT provided" however complete the rest of
+// the configuration is. So pointing the caller at a local endpoint - the one
+// thing that makes a run fully local - could not work unless whoever ran it
+// already knew to type the prefix themselves. A name that carries its own
+// provider is left alone, because choosing a different one is a real thing to
+// want.
+func (config *Config) userModelName() string {
+	model := strings.TrimSpace(config.UserModel)
+	if strings.TrimSpace(config.UserModelURL) == "" || strings.Contains(model, "/") {
+		return model
+	}
+	return "openai/" + model
 }
 
 // userModelArgs is the JSON tau2 passes through to the simulator's provider.
@@ -597,13 +614,26 @@ func readOutcomes(saveTo, domain string) ([]bench.TaskOutcome, error) {
 // here. They are what makes a tau-Voice run say something about turn-taking
 // rather than only about task success, and computing them independently would
 // invite two numbers that disagree with no way to tell which is right.
+// interactionMetricsArgs builds the tau2 invocation that computes the
+// turn-taking measures.
+//
+// input_paths is positional and variadic in tau2's CLI, not a flag. Spelling it
+// --input-paths made argparse reject the whole invocation, so the measures that
+// make a tau-Voice run say something beyond task success were never computed on
+// any run - and because the failure was in a post-processing step, every run
+// still produced a result file that simply had no interaction block in it.
+func interactionMetricsArgs(inputPath, output string) []string {
+	return []string{
+		"-m", "tau2.cli", "submit", "interaction-metrics",
+		inputPath, "--output", output,
+	}
+}
+
 func InteractionMetrics(ctx context.Context, config Config, runName string) (map[string]float64, error) {
 	config.applyDefaults()
 	saveTo := config.simulationDir(runName)
 	output := filepath.Join(saveTo, "interaction-metrics.json")
-	command := exec.CommandContext(ctx, config.Python,
-		"-m", "tau2.cli", "submit", "interaction-metrics",
-		"--input-paths", saveTo, "--output", output)
+	command := exec.CommandContext(ctx, config.Python, interactionMetricsArgs(saveTo, output)...)
 	command.Dir = config.Tau2Dir
 	command.Env = append(os.Environ(), "PYTHONPATH="+filepath.Join(config.Tau2Dir, "src"))
 	if combined, err := command.CombinedOutput(); err != nil {
