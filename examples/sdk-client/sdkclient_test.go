@@ -86,7 +86,7 @@ func TestTheOfficialSDKCompletesAToolUsingSessionOverWebRTC(t *testing.T) {
 	if chromium == "" {
 		t.Skip("chromium is not installed; the SDK's WebRTC transport only runs in a browser")
 	}
-	if err := buildBundle(t, node); err != nil {
+	if err := buildBundle(t); err != nil {
 		t.Skipf("could not build the browser bundle: %v", err)
 	}
 
@@ -110,7 +110,7 @@ func TestTheOfficialSDKCompletesAToolUsingSessionOverWebRTC(t *testing.T) {
 // JavaScript in the tree would be a thing to keep in step with a dependency by
 // hand, and the point of this example is that the client is the published
 // package rather than a copy of it.
-func buildBundle(t *testing.T, node string) error {
+func buildBundle(t *testing.T) error {
 	t.Helper()
 	bundle := filepath.Join("dist", "webrtc.js")
 	source, err := os.Stat("webrtc.mjs")
@@ -126,7 +126,17 @@ func buildBundle(t *testing.T, node string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	command := exec.CommandContext(ctx, node, esbuild, "webrtc.mjs",
+	// Run the bundler directly rather than through node. npm installs a native
+	// executable here on most platforms and a shell shim on the rest, and both
+	// run themselves; handing an ELF binary to node fails with a syntax error
+	// on its first byte.
+	//
+	// This skipped rather than failed, so the suite reported a compatibility
+	// claim it had not checked - and it passed everywhere a previous bundle
+	// happened to be lying around, which is every tree anyone had already run
+	// it in. OPENREALTIME_RELEASE_GATE is what caught it, by refusing to treat
+	// a skip as a pass.
+	command := exec.CommandContext(ctx, esbuild, "webrtc.mjs",
 		"--bundle", "--format=esm", "--outfile="+bundle, "--log-level=warning")
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Log(string(output))
