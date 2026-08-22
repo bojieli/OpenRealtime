@@ -87,7 +87,15 @@ var llmCatalog = []LLM{
 			Dialect: DialectGemini, BaseURL: "https://generativelanguage.googleapis.com/v1beta",
 			Auth: AuthQuery, KeyEnv: []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"},
 		},
-		FastModel: gemini.DefaultModel, SlowModel: "gemini-3.5-pro", Vision: true,
+		// Both phases are the same model, and that is the reference
+		// configuration rather than an oversight: what separates fast from
+		// slow here is reasoning effort and tool authority, not model family.
+		// There is no gemini-3.5-pro - the 3.5 family is flash, flash-lite,
+		// and a live translation preview - so naming one made the background
+		// reasoner return 404 on every turn while the voice kept answering,
+		// which looks like a working deployment until somebody notices that
+		// nothing is ever reasoned about or acted on.
+		FastModel: gemini.DefaultModel, SlowModel: gemini.DefaultModel, Vision: true,
 	},
 	{
 		Common: Common{
@@ -98,7 +106,7 @@ var llmCatalog = []LLM{
 			Notes: "Use the native google entry unless a compatibility layer is required; " +
 				"thought signatures are not preserved here.",
 		},
-		FastModel: gemini.DefaultModel, SlowModel: "gemini-3.5-pro",
+		FastModel: gemini.DefaultModel, SlowModel: gemini.DefaultModel,
 		Reasoning: openaicompat.ReasoningControlEffort, DisabledEffort: "none",
 		EffortNames: openAIEfforts, Vision: true,
 	},
