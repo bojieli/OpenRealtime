@@ -59,6 +59,29 @@ func probeProvider(name, baseURL string, timeout time.Duration, output io.Writer
 	for _, model := range result.Models {
 		fmt.Fprintf(output, "  %s\n", model)
 	}
+	if len(result.Defaults) > 0 {
+		fmt.Fprintln(output, "\nthis catalogue's defaults:")
+		for _, declared := range result.Defaults {
+			mark := "ok"
+			if !declared.Served {
+				mark = "NOT SERVED"
+			}
+			fmt.Fprintf(output, "  %-5s %-40s %s\n", declared.Phase, declared.Model, mark)
+		}
+	}
+	// A default the provider does not serve is a defect in this repository
+	// rather than a fact about the provider, so it is an error rather than a
+	// note. It is silent in ordinary use - the voice keeps answering while the
+	// background reasoner returns 404 every turn - which is exactly why the
+	// one command that can see it has to fail on it.
+	if stale := result.Stale(); len(stale) > 0 {
+		names := make([]string, len(stale))
+		for index, declared := range stale {
+			names[index] = declared.Phase + "=" + declared.Model
+		}
+		return fmt.Errorf("%s does not serve %s: this catalogue's default is stale",
+			result.Provider, strings.Join(names, ", "))
+	}
 	return nil
 }
 

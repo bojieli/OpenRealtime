@@ -11,19 +11,47 @@ import (
 	"time"
 )
 
-// ProbeResult is what a provider says it serves.
+// ProbeResult is what a provider says it serves, and whether the catalogue's
+// own defaults are among them.
 type ProbeResult struct {
 	Provider string
 	Endpoint string
 	Models   []string
+	// Defaults is what this entry names for each phase, checked against the
+	// listing above. A default that is not served is the failure this field
+	// exists to make visible: it is invisible in ordinary use, because the
+	// voice keeps answering while the background reasoner returns 404 on every
+	// turn, and it is the one part of the catalogue guaranteed to go stale.
+	Defaults []DefaultModel
 }
 
-// Probe asks a provider to list its models.
+// DefaultModel is one phase's declared model and whether the provider serves it.
+type DefaultModel struct {
+	Phase  string
+	Model  string
+	Served bool
+}
+
+// Stale returns the declared defaults this provider does not serve.
+func (result ProbeResult) Stale() []DefaultModel {
+	var stale []DefaultModel
+	for _, declared := range result.Defaults {
+		if !declared.Served {
+			stale = append(stale, declared)
+		}
+	}
+	return stale
+}
+
+// Probe asks a provider to list its models, and checks this catalogue's own
+// defaults against the answer.
 //
-// It exists because the default models in this catalogue are the one part of
-// it that goes stale, and a reader with a key can get the truth in a second
-// rather than trusting a constant compiled months ago. It is a listing, not a
-// health check: a provider that answers here may still refuse a completion.
+// It exists because the default models here are the one part of the catalogue
+// that goes stale, and a reader with a key can get the truth in a second
+// rather than trusting a constant compiled months ago. Checking the defaults
+// is the same argument turned on ourselves: a compatibility claim that is not
+// continuously checked decays, and so does a model name. It is a listing, not
+// a health check: a provider that answers here may still refuse a completion.
 func Probe(ctx context.Context, request LLMRequest) (ProbeResult, error) {
 	entry, err := LookupLLM(request.Provider)
 	if err != nil {
@@ -102,7 +130,35 @@ func Probe(ctx context.Context, request LLMRequest) (ProbeResult, error) {
 		return ProbeResult{}, fmt.Errorf("decode %s model listing: %w", entry.Name, err)
 	}
 	sort.Strings(models)
-	return ProbeResult{Provider: entry.Name, Endpoint: endpoint, Models: models}, nil
+	return ProbeResult{
+		Provider: entry.Name, Endpoint: endpoint, Models: models,
+		Defaults: entry.declaredDefaults(models),
+	}, nil
+}
+
+// declaredDefaults checks what this entry names against what is served.
+//
+// A name is matched exactly. A listing that is close but not equal - a dated
+// snapshot, a preview suffix - is not the model the catalogue named, and
+// treating it as one is how a default that stopped existing keeps looking
+// fine.
+func (entry LLM) declaredDefaults(models []string) []DefaultModel {
+	served := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		served[model] = struct{}{}
+	}
+	var defaults []DefaultModel
+	for _, declared := range []DefaultModel{
+		{Phase: "fast", Model: entry.FastModel},
+		{Phase: "slow", Model: entry.SlowModel},
+	} {
+		if strings.TrimSpace(declared.Model) == "" {
+			continue
+		}
+		_, declared.Served = served[declared.Model]
+		defaults = append(defaults, declared)
+	}
+	return defaults
 }
 
 // decodeModelListing reads the three shapes a listing arrives in: OpenAI's
@@ -121,8 +177,13 @@ func decodeModelListing(payload []byte) ([]string, error) {
 	}
 	var models []string
 	for _, entry := range envelope.Data {
-		if entry.ID != "" {
-			models = append(models, entry.ID)
+		// Gemini's OpenAI-compatibility layer answers with its native names in
+		// an OpenAI envelope, so ids arrive as "models/gemini-3.5-flash" here
+		// and as "gemini-3.5-flash" on the native path. It is one namespace
+		// delivered two ways, and stripping is safe because no vendor prefix
+		// is "models".
+		if name := strings.TrimPrefix(entry.ID, "models/"); name != "" {
+			models = append(models, name)
 		}
 	}
 	for _, entry := range envelope.Models {
