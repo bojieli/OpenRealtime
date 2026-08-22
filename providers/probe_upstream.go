@@ -119,6 +119,13 @@ func ProbeUpstream(ctx context.Context, request UpstreamRequest, patience time.D
 				return result
 			case "response.done":
 				result.Spoken = strings.TrimSpace(spoken.String())
+				// A turn can end without having said anything, and the reason
+				// travels on this event. Reading only the text would report
+				// the endpoint as reachable and silent - which is what a
+				// probe is for, minus the one fact that explains it.
+				if reason := incompleteReason(event.Raw); reason != "" && result.Spoken == "" {
+					result.Failure = "the endpoint ended the turn without speaking: " + reason
+				}
 				return result
 			}
 		case <-probeContext.Done():
@@ -157,4 +164,30 @@ func decodeError(raw []byte) string {
 		return fmt.Sprintf("%s: %s", decoded.Error.Code, decoded.Error.Message)
 	}
 	return decoded.Error.Message
+}
+
+// incompleteReason reads why a response stopped short, or empty when it did
+// not. The status is the claim and status_details carries the cause; an
+// endpoint that reports one without the other still gets named.
+func incompleteReason(raw []byte) string {
+	var decoded struct {
+		Response struct {
+			Status        string `json:"status"`
+			StatusDetails struct {
+				Type   string `json:"type"`
+				Reason string `json:"reason"`
+			} `json:"status_details"`
+		} `json:"response"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return ""
+	}
+	response := decoded.Response
+	if response.Status == "" || response.Status == "completed" {
+		return ""
+	}
+	if response.StatusDetails.Reason != "" {
+		return response.Status + " (" + response.StatusDetails.Reason + ")"
+	}
+	return response.Status
 }

@@ -201,6 +201,19 @@ function handle(event) {
       }));
       break;
     case "response.done":
+      // A turn can end without having said anything, and the reason rides on
+      // this event. Reading only that the turn is over would leave someone
+      // watching a demo that connected, listened, answered nothing, and
+      // reported itself healthy.
+      // Deliberately not "anything other than completed": a cancelled turn is
+      // barge-in, which is the user interrupting on purpose and the most
+      // ordinary thing that happens in a voice session. Reporting that as a
+      // problem is a demo crying wolf every time someone speaks.
+      if (["incomplete", "failed"].includes(event.response?.status)) {
+        const reason = event.response.status_details?.reason ?? event.response.status;
+        setState(`${event.response.status}: ${reason}`);
+        break;
+      }
       setState("connected");
       break;
     case "error":

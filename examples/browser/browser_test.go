@@ -40,6 +40,20 @@ func TestTheDemoIsServedAndIsTheRealPage(t *testing.T) {
 			t.Errorf("the demo no longer mentions %q", required)
 		}
 	}
+
+	// A turn can end without having said anything, and the reason rides on
+	// response.done. A demo that read only "the turn is over" would connect,
+	// listen, answer nothing, and report itself healthy - which is worse than
+	// no demo, for the same reason as drifting off the protocol.
+	if !strings.Contains(page, "status_details") {
+		t.Error("the demo does not read why a turn ended, so a silent turn looks healthy")
+	}
+	// And not by treating every non-completed status as trouble: a cancelled
+	// turn is barge-in, the most ordinary thing in a voice session, and
+	// reporting it is a demo crying wolf whenever someone interrupts.
+	if strings.Contains(page, `!== "completed"`) {
+		t.Error("a cancelled turn is the user interrupting on purpose, not a fault to report")
+	}
 }
 
 func TestTheDemoServesOneFileAndNotADirectory(t *testing.T) {
