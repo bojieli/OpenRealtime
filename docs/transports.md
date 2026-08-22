@@ -72,6 +72,30 @@ The requested headers are echoed rather than enumerated, because a client sends
 its own alongside the two the exchange needs and a server cannot know in
 advance what every client will identify itself with.
 
+That is the adapter's half. The page has a half of its own, and it is the
+mirror image: a `Content-Security-Policy` with `connect-src 'self'` forbids the
+browser from making the very request the adapter has just agreed to answer. The
+demo shipped that way and could not reach an adapter in any documented
+configuration — served intact, script parsing, every event name present, and
+dead, because the one request it exists to make was blocked before it left the
+page.
+
+**The two pages in this repository need opposite values, and the difference is
+decided by where the credential lives.** They are worth reading together before
+changing either, because they look like the same header set wrong in one place:
+
+| | `examples/browser` | `console` |
+| --- | --- | --- |
+| Where the SDP goes | direct to the adapter, at an address the page takes as a `?adapter=` parameter | to `/api/webrtc` on its own origin, which the server proxies onward |
+| Where the credential lives | nowhere — the adapter is reached unauthenticated or through an operator's own edge | in the server, attached to the proxied request, never in the browser |
+| Correct `connect-src` | `'self' http: https: ws: wss:` — the destination is a parameter and cannot be enumerated | `'self' ws: wss:` — every connection is same-origin by construction |
+
+So the console's stricter policy is not extra diligence to be copied, and the
+demo's broader one is not laxity to be tightened. Each follows from the shape of
+its page. Harmonising them breaks whichever one gets changed, and it breaks it
+in the way that is hardest to see: the page still loads, still parses, and still
+does nothing.
+
 ### Large events: chunk framing
 
 One data channel message carries one protocol event, as text. That is the whole
