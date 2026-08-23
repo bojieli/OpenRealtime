@@ -197,6 +197,22 @@ scoring it zero is how infrastructure trouble becomes a published capability
 claim. A restricted run — one category, a task limit, named task IDs — is
 reported incomplete however well it scores.
 
+## When a conversation is over
+
+A driver ends a recording when the session goes quiet after playback — but
+quiet only means finished while the agent owes nothing. This system's reasoning
+phase never speaks, so a turn that needs it produces a gap whose length is a
+property of the question, and a driver that read silence as completion would be
+scoring the agent on what it finished before a stopwatch rather than on what it
+can do.
+
+So an open response — created and not yet done — counts as work still owed, and
+the short quiet test does not apply while one is open. `WorkingTimeout` bounds
+that case separately, because a server that opens a response and never closes
+it has to fail rather than hang. If a cell reports tasks that plainly should
+have used a tool and did not, check this first: the question is whether the
+answer never came or whether nobody was still listening.
+
 ## Adding a suite
 
 Implement `Load` for the dataset and a function that turns a

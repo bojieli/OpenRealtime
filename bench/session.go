@@ -147,6 +147,10 @@ type SessionConfig struct {
 	// TrailingSilence is appended so server endpointing fires on the last
 	// utterance. Zero selects 1200 ms.
 	TrailingSilence time.Duration
+	// WorkingTimeout bounds silence while the agent still owes a response, as
+	// distinct from the short quiet that means it has finished. Zero selects
+	// thirty seconds.
+	WorkingTimeout time.Duration
 	// Timeout bounds one conversation.
 	Timeout time.Duration
 	// Quiet suppresses per-task progress.
@@ -240,10 +244,14 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 }
 
 type recorder struct {
-	mu                 sync.Mutex
-	started            time.Time
-	moments            []Moment
-	playbackMS         float64
+	mu         sync.Mutex
+	started    time.Time
+	moments    []Moment
+	playbackMS float64
+	// openResponses counts responses the server has created and not finished.
+	// While it is above zero the agent still owes this turn something, so
+	// silence is work rather than completion.
+	openResponses      int
 	playbackFinishedAt time.Time
 	failure            string
 }
@@ -287,10 +295,23 @@ func (recorder *recorder) snapshot() Transcript {
 // means a session that produces nothing after playback never arms it at all,
 // and every task in that cell fails with a timeout - which looks like the
 // system hanging rather than the harness waiting.
+//
+// Quiet only means finished while the agent owes nothing. This system has a
+// reasoning phase that is silent by construction, so a turn that needs it is
+// quiet for as long as the question is hard - and a driver that read that as
+// completion would score the agent on the answers it managed before the stop
+// watch, which is a measurement of the harness. An open response is the
+// protocol saying work is still owed, so quiet is not the test while one is
+// open; workingFor bounds that separately, because a server that opens a
+// response and never finishes it must still fail rather than hang.
 func (recorder *recorder) collect(
 	ctx context.Context, client *realtimeclient.Client, config SessionConfig,
 ) Transcript {
 	const quietFor = 3 * time.Second
+	workingFor := config.WorkingTimeout
+	if workingFor <= 0 {
+		workingFor = 30 * time.Second
+	}
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 	lastEvent := time.Now()
@@ -310,7 +331,14 @@ func (recorder *recorder) collect(
 			if lastEvent.After(since) {
 				since = lastEvent
 			}
-			if time.Since(since) >= quietFor {
+			recorder.mu.Lock()
+			working := recorder.openResponses > 0
+			recorder.mu.Unlock()
+			limit := quietFor
+			if working {
+				limit = workingFor
+			}
+			if time.Since(since) >= limit {
 				return recorder.snapshot()
 			}
 		case event, open := <-client.Events():
@@ -328,6 +356,10 @@ func (recorder *recorder) handle(
 	config SessionConfig, event realtimeclient.Event,
 ) {
 	switch event.Type {
+	case "response.created":
+		recorder.mu.Lock()
+		recorder.openResponses++
+		recorder.mu.Unlock()
 	case "input_audio_buffer.speech_started":
 		recorder.add(Moment{Kind: MomentSpeechStarted})
 	case "input_audio_buffer.speech_stopped":
@@ -356,6 +388,11 @@ func (recorder *recorder) handle(
 			recorder.add(Moment{Kind: MomentAgentAudio, AudioMS: float64(len(payload)/2) / 24.0})
 		}
 	case "response.done":
+		recorder.mu.Lock()
+		if recorder.openResponses > 0 {
+			recorder.openResponses--
+		}
+		recorder.mu.Unlock()
 		recorder.add(Moment{Kind: MomentResponseDone})
 	case "response.function_call_arguments.done":
 		var decoded struct {
