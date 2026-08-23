@@ -101,6 +101,11 @@ type Buffer struct {
 	finalized           bool
 	terminalErr         error
 	stats               Stats
+
+	// accumulator receives this utterance's counters when it closes. It is
+	// nil for an untracked buffer, which is every buffer a test or a
+	// benchmark builds.
+	accumulator *Accumulator
 }
 
 // New validates middleware configuration and returns a fresh utterance
@@ -145,6 +150,14 @@ func New(config Config) (*Buffer, error) {
 func (buffer *Buffer) Close() error {
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
+	// Fold before releasing. Closing is the last moment this utterance's
+	// counters exist: the observer drops the buffer immediately afterwards,
+	// and whatever was not carried out here is simply lost. Folding is
+	// once-only on the accumulator's side, so a second Close is harmless and
+	// needs no flag here to say so.
+	if buffer.accumulator != nil {
+		buffer.accumulator.fold(buffer, buffer.providerRuntimeMetrics())
+	}
 	closer, releases := buffer.provider.(io.Closer)
 	if !releases {
 		return nil
@@ -182,6 +195,11 @@ func (buffer *Buffer) ProviderInvocationCount() uint64 {
 func (buffer *Buffer) ProviderRuntimeMetrics() ProviderMetrics {
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
+	return buffer.providerRuntimeMetrics()
+}
+
+// providerRuntimeMetrics reads the counters with the lock already held.
+func (buffer *Buffer) providerRuntimeMetrics() ProviderMetrics {
 	return ProviderMetrics{
 		AdvanceInvocations:   buffer.stats.ProviderAttempts,
 		AdvanceFailures:      buffer.stats.ProviderFailures,

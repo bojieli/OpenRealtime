@@ -72,6 +72,13 @@ type Config struct {
 	ValidateWire bool
 	// Metrics is optional operational telemetry.
 	Metrics *Metrics
+	// Recogniser, when set, reports the recogniser boundary for the whole
+	// process. Only a binding that owns perception can supply it: on `omni`,
+	// `duplex`, and `upstream` the model hears the user directly and there is
+	// no recogniser to time, so it stays nil and the field is absent rather
+	// than reported as zero. A zero would read as a recogniser answering
+	// instantly, which is the opposite of the truth.
+	Recogniser func() RecogniserSnapshot
 	// Logger receives structured operational events. It never receives
 	// conversation content: a log that leaked what was said would be a worse
 	// problem than having no log.
@@ -175,7 +182,7 @@ func (server *Server) readLimit() int64 {
 func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(writer).Encode(map[string]any{
+	payload := map[string]any{
 		"status": "ok", "model": server.config.Model,
 		"binding":      server.config.Binding.Name(),
 		"ownership":    server.config.Binding.Ownership(),
@@ -185,7 +192,11 @@ func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
 			"openrealtime":    map[string]any{"version": openrealtime.Version, "features": openrealtime.Features()},
 		},
 		"sessions": server.config.Metrics.Snapshot(),
-	})
+	}
+	if server.config.Recogniser != nil {
+		payload["recogniser"] = server.config.Recogniser()
+	}
+	_ = json.NewEncoder(writer).Encode(payload)
 }
 
 func (server *Server) metrics(writer http.ResponseWriter, _ *http.Request) {

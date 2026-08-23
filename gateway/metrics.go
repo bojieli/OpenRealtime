@@ -44,3 +44,32 @@ func (metrics *Metrics) Snapshot() MetricsSnapshot {
 		ToolCallsOut:       metrics.toolCallsOut.Load(),
 	}
 }
+
+// RecogniserSnapshot is process-level telemetry for the recogniser boundary.
+//
+// It answers one question the session counters cannot: whether the recogniser
+// is getting slower. A failing recogniser already ends a session with a named
+// error, so the visible signal today is the failure; this is the run-up to it.
+// Counters and timing only, like every other number this package reports.
+type RecogniserSnapshot struct {
+	Utterances uint64 `json:"utterances"`
+	// InFlight is how many utterances are open right now. It is reported
+	// because the totals include them: a reader comparing two polls should
+	// know that part of the difference is one call still running.
+	InFlight int `json:"in_flight"`
+
+	AdvanceInvocations uint64 `json:"advance_invocations"`
+	AdvanceFailures    uint64 `json:"advance_failures"`
+	AdvanceElapsedNS   uint64 `json:"advance_elapsed_ns"`
+	// AdvanceMeanElapsedNS is the number to alert on. A maximum jumps once on
+	// a single bad call and never comes down; a mean that climbs over an hour
+	// is a recogniser degrading.
+	AdvanceMeanElapsedNS uint64 `json:"advance_mean_elapsed_ns"`
+	AdvanceMaxElapsedNS  uint64 `json:"advance_max_elapsed_ns"`
+
+	FinalizeInvocations   uint64 `json:"finalize_invocations"`
+	FinalizeFailures      uint64 `json:"finalize_failures"`
+	FinalizeElapsedNS     uint64 `json:"finalize_elapsed_ns"`
+	FinalizeMeanElapsedNS uint64 `json:"finalize_mean_elapsed_ns"`
+	FinalizeMaxElapsedNS  uint64 `json:"finalize_max_elapsed_ns"`
+}

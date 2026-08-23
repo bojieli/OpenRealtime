@@ -32,7 +32,13 @@ should.
   "ownership": { "perception": "engine", "slow_cognition": "engine", "...": "..." },
   "capabilities": { "video": false, "computer_use": true, "fast_slow": true },
   "protocol": { "openai_realtime": "pinned", "openrealtime": { "version": 1 } },
-  "sessions": { "sessions_started": 12, "sessions_completed": 11, "...": "..." }
+  "sessions": { "sessions_started": 12, "sessions_completed": 11, "...": "..." },
+  "recogniser": {
+    "utterances": 340, "in_flight": 1,
+    "advance_invocations": 5100, "advance_failures": 0,
+    "advance_mean_elapsed_ns": 41000000, "advance_max_elapsed_ns": 220000000,
+    "finalize_invocations": 340, "finalize_mean_elapsed_ns": 88000000, "...": "..."
+  }
 }
 ```
 
@@ -131,21 +137,24 @@ capacity.
   again — which is what a health check that only dials the port reports as
   healthy. Check that a chunk round-trips, not that the port is open.
 
-  What is not yet visible is a recogniser getting *slower* before it stops.
-  `asrbuffer` measures `provider_elapsed_ns` and `provider_max_elapsed_ns`, and
-  `Buffer.ProviderRuntimeMetrics()` already returns them — its own comment says
-  "for process-level aggregation", so the accessor was built for this. Nothing
-  calls it. The consumer is not missing by design: it existed and was removed
-  with the rest of the legacy scaffolding in `72c67a2`.
+  **A recogniser getting slower is visible before it stops.** `/healthz`
+  carries a `recogniser` object on any deployment whose binding owns
+  perception, which is `cascade`. The number to watch is
+  `advance_mean_elapsed_ns`: a maximum jumps once on a single bad call and
+  stays there for the life of the process, while a mean climbing over an hour
+  is a recogniser degrading. Compare it against the cadence the advance is
+  bounded by — a mean approaching `-asr-cadence` is a recogniser about to miss
+  it, which is the failure above with a warning attached.
 
-  Restoring it needs no interface change. `/healthz` reads `gateway.Config`,
-  which is a plain struct built with keyed literals, so an optional field
-  populated where the buffer is already constructed reaches it. The real cost
-  is elsewhere: the recogniser is a factory and there is one buffer per
-  utterance, so an aggregator has to fold each buffer's monotonic counters in
-  as it closes, and own that accumulator's lifetime and locking. That is the
-  work, and it is why this is written down rather than done. Until it is, the
-  observable signal is the failure rather than the degradation.
+  The counters live on one buffer per utterance, and a buffer folds itself into
+  a process-level accumulator when it closes. Utterances still open are read in
+  place and counted in `in_flight`, because the utterance most likely to be the
+  slow one is the one that has not finished — a total that only moved at the
+  endpoint would go quiet during exactly the stall it exists to report.
+
+  It is absent rather than zero on `omni`, `duplex`, and `upstream`. Those
+  models hear the user directly and there is no recogniser to time; a zero
+  would read as one answering instantly.
 
 - **A policy model fails or times out.** The policy falls back to its rule:
   backchannel to silence, projection to silence-only endpointing.

@@ -297,7 +297,7 @@ func serve(options serveOptions, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	bind, err := buildBinding(options)
+	bind, recogniser, err := buildBinding(options)
 	if err != nil {
 		return err
 	}
@@ -305,6 +305,7 @@ func serve(options serveOptions, output io.Writer) error {
 		Binding: bind, Token: os.Getenv(options.tokenEnv), Model: options.model,
 		TranscriptionModel: options.asrModel, ValidateWire: options.validateWire,
 		Logger: logger, Demo: demoHandler(options.demo),
+		Recogniser: recogniserReport(recogniser),
 	})
 	if err != nil {
 		return err
@@ -346,26 +347,62 @@ func serve(options serveOptions, output io.Writer) error {
 	}
 }
 
-func buildBinding(options serveOptions) (binding.Binding, error) {
+// buildBinding creates the binding and, when that binding owns perception,
+// the accumulator its recognisers fold into. Every other binding returns a nil
+// accumulator: there is no recogniser in the process to report on.
+func buildBinding(options serveOptions) (binding.Binding, *asrbuffer.Accumulator, error) {
 	governor, err := buildGovernor(options)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	policies, err := buildPolicies(options, governor)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	switch strings.ToLower(strings.TrimSpace(options.binding)) {
 	case "cascade", "":
-		return buildCascade(options, policies, governor)
+		recogniser := asrbuffer.NewAccumulator()
+		bind, err := buildCascade(options, policies, governor, recogniser)
+		if err != nil {
+			return nil, nil, err
+		}
+		return bind, recogniser, nil
 	case "upstream":
-		return buildUpstream(options)
+		bind, err := buildUpstream(options)
+		return bind, nil, err
 	case "omni":
-		return buildSidecarBinding(options, "omni")
+		bind, err := buildSidecarBinding(options, "omni")
+		return bind, nil, err
 	case "duplex":
-		return buildSidecarBinding(options, "duplex")
+		bind, err := buildSidecarBinding(options, "duplex")
+		return bind, nil, err
 	default:
-		return nil, fmt.Errorf("binding must be cascade, upstream, omni, or duplex, got %q", options.binding)
+		return nil, nil, fmt.Errorf("binding must be cascade, upstream, omni, or duplex, got %q", options.binding)
+	}
+}
+
+// recogniserReport adapts the accumulator to the gateway's reporting shape.
+// A binding without a recogniser reports nothing at all rather than zeroes.
+func recogniserReport(accumulator *asrbuffer.Accumulator) func() gateway.RecogniserSnapshot {
+	if accumulator == nil {
+		return nil
+	}
+	return func() gateway.RecogniserSnapshot {
+		snapshot := accumulator.Snapshot()
+		return gateway.RecogniserSnapshot{
+			Utterances: snapshot.Utterances, InFlight: snapshot.InFlight,
+			AdvanceInvocations:   snapshot.AdvanceInvocations,
+			AdvanceFailures:      snapshot.AdvanceFailures,
+			AdvanceElapsedNS:     snapshot.AdvanceElapsedNS,
+			AdvanceMeanElapsedNS: snapshot.MeanAdvanceNS(),
+			AdvanceMaxElapsedNS:  snapshot.AdvanceMaxElapsedNS,
+
+			FinalizeInvocations:   snapshot.FinalizeInvocations,
+			FinalizeFailures:      snapshot.FinalizeFailures,
+			FinalizeElapsedNS:     snapshot.FinalizeElapsedNS,
+			FinalizeMeanElapsedNS: snapshot.MeanFinalizeNS(),
+			FinalizeMaxElapsedNS:  snapshot.FinalizeMaxElapsedNS,
+		}
 	}
 }
 
@@ -522,6 +559,7 @@ func applyPolicyModels(
 
 func buildCascade(
 	options serveOptions, policies interaction.Policies, governor *admission.Governor,
+	recogniserMetrics *asrbuffer.Accumulator,
 ) (binding.Binding, error) {
 	fast, err := buildFast(options)
 	if err != nil {
@@ -577,7 +615,7 @@ func buildCascade(
 			if err != nil {
 				return nil, err
 			}
-			return asrbuffer.New(asrbuffer.Config{Provider: recogniser, MinimumChunk: options.asrCadence})
+			return recogniserMetrics.New(asrbuffer.Config{Provider: recogniser, MinimumChunk: options.asrCadence})
 		},
 		ASRCadence: options.asrCadence,
 		Fast:       fast, Slow: slow, Speech: speech,

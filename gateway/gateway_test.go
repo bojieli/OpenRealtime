@@ -835,3 +835,67 @@ func TestTurnDetectionParametersAreOptional(t *testing.T) {
 		t.Fatalf("a specified parameter must be honoured, got %v", detection)
 	}
 }
+
+// A recogniser that is getting slower is the run-up to one that stops, and
+// until this reached /healthz the only observable signal was the failure.
+func TestHealthReportsTheRecogniserWhenTheBindingOwnsOne(t *testing.T) {
+	bind, err := cascade.New(cascade.Config{
+		Perception: func() (v1.PerceptionProvider, error) { return staticASR{text: "hi"}, nil },
+		Fast:       fast(), Slow: slow(), Speech: toneSpeech{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reported := gateway.RecogniserSnapshot{
+		Utterances: 7, InFlight: 1,
+		AdvanceInvocations: 40, AdvanceElapsedNS: 400, AdvanceMeanElapsedNS: 10, AdvanceMaxElapsedNS: 90,
+	}
+	server, err := gateway.New(gateway.Config{
+		Binding: bind, Recogniser: func() gateway.RecogniserSnapshot { return reported },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listening := httptest.NewServer(server.Handler())
+	defer listening.Close()
+
+	health := getHealth(t, listening.URL)
+	recogniser, present := health["recogniser"].(map[string]any)
+	if !present {
+		t.Fatalf("a cascade deployment should report its recogniser, got %v", health["recogniser"])
+	}
+	if recogniser["utterances"] != float64(7) || recogniser["in_flight"] != float64(1) {
+		t.Fatalf("unexpected utterance counts: %v", recogniser)
+	}
+	// The mean is the number an operator alerts on: a maximum jumps once on a
+	// single bad call and stays there for the life of the process.
+	if recogniser["advance_mean_elapsed_ns"] != float64(10) {
+		t.Fatalf("mean advance = %v, want 10", recogniser["advance_mean_elapsed_ns"])
+	}
+	if recogniser["advance_max_elapsed_ns"] != float64(90) {
+		t.Fatalf("peak advance = %v, want 90", recogniser["advance_max_elapsed_ns"])
+	}
+}
+
+// On omni, duplex, and upstream the model hears the user directly. Reporting
+// zeroes there would read as a recogniser answering instantly.
+func TestHealthOmitsTheRecogniserWhenThereIsNoneToTime(t *testing.T) {
+	server := startServer(t, fast(), slow(), "hello")
+	if health := getHealth(t, server.URL); health["recogniser"] != nil {
+		t.Fatalf("an unconfigured recogniser should be absent, got %v", health["recogniser"])
+	}
+}
+
+func getHealth(t *testing.T, base string) map[string]any {
+	t.Helper()
+	response, err := http.Get(base + "/healthz")
+	if err != nil {
+		t.Fatalf("health: %v", err)
+	}
+	defer response.Body.Close()
+	var health map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&health); err != nil {
+		t.Fatalf("decode health: %v", err)
+	}
+	return health
+}

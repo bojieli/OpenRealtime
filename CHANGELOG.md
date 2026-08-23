@@ -4,6 +4,17 @@
 
 ### Operations
 
+- **A recogniser getting slower is visible before it stops.** `asrbuffer`
+  measured `provider_elapsed_ns` and `provider_max_elapsed_ns` per utterance
+  and `Buffer.ProviderRuntimeMetrics()` returned them "for process-level
+  aggregation", but the aggregation went out with the legacy scaffolding and
+  nothing called it, so the only observable signal was the failure. Buffers now
+  fold into a process-level accumulator as they close and `/healthz` reports
+  it. An utterance still open is read in place rather than waited for: the one
+  most likely to be slow is the one that has not finished, and a total that
+  only moved at the endpoint would go quiet during the stall it exists to
+  report. The mean is reported next to the maximum because a maximum jumps once
+  on one bad call and never comes down.
 - **A session that ends mid-utterance releases its recogniser.** One recogniser
   exists per utterance and the endpoint retires it, but a session closing while
   the user was still speaking never reaches an endpoint — and hanging up
