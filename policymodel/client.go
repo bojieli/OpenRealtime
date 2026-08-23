@@ -34,6 +34,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/adapters/openaicompat"
 	"github.com/bojieli/OpenRealtime/admission"
 	"github.com/bojieli/OpenRealtime/interaction"
 )
@@ -62,6 +63,19 @@ type Config struct {
 	// speculative preparation, below the foreground continuation.
 	Class      admission.Class
 	HTTPClient *http.Client
+	// Reasoning is how this endpoint is told not to think.
+	//
+	// A policy model's contract is one enumerated choice from a short prompt,
+	// so reasoning is definitionally not part of it - and a reasoning model
+	// asked anyway spends the whole budget on the reasoning. Qwen3 answers
+	// "<think>" and stops, having chosen nothing, and constrained decoding
+	// does not help because the thinking block precedes the constraint.
+	//
+	// The switch is spelled differently by every vendor, which is why this is
+	// declared rather than assumed. An instruct model needs no switch at all
+	// and should be given ReasoningControlNone; a model whose thinking cannot
+	// be turned off should not be used here.
+	Reasoning openaicompat.ReasoningControl
 }
 
 // Client is one policy-model endpoint.
@@ -109,6 +123,21 @@ type chatRequest struct {
 	TopLogprobs int           `json:"top_logprobs,omitempty"`
 	// GuidedChoice is the vLLM and SGLang extension for constrained decoding.
 	GuidedChoice []string `json:"guided_choice,omitempty"`
+	// ReasoningEffort, EnableThinking, Thinking and ChatTemplateKwargs are the
+	// spellings of one switch. Exactly one is sent, chosen by the profile.
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+	EnableThinking  *bool          `json:"enable_thinking,omitempty"`
+	Thinking        map[string]any `json:"thinking,omitempty"`
+	// ChatTemplateKwargs turns a reasoning model's thinking mode off.
+	//
+	// A policy model's whole contract is one enumerated choice from a short
+	// prompt, and a model that reasons first spends its budget on the reasoning
+	// - Qwen3 answers "<think>\nOkay" and stops, having chosen nothing. The
+	// caller then reads a first token that matches no option, scores it as
+	// unknown, and discards a decision the model was never given room to make.
+	// Constrained decoding does not save it either: the thinking block is
+	// emitted before the constraint applies.
+	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
 }
 
 type chatMessage struct {
@@ -163,6 +192,17 @@ func (client *Client) Decide(ctx context.Context, decision interaction.Decision)
 		Messages:    []chatMessage{{Role: "user", Content: prompt}},
 		Logprobs:    true,
 		TopLogprobs: len(decision.Options),
+	}
+	switch client.config.Reasoning {
+	case openaicompat.ReasoningControlTemplateKwargs:
+		body.ChatTemplateKwargs = map[string]any{"enable_thinking": false}
+	case openaicompat.ReasoningControlEnableThinking:
+		disabled := false
+		body.EnableThinking = &disabled
+	case openaicompat.ReasoningControlEffort:
+		body.ReasoningEffort = "none"
+	case openaicompat.ReasoningControlThinkingObject:
+		body.Thinking = map[string]any{"type": "disabled"}
 	}
 	if client.config.GuidedChoice {
 		body.GuidedChoice = decision.Options

@@ -112,15 +112,16 @@ type serveOptions struct {
 	webrtcSTUN   string
 	webrtcOrigin string
 
-	gpuCapacity    int
-	policyURL      string
-	policyModel    string
-	policyTokenEnv string
-	policyGuided   bool
-	policies       string
-	projectionHold time.Duration
-	bargeIn        string
-	bargeInHold    time.Duration
+	gpuCapacity     int
+	policyURL       string
+	policyModel     string
+	policyTokenEnv  string
+	policyGuided    bool
+	policies        string
+	policyReasoning string
+	projectionHold  time.Duration
+	bargeIn         string
+	bargeInHold     time.Duration
 
 	computerUse     bool
 	browserURL      string
@@ -263,6 +264,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.browserTarget, "browser-target", "", "connect directly to a known page WebSocket instead of discovering one")
 	flags.StringVar(&options.computerConfirm, "computer-confirm", "", "override every computer.* confirmation requirement: never, policy, or always")
 	flags.StringVar(&options.policies, "policy-models", "none", "comma-separated policy models: backchannel, turn-projection, overlap, all, or none")
+	flags.StringVar(&options.policyReasoning, "policy-reasoning", "chat_template_kwargs",
+		"how the policy endpoint is told not to think: chat_template_kwargs, enable_thinking, reasoning_effort, thinking_object, or none for an instruct model")
 	flags.DurationVar(&options.projectionHold, "projection-hold", time.Second,
 		"how much extra silence a turn-projection model may buy by judging the turn unfinished")
 	flags.StringVar(&options.bargeIn, "barge-in", "immediate", "barge-in policy: immediate, sustained, or never")
@@ -522,6 +525,7 @@ func applyPolicyModels(
 	decider, err := policymodel.New(policymodel.Config{
 		BaseURL: options.policyURL, Model: options.policyModel,
 		APIKey: os.Getenv(options.policyTokenEnv), GuidedChoice: options.policyGuided,
+		Reasoning: openaicompat.ReasoningControl(options.policyReasoning),
 		// Interactive: above speculative preparation, below the foreground
 		// continuation. A backchannel that arrives after the moment for it has
 		// passed is worse than no backchannel.
