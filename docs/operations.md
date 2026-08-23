@@ -158,6 +158,12 @@ capacity.
 
 - **A policy model fails or times out.** The policy falls back to its rule:
   backchannel to silence, projection to silence-only endpointing.
+- **A model names a tool that does not exist.** It is recorded as a
+  non-executable proposal and the conversation continues. It cannot execute —
+  the dispatcher checks the name again at the point of effect — and it is not
+  worth a session: a wrong name is a model mistake of the same kind as a wrong
+  argument, and ending the call over one costs the user everything to prevent
+  nothing.
 - **A sidecar dies.** The session ends and the client is told. A sidecar that
   does not exit after goodbye is killed rather than left holding a GPU.
 - **A client sends a malformed event.** It gets an `error` and the session

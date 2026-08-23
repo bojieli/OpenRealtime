@@ -92,6 +92,9 @@ type bufferedSegment struct {
 	kind     EventKind
 	text     strings.Builder
 	toolCall *trajectory.ToolCall
+	// undeclared marks a call naming a tool this invocation did not offer. It
+	// is recorded, never executed.
+	undeclared bool
 }
 
 // Run invokes provider, forwards validated stream events to observer, and
@@ -211,15 +214,24 @@ func (runner *Runner) run(
 		if event.Kind == EventToolCall && descriptor.EffectiveToolAuthority() == ToolAuthorityNone {
 			return errors.New("continuation emitted a tool call without proposal or execution authority")
 		}
-		// An undeclared name must never execute. It may still be recorded by a
-		// provider that cannot execute anything: the fast phase is offered no
-		// tools at all, so every call it emits is undeclared by construction,
-		// and failing the turn over one would let a stray call cost the user
-		// their answer. It becomes a non-executable proposal instead, which
-		// the dispatcher re-checks at the point of effect.
-		if event.Kind == EventToolCall && descriptor.EffectiveToolAuthority() == ToolAuthorityExecute {
+		// An undeclared name must never execute. It is still recorded, whatever
+		// the provider's authority: the fast phase is offered no tools at all,
+		// so every call it emits is undeclared by construction, and an
+		// executing provider that hallucinates a name has made a mistake of
+		// the same kind. Both become non-executable proposals, which the
+		// dispatcher re-checks at the point of effect.
+		//
+		// Failing the invocation instead would end the session over a model's
+		// spelling. Observed: a reasoner emitted "google_calendar.list_events?"
+		// with the question mark attached, and another emitted a sentence from
+		// its own instructions as a tool name. Neither could have executed, and
+		// neither is a reason for the user to lose the conversation - a wrong
+		// name is what a tool error is for, and the slow phase is told that a
+		// tool error is authoritative.
+		undeclared := false
+		if event.Kind == EventToolCall {
 			if _, declared := declaredTools[event.ToolCall.Name]; !declared {
-				return fmt.Errorf("continuation emitted undeclared tool %q", event.ToolCall.Name)
+				undeclared = true
 			}
 		}
 		if observer != nil {
@@ -230,7 +242,7 @@ func (runner *Runner) run(
 		if event.Kind == EventToolCall {
 			copy := *event.ToolCall
 			copy.Arguments = append(json.RawMessage(nil), event.ToolCall.Arguments...)
-			segments = append(segments, bufferedSegment{kind: event.Kind, toolCall: &copy})
+			segments = append(segments, bufferedSegment{kind: event.Kind, toolCall: &copy, undeclared: undeclared})
 			return nil
 		}
 		if len(segments) == 0 || segments[len(segments)-1].kind != event.Kind || segments[len(segments)-1].toolCall != nil {
@@ -260,7 +272,11 @@ func (runner *Runner) run(
 			result.AssistantText += segment.text.String()
 		}
 		if segment.toolCall != nil && !interrupted {
-			if descriptor.EffectiveToolAuthority() == ToolAuthorityPropose {
+			// The same test the item kind uses. Reporting a proposal as a call
+			// here would hand the caller something to execute that the log
+			// says is not executable, which is the one disagreement this pair
+			// must never have.
+			if descriptor.EffectiveToolAuthority() == ToolAuthorityPropose || segment.undeclared {
 				result.ToolProposals = append(result.ToolProposals, *segment.toolCall)
 			} else {
 				result.ToolCalls = append(result.ToolCalls, *segment.toolCall)
@@ -408,8 +424,11 @@ func (runner *Runner) buildItems(
 	// Native assistant state containing proposal-only function calls must not be
 	// replayed as an executable pending call by a same-provider continuation.
 	// The portable tool_proposal item below is the authoritative handoff.
-	hasProposal := descriptor.EffectiveToolAuthority() == ToolAuthorityPropose && slices.ContainsFunc(segments, func(segment bufferedSegment) bool {
-		return segment.toolCall != nil
+	hasProposal := slices.ContainsFunc(segments, func(segment bufferedSegment) bool {
+		if segment.toolCall == nil {
+			return false
+		}
+		return descriptor.EffectiveToolAuthority() == ToolAuthorityPropose || segment.undeclared
 	})
 	for _, segment := range segments {
 		// A tool call becomes executable only when the provider invocation
@@ -443,7 +462,7 @@ func (runner *Runner) buildItems(
 			item.Visibility = trajectory.VisibilityPrepared
 		case EventToolCall:
 			item.Kind = trajectory.KindToolCall
-			if descriptor.EffectiveToolAuthority() == ToolAuthorityPropose {
+			if descriptor.EffectiveToolAuthority() == ToolAuthorityPropose || segment.undeclared {
 				item.Kind = trajectory.KindToolProposal
 			}
 			item.ToolCall = segment.toolCall

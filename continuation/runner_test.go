@@ -313,7 +313,14 @@ func TestRunnerRejectsToolCallFromNonExecutableProvider(t *testing.T) {
 	}
 }
 
-func TestRunnerRejectsUndeclaredToolCall(t *testing.T) {
+// An undeclared name must never execute, and must never cost the session.
+//
+// A reasoner that hallucinates a tool name has made the same kind of mistake
+// as one that hallucinates an argument, and a tool error is what both are for.
+// Failing the invocation would end the conversation over the model's spelling:
+// observed in the suites as "google_calendar.list_events?" with the question
+// mark attached, and as a sentence from the model's own instructions.
+func TestAnUndeclaredToolIsRecordedRatherThanExecutedOrFatal(t *testing.T) {
 	t.Parallel()
 	store := trajectory.NewStore()
 	runner, err := NewRunner(RunnerConfig{Store: store, Now: func() uint64 { return 1 }})
@@ -332,13 +339,26 @@ func TestRunnerRejectsUndeclaredToolCall(t *testing.T) {
 	result, err := runner.Run(context.Background(), provider, Invocation{
 		Instruction: "Continue.", Tools: []ToolDefinition{{Name: "lookup", Description: "Lookup.", Parameters: json.RawMessage(`{"type":"object"}`)}},
 	}, nil)
-	if err == nil || len(result.ToolCalls) != 0 {
-		t.Fatalf("undeclared tool escaped: result=%#v err=%v", result, err)
+	if err != nil {
+		t.Fatalf("an undeclared name ended the invocation: %v", err)
 	}
+	if len(result.ToolCalls) != 0 {
+		t.Fatalf("undeclared tool escaped as executable: %#v", result.ToolCalls)
+	}
+	if len(result.ToolProposals) != 1 || result.ToolProposals[0].Name != "unknown" {
+		t.Fatalf("the attempt has to be recorded so the model can see it failed: %#v", result.ToolProposals)
+	}
+	var proposals int
 	for _, item := range store.Snapshot().Items {
 		if item.Kind == trajectory.KindToolCall {
-			t.Fatalf("undeclared tool was committed: %#v", item)
+			t.Fatalf("undeclared tool was committed as executable: %#v", item)
 		}
+		if item.Kind == trajectory.KindToolProposal {
+			proposals++
+		}
+	}
+	if proposals != 1 {
+		t.Fatalf("the log records one non-executable proposal, got %d", proposals)
 	}
 }
 
