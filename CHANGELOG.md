@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Operations
+
+- **A session that ends mid-utterance releases its recogniser.** One recogniser
+  exists per utterance and the endpoint retires it, but a session closing while
+  the user was still speaking never reaches an endpoint — and hanging up
+  mid-sentence is ordinary behaviour. The observer's own documentation already
+  claimed this path; nothing called it, so the socket and the goroutine reading
+  it outlived the session.
+
 ### Cognition
 
 - **A question the voice can answer is answered once.** The rollout ran the

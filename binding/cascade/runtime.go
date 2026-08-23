@@ -479,6 +479,14 @@ func (runtime *runtime) Close(ctx context.Context, cause error) error {
 	}
 	runtime.cancel(cause)
 	runtime.discardPreparations()
+	// Release the recogniser. One instance exists per utterance and the
+	// endpoint is what normally retires it, but a session that ends while the
+	// user is still speaking never reaches an endpoint - and that is the
+	// common case, because hanging up mid-sentence is a thing people do. The
+	// observer's own documentation already claims this path; nothing was
+	// calling it, so the socket and the goroutine reading it outlived the
+	// session, and the utterance's counters were never folded in.
+	runtime.audio.Reset()
 	runtime.speech.Close("session closed")
 	runtime.gate.Close()
 	runtime.duplex.Close()

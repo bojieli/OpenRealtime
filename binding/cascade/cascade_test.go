@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -531,5 +532,49 @@ func TestObservationsCommitBeforeTheTurnIsActedOn(t *testing.T) {
 	defer sink.mu.Unlock()
 	if len(sink.transcripts) == 0 {
 		t.Fatal("the client must see the transcript")
+	}
+}
+
+// closingASR reports whether the runtime ever released it.
+type closingASR struct {
+	scriptedASR
+	closed atomic.Bool
+}
+
+func (asr *closingASR) Close() error {
+	asr.closed.Store(true)
+	return nil
+}
+
+// One recogniser exists per utterance and the endpoint is what normally
+// retires it. A session that ends while the user is still speaking never
+// reaches an endpoint, and hanging up mid-sentence is ordinary behaviour, so
+// the socket and the goroutine reading it would outlive the session.
+func TestClosingASessionReleasesARecogniserMidUtterance(t *testing.T) {
+	asr := &closingASR{scriptedASR: scriptedASR{final: "what is my balance"}}
+	fast := newFast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "One moment."}})
+	slow := newSlow([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Forty dollars."}})
+	runtime, _ := startSession(t, cascade.Config{
+		Fast: fast, Slow: slow,
+		Perception: func() (v1.PerceptionProvider, error) { return asr, nil },
+	}, binding.Settings{})
+
+	// Speech with no trailing silence: the utterance is still open.
+	if err := runtime.Audio(context.Background(), perception.Frame{
+		Kind: perception.FrameAudio, Source: "microphone", SampleRateHz: 24_000,
+		PCM16LE: tone(2400, 8000),
+	}); err != nil {
+		t.Fatalf("speak: %v", err)
+	}
+	waitFor(t, func() bool { return asr.pushes > 0 }, "the recogniser never saw audio")
+	if asr.closed.Load() {
+		t.Fatal("the recogniser was released while the utterance was still open")
+	}
+
+	if err := runtime.Close(context.Background(), nil); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if !asr.closed.Load() {
+		t.Fatal("closing the session left the recogniser open")
 	}
 }
