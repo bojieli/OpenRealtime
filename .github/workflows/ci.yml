@@ -87,9 +87,16 @@ jobs:
       # The sidecar library is what a non-Go model implementation depends on,
       # so its wire framing is checked here even though nothing in the Go tree
       # imports it.
+      #
+      # This step used to end by forgiving pytest's exit code 5, which means "no
+      # tests collected". That tolerated the one outcome most worth failing on:
+      # the day sidecars/test_protocol.py is renamed, moved, or made unimportable,
+      # collection returns nothing, the failure is forgiven, and CI reports a green
+      # wire-framing check that ran no tests. Requiring the suite to actually run
+      # costs nothing while it exists, and is the whole check once it does not.
       - name: Sidecar library
         run: |
           python -m pip install --quiet --upgrade pip
           python -m pip install --quiet pytest
           python -m compileall -q sidecars
-          python -m pytest sidecars -q || test $? -eq 5
+          python -m pytest sidecars -q
