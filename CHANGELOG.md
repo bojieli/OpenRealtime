@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+### The benchmark harness
+
+- **Quiet is not completion while the agent still owes a response.** A
+  conversation ended after three seconds without events, which is a reasonable
+  test for a system that talks continuously and the wrong one for this system:
+  the reasoning phase is silent by construction, so a turn that needs it goes
+  quiet for exactly as long as the question is hard. The driver was scoring the
+  agent on whatever it finished before a stopwatch. It now treats an open
+  response as work still owed and applies a separate, longer bound to it, so a
+  server that opens a response and never closes it still fails rather than
+  hanging.
+
+### Turn-taking
+
+- **A turn-projection model can now say the person has *not* finished.** It was
+  asked a two-sided question — continuing or finished — with a prompt tuned to
+  spot exactly the mid-thought pause, and only the "finished" half reached the
+  decision. The "continuing" half was computed and dropped, so silence
+  endpointed the pause anyway and a disfluent sentence became several turns,
+  each answered separately. A projected pause now holds the endpoint open, for
+  at most `-projection-hold` past the silence threshold: a floor that can be
+  talked out of ending is not a floor, and a model that keeps answering
+  "continuing" would hold one forever. The prompt states both costs, because a
+  model told only that cutting people off is bad will never say "finished".
+
+### Cognition
+
+- **A hallucinated tool name no longer ends the session.** An undeclared name
+  from a provider with execution authority failed the whole continuation, and
+  through it the conversation. Two of sixteen FDB v1.5 recordings died this way
+  in one run — once on `google_calendar.list_events?` with the question mark
+  attached, once on a sentence of instructions emitted as a function name.
+  Neither could ever have executed. Both are now recorded as non-executable
+  proposals, exactly as a fast provider's calls already were, and the
+  dispatcher re-checks at the point of effect as it always did. A wrong name is
+  what a tool error is for; the slow phase is already told a tool error is
+  authoritative.
+- **The completion marker means the request is satisfied, not that the
+  sentence is.** The voice writes it to say deliberation is not needed, and a
+  turn that promised to look something up reads as complete when the sentence
+  ends. It is now told the test out loud: ask what the user still does not
+  have, and if the answer is anything, do not write it — a promise with the
+  marker after it is a promise nothing will keep.
+- **Spoken identifiers are reassembled, not guessed.** A recogniser writes an
+  order number the way it was said, so "A-B-C-one-two-three" arrives as
+  "AB, C,1,2,3". The reasoner is told to remove only the separators the
+  recogniser introduced and to write spoken digits as digits, rather than
+  inventing a plausible identifier.
+- **A holding line is said once.** The voice is told never to leave dead air,
+  and on a fragmented turn it obeyed several times over — "one moment please",
+  then "let me check", then asking again for an identifier the user had already
+  given. It is now told that the second "one moment" is worse than a short
+  pause, because it sounds like the agent has lost track.
+
 ### Operations
 
 - **A policy model with no partial transcript measures as no effect.**
