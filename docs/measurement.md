@@ -167,6 +167,47 @@ The floor on the classified path is not the hold and not the model — it is how
 long the recogniser takes to produce its first partial. Classifying overlap
 needs words, and words arrive when they arrive.
 
+### What listening to the recordings found
+
+The suites score outcomes. Playing the audio back — the caller on one channel,
+the agent on the other, on one clock — shows what the outcome sounded like, and
+three defects were only visible that way.
+
+On one FDB v3 recording the agent produced eleven turns, cancelled eight of
+them mid-word, asked seven times for an order number the caller had given once,
+and closed with a loop of farewells. The score said "no matching call". The
+audio said the answer had been produced at sixteen seconds and cut off before
+anyone heard it.
+
+The cause was in perception, and none of it was the recogniser's fault. These
+recordings are forty seconds long: eleven seconds of speech, then room tone
+whose peaks reach full scale. The acoustic gate opened on those transients, the
+recogniser was asked what was in them and answered ".", and an observation said
+the user had spoken. Probing the recogniser directly on every post-speech window
+returns "." or "" for all of them — it was right throughout.
+
+The second cause was the same silence at a different scale. A disfluent request
+pauses longer than the endpoint threshold, so one request arrived as five turns,
+each answered separately, each answer cancelling the last.
+
+The third was that turn projection had never run. A reasoning model asked for
+one word spends its budget reasoning, so the policy model answered "<think>"
+and its decision was scored as unknown and discarded. Every measurement of F8
+taken before that fix is a measurement of a policy that never fired.
+
+With those closed, the same recording is one observation, one turn and no
+cancellations, and an independent listener moves from "broken" to "awkward":
+the request is answered, and what remains is that the answer arrives in three
+redundant pieces rather than one. That is F2 again — the arrangement speaking
+more than once — and it is what the cells are for.
+
+The listener is not exempt from this. Asked to transcribe a post-speech window,
+Gemini produced a fluent account-number dialogue, complete with digits and a
+self-correction, from audio whose peak was under twenty percent and which the
+recogniser correctly called ".". Audio judgements here are trustworthy for
+content that exists and worthless for near-silence, and the difference is
+settled by measuring the signal rather than by asking a second model.
+
 ### What the arrangement costs a tool call
 
 Sixteen FDB v3 tasks per condition, on the local open stack. A smoke

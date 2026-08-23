@@ -25,6 +25,23 @@
   server that opens a response and never closes it still fails rather than
   hanging.
 
+### Perception
+
+- **Room tone no longer becomes a turn.** The acoustic gate opened on any block
+  above its threshold, so anything percussive started an utterance, and a
+  recogniser asked what was in it answered "." — which the only content check,
+  `TrimSpace(text) == ""`, accepted as something the user said. On one FDB v3
+  recording seven of nine observations were that. The gate now wants sustained
+  voicing, and an observation wants a letter or a digit in it.
+- **A pause inside a sentence is no longer the end of a turn.** The gate's
+  silence threshold closed the utterance and that closing was taken as the
+  endpoint, so a disfluent request arrived as five turns. The floor decides
+  now, which is the question it already owned.
+- **Turn projection ran for the first time.** A reasoning model asked for one
+  enumerated word spent its budget on `<think>` and never answered; the empty
+  answer scored as unknown, and unknown fell below the confidence threshold. It
+  is told not to think, in whichever of the five spellings its endpoint takes.
+
 ### Turn-taking
 
 - **A turn-projection model can now say the person has *not* finished.** It was
