@@ -152,6 +152,12 @@ and it is what `-asr-cadence` is really trading against.
 Watch `advance_mean_elapsed_ns` and `finalize_mean_elapsed_ns` on `/healthz` to
 see which side of that you are on; see [operations](operations.md).
 
+This is also what decides whether `-policy-models` can do anything. Backchannel
+and turn projection answer a question about the *partial* transcript, so a
+batch recogniser left at `-asr-partial-interval 0` gives them nothing to judge
+and they measure as having no effect. Enabling them against a batch recogniser
+means enabling partials too.
+
 Deepgram is dialled with the **caller's own sample rate**, declared from the
 first frame, so nothing is resampled on the way in. A recogniser that resamples
 before recognising has thrown away information no later stage can recover.

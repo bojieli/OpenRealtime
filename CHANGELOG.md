@@ -4,6 +4,15 @@
 
 ### Operations
 
+- **A policy model with no partial transcript measures as no effect.**
+  Backchannel and turn projection answer a question about the partial
+  transcript, and a batch recogniser asked for nothing before the endpoint
+  produces none — so enabling them against one changed nothing, which reads as
+  the policy models not working rather than as their evidence being absent.
+  `-policy-models` and `-asr-partial-interval` are documented together now,
+  because they are one decision. Making partials affordable is what made the
+  policies work: on one τ-Voice simulation, agent interruptions fell from 107
+  to 36 for about 200 ms of response latency.
 - **A local recogniser that long conversations can afford.** `sensevoice`
   serves SenseVoiceSmall on the OpenAI transcription route, with the server and
   a preparation script in `deploy/sensevoice`. The property that matters is

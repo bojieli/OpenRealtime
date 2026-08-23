@@ -167,6 +167,35 @@ The floor on the classified path is not the hold and not the model — it is how
 long the recogniser takes to produce its first partial. Classifying overlap
 needs words, and words arrive when they arrive.
 
+### What a recogniser's shape costs the policies
+
+A second smoke observation, on one τ-Voice retail simulation per condition —
+again not a published cell, and again the harness refuses to report it as one.
+
+| Condition | Answered its turns | Agent interruptions | Rate |
+| --- | --- | --- | --- |
+| autoregressive recogniser, endpoint-only | none | — | — |
+| SenseVoice, endpoint-only, no policy models | every turn | 107 | 7.1/min |
+| SenseVoice, policy models, 300 ms partials | every turn | 36 | 2.1/min |
+
+The first row is not a turn-taking result. The recogniser could not keep up
+with the audio arriving, so the session failed before any policy ran; it is
+here because it is what the other two rows were being compared against.
+
+The third row is the one with a lesson in it. Backchannel and turn projection
+answer a question *about the partial transcript*, so a batch recogniser asked
+for nothing before the endpoint gives them nothing to judge — the policy models
+were configured and had no evidence, which measures as no effect. What made
+them work was not enabling them, it was making partials affordable enough to
+ask for: 20 ms an advance, where the same flag against an autoregressive
+recogniser had been the thing that pushed it past its own bound.
+
+So `-policy-models` and `-asr-partial-interval` are one decision wearing two
+flags, and F8 cannot be read without knowing which recogniser F1 selected.
+The cost is about 200 ms of response latency, and neither run resolved its
+task, which is a separate question from turn-taking and not one a single
+simulation can answer.
+
 **`immediate` remains the default.** It is the safer failure, and the
 alternative is a documented configuration with a number attached rather than a
 recommendation. Which one is right depends on whether a deployment's users
