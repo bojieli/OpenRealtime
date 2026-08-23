@@ -137,8 +137,56 @@ check_protocol_conformance() {
 #
 # It is called out separately from the test run it is part of because it is the
 # one gate whose failure means "do not ship", not "fix a test".
+#
+# It used to select the tests with -run 'TestInjection|TestObserved|TestFenced'.
+# Two things were wrong with that, and they compounded. `TestInjection` matched
+# nothing - the test is named TestInjectedActionsCannotLeaveTheDeclaredTarget -
+# and `TestFenced` matched nothing either, because the word is in the middle of
+# TestObservedContentReachesProvidersAsFencedData, which `TestObserved` already
+# caught. So two thirds of the pattern were dead and the gate that means "do not
+# ship" ran exactly one of the five authority tests.
+#
+# What made that survivable is the same shape check_official_client guards
+# against: `go test -run` prints ok and exits 0 for a package where the pattern
+# matched nothing. A typo in the pattern is therefore indistinguishable from a
+# passing gate, and the gate whose failure means "do not ship" is the worst place
+# in this file for a green line that verified nothing.
+#
+# So the pattern is gone. The authority claim lives in one package, and the gate
+# runs that package whole - a new authority test is covered by writing it, not by
+# also remembering to widen a regex here. The count is then asserted against the
+# functions actually declared in the package, so an empty or partial run fails
+# instead of reporting ok.
 check_injection_gate() {
-  "${go_bin}" test -race -count=1 -run 'TestInjection|TestObserved|TestFenced' ./computeruse/...
+  local package="./computeruse/injection"
+  local source_directory="computeruse/injection"
+
+  local declared
+  declared="$(grep -rhoE '^func (Test[A-Za-z0-9_]+)' "${source_directory}"/*_test.go 2>/dev/null | wc -l)"
+  if (( declared == 0 )); then
+    echo "no authority tests found in ${source_directory}: the package moved or the glob is wrong" >&2
+    return 1
+  fi
+
+  local output status
+  output="$("${go_bin}" test -race -count=1 -v "${package}" 2>&1)" && status=0 || status=$?
+  if (( status != 0 )); then
+    echo "${output}" >&2
+    return 1
+  fi
+
+  # -c on the anchored form, so a subtest named PASS in its own output cannot
+  # inflate the count past the top-level functions it is compared against.
+  local passed
+  passed="$(grep -cE '^--- PASS: Test' <<<"${output}" || true)"
+  if (( passed != declared )); then
+    echo "the injection authority gate ran ${passed} of ${declared} tests in ${source_directory}" >&2
+    grep -E '^--- (SKIP|FAIL)' <<<"${output}" | sed 's/^/  /' >&2
+    echo "  section 8 requires the injection-authority test to pass, and a skipped" >&2
+    echo "  or unmatched authority test is not a passing one" >&2
+    return 1
+  fi
+  echo "the injection authority gate passed ${passed} of ${declared} tests"
 }
 
 check_shell() {
