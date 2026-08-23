@@ -74,6 +74,68 @@ jobs:
             dist/openrealtime-*
             dist/SHA256SUMS-*.txt
 
+  # The gate job above runs check.sh without OPENREALTIME_RELEASE_GATE, which is
+  # correct for it: on a runner with no browser the official-client claim skips,
+  # check_official_client says so, and an ordinary run is not failed for a
+  # missing dependency.
+  #
+  # But that means the release flag - the mechanism whose whole purpose is to
+  # refuse a claim that was not checked - was set nowhere in this repository.
+  # A protection that never runs is not a protection, and the claim it guards is
+  # the compatibility claim: an official OpenAI Realtime client completing a
+  # tool-using session unmodified, over WebSocket and over WebRTC. That is
+  # section 8's most externally visible promise and the easiest to ship broken,
+  # because a skipped test and a passing test both print ok.
+  #
+  # So this job installs what the claim needs - the official SDK and a browser -
+  # and runs the gate with the flag set, where a skip is a failure. If the SDK
+  # publishes a breaking change, this job fails while the gate job stays green,
+  # which is the distinction worth having in CI.
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Official Realtime SDK
+        working-directory: examples/sdk-client
+        run: npm install --no-audit --no-fund
+
+      - name: Browser for the WebRTC transport
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends chromium-browser \
+            || sudo apt-get install -y --no-install-recommends chromium
+          # The test looks for chromium, chromium-browser, then google-chrome on
+          # PATH, and honours CHROMIUM. Resolve it here so a rename in the runner
+          # image fails this step rather than silently skipping the WebRTC half.
+          for candidate in chromium chromium-browser google-chrome; do
+            if path="$(command -v "$candidate")"; then
+              echo "CHROMIUM=$path" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          done
+          echo "no chromium on PATH after install" >&2
+          exit 1
+
+      # A skip is a failure here. That is the entire point of the job.
+      - name: Compatibility claim, required
+        env:
+          OPENREALTIME_GO_BIN: ${{ github.workspace }}/go-bin/go
+          OPENREALTIME_RELEASE_GATE: '1'
+        run: |
+          mkdir -p go-bin && ln -sf "$(command -v go)" go-bin/go
+          ./scripts/check.sh
+
   sidecars:
     runs-on: ubuntu-latest
     timeout-minutes: 15
