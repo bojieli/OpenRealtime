@@ -127,10 +127,19 @@ check_official_client() {
   echo "  not fatal for an ordinary run; set OPENREALTIME_RELEASE_GATE=1 to require it" >&2
 }
 
-# check_protocol_conformance runs the wire-level suite against the pinned
+# check_protocol_conformance runs the wire-level suites against the pinned
 # OpenAI Realtime schema and the OpenRealtime extension.
+#
+# It ran `conformance protocol`, which is only the first of the two suites
+# section 8 requires - "conformance suites for the OpenAI surface and the
+# extension". RunExtension is reachable from the command and from nowhere else:
+# no test in the tree calls it, so its 17 checks - the video frame limits, the
+# computer-use vocabulary adding no events, a tool definition carrying the
+# extension still decoding without it - ran in no gate at all. They pass; they
+# were simply never asked. `all` runs both and returns an error if either
+# report is not passed, so the extension suite is now gated by the same line.
 check_protocol_conformance() {
-  "${go_bin}" run ./cmd/openrealtime conformance protocol
+  "${go_bin}" run ./cmd/openrealtime conformance all
 }
 
 # check_injection_gate is the safety release gate for computer use.
@@ -205,7 +214,7 @@ for module_directory in integrations/*/; do
   [[ -f "${module_directory}/go.mod" ]] || continue
   stage "go vet and go test -race (${module_directory%/})" check_module "${module_directory}"
 done
-stage "protocol conformance" check_protocol_conformance
+stage "protocol and extension conformance" check_protocol_conformance
 stage "prompt-injection release gate" check_injection_gate
 stage "examples" check_examples
 stage "official Realtime client" check_official_client
