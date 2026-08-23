@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Measurement
+
+- **What the fast/slow arrangement costs a tool call, on sixteen tasks.**
+  Recorded as a smoke observation rather than a cell. `endpointed-slow-only`
+  attempts a call on fifteen of sixteen FDB v3 tasks; `fast+slow` attempts four
+  to seven depending on prompt and policy. The reasoner runs only when the voice
+  hands the turn on, so most missing calls are a small model judging that it can
+  finish the request itself rather than the reasoner failing to choose a tool.
+  F2 therefore has to report escalation rate beside pass rate, or a paired
+  design will attribute the difference to deliberation quality.
+
 ### The benchmark harness
 
 - **Quiet is not completion while the agent still owes a response.** A

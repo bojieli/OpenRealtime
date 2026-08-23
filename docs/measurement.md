@@ -167,6 +167,34 @@ The floor on the classified path is not the hold and not the model — it is how
 long the recogniser takes to produce its first partial. Classifying overlap
 needs words, and words arrive when they arrive.
 
+### What the arrangement costs a tool call
+
+Sixteen FDB v3 tasks per condition, on the local open stack. A smoke
+observation like the two below it: sixteen stochastic tasks do not separate
+conditions that differ by two or three, and the harness refuses to report any
+of this as a cell.
+
+| Condition | Right tool and arguments | Call attempted | No call |
+| --- | --- | --- | --- |
+| `fast+slow` | 2 | 4 | 12 |
+| `fast+slow`, clarified marker | 3 | 6 | 10 |
+| `fast+slow`, clarified marker, policy models and hold | 3 | 7 | 9 |
+| `endpointed-slow-only` | 8 | 15 | 1 |
+
+Only the last row is outside the spread, and it is the interesting one. The
+first three differ by prompt and policy; the fourth differs by who is asked at
+all. Under `fast+slow` the reasoner runs only when the voice hands the turn on,
+so every tool call in the arrangement depends on a small model correctly
+judging that it cannot finish the request itself — and that judgement, not the
+reasoner's ability to choose a tool, is what most of the missing calls are.
+
+This is F2, and it is worth stating before the cells run because it changes
+what F2 is measuring. The contrast between fast+slow and slow-only is usually
+read as latency against quality: the voice answers immediately, and deliberation
+costs time. These sixteen tasks say it is also a question of whether the
+deliberation happens, which a paired design will attribute to the wrong factor
+if the escalation rate is not reported beside the pass rate.
+
 ### What a recogniser's shape costs the policies
 
 A second smoke observation, on one τ-Voice retail simulation per condition —
