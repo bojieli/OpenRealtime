@@ -69,7 +69,7 @@ func (runtime *runtime) CommitAudio(ctx context.Context) error {
 	}
 	if len(pending) > 0 {
 		// Whatever has not reached the recogniser yet is part of this turn.
-		if err := runtime.observeAudio(ctx, pending, 0); err != nil {
+		if _, err := runtime.observeAudio(ctx, pending, 0); err != nil {
 			runtime.fail("asr_provider_error", err)
 		}
 	}

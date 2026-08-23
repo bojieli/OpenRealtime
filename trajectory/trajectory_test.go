@@ -340,3 +340,45 @@ func TestPlayedAudioCannotBecomeCancelled(t *testing.T) {
 		t.Fatal("played audio must not be able to become cancelled")
 	}
 }
+
+// Two authorities can observe one cancellation: a turn superseded by newer
+// evidence is cancelled where it is superseded, and again where the commitment
+// is reconciled. Refusing the repeat is not harmless - it fails the whole
+// batch, and the session with it.
+func TestCancellingATurnTwiceIsNotAContradiction(t *testing.T) {
+	store := NewStore()
+	item := Item{
+		ID: "item-1", Kind: KindAssistant, Content: "one moment",
+		Visibility: VisibilityPrepared, MonotonicNS: 1,
+		Producer: Producer{Phase: PhaseFast, SpeechAuthority: "voice"},
+	}
+	if err := store.Append(item); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	cancel := Item{
+		ID: "state-1", Kind: KindAssistantState, MonotonicNS: 2,
+		Producer: Producer{Phase: PhaseFast},
+		AssistantState: &AssistantState{
+			AssistantItemID: "item-1", Visibility: VisibilityCancelled,
+		},
+	}
+	if err := store.Append(cancel); err != nil {
+		t.Fatalf("first cancellation: %v", err)
+	}
+	cancel.ID, cancel.MonotonicNS = "state-2", 3
+	if err := store.Append(cancel); err != nil {
+		t.Fatalf("the same cancellation reported twice must not fail the batch: %v", err)
+	}
+	// The direction that matters is still refused: audio nobody heard cannot
+	// later be claimed as heard.
+	played := Item{
+		ID: "state-3", Kind: KindAssistantState, MonotonicNS: 4,
+		Producer: Producer{Phase: PhaseFast},
+		AssistantState: &AssistantState{
+			AssistantItemID: "item-1", Visibility: VisibilityPlayed,
+		},
+	}
+	if err := store.Append(played); err == nil {
+		t.Fatal("a cancelled turn must not become a played one")
+	}
+}

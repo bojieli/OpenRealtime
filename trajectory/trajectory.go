@@ -740,6 +740,17 @@ func (store *Store) transitionAssistantLocked(state AssistantState) error {
 		// whole batch commit, so an ordinary barge-in reported by a
 		// well-behaved client destroyed the session it happened in.
 		allowed = state.Visibility == VisibilityPlayed
+	case VisibilityCancelled:
+		// Cancelled is reported twice for the same reason played is: two
+		// authorities can observe the same event. A turn superseded by newer
+		// evidence is cancelled where it is superseded and again where the
+		// commitment is reconciled, and a repeat is a repeat rather than a
+		// contradiction.
+		//
+		// Only the repeat is allowed. Cancelled to played stays refused below,
+		// because audio that was never heard cannot later be claimed as heard
+		// - which is the direction the strictness was actually protecting.
+		allowed = state.Visibility == VisibilityCancelled
 	}
 	if !allowed {
 		// Cancelled after played stays refused: audio that reached somebody

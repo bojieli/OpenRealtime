@@ -529,9 +529,21 @@ func TestARefusedEventDoesNotTakeItsBatchWithIt(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 
-	// Now the duplicate, batched with an observation that is perfectly valid.
+	// Now an inadmissible one, batched with an observation that is perfectly
+	// valid. Claiming a cancelled turn was played is the transition the log
+	// exists to refuse: audio nobody heard cannot become audio somebody did,
+	// or a repair obligation would vanish. A second cancellation is not that
+	// - two authorities observe one cancellation and a repeat is a repeat -
+	// so this asks for the refusal it means to test.
+	played := eventloop.Event{
+		Type: "speech.played", Source: "action", Channel: "voice",
+		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindAssistantState,
+		AssistantState: &trajectory.AssistantState{
+			AssistantItemID: "assistant-1", Visibility: trajectory.VisibilityPlayed,
+		},
+	}
 	if _, err := test.coordinator.SubmitBatch([]eventloop.Event{
-		cancelled(), observation(2, "the endpoint said something else"),
+		played, observation(2, "the endpoint said something else"),
 	}); err != nil {
 		t.Fatalf("submit: %v", err)
 	}
