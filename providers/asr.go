@@ -108,6 +108,17 @@ var asrCatalog = []ASR{
 	},
 	{
 		Common: Common{
+			Name: "sensevoice", Aliases: []string{"funasr", "sensevoice-small"},
+			Label: "Local SenseVoice (FunASR)", Dialect: DialectOpenAITranscriptions,
+			BaseURL: "http://127.0.0.1:8002/v1", Auth: AuthNone, Local: true,
+			KeyEnv: []string{"OPENREALTIME_ASR_API_KEY"},
+			Notes: "Self-hosted and non-autoregressive, so cost tracks the audio " +
+				"rather than the transcript: see deploy/sensevoice.",
+		},
+		Model: "iic/SenseVoiceSmall",
+	},
+	{
+		Common: Common{
 			Name: "whisper-server", Aliases: []string{"whisper", "faster-whisper"},
 			Label: "Local whisper server", Dialect: DialectOpenAITranscriptions,
 			BaseURL: "http://127.0.0.1:8001/v1", Auth: AuthNone, Local: true,

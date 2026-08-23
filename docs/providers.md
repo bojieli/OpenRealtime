@@ -126,6 +126,7 @@ policy has nothing to observe without it:
 | `groq` | no | Whisper, fast enough that the round trip is close to a streaming one |
 | `elevenlabs` | no | Scribe, over its own batch route |
 | `fireworks`, `siliconflow`, `mistral` | no | the same OpenAI route |
+| `sensevoice` | no | local, non-autoregressive; the batch recogniser a long conversation can afford — see [deploy/sensevoice](../deploy/sensevoice/README.md) |
 | `whisper-server` | no | whisper.cpp, faster-whisper-server, anything local |
 
 `-language` gives every recogniser and synthesiser a hint; each decides for
@@ -137,6 +138,19 @@ utterance, and emits one final revision. `-asr-partial-interval` will buy
 earlier text by re-transcribing everything heard so far on a fixed schedule,
 and it costs exactly what that sounds like. A streaming provider ignores the
 flag because it produces partials for free.
+
+**What "it costs exactly what that sounds like" costs depends on the model.**
+An autoregressive recogniser decodes token by token, so re-reading a growing
+utterance gets dearer every time it is asked, and on long-form conversation it
+stops keeping up with the audio arriving — at which point the advance bound
+fails the session, correctly, for a reason that looks like an engine defect.
+SenseVoice is non-autoregressive and emits the whole transcript in one forward
+pass, so its cost tracks the audio rather than the transcript. That is why it
+is the recogniser to reach for when utterances are long or partials are wanted,
+and it is what `-asr-cadence` is really trading against.
+
+Watch `advance_mean_elapsed_ns` and `finalize_mean_elapsed_ns` on `/healthz` to
+see which side of that you are on; see [operations](operations.md).
 
 Deepgram is dialled with the **caller's own sample rate**, declared from the
 first frame, so nothing is resampled on the way in. A recogniser that resamples

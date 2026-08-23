@@ -261,10 +261,42 @@ func TestStreamingRecognisersAreMarkedAsSuch(t *testing.T) {
 			t.Errorf("%s streams and must be marked as streaming", name)
 		}
 	}
-	for _, name := range []string{"openai", "groq", "elevenlabs"} {
+	for _, name := range []string{"openai", "groq", "elevenlabs", "sensevoice"} {
 		if streaming[name] {
 			t.Errorf("%s is a batch endpoint and must not claim to stream", name)
 		}
+	}
+}
+
+// SenseVoice is the self-hosted recogniser a long conversation can afford.
+//
+// It is non-autoregressive, so recognising a growing utterance costs what the
+// audio costs rather than what the transcript costs. That property is the
+// whole reason the entry exists, and it survives only while the entry stays
+// local, unauthenticated, and on the transcription route - three things a
+// later edit could each undo without looking like it had.
+func TestSenseVoiceIsALocalRecogniserOnTheTranscriptionRoute(t *testing.T) {
+	t.Parallel()
+	var entry providers.ASR
+	for _, candidate := range providers.ASRs() {
+		if candidate.Name == "sensevoice" {
+			entry = candidate
+		}
+	}
+	if entry.Name == "" {
+		t.Fatal("the catalogue has no sensevoice recogniser")
+	}
+	if !entry.Local {
+		t.Error("sensevoice runs on the operator's own machine and must be marked local")
+	}
+	if entry.Auth != providers.AuthNone {
+		t.Errorf("a local recogniser must need no credential, got %v", entry.Auth)
+	}
+	if entry.Dialect != providers.DialectOpenAITranscriptions {
+		t.Errorf("deploy/sensevoice serves the OpenAI transcription route, got %v", entry.Dialect)
+	}
+	if entry.Model == "" {
+		t.Error("sensevoice names a default model")
 	}
 }
 

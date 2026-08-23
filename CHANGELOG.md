@@ -4,6 +4,16 @@
 
 ### Operations
 
+- **A local recogniser that long conversations can afford.** `sensevoice`
+  serves SenseVoiceSmall on the OpenAI transcription route, with the server and
+  a preparation script in `deploy/sensevoice`. The property that matters is
+  that it is non-autoregressive: it emits the whole transcript in one forward
+  pass, so recognising a growing utterance costs what the audio costs rather
+  than what the transcript costs. An autoregressive recogniser asked the same
+  question repeatedly gets dearer every time, until it stops keeping up with
+  the audio arriving and the advance bound fails the session — correctly, for a
+  reason that looks like an engine defect. Measured here at a real-time factor
+  near 0.008, about 26 ms an utterance.
 - **A recogniser getting slower is visible before it stops.** `asrbuffer`
   measured `provider_elapsed_ns` and `provider_max_elapsed_ns` per utterance
   and `Buffer.ProviderRuntimeMetrics()` returned them "for process-level
