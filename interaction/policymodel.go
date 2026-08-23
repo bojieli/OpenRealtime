@@ -65,9 +65,20 @@ func (NoBackchannel) Decide(context.Context, Context) (BackchannelDecision, erro
 }
 
 // Projection is the enumerated output of a turn-projection policy model.
+//
+// The two answers are not symmetric and neither is optional. Ending buys
+// latency by replying before silence has confirmed the turn. Continuing spends
+// latency to avoid the opposite error: replying into a pause the person was
+// going to speak through. A projection that could only end turns would be
+// asking the model a two-sided question and using half the answer, and the
+// half it discarded is the one that cuts people off mid-sentence.
 type Projection struct {
 	// Ending says the user's turn is about to end.
 	Ending bool `json:"ending"`
+	// Continuing says the user is mid-thought: the silence that has
+	// accumulated is a pause rather than the end of a turn. It holds the
+	// endpoint open, and only ever for a bounded time.
+	Continuing bool `json:"continuing,omitempty"`
 	// Confidence is the model's own reported confidence in [0,1].
 	Confidence float64 `json:"confidence"`
 	Reason     string  `json:"reason,omitempty"`

@@ -405,3 +405,71 @@ func TestAlwaysRunNeedsNoWakeUps(t *testing.T) {
 		t.Fatal("always-run admits everything")
 	}
 }
+
+// patientProjection always says the person is mid-thought, which is the shape
+// of a projection model that is wrong in the expensive direction.
+type patientProjection struct{}
+
+func (patientProjection) Name() string { return "patient" }
+func (patientProjection) Project(interaction.Context) interaction.Projection {
+	return interaction.Projection{Continuing: true, Confidence: 0.9, Reason: "still going"}
+}
+
+// Silence past the threshold is what ends a turn, and a disfluent speaker
+// produces plenty of it mid-sentence. The projection model is asked whether
+// the person has finished; when it says they have not, that answer has to
+// reach the decision or the pause is endpointed anyway.
+func TestAProjectedPauseHoldsTheTurnOpen(t *testing.T) {
+	floor := interaction.NewEngineFloor(interaction.EngineFloorOptions{
+		SilenceDuration: 500 * time.Millisecond,
+		ProjectionHold:  time.Second,
+		Projection:      patientProjection{},
+	})
+	decision := floor.Endpoint(interaction.Context{
+		Revision: interaction.Revision{ID: 1, StableText: "the order ID is", SilenceNS: uint64(600 * time.Millisecond)},
+	})
+	if decision.Ended {
+		t.Fatalf("silence past the threshold ended a turn the projection called unfinished: %+v", decision)
+	}
+	if !decision.Projected {
+		t.Fatalf("a held endpoint is a projected decision and must say so: %+v", decision)
+	}
+}
+
+// The hold is a maximum. A model that keeps answering "still going" is asked
+// again on every revision, so without a bound it would hold the floor for as
+// long as it kept saying so, and the turn would never end.
+func TestAProjectedPauseCannotHoldTheTurnForever(t *testing.T) {
+	floor := interaction.NewEngineFloor(interaction.EngineFloorOptions{
+		SilenceDuration: 500 * time.Millisecond,
+		ProjectionHold:  time.Second,
+		Projection:      patientProjection{},
+	})
+	for _, silence := range []time.Duration{1400 * time.Millisecond, 1499 * time.Millisecond} {
+		if floor.Endpoint(interaction.Context{
+			Revision: interaction.Revision{ID: 1, StableText: "the order ID is", SilenceNS: uint64(silence)},
+		}).Ended {
+			t.Fatalf("%s is inside the hold and must not end the turn", silence)
+		}
+	}
+	decision := floor.Endpoint(interaction.Context{
+		Revision: interaction.Revision{ID: 1, StableText: "the order ID is", SilenceNS: uint64(1600 * time.Millisecond)},
+	})
+	if !decision.Ended {
+		t.Fatalf("past the hold the floor ends the turn whatever the model thinks: %+v", decision)
+	}
+}
+
+// A deployment with no policy model must behave exactly as it did before.
+func TestWithoutAProjectionSilenceStillDecidesAlone(t *testing.T) {
+	floor := interaction.NewEngineFloor(interaction.EngineFloorOptions{
+		SilenceDuration: 500 * time.Millisecond,
+		Projection:      interaction.VADOnlyProjection{},
+	})
+	decision := floor.Endpoint(interaction.Context{
+		Revision: interaction.Revision{ID: 1, StableText: "hello", SilenceNS: uint64(600 * time.Millisecond)},
+	})
+	if !decision.Ended || decision.Projected {
+		t.Fatalf("the rule fallback ends on silence and projects nothing: %+v", decision)
+	}
+}

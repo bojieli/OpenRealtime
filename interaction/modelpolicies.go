@@ -203,13 +203,24 @@ func (policy *modelProjection) Project(decision Context) Projection {
 			"continue.\n\n" +
 			"Answer continuing when the utterance is grammatically or semantically incomplete, " +
 			"when it ends on a filler, or when it trails off mid-list. Answer finished only when a " +
-			"reply would clearly be welcome now.",
+			"reply would clearly be welcome now.\n\n" +
+			"Both answers cost something. Continuing keeps the agent silent a moment longer, " +
+			"which is wasted time if the person really had finished. Finished lets the agent " +
+			"start talking, which cuts the person off if they had not. Judge only the words " +
+			"below and the pause so far; do not assume a long pause means the turn ended, " +
+			"because a person searching for a word pauses exactly like a person who has stopped.",
 		Options: []string{"continuing", "finished"},
 		Evidence: fmt.Sprintf(
 			"What the person has said so far: %s\nSilence since they stopped: %d ms",
 			decision.Revision.Text(), decision.Revision.SilenceNS/1_000_000),
 	})
 	result := Projection{Reason: "policy model declined to project"}
+	if err == nil && outcome.Option == "continuing" && outcome.Confidence >= policy.options.Confidence {
+		result = Projection{
+			Continuing: true, Confidence: outcome.Confidence,
+			Reason: "policy model judged the turn unfinished",
+		}
+	}
 	if err == nil && outcome.Option == "finished" && outcome.Confidence >= policy.options.Confidence {
 		result = Projection{
 			Ending: true, Confidence: outcome.Confidence,

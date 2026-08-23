@@ -50,8 +50,19 @@ type EngineFloorOptions struct {
 	SilenceDuration time.Duration
 	// MinimumSpeech guards against a cough ending a turn that never started.
 	MinimumSpeech time.Duration
-	// Projection, when set, may end a turn before silence confirms it.
+	// Projection, when set, may end a turn before silence confirms it, and
+	// may hold one open past the silence threshold.
 	Projection TurnProjection
+	// ProjectionHold bounds how much extra silence a "still going" projection
+	// may buy beyond SilenceDuration. Zero selects one second.
+	//
+	// It is a maximum rather than a target, and it exists because the failure
+	// modes are not symmetric. A projection that wrongly says the person is
+	// still going costs this much added latency once; the same projection
+	// without a bound costs a turn that never ends, because the model is asked
+	// again on every revision and a model that keeps answering "continuing"
+	// would hold the floor for as long as it kept saying so.
+	ProjectionHold time.Duration
 }
 
 type engineFloor struct {
@@ -68,12 +79,16 @@ func NewEngineFloor(options EngineFloorOptions) Floor {
 	if options.SilenceDuration <= 0 {
 		options.SilenceDuration = 500 * time.Millisecond
 	}
+	if options.ProjectionHold <= 0 {
+		options.ProjectionHold = time.Second
+	}
 	return engineFloor{options: options}
 }
 
 func (floor engineFloor) Name() string {
 	if floor.options.Projection != nil && floor.options.Projection.Name() != "vad-only" {
-		return fmt.Sprintf("engine-%dms+%s", floor.options.SilenceDuration.Milliseconds(), floor.options.Projection.Name())
+		return fmt.Sprintf("engine-%dms+%dms+%s", floor.options.SilenceDuration.Milliseconds(),
+			floor.options.ProjectionHold.Milliseconds(), floor.options.Projection.Name())
 	}
 	return fmt.Sprintf("engine-%dms", floor.options.SilenceDuration.Milliseconds())
 }
@@ -87,18 +102,29 @@ func (floor engineFloor) Endpoint(context Context) EndpointDecision {
 	if context.Revision.Empty() {
 		return EndpointDecision{}
 	}
+	held := false
+	heldReason := ""
 	if floor.options.Projection != nil {
-		if projected := floor.options.Projection.Project(context); projected.Ending {
+		projected := floor.options.Projection.Project(context)
+		if projected.Ending {
 			return EndpointDecision{Ended: true, Projected: true, Reason: projected.Reason}
 		}
+		held, heldReason = projected.Continuing, projected.Reason
 	}
 	if context.Duplex.UserSpeaking {
 		return EndpointDecision{}
 	}
-	if context.Revision.SilenceNS >= uint64(floor.options.SilenceDuration.Nanoseconds()) {
-		return EndpointDecision{Ended: true, Reason: "silence exceeded the endpoint threshold"}
+	if context.Revision.SilenceNS < uint64(floor.options.SilenceDuration.Nanoseconds()) {
+		return EndpointDecision{}
 	}
-	return EndpointDecision{}
+	// Silence says the turn is over; the projection may say the person is only
+	// pausing. Believe it, but only up to the bound - past that the turn ends
+	// whatever the model thinks, because a floor that can be talked out of
+	// ending is not a floor.
+	if held && context.Revision.SilenceNS < uint64((floor.options.SilenceDuration+floor.options.ProjectionHold).Nanoseconds()) {
+		return EndpointDecision{Projected: true, Reason: heldReason}
+	}
+	return EndpointDecision{Ended: true, Reason: "silence exceeded the endpoint threshold"}
 }
 
 func (floor engineFloor) Holder(state session.Snapshot) Holder {

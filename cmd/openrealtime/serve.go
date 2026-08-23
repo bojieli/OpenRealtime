@@ -118,6 +118,7 @@ type serveOptions struct {
 	policyTokenEnv string
 	policyGuided   bool
 	policies       string
+	projectionHold time.Duration
 	bargeIn        string
 	bargeInHold    time.Duration
 
@@ -262,6 +263,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.browserTarget, "browser-target", "", "connect directly to a known page WebSocket instead of discovering one")
 	flags.StringVar(&options.computerConfirm, "computer-confirm", "", "override every computer.* confirmation requirement: never, policy, or always")
 	flags.StringVar(&options.policies, "policy-models", "none", "comma-separated policy models: backchannel, turn-projection, overlap, all, or none")
+	flags.DurationVar(&options.projectionHold, "projection-hold", time.Second,
+		"how much extra silence a turn-projection model may buy by judging the turn unfinished")
 	flags.StringVar(&options.bargeIn, "barge-in", "immediate", "barge-in policy: immediate, sustained, or never")
 	flags.DurationVar(&options.bargeInHold, "barge-in-hold", 300*time.Millisecond, "how long a sustained barge-in policy holds the floor before yielding")
 	flags.IntVar(&options.gpuCapacity, "compute-capacity", 0,
@@ -551,7 +554,7 @@ func applyPolicyModels(
 		// rebuilding the floor would leave it unused - which is the kind of
 		// silent no-op a measured factor must never be.
 		policies.Floor = interaction.NewEngineFloor(interaction.EngineFloorOptions{
-			Projection: policy,
+			Projection: policy, ProjectionHold: options.projectionHold,
 		})
 	}
 	return nil
