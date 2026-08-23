@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -25,11 +26,26 @@ type GateConfig struct {
 	PrefixPaddingMS int
 	// SilenceDurationMS is how much silence ends an utterance.
 	SilenceDurationMS int
+	// SpeechDurationMS is how much voiced audio must accumulate before an
+	// utterance starts. Zero selects 120 ms.
+	//
+	// The gate had hysteresis on one side only: half a second of silence to
+	// believe a turn ended, and a single block above the threshold to believe
+	// one began. A door slam, a keyboard, a lip smack all clear an energy
+	// threshold, so anything percussive opened an utterance - and a recogniser
+	// asked what was in it answers honestly that there were no words, which is
+	// then indistinguishable from the user having spoken.
+	//
+	// It costs nothing to wait, because the prefix buffer is already keeping
+	// this audio: what the threshold delays is the decision, not the sound. A
+	// syllable is comfortably longer than any transient, so the smallest thing
+	// a person can say still opens a turn with its onset intact.
+	SpeechDurationMS int
 }
 
 // DefaultGateConfig matches the Realtime server-VAD defaults.
 func DefaultGateConfig() GateConfig {
-	return GateConfig{Threshold: 0.5, PrefixPaddingMS: 300, SilenceDurationMS: 500}
+	return GateConfig{Threshold: 0.5, PrefixPaddingMS: 300, SilenceDurationMS: 500, SpeechDurationMS: 120}
 }
 
 // GateResult is what the acoustic gate decided about a block of audio.
@@ -54,8 +70,17 @@ type EnergyGate struct {
 	speaking   bool
 	prefix     []byte
 	silence    uint64
-	total      uint64
-	noiseRMS   float64
+	// onset is the run of voiced audio heard while the gate is still closed,
+	// and voiced is its length. A gap clears both: a transient is loud but not
+	// sustained, and that is the whole difference between a door and a word.
+	//
+	// It is kept apart from prefix so that "prefix padding" keeps meaning what
+	// it says - audio from before the onset - rather than quietly becoming
+	// "padding plus however long we waited".
+	onset    []byte
+	voiced   uint64
+	total    uint64
+	noiseRMS float64
 }
 
 // NewEnergyGate validates the configuration and creates a gate.
@@ -65,6 +90,9 @@ func NewEnergyGate(config GateConfig, sampleRate uint32) (*EnergyGate, error) {
 	}
 	if config.PrefixPaddingMS < 0 || config.SilenceDurationMS <= 0 {
 		return nil, errors.New("gate prefix must be non-negative and silence duration positive")
+	}
+	if config.SpeechDurationMS < 0 {
+		return nil, errors.New("gate speech duration must be non-negative")
 	}
 	if sampleRate == 0 {
 		return nil, errors.New("gate sample rate must be positive")
@@ -95,7 +123,8 @@ func (gate *EnergyGate) ForceStop() (endMS int, stopped bool) {
 	}
 	gate.speaking = false
 	gate.silence = 0
-	gate.prefix = nil
+	gate.voiced = 0
+	gate.prefix, gate.onset = nil, nil
 	return samplesToMS(gate.total, gate.sampleRate), true
 }
 
@@ -117,7 +146,6 @@ func (gate *EnergyGate) Push(pcm16 []byte) (GateResult, error) {
 		return GateResult{}, errors.New("acoustic gate requires non-empty PCM16 audio")
 	}
 	samples := uint64(len(pcm16) / 2)
-	startSample := gate.total
 	gate.total += samples
 	rms := pcmRMS(pcm16)
 	absolute := 128 + gate.config.Threshold*1_024
@@ -127,17 +155,38 @@ func (gate *EnergyGate) Push(pcm16 []byte) (GateResult, error) {
 	if !gate.speaking {
 		if !voiced {
 			gate.noiseRMS = 0.98*gate.noiseRMS + 0.02*rms
+			// A gap shortens the run rather than ending it. Speech is not
+			// continuously loud - a stop consonant is a moment of near
+			// silence inside a syllable - so a run that reset on the first
+			// quiet block would need the speaker to shout through their own
+			// plosives. A transient decays to nothing in the time it takes
+			// the next block to arrive, which is the distinction that matters.
+			if gate.voiced <= samples {
+				gate.appendPrefix(gate.onset)
+				gate.onset, gate.voiced = nil, 0
+			} else {
+				gate.voiced -= samples
+			}
 			gate.appendPrefix(pcm16)
 			return GateResult{}, nil
 		}
-		prefixSamples := uint64(len(gate.prefix) / 2)
+		// Held rather than emitted, because whether this is the beginning of a
+		// turn is not yet known. Waiting costs nothing: the audio is here.
+		gate.onset = append(gate.onset, pcm16...)
+		gate.voiced += samples
+		speechLimit := uint64(gate.config.SpeechDurationMS) * uint64(gate.sampleRate) / 1_000
+		if gate.voiced < speechLimit {
+			return GateResult{}, nil
+		}
+		held := uint64(len(gate.prefix)+len(gate.onset)) / 2
 		gate.speaking = true
 		gate.silence = 0
-		audio := append(slices.Clone(gate.prefix), pcm16...)
-		gate.prefix = nil
+		gate.voiced = 0
+		audio := append(slices.Clone(gate.prefix), gate.onset...)
+		gate.prefix, gate.onset = nil, nil
 		return GateResult{
 			Started: true, Audio: audio,
-			AudioStartMS: samplesToMS(startSample-prefixSamples, gate.sampleRate),
+			AudioStartMS: samplesToMS(gate.total-held, gate.sampleRate),
 		}, nil
 	}
 
@@ -153,12 +202,16 @@ func (gate *EnergyGate) Push(pcm16 []byte) (GateResult, error) {
 		result.AudioEndMS = samplesToMS(gate.total, gate.sampleRate)
 		gate.speaking = false
 		gate.silence = 0
-		gate.prefix = nil
+		gate.voiced = 0
+		gate.prefix, gate.onset = nil, nil
 	}
 	return result, nil
 }
 
 func (gate *EnergyGate) appendPrefix(audio []byte) {
+	if len(audio) == 0 {
+		return
+	}
 	maximumSamples := uint64(gate.config.PrefixPaddingMS) * uint64(gate.sampleRate) / 1_000
 	maximumBytes := int(maximumSamples * 2)
 	if maximumBytes == 0 {
@@ -342,9 +395,33 @@ func (observer *AudioObserver) DurationMS() uint64 {
 	return observer.sampleOffset * 1_000 / uint64(observer.sampleRate)
 }
 
+// carriesSpeech reports whether a transcript contains anything a person said.
+//
+// A recogniser asked about audio with no words in it has to answer somehow,
+// and the answer is not always an empty string: SenseVoice returns ".", others
+// return the punctuation their language model expects around nothing. The
+// contract here is "what the user said", and text with no letter and no digit
+// in it says nothing - in any script, which is why this asks Unicode rather
+// than stripping a list of characters somebody noticed once.
+// CarriesSpeech is exported so the rule can be tested directly: it is the one
+// place that decides whether a recogniser heard anything at all.
+func CarriesSpeech(text string) bool {
+	for _, symbol := range text {
+		if unicode.IsLetter(symbol) || unicode.IsDigit(symbol) {
+			return true
+		}
+	}
+	return false
+}
+
 func (observer *AudioObserver) observationFor(revision v1.PerceptionRevision, capturedNS uint64, final bool) (Observation, bool) {
 	text := revision.StableText + revision.UnstableText
-	if strings.TrimSpace(text) == "" {
+	// An observation is a claim that the user said something, and the log
+	// keeps it forever. Recording "the recogniser heard no words" as a thing
+	// the user said is what turns room noise into a turn: the agent answers
+	// it, that answer cancels whatever it was already saying, and a caller
+	// hears their own answer cut off to make room for nothing.
+	if !CarriesSpeech(text) {
 		return Observation{}, false
 	}
 	if !final && text == observer.lastText {

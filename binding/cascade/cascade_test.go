@@ -559,12 +559,16 @@ func TestClosingASessionReleasesARecogniserMidUtterance(t *testing.T) {
 		Perception: func() (v1.PerceptionProvider, error) { return asr, nil },
 	}, binding.Settings{})
 
-	// Speech with no trailing silence: the utterance is still open.
-	if err := runtime.Audio(context.Background(), perception.Frame{
-		Kind: perception.FrameAudio, Source: "microphone", SampleRateHz: 24_000,
-		PCM16LE: tone(2400, 8000),
-	}); err != nil {
-		t.Fatalf("speak: %v", err)
+	// Speech with no trailing silence: the utterance is still open. More than
+	// one block, because the gate wants sustained voicing before it believes a
+	// turn has started, and one block is a transient.
+	for range 3 {
+		if err := runtime.Audio(context.Background(), perception.Frame{
+			Kind: perception.FrameAudio, Source: "microphone", SampleRateHz: 24_000,
+			PCM16LE: tone(2400, 8000),
+		}); err != nil {
+			t.Fatalf("speak: %v", err)
+		}
 	}
 	waitFor(t, func() bool { return asr.pushes > 0 }, "the recogniser never saw audio")
 	if asr.closed.Load() {

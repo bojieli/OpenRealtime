@@ -165,6 +165,33 @@ try {
   };
 
   // --- the page ------------------------------------------------------------
+  //
+  // Chromium's fake microphone is a beep, not a voice: it emits about forty
+  // milliseconds at full amplitude and then goes quiet for a second. That is
+  // the shape of a click, and the server's gate is supposed to refuse clicks -
+  // room tone is full of them, and each one it admits becomes a turn the
+  // caller never took. So the microphone here is replaced by something that
+  // actually sustains, which is what this file always claimed it was.
+  await evaluate(`(() => {
+    const context = new AudioContext();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const destination = context.createMediaStreamDestination();
+    oscillator.frequency.value = 220;
+    gain.gain.value = 0.4;
+    oscillator.connect(gain).connect(destination);
+    oscillator.start();
+    const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async (constraints) => {
+      if (!constraints || !constraints.audio) return real(constraints);
+      const stream = await real({ ...constraints, audio: false }).catch(() => new MediaStream());
+      const voice = new MediaStream([destination.stream.getAudioTracks()[0]]);
+      stream.getVideoTracks().forEach((track) => voice.addTrack(track));
+      return voice;
+    };
+    return "installed";
+  })()`);
+
   check("the page loads", await evaluate("document.title") === "OpenRealtime console");
   check("every module loaded", requestFailures.length === 0, requestFailures.join("; "));
   check("no uncaught exception on load", pageErrors.length === 0, pageErrors.join("; "));

@@ -564,3 +564,117 @@ func TestOutOfRangeControlPositionsAreClamped(t *testing.T) {
 		t.Fatalf("unexpected clamping: %q", observations[0].Text)
 	}
 }
+
+// A transient is loud and short. A door, a keyboard, a lip smack all clear an
+// energy threshold, and the gate had hysteresis on one side only: half a
+// second of silence to believe a turn ended, one block above the threshold to
+// believe one began.
+func TestATransientDoesNotOpenATurn(t *testing.T) {
+	gate, err := perception.NewEnergyGate(perception.DefaultGateConfig(), 24_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := func(amplitude byte, count int) []byte {
+		audio := make([]byte, count)
+		for index := 0; index < count; index += 2 {
+			audio[index], audio[index+1] = 0x00, amplitude
+		}
+		return audio
+	}
+	// 40 ms of noise: loud, and over before a syllable would be.
+	if result, _ := gate.Push(block(0x40, 1920)); result.Started {
+		t.Fatal("a click opened a turn")
+	}
+	// Silence after it, which is what makes it a transient rather than speech.
+	for range 3 {
+		if result, _ := gate.Push(block(0x00, 1920)); result.Started {
+			t.Fatal("silence after a click opened a turn")
+		}
+	}
+	if gate.Speaking() {
+		t.Fatal("the gate is open after nothing but a click")
+	}
+}
+
+// The onset is only delayed, never discarded: what the threshold buys is time
+// to decide, and the audio that justified the decision has to arrive with it.
+func TestSustainedSpeechOpensATurnWithItsOnsetIntact(t *testing.T) {
+	gate, err := perception.NewEnergyGate(perception.DefaultGateConfig(), 24_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loud := make([]byte, 1920) // 40 ms
+	for index := 0; index < len(loud); index += 2 {
+		loud[index], loud[index+1] = 0x00, 0x40
+	}
+	var opened perception.GateResult
+	for range 5 {
+		result, err := gate.Push(loud)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Started {
+			opened = result
+			break
+		}
+	}
+	if !opened.Started {
+		t.Fatal("sustained speech never opened a turn")
+	}
+	// Everything voiced before the decision is in the audio it hands over.
+	if len(opened.Audio) < 3*len(loud) {
+		t.Fatalf("the onset was clipped: %d bytes for %d ms of speech", len(opened.Audio), 120)
+	}
+}
+
+// A recogniser asked about audio with no words in it still answers. SenseVoice
+// says ".", and an observation is a claim that the user said something.
+func TestATranscriptWithNoWordsIsNotAnObservation(t *testing.T) {
+	for _, text := range []string{".", " . ", "。", "…", "-", "!?", "  "} {
+		if perception.CarriesSpeech(text) {
+			t.Errorf("%q has no words in it", text)
+		}
+	}
+	for _, text := range []string{"hello", "嗯", "42", "ABC123", "a."} {
+		if !perception.CarriesSpeech(text) {
+			t.Errorf("%q is something the user said", text)
+		}
+	}
+}
+
+// The whole path, not just the predicate: a recogniser that reports no words
+// must not put a turn in the log.
+//
+// This is what room tone does to a session. The gate opens on something, the
+// recogniser is asked what was in it and answers ".", and an observation says
+// the user spoke - so the agent answers, and that answer cancels whatever it
+// was already saying.
+func TestARecogniserReportingNoWordsCommitsNoObservation(t *testing.T) {
+	asr := &revisionASR{
+		revisions: []v1.PerceptionRevision{{StableText: "."}, {StableText: "。"}, {StableText: " "}},
+		final:     ".",
+	}
+	observer, err := perception.NewAudioObserver(perception.AudioConfig{
+		Provider: func() (v1.PerceptionProvider, error) { return asr, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for index := range 3 {
+		observations, err := observer.Observe(ctx, []perception.Frame{audioFrame()})
+		if err != nil {
+			t.Fatalf("observe %d: %v", index, err)
+		}
+		if len(observations) != 0 {
+			t.Fatalf("punctuation became a turn: %+v", observations)
+		}
+	}
+	final, err := observer.Flush(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(final) != 0 {
+		t.Fatalf("a final transcript with no words is still no words: %+v", final)
+	}
+}
