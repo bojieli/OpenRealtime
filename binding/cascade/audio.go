@@ -55,6 +55,8 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 		runtime.utteranceID = idFor("item", runtime.sequence.Add(1))
 		runtime.speechStartNS = now
 		runtime.lastStable, runtime.lastCanonical = "", 0
+		runtime.heard = interaction.Revision{}
+		runtime.pauseStartNS = 0
 	}
 	if manual {
 		// The client owns the buffer. What it appended is the turn, whether or
@@ -70,6 +72,8 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 			runtime.utteranceID = idFor("item", runtime.sequence.Add(1))
 			runtime.speechStartNS = now
 			runtime.lastStable, runtime.lastCanonical = "", 0
+			runtime.heard = interaction.Revision{}
+			runtime.pauseStartNS = 0
 			started = true
 		}
 	}
@@ -85,6 +89,7 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 		due = stopped || runtime.lastObserveNS == 0 || now-runtime.lastObserveNS >= cadence
 	}
 	var batch []perception.Frame
+	var latest interaction.Revision
 	if due {
 		batch, runtime.pending = runtime.pending, nil
 		runtime.lastObserveNS = now
@@ -111,9 +116,11 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 		// policy reads - but it runs no recogniser. That is what factor F3's
 		// video-only level asks for, and a level that quietly recognised
 		// speech anyway would be the audio+video level under another name.
-		if err := runtime.observeAudio(ctx, batch, silenceNS); err != nil {
+		observed, err := runtime.observeAudio(ctx, batch, silenceNS)
+		if err != nil {
 			runtime.fail("asr_provider_error", err)
 		}
+		latest = observed
 	}
 	if !started && !stopped {
 		// A barge-in policy that waits needs its deadline driven by something.
@@ -130,10 +137,83 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 			}
 		}
 	}
+	if stopped && runtime.holdsThroughPause(now, latest, silenceNS) {
+		stopped = false
+	}
 	if stopped {
 		return runtime.onUserSpeechStopped(ctx, utteranceID, result.AudioEndMS, now)
 	}
 	return nil
+}
+
+// holdsThroughPause asks whether the silence that closed the gate is the end
+// of the turn or a pause inside it.
+//
+// The gate answers "is the user still audible", and that is the wrong question
+// to end a turn on. A person searching for a word goes quiet exactly like a
+// person who has finished, and half a second is a short hesitation - so an
+// acoustic threshold splits one request into several, each answered
+// separately, each answer cancelling the last. The floor already owns the
+// other question, and a client-owned floor already reopens the gate on this
+// exact reasoning; this is the engine-owned case of it.
+//
+// The revision is passed without Final set on purpose. Final is the gate's
+// verdict, and the gate's verdict is what is under review here: the floor is
+// being asked what the words and the silence say, not to agree with the
+// mechanism that called it.
+func (runtime *runtime) holdsThroughPause(nowNS uint64, latest interaction.Revision, silenceNS uint64) bool {
+	if !runtime.policies.Floor.EngineOwned() {
+		return false
+	}
+	if latest.Empty() {
+		runtime.audioMu.Lock()
+		latest = runtime.heard
+		runtime.audioMu.Unlock()
+	}
+	if latest.Empty() {
+		return false
+	}
+	latest.Final = false
+	// How long this pause has actually lasted, which is what the hold is
+	// bounded by. Each Reopen zeroes the gate's own counter, so asking the
+	// gate would restart the clock on every hold and the bound would never
+	// arrive - the turn would end when the model stopped saying "continuing",
+	// which is exactly the runaway the bound exists to prevent.
+	runtime.audioMu.Lock()
+	if runtime.pauseStartNS == 0 && nowNS > silenceNS {
+		runtime.pauseStartNS = nowNS - silenceNS
+	}
+	pauseStart := runtime.pauseStartNS
+	runtime.audioMu.Unlock()
+	if pauseStart != 0 && nowNS > pauseStart {
+		silenceNS = nowNS - pauseStart
+	}
+	latest.SilenceNS = silenceNS
+	// The duplex state still says the user is speaking, because the transition
+	// is published by the endpoint this call is deciding whether to make. Both
+	// corrections are the same one: the question is about the pause that has
+	// just started, so the context describes that pause rather than the moment
+	// before it.
+	state := runtime.duplex.Snapshot()
+	state.UserSpeaking = false
+	decision := runtime.policies.Floor.Endpoint(interaction.Context{
+		NowNS: nowNS, Duplex: state, Revision: latest,
+	})
+	if decision.Ended {
+		runtime.audioMu.Lock()
+		runtime.pauseStartNS = 0
+		runtime.audioMu.Unlock()
+		return false
+	}
+	runtime.audioMu.Lock()
+	defer runtime.audioMu.Unlock()
+	if runtime.acoustic == nil {
+		return false
+	}
+	// The gate has already closed itself, so it is reopened and this turn
+	// continues on the next audible frame.
+	runtime.acoustic.Reopen()
+	return true
 }
 
 // onUserSpeechStarted applies the barge-in policy at the moment sound begins.
@@ -249,10 +329,13 @@ func (runtime *runtime) onUserSpeechStopped(ctx context.Context, utteranceID str
 
 // observeAudio advances the recogniser and applies the trigger, preparation,
 // and observation policies to what it produced.
-func (runtime *runtime) observeAudio(ctx context.Context, frames []perception.Frame, silenceNS uint64) error {
+func (runtime *runtime) observeAudio(
+	ctx context.Context, frames []perception.Frame, silenceNS uint64,
+) (interaction.Revision, error) {
+	var latest interaction.Revision
 	observations, err := runtime.audio.Observe(ctx, frames)
 	if err != nil {
-		return err
+		return latest, err
 	}
 	for _, observation := range observations {
 		revision := interaction.Revision{
@@ -260,6 +343,10 @@ func (runtime *runtime) observeAudio(ctx context.Context, frames []perception.Fr
 			UnstableText: strings.TrimPrefix(observation.Text, observation.StableText),
 			Final:        observation.Final, ObservedNS: runtime.scheduler.NowNS(), SilenceNS: silenceNS,
 		}
+		latest = revision
+		runtime.audioMu.Lock()
+		runtime.heard = revision
+		runtime.audioMu.Unlock()
 		decision := interaction.Context{
 			NowNS: runtime.scheduler.NowNS(), Duplex: runtime.duplex.Snapshot(), Revision: revision,
 		}
@@ -268,7 +355,7 @@ func (runtime *runtime) observeAudio(ctx context.Context, frames []perception.Fr
 		if decision.Duplex.Overlapping() {
 			overlap := decision.NowNS - decision.Duplex.UserSpeechStartedNS
 			if err := runtime.considerBargeIn(ctx, revision, overlap); err != nil {
-				return err
+				return latest, err
 			}
 		}
 		// A continuer is decided about here because here is where the words
@@ -279,9 +366,9 @@ func (runtime *runtime) observeAudio(ctx context.Context, frames []perception.Fr
 		// asked before the trigger, because a projected endpoint makes the
 		// rest of this revision's processing part of the next turn.
 		if projected, err := runtime.projectEndpoint(ctx, decision); err != nil {
-			return err
+			return latest, err
 		} else if projected {
-			return nil
+			return latest, nil
 		}
 		// Preparation is consulted on every revision. It decides whether work
 		// starts before the endpoint; it never decides what gets committed.
@@ -290,7 +377,7 @@ func (runtime *runtime) observeAudio(ctx context.Context, frames []perception.Fr
 		if err := runtime.sink.Transcript(ctx, binding.TranscriptEvent{
 			ItemID: runtime.currentUtterance(), Text: observation.Text,
 		}); err != nil {
-			return err
+			return latest, err
 		}
 		if !opportunity.Open {
 			continue
@@ -306,11 +393,11 @@ func (runtime *runtime) observeAudio(ctx context.Context, frames []perception.Fr
 		partial.Text = observation.StableText
 		partial.Provisional = true
 		if err := runtime.commitObservation(ctx, partial); err != nil {
-			return err
+			return latest, err
 		}
 		runtime.setStableText(observation.StableText)
 	}
-	return nil
+	return latest, nil
 }
 
 func (runtime *runtime) currentUtterance() string {

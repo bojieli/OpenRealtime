@@ -65,6 +65,15 @@ type runtime struct {
 	lastObserveNS uint64
 	utteranceID   string
 	lastStable    string
+	// heard is the most recent revision of the utterance in progress. The
+	// endpoint decision needs the words so far, and the frame that closes the
+	// gate usually carries no new ones - an unchanged transcript produces no
+	// observation, which is right for the log and useless for judging a pause.
+	heard interaction.Revision
+	// pauseStartNS is when the silence now being held through began. The gate
+	// cannot time it: reopening resets its counter, so a bound measured from
+	// there would restart on every hold and never expire.
+	pauseStartNS  uint64
 	lastCanonical uint64
 	speechStartNS uint64
 
