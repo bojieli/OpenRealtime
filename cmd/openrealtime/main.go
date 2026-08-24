@@ -40,6 +40,8 @@ func run(arguments []string, stdout, stderr io.Writer) error {
 		return runEfficiency(arguments[1:], stdout)
 	case "bench":
 		return runBench(arguments[1:], stdout)
+	case "eval":
+		return runEval(arguments[1:], stdout)
 	case "compare":
 		return runCompare(arguments[1:], stdout)
 	case "simulate":
