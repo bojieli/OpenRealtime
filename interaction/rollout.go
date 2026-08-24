@@ -163,11 +163,20 @@ func (rollout fastThenSlowRollout) Plan(input RolloutInput) []Step {
 	if input.Cause.SlowInvocations >= rollout.options.MaxSlowInvocations {
 		return steps
 	}
-	// Slow runs when it was asked for, when a result it is waiting on came
-	// back, or when a correction is owed. An observation alone is not a
-	// reason: whether the turn needs deliberation is fast's to judge, and it
-	// has just judged it.
-	if input.Cause.Escalated || input.Cause.ToolResult || input.Cause.PendingRepair {
+	// An observation deliberates. It used to depend on the voice declining to
+	// mark the turn complete, and that put every capability the agent has
+	// behind one judgement by the one phase that cannot act on it - measured
+	// at four to seven of sixteen tool-using turns against fifteen when the
+	// reasoner simply ran. The other three bindings never took that risk.
+	//
+	// The marker still means something, and something the voice is actually
+	// qualified to decide: that it has finished *speaking*. Whether there is
+	// anything left to do is the reasoner's to decide, and it decides it by
+	// looking - a slow continuation with no tool call and nothing to add
+	// returns silently, so a turn that needed nothing costs a call and says
+	// nothing. That is the right price for not losing the ones that did.
+	if input.Cause.Observation || input.Cause.Escalated ||
+		input.Cause.ToolResult || input.Cause.PendingRepair {
 		steps = append(steps, Step{Kind: StepSlow, Reason: "reason and act"})
 	}
 	return steps

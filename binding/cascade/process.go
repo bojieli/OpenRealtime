@@ -76,6 +76,11 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		SourceRevision: revision,
 		PendingRepair:  len(trajectory.PendingRepairs(runtime.store.Snapshot())) > 0,
 	}
+	// A plan that already contains the reasoner does not need the voice to ask
+	// for it, and asking would run it twice.
+	plansSlow := slices.ContainsFunc(plan, func(step interaction.Step) bool {
+		return step.Kind == interaction.StepSlow
+	})
 	var failures []error
 	for _, step := range plan {
 		select {
@@ -83,7 +88,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 			return errors.Join(append(failures, context.Cause(ctx))...)
 		default:
 		}
-		if err := runtime.runStep(ctx, step, request, turn); err != nil {
+		if err := runtime.runStep(ctx, step, request, turn, plansSlow); err != nil {
 			failures = append(failures, fmt.Errorf("%s step: %w", step.Kind, err))
 			if ctx.Err() != nil {
 				break
@@ -106,10 +111,12 @@ func (runtime *runtime) signal(eventType string) error {
 // runStep executes one rollout step.
 func (runtime *runtime) runStep(
 	ctx context.Context, step interaction.Step, request cognition.Request, turn *turnReport,
+	plansSlow bool,
 ) error {
 	switch step.Kind {
 	case interaction.StepFast:
-		return runtime.runFast(ctx, request, turn, step.Reason == interaction.ReasonBackgroundResult)
+		handsOn := step.Reason == interaction.ReasonBackgroundResult || plansSlow
+		return runtime.runFast(ctx, request, turn, handsOn)
 	case interaction.StepSlow:
 		return runtime.runSlow(ctx, request)
 	default:
@@ -123,7 +130,7 @@ func (runtime *runtime) runStep(
 // reasoner has just answered; asking it to answer once more is a loop, and the
 // next thing the user says opens the question again anyway.
 func (runtime *runtime) runFast(
-	ctx context.Context, request cognition.Request, turn *turnReport, speaksBackgroundResult bool,
+	ctx context.Context, request cognition.Request, turn *turnReport, alreadyHandedOn bool,
 ) error {
 	// A preparation that answered this exact sentence is adopted rather than
 	// regenerated. It is the same continuation, produced earlier.
@@ -141,7 +148,7 @@ func (runtime *runtime) runFast(
 	// cannot run. Silence from a small model means "not finished", because the
 	// alternative reading loses every capability the agent has the moment the
 	// marker is forgotten.
-	if !speaksBackgroundResult && (!result.Finished || len(result.ToolProposals) > 0) {
+	if !alreadyHandedOn && (!result.Finished || len(result.ToolProposals) > 0) {
 		signalErr = runtime.signal(interaction.SignalEscalated)
 	}
 	return errors.Join(err, publishErr, signalErr)

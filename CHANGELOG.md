@@ -25,6 +25,23 @@
   server that opens a response and never closes it still fails rather than
   hanging.
 
+### Cognition
+
+- **An observation deliberates.** Whether the background reasoner ran was
+  decided by the voice declining to mark its turn complete — which put every
+  capability the agent has behind one judgement by the only phase that cannot
+  act on it, and the judgement is model-dependent in a way nothing measured.
+  On sixteen FDB v3 tool-using turns the reasoner ran on four to seven of them;
+  it now runs on all sixteen, correct calls went from two to ten, and turns
+  with no call at all went from twelve to zero. The other three bindings never
+  took this risk: `omni`, `duplex` and `upstream` have always deliberated at
+  the endpoint.
+- **The marker still means something, and something the voice can judge.** It
+  says the voice has finished speaking, not that the work is finished. Whether
+  anything remains to be done is decided by looking: a slow continuation with
+  no tool call and nothing to add returns silently, so a turn that needed
+  nothing costs one call and says nothing.
+
 ### Perception
 
 - **Room tone no longer becomes a turn.** The acoustic gate opened on any block

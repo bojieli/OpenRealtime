@@ -91,11 +91,21 @@ func TestContinuousPreparationPacesOnlyTheSlowPhase(t *testing.T) {
 	}
 }
 
-func TestFastThenSlowRunsSlowOnlyWhenFastAsks(t *testing.T) {
+// An observation is answered by the voice and examined by the reasoner, in
+// that order.
+//
+// Deliberation used to wait for the voice to decline to mark the turn
+// complete, which put every capability the agent has behind one judgement by
+// the phase that cannot act on it. The voice still decides whether it has
+// finished speaking; whether anything remains to be done is decided by looking.
+func TestAnObservationIsAnsweredNowAndExaminedAnyway(t *testing.T) {
 	rollout := interaction.NewFastThenSlowRollout(interaction.RolloutOptions{})
 	plan := rollout.Plan(interaction.RolloutInput{Cause: interaction.Cause{Observation: true}})
-	if len(plan) != 1 || plan[0].Kind != interaction.StepFast {
-		t.Fatalf("a question fast can answer is answered once: %+v", plan)
+	if len(plan) != 2 {
+		t.Fatalf("an observation answers and deliberates: %+v", plan)
+	}
+	if plan[0].Kind != interaction.StepFast || plan[1].Kind != interaction.StepSlow {
+		t.Fatalf("the voice goes first, or the user waits on the reasoner: %+v", plan)
 	}
 	escalated := rollout.Plan(interaction.RolloutInput{Cause: interaction.Cause{Escalated: true}})
 	if len(escalated) != 1 || escalated[0].Kind != interaction.StepSlow {
