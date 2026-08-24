@@ -167,6 +167,32 @@ The floor on the classified path is not the hold and not the model — it is how
 long the recogniser takes to produce its first partial. Classifying overlap
 needs words, and words arrive when they arrive.
 
+### What still cannot be built, and why
+
+An agent that goes quiet while it reasons ought to say so. The reasoning half
+is silent by construction, the gap is a property of the question, and a caller
+cannot distinguish a hard question from a broken agent - an independent listener
+called one repaired recording "broken" for exactly this, on a call where
+everything else had gone right.
+
+The turn that would fill it has been written twice and withdrawn twice, and it
+is worth recording why rather than leaving it to be rediscovered.
+
+It has to run *while* the reasoner runs, which means arriving as a parallel
+branch. Two things stood in the way. The deferred set was merged flat before it
+ran, and a merged batch carries one triage, so a parallel branch inherited the
+deferral of whatever routine traffic sat beside it - that half is fixed. The
+half that remains is that the loop is driven by one goroutine: while a batch is
+being processed, the driver is inside that call and cannot pick up the branch,
+so it is planned correctly and runs when the work it was reporting on has
+already finished. Saying "still checking" as the answer arrives is worse than
+saying nothing.
+
+Making that concurrent means a second driver through the machinery that
+guarantees safe points and commit ordering. Getting it subtly wrong reorders the
+log, which is a worse failure than dead air, so the feature waits for that work
+rather than shipping ahead of it.
+
 ### What listening to the recordings found
 
 The suites score outcomes. Playing the audio back — the caller on one channel,
