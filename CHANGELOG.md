@@ -13,6 +13,17 @@
   F2 therefore has to report escalation rate beside pass rate, or a paired
   design will attribute the difference to deliberation quality.
 
+### The event loop
+
+- **A parallel branch no longer waits behind deferred routine work.** The
+  deferred set was merged flat before it ran, a merged batch carries one
+  triage, and parallel does not survive being mixed — correctly, because
+  routine work must keep the deferral that is holding it. Collapsing the two
+  answers meant the branch that exists to answer a question *during* long work
+  arrived after that work had finished, which is the one moment it has nothing
+  left to do. The set is partitioned instead: routine events keep their
+  deferral, parallel ones stop inheriting it.
+
 ### The protocol surface
 
 - **An agent that is thinking keeps its turn open.** The reasoning phase is

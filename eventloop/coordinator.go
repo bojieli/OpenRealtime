@@ -375,15 +375,46 @@ func (coordinator *Coordinator) commitAdmissible(queued []queuedEvent) (Batch, [
 	}
 }
 
+// selectRunnable picks what may run now and returns what must keep waiting.
+//
+// While nothing is in flight everything runs together, which is what a safe
+// point is for. While something *is* in flight only a parallel branch may join
+// it - and merging is the wrong tool for saying so, because a merged batch has
+// one triage for events that were classified separately. Collapsing the two
+// answers meant a parallel branch waited behind whatever routine traffic
+// happened to be deferred beside it, and arrived after the work it was raised
+// to run alongside had finished.
+//
+// So the deferred set is partitioned rather than merged flat. The routine
+// events keep their deferral, which is the thing the merge was right to
+// protect; the parallel ones stop inheriting it.
+func selectRunnable(deferred []Batch, active bool) (Batch, []Batch) {
+	if !active {
+		return merge(deferred), nil
+	}
+	var runnable, held []Batch
+	for _, batch := range deferred {
+		if batch.Triage == TriageParallel {
+			runnable = append(runnable, batch)
+			continue
+		}
+		held = append(held, batch)
+	}
+	if len(runnable) == 0 {
+		return Batch{}, deferred
+	}
+	return merge(runnable), held
+}
+
 func (coordinator *Coordinator) run(parent context.Context, committed Batch) (Batch, error) {
 	coordinator.mu.Lock()
 	if len(coordinator.deferred) == 0 {
 		coordinator.mu.Unlock()
 		return Batch{}, ErrIdle
 	}
-	work := merge(coordinator.deferred)
+	work, _ := selectRunnable(coordinator.deferred, coordinator.active)
 	parallelBranch := work.Triage == TriageParallel && coordinator.active
-	if coordinator.active && !parallelBranch {
+	if len(work.Events) == 0 {
 		coordinator.mu.Unlock()
 		return committed, ErrBusy
 	}
@@ -404,15 +435,19 @@ func (coordinator *Coordinator) run(parent context.Context, committed Batch) (Ba
 		coordinator.mu.Unlock()
 		return Batch{}, ErrIdle
 	}
-	work = merge(coordinator.deferred)
+	work, held := selectRunnable(coordinator.deferred, coordinator.active)
 	parallelBranch = work.Triage == TriageParallel && coordinator.active
-	if coordinator.active && !parallelBranch {
+	if len(work.Events) == 0 {
 		coordinator.mu.Unlock()
 		return committed, ErrBusy
 	}
-	coordinator.deferred = nil
-	coordinator.deferReason = ""
-	coordinator.deferSinceNS = 0
+	// What is not runnable now stays deferred rather than being dropped, and
+	// rather than holding back the branch that could have run.
+	coordinator.deferred = held
+	if len(held) == 0 {
+		coordinator.deferReason = ""
+		coordinator.deferSinceNS = 0
+	}
 	ctx, cancel := context.WithCancelCause(parent)
 	var epoch uint64
 	if parallelBranch {

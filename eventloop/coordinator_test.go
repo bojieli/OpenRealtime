@@ -585,3 +585,51 @@ func TestAVersionConflictStillRequeuesTheWholeBatch(t *testing.T) {
 		t.Fatalf("expected the event still pending, got %d", got)
 	}
 }
+
+// A parallel branch exists so a question asked while long work is in flight
+// can be answered without disturbing it. It used to wait behind whatever
+// routine traffic happened to be deferred beside it: the deferred set was
+// merged flat, a merged batch carries one triage, and parallel does not
+// survive being mixed - correctly, because routine work must keep its
+// deferral. Collapsing the two answers made the branch arrive after the work
+// it was raised to run alongside had already finished.
+func TestAParallelBranchDoesNotWaitBehindDeferredRoutineWork(t *testing.T) {
+	runnable, held := eventloop.SelectRunnableForTest([]eventloop.Batch{
+		{Triage: eventloop.TriageQueue, Events: []eventloop.Event{{Type: "routine"}}},
+		{Triage: eventloop.TriageParallel, Events: []eventloop.Event{{Type: "question"}}},
+	}, true)
+	if runnable.Triage != eventloop.TriageParallel {
+		t.Fatalf("the branch must still be offered as parallel, got %q", runnable.Triage)
+	}
+	if len(runnable.Events) != 1 || runnable.Events[0].Type != "question" {
+		t.Fatalf("only the parallel work may join the run: %+v", runnable.Events)
+	}
+	if len(held) != 1 || held[0].Events[0].Type != "routine" {
+		t.Fatalf("the routine work keeps its deferral rather than being dropped: %+v", held)
+	}
+}
+
+// With nothing in flight a safe point is exactly the moment everything waiting
+// runs together, and partitioning would defeat it.
+func TestAnIdleLoopRunsEverythingWaiting(t *testing.T) {
+	runnable, held := eventloop.SelectRunnableForTest([]eventloop.Batch{
+		{Triage: eventloop.TriageQueue, Events: []eventloop.Event{{Type: "a"}}},
+		{Triage: eventloop.TriageParallel, Events: []eventloop.Event{{Type: "b"}}},
+	}, false)
+	if len(runnable.Events) != 2 || len(held) != 0 {
+		t.Fatalf("an idle loop takes the whole deferred set: %+v held=%+v", runnable.Events, held)
+	}
+}
+
+// Routine work alone, while something is in flight, still waits.
+func TestRoutineWorkStillWaitsForTheRunInFlight(t *testing.T) {
+	runnable, held := eventloop.SelectRunnableForTest([]eventloop.Batch{
+		{Triage: eventloop.TriageQueue, Events: []eventloop.Event{{Type: "routine"}}},
+	}, true)
+	if len(runnable.Events) != 0 {
+		t.Fatalf("routine work must not join a run in flight: %+v", runnable.Events)
+	}
+	if len(held) != 1 {
+		t.Fatalf("and it must not be lost either: %+v", held)
+	}
+}
