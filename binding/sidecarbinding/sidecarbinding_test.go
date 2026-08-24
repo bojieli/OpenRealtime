@@ -15,6 +15,7 @@ import (
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/duplex"
 	"github.com/bojieli/OpenRealtime/binding/omni"
+	"github.com/bojieli/OpenRealtime/binding/sidecarbinding"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/sidecar"
@@ -491,3 +492,27 @@ func main() {
 	}
 }
 `
+
+// The cascade shipped a step that recited another provider's text and withdrew
+// it, because a phase told to say what someone else wrote performs it rather
+// than speaking - and when it loses the referent it reads its own last turn
+// back instead. Three of the four bindings inherited the design and not the
+// lesson.
+func TestTheHandOffStatesTheResultRatherThanDictatingIt(t *testing.T) {
+	handed := sidecarbinding.HandOffText("The order ABC123 is out for delivery and arrives tomorrow.")
+	lowered := strings.ToLower(handed)
+	for _, dictation := range []string{"say this", "read this", "repeat this", "add nothing"} {
+		if strings.Contains(lowered, dictation) {
+			t.Errorf("the hand-off dictates with %q: %s", dictation, handed)
+		}
+	}
+	if !strings.Contains(lowered, "your own words") {
+		t.Error("the model has to be told to speak rather than perform")
+	}
+	if !strings.Contains(handed, "ABC123") {
+		t.Error("the result itself has to be present, or there is no referent to speak from")
+	}
+	if !strings.Contains(lowered, "exactly") {
+		t.Error("identifiers still have to survive the retelling")
+	}
+}

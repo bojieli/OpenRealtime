@@ -299,14 +299,22 @@ func (runtime *runtime) signal(eventType string) error {
 	return err
 }
 
-// handOff gives the model the completed answer to say.
+// handOff gives the model what the reasoner found, and lets it speak.
 //
-// Where the sidecar declares text injection, the answer becomes context and
-// the model speaks it on its next turn - which is the closest thing to
-// splicing a second model into a stack that owns its own voice. Where it does
-// not, the same text is sent as an explicit instruction followed by a respond
-// request. The second path always works, which is why the binding ships
-// whatever the research into the first one concludes.
+// Where the sidecar declares text injection, the result becomes context and
+// the model speaks on its next turn - which is the closest thing to splicing a
+// second model into a stack that owns its own voice. Where it does not, the
+// same text is sent followed by a respond request. The second path always
+// works, which is why the binding ships whatever the research into the first
+// one concludes.
+//
+// What it does not do is ask the model to recite. The cascade shipped that
+// design and withdrew it: a phase told to say what another provider wrote
+// treats the text as a script, and when it cannot find the referent it reads
+// back the last thing it said instead - once, word for word, including the
+// truncation from its own token limit. The result is handed over as something
+// now known rather than something to perform, which is the same contract the
+// cascade voice runs under.
 func (runtime *runtime) handOff() error {
 	runtime.stateMu.Lock()
 	answer := runtime.answer
@@ -315,8 +323,7 @@ func (runtime *runtime) handOff() error {
 	if answer == "" {
 		return nil
 	}
-	text := "The background reasoner has completed the answer. Say this, briefly and naturally, " +
-		"preserving every fact and identifier exactly, and add nothing:\n\n" + answer
+	text := HandOffText(answer)
 	if err := runtime.model.Send(sidecar.Message{
 		Type: sidecar.TypeText, Role: "system", Text: text,
 	}); err != nil {
@@ -418,3 +425,14 @@ func (runtime *runtime) latestRevision(batch eventloop.Batch) uint64 {
 }
 
 var _ eventloop.Processor = (*runtime)(nil)
+
+// HandOffText is what the model is told when a background result arrives. It
+// is a separate function so the wording can be asserted directly: this is the
+// one place a second model's writing meets a voice, and the difference between
+// stating and dictating is the difference between speech and recitation.
+func HandOffText(answer string) string {
+	return "The background reasoner has finished, and this is what it found. You now know it:\n\n" +
+		answer + "\n\nTell the user what it means in your own words, briefly, as speech, and never " +
+		"by reading it out. Keep every fact and identifier exactly as they are above. Do not " +
+		"mention the reasoner or that anything arrived."
+}

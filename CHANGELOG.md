@@ -34,6 +34,14 @@
 
 ### Cognition
 
+- **The sidecar hand-off states the result instead of dictating it.** `omni`,
+  `duplex` and `upstream` told the model "say this, preserving every fact and
+  identifier exactly, and add nothing" — the design the cascade shipped and
+  withdrew, because a phase told to say what another provider wrote performs it
+  rather than speaking, and when it loses the referent it reads its own last
+  turn back instead. The result is now handed over as something the model knows,
+  to be told in its own words, which is the contract the cascade voice already
+  runs under.
 - **An observation deliberates.** Whether the background reasoner ran was
   decided by the voice declining to mark its turn complete — which put every
   capability the agent has behind one judgement by the only phase that cannot
