@@ -158,6 +158,17 @@ capacity.
 
 - **A policy model fails or times out.** The policy falls back to its rule:
   backchannel to silence, projection to silence-only endpointing.
+- **The agent goes quiet while it thinks.** The reasoning phase never speaks,
+  so a turn that needs it produces a gap with nothing in it, and how long the
+  gap lasts is a property of the question rather than of anything going wrong.
+  What distinguishes it from a finished conversation is that the turn is still
+  open: deliberation runs inside the response, so a client sees
+  `response.created` without `response.done` and knows work is owed.
+
+  Anything waiting on this system should wait on that rather than on a silence
+  timer. A driver that ends a conversation after a few quiet seconds is
+  measuring how fast the agent thinks, and reporting it as how well the agent
+  works.
 - **A model names a tool that does not exist.** It is recorded as a
   non-executable proposal and the conversation continues. It cannot execute —
   the dispatcher checks the name again at the point of effect — and it is not

@@ -582,3 +582,106 @@ func TestClosingASessionReleasesARecogniserMidUtterance(t *testing.T) {
 		t.Fatal("closing the session left the recogniser open")
 	}
 }
+
+// slowProvider takes a declared amount of time, the way a reasoner working
+// through a hard question does.
+type slowProvider struct {
+	scriptedProvider
+	delay   time.Duration
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (provider *slowProvider) Continue(
+	ctx context.Context, request continuation.Request, emit continuation.Emit,
+) (continuation.Completion, error) {
+	provider.once.Do(func() { close(provider.entered) })
+	select {
+	case <-time.After(provider.delay):
+	case <-ctx.Done():
+		return continuation.Completion{}, ctx.Err()
+	}
+	return provider.scriptedProvider.Continue(ctx, request, emit)
+}
+
+// turnClock records when the client was told a turn began and ended.
+type turnClock struct {
+	recordingSink
+	clockMu sync.Mutex
+	began   time.Time
+	ended   time.Time
+}
+
+func (sink *turnClock) TurnBegin(ctx context.Context) error {
+	sink.clockMu.Lock()
+	if sink.began.IsZero() {
+		sink.began = time.Now()
+	}
+	sink.clockMu.Unlock()
+	return sink.recordingSink.TurnBegin(ctx)
+}
+
+func (sink *turnClock) TurnEnd(ctx context.Context, outcome binding.TurnOutcome) error {
+	sink.clockMu.Lock()
+	sink.ended = time.Now()
+	sink.clockMu.Unlock()
+	return sink.recordingSink.TurnEnd(ctx, outcome)
+}
+
+// The reasoner is silent by construction, so a turn that needs it produces a
+// gap with nothing in it. What keeps that gap from being indistinguishable
+// from a finished conversation is that the turn is still open: a client - and
+// a benchmark driver - can tell work is owed because nobody said it was done.
+//
+// This holds only while deliberation happens inside the turn. Moving it back
+// outside would close the response first and leave the silence unexplained,
+// which is what it used to do.
+func TestTheTurnStaysOpenWhileTheReasonerWorks(t *testing.T) {
+	const deliberation = 900 * time.Millisecond
+	fast := newFast([]continuation.Event{
+		{Kind: continuation.EventAssistantDelta, Text: "Let me look that up."},
+	})
+	slow := &slowProvider{
+		scriptedProvider: *newSlow([]continuation.Event{
+			{Kind: continuation.EventAssistantDelta, Text: "The balance is $40.00."},
+		}),
+		delay: deliberation, entered: make(chan struct{}),
+	}
+	sink := &turnClock{}
+	bind, err := cascade.New(cascade.Config{
+		Fast: fast, Slow: slow, Speech: toneSpeech{chunks: 1},
+		Perception: func() (v1.PerceptionProvider, error) {
+			return &scriptedASR{final: "what is my balance"}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := bind.Start(context.Background(), binding.Options{
+		Sink: sink, SessionID: "open-turn",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtime.Close(context.Background(), nil) })
+
+	speak(t, runtime, 2)
+	select {
+	case <-slow.entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the reasoner never ran, so there was nothing to stay open for")
+	}
+	waitFor(t, func() bool {
+		sink.clockMu.Lock()
+		defer sink.clockMu.Unlock()
+		return !sink.ended.IsZero()
+	}, "the turn never ended")
+
+	sink.clockMu.Lock()
+	span := sink.ended.Sub(sink.began)
+	sink.clockMu.Unlock()
+	if span < deliberation {
+		t.Fatalf("the turn closed after %v, before the reasoner had finished thinking for %v: "+
+			"a caller would hear silence with nothing saying work was owed", span, deliberation)
+	}
+}

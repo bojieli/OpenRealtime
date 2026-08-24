@@ -13,6 +13,18 @@
   F2 therefore has to report escalation rate beside pass rate, or a paired
   design will attribute the difference to deliberation quality.
 
+### The protocol surface
+
+- **An agent that is thinking keeps its turn open.** The reasoning phase is
+  silent by construction, so a turn that needs it goes quiet for as long as the
+  question is hard — and nothing said whether work was owed or the conversation
+  had simply ended. Deliberation now runs inside the response, so
+  `response.created` without `response.done` is the signal, and a test fails if
+  a future change moves it back outside. Measured on a real recording: a
+  4.44-second response carrying 3.43 seconds of audio and a tool call, with the
+  next response opening in the same instant the first closed — no window where
+  the agent owes work and the wire is silent about it.
+
 ### The benchmark harness
 
 - **A synthesised tool schema now agrees with the values it is scored against.**
