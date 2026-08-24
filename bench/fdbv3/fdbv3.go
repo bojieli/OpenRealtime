@@ -94,18 +94,22 @@ func Load(root string, limit int) ([]Task, error) {
 // supposed to call would measure whether it can call the only tool available,
 // which is not the question.
 func Catalog(tasks []Task) ([]json.RawMessage, error) {
-	arguments := map[string]map[string]struct{}{}
+	arguments := map[string]map[string]string{}
 	for _, task := range tasks {
 		for _, call := range task.Expected {
 			if _, exists := arguments[call.Function]; !exists {
-				arguments[call.Function] = map[string]struct{}{}
+				arguments[call.Function] = map[string]string{}
 			}
 			var decoded map[string]json.RawMessage
 			if err := json.Unmarshal(call.Args, &decoded); err != nil {
 				continue
 			}
-			for name := range decoded {
-				arguments[call.Function][name] = struct{}{}
+			for name, value := range decoded {
+				// The declared type comes from the value the suite expects.
+				// Declaring everything a string and then scoring against a
+				// number asks the model to guess the harness's mistake: it
+				// obeys the schema, emits "200", and is marked wrong for it.
+				arguments[call.Function][name] = jsonTypeOf(value)
 			}
 		}
 	}
@@ -125,7 +129,7 @@ func Catalog(tasks []Task) ([]json.RawMessage, error) {
 		fields := make([]string, 0, len(properties))
 		for _, argument := range properties {
 			fields = append(fields, fmt.Sprintf(
-				`%q:{"type":"string","description":%q}`, argument, argument))
+				`%q:{"type":%q,"description":%q}`, argument, arguments[name][argument], argument))
 		}
 		tool := fmt.Sprintf(
 			`{"type":"function","name":%q,"description":%q,"parameters":{"type":"object","properties":{%s}}}`,
@@ -133,6 +137,32 @@ func Catalog(tasks []Task) ([]json.RawMessage, error) {
 		tools = append(tools, json.RawMessage(tool))
 	}
 	return tools, nil
+}
+
+// jsonTypeOf reports the JSON Schema type of a value the suite expects.
+//
+// A declared type that contradicts the expected value is not a small
+// inaccuracy: it is the harness testing whether the model will disobey the
+// schema it was given, and scoring it as if it had got the answer wrong.
+func jsonTypeOf(value json.RawMessage) string {
+	trimmed := strings.TrimSpace(string(value))
+	if trimmed == "" {
+		return "string"
+	}
+	switch trimmed[0] {
+	case '"':
+		return "string"
+	case '[':
+		return "array"
+	case '{':
+		return "object"
+	case 't', 'f':
+		return "boolean"
+	case 'n':
+		return "string"
+	default:
+		return "number"
+	}
 }
 
 // Options configures a run.

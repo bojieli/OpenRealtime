@@ -108,3 +108,24 @@ func TestScoreSeparatesTheCallFromItsArguments(t *testing.T) {
 		t.Fatalf("a later correct attempt counts once: names=%d arguments=%d", names, arguments)
 	}
 }
+
+// A tool schema the harness invents must agree with the values it scores.
+//
+// Every parameter used to be declared a string. The suite expects numbers for
+// prices and quantities, so a model that obeyed the schema and sent "200" was
+// marked wrong against 200 - which measures whether the model will disobey us,
+// not whether it understood the caller.
+func TestDeclaredTypesFollowTheExpectedValues(t *testing.T) {
+	for _, item := range []struct {
+		value string
+		want  string
+	}{
+		{`"K2"`, "string"}, {`200`, "number"}, {`2`, "number"}, {`1.5`, "number"},
+		{`true`, "boolean"}, {`["a"]`, "array"}, {`{"a":1}`, "object"},
+		{`null`, "string"}, {``, "string"},
+	} {
+		if got := jsonTypeOf([]byte(item.value)); got != item.want {
+			t.Errorf("%s declared as %q, want %q", item.value, got, item.want)
+		}
+	}
+}

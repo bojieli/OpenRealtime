@@ -15,6 +15,13 @@
 
 ### The benchmark harness
 
+- **A synthesised tool schema now agrees with the values it is scored against.**
+  FDB v3 declares its tools from the dataset, and declared every parameter a
+  string. The suite expects numbers for prices and quantities, so a model that
+  obeyed the schema and sent `"200"` was marked wrong against `200` — which
+  measures whether a model will disobey the harness, not whether it understood
+  the caller. The declared type now follows the expected value.
+
 - **Quiet is not completion while the agent still owes a response.** A
   conversation ended after three seconds without events, which is a reasonable
   test for a system that talks continuously and the wrong one for this system:
