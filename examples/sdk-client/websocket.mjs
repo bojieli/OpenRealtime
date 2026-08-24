@@ -103,7 +103,12 @@ try {
   ]);
   check("the official SDK connects to an OpenRealtime server", true, url);
 
-  await waitFor("session.created", () => seen.has("session.created"));
+  // Both halves, because both are what the handshake means. Waiting for
+  // session.created alone and then asserting session.updated had also arrived
+  // is a race the server loses whenever the machine is busy - and it loses it
+  // in the release gate, where a green run is the whole point.
+  await waitFor("the session handshake",
+    () => seen.has("session.created") && seen.has("session.updated"));
   check("the server completes the SDK's session handshake",
     seen.has("session.created") && seen.has("session.updated"),
     [...seen].filter((type) => type.startsWith("session.")).join(", "));
@@ -112,6 +117,12 @@ try {
   // tools, modalities, audio formats. All of that applies. What does not is
   // semantic_vad, which this deployment does not have - and the server says so
   // by name rather than substituting a detector the client did not ask for.
+  // The refusal travels with the session.update that provoked it, so it is
+  // waited for rather than sampled. Reading the list the instant the update
+  // lands is the same race one line up.
+  await waitFor("the refusal of the unsupported field",
+    () => errors.some((error) => error?.code === "unsupported_value"), 10000)
+    .catch(() => {});
   const unsupported = errors.filter((error) => error?.code === "unsupported_value");
   check("the unsupported field is refused by name, not silently substituted",
     unsupported.some((error) => error?.param === "session.audio.input.turn_detection.type"),

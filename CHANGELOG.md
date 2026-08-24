@@ -76,6 +76,27 @@
 
 ### Turn-taking
 
+- **A policy model may report that it does not know how sure it was, and an
+  unknown confidence is no longer read as a low one.** `confidenceOf` returned
+  `0.5` for "no log probabilities came back", which compares like a number: the
+  projection threshold is `0.7`, so every unmeasured answer was silently
+  discarded. Combined with a reasoning model that never reached its choice at
+  all, turn projection had never fired in either direction.
+- **The two projection answers no longer share a threshold.** Ending a turn
+  early cuts a person off mid-sentence; holding one open costs latency that
+  `-projection-hold` already bounds. The code said so in a comment and then
+  gated both on one value, which spends the cheap failure to avoid the
+  expensive one.
+
+### The release gate
+
+- **The official-SDK check no longer races its own handshake.** It waited for
+  `session.created` and then asserted `session.updated` had also arrived, which
+  is true whenever the machine is idle and false under load — so the one test
+  standing behind the compatibility claim failed four gate runs this week for
+  reasons that had nothing to do with the server. It waits for both, and for
+  the refusal that travels with them.
+
 - **A turn-projection model can now say the person has *not* finished.** It was
   asked a two-sided question — continuing or finished — with a prompt tuned to
   spot exactly the mid-thought pause, and only the "finished" half reached the

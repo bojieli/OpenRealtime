@@ -149,8 +149,29 @@ func (decision Decision) Validate() error {
 
 // Outcome is the chosen option and the model's confidence in it.
 type Outcome struct {
-	Index      int     `json:"index"`
-	Option     string  `json:"option"`
+	Index  int    `json:"index"`
+	Option string `json:"option"`
+	// Confidence is meaningful only when Measured is set.
+	//
+	// A server that returns no log probabilities, or returns them for a token
+	// matching no option, has told the caller nothing about how sure the model
+	// was. Reporting that as a number invites it to be compared against a
+	// threshold, and the comparison silently reads "unknown" as "not sure
+	// enough" - which is how a policy model can be called, answer, and have
+	// its answer discarded every single time without anything looking wrong.
 	Confidence float64 `json:"confidence"`
+	Measured   bool    `json:"measured,omitempty"`
 	ElapsedNS  uint64  `json:"elapsed_ns,omitempty"`
+}
+
+// Sure reports whether the outcome clears a threshold.
+//
+// An unmeasured confidence clears it. The model chose an option, and choosing
+// is the answer it was asked for; treating the absence of a probability as
+// evidence of doubt discards a decision that was actually made.
+func (outcome Outcome) Sure(threshold float64) bool {
+	if !outcome.Measured {
+		return true
+	}
+	return outcome.Confidence >= threshold
 }

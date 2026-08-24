@@ -134,9 +134,17 @@ type ProjectionOptions struct {
 	// projection is even considered. Projecting into the middle of a word is
 	// worse than waiting.
 	MinimumSilence time.Duration
-	// Confidence is the threshold a projection must clear to end a turn. A
-	// projected endpoint that is wrong cuts the user off, so this is
+	// Confidence is the threshold a projection must clear to end a turn early.
+	// A projected endpoint that is wrong cuts the user off, so this is
 	// deliberately conservative.
+	//
+	// There is deliberately no matching threshold for the other answer. The
+	// two failures are not symmetric and the comment above says so: ending a
+	// turn early cuts a person off mid-sentence, and holding one open costs
+	// latency that -projection-hold already bounds. Requiring the same
+	// evidence for both spends the cheap failure to avoid the expensive one,
+	// which is backwards - and in practice it discarded the answer that keeps
+	// people from being interrupted while they searched for a word.
 	Confidence float64
 }
 
@@ -215,13 +223,13 @@ func (policy *modelProjection) Project(decision Context) Projection {
 			decision.Revision.Text(), decision.Revision.SilenceNS/1_000_000),
 	})
 	result := Projection{Reason: "policy model declined to project"}
-	if err == nil && outcome.Option == "continuing" && outcome.Confidence >= policy.options.Confidence {
+	if err == nil && outcome.Option == "continuing" {
 		result = Projection{
 			Continuing: true, Confidence: outcome.Confidence,
 			Reason: "policy model judged the turn unfinished",
 		}
 	}
-	if err == nil && outcome.Option == "finished" && outcome.Confidence >= policy.options.Confidence {
+	if err == nil && outcome.Option == "finished" && outcome.Sure(policy.options.Confidence) {
 		result = Projection{
 			Ending: true, Confidence: outcome.Confidence,
 			Reason: "policy model projected the end of the turn",

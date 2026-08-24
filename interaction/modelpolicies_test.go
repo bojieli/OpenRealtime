@@ -35,7 +35,11 @@ func (decider *recordingDecider) Decide(
 	}
 	for index, option := range decision.Options {
 		if option == answer {
-			return interaction.Outcome{Index: index, Option: option, Confidence: confidence}, nil
+			// Measured, because a double that reports a confidence is
+			// standing in for a server that actually returned one.
+			return interaction.Outcome{
+				Index: index, Option: option, Confidence: confidence, Measured: true,
+			}, nil
 		}
 	}
 	return interaction.Outcome{}, nil
@@ -246,5 +250,65 @@ func TestPolicyModelsRequireADecider(t *testing.T) {
 	}
 	if _, err := interaction.NewModelProjection(nil, interaction.ProjectionOptions{}); err == nil {
 		t.Fatal("a model-backed policy needs a model")
+	}
+}
+
+// answering is a decider that returns one option, with or without a measured
+// confidence, so both halves of the asymmetry can be tested.
+type answering struct {
+	option     string
+	confidence float64
+	measured   bool
+}
+
+func (answering) Name() string { return "answering" }
+func (decider answering) Decide(context.Context, interaction.Decision) (interaction.Outcome, error) {
+	return interaction.Outcome{
+		Option: decider.option, Confidence: decider.confidence, Measured: decider.measured,
+	}, nil
+}
+
+// An endpoint that fires early cuts a person off mid-sentence, so it needs
+// evidence. Holding one open costs latency the hold already bounds, so it does
+// not - and requiring the same evidence for both spends the cheap failure to
+// avoid the expensive one.
+func TestEndingEarlyNeedsEvidenceAndWaitingDoesNot(t *testing.T) {
+	unsure := interaction.ProjectionOptions{Confidence: 0.7, MinimumSilence: time.Millisecond}
+	decision := interaction.Context{
+		Revision: interaction.Revision{ID: 1, StableText: "the order id is", SilenceNS: uint64(time.Second)},
+	}
+
+	early, err := interaction.NewModelProjection(answering{option: "finished", confidence: 0.4, measured: true}, unsure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if early.Project(decision).Ending {
+		t.Error("a poorly evidenced endpoint must not cut the user off")
+	}
+
+	waiting, err := interaction.NewModelProjection(answering{option: "continuing", confidence: 0.4, measured: true}, unsure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !waiting.Project(decision).Continuing {
+		t.Error("waiting a moment longer does not need the same evidence")
+	}
+}
+
+// A server that returns no log probabilities has said nothing about how sure
+// the model was. Reading that as "not sure enough" discards a decision the
+// model actually made - which is how turn projection ran for months without
+// ever firing.
+func TestAnUnmeasuredConfidenceIsNotALowOne(t *testing.T) {
+	options := interaction.ProjectionOptions{Confidence: 0.7, MinimumSilence: time.Millisecond}
+	policy, err := interaction.NewModelProjection(answering{option: "finished"}, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projected := policy.Project(interaction.Context{
+		Revision: interaction.Revision{ID: 1, StableText: "that is all", SilenceNS: uint64(time.Second)},
+	})
+	if !projected.Ending {
+		t.Fatalf("an unmeasured answer is still an answer: %+v", projected)
 	}
 }

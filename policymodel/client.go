@@ -264,10 +264,11 @@ func (client *Client) Decide(ctx context.Context, decision interaction.Decision)
 			"policy model answered %q, which is not one of %s", answer, strings.Join(decision.Options, ", "))
 	}
 	client.decisions.Add(1)
+	confidence, measured := confidenceOf(decoded, decision.Options[index])
 	return interaction.Outcome{
 		Index: index, Option: decision.Options[index],
-		Confidence: confidenceOf(decoded, decision.Options[index]),
-		ElapsedNS:  uint64(elapsed.Nanoseconds()),
+		Confidence: confidence, Measured: measured,
+		ElapsedNS: uint64(elapsed.Nanoseconds()),
 	}, nil
 }
 
@@ -294,10 +295,15 @@ func match(answer string, options []string) int {
 // confidenceOf reads the chosen token's probability where the server reported
 // log probabilities, and reports a neutral value where it did not. A caller
 // that thresholds on confidence should not be silently handed a one.
-func confidenceOf(response chatResponse, option string) float64 {
+// confidenceOf reports how sure the model was, and whether that is known.
+//
+// It used to return 0.5 for "no idea", which reads as a number and compares
+// like one: against a 0.7 threshold every unmeasured answer was silently
+// treated as an unsure answer and thrown away.
+func confidenceOf(response chatResponse, option string) (float64, bool) {
 	logprobs := response.Choices[0].Logprobs
 	if logprobs == nil || len(logprobs.Content) == 0 {
-		return 0.5
+		return 0, false
 	}
 	best := 0.0
 	for _, candidate := range logprobs.Content[0].TopLogprobs {
@@ -310,9 +316,9 @@ func confidenceOf(response chatResponse, option string) float64 {
 		}
 	}
 	if best <= 0 {
-		return 0.5
+		return 0, false
 	}
-	return min(best, 1)
+	return min(best, 1), true
 }
 
 // Metrics is operational telemetry with no conversation content in it.
