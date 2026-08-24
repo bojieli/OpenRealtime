@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"unicode"
 )
 
 const Version = "1.0.0"
@@ -73,6 +74,20 @@ func (frame AudioFrame) EndSample() (uint64, error) {
 	return frame.SampleOffset + uint64(len(frame.PCM16LE)/2), nil
 }
 
+// PerceptionRevision is what a recogniser heard, so far.
+//
+// A revision may report that it heard nothing, and reporting nothing is a
+// result rather than an absence of one: a recogniser asked about audio with no
+// words in it has done its job when it says so. There is no field for it
+// because there is no answer every recogniser could give - most cannot
+// distinguish silence from an unintelligible sound - so the report is carried
+// in the text, and CarriesSpeech is how it is read.
+//
+// The distinction matters more than it sounds. An observation built from a
+// revision is a claim that the user said something, and the log keeps it
+// forever: room tone admitted as a turn gets answered, the answer cancels
+// whatever the agent was already saying, and a caller hears their own reply cut
+// off to make room for nothing.
 type PerceptionRevision struct {
 	RevisionID   uint64 `json:"revision_id"`
 	SourceSample uint64 `json:"source_sample"`
@@ -80,6 +95,31 @@ type PerceptionRevision struct {
 	UnstableText string `json:"unstable_text"`
 	Delta        string `json:"delta"`
 	Final        bool   `json:"final"`
+}
+
+// CarriesSpeech reports whether a transcript contains anything a person said.
+//
+// It lives here rather than in a consumer because it is part of the contract:
+// every adapter reports "no words" the same way, and every consumer has to
+// read it the same way, or one of them turns punctuation into a turn.
+//
+// The test is a letter or a digit anywhere in the text. Recognisers answer the
+// empty case differently - SenseVoice returns ".", others return whatever
+// punctuation their language model expects around nothing - and asking Unicode
+// rather than stripping a list of characters somebody once noticed is what
+// makes it hold in scripts nobody tested against.
+func (revision PerceptionRevision) CarriesSpeech() bool {
+	return CarriesSpeech(revision.StableText + revision.UnstableText)
+}
+
+// CarriesSpeech reports whether text contains anything a person said.
+func CarriesSpeech(text string) bool {
+	for _, symbol := range text {
+		if unicode.IsLetter(symbol) || unicode.IsDigit(symbol) {
+			return true
+		}
+	}
+	return false
 }
 
 type PerceptionProvider interface {

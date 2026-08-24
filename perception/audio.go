@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -403,16 +402,10 @@ func (observer *AudioObserver) DurationMS() uint64 {
 // contract here is "what the user said", and text with no letter and no digit
 // in it says nothing - in any script, which is why this asks Unicode rather
 // than stripping a list of characters somebody noticed once.
-// CarriesSpeech is exported so the rule can be tested directly: it is the one
-// place that decides whether a recogniser heard anything at all.
-func CarriesSpeech(text string) bool {
-	for _, symbol := range text {
-		if unicode.IsLetter(symbol) || unicode.IsDigit(symbol) {
-			return true
-		}
-	}
-	return false
-}
+// CarriesSpeech re-exports the api/v1 contract, which is where it belongs: the
+// rule has to be the same for every adapter that reports "no words" and every
+// consumer that reads it, or one of them turns punctuation into a turn.
+func CarriesSpeech(text string) bool { return v1.CarriesSpeech(text) }
 
 func (observer *AudioObserver) observationFor(revision v1.PerceptionRevision, capturedNS uint64, final bool) (Observation, bool) {
 	text := revision.StableText + revision.UnstableText

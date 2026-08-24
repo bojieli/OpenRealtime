@@ -120,6 +120,38 @@ is preparation that will not be ready by the endpoint, which costs tokens and
 saves no latency — turn it off with `-preparation endpoint-only` or raise the
 capacity.
 
+## The silence thresholds, and how they compose
+
+Five numbers decide what silence means, they live in three packages, and each
+is individually documented in a place that does not mention the others. They
+are listed together here because a deployment that changes one has changed a
+relationship, and because one of them silently overrode another until it was
+measured.
+
+| Setting | Default | Question it answers |
+| --- | --- | --- |
+| gate `SpeechDurationMS` | 120 ms | has a person started speaking, or was that a door |
+| gate `PrefixPaddingMS` | 300 ms | how much of the onset to keep once the answer is yes |
+| gate `SilenceDurationMS` | 500 ms | is this person still audible |
+| `-projection-hold` | 1 s | how much longer to wait when a model says they are mid-thought |
+| `-asr-cadence` | 200 ms | how often to ask the recogniser what it has |
+
+They are ordered, and the order is the point. The gate decides audibility and
+nothing else: below `SpeechDurationMS` there is no turn, and after
+`SilenceDurationMS` the person is no longer audible. Whether a turn has *ended*
+is a separate question, asked of the floor, and the floor may keep it open for
+up to `-projection-hold` beyond the gate's answer. So the longest a turn can
+stay open on silence alone is `SilenceDurationMS + projection-hold` — 1.5
+seconds by default — and past that it ends whatever any model thinks, because a
+floor that can be argued out of closing is not a floor.
+
+`-asr-cadence` is orthogonal and easy to mistake for one of these. It sets how
+often the recogniser is asked, which bounds how *stale* the words behind every
+decision above can be; it does not decide anything by itself. Watch it against
+`advance_mean_elapsed_ns`: a mean approaching the cadence is a recogniser that
+cannot keep up, and every threshold above is then being applied to a transcript
+older than it looks.
+
 ## Failure behaviour
 
 - **A provider fails.** The session survives and the client sees an `error`

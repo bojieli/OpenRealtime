@@ -42,3 +42,29 @@ func TestVersionAndDescriptorAreStable(t *testing.T) {
 		t.Fatalf("invalid descriptor: %v", err)
 	}
 }
+
+// A recogniser asked about audio with no words in it still answers, and the
+// answers differ: SenseVoice says ".", others return whatever punctuation
+// their language model puts around nothing. Every adapter has to report that
+// the same way and every consumer has to read it the same way, or one of them
+// turns room tone into something the user said.
+func TestARevisionWithNoWordsReportsNoSpeech(t *testing.T) {
+	for _, text := range []string{"", " ", ".", " . ", "。", "…", "-", "!?", "、。"} {
+		revision := PerceptionRevision{StableText: text}
+		if revision.CarriesSpeech() {
+			t.Errorf("%q has no words in it", text)
+		}
+	}
+	for _, text := range []string{"hello", "嗯", "42", "ABC123", "a.", "¿qué?"} {
+		revision := PerceptionRevision{StableText: text}
+		if !revision.CarriesSpeech() {
+			t.Errorf("%q is something the user said", text)
+		}
+	}
+	// The two halves are read together, because a stable prefix with an
+	// unstable tail is one transcript.
+	split := PerceptionRevision{StableText: ".", UnstableText: "hello"}
+	if !split.CarriesSpeech() {
+		t.Error("the unstable half is part of what was heard")
+	}
+}

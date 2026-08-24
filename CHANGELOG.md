@@ -71,6 +71,17 @@
 
 ### Perception
 
+- **"I heard nothing" is part of the perception contract.** `PerceptionRevision`
+  had no documentation at all, so what an empty or punctuation-only transcript
+  meant was left to each consumer to guess, and one guessed that it was
+  something the user said. The rule now sits on the type, with the predicate
+  beside it: every adapter reports no-words the same way and every consumer
+  reads it the same way.
+- **The five silence thresholds are written down together.** They live in three
+  packages, each documented where the others are not, and one silently overrode
+  another until it was measured. Operations now states the order they compose
+  in and the longest a turn can stay open on silence alone.
+
 - **Room tone no longer becomes a turn.** The acoustic gate opened on any block
   above its threshold, so anything percussive started an utterance, and a
   recogniser asked what was in it answered "." — which the only content check,
