@@ -312,6 +312,15 @@ func (runtime *runtime) publishAssistant(ctx context.Context, result continuatio
 	if strings.TrimSpace(result.AssistantText) == "" || !result.Committed {
 		return nil
 	}
+	// A model that writes a tool call as prose instead of emitting one has not
+	// said anything a person should hear. Measured on a phone menu, the text
+	// [{"name":"press_key","arguments":{"key":"2"}}] was spoken aloud - the
+	// worst kind of leak, because it is both useless and unmistakably a bug to
+	// whoever is listening. There is nothing to salvage: the call is malformed
+	// as a call and the sentence is malformed as speech.
+	if looksLikeToolCall(result.AssistantText) {
+		return nil
+	}
 	items := runtime.assistantItems(result)
 	if len(items) == 0 {
 		return nil
@@ -564,3 +573,24 @@ func (runtime *runtime) latestRevision(batch eventloop.Batch) uint64 {
 }
 
 var _ eventloop.Processor = (*runtime)(nil)
+
+// looksLikeToolCall reports whether text is a model emitting a call as prose.
+//
+// Deliberately narrow. It matches a JSON object or array carrying the keys a
+// call is made of, which is a shape no spoken sentence has, and leaves
+// everything else alone - a guard that swallows real speech to catch this
+// would trade a rare embarrassment for a common silence.
+func looksLikeToolCall(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if len(trimmed) < 2 {
+		return false
+	}
+	if trimmed[0] != '{' && trimmed[0] != '[' {
+		return false
+	}
+	lowered := strings.ToLower(trimmed)
+	if !strings.Contains(lowered, `"name"`) && !strings.Contains(lowered, `"function"`) {
+		return false
+	}
+	return strings.Contains(lowered, `"arguments"`) || strings.Contains(lowered, `"parameters"`)
+}
