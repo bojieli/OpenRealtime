@@ -532,7 +532,11 @@ func (runtime *runtime) commitObservation(ctx context.Context, observation perce
 	if err := runtime.sink.Observation(ctx, observation); err != nil {
 		return err
 	}
-	if observation.Authority == trajectory.AuthorityUser && observation.Final {
+	if observation.Authority == trajectory.AuthorityUser && observation.Final && !observation.Described {
+		// Not a description of a picture. The pass asks what the person just
+		// asked for or took back, and a narrator's account of a terminal
+		// window is neither: measured, one screen description in five revoked
+		// the standing policy the conversation was running on.
 		runtime.noticeStanding(observation.Text)
 	}
 	_, err := runtime.coordinator.Submit(eventloop.Event{
@@ -656,7 +660,7 @@ func (runtime *runtime) describeAttachment(
 		}
 		observation := perception.Observation{
 			Text: text, Observer: "client", Source: "text",
-			Authority: authority, Media: media, Final: true,
+			Authority: authority, Media: media, Final: true, Described: true,
 		}
 		if err := runtime.commitObservation(runtime.ctx, observation); err != nil &&
 			runtime.ctx.Err() == nil {

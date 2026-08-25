@@ -110,6 +110,12 @@ type Observation struct {
 	Authority trajectory.Authority `json:"authority"`
 	// Media are handles to attachments retained outside the trajectory.
 	Media []trajectory.MediaRef `json:"media,omitempty"`
+	// Described marks text that says what the media shows rather than what the
+	// person said. A picture a client attaches carries user authority, because
+	// somebody putting a screenshot in front of an agent is somebody talking -
+	// but the sentence describing it was written by a narrator, and anything
+	// reading it for what the person asked for is reading the wrong author.
+	Described bool `json:"described,omitempty"`
 	// Revision numbers successive views of the same continuous input.
 	Revision uint64 `json:"revision,omitempty"`
 	// Supersedes names an earlier revision this observation replaces.
