@@ -36,7 +36,7 @@ const (
 // nobody will connect to the sentence that caused it.
 func StandingInstructionCases() []Case {
 	said := func(name, utterance, note string, accept []Action, forbid ...Action) Case {
-		return inForce(nil, name, utterance, note, accept, forbid...)
+		return inForce(nil, nil, name, utterance, note, accept, forbid...)
 	}
 	standing := func(text string, scope interaction.Scope) interaction.StandingInstruction {
 		return interaction.StandingInstruction{Text: text, Scope: scope}
@@ -96,19 +96,29 @@ func StandingInstructionCases() []Case {
 		// --- lifting a policy that was set earlier ---
 		inForce([]interaction.StandingInstruction{
 			standing("do not interrupt them while they are talking", interaction.ScopeConversation),
-		}, "permission-to-interrupt", "Okay, you can interrupt me now.",
+		}, nil, "permission-to-interrupt", "Okay, you can interrupt me now.",
 			"a revocation is only visible against the thing it lifts",
 			[]Action{ActRevoke}, ActNoPolicy, ActPinConversation),
 		inForce([]interaction.StandingInstruction{
 			standing("tell them when the kettle has boiled", interaction.ScopeConversation),
-		}, "never-mind-kettle", "Actually never mind about the kettle, you don't need to tell me.", "",
+		}, nil, "never-mind-kettle", "Actually never mind about the kettle, you don't need to tell me.", "",
 			[]Action{ActRevoke}, ActPinConversation),
 
 		inForce([]interaction.StandingInstruction{
 			standing("do not interrupt them while they are talking", interaction.ScopeConversation),
-		}, "adds-a-second-policy", "Also, tell me if the courier turns up.",
+		}, nil, "adds-a-second-policy", "Also, tell me if the courier turns up.",
 			"a new policy alongside an existing one is not a revocation of it",
 			policy, ActRevoke, ActNoPolicy),
+
+		inForce([]interaction.StandingInstruction{
+			standing("count the animals out loud as they are mentioned", interaction.ScopeConversation),
+		}, []string{
+			"user: I'm going to tell you about my afternoon.",
+			"agent: Tell me about your afternoon.",
+			"user: Count the animals out loud, as I mention them.",
+		}, "continues-the-previous-sentence", "And say nothing else.",
+			"a recogniser splits where a speaker breathes; this fragment qualifies the policy and does not lift it",
+			[]Action{ActNoPolicy, ActPinConversation}, ActRevoke),
 
 		// --- an immediate command is obeyed, not pinned ---
 		said("stop-now", "Stop.",
@@ -124,12 +134,12 @@ func StandingInstructionCases() []Case {
 // rendered block rather than the parts, so what a case asserts is exactly what
 // a model was shown.
 func inForce(
-	existing []interaction.StandingInstruction, name, utterance, note string,
+	existing []interaction.StandingInstruction, recent []string, name, utterance, note string,
 	accept []Action, forbid ...Action,
 ) Case {
 	return Case{
 		Name: name, Decision: DecisionStandingInstruction,
-		Context: interaction.RenderForExtraction(existing, utterance),
+		Context: interaction.RenderForExtraction(existing, recent, utterance),
 		Accept:  accept, Forbid: forbid, Note: note,
 	}
 }

@@ -62,6 +62,7 @@ var ExtractionInstruction = buildExtraction()
 
 type extractionExample struct {
 	existing  []StandingInstruction
+	recent    []string
 	utterance string
 	answer    string
 }
@@ -69,14 +70,16 @@ type extractionExample struct {
 func extractionExamples() []extractionExample {
 	watching := []StandingInstruction{{Text: "shout if you see the train coming", Scope: ScopeConversation}}
 	return []extractionExample{
-		{nil, "Book me a table for four at eight.", "none"},
-		{nil, "Keep your answers to a sentence or two.", "none"},
-		{nil, "Shout if you see the train coming.", "pin conversation shout if you see the train coming"},
-		{nil, "Hang on, I haven't got to the point yet.", "pin turn do not reply until they have made their point"},
-		{watching, "Forget about the train, I can see it now.", "revoke shout if you see the train coming"},
-		{watching, "Also let me know if it starts raining.", "pin conversation say something if it starts raining"},
-		{nil, "Give me a nudge if I start talking too fast.", "pin conversation tell them if they start talking too fast"},
-		{nil, "Never talk over me when I'm reading something out.", "pin conversation do not speak while they are reading something out"},
+		{nil, nil, "Book me a table for four at eight.", "none"},
+		{nil, nil, "Keep your answers to a sentence or two.", "none"},
+		{nil, nil, "Shout if you see the train coming.", "pin conversation shout if you see the train coming"},
+		{nil, nil, "Hang on, I haven't got to the point yet.", "pin turn do not reply until they have made their point"},
+		{watching, nil, "Forget about the train, I can see it now.", "revoke shout if you see the train coming"},
+		{watching, nil, "Also let me know if it starts raining.", "pin conversation say something if it starts raining"},
+		{nil, nil, "Give me a nudge if I start talking too fast.", "pin conversation tell them if they start talking too fast"},
+		{nil, nil, "Never talk over me when I'm reading something out.", "pin conversation do not speak while they are reading something out"},
+		{watching, []string{"user: Shout if you see the train coming.", "agent: Will do."},
+			"And nothing else, please.", "none"},
 	}
 }
 
@@ -104,6 +107,10 @@ func buildExtraction() string {
 			"Phrasing decides this, not subject. \"Don't interrupt me\" and \"hang on, I'm not finished\" are " +
 			"both about interruption and are not the same scope: the first says how the conversation should " +
 			"go, and the second asks for a few more seconds.\n\n" +
+			"A sentence can arrive in pieces, because a recogniser splits where a speaker breathes. Read the " +
+			"utterance against what was just said: a fragment that continues the previous sentence qualifies " +
+			"it and does not replace it. Revoke only when they are plainly taking back something on the list " +
+			"above, not when they are still finishing the thought that put it there.\n\n" +
 			"An immediate command is not a policy. The test is whether obeying it takes one action or requires " +
 			"watching for something: \"stop\" is finished the moment it is obeyed and is none, while \"let me " +
 			"finish\" means staying quiet until a condition holds and is a policy for this turn. Neither is a " +
@@ -113,7 +120,7 @@ func buildExtraction() string {
 			"Write the policy back as a short instruction to the agent, in the speaker's own words where you " +
 			"can.\n\nWorked examples. These are other conversations, not this one.\n")
 	for _, example := range extractionExamples() {
-		text.WriteString("\n---\n" + RenderForExtraction(example.existing, example.utterance) +
+		text.WriteString("\n---\n" + RenderForExtraction(example.existing, example.recent, example.utterance) +
 			"\n-> " + example.answer + "\n")
 	}
 	text.WriteString("\n---\nNow decide the case below. Reply with one line and nothing else.")
@@ -127,8 +134,22 @@ func buildExtraction() string {
 // something if the kettle instruction is on the page. Both models tested
 // answered "none" to every revocation until they were shown what there was to
 // revoke.
-func RenderForExtraction(existing []StandingInstruction, utterance string) string {
+//
+// It carries the recent conversation for the opposite reason. A recogniser
+// splits sentences where a speaker breathes, so an instruction arrives in
+// pieces, and a piece read alone means something else entirely: "count the
+// animals out loud, as I mention them" followed by "and say nothing else"
+// produced a pin and then a revocation of that same pin two seconds later.
+// Which is a fair reading of the fragment and a wrong one of the sentence.
+func RenderForExtraction(existing []StandingInstruction, recent []string, utterance string) string {
 	var block strings.Builder
+	if len(recent) > 0 {
+		block.WriteString("Recent conversation:\n")
+		for _, line := range recent {
+			block.WriteString(line + "\n")
+		}
+		block.WriteString("\n")
+	}
 	if len(existing) > 0 {
 		block.WriteString("Policies already in force:\n")
 		for _, pinned := range existing {
@@ -176,7 +197,7 @@ type Extractor interface {
 	Name() string
 	// Extract reads one finished utterance against the policies already in
 	// force, and returns what to do about it.
-	Extract(ctx context.Context, existing []StandingInstruction, utterance string) (Extraction, error)
+	Extract(ctx context.Context, existing []StandingInstruction, recent []string, utterance string) (Extraction, error)
 }
 
 // Extraction is what an utterance did to the set of standing policies.
@@ -206,13 +227,13 @@ func (extractor modelExtractor) Name() string { return "extract:" + extractor.ge
 // what the model should lean towards, not about what this should invent when
 // the model has said something it does not understand.
 func (extractor modelExtractor) Extract(
-	ctx context.Context, existing []StandingInstruction, utterance string,
+	ctx context.Context, existing []StandingInstruction, recent []string, utterance string,
 ) (Extraction, error) {
 	if !v1.CarriesSpeech(utterance) {
 		return Extraction{Kind: "none"}, nil
 	}
 	answer, err := extractor.generator.Generate(
-		ctx, ExtractionInstruction, RenderForExtraction(existing, utterance), 96)
+		ctx, ExtractionInstruction, RenderForExtraction(existing, recent, utterance), 96)
 	if err != nil {
 		return Extraction{}, err
 	}

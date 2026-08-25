@@ -83,6 +83,14 @@ func InteractionCases() []Case {
 		}, "a pause mid-thought during a story someone asked to tell uninterrupted",
 			[]Action{ActStaySilent}, ActAnswer, ActInterrupt, ActSpeakThrough),
 
+		act("count-pause-complete-sentence", interaction.Situation{
+			Pins:    []string{"count the animals out loud as I mention them and say nothing else (2m ago)"},
+			Recent:  story,
+			Silence: "900ms",
+			Heard:   "it was a warm afternoon and I was walking along by the river",
+		}, "the hard half of the pair: a finished sentence, a real pause, and a policy that still says nothing",
+			[]Action{ActStaySilent}, ActAnswer, ActInterrupt, ActSpeakThrough),
+
 		act("pause-after-question", interaction.Situation{
 			Recent:  []string{"user: I need to check something"},
 			Silence: "900ms",

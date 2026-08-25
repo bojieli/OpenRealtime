@@ -123,3 +123,23 @@ func windowLine(item trajectory.Item) string {
 		return ""
 	}
 }
+
+// RecentLines is the tail of a conversation, for a reader that needs context
+// without owning a window.
+//
+// It is separate from Window because Window carries hysteresis state: calling
+// it from two places would move the truncation point for reasons the other
+// caller knows nothing about, and the cache it exists to protect is the
+// interaction model's alone.
+func RecentLines(items []trajectory.Item, max int) []string {
+	if max <= 0 {
+		max = 6
+	}
+	var lines []string
+	for index := len(items) - 1; index >= 0 && len(lines) < max; index-- {
+		if line := windowLine(items[index]); line != "" {
+			lines = append([]string{line}, lines...)
+		}
+	}
+	return lines
+}

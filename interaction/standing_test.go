@@ -42,14 +42,14 @@ func TestParsePinRefusesToGuess(t *testing.T) {
 func TestRenderForExtractionShowsWhatIsInForce(t *testing.T) {
 	block := interaction.RenderForExtraction([]interaction.StandingInstruction{
 		{Text: "tell them when the kettle has boiled", Scope: interaction.ScopeConversation},
-	}, "never mind about the kettle")
+	}, nil, "never mind about the kettle")
 	if !strings.Contains(block, "tell them when the kettle has boiled") {
 		t.Fatalf("the policy being lifted was not shown:\n%s", block)
 	}
 	if !strings.Contains(block, "never mind about the kettle") {
 		t.Fatalf("the utterance was not shown:\n%s", block)
 	}
-	empty := interaction.RenderForExtraction(nil, "hello")
+	empty := interaction.RenderForExtraction(nil, nil, "hello")
 	if !strings.Contains(empty, "No policies") {
 		t.Fatalf("an empty policy list must say so rather than omit the section:\n%s", empty)
 	}

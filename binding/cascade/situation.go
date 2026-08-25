@@ -194,8 +194,11 @@ func (runtime *runtime) noticeStanding(text string) {
 	runtime.wait.Add(1)
 	go func() {
 		defer runtime.wait.Done()
+		// The conversation, not just the utterance: a recogniser splits where a
+		// speaker breathes, and a fragment read alone means something else.
+		recent := interaction.RecentLines(runtime.store.Snapshot().Items, 6)
 		extraction, err := runtime.policies.Extraction.Extract(
-			runtime.ctx, runtime.pinboard.InForce(), text)
+			runtime.ctx, runtime.pinboard.InForce(), recent, text)
 		if recorder := runtime.policies.ShadowInteraction; recorder != nil {
 			outcome := extraction.Kind
 			if err != nil {
