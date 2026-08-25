@@ -113,3 +113,87 @@ demo at 0/2; the interaction model alone left it at 0/3; together it is 5/6.
 The interaction model supplies acts at the right instants and cannot control
 what is said into them; the voice does what the act asked and has no idea when
 to be asked.
+
+## The acts were right and the machinery around them was not
+
+Every defect in this section was found the same way: by reading what each model
+was actually handed, rather than by reasoning about what it should have
+decided. All of them looked, from outside, like the interaction model choosing
+wrongly. None of them were.
+
+**An interruption was cancelled by the sentence it was interrupting.** The
+shipped barge-in policy yields the floor the moment the user speaks. Speech the
+agent began deliberately over somebody who already had the floor is the one
+case where that is wrong, and the policy could not tell the two apart. In the
+recording the difference is unmistakable: a turn produced in silence emits four
+to six seconds of audio, a turn produced over somebody emits exactly one
+hundred-millisecond frame and stops. The guard for this already existed for
+backchannels, on an argument that was never about backchannels - cancelling
+overlap the agent chose is the agent interrupting itself.
+
+A first attempt read the marker from the duplex state when the audio was
+queued, and failed on exactly the case it was for: the recogniser cuts one
+sentence into several stretches, so by then the stretch being answered had
+closed and reopened. It has to come from the act, which is the thing that
+knew.
+
+**The sentence an interjection exists for was never in the conversation.** It
+went into the instruction - "what they have said so far is ..." - and nowhere
+else, so the conversation handed to the provider ended with whatever the agent
+last said. Asked to continue from its own last turn with nothing new addressed
+to it, a provider says nothing:
+
+| what the conversation ends with | three calls |
+| --- | --- |
+| the agent's own "1" | `''` `''` `''` |
+| the same call, the next animal as a user turn | `'2'` `'2'` `'2'` |
+
+Five instruction variants were tried before that, down to six hundred
+characters. Every one returned empty. This was the whole of three separate
+failures - the second animal, the second sentence of an interpretation, the
+dish that fits - and every one of them had been filed as a prompt problem.
+
+**A recogniser cuts where somebody breathes, and both halves read alone are
+wrong.** "Tell me the moment the build finishes and don't say anything else"
+arrives as two utterances. The front half pins a truncation; the back half,
+capitalised and punctuated like a sentence of its own, revokes it - five times
+out of five against the model that runs the pass. Joined, the same model pins
+the whole instruction with a scope that outlives the turn.
+
+Which pieces belong together is a fact about the clock rather than the words,
+and the runtime already measures it for the interaction model: 115 and 210
+milliseconds on the splits this was found on, against seconds for a genuine new
+turn.
+
+**A picture reached only the model that can see.** A client attaching an image
+is the ordinary way to show an agent a screen. Everything else in the session
+was handed the sentence "The user attached an image", including the layer
+deciding whether this was a moment to speak at - so on the visual case it was
+choosing between silence and speech about a screen it had been told nothing
+about. Reading a whole run of its situations back, no description of a screen
+appears anywhere. A video observer narrates every frame for this reason; the
+attachment path had nothing.
+
+And the description is a narrator's account, not something the person said, so
+the pass that lifts standing policies out of speech must not read it: one
+screen description in five revoked the policy the conversation was running on.
+
+**One target, one repair obligation.** An assistant item can be cut off,
+corrected, and cut off again. The canonical order recorded a target's place
+each time it became pending rather than the first time it was seen, so the
+second cycle listed it twice - and the caller turned each entry into a
+resolving item, producing a batch that resolved the same repair twice. The
+second is rejected, the batch is refused whole, the obligation never clears,
+and the session dies a few seconds later.
+
+### What this cost, and what it says about method
+
+Six defects, all in the space between a decision and its execution. The
+interaction model's accuracy was never the thing standing in the way, and three
+separate attempts to improve it by rewording something were wasted.
+
+The instrument that ended it was small: record what a turn was asked for
+whenever it produces nothing anybody hears. Three things can silence a turn -
+the model returns nothing, the output never reaches a safe point, the
+commitment policy holds it - and all three returned silently. From outside they
+are indistinguishable from the decision layer being wrong.
