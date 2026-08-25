@@ -28,7 +28,14 @@ type ActFloorOptions struct {
 	// primary rule is one interruption per stretch of speech, and this is only
 	// here to catch a speaker whose every sentence gets cut into.
 	//
-	// Zero selects two seconds.
+	// Zero selects five seconds.
+	//
+	// Two was too short and the reason is the recogniser: it commits and starts
+	// a fresh utterance every few seconds, so each fragment of one monologue
+	// looks like a new stretch of speech and the prefix test lets it through.
+	// Measured, that produced five interruptions in ten seconds, each 2.3
+	// seconds after the last and each just clearing the bound. A person cutting
+	// into the same monologue five times is not interrupting them.
 	MinimumBetweenInterruptions time.Duration
 	// Liveness is the longest the model may hold the floor past that point.
 	//
@@ -60,7 +67,7 @@ func NewActFloor(model *InteractionModel, options ActFloorOptions) (Floor, error
 		options.Liveness = 20 * time.Second
 	}
 	if options.MinimumBetweenInterruptions <= 0 {
-		options.MinimumBetweenInterruptions = 2 * time.Second
+		options.MinimumBetweenInterruptions = 5 * time.Second
 	}
 	return &actFloor{model: model, options: options}, nil
 }

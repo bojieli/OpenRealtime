@@ -202,7 +202,7 @@ func TestActFloorInterruptsOncePerStretchOfSpeech(t *testing.T) {
 	}
 	floor, err := interaction.NewActFloor(model, interaction.ActFloorOptions{
 		SilenceDuration: 500 * time.Millisecond, Liveness: 20 * time.Second,
-		MinimumBetweenInterruptions: 2 * time.Second,
+		MinimumBetweenInterruptions: 5 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
