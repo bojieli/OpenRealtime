@@ -196,10 +196,21 @@ func (runtime *runtime) holdsThroughPause(nowNS uint64, latest interaction.Revis
 	// before it.
 	state := runtime.duplex.Snapshot()
 	state.UserSpeaking = false
-	decision := runtime.policies.Floor.Endpoint(interaction.Context{
-		NowNS: nowNS, Duplex: state, Revision: latest,
-	})
-	if decision.Ended {
+	decision := interaction.Context{NowNS: nowNS, Duplex: state, Revision: latest}
+	// This is the moment that decides whether a pause ends a turn, and it is
+	// the moment a floor that reads the conversation most needs to read it.
+	// Without this the interaction model can only add endpoints and never
+	// withhold one: every silence-driven ending goes through here, and a floor
+	// handed no conversation falls back to the rule it was installed to
+	// replace. "Don't interrupt me while I think" cannot work from anywhere
+	// else.
+	if runtime.policies.Interaction != nil {
+		situation := runtime.situation(decision)
+		decision.Situation = &situation
+	}
+	endpoint := runtime.policies.Floor.Endpoint(decision)
+	if endpoint.Ended {
+		runtime.setInterjecting(endpoint.Act == interaction.ActInterrupt)
 		runtime.audioMu.Lock()
 		runtime.pauseStartNS = 0
 		runtime.audioMu.Unlock()

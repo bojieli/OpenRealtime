@@ -76,6 +76,7 @@ func extractionExamples() []extractionExample {
 		{watching, "Forget about the train, I can see it now.", "revoke shout if you see the train coming"},
 		{watching, "Also let me know if it starts raining.", "pin conversation say something if it starts raining"},
 		{nil, "Give me a nudge if I start talking too fast.", "pin conversation tell them if they start talking too fast"},
+		{nil, "Never talk over me when I'm reading something out.", "pin conversation do not speak while they are reading something out"},
 	}
 }
 
@@ -94,10 +95,15 @@ func buildExtraction() string {
 			"do and never when to say it. Neither does style: \"give me shorter answers\" and \"always include " +
 			"the order number\" change the shape of replies the agent was going to make anyway, and start none " +
 			"of them. If nothing new would ever cause the agent to speak, it is not a policy.\n\n" +
-			"For scope, ask one question: once this speaker stops talking, does the policy still apply? If it " +
-			"does, it is a conversation policy. Only if it dies the moment they finish - hang on, wait, let me " +
-			"finish, not yet - is it a turn policy. Watching for something that has not happened yet outlives " +
-			"the sentence that asked for it, so it is a conversation policy however briefly it was asked for.\n\n" +
+			"For scope, ask whether they stated a rule or made a request about this moment. A rule describes " +
+			"how things should go from now on and survives the sentence that stated it - never talk over me, " +
+			"always tell me when it lands, count them as I go - and is a conversation policy however briefly " +
+			"it was put. A request about this moment dies when the moment does: hang on, wait, not yet, let me " +
+			"finish this thought. Watching for something that has not happened yet is always a rule, because " +
+			"the thing being watched for has not happened yet.\n\n" +
+			"Phrasing decides this, not subject. \"Don't interrupt me\" and \"hang on, I'm not finished\" are " +
+			"both about interruption and are not the same scope: the first says how the conversation should " +
+			"go, and the second asks for a few more seconds.\n\n" +
 			"An immediate command is not a policy. The test is whether obeying it takes one action or requires " +
 			"watching for something: \"stop\" is finished the moment it is obeyed and is none, while \"let me " +
 			"finish\" means staying quiet until a condition holds and is a policy for this turn. Neither is a " +

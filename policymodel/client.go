@@ -362,13 +362,23 @@ func (client *Client) Generate(ctx context.Context, prompt, evidence string, max
 	if maxTokens <= 0 {
 		maxTokens = 128
 	}
-	content := prompt
+	// The instruction is a system message and the evidence a user one, which
+	// is how the same prompt was measured. Folding both into a single user
+	// message - which is right for Decide, where the answer is one of a listed
+	// few - changed the answers here: every extraction came back scoped to the
+	// turn, including policies that plainly govern a conversation, and a
+	// turn-scoped policy expires at the next answer. The suite said 90% and
+	// the runtime pinned nothing that survived.
+	messages := []chatMessage{{Role: "system", Content: prompt}}
 	if strings.TrimSpace(evidence) != "" {
-		content += "\n\n" + evidence
+		messages = append(messages, chatMessage{Role: "user", Content: evidence})
+	} else {
+		messages = append(messages, chatMessage{Role: "user", Content: prompt})
+		messages = messages[1:]
 	}
 	body := chatRequest{
 		Model: client.config.Model, MaxTokens: maxTokens, Temperature: 0,
-		Messages: []chatMessage{{Role: "user", Content: content}},
+		Messages: messages,
 	}
 	switch client.config.Reasoning {
 	case openaicompat.ReasoningControlTemplateKwargs:
