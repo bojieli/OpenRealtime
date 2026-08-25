@@ -182,6 +182,20 @@ type Request struct {
 	// trajectory in which it has already spoken and nothing has changed, and
 	// the most natural thing to write is what it wrote last time.
 	Holding bool
+	// Standing are the interaction policies people set out loud and have not
+	// lifted.
+	//
+	// They reach cognition as well as the interaction model because some of
+	// them govern what is said and not only when. Asked to count out loud as
+	// somebody names animals, an interaction model that fires at exactly the
+	// right moments still produces nonsense if the voice does not know what it
+	// was called for: it reads a conversation, sees it is expected to say
+	// something, and says "one, two, three, four, five" every time.
+	Standing []string
+	// Interjecting says the turn does not belong to the agent - it is speaking
+	// while somebody else keeps the floor. What that calls for is the shortest
+	// thing that serves, not a reply.
+	Interjecting bool
 }
 
 // Descriptors reports the configured providers, for evidence and health.
@@ -255,6 +269,25 @@ func (engine *Engine) RunSlow(ctx context.Context, request Request, observer Str
 }
 
 func (engine *Engine) instruction(prompt string, request Request) string {
+	return Instruct(prompt, request)
+}
+
+// Instruct renders what a request adds to a phase prompt.
+//
+// It is a function rather than a method because it uses nothing from the
+// engine, and because what the voice is told is the thing most worth asserting
+// about and the least visible from outside: a policy that fails to reach it
+// looks exactly like a model choosing to ignore one.
+func Instruct(prompt string, request Request) string {
+	// Standing policies come first among the injected ones because they
+	// outrank the rest: somebody asked for this out loud, and the others are
+	// the runtime describing its own state.
+	if len(request.Standing) > 0 {
+		prompt += "\n\n" + StandingInstruction + "\n- " + strings.Join(request.Standing, "\n- ")
+	}
+	if request.Interjecting {
+		prompt += "\n\n" + InterjectingInstruction
+	}
 	if request.PendingRepair {
 		prompt += "\n\n" + RepairInstruction
 	}

@@ -115,9 +115,9 @@ func (floor *actFloor) Endpoint(decision Context) EndpointDecision {
 		// interrupt is for, and the model has to say so.
 		verdict = EndpointDecision{Reason: "answering was chosen while the speaker was still audible"}
 	case act == ActAnswer || act == ActInterrupt:
-		verdict = EndpointDecision{Ended: true, Projected: true, Reason: "the interaction model chose " + string(act)}
+		verdict = EndpointDecision{Ended: true, Projected: true, Act: act, Reason: "the interaction model chose " + string(act)}
 	default:
-		verdict = EndpointDecision{Reason: "the interaction model chose " + string(act)}
+		verdict = EndpointDecision{Act: act, Reason: "the interaction model chose " + string(act)}
 	}
 	floor.mu.Lock()
 	floor.lastRev, floor.last = decision.Revision.ID, verdict

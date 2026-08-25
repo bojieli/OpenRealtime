@@ -74,7 +74,10 @@ func (runtime *runtime) prepare(ctx context.Context, decision interaction.Contex
 		MonotonicNS: decision.NowNS, SourceRevision: decision.Revision.ID,
 		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: text,
 	}
-	request := cognition.Request{SourceRevision: decision.Revision.ID}
+	standing, interjecting := runtime.cognitionExtras()
+	request := cognition.Request{
+		SourceRevision: decision.Revision.ID, Standing: standing, Interjecting: interjecting,
+	}
 
 	go func() {
 		defer cancel()

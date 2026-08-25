@@ -27,6 +27,13 @@ type EndpointDecision struct {
 	Ended     bool   `json:"ended"`
 	Projected bool   `json:"projected,omitempty"`
 	Reason    string `json:"reason,omitempty"`
+	// Act names the choice behind the decision, when a floor made one.
+	//
+	// It carries because the two acts that end a turn end it for opposite
+	// reasons. Answering means the floor came free; interrupting means it was
+	// taken from somebody still using it, and what to say into a turn taken
+	// that way is not what to say into one that was offered.
+	Act Act `json:"act,omitempty"`
 }
 
 // Floor decides when the user has finished and who holds the turn. It affects

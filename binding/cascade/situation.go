@@ -212,3 +212,20 @@ func (runtime *runtime) noticeStanding(text string) {
 		}
 	}()
 }
+
+// setInterjecting records whether the turn about to run was taken rather than
+// offered.
+func (runtime *runtime) setInterjecting(interjecting bool) {
+	runtime.audioMu.Lock()
+	runtime.interjecting = interjecting
+	runtime.audioMu.Unlock()
+}
+
+// cognitionExtras is what the voice needs to know beyond the trajectory: the
+// policies people set out loud, and whether this turn is its own.
+func (runtime *runtime) cognitionExtras() ([]string, bool) {
+	runtime.audioMu.Lock()
+	interjecting := runtime.interjecting
+	runtime.audioMu.Unlock()
+	return runtime.pinboard.Lines(runtime.scheduler.NowNS()), interjecting
+}

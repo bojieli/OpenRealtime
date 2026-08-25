@@ -81,6 +81,9 @@ type runtime struct {
 	// there would restart on every hold and never expire.
 	pauseStartNS  uint64
 	lastCanonical uint64
+	// interjecting is set when the turn about to run was taken from somebody
+	// still speaking rather than offered by somebody who had finished.
+	interjecting  bool
 	speechStartNS uint64
 
 	clientCalls *clientcalls.Tracker

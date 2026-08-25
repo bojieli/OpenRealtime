@@ -74,6 +74,22 @@ const (
 	// RepairInstruction is injected only while an unresolved audible-repair
 	// obligation exists. Audio that was heard cannot be unheard, so the only
 	// honest move is to say so.
+	// StandingInstruction introduces the policies people set out loud.
+	//
+	// They are stated as instructions rather than as history because that is
+	// what they are: somebody said them, they have not been lifted, and they
+	// govern until they are. Reaching the voice as another line of transcript
+	// makes them advice it may take or leave.
+	StandingInstruction = "The person you are talking to asked for these, and has not taken them back. They govern what you say and when, and they outrank the general guidance above:"
+
+	// InterjectingInstruction is injected when the turn is not the agent's.
+	//
+	// Somebody else still holds the floor and is still talking. What that
+	// calls for is the smallest thing that serves - a count, an
+	// acknowledgement, the one fact that could not wait - and never a reply,
+	// because there is no pause to put a reply into.
+	InterjectingInstruction = "You are speaking while the other person keeps talking; they have not finished and this is not your turn. Say the shortest thing that does what was asked of you - a number, a word, the single fact that could not wait - and nothing more. Do not answer them, do not ask them anything, and do not summarise what they have said."
+
 	RepairInstruction = "Audio from an earlier branch was heard before newer evidence invalidated it. Explicitly correct the audible claim before continuing; do not pretend it was never said."
 )
 

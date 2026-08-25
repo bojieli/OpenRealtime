@@ -29,6 +29,9 @@ func (runtime *runtime) projectEndpoint(ctx context.Context, decision interactio
 	if !endpoint.Ended || !endpoint.Projected {
 		return false, nil
 	}
+	// A turn taken from somebody still speaking is not a turn they offered,
+	// and what belongs in it is different. The voice is told which it got.
+	runtime.setInterjecting(endpoint.Act == interaction.ActInterrupt)
 	runtime.audioMu.Lock()
 	if runtime.acoustic == nil {
 		runtime.audioMu.Unlock()
