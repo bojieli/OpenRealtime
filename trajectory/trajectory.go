@@ -425,6 +425,42 @@ func (store *Store) AppendBatchAt(expectedVersion uint64, items []Item) error {
 	return store.appendBatch(&expectedVersion, items)
 }
 
+// AppendBatchAfter appends only when nothing that matters has been appended
+// since baseVersion.
+//
+// It exists because "the version moved" and "what I reasoned from is no longer
+// true" are different statements, and only the second is a reason to throw
+// work away. A version check cannot tell them apart: it refuses a reasoner's
+// tool call because the voice said "one moment" in the meantime, which changed
+// nothing the reasoner relied on.
+//
+// The caller supplies supersedes, because only the caller knows what its
+// output depended on. The store knows what arrived.
+func (store *Store) AppendBatchAfter(baseVersion uint64, supersedes func(Item) bool, items []Item) error {
+	if supersedes == nil {
+		return store.AppendBatchAt(baseVersion, items)
+	}
+	if len(items) == 0 {
+		return errors.New("trajectory append batch is empty")
+	}
+	store.mu.Lock()
+	if baseVersion > uint64(len(store.items)) {
+		current := uint64(len(store.items))
+		store.mu.Unlock()
+		return fmt.Errorf("%w: base %d, current %d", ErrVersionConflict, baseVersion, current)
+	}
+	for _, item := range store.items[baseVersion:] {
+		if supersedes(item) {
+			current := uint64(len(store.items))
+			store.mu.Unlock()
+			return fmt.Errorf("%w: %s superseded output derived from version %d, current %d",
+				ErrVersionConflict, item.Kind, baseVersion, current)
+		}
+	}
+	store.mu.Unlock()
+	return store.appendBatch(nil, items)
+}
+
 func (store *Store) appendBatch(expectedVersion *uint64, items []Item) error {
 	if len(items) == 0 {
 		return errors.New("trajectory append batch is empty")

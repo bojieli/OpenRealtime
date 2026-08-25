@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -399,5 +400,172 @@ func TestRunnerRecordsProposalWithoutExecutionAuthorityOrNativeCallState(t *test
 		ToolResult: &trajectory.ToolResult{CallID: "proposal-1", Name: "lookup", Output: json.RawMessage(`{"value":7}`)},
 	}); err == nil {
 		t.Fatal("proposal unexpectedly accepted an executable tool result")
+	}
+}
+
+// A continuation commits against the version it started from, so anything
+// appended while it was thinking discards everything it produced - including
+// its tool calls.
+//
+// This is reachable from outside: a caller who says one more word while the
+// reasoner is working appends an observation, and the action the agent had
+// worked out is thrown away. ErrStalePrefix says the output "must be
+// recomputed from the new prefix", and nothing anywhere recomputes it.
+func TestAnAppendWhileReasoningDiscardsTheReasoning(t *testing.T) {
+	store := trajectory.NewStore()
+	if err := store.Append(trajectory.Item{
+		ID: "user-1", Kind: trajectory.KindObservation, MonotonicNS: 1,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+		Content:  "what is my balance",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := NewRunner(RunnerConfig{Store: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	appended := make(chan struct{})
+	provider := &interposingProvider{
+		descriptor: Descriptor{
+			Provider: "test", Model: "slow", Phase: trajectory.PhaseSlow,
+			Effort: EffortHigh, Streaming: true, ToolAuthority: ToolAuthorityExecute,
+			SpeechAuthority: SpeechAuthoritySilent,
+		},
+		events: []Event{{Kind: EventToolCall, ToolCall: &trajectory.ToolCall{
+			CallID: "call-1", Name: "lookup", Arguments: json.RawMessage(`{}`),
+		}}},
+		// Something else reaches the log while the model is still producing.
+		duringRun: func() {
+			_ = store.Append(trajectory.Item{
+				ID: "user-2", Kind: trajectory.KindObservation, MonotonicNS: 2,
+				Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+				Content:  "actually, hold on",
+			})
+			close(appended)
+		},
+	}
+	result, runErr := runner.Run(context.Background(), provider, Invocation{
+		Instruction: "Continue.",
+		Tools: []ToolDefinition{{
+			Name: "lookup", Description: "Lookup.", Parameters: json.RawMessage(`{"type":"object"}`),
+		}},
+	}, nil)
+	<-appended
+	err = runErr
+
+	if !errors.Is(err, ErrStalePrefix) {
+		t.Fatalf("a commit against a moved prefix is stale, got %v", err)
+	}
+	if result.Committed {
+		t.Fatal("nothing derived from a stale prefix may enter the log")
+	}
+	if len(result.ToolCalls) != 0 {
+		t.Fatalf("the discarded output still names calls: %+v", result.ToolCalls)
+	}
+	// The cost: the agent worked out an action and the caller will never see
+	// it happen, and nothing in the system will work it out again.
+	for _, item := range store.Snapshot().Items {
+		if item.Kind == trajectory.KindToolCall {
+			t.Fatal("the call reached the log after all")
+		}
+	}
+}
+
+// interposingProvider lets a test append to the log at the moment a
+// continuation is mid-flight, which is the race the version check exists for.
+type interposingProvider struct {
+	descriptor Descriptor
+	events     []Event
+	duringRun  func()
+	once       sync.Once
+}
+
+func (provider *interposingProvider) Descriptor() Descriptor { return provider.descriptor }
+
+func (provider *interposingProvider) Continue(
+	_ context.Context, _ Request, emit Emit,
+) (Completion, error) {
+	for _, event := range provider.events {
+		if err := emit(event); err != nil {
+			return Completion{}, err
+		}
+	}
+	provider.once.Do(func() {
+		if provider.duringRun != nil {
+			provider.duringRun()
+		}
+	})
+	return Completion{}, nil
+}
+
+// The voice talking while the reasoner reasons is the whole arrangement, and
+// it used to throw the reasoning away.
+//
+// A commit checked against a version number cannot tell "the person said
+// something else" from "the agent filled a silence": both move the number.
+// Only the first invalidates what the reasoner worked out, and refusing its
+// tool call because the voice said "one moment" removes the concurrency the
+// design exists for.
+func TestTheVoiceSpeakingDoesNotDiscardTheReasoning(t *testing.T) {
+	store := trajectory.NewStore()
+	if err := store.Append(trajectory.Item{
+		ID: "user-1", Kind: trajectory.KindObservation, MonotonicNS: 1,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+		Content:  "what is my balance",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := NewRunner(RunnerConfig{Store: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	spoke := make(chan struct{})
+	provider := &interposingProvider{
+		descriptor: Descriptor{
+			Provider: "test", Model: "slow", Phase: trajectory.PhaseSlow,
+			Effort: EffortHigh, Streaming: true, ToolAuthority: ToolAuthorityExecute,
+			SpeechAuthority: SpeechAuthoritySilent,
+		},
+		events: []Event{{Kind: EventToolCall, ToolCall: &trajectory.ToolCall{
+			CallID: "call-1", Name: "lookup", Arguments: json.RawMessage(`{}`),
+		}}},
+		duringRun: func() {
+			_ = store.Append(trajectory.Item{
+				ID: "voice-1", Kind: trajectory.KindAssistant, MonotonicNS: 2,
+				Producer: trajectory.Producer{
+					Phase: trajectory.PhaseFast, SpeechAuthority: "voice",
+				},
+				Content: "One moment.", Visibility: trajectory.VisibilityPrepared,
+			})
+			close(spoke)
+		},
+	}
+	result, err := runner.Run(context.Background(), provider, Invocation{
+		Instruction: "Continue.",
+		Tools: []ToolDefinition{{
+			Name: "lookup", Description: "Lookup.", Parameters: json.RawMessage(`{"type":"object"}`),
+		}},
+	}, nil)
+	<-spoke
+
+	if err != nil {
+		t.Fatalf("the voice filling a silence is not new evidence: %v", err)
+	}
+	if !result.Committed {
+		t.Fatal("the reasoning was discarded because the agent talked")
+	}
+	if len(result.ToolCalls) != 1 {
+		t.Fatalf("the action it worked out has to survive: %+v", result.ToolCalls)
+	}
+	var calls int
+	for _, item := range store.Snapshot().Items {
+		if item.Kind == trajectory.KindToolCall {
+			calls++
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("the call has to reach the log, got %d", calls)
 	}
 }

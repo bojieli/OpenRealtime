@@ -303,9 +303,34 @@ func (runner *Runner) run(
 	return result, providerErr
 }
 
-// commit appends one continuation's output as a version-checked transaction.
+// supersedesContinuation reports whether an item invalidates output derived
+// from a prefix that predates it.
+//
+// New evidence does: the person said something else, or a repair obligation was
+// raised, or a tool came back. A continuation that answered the previous
+// question is answering a question nobody is asking any more, and committing it
+// would put a stale answer in the log as though it were current.
+//
+// The agent's own output does not. A voice turn, its playback state, reasoning
+// text, a non-executable proposal - none of them change what the reasoner
+// relied on, and refusing its work because the voice filled a silence is
+// exactly backwards: the arrangement exists so the voice can talk while the
+// reasoner reasons, and a rule that punishes it for doing so removes the
+// concurrency the whole design is for.
+func supersedesContinuation(item trajectory.Item) bool {
+	switch item.Kind {
+	case trajectory.KindObservation, trajectory.KindRepair, trajectory.KindToolResult:
+		return true
+	default:
+		return false
+	}
+}
+
+// commit appends one continuation's output as a transaction that is checked
+// against what arrived while it was thinking, rather than against a version
+// number that moves for reasons it does not care about.
 func (runner *Runner) commit(result *RunResult, expectedVersion uint64, items []trajectory.Item) error {
-	if err := runner.store.AppendBatchAt(expectedVersion, items); err != nil {
+	if err := runner.store.AppendBatchAfter(expectedVersion, supersedesContinuation, items); err != nil {
 		result.Interrupted = true
 		result.ToolProposals = nil
 		result.ToolCalls = nil
