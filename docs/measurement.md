@@ -926,3 +926,32 @@ question, a policy honoured through pauses, an acknowledgement that must not
 stop the agent, ordering from a waiter - or failing for a reason already named:
 the voice acknowledging where it should correct, and the vision pipeline's
 latency on triggers other than the frame itself.
+
+### The slot, and the instrument that was not wired (F24)
+
+Counting said "One" and not "Two"; interpreting carried the first sentence and
+not the second. One cause, and it was not the decision: an interjection commits
+through a loop with a single driver, so it can sit behind other work while
+every later moment worth speaking at is refused as "already in flight".
+
+Bounding it fixed interpreting - 4/5 over five runs at a 2.1 second median,
+the best that case has measured and the one I was least confident a cascade
+could do at all.
+
+The bound itself took two attempts, and the first was wrong in an instructive
+direction. Six seconds cancels turns that were about to finish, which wastes
+the work *and* the slot: counting's median wait went from 2.1 seconds to 13.9.
+The deadline is for a turn that will never finish, not one that is late, and
+those differ by an order of magnitude. Twelve.
+
+**And the diagnosis before it was wrong for a worse reason.** I concluded that
+no interjection ever completed, from the absence of completion records - and
+those records were never being written, because the edit that added them had
+silently failed to apply. An instrument that is not wired reads exactly like
+the thing it would have measured being absent. The fix was right by luck of
+the second look; the reasoning that produced it was not.
+
+Counting is still 2/5 at a 6.7 second median against interpreting's 1.8, so
+whatever is slow there is slow for its own reason. Sending only the new part of
+the utterance rather than the whole monologue did not move it, which rules out
+prompt size and leaves it open.
