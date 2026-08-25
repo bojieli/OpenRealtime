@@ -1070,3 +1070,61 @@ So the remaining work has a shape now, and it is two shapes rather than one:
 - **silent when an act said to speak** - the second animal, the second
   sentence, the dish that fits. The act is chosen, the interjection runs, no
   error is reported, and the voice produces nothing.
+
+### The sentence the turn existed for (F27)
+
+Both remaining "silent when an act said to speak" failures were one bug, and it
+was not in the interaction model, the prompt, or the voice.
+
+Every act that speaks into somebody else's turn runs on a sentence the speaker
+has not finished, so it is not in the trajectory. That sentence went into the
+instruction and nowhere else, which left the conversation handed to the
+provider ending with whatever the agent last said - and a provider asked to
+continue from its own last turn, with nothing new addressed to it, says
+nothing.
+
+Probed directly against Gemini 3.5 Flash, with the policy "count them as I
+mention them", the agent having already said "1", and the next animal in the
+instruction:
+
+| what the conversation ends with | three calls |
+| --- | --- |
+| the agent's own "1" | `''` `''` `''` |
+| the same call, the animal as a user turn | `'2'` `'2'` `'2'` |
+
+Five instruction variants were tried first, down to a six-hundred-character one
+stripped to the policy and the act. Every one returned empty. It was never a
+wording problem, and the ablation that proved it was cheap - which is an
+argument for reaching for it earlier than I did.
+
+The runner already had exactly the mechanism: a provisional observation shown
+to the provider and appended to nothing, written for preparation. Only
+preparation used it.
+
+### The suite at 21 of 27
+
+| | before | after |
+| --- | --- | --- |
+| count-as-they-go | 0/3 | **3/3** |
+| a recorded menu | 0/3 | **3/3** |
+| translating as they speak | 1/3 | **3/3** |
+| cutting in on something wrong | 3/3 | 3/3 |
+| an acknowledgement is not an interruption | 3/3 | 3/3 |
+| an ordinary question | 3/3 | 3/3 |
+| asked not to be interrupted | 3/3 | 2/3 |
+| ordering from a waiter | 2/3 | 1/3 |
+| telling them what it saw | 0/3 | 0/3 |
+| **total** | **15/27** | **21/27** |
+
+Counting is the demo this work started from and it now passes all three runs at
+a 433ms median, having been the case I could not make work at all. Interpreting
+live passes all three. The phone menu passes all three, and it does it by
+pressing the key and saying nothing, which is the whole point of the act.
+
+What is left is restraint and one hallucination:
+
+- **telling them what it saw, 0/3.** It speaks at the frame showing the build
+  still running, and then answers the frame that matters 39 seconds late.
+- **ordering from a waiter, 1/3.** It spoke at the right moment and said
+  "that's it, we want a table for three" - nothing in the conversation.
+- **asked not to be interrupted, 2/3.** One run spoke during a long pause.
