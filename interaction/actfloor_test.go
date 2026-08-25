@@ -155,3 +155,39 @@ func TestActFloorDoesNotServeARefusalBackThroughTheWholePause(t *testing.T) {
 		t.Fatalf("the refusal was served back after the speaker stopped: %s", verdict.Reason)
 	}
 }
+
+// Interrupting stops being an interruption when it stops being scarce. The
+// model is asked afresh on every partial and cannot remember having just cut
+// in; consulted sixty-five times in one conversation it answered "interrupt"
+// sixty-five times, each defensible alone and together an agent nobody could
+// speak to.
+func TestActFloorWillNotInterruptTwiceInQuickSuccession(t *testing.T) {
+	model, err := interaction.NewInteractionModel(answers{act: interaction.ActInterrupt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	floor, err := interaction.NewActFloor(model, interaction.ActFloorOptions{
+		SilenceDuration: 500 * time.Millisecond, Liveness: 20 * time.Second,
+		MinimumBetweenInterruptions: 4 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := func(ns uint64, revision uint64) interaction.Context {
+		context := waiting(0, revision)
+		context.NowNS = ns
+		context.Duplex.UserSpeaking = true
+		context.Situation.Speaking = true
+		context.Situation.Heard = "they are still going on about it " + string(rune('a'+revision))
+		return context
+	}
+	if verdict := floor.Endpoint(at(uint64(1*time.Second), 1)); !verdict.Ended {
+		t.Fatal("the first interruption was refused")
+	}
+	if verdict := floor.Endpoint(at(uint64(2*time.Second), 2)); verdict.Ended {
+		t.Fatalf("interrupted again one second later: %s", verdict.Reason)
+	}
+	if verdict := floor.Endpoint(at(uint64(7*time.Second), 3)); !verdict.Ended {
+		t.Fatalf("still refusing six seconds later: %s", verdict.Reason)
+	}
+}

@@ -17,6 +17,19 @@ type ActFloorOptions struct {
 	// SilenceDuration is the endpoint the fallback uses when the model cannot
 	// answer, and the point from which Liveness is measured.
 	SilenceDuration time.Duration
+	// MinimumBetweenInterruptions is how long must pass before the agent may
+	// cut into somebody's sentence again.
+	//
+	// Interrupting is a scarce act and stops being an interruption when it
+	// stops being scarce: done twice in five seconds it is not cutting in, it
+	// is talking over somebody. The bound is structural rather than something
+	// left to the model, because the model is asked afresh on every partial
+	// and has no memory of having just done it - consulted sixty-five times in
+	// one conversation it answered "interrupt" sixty-five times, each
+	// defensible alone and together an agent nobody could speak to.
+	//
+	// Zero selects four seconds.
+	MinimumBetweenInterruptions time.Duration
 	// Liveness is the longest the model may hold the floor past that point.
 	//
 	// It exists because the failure it guards against is silent and total: a
@@ -46,6 +59,9 @@ func NewActFloor(model *InteractionModel, options ActFloorOptions) (Floor, error
 	if options.Liveness <= 0 {
 		options.Liveness = 20 * time.Second
 	}
+	if options.MinimumBetweenInterruptions <= 0 {
+		options.MinimumBetweenInterruptions = 4 * time.Second
+	}
 	return &actFloor{model: model, options: options}, nil
 }
 
@@ -53,9 +69,10 @@ type actFloor struct {
 	model   *InteractionModel
 	options ActFloorOptions
 
-	mu      sync.Mutex
-	lastKey string
-	last    EndpointDecision
+	mu              sync.Mutex
+	lastKey         string
+	last            EndpointDecision
+	lastInterruptNS uint64
 }
 
 func (floor *actFloor) Name() string      { return "act:" + floor.model.Name() }
@@ -127,7 +144,15 @@ func (floor *actFloor) Endpoint(decision Context) EndpointDecision {
 		// answers that instead. Taking a floor somebody still holds is what
 		// interrupt is for, and the model has to say so.
 		verdict = EndpointDecision{Act: act, Reason: "answering was chosen while the speaker was still audible"}
+	case act == ActInterrupt && floor.recentlyInterrupted(decision.NowNS):
+		// Not a refusal of the judgement, a refusal of its repetition. The
+		// model is asked again on every partial and cannot remember having
+		// just cut in.
+		verdict = EndpointDecision{Act: act, Reason: "interrupted too recently to interrupt again"}
 	case act == ActAnswer || act == ActInterrupt:
+		if act == ActInterrupt {
+			floor.markInterrupted(decision.NowNS)
+		}
 		verdict = EndpointDecision{Ended: true, Projected: true, Act: act, Reason: "the interaction model chose " + string(act)}
 	default:
 		verdict = EndpointDecision{Act: act, Reason: "the interaction model chose " + string(act)}
@@ -149,4 +174,19 @@ func (floor *actFloor) Holder(state session.Snapshot) Holder {
 	default:
 		return HolderNobody
 	}
+}
+
+func (floor *actFloor) recentlyInterrupted(nowNS uint64) bool {
+	floor.mu.Lock()
+	defer floor.mu.Unlock()
+	if floor.lastInterruptNS == 0 || nowNS < floor.lastInterruptNS {
+		return false
+	}
+	return nowNS-floor.lastInterruptNS < uint64(floor.options.MinimumBetweenInterruptions.Nanoseconds())
+}
+
+func (floor *actFloor) markInterrupted(nowNS uint64) {
+	floor.mu.Lock()
+	defer floor.mu.Unlock()
+	floor.lastInterruptNS = nowNS
 }
