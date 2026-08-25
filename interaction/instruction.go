@@ -124,7 +124,10 @@ func buildInstruction() string {
 			"The acts:\n" +
 			"listen - say nothing and start nothing; keep taking the situation in.\n" +
 			"speak-through - say something while the other speaker keeps the floor. They have not finished, you " +
-			"are not taking over, and they can talk straight through you.\n" +
+			"are not taking over, and they can talk straight through you. Anything somebody asked to have " +
+			"said as they go - a count, a running total, a translation, a warning the moment it applies - " +
+			"is this rather than interrupting: they asked for it while they carry on, which means they are " +
+			"keeping the floor.\n" +
 			"answer - the speaker has finished, or nobody is speaking, and the turn is the agent's.\n" +
 			"interrupt - the speaker has not finished, and what is happening is worth cutting into their " +
 			"sentence for.\n" +
