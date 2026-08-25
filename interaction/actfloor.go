@@ -3,6 +3,7 @@ package interaction
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,17 +19,16 @@ type ActFloorOptions struct {
 	// answer, and the point from which Liveness is measured.
 	SilenceDuration time.Duration
 	// MinimumBetweenInterruptions is how long must pass before the agent may
-	// cut into somebody's sentence again.
+	// cut into somebody's sentence again, as a backstop.
 	//
-	// Interrupting is a scarce act and stops being an interruption when it
-	// stops being scarce: done twice in five seconds it is not cutting in, it
-	// is talking over somebody. The bound is structural rather than something
-	// left to the model, because the model is asked afresh on every partial
-	// and has no memory of having just done it - consulted sixty-five times in
-	// one conversation it answered "interrupt" sixty-five times, each
-	// defensible alone and together an agent nobody could speak to.
+	// The bound that does the work is not this one. Interrupting the same
+	// utterance twice is talking over somebody; interrupting a later one is a
+	// fresh decision that may well be right, and a flat timer cannot tell them
+	// apart - it blocks the second exactly as readily as the first. So the
+	// primary rule is one interruption per stretch of speech, and this is only
+	// here to catch a speaker whose every sentence gets cut into.
 	//
-	// Zero selects four seconds.
+	// Zero selects two seconds.
 	MinimumBetweenInterruptions time.Duration
 	// Liveness is the longest the model may hold the floor past that point.
 	//
@@ -60,7 +60,7 @@ func NewActFloor(model *InteractionModel, options ActFloorOptions) (Floor, error
 		options.Liveness = 20 * time.Second
 	}
 	if options.MinimumBetweenInterruptions <= 0 {
-		options.MinimumBetweenInterruptions = 4 * time.Second
+		options.MinimumBetweenInterruptions = 2 * time.Second
 	}
 	return &actFloor{model: model, options: options}, nil
 }
@@ -73,6 +73,10 @@ type actFloor struct {
 	lastKey         string
 	last            EndpointDecision
 	lastInterruptNS uint64
+	// interruptedHeard is what had been heard when the agent last cut in. A
+	// stretch of speech that still begins with it is the same stretch, however
+	// much has been added since.
+	interruptedHeard string
 }
 
 func (floor *actFloor) Name() string      { return "act:" + floor.model.Name() }
@@ -144,14 +148,14 @@ func (floor *actFloor) Endpoint(decision Context) EndpointDecision {
 		// answers that instead. Taking a floor somebody still holds is what
 		// interrupt is for, and the model has to say so.
 		verdict = EndpointDecision{Act: act, Reason: "answering was chosen while the speaker was still audible"}
-	case act == ActInterrupt && floor.recentlyInterrupted(decision.NowNS):
+	case act == ActInterrupt && floor.alreadyInterrupted(decision.NowNS, decision.Situation.Heard):
 		// Not a refusal of the judgement, a refusal of its repetition. The
 		// model is asked again on every partial and cannot remember having
 		// just cut in.
 		verdict = EndpointDecision{Act: act, Reason: "interrupted too recently to interrupt again"}
 	case act == ActAnswer || act == ActInterrupt:
 		if act == ActInterrupt {
-			floor.markInterrupted(decision.NowNS)
+			floor.markInterrupted(decision.NowNS, decision.Situation.Heard)
 		}
 		verdict = EndpointDecision{Ended: true, Projected: true, Act: act, Reason: "the interaction model chose " + string(act)}
 	default:
@@ -176,17 +180,31 @@ func (floor *actFloor) Holder(state session.Snapshot) Holder {
 	}
 }
 
-func (floor *actFloor) recentlyInterrupted(nowNS uint64) bool {
+// alreadyInterrupted reports whether cutting in now would be cutting into the
+// same thing twice.
+//
+// The model is asked afresh on every partial and cannot remember having just
+// done it, so each of sixty-five interruptions in one conversation was
+// defensible alone. What makes them wrong is the sequence, which is a property
+// nothing in a single decision can see.
+func (floor *actFloor) alreadyInterrupted(nowNS uint64, heard string) bool {
 	floor.mu.Lock()
 	defer floor.mu.Unlock()
-	if floor.lastInterruptNS == 0 || nowNS < floor.lastInterruptNS {
+	if floor.lastInterruptNS == 0 {
+		return false
+	}
+	// Still the same stretch of speech: it has only grown since.
+	if floor.interruptedHeard != "" && strings.HasPrefix(heard, floor.interruptedHeard) {
+		return true
+	}
+	if nowNS < floor.lastInterruptNS {
 		return false
 	}
 	return nowNS-floor.lastInterruptNS < uint64(floor.options.MinimumBetweenInterruptions.Nanoseconds())
 }
 
-func (floor *actFloor) markInterrupted(nowNS uint64) {
+func (floor *actFloor) markInterrupted(nowNS uint64, heard string) {
 	floor.mu.Lock()
 	defer floor.mu.Unlock()
-	floor.lastInterruptNS = nowNS
+	floor.lastInterruptNS, floor.interruptedHeard = nowNS, heard
 }

@@ -191,3 +191,42 @@ func TestActFloorWillNotInterruptTwiceInQuickSuccession(t *testing.T) {
 		t.Fatalf("still refusing six seconds later: %s", verdict.Reason)
 	}
 }
+
+// Interrupting the same stretch of speech twice is talking over somebody;
+// interrupting a later one is a fresh decision that may well be right. A flat
+// timer cannot tell them apart.
+func TestActFloorInterruptsOncePerStretchOfSpeech(t *testing.T) {
+	model, err := interaction.NewInteractionModel(answers{act: interaction.ActInterrupt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	floor, err := interaction.NewActFloor(model, interaction.ActFloorOptions{
+		SilenceDuration: 500 * time.Millisecond, Liveness: 20 * time.Second,
+		MinimumBetweenInterruptions: 2 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	speaking := func(ns uint64, revision uint64, heard string) interaction.Context {
+		context := waiting(0, revision)
+		context.NowNS = ns
+		context.Duplex.UserSpeaking = true
+		context.Situation.Speaking = true
+		context.Situation.Heard = heard
+		return context
+	}
+	if v := floor.Endpoint(speaking(uint64(time.Second), 1, "so the first option would be")); !v.Ended {
+		t.Fatal("the first interruption was refused")
+	}
+	// The same sentence, further along. Cutting in again is talking over them,
+	// however long has passed.
+	later := speaking(uint64(30*time.Second), 2, "so the first option would be to rewrite it entirely")
+	if v := floor.Endpoint(later); v.Ended {
+		t.Fatalf("cut into the same sentence twice: %s", v.Reason)
+	}
+	// A different stretch of speech is a new decision.
+	fresh := speaking(uint64(40*time.Second), 3, "and the second option is to leave it alone")
+	if v := floor.Endpoint(fresh); !v.Ended {
+		t.Fatalf("refused to interrupt a different sentence entirely: %s", v.Reason)
+	}
+}
