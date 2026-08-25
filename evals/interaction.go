@@ -60,6 +60,21 @@ func InteractionCases() []Case {
 	}
 	return []Case{
 		// --- paired: a spoken instruction changes the act ---
+		act("count-with-a-nothing-else-clause", interaction.Situation{
+			Pins: []string{"count the animals out loud as I mention them and say nothing else (18s ago)"},
+			Recent: []string{
+				"user: I'm going to tell you about my afternoon, count the animals out loud and say nothing else.",
+				"agent: I will count each animal as you mention them.",
+				"user: It was a warm afternoon and a capybara wandered over.",
+				"agent: One.",
+			},
+			Speaker: "user", Speaking: true,
+			SincePrevious: "2200ms",
+			Heard:         "Then, a heron.",
+		}, "taken verbatim from a run where this answered listen: the restriction narrows what else may "+
+			"be said and does not cancel the count",
+			[]Action{ActSpeakThrough, ActInterrupt}, ActStaySilent),
+
 		act("count-animal-heard", interaction.Situation{
 			Pins:    []string{"count the animals out loud as I mention them (2m ago)"},
 			Recent:  story,

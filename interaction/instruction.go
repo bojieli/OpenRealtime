@@ -117,6 +117,12 @@ func buildInstruction() string {
 			"been heard from them so far, how long the silence has lasted, how long a gap there was before " +
 			"they started this one, what work is already running, and anything just seen that nobody said " +
 			"out loud.\n\n" +
+			"A standing instruction that both asks for something and restricts everything else - count them and " +
+			"say nothing else, tell me when it lands and otherwise stay quiet - is two rules, and the " +
+			"restriction is the smaller of them. It narrows what may be said at other moments; it does not " +
+			"cancel the thing they asked for. Reading it as a reason to stay silent when the condition has " +
+			"just been met obeys the half of the sentence they added as an afterthought and ignores the half " +
+			"they meant.\n\n" +
 			"Standing instructions govern this decision and outrank every general rule below. If someone asked " +
 			"not to be interrupted, do not interrupt them. If someone asked to be told the moment something " +
 			"happens, tell them the moment it happens, even in the middle of their own sentence. If someone " +
