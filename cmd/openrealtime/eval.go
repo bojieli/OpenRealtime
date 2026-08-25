@@ -8,8 +8,11 @@ import (
 	"io"
 	"os"
 
+	"github.com/bojieli/OpenRealtime/adapters/openaicompat"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/evals"
+	"github.com/bojieli/OpenRealtime/interaction"
+	"github.com/bojieli/OpenRealtime/policymodel"
 	"github.com/bojieli/OpenRealtime/providers"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -33,6 +36,8 @@ func runEval(arguments []string, output io.Writer) error {
 		repeat    = flags.Int("repeat", 1, "runs per case; more than one exposes an unstable decision")
 		threshold = flags.Float64("require", 0, "fail unless this fraction of cases pass")
 		reason    = flags.String("reason", "off", "reasoning: off, on, or default")
+		via       = flags.String("via", "policy", "how the interaction decision is taken: policy (what ships) or continuation")
+		guided    = flags.Bool("guided", true, "constrain decoding to the enumerated acts, as the runtime does")
 	)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -97,6 +102,13 @@ func runEval(arguments []string, output io.Writer) error {
 		runner = evals.ResultRunner{Provider: client, Label: label}
 	case "interaction":
 		runner = evals.InteractionRunner{Provider: client, Label: label}
+		if *via == "policy" {
+			policyRunner, err := interactionPolicyRunner(*url, *model, os.Getenv(*tokenEnv), *guided, label)
+			if err != nil {
+				return err
+			}
+			runner = policyRunner
+		}
 	case "standing-instruction":
 		runner = evals.StandingInstructionRunner{Provider: client, Label: label}
 	}
@@ -139,4 +151,26 @@ func runTimelines(provider, model, url, key, effort, reason string, output io.Wr
 	}
 	fmt.Fprint(output, evals.FormatTimelines(outcomes))
 	return nil
+}
+
+// interactionPolicyRunner builds the runner that measures the shipping path:
+// decoding constrained to the enumerated acts, a four-token budget, and
+// reasoning turned off at the endpoint.
+func interactionPolicyRunner(url, model, key string, guided bool, label string) (evals.Runner, error) {
+	client, err := policymodel.New(policymodel.Config{
+		BaseURL: url, Model: model, APIKey: key,
+		GuidedChoice: guided, Reasoning: openaicompat.ReasoningControlTemplateKwargs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("configure the policy endpoint: %w", err)
+	}
+	decider, err := interaction.NewInteractionModel(client)
+	if err != nil {
+		return nil, err
+	}
+	// Building the cases is what records their structure.
+	evals.InteractionCases()
+	return evals.PolicyInteractionRunner{
+		Model: decider, Label: label + " (policy)", Situations: evals.InteractionSituations(),
+	}, nil
 }

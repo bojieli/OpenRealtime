@@ -2,6 +2,7 @@ package evals
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -40,8 +41,14 @@ const (
 // change can be worth speaking about when nobody is talking at all, that work
 // already running must not be started twice, and - most of the volume - that
 // the ordinary answer is to do nothing.
+// interactionStates keeps the structure behind each case. Declaring the cases
+// twice - once rendered for one runner and once structured for the other -
+// would guarantee they eventually disagree about what is being measured.
+var interactionStates = map[string]interaction.Situation{}
+
 func InteractionCases() []Case {
 	act := func(name string, state interaction.Situation, note string, accept []Action, forbid ...Action) Case {
+		interactionStates[name] = state
 		return Case{
 			Name: name, Decision: DecisionInteraction, Context: state.Render(),
 			Accept: accept, Forbid: forbid, Note: note,
@@ -322,4 +329,56 @@ func (runner InteractionRunner) Observe(ctx context.Context, item Case) Observat
 		Actions: []Action{ParseAct(text)},
 		Text:    strings.TrimSpace(text), Elapsed: time.Since(started), Err: err,
 	}
+}
+
+// PolicyInteractionRunner measures the decision the way the runtime takes it.
+//
+// A boundary measured under different settings is a different boundary, and
+// these two paths differ in ways that matter: the shipping path constrains
+// decoding to the enumerated acts, allows four tokens, and turns reasoning off
+// at the endpoint. Measuring free generation instead would score a prompt
+// nobody runs.
+type PolicyInteractionRunner struct {
+	Model *interaction.InteractionModel
+	Label string
+	// Situations recovers the state a case was built from. Cases carry their
+	// rendered block so that what is asserted is what a model was shown, and
+	// this runner needs the structure back to ask for the right act set.
+	Situations map[string]interaction.Situation
+}
+
+func (runner PolicyInteractionRunner) Name() string       { return runner.Label }
+func (runner PolicyInteractionRunner) Decision() Decision { return DecisionInteraction }
+
+func (runner PolicyInteractionRunner) Observe(ctx context.Context, item Case) Observation {
+	started := time.Now()
+	// Repeated runs distinguish their cases by suffixing the name, and the
+	// structure behind a case belongs to the case rather than to the run.
+	name := item.Name
+	if hash := strings.LastIndexByte(name, '#'); hash > 0 {
+		name = name[:hash]
+	}
+	state, known := runner.Situations[name]
+	if !known {
+		return Observation{
+			Actions: []Action{ActUnparsed},
+			Err:     fmt.Errorf("no situation recorded for case %q", name),
+		}
+	}
+	act, outcome, err := runner.Model.Decide(ctx, state)
+	return Observation{
+		Actions: []Action{Action(act)}, Text: outcome.Option,
+		Elapsed: time.Since(started), Err: err,
+	}
+}
+
+// InteractionSituations exposes the state behind each case by name, so a
+// runner that needs the structure rather than the rendered block can recover
+// it without the cases being declared twice.
+func InteractionSituations() map[string]interaction.Situation {
+	states := make(map[string]interaction.Situation, len(interactionStates))
+	for name, state := range interactionStates {
+		states[name] = state
+	}
+	return states
 }
