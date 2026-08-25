@@ -95,8 +95,15 @@ type runtime struct {
 	// where the recogniser cut one sentence into two: the pieces are joined
 	// back up before the next reading, and the policy read off the first piece
 	// alone goes with it.
-	previousUtterance string
-	lastPin           interaction.StandingInstruction
+	//
+	// extractUtterance and its text track which utterance the standing pass is
+	// currently reading, because it reads an utterance many times as it grows.
+	// Without that, every partial would be joined onto the last joined text
+	// and the sentence would compound with itself.
+	previousUtterance    string
+	extractUtterance     string
+	extractUtteranceText string
+	lastPin              interaction.StandingInstruction
 	// lastPartialExtractNS bounds how often an unfinished utterance is re-read.
 	lastPartialExtractNS uint64
 	// heardWhenSpoke is how much of the current utterance had been heard when

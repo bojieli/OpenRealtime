@@ -63,7 +63,13 @@ func TestASentenceCutInTwoIsReadWhole(t *testing.T) {
 			if index >= len(halves) {
 				index = len(halves) - 1
 			}
-			return &scriptedASR{final: halves[index]}, nil
+			// Partials as well as a final, because the pass reads an
+			// utterance many times as it grows - and joining each reading onto
+			// the last joined text would compound the sentence with itself.
+			return &scriptedASR{
+				partials: []string{halves[index], halves[index]},
+				final:    halves[index],
+			}, nil
 		},
 		Fast: newFast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Will do."}}),
 		Slow: newSlow(), Policies: policies,
@@ -86,12 +92,18 @@ func TestASentenceCutInTwoIsReadWhole(t *testing.T) {
 	speak(t, runtime, 3)
 	waitFor(t, func() bool { return len(extractor.seen()) > 1 }, "the continuation was never read")
 
+	joined := false
 	for _, read := range extractor.seen() {
+		if strings.Count(read, "the build") > 1 || strings.Count(read, "anything else") > 1 {
+			t.Fatalf("the sentence was compounded with itself: %q", read)
+		}
 		if strings.Contains(read, "the build") && strings.Contains(read, "anything else") {
-			return
+			joined = true
 		}
 	}
-	t.Fatalf("the halves were never read as one sentence: %q", extractor.seen())
+	if !joined {
+		t.Fatalf("the halves were never read as one sentence: %q", extractor.seen())
+	}
 }
 
 // The same fact the extraction pass needs, for the decision that comes first.

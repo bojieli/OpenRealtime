@@ -218,11 +218,22 @@ func (runtime *runtime) noticeStanding(text string) {
 	runtime.extractedText = text
 	runtime.audioMu.Unlock()
 	snapshot := runtime.store.Snapshot()
+	// A new utterance retires the one before it. Within one utterance this
+	// runs many times as the text grows, and the piece to join onto has to
+	// stay the piece before rather than becoming what the last reading made.
+	current := runtime.currentUtterance()
+	runtime.audioMu.Lock()
+	if current != runtime.extractUtterance {
+		runtime.previousUtterance = runtime.extractUtteranceText
+		runtime.extractUtterance = current
+		runtime.extractUtteranceText = ""
+	}
+	runtime.audioMu.Unlock()
 	whole, stale := runtime.wholeUtterance(snapshot, text)
 	// The joined text, not this piece: a sentence cut into three joins onto
 	// what the first two already made.
 	runtime.audioMu.Lock()
-	runtime.previousUtterance = whole
+	runtime.extractUtteranceText = whole
 	runtime.audioMu.Unlock()
 	runtime.wait.Add(1)
 	go func() {
