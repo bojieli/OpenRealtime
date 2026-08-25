@@ -18,9 +18,15 @@ func Suite() []Scenario {
 			Instructions: "You are a voice assistant. Follow the instructions the person gives you about when to speak.",
 			Script: []Line{
 				{Speaker: "user", AtMS: 0, Text: "I'm going to tell you about my afternoon. Count the animals out loud as I mention them, and say nothing else."},
-				{Speaker: "user", AtMS: 9000, Text: "It was a warm afternoon and I was walking along by the river."},
-				{Speaker: "user", AtMS: 17000, Text: "A capybara wandered over and sat down next to me."},
-				{Speaker: "user", AtMS: 25000, Text: "Then a heron landed on the far bank and stared at us."},
+				// The gap after the instruction is deliberate. A person who sets a
+				// policy waits for the "okay" before starting, and measured
+				// response latency here is about two seconds - so a story that
+				// began two seconds after the instruction ended guaranteed the
+				// acknowledgement would land inside the first line's window and
+				// be scored as counting the wrong thing.
+				{Speaker: "user", AtMS: 13000, Text: "It was a warm afternoon and I was walking along by the river."},
+				{Speaker: "user", AtMS: 21000, Text: "A capybara wandered over and sat down next to me."},
+				{Speaker: "user", AtMS: 29000, Text: "Then a heron landed on the far bank and stared at us."},
 			},
 			TrailingMS: 4000,
 			Checks: []Check{
@@ -129,8 +135,8 @@ func Suite() []Scenario {
 			// its result.
 			Script: []Line{
 				{Speaker: "user", AtMS: 0, Text: "My colleague only speaks Mandarin. Translate everything he says into English as he goes, and don't wait for him to finish."},
-				{Speaker: "other", AtMS: 9000, Text: "你好，很高兴见到你。"},
-				{Speaker: "other", AtMS: 15000, Text: "我们明天下午三点在办公室见面。"},
+				{Speaker: "other", AtMS: 13000, Text: "你好，很高兴见到你。"},
+				{Speaker: "other", AtMS: 20000, Text: "我们明天下午三点在办公室见面。"},
 			},
 			TrailingMS: 6000,
 			Checks: []Check{
