@@ -344,6 +344,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 	}
 
 	consumedInvocations := make(map[string]struct{})
+	elapsed := continuation.ElapsedNotes(request.Trajectory.Items)
 	var lastSemanticKind trajectory.Kind
 	for _, item := range request.Trajectory.Items {
 		if item.Kind == trajectory.KindInstruction || item.Kind == trajectory.KindAssistantState {
@@ -375,7 +376,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 		if _, consumed := consumedInvocations[item.InvocationID]; modelItem && consumed && item.InvocationID != "" {
 			continue
 		}
-		content, ok, err := compilePortableItem(item, request.Media)
+		content, ok, err := compilePortableItem(item, request.Media, elapsed)
 		if err != nil {
 			return geminiRequest{}, err
 		}
@@ -418,14 +419,14 @@ func isModelOutputItem(kind trajectory.Kind) bool {
 }
 
 func compilePortableItem(
-	item trajectory.Item, media continuation.MediaResolver,
+	item trajectory.Item, media continuation.MediaResolver, elapsed map[string]string,
 ) (geminiContent, bool, error) {
 	part := make(map[string]any)
 	role := "user"
 	var attachments []json.RawMessage
 	switch item.Kind {
 	case trajectory.KindObservation:
-		part["text"] = continuation.ObservationContent(item)
+		part["text"] = continuation.ObservationContent(item, elapsed[item.ID])
 		// An observation may carry images an observer retained. Narration is
 		// what survives after they are pruned, but while they exist a model
 		// that can see should see them: reasoning about a screen and clicking

@@ -317,6 +317,20 @@ func (runner *Runner) run(
 // exactly backwards: the arrangement exists so the voice can talk while the
 // reasoner reasons, and a rule that punishes it for doing so removes the
 // concurrency the whole design is for.
+//
+// One case this does not yet get right, and cannot reach today. The loop can
+// classify an arriving question as a parallel branch, meaning it "can be
+// handled without disturbing the work in flight" - and then the observation it
+// carries supersedes that very work here. Both statements cannot be true. The
+// loop's classification is the better authority, because it is the one that
+// looked at whether the branch disturbs anything, so the predicate should take
+// it rather than infer from the kind alone.
+//
+// It is unreachable while the loop has a single driver: a parallel branch
+// cannot run beside a continuation, so no observation can arrive during one.
+// Whoever makes that concurrent has to thread the classification through to
+// here, or an unrelated question asked mid-deliberation will silently discard
+// the deliberation.
 func supersedesContinuation(item trajectory.Item) bool {
 	switch item.Kind {
 	case trajectory.KindObservation, trajectory.KindRepair, trajectory.KindToolResult:

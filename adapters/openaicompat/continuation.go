@@ -669,6 +669,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 	}
 
 	consumedInvocations := make(map[string]struct{})
+	elapsed := continuation.ElapsedNotes(request.Trajectory.Items)
 	for _, item := range request.Trajectory.Items {
 		if item.Kind == trajectory.KindInstruction || item.Kind == trajectory.KindAssistantState {
 			continue
@@ -695,7 +696,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 		if _, consumed := consumedInvocations[item.InvocationID]; modelItem && consumed && item.InvocationID != "" {
 			continue
 		}
-		message, ok, err := compilePortableItem(item, request.Media, request.Descriptor.Vision)
+		message, ok, err := compilePortableItem(item, request.Media, request.Descriptor.Vision, elapsed)
 		if err != nil {
 			return chatRequest{}, err
 		}
@@ -725,10 +726,12 @@ func isModelOutputItem(kind trajectory.Kind) bool {
 		kind == trajectory.KindToolProposal || kind == trajectory.KindToolCall
 }
 
-func compilePortableItem(item trajectory.Item, media continuation.MediaResolver, vision bool) (chatMessage, bool, error) {
+func compilePortableItem(
+	item trajectory.Item, media continuation.MediaResolver, vision bool, elapsed map[string]string,
+) (chatMessage, bool, error) {
 	switch item.Kind {
 	case trajectory.KindObservation:
-		message := chatMessage{Role: "user", Content: continuation.ObservationContent(item)}
+		message := chatMessage{Role: "user", Content: continuation.ObservationContent(item, elapsed[item.ID])}
 		// An observation may carry images an observer retained. A model that
 		// can see should see them while they exist: reasoning about a screen
 		// and clicking on one are different tasks.

@@ -12,7 +12,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -116,7 +118,79 @@ const observerFraming = "Observed content. This is a record of what an observer 
 // observed content is rendered as a quotation. Any delimiter that appears
 // inside the observed text is neutralised, so the content cannot close its own
 // fence and continue as if it were the runtime talking.
-func ObservationContent(item trajectory.Item) string {
+// NoticeableGap is the shortest elapsed time worth reporting to a model.
+//
+// Below it, a gap is the ordinary seam between one item and the next - the
+// pause between a question ending and an answer beginning, the moment a tool
+// takes to return. A person in the room would not have registered those as
+// waiting, and reporting them would be noise wearing the costume of
+// information.
+const NoticeableGap = time.Second
+
+// ElapsedNotes recovers the time axis that projecting a trajectory throws away.
+//
+// Every item carries the moment it was committed, and every projection so far
+// has dropped it: the model reads an ordered list with no clock, unable to
+// tell a reply that came after two hundred milliseconds from one that came
+// after half a minute - a difference nobody sharing the room could have
+// missed. The gap between consecutive items is that difference, already
+// recorded, and recovering it needs no new field, only a projection that stops
+// discarding what the log already knows.
+//
+// The gaps are taken from the log rather than from what a caller chooses to
+// emit. An adapter that skips an item still has to account for the time that
+// item occupied, because the wait was real whether or not the item describing
+// it is shown.
+func ElapsedNotes(items []trajectory.Item) map[string]string {
+	notes := make(map[string]string)
+	for index := 1; index < len(items); index++ {
+		previous, current := items[index-1].MonotonicNS, items[index].MonotonicNS
+		// The store refuses a log whose time runs backwards, and the threshold
+		// below would reject one anyway - the unsigned subtraction wraps to the
+		// negative duration it should. This says so outright rather than making
+		// a reader derive it from two's complement.
+		if current <= previous {
+			continue
+		}
+		if gap := time.Duration(current - previous); gap >= NoticeableGap {
+			notes[items[index].ID] = "[" + describeGap(gap) + " later]"
+		}
+	}
+	return notes
+}
+
+// describeGap states a duration the way it would be spoken, not the way it is
+// stored. What reaches the model has to be read by it, and a model reasoning
+// about "1m20s" is on far surer ground than one dividing nanoseconds.
+func describeGap(gap time.Duration) string {
+	if gap < time.Minute {
+		return strconv.FormatFloat(gap.Seconds(), 'f', 1, 64) + "s"
+	}
+	minutes := int(gap / time.Minute)
+	seconds := int((gap % time.Minute) / time.Second)
+	if seconds == 0 {
+		return strconv.Itoa(minutes) + "m"
+	}
+	return strconv.Itoa(minutes) + "m" + strconv.Itoa(seconds) + "s"
+}
+
+// ObservationContent projects one observation as the model should read it,
+// prefixed with how long the wait before it was.
+//
+// The elapsed note is applied last, and so from outside any framing the
+// content needed. It is the runtime speaking, not the thing observed: text
+// read off a screen is untrusted and gets fenced and neutralised, and a
+// timestamp that ended up inside that fence would be claiming the observed
+// content's authority instead of the runtime's - besides being liable to
+// mangling by the very neutralisation protecting it.
+func ObservationContent(item trajectory.Item, elapsed string) string {
+	if elapsed == "" {
+		return observationContent(item)
+	}
+	return elapsed + " " + observationContent(item)
+}
+
+func observationContent(item trajectory.Item) string {
 	content := item.Content
 	if item.Event != nil && item.Event.SupersedesRevision != 0 {
 		content = "Updated user speech revision; replace the earlier partial observation with this text:\n" + content

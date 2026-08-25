@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -376,5 +377,36 @@ func TestBuildRequestMarksUnspokenRetainedState(t *testing.T) {
 	if !hinted {
 		encoded, _ := json.Marshal(body)
 		t.Fatalf("retained state kept a background result indistinguishable from speech: %s", encoded)
+	}
+}
+
+// The projection is what puts the log's clock in front of the model. Testing
+// the note in isolation proves only that it can be rendered; this proves it is
+// actually carried, which is the half that silently breaks.
+func TestBuildRequestCarriesElapsedTime(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{Model: "model-a", Provider: "vllm", Phase: trajectory.PhaseFast})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "inv-t",
+		Trajectory: trajectory.Snapshot{Version: 2, Items: []trajectory.Item{
+			{ID: "first", Kind: trajectory.KindObservation, MonotonicNS: 0,
+				Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "are you there"},
+			{ID: "second", Kind: trajectory.KindObservation, MonotonicNS: uint64(9 * time.Second),
+				Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "still there"},
+		}},
+		Invocation: continuation.Invocation{Instruction: "Continue."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(body)
+	if !strings.Contains(string(encoded), "9.0s later") {
+		t.Fatalf("a nine second silence never reached the model: %s", encoded)
+	}
+	if strings.Contains(string(encoded), "later] are you there") {
+		t.Fatalf("the first observation was given something to be later than: %s", encoded)
 	}
 }

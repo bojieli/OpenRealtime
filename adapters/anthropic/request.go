@@ -56,6 +56,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (messagesRequ
 
 	var blocks []compiledBlock
 	consumed := make(map[string]struct{})
+	elapsed := continuation.ElapsedNotes(request.Trajectory.Items)
 	for _, item := range request.Trajectory.Items {
 		if _, cancelled := cancelledInvocations[item.InvocationID]; cancelled && item.InvocationID != "" {
 			continue
@@ -91,7 +92,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (messagesRequ
 		if _, already := consumed[item.InvocationID]; modelItem && already && item.InvocationID != "" {
 			continue
 		}
-		compiled, err := compileItem(item, request.Media, adapter.descriptor.Vision, resolved)
+		compiled, err := compileItem(item, request.Media, adapter.descriptor.Vision, resolved, elapsed)
 		if err != nil {
 			return messagesRequest{}, err
 		}
@@ -276,10 +277,11 @@ func isModelOutputItem(kind trajectory.Kind) bool {
 // compileItem renders one trajectory item as portable content blocks.
 func compileItem(
 	item trajectory.Item, media continuation.MediaResolver, vision bool, resolved map[string]struct{},
+	elapsed map[string]string,
 ) ([]compiledBlock, error) {
 	switch item.Kind {
 	case trajectory.KindObservation:
-		raw, err := textBlock(continuation.ObservationContent(item))
+		raw, err := textBlock(continuation.ObservationContent(item, elapsed[item.ID]))
 		if err != nil {
 			return nil, err
 		}
