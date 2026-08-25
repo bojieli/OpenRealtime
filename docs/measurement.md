@@ -564,3 +564,53 @@ explicitly asked for passes at most one time in six. The decision is right when
 the policy is in front of it - measured directly, the model answers "listen" at
 exactly the pause that fails - so what is left is the policy not reliably being
 there, which is extraction and not the decision.
+
+### The full suite, including the production cases (F19)
+
+The suite had five scenarios and covered the demos and the phone menu. It had
+nothing for ordering from a waiter or for simultaneous speech, which are the
+two cases that came from somebody actually using this. With those and a
+backchannel case added, eight scenarios and twenty-one checks:
+
+| scenario | passes | source |
+| --- | --- | --- |
+| a recorded menu | 2/2 | production: IVR navigation |
+| an acknowledgement is not an interruption | 2/2 | overlap |
+| an ordinary question | 2/2 | control |
+| translating as they speak | 2/2 | production: simultaneous speech |
+| asked not to be interrupted | 1/2 | a policy set out loud |
+| count as they go | 1/2 | the counting demo |
+| ordering from a waiter | 1/2 | production: the moment passes if you wait |
+| cutting in on something wrong | 0/2 | correcting mid-sentence |
+| **total** | **11/16 (68%)** | |
+
+Against 33% for the shipped predicates on the five it shares. Seven of the
+eight now pass at least sometimes; every one of them passed zero times when
+this started.
+
+Two bugs surfaced only because the new scenarios existed.
+
+**The pause clock was not measuring a pause.** It deliberately survives a hold,
+because reopening the gate zeroes the gate's own counter and a bound measured
+from there would restart on every hold and never arrive. But it also survived
+the speaker *speaking*, so it reported twenty seconds of silence across a
+stretch containing three spoken sentences - and the liveness bound, measured
+against it, fired in the middle of a monologue and interrupted the one thing it
+had been asked not to interrupt. That scenario had never passed; it passes now.
+
+**The recogniser endpoint accepted a language and dropped it**, always passing
+"auto" to the model. Harmless until somebody is interpreting: auto-detection on
+a short second-language utterance guesses the first language and returns the
+right sounds spelled wrong. Asked for German - which this recogniser does not
+cover at all - "Guten Tag" came back as "G talk", and the agent faithfully
+interpreted the nonsense. Live interpreting is bounded by what the recogniser
+can hear, and that bound belongs in the scenario rather than in its result.
+
+### What is still not covered
+
+The scenario harness plays audio, so the visual demos - announcing a posture
+change, watching a screen and a camera at once - have no end-to-end case. The
+perception layer supports them: `perception/video.go` takes named sources,
+samples on change, and narrates to text. What is missing is a way to script a
+visual event on a timeline beside the speech, and until that exists those
+capabilities are covered only at the step-by-step layer.
