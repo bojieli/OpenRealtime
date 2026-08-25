@@ -91,6 +91,32 @@ func InteractionCases() []Case {
 		}, "the hard half of the pair: a finished sentence, a real pause, and a policy that still says nothing",
 			[]Action{ActStaySilent}, ActAnswer, ActInterrupt, ActSpeakThrough),
 
+		act("already-agreed-to-this", interaction.Situation{
+			Recent: []string{
+				"user: I'm going to read for a bit.",
+				"agent: Enjoy your reading.",
+				"user: Tell me the moment the build.",
+				"agent: I will.",
+				"user: finishes. and don't.",
+			},
+			Silence:       "600ms",
+			SincePrevious: "480ms",
+			Heard:         "Say anything else.",
+		}, "a recogniser splits a sentence where the speaker breathes, so one instruction arrives as "+
+			"several; the agent has already agreed and agreeing again sounds like it forgot",
+			[]Action{ActStaySilent}, ActAnswer, ActInterrupt, ActSpeakThrough),
+
+		act("the-same-words-after-a-real-gap", interaction.Situation{
+			Recent: []string{
+				"user: Tell me the moment the build finishes.",
+				"agent: I will let you know as soon as it does.",
+			},
+			Silence:       "700ms",
+			SincePrevious: "34s",
+			Heard:         "Actually, also tell me if any of the tests fail.",
+		}, "half a minute later the same shape is a new instruction, not the tail of the old one",
+			[]Action{ActAnswer}, ActStaySilent),
+
 		act("pause-after-question", interaction.Situation{
 			Recent:  []string{"user: I need to check something"},
 			Silence: "900ms",

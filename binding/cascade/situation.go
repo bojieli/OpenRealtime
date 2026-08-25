@@ -31,6 +31,7 @@ func (runtime *runtime) situation(decision interaction.Context) interaction.Situ
 		Speaking:      decision.Duplex.UserSpeaking,
 		Heard:         strings.TrimSpace(decision.Revision.Text()),
 		Silence:       renderSilence(decision.Revision.SilenceNS),
+		SincePrevious: runtime.gapBeforeUtterance(snapshot),
 		InFlight:      workInFlight(snapshot),
 		Seen:          lastSeen(snapshot),
 		Tools:         runtime.toolLines(),
@@ -269,4 +270,32 @@ func errorText(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+// gapBeforeUtterance is how long passed between the previous utterance ending
+// and the one now in progress starting.
+//
+// It is the difference between a turn and a breath. A recogniser splits a
+// sentence where the speaker pauses, so the tail of an instruction arrives
+// capitalised and punctuated like a sentence of its own, and nothing in the
+// text says which it is. Adjacency in time does.
+func (runtime *runtime) gapBeforeUtterance(snapshot trajectory.Snapshot) string {
+	runtime.audioMu.Lock()
+	startedNS := runtime.speechStartNS
+	runtime.audioMu.Unlock()
+	if startedNS == 0 {
+		return ""
+	}
+	for index := len(snapshot.Items) - 1; index >= 0; index-- {
+		item := snapshot.Items[index]
+		if item.Kind != trajectory.KindObservation ||
+			trajectory.AuthorityOf(item) != trajectory.AuthorityUser {
+			continue
+		}
+		if item.MonotonicNS == 0 || item.MonotonicNS >= startedNS {
+			continue
+		}
+		return renderSilence(startedNS - item.MonotonicNS)
+	}
+	return ""
 }

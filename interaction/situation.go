@@ -92,6 +92,18 @@ type Situation struct {
 	// three hundred milliseconds is nothing to a reader of the transcript and
 	// is the whole question here.
 	Silence string
+	// SincePrevious is how long between the previous utterance ending and this
+	// one starting.
+	//
+	// A recogniser breaks a sentence wherever the speaker draws breath, so one
+	// instruction arrives as several, each capitalised and punctuated into
+	// something that looks like a sentence of its own. "Say anything else."
+	// reads as an imperative and is the tail of "and don't say anything else"
+	// - and the only reliable signal that the two belong together is that
+	// nothing happened between them. Without this the decision is being asked
+	// whether a turn has ended while being shown neither of the two gaps that
+	// would say so.
+	SincePrevious string
 	// InFlight is work already running. It is what stops the same decision
 	// being taken twice.
 	InFlight string
@@ -164,6 +176,9 @@ func (state Situation) Render() string {
 		block.WriteString("just seen: " + state.Seen + "\n")
 	}
 	block.WriteString("silence: " + orElse(state.Silence, "0ms") + "\n")
+	if trimmed := strings.TrimSpace(state.SincePrevious); trimmed != "" {
+		block.WriteString("gap before this utterance: " + trimmed + "\n")
+	}
 	block.WriteString("work in flight: " + orElse(state.InFlight, "nothing") + "\n")
 	if len(state.Tools) > 0 {
 		block.WriteString("tools the agent can use without speaking: " + strings.Join(state.Tools, ", ") + "\n")

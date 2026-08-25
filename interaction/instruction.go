@@ -83,6 +83,16 @@ func examples() []workedExample {
 		}, ActStopSpeaking, "They are taking the floor to correct something, and continuing would bury it."},
 
 		{Situation{
+			Recent: []string{
+				"user: Put the meeting in for Thursday.",
+				"agent: Done, Thursday it is.",
+				"user: and make it.",
+			},
+			Silence: "550ms", SincePrevious: "410ms",
+			Heard: "An hour long.",
+		}, ActStaySilent, "Nothing makes acting necessary: four hundred milliseconds after a sentence already answered, this is its tail."},
+
+		{Situation{
 			Pins:    []string{"tell me the moment the courier arrives (20m ago)"},
 			Recent:  []string{"user: I'll be in the other room"},
 			Silence: "6m", Seen: "a van has stopped outside and someone is walking up the path",
@@ -104,8 +114,9 @@ func buildInstruction() string {
 			"listed as available, since the others describe things the agent is not in a position to do.\n\n" +
 			"You are shown any standing instructions the people in this conversation gave out loud, the recent " +
 			"conversation, and the current instant: what the agent is doing, who else is speaking and what has " +
-			"been heard from them so far, how long the silence has lasted, what work is already running, and " +
-			"anything just seen that nobody said out loud.\n\n" +
+			"been heard from them so far, how long the silence has lasted, how long a gap there was before " +
+			"they started this one, what work is already running, and anything just seen that nobody said " +
+			"out loud.\n\n" +
 			"Standing instructions govern this decision and outrank every general rule below. If someone asked " +
 			"not to be interrupted, do not interrupt them. If someone asked to be told the moment something " +
 			"happens, tell them the moment it happens, even in the middle of their own sentence. If someone " +
@@ -126,6 +137,11 @@ func buildInstruction() string {
 			"you could state in a sentence: a standing instruction whose condition has actually been met, an " +
 			"utterance that has genuinely finished, or something that will be too late if it waits. If you " +
 			"cannot name that reason, there is not one, and the answer is to leave things as they are.\n\n" +
+			"A recogniser breaks a sentence wherever the speaker draws breath, so one thing somebody says " +
+			"often arrives as several, each capitalised and punctuated into something that reads like a " +
+			"sentence of its own. The gap before an utterance tells them apart. A few hundred " +
+			"milliseconds means it is the tail of what came just before, and if the agent has already " +
+			"answered that, there is nothing left to answer. Seconds mean a new thing was said.\n\n" +
 			"Two rules that are easy to get backwards. Silence is neither necessary nor sufficient: someone who " +
 			"paused mid-thought has not finished, and someone who never pauses may already have said the thing " +
 			"worth acting on. And work already running has already been decided: do not start the same work a " +
