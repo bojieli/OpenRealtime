@@ -197,3 +197,42 @@ whenever it produces nothing anybody hears. Three things can silence a turn -
 the model returns nothing, the output never reaches a safe point, the
 commitment policy holds it - and all three returned silently. From outside they
 are indistinguishable from the decision layer being wrong.
+
+## A probe that was right about the case it asked about
+
+Twice today the same method worked: reconstruct the exact input a model was
+given, ask it directly, change one thing, count. It found the empty
+continuation, the revoked policy, and the truncated pin, and each time the fix
+that followed held up in the suite.
+
+The third time it did not.
+
+A recogniser splits a request in two, so the tail arrives looking like a
+request of its own and the agent answers it - a second acknowledgement of
+something already agreed to. Told plainly that the tail was a tail, the model
+listened seven times out of seven instead. Clean result, obvious fix, and the
+suite disagreed:
+
+| | before | after |
+| --- | --- | --- |
+| a recorded menu | 2/5 | 0/5 |
+| ordering from a waiter | 4/5 | 3/5 |
+| translating as they speak | 5/5 | 1/5 |
+
+Every one of those has somebody delivering consecutive sentences with a breath
+between them, and the measurement that identifies a tail - how soon the speaker
+started again - cannot tell a breath inside a sentence from a breath between
+two. Told the next sentence was the rest of one already answered, the agent
+listened: the second sentence of an interpretation went untranslated, the next
+menu option unpressed, the dish that fits unordered.
+
+The probe was not wrong. It answered the question it was asked, about the case
+it was given, and that case is real. What it could not do is say what the same
+sentence costs in the cases it was not given - and the difference between the
+two is the difference between an experiment and a suite.
+
+The distinction that survives: **the gap is evidence and "this is a tail" is a
+conclusion.** Handing a model the conclusion decides the cases it was not
+derived from. Handing it the whole sentence - which is what the
+standing-instruction pass gets, and where this measured a real gain - is
+strictly more information with nothing concluded from it.
