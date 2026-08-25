@@ -37,6 +37,7 @@ audio observer only.
 | F9 | Fast model | local text · hosted vision · local VLM | `-fast-provider`, `-fast-model`, `-fast-sees` |
 | F10 | Fast action lane | slow-only · bounded fast computer use | `-fast-computer-use` |
 | F11 | Video frame rate | 1 · 3 · 5 · 10 fps | client/evaluator `-fps` |
+| F12 | Recogniser | Qwen3-ASR · SenseVoiceSmall · hosted transcription · local Whisper | `-asr-provider`, `-asr-model` |
 
 Every factor is a command-line flag, because a policy that cannot be swapped
 cannot be measured. A cell is a command line rather than a build.
@@ -59,7 +60,7 @@ which is the signal that a model is too small for the job.
 | FDB v1.5 | 498 overlap recordings | overlap, barge-in, turn-taking. F1, F5 |
 | FDB v3 | 100 tool-use recordings | tool use with real function results. F1, F2 |
 | FD-Bench | 6,147 conversations, 77.2 h | endpointing and timing at scale. F1, F4, F5 |
-| OpenRealtime Realtime-CU v1 | 8 task families × pixel and set-of-mark | owned audio/video/camera action correctness and reaction. F2, F3, F7, F9, F10, F11 |
+| OpenRealtime Realtime-CU v1 | 8 task families × pixel and set-of-mark | owned audio/video/camera action correctness and reaction. F2, F3, F7, F9, F10, F11, F12 |
 | DynaCU-Bench | 100 dynamic + 50 static | optional independent video/action validation. F1, F3, F7 |
 
 τ-Voice and DynaCU-Bench stay in their own repositories, and OpenRealtime
@@ -127,12 +128,118 @@ versus narration, pixel versus set-of-mark readings within each task, hosted
 Gemini versus a local VLM, and the video rate. A run from a modified worktree or
 a restricted selection remains non-reportable even when it passes.
 
+### Realtime-CU F10 result, 2026-08-25
+
+One complete paired trial changed only F10. Both cells used the same clean snapshot
+`b23b5b4f19fdb644b626bf0de74ed73147895c97`, executable SHA-256
+`5417b9c0c093ba30861cd1497d620c56ec3b240cda9258444155d99aae8e0bcd`,
+three video frames per second, Gemini 3.5 Flash for both cognition phases,
+SenseVoiceSmall ASR, the local Qwen-VL observer, and Fish S2-Pro speech. Every
+cell completed all sixteen cases with no infrastructure failure.
+
+| Measure | slow-only | bounded fast |
+| --- | ---: | ---: |
+| Pixel correct | 2/8 | 0/8 |
+| Pixel correct within deadline | 2/8 | 0/8 |
+| Set-of-mark correct | 4/8 | 5/8 |
+| Set-of-mark correct within deadline | 3/8 | 4/8 |
+| Overall correct | 6/16 | 5/16 |
+| Overall correct within deadline | 5/16 | 4/16 |
+| Cue to first effectful action, P50 | 4,645 ms (`n=10`) | 1,533 ms (`n=13`) |
+| Cue to first effectful action, P95 | 13,579 ms | 7,858 ms |
+| Cue to first effectful action, max | 15,543 ms | 8,591 ms |
+| Frame to observation, P50 | 6.0 ms (`n=16`) | 4.5 ms (`n=16`) |
+| Cue to observation, P50 | 312 ms (`n=4`) | 146 ms (`n=4`) |
+
+The bounded lane reduced median reaction by 67% and P95 by 42%. It did not
+raise overall correctness or deadline success. Set-of-mark gained one outcome
+while pixel lost two, which is useful diagnostic evidence and not a general
+intelligence claim at this sample size. An earlier clean pair on a prior
+snapshot independently moved the median in the same direction, 7,653 to 1,090
+ms, but code changed between snapshots and the observations are not pooled.
+
+The audit log explains the latency change rather than merely correlating with
+it. Across the first pair, twelve direct clicks ran in the fast phase; all fifty
+screenshots, waits, typing calls, scrolling calls, and deliberative repairs ran
+in slow. The runtime coordinate fence also remained necessary. Slow-only made
+no out-of-bounds calls, while bounded fast attempted three; all three were
+refused even though the target-specific tool schema and task
+instruction both stated the inclusive bounds. A provider accepting a schema is
+not evidence that it will obey it.
+
+The retained recognized turns expose another bottleneck. On every incident-code
+case, the configured recognizer heard variants of “Ko now for N” and the agent
+typed `KONOW4N`; the authored audio independently transcribes as “incident code
+alpha-7”. That failure belongs to the measured end-to-end system, but it is ASR
+evidence rather than a reason to relabel the downstream model as unintelligent.
+The benchmark retains both recognized text and action trace so future ASR and
+cognition cells can separate the two.
+
+A counter-ordered repeat is retained only as diagnostic evidence. One bounded
+fast task reported a trajectory-version conflict and one slow-only task hit a
+Gemini HTTP 503. An earlier runner retained those errors but still marked the
+cases complete; the shared driver now returns a typed session failure and makes
+either cell incomplete. They are not pooled into the table above.
+
+This is a measured speed result and a negative quality result. One clean pair
+and one earlier-snapshot replication are not an estimate of a stable population
+effect; broader model, video-rate, and repeated-seed cells remain the work
+needed for comparative capability claims.
+
+### Realtime-CU F12 result, 2026-08-25
+
+One complete pair changed only the recognizer: local SenseVoiceSmall versus
+streaming Deepgram Nova-3. Both cells used clean snapshot
+`a2d726763713b06ecb89f155b7b4358c1e6cdc52`, executable SHA-256
+`e9a52625bcb0e07b08b8508707ea1422e37ec53966555bb9dca15df0c3ee7ada`,
+and the same slow-only action authority and cognition, vision, TTS, browser,
+audio, and video configuration. Both completed all sixteen cases with no
+infrastructure failure.
+
+| Measure | SenseVoiceSmall | Deepgram Nova-3 |
+| --- | ---: | ---: |
+| Pixel correct | 2/8 | 2/8 |
+| Pixel correct within deadline | 1/8 | 1/8 |
+| Set-of-mark correct | 4/8 | 5/8 |
+| Set-of-mark correct within deadline | 2/8 | 2/8 |
+| Overall correct | 6/16 | 7/16 |
+| Overall correct within deadline | 3/16 | 3/16 |
+| Cue to first effectful action, P50 | 7,264 ms (`n=10`) | 4,481 ms (`n=11`) |
+| Cue to first effectful action, P95 | 10,894 ms | 13,026 ms |
+| Cue to first effectful action, max | 11,721 ms | 15,258 ms |
+| Frame to observation, P50 | 5.6 ms (`n=16`) | 5.7 ms (`n=16`) |
+| Cue to observation, P50 | 480 ms (`n=4`) | 156 ms (`n=4`) |
+
+Deadline pass rate was identical, so the formal paired comparison reports a
+zero difference. Functional correctness gained one case and typical reaction
+was lower, while tail reaction was worse. The result is diagnostic, not a
+general recognizer ranking.
+
+The literal task shows the causal improvement clearly. SenseVoice heard “Ko
+now for N”, the model submitted `K094N`, and the case failed. Deepgram heard
+“AlphaDash7”, the same cognition path typed `Alpha-7`, and the deterministic
+evaluator accepted it, 129 ms beyond the deadline in the smoke run and late
+again in the full cell. Deepgram also preserved “smoke” and “emergency stop” in
+the camera task, turning the pixel case functionally correct but late. Cleaner
+language did not solve transient UI, dashboard, or game timing, and one
+authorization pixel grounding regressed despite an accurate transcript. ASR
+was one bottleneck, not the only bottleneck.
+
+An OpenAI ASR smoke attempt returned HTTP 429 for exhausted quota. It is kept
+as incomplete diagnostic evidence and is excluded from every result above.
+
 ## Reporting rules
 
 - **No incomplete cell is reported.** A partially executed cell is not a
   smaller result, it is a different one.
+- **No legacy session failure is reported.** The reader refuses older JSON in
+  which a protocol error survived as a `session_failure` note on a supposedly
+  completed task, even if that file's cached summary says it is complete.
 - **Every cell declares its source revision and executable hash.** A number
   that cannot be traced to a build is a number that will eventually be wrong.
+- **A pair uses one build and one machine description.** The comparison
+  refuses different revisions, executable hashes, or hardware; otherwise code
+  or hardware would be an unrecorded factor.
 - **Latency claims require distributions.** A mean first-audio latency without
   its tail describes a system nobody is using.
 - **Negative results publish.** A configuration that does not help is
@@ -794,3 +901,28 @@ that is what fails the bound.
 
 **Repetition.** Two or three key presses at a phone menu where one is right,
 now that the in-flight guard stops six.
+
+### The shape of what is left (F23)
+
+Two scenarios fail the same way, and the symmetry is the most useful thing
+known about them. Counting says "One" and not "Two". Interpreting carries the
+first sentence over and not the second. Both are repeated speak-through, both
+answer the first occurrence promptly - 1.7 to 2.1 seconds - and both go quiet
+for the second.
+
+That is one cause rather than two, and it is not the decision: traced with the
+policy pinned, the agent's own first answer in the conversation above it and a
+two-second gap marking the new utterance, the model chose speak-through for the
+second occurrence. Between that choice and the microphone something declines.
+
+The candidates are enumerable, which is the value of having recorded every
+refusal: one interjection per revision, one in flight at a time with a
+three-second staleness bound, the floor's own cache, and the event loop's
+single driver serialising the commit. Each is individually defensible and one
+of them is wrong here.
+
+Everything else in the suite is either passing consistently - an ordinary
+question, a policy honoured through pauses, an acknowledgement that must not
+stop the agent, ordering from a waiter - or failing for a reason already named:
+the voice acknowledging where it should correct, and the vision pipeline's
+latency on triggers other than the frame itself.
