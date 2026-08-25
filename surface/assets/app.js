@@ -278,8 +278,15 @@ function handle(event) {
       elements.mediaState.textContent = manualTurns
         ? "this session declares its own turns — press End turn when you have finished speaking"
         : elements.mediaState.textContent;
+      // Whether the prompt on screen is the prompt the agent has. A surface
+      // that only said "sent" would leave the most useful question about a
+      // mid-session edit unanswered: a server that ignored it and a server
+      // that applied it look identical from the client's side of the send.
       if (typeof event.session?.instructions === "string") {
-        elements.instructionsState.textContent = "in force";
+        elements.instructionsState.textContent =
+          event.session.instructions.trim() === elements.instructions.value.trim()
+            ? "in force"
+            : "the server is running different instructions from the ones shown";
       }
       negotiated = event.session?.openrealtime ?? null;
       describeNegotiation(negotiated);

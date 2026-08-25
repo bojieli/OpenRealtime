@@ -42,6 +42,13 @@ type Config struct {
 	// empty name means the slow provider only speaks.
 	ToolName      string
 	ToolArguments string
+	// ToolCalls is a sequence of calls, one per slow turn, for a client whose
+	// point is that it runs several different kinds of tool. A test that needs
+	// one call uses ToolName; a test that needs to see a file read, a browser
+	// clicked, and an artifact rendered needs them to arrive separately,
+	// because a client that batched them would be a client the protocol does
+	// not describe.
+	ToolCalls []ScriptedCall
 	// Narration is what the video observer reports for any frame.
 	Narration string
 	// FastSpendsBudgetThinking makes the fast provider return no assistant
@@ -51,6 +58,12 @@ type Config struct {
 	FastSpendsBudgetThinking bool
 	// AllowedOrigins are the web origins the WebRTC adapter will answer.
 	AllowedOrigins []string
+}
+
+// ScriptedCall is one tool call the slow provider issues, on its own turn.
+type ScriptedCall struct {
+	Name      string
+	Arguments string
 }
 
 // Stack is a running server and its adapter.
@@ -87,17 +100,25 @@ func Start(t testing.TB, config Config) Stack {
 	slowTurns := [][]continuation.Event{
 		{{Kind: continuation.EventAssistantDelta, Text: "The notes say the deadline moved to Friday."}},
 	}
+	scriptedCalls := config.ToolCalls
 	if strings.TrimSpace(config.ToolName) != "" {
-		arguments := config.ToolArguments
+		scriptedCalls = append([]ScriptedCall{
+			{Name: config.ToolName, Arguments: config.ToolArguments},
+		}, scriptedCalls...)
+	}
+	var callTurns [][]continuation.Event
+	for _, call := range scriptedCalls {
+		arguments := call.Arguments
 		if strings.TrimSpace(arguments) == "" {
 			arguments = "{}"
 		}
-		slowTurns = append([][]continuation.Event{
-			{{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
-				Name: config.ToolName, Arguments: []byte(arguments),
-			}}},
-		}, slowTurns...)
+		callTurns = append(callTurns, []continuation.Event{
+			{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+				Name: call.Name, Arguments: []byte(arguments),
+			}},
+		})
 	}
+	slowTurns = append(callTurns, slowTurns...)
 	slow := &scripted{descriptor: continuation.Descriptor{
 		Provider: "test", Model: "slow", Phase: trajectory.PhaseSlow,
 		Effort: continuation.EffortHigh, ToolAuthority: continuation.ToolAuthorityExecute,
