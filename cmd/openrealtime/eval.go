@@ -41,6 +41,10 @@ func runEval(arguments []string, output io.Writer) error {
 		return errors.New("eval accepts flags only")
 	}
 
+	if *decision == "timeline" {
+		return runTimelines(*provider, *model, *url, os.Getenv(*tokenEnv), *effort, *reason, output)
+	}
+
 	var cases []evals.Case
 	switch *decision {
 	case "hand-off":
@@ -107,5 +111,32 @@ func runEval(arguments []string, output io.Writer) error {
 				rate*100, summary.Total, *threshold*100)
 		}
 	}
+	return nil
+}
+
+// runTimelines replays the scripted stretches of conversation. They are a
+// separate mode rather than another decision because they score something
+// different: not which act, but when.
+func runTimelines(provider, model, url, key, effort, reason string, output io.Writer) error {
+	client, err := providers.NewLLM(providers.LLMRequest{
+		Provider: provider, Model: model, BaseURL: url, APIKey: key,
+		Phase: trajectory.PhaseFast, Effort: continuation.Effort(effort),
+		ToolAuthority:   continuation.ToolAuthorityPropose,
+		SpeechAuthority: continuation.SpeechAuthorityVoice,
+		Reason:          providers.Reason(reason),
+	})
+	if err != nil {
+		return fmt.Errorf("configure the model under test: %w", err)
+	}
+	label := provider
+	if model != "" {
+		label += "/" + model
+	}
+	runner := evals.InteractionRunner{Provider: client, Label: label}
+	var outcomes []evals.TimelineOutcome
+	for _, item := range evals.TimelineCases() {
+		outcomes = append(outcomes, evals.RunTimeline(context.Background(), runner, item))
+	}
+	fmt.Fprint(output, evals.FormatTimelines(outcomes))
 	return nil
 }
