@@ -596,6 +596,18 @@ func (runtime *runtime) drain() {
 			return
 		case errors.Is(err, eventloop.ErrInterrupted), errors.Is(err, context.Canceled):
 			continue
+		case errors.Is(err, continuation.ErrStalePrefix):
+			// The safe point refused output that answers something the
+			// conversation has since moved past. That is the guarantee working:
+			// nothing was committed, the trajectory is intact, and whatever
+			// overtook it gets its own turn.
+			//
+			// Here as well as at the step that produced it, because it can
+			// arise anywhere a continuation commits - a turn, a holding line, a
+			// reasoner resuming after a tool result - and the answer is the
+			// same everywhere. Reporting it ends the call over a moment that
+			// had simply moved on.
+			continue
 		default:
 			runtime.fail("provider_error", err)
 			return
