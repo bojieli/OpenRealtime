@@ -91,3 +91,51 @@ And the first implementation was inverted. `FirstAudioAfter` returns the wait
 rather than the moment, so subtracting the offset again turned every late reply
 into a large negative number - a bound nothing could fail, which passed its
 first test.
+
+## Measured again, five runs of every scenario (F28)
+
+Nine scenarios, five runs each, one server, pooled per scenario. Five is the
+floor rather than the target: three runs put two of these rows inside their own
+spread, and a number that moves by a scenario between runs is a range being
+reported as a figure.
+
+Waveform time throughout: from the last sample of the trigger to the first
+sample the agent produces.
+
+| what triggered the reply | p50 | p90 | worst | triggers |
+| --- | --- | --- | --- | --- |
+| an ordinary finished question | 1711ms | 1783ms | 1911ms | 5 |
+| cutting in on something wrong | 1792ms | 1876ms | 2666ms | 4 |
+| translating a sentence as it lands | 1945ms | 2076ms | 2356ms | 15 |
+| counting an animal as it is mentioned | 1323ms | 6779ms | 8770ms | 20 |
+| a waiter naming the right dish | 1304ms | 10411ms | 11327ms | 10 |
+| a phone menu naming an option | 2301ms | 7432ms | 11360ms | 8 |
+| a backchannel that must not stop the agent | 3055ms | 5951ms | 7104ms | 15 |
+| a frame showing a build finished | 100ms | 5945ms | 6054ms | 15 |
+| being asked not to be interrupted | 96ms | 96ms | 96ms | 1 |
+
+Two of these rows are not what they look like, and both say something.
+
+**The p50s are honest and the tails are not one number.** Counting is 1.3
+seconds at the median and 8.8 in the tail, because a trigger the agent
+correctly stays silent for still counts as a trigger with no reply until the
+next one - the harness cannot know which of them the agent was answering, and
+reporting all of them is the honest version. The rows whose whole point is
+restraint have the longest tails for exactly that reason.
+
+**The visual row is the one real latency problem.** 100ms at the median is the
+acknowledgement landing near a frame; the number that matters is the report of
+the build finishing, and it lands 4.2 to 5.2 seconds after the frame against a
+budget of three. Measured directly, narrating one frame with Gemini 3.5 Flash
+at minimal thinking costs:
+
+  1173  1260  1447  1516  1522 ms
+
+A picture has to become text before any text layer can reason about it, and
+that is 1.45 seconds at the median before the observation exists at all. The
+remaining ~2.7 seconds is the ordinary path - decision, voice, synthesis - which
+is what every other row pays. The visual case pays both.
+
+That is a real cost of the capability rather than a defect, and it is worth
+stating plainly: an agent watching a screen answers about a second and a half
+slower than one listening to a voice, unless the model deciding can see.
