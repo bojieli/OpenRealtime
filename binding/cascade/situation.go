@@ -35,9 +35,11 @@ func (runtime *runtime) situation(decision interaction.Context) interaction.Situ
 		HeardSince:    runtime.heardSinceSpeaking(strings.TrimSpace(decision.Revision.Text())),
 		Silence:       renderSilence(decision.Revision.SilenceNS),
 		SincePrevious: runtime.gapBeforeUtterance(snapshot),
-		InFlight:      workInFlight(snapshot),
-		Seen:          lastSeen(snapshot),
-		Tools:         runtime.toolLines(),
+
+		ContinuesAnswered: runtime.continuesAnswered(snapshot),
+		InFlight:          workInFlight(snapshot),
+		Seen:              lastSeen(snapshot),
+		Tools:             runtime.toolLines(),
 	}
 	if state.AgentSpeaking {
 		state.AgentSaying = speakingNow(snapshot)
@@ -378,6 +380,32 @@ func (runtime *runtime) gapBeforeUtteranceNS(snapshot trajectory.Snapshot) (uint
 // of a conversation in this suite are seconds apart, and a person who has
 // finished waits for an answer.
 const breathGap = time.Second
+
+// continuesAnswered reports that what is being said now is the rest of a
+// sentence the agent has already replied to.
+//
+// Two facts, both the runtime's own. The speaker started again within a breath,
+// which is what makes it the same sentence; and something the agent said sits
+// after the last thing they finished, which is what makes it already answered.
+// Without the second, an ordinary pause mid-request would read as a sentence
+// that had been dealt with, and the reply would never come.
+func (runtime *runtime) continuesAnswered(snapshot trajectory.Snapshot) bool {
+	gap, ok := runtime.gapBeforeUtteranceNS(snapshot)
+	if !ok || gap >= uint64(breathGap) {
+		return false
+	}
+	for index := len(snapshot.Items) - 1; index >= 0; index-- {
+		item := snapshot.Items[index]
+		switch {
+		case item.Kind == trajectory.KindAssistant:
+			return true
+		case item.Kind == trajectory.KindObservation &&
+			trajectory.AuthorityOf(item) == trajectory.AuthorityUser:
+			return false
+		}
+	}
+	return false
+}
 
 // wholeUtterance joins a piece of a sentence back onto the piece before it,
 // and names the policy that was read off that earlier piece.
