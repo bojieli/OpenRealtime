@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -595,5 +596,45 @@ func TestATitleCannotEscapeTheTagItIsIn(t *testing.T) {
 	}
 	if !strings.Contains(document, "&lt;/title&gt;") {
 		t.Fatalf("the title must be escaped rather than dropped, got %q", document)
+	}
+}
+
+// A resize moves the fence, not just the label.
+//
+// The dispatcher validates a coordinate against the target it was built with,
+// so a declaration that moved and a dispatcher that did not is a page whose
+// actions are checked against a screen that is no longer there - admitting
+// clicks off the bottom of a shrunk window, and refusing legitimate ones on a
+// grown one.
+func TestAResizeMovesWhatAnActionIsCheckedAgainst(t *testing.T) {
+	fake := newFakeBrowser(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	page, err := surface.ConnectBrowser(ctx, surface.BrowserConfig{DevToolsURL: fake.server.URL})
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer page.Close()
+	source := page.Source()
+	at := func(y int) json.RawMessage {
+		return json.RawMessage(fmt.Sprintf(`{"source":%q,"x":10,"y":%d}`, source, y))
+	}
+
+	if _, err := page.Act(ctx, "call-1", "computer.click", at(700)); err != nil {
+		t.Fatalf("y=700 is inside 1280x720 and must be admitted: %v", err)
+	}
+
+	fake.resize(800, 600)
+	if _, _, _, err := page.CaptureFrame(ctx); err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	if width, height := page.Viewport(); width != 800 || height != 600 {
+		t.Fatalf("the declaration must follow the page, got %d×%d", width, height)
+	}
+	if _, err := page.Act(ctx, "call-2", "computer.click", at(700)); err == nil {
+		t.Fatal("y=700 is off the bottom of 800x600 and must now be refused")
+	}
+	if _, err := page.Act(ctx, "call-3", "computer.click", at(500)); err != nil {
+		t.Fatalf("y=500 is inside 800x600 and must still be admitted: %v", err)
 	}
 }

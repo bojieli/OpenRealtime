@@ -31,15 +31,20 @@ import (
 // the same session; what it does not get is a page that can show you both
 // halves at once.
 type BrowserContext struct {
-	surface    *browser.Surface
-	dispatcher *computeruse.Dispatcher
-	target     computeruse.Target
-	source     string
+	surface *browser.Surface
+	source  string
 
-	mu       sync.RWMutex
-	lastURL  string
-	captured int
-	acted    int
+	mu sync.RWMutex
+	// target and dispatcher move together, and that is why they are behind one
+	// lock rather than two. The dispatcher validates a coordinate against the
+	// target it was built with, so a target that changed and a dispatcher that
+	// did not is a page whose actions are checked against a screen that is no
+	// longer there.
+	target     computeruse.Target
+	dispatcher *computeruse.Dispatcher
+	lastURL    string
+	captured   int
+	acted      int
 }
 
 // BrowserConfig configures the context.
@@ -88,87 +93,109 @@ func ConnectBrowser(ctx context.Context, config BrowserConfig) (*BrowserContext,
 		return nil, fmt.Errorf("read the browser viewport: %w", err)
 	}
 
-	// The target owns exactly the one source it can actually show, so an
-	// action naming the shared screen or the camera is refused before it
-	// reaches the browser. That is the fence, and it is worth having even on a
-	// developer's own machine: the camera is pointed at a room, and a model
-	// that has confused the room with the page should discover that as a
-	// refusal rather than as a click.
-	target := computeruse.Target{
-		Name: "surface-browser", Sources: []string{source}, Width: width, Height: height,
-	}
-	context := &BrowserContext{surface: surface, target: target, source: source}
-	dispatcher, err := computeruse.NewDispatcher(computeruse.DispatcherConfig{
-		Target: target, Surface: surface,
-		Audit: func(record computeruse.Record) { context.note(record) },
-	})
-	if err != nil {
+	page := &BrowserContext{surface: surface, source: source}
+	if err := page.retarget(width, height); err != nil {
 		_ = surface.Close()
 		return nil, err
 	}
-	context.dispatcher = dispatcher
 	if location, err := surface.Location(ctx); err == nil {
-		context.lastURL = location
+		page.lastURL = location
 	}
-	return context, nil
+	return page, nil
+}
+
+// retarget declares the coordinate space and builds the dispatcher that
+// enforces it.
+//
+// The target owns exactly the one source it can actually show, so an action
+// naming the shared screen or the camera is refused before it reaches the
+// browser. That is worth having even on a developer's own machine: the camera
+// is pointed at a room, and a model that has confused the room with the page
+// should discover that as a refusal rather than as a click.
+func (page *BrowserContext) retarget(width, height int) error {
+	target := computeruse.Target{
+		Name: "surface-browser", Sources: []string{page.source}, Width: width, Height: height,
+	}
+	dispatcher, err := computeruse.NewDispatcher(computeruse.DispatcherConfig{
+		Target: target, Surface: page.surface,
+		Audit: func(computeruse.Record) {
+			page.mu.Lock()
+			page.acted++
+			page.mu.Unlock()
+		},
+	})
+	if err != nil {
+		return err
+	}
+	page.mu.Lock()
+	page.target, page.dispatcher = target, dispatcher
+	page.mu.Unlock()
+	return nil
 }
 
 // Source is the video source name frames arrive under.
-func (context *BrowserContext) Source() string { return context.source }
+func (page *BrowserContext) Source() string { return page.source }
 
 // TargetName is the declared computer-use target.
-func (context *BrowserContext) TargetName() string { return context.target.Name }
+func (page *BrowserContext) TargetName() string { return page.Target().Name }
 
 // Target is the declared context, for a caller building tool specifications.
-func (context *BrowserContext) Target() computeruse.Target { return context.target }
+func (page *BrowserContext) Target() computeruse.Target {
+	page.mu.RLock()
+	defer page.mu.RUnlock()
+	return page.target
+}
 
 // Viewport is the coordinate space actions are expressed in.
-func (context *BrowserContext) Viewport() (width, height int) {
-	return context.target.Width, context.target.Height
+func (page *BrowserContext) Viewport() (width, height int) {
+	target := page.Target()
+	return target.Width, target.Height
 }
 
 // LastURL is where the page was when it was last looked at.
-func (context *BrowserContext) LastURL() string {
-	context.mu.RLock()
-	defer context.mu.RUnlock()
-	return context.lastURL
+func (page *BrowserContext) LastURL() string {
+	page.mu.RLock()
+	defer page.mu.RUnlock()
+	return page.lastURL
 }
 
 // Counts reports how much has happened, for the page's channel meters.
-func (context *BrowserContext) Counts() (captured, acted int) {
-	context.mu.RLock()
-	defer context.mu.RUnlock()
-	return context.captured, context.acted
+func (page *BrowserContext) Counts() (captured, acted int) {
+	page.mu.RLock()
+	defer page.mu.RUnlock()
+	return page.captured, page.acted
 }
 
 // CaptureFrame returns one frame, base64 encoded, with the geometry it was
 // captured in.
 //
 // The geometry is re-read on every capture rather than cached from connect,
-// because a page that resized is a page whose coordinates changed, and a
+// and a change rebuilds the dispatcher along with the declaration. A
 // coordinate space the client believes and the browser has left behind is the
 // one failure in computer use that produces a plausible click on the wrong
-// thing.
-func (context *BrowserContext) CaptureFrame(ctx context.Context) (string, int, int, error) {
-	width, height, err := context.surface.Viewport(ctx)
+// thing - and a dispatcher still bounding actions by the old size would keep
+// admitting them.
+func (page *BrowserContext) CaptureFrame(ctx context.Context) (string, int, int, error) {
+	width, height, err := page.surface.Viewport(ctx)
 	if err != nil {
 		return "", 0, 0, fmt.Errorf("read the viewport: %w", err)
 	}
-	if width != context.target.Width || height != context.target.Height {
-		context.target.Width, context.target.Height = width, height
+	if current := page.Target(); current.Width != width || current.Height != height {
+		if err := page.retarget(width, height); err != nil {
+			return "", 0, 0, fmt.Errorf("redeclare the coordinate space: %w", err)
+		}
 	}
-	image, err := context.surface.Capture(ctx)
+	image, err := page.surface.Capture(ctx)
 	if err != nil {
 		return "", 0, 0, fmt.Errorf("capture the page: %w", err)
 	}
-	context.mu.Lock()
-	context.captured++
-	context.mu.Unlock()
-	if location, err := context.surface.Location(ctx); err == nil {
-		context.mu.Lock()
-		context.lastURL = location
-		context.mu.Unlock()
+	location, _ := page.surface.Location(ctx)
+	page.mu.Lock()
+	page.captured++
+	if location != "" {
+		page.lastURL = location
 	}
+	page.mu.Unlock()
 	return base64.StdEncoding.EncodeToString(image), width, height, nil
 }
 
@@ -180,7 +207,7 @@ func (context *BrowserContext) CaptureFrame(ctx context.Context) (string, int, i
 // the next capture, exactly as the specification says and exactly as it does
 // for a person, who also does not receive a screenshot in reply to moving
 // their hand.
-func (context *BrowserContext) Act(
+func (page *BrowserContext) Act(
 	ctx context.Context, callID, name string, arguments json.RawMessage,
 ) (string, error) {
 	if !computeruse.IsAction(name) {
@@ -189,7 +216,11 @@ func (context *BrowserContext) Act(
 	if len(arguments) == 0 {
 		arguments = json.RawMessage("{}")
 	}
-	result, err := context.dispatcher.Dispatch(ctx, trajectory.ToolCall{
+	page.mu.RLock()
+	dispatcher := page.dispatcher
+	page.mu.RUnlock()
+
+	result, err := dispatcher.Dispatch(ctx, trajectory.ToolCall{
 		CallID: callID, Name: name, Arguments: arguments,
 	})
 	if err != nil {
@@ -202,21 +233,15 @@ func (context *BrowserContext) Act(
 }
 
 // Navigate points the page somewhere, for a developer setting up a run.
-func (context *BrowserContext) Navigate(ctx context.Context, url string) error {
-	if err := context.surface.Navigate(ctx, url); err != nil {
+func (page *BrowserContext) Navigate(ctx context.Context, url string) error {
+	if err := page.surface.Navigate(ctx, url); err != nil {
 		return err
 	}
-	context.mu.Lock()
-	context.lastURL = url
-	context.mu.Unlock()
+	page.mu.Lock()
+	page.lastURL = url
+	page.mu.Unlock()
 	return nil
 }
 
 // Close ends the connection.
-func (context *BrowserContext) Close() error { return context.surface.Close() }
-
-func (context *BrowserContext) note(computeruse.Record) {
-	context.mu.Lock()
-	context.acted++
-	context.mu.Unlock()
-}
+func (page *BrowserContext) Close() error { return page.surface.Close() }

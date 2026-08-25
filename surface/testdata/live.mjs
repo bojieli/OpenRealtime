@@ -15,7 +15,7 @@
 // are slow, and every wait is on a condition rather than a duration.
 
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -40,12 +40,6 @@ const chromium = spawn(process.env.CHROMIUM ?? "chromium", [
   // A real recogniser needs real speech: a tone transcribes to nothing, so
   // without a file the audio channel is left out of this run rather than
   // asserted on evidence that cannot exist.
-  // Looped, because the file starts playing when the browser does and the
-  // page connects seconds later; a clip that played once has finished before
-  // there is a session to hear it. The silence a recogniser needs to endpoint
-  // comes from muting instead, which is what a person stopping talking looks
-  // like on the wire.
-  ...(SPEECH ? [`--use-file-for-fake-audio-capture=${SPEECH}`] : []),
   "--autoplay-policy=no-user-gesture-required",
   "--window-size=1600,1000",
   `--user-data-dir=${profile}`,
@@ -165,6 +159,42 @@ try {
   const say = (text) => evaluate(`
     document.getElementById('typed').value = ${JSON.stringify(text)};
     document.getElementById('compose').dispatchEvent(new Event('submit', {cancelable: true}));`);
+
+
+  // --- real speech, if any was supplied -------------------------------------
+
+  if (SPEECH) {
+    // The speech is decoded in the page and routed through a stream
+    // destination rather than handed to Chromium's fake-file capture flag.
+    // That flag depends on a format and a lifetime this test does not control:
+    // the file starts when the browser does, so a clip has finished before
+    // there is a session to hear it, and a rate the build does not like is
+    // silence with no error. Decoding it here means the audio starts when the
+    // microphone opens, loops for as long as the turn needs, and is the same
+    // samples whatever the file was.
+    const wav = readFileSync(SPEECH).toString("base64");
+    const installed = await evaluate(`(async () => {
+      const bytes = Uint8Array.from(atob(${JSON.stringify(wav)}), c => c.charCodeAt(0));
+      const context = new AudioContext();
+      const decoded = await context.decodeAudioData(bytes.buffer);
+      const destination = context.createMediaStreamDestination();
+      const source = context.createBufferSource();
+      source.buffer = decoded;
+      source.loop = true;
+      source.connect(destination);
+      source.start();
+      const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getUserMedia = async (constraints) => {
+        if (!constraints || !constraints.audio) return real(constraints);
+        const stream = await real({ ...constraints, audio: false }).catch(() => new MediaStream());
+        const voice = new MediaStream([destination.stream.getAudioTracks()[0]]);
+        stream.getVideoTracks().forEach((track) => voice.addTrack(track));
+        return voice;
+      };
+      return decoded.duration;
+    })()`);
+    check("the speech decoded in the page", installed > 0, installed + " seconds");
+  }
 
   // --- connect -------------------------------------------------------------
 
