@@ -637,12 +637,18 @@ mattered did. A decision layer that governs some routes and not others governs
 nothing, because the ungoverned route is always available. Same shape as the
 pause decision; found the same way.
 
-**Latency.** The report arrives five to fifteen seconds after the frame. The
-frame is narrated by a vision model before it is an observation at all, and
-with nobody speaking there is nothing driving a trigger. That is not "the
-moment" by any reading, and it is what the pipeline currently manages. The
-scenario's window says fifteen seconds and says why, rather than hiding the
-number behind a generous bound.
+**Latency, and a wrong reading of it.** The first measurement said five to
+fifteen seconds and it was wrong: what it had timed was a *second*
+acknowledgement of the user's opening instruction, not the report. Measured
+against the frame itself the report lands **1.8 seconds** after it - a vision
+model narrating a picture, then a turn - which is fast enough to be worth
+calling "the moment". The scenario's window is four seconds because that is a
+real bound; fifteen was measuring the wrong event.
+
+The remaining failure in that scenario is that duplicate acknowledgement. The
+agent answers the opening instruction, and then answers it again several
+seconds later, and the second one lands inside the window where it was asked to
+be silent. That is a defect in its own right and nothing to do with seeing.
 
 ### The suite as it stands
 

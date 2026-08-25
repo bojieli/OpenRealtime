@@ -172,12 +172,12 @@ func Suite() []Scenario {
 			},
 			TrailingMS: 18000,
 			Checks: []Check{
-				// Fifteen seconds, which is not "the moment" and is what the
-				// pipeline currently manages: the frame is narrated by a vision
-				// model before it becomes an observation at all, and nothing is
-				// speaking to drive a trigger. The window measures whether the
-				// capability exists; measurement.md records what it costs.
-				{Kind: CheckSaid, Sight: 2, AfterMS: 15000,
+				// Four seconds. The frame is narrated by a vision model before
+				// it is an observation at all, and measured it lands 1.8s after
+				// the frame - so this is a real bound rather than a generous
+				// one. An earlier version allowed fifteen, which turned out to
+				// be measuring a duplicate acknowledgement rather than latency.
+				{Kind: CheckSaid, Sight: 2, AfterMS: 4000,
 					Any:  []string{"finished", "done", "built", "passed", "complete"},
 					Note: "after seeing it finish, not when acknowledging that they would watch for it"},
 				{Kind: CheckSilent, Sight: 1, AfterMS: 7000,
