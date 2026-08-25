@@ -77,3 +77,29 @@ func TestARequestCarryingALiveUtteranceIsNotEmpty(t *testing.T) {
 		t.Fatalf("the live utterance did not reach the instruction:\n%s", prompt)
 	}
 }
+
+// The decision layer knows why it called the voice and used to keep it to
+// itself. Called to correct a date it had been given, the voice said "got it";
+// called to count an animal it had already counted one of, it said nothing.
+// Both are reasonable answers to "say something short" and neither answers the
+// question that was asked.
+func TestTheVoiceIsToldWhatTheTurnWasCalledFor(t *testing.T) {
+	correcting := instructionFor(t, cognition.Request{
+		Interjecting: true, Because: "interrupt",
+		Heard: "and ship it by the thirteenth",
+	})
+	if !strings.Contains(correcting, "Say the correction itself") {
+		t.Fatalf("an interruption was not told it exists to correct something:\n%s", correcting)
+	}
+	counting := instructionFor(t, cognition.Request{
+		Interjecting: true, Because: "speak-through",
+		Standing: []string{"count the animals out loud (1m ago)"},
+	})
+	if !strings.Contains(counting, "say the next number") {
+		t.Fatalf("a running commentary was not told what it is for:\n%s", counting)
+	}
+	// An ordinary turn is not told anything of the sort.
+	if plain := instructionFor(t, cognition.Request{}); strings.Contains(plain, "Say the correction itself") {
+		t.Fatal("an ordinary turn was told it was correcting something")
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -76,8 +77,11 @@ type Config struct {
 
 // Engine runs continuations over one canonical trajectory.
 type Engine struct {
-	config     Config
-	runner     *continuation.Runner
+	config Config
+	runner *continuation.Runner
+	// promptMu guards the phase prompts, which change when a session's
+	// instruction does.
+	promptMu   sync.RWMutex
 	fastPrompt string
 	slowPrompt string
 }
@@ -196,6 +200,16 @@ type Request struct {
 	// while somebody else keeps the floor. What that calls for is the shortest
 	// thing that serves, not a reply.
 	Interjecting bool
+	// Because names the act this turn exists to carry out.
+	//
+	// The decision layer knows why it called: a standing policy's condition
+	// was met, or something said needs correcting now. The voice was told only
+	// that it was interjecting and had to guess which - so, called to correct
+	// a date it had been given, it said "got it", and called to count an
+	// animal it had already counted one of, it said nothing at all. Both are
+	// reasonable answers to "say something short"; neither is an answer to the
+	// question that was actually asked.
+	Because string
 	// Heard is what the current speaker has said so far in an utterance that
 	// has not been committed yet.
 	//
@@ -222,7 +236,7 @@ func (engine *Engine) RunFast(ctx context.Context, request Request, observer Str
 		return continuation.RunResult{}, ErrExternalFast
 	}
 	return engine.run(ctx, engine.config.Fast, trajectory.PhaseFast, continuation.Invocation{
-		Instruction: engine.instruction(engine.fastPrompt, request), SourceRevision: request.SourceRevision,
+		Instruction: engine.instruction(engine.prompt(trajectory.PhaseFast), request), SourceRevision: request.SourceRevision,
 		Capabilities:    engine.capabilityManifest(),
 		MaxOutputTokens: engine.config.FastMaxTokens,
 	}, observer, request.Heard)
@@ -241,7 +255,7 @@ func (engine *Engine) PrepareFast(
 		return nil, ErrExternalFast
 	}
 	return engine.runner.Prepare(ctx, engine.config.Fast, continuation.Invocation{
-		Instruction: engine.instruction(engine.fastPrompt, request), SourceRevision: request.SourceRevision,
+		Instruction: engine.instruction(engine.prompt(trajectory.PhaseFast), request), SourceRevision: request.SourceRevision,
 		Capabilities:    engine.capabilityManifest(),
 		MaxOutputTokens: engine.config.FastMaxTokens,
 	}, provisional, nil)
@@ -257,7 +271,7 @@ func (engine *Engine) PrepareSlow(
 	ctx context.Context, request Request, provisional trajectory.Item,
 ) (*continuation.Prepared, error) {
 	return engine.runner.Prepare(ctx, engine.config.Slow, continuation.Invocation{
-		Instruction: engine.instruction(engine.slowPrompt, request), SourceRevision: request.SourceRevision,
+		Instruction: engine.instruction(engine.prompt(trajectory.PhaseSlow), request), SourceRevision: request.SourceRevision,
 		Capabilities: engine.capabilityManifest(), Tools: engine.executableTools(),
 		MaxOutputTokens: engine.config.SlowMaxTokens,
 	}, provisional, nil)
@@ -273,7 +287,7 @@ func (engine *Engine) Adopt(prepared *continuation.Prepared) (continuation.RunRe
 // their results are appended before the next call.
 func (engine *Engine) RunSlow(ctx context.Context, request Request, observer StreamObserver) (continuation.RunResult, error) {
 	return engine.run(ctx, engine.config.Slow, trajectory.PhaseSlow, continuation.Invocation{
-		Instruction: engine.instruction(engine.slowPrompt, request), SourceRevision: request.SourceRevision,
+		Instruction: engine.instruction(engine.prompt(trajectory.PhaseSlow), request), SourceRevision: request.SourceRevision,
 		Capabilities: engine.capabilityManifest(), Tools: engine.executableTools(),
 		MaxOutputTokens: engine.config.SlowMaxTokens,
 	}, observer, request.Heard)
@@ -301,6 +315,9 @@ func Instruct(prompt string, request Request) string {
 	}
 	if request.Interjecting {
 		prompt += "\n\n" + InterjectingInstruction
+	}
+	if reason := becauseInstruction(request.Because); reason != "" {
+		prompt += "\n\n" + reason
 	}
 	if request.PendingRepair {
 		prompt += "\n\n" + RepairInstruction
@@ -444,4 +461,47 @@ func validateCapabilities(capabilities []continuation.Capability) error {
 		seen[capability.Name] = struct{}{}
 	}
 	return nil
+}
+
+// becauseInstruction says what the turn was called for.
+//
+// It is a small vocabulary on purpose. The acts are the runtime's own and
+// there are seven of them; only the two that mean "say something into a turn
+// that is not yours" need explaining, because those are the two where the
+// voice cannot work out from the conversation alone what it is for.
+func becauseInstruction(act string) string {
+	switch act {
+	case "speak-through":
+		return "You are speaking because something the person asked to be told about has just happened. Do that thing now, for the occurrence in front of you: if they asked for a count, say the next number; if they asked for a translation, give the English; if they asked to be told when something lands, say it has landed. Say only that."
+	case "interrupt":
+		return "You are cutting into their sentence because what they are saying needs correcting now, and waiting until they finish would make the correction useless. Say the correction itself - the right date, the right figure, the right name - not that you are listening and not a question about it."
+	}
+	return ""
+}
+
+// prompt returns the phase prompt as it stands now.
+func (engine *Engine) prompt(phase trajectory.Phase) string {
+	engine.promptMu.RLock()
+	defer engine.promptMu.RUnlock()
+	if phase == trajectory.PhaseSlow {
+		return engine.slowPrompt
+	}
+	return engine.fastPrompt
+}
+
+// SetAgentInstruction replaces the deployment's own instruction.
+//
+// A session's instruction arrives after the session exists - every client
+// sends it in session.update, including the official ones - and the prompts
+// were composed once at construction from whatever was known then. So the
+// voice never saw it. The interaction model did, because it reads the current
+// settings on every decision, which is precisely the split that showed up in
+// measurement: told a deadline was the third, the decision layer correctly cut
+// in to correct a wrong date and the voice invented one, having never been
+// told what the right one was.
+func (engine *Engine) SetAgentInstruction(instruction string) {
+	engine.promptMu.Lock()
+	defer engine.promptMu.Unlock()
+	engine.fastPrompt = Compose(instruction, engine.config.FastInstruction)
+	engine.slowPrompt = Compose(instruction, engine.config.SlowInstruction)
 }

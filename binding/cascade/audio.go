@@ -246,7 +246,7 @@ func (runtime *runtime) holdsThroughPause(nowNS uint64, latest interaction.Revis
 		runtime.interject(decision)
 	}
 	if endpoint.Ended {
-		runtime.setInterjecting(endpoint.Act == interaction.ActInterrupt)
+		runtime.setInterjecting(decision.Revision.ID, endpoint.Act == interaction.ActInterrupt)
 		runtime.audioMu.Lock()
 		runtime.pauseStartNS = 0
 		runtime.audioMu.Unlock()

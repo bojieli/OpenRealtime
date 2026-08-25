@@ -41,7 +41,7 @@ func (runtime *runtime) projectEndpoint(ctx context.Context, decision interactio
 	}
 	// A turn taken from somebody still speaking is not a turn they offered,
 	// and what belongs in it is different. The voice is told which it got.
-	runtime.setInterjecting(endpoint.Act == interaction.ActInterrupt)
+	runtime.setInterjecting(decision.Revision.ID, endpoint.Act == interaction.ActInterrupt)
 	runtime.audioMu.Lock()
 	if runtime.acoustic == nil {
 		runtime.audioMu.Unlock()

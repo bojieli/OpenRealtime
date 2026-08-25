@@ -102,7 +102,7 @@ type runtime struct {
 	lastCanonical    uint64
 	// interjecting is set when the turn about to run was taken from somebody
 	// still speaking rather than offered by somebody who had finished.
-	interjecting bool
+	interjectingRev uint64
 	// lastInterjectRev is the revision the last interjection answered, so a
 	// speaker who keeps talking is not answered once per partial.
 	lastInterjectRev uint64
@@ -432,6 +432,15 @@ func (runtime *runtime) Update(_ context.Context, settings binding.Settings) err
 	runtime.settingsMu.Lock()
 	runtime.settings = settings
 	runtime.settingsMu.Unlock()
+	// The instruction a client sends here is the deployment's own, and the
+	// prompts were composed once from whatever was known when the session was
+	// built - which is never this. Without it the voice works from the default
+	// prompt while the interaction model, which reads the settings on every
+	// decision, works from the real one.
+	if runtime.engine != nil {
+		runtime.engine.SetAgentInstruction(
+			cognition.Compose(runtime.config.AgentInstruction, settings.Instruction))
+	}
 	return runtime.resetAcoustic()
 }
 

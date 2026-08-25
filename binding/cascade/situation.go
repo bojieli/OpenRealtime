@@ -244,12 +244,30 @@ func (runtime *runtime) noticeStanding(text string) {
 	}()
 }
 
-// setInterjecting records whether the turn about to run was taken rather than
-// offered.
-func (runtime *runtime) setInterjecting(interjecting bool) {
+// setInterjecting records that the turn for a particular revision was taken
+// rather than offered.
+//
+// Keyed by revision, because a single shared flag does not survive the trip.
+// The floor is consulted on every partial and clears the flag for every act
+// that is not an interruption, so between the decision that set it and the
+// turn that reads it there are several chances for it to be reset - and
+// measured, the voice that answers perfectly when told it is correcting
+// something invented a date instead, because by then nothing was telling it.
+func (runtime *runtime) setInterjecting(revision uint64, interjecting bool) {
+	if !interjecting {
+		return
+	}
 	runtime.audioMu.Lock()
-	runtime.interjecting = interjecting
+	runtime.interjectingRev = revision
 	runtime.audioMu.Unlock()
+}
+
+// tookTheFloor reports whether the turn for this revision was taken from
+// somebody mid-sentence.
+func (runtime *runtime) tookTheFloor(revision uint64) bool {
+	runtime.audioMu.Lock()
+	defer runtime.audioMu.Unlock()
+	return revision != 0 && runtime.interjectingRev == revision
 }
 
 // cognitionExtras is what cognition needs beyond the trajectory, so that the
@@ -264,9 +282,9 @@ func (runtime *runtime) setInterjecting(interjecting bool) {
 // then reaches the voice with its own cause missing.
 func (runtime *runtime) cognitionExtras() (standing []string, interjecting bool, heard string) {
 	runtime.audioMu.Lock()
-	interjecting = runtime.interjecting
 	latest := runtime.heard
 	runtime.audioMu.Unlock()
+	interjecting = runtime.tookTheFloor(latest.ID)
 	// Only while they are still talking. Once the utterance is committed it is
 	// in the log, and repeating it there would show the voice the same sentence
 	// twice with no way to tell that it is one.

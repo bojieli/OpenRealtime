@@ -126,7 +126,7 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		}
 		request := cognition.Request{
 			SourceRevision: decision.Revision.ID,
-			Standing:       standing, Interjecting: true,
+			Standing:       standing, Interjecting: true, Because: string(interaction.ActSpeakThrough),
 			Heard: heard,
 		}
 		// An interjection that cannot run is an interjection that does not

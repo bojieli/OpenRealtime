@@ -93,10 +93,16 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	}()
 
 	standing, interjecting, heard := runtime.cognitionExtras()
+	because := ""
+	if interjecting {
+		// The floor took this turn from somebody mid-sentence, which is what
+		// interrupt means, and the voice needs that rather than only knowing
+		// the turn is not its own.
+		because = string(interaction.ActInterrupt)
+	}
 	request := cognition.Request{
-		Standing: standing, Interjecting: interjecting, Heard: heard,
+		Standing: standing, Interjecting: interjecting, Heard: heard, Because: because,
 		SourceRevision: revision,
-		AllowFastTools: runtime.observationHasUserIntent(batch),
 		PendingRepair:  len(trajectory.PendingRepairs(runtime.store.Snapshot())) > 0,
 	}
 	// A plan that already contains the reasoner does not need the voice to ask
