@@ -108,8 +108,7 @@ type countingExtractor struct {
 func (extractor *countingExtractor) Name() string { return "counting" }
 
 func (extractor *countingExtractor) Extract(
-	_ context.Context, _ []interaction.StandingInstruction, _ []string,
-	utterance string, _ bool,
+	_ context.Context, _ []interaction.StandingInstruction, _ []string, utterance string,
 ) (interaction.Extraction, error) {
 	extractor.mu.Lock()
 	defer extractor.mu.Unlock()
