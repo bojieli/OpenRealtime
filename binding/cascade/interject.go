@@ -205,10 +205,12 @@ const interjectionStale = 3 * time.Second
 
 // interjectionDeadline bounds one interjection.
 //
-// Longer than the staleness bound, so one that is merely slow is not abandoned
-// while a fresh one starts beside it, and short enough that a stuck one costs
-// a few seconds rather than the rest of the conversation.
-const interjectionDeadline = 6 * time.Second
+// Generous, because cancelling a slow interjection wastes both the work and
+// the slot: at six seconds the counting case regressed to a 13.9s median wait
+// from 2.1s, which is what abandoning turns that were about to finish looks
+// like. What this is for is a turn that will never finish, not one that is
+// late, and those differ by an order of magnitude rather than by a little.
+const interjectionDeadline = 12 * time.Second
 
 func (runtime *runtime) claimInterjection() bool {
 	now := runtime.scheduler.NowNS()
