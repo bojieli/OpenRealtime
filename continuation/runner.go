@@ -106,7 +106,37 @@ func (runner *Runner) Run(
 	invocation Invocation,
 	observer StreamObserver,
 ) (RunResult, error) {
-	return runner.run(ctx, provider, invocation, nil, observer, nil)
+	return runner.run(ctx, provider, invocation, nil, observer, nil, trajectory.Item{})
+}
+
+// RunLive invokes a provider over the canonical trajectory plus one utterance
+// that is still being spoken, and commits its output like any other turn.
+//
+// Every act that speaks into somebody else's turn runs on a sentence that is
+// not in the log yet, and putting that sentence only in the instruction leaves
+// the conversation ending with whatever the agent last said. A provider asked
+// to continue from its own last turn, with nothing new addressed to it, has
+// nothing to continue: measured against Gemini 3.5 Flash, "count them as I
+// mention them" with the animal in the instruction returned an empty string
+// three times out of three, and the same call with the animal as a user turn
+// returned "2" three times out of three. That is the whole of the second
+// animal, the second sentence of an interpretation, and the dish that fits.
+func (runner *Runner) RunLive(
+	ctx context.Context,
+	provider Provider,
+	invocation Invocation,
+	live string,
+	observer StreamObserver,
+) (RunResult, error) {
+	if strings.TrimSpace(live) == "" {
+		return runner.Run(ctx, provider, invocation, observer)
+	}
+	provisional := trajectory.Item{
+		ID: runner.nextID("live"), Kind: trajectory.KindObservation,
+		MonotonicNS: runner.now(), SourceRevision: invocation.SourceRevision,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: live,
+	}
+	return runner.run(ctx, provider, invocation, nil, observer, nil, provisional)
 }
 
 // RunProjected invokes a provider over an explicit experimental projection,
@@ -122,7 +152,7 @@ func (runner *Runner) RunProjected(
 	if projection == nil {
 		return RunResult{}, errors.New("projected continuation requires a projection")
 	}
-	return runner.run(ctx, provider, invocation, projection, observer, nil)
+	return runner.run(ctx, provider, invocation, projection, observer, nil, trajectory.Item{})
 }
 
 func (runner *Runner) run(
@@ -132,6 +162,7 @@ func (runner *Runner) run(
 	projection TrajectoryProjection,
 	observer StreamObserver,
 	prepared *Prepared,
+	provisional trajectory.Item,
 ) (RunResult, error) {
 	if provider == nil {
 		return RunResult{}, errors.New("continuation provider is required")
@@ -186,14 +217,22 @@ func (runner *Runner) run(
 	}
 	prefix := providerPrefix
 	if prepared != nil && prepared.provisional.ID != "" {
+		provisional = prepared.provisional
+	}
+	if provisional.ID != "" {
 		// The provisional observation is what makes preparation possible at
 		// all: at this instant the user is still talking, so nothing about
 		// this turn is in the canonical log yet. It is shown to the provider
 		// and appended to nothing, and adoption later checks that the endpoint
 		// said the same thing.
-		prefix.Items = append(prefix.Items, prepared.provisional)
+		//
+		// A turn that speaks into somebody else's needs it for the same
+		// reason and gets it the same way. Only the visible copy of the
+		// instruction is reparented onto it, so nothing that commits refers to
+		// an item that was never appended.
+		prefix.Items = append(prefix.Items, provisional)
 		prefix.Version++
-		visibleInstruction.CausalParentIDs = []string{prepared.provisional.ID}
+		visibleInstruction.CausalParentIDs = []string{provisional.ID}
 	}
 	prefix.Items = append(prefix.Items, visibleInstruction)
 	prefix.Version++
@@ -606,7 +645,7 @@ func (runner *Runner) Prepare(
 		return nil, errors.New("a provisional observation requires text")
 	}
 	prepared := &Prepared{provisional: provisional}
-	if _, err := runner.run(ctx, provider, invocation, nil, observer, prepared); err != nil {
+	if _, err := runner.run(ctx, provider, invocation, nil, observer, prepared, trajectory.Item{}); err != nil {
 		return nil, err
 	}
 	if !prepared.Ready() {

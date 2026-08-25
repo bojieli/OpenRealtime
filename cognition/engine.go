@@ -358,7 +358,12 @@ func (engine *Engine) run(
 			return observerErr
 		}
 	}
-	result, err := engine.runner.Run(ctx, provider, invocation, stream)
+	// The live utterance is shown to the provider as an uncommitted
+	// observation rather than kept in the instruction alone. It was the guard
+	// above and nothing else, which left every interjection asking a provider
+	// to continue from the agent's own last turn with nothing new addressed to
+	// it - and a provider asked that says nothing at all.
+	result, err := engine.runner.RunLive(ctx, provider, invocation, live, stream)
 	return result, errors.Join(err, observerErr)
 }
 
