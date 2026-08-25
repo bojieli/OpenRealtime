@@ -35,6 +35,7 @@ func runScenario(arguments []string, output io.Writer) error {
 		only     = flags.String("only", "", "run one scenario by name")
 		timeout  = flags.Duration("timeout", 3*time.Minute, "bound on one scenario")
 		record   = flags.String("record", "", "write the timed record of each scenario to this file")
+		repeat   = flags.Int("repeat", 1, "runs per scenario; latency from one run is noise, so a latency claim needs several")
 	)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -57,30 +58,26 @@ func runScenario(arguments []string, output io.Writer) error {
 
 	var results []scenario.Result
 	passed := 0
+	runs := max(1, *repeat)
 	for _, item := range scenario.Suite() {
 		if *only != "" && item.Name != *only {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
-		result, err := scenario.Play(ctx, speaker, config, item)
-		cancel()
-		if err != nil {
-			fmt.Fprintf(output, "  ERR  %-28s %v\n", item.Name, err)
+		var attempts []scenario.Result
+		for run := 0; run < runs; run++ {
+			ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+			result, err := scenario.Play(ctx, speaker, config, item)
+			cancel()
+			if err != nil {
+				fmt.Fprintf(output, "  ERR  %-28s %v\n", item.Name, err)
+			}
+			attempts = append(attempts, result)
 			results = append(results, result)
-			continue
+			if result.Passed {
+				passed++
+			}
 		}
-		results = append(results, result)
-		if result.Passed {
-			passed++
-			fmt.Fprintf(output, "  ok   %-28s %s\n", item.Name, item.Note)
-			reportLatency(output, result)
-			continue
-		}
-		fmt.Fprintf(output, "  FAIL %-28s %s\n", item.Name, item.Note)
-		for _, failure := range result.Failures {
-			fmt.Fprintf(output, "         %s\n", failure)
-		}
-		reportLatency(output, result)
+		reportScenario(output, item, attempts)
 	}
 	fmt.Fprintf(output, "\n  scenarios %d/%d\n", passed, len(results))
 
@@ -96,22 +93,66 @@ func runScenario(arguments []string, output io.Writer) error {
 	return nil
 }
 
-// reportLatency prints the waits a person in the room would have sat through.
+// report renders one scenario's attempts.
+//
+// Failures are listed from the first attempt that had them rather than from
+// every attempt, because the same failure repeated five times is one fact.
+// Latency is pooled across all of them, because one sample of a latency is not
+// a measurement of anything.
+func reportScenario(output io.Writer, item scenario.Scenario, attempts []scenario.Result) {
+	passed := 0
+	var failures []string
+	for _, attempt := range attempts {
+		if attempt.Passed {
+			passed++
+			continue
+		}
+		if failures == nil {
+			failures = attempt.Failures
+		}
+	}
+	mark := "FAIL"
+	if passed == len(attempts) {
+		mark = "ok  "
+	} else if passed > 0 {
+		mark = "part"
+	}
+	if len(attempts) > 1 {
+		fmt.Fprintf(output, "  %s %-28s %d/%d  %s\n", mark, item.Name, passed, len(attempts), item.Note)
+	} else {
+		fmt.Fprintf(output, "  %s %-28s %s\n", mark, item.Name, item.Note)
+	}
+	for _, failure := range failures {
+		fmt.Fprintf(output, "         %s\n", failure)
+	}
+	reportLatency(output, attempts)
+}
+
+// reportLatency prints the waits a person in the room would have sat through,
+// pooled across every attempt.
 //
 // Only the ones the agent actually answered: a trigger it ignored is a
 // correctness result and belongs in the checks, and averaging it in as a very
-// large latency would make one silence look like a slow reply.
-func reportLatency(output io.Writer, result scenario.Result) {
+// large latency would make one silence look like a slow reply. The count is
+// printed so a number drawn from two samples cannot be mistaken for one drawn
+// from fifty.
+func reportLatency(output io.Writer, attempts []scenario.Result) {
 	var answered []float64
-	for _, entry := range result.Latencies {
-		if entry.Heard && entry.MS >= 0 {
-			answered = append(answered, entry.MS)
+	for _, attempt := range attempts {
+		for _, entry := range attempt.Latencies {
+			if entry.Heard && entry.MS >= 0 {
+				answered = append(answered, entry.MS)
+			}
 		}
 	}
 	if len(answered) == 0 {
 		return
 	}
 	sort.Float64s(answered)
-	fmt.Fprintf(output, "         heard after %.0fms median, %.0fms worst, over %d triggers\n",
-		answered[len(answered)/2], answered[len(answered)-1], len(answered))
+	pick := func(fraction float64) float64 {
+		index := int(fraction * float64(len(answered)-1))
+		return answered[index]
+	}
+	fmt.Fprintf(output, "         heard after %.0fms p50, %.0fms p90, %.0fms worst, over %d triggers\n",
+		pick(0.5), pick(0.9), answered[len(answered)-1], len(answered))
 }
