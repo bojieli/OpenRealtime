@@ -15,8 +15,10 @@ package scenario
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -43,8 +45,14 @@ type Line struct {
 type Check struct {
 	Kind CheckKind
 	// Line indexes the script. The window runs from that line's start to its
-	// end, extended by AfterMS.
+	// end, extended by AfterMS. Negative means the whole conversation.
 	Line int
+	// Sight indexes Sees instead, when the moment being checked is something
+	// the agent saw. It is one-based so that the zero value keeps meaning
+	// "use Line", and it can anchor absolutely where a spoken line cannot:
+	// a picture arrives when it is sent, while a sentence takes as long as a
+	// synthesiser decides to take.
+	Sight int
 	// AfterMS extends the window past the end of the line, which is where the
 	// interesting part of a pause lives.
 	//
@@ -116,6 +124,19 @@ func truncateSaid(text string) string {
 	return text
 }
 
+// Sight is something the agent sees, at a moment, with nobody speaking.
+//
+// It is a file rather than bytes because the point of these scenarios is that
+// a real narrator looks at a real picture: a scenario that handed the runtime
+// a description it had written itself would be testing nothing but whether the
+// runtime can read its own input back.
+type Sight struct {
+	AtMS int
+	// Path is a PNG on disk.
+	Path string
+	Note string
+}
+
 // Scenario is one scripted conversation and what must be true of it.
 type Scenario struct {
 	Name         string
@@ -123,7 +144,10 @@ type Scenario struct {
 	Instructions string
 	Tools        []Tool
 	Script       []Line
-	Checks       []Check
+	// Sees are visual events on the same timeline as the speech. A capability
+	// that fires with nobody talking cannot be scripted any other way.
+	Sees   []Sight
+	Checks []Check
 	// TrailingMS is quiet held after the last line, so that a scenario about
 	// staying silent has somewhere to be silent.
 	TrailingMS int
@@ -162,6 +186,8 @@ type Span struct {
 type Timeline struct {
 	Samples []int16
 	Spans   []Span
+	// Sights is when each visual event was scheduled.
+	Sights  []int
 	TotalMS int
 }
 
@@ -175,6 +201,11 @@ type Timeline struct {
 func Compose(ctx context.Context, voice Voice, item Scenario) (Timeline, error) {
 	const rate = 24_000
 	total := item.TrailingMS
+	for _, sight := range item.Sees {
+		if sight.AtMS > total {
+			total = sight.AtMS
+		}
+	}
 	spoken := make([][]int16, len(item.Script))
 	spans := make([]Span, len(item.Script))
 	for index, line := range item.Script {
@@ -212,7 +243,11 @@ func Compose(ctx context.Context, voice Voice, item Scenario) (Timeline, error) 
 			mixed[offset+position] = int16(sum)
 		}
 	}
-	return Timeline{Samples: mixed, Spans: spans, TotalMS: total}, nil
+	sights := make([]int, len(item.Sees))
+	for index, sight := range item.Sees {
+		sights[index] = sight.AtMS
+	}
+	return Timeline{Samples: mixed, Spans: spans, Sights: sights, TotalMS: total}, nil
 }
 
 // Play runs one scenario and scores it.
@@ -229,6 +264,11 @@ func Play(ctx context.Context, voice Voice, config bench.SessionConfig, item Sce
 		return json.RawMessage(`{"ok":true}`), nil
 	}
 	config.Realtime = true
+	scheduled, err := sights(item.Sees)
+	if err != nil {
+		return Result{Scenario: item.Name}, err
+	}
+	config.Scheduled = scheduled
 	if config.TrailingSilence == 0 {
 		config.TrailingSilence = time.Duration(item.TrailingMS) * time.Millisecond
 	}
@@ -260,7 +300,14 @@ const audibleMS = 120
 
 func apply(check Check, timeline Timeline, transcript bench.Transcript) string {
 	from, to := 0, timeline.TotalMS
-	if check.Line >= 0 && check.Line < len(timeline.Spans) {
+	switch {
+	case check.Sight > 0 && check.Sight <= len(timeline.Sights):
+		from = timeline.Sights[check.Sight-1]
+		to = from + check.AfterMS
+		if to <= from {
+			to = timeline.TotalMS
+		}
+	case check.Line >= 0 && check.Line < len(timeline.Spans):
 		span := timeline.Spans[check.Line]
 		from, to = span.StartMS, span.EndMS+check.AfterMS
 		if to <= from {
@@ -322,4 +369,37 @@ func declare(tools []Tool) []json.RawMessage {
 		declared = append(declared, encoded)
 	}
 	return declared
+}
+
+// sights turns the visual events into protocol sends.
+//
+// They go as input_image content on a conversation item, which is the shape
+// the official clients produce and the one the gateway already accepts. The
+// harness does not narrate them: the deployment's own observer looks at the
+// picture and writes what it sees, which is the thing under test.
+func sights(seen []Sight) ([]bench.ScheduledEvent, error) {
+	if len(seen) == 0 {
+		return nil, nil
+	}
+	events := make([]bench.ScheduledEvent, 0, len(seen))
+	for _, sight := range seen {
+		payload, err := os.ReadFile(sight.Path)
+		if err != nil {
+			return nil, fmt.Errorf("read the frame for %dms: %w", sight.AtMS, err)
+		}
+		events = append(events, bench.ScheduledEvent{
+			AtMS: sight.AtMS,
+			Event: map[string]any{
+				"type": "conversation.item.create",
+				"item": map[string]any{
+					"type": "message", "role": "user",
+					"content": []map[string]any{{
+						"type":      "input_image",
+						"image_url": "data:image/png;base64," + base64.StdEncoding.EncodeToString(payload),
+					}},
+				},
+			},
+		})
+	}
+	return events, nil
 }

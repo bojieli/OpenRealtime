@@ -5,7 +5,9 @@ import (
 	"errors"
 
 	"github.com/bojieli/OpenRealtime/cognition"
+	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/interaction"
+	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 // interject speaks into somebody else's turn without ending it.
@@ -65,4 +67,41 @@ func (runtime *runtime) interject(decision interaction.Context) {
 			runtime.fail("interjection_error", err)
 		}
 	}()
+}
+
+// worthActingOn asks the interaction model whether an observation nobody spoke
+// aloud is worth a turn.
+//
+// Every other path to speech consults it. This one did not, and the gap is the
+// same one that made "don't interrupt me" impossible: a decision layer that
+// governs some routes to the microphone and not others governs nothing, since
+// the ungoverned route is always available. An observer commits what it saw and
+// the rollout plans a turn on any observation at all, so a screen that changed
+// in a way nobody asked about produced a turn exactly as one that mattered did.
+//
+// Only observer-authority observations are gated here. What a person said is
+// already governed by the floor, which decided the turn was theirs to end.
+func (runtime *runtime) worthActingOn(ctx context.Context, batch eventloop.Batch) bool {
+	if runtime.policies.Interaction == nil || !batch.Contains(trajectory.KindObservation) {
+		return true
+	}
+	snapshot := runtime.store.Snapshot()
+	seen := lastSeen(snapshot)
+	if seen == "" {
+		return true
+	}
+	// Nothing was said; the observation is the whole of the evidence.
+	if runtime.duplex.Snapshot().UserSpeaking {
+		return true
+	}
+	state := runtime.situation(interaction.Context{
+		NowNS: runtime.scheduler.NowNS(), Duplex: runtime.duplex.Snapshot(),
+	})
+	act, _, err := runtime.policies.Interaction.Decide(ctx, state)
+	if err != nil {
+		// A decision that could not be taken is not a reason to go silent on
+		// something that may matter.
+		return true
+	}
+	return act != interaction.ActStaySilent
 }

@@ -75,6 +75,11 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	if err := runtime.sink.TurnBegin(ctx); err != nil {
 		return err
 	}
+	// An observation nobody spoke aloud goes past the interaction model on
+	// every other route to speech; it must not go past it here.
+	if !runtime.worthActingOn(ctx, batch) {
+		return nil
+	}
 	turn := &turnReport{}
 	defer func() {
 		if err := runtime.sink.TurnEnd(ctx, turn.outcome()); err != nil {

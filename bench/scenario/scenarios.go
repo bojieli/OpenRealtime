@@ -156,6 +156,35 @@ func Suite() []Scenario {
 			},
 		},
 		{
+			Name: "telling them what it saw",
+			Note: "the visual case: nobody is speaking at all, and what makes the moment is something " +
+				"the agent saw",
+			Instructions: "You are watching the user's screen while they work. Follow the instructions " +
+				"they give you about when to speak.",
+			Script: []Line{
+				{Speaker: "user", AtMS: 0, Text: "I'm going to read for a bit. Tell me the moment the build finishes, and don't say anything else."},
+			},
+			Sees: []Sight{
+				{AtMS: 7000, Path: "bench/scenario/testdata/build-running.png",
+					Note: "the condition has not happened; nothing here is worth speaking about"},
+				{AtMS: 16000, Path: "bench/scenario/testdata/build-finished.png",
+					Note: "the condition they asked to be told about"},
+			},
+			TrailingMS: 18000,
+			Checks: []Check{
+				// Fifteen seconds, which is not "the moment" and is what the
+				// pipeline currently manages: the frame is narrated by a vision
+				// model before it becomes an observation at all, and nothing is
+				// speaking to drive a trigger. The window measures whether the
+				// capability exists; measurement.md records what it costs.
+				{Kind: CheckSaid, Sight: 2, AfterMS: 15000,
+					Any:  []string{"finished", "done", "built", "passed", "complete"},
+					Note: "after seeing it finish, not when acknowledging that they would watch for it"},
+				{Kind: CheckSilent, Sight: 1, AfterMS: 7000,
+					Note: "the first screen shows it still running, which is not the moment they asked for"},
+			},
+		},
+		{
 			Name: "an ordinary question",
 			Note: "the control: most of this suite asks for silence, and a system that had simply " +
 				"stopped talking would pass all of it",

@@ -48,7 +48,10 @@ const (
 	MomentAgentAudio    = "agent_audio"
 	MomentResponseDone  = "response_done"
 	MomentToolCall      = "tool_call"
-	MomentError         = "error"
+	// MomentScheduled marks a non-audio event the harness injected, so a
+	// transcript shows why the agent spoke when nobody had said anything.
+	MomentScheduled = "scheduled"
+	MomentError     = "error"
 )
 
 // Transcript is the complete timed record of one conversation.
@@ -155,6 +158,23 @@ type SessionConfig struct {
 	Timeout time.Duration
 	// Quiet suppresses per-task progress.
 	Quiet bool
+	// Scheduled are protocol events to send at points in the playback.
+	//
+	// A conversation is not only speech. A screen changes, a camera sees
+	// something, a system event lands - and each of those has a moment,
+	// exactly as an utterance does. Scheduling them on the same timeline is
+	// what lets a scenario ask whether the agent spoke because of something it
+	// saw while nobody was talking, which no amount of audio can express.
+	Scheduled []ScheduledEvent
+}
+
+// ScheduledEvent is one protocol event and when to send it.
+type ScheduledEvent struct {
+	// AtMS is measured from the start of playback, like everything else in a
+	// transcript, so a scheduled event and an utterance can be placed against
+	// each other.
+	AtMS  int
+	Event map[string]any
 }
 
 // Play drives one recording through a session and returns the timed record.
@@ -214,8 +234,21 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 
 	const frameSamples = 2400 // 100 ms
 	started := time.Now()
+	scheduled := append([]ScheduledEvent(nil), config.Scheduled...)
+	sort.SliceStable(scheduled, func(i, j int) bool { return scheduled[i].AtMS < scheduled[j].AtMS })
+	sent := 0
 	for offset := 0; offset < len(samples); offset += frameSamples {
 		end := min(offset+frameSamples, len(samples))
+		// Anything due by this point in the playback goes first, so a scheduled
+		// event lands before the audio that follows it rather than after.
+		atMS := offset * 1000 / 24_000
+		for sent < len(scheduled) && scheduled[sent].AtMS <= atMS {
+			if err := client.Send(timed, scheduled[sent].Event); err != nil {
+				return Transcript{}, err
+			}
+			recorder.add(Moment{AtMS: float64(scheduled[sent].AtMS), Kind: MomentScheduled})
+			sent++
+		}
 		if err := client.Send(timed, map[string]any{
 			"type":  "input_audio_buffer.append",
 			"audio": base64.StdEncoding.EncodeToString(encodePCM(samples[offset:end])),
