@@ -220,9 +220,11 @@ func (runtime *runtime) noticeStanding(text string) {
 		defer runtime.wait.Done()
 		// The conversation, not just the utterance: a recogniser splits where a
 		// speaker breathes, and a fragment read alone means something else.
-		recent := interaction.RecentLines(runtime.store.Snapshot().Items, 6)
+		snapshot := runtime.store.Snapshot()
+		recent := interaction.RecentLines(snapshot.Items, 6)
 		extraction, err := runtime.policies.Extraction.Extract(
-			runtime.ctx, runtime.pinboard.InForce(), recent, text)
+			runtime.ctx, runtime.pinboard.InForce(), recent, text,
+			runtime.continuesPreviousUtterance(snapshot))
 		if recorder := runtime.policies.ShadowInteraction; recorder != nil {
 			outcome := extraction.Kind
 			if err != nil {
@@ -320,11 +322,20 @@ func errorText(err error) string {
 // capitalised and punctuated like a sentence of its own, and nothing in the
 // text says which it is. Adjacency in time does.
 func (runtime *runtime) gapBeforeUtterance(snapshot trajectory.Snapshot) string {
+	gap, ok := runtime.gapBeforeUtteranceNS(snapshot)
+	if !ok {
+		return ""
+	}
+	return renderSilence(gap)
+}
+
+// gapBeforeUtteranceNS is the same measurement as a number.
+func (runtime *runtime) gapBeforeUtteranceNS(snapshot trajectory.Snapshot) (uint64, bool) {
 	runtime.audioMu.Lock()
 	startedNS := runtime.speechStartNS
 	runtime.audioMu.Unlock()
 	if startedNS == 0 {
-		return ""
+		return 0, false
 	}
 	for index := len(snapshot.Items) - 1; index >= 0; index-- {
 		item := snapshot.Items[index]
@@ -335,9 +346,28 @@ func (runtime *runtime) gapBeforeUtterance(snapshot trajectory.Snapshot) string 
 		if item.MonotonicNS == 0 || item.MonotonicNS >= startedNS {
 			continue
 		}
-		return renderSilence(startedNS - item.MonotonicNS)
+		return startedNS - item.MonotonicNS, true
 	}
-	return ""
+	return 0, false
+}
+
+// breathGap is how soon after one utterance another has to start to be the
+// same sentence carrying on.
+//
+// The gate needs half a second of quiet before it closes an utterance at all,
+// so a speaker who was only drawing breath is heard again almost the instant
+// the previous piece is committed - measured at 115 and 210 milliseconds on
+// the two recogniser splits that broke a standing policy in half. Somebody
+// starting a genuinely new turn has been quiet far longer than this: the lines
+// of a conversation in this suite are seconds apart, and a person who has
+// finished waits for an answer.
+const breathGap = time.Second
+
+// continuesPreviousUtterance reports whether the speaker is carrying on rather
+// than starting something new.
+func (runtime *runtime) continuesPreviousUtterance(snapshot trajectory.Snapshot) bool {
+	gap, ok := runtime.gapBeforeUtteranceNS(snapshot)
+	return ok && gap < uint64(breathGap)
 }
 
 // noticeStandingInPartial runs extraction before an utterance has finished.

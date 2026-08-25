@@ -120,7 +120,7 @@ func buildExtraction() string {
 			"Write the policy back as a short instruction to the agent, in the speaker's own words where you " +
 			"can.\n\nWorked examples. These are other conversations, not this one.\n")
 	for _, example := range extractionExamples() {
-		text.WriteString("\n---\n" + RenderForExtraction(example.existing, example.recent, example.utterance) +
+		text.WriteString("\n---\n" + RenderForExtraction(example.existing, example.recent, example.utterance, false) +
 			"\n-> " + example.answer + "\n")
 	}
 	text.WriteString("\n---\nNow decide the case below. Reply with one line and nothing else.")
@@ -141,7 +141,9 @@ func buildExtraction() string {
 // animals out loud, as I mention them" followed by "and say nothing else"
 // produced a pin and then a revocation of that same pin two seconds later.
 // Which is a fair reading of the fragment and a wrong one of the sentence.
-func RenderForExtraction(existing []StandingInstruction, recent []string, utterance string) string {
+func RenderForExtraction(
+	existing []StandingInstruction, recent []string, utterance string, continuing bool,
+) string {
 	var block strings.Builder
 	if len(recent) > 0 {
 		block.WriteString("Recent conversation:\n")
@@ -158,6 +160,21 @@ func RenderForExtraction(existing []StandingInstruction, recent []string, uttera
 		block.WriteString("\n")
 	} else {
 		block.WriteString("No policies are currently in force.\n\n")
+	}
+	if continuing {
+		// A recogniser cuts where somebody breathes, and the tail arrives
+		// capitalised and punctuated like a sentence of its own. Read that way
+		// it means something else: measured, "Finishes and don't say anything
+		// else" - the back half of "tell me the moment the build finishes and
+		// don't say anything else" - revoked the policy the front half had
+		// just set, five times out of five. Told it was a continuation, the
+		// same model pinned the whole instruction five times out of five.
+		//
+		// The runtime knows this and the reader cannot: it is how soon they
+		// started again, not anything about the words.
+		block.WriteString("They are still in the middle of a sentence; this is the next piece " +
+			"of it, not a new thing they said: \"" + utterance + "\"")
+		return block.String()
 	}
 	block.WriteString("They just said: \"" + utterance + "\"")
 	return block.String()
@@ -197,7 +214,14 @@ type Extractor interface {
 	Name() string
 	// Extract reads one finished utterance against the policies already in
 	// force, and returns what to do about it.
-	Extract(ctx context.Context, existing []StandingInstruction, recent []string, utterance string) (Extraction, error)
+	//
+	// continuing says the speaker was in the middle of a sentence and this is
+	// the next piece of it, which the runtime knows from how soon they started
+	// again and the reader cannot know from the words.
+	Extract(
+		ctx context.Context, existing []StandingInstruction, recent []string,
+		utterance string, continuing bool,
+	) (Extraction, error)
 }
 
 // Extraction is what an utterance did to the set of standing policies.
@@ -227,13 +251,14 @@ func (extractor modelExtractor) Name() string { return "extract:" + extractor.ge
 // what the model should lean towards, not about what this should invent when
 // the model has said something it does not understand.
 func (extractor modelExtractor) Extract(
-	ctx context.Context, existing []StandingInstruction, recent []string, utterance string,
+	ctx context.Context, existing []StandingInstruction, recent []string,
+	utterance string, continuing bool,
 ) (Extraction, error) {
 	if !v1.CarriesSpeech(utterance) {
 		return Extraction{Kind: "none"}, nil
 	}
 	answer, err := extractor.generator.Generate(
-		ctx, ExtractionInstruction, RenderForExtraction(existing, recent, utterance), 96)
+		ctx, ExtractionInstruction, RenderForExtraction(existing, recent, utterance, continuing), 96)
 	if err != nil {
 		return Extraction{}, err
 	}
