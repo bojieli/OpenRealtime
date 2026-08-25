@@ -178,7 +178,7 @@ func (runtime *runtime) runFast(
 	if err == nil && len(result.ToolCalls) > 0 {
 		dispatchErr = runtime.dispatch(ctx, result)
 	}
-	publishErr := runtime.publishAssistant(ctx, result)
+	publishErr := runtime.publishAssistant(ctx, result, request.Interjecting)
 	var signalErr error
 	// A turn the voice did not declare finished goes to the reasoner. So does
 	// one carrying a proposal, which is the voice naming a capability it
@@ -314,7 +314,13 @@ func (runtime *runtime) breakSilenceWhileDeliberating(
 
 // publishAssistant applies the commitment policy to one continuation's output
 // and, when it commits, queues speech and records the queued transition.
-func (runtime *runtime) publishAssistant(ctx context.Context, result continuation.RunResult) error {
+//
+// overFloor says the turn was spoken into somebody else's, which barge-in has
+// to know: what would otherwise read as being interrupted is the act working
+// as intended.
+func (runtime *runtime) publishAssistant(
+	ctx context.Context, result continuation.RunResult, overFloor bool,
+) error {
 	if strings.TrimSpace(result.AssistantText) == "" || !result.Committed {
 		return nil
 	}
@@ -349,8 +355,9 @@ func (runtime *runtime) publishAssistant(ctx context.Context, result continuatio
 	utterance := action.Utterance{
 		ID: idFor("speech", runtime.sequence.Add(1)), Text: decision.Emit,
 		Phase: items[0].Producer.Phase, SourceRevision: result.SourceRevision,
-		AssistantItemIDs: ids,
+		AssistantItemIDs: ids, SpokeOver: overFloor,
 	}
+
 	if runtime.textOnly() {
 		// No synthesiser, no pacing, no duplex state: a text turn is delivered
 		// the moment it is written. It crosses the same commit boundary, which

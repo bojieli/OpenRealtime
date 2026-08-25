@@ -308,10 +308,12 @@ func (runtime *runtime) considerBargeIn(
 		evidence = runtime.policies.Overlap.Classify(classify, decision)
 		cancel()
 	}
-	if runtime.speech.ActiveIsContinuer() {
-		// The overlap is the agent's own continuer. Cancelling it because the
-		// user kept talking would be the agent interrupting itself for having
-		// said it was listening.
+	if runtime.speech.ActiveSpokeOver() {
+		// The agent is talking over a stretch of speech it chose to talk over,
+		// so this overlap is not somebody taking the floor from it - it is the
+		// reason the act exists. Cancelling here would have the agent abandon
+		// its own backchannel for saying it was listening, and abandon its own
+		// correction for the sentence it is correcting.
 		return nil
 	}
 	outcome := runtime.policies.BargeIn.Decide(interaction.BargeInInput{

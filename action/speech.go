@@ -28,6 +28,25 @@ type Utterance struct {
 	// continuing speech over it as a barge-in would have the agent interrupt
 	// itself for saying it was listening.
 	Continuer bool `json:"continuer,omitempty"`
+	// SpokeOver marks speech the agent began on purpose while somebody else
+	// held the floor. A continuer is one case of it; an interruption and a
+	// speak-through are the others.
+	//
+	// Barge-in asks whether somebody took the floor from the agent. Nobody did
+	// here: the agent walked into speech that was already in progress, so the
+	// overlap is the utterance's premise rather than evidence against it.
+	// Measured, without this every correction was decided, worded, and then
+	// cancelled by the sentence it was correcting after a single
+	// hundred-millisecond frame had gone out, so nothing audible ever reached
+	// the person it was for.
+	//
+	// It says which act produced the speech, and is not derived from the
+	// duplex state when the audio is queued. The recogniser cuts one
+	// continuous sentence into several stretches, and a rule keyed on the
+	// stretch in progress fails exactly when the person keeps talking - which
+	// is the case this exists for. What bounds talking over somebody is the
+	// act's own brevity and scarcity, not barge-in.
+	SpokeOver bool `json:"spoke_over,omitempty"`
 }
 
 // Frame is one paced block of audio.
@@ -342,17 +361,18 @@ func (speech *Speech) activeCommitment() string {
 	return speech.activeID
 }
 
-// ActiveIsContinuer reports whether the audio reaching the user right now is a
-// listener backchannel rather than a turn.
+// ActiveSpokeOver reports whether the audio reaching the user right now was
+// begun on purpose over somebody who already had the floor.
 //
-// Barge-in needs it. A continuer is overlap the agent chose to produce while
-// the user was speaking, so the user carrying on is not an interruption of
-// anything - and a barge-in policy that could not tell the difference would
-// have the agent cancel itself for saying it was listening.
-func (speech *Speech) ActiveIsContinuer() bool {
+// Barge-in needs it, for every act that produces overlap deliberately: a
+// backchannel, where cancelling would have the agent interrupt itself for
+// saying it was listening, and an interruption or speak-through, where
+// cancelling would have it abandon what it cut in to say the moment the
+// sentence it cut into carried on.
+func (speech *Speech) ActiveSpokeOver() bool {
 	speech.mu.Lock()
 	defer speech.mu.Unlock()
-	return speech.activeID != "" && speech.active.Continuer
+	return speech.activeID != "" && speech.active.SpokeOver
 }
 
 // Close stops accepting work and cancels what is queued.

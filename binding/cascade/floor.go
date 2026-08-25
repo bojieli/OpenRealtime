@@ -81,12 +81,14 @@ func (runtime *runtime) backchannel(ctx context.Context, decision interaction.Co
 		}
 		// The state may have moved while the model was thinking. Interjecting
 		// into a turn that has since ended is worse than not interjecting.
-		if state := runtime.duplex.Snapshot(); !state.UserSpeaking || state.AgentSpeaking {
+		state := runtime.duplex.Snapshot()
+		if !state.UserSpeaking || state.AgentSpeaking {
 			return
 		}
 		utterance := action.Utterance{
 			ID: idFor("continuer", runtime.sequence.Add(1)), Text: outcome.Token,
 			SourceRevision: decision.Revision.ID, Continuer: true,
+			SpokeOver: true,
 		}
 		// A continuer carries no assistant item. It is not part of the answer
 		// and it is not something the model said - it is the runtime showing

@@ -172,6 +172,7 @@ type recordingSink struct {
 	outcomes     []binding.TurnOutcome
 	transcripts  []binding.TranscriptEvent
 	utterances   []action.Utterance
+	ended        []endedSpeech
 	frames       int
 	spoken       []string
 	toolCalls    []binding.ToolCallEvent
@@ -231,8 +232,32 @@ func (sink *recordingSink) SpeechAudio(context.Context, action.Utterance, action
 	return nil
 }
 
-func (sink *recordingSink) SpeechEnd(context.Context, action.Utterance, action.Outcome) error {
+func (sink *recordingSink) SpeechEnd(
+	_ context.Context, utterance action.Utterance, outcome action.Outcome,
+) error {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	sink.ended = append(sink.ended, endedSpeech{utterance: utterance, outcome: outcome})
 	return nil
+}
+
+// endedSpeech is an utterance and how it finished. Whether it finished is the
+// whole question for anything the agent says over somebody else.
+type endedSpeech struct {
+	utterance action.Utterance
+	outcome   action.Outcome
+}
+
+func (sink *recordingSink) speechOutcomes() []endedSpeech {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	return append([]endedSpeech(nil), sink.ended...)
+}
+
+func (sink *recordingSink) speechBegan() []action.Utterance {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	return append([]action.Utterance(nil), sink.utterances...)
 }
 
 func (sink *recordingSink) ToolCalls(_ context.Context, event binding.ToolCallEvent) error {
