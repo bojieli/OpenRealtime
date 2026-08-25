@@ -614,3 +614,49 @@ perception layer supports them: `perception/video.go` takes named sources,
 samples on change, and narrates to text. What is missing is a way to script a
 visual event on a timeline beside the speech, and until that exists those
 capabilities are covered only at the step-by-step layer.
+
+### The visual case, and the route that skipped the decision (F20)
+
+The suite played audio, so anything that fires with nobody talking had no
+end-to-end case. The timeline now carries protocol events beside the audio, and
+a scenario puts a real picture in front of the deployment's own narrator - a
+terminal showing a build running, then the same terminal showing it finished.
+
+It works. Told "tell me the moment the build finishes, and don't say anything
+else", the agent acknowledges, stays quiet through the frame showing it still
+running, and reports when the finished frame arrives, with nobody having spoken
+since the first sentence.
+
+Two things it found.
+
+**A route to speech the interaction model never saw.** It governs endpointing,
+which is how a person's turn reaches the microphone. An observer commits what
+it saw and the rollout plans a turn on any observation at all, so a screen that
+changed in a way nobody had asked about produced a turn exactly as one that
+mattered did. A decision layer that governs some routes and not others governs
+nothing, because the ungoverned route is always available. Same shape as the
+pause decision; found the same way.
+
+**Latency.** The report arrives five to fifteen seconds after the frame. The
+frame is narrated by a vision model before it is an observation at all, and
+with nobody speaking there is nothing driving a trigger. That is not "the
+moment" by any reading, and it is what the pipeline currently manages. The
+scenario's window says fifteen seconds and says why, rather than hiding the
+number behind a generous bound.
+
+### The suite as it stands
+
+| scenario | source |
+| --- | --- |
+| an ordinary question | control |
+| a recorded menu | production: IVR navigation |
+| ordering from a waiter | production: the moment passes if you wait |
+| translating as they speak | production: simultaneous speech |
+| an acknowledgement is not an interruption | overlap |
+| count as they go | demo: counting while somebody talks |
+| cutting in on something wrong | demo: correcting mid-sentence |
+| asked not to be interrupted | a policy set out loud |
+| telling them what it saw | demo: a visual trigger, nobody speaking |
+
+Nine scenarios, twenty-three checks, against 33% for the shipped predicates on
+the five they share.
