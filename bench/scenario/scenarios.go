@@ -90,6 +90,72 @@ func Suite() []Scenario {
 			},
 		},
 		{
+			Name: "ordering from a waiter",
+			Note: "a third party lists options and the moment worth acting on passes if you wait for a pause",
+			Instructions: "You are helping the user in a restaurant. They have told you what they want. " +
+				"When the waiter says something that matches it, say so straight away - the waiter " +
+				"will move on to the next item and the moment will be gone.",
+			Script: []Line{
+				{Speaker: "user", AtMS: 0, Text: "I want fish tonight. Order for me when you hear something that fits."},
+				{Speaker: "other", AtMS: 7000, Text: "Good evening. Tonight we have three specials. The first is a ribeye steak with peppercorn sauce. The second is a duck confit with cherries. The third is a sea bass with fennel and new potatoes."},
+			},
+			TrailingMS: 6000,
+			Checks: []Check{
+				{Kind: CheckSpoke, Line: 1, AfterMS: 2000,
+					Note: "the dish that fits was named and the waiter kept going"},
+				{Kind: CheckSaid, Line: 1, AfterMS: 4000, Any: []string{"sea bass", "bass", "fish"},
+					Note: "and it has to be about the right dish, not just a noise at the right time"},
+			},
+		},
+		{
+			Name: "translating as they speak",
+			Note: "the simultaneous-speech case: a policy never to yield the floor, and speech that " +
+				"does not end anybody's turn",
+			Instructions: "You are interpreting for the user. Do exactly what they ask you to do.",
+			// Mandarin rather than a European language, because the recogniser
+			// this suite runs against covers Chinese, English, Cantonese,
+			// Japanese and Korean and nothing else. Asked to interpret German
+			// it returned the right sounds spelled as English words, and the
+			// agent faithfully translated the nonsense - which measures the
+			// recogniser's language coverage rather than anything about
+			// interaction. Live interpreting is bounded by what the recogniser
+			// can hear, and that bound belongs in the scenario rather than in
+			// its result.
+			Script: []Line{
+				{Speaker: "user", AtMS: 0, Text: "My colleague only speaks Mandarin. Translate everything he says into English as he goes, and don't wait for him to finish."},
+				{Speaker: "other", AtMS: 9000, Text: "你好，很高兴见到你。"},
+				{Speaker: "other", AtMS: 15000, Text: "我们明天下午三点在办公室见面。"},
+			},
+			TrailingMS: 6000,
+			Checks: []Check{
+				{Kind: CheckSpoke, Line: 1, AfterMS: 4000, Note: "the first sentence should be carried over"},
+				{Kind: CheckSaid, Line: 1, AfterMS: 5000,
+					Any:  []string{"good day", "good afternoon", "hello", "pleased", "nice to meet", "meet you"},
+					Note: "and carried over into English rather than commented on"},
+				{Kind: CheckSaid, Line: 2, AfterMS: 5000,
+					Any:  []string{"three", "3", "tomorrow", "office"},
+					Note: "the second sentence too, which means it never stopped to hand the floor back"},
+			},
+		},
+		{
+			Name:         "an acknowledgement is not an interruption",
+			Note:         "the agent is mid-sentence and somebody says mhm; stopping would be wrong",
+			Instructions: "You are a helpful voice assistant. When asked what you found, give the detail you have.",
+			Script: []Line{
+				{Speaker: "user", AtMS: 0, Text: "Tell me everything you know about the refund process, in as much detail as you can manage."},
+				{Speaker: "user", AtMS: 9000, Text: "Mhm."},
+				{Speaker: "user", AtMS: 11500, Text: "Right, yeah."},
+			},
+			TrailingMS: 6000,
+			Checks: []Check{
+				{Kind: CheckSpoke, Line: 0, AfterMS: 5000, Note: "they asked for detail"},
+				{Kind: CheckNotSaid, Line: 2, AfterMS: 4000,
+					Any:  []string{"what would you like", "how can I help", "anything else", "sorry"},
+					Note: "an acknowledgement is not a new question and must not restart the turn",
+				},
+			},
+		},
+		{
 			Name: "an ordinary question",
 			Note: "the control: most of this suite asks for silence, and a system that had simply " +
 				"stopped talking would pass all of it",

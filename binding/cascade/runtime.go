@@ -81,7 +81,11 @@ type runtime struct {
 	// pauseStartNS is when the silence now being held through began. The gate
 	// cannot time it: reopening resets its counter, so a bound measured from
 	// there would restart on every hold and never expire.
-	pauseStartNS  uint64
+	pauseStartNS uint64
+	// pauseHeard is what had been heard when the current pause began, so that a
+	// speaker talking through a hold starts a new pause rather than extending
+	// one that ended when they spoke.
+	pauseHeard    string
 	lastCanonical uint64
 	// interjecting is set when the turn about to run was taken from somebody
 	// still speaking rather than offered by somebody who had finished.

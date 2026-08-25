@@ -64,20 +64,29 @@ def decode(raw: bytes):
     return samples, TARGET_RATE
 
 
-def transcribe(samples: np.ndarray) -> str:
+def transcribe(samples: np.ndarray, requested: str = "") -> str:
+    """Recognise one buffer.
+
+    The requested language is honoured rather than accepted and dropped. The
+    endpoint took the field from the first version and always passed "auto" to
+    the model, which is fine until somebody is interpreting: auto-detection on
+    a short utterance in a second language guesses the first one, and what
+    comes back is the right sounds spelled in the wrong language.
+    """
     from funasr.utils.postprocess_utils import rich_transcription_postprocess
     # The model is one graph on one device; serialising is what keeps a burst
     # of sessions from interleaving into it.
     with _lock:
         result = _model.generate(input=samples, fs=TARGET_RATE, cache={},
-                                 language="auto", use_itn=True, batch_size_s=300)
+                                 language=requested or "auto", use_itn=True, batch_size_s=300)
     if not result:
         return ""
     return rich_transcription_postprocess(result[0]["text"]).strip()
 
 
-async def run(samples: np.ndarray) -> str:
-    return await asyncio.wait_for(asyncio.to_thread(transcribe, samples), timeout=REQUEST_DEADLINE)
+async def run(samples: np.ndarray, requested: str = "") -> str:
+    return await asyncio.wait_for(
+        asyncio.to_thread(transcribe, samples, requested), timeout=REQUEST_DEADLINE)
 
 
 @app.on_event("startup")
@@ -106,7 +115,7 @@ async def transcriptions(file: UploadFile = File(...), model: str = Form(default
         return JSONResponse({"text": "", "language": ""})
 
     try:
-        text = await run(samples)
+        text = await run(samples, (language or "").strip().lower())
     except asyncio.TimeoutError:
         _stats["failures"] += 1
         log.error("deadline exceeded after %.1fs on %.2fs of audio", REQUEST_DEADLINE, seconds)

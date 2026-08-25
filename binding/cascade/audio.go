@@ -181,6 +181,20 @@ func (runtime *runtime) holdsThroughPause(nowNS uint64, latest interaction.Revis
 	// arrive - the turn would end when the model stopped saying "continuing",
 	// which is exactly the runaway the bound exists to prevent.
 	runtime.audioMu.Lock()
+	// A pause that the speaker has since talked through is not one pause.
+	//
+	// The clock deliberately survives a hold, because reopening the gate zeroes
+	// the gate's own counter and a bound measured from there would restart on
+	// every hold and never arrive. But it must not survive the speaker actually
+	// saying something: this is the clock a liveness bound is measured against,
+	// and without this it reported twenty seconds of silence across a stretch
+	// in which somebody had spoken three sentences - so the bound fired in the
+	// middle of a conversation and the agent interrupted a monologue it had
+	// been asked not to interrupt.
+	if spoken := latest.Text(); spoken != runtime.pauseHeard {
+		runtime.pauseHeard = spoken
+		runtime.pauseStartNS = 0
+	}
 	if runtime.pauseStartNS == 0 && nowNS > silenceNS {
 		runtime.pauseStartNS = nowNS - silenceNS
 	}
