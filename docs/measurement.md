@@ -305,3 +305,34 @@ simulation can answer.
 alternative is a documented configuration with a number attached rather than a
 recommendation. Which one is right depends on whether a deployment's users
 backchannel, which is what the full cells will say.
+
+## The trajectory's clock (F13)
+
+Every trajectory item has carried `MonotonicNS` since the log existed, and no
+projection had ever put it in front of a model. The transcript a model read was
+an ordered list with no clock: a reply after two hundred milliseconds and one
+after half a minute were indistinguishable to it, though nobody sharing the
+room could have missed the difference.
+
+Measured against `qwen-fast` (Qwen3-30B-A3B-FP8), same prompt and same three
+prior messages, differing only in whether the projection carried the gap:
+
+| the user says | the agent answers |
+| --- | --- |
+| `how long was i gone` | "I don't have a way to track time, but I'm here whenever you're ready!" |
+| `[2m14s later] how long was i gone` | "You were gone for 2 minutes and 14 seconds." |
+
+Two things worth separating. The model *uses* the note rather than merely
+receiving it — its reasoning refers to the elapsed time unprompted — and it
+does not read the bracket aloud, which was the risk worth checking before
+putting runtime-authored text into a user message.
+
+The second, less flattering half: on a prompt where timing was available but
+not load-bearing ("sorry, i'm back"), the answers with and without the clock
+were the same sentence. The clock adds a fact the model can reach for. It does
+not by itself change what the model says, and no measurement here claims it
+improves turn-taking or task completion. Those are separate questions.
+
+The threshold is a second. Below that a gap is the ordinary seam between one
+item and the next — the pause between a question ending and an answer
+beginning — and reporting it would be noise wearing the costume of information.
