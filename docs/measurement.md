@@ -990,3 +990,83 @@ interrupts in 630-843 milliseconds, the fastest response in the suite, and says
 The pattern across the last three is one thing: the decision layer is choosing
 correctly and the voice is not saying what the choice was for. That is a
 different problem from the one this work started on, and a smaller one.
+
+### The act was carried out and nobody could hear it (F26)
+
+Two bugs, found by reading the recorded audio durations rather than the
+transcripts.
+
+**The voice never received the deployment's own instruction.** The phase
+prompts are composed once, when the engine is built. A session's instruction
+does not arrive then - every client sends it in `session.update`, the official
+SDK included - and `Update` stored the new settings without recomposing
+anything. The interaction model was unaffected, because its situation reads the
+current settings on every decision.
+
+That is the whole of the split under the cutting-in case. Told the deadline was
+the third, the decision layer correctly recognised a wrong date mid-sentence
+and cut in; the voice, which had never been told what the right date was,
+invented one. Probed in isolation with the instruction present it said
+"Actually, the deadline is the third" three times out of three. Wired up, the
+scenario went from 0/5 to 2/5 in one step, and every remaining failure was a
+timing failure rather than a content one.
+
+**Every interruption was cancelled by the sentence it was interrupting.** The
+shipped barge-in policy yields the floor the moment the user speaks. Speech the
+agent began on purpose over somebody who already had the floor is the one case
+where that is wrong, and the policy could not tell the difference. The
+recording says it without ambiguity - turns produced in silence emit four to
+six seconds of audio, and turns produced over somebody emit exactly one
+hundred-millisecond frame and then stop:
+
+```
+8781 TEXT (user speaking) 'Actually, the deadline is the third of the month.'
+9781 DONE  audio=100ms
+```
+
+The act chose right, the voice said the right words, and nothing audible
+reached the person it was for. The guard for this already existed and was drawn
+too narrowly: a continuer had it, on the argument that "cancelling it because
+the user kept talking would be the agent interrupting itself for having said it
+was listening" - which was never an argument about backchannels.
+
+The first attempt read the marker from the duplex state when the audio was
+queued, and failed on the case it was written for. The recogniser cuts one
+continuous sentence into several stretches, so by the time a correction is
+queued the stretch it answers has already been closed and reopened. It comes
+down from the request now, where the decision to speak into somebody else's
+turn was actually made.
+
+**Cutting in on something wrong is 3/3, having never once passed.** Asked not
+to be interrupted went to 3/3 and the control question to 3/3.
+
+### What the suite total hides
+
+15 of 27, which is what it was before both fixes. That is the least interesting
+fact about them.
+
+| | before | after |
+| --- | --- | --- |
+| cutting in on something wrong | 0/3 | **3/3** |
+| asked not to be interrupted | 2/3 | **3/3** |
+| an ordinary question | 2/3 | **3/3** |
+| a recorded menu | 2/3 | 0/3 |
+| translating as they speak | 2/3 | 1/3 |
+| ordering from a waiter | 3/3 | 2/3 |
+| count-as-they-go | 1/3 | 0/3 |
+
+Every scenario in the lower half asks for silence somewhere, and every one of
+them was passing that check with speech that had been cut to a hundred
+milliseconds. The agent was talking over a recorded menu, over a waiter, and
+over a build that had not finished the entire time; it was simply inaudible.
+Fixing the audio did not cause those failures, it uncovered them, and a
+measurement that reported them as passing was measuring the wrong thing.
+
+So the remaining work has a shape now, and it is two shapes rather than one:
+
+- **speaks when the act should be `listen`** - the recorded menu, the frame
+  showing the build still running. This is restraint, and it is the interaction
+  model's decision.
+- **silent when an act said to speak** - the second animal, the second
+  sentence, the dish that fits. The act is chosen, the interjection runs, no
+  error is reported, and the voice produces nothing.
