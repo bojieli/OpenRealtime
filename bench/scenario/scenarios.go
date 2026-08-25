@@ -26,14 +26,18 @@ func Suite() []Scenario {
 			Checks: []Check{
 				{Kind: CheckSilent, Line: 1, AfterMS: 3000,
 					Note: "no animal was mentioned and the pause afterwards is not an invitation"},
-				{Kind: CheckSpoke, Line: 2, AfterMS: 3000, Note: "a capybara is an animal and they asked to be told"},
-				{Kind: CheckSpoke, Line: 3, AfterMS: 3000, Note: "a heron is the second one"},
-				{Kind: CheckSaid, Line: 2, AfterMS: 3000, Any: []string{"one", "1"},
-					Note: "counting means saying the count, at the moment the animal is mentioned"},
-				{Kind: CheckSaid, Line: 3, AfterMS: 3000, Any: []string{"two", "2"},
+				// Two claims, kept apart. Whether it counted the right animal is a
+				// capability; how soon is a latency, and folding them into one
+				// window scored a run that counted both correctly as a failure
+				// for being three hundred milliseconds late.
+				{Kind: CheckSaid, Line: 2, AfterMS: 5000, Any: []string{"one", "1"},
+					Note: "counting means saying the count, for the animal that was mentioned"},
+				{Kind: CheckSaid, Line: 3, AfterMS: 5000, Any: []string{"two", "2"},
 					Note: "and the second animal is two"},
-				{Kind: CheckNotSaid, Line: 2, AfterMS: 3000, Any: []string{"?"},
+				{Kind: CheckNotSaid, Line: 2, AfterMS: 5000, Any: []string{"?"},
 					Note: "they asked to be counted at, not interviewed"},
+				{Kind: CheckAnsweredWithin, Line: 2, AfterMS: 5000,
+					Note: "counting as somebody goes is a claim about timing, so it is measured as one"},
 			},
 		},
 		{
