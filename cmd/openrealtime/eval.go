@@ -51,6 +51,8 @@ func runEval(arguments []string, output io.Writer) error {
 		cases = evals.ResultCases()
 	case "interaction":
 		cases = evals.InteractionCases()
+	case "standing-instruction":
+		cases = evals.StandingInstructionCases()
 	default:
 		return fmt.Errorf("decision must be hand-off, identifier, result, or interaction, got %q", *decision)
 	}
@@ -91,6 +93,8 @@ func runEval(arguments []string, output io.Writer) error {
 		runner = evals.ResultRunner{Provider: client, Label: label}
 	case "interaction":
 		runner = evals.InteractionRunner{Provider: client, Label: label}
+	case "standing-instruction":
+		runner = evals.StandingInstructionRunner{Provider: client, Label: label}
 	}
 	report := evals.Run(context.Background(), runner, repeated)
 	fmt.Fprint(output, report.Format())
