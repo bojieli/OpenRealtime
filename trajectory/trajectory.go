@@ -229,8 +229,16 @@ func (failure *ItemError) Error() string {
 func (failure *ItemError) Unwrap() error { return failure.Err }
 
 // PendingRepairs resolves the append-only repair lifecycle in canonical order.
+//
+// One entry per target, always. The order was recorded whenever a target
+// became pending rather than the first time it was ever seen, so an item cut
+// off, corrected, and cut off again - an ordinary thing in a long call -
+// appeared twice, and a caller that turns each entry into a resolving item
+// built a batch resolving the same repair twice. The second is rejected, the
+// batch is refused whole, and the obligation never clears.
 func PendingRepairs(snapshot Snapshot) []PendingRepair {
 	pending := make(map[string]PendingRepair)
+	ordered := make(map[string]struct{})
 	var order []string
 	for _, item := range snapshot.Items {
 		if item.Kind != KindRepair || item.Repair == nil {
@@ -238,7 +246,8 @@ func PendingRepairs(snapshot Snapshot) []PendingRepair {
 		}
 		switch item.Repair.Status {
 		case RepairRequired:
-			if _, exists := pending[item.Repair.TargetAssistantItemID]; !exists {
+			if _, seen := ordered[item.Repair.TargetAssistantItemID]; !seen {
+				ordered[item.Repair.TargetAssistantItemID] = struct{}{}
 				order = append(order, item.Repair.TargetAssistantItemID)
 			}
 			pending[item.Repair.TargetAssistantItemID] = PendingRepair{
