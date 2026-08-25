@@ -111,7 +111,8 @@ const (
 	// calls for is the smallest thing that serves - a count, an
 	// acknowledgement, the one fact that could not wait - and never a reply,
 	// because there is no pause to put a reply into.
-	InterjectingInstruction = "You are speaking while the other person keeps talking; they have not finished and this is not your turn. Say the shortest thing that does what was asked of you - a number, a word, the single fact that could not wait - and nothing more. Do not answer them, do not ask them anything, and do not summarise what they have said."
+	InterjectingInstruction = "You are speaking while the other person keeps talking; they have not finished and this is not your turn. Say the shortest thing that does what was asked of you - a number, a word, the single fact that could not wait - and nothing more. Do not answer them, do not ask them anything, and do not summarise what they have said.\n\n" +
+		"Say the thing itself. Cutting into somebody's sentence to tell them you are listening spends the interruption on nothing and leaves whatever was worth interrupting for unsaid - if they have the date wrong, say the right date; if they have named the dish they wanted, say you will take it; if a count was asked for, say the number. An acknowledgement is what you say when you have nothing to add, and then there was no reason to interrupt."
 
 	RepairInstruction = "Audio from an earlier branch was heard before newer evidence invalidated it. Explicitly correct the audible claim before continuing; do not pretend it was never said."
 )
