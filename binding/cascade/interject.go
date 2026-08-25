@@ -197,3 +197,66 @@ func (runtime *runtime) releaseInterjection() {
 	runtime.interjectStartNS = 0
 	runtime.audioMu.Unlock()
 }
+
+// actSilently runs the phase that may act and may not speak.
+//
+// The act existed, the model chose it correctly, and nothing happened - the
+// floor recognised answer and interrupt and speak-through and let this one
+// fall through its default branch. The phone menu passed for a while anyway,
+// because a tool call can also come out of an ordinary turn, and stopped
+// passing the moment the model got better at choosing this instead.
+//
+// It is ADR-0006's second boundary under another name: the slow phase acts and
+// cannot speak, which is exactly what pressing a key at a recording needs.
+func (runtime *runtime) actSilently(decision interaction.Context) {
+	if runtime.policies.Interaction == nil {
+		return
+	}
+	// Something already sent and not yet answered is a decision already taken.
+	// The situation says so and the model reads it and presses anyway - six
+	// times in one call to a phone menu - because each partial is a fresh
+	// question and "I already did this" is a property of the sequence. The
+	// guard belongs here for the same reason the interruption bound does.
+	if pending := trajectory.UnresolvedToolCalls(runtime.store.Snapshot()); len(pending) > 0 {
+		runtime.noteInterject("a tool call is already awaiting its result")
+		return
+	}
+	runtime.audioMu.Lock()
+	if runtime.lastSilentActRev == decision.Revision.ID {
+		runtime.audioMu.Unlock()
+		return
+	}
+	runtime.lastSilentActRev = decision.Revision.ID
+	runtime.audioMu.Unlock()
+	if !runtime.claimInterjection() {
+		runtime.noteInterject("acting silently, but something is already in flight")
+		return
+	}
+	runtime.wait.Add(1)
+	go func() {
+		defer runtime.wait.Done()
+		defer runtime.releaseInterjection()
+		standing, _, _ := runtime.cognitionExtras()
+		request := cognition.Request{
+			SourceRevision: decision.Revision.ID,
+			Standing:       standing,
+			Heard:          decision.Revision.Text(),
+		}
+		// runSlow rather than the engine directly: a proposal that nobody
+		// dispatches is a key nobody presses. The engine produces the call and
+		// the runtime is what executes it, and calling past that layer meant
+		// the phase ran nineteen times and the menu never heard a tone.
+		err := runtime.runSlow(runtime.ctx, request, &turnReport{})
+		if recorder := runtime.policies.ShadowInteraction; recorder != nil {
+			outcome := "acted"
+			if err != nil {
+				outcome = "refused"
+			}
+			recorder(interaction.ShadowDecision{
+				NowNS: runtime.scheduler.NowNS(), Situation: "call-tool: " + decision.Revision.Text(),
+				Act: outcome, Predicates: map[string]string{"where": "call-tool"},
+				Error: errorText(err),
+			})
+		}
+	}()
+}

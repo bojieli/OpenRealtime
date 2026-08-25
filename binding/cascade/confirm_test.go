@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/binding"
@@ -140,4 +141,49 @@ func TestAConfirmerAnswersAnAlwaysRequirement(t *testing.T) {
 	speak(t, runtime, 3)
 	waitFor(t, func() bool { return len(calls) > 0 }, "a confirmed action never executed")
 	_ = <-calls
+}
+
+// A client-owned implementation is still an action, not a route around the
+// server's confirmation boundary. This was especially important once bounded
+// client computer tools could enter the opt-in fast lane, but it applies to
+// slow calls too: authority is about the call, not where its code runs.
+func TestAClientExecutedToolCannotBypassConfirmation(t *testing.T) {
+	audited := make(chan action.Record, 1)
+	runtime, sink := startSession(t, cascade.Config{
+		Fast: newFast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking."}}),
+		Slow: newSlow([]continuation.Event{{
+			Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+				CallID: "remote_1", Name: "remote_press", Arguments: json.RawMessage(`{}`),
+			},
+		}}),
+		ActionAudit: func(record action.Record) { audited <- record },
+	}, binding.Settings{Tools: []action.ToolSpec{{
+		Name: "remote_press", Description: "press a client control",
+		Parameters: json.RawMessage(`{"type":"object"}`), Confirm: action.ConfirmAlways,
+		Target: "client-browser",
+	}}})
+	speak(t, runtime, 3)
+	select {
+	case record := <-audited:
+		if record.Executed || record.Name != "remote_press" {
+			t.Fatalf("unexpected remote refusal audit: %+v", record)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the remote confirmation refusal was not audited")
+	}
+	waitFor(t, func() bool {
+		for _, item := range runtime.Trajectory().Items {
+			if item.Kind == trajectory.KindToolResult && item.ToolResult != nil &&
+				item.ToolResult.CallID == "remote_1" && item.ToolResult.Error != "" {
+				return true
+			}
+		}
+		return false
+	}, "the remote confirmation refusal did not become a tool result")
+	sink.mu.Lock()
+	remoteCalls := len(sink.toolCalls)
+	sink.mu.Unlock()
+	if remoteCalls != 0 {
+		t.Fatal("an unconfirmed client action crossed the wire")
+	}
 }

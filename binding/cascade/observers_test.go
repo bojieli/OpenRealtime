@@ -14,6 +14,7 @@ import (
 	"github.com/bojieli/OpenRealtime/binding/cascade"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 func videoFactory() perception.Factory {
@@ -102,6 +103,39 @@ func TestObserversAreSelectablePerSession(t *testing.T) {
 	if err := watching.Video(context.Background(), screenFrame(t)); err != nil {
 		t.Fatalf("a session that selected the video observer must accept video: %v", err)
 	}
+}
+
+// Seeing a page is not authorization to operate it. The video observation is
+// committed immediately, but cognition stays unarmed until a user-authority
+// observation establishes intent. This is what keeps a fast visual lane from
+// clicking the first plausible control before the spoken request is over.
+func TestObserverEvidenceCannotStartAnAutonomousTurnBeforeUserIntent(t *testing.T) {
+	config := videoConfig(nil)
+	fast := config.Fast.(*scriptedProvider)
+	slow := config.Slow.(*scriptedProvider)
+	runtime, sink := startSession(t, config, binding.Settings{})
+	if err := runtime.Video(context.Background(), screenFrame(t)); err != nil {
+		t.Fatalf("video: %v", err)
+	}
+	waitFor(t, func() bool {
+		for _, item := range runtime.Trajectory().Items {
+			if item.Kind == trajectory.KindObservation &&
+				trajectory.AuthorityOf(item) == trajectory.AuthorityObserver {
+				return true
+			}
+		}
+		return false
+	}, "the observer evidence was not committed")
+	time.Sleep(150 * time.Millisecond)
+	if fast.invocations() != 0 || slow.invocations() != 0 {
+		t.Fatalf("passive evidence started cognition: fast=%d slow=%d", fast.invocations(), slow.invocations())
+	}
+	if outcomes := sink.turnOutcomes(); len(outcomes) != 0 {
+		t.Fatalf("a silent observation opened a protocol turn: %+v", outcomes)
+	}
+
+	speak(t, runtime, 3)
+	waitFor(t, func() bool { return fast.invocations() > 0 }, "user intent did not arm cognition")
 }
 
 // The video-only level of factor F3 has to actually remove the recogniser.

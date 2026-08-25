@@ -77,6 +77,7 @@ func (runtime *runtime) prepare(ctx context.Context, decision interaction.Contex
 	standing, interjecting, heard := runtime.cognitionExtras()
 	request := cognition.Request{
 		SourceRevision: decision.Revision.ID, Standing: standing, Interjecting: interjecting, Heard: heard,
+		AllowFastTools: true,
 	}
 
 	go func() {

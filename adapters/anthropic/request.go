@@ -113,7 +113,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (messagesRequ
 	}
 	if len(messages) == 0 {
 		return messagesRequest{}, errors.New(
-			"Anthropic continuation requires at least one observation or prior model item")
+			"Anthropic continuation requires an observation, a prior model item, or an instruction")
 	}
 	if messages[0].Role != "user" {
 		return messagesRequest{}, errors.New(

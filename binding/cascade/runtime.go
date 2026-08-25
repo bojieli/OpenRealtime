@@ -14,6 +14,7 @@ import (
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/clientcalls"
 	"github.com/bojieli/OpenRealtime/cognition"
+	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/interaction"
@@ -96,6 +97,8 @@ type runtime struct {
 	heardWhenSpoke string
 	// interjectStartNS is when the in-flight interjection claimed its slot.
 	interjectStartNS uint64
+	// lastSilentActRev is the revision the last silent act answered.
+	lastSilentActRev uint64
 	lastCanonical    uint64
 	// interjecting is set when the turn about to run was taken from somebody
 	// still speaking rather than offered by somebody who had finished.
@@ -202,11 +205,18 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		return nil, err
 	}
 
+	var fastToolFilter func(continuation.ToolDefinition) bool
+	if bind.config.FastComputerUse {
+		fastToolFilter = func(tool continuation.ToolDefinition) bool {
+			return result.fastExecutableTool(tool.Name)
+		}
+	}
 	engine, err := cognition.New(cognition.Config{
 		Store: result.store, Fast: bind.config.Fast, Slow: bind.config.Slow,
 		Catalog:          toolCatalog{runtime: result},
 		AgentInstruction: cognition.Compose(bind.config.AgentInstruction, result.settings.Instruction),
 		FastMaxTokens:    bind.config.FastMaxTokens, SlowMaxTokens: bind.config.SlowMaxTokens,
+		FastToolFilter:    fastToolFilter,
 		RequireSilentSlow: true, RetainReasoning: true,
 		// Without this a provider that can see gets the narration and nothing
 		// else, which is enough to reason about a screen and not enough to
@@ -581,11 +591,10 @@ func idFor(prefix string, sequence uint64) string {
 	return prefix + "_" + strconv.FormatUint(sequence, 10)
 }
 
-// toolCatalog exposes the declared tool surface to cognition.
-//
-// Visibility is not authority: the fast provider sees the same schemas as the
-// slow one so it can say which capability a request needs, and its descriptor
-// is what makes any call it emits a non-executable proposal.
+// toolCatalog exposes the declared tool surface to cognition. Every tool is
+// visible as a capability, slow receives all executable schemas, and fast
+// receives only runtime.fastExecutableTool definitions at eligible safe
+// points.
 type toolCatalog struct{ runtime *runtime }
 
 func (catalog toolCatalog) Tools() []continuation.ToolDefinition {
@@ -603,11 +612,37 @@ func (catalog toolCatalog) Capabilities() []continuation.Capability {
 	specs := catalog.runtime.registry.Specs()
 	capabilities := make([]continuation.Capability, 0, len(specs))
 	for _, spec := range specs {
+		phase := trajectory.PhaseSlow
+		if catalog.runtime.fastExecutableTool(spec.Name) {
+			phase = trajectory.PhaseFast
+		}
 		capabilities = append(capabilities, continuation.Capability{
 			Name: spec.Name, Description: spec.Description, Available: true,
-			ExecutionPhase:       string(trajectory.PhaseSlow),
+			ExecutionPhase:       string(phase),
 			ConfirmationRequired: spec.Confirm != action.ConfirmNever,
 		})
 	}
 	return capabilities
+}
+
+func (runtime *runtime) fastExecutableTool(name string) bool {
+	if !runtime.config.FastComputerUse {
+		return false
+	}
+	if !computeruse.IsReflexAction(name) {
+		return false
+	}
+	spec, declared := runtime.registry.Lookup(name)
+	if !declared {
+		return false
+	}
+	if spec.Dispatcher != nil {
+		// A server-owned standard action crosses the local action boundary,
+		// which applies its declared confirmation policy and target dispatcher.
+		return true
+	}
+	// The client is the action environment. Fast may emit to it only when the
+	// client explicitly waived confirmation and declared the bounded context;
+	// policy/always must be answered before the call crosses the wire.
+	return spec.Confirm == action.ConfirmNever && strings.TrimSpace(spec.Target) != ""
 }

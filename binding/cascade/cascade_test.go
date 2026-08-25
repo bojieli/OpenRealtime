@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/cascade"
+	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -107,6 +109,12 @@ func newFast(turns ...[]continuation.Event) *scriptedProvider {
 		},
 		turns: turns,
 	}
+}
+
+func newFastComputer(turns ...[]continuation.Event) *scriptedProvider {
+	provider := newFast(turns...)
+	provider.descriptor.ToolAuthority = continuation.ToolAuthorityExecute
+	return provider
 }
 
 func newSlow(turns ...[]continuation.Event) *scriptedProvider {
@@ -422,7 +430,7 @@ func TestSlowToolCallsReachTheClientAndResultsResumeTheTurn(t *testing.T) {
 			sawResult = true
 		}
 		if item.Kind == trajectory.KindToolCall && item.Producer.Phase != trajectory.PhaseSlow {
-			t.Fatal("only the slow provider may append an executable call")
+			t.Fatal("fast is proposal-only in the default arrangement")
 		}
 	}
 	if !sawResult {
@@ -462,6 +470,340 @@ func TestFastProposalsNeverBecomeExecutableCalls(t *testing.T) {
 		t.Fatal("a proposal must never reach the client as an executable call")
 	}
 }
+
+func TestOptInFastComputerActionDispatchesInProcess(t *testing.T) {
+	dispatched := make(chan trajectory.ToolCall, 1)
+	fast := newFastComputer([]continuation.Event{{
+		Kind: continuation.EventToolCall,
+		ToolCall: &trajectory.ToolCall{
+			CallID: "fast_click_1", Name: computeruse.Click,
+			Arguments: json.RawMessage(`{"source":"screen","x":10,"y":10}`),
+		},
+	}})
+	policies := defaultPolicies()
+	rollout, err := parseRollout("fast-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	policies.Rollout = rollout
+	runtime, sink := startSession(t, cascade.Config{
+		Fast: fast, Slow: newSlow(), Policies: policies, FastComputerUse: true,
+		Tools: []action.ToolSpec{{
+			Name: computeruse.Click, Description: "click the screen",
+			Parameters: json.RawMessage(`{"type":"object"}`), Confirm: action.ConfirmNever,
+			Target: "browser", Dispatcher: action.DispatcherFunc(func(
+				_ context.Context, call trajectory.ToolCall,
+			) (trajectory.ToolResult, error) {
+				dispatched <- call
+				return trajectory.ToolResult{
+					CallID: call.CallID, Name: call.Name, Output: json.RawMessage(`{"ok":true}`),
+				}, nil
+			}),
+		}},
+	}, binding.Settings{})
+
+	speak(t, runtime, 3)
+	select {
+	case call := <-dispatched:
+		if call.Name != computeruse.Click {
+			t.Fatalf("unexpected fast dispatch: %+v", call)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the bounded fast action never reached its in-process dispatcher")
+	}
+	waitFor(t, func() bool {
+		var call, result bool
+		for _, item := range runtime.Trajectory().Items {
+			call = call || (item.Kind == trajectory.KindToolCall && item.Producer.Phase == trajectory.PhaseFast)
+			result = result || item.Kind == trajectory.KindToolResult
+		}
+		return call && result
+	}, "the fast call and result were not committed")
+	fast.mu.Lock()
+	request := fast.requests[0]
+	fast.mu.Unlock()
+	if len(request.Invocation.Tools) != 1 || request.Invocation.Tools[0].Name != computeruse.Click {
+		t.Fatalf("fast received more than its exact server-owned allowlist: %+v", request.Invocation.Tools)
+	}
+	sink.mu.Lock()
+	remoteCalls := len(sink.toolCalls)
+	sink.mu.Unlock()
+	if remoteCalls != 0 {
+		t.Fatal("a fast server-owned action was handed to the client")
+	}
+}
+
+func TestFastComputerLaneKeepsObservationControlSlowOnly(t *testing.T) {
+	fast := newFastComputer(
+		[]continuation.Event{{
+			Kind: continuation.EventToolCall,
+			ToolCall: &trajectory.ToolCall{
+				CallID: "fast_wait_1", Name: computeruse.Wait,
+				Arguments: json.RawMessage(`{"duration_ms":2000}`),
+			},
+		}},
+		[]continuation.Event{{
+			Kind: continuation.EventToolCall,
+			ToolCall: &trajectory.ToolCall{
+				CallID: "fast_shot_1", Name: computeruse.Screenshot,
+				Arguments: json.RawMessage(`{"source":"screen"}`),
+			},
+		}},
+	)
+	policies := defaultPolicies()
+	rollout, _ := parseRollout("fast-only")
+	policies.Rollout = rollout
+	var dispatched atomic.Int32
+	runtime, _ := startSession(t, cascade.Config{
+		Fast: fast, Slow: newSlow(), Policies: policies, FastComputerUse: true,
+		Tools: []action.ToolSpec{
+			{
+				Name: computeruse.Wait, Description: "wait",
+				Parameters: json.RawMessage(`{"type":"object"}`), Confirm: action.ConfirmNever,
+				Target: "browser", Dispatcher: action.DispatcherFunc(func(
+					_ context.Context, call trajectory.ToolCall,
+				) (trajectory.ToolResult, error) {
+					dispatched.Add(1)
+					return trajectory.ToolResult{CallID: call.CallID, Name: call.Name}, nil
+				}),
+			},
+			{
+				Name: computeruse.Screenshot, Description: "capture",
+				Parameters: json.RawMessage(`{"type":"object"}`), Confirm: action.ConfirmNever,
+				Target: "browser", Dispatcher: action.DispatcherFunc(func(
+					_ context.Context, call trajectory.ToolCall,
+				) (trajectory.ToolResult, error) {
+					dispatched.Add(1)
+					return trajectory.ToolResult{CallID: call.CallID, Name: call.Name}, nil
+				}),
+			},
+		},
+	}, binding.Settings{})
+
+	speak(t, runtime, 3)
+	waitFor(t, func() bool {
+		for _, item := range runtime.Trajectory().Items {
+			if item.Kind == trajectory.KindToolProposal && item.ToolCall != nil && item.ToolCall.Name == computeruse.Wait {
+				return true
+			}
+		}
+		return false
+	}, "fast wait did not remain a proposal")
+	if dispatched.Load() != 0 {
+		t.Fatal("observation control crossed the fast execution boundary")
+	}
+	fast.mu.Lock()
+	request := fast.requests[0]
+	fast.mu.Unlock()
+	if len(request.Invocation.Tools) != 0 {
+		t.Fatalf("fast received observation-control schemas: %+v", request.Invocation.Tools)
+	}
+}
+
+func TestOptInFastComputerActionCanUseABoundedClientEnvironment(t *testing.T) {
+	fast := newFastComputer([]continuation.Event{{
+		Kind: continuation.EventToolCall,
+		ToolCall: &trajectory.ToolCall{
+			CallID: "fast_mark_1", Name: computeruse.ClickElement,
+			Arguments: json.RawMessage(`{"source":"screen","element_id":"1"}`),
+		},
+	}})
+	policies := defaultPolicies()
+	rollout, _ := parseRollout("fast-only")
+	policies.Rollout = rollout
+	runtime, sink := startSession(t, cascade.Config{
+		Fast: fast, Slow: newSlow(), Policies: policies, FastComputerUse: true,
+	}, binding.Settings{})
+	// Realtime clients declare tools in session.update, after the binding
+	// runtime and cognition engine already exist. The fast filter must read the
+	// live registry or the repository-owned evaluator would silently exercise
+	// the slow path despite asking for fast computer use.
+	settings := binding.Settings{Gate: perception.DefaultGateConfig(), Tools: []action.ToolSpec{{
+		Name: computeruse.ClickElement, Description: "click a visible mark",
+		Parameters: json.RawMessage(`{"type":"object"}`), Confirm: action.ConfirmNever,
+		Target: "benchmark-browser",
+	}}}
+	if err := runtime.Update(context.Background(), settings); err != nil {
+		t.Fatalf("declare client tool: %v", err)
+	}
+
+	speak(t, runtime, 3)
+	waitFor(t, func() bool {
+		sink.mu.Lock()
+		defer sink.mu.Unlock()
+		return len(sink.toolCalls) == 1
+	}, "the bounded client action never crossed the protocol boundary")
+	sink.mu.Lock()
+	event := sink.toolCalls[0]
+	sink.mu.Unlock()
+	if len(event.Calls) != 1 || event.Calls[0].Name != computeruse.ClickElement {
+		t.Fatalf("unexpected client call: %+v", event)
+	}
+	if err := runtime.ToolResult(context.Background(), trajectory.ToolResult{
+		CallID: "fast_mark_1", Name: computeruse.ClickElement, Output: json.RawMessage(`{"ok":true}`),
+	}); err != nil {
+		t.Fatalf("client result: %v", err)
+	}
+	waitFor(t, func() bool {
+		for _, item := range runtime.Trajectory().Items {
+			if item.Kind == trajectory.KindToolResult && item.ToolResult != nil && item.ToolResult.CallID == "fast_mark_1" {
+				return true
+			}
+		}
+		return false
+	}, "the client action result did not rejoin the trajectory")
+	fast.mu.Lock()
+	request := fast.requests[0]
+	fast.mu.Unlock()
+	if len(request.Invocation.Tools) != 1 || request.Invocation.Tools[0].Name != computeruse.ClickElement {
+		t.Fatalf("the post-construction client declaration was absent from fast cognition: %+v", request.Invocation.Tools)
+	}
+}
+
+func TestFastComputerModeDoesNotAdmitArbitraryOrClientNamedTools(t *testing.T) {
+	fast := newFastComputer([]continuation.Event{
+		{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+			CallID: "fake_1", Name: "computer.exfiltrate", Arguments: json.RawMessage(`{}`),
+		}},
+		{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+			CallID: "money_1", Name: "transfer_funds", Arguments: json.RawMessage(`{}`),
+		}},
+	})
+	policies := defaultPolicies()
+	rollout, err := parseRollout("fast-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	policies.Rollout = rollout
+	runtime, sink := startSession(t, cascade.Config{
+		Fast: fast, Slow: newSlow(), Policies: policies, FastComputerUse: true,
+		Tools: []action.ToolSpec{{
+			Name: computeruse.Screenshot, Description: "capture",
+			Parameters: json.RawMessage(`{"type":"object"}`), Confirm: action.ConfirmNever,
+			Dispatcher: action.DispatcherFunc(func(_ context.Context, call trajectory.ToolCall) (trajectory.ToolResult, error) {
+				t.Fatalf("unrequested allowed tool dispatched: %+v", call)
+				return trajectory.ToolResult{}, nil
+			}),
+		}},
+	}, binding.Settings{Tools: []action.ToolSpec{
+		{Name: "computer.exfiltrate", Description: "client impostor", Parameters: json.RawMessage(`{"type":"object"}`)},
+		{Name: "transfer_funds", Description: "move money", Parameters: json.RawMessage(`{"type":"object"}`)},
+	}})
+
+	speak(t, runtime, 3)
+	waitFor(t, func() bool {
+		count := 0
+		for _, item := range runtime.Trajectory().Items {
+			if item.Kind == trajectory.KindToolProposal {
+				count++
+			}
+			if item.Kind == trajectory.KindToolCall && item.Producer.Phase == trajectory.PhaseFast {
+				return false
+			}
+		}
+		return count == 2
+	}, "non-allowed fast calls did not remain proposals")
+	sink.mu.Lock()
+	remoteCalls := len(sink.toolCalls)
+	sink.mu.Unlock()
+	if remoteCalls != 0 {
+		t.Fatal("a client tool escaped through the fast execution lane")
+	}
+}
+
+func TestFastComputerActionStillRequiresDeclaredConfirmation(t *testing.T) {
+	var dispatched atomic.Int32
+	audited := make(chan action.Record, 1)
+	fast := newFastComputer([]continuation.Event{{
+		Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+			CallID: "fast_click_1", Name: computeruse.Click,
+			Arguments: json.RawMessage(`{"source":"screen","x":10,"y":10}`),
+		},
+	}})
+	policies := defaultPolicies()
+	rollout, _ := parseRollout("fast-only")
+	policies.Rollout = rollout
+	runtime, _ := startSession(t, cascade.Config{
+		Fast: fast, Slow: newSlow(), Policies: policies, FastComputerUse: true,
+		ActionAudit: func(record action.Record) { audited <- record },
+		Tools: []action.ToolSpec{{
+			Name: computeruse.Click, Description: "click",
+			Parameters: json.RawMessage(`{"type":"object"}`), Confirm: action.ConfirmAlways,
+			Target: "browser", Dispatcher: action.DispatcherFunc(func(
+				_ context.Context, call trajectory.ToolCall,
+			) (trajectory.ToolResult, error) {
+				dispatched.Add(1)
+				return trajectory.ToolResult{CallID: call.CallID, Name: call.Name}, nil
+			}),
+		}},
+	}, binding.Settings{})
+	speak(t, runtime, 3)
+	select {
+	case record := <-audited:
+		if record.Executed || !strings.Contains(record.Error, "confirmed") {
+			t.Fatalf("unexpected confirmation audit: %+v", record)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the refused fast action was not audited")
+	}
+	if dispatched.Load() != 0 {
+		t.Fatal("a fast action bypassed its declared confirmation requirement")
+	}
+}
+
+func TestFastComputerActionStillObeysTheSourceFence(t *testing.T) {
+	surface := &fastTestSurface{}
+	target := computeruse.Target{Name: "browser", Sources: []string{"screen"}, Width: 100, Height: 100}
+	dispatcher, err := computeruse.NewDispatcher(computeruse.DispatcherConfig{Target: target, Surface: surface})
+	if err != nil {
+		t.Fatal(err)
+	}
+	specs, err := computeruse.Specs(target, dispatcher, map[string]action.Confirm{
+		computeruse.Click: action.ConfirmNever,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fast := newFastComputer([]continuation.Event{{
+		Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+			CallID: "fast_click_1", Name: computeruse.Click,
+			Arguments: json.RawMessage(`{"source":"physical-camera","x":10,"y":10}`),
+		},
+	}})
+	policies := defaultPolicies()
+	rollout, _ := parseRollout("fast-only")
+	policies.Rollout = rollout
+	runtime, _ := startSession(t, cascade.Config{
+		Fast: fast, Slow: newSlow(), Policies: policies, FastComputerUse: true, Tools: specs,
+	}, binding.Settings{})
+	speak(t, runtime, 3)
+	waitFor(t, func() bool {
+		for _, item := range runtime.Trajectory().Items {
+			if item.Kind == trajectory.KindToolResult && item.ToolResult != nil {
+				return strings.Contains(item.ToolResult.Error, "does not own source")
+			}
+		}
+		return false
+	}, "the source-fence refusal did not reach the trajectory")
+	if surface.clicks.Load() != 0 {
+		t.Fatal("a fast action crossed from camera evidence into an undeclared target")
+	}
+}
+
+type fastTestSurface struct{ clicks atomic.Int32 }
+
+func (*fastTestSurface) Name() string { return "fast-test" }
+func (surface *fastTestSurface) Click(context.Context, int, int, string) error {
+	surface.clicks.Add(1)
+	return nil
+}
+func (*fastTestSurface) DoubleClick(context.Context, int, int) error      { return nil }
+func (*fastTestSurface) Move(context.Context, int, int) error             { return nil }
+func (*fastTestSurface) Drag(context.Context, int, int, int, int) error   { return nil }
+func (*fastTestSurface) Type(context.Context, string) error               { return nil }
+func (*fastTestSurface) Key(context.Context, []string) error              { return nil }
+func (*fastTestSurface) Scroll(context.Context, int, int, int, int) error { return nil }
+func (*fastTestSurface) Screenshot(context.Context) error                 { return nil }
 
 func TestServerSideToolsDispatchInProcess(t *testing.T) {
 	var dispatched int

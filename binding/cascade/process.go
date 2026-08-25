@@ -66,6 +66,16 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	if len(plan) == 0 {
 		return nil
 	}
+	// A passive screen opening is evidence, not an instruction to start an
+	// autonomous turn. Before any user-authority observation has established
+	// intent, observer-only batches are committed and exposed to clients but do
+	// not run cognition. The first user turn becomes the wake-up; later visual
+	// changes may then trigger the action the user asked the agent to monitor
+	// for. Besides avoiding premature actions, doing this before TurnBegin keeps
+	// a silent observation from opening a protocol response it never closes.
+	if !runtime.worthActingOn(ctx, batch) {
+		return nil
+	}
 
 	// Everything this plan produces belongs to one turn, and the client is
 	// told the turn is done once. Bracketing here rather than around each
@@ -74,11 +84,6 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	// the client stops reading after the first.
 	if err := runtime.sink.TurnBegin(ctx); err != nil {
 		return err
-	}
-	// An observation nobody spoke aloud goes past the interaction model on
-	// every other route to speech; it must not go past it here.
-	if !runtime.worthActingOn(ctx, batch) {
-		return nil
 	}
 	turn := &turnReport{}
 	defer func() {
@@ -91,6 +96,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	request := cognition.Request{
 		Standing: standing, Interjecting: interjecting, Heard: heard,
 		SourceRevision: revision,
+		AllowFastTools: runtime.observationHasUserIntent(batch),
 		PendingRepair:  len(trajectory.PendingRepairs(runtime.store.Snapshot())) > 0,
 	}
 	// A plan that already contains the reasoner does not need the voice to ask
@@ -158,6 +164,14 @@ func (runtime *runtime) runFast(
 		result, err = runtime.engine.RunFast(ctx, request, nil)
 	}
 	turn.record(result)
+	// A bounded reflex action crosses the action boundary before speech is
+	// queued. Both happen only after the continuation commits at its terminal
+	// safe point; ordering the cheap enqueue second keeps it off the critical
+	// cue-to-action path.
+	var dispatchErr error
+	if err == nil && len(result.ToolCalls) > 0 {
+		dispatchErr = runtime.dispatch(ctx, result)
+	}
 	publishErr := runtime.publishAssistant(ctx, result)
 	var signalErr error
 	// A turn the voice did not declare finished goes to the reasoner. So does
@@ -165,10 +179,10 @@ func (runtime *runtime) runFast(
 	// cannot run. Silence from a small model means "not finished", because the
 	// alternative reading loses every capability the agent has the moment the
 	// marker is forgotten.
-	if !alreadyHandedOn && (!result.Finished || len(result.ToolProposals) > 0) {
+	if !alreadyHandedOn && (!result.Finished || len(result.ToolProposals) > 0 || len(result.ToolCalls) > 0) {
 		signalErr = runtime.signal(interaction.SignalEscalated)
 	}
-	return errors.Join(err, publishErr, signalErr)
+	return errors.Join(err, dispatchErr, publishErr, signalErr)
 }
 
 // runSlow deliberates and acts. It never speaks: what it writes is recorded as
@@ -412,11 +426,22 @@ func (runtime *runtime) recordCancellations(
 // appended here.
 func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunResult) error {
 	var local, remote []trajectory.ToolCall
+	immediate := make(map[string]trajectory.ToolResult, len(result.ToolCalls))
 	for _, call := range result.ToolCalls {
 		call.Arguments = slices.Clone(call.Arguments)
 		spec, declared := runtime.registry.Lookup(call.Name)
 		if declared && spec.Dispatcher != nil {
 			local = append(local, call)
+			continue
+		}
+		// The client owns this implementation, not its authority. Confirmation
+		// and the irreversible ledger still run before the call crosses the
+		// protocol boundary. A refusal becomes an ordinary tool result and the
+		// client never sees the call.
+		if err := runtime.tools.EmitRemote(ctx, call); err != nil {
+			immediate[call.CallID] = trajectory.ToolResult{
+				CallID: call.CallID, Name: call.Name, Error: err.Error(),
+			}
 			continue
 		}
 		remote = append(remote, call)
@@ -426,25 +451,40 @@ func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunRes
 			return err
 		}
 	}
-	if len(local) == 0 {
-		return nil
-	}
-	results, err := runtime.tools.DispatchAll(ctx, local)
-	if err != nil {
-		return err
+	if len(local) > 0 {
+		results, err := runtime.tools.DispatchAll(ctx, local)
+		if err != nil {
+			return err
+		}
+		for _, toolResult := range results {
+			immediate[toolResult.CallID] = toolResult
+		}
 	}
 	if len(remote) > 0 {
 		// A split batch cannot be appended atomically: the invocation's
 		// outstanding set includes calls this process is not executing. The
 		// local results wait for the client's, which the tool-result path
 		// assembles.
-		runtime.clientCalls.Hold(result.InvocationID, results)
+		runtime.clientCalls.Hold(result.InvocationID, resultOrder(result.ToolCalls, immediate))
+		return nil
+	}
+	if len(immediate) == 0 {
 		return nil
 	}
 	// Locally dispatched results rejoin exactly where a client's do. Appending
 	// them here instead would resume the chain without the loop ever seeing
 	// that a tool came back, which is the one thing every completion owes it.
-	return runtime.commitToolResults(result.InvocationID, results)
+	return runtime.commitToolResults(result.InvocationID, resultOrder(result.ToolCalls, immediate))
+}
+
+func resultOrder(calls []trajectory.ToolCall, indexed map[string]trajectory.ToolResult) []trajectory.ToolResult {
+	ordered := make([]trajectory.ToolResult, 0, len(indexed))
+	for _, call := range calls {
+		if result, exists := indexed[call.CallID]; exists {
+			ordered = append(ordered, result)
+		}
+	}
+	return ordered
 }
 
 func (runtime *runtime) sendToClient(ctx context.Context, result continuation.RunResult, calls []trajectory.ToolCall) error {
@@ -463,6 +503,9 @@ func (runtime *runtime) sendToClient(ctx context.Context, result continuation.Ru
 // commitToolResults appends a batch every call in which now has a result,
 // whether the client answered them or the deadline did.
 func (runtime *runtime) commitToolResults(invocationID string, results []trajectory.ToolResult) error {
+	for _, result := range results {
+		runtime.tools.Complete(result.CallID)
+	}
 	_, err := runtime.coordinator.Submit(eventloop.Event{
 		Type: "tool.results", Source: "client", Channel: "tool",
 		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindToolResult,

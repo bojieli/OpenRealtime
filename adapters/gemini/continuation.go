@@ -399,7 +399,21 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 		})
 	}
 	if len(result.Contents) == 0 {
-		return geminiRequest{}, errors.New("Gemini continuation requires at least one observation or prior model item")
+		// A turn can begin before anything has been committed. An interjection
+		// or a silent act fires on an utterance still in progress, so the log
+		// is genuinely empty and what caused the turn is in the instruction -
+		// and this refused every one of them, fifty times in one conversation,
+		// with the phone menu never getting its key pressed.
+		//
+		// A system instruction is not an empty request. What is missing is the
+		// user turn this API requires, not the context.
+		if strings.TrimSpace(request.Invocation.Instruction) == "" {
+			return geminiRequest{}, errors.New("Gemini continuation requires an observation, a prior model item, or an instruction")
+		}
+		part, _ := json.Marshal(map[string]string{"text": "Go ahead."})
+		result.Contents = appendGeminiContent(result.Contents, geminiContent{
+			Role: "user", Parts: []json.RawMessage{part},
+		})
 	}
 	if len(request.Invocation.Tools) > 0 {
 		declarations := make([]geminiFunctionDeclaration, 0, len(request.Invocation.Tools))

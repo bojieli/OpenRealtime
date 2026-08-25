@@ -26,6 +26,9 @@ func (runtime *runtime) projectEndpoint(ctx context.Context, decision interactio
 		return false, nil
 	}
 	endpoint := runtime.policies.Floor.Endpoint(decision)
+	if endpoint.Act == interaction.ActCallTool {
+		runtime.actSilently(decision)
+	}
 	if endpoint.Act == interaction.ActSpeakThrough {
 		// The one act that produces speech without ending a turn. It is handled
 		// here rather than by the caller because the caller only ever learns

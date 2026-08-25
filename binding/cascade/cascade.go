@@ -111,6 +111,14 @@ type Config struct {
 	// should not have to know the coordinate space of a browser the server is
 	// driving.
 	Tools []action.ToolSpec
+	// FastComputerUse lets the fast provider execute the exact standard
+	// computer-use actions present in Tools and backed by an in-process
+	// dispatcher. It also admits standard client-executed computer actions only
+	// when the client explicitly declares confirm=never and a target. It is
+	// opt-in. Arbitrary tools and names that merely share the computer. prefix
+	// remain slow-only, and every emitted call crosses the server's authority,
+	// confirmation, ledger, and audit path.
+	FastComputerUse bool
 
 	// Confirmer authorizes actions whose declared requirement is "always".
 	// Nil denies them, which is the right default and a real one: an action a
@@ -160,6 +168,14 @@ func New(config Config) (*Binding, error) {
 	}
 	if config.Speech == nil {
 		return nil, errors.New("cascade requires a streaming speech provider")
+	}
+	fastAuthority := config.Fast.Descriptor().EffectiveToolAuthority()
+	if config.FastComputerUse {
+		if fastAuthority != continuation.ToolAuthorityExecute {
+			return nil, errors.New("fast computer use requires a fast provider with execution authority")
+		}
+	} else if fastAuthority == continuation.ToolAuthorityExecute {
+		return nil, errors.New("fast provider execution authority requires the explicit fast computer-use mode")
 	}
 	policy, err := ParseObservationPolicy(string(config.ObservationPolicy))
 	if err != nil {

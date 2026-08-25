@@ -709,7 +709,15 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 		result.Messages = append(result.Messages, chatMessage{Role: "user", Content: continuation.PendingRepairPrompt})
 	}
 	if len(result.Messages) == 1 && result.Messages[0].Role == "system" {
-		return chatRequest{}, errors.New("OpenAI-compatible continuation requires at least one observation or prior model item")
+		// A turn can begin before anything has been committed - an interjection
+		// or a silent act fires on an utterance still in progress - and what
+		// caused it is then in the instruction rather than in the log. A system
+		// instruction is not an empty request; what is missing is the user turn
+		// the API wants.
+		if strings.TrimSpace(request.Invocation.Instruction) == "" {
+			return chatRequest{}, errors.New("OpenAI-compatible continuation requires an observation, a prior model item, or an instruction")
+		}
+		result.Messages = append(result.Messages, chatMessage{Role: "user", Content: "Go ahead."})
 	}
 	if len(request.Invocation.Tools) > 0 {
 		result.ToolChoice = "auto"
