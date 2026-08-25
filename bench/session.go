@@ -119,6 +119,40 @@ func (transcript Transcript) AudioBetween(fromMS, toMS float64) float64 {
 	return total
 }
 
+// AudioStartedBetween is agent audio from turns that began inside the window.
+//
+// A silence check asks whether something in the window made the agent speak,
+// and audio still playing from a turn that began before it cannot have. The
+// distinction is not academic: an agent asked to report a build finishing says
+// briefly that it will, and the tail of that sentence was being counted as a
+// reaction to the first screen it saw three seconds later. Counting it that
+// way also contradicts the scenario next to it, where the agent keeping the
+// floor through somebody's "mhm" is the behaviour being asked for.
+//
+// A turn's audio begins at its first frame after the last response, which is
+// the protocol's own boundary rather than a gap this has to guess at.
+func (transcript Transcript) AudioStartedBetween(fromMS, toMS float64) float64 {
+	total, startedAt := 0.0, -1.0
+	for _, moment := range transcript.Moments {
+		switch moment.Kind {
+		case MomentResponseDone:
+			startedAt = -1
+		case MomentAgentAudio:
+			if startedAt < 0 {
+				startedAt = moment.AtMS
+			}
+			if startedAt < fromMS || startedAt > toMS {
+				continue
+			}
+			if moment.AtMS < fromMS || moment.AtMS > toMS {
+				continue
+			}
+			total += moment.AudioMS
+		}
+	}
+	return total
+}
+
 // FirstAudioAfter is the latency from a moment in the recording to the next
 // audio the agent produced.
 func (transcript Transcript) FirstAudioAfter(fromMS float64) (float64, bool) {

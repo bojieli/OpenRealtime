@@ -361,7 +361,11 @@ func apply(check Check, timeline Timeline, transcript bench.Transcript) string {
 	where := fmt.Sprintf("%d-%dms", from, to)
 	switch check.Kind {
 	case CheckSilent:
-		if audio := transcript.AudioBetween(float64(from), float64(to)); audio > audibleMS {
+		// Audio from turns that began in the window, not audio playing in it.
+		// The question is whether something here made the agent speak, and a
+		// sentence already under way when the window opened is not an answer
+		// to it.
+		if audio := transcript.AudioStartedBetween(float64(from), float64(to)); audio > audibleMS {
 			return fmt.Sprintf("spoke %.0fms during %s, which should have been silent (%s)", audio, where, check.Note)
 		}
 	case CheckSpoke:
