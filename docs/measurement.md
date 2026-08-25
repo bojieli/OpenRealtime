@@ -666,3 +666,48 @@ be silent. That is a defect in its own right and nothing to do with seeing.
 
 Nine scenarios, twenty-three checks, against 33% for the shipped predicates on
 the five they share.
+
+### How long a person waits (F21)
+
+Every check in the scenario suite asked what the agent did and none asked how
+long it took. A system can pass all of them and be unbearable.
+
+Latency is measured in waveform time: from the last sample of the thing that
+triggered a reply to the first sample the agent produced. Not from the
+decision - a decision taken in thirty milliseconds is still a long silence once
+the recogniser, the voice and the synthesiser have each taken their share - and
+not from the start of the trigger, because what a person waits through is the
+silence after somebody finishes talking. The arrival of an audio event stands
+in for the moment it is heard, which is exact while playback is realtime.
+
+Measured with Gemini 3.5 Flash as the voice:
+
+| what triggered it | median wait |
+| --- | --- |
+| interrupting a waiter mid-list | **324ms** |
+| cutting in on a wrong date | **845ms** |
+| a frame showing the build finished | **~900ms** |
+| translating a sentence as it lands | 1895ms |
+| an ordinary finished question | 1625ms |
+| a phone menu naming the right option | 3322ms |
+
+The ordering is the interesting part, and it inverts the usual assumption.
+**Interrupting is faster than answering.** Answering waits out a silence
+threshold to establish that the turn has ended; interrupting fires on content
+and skips that wait entirely. The acts that felt like the risky, advanced ones
+are the low-latency ones, and the ordinary reply is the slow one - because
+endpointing, not thinking, is where the time goes.
+
+That also says where to spend effort. Cutting a hundred milliseconds off the
+voice improves every row a little; cutting the silence threshold improves only
+the rows that wait for it, and those are the slowest.
+
+Two bounds now fail and are worth failing: a phone menu answered at 4478ms
+against a 4000ms bound, because a menu moves on and a key pressed late is
+pressed into the next option, and the visual case at 11785ms against 3000ms.
+The frame itself is answered in under a second; the eleven seconds is a
+different trigger in the same scenario being answered late.
+
+Writing the test found the measurement inverted. FirstAudioAfter returns the
+wait rather than the moment, and subtracting the offset again turned every late
+reply into a large negative number - a bound nothing could fail.
