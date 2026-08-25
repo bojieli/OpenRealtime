@@ -26,6 +26,13 @@ func (runtime *runtime) projectEndpoint(ctx context.Context, decision interactio
 		return false, nil
 	}
 	endpoint := runtime.policies.Floor.Endpoint(decision)
+	if endpoint.Act == interaction.ActSpeakThrough {
+		// The one act that produces speech without ending a turn. It is handled
+		// here rather than by the caller because the caller only ever learns
+		// whether the turn ended, and this is the case where it did not and
+		// something still has to happen.
+		runtime.interject(decision)
+	}
 	if !endpoint.Ended || !endpoint.Projected {
 		return false, nil
 	}

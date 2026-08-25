@@ -60,6 +60,8 @@ type runtime struct {
 	// continuing is true while a backchannel decision is in flight, so one
 	// turn does not accumulate a model call per revision.
 	continuing inFlight
+	// interjecting_ guards the single in-flight interjection.
+	interjecting_ inFlight
 
 	settingsMu sync.RWMutex
 	settings   binding.Settings
@@ -83,8 +85,11 @@ type runtime struct {
 	lastCanonical uint64
 	// interjecting is set when the turn about to run was taken from somebody
 	// still speaking rather than offered by somebody who had finished.
-	interjecting  bool
-	speechStartNS uint64
+	interjecting bool
+	// lastInterjectRev is the revision the last interjection answered, so a
+	// speaker who keeps talking is not answered once per partial.
+	lastInterjectRev uint64
+	speechStartNS    uint64
 
 	clientCalls *clientcalls.Tracker
 
