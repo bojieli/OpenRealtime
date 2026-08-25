@@ -2,8 +2,15 @@
 
 ## Status
 
-Proposed. Shipped behind `-policy-models interaction`, off by default.
-Extends ADR-0005.
+Proposed, and measured. Shipped behind `-policy-models interaction`, off by
+default. Extends ADR-0005.
+
+End to end it takes a scripted-conversation suite from 33% to 60%, and two
+capabilities from never working to working: counting out loud while somebody
+keeps talking, and cutting into a sentence to correct something. One capability
+it was built for - holding silence through a pause somebody asked for - still
+does not work reliably, and the cause is extraction rather than the decision.
+See `measurement.md` F13-F18 and `interaction-findings.md`.
 
 ## Context
 

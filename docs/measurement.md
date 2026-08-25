@@ -529,3 +529,38 @@ passed in any cell, and holding silence through a pause somebody asked for
 passes one time in six. Neither is a measurement artefact now: the recogniser
 is clean, the harness is honest, and the failures are visible as specific
 decisions in the recorded log.
+
+### The agent's own contract, and the final progression (F18)
+
+Correcting somebody mid-sentence had never passed in any configuration, and the
+reason was that the fact being corrected against - *the deadline is the 3rd* -
+lives in the deployment's own instruction, which the decision could not see.
+The situation was designed to carry it and did not. With it, the step-by-step
+case goes from never passing to 3/3.
+
+It costs something. The paired case, where the person says a date that agrees
+with the contract, now fails 3/3: the model fires on "a date was mentioned"
+rather than on the contradiction. Balanced accuracy is unchanged at 0.73, which
+is the trade showing up honestly rather than the change being free.
+
+Four cells, same suite, same recogniser, same scripted audio:
+
+| scenario | predicates + Qwen | predicates + Gemini | + interaction model | + contract |
+| --- | --- | --- | --- | --- |
+| an ordinary question | 3/3 | 4/4 | 6/6 | 3/3 |
+| a recorded menu | 2/3 | 4/4 | 3/6 | 3/3 |
+| asked not to be interrupted | 0/3 | 0/4 | 1/6 | 0/3 |
+| count as they go | 0/3 | 0/4 | 5/6 | 2/3 |
+| cutting in on something wrong | 0/3 | 1/4 | 0/6 | 1/3 |
+| **total** | **33%** | **45%** | **50%** | **60%** |
+
+Two capabilities that had never worked in any configuration now work: counting
+out loud while somebody keeps talking, and cutting into a sentence to correct
+something. Both needed several things at once, and no single column shows
+either of them arriving.
+
+One has not been made to work. Holding silence through a pause somebody
+explicitly asked for passes at most one time in six. The decision is right when
+the policy is in front of it - measured directly, the model answers "listen" at
+exactly the pause that fails - so what is left is the policy not reliably being
+there, which is extraction and not the decision.
