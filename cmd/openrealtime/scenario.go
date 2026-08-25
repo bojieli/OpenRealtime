@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -72,12 +73,14 @@ func runScenario(arguments []string, output io.Writer) error {
 		if result.Passed {
 			passed++
 			fmt.Fprintf(output, "  ok   %-28s %s\n", item.Name, item.Note)
+			reportLatency(output, result)
 			continue
 		}
 		fmt.Fprintf(output, "  FAIL %-28s %s\n", item.Name, item.Note)
 		for _, failure := range result.Failures {
 			fmt.Fprintf(output, "         %s\n", failure)
 		}
+		reportLatency(output, result)
 	}
 	fmt.Fprintf(output, "\n  scenarios %d/%d\n", passed, len(results))
 
@@ -91,4 +94,24 @@ func runScenario(arguments []string, output io.Writer) error {
 		}
 	}
 	return nil
+}
+
+// reportLatency prints the waits a person in the room would have sat through.
+//
+// Only the ones the agent actually answered: a trigger it ignored is a
+// correctness result and belongs in the checks, and averaging it in as a very
+// large latency would make one silence look like a slow reply.
+func reportLatency(output io.Writer, result scenario.Result) {
+	var answered []float64
+	for _, entry := range result.Latencies {
+		if entry.Heard && entry.MS >= 0 {
+			answered = append(answered, entry.MS)
+		}
+	}
+	if len(answered) == 0 {
+		return
+	}
+	sort.Float64s(answered)
+	fmt.Fprintf(output, "         heard after %.0fms median, %.0fms worst, over %d triggers\n",
+		answered[len(answered)/2], answered[len(answered)-1], len(answered))
 }

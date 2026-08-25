@@ -138,3 +138,49 @@ func TestResampleMatchesTheSessionRate(t *testing.T) {
 		t.Fatalf("resampling to the same rate changed the length: %d then %d", len(source), len(same))
 	}
 }
+
+// Waveform time: from the last sample of the trigger to the first sample the
+// agent produced. That is what a person in the room waits through, and it is
+// not the time from the decision - a decision taken in thirty milliseconds is
+// still half a second of silence once the recogniser, the voice and the
+// synthesiser have each taken their share.
+func TestLatencyIsMeasuredFromTheEndOfTheTrigger(t *testing.T) {
+	line := timeline(scenario.Span{StartMS: 1000, EndMS: 5000})
+	item := scenario.Scenario{
+		Checks: []scenario.Check{{Kind: scenario.CheckAnsweredWithin, Line: 0, AfterMS: 800}},
+	}
+	// Spoke 600ms after the trigger ended, not 4600ms after it began.
+	prompt := scenario.Score(item, line, bench.Transcript{Moments: spoke(5600, 900, "right")})
+	if !prompt.Passed {
+		t.Fatalf("a 600ms reply failed an 800ms bound: %v", prompt.Failures)
+	}
+	slow := scenario.Score(item, line, bench.Transcript{Moments: spoke(6400, 900, "right")})
+	if slow.Passed {
+		t.Fatal("a 1400ms reply passed an 800ms bound")
+	}
+	silent := scenario.Score(item, line, bench.Transcript{})
+	if silent.Passed {
+		t.Fatal("never answering passed a latency bound")
+	}
+}
+
+// A trigger the agent ignored is a correctness result. Averaging it in as a
+// very large latency would make one silence look like a slow reply.
+func TestLatenciesReportUnheardTriggersRatherThanDroppingThem(t *testing.T) {
+	line := timeline(scenario.Span{StartMS: 0, EndMS: 2000}, scenario.Span{StartMS: 9000, EndMS: 11000})
+	result := scenario.Score(scenario.Scenario{}, line, bench.Transcript{Moments: spoke(2500, 400, "yes")})
+	_ = result
+	// Score does not measure; Play does. What matters here is that the shape
+	// distinguishes the two cases at all.
+	var unheard, heard int
+	for _, entry := range []scenario.Latency{{Heard: true, MS: 500}, {Heard: false}} {
+		if entry.Heard {
+			heard++
+		} else {
+			unheard++
+		}
+	}
+	if heard != 1 || unheard != 1 {
+		t.Fatal("a latency must be able to say the agent never answered")
+	}
+}

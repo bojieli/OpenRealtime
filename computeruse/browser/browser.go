@@ -369,6 +369,72 @@ func (surface *Surface) Capture(ctx context.Context) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(decoded.Data)
 }
 
+// Navigate points the page at a URL and waits for the load to finish.
+//
+// It is not an action in the computer-use namespace and is deliberately not
+// one. A model that could navigate by naming a URL would be reaching past the
+// page it was shown - the whole grounding argument for this vocabulary is that
+// an action lands somewhere the model actually looked at. So this is here for
+// the operator setting up a run, and it is not offered to a session.
+func (surface *Surface) Navigate(ctx context.Context, url string) error {
+	if strings.TrimSpace(url) == "" {
+		return errors.New("navigation requires a URL")
+	}
+	if _, err := surface.call(ctx, "Page.enable", nil); err != nil {
+		return err
+	}
+	if _, err := surface.call(ctx, "Page.navigate", map[string]any{"url": url}); err != nil {
+		return err
+	}
+	// A navigation that has been asked for and not yet happened is a page in
+	// two states, and a frame captured in that window shows the old one. The
+	// document's own readiness is the thing to wait on rather than a fixed
+	// pause, which is either too short on a slow page or wasted on a fast one.
+	deadline := time.Now().Add(surface.config.Timeout)
+	for time.Now().Before(deadline) {
+		state, err := surface.evaluate(ctx, "document.readyState")
+		if err == nil && (state == "complete" || state == "interactive") {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("the page did not finish loading %s within %s", url, surface.config.Timeout)
+}
+
+// Location reports where the page currently is.
+func (surface *Surface) Location(ctx context.Context) (string, error) {
+	return surface.evaluate(ctx, "location.href")
+}
+
+// evaluate runs an expression and returns its value as a string.
+func (surface *Surface) evaluate(ctx context.Context, expression string) (string, error) {
+	result, err := surface.call(ctx, "Runtime.evaluate", map[string]any{
+		"expression": expression, "returnByValue": true,
+	})
+	if err != nil {
+		return "", err
+	}
+	var decoded struct {
+		Result struct {
+			Value string `json:"value"`
+		} `json:"result"`
+		ExceptionDetails *struct {
+			Text string `json:"text"`
+		} `json:"exceptionDetails"`
+	}
+	if err := json.Unmarshal(result, &decoded); err != nil {
+		return "", err
+	}
+	if decoded.ExceptionDetails != nil {
+		return "", fmt.Errorf("evaluate %s: %s", expression, decoded.ExceptionDetails.Text)
+	}
+	return decoded.Result.Value, nil
+}
+
 // Viewport reports the page's coordinate space, which is what a computer-use
 // target must declare.
 func (surface *Surface) Viewport(ctx context.Context) (width, height int, err error) {

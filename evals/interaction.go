@@ -68,6 +68,16 @@ func InteractionCases() []Case {
 		}, "the pinned instruction is the only reason to speak here",
 			[]Action{ActSpeakThrough}, ActAnswer, ActInterrupt, ActStopSpeaking),
 
+		act("count-a-fragment-of-the-story", interaction.Situation{
+			Pins:    []string{"count the animals out loud as I mention them (2m ago)"},
+			Recent:  []string{"user: I was walking by the river when a", "agent: one"},
+			Speaker: "user", Speaking: true,
+			SincePrevious: "380ms",
+			Heard:         "And then a heron landed.",
+		}, "a broken-up sentence does not suspend a standing instruction; they are not asking any less "+
+			"because the recogniser split it",
+			[]Action{ActSpeakThrough, ActInterrupt}, ActStaySilent),
+
 		act("count-animal-heard-unpinned", interaction.Situation{
 			Recent:  []string{"user: I'm going to tell you about my afternoon", "agent: okay"},
 			Speaker: "user", Speaking: true,

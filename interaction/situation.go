@@ -123,7 +123,16 @@ type Situation struct {
 func (state Situation) AvailableActs() []Act {
 	acts := []Act{ActKeepSpeaking, ActStopSpeaking}
 	if !state.AgentSpeaking {
-		acts = []Act{ActStaySilent, ActSpeakThrough, ActAnswer, ActInterrupt}
+		acts = []Act{ActStaySilent, ActSpeakThrough, ActInterrupt}
+		// Answering means the floor is free. While somebody is audibly using
+		// it, that is not a judgement to offer: taking a floor still in use is
+		// what interrupt is for, and speaking without taking it is
+		// speak-through. Offered anyway, a model reaches for answer whenever
+		// something is worth saying and the runtime then refuses it, so the
+		// thing worth saying is never said at all.
+		if !state.Speaking {
+			acts = append(acts, ActAnswer)
+		}
 	}
 	if len(state.Tools) > 0 {
 		acts = append(acts, ActCallTool)

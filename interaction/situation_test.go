@@ -110,3 +110,22 @@ func TestRenderCarriesTheAgentContract(t *testing.T) {
 		t.Fatal("an empty contract still announced a section")
 	}
 }
+
+// Answering means the floor is free. Offered while somebody is audibly using
+// it, a model reaches for it whenever something is worth saying, and the
+// runtime then refuses it - so the thing worth saying is never said at all.
+func TestAvailableActsWithholdAnswerWhileSomebodyIsSpeaking(t *testing.T) {
+	live := interaction.Situation{Speaker: "user", Speaking: true, Heard: "and then a heron landed"}
+	if contains(live.AvailableActs(), interaction.ActAnswer) {
+		t.Fatalf("answer was offered over an active speaker: %v", live.AvailableActs())
+	}
+	for _, act := range []interaction.Act{interaction.ActSpeakThrough, interaction.ActInterrupt} {
+		if !contains(live.AvailableActs(), act) {
+			t.Fatalf("%s must stay available while somebody is speaking", act)
+		}
+	}
+	stopped := interaction.Situation{Heard: "and then a heron landed", Silence: "900ms"}
+	if !contains(stopped.AvailableActs(), interaction.ActAnswer) {
+		t.Fatal("answer was withheld from a floor nobody was using")
+	}
+}

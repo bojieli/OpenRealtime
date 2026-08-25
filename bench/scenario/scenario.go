@@ -83,6 +83,14 @@ const (
 	CheckSpoke CheckKind = "spoke"
 	// CheckToolCalled asserts a named tool was called.
 	CheckToolCalled CheckKind = "tool"
+	// CheckAnsweredWithin asserts the agent could be heard within AfterMS of
+	// the trigger finishing, in waveform time.
+	//
+	// It is separate from CheckSpoke because they fail differently and want
+	// different windows: speaking at all is a capability, and speaking soon
+	// enough is whether anybody would want to use it. A system can pass every
+	// other check here and be unbearable.
+	CheckAnsweredWithin CheckKind = "answered-within"
 	// CheckSaid asserts the agent said one of a set of phrases, inside a
 	// window when one is given. The window is what makes it mean anything: a
 	// scenario that asks an agent to count out loud is not satisfied by the
@@ -165,7 +173,31 @@ type Result struct {
 	Scenario   string           `json:"scenario"`
 	Passed     bool             `json:"passed"`
 	Failures   []string         `json:"failures,omitempty"`
+	Latencies  []Latency        `json:"latencies,omitempty"`
 	Transcript bench.Transcript `json:"transcript"`
+}
+
+// Latency is how long after something happened the agent could be heard.
+//
+// Measured in waveform time: from the last sample of the thing that triggered
+// it to the first sample the agent produced. That is the number a person in
+// the room experiences, and it is not the same as the time from the decision -
+// a decision taken in thirty milliseconds is still half a second of silence if
+// the recogniser, the voice and the synthesiser each take their share.
+//
+// The arrival of an audio event stands in for the moment it is heard, which is
+// exact enough while playback is realtime and worth naming as a proxy rather
+// than presenting as a measurement of a loudspeaker.
+type Latency struct {
+	// After names what triggered it: a line of the script, or something seen.
+	After string `json:"after"`
+	// EndedMS is when that thing finished, in the playback's own clock.
+	EndedMS int `json:"ended_ms"`
+	// MS is the wait. Negative means the agent was already speaking, which is
+	// not a latency and is recorded rather than hidden.
+	MS float64 `json:"ms"`
+	// Heard is false when the agent never spoke after it at all.
+	Heard bool `json:"heard"`
 }
 
 // Voice synthesises a line of speech as 24 kHz mono samples.
@@ -276,7 +308,9 @@ func Play(ctx context.Context, voice Voice, config bench.SessionConfig, item Sce
 	if err != nil {
 		return Result{Scenario: item.Name, Transcript: transcript}, err
 	}
-	return Score(item, timeline, transcript), nil
+	result := Score(item, timeline, transcript)
+	result.Latencies = latencies(item, timeline, transcript)
+	return result, nil
 }
 
 // Score applies a scenario's checks to what happened.
@@ -314,6 +348,16 @@ func apply(check Check, timeline Timeline, transcript bench.Transcript) string {
 			to = from + 1
 		}
 	}
+	// A latency is measured from the moment the trigger stopped, not from the
+	// moment it started: what a person waits through is the silence after
+	// somebody finishes talking.
+	if check.Kind == CheckAnsweredWithin {
+		if check.Sight > 0 && check.Sight <= len(timeline.Sights) {
+			from = timeline.Sights[check.Sight-1]
+		} else if check.Line >= 0 && check.Line < len(timeline.Spans) {
+			from = timeline.Spans[check.Line].EndMS
+		}
+	}
 	where := fmt.Sprintf("%d-%dms", from, to)
 	switch check.Kind {
 	case CheckSilent:
@@ -323,6 +367,18 @@ func apply(check Check, timeline Timeline, transcript bench.Transcript) string {
 	case CheckSpoke:
 		if audio := transcript.AudioBetween(float64(from), float64(to)); audio <= audibleMS {
 			return fmt.Sprintf("said nothing during %s (%s)", where, check.Note)
+		}
+	case CheckAnsweredWithin:
+		// FirstAudioAfter returns the wait, not the moment. Subtracting the
+		// offset again turned every late reply into a large negative number
+		// and every latency bound into one nothing could fail.
+		wait, ok := transcript.FirstAudioAfter(float64(from))
+		if !ok {
+			return fmt.Sprintf("never answered after %dms (%s)", from, check.Note)
+		}
+		if wait > float64(check.AfterMS) {
+			return fmt.Sprintf("answered %.0fms after %dms, later than %dms (%s)",
+				wait, from, check.AfterMS, check.Note)
 		}
 	case CheckToolCalled:
 		for _, called := range transcript.ToolCalls() {
@@ -402,4 +458,31 @@ func sights(seen []Sight) ([]bench.ScheduledEvent, error) {
 		})
 	}
 	return events, nil
+}
+
+// latencies measures the wait after every trigger in a scenario.
+//
+// Every line and every sight is a candidate, because which of them the agent
+// was answering is not something the harness can know - and reporting all of
+// them is more honest than guessing at one. A trigger the agent never answered
+// is reported as unheard rather than dropped, since a scenario whose latencies
+// all look excellent because the slow ones vanished is worse than no numbers.
+func latencies(item Scenario, timeline Timeline, transcript bench.Transcript) []Latency {
+	measured := make([]Latency, 0, len(timeline.Spans)+len(timeline.Sights))
+	measure := func(after string, endedMS int) {
+		wait, ok := transcript.FirstAudioAfter(float64(endedMS))
+		entry := Latency{After: after, EndedMS: endedMS, Heard: ok, MS: wait}
+		measured = append(measured, entry)
+	}
+	for index, span := range timeline.Spans {
+		who := "user"
+		if index < len(item.Script) && item.Script[index].Speaker != "" {
+			who = item.Script[index].Speaker
+		}
+		measure(fmt.Sprintf("%s said line %d", who, index), span.EndMS)
+	}
+	for index, at := range timeline.Sights {
+		measure(fmt.Sprintf("saw frame %d", index+1), at)
+	}
+	return measured
 }

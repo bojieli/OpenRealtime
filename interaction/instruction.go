@@ -142,6 +142,10 @@ func buildInstruction() string {
 			"sentence of its own. The gap before an utterance tells them apart. A few hundred " +
 			"milliseconds means it is the tail of what came just before, and if the agent has already " +
 			"answered that, there is nothing left to answer. Seconds mean a new thing was said.\n\n" +
+			"That is about answering, and about nothing else. A standing instruction that asks for " +
+			"something each time a condition occurs applies to every piece of a broken-up sentence exactly " +
+			"as it would to a whole one - somebody who asked to be counted at, or interpreted for, is not " +
+			"asking any less because the recogniser split their sentence.\n\n" +
 			"Two rules that are easy to get backwards. Silence is neither necessary nor sufficient: someone who " +
 			"paused mid-thought has not finished, and someone who never pauses may already have said the thing " +
 			"worth acting on. And work already running has already been decided: do not start the same work a " +

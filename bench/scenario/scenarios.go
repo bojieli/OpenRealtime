@@ -70,6 +70,8 @@ func Suite() []Scenario {
 					Note: "the menu named the option the user asked for"},
 				{Kind: CheckSilent, Line: 1, AfterMS: 500,
 					Note: "a recording cannot hear you, so speaking over it is wasted and covers the menu"},
+				{Kind: CheckAnsweredWithin, Line: 1, AfterMS: 4000,
+					Note: "a menu moves on, and a key pressed after it has is pressed into the next option"},
 			},
 		},
 		{
@@ -180,6 +182,8 @@ func Suite() []Scenario {
 				{Kind: CheckSaid, Sight: 2, AfterMS: 4000,
 					Any:  []string{"finished", "done", "built", "passed", "complete"},
 					Note: "after seeing it finish, not when acknowledging that they would watch for it"},
+				{Kind: CheckAnsweredWithin, Sight: 2, AfterMS: 3000,
+					Note: "\"the moment it finishes\" is a claim about latency, so it is measured as one"},
 				{Kind: CheckSilent, Sight: 1, AfterMS: 7000,
 					Note: "the first screen shows it still running, which is not the moment they asked for"},
 			},
@@ -195,6 +199,8 @@ func Suite() []Scenario {
 			TrailingMS: 6000,
 			Checks: []Check{
 				{Kind: CheckSpoke, Line: 0, AfterMS: 4000, Note: "a finished question with nothing standing in the way"},
+				{Kind: CheckAnsweredWithin, Line: 0, AfterMS: 2500,
+					Note: "waveform time: from the last sample of their question to the first of the answer"},
 				{Kind: CheckSaid, Any: []string{"paris"}, Line: -1, Note: "and the answer should be right"},
 			},
 		},
