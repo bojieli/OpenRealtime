@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -209,6 +210,16 @@ func (runtime *runtime) holdsThroughPause(nowNS uint64, latest interaction.Revis
 		decision.Situation = &situation
 	}
 	endpoint := runtime.policies.Floor.Endpoint(decision)
+	// The pause decision is recorded like any other. It was invisible until it
+	// was, and it is the one that decides whether a silence ends a turn - the
+	// single most consequential call the floor makes.
+	if recorder := runtime.policies.ShadowInteraction; recorder != nil && decision.Situation != nil {
+		recorder(interaction.ShadowDecision{
+			NowNS: nowNS, Situation: decision.Situation.Render(), Act: string(endpoint.Act),
+			Predicates: map[string]string{"where": "pause", "ended": strconv.FormatBool(endpoint.Ended)},
+			Agreed:     endpoint.Ended,
+		})
+	}
 	if endpoint.Ended {
 		runtime.setInterjecting(endpoint.Act == interaction.ActInterrupt)
 		runtime.audioMu.Lock()

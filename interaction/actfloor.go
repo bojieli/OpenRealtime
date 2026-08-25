@@ -54,7 +54,7 @@ type actFloor struct {
 	options ActFloorOptions
 
 	mu      sync.Mutex
-	lastRev uint64
+	lastKey string
 	last    EndpointDecision
 }
 
@@ -85,8 +85,21 @@ func (floor *actFloor) Endpoint(decision Context) EndpointDecision {
 	if decision.Revision.Empty() {
 		return EndpointDecision{}
 	}
+	// Cached on the whole situation, not on the revision.
+	//
+	// The revision is the wrong key and the difference is not subtle: while
+	// somebody holds a pause the transcript stops changing and the silence
+	// does not, which is the entire question. Worse, the last call before the
+	// pause is made while they are still audible, where answering is refused -
+	// so a revision-keyed cache serves that refusal back for as long as the
+	// pause lasts and the turn never ends at all.
+	//
+	// The situation renders everything the answer depends on, so an identical
+	// string is an identical question and reusing the answer is free rather
+	// than a guess.
+	key := decision.Situation.Render()
 	floor.mu.Lock()
-	if floor.lastRev == decision.Revision.ID && decision.Revision.ID != 0 {
+	if floor.lastKey == key {
 		cached := floor.last
 		floor.mu.Unlock()
 		return cached
@@ -113,14 +126,14 @@ func (floor *actFloor) Endpoint(decision Context) EndpointDecision {
 		// returns something that is not what anybody said, and the agent
 		// answers that instead. Taking a floor somebody still holds is what
 		// interrupt is for, and the model has to say so.
-		verdict = EndpointDecision{Reason: "answering was chosen while the speaker was still audible"}
+		verdict = EndpointDecision{Act: act, Reason: "answering was chosen while the speaker was still audible"}
 	case act == ActAnswer || act == ActInterrupt:
 		verdict = EndpointDecision{Ended: true, Projected: true, Act: act, Reason: "the interaction model chose " + string(act)}
 	default:
 		verdict = EndpointDecision{Act: act, Reason: "the interaction model chose " + string(act)}
 	}
 	floor.mu.Lock()
-	floor.lastRev, floor.last = decision.Revision.ID, verdict
+	floor.lastKey, floor.last = key, verdict
 	floor.mu.Unlock()
 	return verdict
 }

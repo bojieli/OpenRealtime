@@ -133,3 +133,25 @@ func TestActFloorRefusesToAnswerOverSomebodyStillSpeaking(t *testing.T) {
 		t.Fatal("interrupting did not take the floor from an active speaker")
 	}
 }
+
+// The last call before a pause is made while the speaker is still audible,
+// where answering is refused. A cache keyed on anything that does not change
+// during the pause serves that refusal back for as long as the pause lasts,
+// and the turn never ends at all.
+func TestActFloorDoesNotServeARefusalBackThroughTheWholePause(t *testing.T) {
+	floor := floorFor(t, interaction.ActAnswer, false)
+	// Mid-word: answering is refused because they still hold the floor.
+	speaking := waiting(0, 7)
+	speaking.Duplex.UserSpeaking = true
+	speaking.Situation.Speaking = true
+	if verdict := floor.Endpoint(speaking); verdict.Ended {
+		t.Fatal("a turn was ended mid-word")
+	}
+	// They stop. Same revision, same transcript, and the answer must change.
+	stopped := waiting(700*time.Millisecond, 7)
+	stopped.Situation.Speaking = false
+	stopped.Situation.Silence = "700ms"
+	if verdict := floor.Endpoint(stopped); !verdict.Ended {
+		t.Fatalf("the refusal was served back after the speaker stopped: %s", verdict.Reason)
+	}
+}

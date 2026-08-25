@@ -404,3 +404,56 @@ with the case mix and would have called all three of these equally good.
 Acting and restraint are reported separately because a model that always acts
 and one that never acts post identical totals while being opposite bugs. The
 first two runs of this suite were precisely that pair.
+
+## The interaction model end to end (F15)
+
+The step-by-step layer says the decision is sound: balanced accuracy 0.76 on
+the interaction boundary, 7/7 on the timelines, 38/42 on extraction, 34ms a
+decision. The end-to-end layer says it does not yet make the system better.
+
+Five scripted conversations, three runs each, same audio and same recogniser:
+
+| | predicates | interaction model |
+| --- | --- | --- |
+| an ordinary question | 3/3 | 3/3 |
+| a recorded menu | 2/3 | 1/3 |
+| asked not to be interrupted | 0/3 | 0/3 |
+| count as they go | 0/3 | 0/3 |
+| cutting in on something wrong | 0/3 | 0/3 |
+| **total** | **5/15** | **4/15** |
+
+Parity, inside the run-to-run spread. The three capabilities this was built for
+do not work yet, and neither configuration has ever passed them.
+
+### The result that was not real
+
+An intermediate run scored 3/3 on "asked not to be interrupted" and it was a
+bug, not a capability. The floor cached its verdict by revision, and the last
+call before a pause is made while the speaker is still audible - where
+answering is refused. So the refusal was served back for the whole pause and
+the turn never ended at all. It looked exactly like honouring "don't interrupt
+me", including on the transcript.
+
+Fixing the cache restored ordinary turn-taking and took that scenario back to
+0/3. Both numbers came from the same code; only one of them was a measurement.
+
+### What the harness was measuring before that
+
+Nothing. The speech backend returns 44.1 kHz whatever it is asked for, and
+those samples in a 24 kHz pipeline stretch by 1.84 and drop an octave. "A heron
+landed on the far bank" reached the recogniser as "the horn mounted on the far
+bank", which reads like a weak recogniser rather than like arithmetic. Every
+scenario number before the resampler is void.
+
+### What is actually blocking the three
+
+Reading the recorded decisions rather than the scores: the interaction model
+chooses sensibly. It answers "listen" at a pause where somebody has asked not
+to be interrupted, with the request visible in the transcript. What fails is
+downstream - the voice does not reliably do the thing the policy asked for,
+and speaking through somebody without ending their turn has no path to
+producing speech at all. The act selects machinery that in two cases does not
+exist yet.
+
+So the honest position is that the decision layer is measured and the
+behaviour it should produce is not, and the flag stays off.

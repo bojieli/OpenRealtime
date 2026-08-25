@@ -196,6 +196,21 @@ func (runtime *runtime) noticeStanding(text string) {
 		defer runtime.wait.Done()
 		extraction, err := runtime.policies.Extraction.Extract(
 			runtime.ctx, runtime.pinboard.InForce(), text)
+		if recorder := runtime.policies.ShadowInteraction; recorder != nil {
+			outcome := extraction.Kind
+			if err != nil {
+				outcome = "error"
+			}
+			recorder(interaction.ShadowDecision{
+				NowNS: runtime.scheduler.NowNS(), Situation: "extract: " + text,
+				Act: outcome,
+				Predicates: map[string]string{
+					"where": "extract", "scope": string(extraction.Instruction.Scope),
+					"text": extraction.Instruction.Text,
+				},
+				Error: errorText(err),
+			})
+		}
 		if err != nil || runtime.ctx.Err() != nil {
 			// A policy that could not be read is a policy nobody recorded,
 			// which is the failure this leans away from - but inventing one
@@ -228,4 +243,11 @@ func (runtime *runtime) cognitionExtras() ([]string, bool) {
 	interjecting := runtime.interjecting
 	runtime.audioMu.Unlock()
 	return runtime.pinboard.Lines(runtime.scheduler.NowNS()), interjecting
+}
+
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
