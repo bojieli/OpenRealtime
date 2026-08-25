@@ -772,3 +772,72 @@ func TestSilenceIsLeftAloneWhenNoHoldingIntervalIsConfigured(t *testing.T) {
 		t.Fatalf("nothing should fill the gap unconfigured, got %d turns", spoken)
 	}
 }
+
+// The reasoner finishing while the holding turn is still being produced is the
+// outcome the mechanism is hoping for: the silence was filled, and then it
+// stopped being a silence. Cancelling that continuation reports an error, and
+// reporting it to the client turns a well-handled gap into a failed session.
+func TestAHoldingTurnOvertakenByTheAnswerIsNotAFailure(t *testing.T) {
+	// The race made deterministic: the holding turn's continuation blocks
+	// until its context is cancelled, and the reasoner returns while it is
+	// still blocked. That is exactly the ordering the timing-based version
+	// only reached sometimes.
+	fast := &blockingSecondTurn{
+		scriptedProvider: *newFast(
+			[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Let me look that up."}},
+			[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Still checking."}},
+		),
+		blocked: make(chan struct{}),
+	}
+	slow := &slowProvider{
+		scriptedProvider: *newSlow([]continuation.Event{
+			{Kind: continuation.EventAssistantDelta, Text: "The balance is $40.00."},
+		}),
+		delay: 900 * time.Millisecond, entered: make(chan struct{}),
+	}
+	runtime, sink := startSession(t, cascade.Config{
+		Fast: fast, Slow: slow, HoldingAfter: 100 * time.Millisecond,
+	}, binding.Settings{})
+	speak(t, runtime, 2)
+	select {
+	case <-slow.entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the reasoner never started")
+	}
+	select {
+	case <-fast.blocked:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the holding turn never started, so the race never happened")
+	}
+	time.Sleep(2 * time.Second)
+
+	sink.mu.Lock()
+	failures := append([]binding.ErrorEvent(nil), sink.failures...)
+	sink.mu.Unlock()
+	for _, failure := range failures {
+		if failure.Code == "holding_error" {
+			t.Fatalf("filling a silence that then ended was reported as a fault: %+v", failure)
+		}
+	}
+}
+
+// blockingSecondTurn answers the first turn normally and then blocks, so a
+// holding turn is guaranteed to still be in flight when the reasoner returns
+// and the turn's context is cancelled.
+type blockingSecondTurn struct {
+	scriptedProvider
+	blocked chan struct{}
+	once    sync.Once
+	turns   atomic.Int32
+}
+
+func (provider *blockingSecondTurn) Continue(
+	ctx context.Context, request continuation.Request, emit continuation.Emit,
+) (continuation.Completion, error) {
+	if provider.turns.Add(1) == 1 {
+		return provider.scriptedProvider.Continue(ctx, request, emit)
+	}
+	provider.once.Do(func() { close(provider.blocked) })
+	<-ctx.Done()
+	return continuation.Completion{}, ctx.Err()
+}

@@ -254,7 +254,13 @@ func (runtime *runtime) breakSilenceWhileDeliberating(
 			holding := request
 			holding.Holding = true
 			// Handed on already: the reasoning this is reporting on is running.
-			if err := runtime.runFast(ctx, holding, turn, true); err != nil {
+			err := runtime.runFast(ctx, holding, turn, true)
+			// A holding turn overtaken by the answer arriving is the outcome
+			// this whole mechanism is hoping for, not a fault. The reasoner
+			// finishing cancels the turn's context, and a continuation cut off
+			// that way reports it - which reached the client as a session
+			// error for a silence that had just been filled properly.
+			if err != nil && ctx.Err() == nil && !errors.Is(err, context.Canceled) {
 				runtime.fail("holding_error", err)
 			}
 		})

@@ -71,6 +71,11 @@
   Instruction length is not free, and a mechanism that does nothing is not
   free either. `StripMarkers` still runs, so a model that emits one out of
   habit does not say it aloud.
+- **A holding turn the answer overtakes is not a failure.** The reasoner
+  finishing cancels the turn's context, and a holding continuation still being
+  produced reports that cancellation — which reached the client as a session
+  error for a silence that had just been filled properly. It is the outcome the
+  mechanism hopes for: the gap was covered, and then it stopped being a gap.
 - **An agent that goes quiet while it reasons says so.** The reasoning half
   never speaks, so a question that needs it produces a silence whose length is
   a property of the question — and a caller cannot tell that from a broken
