@@ -175,8 +175,13 @@ func TestSlowIsSilentAndFastKnowsCapabilitiesWithoutTools(t *testing.T) {
 	if len(fast.seen.Invocation.Capabilities) == 0 {
 		t.Fatal("fast must know what the agent can do, or it will deny a capability the agent has")
 	}
-	if !strings.Contains(fast.seen.Invocation.Instruction, continuation.CompletionMarker) {
-		t.Fatalf("fast must be told how to declare a turn finished: %q", fast.seen.Invocation.Instruction)
+	// The voice is no longer asked about the completion marker. It used to
+	// decide whether the reasoner ran by omitting one, which put every
+	// capability behind a judgement by the phase that cannot act on it; an
+	// observation deliberates now, so the marker decides nothing and the
+	// instruction does not spend four paragraphs on it.
+	if strings.Contains(fast.seen.Invocation.Instruction, continuation.CompletionMarker) {
+		t.Fatalf("the marker is inert and must not be asked for: %q", fast.seen.Invocation.Instruction)
 	}
 }
 

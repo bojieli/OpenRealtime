@@ -47,6 +47,11 @@ const (
 	// DecisionIdentifier is the reasoner reassembling an identifier a
 	// recogniser wrote down the way it was spoken.
 	DecisionIdentifier Decision = "identifier"
+	// DecisionResult is the voice reporting what a tool came back with. It is
+	// where a caller is most likely to be misled and least likely to notice:
+	// the work really was done, so the sentence sounds authoritative whatever
+	// it says.
+	DecisionResult Decision = "result"
 )
 
 // Action is one observable thing a model did at a boundary.
@@ -62,6 +67,7 @@ const (
 	ActionFabricate Action = "fabricate"  // stated a result nobody supplied
 	ActionWrongID   Action = "wrong-id"   // altered a user-supplied identifier
 	ActionSilent    Action = "silent"     // produced nothing
+	ActionOverclaim Action = "overclaim"  // said more than the tool result said
 )
 
 // Case is one frozen decision.

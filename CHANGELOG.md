@@ -57,6 +57,20 @@
 
 ### Cognition
 
+- **The voice no longer over-claims a tool result.** A tool returning
+  `{"status":"ok"}` became "your order is on its way and scheduled for
+  delivery" — a delivery claim, a routing claim and a schedule claim, none of
+  which the tool said. An empty result became "being processed and will be
+  shipped soon". This is where a caller is most likely to be misled and least
+  likely to notice, because the work really was done and so the sentence sounds
+  authoritative. There is now a boundary in `evals` that catches it in 150 ms.
+- **The completion marker is no longer the voice's problem.** It decided
+  nothing once an observation began deliberating, yet four paragraphs of the
+  voice's instruction explained it. Removing them fixed the over-claiming
+  outright on the local model — the rules that matter had been crowded out.
+  Instruction length is not free, and a mechanism that does nothing is not
+  free either. `StripMarkers` still runs, so a model that emits one out of
+  habit does not say it aloud.
 - **An agent that goes quiet while it reasons says so.** The reasoning half
   never speaks, so a question that needs it produces a silence whose length is
   a property of the question — and a caller cannot tell that from a broken

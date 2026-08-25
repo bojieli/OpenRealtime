@@ -24,7 +24,7 @@ func runEval(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("eval", flag.ContinueOnError)
 	flags.SetOutput(output)
 	var (
-		decision  = flags.String("decision", "hand-off", "which boundary: hand-off or identifier")
+		decision  = flags.String("decision", "hand-off", "which boundary: hand-off, identifier, or result")
 		provider  = flags.String("provider", "vllm", "provider serving the model under test")
 		model     = flags.String("model", "", "model; empty selects the provider's default")
 		url       = flags.String("url", "", "base URL; empty selects the provider's own")
@@ -46,8 +46,10 @@ func runEval(arguments []string, output io.Writer) error {
 		cases = evals.HandOffCases()
 	case "identifier":
 		cases = evals.IdentifierCases()
+	case "result":
+		cases = evals.ResultCases()
 	default:
-		return fmt.Errorf("decision must be hand-off or identifier, got %q", *decision)
+		return fmt.Errorf("decision must be hand-off, identifier, or result, got %q", *decision)
 	}
 
 	// The model under test is configured exactly as the fast phase is, because
@@ -79,8 +81,11 @@ func runEval(arguments []string, output io.Writer) error {
 	}
 
 	var runner evals.Runner = evals.HandOffRunner{Provider: client, Label: label}
-	if *decision == "identifier" {
+	switch *decision {
+	case "identifier":
 		runner = evals.IdentifierRunner{Provider: client, Label: label}
+	case "result":
+		runner = evals.ResultRunner{Provider: client, Label: label}
 	}
 	report := evals.Run(context.Background(), runner, repeated)
 	fmt.Fprint(output, report.Format())
