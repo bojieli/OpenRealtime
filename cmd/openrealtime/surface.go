@@ -194,25 +194,57 @@ func describeSurface(output io.Writer, described describedSurface) {
 		fmt.Fprintln(output, "  browser   not attached; pass -browser-devtools-url to observe and act on one")
 	}
 
-	if mutatingSurface(described.tools) {
-		// Worth saying out loud rather than leaving in a manual. A session
-		// that can change files, run commands, and click things in a browser
-		// is a different thing from one that can only talk, and the person
-		// starting it should know which one they just started.
-		fmt.Fprintln(output,
-			"\n  This surface can change your files, run commands, and act on a browser.\n"+
-				"  Filesystem changes wait for you to approve them. Computer-use actions are\n"+
-				"  bounded by the declared browser context and do not.")
+	// Worth saying out loud rather than leaving in a manual. A session that can
+	// change files and click things in a browser is a different thing from one
+	// that can only talk, and the person starting it should know which one they
+	// just started - which means naming what is actually declared. A warning
+	// that lists powers this process does not have is a warning that gets read
+	// once and then ignored.
+	var mutating []string
+	for _, tool := range described.tools.Tools() {
+		if tool.Channel == surface.ChannelTool && tool.Mutating {
+			mutating = append(mutating, tool.Name)
+		}
+	}
+	browserTarget := ""
+	if described.browser != nil {
+		browserTarget = described.browser.TargetName()
+	}
+	if warning := describePowers(mutating, browserTarget); warning != "" {
+		fmt.Fprintln(output, "\n  "+warning)
 	}
 	fmt.Fprintln(output, "\nOpen the address above. Loopback counts as a secure context, so the")
 	fmt.Fprintln(output, "microphone, screen, and camera work without a certificate.")
 }
 
-func mutatingSurface(host *surface.ToolHost) bool {
-	for _, tool := range host.Tools() {
-		if tool.Mutating {
-			return true
-		}
+// describePowers names what this surface can actually do to the machine.
+//
+// It is built from what was declared rather than written once and left, so a
+// read-only surface does not warn about writing files and a surface with no
+// browser does not warn about clicking. A warning that lists powers the
+// process does not have is a warning that gets read once and then ignored.
+func describePowers(mutatingFileTools []string, browserTarget string) string {
+	var lines []string
+	switch {
+	case len(mutatingFileTools) > 0 && browserTarget != "":
+		lines = append(lines, fmt.Sprintf(
+			"This surface can act on your machine (%s) and on the browser it is attached to.",
+			strings.Join(mutatingFileTools, ", ")))
+	case len(mutatingFileTools) > 0:
+		lines = append(lines, fmt.Sprintf(
+			"This surface can change your files (%s).", strings.Join(mutatingFileTools, ", ")))
+	case browserTarget != "":
+		lines = append(lines, "This surface can act on the browser it is attached to.")
+	default:
+		return ""
 	}
-	return false
+	if len(mutatingFileTools) > 0 {
+		lines = append(lines, "Those changes wait for you to approve them.")
+	}
+	if browserTarget != "" {
+		lines = append(lines, fmt.Sprintf(
+			"Computer-use actions run without asking, bounded by the declared context (%s).",
+			browserTarget))
+	}
+	return strings.Join(lines, "\n  ")
 }
