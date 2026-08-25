@@ -307,6 +307,10 @@ func (runtime *runtime) breakSilenceWhileDeliberating(
 			// finishing cancels the turn's context, and a continuation cut off
 			// that way reports it - which reached the client as a session
 			// error for a silence that had just been filled properly.
+			//
+			// A safe point refusing it for the same reason - the answer
+			// committed first, so this was computed from a prefix that has
+			// moved - is handled where every session failure is decided.
 			if err != nil && ctx.Err() == nil && !errors.Is(err, context.Canceled) {
 				runtime.fail("holding_error", err)
 			}

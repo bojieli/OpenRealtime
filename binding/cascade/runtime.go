@@ -573,6 +573,28 @@ func (runtime *runtime) fail(code string, err error) {
 	if err == nil {
 		return
 	}
+	if errors.Is(err, continuation.ErrStalePrefix) {
+		// The safe point refused output that answers something the
+		// conversation has since moved past. That is the guarantee working -
+		// nothing was committed, the trajectory is intact, and whatever
+		// overtook it gets its own turn - and it is never a fault in the
+		// session.
+		//
+		// The rule lives here because a continuation commits from more than
+		// one place. It was answered at the step that produced it, then at the
+		// driver, then at the holding line, and the phone menu still died on
+		// it - a recording talks continuously, so something arrives during
+		// almost every turn and each route out had to be found separately.
+		// One judgement, one place.
+		if recorder := runtime.policies.ShadowInteraction; recorder != nil {
+			recorder(interaction.ShadowDecision{
+				NowNS: runtime.scheduler.NowNS(), Act: "withheld",
+				Situation:  "overtaken: " + err.Error(),
+				Predicates: map[string]string{"where": code},
+			})
+		}
+		return
+	}
 	runtime.sink.Failed(runtime.ctx, binding.ErrorEvent{Code: code, Message: err.Error()})
 }
 
@@ -602,18 +624,6 @@ func (runtime *runtime) drain() {
 			// Committed and waiting. A wake-up owes the next attempt.
 			return
 		case errors.Is(err, eventloop.ErrInterrupted), errors.Is(err, context.Canceled):
-			continue
-		case errors.Is(err, continuation.ErrStalePrefix):
-			// The safe point refused output that answers something the
-			// conversation has since moved past. That is the guarantee working:
-			// nothing was committed, the trajectory is intact, and whatever
-			// overtook it gets its own turn.
-			//
-			// Here as well as at the step that produced it, because it can
-			// arise anywhere a continuation commits - a turn, a holding line, a
-			// reasoner resuming after a tool result - and the answer is the
-			// same everywhere. Reporting it ends the call over a moment that
-			// had simply moved on.
 			continue
 		default:
 			runtime.fail("provider_error", err)
