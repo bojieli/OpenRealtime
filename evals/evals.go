@@ -30,6 +30,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/bojieli/OpenRealtime/interaction"
 )
 
 // Decision is the boundary a case is frozen at. Each names one question the
@@ -197,7 +199,7 @@ type Summary struct {
 // not an action, it is the absence of one.
 func restraintExpected(item Case) bool {
 	for _, allowed := range item.Accept {
-		if allowed == "listen" || allowed == "keep-speaking" {
+		if allowed == Action(interaction.ActStaySilent) || allowed == Action(interaction.ActKeepSpeaking) {
 			return true
 		}
 	}
@@ -273,9 +275,17 @@ func (report Report) Format() string {
 	}
 	fmt.Fprintf(&builder, "   slowest %dms\n", summary.Slowest.Milliseconds())
 	if summary.ActingTotal > 0 && summary.RestraintTotal > 0 {
-		fmt.Fprintf(&builder, "  acting %d/%d   restraint %d/%d\n",
+		acting := float64(summary.ActingPassed) / float64(summary.ActingTotal)
+		restraint := float64(summary.RestraintPassed) / float64(summary.RestraintTotal)
+		// Balanced accuracy, because the plain total moves when the case mix
+		// moves and this does not. It is the number to compare configurations
+		// on: naming the do-nothing act differently slides a model along the
+		// trade between these two without changing how well it tells the cases
+		// apart, and only a measure that holds the mix fixed makes that visible.
+		fmt.Fprintf(&builder, "  acting %d/%d   restraint %d/%d   balanced %.2f\n",
 			summary.ActingPassed, summary.ActingTotal,
-			summary.RestraintPassed, summary.RestraintTotal)
+			summary.RestraintPassed, summary.RestraintTotal,
+			(acting+restraint)/2)
 	}
 	return builder.String()
 }
