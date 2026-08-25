@@ -90,6 +90,13 @@ type runtime struct {
 	// extractedText is the stretch extraction last read, so an utterance that
 	// keeps growing is not re-read from the beginning on every partial.
 	extractedText string
+	// previousUtterance is the last thing the speaker finished saying, and
+	// lastPin is the policy that was read out of it. Both exist for the case
+	// where the recogniser cut one sentence into two: the pieces are joined
+	// back up before the next reading, and the policy read off the first piece
+	// alone goes with it.
+	previousUtterance string
+	lastPin           interaction.StandingInstruction
 	// lastPartialExtractNS bounds how often an unfinished utterance is re-read.
 	lastPartialExtractNS uint64
 	// heardWhenSpoke is how much of the current utterance had been heard when

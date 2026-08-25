@@ -42,25 +42,15 @@ func TestParsePinRefusesToGuess(t *testing.T) {
 func TestRenderForExtractionShowsWhatIsInForce(t *testing.T) {
 	block := interaction.RenderForExtraction([]interaction.StandingInstruction{
 		{Text: "tell them when the kettle has boiled", Scope: interaction.ScopeConversation},
-	}, nil, "never mind about the kettle", false)
+	}, nil, "never mind about the kettle")
 	if !strings.Contains(block, "tell them when the kettle has boiled") {
 		t.Fatalf("the policy being lifted was not shown:\n%s", block)
 	}
 	if !strings.Contains(block, "never mind about the kettle") {
 		t.Fatalf("the utterance was not shown:\n%s", block)
 	}
-	empty := interaction.RenderForExtraction(nil, nil, "hello", false)
+	empty := interaction.RenderForExtraction(nil, nil, "hello")
 	if !strings.Contains(empty, "No policies") {
 		t.Fatalf("an empty policy list must say so rather than omit the section:\n%s", empty)
-	}
-	// A recogniser cuts where somebody breathes, and the tail arrives looking
-	// like a sentence. Whether it is one is a fact about the clock, and the
-	// reader is told it rather than left to guess from the words.
-	tail := interaction.RenderForExtraction(nil, nil, "and don't say anything else", true)
-	if !strings.Contains(tail, "still in the middle of a sentence") {
-		t.Fatalf("a continuation was rendered as a new utterance:\n%s", tail)
-	}
-	if strings.Contains(empty, "still in the middle") {
-		t.Fatalf("an ordinary utterance was rendered as a continuation:\n%s", empty)
 	}
 }

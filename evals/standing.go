@@ -139,7 +139,7 @@ func inForce(
 ) Case {
 	return Case{
 		Name: name, Decision: DecisionStandingInstruction,
-		Context: interaction.RenderForExtraction(existing, recent, utterance, false),
+		Context: interaction.RenderForExtraction(existing, recent, utterance),
 		Accept:  accept, Forbid: forbid, Note: note,
 	}
 }

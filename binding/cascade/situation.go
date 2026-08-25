@@ -215,23 +215,36 @@ func (runtime *runtime) noticeStanding(text string) {
 	}
 	runtime.extractedText = text
 	runtime.audioMu.Unlock()
+	snapshot := runtime.store.Snapshot()
+	whole, stale := runtime.wholeUtterance(snapshot, text)
+	// The joined text, not this piece: a sentence cut into three joins onto
+	// what the first two already made.
+	runtime.audioMu.Lock()
+	runtime.previousUtterance = whole
+	runtime.audioMu.Unlock()
 	runtime.wait.Add(1)
 	go func() {
 		defer runtime.wait.Done()
+		if stale.Text != "" {
+			// The policy the front half produced was read off half a sentence.
+			// It goes before the whole one is read, or the pass is comparing
+			// what somebody said against a truncation of it - measured, with
+			// "tell me the moment the build" standing, the tail "finishes and
+			// don't say anything else" revoked it five times out of five.
+			runtime.pinboard.Revoke(stale.Text)
+		}
 		// The conversation, not just the utterance: a recogniser splits where a
 		// speaker breathes, and a fragment read alone means something else.
-		snapshot := runtime.store.Snapshot()
 		recent := interaction.RecentLines(snapshot.Items, 6)
 		extraction, err := runtime.policies.Extraction.Extract(
-			runtime.ctx, runtime.pinboard.InForce(), recent, text,
-			runtime.continuesPreviousUtterance(snapshot))
+			runtime.ctx, runtime.pinboard.InForce(), recent, whole)
 		if recorder := runtime.policies.ShadowInteraction; recorder != nil {
 			outcome := extraction.Kind
 			if err != nil {
 				outcome = "error"
 			}
 			recorder(interaction.ShadowDecision{
-				NowNS: runtime.scheduler.NowNS(), Situation: "extract: " + text,
+				NowNS: runtime.scheduler.NowNS(), Situation: "extract: " + whole,
 				Act: outcome,
 				Predicates: map[string]string{
 					"where": "extract", "scope": string(extraction.Instruction.Scope),
@@ -251,6 +264,9 @@ func (runtime *runtime) noticeStanding(text string) {
 			instruction := extraction.Instruction
 			instruction.SetNS = runtime.scheduler.NowNS()
 			runtime.pinboard.Pin(instruction)
+			runtime.audioMu.Lock()
+			runtime.lastPin = instruction
+			runtime.audioMu.Unlock()
 		case "revoke":
 			runtime.pinboard.Revoke(extraction.Instruction.Text)
 		}
@@ -363,11 +379,33 @@ func (runtime *runtime) gapBeforeUtteranceNS(snapshot trajectory.Snapshot) (uint
 // finished waits for an answer.
 const breathGap = time.Second
 
-// continuesPreviousUtterance reports whether the speaker is carrying on rather
-// than starting something new.
-func (runtime *runtime) continuesPreviousUtterance(snapshot trajectory.Snapshot) bool {
+// wholeUtterance joins a piece of a sentence back onto the piece before it,
+// and names the policy that was read off that earlier piece.
+//
+// A recogniser cuts where somebody breathes. "Tell me the moment the build
+// finishes and don't say anything else" arrives as two utterances, and both
+// halves read alone are wrong: the front half pins "tell me the moment the
+// build", and the back half - capitalised and punctuated like a sentence of
+// its own - revokes it. Read whole, the same model pins the whole instruction,
+// with the right scope, five times out of five.
+//
+// Which pieces belong together is a fact about the clock rather than the
+// words, and the runtime already measures it for the interaction model.
+func (runtime *runtime) wholeUtterance(
+	snapshot trajectory.Snapshot, text string,
+) (whole string, stale interaction.StandingInstruction) {
 	gap, ok := runtime.gapBeforeUtteranceNS(snapshot)
-	return ok && gap < uint64(breathGap)
+	if !ok || gap >= uint64(breathGap) {
+		return text, interaction.StandingInstruction{}
+	}
+	runtime.audioMu.Lock()
+	previous := runtime.previousUtterance
+	stale = runtime.lastPin
+	runtime.audioMu.Unlock()
+	if previous == "" {
+		return text, interaction.StandingInstruction{}
+	}
+	return strings.TrimSpace(previous) + " " + text, stale
 }
 
 // noticeStandingInPartial runs extraction before an utterance has finished.
