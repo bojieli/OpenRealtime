@@ -47,6 +47,15 @@ const (
 	// DecisionIdentifier is the reasoner reassembling an identifier a
 	// recogniser wrote down the way it was spoken.
 	DecisionIdentifier Decision = "identifier"
+	// DecisionInteraction is the model that decides what the agent does in an
+	// instant rather than what it says. It is the only boundary here whose
+	// correct answer usually is to do nothing, which is why its cases are
+	// scored as two numbers rather than one.
+	DecisionInteraction Decision = "interaction"
+	// DecisionStandingInstruction is the pass that notices when someone has
+	// set an interaction policy out loud - wait, let me finish; tell me the
+	// moment it lands - and pins it where a truncated window cannot repeal it.
+	DecisionStandingInstruction Decision = "standing-instruction"
 	// DecisionResult is the voice reporting what a tool came back with. It is
 	// where a caller is most likely to be misled and least likely to notice:
 	// the work really was done, so the sentence sounds authoritative whatever
@@ -171,6 +180,28 @@ func Run(ctx context.Context, runner Runner, cases []Case) Report {
 type Summary struct {
 	Total, Passed, Vetoed, Errored int
 	Slowest                        time.Duration
+	// Acting and Restraint split the cases by what the right answer was.
+	//
+	// A single pass rate hides the only failure mode that matters at a
+	// boundary whose commonest correct answer is to do nothing: a model that
+	// always acts and a model that never acts can post identical totals, and
+	// they are opposite bugs needing opposite fixes. Measured separately they
+	// are impossible to confuse, and the first two runs of the interaction
+	// suite were exactly that pair.
+	ActingTotal, ActingPassed       int
+	RestraintTotal, RestraintPassed int
+}
+
+// restraintExpected reports whether the right answer at a case was to leave
+// things as they are. Continuing to speak counts: carrying on mid-sentence is
+// not an action, it is the absence of one.
+func restraintExpected(item Case) bool {
+	for _, allowed := range item.Accept {
+		if allowed == "listen" || allowed == "keep-speaking" {
+			return true
+		}
+	}
+	return false
 }
 
 func (report Report) Summary() Summary {
@@ -187,6 +218,17 @@ func (report Report) Summary() Summary {
 		}
 		if outcome.Elapsed > summary.Slowest {
 			summary.Slowest = outcome.Elapsed
+		}
+		if restraintExpected(outcome.Case) {
+			summary.RestraintTotal++
+			if outcome.Passed {
+				summary.RestraintPassed++
+			}
+		} else {
+			summary.ActingTotal++
+			if outcome.Passed {
+				summary.ActingPassed++
+			}
 		}
 	}
 	return summary
@@ -230,6 +272,11 @@ func (report Report) Format() string {
 		fmt.Fprintf(&builder, "   errored %d", summary.Errored)
 	}
 	fmt.Fprintf(&builder, "   slowest %dms\n", summary.Slowest.Milliseconds())
+	if summary.ActingTotal > 0 && summary.RestraintTotal > 0 {
+		fmt.Fprintf(&builder, "  acting %d/%d   restraint %d/%d\n",
+			summary.ActingPassed, summary.ActingTotal,
+			summary.RestraintPassed, summary.RestraintTotal)
+	}
 	return builder.String()
 }
 

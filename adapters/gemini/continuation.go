@@ -196,6 +196,7 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 		ctx, cancel = context.WithTimeout(ctx, adapter.config.RequestTimeout)
 		defer cancel()
 	}
+	continuation.TraceRequest(adapter.Descriptor(), request.InvocationID, encoded)
 	endpoint := adapter.config.Endpoint + "/models/" + url.PathEscape(adapter.config.Model) + ":streamGenerateContent?alt=sse"
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
 	if err != nil {

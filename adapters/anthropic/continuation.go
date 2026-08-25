@@ -285,6 +285,7 @@ func (adapter *Adapter) Continue(
 		ctx, cancel = context.WithTimeout(ctx, adapter.config.RequestTimeout)
 		defer cancel()
 	}
+	continuation.TraceRequest(adapter.Descriptor(), request.InvocationID, encoded)
 	httpRequest, err := http.NewRequestWithContext(
 		ctx, http.MethodPost, adapter.config.BaseURL+"/messages", bytes.NewReader(encoded))
 	if err != nil {
