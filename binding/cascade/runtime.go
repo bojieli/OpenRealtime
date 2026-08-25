@@ -91,7 +91,10 @@ type runtime struct {
 	extractedText string
 	// lastPartialExtractNS bounds how often an unfinished utterance is re-read.
 	lastPartialExtractNS uint64
-	lastCanonical        uint64
+	// heardWhenSpoke is how much of the current utterance had been heard when
+	// the agent last said something, so a decision can be told what is new.
+	heardWhenSpoke string
+	lastCanonical  uint64
 	// interjecting is set when the turn about to run was taken from somebody
 	// still speaking rather than offered by somebody who had finished.
 	interjecting bool

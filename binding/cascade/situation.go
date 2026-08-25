@@ -30,6 +30,7 @@ func (runtime *runtime) situation(decision interaction.Context) interaction.Situ
 		Speaker:       "user",
 		Speaking:      decision.Duplex.UserSpeaking,
 		Heard:         strings.TrimSpace(decision.Revision.Text()),
+		HeardSince:    runtime.heardSinceSpeaking(strings.TrimSpace(decision.Revision.Text())),
 		Silence:       renderSilence(decision.Revision.SilenceNS),
 		SincePrevious: runtime.gapBeforeUtterance(snapshot),
 		InFlight:      workInFlight(snapshot),
@@ -353,3 +354,26 @@ func (runtime *runtime) noticeStandingInPartial(stable string) {
 // partialExtractInterval bounds how often an unfinished utterance is re-read
 // for a policy.
 const partialExtractInterval = 3 * time.Second
+
+// heardSinceSpeaking is the part of an utterance the agent has not decided
+// about yet.
+//
+// While the floor holds a turn open the heard text only grows, so a decision
+// taken forty times over one monologue sees the same wall of text with a new
+// clause on the end each time. What it is being asked about is the new clause.
+func (runtime *runtime) heardSinceSpeaking(heard string) string {
+	runtime.audioMu.Lock()
+	mark := runtime.heardWhenSpoke
+	runtime.audioMu.Unlock()
+	if mark == "" || !strings.HasPrefix(heard, mark) {
+		return ""
+	}
+	return strings.TrimSpace(heard[len(mark):])
+}
+
+// markSpoken records how much had been heard when the agent last spoke.
+func (runtime *runtime) markSpoken(heard string) {
+	runtime.audioMu.Lock()
+	runtime.heardWhenSpoke = heard
+	runtime.audioMu.Unlock()
+}

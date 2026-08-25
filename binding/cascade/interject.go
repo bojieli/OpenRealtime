@@ -66,6 +66,7 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		// nature - the turn it would have spoken into belongs to somebody else
 		// - and reporting it reached the client as a session error for a
 		// moment that had simply passed.
+		runtime.markSpoken(decision.Revision.Text())
 		_ = runtime.runFast(runtime.ctx, request, &turnReport{}, true)
 	}()
 }

@@ -92,6 +92,14 @@ type Situation struct {
 	// three hundred milliseconds is nothing to a reader of the transcript and
 	// is the whole question here.
 	Silence string
+	// HeardSince is what has been added since the agent last said anything.
+	//
+	// Heard grows for as long as the floor holds a turn open, which is exactly
+	// as long as somebody keeps talking - so in the case this matters most it
+	// is a wall of text with the thing that just happened buried at the end.
+	// A model asked "is anything worth acting on" needs to know what is new,
+	// not to re-read a monologue it has already decided about forty times.
+	HeardSince string
 	// SincePrevious is how long between the previous utterance ending and this
 	// one starting.
 	//
@@ -180,6 +188,9 @@ func (state Situation) Render() string {
 	}
 	if state.Heard != "" {
 		block.WriteString("heard from " + who + " so far: \"" + state.Heard + "\"\n")
+	}
+	if trimmed := strings.TrimSpace(state.HeardSince); trimmed != "" && trimmed != strings.TrimSpace(state.Heard) {
+		block.WriteString("new since the agent last spoke: \"" + trimmed + "\"\n")
 	}
 	if state.Seen != "" {
 		block.WriteString("just seen: " + state.Seen + "\n")
