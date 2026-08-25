@@ -87,20 +87,6 @@ type Situation struct {
 	Speaker  string
 	Speaking bool
 	Heard    string
-	// ContinuesAnswered says what is being said now is the rest of a sentence
-	// the agent has already replied to.
-	//
-	// A recogniser cuts where somebody breathes, so the tail of one request
-	// arrives capitalised and punctuated like a request of its own - and read
-	// that way, answering it is the obvious thing to do. It produces a second
-	// acknowledgement of something already agreed to, which the voice is told
-	// not to give and cannot avoid, because from where it stands nothing says
-	// this is the same sentence.
-	//
-	// Measured on the moment it was found: told only the gap in milliseconds,
-	// the model answered seven times out of seven; told this, it listened
-	// seven times out of seven.
-	ContinuesAnswered bool
 	// Silence is how long the quiet has lasted, in a unit a model can reason
 	// about. It is deliberately finer than the projection cognition gets:
 	// three hundred milliseconds is nothing to a reader of the transcript and
@@ -202,9 +188,6 @@ func (state Situation) Render() string {
 	}
 	if state.Heard != "" {
 		block.WriteString("heard from " + who + " so far: \"" + state.Heard + "\"\n")
-		if state.ContinuesAnswered {
-			block.WriteString("this is the rest of the sentence above, which the agent has already replied to\n")
-		}
 	}
 	if trimmed := strings.TrimSpace(state.HeardSince); trimmed != "" && trimmed != strings.TrimSpace(state.Heard) {
 		block.WriteString("new since the agent last spoke: \"" + trimmed + "\"\n")
