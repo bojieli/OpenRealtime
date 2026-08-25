@@ -322,6 +322,7 @@ func (runtime *runtime) publishAssistant(
 	ctx context.Context, result continuation.RunResult, overFloor bool,
 ) error {
 	if strings.TrimSpace(result.AssistantText) == "" || !result.Committed {
+		runtime.noteWithheld(result, overFloor, "the model said nothing that reached a safe point")
 		return nil
 	}
 	// A model that writes a tool call as prose instead of emitting one has not
@@ -331,6 +332,7 @@ func (runtime *runtime) publishAssistant(
 	// whoever is listening. There is nothing to salvage: the call is malformed
 	// as a call and the sentence is malformed as speech.
 	if looksLikeToolCall(result.AssistantText) {
+		runtime.noteWithheld(result, overFloor, "the model wrote a tool call as prose")
 		return nil
 	}
 	items := runtime.assistantItems(result)
@@ -346,6 +348,7 @@ func (runtime *runtime) publishAssistant(
 		Text: result.AssistantText, Complete: !result.Interrupted, SpeechAuthority: authority,
 	})
 	if !decision.Committed() {
+		runtime.noteWithheld(result, overFloor, decision.Reason)
 		return nil
 	}
 	ids := make([]string, 0, len(items))

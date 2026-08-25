@@ -7,6 +7,7 @@ import (
 	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -394,4 +395,31 @@ func (runtime *runtime) markSpoken(heard string) {
 	runtime.audioMu.Lock()
 	runtime.heardWhenSpoke = heard
 	runtime.audioMu.Unlock()
+}
+
+// noteWithheld records a turn that ran and produced nothing anybody heard.
+//
+// Three things stand between a continuation and the world - it can return
+// nothing, it can fail to reach a safe point, and the commitment policy can
+// hold it - and all three returned silently. From outside they are
+// indistinguishable from the interaction model having decided wrongly, which
+// is the bug class that has cost the most here: an act chosen correctly and
+// never carried out. Measured, the second animal in a counting policy is
+// exactly this shape - the model chooses speak-through, the interjection runs,
+// no error is reported, and nothing is said.
+func (runtime *runtime) noteWithheld(result continuation.RunResult, overFloor bool, why string) {
+	recorder := runtime.policies.ShadowInteraction
+	if recorder == nil {
+		return
+	}
+	recorder(interaction.ShadowDecision{
+		NowNS: runtime.scheduler.NowNS(), Act: "withheld",
+		Situation: "withheld: " + strings.TrimSpace(result.AssistantText),
+		Predicates: map[string]string{
+			"where": "publish", "why": why,
+			"over_floor":  strconv.FormatBool(overFloor),
+			"interrupted": strconv.FormatBool(result.Interrupted),
+			"committed":   strconv.FormatBool(result.Committed),
+		},
+	})
 }
