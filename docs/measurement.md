@@ -489,3 +489,43 @@ forbids.
 So the limit here is the voice at this scale, not the design, and it is a
 deployment's choice to spend a larger model on the phase that speaks. The
 interaction model is 3B active for a reason; the voice need not be.
+
+### What it takes to make the counting demo work (F17)
+
+Three cells, same suite, same recogniser, same scripted audio:
+
+| scenario | predicates + Qwen voice | predicates + Gemini voice | interaction model + Gemini voice |
+| --- | --- | --- | --- |
+| an ordinary question | 3/3 | 2/2 | 6/6 |
+| a recorded menu | 2/3 | 2/2 | 3/6 |
+| asked not to be interrupted | 0/3 | 0/2 | 1/6 |
+| **count as they go** | **0/3** | **0/2** | **5/6** |
+| cutting in on something wrong | 0/3 | 0/2 | 0/6 |
+| **total** | **5/15** | **4/10** | **15/30** |
+
+The middle column is the one worth having. A better voice on its own does not
+produce the behaviour: counting stays at zero. The interaction model on its own
+did not either. Together it is five in six, and the transcript is the demo:
+
+```
+ 8190ms  "I will count each animal as you mention them. Go ahead."
+21036ms  "That's one."
+29881ms  "Two."
+```
+
+The acknowledgement with no count in it, then one number per animal while the
+speaker keeps talking. That is what the whole design is for, and it needed both
+halves - the acts arriving at the right instants, and a voice that does what
+the act asked rather than what the words primed.
+
+Gemini 3.5 Flash at minimal thinking answers in 700-900ms against the MoE's
+30-40ms. That is far too slow for the interaction decision, which is asked
+several times a second, and perfectly affordable for the phase that speaks,
+which is asked once a turn. The two phases want different models for reasons
+that have nothing to do with quality.
+
+Two scenarios remain at zero or near it. Interrupting to correct has never
+passed in any cell, and holding silence through a pause somebody asked for
+passes one time in six. Neither is a measurement artefact now: the recogniser
+is clean, the harness is honest, and the failures are visible as specific
+decisions in the recorded log.
