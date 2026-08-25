@@ -336,3 +336,71 @@ improves turn-taking or task completion. Those are separate questions.
 The threshold is a second. Below that a gap is the ordinary seam between one
 item and the next — the pause between a question ending and an answer
 beginning — and reporting it would be noise wearing the costume of information.
+
+## The interaction model (F14)
+
+Three boundaries, measured before any of it was wired into the runtime. The
+step-by-step layer exists so that a design can be judged in milliseconds
+against one provider rather than in minutes against a whole stack, and this is
+the first change large enough to need it.
+
+### Which model
+
+Qwen3-30B-A3B-FP8 against Qwen3-8B, same prompts, same cases:
+
+| | 30B-A3B | 8B |
+| --- | --- | --- |
+| interaction, balanced | **0.77** | 0.68 |
+| timelines | **7/7** | 5/7 |
+| standing instructions | 36/42 | **38/42** |
+| latency, one decision | 25–45ms | 33–60ms |
+
+The MoE wins where it matters and is the faster of the two, because only three
+billion parameters are active. 8B is marginally better at extraction, which
+runs off the critical path where 20ms is irrelevant. So: **30B-A3B decides,
+and the choice is not close on the boundary that runs five times a second.**
+
+Reasoning was tried and is not an option here. Enabled on the 8B it scored
+9/23 against 13/23 with it off, and took 5.5 seconds. This decision has to be
+made without deliberation, which is a constraint on the design and not a
+preference.
+
+### What actually moved the numbers
+
+None of the four things that mattered was a better-written rule.
+
+**Format consistency, 36/69 to 54/69.** The worked examples had been written as
+compressed one-liners while the live input was a labelled block. A model was
+spending its capacity translating between two shapes of the same thing before
+it could decide. Examples now render through the same function as a real
+decision.
+
+**A missing field.** Who is speaking and what has been heard were one field, so
+every completed utterance vanished the instant its speaker stopped: the model
+was told a turn had ended and never told what the turn said. It answered
+"listen" because nothing had been put in front of it to answer.
+
+**An act with no way to perform it.** The phone-menu case failed while
+call-tool was offered and no tool was ever named.
+
+**The name of the do-nothing act, which is a threshold and not a quality
+lever.** Asked to explain a wrong answer, a model said it had chosen "listen"
+to keep track of what the speaker was saying - it had understood the task
+perfectly and read the act as an instruction to pay attention rather than as a
+decision to say nothing. Renaming it slides the model along a trade and leaves
+discrimination unchanged:
+
+| do-nothing act named | acts when it should | refrains when it should |
+| --- | --- | --- |
+| `listen` | 40% | 85% |
+| `wait` | 60% | 73% |
+| `stay-silent` | 75% | 54% |
+
+Balanced accuracy is reported for exactly this reason: the plain total moves
+with the case mix and would have called all three of these equally good.
+
+### What the suite refuses to measure with one number
+
+Acting and restraint are reported separately because a model that always acts
+and one that never acts post identical totals while being opposite bugs. The
+first two runs of this suite were precisely that pair.
