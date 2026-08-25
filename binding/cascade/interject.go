@@ -2,6 +2,7 @@ package cascade
 
 import (
 	"context"
+	"strings"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"time"
@@ -77,13 +78,24 @@ func (runtime *runtime) interject(decision interaction.Context) {
 			return
 		}
 		standing, _, _ := runtime.cognitionExtras()
+		// The sentence that caused this. It is in no committed item yet, and
+		// without it the voice is asked to speak about something it cannot see.
+		//
+		// The part since the agent last spoke, where there is one. While the
+		// floor holds a turn open the heard text only grows, so an interjection
+		// late in a monologue was sending the whole monologue every time - and
+		// counting, whose entire story is one held utterance, waited 6.3
+		// seconds a turn against 2.1 for interpreting, where a second speaker's
+		// turns commit and clear it. An interjection is about what just
+		// happened; the rest is already in the conversation above.
+		heard := decision.Revision.Text()
+		if since := runtime.heardSinceSpeaking(strings.TrimSpace(heard)); since != "" {
+			heard = since
+		}
 		request := cognition.Request{
 			SourceRevision: decision.Revision.ID,
 			Standing:       standing, Interjecting: true,
-			// The sentence that caused this. It is in no committed item yet,
-			// and without it the voice is asked to speak about something it
-			// cannot see.
-			Heard: decision.Revision.Text(),
+			Heard: heard,
 		}
 		// An interjection that cannot run is an interjection that does not
 		// happen, not a fault in the conversation. It is opportunistic by
