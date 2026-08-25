@@ -2,6 +2,8 @@ package cascade
 
 import (
 	"context"
+
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"time"
 
 	"github.com/bojieli/OpenRealtime/cognition"
@@ -28,6 +30,15 @@ import (
 // reasoner would start work on a turn nobody has finished.
 func (runtime *runtime) interject(decision interaction.Context) {
 	if runtime.policies.Interaction == nil {
+		return
+	}
+	// Nothing to speak into yet. A policy is often stated in the same breath as
+	// the thing it governs, and the floor asks about every partial of that
+	// breath - so eight speak-through decisions arrive while somebody is still
+	// saying "count the animals as I mention them", before any animal exists.
+	// Interjecting there claims the slot and spends it on nothing.
+	if !v1.CarriesSpeech(decision.Revision.Text()) {
+		runtime.noteInterject("nothing said yet to speak into")
 		return
 	}
 	// One interjection per revision. The floor is consulted on every partial,
@@ -97,7 +108,13 @@ func (runtime *runtime) interject(decision interaction.Context) {
 // Only observer-authority observations are gated here. What a person said is
 // already governed by the floor, which decided the turn was theirs to end.
 func (runtime *runtime) worthActingOn(ctx context.Context, batch eventloop.Batch) bool {
-	if runtime.policies.Interaction == nil || !batch.Contains(trajectory.KindObservation) {
+	if !batch.Contains(trajectory.KindObservation) {
+		return true
+	}
+	if !runtime.observationHasUserIntent(batch) {
+		return false
+	}
+	if runtime.policies.Interaction == nil {
 		return true
 	}
 	snapshot := runtime.store.Snapshot()
@@ -119,6 +136,27 @@ func (runtime *runtime) worthActingOn(ctx context.Context, batch eventloop.Batch
 		return true
 	}
 	return act != interaction.ActStaySilent
+}
+
+// observationHasUserIntent arms observer-driven cognition after a person has
+// spoken once. A user observation in this batch counts because eventloop
+// commits before processing; otherwise a prior user observation in the
+// canonical trajectory carries the standing intent into later screen/camera
+// changes.
+func (runtime *runtime) observationHasUserIntent(batch eventloop.Batch) bool {
+	for _, item := range batch.Items {
+		if item.Kind == trajectory.KindObservation &&
+			trajectory.AuthorityOf(item) == trajectory.AuthorityUser {
+			return true
+		}
+	}
+	for _, item := range runtime.store.Snapshot().Items {
+		if item.Kind == trajectory.KindObservation &&
+			trajectory.AuthorityOf(item) == trajectory.AuthorityUser {
+			return true
+		}
+	}
+	return false
 }
 
 // noteInterject records why an interjection did not happen.
