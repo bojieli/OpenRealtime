@@ -94,7 +94,9 @@ type runtime struct {
 	// heardWhenSpoke is how much of the current utterance had been heard when
 	// the agent last said something, so a decision can be told what is new.
 	heardWhenSpoke string
-	lastCanonical  uint64
+	// interjectStartNS is when the in-flight interjection claimed its slot.
+	interjectStartNS uint64
+	lastCanonical    uint64
 	// interjecting is set when the turn about to run was taken from somebody
 	// still speaking rather than offered by somebody who had finished.
 	interjecting bool

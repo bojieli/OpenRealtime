@@ -234,6 +234,14 @@ func (runtime *runtime) holdsThroughPause(nowNS uint64, latest interaction.Revis
 			Agreed:     endpoint.Ended,
 		})
 	}
+	// The one act that produces speech without ending a turn has to be acted on
+	// wherever it is decided. It was handled where partials are processed and
+	// not here, so a speak-through chosen at a pause was decided and dropped -
+	// nine of them in one conversation, and the two that did reach the
+	// interjection were the only ones anybody could have heard.
+	if endpoint.Act == interaction.ActSpeakThrough {
+		runtime.interject(decision)
+	}
 	if endpoint.Ended {
 		runtime.setInterjecting(endpoint.Act == interaction.ActInterrupt)
 		runtime.audioMu.Lock()

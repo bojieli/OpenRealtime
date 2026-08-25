@@ -2,6 +2,7 @@ package cascade
 
 import (
 	"context"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/cognition"
 	"github.com/bojieli/OpenRealtime/eventloop"
@@ -35,21 +36,33 @@ func (runtime *runtime) interject(decision interaction.Context) {
 	runtime.audioMu.Lock()
 	if runtime.lastInterjectRev == decision.Revision.ID {
 		runtime.audioMu.Unlock()
+		runtime.noteInterject("already answered this revision")
 		return
 	}
 	runtime.lastInterjectRev = decision.Revision.ID
 	runtime.audioMu.Unlock()
-	if !runtime.interjecting_.CompareAndSwap(false, true) {
+	// One at a time, but not forever. An interjection runs a continuation and
+	// commits it through a loop with one driver, so it can sit behind other
+	// work for seconds - and a flag held for that long silences every later
+	// moment worth speaking at. Measured, one interjection blocked the next
+	// eight in a single conversation and the agent counted once.
+	//
+	// Speech that would overlap is already prevented where speech is
+	// scheduled. What this guards is two continuations at once, which is worth
+	// bounding rather than holding open.
+	if !runtime.claimInterjection() {
+		runtime.noteInterject("already in flight")
 		return
 	}
 	runtime.wait.Add(1)
 	go func() {
 		defer runtime.wait.Done()
-		defer runtime.interjecting_.Store(false)
+		defer runtime.releaseInterjection()
 		// The state may have moved while this was starting. Speaking into a
 		// turn that has since ended is worse than not speaking: the turn that
 		// ended will produce its own answer, and this would talk over it.
 		if state := runtime.duplex.Snapshot(); !state.UserSpeaking || state.AgentSpeaking {
+			runtime.noteInterject("the moment passed while starting")
 			return
 		}
 		standing, _, _ := runtime.cognitionExtras()
@@ -106,4 +119,43 @@ func (runtime *runtime) worthActingOn(ctx context.Context, batch eventloop.Batch
 		return true
 	}
 	return act != interaction.ActStaySilent
+}
+
+// noteInterject records why an interjection did not happen.
+//
+// Every one of these is a legitimate refusal and none of them should reach the
+// caller, which is exactly why they need somewhere to go: an interjection that
+// was decided on and never heard is otherwise indistinguishable from one that
+// was never decided on.
+func (runtime *runtime) noteInterject(reason string) {
+	if recorder := runtime.policies.ShadowInteraction; recorder != nil {
+		recorder(interaction.ShadowDecision{
+			NowNS: runtime.scheduler.NowNS(), Situation: "interject refused",
+			Act: reason, Predicates: map[string]string{"where": "interject"},
+		})
+	}
+}
+
+// interjectionStale is how long an in-flight interjection may hold its claim.
+//
+// Long enough that two do not run together in the ordinary case, short enough
+// that one stuck behind the event loop does not silence the rest of a
+// conversation.
+const interjectionStale = 3 * time.Second
+
+func (runtime *runtime) claimInterjection() bool {
+	now := runtime.scheduler.NowNS()
+	runtime.audioMu.Lock()
+	defer runtime.audioMu.Unlock()
+	if runtime.interjectStartNS != 0 && now-runtime.interjectStartNS < uint64(interjectionStale) {
+		return false
+	}
+	runtime.interjectStartNS = now
+	return true
+}
+
+func (runtime *runtime) releaseInterjection() {
+	runtime.audioMu.Lock()
+	runtime.interjectStartNS = 0
+	runtime.audioMu.Unlock()
 }
