@@ -57,6 +57,15 @@
 
 ### Cognition
 
+- **The voice talking no longer discards the reasoning.** A continuation
+  committed against the trajectory version it started from, so anything
+  appended while it was thinking threw away everything it had produced —
+  including its tool calls. `ErrStalePrefix` says such output "must be
+  recomputed from the new prefix"; nothing anywhere recomputed it. A version
+  number cannot tell "the person said something else" from "the agent filled a
+  silence", and only the first invalidates what the reasoner relied on.
+  Staleness is now about evidence: a new observation, a repair obligation or a
+  tool result supersedes a continuation; the agent's own speech does not.
 - **The sidecar hand-off states the result instead of dictating it.** `omni`,
   `duplex` and `upstream` told the model "say this, preserving every fact and
   identifier exactly, and add nothing" — the design the cascade shipped and
