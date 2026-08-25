@@ -34,6 +34,9 @@ audio observer only.
 | F6 | Slow model and effort | high · medium · local | `-slow-model`, `-slow-effort` |
 | F7 | Observer components | keyframe+narration · narration-only · keyframe-only | `-observer-components` |
 | F8 | Policy models | none · backchannel · turn projection · both | `-policy-models` |
+| F9 | Fast model | local text · hosted vision · local VLM | `-fast-provider`, `-fast-model`, `-fast-sees` |
+| F10 | Fast action lane | slow-only · bounded fast computer use | `-fast-computer-use` |
+| F11 | Video frame rate | 1 · 3 · 5 · 10 fps | client/evaluator `-fps` |
 
 Every factor is a command-line flag, because a policy that cannot be swapped
 cannot be measured. A cell is a command line rather than a build.
@@ -56,7 +59,8 @@ which is the signal that a model is too small for the job.
 | FDB v1.5 | 498 overlap recordings | overlap, barge-in, turn-taking. F1, F5 |
 | FDB v3 | 100 tool-use recordings | tool use with real function results. F1, F2 |
 | FD-Bench | 6,147 conversations, 77.2 h | endpointing and timing at scale. F1, F4, F5 |
-| DynaCU-Bench | 100 dynamic + 50 static | video observation, action grounding. F1, F3, F7 |
+| OpenRealtime Realtime-CU v1 | 8 task families × pixel and set-of-mark | owned audio/video/camera action correctness and reaction. F2, F3, F7, F9, F10, F11 |
+| DynaCU-Bench | 100 dynamic + 50 static | optional independent video/action validation. F1, F3, F7 |
 
 τ-Voice and DynaCU-Bench stay in their own repositories, and OpenRealtime
 ships a runner for each rather than a copy (`scripts/prepare-tau-voice.sh` and
@@ -94,10 +98,34 @@ openrealtime bench dynacu -verify
 openrealtime bench dynacu -out results/dynacu.json
 ```
 
-A subset of it is also the functional release gate — that video observation and
-action grounding work end to end — which is a narrower question than the suite
-answers: `openrealtime bench dynacu -category S_static -limit 5` is minutes
-rather than hours and is reported incomplete, because it is.
+DynaCU is optional independent validation. It is not a dependency, release
+gate, or prerequisite for an OpenRealtime capability claim.
+
+The repository-owned gate is `openrealtime bench realtime-cu`. It streams live
+screen frames (and a separate physical-camera source where applicable) while
+the model acts, runs every task under both grounding modes, and scores hidden
+browser state deterministically. A category, grounding, or task limit is a
+diagnostic subset and is always reported incomplete; only all sixteen cases
+constitute the suite.
+
+Realtime-CU keeps four clocks conceptually separate:
+
+1. cue to observation: perception/transport latency;
+2. cue to first tool and first effectful action: model reaction and grounding;
+3. tool receipt to completion: browser/action execution;
+4. cue to task completion: dependent multi-step outcome.
+
+Functional correctness is not collapsed into the deadline. A correct late
+action records `correct_action_rate=1` and `deadline_miss_count=1`; this exposes
+whether a change improved reasoning, reaction, or both. Screenshot, wait, and
+pointer movement do not count as the first effectful action. All latency claims
+retain distributions and sample counts.
+
+The first controlled experiment is slow-only action versus bounded fast action
+with every other factor fixed. Subsequent paired cells vary direct keyframes
+versus narration, pixel versus set-of-mark readings within each task, hosted
+Gemini versus a local VLM, and the video rate. A run from a modified worktree or
+a restricted selection remains non-reportable even when it passes.
 
 ## Reporting rules
 
@@ -711,3 +739,58 @@ different trigger in the same scenario being answered late.
 Writing the test found the measurement inverted. FirstAudioAfter returns the
 wait rather than the moment, and subtracting the offset again turned every late
 reply into a large negative number - a bound nothing could fail.
+
+### Where it stands, and the bug class that dominated (F22)
+
+Nine scenarios, three runs each, Gemini 3.5 Flash as the voice and
+Qwen3-30B-A3B deciding: **15–17 of 27** across recent runs, against 33% for the
+shipped predicates on the five scenarios they share. Run-to-run spread is two
+scenarios wide, which is worth stating before any single number is quoted.
+
+| scenario | typical |
+| --- | --- |
+| an ordinary question | 3/3 |
+| asked not to be interrupted | 3/3 |
+| an acknowledgement is not an interruption | 3/3 |
+| ordering from a waiter | 2–3/3 |
+| a recorded menu | 1–2/3 |
+| count as they go | 1–2/3 |
+| translating as they speak | 1–2/3 |
+| cutting in on something wrong | 0/3 |
+| telling them what it saw | 0–1/3 |
+
+### The pattern in the defects
+
+Of everything found end to end, the largest group is one shape: **an act that
+was decided correctly and never carried out**. The model chose it, the eval
+agreed it was right, and some route between the decision and the microphone
+dropped it.
+
+- speak-through was handled where partials are processed and not where pauses
+  are, so most of them - a pause is when the floor is asked - reached nothing
+- call-tool fell through the floor's default branch entirely and did nothing at
+  all, and the phone menu passed anyway until the model got better at choosing
+  the act built for it
+- the adapters refused a turn whose log was empty, which is every turn that
+  begins on a partial: fifty of seventy-seven silent acts died there
+- a proposal nobody dispatched is a key nobody presses - calling the engine
+  rather than the runtime's own slow step skipped the layer that executes what
+  the engine produced
+
+Each looked from outside like the interaction model failing to decide, and in
+each case the decision was already right. That is the argument for recording
+every act *and* every refusal: the two are indistinguishable in a transcript.
+
+### What is left
+
+**The voice, not the decision.** Told to correct a wrong date, the agent cuts
+in at 630-843ms - the fastest response in the suite - and then says "got it" or
+"are you sure?" rather than the right date. The decision, the timing and the
+floor are all correct; what is said into the turn is not.
+
+**Visual latency.** The frame is answered in under a second when it is
+answered; the scenario's other triggers are answered at 13-18 seconds, and
+that is what fails the bound.
+
+**Repetition.** Two or three key presses at a phone menu where one is right,
+now that the in-flight guard stops six.
