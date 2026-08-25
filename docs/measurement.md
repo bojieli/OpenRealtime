@@ -955,3 +955,38 @@ Counting is still 2/5 at a 6.7 second median against interpreting's 1.8, so
 whatever is slow there is slow for its own reason. Sending only the new part of
 the utterance rather than the whole monologue did not move it, which rules out
 prompt size and leaves it open.
+
+### Final state of the scenario suite (F25)
+
+Nine scenarios, three runs each. 15-17 of 27 across runs, and the spread is two
+scenarios wide, so the number is a range rather than a figure.
+
+What has been established, in the order the failures were peeled back:
+
+**Ordering from a waiter passes consistently.** So does an acknowledgement that
+must not stop the agent, and a policy honoured through the speaker's pauses.
+
+**Interpreting live is 4/5 over five runs at a 1.9 second median.** Both
+sentences carried over into English while the other party keeps talking. This
+is the case I was least confident a cascade could do at all.
+
+**Counting is right in shape and unreliable in the tail.** The off-by-one is
+gone - "One" now lands on the first animal rather than four seconds earlier on
+the sentence that asked for counting - and the median wait fell from 6.4
+seconds to 2.0 when premature interjections stopped spending the slot. The
+second animal is still missed about three runs in five, and the trace says why
+without saying what to do: the model chooses speak-through for it, the
+interjection runs and reports no error, and the voice produces nothing. Told to
+count and say nothing else, having already said "One", it stays silent.
+
+**The visual case now reports what it saw** and fails only on restraint: it
+also speaks after the frame showing the build still running, which is not the
+moment anybody asked about.
+
+**Cutting in on something wrong is the one that has never passed.** It
+interrupts in 630-843 milliseconds, the fastest response in the suite, and says
+"got it" or "are you sure?" instead of the date the contract gave it.
+
+The pattern across the last three is one thing: the decision layer is choosing
+correctly and the voice is not saying what the choice was for. That is a
+different problem from the one this work started on, and a smaller one.
