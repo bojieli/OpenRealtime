@@ -23,6 +23,7 @@ import (
 func (runtime *runtime) situation(decision interaction.Context) interaction.Situation {
 	snapshot := runtime.store.Snapshot()
 	state := interaction.Situation{
+		Contract:      runtime.Settings().Instruction,
 		Pins:          runtime.pinboard.Lines(decision.NowNS),
 		Recent:        runtime.window.Lines(snapshot.Items),
 		AgentSpeaking: decision.Duplex.AgentSpeaking,

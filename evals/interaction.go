@@ -225,6 +225,26 @@ func InteractionCases() []Case {
 			[]Action{ActKeepSpeaking}, ActStopSpeaking, ActStaySilent),
 
 		// --- interrupting to correct ---
+		act("correct-against-the-contract", interaction.Situation{
+			Contract: "You help plan projects. The deadline the client gave is the 3rd of the month. " +
+				"Correct the person immediately if they say a date that contradicts it.",
+			Recent:  []string{"user: right, so let me plan this out"},
+			Speaker: "user", Speaking: true,
+			Heard:   "we'll do the review next week and ship it by the 13th which gives us",
+			Silence: "0ms",
+		}, "the fact being corrected against is in the contract, not in anything anybody said",
+			[]Action{ActInterrupt, ActSpeakThrough}, ActStaySilent),
+
+		act("contract-consistent", interaction.Situation{
+			Contract: "You help plan projects. The deadline the client gave is the 3rd of the month. " +
+				"Correct the person immediately if they say a date that contradicts it.",
+			Recent:  []string{"user: right, so let me plan this out"},
+			Speaker: "user", Speaking: true,
+			Heard:   "we'll do the review this week and ship it by the 3rd which gives us",
+			Silence: "0ms",
+		}, "the same contract with nothing contradicting it",
+			[]Action{ActStaySilent}, ActInterrupt, ActAnswer),
+
 		act("correct-a-wrong-fact", interaction.Situation{
 			Recent: []string{
 				"agent: the deadline they gave is the 3rd",

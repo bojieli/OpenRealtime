@@ -89,3 +89,24 @@ func contains(acts []interaction.Act, want interaction.Act) bool {
 	}
 	return false
 }
+
+// A decision about when to speak often turns on something only the deployment
+// knows. Correcting somebody mid-sentence never worked without this, because
+// the fact being corrected against was never in front of the decision.
+func TestRenderCarriesTheAgentContract(t *testing.T) {
+	block := interaction.Situation{
+		Contract: "The deadline the client gave is the third of the month.",
+		Recent:   []string{"user: so we ship by the thirteenth"},
+	}.Render()
+	if !strings.Contains(block, "third of the month") {
+		t.Fatalf("the contract never reached the decision:\n%s", block)
+	}
+	contract := strings.Index(block, "third of the month")
+	window := strings.Index(block, "thirteenth")
+	if contract > window {
+		t.Fatalf("the contract was rendered after the window it should outlive:\n%s", block)
+	}
+	if strings.Contains(interaction.Situation{}.Render(), "What this agent is for") {
+		t.Fatal("an empty contract still announced a section")
+	}
+}

@@ -55,6 +55,16 @@ const (
 // the instant changes constantly, and putting them the other way round would
 // invalidate the cache on every tick.
 type Situation struct {
+	// Contract is what this deployment told the agent to be and to do.
+	//
+	// It belongs here for the same reason the conversation does. A decision
+	// about when to speak often turns on something only the contract knows -
+	// that a date is wrong, that a price is out of range, that a caller is not
+	// entitled to what they just asked for - and a model that cannot see it
+	// has no way to tell an ordinary sentence from one worth cutting into.
+	// Correcting somebody mid-sentence never once worked without this, because
+	// the fact being corrected against was never in front of the decision.
+	Contract string
 	// Pins are standing instructions someone gave out loud, each carrying its
 	// own age. They live outside the conversation window because truncating
 	// that window must never silently repeal a policy somebody set.
@@ -115,6 +125,9 @@ func (state Situation) AvailableActs() []Act {
 // is spending capacity on the translation.
 func (state Situation) Render() string {
 	var block strings.Builder
+	if trimmed := strings.TrimSpace(state.Contract); trimmed != "" {
+		block.WriteString("What this agent is for:\n" + trimmed + "\n\n")
+	}
 	if len(state.Pins) > 0 {
 		block.WriteString("Standing instructions:\n")
 		for _, pin := range state.Pins {
