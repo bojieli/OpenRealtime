@@ -276,6 +276,16 @@ try {
       JSON.stringify((await channel("obs.audio")).entries.map((entry) => entry.body.slice(0, 160))));
   }
 
+  const ALL_CHANNELS = ["obs.audio", "obs.text", "obs.screen", "obs.camera", "obs.browser",
+                        "obs.tools", "act.speech", "act.text", "act.computer", "act.tools",
+                        "act.artifact"];
+  const carriedSoFar = new Set();
+  const noteCarried = async () => {
+    for (const id of ALL_CHANNELS) {
+      if ((await channel(id)).count > 0) carriedSoFar.add(id);
+    }
+  };
+
   // --- the video channels, if this endpoint can see -------------------------
 
   if (videoNegotiated) {
@@ -313,13 +323,21 @@ try {
     // something reasonable and a test learning nothing. An agent that asks
     // before acting is a configuration, not a capability, and the point here
     // is the capability.
-    await evaluate(`
-      document.getElementById('instructions').value = ${JSON.stringify(
-        "You are operating a browser on the person's behalf. When they ask you to press or click " +
-        "something on the screen, call computer.click immediately, using the coordinates from the " +
-        "most recent observation of that source. Do not ask for confirmation and do not describe " +
-        "what you are about to do first - click, then say what happened in a few words.")};
-      document.getElementById('apply-instructions').click();`);
+    // Appended, not substituted. The first version replaced the instructions
+    // wholesale with a browser-operating prompt, and the agent then spent the
+    // rest of the session unable to think about anything but the screen - it
+    // stopped reading files, because as far as it knew it did not have any.
+    // Which is a fair thing for it to conclude, and a test learning about its
+    // own prompt rather than about the system.
+    await evaluate(`(() => {
+      const box = document.getElementById('instructions');
+      box.value = box.value.trim() + " " + ${JSON.stringify(
+        "When the person asks you to press or click something on a screen, call computer.click " +
+        "immediately, using the coordinates from the most recent observation of that source. Do " +
+        "not ask for confirmation first - click, then say what happened in a few words.")};
+      document.getElementById('apply-instructions').click();
+      return box.value.length;
+    })()`);
     await waitFor("the new prompt to be in force", async () =>
       (await evaluate("document.getElementById('instructions-state').textContent")) === "in force",
       30000);
@@ -349,6 +367,30 @@ try {
     // spends the rest of the session's context describing a page nobody is
     // going to ask about again.
     await evaluate("document.getElementById('browser').click()");
+  }
+
+  // --- a second session, for the channels that need room to think ------------
+  //
+  // Continuous narration is not free: two sources at three frames a second put
+  // hundreds of observations into one trajectory, and the first version of
+  // this run asked its last question with forty thousand tokens of synthetic
+  // test pattern behind it, on a model whose context is forty thousand and
+  // change. Both halves failed, and what the run measured was context
+  // endurance - a real thing to measure, and not this thing.
+  //
+  // So the video channels get one session and the conversational ones get
+  // another, and reconnecting is exercised on the way through.
+  await noteCarried();
+  if (videoNegotiated) {
+    await evaluate("document.getElementById('disconnect').click()");
+    await waitFor("the first session to close", async () =>
+      !live.includes(await evaluate("document.getElementById('state').textContent")), 30000);
+    await evaluate("document.getElementById('connect').click()");
+    await waitFor("the second session to open", async () =>
+      live.includes(await evaluate("document.getElementById('state').textContent")), 60000);
+    check("the surface reconnects into a fresh session",
+      live.includes(await evaluate("document.getElementById('state').textContent")),
+      await evaluate("document.getElementById('state').textContent"));
   }
 
   // --- a real model, a real tool -------------------------------------------
@@ -417,12 +459,9 @@ try {
 
   // --- what carried ---------------------------------------------------------
 
-  const carried = [];
-  const silent = [];
-  for (const id of ["obs.audio", "obs.text", "obs.screen", "obs.camera", "obs.browser", "obs.tools",
-                    "act.speech", "act.text", "act.computer", "act.tools", "act.artifact"]) {
-    ((await channel(id)).count > 0 ? carried : silent).push(id);
-  }
+  await noteCarried();
+  const carried = ALL_CHANNELS.filter((id) => carriedSoFar.has(id));
+  const silent = ALL_CHANNELS.filter((id) => !carriedSoFar.has(id));
   console.log(`\ncarried: ${carried.join(", ")}`);
   console.log(`silent:  ${silent.join(", ") || "none"}`);
 

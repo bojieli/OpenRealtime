@@ -227,7 +227,7 @@ try {
     declared.tools?.some((tool) => tool.name === "display_artifact" && tool.type === "function"),
     JSON.stringify(declared.tools?.map((tool) => tool.name)));
   check("the computer-use vocabulary is declared",
-    declared.tools?.filter((tool) => tool.name.startsWith("computer.")).length === 9,
+    declared.tools?.filter((tool) => tool.name.startsWith("computer.")).length === 10,
     `${declared.tools?.filter((tool) => tool.name.startsWith("computer.")).length} actions`);
   check("tool declarations carry their confirmation requirement",
     declared.tools?.find((tool) => tool.name === "write_file")?.openrealtime?.confirm === "always");

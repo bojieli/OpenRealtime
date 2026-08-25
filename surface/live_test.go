@@ -92,7 +92,7 @@ func TestLiveSurfaceAgainstRealModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("locate the driver: %v", err)
 	}
-	runCtx, cancelRun := context.WithTimeout(context.Background(), 10*time.Minute)
+	runCtx, cancelRun := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancelRun()
 	command := exec.CommandContext(runCtx, node, driver, local)
 	command.Env = append(os.Environ(), "CHROMIUM="+chromium, "CDP_PORT="+freePort(t))

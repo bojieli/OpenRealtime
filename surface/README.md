@@ -204,7 +204,37 @@ slow model refuses tool calls fails at the first assertion, and should.
 The three video channels need the server to have negotiated `video.input`,
 which needs a video observer, which needs a model that can see. A deployment
 with no vision model connects fine and reports no video input, and the live run
-says so rather than reporting three channels as silent.
+says so rather than reporting three channels as silent. To run them, add a
+narrator:
+
+```sh
+vllm serve Qwen/Qwen2.5-VL-7B-Instruct --served-model-name qwen-vl --port 8003 \
+  --gpu-memory-utilization 0.28 --max-model-len 16384
+
+openrealtime serve ... \
+  -observers audio+video -narrator dedicated \
+  -vision-provider openai-compatible -vision-url http://127.0.0.1:8003/v1 -vision-model qwen-vl \
+  -narration actionable
+```
+
+`-narration actionable` is what makes computer use possible at all: it asks the
+narrator for control positions as well as a description, so the agent is told
+where the button is rather than left to infer a coordinate from pixels it never
+saw. A 7B narrator locates a large control well enough to hit it; asking it for
+five-pixel precision is a different and much harder question.
+
+The run does the video half and the conversational half on **two sessions**.
+Continuous narration is not free — two sources at three frames a second put
+hundreds of observations into one trajectory — and the first version of this
+asked its last question with forty thousand tokens of synthetic test pattern
+behind it, on a model whose context is forty thousand and change. Both halves
+failed, and what the run measured was context endurance: a real thing to
+measure, and not this thing.
+
+Against a local stack (Qwen3-30B reasoning, Qwen2.5-VL-7B narrating, SenseVoice
+listening, FishAudio speaking) it passes thirty-one checks and nine of the
+eleven channels carry. The two that do not are named: a headless browser has no
+display to share, and a model that speaks its answer never writes one.
 
 ## Building on it
 

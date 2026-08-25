@@ -319,8 +319,8 @@ func TestComputerUseIsDeclaredOnlyWithABrowser(t *testing.T) {
 			artifacts++
 		}
 	}
-	if computer != 9 {
-		t.Fatalf("the published vocabulary is nine actions, got %d", computer)
+	if computer != 10 {
+		t.Fatalf("the published vocabulary is ten actions, got %d", computer)
 	}
 	if files != 3 || artifacts != 1 {
 		t.Fatalf("expected three file tools and one artifact tool, got %d and %d", files, artifacts)

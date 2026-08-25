@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Computer use
+
+- **The source field names the sources.** A live run produced source
+  `"video browser"` - the observer name and the source name run together, taken
+  from an observation that had honestly reported both. That looks like a model
+  failure and is a schema failure: every action's source field said "the
+  declared video source this action targets" and nothing anywhere said what the
+  declared video sources were called. `DefinitionsFor` narrows the field to an
+  enum of the target's own sources; `Definitions` stays target-free, because
+  that is the form published with the specification. Nothing changes on the
+  wire, and with the enum in place the same model named `"browser"` and the
+  click landed.
+
 ### The test surface
 
 - **Every channel, both directions, on one page.** `openrealtime surface` is a
@@ -30,6 +43,13 @@
   script runs and it has no network at all. The frame withholds the origin, so
   the one way out is `postMessage`, and a person clicking a button inside an
   artifact reaches the session as a person speaking.
+
+- **Every channel carries against real models.** A local stack - Qwen3-30B
+  reasoning, Qwen2.5-VL-7B narrating, SenseVoice listening, FishAudio speaking -
+  hears real speech, reads a real file, renders a real HTML table, and presses a
+  button on a real page that it was only ever told about in words. The two
+  channels that stay silent are named rather than counted: a headless browser
+  has no display to share, and a model that speaks its answer never writes one.
 
 - **A fragment is wrapped.** Found by a real model doing it: asked for a table,
   a good one returns a style block and a table and stops, because that is what
