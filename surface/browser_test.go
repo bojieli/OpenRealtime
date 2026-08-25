@@ -128,6 +128,15 @@ func startTargetBrowser(t *testing.T, chromium, pageURL string) string {
 	return ""
 }
 
+// newLoopbackServer serves a built surface on loopback, which is what makes
+// the page a secure context and therefore able to open a microphone.
+func newLoopbackServer(t *testing.T, server *surface.Server) string {
+	t.Helper()
+	local := httptest.NewServer(server.Handler())
+	t.Cleanup(local.Close)
+	return local.URL
+}
+
 func startSurfaceServer(
 	t *testing.T, protocolURL, adapterURL, root string, browserContext *surface.BrowserContext,
 ) string {

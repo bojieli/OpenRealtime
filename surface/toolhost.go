@@ -195,7 +195,7 @@ func (host *ToolHost) artifactTool() Tool {
     },
     "html": {
       "type": "string",
-      "description": "A complete HTML document. Inline style and script run; the artifact is sandboxed and cannot reach the network, so everything it needs must be in the document. Up to %d bytes. To send a value back to the conversation, call window.parent.postMessage({text: \"...\"}, \"*\") - it arrives as a message from the person."
+      "description": "The markup to display: either a complete HTML document or just the fragment that is the answer, such as a table or a chart - a fragment is wrapped in a readable document for you. Inline style and script run; the artifact is sandboxed and cannot reach the network, so everything it needs must be in the markup. Up to %d bytes. To send a value back to the conversation, call window.parent.postMessage({text: \"...\"}, \"*\") - it arrives as a message from the person."
     }
   },
   "required": ["artifact_id", "title", "html"],

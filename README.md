@@ -109,6 +109,7 @@ taken in, a dangerous tool declared, and nothing happens. See
 | [Providers](docs/providers.md) | every model provider it runs on, and how to add one |
 | [OpenAI's own client](examples/sdk-client/README.md) | the compatibility claim, checked by the published SDK |
 | [The developer console](console/README.md) | both transports, video, and tools on your own machine |
+| [The test surface](surface/README.md) | every channel, both directions, on one page |
 | [Architecture](docs/architecture.md) | the four subsystems and why they are separate |
 | [Bindings](docs/bindings/README.md) | which voice stack, and what each one owns |
 | [The OpenRealtime Protocol](docs/protocol/openrealtime-1.md) | normative spec for video, observations, and computer use |

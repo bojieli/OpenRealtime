@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### The test surface
+
+- **Every channel, both directions, on one page.** `openrealtime surface` is a
+  second local client, and deliberately not a second console: the console is
+  the minimal worked example of the protocol, and this is the bench. Six
+  channels in — audio, typed text, screen, camera, a browser, tool results —
+  and five out: speech, text, computer use, tool calls, and HTML artifacts.
+  Each one shows whether it is carrying anything and how much, because a
+  channel at zero when you expected traffic is the most common finding in an
+  end-to-end run and is invisible in a transcript, which only shows what did
+  arrive.
+
+- **The browser channel closes a loop the protocol described and nothing
+  implemented.** A context the surface both captures frames from and performs
+  clicks against: ordinary `video.input` frames under a source name, ordinary
+  `computer.*` actions naming that source, so what the agent looks at and what
+  it acts on are the same page in the same coordinate space.
+  `browser.Capture` had existed since the beginning for "a caller that is
+  feeding the video stream rather than acting", and nothing was that caller.
+
+- **Generative UI is an ordinary function tool, and stays one.** `display_artifact`
+  adds no event, no namespace, and nothing the protocol knows about — a model
+  that can call a function can drive it against any Realtime server. The
+  surface renders it in a frame loaded from its own route rather than from
+  `srcdoc`, so it carries a policy written for an artifact: its own inline
+  script runs and it has no network at all. The frame withholds the origin, so
+  the one way out is `postMessage`, and a person clicking a button inside an
+  artifact reaches the session as a person speaking.
+
+- **A fragment is wrapped.** Found by a real model doing it: asked for a table,
+  a good one returns a style block and a table and stops, because that is what
+  the answer is. Insisting on a full document would be holding out for
+  boilerplate that adds nothing from a model that will keep declining to write
+  it.
+
 ### Measurement
 
 - **What the fast/slow arrangement costs a tool call, on sixteen tasks.**

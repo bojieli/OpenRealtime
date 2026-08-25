@@ -46,6 +46,41 @@ type Artifact struct {
 	Bytes     int       `json:"bytes"`
 }
 
+// Document is what the frame loads: the model's HTML, wrapped if it needs to
+// be.
+//
+// Models write fragments. Asked for a table, a good one returns a style block
+// and a table and stops, because that is what the answer is - and a surface
+// that insisted on a full document would be holding out for boilerplate that
+// adds nothing, from a model that will keep declining to write it. So a
+// fragment is wrapped here, once, in the smallest document that makes it
+// render as intended: a charset so text is not mojibake, a viewport so it is
+// not laid out at desktop width and scaled down, and a readable default font,
+// because a fragment carries no font and the frame's default is Times.
+//
+// The bytes the model wrote stay in HTML, unmodified. What it produced and
+// what the browser loads are different questions, and a developer looking at
+// an artifact that came out wrong needs to be able to ask the first one.
+func (artifact Artifact) Document() string {
+	head := strings.ToLower(artifact.HTML)
+	if strings.Contains(head, "<!doctype") || strings.Contains(head, "<html") {
+		return artifact.HTML
+	}
+	return `<!doctype html><html><head><meta charset="utf-8">` +
+		`<meta name="viewport" content="width=device-width, initial-scale=1">` +
+		`<title>` + escapeTitle(artifact.Title) + `</title>` +
+		`<style>body{margin:0;padding:1rem;font:14px/1.55 ui-sans-serif,system-ui,sans-serif;` +
+		`color-scheme:light dark}</style></head><body>` + artifact.HTML + `</body></html>`
+}
+
+// escapeTitle keeps a title with a bracket in it from closing the tag it is
+// inside. The title comes from a model, and a model that wrote one containing
+// markup would otherwise be writing markup into the head of the document.
+func escapeTitle(title string) string {
+	replacer := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+	return replacer.Replace(title)
+}
+
 // ArtifactStore holds what the agent rendered and serves it to the frame.
 type ArtifactStore struct {
 	maxBytes int
@@ -191,5 +226,5 @@ func (store *ArtifactStore) ServeHTTP(writer http.ResponseWriter, request *http.
 	writer.Header().Set("Referrer-Policy", "no-referrer")
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.Header().Set("X-Artifact-Version", strconv.Itoa(artifact.Version))
-	_, _ = writer.Write([]byte(artifact.HTML))
+	_, _ = writer.Write([]byte(artifact.Document()))
 }

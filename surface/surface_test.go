@@ -549,3 +549,51 @@ func TestAnActionReachesTheBrowserAndAnotherSourceDoesNot(t *testing.T) {
 		t.Fatal("a coordinate outside the declared space must be refused")
 	}
 }
+
+// Models write fragments. Asked for a table, a good one returns a style block
+// and a table and stops, because that is what the answer is - and this was
+// found by a real model doing exactly that against the live run.
+func TestAFragmentIsWrappedAndADocumentIsLeftAlone(t *testing.T) {
+	store := surface.NewArtifactStore(0)
+	fragment, err := store.Put("table", "Notes", `<style>td{padding:8px}</style><table><tr><td>x</td></tr></table>`)
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	document := fragment.Document()
+	for _, required := range []string{"<!doctype html>", `charset="utf-8"`, "width=device-width", "<table>"} {
+		if !strings.Contains(document, required) {
+			t.Fatalf("a wrapped fragment must carry %q, got %q", required, document)
+		}
+	}
+	// What the model wrote stays inspectable. What it produced and what the
+	// browser loads are different questions, and a developer looking at an
+	// artifact that came out wrong needs to be able to ask the first one.
+	if strings.Contains(fragment.HTML, "<!doctype") {
+		t.Fatalf("the model's own bytes must not be rewritten, got %q", fragment.HTML)
+	}
+
+	whole, err := store.Put("page", "Page", "<!DOCTYPE html><html><body>done</body></html>")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	if whole.Document() != whole.HTML {
+		t.Fatalf("a complete document must be served unchanged, got %q", whole.Document())
+	}
+}
+
+// A title is a model's own words, and one containing markup would otherwise be
+// writing markup into the head of the document it names.
+func TestATitleCannotEscapeTheTagItIsIn(t *testing.T) {
+	store := surface.NewArtifactStore(0)
+	artifact, err := store.Put("x", `</title><script>alert(1)</script>`, "<p>body</p>")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	document := artifact.Document()
+	if strings.Contains(document, "<script>alert(1)</script>") {
+		t.Fatalf("a title must not close its own tag, got %q", document)
+	}
+	if !strings.Contains(document, "&lt;/title&gt;") {
+		t.Fatalf("the title must be escaped rather than dropped, got %q", document)
+	}
+}
