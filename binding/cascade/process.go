@@ -40,6 +40,14 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	if err := runtime.raiseRepairs(); err != nil {
 		runtime.fail("repair_error", err)
 	}
+	// A turn-scoped policy suppresses one answer - wait, I have more to say -
+	// and is discharged once that answer happens. Expiring it when the speaker
+	// stopped would be too early: they stop constantly while making the point
+	// the policy was protecting. Expiring it here, where the agent is about to
+	// respond to a completed turn, is the moment it was asking about.
+	if batch.Contains(trajectory.KindObservation) {
+		defer runtime.pinboard.EndTurn()
+	}
 	revision := runtime.latestRevision(batch)
 	plan := runtime.policies.Rollout.Plan(interaction.RolloutInput{
 		Context: interaction.Context{

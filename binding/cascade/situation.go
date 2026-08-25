@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -116,11 +117,10 @@ func (runtime *runtime) toolLines() []string {
 // ended the turn describes what the predicates did, not what they were looking
 // at, and comparing an answer to that is comparing answers to two questions.
 func (runtime *runtime) beginShadow(decision interaction.Context) *interaction.Situation {
-	if runtime.policies.ShadowInteraction == nil || runtime.policies.Interaction == nil {
+	if runtime.policies.ShadowInteraction == nil || decision.Situation == nil {
 		return nil
 	}
-	state := runtime.situation(decision)
-	return &state
+	return decision.Situation
 }
 
 // endShadow asks the interaction model and records both answers.
@@ -178,4 +178,37 @@ func predicateAct(state interaction.Situation, projected bool) interaction.Act {
 		return interaction.ActAnswer
 	}
 	return interaction.InertialAct(state)
+}
+
+// noticeStanding runs the pass that lifts an interaction policy out of what
+// somebody just said.
+//
+// Off the critical path, and deliberately so. A policy governs what happens
+// next rather than what happens now, so it has to land before the following
+// utterance rather than before this reply - a budget of hundreds of
+// milliseconds where the decision it feeds has tens.
+func (runtime *runtime) noticeStanding(text string) {
+	if runtime.policies.Extraction == nil || !v1.CarriesSpeech(text) {
+		return
+	}
+	runtime.wait.Add(1)
+	go func() {
+		defer runtime.wait.Done()
+		extraction, err := runtime.policies.Extraction.Extract(
+			runtime.ctx, runtime.pinboard.InForce(), text)
+		if err != nil || runtime.ctx.Err() != nil {
+			// A policy that could not be read is a policy nobody recorded,
+			// which is the failure this leans away from - but inventing one
+			// from an answer nobody understood is worse.
+			return
+		}
+		switch extraction.Kind {
+		case "pin":
+			instruction := extraction.Instruction
+			instruction.SetNS = runtime.scheduler.NowNS()
+			runtime.pinboard.Pin(instruction)
+		case "revoke":
+			runtime.pinboard.Revoke(extraction.Instruction.Text)
+		}
+	}()
 }

@@ -88,6 +88,14 @@ type Policies struct {
 	// ShadowInteraction records each decision taken twice. Non-nil implies
 	// shadowing.
 	ShadowInteraction func(ShadowDecision)
+	// Extraction notices when somebody set an interaction policy out loud.
+	//
+	// Without it the interaction model is a turn-taking predicate with a
+	// larger vocabulary: it can read the conversation, but nothing lifts a
+	// policy out of that conversation and keeps it once the window has moved
+	// on. Measured over a run of scripted conversations, none of two hundred
+	// and sixty decisions carried a standing instruction until this existed.
+	Extraction Extractor
 }
 
 // ShadowDecision is one instant, decided twice.
@@ -204,4 +212,14 @@ type Context struct {
 	// Phase names which cognition provider the decision concerns, where that
 	// is meaningful. It is empty for decisions that concern neither.
 	Phase trajectory.Phase
+	// Situation is the conversation and the instant together, for policies
+	// that need both.
+	//
+	// Its absence was the reason no policy here could be changed by the people
+	// it governed. Everything above describes acoustics and a partial
+	// transcript, so a policy set out loud - let me finish, tell me the moment
+	// it lands, count them as I go - was not merely ignored: there was no path
+	// by which it could arrive. It is a pointer because most decisions do not
+	// need it and assembling it is not free.
+	Situation *Situation
 }

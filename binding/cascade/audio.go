@@ -358,9 +358,16 @@ func (runtime *runtime) observeAudio(
 				return latest, err
 			}
 		}
-		// The interaction model is asked here, before the predicates run, so
-		// that it sees the instant they are about to act on rather than the
-		// one they leave behind. While shadowing it decides nothing.
+		// The conversation is attached here, before the predicates run, so
+		// that whoever reads it sees the instant they are about to act on
+		// rather than the one they leave behind. It is assembled once: the
+		// floor may decide from it and the shadow may be scored against it,
+		// and two assemblies of "now" taken a few milliseconds apart are two
+		// different moments.
+		if runtime.policies.Interaction != nil {
+			state := runtime.situation(decision)
+			decision.Situation = &state
+		}
 		shadow := runtime.beginShadow(decision)
 		// A continuer is decided about here because here is where the words
 		// are: a policy that only saw the acoustic envelope could not tell a
@@ -466,6 +473,9 @@ func (runtime *runtime) commitObservation(ctx context.Context, observation perce
 	}
 	if err := runtime.sink.Observation(ctx, observation); err != nil {
 		return err
+	}
+	if observation.Authority == trajectory.AuthorityUser && observation.Final {
+		runtime.noticeStanding(observation.Text)
 	}
 	_, err := runtime.coordinator.Submit(eventloop.Event{
 		Type: observationEventType(observation), Source: observation.Observer, Channel: observationChannel(observation),

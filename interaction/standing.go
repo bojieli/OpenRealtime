@@ -1,6 +1,13 @@
 package interaction
 
-import "strings"
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
+)
 
 // Scope is how long a standing instruction lasts.
 //
@@ -149,4 +156,71 @@ func ParsePin(text string) (kind string, instruction StandingInstruction, ok boo
 		return "revoke", StandingInstruction{Text: strings.TrimSpace(line[len("revoke "):])}, true
 	}
 	return "", StandingInstruction{}, false
+}
+
+// Generator produces a short free-form answer. Extraction needs one because
+// the policy it finds cannot be drawn from an enumeration.
+type Generator interface {
+	Name() string
+	Generate(ctx context.Context, prompt, evidence string, maxTokens int) (string, error)
+}
+
+// Extractor notices when somebody set an interaction policy out loud.
+type Extractor interface {
+	Name() string
+	// Extract reads one finished utterance against the policies already in
+	// force, and returns what to do about it.
+	Extract(ctx context.Context, existing []StandingInstruction, utterance string) (Extraction, error)
+}
+
+// Extraction is what an utterance did to the set of standing policies.
+type Extraction struct {
+	// Kind is "none", "pin", or "revoke".
+	Kind        string
+	Instruction StandingInstruction
+}
+
+// NewExtractor builds the pass over a generator.
+func NewExtractor(generator Generator) (Extractor, error) {
+	if generator == nil {
+		return nil, errors.New("an extractor requires a generator")
+	}
+	return modelExtractor{generator: generator}, nil
+}
+
+type modelExtractor struct{ generator Generator }
+
+func (extractor modelExtractor) Name() string { return "extract:" + extractor.generator.Name() }
+
+// Extract runs the pass and refuses to guess.
+//
+// An unparseable answer produces nothing rather than a policy nobody set.
+// The asymmetry elsewhere runs the other way - a missed policy fails silently
+// and a spurious one is merely never triggered - but that argument is about
+// what the model should lean towards, not about what this should invent when
+// the model has said something it does not understand.
+func (extractor modelExtractor) Extract(
+	ctx context.Context, existing []StandingInstruction, utterance string,
+) (Extraction, error) {
+	if !v1.CarriesSpeech(utterance) {
+		return Extraction{Kind: "none"}, nil
+	}
+	answer, err := extractor.generator.Generate(
+		ctx, ExtractionInstruction, RenderForExtraction(existing, utterance), 96)
+	if err != nil {
+		return Extraction{}, err
+	}
+	kind, instruction, ok := ParsePin(answer)
+	if !ok {
+		return Extraction{}, fmt.Errorf("extraction returned %q, which is not an answer", truncateAnswer(answer))
+	}
+	return Extraction{Kind: kind, Instruction: instruction}, nil
+}
+
+func truncateAnswer(text string) string {
+	text = strings.Join(strings.Fields(text), " ")
+	if len(text) > 80 {
+		return text[:80] + "…"
+	}
+	return text
 }

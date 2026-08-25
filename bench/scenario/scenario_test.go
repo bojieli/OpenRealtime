@@ -120,3 +120,21 @@ func TestToolCheckReportsWhatWasMissing(t *testing.T) {
 		t.Fatalf("a tool that was called failed its check: %v", called.Failures)
 	}
 }
+
+// The harness bug that made every scenario measure the wrong thing: the
+// backend returns 44.1 kHz whatever it is asked for, and 44.1 kHz samples fed
+// to a 24 kHz pipeline stretch by 1.84 and drop an octave.
+func TestResampleMatchesTheSessionRate(t *testing.T) {
+	// One second of 44.1 kHz becomes one second of 24 kHz.
+	source := make([]int16, 44100)
+	for index := range source {
+		source[index] = int16(index % 1000)
+	}
+	got := scenario.ResampleForTest(source, 44100, 24000)
+	if len(got) != 24000 {
+		t.Fatalf("a second of audio became %d samples at 24 kHz, want 24000", len(got))
+	}
+	if same := scenario.ResampleForTest(source, 24000, 24000); len(same) != len(source) {
+		t.Fatalf("resampling to the same rate changed the length: %d then %d", len(source), len(same))
+	}
+}

@@ -345,3 +345,75 @@ func (client *Client) Metrics() Metrics {
 }
 
 var _ interaction.Decider = (*Client)(nil)
+
+// Generate asks for a short free-form answer rather than an enumerated one.
+//
+// Most decisions here are a choice among options, which is what makes them
+// cheap and checkable. One is not: noticing that somebody has set a policy out
+// loud has to come back with the policy, and no enumeration can contain it.
+//
+// It runs off the critical path, so the budget is generous where Decide's is
+// four tokens - what it produces is read once per turn rather than five times
+// a second.
+func (client *Client) Generate(ctx context.Context, prompt, evidence string, maxTokens int) (string, error) {
+	if strings.TrimSpace(prompt) == "" {
+		return "", errors.New("generation requires a prompt")
+	}
+	if maxTokens <= 0 {
+		maxTokens = 128
+	}
+	content := prompt
+	if strings.TrimSpace(evidence) != "" {
+		content += "\n\n" + evidence
+	}
+	body := chatRequest{
+		Model: client.config.Model, MaxTokens: maxTokens, Temperature: 0,
+		Messages: []chatMessage{{Role: "user", Content: content}},
+	}
+	switch client.config.Reasoning {
+	case openaicompat.ReasoningControlTemplateKwargs:
+		body.ChatTemplateKwargs = map[string]any{"enable_thinking": false}
+	case openaicompat.ReasoningControlEnableThinking:
+		disabled := false
+		body.EnableThinking = &disabled
+	case openaicompat.ReasoningControlEffort:
+		body.ReasoningEffort = "none"
+	case openaicompat.ReasoningControlThinkingObject:
+		body.Thinking = map[string]any{"type": "disabled"}
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return "", err
+	}
+	timed, cancel := context.WithTimeout(ctx, client.config.Timeout*4)
+	defer cancel()
+	request, err := http.NewRequestWithContext(
+		timed, http.MethodPost, client.config.BaseURL+"/chat/completions", bytes.NewReader(encoded))
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	if strings.TrimSpace(client.config.APIKey) != "" {
+		request.Header.Set("Authorization", "Bearer "+client.config.APIKey)
+	}
+	response, err := client.http.Do(request)
+	if err != nil {
+		return "", fmt.Errorf("policy generation: %w", err)
+	}
+	defer response.Body.Close()
+	payload, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("policy generation returned %s", response.Status)
+	}
+	var decoded chatResponse
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		return "", err
+	}
+	if len(decoded.Choices) == 0 {
+		return "", errors.New("policy generation returned no choices")
+	}
+	return strings.TrimSpace(decoded.Choices[0].Message.Content), nil
+}

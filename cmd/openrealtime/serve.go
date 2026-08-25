@@ -112,18 +112,20 @@ type serveOptions struct {
 	webrtcSTUN   string
 	webrtcOrigin string
 
-	gpuCapacity       int
-	policyURL         string
-	policyModel       string
-	policyTokenEnv    string
-	policyGuided      bool
-	policies          string
-	interactionShadow string
-	policyReasoning   string
-	projectionHold    time.Duration
-	holdingAfter      time.Duration
-	bargeIn           string
-	bargeInHold       time.Duration
+	gpuCapacity         int
+	policyURL           string
+	policyModel         string
+	policyTokenEnv      string
+	policyGuided        bool
+	policies            string
+	interactionShadow   string
+	interactionFloor    bool
+	interactionLiveness time.Duration
+	policyReasoning     string
+	projectionHold      time.Duration
+	holdingAfter        time.Duration
+	bargeIn             string
+	bargeInHold         time.Duration
 
 	computerUse     bool
 	browserURL      string
@@ -267,6 +269,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.computerConfirm, "computer-confirm", "", "override every computer.* confirmation requirement: never, policy, or always")
 	flags.StringVar(&options.policies, "policy-models", "none", "comma-separated policy models: backchannel, turn-projection, overlap, interaction, all, or none")
 	flags.StringVar(&options.interactionShadow, "interaction-shadow", "", "file to record shadow interaction decisions to; enabling it decides nothing")
+	flags.BoolVar(&options.interactionFloor, "interaction-floor", false, "let the interaction model own turn-taking instead of the silence rule and the projection")
+	flags.DurationVar(&options.interactionLiveness, "interaction-liveness", 20*time.Second, "longest the interaction model may hold the floor past the silence threshold")
 	flags.StringVar(&options.policyReasoning, "policy-reasoning", "chat_template_kwargs",
 		"how the policy endpoint is told not to think: chat_template_kwargs, enable_thinking, reasoning_effort, thinking_object, or none for an instruct model")
 	flags.DurationVar(&options.holdingAfter, "holding-after", 2500*time.Millisecond,
@@ -581,6 +585,28 @@ func applyPolicyModels(
 		policies.Floor = interaction.NewEngineFloor(interaction.EngineFloorOptions{
 			Projection: policy, ProjectionHold: options.projectionHold,
 		})
+	}
+	if wholeDecision {
+		// Extraction shares the endpoint but not the call shape: it needs a
+		// policy back, which no enumeration can contain.
+		extractor, err := interaction.NewExtractor(decider)
+		if err != nil {
+			return err
+		}
+		policies.Extraction = extractor
+	}
+	// The act floor is installed last because it replaces the floor outright,
+	// and the projection above rebuilds one. Installing it earlier would leave
+	// it configured and overwritten - a flag that reports success and changes
+	// nothing, which is the failure mode a measured factor must never have.
+	if wholeDecision && options.interactionFloor {
+		floor, err := interaction.NewActFloor(policies.Interaction, interaction.ActFloorOptions{
+			Liveness: options.interactionLiveness,
+		})
+		if err != nil {
+			return err
+		}
+		policies.Floor = floor
 	}
 	return nil
 }
