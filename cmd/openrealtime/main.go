@@ -42,6 +42,8 @@ func run(arguments []string, stdout, stderr io.Writer) error {
 		return runBench(arguments[1:], stdout)
 	case "eval":
 		return runEval(arguments[1:], stdout)
+	case "scenario":
+		return runScenario(arguments[1:], stdout)
 	case "compare":
 		return runCompare(arguments[1:], stdout)
 	case "simulate":
