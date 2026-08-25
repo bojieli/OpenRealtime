@@ -118,6 +118,18 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		default:
 		}
 		if err := runtime.runStep(ctx, step, request, turn, plansSlow); err != nil {
+			if errors.Is(err, continuation.ErrStalePrefix) {
+				// Somebody said something while this was being computed, and
+				// the safe point refused the output because it answers a
+				// sentence that has since been superseded. That is the rule
+				// working: the output is discarded, nothing was committed, and
+				// the observation that overtook it will get its own turn.
+				//
+				// It is not a fault in the conversation, and reporting it as
+				// one killed a session over a moment that had simply moved on.
+				runtime.noteWithheld(continuation.RunResult{}, request, "overtaken by what they said next")
+				continue
+			}
 			failures = append(failures, fmt.Errorf("%s step: %w", step.Kind, err))
 			if ctx.Err() != nil {
 				break
