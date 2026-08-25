@@ -113,7 +113,38 @@ try {
   browser.on("Runtime.exceptionThrown", (params) =>
     pageErrors.push(params.exceptionDetails.exception?.description ?? params.exceptionDetails.text));
 
+  // Errors the session reported, which is a different thing from errors the
+  // page threw and is the one that was missing. A run where the provider
+  // refused every request for six minutes looked, from here, exactly like a
+  // model choosing not to act - and the surface had been showing the reason on
+  // its own tool-results channel the whole time.
+  const sessionErrors = () => evaluate(`
+    [...document.querySelectorAll('.channel[data-channel="obs.tools"] .entries li')]
+      .filter(entry => entry.querySelector('.entry-title').textContent === 'surface')
+      .map(entry => entry.querySelector('.entry-body').textContent.slice(0, 300))`);
+
   const call = (method, params) => browser.send(method, params, sessionId);
+
+  // A confirmation nobody answers is a run that stalls rather than fails, and
+  // an unattended run has nobody. So the dialog is answered here - approved,
+  // because the point of this run is to find out what the models do, and a
+  // refusal would answer that question for them. The dispatcher still refuses
+  // anything outside the declared target after the approval, which is the
+  // check that matters and the one a person cannot wave through.
+  const approvals = [];
+  setInterval(async () => {
+    try {
+      const asked = await evaluate(`(() => {
+        const dialog = document.getElementById('confirm');
+        if (!dialog?.open) return null;
+        const name = document.getElementById('confirm-name').textContent;
+        dialog.returnValue = 'allow';
+        dialog.close('allow');
+        return name;
+      })()`);
+      if (asked) approvals.push(asked);
+    } catch {}
+  }, 1000);
   await call("Runtime.enable");
   await call("Page.enable");
   await call("Page.navigate", { url: SURFACE_URL });
@@ -245,6 +276,81 @@ try {
       JSON.stringify((await channel("obs.audio")).entries.map((entry) => entry.body.slice(0, 160))));
   }
 
+  // --- the video channels, if this endpoint can see -------------------------
+
+  if (videoNegotiated) {
+    await evaluate("document.getElementById('camera').click()");
+
+    const narratedBrowser = await waitFor("a real vision model to narrate the browser",
+      async () => (await channel("obs.browser")).entries.length > 0);
+    check("a real vision model narrated the browser", Boolean(narratedBrowser),
+      JSON.stringify((await channel("obs.browser")).entries.map((e) => e.body.slice(0, 200))));
+
+    const narratedCamera = await waitFor("a real vision model to narrate the camera",
+      async () => (await channel("obs.camera")).entries.length > 0);
+    check("a real vision model narrated the camera", Boolean(narratedCamera),
+      JSON.stringify((await channel("obs.camera")).entries.map((e) => e.body.slice(0, 160))));
+
+    // Stopped once it has narrated. A camera pointed at a room produces an
+    // observation every third of a second forever, and the first run of this
+    // spent forty thousand tokens of context on a synthetic test pattern
+    // before it got to the question it was asking - at which point the
+    // provider refused every request and the model's silence looked like a
+    // decision. Perception is not free, and a bench that pretends otherwise
+    // measures the wrong thing.
+    await evaluate("document.getElementById('camera').click()");
+
+    // The hardest thing this whole surface can be asked to do, and the reason
+    // the browser channel is worth having: a model that has only ever been
+    // told about the page in words, by another model that looked at it, is
+    // asked to press something on it. Nothing in the prompt says where the
+    // button is. If the coordinate is right, perception and action met in the
+    // same space.
+    //
+    // The instruction goes through the surface's own prompt panel first,
+    // because the first run of this got "I see a green button labeled 'Press
+    // me' at position (460, 156). Shall I click it?" - which is a model doing
+    // something reasonable and a test learning nothing. An agent that asks
+    // before acting is a configuration, not a capability, and the point here
+    // is the capability.
+    await evaluate(`
+      document.getElementById('instructions').value = ${JSON.stringify(
+        "You are operating a browser on the person's behalf. When they ask you to press or click " +
+        "something on the screen, call computer.click immediately, using the coordinates from the " +
+        "most recent observation of that source. Do not ask for confirmation and do not describe " +
+        "what you are about to do first - click, then say what happened in a few words.")};
+      document.getElementById('apply-instructions').click();`);
+    await waitFor("the new prompt to be in force", async () =>
+      (await evaluate("document.getElementById('instructions-state').textContent")) === "in force",
+      30000);
+    check("the prompt that governs the action is the one on screen",
+      (await evaluate("document.getElementById('instructions-state').textContent")) === "in force");
+
+    await say("Press the green button on the browser screen now.");
+    const acted = await waitFor("the model to act on what it was shown", async () =>
+      (await channel("act.computer")).entries.length > 0, 240000);
+    check("a real model chose a computer-use action from what it was shown", Boolean(acted),
+      JSON.stringify((await channel("act.computer")).entries.map((e) => `${e.title} ${e.body}`)));
+    check("the action was performed rather than refused",
+      (await channel("act.computer")).entries.some((entry) => entry.outcome === "done"),
+      JSON.stringify((await channel("act.computer")).entries.map((entry) => entry.outcome)));
+
+    // And the page it aimed at actually moved. A coordinate inside the
+    // viewport is accepted by the dispatcher whether or not anything was
+    // there, so this is the only assertion that separates a model that saw
+    // the button from a model that guessed the middle of the screen.
+    const landed = await waitFor("the page to react to what the model pressed", async () =>
+      (await channel("obs.browser")).caption.includes("#pressed"), 120000);
+    check("the model pressed the button it had been told about, not the page",
+      Boolean(landed), (await channel("obs.browser")).caption);
+
+    // And stopped, for the same reason the camera was. The browser channel has
+    // answered the question it was turned on for, and leaving it narrating
+    // spends the rest of the session's context describing a page nobody is
+    // going to ask about again.
+    await evaluate("document.getElementById('browser').click()");
+  }
+
   // --- a real model, a real tool -------------------------------------------
 
   await say("Read the file notes.txt and tell me the deadline.");
@@ -283,6 +389,12 @@ try {
   const source = await evaluate(
     "document.querySelector('.artifact-frame')?.getAttribute('src') ?? ''");
   check("the artifact is framed from its own route", source.startsWith("/artifacts/"), source);
+  // Without this the next fetch asks for "" and gets this page back, and a
+  // check named "the artifact is a real HTML document" passes on the surface's
+  // own markup. A false pass is worse than the failure it hides.
+  if (!source.startsWith("/artifacts/")) {
+    throw new Error("no artifact was rendered, so there is nothing to inspect");
+  }
 
   // What the model actually wrote. An artifact that renders is not the same as
   // an artifact worth rendering, and the difference is visible only in the
@@ -316,9 +428,18 @@ try {
 
   const requiredChannels = ["obs.text", "obs.tools", "act.tools", "act.artifact"];
   if (SPEECH) requiredChannels.push("obs.audio");
+  if (videoNegotiated) requiredChannels.push("obs.browser", "obs.camera", "act.computer");
   for (const required of requiredChannels) {
     check(`${required} carried something against a real model`, carried.includes(required));
   }
+  if (approvals.length) console.log(`\nconfirmations approved: ${approvals.join(", ")}`);
+  const reported = await sessionErrors();
+  if (reported.length) {
+    console.log(`\nthe session reported ${reported.length} error(s):`);
+    for (const failure of reported.slice(0, 5)) console.log(`  - ${failure}`);
+  }
+  check("the session reported no errors of its own", reported.length === 0,
+    reported.slice(0, 2).join(" | "));
   check("no uncaught exception during the live session", pageErrors.length === 0,
     pageErrors.join("; "));
 } catch (failure) {

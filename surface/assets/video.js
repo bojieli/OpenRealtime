@@ -26,6 +26,12 @@ export class VideoSource extends EventTarget {
   #limits = DEFAULT_LIMITS;
   #declared = null;
   #sending = false;
+  // A capture is asynchronous - encoding a frame is a trip through the canvas
+  // and back - so a source stopped while one is in flight would emit that
+  // frame after it had already declared itself closed. The server is right to
+  // refuse it, and the refusal arrives as a session error about a source that
+  // "was never declared", which reads like a client that cannot count.
+  #stopped = false;
 
   constructor(name) {
     super();
@@ -85,7 +91,7 @@ export class VideoSource extends EventTarget {
   }
 
   async #capture() {
-    if (!this.#video || this.#sending) return;
+    if (!this.#video || this.#sending || this.#stopped) return;
     const { width, height } = this.#geometry();
     if (width === 0 || height === 0) return;
 
@@ -106,7 +112,7 @@ export class VideoSource extends EventTarget {
     this.#sending = true;
     try {
       const frame = await this.#encode();
-      if (!frame) return;
+      if (!frame || this.#stopped) return;
       this.dispatchEvent(new CustomEvent("frame", {
         detail: {
           type: "openrealtime.input_video_frame.append",
@@ -149,6 +155,8 @@ export class VideoSource extends EventTarget {
   }
 
   stop() {
+    if (this.#stopped) return;
+    this.#stopped = true;
     clearInterval(this.#timer);
     this.#timer = null;
     this.#stream?.getTracks().forEach((track) => track.stop());
@@ -187,6 +195,10 @@ export class RemoteVideoSource extends EventTarget {
   #canvas = document.createElement("canvas");
   #image = new Image();
   #failures = 0;
+  // Same race as the local sources: a fetch in flight when the channel is
+  // turned off would deliver a frame from a source that has just declared
+  // itself closed.
+  #stopped = false;
 
   constructor(name) {
     super();
@@ -223,7 +235,7 @@ export class RemoteVideoSource extends EventTarget {
   }
 
   async #poll() {
-    if (this.#fetching) return;
+    if (this.#fetching || this.#stopped) return;
     this.#fetching = true;
     try {
       const response = await fetch("/api/browser/frame", { cache: "no-store" });
@@ -244,7 +256,7 @@ export class RemoteVideoSource extends EventTarget {
 
   #emit(captured) {
     const { width, height, frame } = captured;
-    if (!frame || !width || !height) return;
+    if (!frame || !width || !height || this.#stopped) return;
 
     if (!this.#declared || this.#declared.width !== width || this.#declared.height !== height) {
       this.#declared = { width, height };
@@ -272,6 +284,8 @@ export class RemoteVideoSource extends EventTarget {
   }
 
   stop() {
+    if (this.#stopped) return;
+    this.#stopped = true;
     clearInterval(this.#timer);
     this.#timer = null;
     if (this.#declared) {

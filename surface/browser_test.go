@@ -81,14 +81,43 @@ const targetPage = `<!doctype html>
  <p id="state">not pressed</p>
 </body></html>`
 
-func serveTargetPage(t *testing.T) string {
+// livePage is the target for a run against a real vision model.
+//
+// One large, high-contrast control and nothing else, and that is a deliberate
+// choice rather than a rigged one. The scripted gate already pins exact
+// coordinate handling: it clicks (200, 152) and asserts the page moved, and
+// nothing about that is approximate. What the live run is asking is whether
+// perception and action compose - whether a model told about a screen in words
+// by another model that looked at it can press what it was told about. A
+// target needing five-pixel precision would be measuring a vision model's
+// pixel regression instead, which is a real question and a different one.
+const livePage = `<!doctype html>
+<html><head><title>Target</title><style>
+ body { margin: 0; font: 16px system-ui; background: #ffffff; }
+ button {
+   position: absolute; left: 128px; top: 128px; width: 768px; height: 400px;
+   font: 600 56px system-ui; background: #1a7f37; color: white; border: none; border-radius: 20px;
+ }
+ p { position: absolute; left: 128px; top: 560px; font-size: 30px; }
+</style></head>
+<body>
+ <button id="press" onclick="location.hash = 'pressed'; document.getElementById('state').textContent = 'pressed'">Press me</button>
+ <p id="state">not pressed</p>
+</body></html>`
+
+func servePage(t *testing.T, page string) string {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = writer.Write([]byte(targetPage))
+		_, _ = writer.Write([]byte(page))
 	}))
 	t.Cleanup(server.Close)
 	return server.URL
+}
+
+func serveTargetPage(t *testing.T) string {
+	t.Helper()
+	return servePage(t, targetPage)
 }
 
 // startTargetBrowser launches the browser the surface will observe and act on.

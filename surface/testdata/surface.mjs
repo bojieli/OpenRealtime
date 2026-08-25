@@ -296,6 +296,30 @@ try {
   check("observed content is rendered as observed rather than as speech",
     await evaluate(`document.querySelectorAll('.channel[data-channel="obs.camera"] .entries li.observed').length > 0`));
 
+  // A source that stops must stop sending.
+  //
+  // Encoding a frame is asynchronous, so a capture in flight when the channel
+  // is turned off would arrive after the source declared itself closed - and
+  // the server refuses it, correctly, with an error about a source that "was
+  // never declared". A live run turned the camera off to save context and
+  // produced exactly that, which reads like a client that cannot count.
+  await evaluate("document.getElementById('camera').click()");
+  await waitFor("the camera to declare itself closed", async () =>
+    (await events("out")).some((line) =>
+      line.includes("input_video_source.update") && line.includes('"source":"camera"')
+        && line.includes('"state":"closed"')));
+
+  const outboundAfterClose = await events("out");
+  const closedAt = outboundAfterClose.findLastIndex((line) =>
+    line.includes("input_video_source.update") && line.includes('"source":"camera"')
+      && line.includes('"state":"closed"'));
+  const framesAfterClose = outboundAfterClose.slice(closedAt + 1).filter((line) =>
+    line.includes("input_video_frame.append") && line.includes('"source":"camera"'));
+  check("no frame follows the close of the source that sent it",
+    framesAfterClose.length === 0, `${framesAfterClose.length} late frames`);
+  check("no session error followed stopping a source",
+    !(await events("in")).slice(-40).some((line) => line.includes("was never declared")));
+
   // --- a turn, and a tool that runs on this machine -------------------------
 
   await waitFor("the gate to hear the fake microphone", () =>

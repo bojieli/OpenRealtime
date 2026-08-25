@@ -64,7 +64,7 @@ func TestLiveSurfaceAgainstRealModels(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	target := startTargetBrowser(t, chromium, serveTargetPage(t))
+	target := startTargetBrowser(t, chromium, servePage(t, livePage))
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	browserContext, err := surface.ConnectBrowser(ctx, surface.BrowserConfig{DevToolsURL: target})
 	cancel()

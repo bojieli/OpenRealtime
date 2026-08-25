@@ -102,7 +102,21 @@ func NewToolHost(files *console.Host, browserContext *BrowserContext, artifacts 
 	host.tools = append(host.tools, host.artifactTool())
 
 	if browserContext != nil {
-		for _, definition := range computeruse.Definitions() {
+		// The narrowed vocabulary, not the target-free one: the model is told
+		// which sources exist rather than asked to recover the name from
+		// prose. A live run against a real model produced source "video
+		// browser" - the observer name and the source name run together,
+		// taken from an observation that had honestly reported both - and an
+		// enum is what makes that impossible rather than merely unlikely.
+		declared, err := computeruse.DefinitionsFor(browserContext.Target())
+		if err != nil {
+			// A target that will not validate is a browser context that
+			// should not have been built, and the constructor already refuses
+			// one. Declaring the un-narrowed vocabulary here would hand the
+			// model back the guess this exists to remove.
+			declared = nil
+		}
+		for _, definition := range declared {
 			name := definition.Name
 			host.tools = append(host.tools, Tool{
 				Name: name, Description: definition.Description, Parameters: definition.Parameters,

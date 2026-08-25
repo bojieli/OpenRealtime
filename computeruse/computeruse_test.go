@@ -277,3 +277,60 @@ func TestTargetPolicyDoesNotAnswerAnAlwaysRequirement(t *testing.T) {
 		}
 	}
 }
+
+// The model is told which sources exist, rather than asked to recover the name
+// from prose.
+//
+// A live run produced source "video browser" - the observer name and the
+// source name run together, taken from an observation that had honestly
+// reported both. That looks like a model failure and is a schema failure:
+// nothing in the vocabulary ever said what the sources were called.
+func TestTheSourceFieldNamesTheSourcesTheTargetOwns(t *testing.T) {
+	target := computeruse.Target{
+		Name: "surface-browser", Sources: []string{"browser"}, Width: 1024, Height: 768,
+	}
+	declared, err := computeruse.DefinitionsFor(target)
+	if err != nil {
+		t.Fatalf("definitions: %v", err)
+	}
+	if len(declared) != len(computeruse.Names()) {
+		t.Fatalf("narrowing must not drop an action, got %d of %d",
+			len(declared), len(computeruse.Names()))
+	}
+	for _, definition := range declared {
+		if definition.Name == computeruse.Wait {
+			// The one action that touches no screen takes no source.
+			if strings.Contains(string(definition.Parameters), `"source"`) {
+				t.Fatalf("computer.wait must not take a source, got %s", definition.Parameters)
+			}
+			continue
+		}
+		var schema struct {
+			Properties struct {
+				Source struct {
+					Enum []string `json:"enum"`
+				} `json:"source"`
+			} `json:"properties"`
+		}
+		if err := json.Unmarshal(definition.Parameters, &schema); err != nil {
+			t.Fatalf("%s: %v", definition.Name, err)
+		}
+		if len(schema.Properties.Source.Enum) != 1 || schema.Properties.Source.Enum[0] != "browser" {
+			t.Fatalf("%s must name the declared source, got %v",
+				definition.Name, schema.Properties.Source.Enum)
+		}
+	}
+
+	// The target-free form stays target-free: it is what gets published with
+	// the specification, and a schema naming one deployment's sources would be
+	// the wrong thing to publish.
+	for _, definition := range computeruse.Definitions() {
+		if strings.Contains(string(definition.Parameters), `"enum":["browser"]`) {
+			t.Fatalf("Definitions must not carry a target's sources, got %s", definition.Parameters)
+		}
+	}
+
+	if _, err := computeruse.DefinitionsFor(computeruse.Target{Name: "x"}); err == nil {
+		t.Fatal("a target with no sources cannot narrow anything and must be refused")
+	}
+}

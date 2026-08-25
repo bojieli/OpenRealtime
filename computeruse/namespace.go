@@ -62,6 +62,31 @@ type Definition struct {
 // is meaningless without the coordinate space the model actually saw.
 const sourceProperty = `"source":{"type":"string","description":"the declared video source this action targets"}`
 
+// sourcePropertyFor is the same field, narrowed to the sources a target
+// actually owns.
+//
+// Without it the model is told to name "the declared video source" and never
+// told what the declared video sources are called, so it has to recover the
+// name from prose - and it gets it wrong in a way that looks like a model
+// failure and is a schema failure. A real run produced source "video browser",
+// which is the observer name and the source name run together, taken from an
+// observation that had honestly reported both. Every deployment is exposed to
+// that, because every deployment names its sources something.
+//
+// An enum removes the guess. It is a narrowing of an existing field for a
+// target whose sources are known, changes nothing on the wire, and is what
+// makes "an action names a declared source" a thing the schema states rather
+// than a thing the prose asks for.
+func sourcePropertyFor(sources []string) string {
+	encoded, err := json.Marshal(sources)
+	if err != nil {
+		return sourceProperty
+	}
+	return fmt.Sprintf(
+		`"source":{"type":"string","enum":%s,"description":"the declared video source this action targets"}`,
+		encoded)
+}
+
 func coordinate(name, description string) string {
 	return fmt.Sprintf(`%q:{"type":"integer","minimum":0,"description":%q}`, name, description)
 }
@@ -71,7 +96,20 @@ func coordinate(name, description string) string {
 // The schemas are strict - additionalProperties false, required fields listed -
 // because an action with a misread argument is an action on the wrong thing,
 // and a permissive schema turns that into a silent failure.
-func Definitions() []Definition {
+func Definitions() []Definition { return definitions(sourceProperty) }
+
+// DefinitionsFor returns the vocabulary with the source field narrowed to the
+// sources this target owns, which is what a deployment declaring tools should
+// use. Definitions stays the target-free form, for publishing the schemas and
+// for a caller that has no target yet.
+func DefinitionsFor(target Target) ([]Definition, error) {
+	if err := target.Validate(); err != nil {
+		return nil, err
+	}
+	return definitions(sourcePropertyFor(target.Sources)), nil
+}
+
+func definitions(sourceProperty string) []Definition {
 	object := func(properties, required string) json.RawMessage {
 		return json.RawMessage(fmt.Sprintf(
 			`{"type":"object","properties":{%s},"required":[%s],"additionalProperties":false}`,
@@ -260,8 +298,12 @@ func Specs(target Target, dispatcher action.Dispatcher, overrides map[string]act
 	if dispatcher == nil {
 		return nil, errors.New("computer-use tools require a dispatcher")
 	}
-	specs := make([]action.ToolSpec, 0, len(Definitions()))
-	for _, definition := range Definitions() {
+	declared, err := DefinitionsFor(target)
+	if err != nil {
+		return nil, err
+	}
+	specs := make([]action.ToolSpec, 0, len(declared))
+	for _, definition := range declared {
 		confirm := definition.DefaultConfirm
 		if override, exists := overrides[definition.Name]; exists {
 			parsed, err := action.ParseConfirm(string(override))
