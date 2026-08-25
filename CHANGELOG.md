@@ -79,6 +79,13 @@
   one active response and the turn that started the deliberation is still open.
   It costs the reasoner nothing, now that an assistant turn is no longer
   treated as evidence that invalidates it.
+- **An item is stamped as it enters the log, not as it was produced.** A
+  continuation is asked at one moment and commits at another, and with anything
+  running beside it those interleave: a reasoner's instruction item carried a
+  time from before everything the voice had said since, and the append was
+  refused as "monotonic time moved backwards". The log is append-only and its
+  times exist to agree with its order, so entry time is the honest one —
+  production order is already recorded by the order of the items.
 - **The voice talking no longer discards the reasoning.** A continuation
   committed against the trajectory version it started from, so anything
   appended while it was thinking threw away everything it had produced —

@@ -569,3 +569,62 @@ func TestTheVoiceSpeakingDoesNotDiscardTheReasoning(t *testing.T) {
 		t.Fatalf("the call has to reach the log, got %d", calls)
 	}
 }
+
+// A continuation is asked at one moment and commits at another. With a second
+// producer running beside it those interleave, and the reasoner's instruction
+// item carries a time from before everything the voice has said since.
+//
+// The log is append-only and its times exist to agree with its order, so an
+// item is stamped as it enters. Without that, a reasoner that took a few
+// seconds fails to commit at all - observed as three of sixteen FDB v3 tasks
+// dying on "trajectory monotonic time moved backwards" the first time anything
+// spoke during a deliberation.
+func TestAnItemIsStampedWhenItEntersTheLog(t *testing.T) {
+	store := trajectory.NewStore()
+	if err := store.Append(trajectory.Item{
+		ID: "user-1", Kind: trajectory.KindObservation, MonotonicNS: 1,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "question",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clock := uint64(10)
+	runner, err := NewRunner(RunnerConfig{Store: store, Now: func() uint64 { return clock }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &interposingProvider{
+		descriptor: Descriptor{
+			Provider: "test", Model: "slow", Phase: trajectory.PhaseSlow,
+			Effort: EffortHigh, Streaming: true, ToolAuthority: ToolAuthorityExecute,
+			SpeechAuthority: SpeechAuthoritySilent,
+		},
+		events: []Event{{Kind: EventAssistantDelta, Text: "the balance is $40.00"}},
+		// Something else reaches the log while this one is thinking, and the
+		// clock moves on with it.
+		duringRun: func() {
+			clock = 500
+			_ = store.Append(trajectory.Item{
+				ID: "voice-1", Kind: trajectory.KindAssistant, MonotonicNS: 400,
+				Producer: trajectory.Producer{
+					Phase: trajectory.PhaseFast, SpeechAuthority: "voice",
+				},
+				Content: "One moment.", Visibility: trajectory.VisibilityPrepared,
+			})
+		},
+	}
+	result, err := runner.Run(context.Background(), provider, Invocation{Instruction: "Continue."}, nil)
+	if err != nil {
+		t.Fatalf("a continuation that took a while must still commit: %v", err)
+	}
+	if !result.Committed {
+		t.Fatal("the reasoning was lost to a clock comparison")
+	}
+	var last uint64
+	for _, item := range store.Snapshot().Items {
+		if item.MonotonicNS < last {
+			t.Fatalf("the log's times contradict its order at %s: %d after %d",
+				item.ID, item.MonotonicNS, last)
+		}
+		last = item.MonotonicNS
+	}
+}

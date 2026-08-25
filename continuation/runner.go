@@ -330,6 +330,21 @@ func supersedesContinuation(item trajectory.Item) bool {
 // against what arrived while it was thinking, rather than against a version
 // number that moves for reasons it does not care about.
 func (runner *Runner) commit(result *RunResult, expectedVersion uint64, items []trajectory.Item) error {
+	// Stamped as they enter, not as they were produced.
+	//
+	// A continuation is asked at one moment and commits at another, and with a
+	// second producer running beside it those can interleave: the instruction
+	// item of a reasoner that started six seconds ago carries a time from
+	// before everything the voice has said since. The log is append-only and
+	// its times exist to agree with its order, so entry time is the honest
+	// one - production order is already recorded by the order of the items
+	// themselves.
+	entered := runner.now()
+	for index := range items {
+		if items[index].MonotonicNS < entered {
+			items[index].MonotonicNS = entered
+		}
+	}
 	if err := runner.store.AppendBatchAfter(expectedVersion, supersedesContinuation, items); err != nil {
 		result.Interrupted = true
 		result.ToolProposals = nil
