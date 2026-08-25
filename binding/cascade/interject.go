@@ -2,7 +2,6 @@ package cascade
 
 import (
 	"context"
-	"errors"
 
 	"github.com/bojieli/OpenRealtime/cognition"
 	"github.com/bojieli/OpenRealtime/eventloop"
@@ -62,10 +61,12 @@ func (runtime *runtime) interject(decision interaction.Context) {
 			// cannot see.
 			Heard: decision.Revision.Text(),
 		}
-		err := runtime.runFast(runtime.ctx, request, &turnReport{}, true)
-		if err != nil && runtime.ctx.Err() == nil && !errors.Is(err, context.Canceled) {
-			runtime.fail("interjection_error", err)
-		}
+		// An interjection that cannot run is an interjection that does not
+		// happen, not a fault in the conversation. It is opportunistic by
+		// nature - the turn it would have spoken into belongs to somebody else
+		// - and reporting it reached the client as a session error for a
+		// moment that had simply passed.
+		_ = runtime.runFast(runtime.ctx, request, &turnReport{}, true)
 	}()
 }
 

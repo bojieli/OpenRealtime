@@ -193,6 +193,16 @@ func (runtime *runtime) noticeStanding(text string) {
 	if runtime.policies.Extraction == nil || !v1.CarriesSpeech(text) {
 		return
 	}
+	// Once per stretch of text. The partial path calls this as an utterance
+	// grows, and re-reading the same sentence would spend a model call to
+	// learn what is already pinned.
+	runtime.audioMu.Lock()
+	if text == runtime.extractedText {
+		runtime.audioMu.Unlock()
+		return
+	}
+	runtime.extractedText = text
+	runtime.audioMu.Unlock()
 	runtime.wait.Add(1)
 	go func() {
 		defer runtime.wait.Done()
@@ -299,3 +309,47 @@ func (runtime *runtime) gapBeforeUtterance(snapshot trajectory.Snapshot) string 
 	}
 	return ""
 }
+
+// noticeStandingInPartial runs extraction before an utterance has finished.
+//
+// A policy set at the start of a two-minute monologue has to govern the rest of
+// that monologue. Extraction ran only on committed observations, and the floor
+// - correctly - holds a turn open while somebody keeps talking, so nothing
+// commits and nothing is pinned: "count the animals as I mention them" was
+// still sitting unextracted inside the partial when the first animal went by.
+// The policy was in the text the decision could read and not in the standing
+// list it acts on.
+//
+// It waits for a sentence to close. A fragment mid-clause is not yet a policy,
+// and asking about one costs a model call to be told so.
+func (runtime *runtime) noticeStandingInPartial(stable string) {
+	trimmed := strings.TrimSpace(stable)
+	if runtime.policies.Extraction == nil || len(trimmed) < 12 {
+		return
+	}
+	if !strings.ContainsAny(trimmed[len(trimmed)-1:], ".!?。！？") {
+		return
+	}
+	// Rate-limited, because this shares an endpoint with the decision that
+	// runs on the audio path. Extracting at every sentence boundary of a long
+	// monologue put enough load on that endpoint to slow the decisions it was
+	// meant to inform, and one run in five produced no audio at all. A policy
+	// pinned three seconds after it was stated is pinned in time to govern
+	// what follows; one that starves the decision layer is not.
+	now := runtime.scheduler.NowNS()
+	runtime.audioMu.Lock()
+	tooSoon := runtime.lastPartialExtractNS != 0 &&
+		now-runtime.lastPartialExtractNS < uint64(partialExtractInterval)
+	if !tooSoon {
+		runtime.lastPartialExtractNS = now
+	}
+	runtime.audioMu.Unlock()
+	if tooSoon {
+		return
+	}
+	runtime.noticeStanding(trimmed)
+}
+
+// partialExtractInterval bounds how often an unfinished utterance is re-read
+// for a policy.
+const partialExtractInterval = 3 * time.Second

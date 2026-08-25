@@ -394,6 +394,11 @@ func (runtime *runtime) observeAudio(
 				return latest, err
 			}
 		}
+		// A policy set at the start of a long utterance has to govern the rest
+		// of it, and the floor holds that utterance open while they keep
+		// talking - so waiting for a commit means waiting for the very thing
+		// the policy was meant to shape.
+		runtime.noticeStandingInPartial(observation.StableText)
 		// The conversation is attached here, before the predicates run, so
 		// that whoever reads it sees the instant they are about to act on
 		// rather than the one they leave behind. It is assembled once: the

@@ -225,7 +225,7 @@ func (engine *Engine) RunFast(ctx context.Context, request Request, observer Str
 		Instruction: engine.instruction(engine.fastPrompt, request), SourceRevision: request.SourceRevision,
 		Capabilities:    engine.capabilityManifest(),
 		MaxOutputTokens: engine.config.FastMaxTokens,
-	}, observer)
+	}, observer, request.Heard)
 }
 
 // PrepareFast generates a fast continuation before the endpoint, against a
@@ -276,7 +276,7 @@ func (engine *Engine) RunSlow(ctx context.Context, request Request, observer Str
 		Instruction: engine.instruction(engine.slowPrompt, request), SourceRevision: request.SourceRevision,
 		Capabilities: engine.capabilityManifest(), Tools: engine.executableTools(),
 		MaxOutputTokens: engine.config.SlowMaxTokens,
-	}, observer)
+	}, observer, request.Heard)
 }
 
 func (engine *Engine) instruction(prompt string, request Request) string {
@@ -317,9 +317,17 @@ func (engine *Engine) run(
 	phase trajectory.Phase,
 	invocation continuation.Invocation,
 	observer StreamObserver,
+	live string,
 ) (continuation.RunResult, error) {
-	if len(engine.config.Store.Snapshot().Items) == 0 {
-		return continuation.RunResult{}, errors.New("a continuation requires an observation or prior trajectory item")
+	// Something to speak from. An empty log used to be the whole test, which
+	// was right while every turn began with a committed observation - and
+	// wrong once a turn could begin with an utterance still in progress. An
+	// interjection fires on a partial, so early in a session the log is
+	// genuinely empty and the sentence that triggered it is in the request
+	// rather than in the store. Refusing that is refusing the only turn that
+	// had anything to say.
+	if len(engine.config.Store.Snapshot().Items) == 0 && strings.TrimSpace(live) == "" {
+		return continuation.RunResult{}, errors.New("a continuation requires an observation, a prior trajectory item, or an utterance in progress")
 	}
 	descriptor := provider.Descriptor()
 	var observerErr error

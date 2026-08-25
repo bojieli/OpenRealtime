@@ -85,8 +85,13 @@ type runtime struct {
 	// pauseHeard is what had been heard when the current pause began, so that a
 	// speaker talking through a hold starts a new pause rather than extending
 	// one that ended when they spoke.
-	pauseHeard    string
-	lastCanonical uint64
+	pauseHeard string
+	// extractedText is the stretch extraction last read, so an utterance that
+	// keeps growing is not re-read from the beginning on every partial.
+	extractedText string
+	// lastPartialExtractNS bounds how often an unfinished utterance is re-read.
+	lastPartialExtractNS uint64
+	lastCanonical        uint64
 	// interjecting is set when the turn about to run was taken from somebody
 	// still speaking rather than offered by somebody who had finished.
 	interjecting bool

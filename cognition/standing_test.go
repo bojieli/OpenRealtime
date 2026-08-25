@@ -65,3 +65,15 @@ func TestTheVoiceIsShownTheUtteranceThatCausedTheTurn(t *testing.T) {
 		t.Fatal("a request with nothing in flight still announced a live utterance")
 	}
 }
+
+// An interjection fires on a partial, so early in a session the log is
+// genuinely empty and the sentence that triggered the turn is in the request
+// rather than in the store. Refusing that refuses the only turn with anything
+// to say - and it reached the client as a session error, so whole runs
+// produced no audio at all.
+func TestARequestCarryingALiveUtteranceIsNotEmpty(t *testing.T) {
+	prompt := instructionFor(t, cognition.Request{Heard: "a capybara wandered over"})
+	if !strings.Contains(prompt, "capybara") {
+		t.Fatalf("the live utterance did not reach the instruction:\n%s", prompt)
+	}
+}
