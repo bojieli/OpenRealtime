@@ -300,6 +300,18 @@ func (runtime *runtime) considerBargeIn(
 	decision := interaction.Context{
 		NowNS: runtime.scheduler.NowNS(), Duplex: state, Revision: revision,
 	}
+	if runtime.speech.ActiveSpokeOver() {
+		// The agent is talking over speech it chose to talk over, so this
+		// overlap is not somebody taking the floor from it - it is the reason
+		// the act exists. Cancelling here would have the agent abandon its own
+		// backchannel for saying it was listening, and abandon its own
+		// correction for the sentence it is correcting.
+		//
+		// Asked before the classifier, because the answer does not depend on
+		// what the overlapping speech turns out to be, and that call costs up
+		// to 150ms on every partial for the length of the interjection.
+		return nil
+	}
 	evidence := interaction.OverlapEvidence("")
 	if !revision.Empty() {
 		// Classification is bounded hard. A barge-in decision that arrives
@@ -307,14 +319,6 @@ func (runtime *runtime) considerBargeIn(
 		classify, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
 		evidence = runtime.policies.Overlap.Classify(classify, decision)
 		cancel()
-	}
-	if runtime.speech.ActiveSpokeOver() {
-		// The agent is talking over a stretch of speech it chose to talk over,
-		// so this overlap is not somebody taking the floor from it - it is the
-		// reason the act exists. Cancelling here would have the agent abandon
-		// its own backchannel for saying it was listening, and abandon its own
-		// correction for the sentence it is correcting.
-		return nil
 	}
 	outcome := runtime.policies.BargeIn.Decide(interaction.BargeInInput{
 		Context: decision, OverlapNS: overlapNS, Evidence: evidence,
