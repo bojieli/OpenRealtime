@@ -91,7 +91,29 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		// - and reporting it reached the client as a session error for a
 		// moment that had simply passed.
 		runtime.markSpoken(decision.Revision.Text())
-		_ = runtime.runFast(runtime.ctx, request, &turnReport{}, true)
+		// Bounded, because an interjection that has missed its moment must not
+		// take the next one with it: it commits through a loop with a single
+		// driver, so it can sit behind other work indefinitely while every
+		// later moment worth speaking at is refused as "already in flight".
+		// Abandoning it is the honest outcome - what was worth saying was
+		// worth saying then.
+		ctx, cancel := context.WithTimeout(runtime.ctx, interjectionDeadline)
+		defer cancel()
+		err := runtime.runFast(ctx, request, &turnReport{}, true)
+		// Silent to the caller and not to the operator. Swallowing it outright
+		// traded a noisy bug for an invisible one, and worse: it made me read
+		// the absence of these records as the absence of the thing they record.
+		if recorder := runtime.policies.ShadowInteraction; recorder != nil {
+			outcome := "spoke"
+			if err != nil {
+				outcome = "refused"
+			}
+			recorder(interaction.ShadowDecision{
+				NowNS: runtime.scheduler.NowNS(), Situation: "interject: " + decision.Revision.Text(),
+				Act: outcome, Predicates: map[string]string{"where": "interject"},
+				Error: errorText(err),
+			})
+		}
 	}()
 }
 
@@ -181,6 +203,13 @@ func (runtime *runtime) noteInterject(reason string) {
 // conversation.
 const interjectionStale = 3 * time.Second
 
+// interjectionDeadline bounds one interjection.
+//
+// Longer than the staleness bound, so one that is merely slow is not abandoned
+// while a fresh one starts beside it, and short enough that a stuck one costs
+// a few seconds rather than the rest of the conversation.
+const interjectionDeadline = 6 * time.Second
+
 func (runtime *runtime) claimInterjection() bool {
 	now := runtime.scheduler.NowNS()
 	runtime.audioMu.Lock()
@@ -246,7 +275,9 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 		// dispatches is a key nobody presses. The engine produces the call and
 		// the runtime is what executes it, and calling past that layer meant
 		// the phase ran nineteen times and the menu never heard a tone.
-		err := runtime.runSlow(runtime.ctx, request, &turnReport{})
+		ctx, cancel := context.WithTimeout(runtime.ctx, interjectionDeadline)
+		defer cancel()
+		err := runtime.runSlow(ctx, request, &turnReport{})
 		if recorder := runtime.policies.ShadowInteraction; recorder != nil {
 			outcome := "acted"
 			if err != nil {
