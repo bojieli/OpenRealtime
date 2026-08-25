@@ -60,6 +60,16 @@ func InteractionCases() []Case {
 	}
 	return []Case{
 		// --- paired: a spoken instruction changes the act ---
+		act("still-stating-the-policy", interaction.Situation{
+			Pins:    []string{"count the animals out loud as I mention them (1s ago)"},
+			Recent:  []string{"user: I'm going to tell you about my afternoon."},
+			Speaker: "user", Speaking: true,
+			Heard: "count the animals out loud as I mention them and say nothing else",
+		}, "taken verbatim from a run that counted \"one\" here, four seconds in, with no animal "+
+			"anywhere: the sentence that states a policy does not satisfy it, and a count that starts "+
+			"in the wrong place is wrong for the rest of the conversation",
+			[]Action{ActStaySilent}, ActSpeakThrough, ActInterrupt),
+
 		act("count-with-a-nothing-else-clause", interaction.Situation{
 			Pins: []string{"count the animals out loud as I mention them and say nothing else (18s ago)"},
 			Recent: []string{

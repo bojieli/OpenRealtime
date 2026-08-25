@@ -33,6 +33,38 @@ func (runtime *runtime) interject(decision interaction.Context) {
 	if runtime.policies.Interaction == nil {
 		return
 	}
+	// Speaking through somebody is how a standing policy gets honoured while
+	// they keep talking, so with no policy in force there is nothing to
+	// honour. Without this the agent read "count the animals as I mention
+	// them" out of the live transcript and said "One" four seconds in, before
+	// extraction had even seen the sentence - and every later count was wrong
+	// by one.
+	//
+	// The guard below catches the same thing once a policy exists. This
+	// catches it in the seconds before, which is exactly when the request is
+	// being spoken.
+	if len(runtime.pinboard.InForce()) == 0 {
+		runtime.noteInterject("no standing policy to speak through for")
+		return
+	}
+	// Not into the sentence that set the policy up. "Count the animals as I
+	// mention them" mentions no animal, and a count that starts there is wrong
+	// by one for the rest of the conversation - measured, the agent said "One"
+	// four seconds in with no animal anywhere, and then called the capybara
+	// two.
+	//
+	// The runtime knows this where the model does not: extraction read that
+	// utterance and produced the policy from it, so acting on the same text is
+	// acting on the request rather than on anything it asked to watch for. The
+	// instruction says so too and the model does not follow it, which makes
+	// this the reliable half of the pair rather than a duplicate of it.
+	runtime.audioMu.Lock()
+	pinnedFrom := runtime.extractedText
+	runtime.audioMu.Unlock()
+	if heard := strings.TrimSpace(decision.Revision.Text()); pinnedFrom != "" && strings.HasPrefix(heard, pinnedFrom) {
+		runtime.noteInterject("this is the utterance the policy came from")
+		return
+	}
 	// Nothing to speak into yet. A policy is often stated in the same breath as
 	// the thing it governs, and the floor asks about every partial of that
 	// breath - so eight speak-through decisions arrive while somebody is still
