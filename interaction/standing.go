@@ -22,6 +22,11 @@ const (
 type StandingInstruction struct {
 	Text  string
 	Scope Scope
+	// SetNS is when it was pinned. Age is part of the instruction: "don't cut
+	// me off" said thirty seconds ago governs differently from the same words
+	// an hour and three topics back, and a decision that cannot see which one
+	// it is has been handed the words without the context.
+	SetNS uint64
 }
 
 // ExtractionInstruction governs the pass that notices when somebody has set an

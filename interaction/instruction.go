@@ -117,7 +117,9 @@ func buildInstruction() string {
 			"answer - the speaker has finished, or nobody is speaking, and the turn is the agent's.\n" +
 			"interrupt - the speaker has not finished, and what is happening is worth cutting into their " +
 			"sentence for.\n" +
-			"call-tool - act without saying anything.\n" +
+			"call-tool - do something without saying anything at all. Only when speech would be pointless or " +
+			"unwelcome: a recorded menu that cannot hear you, or someone who asked not to be spoken to. " +
+			"Answering already lets the agent act as well as speak, so this is for when it must not speak.\n" +
 			"keep-speaking - the agent is mid-sentence and someone else has started; carry on anyway.\n" +
 			"stop-speaking - the agent is mid-sentence; stop and let them have the floor.\n\n" +
 			"Anything other than staying silent, or carrying on with what the agent is already saying, needs a reason " +

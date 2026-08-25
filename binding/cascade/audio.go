@@ -358,6 +358,10 @@ func (runtime *runtime) observeAudio(
 				return latest, err
 			}
 		}
+		// The interaction model is asked here, before the predicates run, so
+		// that it sees the instant they are about to act on rather than the
+		// one they leave behind. While shadowing it decides nothing.
+		shadow := runtime.beginShadow(decision)
 		// A continuer is decided about here because here is where the words
 		// are: a policy that only saw the acoustic envelope could not tell a
 		// finished thought from a pause for breath.
@@ -365,15 +369,19 @@ func (runtime *runtime) observeAudio(
 		// The floor policy may end the turn before silence confirms it. It is
 		// asked before the trigger, because a projected endpoint makes the
 		// rest of this revision's processing part of the next turn.
-		if projected, err := runtime.projectEndpoint(ctx, decision); err != nil {
+		projected, err := runtime.projectEndpoint(ctx, decision)
+		if err != nil {
 			return latest, err
-		} else if projected {
+		}
+		if projected {
+			runtime.endShadow(shadow, decision, true, false)
 			return latest, nil
 		}
 		// Preparation is consulted on every revision. It decides whether work
 		// starts before the endpoint; it never decides what gets committed.
 		runtime.prepare(ctx, decision)
 		opportunity := runtime.policies.Trigger.Next(decision)
+		runtime.endShadow(shadow, decision, false, opportunity.Open)
 		if err := runtime.sink.Transcript(ctx, binding.TranscriptEvent{
 			ItemID: runtime.currentUtterance(), Text: observation.Text,
 		}); err != nil {

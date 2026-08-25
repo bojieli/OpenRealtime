@@ -49,6 +49,12 @@ type runtime struct {
 	cancel context.CancelCauseFunc
 	wait   sync.WaitGroup
 
+	// window and pinboard are the two halves of what an interaction model
+	// reads about the past. They are separate because truncating the first
+	// must never be able to repeal something in the second.
+	window   *interaction.Window
+	pinboard *interaction.Pinboard
+
 	sequence atomic.Uint64
 	revision atomic.Uint64
 	// continuing is true while a backchannel decision is in flight, so one
@@ -111,6 +117,8 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		ctx:      ctx, cancel: cancel,
 		settings: binding.CloneSettings(options.Settings),
 		prepared: newPreparations(),
+		window:   &interaction.Window{},
+		pinboard: &interaction.Pinboard{},
 	}
 	tracker, err := clientcalls.New(clientcalls.Config{
 		Timeout: bind.config.ClientToolTimeout, Scheduler: scheduler,

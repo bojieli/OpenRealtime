@@ -75,6 +75,35 @@ type Policies struct {
 	// with a barge-in policy that waits long enough to ask.
 	Overlap  OverlapClassifier
 	Deferral Deferral
+	// Interaction is the model that replaces Floor, Backchannel,
+	// TurnProjection and Overlap with one decision.
+	//
+	// It is nil by default and, while shadowing, decides nothing: it is asked
+	// on every revision and its answer recorded beside what the four
+	// predicates actually did. That is deliberate. The four have measured
+	// behaviour on four benchmark suites and this does not, so the way to earn
+	// the swap is a corpus of disagreements drawn from real recordings rather
+	// than an argument that the new shape is better.
+	Interaction *InteractionModel
+	// ShadowInteraction records each decision taken twice. Non-nil implies
+	// shadowing.
+	ShadowInteraction func(ShadowDecision)
+}
+
+// ShadowDecision is one instant, decided twice.
+type ShadowDecision struct {
+	NowNS uint64 `json:"now_ns"`
+	// Situation is the block the interaction model was shown, verbatim. A
+	// disagreement is only diagnosable next to what was actually in front of
+	// the model, and reconstructing it afterwards reconstructs a different
+	// moment.
+	Situation string `json:"situation"`
+	Act       string `json:"act"`
+	// Predicates is what the shipped policies did at the same instant.
+	Predicates map[string]string `json:"predicates"`
+	Agreed     bool              `json:"agreed"`
+	ElapsedNS  uint64            `json:"elapsed_ns"`
+	Error      string            `json:"error,omitempty"`
 }
 
 // Defaults returns the shipped policy set: fixed 200 ms triggering, no

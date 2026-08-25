@@ -112,17 +112,18 @@ type serveOptions struct {
 	webrtcSTUN   string
 	webrtcOrigin string
 
-	gpuCapacity     int
-	policyURL       string
-	policyModel     string
-	policyTokenEnv  string
-	policyGuided    bool
-	policies        string
-	policyReasoning string
-	projectionHold  time.Duration
-	holdingAfter    time.Duration
-	bargeIn         string
-	bargeInHold     time.Duration
+	gpuCapacity       int
+	policyURL         string
+	policyModel       string
+	policyTokenEnv    string
+	policyGuided      bool
+	policies          string
+	interactionShadow string
+	policyReasoning   string
+	projectionHold    time.Duration
+	holdingAfter      time.Duration
+	bargeIn           string
+	bargeInHold       time.Duration
 
 	computerUse     bool
 	browserURL      string
@@ -264,7 +265,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.browserURL, "browser-devtools-url", "http://127.0.0.1:9222", "browser DevTools endpoint for computer use")
 	flags.StringVar(&options.browserTarget, "browser-target", "", "connect directly to a known page WebSocket instead of discovering one")
 	flags.StringVar(&options.computerConfirm, "computer-confirm", "", "override every computer.* confirmation requirement: never, policy, or always")
-	flags.StringVar(&options.policies, "policy-models", "none", "comma-separated policy models: backchannel, turn-projection, overlap, all, or none")
+	flags.StringVar(&options.policies, "policy-models", "none", "comma-separated policy models: backchannel, turn-projection, overlap, interaction, all, or none")
+	flags.StringVar(&options.interactionShadow, "interaction-shadow", "", "file to record shadow interaction decisions to; enabling it decides nothing")
 	flags.StringVar(&options.policyReasoning, "policy-reasoning", "chat_template_kwargs",
 		"how the policy endpoint is told not to think: chat_template_kwargs, enable_thinking, reasoning_effort, thinking_object, or none for an instruct model")
 	flags.DurationVar(&options.holdingAfter, "holding-after", 2500*time.Millisecond,
@@ -502,7 +504,7 @@ func buildPolicies(options serveOptions, governor *admission.Governor) (interact
 func applyPolicyModels(
 	policies *interaction.Policies, options serveOptions, governor *admission.Governor,
 ) error {
-	var backchannel, projection, overlap bool
+	var backchannel, projection, overlap, wholeDecision bool
 	for _, name := range strings.Split(strings.ToLower(strings.TrimSpace(options.policies)), ",") {
 		switch strings.TrimSpace(name) {
 		case "", "none":
@@ -512,14 +514,16 @@ func applyPolicyModels(
 			projection = true
 		case "overlap":
 			overlap = true
+		case "interaction":
+			wholeDecision = true
 		case "all", "both":
 			backchannel, projection, overlap = true, true, true
 		default:
 			return fmt.Errorf(
-				"policy models must be backchannel, turn-projection, overlap, all, or none, got %q", name)
+				"policy models must be backchannel, turn-projection, overlap, interaction, all, or none, got %q", name)
 		}
 	}
-	if !backchannel && !projection && !overlap {
+	if !backchannel && !projection && !overlap && !wholeDecision {
 		return nil
 	}
 	if strings.TrimSpace(options.policyModel) == "" {
@@ -536,6 +540,20 @@ func applyPolicyModels(
 	})
 	if err != nil {
 		return err
+	}
+	if wholeDecision {
+		model, err := interaction.NewInteractionModel(decider)
+		if err != nil {
+			return err
+		}
+		policies.Interaction = model
+		if path := strings.TrimSpace(options.interactionShadow); path != "" {
+			recorder, err := newShadowRecorder(path)
+			if err != nil {
+				return err
+			}
+			policies.ShadowInteraction = recorder
+		}
 	}
 	if backchannel {
 		policy, err := interaction.NewModelBackchannel(decider, interaction.BackchannelOptions{})
