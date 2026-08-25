@@ -685,3 +685,90 @@ func TestTheTurnStaysOpenWhileTheReasonerWorks(t *testing.T) {
 			"a caller would hear silence with nothing saying work was owed", span, deliberation)
 	}
 }
+
+// A caller waiting on the reasoner hears nothing, because the reasoner never
+// speaks. How long that lasts is a property of the question, and a hard
+// question and a broken agent sound identical.
+//
+// The deadline is what makes this a test of the holding turn rather than of
+// the reasoner finishing: slow takes six seconds, so a second spoken turn
+// inside four of them cannot be the answer - the answer does not exist yet.
+func TestALongDeliberationDoesNotLeaveTheUserInSilence(t *testing.T) {
+	// More scripted turns than the gap should need, so a holding line that
+	// repeated would be visible rather than silently exhausting the script.
+	fast := newFast(
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Let me look that up."}},
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Still checking on that."}},
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Still going."}},
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Nearly there."}},
+	)
+	slow := &slowProvider{
+		scriptedProvider: *newSlow([]continuation.Event{
+			{Kind: continuation.EventAssistantDelta, Text: "The balance is $40.00."},
+		}),
+		delay: 6 * time.Second, entered: make(chan struct{}),
+	}
+	runtime, sink := startSession(t, cascade.Config{
+		Fast: fast, Slow: slow, HoldingAfter: 150 * time.Millisecond,
+	}, binding.Settings{})
+	speak(t, runtime, 2)
+	select {
+	case <-slow.entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the reasoner never started")
+	}
+
+	deadline := time.After(4 * time.Second)
+	for {
+		sink.mu.Lock()
+		spoken := append([]string(nil), sink.spoken...)
+		sink.mu.Unlock()
+		if len(spoken) >= 2 {
+			if spoken[1] == spoken[0] {
+				t.Fatalf("the gap was filled by repeating the last line: %q", spoken[1])
+			}
+			// Once, and once only. The reasoner is still working - it has five
+			// seconds left - so anything further would be the voice filling
+			// the same silence again, which is the repetition it is told to
+			// avoid and which sounds like an agent that has lost track.
+			time.Sleep(time.Second)
+			sink.mu.Lock()
+			again := len(sink.spoken)
+			sink.mu.Unlock()
+			if again > 2 {
+				t.Fatalf("the silence was broken %d times over: %v", again, sink.spoken)
+			}
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("the agent left the user in silence while it deliberated: %v", spoken)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+// Unconfigured, the behaviour is what it was: the caller waits.
+func TestSilenceIsLeftAloneWhenNoHoldingIntervalIsConfigured(t *testing.T) {
+	fast := newFast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Let me look that up."}})
+	slow := &slowProvider{
+		scriptedProvider: *newSlow([]continuation.Event{
+			{Kind: continuation.EventAssistantDelta, Text: "The balance is $40.00."},
+		}),
+		delay: 900 * time.Millisecond, entered: make(chan struct{}),
+	}
+	runtime, sink := startSession(t, cascade.Config{Fast: fast, Slow: slow}, binding.Settings{})
+	speak(t, runtime, 2)
+	select {
+	case <-slow.entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the reasoner never started")
+	}
+	time.Sleep(450 * time.Millisecond)
+	sink.mu.Lock()
+	spoken := len(sink.spoken)
+	sink.mu.Unlock()
+	if spoken > 1 {
+		t.Fatalf("nothing should fill the gap unconfigured, got %d turns", spoken)
+	}
+}

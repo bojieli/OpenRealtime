@@ -65,6 +65,10 @@ type Config struct {
 	Perception func() (v1.PerceptionProvider, error)
 	// ASRCadence is how often the recogniser is advanced.
 	ASRCadence time.Duration
+	// HoldingAfter is how long the reasoner may run before the voice says what
+	// is happening, in the turn already in progress. Zero leaves the user
+	// listening to silence for as long as the reasoner takes.
+	HoldingAfter time.Duration
 
 	// Fast is the voice; Slow is the background reasoner. Slow must be
 	// configured silent: the cognition engine refuses the pair otherwise.

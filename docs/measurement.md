@@ -167,31 +167,41 @@ The floor on the classified path is not the hold and not the model — it is how
 long the recogniser takes to produce its first partial. Classifying overlap
 needs words, and words arrive when they arrive.
 
-### What still cannot be built, and why
+### Where the concurrency actually was, and was not
 
-An agent that goes quiet while it reasons ought to say so. The reasoning half
-is silent by construction, the gap is a property of the question, and a caller
-cannot distinguish a hard question from a broken agent - an independent listener
-called one repaired recording "broken" for exactly this, on a call where
-everything else had gone right.
+An agent that goes quiet while it reasons ought to say so. The turn that fills
+that gap was written twice and withdrawn twice before it worked, and what the
+two failures found is worth more than the feature.
 
-The turn that would fill it has been written twice and withdrawn twice, and it
-is worth recording why rather than leaving it to be rediscovered.
+The first instinct is that such a turn must run *beside* the deliberation, as a
+parallel branch. Chasing that found three layers, each of which would have had
+to change:
 
-It has to run *while* the reasoner runs, which means arriving as a parallel
-branch. Two things stood in the way. The deferred set was merged flat before it
-ran, and a merged batch carries one triage, so a parallel branch inherited the
-deferral of whatever routine traffic sat beside it - that half is fixed. The
-half that remains is that the loop is driven by one goroutine: while a batch is
-being processed, the driver is inside that call and cannot pick up the branch,
-so it is planned correctly and runs when the work it was reporting on has
-already finished. Saying "still checking" as the answer arrives is worse than
-saying nothing.
+The **deferred set** was merged flat before it ran, and a merged batch carries
+one triage, so a parallel branch inherited the deferral of whatever routine
+traffic sat beside it. That was a real defect and is fixed.
 
-Making that concurrent means a second driver through the machinery that
-guarantees safe points and commit ordering. Getting it subtly wrong reorders the
-log, which is a worse failure than dead air, so the feature waits for that work
-rather than shipping ahead of it.
+The **loop has one driver**. While a batch is processed the driver is inside
+that call, so a branch is planned correctly and runs once the work it was
+reporting on has finished - the one moment it has nothing to say.
+
+The **gateway has one turn**. `planning` is a boolean and `response` a single
+pointer, and that is right rather than a limitation: the base protocol has one
+active response, so a second concurrent turn would not be expressible on the
+wire even if the loop could produce it.
+
+The third layer is the answer to the other two. A turn that fills a silence is
+not a second turn; the turn that started the deliberation is still open, and the
+voice adding a sentence to a turn it is already in is what "the voice keeps
+talking while the reasoner reasons" has always meant. No second driver, no
+second response, no change to the loop.
+
+What made it possible was unrelated and worse: a continuation committed against
+the trajectory version it started from, so an assistant turn appended while the
+reasoner was working discarded everything the reasoner had produced, tool calls
+included. Every earlier attempt at this feature would have silently destroyed
+the reasoning it was reporting on. Staleness is about evidence now, not about
+version numbers, and speaking during deliberation costs the reasoner nothing.
 
 ### What listening to the recordings found
 

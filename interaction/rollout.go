@@ -41,6 +41,12 @@ const (
 // than opening another one.
 const ReasonBackgroundResult = "the background reasoner finished"
 
+// ReasonHolding names a spoken turn that exists because the reasoner is taking
+// a while. It belongs to the turn already in progress rather than starting one:
+// the base protocol has a single active response, and a second one would be a
+// second turn for work that is still the first.
+const ReasonHolding = "say what is happening"
+
 // Step is one action in a rollout plan.
 type Step struct {
 	Kind   StepKind `json:"kind"`

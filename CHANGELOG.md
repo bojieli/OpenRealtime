@@ -57,6 +57,14 @@
 
 ### Cognition
 
+- **An agent that goes quiet while it reasons says so.** The reasoning half
+  never speaks, so a question that needs it produces a silence whose length is
+  a property of the question — and a caller cannot tell that from a broken
+  agent. After `-holding-after` the voice says one short sentence, once, in the
+  turn already in progress: not a second turn, because the base protocol has
+  one active response and the turn that started the deliberation is still open.
+  It costs the reasoner nothing, now that an assistant turn is no longer
+  treated as evidence that invalidates it.
 - **The voice talking no longer discards the reasoning.** A continuation
   committed against the trajectory version it started from, so anything
   appended while it was thinking threw away everything it had produced —

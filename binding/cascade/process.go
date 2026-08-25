@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/binding"
@@ -13,6 +14,7 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/interaction"
+	"github.com/bojieli/OpenRealtime/internal/clock"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -118,7 +120,7 @@ func (runtime *runtime) runStep(
 		handsOn := step.Reason == interaction.ReasonBackgroundResult || plansSlow
 		return runtime.runFast(ctx, request, turn, handsOn)
 	case interaction.StepSlow:
-		return runtime.runSlow(ctx, request)
+		return runtime.runSlow(ctx, request, turn)
 	default:
 		return fmt.Errorf("unknown rollout step %q", step.Kind)
 	}
@@ -157,7 +159,10 @@ func (runtime *runtime) runFast(
 // runSlow deliberates and acts. It never speaks: what it writes is recorded as
 // background state, and the signal it raises is what causes the voice to read
 // that state and say something of its own.
-func (runtime *runtime) runSlow(ctx context.Context, request cognition.Request) error {
+func (runtime *runtime) runSlow(
+	ctx context.Context, request cognition.Request, turn *turnReport,
+) error {
+	defer runtime.breakSilenceWhileDeliberating(ctx, request, turn)()
 	result, adopted := runtime.adopt(trajectory.PhaseSlow, canonicalText(
 		runtime.store.Snapshot(), request.SourceRevision))
 	var err error
@@ -189,6 +194,81 @@ func (runtime *runtime) runSlow(ctx context.Context, request cognition.Request) 
 		return runtime.signal(interaction.SignalBackgroundResult)
 	}
 	return nil
+}
+
+// breakSilenceWhileDeliberating arms one spoken turn to fill the gap the
+// reasoner is about to leave, and returns the stop.
+//
+// The reasoning half never speaks, so a question that needs it produces a
+// silence whose length is a property of the question. A caller cannot tell
+// that from a broken agent: both sound like nothing.
+//
+// What fills it is not a second turn. The base protocol has one active
+// response, the turn that started this deliberation is still open, and the
+// voice adding a sentence to a turn it is already in is what "the voice keeps
+// talking while the reasoner reasons" actually means. So this runs the same
+// fast phase through the same commitment boundary as any other utterance -
+// only the goroutine differs, and the trajectory tolerates that now: an
+// assistant turn is not evidence, so speaking here does not discard what the
+// reasoner is in the middle of working out.
+//
+// It fires once. A second "still working" is the repetition the voice is told
+// to avoid, and the reasoner finishing is what ends the silence properly.
+func (runtime *runtime) breakSilenceWhileDeliberating(
+	ctx context.Context, request cognition.Request, turn *turnReport,
+) func() {
+	after := runtime.config.HoldingAfter
+	if after <= 0 {
+		return func() {}
+	}
+	var mu sync.Mutex
+	var timer clock.Timer
+	stopped := false
+
+	// Once, by construction: nothing re-arms after it speaks. The only path
+	// that re-arms is the one that found the agent still talking, which has
+	// not spoken yet.
+	var arm func()
+	arm = func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if stopped {
+			return
+		}
+		timer = runtime.scheduler.AfterFunc(after, func() {
+			// Nothing to break while the agent is talking: the user is hearing
+			// the last turn, not silence. The silence starts when that ends,
+			// so this waits again - a one-shot timer that landed mid-utterance
+			// would leave the gap it exists for unattended.
+			if runtime.duplex.Snapshot().AgentSpeaking {
+				arm()
+				return
+			}
+			mu.Lock()
+			done := stopped
+			mu.Unlock()
+			if done {
+				return
+			}
+
+			holding := request
+			holding.Holding = true
+			// Handed on already: the reasoning this is reporting on is running.
+			if err := runtime.runFast(ctx, holding, turn, true); err != nil {
+				runtime.fail("holding_error", err)
+			}
+		})
+	}
+	arm()
+
+	return func() {
+		mu.Lock()
+		defer mu.Unlock()
+		stopped = true
+		if timer != nil {
+			timer.Stop()
+		}
+	}
 }
 
 // publishAssistant applies the commitment policy to one continuation's output

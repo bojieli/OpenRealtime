@@ -54,6 +54,15 @@ const (
 		"Only your tool calls have execution authority. Preserve user-supplied literal identifiers exactly; a tool error is authoritative, so do not guess spelling variants.\n\n" +
 		"Identifiers reach you as speech that a recogniser has written down, so it punctuates them the way they were said: an order number spelled \"A-B-C-one-two-three\" can arrive as \"AB, C,1,2,3\" or \"a b c one two three\". Reassemble it by removing only the separators the recogniser introduced and by writing spoken digits as digits. Do not reorder characters, change letter case beyond the obvious convention, or supply any character the user did not say."
 
+	// HoldingInstruction is injected only on a turn that exists because the
+	// reasoner is still working.
+	//
+	// The voice is otherwise told that a second "one moment" is worse than a
+	// pause, which is right for a turn with something to say. Here the silence
+	// is the thing to address, so that rule is lifted deliberately rather than
+	// argued with.
+	HoldingInstruction = "The reasoning half is still working and the user has been listening to silence. Say one short sentence that fills it honestly. Do not repeat your last line back to them: add what you can - what is being checked, or that it is taking longer than usual. Claim nothing you do not have, promise no time, and do not mention that anything is running."
+
 	// RepairInstruction is injected only while an unresolved audible-repair
 	// obligation exists. Audio that was heard cannot be unheard, so the only
 	// honest move is to say so.

@@ -120,6 +120,7 @@ type serveOptions struct {
 	policies        string
 	policyReasoning string
 	projectionHold  time.Duration
+	holdingAfter    time.Duration
 	bargeIn         string
 	bargeInHold     time.Duration
 
@@ -266,6 +267,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.policies, "policy-models", "none", "comma-separated policy models: backchannel, turn-projection, overlap, all, or none")
 	flags.StringVar(&options.policyReasoning, "policy-reasoning", "chat_template_kwargs",
 		"how the policy endpoint is told not to think: chat_template_kwargs, enable_thinking, reasoning_effort, thinking_object, or none for an instruct model")
+	flags.DurationVar(&options.holdingAfter, "holding-after", 2500*time.Millisecond,
+		"how long the reasoner may run before the voice says what is happening; 0 leaves the user in silence")
 	flags.DurationVar(&options.projectionHold, "projection-hold", time.Second,
 		"how much extra silence a turn-projection model may buy by judging the turn unfinished")
 	flags.StringVar(&options.bargeIn, "barge-in", "immediate", "barge-in policy: immediate, sustained, or never")
@@ -624,8 +627,8 @@ func buildCascade(
 			}
 			return recogniserMetrics.New(asrbuffer.Config{Provider: recogniser, MinimumChunk: options.asrCadence})
 		},
-		ASRCadence: options.asrCadence,
-		Fast:       fast, Slow: slow, Speech: speech,
+		ASRCadence: options.asrCadence, HoldingAfter: options.holdingAfter,
+		Fast: fast, Slow: slow, Speech: speech,
 		Voice:         options.ttsVoice,
 		FastMaxTokens: options.fastTokens, SlowMaxTokens: options.slowTokens,
 		Policies: policies, ObservationPolicy: observation,

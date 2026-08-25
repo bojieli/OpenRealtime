@@ -177,6 +177,11 @@ type Request struct {
 	// PendingRepair injects the repair obligation instruction. It is runtime
 	// policy derived from typed trajectory state, never from text.
 	PendingRepair bool
+	// Holding says this spoken turn exists because the reasoner is taking a
+	// while, not because anything new arrived. Without it the voice reads a
+	// trajectory in which it has already spoken and nothing has changed, and
+	// the most natural thing to write is what it wrote last time.
+	Holding bool
 }
 
 // Descriptors reports the configured providers, for evidence and health.
@@ -250,10 +255,13 @@ func (engine *Engine) RunSlow(ctx context.Context, request Request, observer Str
 }
 
 func (engine *Engine) instruction(prompt string, request Request) string {
-	if !request.PendingRepair {
-		return prompt
+	if request.PendingRepair {
+		prompt += "\n\n" + RepairInstruction
 	}
-	return prompt + "\n\n" + RepairInstruction
+	if request.Holding {
+		prompt += "\n\n" + HoldingInstruction
+	}
+	return prompt
 }
 
 func (engine *Engine) run(
