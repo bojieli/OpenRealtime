@@ -636,7 +636,7 @@ func buildCascade(
 	if err != nil {
 		return nil, err
 	}
-	observers, err := buildObservers(options, governor)
+	observers, narrator, err := buildObservers(options, governor)
 	if err != nil {
 		return nil, err
 	}
@@ -655,6 +655,7 @@ func buildCascade(
 	return cascade.New(cascade.Config{
 		ClientToolTimeout: options.clientToolTimeout,
 		Observers:         observers, DefaultObservers: defaults, Tools: computer.specs,
+		Narrator:      narrator,
 		Governor:      governor,
 		ConfirmPolicy: computer.policy,
 		// Every executed action is already a trajectory item with causal
@@ -893,28 +894,38 @@ func defaultObserverSet(configured string) ([]string, error) {
 	}
 }
 
-func buildObservers(options serveOptions, governor *admission.Governor) ([]perception.Factory, error) {
+// buildObservers returns the video observer factories and the narrator behind
+// them.
+//
+// The narrator comes back because a picture does not only arrive on a video
+// stream. A client can put one straight into the conversation, and on that
+// path there was nothing to turn it into text - so everything in the session
+// that cannot see, the interaction model first among them, was handed "the
+// user attached an image" and asked to decide from that.
+func buildObservers(
+	options serveOptions, governor *admission.Governor,
+) ([]perception.Factory, perception.Narrator, error) {
 	set, err := perception.ParseObserverSet(options.observers)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if set == perception.SetAudioOnly {
-		return nil, nil
+		return nil, nil, nil
 	}
 	components, err := perception.ParseComponents(options.components)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	label, narration, err := narratorComposition(options)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	vision, err := providers.NewVision(providers.VisionRequest{
 		Provider: narration.provider, Model: narration.model, BaseURL: narration.url,
 		APIKey: os.Getenv(narration.tokenEnv), RequestTimeout: options.requestTimeout,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	prompt := ""
 	switch strings.ToLower(strings.TrimSpace(options.narration)) {
@@ -922,7 +933,7 @@ func buildObservers(options serveOptions, governor *admission.Governor) ([]perce
 	case "actionable":
 		prompt = perception.ActionableNarrationPrompt
 	default:
-		return nil, fmt.Errorf("narration must be describe or actionable, got %q", options.narration)
+		return nil, nil, fmt.Errorf("narration must be describe or actionable, got %q", options.narration)
 	}
 	var narrator perception.Narrator
 	narrator, err = perception.NewNarrator(perception.NarratorConfig{
@@ -932,7 +943,7 @@ func buildObservers(options serveOptions, governor *admission.Governor) ([]perce
 		Governor: governor, Class: admission.ClassBackground,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if components == perception.ComponentKeyframeOnly {
 		// Keyframe-only is a measurement level, not a working configuration:
@@ -942,7 +953,7 @@ func buildObservers(options serveOptions, governor *admission.Governor) ([]perce
 	return []perception.Factory{perception.VideoFactory(perception.VideoConfig{
 		Narrator:        narrator,
 		AttachKeyframes: components != perception.ComponentNarrationOnly,
-	})}, nil
+	})}, narrator, nil
 }
 
 // narratorSource is which endpoint narrates.

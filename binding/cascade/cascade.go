@@ -63,6 +63,19 @@ type Config struct {
 	// Perception creates one streaming recogniser per utterance, so
 	// recogniser state cannot leak between turns.
 	Perception func() (v1.PerceptionProvider, error)
+	// Narrator turns a picture a client put into the conversation into text.
+	//
+	// A video observer has one because a frame nobody describes is a frame
+	// only a model that can see will ever know about. A picture attached to a
+	// message needs it for exactly the same reason and had nothing: the fast
+	// provider was handed the image and everything else in the session was
+	// handed the sentence "The user attached an image", including the
+	// interaction model, which then decided whether to speak about a screen it
+	// had been told nothing about.
+	//
+	// Nil leaves that sentence in place, which is the honest fallback for a
+	// deployment with no vision model configured.
+	Narrator perception.Narrator
 	// ASRCadence is how often the recogniser is advanced.
 	ASRCadence time.Duration
 	// HoldingAfter is how long the reasoner may run before the voice says what

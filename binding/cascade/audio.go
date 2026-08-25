@@ -604,12 +604,65 @@ func (runtime *runtime) Text(ctx context.Context, input binding.TextInput) error
 		// about it still gets a line saying it arrived, so the trajectory has
 		// something to hang the handle on.
 		text = "The user attached an image."
+		if runtime.config.Narrator != nil {
+			// And that line is all anything without eyes ever got. The fast
+			// provider is handed the image; the interaction model, which
+			// decides whether this is a moment to speak at, was handed the
+			// sentence above and nothing else - so on the visual case it was
+			// choosing between silence and speech about a screen it had been
+			// told nothing about. Describing it is what the video observer
+			// already does with every frame, and for the same reason.
+			runtime.describeAttachment(input.Images, media, authority)
+			return nil
+		}
 	}
 	observation := perception.Observation{
 		Text: text, Observer: "client", Source: "text",
 		Authority: authority, Media: media, Final: true,
 	}
 	return runtime.commitObservation(ctx, observation)
+}
+
+// describeAttachment narrates an attached picture and commits it once there is
+// something to say about it.
+//
+// Off the caller's goroutine, because that goroutine is the session's reader:
+// blocking it for the length of a vision call would hold up the audio arriving
+// behind it. The observation lands a beat later than the client's own
+// item.created, which is the right order anyway - a picture is an observation
+// and not a turn, and nothing is waiting on it to speak.
+func (runtime *runtime) describeAttachment(
+	images []binding.Image, media []trajectory.MediaRef, authority trajectory.Authority,
+) {
+	frames := make([]perception.Frame, 0, len(images))
+	for index, image := range images {
+		frames = append(frames, perception.Frame{
+			Kind: perception.FrameImage, Source: "message", Index: uint64(index),
+			CapturedNS: runtime.scheduler.NowNS(), Image: image.Bytes,
+			MIMEType: image.MIMEType, Width: image.Width, Height: image.Height,
+		})
+	}
+	runtime.wait.Add(1)
+	go func() {
+		defer runtime.wait.Done()
+		text := "The user attached an image."
+		described, err := runtime.config.Narrator.Narrate(
+			runtime.ctx, frames, runtime.store.Snapshot())
+		if described = strings.TrimSpace(described); err == nil && described != "" {
+			// Named, because the description is the narrator talking about
+			// what the user put in front of it, and a line that reads as the
+			// user's own words would have the voice answer it as if it were.
+			text = "The user attached an image showing: " + described
+		}
+		observation := perception.Observation{
+			Text: text, Observer: "client", Source: "text",
+			Authority: authority, Media: media, Final: true,
+		}
+		if err := runtime.commitObservation(runtime.ctx, observation); err != nil &&
+			runtime.ctx.Err() == nil {
+			runtime.fail("observation_error", err)
+		}
+	}()
 }
 
 // retain stores pictures a client attached and returns handles to them.

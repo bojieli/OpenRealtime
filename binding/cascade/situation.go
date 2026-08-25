@@ -7,6 +7,7 @@ import (
 	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	"github.com/bojieli/OpenRealtime/cognition"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -81,14 +82,23 @@ func workInFlight(snapshot trajectory.Snapshot) string {
 	return strings.Join(names, ", ")
 }
 
-// lastSeen is the newest thing an observer noticed that nobody said out loud.
+// lastSeen is the newest thing the agent looked at rather than heard.
+//
+// An observer's own observation is one route to that. The other is a picture a
+// client put into the conversation, which carries user authority because a
+// person attaching a screenshot is a person talking - and is still, entirely,
+// something seen. Reading only the first route left the whole visual axis
+// invisible to a decision layer that cannot see, on the exact path every
+// Realtime client uses to send an image.
 func lastSeen(snapshot trajectory.Snapshot) string {
 	for index := len(snapshot.Items) - 1; index >= 0; index-- {
 		item := snapshot.Items[index]
 		if item.Kind != trajectory.KindObservation {
 			continue
 		}
-		if trajectory.AuthorityOf(item) != trajectory.AuthorityObserver {
+		observer := trajectory.AuthorityOf(item) == trajectory.AuthorityObserver
+		attached := item.Observation != nil && len(item.Observation.Media) > 0
+		if !observer && !attached {
 			continue
 		}
 		return strings.TrimSpace(item.Content)
@@ -407,7 +417,9 @@ func (runtime *runtime) markSpoken(heard string) {
 // never carried out. Measured, the second animal in a counting policy is
 // exactly this shape - the model chooses speak-through, the interjection runs,
 // no error is reported, and nothing is said.
-func (runtime *runtime) noteWithheld(result continuation.RunResult, overFloor bool, why string) {
+func (runtime *runtime) noteWithheld(
+	result continuation.RunResult, request cognition.Request, why string,
+) {
 	recorder := runtime.policies.ShadowInteraction
 	if recorder == nil {
 		return
@@ -417,7 +429,14 @@ func (runtime *runtime) noteWithheld(result continuation.RunResult, overFloor bo
 		Situation: "withheld: " + strings.TrimSpace(result.AssistantText),
 		Predicates: map[string]string{
 			"where": "publish", "why": why,
-			"over_floor":  strconv.FormatBool(overFloor),
+			// What the turn was asked for, because a turn that produced
+			// nothing is a question about the request and not about the
+			// result. Reconstructing it afterwards from timestamps is how an
+			// afternoon goes.
+			"because":     request.Because,
+			"heard":       request.Heard,
+			"standing":    strings.Join(request.Standing, " | "),
+			"over_floor":  strconv.FormatBool(request.Interjecting),
 			"interrupted": strconv.FormatBool(result.Interrupted),
 			"committed":   strconv.FormatBool(result.Committed),
 		},

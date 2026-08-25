@@ -178,7 +178,7 @@ func (runtime *runtime) runFast(
 	if err == nil && len(result.ToolCalls) > 0 {
 		dispatchErr = runtime.dispatch(ctx, result)
 	}
-	publishErr := runtime.publishAssistant(ctx, result, request.Interjecting)
+	publishErr := runtime.publishAssistant(ctx, result, request)
 	var signalErr error
 	// A turn the voice did not declare finished goes to the reasoner. So does
 	// one carrying a proposal, which is the voice naming a capability it
@@ -315,14 +315,15 @@ func (runtime *runtime) breakSilenceWhileDeliberating(
 // publishAssistant applies the commitment policy to one continuation's output
 // and, when it commits, queues speech and records the queued transition.
 //
-// overFloor says the turn was spoken into somebody else's, which barge-in has
-// to know: what would otherwise read as being interrupted is the act working
-// as intended.
+// The request comes down with the result because what the turn was asked for
+// decides two things here: whether the speech was begun over somebody else's
+// floor, which barge-in has to know, and what to say about a turn that
+// produced nothing.
 func (runtime *runtime) publishAssistant(
-	ctx context.Context, result continuation.RunResult, overFloor bool,
+	ctx context.Context, result continuation.RunResult, request cognition.Request,
 ) error {
 	if strings.TrimSpace(result.AssistantText) == "" || !result.Committed {
-		runtime.noteWithheld(result, overFloor, "the model said nothing that reached a safe point")
+		runtime.noteWithheld(result, request, "the model said nothing that reached a safe point")
 		return nil
 	}
 	// A model that writes a tool call as prose instead of emitting one has not
@@ -332,7 +333,7 @@ func (runtime *runtime) publishAssistant(
 	// whoever is listening. There is nothing to salvage: the call is malformed
 	// as a call and the sentence is malformed as speech.
 	if looksLikeToolCall(result.AssistantText) {
-		runtime.noteWithheld(result, overFloor, "the model wrote a tool call as prose")
+		runtime.noteWithheld(result, request, "the model wrote a tool call as prose")
 		return nil
 	}
 	items := runtime.assistantItems(result)
@@ -348,7 +349,7 @@ func (runtime *runtime) publishAssistant(
 		Text: result.AssistantText, Complete: !result.Interrupted, SpeechAuthority: authority,
 	})
 	if !decision.Committed() {
-		runtime.noteWithheld(result, overFloor, decision.Reason)
+		runtime.noteWithheld(result, request, decision.Reason)
 		return nil
 	}
 	ids := make([]string, 0, len(items))
@@ -358,7 +359,7 @@ func (runtime *runtime) publishAssistant(
 	utterance := action.Utterance{
 		ID: idFor("speech", runtime.sequence.Add(1)), Text: decision.Emit,
 		Phase: items[0].Producer.Phase, SourceRevision: result.SourceRevision,
-		AssistantItemIDs: ids, SpokeOver: overFloor,
+		AssistantItemIDs: ids, SpokeOver: request.Interjecting,
 	}
 
 	if runtime.textOnly() {
