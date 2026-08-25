@@ -82,9 +82,9 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		}
 	}()
 
-	standing, interjecting := runtime.cognitionExtras()
+	standing, interjecting, heard := runtime.cognitionExtras()
 	request := cognition.Request{
-		Standing: standing, Interjecting: interjecting,
+		Standing: standing, Interjecting: interjecting, Heard: heard,
 		SourceRevision: revision,
 		PendingRepair:  len(trajectory.PendingRepairs(runtime.store.Snapshot())) > 0,
 	}

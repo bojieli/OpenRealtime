@@ -74,9 +74,9 @@ func (runtime *runtime) prepare(ctx context.Context, decision interaction.Contex
 		MonotonicNS: decision.NowNS, SourceRevision: decision.Revision.ID,
 		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: text,
 	}
-	standing, interjecting := runtime.cognitionExtras()
+	standing, interjecting, heard := runtime.cognitionExtras()
 	request := cognition.Request{
-		SourceRevision: decision.Revision.ID, Standing: standing, Interjecting: interjecting,
+		SourceRevision: decision.Revision.ID, Standing: standing, Interjecting: interjecting, Heard: heard,
 	}
 
 	go func() {

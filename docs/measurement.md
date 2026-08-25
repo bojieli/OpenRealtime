@@ -457,3 +457,35 @@ exist yet.
 
 So the honest position is that the decision layer is measured and the
 behaviour it should produce is not, and the flag stays off.
+
+### Where the counting case actually fails (F16)
+
+Probing the voice directly, outside the whole stack, separates the two layers
+cleanly. Same trajectory, same instruction, one turn at a time:
+
+| the turn | 30B-A3B | 8B |
+| --- | --- | --- |
+| somebody sets the policy | "One. Two. Three… Ten." | "Okay, I'll count them as you mention them." |
+| a line with no animal in it | "Nothing." | "I saw a fox." |
+| a line with an animal in it | **"One."** | **"One."** |
+
+Both models get the case the demo is about. Both get the turn that *sets up*
+the arrangement wrong, and they get it wrong in opposite directions: the MoE
+performs the arrangement on being told about it, and the dense model
+acknowledges correctly and then invents an animal that was never mentioned.
+
+That first spurious count is the whole failure. Once it has counted to ten, the
+next real animal is eleven, and every check for "one" and "two" fails for the
+rest of the conversation - which reads in the scenario report as counting being
+broken, when the only broken turn is the one before any animal exists.
+
+The interaction model is right in all three cases. It answers the policy-setting
+turn, stays silent through the line with no animal, and speaks through the line
+with one. Four rewordings of the instruction moved this around without fixing
+it, and moving the rule to the end of the prompt - where recency should have
+helped - made it worse, because the example inside it primes the behaviour it
+forbids.
+
+So the limit here is the voice at this scale, not the design, and it is a
+deployment's choice to spend a larger model on the phase that speaks. The
+interaction model is 3B active for a reason; the voice need not be.

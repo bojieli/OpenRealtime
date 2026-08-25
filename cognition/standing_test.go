@@ -41,3 +41,27 @@ func TestInterjectingTellsTheVoiceTheTurnIsNotItsOwn(t *testing.T) {
 		t.Fatal("an ordinary turn was told it was interjecting")
 	}
 }
+
+// The three models must not disagree about what happened.
+//
+// Interaction decides on partials and cognition reads committed items, so a
+// turn triggered by something still in a partial reaches the voice with its own
+// cause missing. Told to count animals as they were mentioned, it counted from
+// one to ten: the animal was in a partial, and the instruction was all it had.
+func TestTheVoiceIsShownTheUtteranceThatCausedTheTurn(t *testing.T) {
+	prompt := instructionFor(t, cognition.Request{
+		Standing: []string{"count the animals out loud as they are mentioned (11s ago)"},
+		Heard:    "a capybara wandered over and sat down next to me",
+	})
+	if !strings.Contains(prompt, "a capybara wandered over") {
+		t.Fatalf("the sentence that caused the turn never reached the voice:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, cognition.HeardInstruction) {
+		t.Fatal("the live utterance was included without saying what it is")
+	}
+	// Once committed it is in the log, and repeating it would show the voice
+	// the same sentence twice with no way to tell that it is one.
+	if strings.Contains(instructionFor(t, cognition.Request{}), cognition.HeardInstruction) {
+		t.Fatal("a request with nothing in flight still announced a live utterance")
+	}
+}

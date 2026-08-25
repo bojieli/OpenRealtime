@@ -51,10 +51,14 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		if state := runtime.duplex.Snapshot(); !state.UserSpeaking || state.AgentSpeaking {
 			return
 		}
-		standing, _ := runtime.cognitionExtras()
+		standing, _, _ := runtime.cognitionExtras()
 		request := cognition.Request{
 			SourceRevision: decision.Revision.ID,
 			Standing:       standing, Interjecting: true,
+			// The sentence that caused this. It is in no committed item yet,
+			// and without it the voice is asked to speak about something it
+			// cannot see.
+			Heard: decision.Revision.Text(),
 		}
 		err := runtime.runFast(runtime.ctx, request, &turnReport{}, true)
 		if err != nil && runtime.ctx.Err() == nil && !errors.Is(err, context.Canceled) {

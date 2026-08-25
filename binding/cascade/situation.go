@@ -239,13 +239,28 @@ func (runtime *runtime) setInterjecting(interjecting bool) {
 	runtime.audioMu.Unlock()
 }
 
-// cognitionExtras is what the voice needs to know beyond the trajectory: the
-// policies people set out loud, and whether this turn is its own.
-func (runtime *runtime) cognitionExtras() ([]string, bool) {
+// cognitionExtras is what cognition needs beyond the trajectory, so that the
+// three models see one conversation rather than three.
+//
+// They cannot see identical context and should not: the interaction model
+// needs milliseconds of silence where the voice needs none, and the voice needs
+// the whole log where the interaction model needs a bounded window. What they
+// must not differ on is *what happened*. Interaction decides on partials and
+// cognition reads committed items, so anything still in a partial is invisible
+// to the voice unless it is carried across - and a turn triggered by a partial
+// then reaches the voice with its own cause missing.
+func (runtime *runtime) cognitionExtras() (standing []string, interjecting bool, heard string) {
 	runtime.audioMu.Lock()
-	interjecting := runtime.interjecting
+	interjecting = runtime.interjecting
+	latest := runtime.heard
 	runtime.audioMu.Unlock()
-	return runtime.pinboard.Lines(runtime.scheduler.NowNS()), interjecting
+	// Only while they are still talking. Once the utterance is committed it is
+	// in the log, and repeating it there would show the voice the same sentence
+	// twice with no way to tell that it is one.
+	if runtime.duplex.Snapshot().UserSpeaking {
+		heard = strings.TrimSpace(latest.Text())
+	}
+	return runtime.pinboard.Lines(runtime.scheduler.NowNS()), interjecting, heard
 }
 
 func errorText(err error) string {

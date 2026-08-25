@@ -196,6 +196,17 @@ type Request struct {
 	// while somebody else keeps the floor. What that calls for is the shortest
 	// thing that serves, not a reply.
 	Interjecting bool
+	// Heard is what the current speaker has said so far in an utterance that
+	// has not been committed yet.
+	//
+	// Without it the three models do not see the same conversation, and the
+	// difference is not a detail of resolution. Interaction decides on
+	// partials; cognition reads the committed log. So a turn triggered by
+	// something in a partial reaches the voice with that something missing -
+	// it is asked to speak and cannot see the sentence that asked it to.
+	// Told to count animals as they are mentioned, it counted from one to ten,
+	// because the animal was in a partial and the instruction was all it had.
+	Heard string
 }
 
 // Descriptors reports the configured providers, for evidence and health.
@@ -284,6 +295,9 @@ func Instruct(prompt string, request Request) string {
 	// the runtime describing its own state.
 	if len(request.Standing) > 0 {
 		prompt += "\n\n" + StandingInstruction + "\n- " + strings.Join(request.Standing, "\n- ")
+	}
+	if strings.TrimSpace(request.Heard) != "" {
+		prompt += "\n\n" + HeardInstruction + " \"" + strings.TrimSpace(request.Heard) + "\""
 	}
 	if request.Interjecting {
 		prompt += "\n\n" + InterjectingInstruction
