@@ -242,10 +242,11 @@ strictly more information with nothing concluded from it.
 Both candidates on the same 96 cases, three runs each, guided decoding,
 reasoning off, on the one local GPU:
 
-| | balanced | p50 | p90 | worst | notes |
-| --- | --- | --- | --- | --- | --- |
-| Qwen3-8B | 0.69 | 35ms | 55ms | 60ms | one malformed answer in 96 |
-| Qwen3-30B-A3B-FP8 | **0.72–0.73** | **30ms** | **38ms** | **41ms** | none |
+| | balanced | acting | restraint | p50 | p90 | worst |
+| --- | --- | --- | --- | --- | --- | --- |
+| Qwen3-8B | 0.69 | 33/45 | 33/51 | 35ms | 55ms | 60ms |
+| Qwen3-30B-A3B-FP8 | 0.72–0.73 | **36/45** | 33/51 | **30ms** | **38ms** | **41ms** |
+| Qwen3.6-35B-A3B-FP8 | **0.81** | 33/45 | **45/51** | 87–107ms | 113–120ms | 166ms |
 
 The larger model is also the faster one, which is what makes the choice easy
 rather than a trade. A mixture of experts with three billion parameters active
@@ -258,8 +259,23 @@ Restraint is identical at 33/51. The whole difference is acting: 37/45 against
 failure that is invisible in conversation - nobody notices the sentence that
 was not said.
 
-This agrees with the earlier measurement on an older prompt (0.76 against 0.68)
-and settles it on the current one. The 30B-A3B is what ships.
+This agrees with the earlier measurement on an older prompt (0.76 against 0.68).
+
+**And then Qwen3.6 changes the answer.** Nine points of balanced accuracy over
+the 30B, and every one of them is restraint: 45 of 51 against 33, twelve more
+cases where the right move is to do nothing and it does nothing. Acting is
+three cases worse. That is the trade one would choose without hesitating - a
+missed moment costs a beat, and speaking into one that was not there is the
+thing people actually dislike.
+
+It costs about three times the decision: 87 to 107ms against 30. That still
+lands inside the 250ms deadline a decision is given and inside the 150ms the
+overlap classifier is bounded by, so it is affordable rather than free. Read
+the first run of it carefully, though - 84 of 96 cases errored on a cold
+server, because the eval fires them together and the first request took 238ms
+with everything queued behind it. A model that misses the deadline reports as
+broken rather than as slow, which is worth knowing before believing a bad
+number.
 
 Both sat behind the same 40k context and the same guided decoding. The 8B needs
 16GB of weights against the 30B's FP8 footprint, so on a single card the choice
