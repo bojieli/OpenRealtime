@@ -39,7 +39,7 @@ tool-proposal, tool-call, and tool-result items.
   a larger context projection, and executable tools.
 - Both profiles receive the same agent identity, capability manifest, actual
   tool definitions, audible commitments, and actual tool state.
-- Fast has proposal-only authority. Its structured calls are working state and
+- Fast has proposal-only authority by default. Its structured calls are working state and
   can neither execute nor receive a result. Slow has execute authority and must
   generate the authoritative call independently.
 - The default experiment schedules one slow continuation after every completed

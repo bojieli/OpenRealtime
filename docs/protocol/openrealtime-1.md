@@ -246,6 +246,7 @@ adopting anything else here.
 | Tool | Parameters |
 | --- | --- |
 | `computer.click` | `source`, `x`, `y`, `button` (`left`\|`right`\|`middle`, default `left`) |
+| `computer.click_element` | `source`, `element_id` (the visible label in a set-of-mark frame) |
 | `computer.double_click` | `source`, `x`, `y` |
 | `computer.move` | `source`, `x`, `y` |
 | `computer.drag` | `source`, `from_x`, `from_y`, `to_x`, `to_y` |
@@ -258,6 +259,12 @@ adopting anything else here.
 Every tool takes `source`, naming a declared video source (§3.1), so an action
 targets a coordinate space the model actually saw. Coordinates are in that
 source's declared `width` × `height`, origin at the top left.
+
+`computer.click_element` is the browser-grounded alternative to
+`computer.click`. It is valid only when the current frame visibly labels
+interactive elements. The label resolves inside the declared browser target;
+it is not a selector, accessibility query, or ambient DOM-reading capability.
+Desktop, VM, and Android targets use pixel grounding and SHOULD omit this tool.
 
 The complete JSON Schemas are published with this specification and are
 available from an implementation as machine-readable definitions.
@@ -286,6 +293,10 @@ rather than only to `computer.*`.
 Servers that do not understand the key MUST ignore it, as JSON Schema requires.
 A server that does understand it MUST NOT dispatch an `always` action without
 authorization, and MUST treat `policy` as `always` when no policy is configured.
+The same rule applies when the tool implementation belongs to the client: a
+server MUST apply the declared confirmation before emitting the executable call
+over the protocol. Client ownership is an implementation boundary, not an
+authority or confirmation bypass.
 
 ## 6. Authority and injection
 

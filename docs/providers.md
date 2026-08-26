@@ -56,7 +56,7 @@ providers are available:
 | | Fast | Slow |
 | --- | --- | --- |
 | Reasoning | off | on, at `-slow-effort` |
-| Tools | proposal-only | executable |
+| Tools | proposal-only by default; bounded direct `computer.*` actions with explicit opt-in | executable |
 | Speech | voiced | silent |
 | Default model | the provider's small model | the provider's large model |
 
@@ -64,6 +64,40 @@ Those are properties of the arrangement, not of the vendor. The catalogue knows
 how to reach a provider; the arrangement knows what the provider is for. That
 separation is what stops a fast provider acquiring tool authority because its
 vendor happens to support tools.
+
+For a vision-capable reflex model, a hosted Gemini configuration is:
+
+```sh
+openrealtime serve \
+  -computer-use -fast-computer-use \
+  -fast-provider google -fast-model gemini-3.5-flash -fast-sees \
+  -observers audio+video -observer-components keyframe \
+  -slow-provider google -slow-model gemini-3.5-flash -slow-sees
+```
+
+The native Google continuation adapter accepts images and function tools. The
+fast phase requests minimal effort with thinking disabled; slow retains high
+effort and the shared trajectory. Model availability changes, so use
+`openrealtime providers -role fast -probe google` before a measured run rather
+than treating the example model name as permanent.
+
+For a local VLM, point the existing `vllm`, `sglang`, or
+`openai-compatible` provider at its endpoint and keep the same architecture:
+
+```sh
+openrealtime serve \
+  -computer-use -fast-computer-use \
+  -fast-provider vllm -fast-url http://127.0.0.1:8000/v1 \
+  -fast-model your-vision-instruct-model -fast-sees \
+  -observers audio+video -observer-components keyframe \
+  -slow-provider google -slow-sees
+```
+
+The local server must support image content and function calling. Keep the
+model warm, disable its thinking mode for fast, and measure it rather than
+assuming parameter count predicts reaction time. `keyframe` is the direct
+low-latency path; narration remains useful persistent trajectory text but adds
+another model call before a narration-only actor can ground a click.
 
 Three wire dialects are implemented:
 

@@ -1,8 +1,10 @@
-# ADR-0006: The fast provider cannot call tools; the slow provider cannot speak
+# ADR-0006: Proposal-only fast cognition and silent slow cognition
 
 ## Status
 
-Accepted, v1.0. Extends ADR-0003.
+Accepted, v1.0. Extends ADR-0003. The first boundary is narrowed for an
+explicit cascade computer-use mode by ADR-0010; it remains unchanged by
+default and for every other tool and binding.
 
 ## Context
 
@@ -19,9 +21,13 @@ which model owned what the user heard depended on timing.
 
 ## Decision
 
-Add a second boundary, symmetric with the first:
+Add a second boundary, symmetric with the original first boundary:
 
 > The fast provider cannot call tools. The slow provider cannot speak.
+
+ADR-0010 later narrows the first clause for an explicitly filtered cascade
+computer-action lane. Proposal-only remains the default; the silent-slow clause
+is unchanged.
 
 Slow's output appends to the trajectory as background state, and the next fast
 turn speaks from it in its own words.

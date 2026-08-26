@@ -117,6 +117,30 @@ A client must negotiate `video.input` before sending frames, and must declare a
 source's geometry before sending any. See the
 [protocol](../protocol/openrealtime-1.md).
 
+For cue-sensitive browser control, the cascade can open a bounded reflex lane:
+
+```sh
+openrealtime serve \
+  -computer-use -fast-computer-use \
+  -fast-provider google -fast-sees \
+  -observers audio+video -observer-components keyframe
+```
+
+This does not give the fast phase arbitrary tools. Only exact standard direct
+`computer.*` actions admitted by the live session filter are attached, and
+only on committed-observation turns. `computer.screenshot` and
+`computer.wait` remain slow-only observation control. Server-owned actions run
+through the declared browser target; client-owned computer environments must
+declare a target and `confirm: never` to enter the reflex lane. Every call
+still crosses trajectory authority, confirmation, the action ledger, and
+audit. Slow remains active for planning and consumes fast action results from
+the shared trajectory.
+
+`keyframe` is the direct visual route for a vision-capable fast model.
+Narration is useful persistent context, but a narration-only reflex waits for
+the narrator and often lacks exact pixel coordinates; set-of-mark grounding is
+the robust browser alternative when coordinate-producing vision is weak.
+
 ## Resource guidance
 
 A cascade session holds one recogniser stream, one fast continuation, one slow

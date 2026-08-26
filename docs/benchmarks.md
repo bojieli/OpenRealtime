@@ -1,8 +1,13 @@
 # The benchmark harness
 
-Every suite reduces to the same thing: play audio into a session and judge what
-came out. So there is one driver, and the suites differ only in what they play
-and what they look for.
+Every suite reduces to the same thing: drive a timed environment into a session
+and judge what came out. The shared driver can pace audio, schedule protocol
+events, negotiate video sources, stream changing frames while the agent acts,
+answer tool calls, and retain the resulting observations and actions on one
+clock. Suites differ in the environment and scorer, not in protocol plumbing.
+When a session ends, the driver stops scheduling frames and joins any capture
+already in flight before a suite reuses its environment; a canceled capture
+cannot leak into the next case or invalidate a shared browser connection.
 
 The harness drives a **running server over the protocol**, not an in-process
 session. A measurement of something other than what users get is not a
@@ -21,7 +26,8 @@ openrealtime bench fdb --limit 4           # a suite against it
 | `bench fdbv3` | FDB v3 | tool use under disfluent speech, including spelled identifiers |
 | `bench fdbench` | FD-Bench | endpointing and response timing at scale |
 | `bench tau-voice` | τ-Voice | tool-use success under voice, against a live environment |
-| `bench dynacu` | DynaCU-Bench | dynamic computer use: audio and visual perception, action grounding |
+| `bench realtime-cu` | OpenRealtime Realtime-CU v1 | repository-owned realtime audio, video, camera, authorization, games, and computer use |
+| `bench dynacu` | DynaCU-Bench | optional independent external validation of dynamic computer use |
 
 Every suite here plays a recording at the system. For conversations where both
 sides are live — a support call, an interview, an argument over a large
@@ -153,7 +159,85 @@ never reached evaluation is recorded as incomplete rather than as a failure: an
 endpoint that was down is not a benchmark result, and scoring it zero is how
 infrastructure trouble becomes a published capability claim.
 
-## DynaCU-Bench
+A connected session that continues acting beyond a suite's evaluation horizon
+is different: the environment did run and its deterministic state can be
+scored. Realtime-CU records that case as a completed negative result with
+`session_timeout_count=1`, retaining its observations and action trace. Only a
+failure to reach or read the evaluator remains an infrastructure failure. A
+protocol `error` from ASR, cognition, the engine, or transport is also
+incomplete: the driver returns a typed session failure with the transcript
+evidence, rather than scoring an unavailable provider as an incapable agent.
+
+## OpenRealtime Realtime-CU v1
+
+This is the repository-owned audiovisual computer-use capability and release
+suite. Its task definitions, authored audio, browser environment, live screen
+and camera capture, action evaluator, and scorer ship in `bench/realtimecu`.
+No external checkout or model vendor is part of its definition.
+
+Eight diagnostic task families run under both pixel and set-of-mark grounding,
+for sixteen declared cases:
+
+| Task family | What it isolates |
+| --- | --- |
+| static control | ordinary audio-to-screen action control |
+| transient deployment alert | a short-lived visual cue and reaction deadline |
+| live temperature threshold | continuous visual-temporal monitoring |
+| moving target | game-like realtime interaction |
+| spoken colour choice | cross-modal audio instruction and visual grounding |
+| physical-camera smoke | camera evidence with a separate screen-only action target |
+| untrusted payment prompt | authorization and prompt-injection resistance |
+| incident-code form | dependent click, literal typing, and submission |
+
+Pixel grounding is the portable baseline for a desktop, virtual machine, or
+Android display. Set-of-mark grounding is the browser condition: the evaluator
+renders numbered bubbles over interactive elements, and
+`computer.click_element` resolves the visible label at action time. DOM access
+stays inside the browser grounding/evaluator boundary; the model never receives
+a CSS selector or hidden task state. A deployment-bound pixel tool schema names
+the target's exact inclusive coordinate maxima, while the portable published
+vocabulary remains dimension-free. Realtime-CU also repeats the viewport extent
+in its pixel instruction so a model cannot silently assume the source image's
+encoded or training-time dimensions.
+
+```sh
+openrealtime serve \
+  -computer-use -fast-computer-use \
+  -fast-provider google -fast-sees \
+  -observers audio+video -observer-components keyframe
+
+openrealtime bench realtime-cu \
+  -grounding pixel,set_of_mark -fps 3 \
+  -vary F10 -level bounded-fast \
+  -out results/realtime-cu.json
+```
+
+The `-vary F10` label is part of the measurement: omit it only when the server
+uses the suite's `slow-only` reference authority. A server option cannot be
+inferred through the benchmark WebSocket, so the runner requires the operator
+to record the paired cell explicitly.
+
+`-categories`, `-grounding`, and `-limit` are diagnostic filters. A filtered
+run always declares the full sixteen-case suite as expected and is therefore
+incomplete and non-reportable. `-list` prints the owned tasks without starting
+a browser.
+
+Correctness and timeliness are separate outputs. `correct_action_rate` records
+functional success even when an action was late;
+`task_success_rate`/`deadline_miss_count` express the task's realtime outcome.
+The report also retains cue-to-first-tool, cue-to-effectful-action,
+speech-end-to-action, cue/frame-to-observation, action execution, and total
+completion latency, with sample counts and distributions. Screenshot, wait,
+and pointer-move calls do not masquerade as the first effectful action. Per-case
+notes retain the recognized user turns beside the action trace, which separates
+speech-recognition mistakes from downstream reasoning and grounding mistakes.
+
+The evaluator controls reset and scoring through a private browser control
+plane. Model actions travel only through declared `computer.*` tools and see
+the consequence in subsequent video frames. A separate camera source is
+observation-only; every action must still name the declared `screen` source.
+
+## DynaCU-Bench (optional external validation)
 
 150 browser tasks: 100 dynamic ones across ten categories that a
 screenshot-only agent cannot solve — podcasts, meetings, video, carousels,
@@ -161,13 +245,17 @@ live dashboards, transient UI, phone calls, interviews, collaborative editing,
 games — and a static 50 that any agent should, which is the control saying
 whether perception cost anything where there was nothing to perceive.
 
-It is the second suite the harness does not own. The AOI repository has the
+The AOI repository has the
 task pages, the Playwright environment that serves them, the audio injected
 into them, and the evaluator that decides whether a task passed; a
 reimplementation would produce a benchmark that agreed with this project rather
 than with the published one. So `bench dynacu` is a runner: it pins the
 environment to a revision, points it at a running server, and turns what comes
 back into the same report shape every other suite produces.
+
+It is useful independent validation and remains intentionally unmodified, but
+it is not an OpenRealtime dependency, capability definition, release gate, or
+publication prerequisite. The owned Realtime-CU suite fills those roles.
 
 ```sh
 scripts/prepare-dynacu.sh                  # clone, pin, and check the environment

@@ -52,7 +52,8 @@ of evidence: **what does the agent do right now?**
 
 A third authority rule joins the two in ADR-0006:
 
-> The fast provider cannot call tools. The slow provider cannot speak.
+> Fast is proposal-only by default and may execute only an explicitly filtered
+> bounded lane. The slow provider cannot speak. (ADR-0010)
 > **The interaction model cannot produce content.**
 
 It selects an act; cognition fills it. Interaction still decides only *when*.

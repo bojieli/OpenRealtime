@@ -5,23 +5,40 @@ has a test that fails if the enforcement is removed.
 
 | Concern | Mechanism | Enforced in |
 | --- | --- | --- |
-| The fast model taking irreversible action | proposal versus execute authority | `continuation`, `action.Tools.Dispatch` |
+| The fast model exceeding a bounded action lane | per-invocation tool filtering plus proposal versus execute authority | `cognition`, `continuation`, `action.Tools` |
 | Destructive actions | a declared `confirm` policy per tool | `action.Tools.confirm` |
 | Prompt injection through observed content | typed provenance, fenced rendering | `trajectory`, `continuation.ObservationContent` |
 | Blast radius | actions target a declared source in a declared context | `computeruse.Dispatcher` |
-| Auditability | every action is a trajectory item with causal parents | `trajectory`, `computeruse.Records` |
+| Auditability | every action is a trajectory item with causal parents and producer-phase provenance | `trajectory`, `action.Record`, `computeruse.Records` |
 
-## 1. The fast provider cannot act
+## 1. Fast is proposal-only unless a bounded lane is explicitly opened
 
 This is structural rather than discouraged. A fast provider's descriptor
 carries proposal-only tool authority, so a call it emits is committed as a
 `tool_proposal`: a typed record of what capability it thought was needed, which
 no dispatcher will execute.
 
+Cascade can opt into `-fast-computer-use` for cue-sensitive visual action. That
+does not expose the session's general tool catalogue. It requires execution
+authority and a live filter, attaches tools only to committed-observation safe
+points, and admits only exact standard computer-use actions. A server action
+must be backed by an in-process dispatcher. A client action must declare both a
+target and `confirm: never`; a client tool requiring policy or human
+confirmation stays outside the reflex lane. Names like `computer.exfiltrate`
+are not standard actions and stay proposals. `computer.screenshot` and
+`computer.wait` are standard but remain slow-only: a reflex cannot replace the
+current streaming frame or deliberately sleep through a transient cue.
+
 The check is repeated at the point of effect. `action.Tools.Dispatch` reads the
 canonical trajectory and refuses any call that was not committed as an
 executable `tool_call`, so a proposal cannot become an effect however it is
 routed — including by a caller that simply passes it to the dispatcher.
+
+Client-executed implementations use the same boundary. Before a call is
+emitted over the protocol, `action.Tools.EmitRemote` verifies trajectory
+authority, answers its declared confirmation, and crosses the irreversible
+ledger. Returning the client result completes that commitment. Tool ownership
+never implies action authority.
 
 The same rule holds across a process boundary. A sidecar model is the fast
 provider, and a tool call from a sidecar is refused with a reason it can see.
@@ -91,13 +108,19 @@ cannot close its own fence and continue as though it were the runtime talking.
 The user's own speech is not fenced: the defence applies to what was observed,
 not to what was said.
 
-**The authority boundary.** Even a model that is entirely taken in cannot cause
-the effect. The fast provider has no execution authority, and the declared
-confirmation requirement stands between the slow provider and the world.
+**The authority boundary.** Even a model that is entirely taken in cannot turn
+an arbitrary call into an effect. In the default arrangement fast has no
+execution authority. In constrained-fast mode only the attached bounded
+computer actions can become calls; a dangerous arbitrary tool remains an
+undeclared proposal. Declared confirmation stands between every authoritative
+call and the world, regardless of which phase produced it or whether the
+implementation runs in the server or client.
 
 `computeruse/injection` is the release gate for all of this. It drives a
 compromised screen through a live session with both models taken in and a
-dangerous tool declared, and asserts that nothing happens.
+dangerous tool declared, and asserts that nothing happens. A second gate runs
+the fast provider with execution authority and proves the exact filter still
+downgrades that dangerous call to a proposal.
 
 ## 4. Blast radius is bounded by construction
 

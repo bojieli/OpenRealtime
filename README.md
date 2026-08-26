@@ -55,15 +55,19 @@ Action      →  pace commitments back out into the world
 Interaction →  decide when each of those happens
 ```
 
-Two rules define the division of labour between the models:
+Two boundaries define the division of labour between the models:
 
-> **The fast provider cannot call tools. The slow provider cannot speak.**
+> **Fast is proposal-only by default and may execute only an explicit bounded
+> computer-action lane. Slow cannot speak.**
 
 Fast answers the question the user actually asked, immediately. Slow reasons
-and acts, concurrently, and the voice says what it found. Both
-are properties of the provider descriptor rather than routing decisions,
-enforced where output commits — so a fast provider's tool call is recorded as a
-non-executable proposal and can never become an effect.
+and acts, concurrently, and the voice says what it found. The default remains
+proposal-only. `-fast-computer-use` is a two-key exception for realtime
+reaction: the descriptor must grant execution and the current invocation sees
+only exact direct standard `computer.*` definitions admitted by a live filter;
+screenshot and wait remain slow-only observation control. Every other call is
+committed as a non-executable proposal. Confirmation, the target fence, the
+irreversible-action ledger, and audit still run at the point of effect.
 
 ## Bindings
 
@@ -88,8 +92,9 @@ so. See [transports](docs/transports.md).
 
 ## Safety
 
-- A fast provider's tool call is structurally non-executable, checked again at
-  the point of effect.
+- Fast calls are structurally non-executable by default. The opt-in reflex lane
+  exposes only exact bounded computer actions on committed observation turns;
+  arbitrary and confirmation-requiring client tools stay out of it.
 - Confirmation is a developer's declaration per tool, never an inference, and
   an unattended deployment refuses what it cannot get authorised.
 - Screen text is data forever: the log refuses to record it as user speech, and
@@ -98,8 +103,26 @@ so. See [transports](docs/transports.md).
   coordinate space. There is no ambient-desktop option.
 
 `computeruse/injection` is the release gate: a compromised screen, both models
-taken in, a dangerous tool declared, and nothing happens. See
+taken in, a dangerous arbitrary tool declared, and nothing happens in both
+default and constrained-fast modes. See
 [safety](docs/safety.md).
+
+## Audiovisual computer-use evaluation
+
+The release and capability suite is repository-owned: eight deterministic
+audio/video/browser task families, each run with pixel and set-of-mark
+grounding. It covers static control, transient UI, live dashboards, a moving
+game, spoken visual choice, a separate physical-camera feed, authorization,
+and multi-step form entry. Correctness and deadline success are reported
+separately, alongside cue-to-action, observation, and action-execution latency.
+
+```sh
+openrealtime bench realtime-cu -out results/realtime-cu.json
+```
+
+`bench dynacu` remains available as optional independent validation against the
+published AOI environment. OpenRealtime does not depend on it and never uses it
+as its release gate. See [the benchmark harness](docs/benchmarks.md).
 
 ## Documentation
 

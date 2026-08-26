@@ -133,13 +133,35 @@ speak with the user hearing it gets every overlap decision wrong.
 
 ## The two cognition boundaries
 
-> **The fast provider cannot call tools. The slow provider cannot speak.**
+> **Fast is proposal-only by default and can execute only an explicitly
+> filtered bounded tool lane. Slow cannot speak.**
 
 Both are properties of the provider descriptor, checked once at construction
-and enforced where output commits. A fast provider's emitted call becomes a
-`tool_proposal` — structured working state with no execution authority — and
-the dispatcher re-checks the trajectory before any effect, so a proposal cannot
-become an action however it is routed.
+and enforced where output commits. In the default arrangement a fast
+provider's emitted call becomes a `tool_proposal` — structured working state
+with no execution authority — and the dispatcher re-checks the trajectory
+before any effect, so a proposal cannot become an action however it is routed.
+
+The cascade binding has one explicit exception for visual reaction:
+`-fast-computer-use`. It is narrower than granting the fast model tools in
+general:
+
+- cognition attaches filtered tools only to a committed-observation turn (or
+  speculation that can be adopted only by that same observation), never a
+  holding line, interjection, or background-result narration;
+- only exact direct actions from the standard `computer.*` vocabulary qualify,
+  not a name that merely shares the prefix; `computer.screenshot` and
+  `computer.wait` remain slow-only observation control;
+- server-owned actions must have an in-process dispatcher; client-owned actions
+  must declare a non-empty target and `confirm: never`;
+- undeclared and filtered calls are downgraded to proposals even though the
+  provider descriptor has execution authority;
+- local and client-executed calls both cross the same confirmation, ledger,
+  trajectory-authority, and audit boundary.
+
+That lane handles a simple click or keypress while its cue is still current.
+Arbitrary business tools, confirmation-requiring client actions, ambiguity,
+planning, and dependent multi-step work remain slow responsibilities.
 
 The second rule is what makes the division of labour legible: one model owns
 what the user hears, one owns what the system does. Slow's output is not an
@@ -149,12 +171,12 @@ the user was told — and the next fast turn answers *from* it rather than
 reciting it. Fast is therefore always the last writer before audio, and slow
 cannot contradict, or repeat, something already said.
 
-Whether slow runs is fast's judgement, not a rule. A turn the voice can answer
-outright is answered once and ends there; a turn that needs a capability or
-real reasoning is handed on with a control marker that is stripped before any
-item is committed, so it reaches neither the trajectory nor the user. That is
-what keeps a simple question from being answered twice — by construction,
-rather than by noticing the duplicate afterwards.
+An observation runs slow under the reference fast+slow rollout. This is
+deliberate: making slow conditional on a small fast model's marker lost
+tool-using turns in measurement. A fast action result enters the shared
+trajectory before slow continues, so the reasoner plans from what already
+happened instead of repeating it. `fast-only` and `endpointed-slow-only` remain
+separate rollout controls for measuring what each lane contributes.
 
 ## Bindings declare ownership
 
