@@ -328,14 +328,53 @@ func (runtime *runtime) cognitionExtras() (standing []string, interjecting bool,
 	runtime.audioMu.Lock()
 	latest := runtime.heard
 	runtime.audioMu.Unlock()
+	snapshot := runtime.store.Snapshot()
 	interjecting = runtime.tookTheFloor(latest.ID)
-	// Only while they are still talking. Once the utterance is committed it is
-	// in the log, and repeating it there would show the voice the same sentence
-	// twice with no way to tell that it is one.
+	// Only while they are still talking, and only the part that is not already
+	// there. The voice is handed this under a line that says it is not yet in
+	// the conversation above, and a recogniser commits its stable text as it
+	// goes - so mid-sentence both are true at once and the same words appear
+	// twice under a sentence promising they do not.
+	//
+	// Measured on a counting policy: the capybara was counted while the
+	// sentence was live, the sentence then committed, and the next turn saw it
+	// in the conversation and again in the live line and called the heron
+	// three.
 	if runtime.duplex.Snapshot().UserSpeaking {
-		heard = strings.TrimSpace(latest.Text())
+		heard = runtime.heardBeyondTheLog(snapshot, strings.TrimSpace(latest.Text()))
 	}
 	return runtime.pinboard.Lines(runtime.scheduler.NowNS()), interjecting, heard
+}
+
+// heardBeyondTheLog is the part of what they are saying that the conversation
+// does not already contain.
+//
+// The last committed thing they said is compared as words, because a recogniser
+// re-punctuates between one commit and the next. When it is not a prefix of the
+// live text this is a different utterance and all of it is new.
+func (runtime *runtime) heardBeyondTheLog(snapshot trajectory.Snapshot, live string) string {
+	if live == "" {
+		return ""
+	}
+	for index := len(snapshot.Items) - 1; index >= 0; index-- {
+		item := snapshot.Items[index]
+		if item.Kind != trajectory.KindObservation ||
+			trajectory.AuthorityOf(item) != trajectory.AuthorityUser {
+			continue
+		}
+		committed := trajectory.SpokenWords(item.Content)
+		spoken := trajectory.SpokenWords(live)
+		if len(committed) == 0 || len(spoken) < len(committed) {
+			return live
+		}
+		for position := range committed {
+			if committed[position] != spoken[position] {
+				return live
+			}
+		}
+		return strings.TrimSpace(strings.Join(spoken[len(committed):], " "))
+	}
+	return live
 }
 
 func errorText(err error) string {

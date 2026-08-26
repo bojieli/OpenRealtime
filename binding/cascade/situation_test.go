@@ -1,6 +1,10 @@
 package cascade
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/bojieli/OpenRealtime/trajectory"
+)
 
 // TestBeforeTheAgentHasSpokenEverythingHeardIsNew is the regression for the
 // control scenario going to 0/5. heardSinceSpeaking returned nothing for three
@@ -62,5 +66,32 @@ func TestSpeakingAgainNeedsSomethingNewToSpeakAbout(t *testing.T) {
 	}
 	if got := runtime.heardSinceSpeaking("a capybara wandered over and a heron landed"); got == "" {
 		t.Fatal("a second animal counted as nothing new")
+	}
+}
+
+// TestTheLiveLineDoesNotRepeatTheConversation is the regression for an
+// afternoon with two animals in it counted to three. The voice is handed the
+// utterance in progress under a line saying it is not yet in the conversation
+// above, and a recogniser commits its stable text as it goes - so mid-sentence
+// both are true at once, and the same animal appears twice under a sentence
+// promising it does not.
+func TestTheLiveLineDoesNotRepeatTheConversation(t *testing.T) {
+	runtime := &runtime{}
+	said := func(text string) trajectory.Item {
+		return trajectory.Item{
+			Kind: trajectory.KindObservation, Content: text,
+			Observation: &trajectory.ObservationMeta{Source: "microphone", Authority: trajectory.AuthorityUser},
+		}
+	}
+	snapshot := trajectory.Snapshot{Items: []trajectory.Item{
+		said("It was a warm afternoon and a capybara wandered over"),
+	}}
+	live := "It was a warm afternoon, and a capybara wandered over and sat down"
+	if got := runtime.heardBeyondTheLog(snapshot, live); got != "and sat down" {
+		t.Fatalf("the live line repeated the conversation: %q", got)
+	}
+	// A different sentence is new in its entirety.
+	if got := runtime.heardBeyondTheLog(snapshot, "then a heron landed"); got != "then a heron landed" {
+		t.Fatalf("a new sentence was trimmed to %q", got)
 	}
 }
