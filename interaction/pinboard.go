@@ -93,6 +93,17 @@ func (board *Pinboard) Lines(nowNS uint64) []string {
 	lines := make([]string, 0, len(inForce))
 	for _, existing := range inForce {
 		line := existing.Text
+		// The delay belongs in the line. Extraction lifts "after 15s" out of
+		// the text and into a number the runtime reads, which is right for the
+		// runtime and leaves the model deciding whether to speak with no idea
+		// there was a number at all. Measured: somebody said they would be
+		// quiet and asked to be checked on after fifteen seconds, the policy
+		// was read and pinned correctly as "ask whether they are still there",
+		// and the agent asked at eight - which is the right act on the
+		// evidence it was shown.
+		if existing.After > 0 {
+			line += " (after " + describeAge(existing.After) + " of quiet)"
+		}
 		if existing.SetNS != 0 && nowNS > existing.SetNS {
 			line += " (" + describeAge(time.Duration(nowNS-existing.SetNS)) + " ago)"
 		}

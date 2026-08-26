@@ -72,3 +72,23 @@ func TestPinboardLinesCarryAge(t *testing.T) {
 		t.Fatalf("a sub-minute age rendered as %q", recent[0])
 	}
 }
+
+// TestAPinnedDelayIsShownToWhoeverDecides is the regression for an agent that
+// checked in at eight seconds when it had been asked to wait fifteen.
+// Extraction lifts "after 15s" out of the text and into a number, which is
+// what the runtime needs and leaves the model deciding whether to speak with
+// no idea a number was ever named.
+func TestAPinnedDelayIsShownToWhoeverDecides(t *testing.T) {
+	board := &interaction.Pinboard{}
+	board.Pin(interaction.StandingInstruction{
+		Text: "ask whether they are still there", Scope: interaction.ScopeConversation,
+		After: 15 * time.Second,
+	})
+	lines := board.Lines(0)
+	if len(lines) != 1 {
+		t.Fatalf("expected one pinned line, got %v", lines)
+	}
+	if !strings.Contains(lines[0], "15s") {
+		t.Fatalf("the pinned line does not say how long to wait: %q", lines[0])
+	}
+}
