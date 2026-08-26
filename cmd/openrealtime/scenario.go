@@ -137,22 +137,38 @@ func reportScenario(output io.Writer, item scenario.Scenario, attempts []scenari
 // printed so a number drawn from two samples cannot be mistaken for one drawn
 // from fifty.
 func reportLatency(output io.Writer, attempts []scenario.Result) {
-	var answered []float64
+	var spoken, seen []float64
 	for _, attempt := range attempts {
 		for _, entry := range attempt.Latencies {
-			if entry.Heard && entry.MS >= 0 {
-				answered = append(answered, entry.MS)
+			if !entry.Heard || entry.MS < 0 {
+				continue
 			}
+			if strings.HasPrefix(entry.After, "saw ") {
+				seen = append(seen, entry.MS)
+				continue
+			}
+			spoken = append(spoken, entry.MS)
 		}
 	}
-	if len(answered) == 0 {
+	reportWaits(output, "heard after", spoken)
+	// Sight is reported apart from speech because pooling them says something
+	// false. In the visual scenario most triggers are lines of the script and
+	// one is the frame the whole case is about, so a pooled median describes
+	// the speech and the reader takes it for the vision path: pooled, that
+	// scenario read 402ms p50, and the frame that mattered took 494ms while
+	// another the agent was right to ignore sat in the tail at 9.3s.
+	reportWaits(output, "saw and spoke after", seen)
+}
+
+// reportWaits prints one pooled distribution, or nothing when there is none.
+func reportWaits(output io.Writer, label string, waits []float64) {
+	if len(waits) == 0 {
 		return
 	}
-	sort.Float64s(answered)
+	sort.Float64s(waits)
 	pick := func(fraction float64) float64 {
-		index := int(fraction * float64(len(answered)-1))
-		return answered[index]
+		return waits[int(fraction*float64(len(waits)-1))]
 	}
-	fmt.Fprintf(output, "         heard after %.0fms p50, %.0fms p90, %.0fms worst, over %d triggers\n",
-		pick(0.5), pick(0.9), answered[len(answered)-1], len(answered))
+	fmt.Fprintf(output, "         %s %.0fms p50, %.0fms p90, %.0fms worst, over %d triggers\n",
+		label, pick(0.5), pick(0.9), waits[len(waits)-1], len(waits))
 }
