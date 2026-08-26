@@ -236,3 +236,31 @@ conclusion.** Handing a model the conclusion decides the cases it was not
 derived from. Handing it the whole sentence - which is what the
 standing-instruction pass gets, and where this measured a real gain - is
 strictly more information with nothing concluded from it.
+
+## Which model takes the decision, measured on the design as it stands
+
+Both candidates on the same 96 cases, three runs each, guided decoding,
+reasoning off, on the one local GPU:
+
+| | balanced | p50 | p90 | worst | notes |
+| --- | --- | --- | --- | --- | --- |
+| Qwen3-8B | 0.69 | 35ms | 55ms | 60ms | one malformed answer in 96 |
+| Qwen3-30B-A3B-FP8 | **0.72–0.73** | **30ms** | **38ms** | **41ms** | none |
+
+The larger model is also the faster one, which is what makes the choice easy
+rather than a trade. A mixture of experts with three billion parameters active
+does less work per token than a dense eight billion, so the 30B answers a
+decision in 30ms where the 8B takes 35 and has a longer tail - and it is three
+to four points better on the same cases.
+
+Restraint is identical at 33/51. The whole difference is acting: 37/45 against
+33/45. The smaller model misses moments it should have spoken at, which is the
+failure that is invisible in conversation - nobody notices the sentence that
+was not said.
+
+This agrees with the earlier measurement on an older prompt (0.76 against 0.68)
+and settles it on the current one. The 30B-A3B is what ships.
+
+Both sat behind the same 40k context and the same guided decoding. The 8B needs
+16GB of weights against the 30B's FP8 footprint, so on a single card the choice
+also costs nothing in memory that matters.
