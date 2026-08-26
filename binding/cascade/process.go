@@ -204,8 +204,14 @@ func (runtime *runtime) runStep(
 		// somebody has asked for a stretch of quiet it waits for the moment
 		// they named - the trajectory keeps it, and the turn that comes due
 		// reads it.
-		if step.Reason == interaction.ReasonBackgroundResult && runtime.silenceWasAskedFor() {
-			runtime.noteInterject("a standing policy asked for this silence")
+		// A background result is worth saying, and not necessarily now. It
+		// arrives with no utterance to answer, which is the shape the holding
+		// line has - and, like the holding line, it used to go out whatever
+		// else was happening. Measured at a phone menu, "I've pressed 2 for
+		// order status" was read to a recording that could not hear it and was
+		// still talking.
+		if step.Reason == interaction.ReasonBackgroundResult && !runtime.speechIsWelcome() {
+			runtime.noteInterject("the result is worth saying, and not at this moment")
 			return nil
 		}
 		handsOn := step.Reason == interaction.ReasonBackgroundResult || plansSlow
@@ -377,7 +383,7 @@ func (runtime *runtime) breakSilenceWhileDeliberating(
 			// between the timer and the speech queue had ever heard the
 			// policy. The model that decides whether to speak decides here
 			// too; what it says is still not its business.
-			if !runtime.holdingIsWelcome() {
+			if !runtime.speechIsWelcome() {
 				arm()
 				return
 			}
@@ -452,14 +458,14 @@ func (runtime *runtime) quietSoFar() (time.Duration, bool) {
 	return time.Duration(nowNS - since), true
 }
 
-// holdingIsWelcome asks whether this is a moment to break the silence.
+// speechIsWelcome asks whether this is a moment to break the silence.
 //
 // The same question every other moment asks, of the same model, from the same
 // rendered situation - so a standing instruction about when to speak governs a
 // holding line exactly as it governs an answer. Without an interaction policy
 // there is nobody to ask and the silence gets broken, which is the behaviour
 // this had before the question existed.
-func (runtime *runtime) holdingIsWelcome() bool {
+func (runtime *runtime) speechIsWelcome() bool {
 	if runtime.silenceWasAskedFor() {
 		return false
 	}
