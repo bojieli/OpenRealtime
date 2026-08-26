@@ -193,6 +193,7 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 	if result.settings.Gate.SilenceDurationMS == 0 {
 		result.settings.Gate = perception.DefaultGateConfig()
 	}
+	result.settings.Gate = result.withEndpointSilence(result.settings.Gate)
 	prefix := strings.TrimSpace(options.SessionID)
 	if prefix == "" {
 		prefix = "sess"
@@ -477,6 +478,7 @@ func (runtime *runtime) Update(_ context.Context, settings binding.Settings) err
 		runtime.coordinator.SetGate(gate)
 	}
 	runtime.settingsMu.Lock()
+	settings.Gate = runtime.withEndpointSilence(settings.Gate)
 	runtime.settings = settings
 	runtime.settingsMu.Unlock()
 	// The instruction a client sends here is the deployment's own, and the
@@ -758,4 +760,34 @@ func (runtime *runtime) boundedComputerTool(name string) bool {
 	// client explicitly waived confirmation and declared the bounded context;
 	// policy/always must be answered before the call crosses the wire.
 	return spec.Confirm == action.ConfirmNever && strings.TrimSpace(spec.Target) != ""
+}
+
+// withEndpointSilence applies the deployment's own endpoint threshold.
+//
+// The gate's job here is to say when the energy stopped, not when the
+// turn did. Waiting half a second to say so is a turn-taking decision
+// taken by a threshold, and it is taken before the model that owns
+// turn-taking is ever asked: answer is withheld from the act menu
+// while the gate reports somebody speaking, so the one act that could
+// end a turn early is unavailable until the wait is already over.
+//
+// Measured on a finished question, the model chose listen on every
+// partial with the whole sentence in front of it and answered only at
+// the 500ms mark - not a judgement, an act it was not offered.
+//
+// Closing sooner costs decisions rather than correctness, because a
+// speaker who was only drawing breath is caught by the same path that
+// already exists: the floor is asked, says listen, and the gate is
+// reopened.
+//
+// Applied wherever settings arrive, not only at construction: every client
+// sends a gate config in session.update - the harness here sends the library
+// default - and a deployment threshold that the first update overwrites is a
+// flag that does nothing. Measured that way it did exactly nothing, and the
+// decisions still read silence: 500ms.
+func (runtime *runtime) withEndpointSilence(gate perception.GateConfig) perception.GateConfig {
+	if runtime.config.EndpointSilenceMS > 0 {
+		gate.SilenceDurationMS = runtime.config.EndpointSilenceMS
+	}
+	return gate
 }

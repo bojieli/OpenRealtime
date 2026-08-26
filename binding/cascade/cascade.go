@@ -94,6 +94,9 @@ type Config struct {
 	// deployment and the only way to answer "what was the person waiting
 	// through" in a measurement.
 	ProfileTurns bool
+	// EndpointSilenceMS overrides how much quiet closes an utterance. Zero
+	// keeps the recogniser default.
+	EndpointSilenceMS int
 	// ASRCadence is how often the recogniser is advanced.
 	ASRCadence time.Duration
 	// HoldingAfter is how long the reasoner may run before the voice says what

@@ -132,6 +132,7 @@ type serveOptions struct {
 	interactionSees     bool
 	profileTurns        bool
 	speakBySentence     bool
+	endpointSilenceMS   int
 	interactionLiveness time.Duration
 	policyReasoning     string
 	projectionHold      time.Duration
@@ -302,6 +303,7 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.BoolVar(&options.interactionSees, "interaction-sees", false, "the interaction model can look at a frame, so pictures reach it directly instead of as a narration")
 	flags.BoolVar(&options.profileTurns, "profile-turns", false, "log how long each stage of a turn took, one line per turn")
 	flags.BoolVar(&options.speakBySentence, "speak-by-sentence", false, "synthesise the first sentence on its own, so speech starts before the rest is ready")
+	flags.IntVar(&options.endpointSilenceMS, "endpoint-silence", 0, "how much quiet closes an utterance, in milliseconds; zero keeps the recogniser default")
 	flags.DurationVar(&options.interactionLiveness, "interaction-liveness", 20*time.Second, "longest the interaction model may hold the floor past the silence threshold")
 	flags.StringVar(&options.policyReasoning, "policy-reasoning", "chat_template_kwargs",
 		"how the policy endpoint is told not to think: chat_template_kwargs, enable_thinking, reasoning_effort, thinking_object, or none for an instruct model")
@@ -712,12 +714,13 @@ func buildCascade(
 		Profile:           options.profile,
 		ClientToolTimeout: options.clientToolTimeout,
 		Observers:         observers, DefaultObservers: defaults, Tools: computer.specs,
-		Narrator:        narrator,
-		DeciderSees:     options.interactionSees,
-		ProfileTurns:    options.profileTurns,
-		FastComputerUse: options.fastComputerUse,
-		Governor:        governor,
-		ConfirmPolicy:   computer.policy,
+		Narrator:          narrator,
+		DeciderSees:       options.interactionSees,
+		ProfileTurns:      options.profileTurns,
+		EndpointSilenceMS: options.endpointSilenceMS,
+		FastComputerUse:   options.fastComputerUse,
+		Governor:          governor,
+		ConfirmPolicy:     computer.policy,
 		// Every executed action is already a trajectory item with causal
 		// parents. This is the operational mirror of that, so an operator
 		// reading logs can see a refusal without reading a transcript.
