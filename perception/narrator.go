@@ -19,9 +19,18 @@ import (
 // than describe the picture. It also asks for silence on an unchanged screen,
 // because a narrator that says "the same page is still open" every third of a
 // second fills the trajectory with nothing.
-const DefaultNarrationPrompt = "Describe what this screen shows, as a short factual note for an agent that cannot see it.\n\n" +
-	"State what is on screen and what a person could do next: the application, the visible state, any dialog, error, or confirmation, and the text of anything that asks for a decision. Quote on-screen text exactly when it carries a value, an identifier, or an amount.\n\n" +
-	"Two or three sentences at most. Do not speculate about what is not visible, do not describe layout or colour for its own sake, and do not address the user. If nothing meaningful has changed, reply with exactly: no change."
+//
+// It asks for the state first, and for one sentence. Both are measured. The
+// layer that decides whether a frame is worth speaking at cannot see, so the
+// narration is the whole of its evidence, and a description that opens with
+// the application and the command and reaches the word "finished" in the third
+// clause buries the only part it needs. Leading with it also costs less:
+// against Gemini 3.5 Flash at minimal thinking, over four calls on each of two
+// frames, this runs at about 1.1 seconds where asking for two or three
+// sentences ran at 1.4 - and that sits on the critical path of every visual
+// turn, because a picture is not an observation until it is text.
+const DefaultNarrationPrompt = "Say what this screen shows, in one sentence, for an agent that cannot see it.\n\n" +
+	"Say what is happening or has happened first - it is running, it finished, it failed, it is waiting for an answer - and quote the on-screen text that carries it, exactly, when it is a value, an identifier, or an amount. Nothing about layout or colour, and do not address the user. If nothing meaningful has changed, reply with exactly: no change."
 
 // ActionableNarrationPrompt is the narration a computer-use session wants.
 //
