@@ -78,6 +78,12 @@ func examples() []workedExample {
 		}, ActCallTool, "The menu just named the option that gets them a person, and talking to a recording achieves nothing."},
 
 		{Situation{
+			Recent:  []string{"agent: what can I do for you?"},
+			Speaker: "user", Heard: "ring them and get me through to a person", Silence: "900ms",
+			Tools:   []string{"press_key(digit) - send a keypad tone on the open call"},
+		}, ActAnswer, "They asked for the call to be made and have finished asking; no menu has offered a key yet, so there is no key to press and this is a turn to take."},
+
+		{Situation{
 			Recent:        []string{"user: how much was it?"},
 			AgentSpeaking: true, AgentSaying: "the total comes to about",
 			Speaker: "user", Speaking: true, Heard: "yeah",
@@ -167,7 +173,10 @@ func buildInstruction() string {
 			"sentence for.\n" +
 			"call-tool - do something without saying anything at all. Only when speech would be pointless or " +
 			"unwelcome: a recorded menu that cannot hear you, or someone who asked not to be spoken to. " +
-			"Answering already lets the agent act as well as speak, so this is for when it must not speak.\n" +
+			"Answering already lets the agent act as well as speak, so this is for when it must not speak. " +
+			"A tool being available is not a moment to use it: the thing it acts on has to have happened. " +
+			"A key gets pressed when a recording has named the option, not when somebody asks for the call " +
+			"to be made - at that point there is no menu, no option, and nothing to press.\n" +
 			"keep-speaking - the agent is mid-sentence and someone else has started; carry on anyway.\n" +
 			"stop-speaking - the agent is mid-sentence; stop and let them have the floor.\n\n" +
 			"Anything other than staying silent, or carrying on with what the agent is already saying, needs a reason " +
