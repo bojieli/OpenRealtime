@@ -204,6 +204,17 @@ func (result Result) Reportable() error {
 	if !result.Summary.Complete {
 		failures = append(failures, result.Summary.Incompleteness)
 	}
+	legacySessionFailures := 0
+	for _, task := range result.Tasks {
+		if strings.TrimSpace(task.Notes["session_failure"]) != "" {
+			legacySessionFailures++
+		}
+	}
+	if legacySessionFailures > 0 {
+		failures = append(failures, fmt.Sprintf(
+			"%d completed tasks retained session failures and were produced by an unsafe legacy scorer",
+			legacySessionFailures))
+	}
 	if err := result.Provenance.Reproducible(); err != nil {
 		failures = append(failures, err.Error())
 	}
@@ -261,6 +272,19 @@ func Pair(baseline, variant Result) Comparison {
 		refusals = append(refusals, fmt.Sprintf(
 			"suites %q and %q measure different things and do not compare", baseline.Suite, variant.Suite))
 	}
+	if baseline.Provenance.Revision != variant.Provenance.Revision {
+		refusals = append(refusals, fmt.Sprintf(
+			"source revisions %q and %q differ, so code is an unrecorded factor",
+			baseline.Provenance.Revision, variant.Provenance.Revision))
+	}
+	if baseline.Provenance.ExecutableSHA256 != variant.Provenance.ExecutableSHA256 {
+		refusals = append(refusals,
+			"executable hashes differ, so the cells did not run the same build")
+	}
+	if !sameMachine(baseline.Provenance.Machine, variant.Provenance.Machine) {
+		refusals = append(refusals,
+			"machine descriptions differ, so hardware is an unrecorded factor")
+	}
 	factor, paired := Paired(baseline.Cell, variant.Cell)
 	if !paired {
 		refusals = append(refusals, fmt.Sprintf(
@@ -280,4 +304,9 @@ func Pair(baseline, variant Result) Comparison {
 	}
 	comparison.Reportable = true
 	return comparison
+}
+
+func sameMachine(left, right Machine) bool {
+	return left.CPU == right.CPU && left.Cores == right.Cores && left.GPU == right.GPU &&
+		left.OS == right.OS && left.Arch == right.Arch && left.GoVersion == right.GoVersion
 }

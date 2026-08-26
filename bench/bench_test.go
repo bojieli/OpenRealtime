@@ -70,6 +70,16 @@ func TestAnUntraceableRunIsNotReportable(t *testing.T) {
 	}
 }
 
+func TestALegacyCompletedTaskWithASessionFailureIsNotReportable(t *testing.T) {
+	legacy := complete("legacy", 5, 5)
+	legacy.Tasks[2].Notes = map[string]string{
+		"session_failure": "recogniser quota exhausted",
+	}
+	if err := legacy.Reportable(); err == nil || !strings.Contains(err.Error(), "legacy scorer") {
+		t.Fatalf("a session outage recorded as a completed task became reportable: %v", err)
+	}
+}
+
 func TestPairedCellsChangeExactlyOneFactor(t *testing.T) {
 	variant, err := bench.Vary(bench.FactorCognition, "fast-only")
 	if err != nil {
@@ -135,6 +145,28 @@ func TestAValidPairingIsReported(t *testing.T) {
 	}
 	if comparison.Difference <= 0 {
 		t.Fatalf("expected a positive difference, got %f", comparison.Difference)
+	}
+}
+
+func TestComparisonRefusesAnUnrecordedBuildOrMachineChange(t *testing.T) {
+	for name, mutate := range map[string]func(*bench.Result){
+		"revision": func(result *bench.Result) { result.Provenance.Revision = "different" },
+		"executable": func(result *bench.Result) {
+			result.Provenance.ExecutableSHA256 = "different"
+		},
+		"machine": func(result *bench.Result) { result.Provenance.Machine.CPU = "different" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			baseline := complete("reference", 4, 5)
+			variant := complete("variant", 4, 5)
+			variant.Cell.Levels[bench.FactorCognition] = "fast-only"
+			mutate(&variant)
+			comparison := bench.Pair(baseline, variant)
+			if comparison.Reportable || !strings.Contains(comparison.Refusal, "factor") &&
+				!strings.Contains(comparison.Refusal, "same build") {
+				t.Fatalf("uncontrolled %s change was reportable: %+v", name, comparison)
+			}
+		})
 	}
 }
 

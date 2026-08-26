@@ -19,6 +19,10 @@ const (
 	FactorSlowModel  Factor = "F6"
 	FactorComponents Factor = "F7"
 	FactorPolicy     Factor = "F8"
+	FactorFastModel  Factor = "F9"
+	FactorFastAction Factor = "F10"
+	FactorVideoRate  Factor = "F11"
+	FactorRecognizer Factor = "F12"
 )
 
 // Description is what a factor varies, for reports that a person reads.
@@ -40,6 +44,14 @@ func (factor Factor) Description() string {
 		return "observer components"
 	case FactorPolicy:
 		return "policy models"
+	case FactorFastModel:
+		return "fast model"
+	case FactorFastAction:
+		return "fast action lane"
+	case FactorVideoRate:
+		return "video frame rate"
+	case FactorRecognizer:
+		return "recogniser"
 	default:
 		return string(factor)
 	}
@@ -47,9 +59,9 @@ func (factor Factor) Description() string {
 
 // Reference is the configuration every paired cell is measured against.
 //
-// A full cross-product of eight factors is both infeasible and
+// A full cross-product of the factors is both infeasible and
 // uninterpretable. Paired cells that change exactly one factor are what make a
-// difference attributable to that factor rather than to the seven others that
+// difference attributable to that factor rather than to the others that
 // also moved.
 func Reference() Cell {
 	return Cell{
@@ -63,6 +75,10 @@ func Reference() Cell {
 			FactorSlowModel:  "hosted-high",
 			FactorComponents: "narration",
 			FactorPolicy:     "none",
+			FactorFastModel:  "local-text",
+			FactorFastAction: "slow-only",
+			FactorVideoRate:  "3fps",
+			FactorRecognizer: "qwen3-asr",
 		},
 	}
 }
@@ -82,7 +98,13 @@ type Cell struct {
 
 // Vary produces a paired cell that changes exactly one factor.
 func Vary(factor Factor, level string) (Cell, error) {
-	reference := Reference()
+	return VaryFrom(Reference(), factor, level)
+}
+
+// VaryFrom produces a paired cell against a suite-specific reference. A video
+// suite must not label its baseline as the voice-only global reference merely
+// to reuse comparison plumbing.
+func VaryFrom(reference Cell, factor Factor, level string) (Cell, error) {
 	if _, known := reference.Levels[factor]; !known {
 		return Cell{}, fmt.Errorf("unknown factor %q", factor)
 	}

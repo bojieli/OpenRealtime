@@ -15,6 +15,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/internal/audio"
 	"github.com/bojieli/OpenRealtime/pcm"
+	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/bojieli/OpenRealtime/realtimeclient"
 )
 
@@ -37,6 +38,12 @@ type Moment struct {
 	// AudioMS is how much audio a speech moment carried.
 	AudioMS float64 `json:"audio_ms,omitempty"`
 	Name    string  `json:"name,omitempty"`
+	CallID  string  `json:"call_id,omitempty"`
+	// Arguments preserves the action the model actually grounded. Accuracy
+	// cannot be reconstructed from a tool name alone.
+	Arguments string `json:"arguments,omitempty"`
+	Source    string `json:"source,omitempty"`
+	Observer  string `json:"observer,omitempty"`
 }
 
 // Moment kinds.
@@ -48,6 +55,10 @@ const (
 	MomentAgentAudio    = "agent_audio"
 	MomentResponseDone  = "response_done"
 	MomentToolCall      = "tool_call"
+	MomentToolResult    = "tool_result"
+	MomentVideoFrame    = "video_frame_sent"
+	MomentObservation   = "observation"
+	MomentReady         = "environment_ready"
 	// MomentScheduled marks a non-audio event the harness injected, so a
 	// transcript shows why the agent spoke when nobody had said anything.
 	MomentScheduled = "scheduled"
@@ -192,6 +203,10 @@ type SessionConfig struct {
 	// Respond answers a tool call. Returning an error ends the task; a nil
 	// function refuses every call, which is correct for a suite with no tools.
 	Respond func(name string, arguments json.RawMessage) (json.RawMessage, error)
+	// HandleTool is the context-aware form used by interactive environments.
+	// It takes precedence over Respond and receives the call identity so an
+	// evaluator can retain an exact action trace and propagate idempotency.
+	HandleTool func(context.Context, ToolRequest) (json.RawMessage, error)
 	// Realtime plays audio at its own rate. Turning it off makes a suite
 	// faster and its timing numbers meaningless, so it stays on for anything
 	// that reports latency.
@@ -215,6 +230,32 @@ type SessionConfig struct {
 	// what lets a scenario ask whether the agent spoke because of something it
 	// saw while nobody was talking, which no amount of audio can express.
 	Scheduled []ScheduledEvent
+	// Video streams live frames until the conversation finishes. Unlike a
+	// Scheduled event, a stream keeps observing while the agent acts, which is
+	// necessary for multi-step computer use and transient visual tasks.
+	Video []VideoStream
+	// Ready runs after session configuration and video-source declarations but
+	// before audio playback and frame capture. Browser tasks reset their clock
+	// here so cue-to-action latency excludes connection setup.
+	Ready func(context.Context) error
+}
+
+// ToolRequest is one complete model action received over the protocol.
+type ToolRequest struct {
+	CallID    string
+	Name      string
+	Arguments json.RawMessage
+	Received  time.Time
+}
+
+// VideoStream is one declared source sampled for the duration of a task.
+// Capture returns encoded JPEG or PNG bytes. A nil frame skips this tick.
+type VideoStream struct {
+	Source   string
+	Width    int
+	Height   int
+	Interval time.Duration
+	Capture  func(context.Context) ([]byte, error)
 }
 
 // ScheduledEvent is one protocol event and when to send it.
@@ -225,6 +266,18 @@ type ScheduledEvent struct {
 	AtMS  int
 	Event map[string]any
 }
+
+// ErrConversationTimeout means a connected session continued working beyond
+// its configured conversation horizon. Suites with a deterministic evaluator
+// may score the state reached at that horizon as a completed negative outcome;
+// setup, transport, and capture errors remain distinct infrastructure errors.
+var ErrConversationTimeout = errors.New("the conversation did not finish before the timeout")
+
+// ErrSessionFailure means the connected endpoint emitted a protocol error.
+// Unlike ErrConversationTimeout, this is not an agent reaching a scoring
+// horizon: ASR, model, engine, or transport work failed, so a suite must leave
+// the task incomplete rather than publish the outage as a capability result.
+var ErrSessionFailure = errors.New("the session reported a failure")
 
 // Play drives one recording through a session and returns the timed record.
 func Play(ctx context.Context, config SessionConfig, wavPath string) (Transcript, error) {
@@ -245,6 +298,18 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 	}
 	if config.TrailingSilence <= 0 {
 		config.TrailingSilence = 1200 * time.Millisecond
+	}
+	for index := range config.Video {
+		stream := &config.Video[index]
+		if strings.TrimSpace(stream.Source) == "" || stream.Width <= 0 || stream.Height <= 0 {
+			return Transcript{}, fmt.Errorf("video stream %d requires a source and positive geometry", index)
+		}
+		if stream.Capture == nil {
+			return Transcript{}, fmt.Errorf("video stream %q requires capture", stream.Source)
+		}
+		if stream.Interval <= 0 {
+			stream.Interval = time.Second / 3
+		}
 	}
 	samples = append(samples, make([]int16, int(config.TrailingSilence.Seconds()*24_000))...)
 
@@ -277,9 +342,60 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 		copy(tools, config.Tools)
 		update["tools"] = tools
 	}
+	if len(config.Video) > 0 {
+		update["openrealtime"] = map[string]any{
+			"version": openrealtime.Version,
+			"supports": []string{
+				string(openrealtime.FeatureVideoInput),
+				string(openrealtime.FeatureObservations),
+				string(openrealtime.FeatureComputerUse),
+			},
+			"observers": []string{"audio", "video"},
+		}
+	}
 	if err := client.Send(timed, map[string]any{"type": "session.update", "session": update}); err != nil {
 		return Transcript{}, err
 	}
+	for _, stream := range config.Video {
+		if err := client.Send(timed, map[string]any{
+			"type": openrealtime.EventVideoSourceUpdate, "source": stream.Source,
+			"state": openrealtime.SourceActive, "width": stream.Width, "height": stream.Height,
+		}); err != nil {
+			return Transcript{}, err
+		}
+	}
+	if config.Ready != nil {
+		if err := config.Ready(timed); err != nil {
+			return Transcript{}, fmt.Errorf("prepare session environment: %w", err)
+		}
+	}
+	recorder.add(Moment{Kind: MomentReady})
+
+	// A conversation and its video workers have different shutdown edges. A
+	// normal conversation may finish while Capture is inside a multi-command
+	// operation (for example, installing, capturing, and removing a set-of-mark
+	// overlay). Canceling that operation and returning immediately lets the
+	// orphaned worker race the next benchmark case and can invalidate a shared
+	// browser connection. Stop scheduling frames, let the one already in flight
+	// finish under the caller's run-wide context, and join every worker before
+	// the session or environment can be reused.
+	videoStop := make(chan struct{})
+	videoErrors := make(chan error, max(1, len(config.Video)))
+	var videoWorkers sync.WaitGroup
+	for _, stream := range config.Video {
+		stream := stream
+		videoWorkers.Add(1)
+		go func() {
+			defer videoWorkers.Done()
+			streamVideo(ctx, videoStop, client, recorder, stream, videoErrors)
+		}()
+	}
+	var stopVideoOnce sync.Once
+	stopVideo := func() {
+		stopVideoOnce.Do(func() { close(videoStop) })
+		videoWorkers.Wait()
+	}
+	defer stopVideo()
 
 	const frameSamples = 2400 // 100 ms
 	started := time.Now()
@@ -319,9 +435,72 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 
 	select {
 	case transcript := <-collected:
+		stopVideo()
+		if strings.TrimSpace(transcript.Failure) != "" {
+			return transcript, fmt.Errorf("%w: %s", ErrSessionFailure, transcript.Failure)
+		}
 		return transcript, nil
+	case err := <-videoErrors:
+		stopVideo()
+		return recorder.snapshot(), err
 	case <-timed.Done():
-		return recorder.snapshot(), errors.New("the conversation did not finish before the timeout")
+		stopVideo()
+		transcript := recorder.snapshot()
+		if strings.TrimSpace(transcript.Failure) != "" {
+			return transcript, fmt.Errorf("%w: %s", ErrSessionFailure, transcript.Failure)
+		}
+		return transcript, ErrConversationTimeout
+	}
+}
+
+func streamVideo(
+	ctx context.Context, stop <-chan struct{}, client *realtimeclient.Client, recorder *recorder,
+	stream VideoStream, failures chan<- error,
+) {
+	send := func() error {
+		frame, err := stream.Capture(ctx)
+		if err != nil {
+			return fmt.Errorf("capture video source %q: %w", stream.Source, err)
+		}
+		if len(frame) == 0 {
+			return nil
+		}
+		if err := client.Send(ctx, map[string]any{
+			"type": openrealtime.EventVideoFrameAppend, "source": stream.Source,
+			"frame":        base64.StdEncoding.EncodeToString(frame),
+			"timestamp_ms": time.Now().UnixMilli(),
+		}); err != nil {
+			return fmt.Errorf("send video source %q: %w", stream.Source, err)
+		}
+		recorder.add(Moment{Kind: MomentVideoFrame, Source: stream.Source})
+		return nil
+	}
+	if err := send(); err != nil {
+		select {
+		case failures <- err:
+		case <-stop:
+		case <-ctx.Done():
+		}
+		return
+	}
+	ticker := time.NewTicker(stream.Interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := send(); err != nil {
+				select {
+				case failures <- err:
+				case <-stop:
+				case <-ctx.Done():
+				}
+				return
+			}
+		}
 	}
 }
 
@@ -429,6 +608,12 @@ func (recorder *recorder) collect(
 			}
 			lastEvent = time.Now()
 			recorder.handle(ctx, client, config, event)
+			recorder.mu.Lock()
+			failed := recorder.failure != ""
+			recorder.mu.Unlock()
+			if failed {
+				return recorder.snapshot()
+			}
 		}
 	}
 }
@@ -488,12 +673,26 @@ func (recorder *recorder) handle(
 			Arguments string `json:"arguments"`
 		}
 		_ = event.Decode(&decoded)
-		recorder.add(Moment{Kind: MomentToolCall, Name: decoded.Name})
+		recorder.add(Moment{
+			Kind: MomentToolCall, CallID: decoded.CallID, Name: decoded.Name,
+			Arguments: decoded.Arguments,
+		})
 		arguments := json.RawMessage(decoded.Arguments)
 		if !json.Valid(arguments) {
 			arguments = json.RawMessage(`{}`)
 		}
 		recorder.answer(ctx, client, config, decoded.CallID, decoded.Name, arguments)
+	case openrealtime.EventObservationAdded:
+		var decoded struct {
+			Observer string `json:"observer"`
+			Source   string `json:"source"`
+			Text     string `json:"text"`
+		}
+		_ = event.Decode(&decoded)
+		recorder.add(Moment{
+			Kind: MomentObservation, Observer: decoded.Observer,
+			Source: decoded.Source, Text: decoded.Text,
+		})
 	case "error":
 		var decoded struct {
 			Error struct {
@@ -518,7 +717,16 @@ func (recorder *recorder) answer(
 	config SessionConfig, callID, name string, arguments json.RawMessage,
 ) {
 	output := json.RawMessage(`{"error":"no tools are available in this task"}`)
-	if config.Respond != nil {
+	if config.HandleTool != nil {
+		produced, err := config.HandleTool(ctx, ToolRequest{
+			CallID: callID, Name: name, Arguments: arguments, Received: time.Now(),
+		})
+		if err != nil {
+			output = json.RawMessage(fmt.Sprintf("{%q:%q}", "error", err.Error()))
+		} else if len(produced) > 0 {
+			output = produced
+		}
+	} else if config.Respond != nil {
 		produced, err := config.Respond(name, arguments)
 		if err != nil {
 			output = json.RawMessage(fmt.Sprintf("{%q:%q}", "error", err.Error()))
@@ -531,6 +739,9 @@ func (recorder *recorder) answer(
 		"item": map[string]any{
 			"type": "function_call_output", "call_id": callID, "output": string(output),
 		},
+	})
+	recorder.add(Moment{
+		Kind: MomentToolResult, CallID: callID, Name: name, Text: string(output),
 	})
 	_ = client.Send(ctx, map[string]any{"type": "response.create"})
 }
@@ -552,6 +763,21 @@ func loadPCM24k(path string) ([]int16, error) {
 	if err != nil {
 		return nil, err
 	}
+	return pcm24k(decoded)
+}
+
+// DecodePCM24k decodes an in-memory WAV into the format the Realtime protocol
+// uses. Benchmark suites embed their audio so an installed binary owns every
+// task asset and does not depend on a source checkout at runtime.
+func DecodePCM24k(raw []byte) ([]int16, error) {
+	decoded, err := audio.Decode(raw)
+	if err != nil {
+		return nil, err
+	}
+	return pcm24k(decoded)
+}
+
+func pcm24k(decoded audio.Decoded) ([]int16, error) {
 	payload := decoded.PCM16LE
 	if decoded.Metadata.SampleRateHz != 24_000 {
 		resampler, err := pcm.NewResampler(decoded.Metadata.SampleRateHz, 24_000)
