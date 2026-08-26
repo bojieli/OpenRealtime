@@ -20,6 +20,7 @@ import (
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/internal/clock"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/perception/voices"
 	"github.com/bojieli/OpenRealtime/session"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -45,6 +46,7 @@ type runtime struct {
 	registry    *action.Registry
 	observers   *perception.Set
 	audio       *perception.AudioObserver
+	voices      *voices.Recogniser
 
 	ctx    context.Context
 	cancel context.CancelCauseFunc
@@ -180,6 +182,7 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		prepared: newPreparations(),
 		window:   &interaction.Window{},
 		pinboard: &interaction.Pinboard{},
+		voices:   bind.config.Voices,
 	}
 	tracker, err := clientcalls.New(clientcalls.Config{
 		Timeout: bind.config.ClientToolTimeout, Scheduler: scheduler,

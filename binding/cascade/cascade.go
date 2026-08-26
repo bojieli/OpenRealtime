@@ -26,6 +26,7 @@ import (
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/internal/clock"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/perception/voices"
 	"github.com/bojieli/OpenRealtime/session"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -129,6 +130,10 @@ type Config struct {
 	// FrameDuration is the paced wire frame size.
 	FrameDuration time.Duration
 
+	// Voices tells the person the session is with from another voice in the
+	// room. Nil leaves the prior in place, which is that whoever is talking is
+	// the person whose session this is.
+	Voices *voices.Recogniser
 	// Policies is the interaction policy set. A zero value selects the
 	// shipped defaults.
 	Policies          interaction.Policies

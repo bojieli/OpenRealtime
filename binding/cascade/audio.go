@@ -276,6 +276,9 @@ func (runtime *runtime) holdsThroughPause(nowNS uint64, latest interaction.Revis
 // revisions arrive. Both are the interaction plane's decision; carrying it out
 // is here.
 func (runtime *runtime) onUserSpeechStarted(ctx context.Context, utteranceID string, startMS int) error {
+	// A new utterance is a new question about who is talking. What was
+	// heard of the last one is not evidence about this one.
+	runtime.voices.Begin(utteranceID)
 	if err := runtime.considerBargeIn(ctx, interaction.Revision{}, 0); err != nil {
 		return err
 	}
@@ -392,6 +395,11 @@ func (runtime *runtime) observeAudio(
 	ctx context.Context, frames []perception.Frame, silenceNS uint64,
 ) (interaction.Revision, error) {
 	var latest interaction.Revision
+	// Asked here because here is where the admitted audio is, and answered off
+	// this goroutine: the verdict is read by the situation, and one that
+	// arrives a revision late costs nothing while a request that blocks costs
+	// every turn.
+	runtime.voices.Hear(ctx, frames)
 	observations, err := runtime.audio.Observe(ctx, frames)
 	if err != nil {
 		return latest, err

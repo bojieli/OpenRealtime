@@ -21,6 +21,7 @@ import (
 	"github.com/bojieli/OpenRealtime/adapters/openaitts"
 	"github.com/bojieli/OpenRealtime/adapters/openaivision"
 	"github.com/bojieli/OpenRealtime/adapters/qwenasr"
+	"github.com/bojieli/OpenRealtime/adapters/speakerid"
 	"github.com/bojieli/OpenRealtime/admission"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/asrbuffer"
@@ -38,6 +39,7 @@ import (
 	"github.com/bojieli/OpenRealtime/gateway"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/perception/voices"
 	"github.com/bojieli/OpenRealtime/policymodel"
 	"github.com/bojieli/OpenRealtime/providers"
 	"github.com/bojieli/OpenRealtime/sidecar"
@@ -128,6 +130,7 @@ type serveOptions struct {
 	policyGuided        bool
 	policies            string
 	interactionShadow   string
+	speakerURL          string
 	interactionFloor    bool
 	interactionSees     bool
 	profileTurns        bool
@@ -299,6 +302,7 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.computerConfirm, "computer-confirm", "", "override every computer.* confirmation requirement: never, policy, or always")
 	flags.StringVar(&options.policies, "policy-models", "none", "comma-separated policy models: backchannel, turn-projection, overlap, interaction, all, or none")
 	flags.StringVar(&options.interactionShadow, "interaction-shadow", "", "file to record shadow interaction decisions to; enabling it decides nothing")
+	flags.StringVar(&options.speakerURL, "speaker-url", "", "speaker-embedding endpoint, so a voice that is not the one the session is with is not reported as the user; unset leaves that prior in place")
 	flags.BoolVar(&options.interactionFloor, "interaction-floor", false, "let the interaction model own turn-taking instead of the silence rule and the projection")
 	flags.BoolVar(&options.interactionSees, "interaction-sees", false, "the interaction model can look at a frame, so pictures reach it directly instead of as a narration")
 	flags.BoolVar(&options.profileTurns, "profile-turns", false, "log how long each stage of a turn took, one line per turn")
@@ -710,8 +714,17 @@ func buildCascade(
 	if err != nil {
 		return nil, fmt.Errorf("configure the recogniser: %w", err)
 	}
+	var listener *voices.Recogniser
+	if endpoint := strings.TrimSpace(options.speakerURL); endpoint != "" {
+		embedder, err := speakerid.New(speakerid.Config{Endpoint: endpoint})
+		if err != nil {
+			return nil, fmt.Errorf("configure the speaker embedding: %w", err)
+		}
+		listener = voices.New(embedder, voices.DefaultThreshold, voices.DefaultMinimum)
+	}
 	return cascade.New(cascade.Config{
 		Profile:           options.profile,
+		Voices:            listener,
 		ClientToolTimeout: options.clientToolTimeout,
 		Observers:         observers, DefaultObservers: defaults, Tools: computer.specs,
 		Narrator:          narrator,

@@ -10,6 +10,7 @@ import (
 	"github.com/bojieli/OpenRealtime/cognition"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/interaction"
+	"github.com/bojieli/OpenRealtime/perception/voices"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -581,6 +582,15 @@ func (runtime *runtime) lastFrame(snapshot trajectory.Snapshot) []interaction.Im
 // here changing. One undiarised microphone still calls everybody in the room
 // the user, which is the honest reading of what it knows.
 func (runtime *runtime) speakerNow(snapshot trajectory.Snapshot) string {
+	// A voice that does not belong to the person this session is with is
+	// somebody else in the room, whatever the channel it arrived on. One
+	// microphone carries everybody, so without this the situation asserts that
+	// the user said whatever was heard - and a model told the user asked about
+	// the milk answers about the milk. It is a correct answer to a false
+	// premise, and the premise is the part that was wrong.
+	if runtime.voices.Verdict() == voices.Different {
+		return "someone else in the room"
+	}
 	for index := len(snapshot.Items) - 1; index >= 0; index-- {
 		item := snapshot.Items[index]
 		if item.Kind != trajectory.KindObservation ||
