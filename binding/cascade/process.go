@@ -238,6 +238,7 @@ func (runtime *runtime) runFast(
 	var err error
 	if !adopted {
 		began := runtime.scheduler.NowNS()
+		runtime.noteVoiceTurn(request)
 		watch := runtime.watchFirstPhrase(began)
 		result, err = runtime.engine.RunFast(ctx, request, watch.observe)
 		turn.stage("voice", runtime.scheduler.NowNS()-began)
@@ -483,6 +484,34 @@ func (runtime *runtime) speechIsWelcome() bool {
 		return true
 	}
 	return act != interaction.ActStaySilent
+}
+
+// noteVoiceTurn records what the voice was given, alongside what the
+// interaction model was given.
+//
+// The interaction shadow answers "why did it decide that" and has answered it
+// well. It says nothing about the other half, and the other half is where the
+// content comes from: measured, a counting policy came back "4 5" from a model
+// that answers the same question correctly five times out of five when the
+// conversation is assembled by hand. Something in the real one differs, and
+// four rounds of reasoning about which four things it might be would have been
+// one round of reading it.
+func (runtime *runtime) noteVoiceTurn(request cognition.Request) {
+	recorder := runtime.policies.ShadowInteraction
+	if recorder == nil {
+		return
+	}
+	snapshot := runtime.store.Snapshot()
+	lines := interaction.RecentLines(snapshot.Items, 12)
+	recorder(interaction.ShadowDecision{
+		NowNS:     runtime.scheduler.NowNS(),
+		Situation: "voice: " + strings.Join(lines, "\n"),
+		Act:       "asked",
+		Predicates: map[string]string{
+			"where": "voice", "because": request.Because,
+			"heard": request.Heard, "standing": strings.Join(request.Standing, " | "),
+		},
+	})
 }
 
 // publishAssistant applies the commitment policy to one continuation's output
