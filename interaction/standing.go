@@ -101,6 +101,16 @@ func extractionExamples() []extractionExample {
 		{nil, nil, "Keep your answers to a sentence or two.", "none"},
 		{nil, nil, "Shout if you see the train coming.", "pin conversation shout if you see the train coming"},
 		{nil, nil, "Hang on, I haven't got to the point yet.", "pin turn do not reply until they have made their point"},
+		// The pair that turn scope keeps getting wrong. Both of these bound
+		// themselves to something the speaker is about to do - "as I read it
+		// out", "until I finish" - and only one of them is about this moment.
+		// Measured, the first was pinned to the turn five times out of five,
+		// which is over in seconds, and the policy governed nothing for the
+		// rest of the story.
+		{nil, nil, "I'll read out the numbers - add them up as I go and say the running total.",
+			"pin conversation say the running total each time they read out a number"},
+		{nil, nil, "Let me finish reading this out before you say anything.",
+			"pin turn do not reply until they have finished reading it out"},
 		{watching, nil, "Forget about the train, I can see it now.", "revoke shout if you see the train coming"},
 		{watching, nil, "Also let me know if it starts raining.", "pin conversation say something if it starts raining"},
 		{nil, nil, "Give me a nudge if I start talking too fast.", "pin conversation tell them if they start talking too fast"},
