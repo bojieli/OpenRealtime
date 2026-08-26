@@ -183,7 +183,10 @@ func buildInstruction() string {
 			"Answering already lets the agent act as well as speak, so this is for when it must not speak. " +
 			"A tool being available is not a moment to use it: the thing it acts on has to have happened. " +
 			"A key gets pressed when a recording has named the option, not when somebody asks for the call " +
-			"to be made - at that point there is no menu, no option, and nothing to press.\n" +
+			"to be made - at that point there is no menu, no option, and nothing to press. And an act whose " +
+			"result is already in the conversation does not need doing again: a menu that has answered \"you " +
+			"have reached order status\" has been reached, and pressing on from there is pressing into " +
+			"somewhere nobody asked to go.\n" +
 			"keep-speaking - the agent is mid-sentence and someone else has started; carry on anyway.\n" +
 			"stop-speaking - the agent is mid-sentence; stop and let them have the floor.\n\n" +
 			"Anything other than staying silent, or carrying on with what the agent is already saying, needs a reason " +

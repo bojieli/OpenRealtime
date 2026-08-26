@@ -409,10 +409,17 @@ func (runtime *runtime) publishAssistant(
 		runtime.noteWithheld(result, request, "the model described saying nothing instead of saying nothing")
 		return nil
 	}
-	if strings.TrimSpace(result.AssistantText) == cognition.WaitToken {
+	if strings.Contains(result.AssistantText, cognition.WaitToken) {
 		// A decision to be silent, which is a different thing from a turn that
 		// produced nothing, and the whole reason the token exists: the second
 		// is worth looking at and the first is the system working.
+		//
+		// Anywhere in the text, not only alone. A turn that both says
+		// something and asks for silence is a model in two minds, and the safe
+		// reading of a token whose entire purpose is silence is silence -
+		// where the other reading speaks a control token out loud. Measured at
+		// a phone menu, "Pressing the key for order status. <wait>" was read
+		// to a recording that could not hear it and was still talking.
 		runtime.noteWithheld(result, request, "the voice chose to stay silent")
 		return nil
 	}
