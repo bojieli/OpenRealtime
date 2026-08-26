@@ -1522,3 +1522,54 @@ Please begin describing your afternoon."
 The comment beside that paragraph already recorded this exact failure from an
 earlier measurement. The fix had been applied to one prompt path and not the
 other.
+
+### The instrument was one session behind (F42)
+
+Two suite runs in a row scored worse than the one before them, and the control
+scenario - a finished question with nothing standing in the way - scored 0/5 at
+the end of both while passing 3/3 when run on its own. Anything that passes
+alone and fails in company is a state that outlives what it belongs to.
+
+The recogniser learns whose session it is from the first voice it hears, and it
+was built once for the process. So it enrolled the first speaker of the first
+scenario in a run, and every user in every scenario after that was a stranger.
+The shadow log shows a single sentence changing hands halfway through:
+
+```
+listen  who=user                     heard "Everything you know."
+listen  who=someone else in the room heard "Everything you know about theef."
+```
+
+The agent then correctly declined to answer a stranger, having just been taught
+what a stranger means. Both halves of this session's work - the evidence and
+the rule for reading it - were behaving exactly as designed on a premise that
+was wrong for every session but the first.
+
+Worth stating with the other one: a benchmark that scores behaviour cannot tell
+a model that decided to stay quiet from a pipeline that stopped feeding it, and
+it cannot tell either of those from a fact about the world that leaked between
+two runs. All three look like silence.
+
+### The suite at 40 of 55, on local models throughout (F43)
+
+```
+count-as-they-go                          2/5    3156ms p50
+asked not to be interrupted               5/5
+a recorded menu                           0/5    8179ms p50
+cutting in on something wrong             5/5    2028ms p50
+ordering from a waiter                    5/5      91ms p50
+translating as they speak                 4/5      67ms p50
+waiting out a silence they asked for      1/5    3778ms p50
+somebody else's conversation              5/5    2837ms p50
+an acknowledgement is not an interruption 5/5     307ms p50
+telling them what it saw                  3/5      65ms p50 spoken, 2862ms seen
+an ordinary question                      5/5      60ms p50
+```
+
+Against the cloud voice at 43/55 the total is lower and the composition is
+different: the third-party case was structurally impossible before and is now
+5/5, the waiter went 4/5 to 5/5, and the control answers in 60ms rather than
+1522ms. What is left divides cleanly. The menu is an act carried out too late
+by a path that wants a reflex; the silence and the counting are a policy read
+off a fragment of the sentence that set it; the visual case is a model claiming
+to have seen something before any frame arrived.
