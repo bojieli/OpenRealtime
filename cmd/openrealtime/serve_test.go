@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -391,5 +392,167 @@ func TestTheRecogniserIsBoundedByItsOwnCadence(t *testing.T) {
 	// A long cadence must not quietly exceed the deployment's own limit.
 	if got := recogniserTimeout(time.Hour, shared); got != shared {
 		t.Fatalf("the shared timeout is still the ceiling, got %s", got)
+	}
+}
+
+func TestVoiceProfileIsAnIdentityTransform(t *testing.T) {
+	options := defaultOptions()
+	options.profile = "voice"
+	options.fastProvider = "vllm"
+	options.fastModel = "voice-model"
+	options.fastTokens = 96
+	options.slowProvider = "vllm"
+	options.slowModel = "reasoner-model"
+	options.slowEffort = "high"
+	options.slowTokens = 2048
+	options.requestTimeout = 2 * time.Minute
+	options.explicit = map[string]bool{
+		"fast-model": true, "slow-model": true,
+	}
+	before := options
+	normalized, err := normalizeProfile(options)
+	if err != nil {
+		t.Fatalf("normalize voice: %v", err)
+	}
+	if !reflect.DeepEqual(normalized, before) {
+		t.Fatalf("voice profile changed legacy configuration:\nbefore=%+v\nafter=%+v", before, normalized)
+	}
+
+	beforeFast, err := buildFast(before)
+	if err != nil {
+		t.Fatalf("build legacy fast: %v", err)
+	}
+	afterFast, err := buildFast(normalized)
+	if err != nil {
+		t.Fatalf("build profile fast: %v", err)
+	}
+	beforeSlow, err := buildSlow(before)
+	if err != nil {
+		t.Fatalf("build legacy slow: %v", err)
+	}
+	afterSlow, err := buildSlow(normalized)
+	if err != nil {
+		t.Fatalf("build profile slow: %v", err)
+	}
+	if !reflect.DeepEqual(beforeFast.Descriptor(), afterFast.Descriptor()) ||
+		!reflect.DeepEqual(beforeSlow.Descriptor(), afterSlow.Descriptor()) {
+		t.Fatalf("voice profile changed provider descriptors: before=%+v/%+v after=%+v/%+v",
+			beforeFast.Descriptor(), beforeSlow.Descriptor(), afterFast.Descriptor(), afterSlow.Descriptor())
+	}
+	beforePolicies, err := buildPolicies(before, nil)
+	if err != nil {
+		t.Fatalf("build legacy policies: %v", err)
+	}
+	afterPolicies, err := buildPolicies(normalized, nil)
+	if err != nil {
+		t.Fatalf("build profile policies: %v", err)
+	}
+	if !reflect.DeepEqual(beforePolicies.Report(), afterPolicies.Report()) {
+		t.Fatalf("voice profile changed policies: before=%+v after=%+v",
+			beforePolicies.Report(), afterPolicies.Report())
+	}
+	if reflex, err := buildVisualReflex(normalized); err != nil || reflex != nil {
+		t.Fatalf("voice profile instantiated a visual role: provider=%v err=%v", reflex, err)
+	}
+}
+
+func TestVoiceVisionProfileSelectsCurrentFramesWithoutChangingVoiceRoles(t *testing.T) {
+	options := defaultOptions()
+	options.profile = "voice+vision"
+	options.fastProvider = "vllm"
+	options.fastModel = "voice-model"
+	options.slowProvider = "vllm"
+	options.slowModel = "reasoner-model"
+	options.slowEffort = "high"
+	options.reflexProvider = "vllm"
+	options.reflexURL = "http://127.0.0.1:8004/v1"
+	options.reflexModel = "qwen-vl-fast-local"
+	options.reflexTokens = 48
+	options.reflexTimeout = 650 * time.Millisecond
+	options.explicit = map[string]bool{
+		"profile": true, "fast-model": true, "slow-model": true,
+		"visual-reflex-model": true, "visual-reflex-url": true,
+	}
+	voiceBefore, err := buildFast(options)
+	if err != nil {
+		t.Fatalf("voice before profile: %v", err)
+	}
+	slowBefore, err := buildSlow(options)
+	if err != nil {
+		t.Fatalf("slow before profile: %v", err)
+	}
+	normalized, err := normalizeProfile(options)
+	if err != nil {
+		t.Fatalf("normalize voice+vision: %v", err)
+	}
+	if normalized.observers != "audio+video" || normalized.components != "keyframe" {
+		t.Fatalf("visual reflex profile did not select current frames: observers=%q components=%q",
+			normalized.observers, normalized.components)
+	}
+	voiceAfter, _ := buildFast(normalized)
+	slowAfter, _ := buildSlow(normalized)
+	if !reflect.DeepEqual(voiceBefore.Descriptor(), voiceAfter.Descriptor()) ||
+		!reflect.DeepEqual(slowBefore.Descriptor(), slowAfter.Descriptor()) {
+		t.Fatal("enabling the visual role changed voice or slow cognition")
+	}
+	reflex, err := buildVisualReflex(normalized)
+	if err != nil {
+		t.Fatalf("build visual reflex: %v", err)
+	}
+	descriptor := reflex.Descriptor()
+	if descriptor.Provider != "vllm" || descriptor.Model != "qwen-vl-fast-local" ||
+		!descriptor.Vision || descriptor.EffectiveToolAuthority() != continuation.ToolAuthorityExecute ||
+		descriptor.EffectiveSpeechAuthority() != continuation.SpeechAuthoritySilent {
+		t.Fatalf("unexpected independent visual role: %+v", descriptor)
+	}
+}
+
+func TestVoiceVisionProfilePreservesExplicitObserverPolicy(t *testing.T) {
+	options := defaultOptions()
+	options.profile = "voice+vision"
+	options.reflexModel = "vision"
+	options.observers = "video"
+	options.components = "keyframe+narration"
+	options.explicit = map[string]bool{
+		"profile": true, "visual-reflex-model": true,
+		"observers": true, "observer-components": true,
+	}
+	normalized, err := normalizeProfile(options)
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if normalized.observers != "video" || normalized.components != "keyframe+narration" {
+		t.Fatalf("profile overrode explicit interaction/perception policy: %+v", normalized)
+	}
+}
+
+func TestLegacyVisualFlagsNormalizeIntoTheUnifiedProfile(t *testing.T) {
+	options := defaultOptions()
+	options.profile = "voice"
+	options.observers = "audio+video"
+	options.components = "keyframe+narration"
+	options.explicit = map[string]bool{
+		"observers": true, "observer-components": true,
+	}
+	normalized, err := normalizeProfile(options)
+	if err != nil {
+		t.Fatalf("normalize legacy visual flags: %v", err)
+	}
+	if normalized.profile != "voice+vision" || normalized.observers != options.observers ||
+		normalized.components != options.components {
+		t.Fatalf("legacy flags did not normalize without changing their choices: %+v", normalized)
+	}
+}
+
+func TestVisualReflexCannotBeConfiguredAsANarrationOnlyNoOp(t *testing.T) {
+	options := defaultOptions()
+	options.profile = "voice+vision"
+	options.reflexModel = "vision"
+	options.components = "narration"
+	options.explicit = map[string]bool{
+		"profile": true, "visual-reflex-model": true, "observer-components": true,
+	}
+	if _, err := normalizeProfile(options); err == nil {
+		t.Fatal("a reflex with no retained frame must be refused instead of silently never running")
 	}
 }

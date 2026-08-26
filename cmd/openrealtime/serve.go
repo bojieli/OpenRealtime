@@ -48,6 +48,7 @@ import (
 type serveOptions struct {
 	listen   string
 	binding  string
+	profile  string
 	model    string
 	tokenEnv string
 
@@ -67,6 +68,13 @@ type serveOptions struct {
 	fastTokenEnv string
 	fastTokens   int
 	fastVision   bool
+
+	reflexProvider string
+	reflexURL      string
+	reflexModel    string
+	reflexTokenEnv string
+	reflexTokens   int
+	reflexTimeout  time.Duration
 
 	slowProvider string
 	slowURL      string
@@ -167,6 +175,7 @@ func runServe(arguments []string, output io.Writer) error {
 	var options serveOptions
 	flags.StringVar(&options.listen, "listen", "127.0.0.1:8765", "HTTP and WebSocket listen address")
 	flags.StringVar(&options.binding, "binding", "cascade", "voice stack: cascade, upstream, omni, or duplex")
+	flags.StringVar(&options.profile, "profile", "voice", "runtime profile: voice or voice+vision")
 	flags.StringVar(&options.model, "model", "openrealtime", "compatibility model identifier reported to clients")
 	flags.StringVar(&options.tokenEnv, "token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token; empty disables authentication")
 	flags.DurationVar(&options.requestTimeout, "request-timeout", 2*time.Minute, "per-request provider timeout")
@@ -204,6 +213,19 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.IntVar(&options.fastTokens, "fast-max-tokens", 96, "fast spoken turn output-token limit")
 	flags.BoolVar(&options.fastVision, "fast-sees", false,
 		"the fast model accepts images; false withholds them, which a text-only model requires")
+
+	flags.StringVar(&options.reflexProvider, "visual-reflex-provider", "vllm",
+		"optional visual reflex provider; enabled by -visual-reflex-model")
+	flags.StringVar(&options.reflexURL, "visual-reflex-url", openaicompat.DefaultBaseURL,
+		"visual reflex model base URL; unset selects the provider's own")
+	flags.StringVar(&options.reflexModel, "visual-reflex-model", "",
+		"visual reflex model identity; empty disables the visual reflex lane")
+	flags.StringVar(&options.reflexTokenEnv, "visual-reflex-token-env", "",
+		"environment variable holding the visual reflex credential; empty reads OPENREALTIME_VISUAL_REFLEX_API_KEY and then the provider's conventional variable")
+	flags.IntVar(&options.reflexTokens, "visual-reflex-max-tokens", 48,
+		"visual reflex act/wait/abstain output-token limit")
+	flags.DurationVar(&options.reflexTimeout, "visual-reflex-timeout", 650*time.Millisecond,
+		"hard deadline for one visual reflex decision")
 
 	flags.StringVar(&options.slowProvider, "slow-provider", "gemini",
 		"slow provider; openrealtime providers lists them")
@@ -369,6 +391,11 @@ func serve(options serveOptions, output io.Writer) error {
 // the accumulator its recognisers fold into. Every other binding returns a nil
 // accumulator: there is no recogniser in the process to report on.
 func buildBinding(options serveOptions) (binding.Binding, *asrbuffer.Accumulator, error) {
+	var err error
+	options, err = normalizeProfile(options)
+	if err != nil {
+		return nil, nil, err
+	}
 	bindingName := strings.ToLower(strings.TrimSpace(options.binding))
 	if bindingName == "" {
 		bindingName = "cascade"
@@ -634,6 +661,10 @@ func buildCascade(
 	if err != nil {
 		return nil, fmt.Errorf("configure the slow provider: %w", err)
 	}
+	reflex, err := buildVisualReflex(options)
+	if err != nil {
+		return nil, fmt.Errorf("configure the visual reflex provider: %w", err)
+	}
 	speech, err := providers.NewTTS(providers.TTSRequest{
 		Provider: options.ttsProvider, Model: options.override("tts-model", options.ttsModel),
 		Voice: options.ttsVoice, BaseURL: options.override("tts-url", options.ttsURL),
@@ -664,6 +695,7 @@ func buildCascade(
 		return nil, fmt.Errorf("configure the recogniser: %w", err)
 	}
 	return cascade.New(cascade.Config{
+		Profile:           options.profile,
 		ClientToolTimeout: options.clientToolTimeout,
 		Observers:         observers, DefaultObservers: defaults, Tools: computer.specs,
 		Narrator:        narrator,
@@ -689,7 +721,9 @@ func buildCascade(
 		Fast: fast, Slow: slow, Speech: speech,
 		Voice:         options.ttsVoice,
 		FastMaxTokens: options.fastTokens, SlowMaxTokens: options.slowTokens,
-		Policies: policies, ObservationPolicy: observation,
+		VisualReflex: reflex, VisualReflexMaxTokens: options.reflexTokens,
+		VisualReflexTimeout: options.reflexTimeout,
+		Policies:            policies, ObservationPolicy: observation,
 		AgentInstruction: options.instruction,
 	})
 }
@@ -762,6 +796,32 @@ func buildSlow(options serveOptions) (continuation.Provider, error) {
 		Reason:          providers.ReasonOn,
 		Vision:          visionOverride(options, "slow-sees", options.slowVision),
 		RequestTimeout:  options.requestTimeout,
+	})
+}
+
+// buildVisualReflex configures the optional one-shot visual action role. It
+// is deliberately independent from buildFast: changing this role must not
+// change the voice provider, prompt, token budget, or speech authority.
+func buildVisualReflex(options serveOptions) (continuation.Provider, error) {
+	if strings.TrimSpace(options.reflexModel) == "" {
+		return nil, nil
+	}
+	sees := true
+	return providers.NewLLM(providers.LLMRequest{
+		Provider: options.reflexProvider,
+		Model: modelOverride(
+			options, "visual-reflex-model", options.reflexModel,
+			options.reflexProvider, trajectory.PhaseFast),
+		BaseURL: options.override("visual-reflex-url", options.reflexURL),
+		APIKey: roleCredential(
+			options, "visual-reflex-token-env", options.reflexTokenEnv,
+			"OPENREALTIME_VISUAL_REFLEX_API_KEY"),
+		Phase: trajectory.PhaseFast, Effort: continuation.EffortMinimal,
+		ToolAuthority:   continuation.ToolAuthorityExecute,
+		SpeechAuthority: continuation.SpeechAuthoritySilent,
+		Reason:          providers.ReasonOff,
+		Vision:          &sees,
+		RequestTimeout:  options.reflexTimeout,
 	})
 }
 
@@ -934,6 +994,15 @@ func buildObservers(
 	if err != nil {
 		return nil, nil, err
 	}
+	if components == perception.ComponentKeyframeOnly {
+		// The low-latency visual reflex needs pixels, not a description produced
+		// before it may start. A static observation keeps the canonical event and
+		// media lifecycle intact without placing another model call on that path.
+		narrator := perception.StaticNarrator{Text: "A new screen state was captured."}
+		return []perception.Factory{perception.VideoFactory(perception.VideoConfig{
+			Narrator: narrator, AttachKeyframes: true,
+		})}, narrator, nil
+	}
 	label, narration, err := narratorComposition(options)
 	if err != nil {
 		return nil, nil, err
@@ -962,11 +1031,6 @@ func buildObservers(
 	})
 	if err != nil {
 		return nil, nil, err
-	}
-	if components == perception.ComponentKeyframeOnly {
-		// Keyframe-only is a measurement level, not a working configuration:
-		// it asks what images are worth with no persistent text at all.
-		narrator = perception.StaticNarrator{Text: "A new screen state was captured."}
 	}
 	return []perception.Factory{perception.VideoFactory(perception.VideoConfig{
 		Narrator:        narrator,
