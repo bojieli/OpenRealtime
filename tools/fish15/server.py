@@ -13,6 +13,7 @@ token queue to the decoder and leaves the allocator alone.
 
 import argparse
 import json
+import os
 import queue
 import struct
 import sys
@@ -20,6 +21,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import soundfile
 import torch
 import torchaudio
 
@@ -37,6 +39,27 @@ from fish_speech.models.vqgan.inference import load_model as load_decoder  # noq
 
 SAMPLE_RATE = 44_100
 AMPLITUDE = 32768
+
+
+ENROLMENT = (
+    "This is my voice. I sound like this whenever I speak, "
+    "in this room and in this conversation."
+)
+
+
+def wav_file(pcm, sample_rate=SAMPLE_RATE, channels=1, bits=16):
+    """A complete RIFF file, for a caller that wanted the whole utterance."""
+    block_align = channels * bits // 8
+    return (
+        b"RIFF"
+        + struct.pack("<I", 36 + len(pcm))
+        + b"WAVEfmt "
+        + struct.pack("<IHHIIHH", 16, 1, channels, sample_rate,
+                      sample_rate * block_align, block_align, bits)
+        + b"data"
+        + struct.pack("<I", len(pcm))
+        + pcm
+    )
 
 
 def wav_header(sample_rate=SAMPLE_RATE, channels=1, bits=16):
@@ -66,7 +89,7 @@ class Speech:
     keeps the ordering honest without a second worker.
     """
 
-    def __init__(self, checkpoint, device, compile_graphs):
+    def __init__(self, checkpoint, device, compile_graphs, voice_dir):
         self.queue = launch_thread_safe_queue(
             checkpoint_path=checkpoint, device=device,
             precision=torch.half, compile=compile_graphs,
@@ -79,9 +102,16 @@ class Speech:
         self.device = device
         self.compile_graphs = compile_graphs
         self.decode_lock = threading.Lock()
+        self.voice_dir = voice_dir
+        self.voices = {}
+        self.voice_lock = threading.Lock()
+        os.makedirs(voice_dir, exist_ok=True)
 
-    def synthesize(self, request):
+    def synthesize(self, request, voice=None):
         """Yield int16 PCM for one request, a text chunk at a time."""
+        tokens, texts = ([], [])
+        if voice:
+            tokens, texts = self.voice_prompt(voice)
         replies = queue.Queue()
         self.queue.put(GenerateRequest(dict(
             device=self.device,
@@ -94,8 +124,8 @@ class Speech:
             iterative_prompt=request["chunk_length"] > 0,
             chunk_length=request["chunk_length"],
             max_length=2048,
-            prompt_tokens=[],
-            prompt_text=[],
+            prompt_tokens=tokens,
+            prompt_text=texts,
         ), replies))
 
         while True:
@@ -106,6 +136,49 @@ class Speech:
             if reply.action == "next":
                 return
             yield self.decode(reply.codes)
+
+    def voice_prompt(self, name):
+        """The prompt tokens that make this speaker sound like themselves.
+
+        Fish is zero-shot: asked for speech with no reference it invents a
+        speaker, and it invents a different one every call. That is fine for a
+        demo and wrong for anything that has to sound like the same person
+        twice - measured on the benchmark's own audio, two lines from the same
+        scripted speaker embedded 0.27 apart, which is what two strangers score.
+        A scenario about a third party talking near the microphone cannot pose
+        that case if the user's own voice changes every sentence.
+
+        So a speaker is enrolled once, on first use, and kept: the enrolment
+        audio is written to disk, so restarting the server does not give
+        everybody a new voice either.
+        """
+        with self.voice_lock:
+            if name in self.voices:
+                return self.voices[name]
+        path = os.path.join(self.voice_dir, f"{name}.wav")
+        if not os.path.exists(path):
+            pcm = b"".join(self.synthesize(defaults(ENROLMENT)))
+            with open(path, "wb") as handle:
+                handle.write(wav_file(pcm))
+            print(f"enrolled voice {name!r} from {len(pcm) / 2 / SAMPLE_RATE:.1f}s", flush=True)
+        prompt = ([self.encode_reference(path)], [ENROLMENT])
+        with self.voice_lock:
+            self.voices[name] = prompt
+        return prompt
+
+    def encode_reference(self, path):
+        # soundfile rather than torchaudio.load: 2.10 routes loading through
+        # torchcodec, which is not installed and is a decoder we do not need
+        # for a mono RIFF file this process wrote itself.
+        samples, rate = soundfile.read(path, dtype="float32", always_2d=True)
+        audio = torch.from_numpy(samples.T)
+        if rate != self.decoder.spec_transform.sample_rate:
+            audio = torchaudio.functional.resample(
+                audio, rate, self.decoder.spec_transform.sample_rate)
+        audio = audio.mean(dim=0, keepdim=True)[None].to(self.device)
+        lengths = torch.tensor([audio.shape[2]], device=self.device, dtype=torch.long)
+        with self.decode_lock:
+            return self.decoder.encode(audio, lengths)[0][0]
 
     def decode(self, codes):
         with self.decode_lock:
@@ -159,8 +232,32 @@ def handler_for(speech):
                           "repetition_penalty", "temperature"):
                 if body.get(field):
                     request[field] = body[field]
+            # A named voice is a speaker who has to sound the same every time
+            # they talk. "default" is a name like any other.
+            voice = (body.get("voice") or body.get("reference_id") or "").strip()
 
             started = time.perf_counter()
+            # Streaming is for the agent, where the first sample matters more
+            # than the file. A caller that wants the utterance gets a complete
+            # RIFF file with real lengths in it rather than a stream with the
+            # placeholders a decoder then has to know to ignore.
+            if not body.get("streaming"):
+                try:
+                    pcm = b"".join(speech.synthesize(request, voice))
+                except RuntimeError as error:
+                    print(f"synthesis failed: {error}", file=sys.stderr, flush=True)
+                    self.send_error(500, str(error))
+                    return
+                payload = wav_file(pcm)
+                self.send_response(200)
+                self.send_header("Content-Type", "audio/wav")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                print(f'{(time.perf_counter() - started) * 1000:.0f} ms for '
+                      f'"{text[:40]}" as {voice or "nobody in particular"}', flush=True)
+                return
+
             self.send_response(200)
             self.send_header("Content-Type", "audio/wav")
             self.send_header("Transfer-Encoding", "chunked")
@@ -169,7 +266,7 @@ def handler_for(speech):
             first = None
             try:
                 self.write_chunk(wav_header())
-                for pcm in speech.synthesize(request):
+                for pcm in speech.synthesize(request, voice):
                     if first is None:
                         first = (time.perf_counter() - started) * 1000
                     self.write_chunk(pcm)
@@ -203,10 +300,13 @@ def main():
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--no-compile", action="store_true")
+    parser.add_argument("--voices", default=".runtime/fish-voices",
+                        help="where enrolled speaker references are kept")
     arguments = parser.parse_args()
 
     started = time.perf_counter()
-    speech = Speech(arguments.checkpoint, arguments.device, not arguments.no_compile)
+    speech = Speech(arguments.checkpoint, arguments.device, not arguments.no_compile,
+                    arguments.voices)
     speech.warm()
     print(f"ready on :{arguments.port} after {time.perf_counter() - started:.1f}s", flush=True)
 
