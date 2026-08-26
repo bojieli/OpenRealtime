@@ -200,6 +200,14 @@ func (runtime *runtime) runStep(
 ) error {
 	switch step.Kind {
 	case interaction.StepFast:
+		// A background result is worth saying, and not necessarily now. Where
+		// somebody has asked for a stretch of quiet it waits for the moment
+		// they named - the trajectory keeps it, and the turn that comes due
+		// reads it.
+		if step.Reason == interaction.ReasonBackgroundResult && runtime.silenceWasAskedFor() {
+			runtime.noteInterject("a standing policy asked for this silence")
+			return nil
+		}
 		handsOn := step.Reason == interaction.ReasonBackgroundResult || plansSlow
 		return runtime.runFast(ctx, request, turn, handsOn)
 	case interaction.StepSlow:
@@ -404,6 +412,32 @@ func (runtime *runtime) breakSilenceWhileDeliberating(
 	}
 }
 
+// silenceWasAskedFor reports that a standing policy names a length of quiet
+// that has not elapsed.
+//
+// Dead air presupposes somebody waiting to be spoken to. Somebody who said they
+// would be quiet for a while and asked to be checked on after fifteen seconds
+// is not waiting, and filling that silence is the one behaviour the policy
+// exists to prevent. The delay and the clock are facts the runtime holds rather
+// than judgements, so this is settled before anybody is asked.
+//
+// It governs every path that produces speech without an utterance to answer -
+// the holding line, and the turn that reports what the reasoner came back with.
+// Both were built to break a silence, and neither had ever heard a policy
+// about silence.
+func (runtime *runtime) silenceWasAskedFor() bool {
+	quiet, ok := runtime.quietSoFar()
+	if !ok {
+		return false
+	}
+	for _, standing := range runtime.pinboard.InForce() {
+		if standing.After > 0 && !standing.Due(quiet) {
+			return true
+		}
+	}
+	return false
+}
+
 // quietSoFar is how long nothing has been heard and nothing has been played.
 func (runtime *runtime) quietSoFar() (time.Duration, bool) {
 	state := runtime.duplex.Snapshot()
@@ -426,17 +460,8 @@ func (runtime *runtime) quietSoFar() (time.Duration, bool) {
 // there is nobody to ask and the silence gets broken, which is the behaviour
 // this had before the question existed.
 func (runtime *runtime) holdingIsWelcome() bool {
-	// Dead air presupposes somebody waiting to be spoken to. Someone who asked
-	// to be left alone for fifteen seconds is not waiting; the silence is the
-	// thing they asked for, and filling it is the one behaviour the policy
-	// exists to prevent. This is a fact the runtime holds - the delay and the
-	// clock - rather than a judgement, so it is settled before anyone is asked.
-	if quiet, ok := runtime.quietSoFar(); ok {
-		for _, standing := range runtime.pinboard.InForce() {
-			if standing.After > 0 && !standing.Due(quiet) {
-				return false
-			}
-		}
+	if runtime.silenceWasAskedFor() {
+		return false
 	}
 	if runtime.policies.Interaction == nil {
 		return true
