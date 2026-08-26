@@ -367,3 +367,49 @@ paths this project maintains.
 Which is the argument for the omni path in one measurement: the cascade's
 recogniser is not a neutral component that turns sound into text, it is a lossy
 one that decides what the rest of the system is allowed to know.
+
+## Counting fails because its policy lasts one utterance
+
+Read from the decisions rather than the score. At the moment the agent answered
+a line with no animal in it, the situation said:
+
+```
+   act: answer | policy in force: False
+   heard from user so far: "It was a warm afternoon, and I was walking along by the river."
+```
+
+No policy in force - four seconds after one was pinned. Every counting policy
+in the run was pinned with turn scope:
+
+```
+t=  11.9 pin  scope='turn'  'count the animals out loud as I mention them and say not...'
+t=  23.0 pin  scope='turn'  'count the animals out loud as I mention them and say not...'
+t=  26.9 pin  scope='turn'  'count the animals out loud as I mention them'
+```
+
+A turn-scoped policy is dropped when the next observation commits, which is the
+next thing the speaker says - seconds later. So the policy governs nothing, the
+decision layer has no reason to stay quiet, and the voice never receives the
+paragraph that carries `<wait>`, because that paragraph is only attached when a
+policy is in force. One mis-scoped pin explains the whole failure, including
+why a token measured at six out of six never fired once in a live run.
+
+It is not a runtime bug. Probed directly, the extraction chooses turn five
+times out of five for the counting policy and conversation five out of five for
+"tell me the moment the build finishes" - two policies with the same shape,
+both watching for something that has not happened yet, which the extraction
+instruction already says is "always a rule".
+
+Sharpening the instruction did not move it. Told plainly that turn scope
+expires when the sentence being spoken now ends, that anything firing more than
+once is a conversation policy, and that "as I mention them" describes a series,
+the answer was still turn five out of five - while the build case stayed
+conversation. The model appears to read "as I mention them" as bounded by the
+telling, which is a reasonable thing to think and is not what turn scope means.
+
+So the honest statement of the defect: **the two scopes on offer are one
+utterance and forever, and "for as long as I am telling you this" is neither.**
+A policy that recurs across a story has no scope that fits it, and the model
+picks the one whose words match rather than the one whose mechanism does. That
+is a gap in the design and not a failure of the model to follow instructions -
+which is why three attempts to instruct around it all failed.
