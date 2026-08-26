@@ -1128,3 +1128,64 @@ What is left is restraint and one hallucination:
 - **ordering from a waiter, 1/3.** It spoke at the right moment and said
   "that's it, we want a table for three" - nothing in the conversation.
 - **asked not to be interrupted, 2/3.** One run spoke during a long pause.
+
+### The suite at 37 of 45 (F29)
+
+Nine scenarios, five runs each. Six of the nine pass every run.
+
+| | 15/27 | 21/27 | 37/45 |
+| --- | --- | --- | --- |
+| count-as-they-go | 0/3 | 3/3 | **5/5** |
+| asked not to be interrupted | 3/3 | 2/3 | **5/5** |
+| a recorded menu | 0/3 | 3/3 | 3/5 |
+| cutting in on something wrong | 3/3 | 3/3 | **5/5** |
+| ordering from a waiter | 2/3 | 1/3 | **5/5** |
+| translating as they speak | 1/3 | 3/3 | 4/5 |
+| an acknowledgement is not an interruption | 3/3 | 3/3 | **5/5** |
+| telling them what it saw | 0/3 | 0/3 | 0/5 |
+| an ordinary question | 3/3 | 3/3 | **5/5** |
+
+The number moved because six defects between a decision and its execution were
+found and fixed, not because the interaction model got better at deciding. It
+was never the thing in the way. What was:
+
+1. the voice never received the session's own instruction
+2. every interruption was cancelled by the sentence it was interrupting
+3. the sentence an interjection exists for was never in the conversation
+4. a repair required twice was listed twice and killed the session
+5. a picture reached only the model that can see
+6. the back half of a cut sentence revoked what the front half asked for
+
+and two more that only became visible once the acts started being carried out:
+a key pressed nine times in one call, and a safe point's refusal reported as a
+session failure from four different places.
+
+### What is left
+
+**telling them what it saw, 0/5, and it is now one check.** It reports the
+build finishing, correctly, in every run. It says nothing at the frame that
+does not matter. What it misses is the latency bound: first audio 4.87s after
+the frame against 3s.
+
+That is close to the floor of this pipeline rather than a defect in it.
+Narrating one frame costs 1.45s at the median (measured directly, five calls),
+and the ordinary path from a finished observation to first audio is 1.6-1.8s in
+every other row of this suite. 1.45 + 1.7 is 3.15s before anything goes wrong.
+The bound beside it - the phrase within 4s - now passes, and audio cannot
+precede the text it is synthesised from, so the two bounds as written cannot
+both be met. The check is left failing rather than adjusted: the system does
+not meet it, and that is the honest report.
+
+**a recorded menu, 3/5.** Two runs still say something out loud to a recording.
+
+**translating as they speak, 4/5.** One run left a greeting in Mandarin
+instead of carrying it into English.
+
+### The variance is part of the result
+
+Across five-run passes today the total read 30, 35 and 37 of 45 on builds that
+differed by one or two fixes, and single scenarios moved by two runs between
+passes on identical code. Five runs is the floor for saying anything about one
+scenario, and the total is a range rather than a figure. Both of today's
+regressions - one measured, one reverted - were only visible because the pass
+was five runs wide.
