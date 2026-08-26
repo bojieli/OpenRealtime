@@ -128,6 +128,7 @@ type serveOptions struct {
 	policies            string
 	interactionShadow   string
 	interactionFloor    bool
+	interactionSees     bool
 	interactionLiveness time.Duration
 	policyReasoning     string
 	projectionHold      time.Duration
@@ -295,6 +296,7 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.policies, "policy-models", "none", "comma-separated policy models: backchannel, turn-projection, overlap, interaction, all, or none")
 	flags.StringVar(&options.interactionShadow, "interaction-shadow", "", "file to record shadow interaction decisions to; enabling it decides nothing")
 	flags.BoolVar(&options.interactionFloor, "interaction-floor", false, "let the interaction model own turn-taking instead of the silence rule and the projection")
+	flags.BoolVar(&options.interactionSees, "interaction-sees", false, "the interaction model can look at a frame, so pictures reach it directly instead of as a narration")
 	flags.DurationVar(&options.interactionLiveness, "interaction-liveness", 20*time.Second, "longest the interaction model may hold the floor past the silence threshold")
 	flags.StringVar(&options.policyReasoning, "policy-reasoning", "chat_template_kwargs",
 		"how the policy endpoint is told not to think: chat_template_kwargs, enable_thinking, reasoning_effort, thinking_object, or none for an instruct model")
@@ -699,6 +701,7 @@ func buildCascade(
 		ClientToolTimeout: options.clientToolTimeout,
 		Observers:         observers, DefaultObservers: defaults, Tools: computer.specs,
 		Narrator:        narrator,
+		DeciderSees:     options.interactionSees,
 		FastComputerUse: options.fastComputerUse,
 		Governor:        governor,
 		ConfirmPolicy:   computer.policy,

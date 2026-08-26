@@ -37,6 +37,7 @@ func (runtime *runtime) situation(decision interaction.Context) interaction.Situ
 		SincePrevious: runtime.gapBeforeUtterance(snapshot),
 		InFlight:      workInFlight(snapshot),
 		Seen:          lastSeen(snapshot),
+		Seeing:        runtime.lastFrame(snapshot),
 		Tools:         runtime.toolLines(),
 	}
 	if state.AgentSpeaking {
@@ -525,4 +526,42 @@ func (runtime *runtime) noteWithheld(
 			"committed":   strconv.FormatBool(result.Committed),
 		},
 	})
+}
+
+// lastFrame is the newest picture the agent has, for a decision model that can
+// look at one.
+//
+// Only when the deployment says its decider can see. A frame handed to a
+// text-only model is bytes it will refuse or ignore, and paying to base64 a
+// screenshot on the critical path of a decision taken several times a second
+// is worse than not having it.
+//
+// It replaces the narration rather than joining it: a description of a screen
+// is a cloud round trip that costs 1.45 seconds and throws away everything the
+// sentence left out.
+func (runtime *runtime) lastFrame(snapshot trajectory.Snapshot) []interaction.Image {
+	if !runtime.config.DeciderSees || runtime.media == nil {
+		return nil
+	}
+	for index := len(snapshot.Items) - 1; index >= 0; index-- {
+		item := snapshot.Items[index]
+		if item.Kind != trajectory.KindObservation || item.Observation == nil {
+			continue
+		}
+		if len(item.Observation.Media) == 0 {
+			continue
+		}
+		frames := make([]interaction.Image, 0, len(item.Observation.Media))
+		for _, reference := range item.Observation.Media {
+			media, err := runtime.media.Resolve(reference.Handle)
+			if err != nil {
+				continue
+			}
+			frames = append(frames, interaction.Image{
+				MIMEType: media.Ref.MIMEType, Bytes: media.Bytes,
+			})
+		}
+		return frames
+	}
+	return nil
 }

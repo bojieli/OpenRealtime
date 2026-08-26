@@ -37,7 +37,11 @@ func (state Situation) Decidable() bool {
 	// where somebody has asked for something that happens on its own. See
 	// Situation.Quiet: a policy about time makes the passing of time evidence,
 	// and without such a policy the quiet decides nothing.
-	return state.Seen != "" || v1.CarriesSpeech(state.Heard) ||
+	// A frame the model can look at is evidence in its own right. Requiring a
+	// description first is what put a cloud narration on the critical path of
+	// every visual turn, and it is the one input here that does not need
+	// turning into words before it can be judged.
+	return state.Seen != "" || len(state.Seeing) > 0 || v1.CarriesSpeech(state.Heard) ||
 		(state.Quiet && len(state.Pins) > 0)
 }
 
@@ -79,6 +83,7 @@ func (model *InteractionModel) Decide(ctx context.Context, state Situation) (Act
 	}
 	outcome, err := model.decider.Decide(ctx, Decision{
 		Prompt: Instruction, Options: options, Evidence: state.Render(),
+		Images: state.Seeing,
 	})
 	if err != nil {
 		// A decision that could not be taken is not a decision to do something

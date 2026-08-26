@@ -124,6 +124,10 @@ type Decision struct {
 	// Evidence is the decision-time context, already rendered to text by the
 	// caller so the policy model never touches the trajectory itself.
 	Evidence string `json:"evidence,omitempty"`
+	// Images are frames the decision is about, for a model that can see them.
+	// They are deliberately absent from the JSON: this type is logged, and a
+	// screenshot in a log line is neither readable nor small.
+	Images []Image `json:"-"`
 }
 
 // Validate rejects a malformed question before it reaches a model.

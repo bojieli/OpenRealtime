@@ -24,6 +24,7 @@ package policymodel
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -141,8 +142,51 @@ type chatRequest struct {
 }
 
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role string `json:"role"`
+	// Content is a string for an ordinary decision and a list of parts when a
+	// frame comes with it, which is what the OpenAI-compatible shape requires
+	// and what every server that can see accepts.
+	Content any `json:"content"`
+}
+
+// contentPart is one piece of a multimodal message.
+type contentPart struct {
+	Type     string    `json:"type"`
+	Text     string    `json:"text,omitempty"`
+	ImageURL *imageURL `json:"image_url,omitempty"`
+}
+
+type imageURL struct {
+	URL string `json:"url"`
+}
+
+// withImages renders the evidence as text plus frames.
+//
+// Inline data URIs rather than links, because the frame is in memory at the
+// instant the decision is taken and there is nothing to serve it from - and
+// because a decision that has to fetch its own evidence is not a decision
+// taken in thirty milliseconds.
+func withImages(evidence string, images []interaction.Image) []contentPart {
+	parts := make([]contentPart, 0, len(images)+1)
+	if strings.TrimSpace(evidence) != "" {
+		parts = append(parts, contentPart{Type: "text", Text: evidence})
+	}
+	for _, image := range images {
+		if len(image.Bytes) == 0 {
+			continue
+		}
+		mime := image.MIMEType
+		if strings.TrimSpace(mime) == "" {
+			mime = "image/png"
+		}
+		parts = append(parts, contentPart{
+			Type: "image_url",
+			ImageURL: &imageURL{
+				URL: "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(image.Bytes),
+			},
+		})
+	}
+	return parts
 }
 
 type chatResponse struct {
@@ -187,9 +231,16 @@ func (client *Client) Decide(ctx context.Context, decision interaction.Decision)
 	if strings.TrimSpace(decision.Evidence) != "" {
 		prompt += "\n\n" + decision.Evidence
 	}
+	// The frame travels in the same message as the evidence it is evidence
+	// for. Splitting them asks the model to associate a picture with a
+	// paragraph by position.
+	var content any = prompt
+	if len(decision.Images) > 0 {
+		content = withImages(prompt, decision.Images)
+	}
 	body := chatRequest{
 		Model: client.config.Model, MaxTokens: 4, Temperature: 0,
-		Messages:    []chatMessage{{Role: "user", Content: prompt}},
+		Messages:    []chatMessage{{Role: "user", Content: content}},
 		Logprobs:    true,
 		TopLogprobs: len(decision.Options),
 	}

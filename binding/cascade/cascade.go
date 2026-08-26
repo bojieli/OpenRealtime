@@ -80,6 +80,14 @@ type Config struct {
 	// Nil leaves that sentence in place, which is the honest fallback for a
 	// deployment with no vision model configured.
 	Narrator perception.Narrator
+	// DeciderSees says the interaction model can look at a picture, so frames
+	// reach it directly instead of as somebody's description of one.
+	//
+	// It is a property of the model an operator configured, not something to
+	// probe for: a text-only decider handed a screenshot either refuses it or
+	// silently ignores it, and both are worse than the description it would
+	// otherwise have had.
+	DeciderSees bool
 	// ASRCadence is how often the recogniser is advanced.
 	ASRCadence time.Duration
 	// HoldingAfter is how long the reasoner may run before the voice says what

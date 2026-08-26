@@ -54,6 +54,15 @@ const (
 // prefix with a volatile tail: instructions and conversation change rarely,
 // the instant changes constantly, and putting them the other way round would
 // invalidate the cache on every tick.
+// Image is a frame handed to a model that can look at one.
+//
+// Bytes rather than a handle, because the decision is taken on the live
+// instant and a handle would have to be resolved inside the hot path anyway.
+type Image struct {
+	MIMEType string
+	Bytes    []byte
+}
+
 type Situation struct {
 	// Contract is what this deployment told the agent to be and to do.
 	//
@@ -87,6 +96,19 @@ type Situation struct {
 	Speaker  string
 	Speaking bool
 	Heard    string
+	// Seeing is the frame this decision is about, handed to the model as a
+	// picture rather than as somebody's description of one.
+	//
+	// A narrator is a cloud round trip that turns an image into a sentence,
+	// and it costs both ways: measured at 1.45 seconds on the critical path of
+	// every visual turn - the largest single cost in this system - and
+	// whatever the sentence left out is gone. "The build has finished
+	// successfully" is a good sentence and it is not the screen.
+	//
+	// It is only populated where the model deciding can see. A text-only
+	// decider gets Seen, which is the description, and the two are
+	// alternatives rather than a pair.
+	Seeing []Image
 	// Silence is how long the quiet has lasted, in a unit a model can reason
 	// about. It is deliberately finer than the projection cognition gets:
 	// three hundred milliseconds is nothing to a reader of the transcript and
