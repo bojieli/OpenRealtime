@@ -321,6 +321,15 @@ func (runtime *runtime) breakSilenceWhileDeliberating(
 	if after <= 0 {
 		return func() {}
 	}
+	// A turn that exists to act without speaking has nowhere to put a holding
+	// line. The act was chosen because speech would be pointless - a recording
+	// that cannot hear it, or somebody who asked not to be spoken to - and
+	// "I'm calling now, please hold" is speech, addressed to whoever the agent
+	// decided not to address. Measured at a phone menu, it covered the options
+	// the agent was waiting to hear.
+	if request.Because == string(interaction.ActCallTool) {
+		return func() {}
+	}
 	var mu sync.Mutex
 	var timer clock.Timer
 	stopped := false
