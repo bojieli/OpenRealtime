@@ -215,6 +215,12 @@ func (runner *Runner) run(
 			visibleInstruction.CausalParentIDs = []string{providerPrefix.Items[len(providerPrefix.Items)-1].ID}
 		}
 	}
+	// One sentence is one thing somebody said, however many times the
+	// recogniser committed it on the way. Applied here rather than in each
+	// adapter because it is true of every provider, and after any projection
+	// because a projection that has already dropped items leaves nothing for
+	// this to do.
+	providerPrefix.Items = trajectory.WithoutSupersededPartials(providerPrefix.Items)
 	prefix := providerPrefix
 	if prepared != nil && prepared.provisional.ID != "" {
 		provisional = prepared.provisional

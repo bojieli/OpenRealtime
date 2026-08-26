@@ -2,7 +2,6 @@ package interaction
 
 import (
 	"strings"
-	"unicode"
 
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -64,7 +63,7 @@ func (window *Window) Lines(items []trajectory.Item) []string {
 			speakable = append(speakable, item)
 		}
 	}
-	speakable = withoutSupersededPartials(speakable)
+	speakable = trajectory.WithoutSupersededPartials(speakable)
 	start := 0
 	if window.startID != "" {
 		for index, item := range speakable {
@@ -108,62 +107,6 @@ func cost(items []trajectory.Item) int {
 // that are not conversation. What an interaction model needs from the past is
 // who said what; reasoning, tool plumbing and assistant state are the agent
 // talking to itself.
-// withoutSupersededPartials drops an utterance that a later one continues.
-//
-// A recogniser commits its stable text as it goes, so one sentence reaches the
-// trajectory several times, each version a little longer than the last. That is
-// what the trajectory is for and it is not what a conversation looks like:
-// rendered line by line, somebody who mentioned a capybara once appears to have
-// mentioned it three times. Asked to count the animals, the voice counted three
-// and then four, which is the right answer to the conversation it was shown.
-//
-// Only consecutive items, and only from the same speaker, and only where the
-// earlier is a word-prefix of the later - which is what "the same sentence,
-// further along" means and what nothing else looks like.
-func withoutSupersededPartials(items []trajectory.Item) []trajectory.Item {
-	kept := make([]trajectory.Item, 0, len(items))
-	for index, item := range items {
-		if index+1 < len(items) && continues(item, items[index+1]) {
-			continue
-		}
-		kept = append(kept, item)
-	}
-	return kept
-}
-
-// continues reports that later is earlier said further.
-func continues(earlier, later trajectory.Item) bool {
-	if earlier.Kind != trajectory.KindObservation || later.Kind != trajectory.KindObservation {
-		return false
-	}
-	if SpeakerOf(earlier) != SpeakerOf(later) ||
-		trajectory.AuthorityOf(earlier) != trajectory.AuthorityOf(later) {
-		return false
-	}
-	was, now := spokenWords(earlier.Content), spokenWords(later.Content)
-	if len(was) == 0 || len(now) <= len(was) {
-		return false
-	}
-	for index := range was {
-		if was[index] != now[index] {
-			return false
-		}
-	}
-	return true
-}
-
-// spokenWords lowercases and drops punctuation, because a recogniser
-// re-punctuates what it has already given you between one commit and the next.
-func spokenWords(text string) []string {
-	words := strings.FieldsFunc(text, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	})
-	for index, word := range words {
-		words[index] = strings.ToLower(word)
-	}
-	return words
-}
-
 func windowLine(item trajectory.Item) string {
 	text := strings.TrimSpace(item.Content)
 	if text == "" {
