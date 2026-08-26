@@ -1218,3 +1218,45 @@ is the complement of the waiter: one demands acting on a third party within
 seconds, the other demands ignoring one completely, and a system that always
 does either passes one and fails the other. Neither number means anything
 without its pair.
+
+### One five-run pass cannot rank two models (F30)
+
+Counting scored 2/5 in a suite pass and 3/3 forty minutes later on the same
+code and the same model. Nothing behavioural changed between them.
+
+Collecting every pass taken tonight, per scenario, across builds that differ by
+one or two fixes:
+
+| scenario | passes seen |
+| --- | --- |
+| count-as-they-go | 0/3, 2/5, 3/3, 4/5, 5/5 |
+| a recorded menu | 0/5, 1/5, 2/5, 3/3, 3/5 |
+| translating as they speak | 1/5, 2/5, 3/5, 4/5, 5/5 |
+| ordering from a waiter | 0/5, 1/3, 3/5, 4/5, 5/5 |
+
+Four scenarios whose per-pass rate spans nearly the whole range. Some of that
+is real - fixes landed between passes - and some of it plainly is not, because
+two passes on identical code sit at opposite ends.
+
+The consequence is uncomfortable and worth stating plainly: **several of
+tonight's model comparisons were drawn from one five-run pass each, and on
+these four scenarios that is not enough to rank anything.** What survives is
+only what has a mechanism behind it as well as a number:
+
+- **The visual case, 0/5 to 5/5.** Not noise: the frame reaching the decision
+  directly is a different input, the narration it replaced was measured at 1.45
+  seconds, and every run improved.
+- **Qwen3.6's collapse.** Not noise either: counting, the waiter and the clock
+  all went to zero at once, and the eval predicted it - the model buys nine
+  points of balanced accuracy entirely with restraint and pays three cases of
+  acting for them.
+- **Everything else is unranked.** The 8B against the 30B end to end, the VL
+  against the text 30B on speech, the menu against anything - one pass each,
+  and the spread above says one pass is a coin.
+
+What the suite is good for is finding defects, which it has done all night:
+every fix in this document came from reading a failing run rather than from a
+score. What it is not yet good for is comparing two systems that are close,
+and no amount of care in reading a single number fixes that. That needs more
+passes per model than a night has room for, or scenarios whose outcome does not
+turn on a recogniser hearing "build" rather than "bill".
