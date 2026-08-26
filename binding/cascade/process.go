@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/binding"
@@ -403,6 +404,20 @@ func (runtime *runtime) breakSilenceWhileDeliberating(
 	}
 }
 
+// quietSoFar is how long nothing has been heard and nothing has been played.
+func (runtime *runtime) quietSoFar() (time.Duration, bool) {
+	state := runtime.duplex.Snapshot()
+	since := state.UserSpeechEndedNS
+	if state.PlayoutHorizonNS > since {
+		since = state.PlayoutHorizonNS
+	}
+	nowNS := runtime.scheduler.NowNS()
+	if since == 0 || nowNS < since {
+		return 0, false
+	}
+	return time.Duration(nowNS - since), true
+}
+
 // holdingIsWelcome asks whether this is a moment to break the silence.
 //
 // The same question every other moment asks, of the same model, from the same
@@ -411,6 +426,18 @@ func (runtime *runtime) breakSilenceWhileDeliberating(
 // there is nobody to ask and the silence gets broken, which is the behaviour
 // this had before the question existed.
 func (runtime *runtime) holdingIsWelcome() bool {
+	// Dead air presupposes somebody waiting to be spoken to. Someone who asked
+	// to be left alone for fifteen seconds is not waiting; the silence is the
+	// thing they asked for, and filling it is the one behaviour the policy
+	// exists to prevent. This is a fact the runtime holds - the delay and the
+	// clock - rather than a judgement, so it is settled before anyone is asked.
+	if quiet, ok := runtime.quietSoFar(); ok {
+		for _, standing := range runtime.pinboard.InForce() {
+			if standing.After > 0 && !standing.Due(quiet) {
+				return false
+			}
+		}
+	}
 	if runtime.policies.Interaction == nil {
 		return true
 	}
