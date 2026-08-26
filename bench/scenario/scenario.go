@@ -62,6 +62,15 @@ type Check struct {
 	// agent that waited politely until the end - the exact behaviour the
 	// interruption is meant to replace.
 	AfterMS int
+	// FromMS pushes the start of the window past the end of the line, for a
+	// check about what happens later rather than about the moment itself.
+	//
+	// A policy set out loud is answered with a brief "I will" - the voice is
+	// told to do exactly that, and the scenarios beside this one depend on it.
+	// So a scenario asking whether the agent then waited has to start its
+	// window after that answer, or it measures the acknowledgement it asked
+	// for.
+	FromMS int
 	// Tool is the call that must have happened, for CheckToolCalled.
 	Tool string
 	// Any is a set of phrases, one of which must appear in what the agent
@@ -344,6 +353,9 @@ func apply(check Check, timeline Timeline, transcript bench.Transcript) string {
 	case check.Line >= 0 && check.Line < len(timeline.Spans):
 		span := timeline.Spans[check.Line]
 		from, to = span.StartMS, span.EndMS+check.AfterMS
+		if check.FromMS != 0 {
+			from = span.EndMS + check.FromMS
+		}
 		if to <= from {
 			to = from + 1
 		}

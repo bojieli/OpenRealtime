@@ -33,7 +33,12 @@ func InertialAct(state Situation) Act {
 // triggered by voice activity has to guess; one triggered by content does not,
 // because noise produces no content and so produces no decision.
 func (state Situation) Decidable() bool {
-	return state.Seen != "" || v1.CarriesSpeech(state.Heard)
+	// Quiet is the one input that is not an arrival, and it is admitted only
+	// where somebody has asked for something that happens on its own. See
+	// Situation.Quiet: a policy about time makes the passing of time evidence,
+	// and without such a policy the quiet decides nothing.
+	return state.Seen != "" || v1.CarriesSpeech(state.Heard) ||
+		(state.Quiet && len(state.Pins) > 0)
 }
 
 // InteractionModel decides what an agent does in an instant.

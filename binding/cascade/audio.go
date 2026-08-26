@@ -137,6 +137,12 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 				return err
 			}
 		}
+		// And the same argument for the opposite case. A policy about time -
+		// "ask if I go quiet for fifteen seconds" - is about the moment when
+		// nothing arrives, so nothing that arrives can drive it. Frames do.
+		if state.Silent() {
+			runtime.considerQuiet(ctx, now, state)
+		}
 	}
 	if stopped && runtime.holdsThroughPause(now, latest, silenceNS) {
 		stopped = false

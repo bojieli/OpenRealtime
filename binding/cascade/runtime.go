@@ -125,8 +125,11 @@ type runtime struct {
 	// recorded menu is one utterance producing a revision every few hundred
 	// milliseconds, and one press per revision is nine presses in a call.
 	lastSilentActRev uint64
-	actedOnHeard     string
-	lastCanonical    uint64
+	// lastQuietNS is when the quiet was last asked about, so a stretch of
+	// nothing costs one decision a second rather than one a frame.
+	lastQuietNS   uint64
+	actedOnHeard  string
+	lastCanonical uint64
 	// interjecting is set when the turn about to run was taken from somebody
 	// still speaking rather than offered by somebody who had finished.
 	interjectingRev uint64

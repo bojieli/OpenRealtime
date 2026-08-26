@@ -92,6 +92,20 @@ type Situation struct {
 	// three hundred milliseconds is nothing to a reader of the transcript and
 	// is the whole question here.
 	Silence string
+	// Quiet says nothing has happened for a while and somebody asked to be
+	// told about something that happens on its own.
+	//
+	// Every other decision here is caused by an arrival - words, a frame, a
+	// result. An agent whose only inputs are other people's actions cannot
+	// honour "tell me if I go quiet for fifteen seconds", because the moment
+	// it is about is precisely the one where nothing arrives.
+	//
+	// It does not weaken the rule that evidence is what makes acting
+	// necessary. A policy about time is somebody putting time in front of the
+	// agent, and the elapsed silence is then evidence like any other. Without
+	// a policy in force this stays false and the quiet decides nothing, which
+	// is the inertia the rest of this rests on.
+	Quiet bool
 	// HeardSince is what has been added since the agent last said anything.
 	//
 	// Heard grows for as long as the floor holds a turn open, which is exactly

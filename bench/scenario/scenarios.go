@@ -167,8 +167,11 @@ func Suite() []Scenario {
 				// thing that can move the agent is the silence lengthening -
 				// which is the one input the interaction model is given on
 				// every decision and has never been asked to act on.
-				{Kind: CheckSilent, Line: 0, AfterMS: 12000,
-					Note: "they said fifteen seconds; speaking at five is not waiting"},
+				// From five seconds, because saying "I will" is what the
+				// voice is told to do when somebody sets a policy, and the
+				// scenarios beside this one depend on it happening.
+				{Kind: CheckSilent, Line: 0, FromMS: 5000, AfterMS: 12000,
+					Note: "they said fifteen seconds; speaking at eight is not waiting"},
 				{Kind: CheckSaid, Line: 0, AfterMS: 26000,
 					Any:  []string{"still there", "still with", "everything all right", "you there", "all right"},
 					Note: "and when it does arrive it is the thing they asked for"},

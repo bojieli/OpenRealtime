@@ -10,6 +10,7 @@ import (
 	"github.com/bojieli/OpenRealtime/cognition"
 	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/interaction"
+	"github.com/bojieli/OpenRealtime/session"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -347,4 +348,76 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 			})
 		}
 	}()
+}
+
+// quietAfter is how long nothing may happen before the quiet is itself
+// evidence.
+//
+// Below this the pause path already governs: it runs on every gate close and
+// asks the same model the same question with the words in front of it. This is
+// for the stretch after that, where there is no utterance to hold open and
+// nothing else will ever ask again. Three seconds because a policy about
+// elapsed time is written in seconds - nobody says "tell me if I go quiet for
+// four hundred milliseconds" - and because it keeps ordinary pauses between
+// sentences out of a decision they are already covered by.
+const quietAfter = 3 * time.Second
+
+// quietInterval is how often the question is asked while the quiet lasts.
+//
+// The decision costs 30 to 40 milliseconds against a local mixture-of-experts,
+// so once a second while nothing at all is happening is affordable in a way it
+// would not be per frame.
+const quietInterval = time.Second
+
+// considerQuiet asks what to do when nothing has happened.
+//
+// Every other route to this model is caused by an arrival - words, a frame, a
+// result. That is the right default and it has one hole in it: somebody can
+// ask to be told about something that happens on its own, and the moment they
+// mean is exactly the one where nothing arrives. Measured, the agent
+// acknowledged "ask whether I'm still there if I go quiet for fifteen seconds"
+// and then never asked, because after the acknowledgement nothing ever
+// consulted anything again.
+//
+// It is gated on a policy being in force, which is what keeps the inertia
+// intact: with nothing standing, the quiet decides nothing and this costs one
+// comparison per frame.
+func (runtime *runtime) considerQuiet(ctx context.Context, nowNS uint64, state session.Snapshot) {
+	if runtime.policies.Interaction == nil {
+		return
+	}
+	since := state.UserSpeechEndedNS
+	if state.PlayoutHorizonNS > since {
+		since = state.PlayoutHorizonNS
+	}
+	if since == 0 || nowNS < since || nowNS-since < uint64(quietAfter) {
+		return
+	}
+	runtime.audioMu.Lock()
+	if runtime.lastQuietNS != 0 && nowNS-runtime.lastQuietNS < uint64(quietInterval) {
+		runtime.audioMu.Unlock()
+		return
+	}
+	runtime.lastQuietNS = nowNS
+	runtime.audioMu.Unlock()
+
+	decision := interaction.Context{NowNS: nowNS, Duplex: state}
+	situation := runtime.situation(decision)
+	if len(situation.Pins) == 0 {
+		return
+	}
+	situation.Quiet = true
+	situation.Silence = renderSilence(nowNS - since)
+	decision.Situation = &situation
+	act, _, err := runtime.policies.Interaction.Decide(ctx, situation)
+	if recorder := runtime.policies.ShadowInteraction; recorder != nil {
+		recorder(interaction.ShadowDecision{
+			NowNS: nowNS, Situation: situation.Render(), Act: string(act),
+			Predicates: map[string]string{"where": "quiet"}, Error: errorText(err),
+		})
+	}
+	if err != nil || act != interaction.ActSpeakThrough {
+		return
+	}
+	runtime.interject(decision)
 }
