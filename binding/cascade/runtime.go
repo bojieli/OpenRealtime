@@ -103,7 +103,13 @@ type runtime struct {
 	previousUtterance    string
 	extractUtterance     string
 	extractUtteranceText string
-	lastPin              interaction.StandingInstruction
+	// lastPin is the policy read out of the utterance being read now;
+	// previousPin is the one read out of the piece before it, which is what a
+	// join retires. Kept apart because a revocation matches loosely, so
+	// revoking the wrong one lifts a policy nobody cancelled - and because the
+	// pin produced from the joined text is the good one and must survive.
+	lastPin     interaction.StandingInstruction
+	previousPin interaction.StandingInstruction
 	// lastPartialExtractNS bounds how often an unfinished utterance is re-read.
 	lastPartialExtractNS uint64
 	// heardWhenSpoke is how much of the current utterance had been heard when

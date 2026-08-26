@@ -223,6 +223,7 @@ func (runtime *runtime) noticeStanding(text string) {
 	runtime.audioMu.Lock()
 	if current != runtime.extractUtterance {
 		runtime.previousUtterance = runtime.extractUtteranceText
+		runtime.previousPin, runtime.lastPin = runtime.lastPin, interaction.StandingInstruction{}
 		runtime.extractUtterance = current
 		runtime.extractUtteranceText = ""
 	}
@@ -411,7 +412,11 @@ func (runtime *runtime) wholeUtterance(
 	}
 	runtime.audioMu.Lock()
 	previous := runtime.previousUtterance
-	stale = runtime.lastPin
+	// Taken rather than read: the piece before is retired once, by the first
+	// reading that joins onto it. Every later reading of the same utterance
+	// joins onto the same text, and by then the pin worth keeping is the one
+	// the joined text produced.
+	stale, runtime.previousPin = runtime.previousPin, interaction.StandingInstruction{}
 	runtime.audioMu.Unlock()
 	if previous == "" {
 		return text, interaction.StandingInstruction{}
