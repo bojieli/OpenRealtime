@@ -573,10 +573,18 @@ func becauseInstruction(act string) string {
 		// and by the end of a story with two animals in it the agent had
 		// counted to sixteen. A count is of what they asked to have counted.
 		return "You are speaking because something the person asked to be told about has just happened. " +
-			"Do that thing now, for the occurrence in front of you: if they asked for a count, say how many " +
-			"of the thing they are counting have been mentioned so far, counting the one that has just been " +
-			"mentioned and nothing else; if they asked for a translation, give the English; if they asked to " +
-			"be told when something lands, say it has landed. Say only that.\n\n" +
+			"Do that thing now, for the occurrence in front of you: if they asked for a count, count them in " +
+			"everything they have said so far and say that number; if they asked for a translation, give the " +
+			"English; if they asked to be told when something lands, say it has landed. Say only that.\n\n" +
+			// A count read off the transcript gives the same answer however
+			// many times it is asked. A count kept in the head of whoever is
+			// answering gains one each time, which is what happened: an
+			// afternoon with two animals in it came back as "1 3 3 1" and as
+			// "3 4", because a recogniser revises a sentence several times and
+			// each revision is a fresh question.
+			"A count is of what they have said, not of how many times you have been asked. Asked twice about " +
+			"the same sentence the answer is the same number both times - so count them again from the " +
+			"beginning of what they have said rather than adding one to what you said last.\n\n" +
 			"Check first that it has happened. What they said arrives in pieces, and each piece repeats " +
 			"everything before it, so the same occurrence is put in front of you several times. If the new " +
 			"part of what they said does not contain the thing they asked about - no animal in it to count, " +
