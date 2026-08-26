@@ -611,10 +611,13 @@ func (recorder *recorder) collect(
 				// runs in one suite ended between one and eight seconds into a
 				// thirty-five second scenario and three of them were scored as
 				// passes.
+				why := "the session stream ended while the scenario was still playing"
+				if err := client.Err(); err != nil {
+					why += ": " + err.Error()
+				}
 				recorder.mu.Lock()
-				truncated := recorder.playbackFinishedAt.IsZero()
-				if truncated && recorder.failure == "" {
-					recorder.failure = "the session stream ended while the scenario was still playing"
+				if recorder.playbackFinishedAt.IsZero() && recorder.failure == "" {
+					recorder.failure = why
 				}
 				recorder.mu.Unlock()
 				return recorder.snapshot()
