@@ -360,6 +360,19 @@ func (runtime *runtime) breakSilenceWhileDeliberating(
 				return
 			}
 
+			// A holding line is speech, and whether the agent speaks is not a
+			// question a timer gets to answer on its own. Somebody who said
+			// they were going to read for a while and would be checked on in
+			// fifteen seconds got "I'm here, waiting for you to continue" at
+			// twelve, because the reasoner was still working and nothing
+			// between the timer and the speech queue had ever heard the
+			// policy. The model that decides whether to speak decides here
+			// too; what it says is still not its business.
+			if !runtime.holdingIsWelcome() {
+				arm()
+				return
+			}
+
 			holding := request
 			holding.Holding = true
 			// Handed on already: the reasoning this is reporting on is running.
@@ -388,6 +401,30 @@ func (runtime *runtime) breakSilenceWhileDeliberating(
 			timer.Stop()
 		}
 	}
+}
+
+// holdingIsWelcome asks whether this is a moment to break the silence.
+//
+// The same question every other moment asks, of the same model, from the same
+// rendered situation - so a standing instruction about when to speak governs a
+// holding line exactly as it governs an answer. Without an interaction policy
+// there is nobody to ask and the silence gets broken, which is the behaviour
+// this had before the question existed.
+func (runtime *runtime) holdingIsWelcome() bool {
+	if runtime.policies.Interaction == nil {
+		return true
+	}
+	decision := interaction.Context{
+		NowNS: runtime.scheduler.NowNS(), Duplex: runtime.duplex.Snapshot(),
+	}
+	state := runtime.situation(decision)
+	act, _, err := runtime.policies.Interaction.Decide(runtime.ctx, state)
+	if err != nil {
+		// A question that could not be asked is not an answer of no. The
+		// silence this exists to fill is the failure it was built for.
+		return true
+	}
+	return act != interaction.ActStaySilent
 }
 
 // publishAssistant applies the commitment policy to one continuation's output
