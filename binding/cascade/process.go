@@ -387,6 +387,10 @@ func (runtime *runtime) publishAssistant(
 		runtime.noteWithheld(result, request, "the model wrote a tool call as prose")
 		return nil
 	}
+	if isStageDirection(result.AssistantText) {
+		runtime.noteWithheld(result, request, "the model described saying nothing instead of saying nothing")
+		return nil
+	}
 	items := runtime.assistantItems(result)
 	if len(items) == 0 {
 		return nil
@@ -661,4 +665,33 @@ func looksLikeToolCall(text string) bool {
 		return false
 	}
 	return strings.Contains(lowered, `"arguments"`) || strings.Contains(lowered, `"parameters"`)
+}
+
+// isStageDirection reports text that describes an absence of speech rather
+// than being speech.
+//
+// A voice asked to stay quiet sometimes writes "(silence)" instead of nothing,
+// and every character here is synthesised - so the one thing the turn existed
+// to avoid is what the person hears. It is the same shape as a tool call
+// written as prose: unmistakably a bug to whoever is listening, and nothing in
+// it is worth salvaging.
+//
+// Bracketed and short, both. A sentence that merely contains the word silence
+// is somebody talking about silence, which is ordinary speech.
+func isStageDirection(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if len(trimmed) < 2 || len(trimmed) > 40 {
+		return false
+	}
+	open, close := trimmed[0], trimmed[len(trimmed)-1]
+	if !((open == '(' && close == ')') || (open == '[' && close == ']') || (open == '*' && close == '*')) {
+		return false
+	}
+	inner := strings.ToLower(strings.Trim(trimmed, "()[]* "))
+	for _, phrase := range []string{"silence", "silent", "no response", "nothing", "says nothing", "no reply", "pause"} {
+		if inner == phrase || strings.HasPrefix(inner, phrase+" ") || strings.HasSuffix(inner, " "+phrase) {
+			return true
+		}
+	}
+	return false
 }

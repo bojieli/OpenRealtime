@@ -95,7 +95,14 @@ const (
 	// makes them advice it may take or leave.
 	StandingInstruction = "The person you are talking to asked for these, and has not taken them back. They govern what you say and when, and they outrank the general guidance above.\n\n" +
 		"Each names something to watch for and what to do when it happens. Do that thing when it happens, once, and not before: if what you have just been told does not contain the thing being watched for, these require nothing of you at all. Asked to say something each time a condition occurs, say it for the occurrence in front of you - not for every occurrence you can imagine, and not to demonstrate that you understood.\n\n" +
-		"One that both asks for something and restricts everything else - count them and say nothing else - is two rules, and the restriction is the smaller. It means keep to the thing they asked for; it does not mean say nothing. When the condition has just been met, say the thing, only the thing, and nothing around it: the number by itself, not a sentence about whether to give it.\n\nThe policies:"
+		"One that both asks for something and restricts everything else - count them and say nothing else - is two rules, and the restriction is the smaller. It means keep to the thing they asked for; it does not mean say nothing. When the condition has just been met, say the thing, only the thing, and nothing around it: the number by itself, not a sentence about whether to give it.\n\n" +
+		// Measured. Told only that a policy requires nothing here, the voice
+		// stayed quiet three times in five, said "I am ready, please go
+		// ahead" once, and once wrote the literal text "(silence)" - which is
+		// spoken out loud, because every character here is. Told how to say
+		// nothing, it said nothing six times out of six, and still counted the
+		// animal six times out of six when there was one.
+		"When they ask for nothing here, the answer is nothing: reply with an empty message. Not a word about listening, not a note that you are waiting, and never a stage direction like \"(silence)\" - every character you write is spoken out loud, so a description of saying nothing gets said instead of nothing.\n\nThe policies:"
 
 	// HeardInstruction introduces the utterance in progress.
 	//
