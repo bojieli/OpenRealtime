@@ -88,6 +88,12 @@ type Config struct {
 	// silently ignores it, and both are worse than the description it would
 	// otherwise have had.
 	DeciderSees bool
+	// ProfileTurns logs how long each stage of a turn took.
+	//
+	// Off by default: it is a line per turn on stderr, which is noise in a
+	// deployment and the only way to answer "what was the person waiting
+	// through" in a measurement.
+	ProfileTurns bool
 	// ASRCadence is how often the recogniser is advanced.
 	ASRCadence time.Duration
 	// HoldingAfter is how long the reasoner may run before the voice says what

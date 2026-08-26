@@ -1,6 +1,8 @@
 package cascade
 
 import (
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -27,6 +29,43 @@ type turnReport struct {
 	spoke      bool
 	truncated  bool
 	deliberate bool
+	// stages is how long each part of the turn took, in nanoseconds.
+	//
+	// A third of the visual path was unaccounted for after every component had
+	// been measured on its own - the decision at 21ms, the voice at 1250, the
+	// synthesiser at 770 - against 3066 end to end. Components measured apart
+	// do not add up to a path, and the difference is exactly the part nobody
+	// instrumented.
+	stages map[string]uint64
+}
+
+// stage folds in how long one part of the turn took.
+func (report *turnReport) stage(name string, tookNS uint64) {
+	report.mu.Lock()
+	defer report.mu.Unlock()
+	if report.stages == nil {
+		report.stages = map[string]uint64{}
+	}
+	report.stages[name] += tookNS
+}
+
+// timings renders the stages, longest first, for one line in a log.
+func (report *turnReport) timings() string {
+	report.mu.Lock()
+	defer report.mu.Unlock()
+	if len(report.stages) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(report.stages))
+	for name := range report.stages {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool { return report.stages[names[i]] > report.stages[names[j]] })
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		parts = append(parts, name+"="+strconv.FormatUint(report.stages[name]/1e6, 10)+"ms")
+	}
+	return strings.Join(parts, " ")
 }
 
 // record folds in one continuation's result.

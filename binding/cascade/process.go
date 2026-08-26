@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -86,6 +87,13 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		return err
 	}
 	turn := &turnReport{}
+	batchBegan := runtime.scheduler.NowNS()
+	defer func() {
+		turn.stage("turn", runtime.scheduler.NowNS()-batchBegan)
+		if timings := turn.timings(); timings != "" && runtime.config.ProfileTurns {
+			fmt.Fprintf(os.Stderr, "turn-profile %s\n", timings)
+		}
+	}()
 	defer func() {
 		if err := runtime.sink.TurnEnd(ctx, turn.outcome()); err != nil {
 			runtime.fail("sink_error", err)
@@ -214,7 +222,9 @@ func (runtime *runtime) runFast(
 		runtime.store.Snapshot(), request.SourceRevision))
 	var err error
 	if !adopted {
+		began := runtime.scheduler.NowNS()
 		result, err = runtime.engine.RunFast(ctx, request, nil)
+		turn.stage("voice", runtime.scheduler.NowNS()-began)
 	}
 	turn.record(result)
 	// A bounded reflex action crosses the action boundary before speech is
@@ -225,7 +235,9 @@ func (runtime *runtime) runFast(
 	if err == nil && len(result.ToolCalls) > 0 {
 		dispatchErr = runtime.dispatch(ctx, result)
 	}
+	publishBegan := runtime.scheduler.NowNS()
 	publishErr := runtime.publishAssistant(ctx, result, request)
+	turn.stage("publish", runtime.scheduler.NowNS()-publishBegan)
 	var signalErr error
 	// A turn the voice did not declare finished goes to the reasoner. So does
 	// one carrying a proposal, which is the voice naming a capability it
