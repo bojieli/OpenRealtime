@@ -31,6 +31,17 @@ type Surface interface {
 	Screenshot(ctx context.Context) error
 }
 
+// ElementSurface is the optional browser grounding extension.
+//
+// Pixel actions remain the portable baseline for a desktop, VM, or Android
+// display. A browser can additionally expose a set-of-mark frame whose labels
+// name interactive elements. Keeping that operation in a separate interface
+// means a general screen surface does not pretend it can resolve DOM elements,
+// and the dispatcher can refuse the wrong grounding mode explicitly.
+type ElementSurface interface {
+	ClickElement(ctx context.Context, elementID string) error
+}
+
 // Record is one performed action, for the audit trail.
 type Record struct {
 	CallID    string `json:"call_id"`
@@ -86,19 +97,20 @@ func (dispatcher *Dispatcher) Name() string {
 }
 
 type arguments struct {
-	Source   string   `json:"source"`
-	X        int      `json:"x"`
-	Y        int      `json:"y"`
-	Button   string   `json:"button"`
-	FromX    int      `json:"from_x"`
-	FromY    int      `json:"from_y"`
-	ToX      int      `json:"to_x"`
-	ToY      int      `json:"to_y"`
-	Text     string   `json:"text"`
-	Keys     []string `json:"keys"`
-	DeltaX   int      `json:"delta_x"`
-	DeltaY   int      `json:"delta_y"`
-	Duration int      `json:"duration_ms"`
+	Source    string   `json:"source"`
+	ElementID string   `json:"element_id"`
+	X         int      `json:"x"`
+	Y         int      `json:"y"`
+	Button    string   `json:"button"`
+	FromX     int      `json:"from_x"`
+	FromY     int      `json:"from_y"`
+	ToX       int      `json:"to_x"`
+	ToY       int      `json:"to_y"`
+	Text      string   `json:"text"`
+	Keys      []string `json:"keys"`
+	DeltaX    int      `json:"delta_x"`
+	DeltaY    int      `json:"delta_y"`
+	Duration  int      `json:"duration_ms"`
 }
 
 // Dispatch performs one action.
@@ -128,6 +140,15 @@ func (dispatcher *Dispatcher) Dispatch(ctx context.Context, call trajectory.Tool
 	case Click:
 		if err = dispatcher.inside(parsed.X, parsed.Y); err == nil {
 			err = dispatcher.config.Surface.Click(ctx, parsed.X, parsed.Y, button(parsed.Button))
+		}
+	case ClickElement:
+		grounded, ok := dispatcher.config.Surface.(ElementSurface)
+		if !ok {
+			err = errors.New("this target does not support set-of-mark element grounding")
+		} else if strings.TrimSpace(parsed.ElementID) == "" {
+			err = errors.New("an element click requires a visible mark label")
+		} else {
+			err = grounded.ClickElement(ctx, parsed.ElementID)
 		}
 	case DoubleClick:
 		if err = dispatcher.inside(parsed.X, parsed.Y); err == nil {

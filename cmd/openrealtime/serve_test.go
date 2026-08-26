@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/interaction"
 )
 
@@ -237,6 +238,34 @@ func TestServeRejectsFlagsItCannotHonour(t *testing.T) {
 		if err := runServe(arguments, &output); err == nil {
 			t.Fatalf("expected %v to be refused", arguments)
 		}
+	}
+}
+
+func TestFastComputerUseChangesAuthorityAndCannotBeASilentNoOp(t *testing.T) {
+	options := defaultOptions()
+	options.fastProvider = "vllm"
+	options.fastURL = "http://127.0.0.1:8000/v1"
+	options.fastModel = "vision-fast"
+	options.explicit = map[string]bool{"fast-url": true, "fast-model": true}
+	provider, err := buildFast(options)
+	if err != nil {
+		t.Fatalf("default fast provider: %v", err)
+	}
+	if provider.Descriptor().EffectiveToolAuthority() != continuation.ToolAuthorityPropose {
+		t.Fatal("fast must remain proposal-only by default")
+	}
+	options.fastComputerUse = true
+	provider, err = buildFast(options)
+	if err != nil {
+		t.Fatalf("fast computer provider: %v", err)
+	}
+	if provider.Descriptor().EffectiveToolAuthority() != continuation.ToolAuthorityExecute {
+		t.Fatal("the fast-computer flag did not reach the provider descriptor")
+	}
+
+	options.binding = "upstream"
+	if _, _, err := buildBinding(options); err == nil || !strings.Contains(err.Error(), "cascade") {
+		t.Fatalf("a cascade-only flag silently reached another binding: %v", err)
 	}
 }
 

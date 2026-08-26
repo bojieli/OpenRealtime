@@ -116,7 +116,10 @@ export function declarations(tools) {
     name: tool.name,
     description: tool.description,
     parameters: tool.parameters,
-    openrealtime: { confirm: tool.confirm },
+    openrealtime: {
+      confirm: tool.session_confirm,
+      ...(tool.target ? { target: tool.target } : {}),
+    },
   }));
 }
 

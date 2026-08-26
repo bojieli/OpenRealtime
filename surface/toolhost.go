@@ -37,10 +37,16 @@ type Tool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	Parameters  json.RawMessage `json:"parameters"`
-	// Confirm is the requirement declared to the session: never, policy, or
-	// always. It is also enforced here, because the browser is a user
-	// interface and this process is what touches the world.
-	Confirm string `json:"confirm"`
+	// Confirm is enforced by this loopback host before it touches the world.
+	// SessionConfirm is the distinct requirement declared to the remote
+	// session. It is never because this client owns and applies Confirm; asking
+	// the server to confirm as well would make every mutating client tool fail
+	// before the host could present its own confirmation UI.
+	Confirm        string `json:"confirm"`
+	SessionConfirm string `json:"session_confirm"`
+	// Target declares the bounded client context to the session for computer
+	// actions. It is empty for ordinary tools and artifacts.
+	Target string `json:"target,omitempty"`
 	// Mutating marks a tool that can change something outside this process.
 	Mutating bool    `json:"mutating"`
 	Channel  Channel `json:"channel"`
@@ -90,7 +96,8 @@ func NewToolHost(files *console.Host, browserContext *BrowserContext, artifacts 
 			name := tool.Name
 			host.tools = append(host.tools, Tool{
 				Name: name, Description: tool.Description, Parameters: tool.Parameters,
-				Confirm: tool.Confirm, Mutating: tool.Mutating, Channel: ChannelTool,
+				Confirm: tool.Confirm, SessionConfirm: string(action.ConfirmNever),
+				Mutating: tool.Mutating, Channel: ChannelTool,
 				run: func(ctx context.Context, _ string, arguments json.RawMessage) (result, error) {
 					output, err := files.Run(ctx, name, arguments)
 					return result{Output: output}, err
@@ -120,7 +127,9 @@ func NewToolHost(files *console.Host, browserContext *BrowserContext, artifacts 
 			name := definition.Name
 			host.tools = append(host.tools, Tool{
 				Name: name, Description: definition.Description, Parameters: definition.Parameters,
-				Confirm: string(definition.DefaultConfirm),
+				Confirm:        string(definition.DefaultConfirm),
+				SessionConfirm: string(action.ConfirmNever),
+				Target:         browserContext.Target().Name,
 				// Every action in the namespace changes something the person
 				// can see, including the ones that only move the pointer.
 				Mutating: definition.DefaultConfirm != action.ConfirmNever,
@@ -221,10 +230,11 @@ func (host *ToolHost) artifactTool() Tool {
 		Description: "Display an HTML artifact to the person: a chart, a table, a form, a small " +
 			"interactive page. Use it when what you have to say is better looked at than listened to. " +
 			"Call it again with the same artifact_id to revise what they are already looking at.",
-		Parameters: json.RawMessage(parameters),
-		Confirm:    string(action.ConfirmNever),
-		Mutating:   false,
-		Channel:    ChannelArtifact,
+		Parameters:     json.RawMessage(parameters),
+		Confirm:        string(action.ConfirmNever),
+		SessionConfirm: string(action.ConfirmNever),
+		Mutating:       false,
+		Channel:        ChannelArtifact,
 		run: func(_ context.Context, _ string, arguments json.RawMessage) (result, error) {
 			var parsed struct {
 				ArtifactID string `json:"artifact_id"`
@@ -257,17 +267,23 @@ func (host *ToolHost) artifactTool() Tool {
 
 // Declarations renders the tools in the shape session.update wants.
 //
-// The confirmation requirement travels with the definition, so what the model
-// is told about a tool and what this process will enforce are one statement.
+// The session sees that confirmation is delegated to this client. The local
+// requirement remains on Tool and is enforced by toolSession before ToolHost
+// touches the world. A computer action also declares its bounded target, which
+// is required before it can enter an opted-in fast action lane.
 func Declarations(tools []Tool) []map[string]any {
 	declared := make([]map[string]any, 0, len(tools))
 	for _, tool := range tools {
+		extension := map[string]any{"confirm": tool.SessionConfirm}
+		if tool.Target != "" {
+			extension["target"] = tool.Target
+		}
 		declared = append(declared, map[string]any{
 			"type":         "function",
 			"name":         tool.Name,
 			"description":  tool.Description,
 			"parameters":   json.RawMessage(tool.Parameters),
-			"openrealtime": map[string]any{"confirm": tool.Confirm},
+			"openrealtime": extension,
 		})
 	}
 	return declared

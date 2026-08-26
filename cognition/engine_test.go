@@ -66,6 +66,22 @@ func (catalog) Tools() []continuation.ToolDefinition {
 	}}
 }
 
+type listedCatalog struct {
+	tools []continuation.ToolDefinition
+}
+
+func (catalog listedCatalog) Capabilities() []continuation.Capability {
+	result := make([]continuation.Capability, 0, len(catalog.tools))
+	for _, tool := range catalog.tools {
+		result = append(result, continuation.Capability{
+			Name: tool.Name, Description: tool.Description, Available: true,
+		})
+	}
+	return result
+}
+
+func (catalog listedCatalog) Tools() []continuation.ToolDefinition { return catalog.tools }
+
 func seed(t *testing.T, store *trajectory.Store) {
 	t.Helper()
 	if err := store.Append(trajectory.Item{
@@ -92,12 +108,92 @@ func TestSlowMustBeSilentWhenTheArrangementPairsThem(t *testing.T) {
 	}
 }
 
-func TestFastMustNotHoldExecutionAuthority(t *testing.T) {
+func TestFastExecutionRequiresAnExplicitToolFilter(t *testing.T) {
 	fast := fastProvider()
 	fast.descriptor.ToolAuthority = continuation.ToolAuthorityExecute
 	_, err := cognition.New(cognition.Config{Store: trajectory.NewStore(), Fast: fast, Slow: slowProvider()})
-	if err == nil || !strings.Contains(err.Error(), "executable-tool") {
+	if err == nil || !strings.Contains(err.Error(), "tool filter") {
 		t.Fatalf("expected the first boundary to be enforced at construction, got %v", err)
+	}
+}
+
+func TestFastAllowlistRequiresExecutionAuthority(t *testing.T) {
+	_, err := cognition.New(cognition.Config{
+		Store: trajectory.NewStore(), Fast: fastProvider(), Slow: slowProvider(), Catalog: catalog{},
+		FastToolFilter: func(tool continuation.ToolDefinition) bool { return tool.Name == "get_balance" },
+	})
+	if err == nil || !strings.Contains(err.Error(), "requires fast execution authority") {
+		t.Fatalf("an allowlist with proposal authority is a misleading no-op, got %v", err)
+	}
+}
+
+func TestFastExecutesOnlyExactAllowedToolsAtAnEligibleSafePoint(t *testing.T) {
+	store := trajectory.NewStore()
+	seed(t, store)
+	fast := fastProvider(
+		continuation.Event{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+			CallID: "click-1", Name: "computer.click", Arguments: json.RawMessage(`{"source":"screen","x":10,"y":10}`),
+		}},
+		continuation.Event{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+			CallID: "transfer-1", Name: "transfer_funds", Arguments: json.RawMessage(`{"amount":10000}`),
+		}},
+	)
+	fast.descriptor.ToolAuthority = continuation.ToolAuthorityExecute
+	catalog := listedCatalog{tools: []continuation.ToolDefinition{
+		{Name: "computer.click", Description: "click the screen", Parameters: json.RawMessage(`{"type":"object"}`)},
+		{Name: "transfer_funds", Description: "move money", Parameters: json.RawMessage(`{"type":"object"}`)},
+	}}
+	engine, err := cognition.New(cognition.Config{
+		Store: store, Fast: fast, Slow: slowProvider(), Catalog: catalog,
+		RequireSilentSlow: true,
+		FastToolFilter:    func(tool continuation.ToolDefinition) bool { return tool.Name == "computer.click" },
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	result, err := engine.RunFast(context.Background(), cognition.Request{
+		SourceRevision: 1, AllowFastTools: true,
+	}, nil)
+	if err != nil {
+		t.Fatalf("run fast: %v", err)
+	}
+	if len(fast.seen.Invocation.Tools) != 1 || fast.seen.Invocation.Tools[0].Name != "computer.click" {
+		t.Fatalf("fast saw something other than the exact allowlist: %+v", fast.seen.Invocation.Tools)
+	}
+	if len(result.ToolCalls) != 1 || result.ToolCalls[0].Name != "computer.click" {
+		t.Fatalf("the allowed action did not become executable: %+v", result)
+	}
+	if len(result.ToolProposals) != 1 || result.ToolProposals[0].Name != "transfer_funds" {
+		t.Fatalf("the non-allowed call did not stay a proposal: %+v", result)
+	}
+	if !strings.Contains(fast.seen.Invocation.Instruction, cognition.FastActionInstruction) {
+		t.Fatal("the bounded action guidance did not reach the fast provider")
+	}
+}
+
+func TestFastAllowlistIsClosedOutsideAnObservationSafePoint(t *testing.T) {
+	store := trajectory.NewStore()
+	seed(t, store)
+	fast := fastProvider(continuation.Event{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+		CallID: "click-1", Name: "computer.click", Arguments: json.RawMessage(`{"source":"screen","x":10,"y":10}`),
+	}})
+	fast.descriptor.ToolAuthority = continuation.ToolAuthorityExecute
+	engine, err := cognition.New(cognition.Config{
+		Store: store, Fast: fast, Slow: slowProvider(),
+		Catalog: listedCatalog{tools: []continuation.ToolDefinition{{
+			Name: "computer.click", Description: "click", Parameters: json.RawMessage(`{"type":"object"}`),
+		}}},
+		FastToolFilter: func(tool continuation.ToolDefinition) bool { return tool.Name == "computer.click" },
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	result, err := engine.RunFast(context.Background(), cognition.Request{SourceRevision: 1}, nil)
+	if err != nil {
+		t.Fatalf("run fast: %v", err)
+	}
+	if len(fast.seen.Invocation.Tools) != 0 || len(result.ToolCalls) != 0 || len(result.ToolProposals) != 1 {
+		t.Fatalf("a holding/background-style fast turn acquired action authority: %+v", result)
 	}
 }
 

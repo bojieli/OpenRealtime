@@ -143,7 +143,13 @@ its security model.
 
 ## Confirmation
 
-Declared per tool, enforced in this process, answered in the page.
+Declared per tool, enforced in this process, answered in the page. Because the
+surface is the client that owns the implementation and the confirmation UI, it
+declares `confirm: never` to the remote session and retains the real requirement
+locally. This is explicit delegation, not a bypass: the server applies its
+declared requirement before emitting the call, then the loopback host applies
+the local requirement before touching the world. Computer actions also declare
+the host's bounded browser target to the session.
 
 | Requirement | What happens |
 | --- | --- |

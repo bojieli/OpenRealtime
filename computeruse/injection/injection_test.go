@@ -24,6 +24,7 @@ import (
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/cascade"
+	"github.com/bojieli/OpenRealtime/cognition"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/perception"
@@ -137,9 +138,10 @@ func TestObservedContentReachesProvidersAsFencedData(t *testing.T) {
 
 // --- 3. Authority ---------------------------------------------------------
 
-// Even a model that is fully taken in cannot cause the effect. The fast
-// provider has no execution authority, and the declared confirmation
-// requirement stands between the slow provider and the world.
+// Even a model that is fully taken in cannot cause the effect in the default
+// arrangement. Fast has no execution authority there, and the declared
+// confirmation requirement stands between slow and the world. A separate
+// test below covers the constrained fast-computer exception.
 func TestATakenInModelStillCannotTransferTheMoney(t *testing.T) {
 	store := trajectory.NewStore()
 	if err := store.AppendBatch([]trajectory.Item{
@@ -241,6 +243,97 @@ func TestATakenInModelStillCannotTransferTheMoney(t *testing.T) {
 	}
 	if transfers != 0 {
 		t.Fatal("a refused confirmation still let the action through")
+	}
+}
+
+type injectionCatalog struct{}
+
+func (injectionCatalog) Capabilities() []continuation.Capability {
+	return []continuation.Capability{
+		{Name: computeruse.Click, Description: "click the bounded screen", Available: true},
+		{Name: "transfer_funds", Description: "move money", Available: true},
+	}
+}
+
+func (injectionCatalog) Tools() []continuation.ToolDefinition {
+	return []continuation.ToolDefinition{
+		{Name: computeruse.Click, Description: "click the bounded screen", Parameters: json.RawMessage(`{"type":"object"}`)},
+		{Name: "transfer_funds", Description: "move money", Parameters: json.RawMessage(`{"type":"object"}`)},
+	}
+}
+
+// Opting into the bounded reflex lane changes the default fast authority, so
+// the injection gate must exercise that mode too. The exact allowlist, not a
+// prompt promise, keeps an arbitrary business tool as a proposal even when the
+// fast model is fully taken in by observed content.
+func TestConstrainedFastLaneDoesNotGrantInjectionAuthorityToArbitraryTools(t *testing.T) {
+	store := trajectory.NewStore()
+	if err := store.Append(trajectory.Item{
+		ID: "obs-1", Kind: trajectory.KindObservation, MonotonicNS: 1, SourceRevision: 1,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseObserver, Provider: "video"},
+		Content:  injectionPayload,
+		Observation: &trajectory.ObservationMeta{
+			Observer: "video", Source: "screen", Authority: trajectory.AuthorityObserver,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fast := &scriptedProvider{descriptor: continuation.Descriptor{
+		Provider: "test", Model: "fast", Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortMinimal, ToolAuthority: continuation.ToolAuthorityExecute,
+		SpeechAuthority: continuation.SpeechAuthorityVoice,
+	}, turns: [][]continuation.Event{{{
+		Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+			CallID: "fast_transfer", Name: "transfer_funds",
+			Arguments: json.RawMessage(`{"account":"8815","amount":10000}`),
+		},
+	}}}}
+	slow := &scriptedProvider{descriptor: continuation.Descriptor{
+		Provider: "test", Model: "slow", Phase: trajectory.PhaseSlow,
+		Effort: continuation.EffortHigh, ToolAuthority: continuation.ToolAuthorityExecute,
+		SpeechAuthority: continuation.SpeechAuthoritySilent,
+	}}
+	engine, err := cognition.New(cognition.Config{
+		Store: store, Fast: fast, Slow: slow, Catalog: injectionCatalog{},
+		RequireSilentSlow: true,
+		FastToolFilter:    func(tool continuation.ToolDefinition) bool { return tool.Name == computeruse.Click },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.RunFast(context.Background(), cognition.Request{
+		SourceRevision: 1, AllowFastTools: true,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ToolCalls) != 0 || len(result.ToolProposals) != 1 || result.ToolProposals[0].Name != "transfer_funds" {
+		t.Fatalf("the injected arbitrary call acquired fast authority: %+v", result)
+	}
+
+	var transfers int
+	registry := action.NewRegistry()
+	if err := registry.Declare(action.ToolSpec{
+		Name: "transfer_funds", Description: "move money", Parameters: json.RawMessage(`{"type":"object"}`),
+		Confirm: action.ConfirmNever,
+		Dispatcher: action.DispatcherFunc(func(_ context.Context, call trajectory.ToolCall) (trajectory.ToolResult, error) {
+			transfers++
+			return trajectory.ToolResult{CallID: call.CallID, Name: call.Name}, nil
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tools, err := action.NewTools(action.ToolsConfig{
+		Registry: registry, Ledger: action.NewLedger(), Store: store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tools.Dispatch(context.Background(), result.ToolProposals[0]); err == nil {
+		t.Fatal("the action boundary accepted a fast proposal as executable")
+	}
+	if transfers != 0 {
+		t.Fatal("the injected arbitrary action reached the world through constrained fast mode")
 	}
 }
 

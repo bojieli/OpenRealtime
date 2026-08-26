@@ -163,7 +163,11 @@ type describedTool struct {
 	Description string          `json:"description"`
 	Parameters  json.RawMessage `json:"parameters"`
 	Confirm     string          `json:"confirm"`
-	Mutating    bool            `json:"mutating"`
+	// SessionConfirm tells the page what to declare to the remote server. The
+	// loopback host still enforces Confirm before any local effect.
+	SessionConfirm string `json:"session_confirm"`
+	Target         string `json:"target,omitempty"`
+	Mutating       bool   `json:"mutating"`
 	// Channel is which action channel the page files this tool under. The
 	// page could guess from the name, but a guess in the client and a fact in
 	// the host are two statements that can disagree, and the whole point of
@@ -181,7 +185,8 @@ func (server *Server) describe(writer http.ResponseWriter, _ *http.Request) {
 	for _, tool := range server.tools.Tools() {
 		described = append(described, describedTool{
 			Name: tool.Name, Description: tool.Description, Parameters: tool.Parameters,
-			Confirm: tool.Confirm, Mutating: tool.Mutating, Channel: string(tool.Channel),
+			Confirm: tool.Confirm, SessionConfirm: tool.SessionConfirm, Target: tool.Target,
+			Mutating: tool.Mutating, Channel: string(tool.Channel),
 		})
 	}
 	root := ""

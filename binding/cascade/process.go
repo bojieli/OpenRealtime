@@ -103,6 +103,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	request := cognition.Request{
 		Standing: standing, Interjecting: interjecting, Heard: heard, Because: because,
 		SourceRevision: revision,
+		AllowFastTools: runtime.observationHasUserIntent(batch),
 		PendingRepair:  len(trajectory.PendingRepairs(runtime.store.Snapshot())) > 0,
 	}
 	// A plan that already contains the reasoner does not need the voice to ask

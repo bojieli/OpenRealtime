@@ -28,24 +28,36 @@ const Prefix = "computer."
 
 // Action names.
 const (
-	Click       = "computer.click"
-	DoubleClick = "computer.double_click"
-	Move        = "computer.move"
-	Drag        = "computer.drag"
-	Type        = "computer.type"
-	Key         = "computer.key"
-	Scroll      = "computer.scroll"
-	Screenshot  = "computer.screenshot"
-	Wait        = "computer.wait"
+	Click        = "computer.click"
+	ClickElement = "computer.click_element"
+	DoubleClick  = "computer.double_click"
+	Move         = "computer.move"
+	Drag         = "computer.drag"
+	Type         = "computer.type"
+	Key          = "computer.key"
+	Scroll       = "computer.scroll"
+	Screenshot   = "computer.screenshot"
+	Wait         = "computer.wait"
 )
 
 // Names lists the vocabulary in specification order.
 func Names() []string {
-	return []string{Click, DoubleClick, Move, Drag, Type, Key, Scroll, Screenshot, Wait}
+	return []string{Click, ClickElement, DoubleClick, Move, Drag, Type, Key, Scroll, Screenshot, Wait}
 }
 
 // IsAction reports whether a tool name is in the namespace.
 func IsAction(name string) bool { return strings.HasPrefix(name, Prefix) }
+
+// IsReflexAction reports whether name is an exact standard action that can
+// usefully execute against the current frame. Screenshot and wait are
+// observation-control operations: admitting either to a low-latency lane lets
+// the model discard current evidence or deliberately sleep through a
+// transient cue. They remain ordinary computer-use tools for the reasoning
+// lane.
+func IsReflexAction(name string) bool {
+	_, standard := Lookup(name)
+	return standard && name != Screenshot && name != Wait
+}
 
 // Definition is one action's schema and its default consequence declaration.
 type Definition struct {
@@ -87,8 +99,16 @@ func sourcePropertyFor(sources []string) string {
 		encoded)
 }
 
-func coordinate(name, description string) string {
-	return fmt.Sprintf(`%q:{"type":"integer","minimum":0,"description":%q}`, name, description)
+// coordinate renders one coordinate axis. An extent of zero means that the
+// vocabulary is being published without a deployment target; a positive
+// extent narrows the schema to the exact coordinate space the model sees.
+func coordinate(name, description string, extent int) string {
+	maximum := ""
+	if extent > 0 {
+		maximum = fmt.Sprintf(`,"maximum":%d`, extent-1)
+	}
+	return fmt.Sprintf(`%q:{"type":"integer","minimum":0%s,"description":%q}`,
+		name, maximum, description)
 }
 
 // Definitions returns the complete vocabulary.
@@ -96,7 +116,7 @@ func coordinate(name, description string) string {
 // The schemas are strict - additionalProperties false, required fields listed -
 // because an action with a misread argument is an action on the wrong thing,
 // and a permissive schema turns that into a silent failure.
-func Definitions() []Definition { return definitions(sourceProperty) }
+func Definitions() []Definition { return definitions(sourceProperty, 0, 0) }
 
 // DefinitionsFor returns the vocabulary with the source field narrowed to the
 // sources this target owns, which is what a deployment declaring tools should
@@ -106,10 +126,10 @@ func DefinitionsFor(target Target) ([]Definition, error) {
 	if err := target.Validate(); err != nil {
 		return nil, err
 	}
-	return definitions(sourcePropertyFor(target.Sources)), nil
+	return definitions(sourcePropertyFor(target.Sources), target.Width, target.Height), nil
 }
 
-func definitions(sourceProperty string) []Definition {
+func definitions(sourceProperty string, width, height int) []Definition {
 	object := func(properties, required string) json.RawMessage {
 		return json.RawMessage(fmt.Sprintf(
 			`{"type":"object","properties":{%s},"required":[%s],"additionalProperties":false}`,
@@ -121,18 +141,27 @@ func definitions(sourceProperty string) []Definition {
 			Description: "Click a point on a declared video source.",
 			Parameters: object(
 				sourceProperty+","+
-					coordinate("x", "horizontal pixel from the left edge")+","+
-					coordinate("y", "vertical pixel from the top edge")+","+
+					coordinate("x", "horizontal pixel from the left edge", width)+","+
+					coordinate("y", "vertical pixel from the top edge", height)+","+
 					`"button":{"type":"string","enum":["left","right","middle"],"description":"mouse button, left by default"}`,
 				`"source","x","y"`),
+			DefaultConfirm: action.ConfirmPolicy,
+		},
+		{
+			Name: ClickElement,
+			Description: "Click an element by the visible set-of-mark label on a declared video source. " +
+				"Use this instead of pixel coordinates only when the current frame displays numbered marks.",
+			Parameters: object(
+				sourceProperty+`,"element_id":{"type":"string","minLength":1,"description":"visible mark label exactly as shown in the current frame"}`,
+				`"source","element_id"`),
 			DefaultConfirm: action.ConfirmPolicy,
 		},
 		{
 			Name:        DoubleClick,
 			Description: "Double-click a point on a declared video source.",
 			Parameters: object(
-				sourceProperty+","+coordinate("x", "horizontal pixel from the left edge")+","+
-					coordinate("y", "vertical pixel from the top edge"),
+				sourceProperty+","+coordinate("x", "horizontal pixel from the left edge", width)+","+
+					coordinate("y", "vertical pixel from the top edge", height),
 				`"source","x","y"`),
 			DefaultConfirm: action.ConfirmPolicy,
 		},
@@ -140,8 +169,8 @@ func definitions(sourceProperty string) []Definition {
 			Name:        Move,
 			Description: "Move the pointer to a point on a declared video source without clicking.",
 			Parameters: object(
-				sourceProperty+","+coordinate("x", "horizontal pixel from the left edge")+","+
-					coordinate("y", "vertical pixel from the top edge"),
+				sourceProperty+","+coordinate("x", "horizontal pixel from the left edge", width)+","+
+					coordinate("y", "vertical pixel from the top edge", height),
 				`"source","x","y"`),
 			DefaultConfirm: action.ConfirmNever,
 		},
@@ -150,10 +179,10 @@ func definitions(sourceProperty string) []Definition {
 			Description: "Press at one point, move to another, and release.",
 			Parameters: object(
 				sourceProperty+","+
-					coordinate("from_x", "starting horizontal pixel")+","+
-					coordinate("from_y", "starting vertical pixel")+","+
-					coordinate("to_x", "ending horizontal pixel")+","+
-					coordinate("to_y", "ending vertical pixel"),
+					coordinate("from_x", "starting horizontal pixel", width)+","+
+					coordinate("from_y", "starting vertical pixel", height)+","+
+					coordinate("to_x", "ending horizontal pixel", width)+","+
+					coordinate("to_y", "ending vertical pixel", height),
 				`"source","from_x","from_y","to_x","to_y"`),
 			DefaultConfirm: action.ConfirmPolicy,
 		},
@@ -178,8 +207,8 @@ func definitions(sourceProperty string) []Definition {
 			Description: "Scroll at a point on a declared video source.",
 			Parameters: object(
 				sourceProperty+","+
-					coordinate("x", "horizontal pixel from the left edge")+","+
-					coordinate("y", "vertical pixel from the top edge")+","+
+					coordinate("x", "horizontal pixel from the left edge", width)+","+
+					coordinate("y", "vertical pixel from the top edge", height)+","+
 					`"delta_x":{"type":"integer","description":"horizontal scroll amount"},`+
 					`"delta_y":{"type":"integer","description":"vertical scroll amount"}`,
 				`"source","x","y"`),

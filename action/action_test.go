@@ -442,6 +442,35 @@ func TestDispatchIsIdempotentByCallID(t *testing.T) {
 	}
 }
 
+func TestActionAuditCarriesCanonicalProducerPhase(t *testing.T) {
+	store := trajectory.NewStore()
+	seedCall(t, store, "c1", "lookup")
+	registry := action.NewRegistry()
+	calls := 0
+	if err := registry.Declare(action.ToolSpec{
+		Name: "lookup", Description: "lookup", Parameters: json.RawMessage(`{"type":"object"}`),
+		Dispatcher: echoDispatcher(&calls),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var audited action.Record
+	tools, err := action.NewTools(action.ToolsConfig{
+		Registry: registry, Ledger: action.NewLedger(), Store: store,
+		Audit: func(record action.Record) { audited = record },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tools.Dispatch(context.Background(), trajectory.ToolCall{
+		CallID: "c1", Name: "lookup", Arguments: json.RawMessage(`{"a":1}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if audited.ProducerPhase != trajectory.PhaseSlow {
+		t.Fatalf("audit phase = %q, want canonical producer %q", audited.ProducerPhase, trajectory.PhaseSlow)
+	}
+}
+
 func TestDeclaredConfirmationGatesDispatch(t *testing.T) {
 	store := trajectory.NewStore()
 	seedCall(t, store, "c1", "computer.click")

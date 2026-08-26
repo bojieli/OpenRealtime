@@ -17,9 +17,9 @@ import (
 
 // Catalog is the capability surface visible to both providers.
 //
-// Visibility is not authority: the fast provider sees the same tool schemas as
-// the slow one so it can say which capability a request needs, and its
-// descriptor is what makes any call it emits a non-executable proposal.
+// Visibility is not authority. Both providers see the capability manifest,
+// slow sees the complete executable schema set, and fast sees only the exact
+// schemas an operator explicitly admitted to its bounded execution lane.
 type Catalog interface {
 	Capabilities() []continuation.Capability
 	Tools() []continuation.ToolDefinition
@@ -40,7 +40,7 @@ type StreamObserver func(StreamEvent) error
 type Config struct {
 	Store *trajectory.Store
 	// Fast is the voice. It must declare the fast phase and must not hold
-	// executable-tool authority.
+	// executable-tool authority unless FastToolFilter is configured.
 	Fast continuation.Provider
 	// Slow is the brain. It must declare the slow phase and, when the
 	// arrangement pairs the two, must be silent.
@@ -57,6 +57,17 @@ type Config struct {
 	SlowInstruction string
 	FastMaxTokens   int
 	SlowMaxTokens   int
+	// FastToolFilter is the deployment-owned allowlist for tools the fast
+	// provider may execute. Nil preserves proposal-only fast cognition. The
+	// filter is evaluated against the live catalog for every invocation so
+	// session-declared tools added after engine construction are handled without
+	// weakening the boundary.
+	//
+	// This is one half of a two-key configuration: Fast must also declare
+	// ToolAuthorityExecute. Each fast invocation must additionally set
+	// Request.AllowFastTools; otherwise no executable schemas are attached and
+	// any emitted call is downgraded to a proposal by the runner.
+	FastToolFilter func(continuation.ToolDefinition) bool
 	// RequireSilentSlow enforces the second cognition boundary at
 	// construction. A single-provider arrangement sets it false.
 	RequireSilentSlow bool
@@ -112,15 +123,22 @@ func New(config Config) (*Engine, error) {
 	if slow.Phase != trajectory.PhaseSlow {
 		return nil, errors.New("slow provider must declare the slow phase")
 	}
-	if fast.EffectiveToolAuthority() == continuation.ToolAuthorityExecute {
-		return nil, errors.New("fast provider must not have executable-tool authority")
+	fastExecutes := config.FastToolFilter != nil
+	if fast.EffectiveToolAuthority() == continuation.ToolAuthorityExecute && !fastExecutes {
+		return nil, errors.New("fast provider execution authority requires an explicit tool filter")
+	}
+	if fastExecutes && fast.EffectiveToolAuthority() != continuation.ToolAuthorityExecute {
+		return nil, errors.New("a fast executable-tool filter requires fast execution authority")
+	}
+	if fastExecutes && config.Catalog == nil {
+		return nil, errors.New("a fast executable-tool filter requires a tool catalog")
 	}
 	if config.RequireSilentSlow && slow.EffectiveSpeechAuthority() != continuation.SpeechAuthoritySilent {
 		return nil, errors.New("slow provider must be configured silent: its output is voiced by a fast continuation")
 	}
 	if config.Catalog != nil {
-		if !config.ExternalFast && fast.EffectiveToolAuthority() != continuation.ToolAuthorityPropose {
-			return nil, errors.New("fast provider needs proposal authority when tools are declared")
+		if !config.ExternalFast && !fastExecutes && fast.EffectiveToolAuthority() != continuation.ToolAuthorityPropose {
+			return nil, errors.New("fast provider needs proposal authority when tools are declared without a fast execution allowlist")
 		}
 		if slow.EffectiveToolAuthority() != continuation.ToolAuthorityExecute {
 			return nil, errors.New("slow provider needs execution authority when tools are declared")
@@ -137,6 +155,9 @@ func New(config Config) (*Engine, error) {
 	}
 	if config.FastInstruction == "" {
 		config.FastInstruction = FastInstruction
+	}
+	if fastExecutes {
+		config.FastInstruction = Compose(config.FastInstruction, FastActionInstruction)
 	}
 	if config.SlowInstruction == "" {
 		config.SlowInstruction = SlowInstruction
@@ -178,6 +199,11 @@ var ErrExternalFast = errors.New("the fast provider is external to this engine")
 // Request binds one continuation to the perception revision it answers.
 type Request struct {
 	SourceRevision uint64
+	// AllowFastTools opens the configured fast-tool allowlist for this one
+	// invocation. The binding sets it only for a committed observation (or a
+	// preparation that can be adopted only by that same observation), never
+	// for holding speech, interjections, or narration of background results.
+	AllowFastTools bool
 	// PendingRepair injects the repair obligation instruction. It is runtime
 	// policy derived from typed trajectory state, never from text.
 	PendingRepair bool
@@ -229,15 +255,15 @@ func (engine *Engine) Descriptors() (fast, slow continuation.Descriptor) {
 }
 
 // RunFast appends one low-latency continuation. The fast provider sees the
-// complete capability and tool definitions; its descriptor is what makes any
-// call it emits a non-executable proposal.
+// complete capability manifest and, only at an eligible safe point, the exact
+// tool schemas admitted to its execution lane.
 func (engine *Engine) RunFast(ctx context.Context, request Request, observer StreamObserver) (continuation.RunResult, error) {
 	if engine.config.ExternalFast {
 		return continuation.RunResult{}, ErrExternalFast
 	}
 	return engine.run(ctx, engine.config.Fast, trajectory.PhaseFast, continuation.Invocation{
 		Instruction: engine.instruction(engine.prompt(trajectory.PhaseFast), request), SourceRevision: request.SourceRevision,
-		Capabilities:    engine.capabilityManifest(),
+		Capabilities: engine.capabilityManifest(), Tools: engine.fastTools(request.AllowFastTools),
 		MaxOutputTokens: engine.config.FastMaxTokens,
 	}, observer, request.Heard)
 }
@@ -256,7 +282,7 @@ func (engine *Engine) PrepareFast(
 	}
 	return engine.runner.Prepare(ctx, engine.config.Fast, continuation.Invocation{
 		Instruction: engine.instruction(engine.prompt(trajectory.PhaseFast), request), SourceRevision: request.SourceRevision,
-		Capabilities:    engine.capabilityManifest(),
+		Capabilities: engine.capabilityManifest(), Tools: engine.fastTools(request.AllowFastTools),
 		MaxOutputTokens: engine.config.FastMaxTokens,
 	}, provisional, nil)
 }
@@ -452,6 +478,25 @@ func (engine *Engine) executableTools() []continuation.ToolDefinition {
 		tools[index].Parameters = slices.Clone(tools[index].Parameters)
 	}
 	return tools
+}
+
+// fastTools filters the live catalog through the immutable exact allowlist.
+// Reading the catalog live matters because client session updates can replace
+// declarations after the engine was built. A removed or renamed declaration
+// disappears from the invocation and therefore cannot execute.
+func (engine *Engine) fastTools(allowedAtSafePoint bool) []continuation.ToolDefinition {
+	if !allowedAtSafePoint || engine.config.Catalog == nil || engine.config.FastToolFilter == nil {
+		return nil
+	}
+	var result []continuation.ToolDefinition
+	for _, tool := range engine.config.Catalog.Tools() {
+		if !engine.config.FastToolFilter(tool) {
+			continue
+		}
+		tool.Parameters = slices.Clone(tool.Parameters)
+		result = append(result, tool)
+	}
+	return result
 }
 
 func validateCapabilities(capabilities []continuation.Capability) error {

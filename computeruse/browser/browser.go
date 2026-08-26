@@ -369,6 +369,130 @@ func (surface *Surface) Capture(ctx context.Context) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(decoded.Data)
 }
 
+// MarkedElement describes one interactive element in a set-of-mark frame.
+// Bounds use the same CSS-pixel coordinate space as the video source.
+type MarkedElement struct {
+	ID     string `json:"id"`
+	Role   string `json:"role,omitempty"`
+	Name   string `json:"name,omitempty"`
+	X      int    `json:"x"`
+	Y      int    `json:"y"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+}
+
+// CaptureMarked labels visible interactive DOM elements and captures the
+// resulting page. The labels are part of the pixels the model sees; the
+// returned metadata exists for audit and scoring, never as a model shortcut.
+//
+// Labels persist on their target elements across captures while the red marker
+// bubbles themselves are removed immediately after the screenshot. That makes
+// computer.click_element stable without changing the page a person would use.
+func (surface *Surface) CaptureMarked(ctx context.Context) ([]byte, []MarkedElement, error) {
+	const install = `(() => {
+	  document.querySelectorAll('[data-openrealtime-marker-overlay]').forEach((node) => node.remove());
+	  const selector = 'a[href],button,input:not([type="hidden"]),select,textarea,[role="button"],[role="link"],[tabindex]:not([tabindex="-1"])';
+	  const nodes = [...document.querySelectorAll(selector)].filter((node) => {
+	    const rect = node.getBoundingClientRect();
+	    const style = getComputedStyle(node);
+	    return rect.width > 1 && rect.height > 1 && rect.bottom > 0 && rect.right > 0 &&
+	      rect.top < innerHeight && rect.left < innerWidth && style.visibility !== 'hidden' &&
+	      style.display !== 'none' && !node.disabled;
+	  });
+	  let next = Number(document.documentElement.dataset.openrealtimeNextMark || '1');
+	  const result = [];
+	  for (const node of nodes) {
+	    if (!node.dataset.openrealtimeMark) node.dataset.openrealtimeMark = String(next++);
+	    const id = node.dataset.openrealtimeMark;
+	    const rect = node.getBoundingClientRect();
+	    const marker = document.createElement('div');
+	    marker.dataset.openrealtimeMarkerOverlay = 'true';
+	    marker.textContent = id;
+	    Object.assign(marker.style, {
+	      position: 'fixed', left: Math.max(0, rect.left - 10) + 'px',
+	      top: Math.max(0, rect.top - 10) + 'px', zIndex: '2147483647',
+	      minWidth: '20px', height: '20px', padding: '0 3px', boxSizing: 'border-box',
+	      border: '2px solid white', borderRadius: '10px', background: '#d00000',
+	      color: 'white', font: 'bold 12px/16px sans-serif', textAlign: 'center',
+	      pointerEvents: 'none', boxShadow: '0 1px 3px rgba(0,0,0,.7)'
+	    });
+	    document.documentElement.appendChild(marker);
+	    const role = node.getAttribute('role') || node.tagName.toLowerCase();
+	    const name = node.getAttribute('aria-label') || node.innerText || node.value || node.getAttribute('title') || '';
+	    result.push({id, role, name: String(name).trim().slice(0, 160),
+	      x: Math.round(rect.left), y: Math.round(rect.top),
+	      width: Math.round(rect.width), height: Math.round(rect.height)});
+	  }
+	  document.documentElement.dataset.openrealtimeNextMark = String(next);
+	  return result;
+	})()`
+	result, err := surface.call(ctx, "Runtime.evaluate", map[string]any{
+		"expression": install, "returnByValue": true, "awaitPromise": true,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	var evaluated struct {
+		Result struct {
+			Value []MarkedElement `json:"value"`
+		} `json:"result"`
+		ExceptionDetails *struct {
+			Text string `json:"text"`
+		} `json:"exceptionDetails"`
+	}
+	if err := json.Unmarshal(result, &evaluated); err != nil {
+		return nil, nil, err
+	}
+	if evaluated.ExceptionDetails != nil {
+		return nil, nil, fmt.Errorf("install set-of-mark overlay: %s", evaluated.ExceptionDetails.Text)
+	}
+	frame, captureErr := surface.Capture(ctx)
+	_, cleanupErr := surface.call(ctx, "Runtime.evaluate", map[string]any{
+		"expression": `document.querySelectorAll('[data-openrealtime-marker-overlay]').forEach((node) => node.remove())`,
+	})
+	if captureErr != nil {
+		return nil, nil, captureErr
+	}
+	if cleanupErr != nil {
+		return nil, nil, cleanupErr
+	}
+	return frame, evaluated.Result.Value, nil
+}
+
+// ClickElement clicks the centre of an element carrying the mark shown in the
+// most recent marked frame. It still dispatches ordinary pointer events: the
+// DOM is used only to resolve the label into the pixel space the model saw.
+func (surface *Surface) ClickElement(ctx context.Context, elementID string) error {
+	encoded, err := json.Marshal(strings.TrimSpace(elementID))
+	if err != nil {
+		return err
+	}
+	expression := `(() => {
+	  const wanted = ` + string(encoded) + `;
+	  const node = [...document.querySelectorAll('[data-openrealtime-mark]')]
+	    .find((candidate) => candidate.dataset.openrealtimeMark === wanted);
+	  if (!node) return '';
+	  const rect = node.getBoundingClientRect();
+	  if (rect.width <= 1 || rect.height <= 1) return '';
+	  return JSON.stringify({x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2)});
+	})()`
+	point, err := surface.evaluate(ctx, expression)
+	if err != nil {
+		return err
+	}
+	if point == "" {
+		return fmt.Errorf("set-of-mark element %q is absent or no longer visible", elementID)
+	}
+	var coordinate struct {
+		X int `json:"x"`
+		Y int `json:"y"`
+	}
+	if err := json.Unmarshal([]byte(point), &coordinate); err != nil {
+		return fmt.Errorf("resolve set-of-mark element %q: %w", elementID, err)
+	}
+	return surface.Click(ctx, coordinate.X, coordinate.Y, "left")
+}
+
 // Navigate points the page at a URL and waits for the load to finish.
 //
 // It is not an action in the computer-use namespace and is deliberately not
@@ -435,6 +559,44 @@ func (surface *Surface) evaluate(ctx context.Context, expression string) (string
 	return decoded.Result.Value, nil
 }
 
+// Evaluate runs an operator expression and decodes its value.
+//
+// Like Navigate, this is not a computer-use action. It exists for an
+// environment owner to reset and score a task through a deliberately separate
+// control plane. The model never receives this method or its result.
+func (surface *Surface) Evaluate(ctx context.Context, expression string, destination any) error {
+	if strings.TrimSpace(expression) == "" {
+		return errors.New("evaluation requires an expression")
+	}
+	if destination == nil {
+		return errors.New("evaluation requires a destination")
+	}
+	result, err := surface.call(ctx, "Runtime.evaluate", map[string]any{
+		"expression": expression, "returnByValue": true, "awaitPromise": true,
+	})
+	if err != nil {
+		return err
+	}
+	var decoded struct {
+		Result struct {
+			Value json.RawMessage `json:"value"`
+		} `json:"result"`
+		ExceptionDetails *struct {
+			Text string `json:"text"`
+		} `json:"exceptionDetails"`
+	}
+	if err := json.Unmarshal(result, &decoded); err != nil {
+		return err
+	}
+	if decoded.ExceptionDetails != nil {
+		return fmt.Errorf("evaluate %s: %s", expression, decoded.ExceptionDetails.Text)
+	}
+	if len(decoded.Result.Value) == 0 {
+		return errors.New("evaluation returned no value")
+	}
+	return json.Unmarshal(decoded.Result.Value, destination)
+}
+
 // Viewport reports the page's coordinate space, which is what a computer-use
 // target must declare.
 func (surface *Surface) Viewport(ctx context.Context) (width, height int, err error) {
@@ -492,3 +654,4 @@ func keyText(key string, modifiers int) string {
 }
 
 var _ computeruse.Surface = (*Surface)(nil)
+var _ computeruse.ElementSurface = (*Surface)(nil)

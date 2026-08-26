@@ -229,8 +229,10 @@ try {
   check("the computer-use vocabulary is declared",
     declared.tools?.filter((tool) => tool.name.startsWith("computer.")).length === 10,
     `${declared.tools?.filter((tool) => tool.name.startsWith("computer.")).length} actions`);
-  check("tool declarations carry their confirmation requirement",
-    declared.tools?.find((tool) => tool.name === "write_file")?.openrealtime?.confirm === "always");
+  check("client-hosted tools delegate server confirmation explicitly",
+    declared.tools?.find((tool) => tool.name === "write_file")?.openrealtime?.confirm === "never");
+  check("computer-use declarations name the bounded client target",
+    Boolean(declared.tools?.find((tool) => tool.name === "computer.click")?.openrealtime?.target));
 
   // --- connect -------------------------------------------------------------
 
@@ -431,16 +433,16 @@ try {
   await evaluate(`
     document.getElementById('instructions').value = 'Answer in one word.';
     document.getElementById('apply-instructions').click();`);
-  // "in force" rather than "sent": the server echoes the instructions it is
-  // actually running, and the page compares them to what is on screen. Which
-  // of the two words appears depends on whether session.updated has come back
-  // yet, and both mean the edit was carried.
+  // Wait for "in force", not the transient "sent": the former means the
+  // server echoed the instructions it is actually running. Returning as soon
+  // as the local send marker appears makes this assertion race its own
+  // session.updated acknowledgement under the race detector.
   const promptState = await waitFor("the prompt to be confirmed", async () => {
     const shown = await evaluate("document.getElementById('instructions-state').textContent");
-    return /sent|in force/.test(shown) ? shown : null;
+    return shown === "in force" ? shown : null;
   }, 15000);
   check("the session prompt can be changed mid-session",
-    /sent|in force/.test(promptState ?? ""), promptState);
+    promptState === "in force", promptState);
   check("the page says whether the prompt on screen is the one the agent has",
     (await evaluate("document.getElementById('instructions-state').textContent")) === "in force",
     await evaluate("document.getElementById('instructions-state').textContent"));

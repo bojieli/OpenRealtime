@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/action"
+	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/console"
 	"github.com/bojieli/OpenRealtime/surface"
 	"github.com/coder/websocket"
@@ -307,12 +309,16 @@ func TestArtifactChannelIsDeclaredWithNoBrowserAndNoFiles(t *testing.T) {
 // a turn on it and learns nothing. So the computer-use vocabulary appears only
 // when there is a browser behind it.
 func TestComputerUseIsDeclaredOnlyWithABrowser(t *testing.T) {
-	host := surface.NewToolHost(fileHost(t), connectFakeBrowser(t), nil)
+	browserContext := connectFakeBrowser(t)
+	host := surface.NewToolHost(fileHost(t), browserContext, nil)
 	var computer, files, artifacts int
 	for _, tool := range host.Tools() {
 		switch tool.Channel {
 		case surface.ChannelComputer:
 			computer++
+			if tool.SessionConfirm != string(action.ConfirmNever) || tool.Target != browserContext.Target().Name {
+				t.Fatalf("client computer tool %q must delegate confirmation and declare its target: %+v", tool.Name, tool)
+			}
 		case surface.ChannelTool:
 			files++
 		case surface.ChannelArtifact:
@@ -324,6 +330,14 @@ func TestComputerUseIsDeclaredOnlyWithABrowser(t *testing.T) {
 	}
 	if files != 3 || artifacts != 1 {
 		t.Fatalf("expected three file tools and one artifact tool, got %d and %d", files, artifacts)
+	}
+	click, _ := host.Lookup(computeruse.Click)
+	if click.Confirm != string(action.ConfirmPolicy) {
+		t.Fatalf("the surface host must retain the click policy locally, got %q", click.Confirm)
+	}
+	write, _ := host.Lookup("write_file")
+	if write.Confirm != string(action.ConfirmAlways) || write.SessionConfirm != string(action.ConfirmNever) {
+		t.Fatalf("write confirmation ownership is ambiguous: %+v", write)
 	}
 }
 
@@ -365,8 +379,11 @@ func TestConfigNamesEveryChannelTheSurfaceCanCarry(t *testing.T) {
 			Width     int    `json:"width"`
 		} `json:"browser"`
 		Tools []struct {
-			Name    string `json:"name"`
-			Channel string `json:"channel"`
+			Name           string `json:"name"`
+			Channel        string `json:"channel"`
+			Confirm        string `json:"confirm"`
+			SessionConfirm string `json:"session_confirm"`
+			Target         string `json:"target"`
 		} `json:"tools"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&described); err != nil {
@@ -384,6 +401,12 @@ func TestConfigNamesEveryChannelTheSurfaceCanCarry(t *testing.T) {
 	channels := map[string]bool{}
 	for _, tool := range described.Tools {
 		channels[tool.Channel] = true
+		if tool.SessionConfirm != string(action.ConfirmNever) {
+			t.Fatalf("client-hosted tool %q did not delegate confirmation explicitly", tool.Name)
+		}
+		if tool.Channel == string(surface.ChannelComputer) && tool.Target == "" {
+			t.Fatalf("computer tool %q did not declare the client target", tool.Name)
+		}
 	}
 	for _, expected := range []string{"tool", "computer", "artifact"} {
 		if !channels[expected] {

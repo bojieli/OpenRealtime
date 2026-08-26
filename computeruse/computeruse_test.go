@@ -29,6 +29,9 @@ func (surface *fakeSurface) note(text string) error {
 func (surface *fakeSurface) Click(_ context.Context, x, y int, button string) error {
 	return surface.note("click")
 }
+func (surface *fakeSurface) ClickElement(context.Context, string) error {
+	return surface.note("click-element")
+}
 func (surface *fakeSurface) DoubleClick(context.Context, int, int) error {
 	return surface.note("double")
 }
@@ -68,10 +71,10 @@ func call(name, arguments string) trajectory.ToolCall {
 	return trajectory.ToolCall{CallID: "c1", Name: name, Arguments: json.RawMessage(arguments)}
 }
 
-func TestVocabularyIsNineActionsWithStrictSchemas(t *testing.T) {
+func TestVocabularyIsTenActionsWithStrictSchemas(t *testing.T) {
 	definitions := computeruse.Definitions()
-	if len(definitions) != 9 || len(computeruse.Names()) != 9 {
-		t.Fatalf("expected nine actions, got %d", len(definitions))
+	if len(definitions) != 10 || len(computeruse.Names()) != 10 {
+		t.Fatalf("expected ten actions, got %d", len(definitions))
 	}
 	for _, definition := range definitions {
 		if !computeruse.IsAction(definition.Name) {
@@ -95,6 +98,58 @@ func TestVocabularyIsNineActionsWithStrictSchemas(t *testing.T) {
 		}
 	}
 }
+
+func TestReflexActionsExcludeObservationControl(t *testing.T) {
+	for _, name := range computeruse.Names() {
+		want := name != computeruse.Screenshot && name != computeruse.Wait
+		if got := computeruse.IsReflexAction(name); got != want {
+			t.Fatalf("IsReflexAction(%q) = %t, want %t", name, got, want)
+		}
+	}
+	for _, name := range []string{"computer.exfiltrate", "transfer_funds", ""} {
+		if computeruse.IsReflexAction(name) {
+			t.Fatalf("non-standard action %q entered the reflex vocabulary", name)
+		}
+	}
+}
+
+func TestSetOfMarkActionsResolveOnlyOnElementSurfaces(t *testing.T) {
+	dispatcher, surface := newDispatcher(t)
+	result, err := dispatcher.Dispatch(context.Background(), call(
+		computeruse.ClickElement, `{"source":"screen","element_id":"7"}`))
+	if err != nil || result.Error != "" {
+		t.Fatalf("marked click: %v %s", err, result.Error)
+	}
+	if performed := surface.performed(); len(performed) != 1 || performed[0] != "click-element" {
+		t.Fatalf("the mark must resolve through the element surface, got %v", performed)
+	}
+
+	plain := &pixelOnlySurface{}
+	unsupported, err := computeruse.NewDispatcher(computeruse.DispatcherConfig{
+		Target:  computeruse.Target{Name: "display", Sources: []string{"screen"}, Width: 100, Height: 100},
+		Surface: plain,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused, _ := unsupported.Dispatch(context.Background(), call(
+		computeruse.ClickElement, `{"source":"screen","element_id":"1"}`))
+	if !strings.Contains(refused.Error, "does not support set-of-mark") {
+		t.Fatalf("a pixel-only target must refuse element grounding, got %q", refused.Error)
+	}
+}
+
+type pixelOnlySurface struct{}
+
+func (*pixelOnlySurface) Name() string                                     { return "pixels" }
+func (*pixelOnlySurface) Click(context.Context, int, int, string) error    { return nil }
+func (*pixelOnlySurface) DoubleClick(context.Context, int, int) error      { return nil }
+func (*pixelOnlySurface) Move(context.Context, int, int) error             { return nil }
+func (*pixelOnlySurface) Drag(context.Context, int, int, int, int) error   { return nil }
+func (*pixelOnlySurface) Type(context.Context, string) error               { return nil }
+func (*pixelOnlySurface) Key(context.Context, []string) error              { return nil }
+func (*pixelOnlySurface) Scroll(context.Context, int, int, int, int) error { return nil }
+func (*pixelOnlySurface) Screenshot(context.Context) error                 { return nil }
 
 func TestActionsAreGroundedInTheDeclaredSpace(t *testing.T) {
 	dispatcher, surface := newDispatcher(t)
@@ -167,7 +222,7 @@ func TestSpecsCarryTargetsAndConfirmationDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("specs: %v", err)
 	}
-	if len(specs) != 9 {
+	if len(specs) != 10 {
 		t.Fatalf("expected the whole vocabulary, got %d", len(specs))
 	}
 	byName := make(map[string]action.ToolSpec, len(specs))
@@ -332,5 +387,66 @@ func TestTheSourceFieldNamesTheSourcesTheTargetOwns(t *testing.T) {
 
 	if _, err := computeruse.DefinitionsFor(computeruse.Target{Name: "x"}); err == nil {
 		t.Fatal("a target with no sources cannot narrow anything and must be refused")
+	}
+}
+
+func TestTargetSchemasNameTheExactCoordinateSpace(t *testing.T) {
+	target := computeruse.Target{
+		Name: "surface-browser", Sources: []string{"browser"}, Width: 1280, Height: 577,
+	}
+	declared, err := computeruse.DefinitionsFor(target)
+	if err != nil {
+		t.Fatalf("definitions: %v", err)
+	}
+	want := map[string]map[string]float64{
+		computeruse.Click:       {"x": 1279, "y": 576},
+		computeruse.DoubleClick: {"x": 1279, "y": 576},
+		computeruse.Move:        {"x": 1279, "y": 576},
+		computeruse.Drag: {
+			"from_x": 1279, "from_y": 576, "to_x": 1279, "to_y": 576,
+		},
+		computeruse.Scroll: {"x": 1279, "y": 576},
+	}
+	for _, definition := range declared {
+		coordinates, relevant := want[definition.Name]
+		if !relevant {
+			continue
+		}
+		var schema struct {
+			Properties map[string]struct {
+				Minimum *float64 `json:"minimum"`
+				Maximum *float64 `json:"maximum"`
+			} `json:"properties"`
+		}
+		if err := json.Unmarshal(definition.Parameters, &schema); err != nil {
+			t.Fatalf("%s: %v", definition.Name, err)
+		}
+		for name, maximum := range coordinates {
+			property := schema.Properties[name]
+			if property.Minimum == nil || *property.Minimum != 0 ||
+				property.Maximum == nil || *property.Maximum != maximum {
+				t.Errorf("%s.%s bounds = [%v,%v], want [0,%v]",
+					definition.Name, name, property.Minimum, property.Maximum, maximum)
+			}
+		}
+	}
+
+	// The portable vocabulary does not pretend to know a deployment's
+	// dimensions. Only DefinitionsFor may publish target-specific maxima.
+	for _, definition := range computeruse.Definitions() {
+		var schema struct {
+			Properties map[string]struct {
+				Maximum *float64 `json:"maximum"`
+			} `json:"properties"`
+		}
+		if err := json.Unmarshal(definition.Parameters, &schema); err != nil {
+			t.Fatalf("%s: %v", definition.Name, err)
+		}
+		for _, name := range []string{"x", "y", "from_x", "from_y", "to_x", "to_y"} {
+			if property, present := schema.Properties[name]; present && property.Maximum != nil {
+				t.Errorf("portable %s.%s unexpectedly has maximum %v",
+					definition.Name, name, *property.Maximum)
+			}
+		}
 	}
 }

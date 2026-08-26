@@ -128,6 +128,7 @@ type serveOptions struct {
 	bargeInHold         time.Duration
 
 	computerUse     bool
+	fastComputerUse bool
 	browserURL      string
 	browserTarget   string
 	computerConfirm string
@@ -264,6 +265,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.webrtcOrigin, "webrtc-allow-origin", "",
 		"comma-separated web origins allowed to POST an SDP offer, or \"*\"; empty allows none, which is right unless a browser on another origin has to reach the adapter")
 	flags.BoolVar(&options.computerUse, "computer-use", false, "declare the computer.* tools against a browser target")
+	flags.BoolVar(&options.fastComputerUse, "fast-computer-use", false,
+		"let the fast provider execute only bounded standard computer.* actions")
 	flags.StringVar(&options.browserURL, "browser-devtools-url", "http://127.0.0.1:9222", "browser DevTools endpoint for computer use")
 	flags.StringVar(&options.browserTarget, "browser-target", "", "connect directly to a known page WebSocket instead of discovering one")
 	flags.StringVar(&options.computerConfirm, "computer-confirm", "", "override every computer.* confirmation requirement: never, policy, or always")
@@ -366,6 +369,14 @@ func serve(options serveOptions, output io.Writer) error {
 // the accumulator its recognisers fold into. Every other binding returns a nil
 // accumulator: there is no recogniser in the process to report on.
 func buildBinding(options serveOptions) (binding.Binding, *asrbuffer.Accumulator, error) {
+	bindingName := strings.ToLower(strings.TrimSpace(options.binding))
+	if bindingName == "" {
+		bindingName = "cascade"
+	}
+	if options.fastComputerUse && bindingName != "cascade" {
+		return nil, nil, fmt.Errorf(
+			"fast computer use is implemented by the cascade binding, not %q", bindingName)
+	}
 	governor, err := buildGovernor(options)
 	if err != nil {
 		return nil, nil, err
@@ -374,8 +385,8 @@ func buildBinding(options serveOptions) (binding.Binding, *asrbuffer.Accumulator
 	if err != nil {
 		return nil, nil, err
 	}
-	switch strings.ToLower(strings.TrimSpace(options.binding)) {
-	case "cascade", "":
+	switch bindingName {
+	case "cascade":
 		recogniser := asrbuffer.NewAccumulator()
 		bind, err := buildCascade(options, policies, governor, recogniser)
 		if err != nil {
@@ -655,15 +666,17 @@ func buildCascade(
 	return cascade.New(cascade.Config{
 		ClientToolTimeout: options.clientToolTimeout,
 		Observers:         observers, DefaultObservers: defaults, Tools: computer.specs,
-		Narrator:      narrator,
-		Governor:      governor,
-		ConfirmPolicy: computer.policy,
+		Narrator:        narrator,
+		FastComputerUse: options.fastComputerUse,
+		Governor:        governor,
+		ConfirmPolicy:   computer.policy,
 		// Every executed action is already a trajectory item with causal
 		// parents. This is the operational mirror of that, so an operator
 		// reading logs can see a refusal without reading a transcript.
 		ActionAudit: func(record action.Record) {
-			fmt.Fprintf(os.Stderr, "tool-dispatch %s %s target=%s confirmed=%t executed=%t error=%q\n",
-				record.Name, record.CallID, record.Target, record.Confirmed, record.Executed, record.Error)
+			fmt.Fprintf(os.Stderr, "tool-dispatch %s %s phase=%s target=%s confirmed=%t executed=%t error=%q\n",
+				record.Name, record.CallID, record.ProducerPhase, record.Target,
+				record.Confirmed, record.Executed, record.Error)
 		},
 		Perception: func() (v1.PerceptionProvider, error) {
 			recogniser, err := recognise()
@@ -706,19 +719,24 @@ func buildUpstream(options serveOptions) (binding.Binding, error) {
 
 // buildFast configures the voice.
 //
-// It is always silent-capable and always proposal-only: the fast provider
-// cannot call tools, and that is a property of the descriptor here rather than
-// a convention the prompt is trusted to follow. It also does not reason -
-// minimal effort with the provider's thinking switch turned off - because the
-// fast phase exists to answer the question that was actually asked, now.
+// It is always silent-capable and proposal-only by default. The explicit
+// fast-computer-use mode grants execution authority at the descriptor while
+// cognition supplies only an exact server-owned computer-action allowlist at
+// eligible safe points. It also does not reason - minimal effort with the
+// provider's thinking switch turned off - because the fast phase exists to
+// answer the question that was actually asked, now.
 func buildFast(options serveOptions) (continuation.Provider, error) {
+	authority := continuation.ToolAuthorityPropose
+	if options.fastComputerUse {
+		authority = continuation.ToolAuthorityExecute
+	}
 	return providers.NewLLM(providers.LLMRequest{
 		Provider: options.fastProvider,
 		Model:    modelOverride(options, "fast-model", options.fastModel, options.fastProvider, trajectory.PhaseFast),
 		BaseURL:  options.override("fast-url", options.fastURL),
 		APIKey:   roleCredential(options, "fast-token-env", options.fastTokenEnv, "OPENREALTIME_FAST_API_KEY"),
 		Phase:    trajectory.PhaseFast, Effort: continuation.EffortMinimal,
-		ToolAuthority:   continuation.ToolAuthorityPropose,
+		ToolAuthority:   authority,
 		SpeechAuthority: continuation.SpeechAuthorityVoice,
 		Reason:          providers.ReasonOff,
 		Vision:          visionOverride(options, "fast-sees", options.fastVision),

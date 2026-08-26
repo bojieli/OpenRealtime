@@ -186,13 +186,14 @@ type ToolsConfig struct {
 
 // Record is one dispatch attempt.
 type Record struct {
-	CallID    string `json:"call_id"`
-	Name      string `json:"name"`
-	Target    string `json:"target,omitempty"`
-	Confirmed bool   `json:"confirmed"`
-	Executed  bool   `json:"executed"`
-	Error     string `json:"error,omitempty"`
-	ElapsedNS uint64 `json:"elapsed_ns,omitempty"`
+	CallID        string           `json:"call_id"`
+	Name          string           `json:"name"`
+	Target        string           `json:"target,omitempty"`
+	ProducerPhase trajectory.Phase `json:"producer_phase,omitempty"`
+	Confirmed     bool             `json:"confirmed"`
+	Executed      bool             `json:"executed"`
+	Error         string           `json:"error,omitempty"`
+	ElapsedNS     uint64           `json:"elapsed_ns,omitempty"`
 }
 
 // Tools dispatches authoritative calls through one boundary.
@@ -256,30 +257,8 @@ func (tools *Tools) Dispatch(ctx context.Context, call trajectory.ToolCall) (tra
 		tools.mu.Unlock()
 	}()
 
-	kind := KindToolCall
-	if strings.HasPrefix(call.Name, "computer.") {
-		kind = KindComputerAction
-	}
-	commitmentID := "action_" + call.CallID
-	if err := tools.config.Ledger.Prepare(Commitment{
-		ID: commitmentID, Kind: kind, CallID: call.CallID, Confirm: spec.Confirm,
-	}); err != nil && !errors.Is(err, ErrDuplicateCall) {
-		return trajectory.ToolResult{}, err
-	}
-
-	confirmed, err := tools.confirm(ctx, call, spec)
+	commitmentID, err := tools.authorize(ctx, call, spec)
 	if err != nil {
-		tools.record(Record{CallID: call.CallID, Name: call.Name, Target: spec.Target, Error: err.Error()})
-		_, _ = tools.config.Ledger.Cancel(commitmentID, err.Error())
-		return trajectory.ToolResult{}, err
-	}
-	if !confirmed {
-		tools.record(Record{CallID: call.CallID, Name: call.Name, Target: spec.Target, Error: ErrNotConfirmed.Error()})
-		_, _ = tools.config.Ledger.Cancel(commitmentID, "not confirmed")
-		return trajectory.ToolResult{}, fmt.Errorf("%w: %s", ErrNotConfirmed, call.Name)
-	}
-
-	if err := tools.config.Ledger.Queue(commitmentID); err != nil && !errors.Is(err, ErrInvalidTransition) {
 		return trajectory.ToolResult{}, err
 	}
 	dispatcher := spec.Dispatcher
@@ -311,6 +290,86 @@ func (tools *Tools) Dispatch(ctx context.Context, call trajectory.ToolCall) (tra
 		Confirmed: true, Executed: true, Error: result.Error,
 	})
 	return result, nil
+}
+
+// EmitRemote authorizes an executable call whose implementation belongs to
+// the protocol client, then records that it crossed the action boundary.
+//
+// Client execution is not a shortcut around the action plane. The call must
+// already be authoritative in the trajectory, its declared confirmation is
+// answered here, and its ledger transition happens before it is handed to the
+// client. The eventual client result completes the commitment through
+// Complete.
+func (tools *Tools) EmitRemote(ctx context.Context, call trajectory.ToolCall) error {
+	spec, declared := tools.config.Registry.Lookup(call.Name)
+	if !declared {
+		return fmt.Errorf("%w: %s", ErrUnknownTool, call.Name)
+	}
+	if spec.Dispatcher != nil {
+		return fmt.Errorf("tool %q has an in-process dispatcher", call.Name)
+	}
+	if !tools.authoritative(call) {
+		return fmt.Errorf("%w: %s", ErrNoAuthority, call.CallID)
+	}
+	commitmentID, err := tools.authorize(ctx, call, spec)
+	if err != nil {
+		return err
+	}
+	// Conservative ordering: mark the irreversible crossing before the wire
+	// write. If the write then fails, the audit says an execution was attempted
+	// rather than claiming an action known not to have escaped.
+	if err := tools.config.Ledger.Emit(commitmentID); err != nil {
+		tools.record(Record{
+			CallID: call.CallID, Name: call.Name, Target: spec.Target,
+			Confirmed: true, Error: err.Error(),
+		})
+		return err
+	}
+	tools.record(Record{
+		CallID: call.CallID, Name: call.Name, Target: spec.Target,
+		Confirmed: true, Executed: true,
+	})
+	return nil
+}
+
+// Complete closes a client-executed commitment when its real or synthesised
+// result joins the trajectory. It is idempotent at the caller: local actions
+// are already complete, and a result for one simply leaves the terminal ledger
+// state unchanged.
+func (tools *Tools) Complete(callID string) {
+	_ = tools.config.Ledger.Complete("action_"+callID, 0)
+}
+
+func (tools *Tools) authorize(
+	ctx context.Context, call trajectory.ToolCall, spec ToolSpec,
+) (string, error) {
+	kind := KindToolCall
+	if strings.HasPrefix(call.Name, "computer.") {
+		kind = KindComputerAction
+	}
+	commitmentID := "action_" + call.CallID
+	if err := tools.config.Ledger.Prepare(Commitment{
+		ID: commitmentID, Kind: kind, CallID: call.CallID, Confirm: spec.Confirm,
+	}); err != nil && !errors.Is(err, ErrDuplicateCall) {
+		return "", err
+	}
+
+	confirmed, err := tools.confirm(ctx, call, spec)
+	if err != nil {
+		tools.record(Record{CallID: call.CallID, Name: call.Name, Target: spec.Target, Error: err.Error()})
+		_, _ = tools.config.Ledger.Cancel(commitmentID, err.Error())
+		return "", err
+	}
+	if !confirmed {
+		tools.record(Record{CallID: call.CallID, Name: call.Name, Target: spec.Target, Error: ErrNotConfirmed.Error()})
+		_, _ = tools.config.Ledger.Cancel(commitmentID, "not confirmed")
+		return "", fmt.Errorf("%w: %s", ErrNotConfirmed, call.Name)
+	}
+
+	if err := tools.config.Ledger.Queue(commitmentID); err != nil && !errors.Is(err, ErrInvalidTransition) {
+		return "", err
+	}
+	return commitmentID, nil
 }
 
 // DispatchAll runs a complete call batch, preserving call order in the
@@ -355,18 +414,26 @@ func (tools *Tools) confirm(ctx context.Context, call trajectory.ToolCall, spec 
 // provider's structural inability to act is enforced at the point of effect
 // rather than by convention.
 func (tools *Tools) authoritative(call trajectory.ToolCall) bool {
+	_, found := tools.producerPhase(call.CallID, call.Name)
+	return found
+}
+
+func (tools *Tools) producerPhase(callID, name string) (trajectory.Phase, bool) {
 	for _, item := range tools.config.Store.Snapshot().Items {
 		if item.Kind != trajectory.KindToolCall || item.ToolCall == nil {
 			continue
 		}
-		if item.ToolCall.CallID == call.CallID && item.ToolCall.Name == call.Name {
-			return true
+		if item.ToolCall.CallID == callID && item.ToolCall.Name == name {
+			return item.Producer.Phase, true
 		}
 	}
-	return false
+	return "", false
 }
 
 func (tools *Tools) record(record Record) {
+	if record.ProducerPhase == "" {
+		record.ProducerPhase, _ = tools.producerPhase(record.CallID, record.Name)
+	}
 	if tools.config.Audit != nil {
 		tools.config.Audit(record)
 	}
