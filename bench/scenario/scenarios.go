@@ -253,6 +253,15 @@ func Suite() []Scenario {
 					Note: "\"the moment it finishes\" is a claim about latency, so it is measured as one"},
 				{Kind: CheckSilent, Sight: 1, AfterMS: 7000,
 					Note: "the first screen shows it still running, which is not the moment they asked for"},
+				// Before anything has been seen at all. A model that can look
+				// at frames announced "the build has finished" three seconds
+				// before the first one arrived, then corrected itself twice -
+				// and passed every other check here, because they all ask
+				// whether it said the right thing near the right moment and
+				// none of them asked whether it knew.
+				{Kind: CheckNotSaid, Line: 0, AfterMS: 3000,
+					Any:  []string{"has finished", "is finished", "finished successfully", "is complete", "has completed"},
+					Note: "nothing has been seen yet, so there is nothing it can know has finished"},
 			},
 		},
 		{
