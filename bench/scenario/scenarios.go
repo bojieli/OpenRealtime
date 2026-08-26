@@ -150,6 +150,53 @@ func Suite() []Scenario {
 			},
 		},
 		{
+			Name: "waiting out a silence they asked for",
+			Note: "the trigger is the clock: nothing is said and nothing is seen, and the moment " +
+				"arrives because time passed",
+			Instructions: "You are a voice assistant. Follow the instructions the person gives you " +
+				"about when to speak.",
+			Script: []Line{
+				{Speaker: "user", AtMS: 0, Text: "I'm going to read something now, so I'll be quiet for a while. If I haven't said anything for about fifteen seconds, ask whether I'm still there."},
+			},
+			// Long enough for the condition to arrive and for a premature
+			// answer to be distinguishable from a punctual one.
+			TrailingMS: 30000,
+			Checks: []Check{
+				// Every other scenario here is triggered by speech or a frame.
+				// This one has neither after the instruction, so the only
+				// thing that can move the agent is the silence lengthening -
+				// which is the one input the interaction model is given on
+				// every decision and has never been asked to act on.
+				{Kind: CheckSilent, Line: 0, AfterMS: 12000,
+					Note: "they said fifteen seconds; speaking at five is not waiting"},
+				{Kind: CheckSaid, Line: 0, AfterMS: 26000,
+					Any:  []string{"still there", "still with", "everything all right", "you there", "all right"},
+					Note: "and when it does arrive it is the thing they asked for"},
+			},
+		},
+		{
+			Name: "somebody else's conversation",
+			Note: "the complement of the waiter: a third party talking near the microphone who is " +
+				"not addressing the agent at all",
+			Instructions: "You are a voice assistant helping the user with their work. " +
+				"Answer them when they speak to you.",
+			Script: []Line{
+				{Speaker: "user", AtMS: 0, Text: "I'm just going to get on with this for a bit."},
+				// Directed at each other, in the room, about nothing the agent
+				// has anything to do with. Every word of it is a well-formed
+				// request to somebody.
+				{Speaker: "other", AtMS: 8000, Text: "Did you get the milk on the way in? I looked in the fridge and there wasn't any."},
+				{Speaker: "other", AtMS: 16000, Text: "No, I forgot again. Can you put it on the list for tomorrow?"},
+			},
+			TrailingMS: 6000,
+			Checks: []Check{
+				{Kind: CheckSilent, Line: 1, AfterMS: 4000,
+					Note: "a question in the room is not a question to the agent"},
+				{Kind: CheckSilent, Line: 2, AfterMS: 4000,
+					Note: "and neither is the answer to it"},
+			},
+		},
+		{
 			Name:         "an acknowledgement is not an interruption",
 			Note:         "the agent is mid-sentence and somebody says mhm; stopping would be wrong",
 			Instructions: "You are a helpful voice assistant. When asked what you found, give the detail you have.",
