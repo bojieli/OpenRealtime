@@ -310,13 +310,18 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 	nowNS := runtime.scheduler.NowNS()
 	runtime.audioMu.Lock()
 	sameRevision := runtime.lastSilentActRev == decision.Revision.ID
-	// The same stretch of speech, grown longer. This is the rule the floor
-	// already applies to interrupting, for the same reason: acting twice on
-	// one stretch is acting twice for one reason, and a revision boundary is
-	// not a new reason. Measured on a phone menu, without it the agent pressed
-	// a key nine times in a single call - a person doing that lands three
-	// menus deep.
-	sameStretch := runtime.actedOnHeard != "" && strings.HasPrefix(heard, runtime.actedOnHeard)
+	// The same words, not the same stretch. Acting twice on one reason is what
+	// this refuses, and a recording that has since named three options is not
+	// one reason - measured, the act fired on "Thank you for calling." and
+	// every revision after it extended that prefix, so one press at a greeting
+	// that offered nothing disabled the rest of the call and the menu ended
+	// where it started, after zero useful presses.
+	//
+	// What stops the nine presses that this guard was written for is the bound
+	// in time below. It is the honest one: pressing twice for one reason is a
+	// judgement about reasons, and growth in a revision is not evidence either
+	// way, but three seconds between keypresses is a fact about phone menus.
+	sameStretch := runtime.actedOnHeard != "" && heard == runtime.actedOnHeard
 	// And a bound in time behind it, for the reason the interruption bound
 	// carries one: the recogniser commits and starts a fresh utterance every
 	// few seconds, so each piece of one recorded menu looks like a new stretch
