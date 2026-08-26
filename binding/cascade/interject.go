@@ -351,6 +351,7 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 		request := cognition.Request{
 			SourceRevision: decision.Revision.ID,
 			Standing:       standing,
+			Because:        string(interaction.ActCallTool),
 			Heard:          decision.Revision.Text(),
 		}
 		// runSlow rather than the engine directly: a proposal that nobody

@@ -568,6 +568,13 @@ func becauseInstruction(act string) string {
 	switch act {
 	case "speak-through":
 		return "You are speaking because something the person asked to be told about has just happened. Do that thing now, for the occurrence in front of you: if they asked for a count, say the next number; if they asked for a translation, give the English; if they asked to be told when something lands, say it has landed. Say only that."
+	case "call-tool":
+		// Measured on a phone menu: the key was pressed correctly and then
+		// announced out loud - "I have pressed two to select the order status
+		// option" - to a recording, which cannot hear it and is still talking
+		// over the announcement. The act is the answer; saying it as well
+		// spends a turn describing what was already done.
+		return "You are acting rather than speaking: the tool call is the whole of what this turn is for. Make the call and reply with " + WaitToken + " - nothing you write here would reach anybody who needed it, and whoever is talking is still talking."
 	case "interrupt":
 		return "You are cutting into their sentence because what they are saying needs correcting now, and waiting until they finish would make the correction useless. Say the correction itself - the right date, the right figure, the right name - not that you are listening and not a question about it."
 	}

@@ -103,3 +103,25 @@ func TestTheVoiceIsToldWhatTheTurnWasCalledFor(t *testing.T) {
 		t.Fatal("an ordinary turn was told it was correcting something")
 	}
 }
+
+// A tool call is the whole of what a silent act is for. Measured on a phone
+// menu, the key was pressed correctly and then announced out loud - "I have
+// pressed two to select the order status option" - to a recording, which
+// cannot hear it and is still talking over the announcement.
+func TestActingIsToldThatTheCallIsTheAnswer(t *testing.T) {
+	acting := instructionFor(t, cognition.Request{
+		Because:  "call-tool",
+		Standing: []string{"press the key when the menu offers what they asked for (20s ago)"},
+	})
+	if !strings.Contains(acting, "the tool call is the whole of what this turn is for") {
+		t.Fatalf("a silent act was not told the call is the answer:\n%s", acting)
+	}
+	if !strings.Contains(acting, cognition.WaitToken) {
+		t.Fatal("it was not told how to make the call without also announcing it")
+	}
+	// And an ordinary turn is told none of that, or every answer would come
+	// back as a token.
+	if plain := instructionFor(t, cognition.Request{}); strings.Contains(plain, "the tool call is the whole") {
+		t.Fatal("an ordinary turn was told it was acting rather than speaking")
+	}
+}
