@@ -26,3 +26,25 @@ func TestBeforeTheAgentHasSpokenEverythingHeardIsNew(t *testing.T) {
 		t.Fatalf("a new utterance reported %q as new", got)
 	}
 }
+
+// TestRepunctuatingIsNotSayingSomethingNew is the regression for an afternoon
+// with two animals in it counted to sixteen. A recogniser rewrites what it has
+// already given you - "a warm afternoon and I was walking" becomes "a warm
+// afternoon. And I was walking" and back again between revisions of the same
+// sentence - so a text prefix test fails and every revision reads as a whole
+// new utterance.
+func TestRepunctuatingIsNotSayingSomethingNew(t *testing.T) {
+	runtime := &runtime{}
+	runtime.markSpoken("It was a warm afternoon and I was walking")
+	if got := runtime.heardSinceSpeaking("It was a warm afternoon. And I was walking"); got != "" {
+		t.Fatalf("re-punctuating reported %q as new", got)
+	}
+	if got := runtime.heardSinceSpeaking(
+		"It was a warm afternoon. And I was walking, a capybara wandered over"); got != "a capybara wandered over" {
+		t.Fatalf("what is new was %q", got)
+	}
+	// A genuinely different sentence is still new.
+	if got := runtime.heardSinceSpeaking("then a heron landed"); got != "then a heron landed" {
+		t.Fatalf("a new sentence reported %q as new", got)
+	}
+}

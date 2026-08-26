@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/cognition"
@@ -486,10 +487,40 @@ func (runtime *runtime) heardSinceSpeaking(heard string) string {
 	// agent has never spoken" into "nothing has been said since it did", and
 	// the control scenario - a finished question with nothing standing in the
 	// way - went to 0/5 the moment a rule started reading the line.
-	if mark == "" || !strings.HasPrefix(heard, mark) {
+	if mark == "" {
 		return heard
 	}
-	return strings.TrimSpace(heard[len(mark):])
+	// Compared as words, because a recogniser rewrites what it has already
+	// given you: "a warm afternoon and I was walking" becomes "a warm
+	// afternoon. And I was walking" and back again between revisions of the
+	// same sentence. Compared as text, the mark stops being a prefix and every
+	// revision reads as a whole new utterance - so the line said all of this
+	// is new each time, the agent counted the same animal again, and an
+	// afternoon with two animals in it was counted to sixteen.
+	said, _ := spokenWords(mark)
+	nowSaid, nowWords := spokenWords(heard)
+	if len(said) == 0 || len(nowSaid) < len(said) {
+		return heard
+	}
+	for index := range said {
+		if said[index] != nowSaid[index] {
+			return heard
+		}
+	}
+	return strings.Join(nowWords[len(said):], " ")
+}
+
+// spokenWords splits text into the words somebody said, lowercased for
+// comparison and original for reading back.
+func spokenWords(text string) (compare, original []string) {
+	original = strings.FieldsFunc(text, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	compare = make([]string, len(original))
+	for index, word := range original {
+		compare[index] = strings.ToLower(word)
+	}
+	return compare, original
 }
 
 // markSpoken records how much had been heard when the agent last spoke.
