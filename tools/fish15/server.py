@@ -21,6 +21,11 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+# Before torch: the allocator reads this when it initialises CUDA, and the
+# whole point of the setting is fragmentation under varying shapes, which is
+# what a synthesiser serving utterances of every length produces.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import soundfile
 import torch
 import torchaudio
@@ -39,6 +44,21 @@ from fish_speech.models.vqgan.inference import load_model as load_decoder  # noq
 
 SAMPLE_RATE = 44_100
 AMPLITUDE = 32768
+
+# RESERVE_LIMIT is how much CUDA memory this process may hold before it gives
+# some back.
+#
+# The upstream server empties the caching allocator after every request, which
+# costs more than the synthesis: 375ms against 130ms of model time. Not
+# emptying it at all is worse in a way that takes hours to appear - measured,
+# this process grew from 3.7GB to 38GB over a few hundred utterances of varying
+# length, filled the GPU, and the failure surfaced as the recogniser returning
+# nothing while a scenario played eighteen seconds of a question nobody
+# answered. The allocator was fragmenting, not leaking.
+#
+# So the trim is kept and made rare: expandable segments handle the
+# fragmentation, and this is the backstop for whatever they do not.
+RESERVE_LIMIT = 8 << 30
 
 
 ENROLMENT = (
@@ -180,6 +200,15 @@ class Speech:
         with self.decode_lock:
             return self.decoder.encode(audio, lengths)[0][0]
 
+    def trim(self):
+        """Give memory back when this process is holding more than its share."""
+        if torch.cuda.memory_reserved() <= RESERVE_LIMIT:
+            return
+        reserved = torch.cuda.memory_reserved()
+        torch.cuda.empty_cache()
+        print(f"trimmed the allocator: {reserved / 1e9:.1f}GB reserved, "
+              f"{torch.cuda.memory_reserved() / 1e9:.1f}GB after", flush=True)
+
     def decode(self, codes):
         with self.decode_lock:
             lengths = torch.tensor([codes.shape[1]], device=codes.device, dtype=torch.long)
@@ -256,6 +285,7 @@ def handler_for(speech):
                 self.wfile.write(payload)
                 print(f'{(time.perf_counter() - started) * 1000:.0f} ms for '
                       f'"{text[:40]}" as {voice or "nobody in particular"}', flush=True)
+                speech.trim()
                 return
 
             self.send_response(200)
@@ -277,6 +307,7 @@ def handler_for(speech):
                 print(f"synthesis failed: {error}", file=sys.stderr, flush=True)
                 return
             print(f'first audio {first:.0f} ms for "{text[:48]}"', flush=True)
+            speech.trim()
 
         def write_chunk(self, payload):
             self.wfile.write(b"%x\r\n" % len(payload) + payload + b"\r\n")
