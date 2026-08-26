@@ -63,3 +63,32 @@ func indexOf(haystack, needle string) int {
 	}
 	return -1
 }
+
+// TestEachRunDialsItsOwnMenu is the regression for four failures that were
+// reported against the agent and belonged to the harness. The suite held one
+// live menu for every repeat, so the run that pressed 1 left the call in
+// billing and the next four were told that 2 - the right key - was not one of
+// the options.
+func TestEachRunDialsItsOwnMenu(t *testing.T) {
+	var phone *Scenario
+	for _, item := range Suite() {
+		if item.Menu != nil {
+			phone = &item
+			break
+		}
+	}
+	if phone == nil {
+		t.Fatal("no scenario in the suite brings a menu")
+	}
+	first := phone.Menu()
+	if _, moved := first.Press("1"); !moved {
+		t.Fatal("pressing 1 should reach billing from the main menu")
+	}
+	second := phone.Menu()
+	if second.Where() != "the main menu" {
+		t.Fatalf("the second run started at %q, so it inherited the first run's call", second.Where())
+	}
+	if presses := second.Presses(); presses != 0 {
+		t.Fatalf("the second run started with %d presses already counted", presses)
+	}
+}

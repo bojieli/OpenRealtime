@@ -73,7 +73,7 @@ func Suite() []Scenario {
 			// A menu that answers. Pressing two reaches order status and
 			// pressing anything else reaches somewhere with no way back, so
 			// hurrying costs what it costs on a real call.
-			Menu: OrderStatusMenu(),
+			Menu: OrderStatusMenu,
 			Script: []Line{
 				{Speaker: "user", AtMS: 0, Text: "Call them and find out where my order has got to."},
 				{Speaker: "other", AtMS: 7000, Text: "Thank you for calling. Press one for billing. Press two for order status. Press three for technical support. Press four to repeat these options."},

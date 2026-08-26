@@ -173,11 +173,19 @@ type Scenario struct {
 	// that fires with nobody talking cannot be scripted any other way.
 	Sees   []Sight
 	Checks []Check
-	// Menu is a world that answers, for a scenario where what happens next
+	// Menu builds a world that answers, for a scenario where what happens next
 	// depends on what the agent did. A phone menu is the case: pressing a key
 	// moves the call, and a fixed recording cannot tell an agent that pressed
 	// once from one that pressed six times.
-	Menu *Menu
+	//
+	// A constructor rather than a menu, because a scenario is a description
+	// and each run needs its own world. Held as a live menu it was built once
+	// for the whole suite and every repeat inherited where the last one left
+	// the call: one run pressed 1 and reached billing, and the four runs after
+	// it pressed 2 correctly and were told 2 was not one of the options,
+	// because they were already in billing and billing has no options. Four
+	// failures reported against the agent belonged to the harness.
+	Menu func() *Menu
 	// TrailingMS is quiet held after the last line, so that a scenario about
 	// staying silent has somewhere to be silent.
 	TrailingMS int
@@ -315,7 +323,10 @@ func Play(ctx context.Context, voice Voice, config bench.SessionConfig, item Sce
 	// A scenario is about when the agent acts, not about what the world
 	// answers, so a call succeeds with nothing in it - unless the scenario
 	// brought a world that answers, which is what a phone menu is.
-	menu := item.Menu
+	var menu *Menu
+	if item.Menu != nil {
+		menu = item.Menu()
+	}
 	config.Respond = func(name string, arguments json.RawMessage) (json.RawMessage, error) {
 		if menu != nil {
 			return menu.Respond(name, arguments)
@@ -335,16 +346,27 @@ func Play(ctx context.Context, voice Voice, config bench.SessionConfig, item Sce
 	if err != nil {
 		return Result{Scenario: item.Name, Transcript: transcript}, err
 	}
-	result := Score(item, timeline, transcript)
+	result := score(item, timeline, transcript, menu)
 	result.Latencies = latencies(item, timeline, transcript)
 	return result, nil
 }
 
 // Score applies a scenario's checks to what happened.
 func Score(item Scenario, timeline Timeline, transcript bench.Transcript) Result {
+	var menu *Menu
+	if item.Menu != nil {
+		menu = item.Menu()
+	}
+	return score(item, timeline, transcript, menu)
+}
+
+// score is Score against a menu that has already been played, which is the
+// only way the menu checks mean anything: Score building its own would score a
+// call nobody made.
+func score(item Scenario, timeline Timeline, transcript bench.Transcript, menu *Menu) Result {
 	result := Result{Scenario: item.Name, Transcript: transcript, Passed: true}
 	for _, check := range item.Checks {
-		if failure := apply(check, timeline, transcript, item.Menu); failure != "" {
+		if failure := apply(check, timeline, transcript, menu); failure != "" {
 			result.Passed = false
 			result.Failures = append(result.Failures, failure)
 		}
