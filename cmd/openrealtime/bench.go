@@ -20,6 +20,7 @@ import (
 	"github.com/bojieli/OpenRealtime/bench/fdb"
 	"github.com/bojieli/OpenRealtime/bench/fdbench"
 	"github.com/bojieli/OpenRealtime/bench/fdbv3"
+	"github.com/bojieli/OpenRealtime/bench/realtimecu"
 	"github.com/bojieli/OpenRealtime/bench/tauvoice"
 )
 
@@ -30,7 +31,7 @@ import (
 // users get is not a measurement of anything.
 func runBench(arguments []string, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: openrealtime bench <fdb|fdbv3|fdbench|tau-voice|dynacu> [flags]")
+		return errors.New("usage: openrealtime bench <realtime-cu|fdb|fdbv3|fdbench|tau-voice|dynacu> [flags]")
 	}
 	suite := strings.ToLower(strings.TrimSpace(arguments[0]))
 	switch suite {
@@ -42,11 +43,155 @@ func runBench(arguments []string, output io.Writer) error {
 		return runFDBv3(arguments[1:], output)
 	case "tau-voice", "tauvoice", "tau":
 		return runTauVoice(arguments[1:], output)
-	case "dynacu", "computer-use":
+	case "realtime-cu", "realtime-computer-use", "computer-use":
+		return runRealtimeCU(arguments[1:], output)
+	case "dynacu":
 		return runDynaCU(arguments[1:], output)
 	default:
 		return fmt.Errorf("unknown suite %q", suite)
 	}
+}
+
+// runRealtimeCU executes the repository-owned audiovisual computer-use suite.
+func runRealtimeCU(arguments []string, output io.Writer) error {
+	flags := flag.NewFlagSet("openrealtime bench realtime-cu", flag.ContinueOnError)
+	var (
+		endpoint   string
+		tokenEnv   string
+		model      string
+		out        string
+		browser    string
+		groundings string
+		categories string
+		limit      int
+		fps        int
+		timeout    time.Duration
+		cellName   string
+		varyFactor string
+		varyLevel  string
+		list       bool
+	)
+	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
+	flags.StringVar(&tokenEnv, "token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token")
+	flags.StringVar(&model, "model", "openrealtime", "model to request")
+	flags.StringVar(&out, "out", "", "write the result to this path as JSON")
+	flags.StringVar(&browser, "browser", "", "Chromium executable; empty discovers it")
+	flags.StringVar(&groundings, "grounding", "pixel,set_of_mark", "comma-separated grounding conditions")
+	flags.StringVar(&categories, "categories", "", "comma-separated task categories; empty runs all")
+	flags.IntVar(&limit, "limit", 0, "stop after this many cases; a limited run is incomplete")
+	flags.IntVar(&fps, "fps", 3, "screen and camera capture rate")
+	flags.DurationVar(&timeout, "task-timeout", 45*time.Second, "bound one browser task")
+	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
+	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F2")
+	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
+	flags.BoolVar(&list, "list", false, "list repository-owned tasks and stop")
+	flags.SetOutput(output)
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if list {
+		for _, task := range realtimecu.Suite() {
+			fmt.Fprintf(output, "%-30s %-18s %-6s %s\n", task.ID, task.Category, task.Difficulty, axes(task.Axes))
+		}
+		return nil
+	}
+	cell, err := resolveRealtimeCUCell(cellName, varyFactor, varyLevel)
+	if err != nil {
+		return err
+	}
+	var selectedGroundings []realtimecu.Grounding
+	for _, value := range strings.Split(groundings, ",") {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		grounding, err := realtimecu.ParseGrounding(value)
+		if err != nil {
+			return err
+		}
+		selectedGroundings = append(selectedGroundings, grounding)
+	}
+	var selectedCategories []string
+	for _, value := range strings.Split(categories, ",") {
+		if strings.TrimSpace(value) != "" {
+			selectedCategories = append(selectedCategories, strings.TrimSpace(value))
+		}
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	result, err := realtimecu.Run(ctx, realtimecu.Options{
+		Endpoint: endpoint, Token: os.Getenv(tokenEnv), Model: model,
+		Cell: cell, Browser: browser, Groundings: selectedGroundings,
+		Categories: selectedCategories, Limit: limit, FrameRate: fps, Timeout: timeout,
+		Progress: func(line string) { fmt.Fprintln(output, line) },
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(output)
+	fmt.Fprintf(output, "suite      : %s\n", result.Suite)
+	fmt.Fprintf(output, "cell       : %s\n", result.Cell.Describe())
+	fmt.Fprintf(output, "tasks      : %d completed, %d infrastructure failures, of %d expected\n",
+		result.Summary.Completed, result.Summary.Failed, result.Expected)
+	for _, grounding := range []realtimecu.Grounding{realtimecu.GroundingPixel, realtimecu.GroundingSetOfMark} {
+		reading, present := realtimecu.ByGrounding(result)[grounding]
+		if !present {
+			continue
+		}
+		fmt.Fprintf(output, "  %-12s correct %d/%d (%.1f%%), correct within deadline %d/%d (%.1f%%)\n",
+			grounding, reading.Correct, reading.Cases, reading.CorrectRate*100,
+			reading.Timely, reading.Cases, reading.TimelyRate*100)
+	}
+	for _, metric := range []string{
+		"cue_to_action_latency_ms", "frame_to_observation_latency_ms",
+		"cue_to_observation_latency_ms", "action_execution_ms",
+	} {
+		distribution, present := result.Summary.Distributions[metric]
+		if !present {
+			continue
+		}
+		fmt.Fprintf(output, "  %-32s n=%-3d p50 %-9s p95 %-9s max %s\n", metric,
+			distribution.Count, distribution.Format(distribution.P50),
+			distribution.Format(distribution.P95), distribution.Format(distribution.Max))
+	}
+	if reportErr := result.Reportable(); reportErr != nil {
+		fmt.Fprintf(output, "\nNOT REPORTABLE: %v\n", reportErr)
+	} else {
+		fmt.Fprintln(output, "\nreportable")
+	}
+	if strings.TrimSpace(out) != "" {
+		if err := result.Write(out); err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "written to %s\n", out)
+	}
+	return nil
+}
+
+func resolveRealtimeCUCell(name, factor, level string) (bench.Cell, error) {
+	reference := realtimecu.ReferenceCell()
+	if strings.TrimSpace(factor) == "" {
+		if strings.TrimSpace(name) != "" && name != "reference" {
+			reference.Name = name
+		}
+		return reference, nil
+	}
+	cell, err := bench.VaryFrom(reference, bench.Factor(strings.ToUpper(factor)), level)
+	if err != nil {
+		return bench.Cell{}, err
+	}
+	if strings.TrimSpace(name) != "" && name != "reference" {
+		cell.Name = name
+	}
+	return cell, nil
+}
+
+func axes(values []realtimecu.Axis) string {
+	parts := make([]string, len(values))
+	for index, value := range values {
+		parts[index] = string(value)
+	}
+	return strings.Join(parts, ",")
 }
 
 func runFDB(arguments []string, output io.Writer) error {
