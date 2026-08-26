@@ -56,12 +56,23 @@ func examples() []workedExample {
 			Heard: "add milk, and two tins of tomatoes",
 		}, ActSpeakThrough, "They asked for a running total and have just added items, and they are still going."},
 
+		// The pair a counting policy needs, and deliberately not about the
+		// animal in any scenario: one example with an animal in it and the
+		// answer "stay silent" teaches that the animal is the reason to wait.
 		{Situation{
-			Pins:    []string{"count the animals out loud as I mention them (40s ago)"},
-			Recent:  []string{"user: a capybara wandered over and sat", "agent: one"},
+			Pins:    []string{"count the birds out loud as I mention them (40s ago)"},
+			Recent:  []string{"user: I was down by the harbour"},
 			Speaker: "user", Speaking: true,
-			Heard: "a capybara wandered over and sat down next to me", HeardSince: "down next to me",
-		}, ActStaySilent, "Nothing makes acting necessary: the capybara was counted already, and what is new since is the rest of the same sentence with no animal in it."},
+			Heard:      "a cormorant was standing on the wall drying its",
+			HeardSince: "a cormorant was standing on the wall drying its",
+		}, ActSpeakThrough, "They asked to be counted at as they go, a bird has just been named, and they are still talking - so it is now, over them, and not when the sentence ends."},
+
+		{Situation{
+			Pins:    []string{"count the birds out loud as I mention them (40s ago)"},
+			Recent:  []string{"user: a cormorant was standing on the wall", "agent: one"},
+			Speaker: "user", Speaking: true,
+			Heard: "a cormorant was standing on the wall drying its wings", HeardSince: "drying its wings",
+		}, ActStaySilent, "Nothing makes acting necessary: the cormorant was counted already, and what is new since is the rest of the same sentence with no bird in it."},
 
 		{Situation{
 			Pins:    []string{"stop me if I quote a price under fifty (3m ago)"},
