@@ -702,17 +702,18 @@ there, which is extraction and not the decision.
 
 ### The full suite, including the production cases (F19)
 
-The suite had five scenarios and covered the demos and the phone menu. It had
-nothing for ordering from a waiter or for simultaneous speech, which are the
-two cases that came from somebody actually using this. With those and a
-backchannel case added, eight scenarios and twenty-one checks:
+The suite had five scenarios and covered part of the demos and the phone menu.
+It had nothing for ordering from a waiter, which came from somebody actually
+using this, and nothing for simultaneous speech, which is the interpreting
+demo. With those and a backchannel case added, eight scenarios and twenty-one
+checks:
 
 | scenario | passes | source |
 | --- | --- | --- |
 | a recorded menu | 2/2 | production: IVR navigation |
 | an acknowledgement is not an interruption | 2/2 | overlap |
 | an ordinary question | 2/2 | control |
-| translating as they speak | 2/2 | production: simultaneous speech |
+| translating as they speak | 2/2 | the interpreting demo |
 | asked not to be interrupted | 1/2 | a policy set out loud |
 | count as they go | 1/2 | the counting demo |
 | ordering from a waiter | 1/2 | production: the moment passes if you wait |
@@ -1189,3 +1190,31 @@ passes on identical code. Five runs is the floor for saying anything about one
 scenario, and the total is a range rather than a figure. Both of today's
 regressions - one measured, one reverted - were only visible because the pass
 was five runs wide.
+
+### Where each scenario comes from
+
+Recorded because it was got wrong once. Interpreting live is one of the demos,
+not a case that came from deployment, and the suite's own table said otherwise
+for a while.
+
+| scenario | source |
+| --- | --- |
+| count-as-they-go | demo: counting to a spoken policy |
+| cutting in on something wrong | demo: correcting mid-sentence |
+| translating as they speak | demo: interpreting live |
+| telling them what it saw | demo: acting on a screen |
+| waiting out a silence they asked for | demo: time awareness |
+| an acknowledgement is not an interruption | overlap, from the demos' four streams |
+| a recorded menu | production: IVR navigation |
+| ordering from a waiter | production: a third party whose moment passes |
+| somebody else's conversation | production: a room with other people in it |
+| asked not to be interrupted | a policy set out loud, either source |
+| an ordinary question | the control |
+
+The last two matter for reading the rest. **An ordinary question** is there
+because most of this suite asks for silence, and a system that had simply
+stopped talking would pass almost all of it. **Somebody else's conversation**
+is the complement of the waiter: one demands acting on a third party within
+seconds, the other demands ignoring one completely, and a system that always
+does either passes one and fails the other. Neither number means anything
+without its pair.
