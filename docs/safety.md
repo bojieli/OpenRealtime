@@ -18,10 +18,19 @@ carries proposal-only tool authority, so a call it emits is committed as a
 `tool_proposal`: a typed record of what capability it thought was needed, which
 no dispatcher will execute.
 
-Cascade can opt into `-fast-computer-use` for cue-sensitive visual action. That
-does not expose the session's general tool catalogue. It requires execution
-authority and a live filter, attaches tools only to committed-observation safe
-points, and admits only exact standard computer-use actions. A server action
+The recommended `voice+vision` profile can add an independent silent visual
+reflex for cue-sensitive action. It receives only the current task, newest
+image per source, and the live filtered action schemas, and must return one
+`act`, `wait`, or `abstain` decision. A 650 ms hard deadline and malformed
+output both become safe abstentions into the ordinary slow lane. Audio-only
+sessions do not instantiate the controller. The compatible
+`-fast-computer-use` flag remains available when a deployment intentionally
+uses its voice model for the same bounded job.
+
+Neither route exposes the session's general tool catalogue. Each requires
+execution authority and a live filter, attaches tools only at an eligible
+committed-observation safe point, and admits only exact standard computer-use
+actions. A server action
 must be backed by an in-process dispatcher. A client action must declare both a
 target and `confirm: never`; a client tool requiring policy or human
 confirmation stays outside the reflex lane. Names like `computer.exfiltrate`

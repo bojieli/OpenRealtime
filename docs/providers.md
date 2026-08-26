@@ -69,15 +69,16 @@ For a vision-capable reflex model, a hosted Gemini configuration is:
 
 ```sh
 openrealtime serve \
-  -computer-use -fast-computer-use \
-  -fast-provider google -fast-model gemini-3.5-flash -fast-sees \
-  -observers audio+video -observer-components keyframe \
+  -profile voice+vision -computer-use \
+  -visual-reflex-provider google \
+  -visual-reflex-model gemini-3.5-flash \
   -slow-provider google -slow-model gemini-3.5-flash -slow-sees
 ```
 
 The native Google continuation adapter accepts images and function tools. The
-fast phase requests minimal effort with thinking disabled; slow retains high
-effort and the shared trajectory. Model availability changes, so use
+reflex requests minimal effort with thinking disabled and cannot speak; slow
+retains high effort and the shared trajectory. The voice provider remains
+independently configurable. Model availability changes, so use
 `openrealtime providers -role fast -probe google` before a measured run rather
 than treating the example model name as permanent.
 
@@ -86,15 +87,15 @@ For a local VLM, point the existing `vllm`, `sglang`, or
 
 ```sh
 openrealtime serve \
-  -computer-use -fast-computer-use \
-  -fast-provider vllm -fast-url http://127.0.0.1:8000/v1 \
-  -fast-model your-vision-instruct-model -fast-sees \
-  -observers audio+video -observer-components keyframe \
+  -profile voice+vision -computer-use \
+  -visual-reflex-provider vllm \
+  -visual-reflex-url http://127.0.0.1:8004/v1 \
+  -visual-reflex-model your-vision-instruct-model \
   -slow-provider google -slow-sees
 ```
 
 The local server must support image content and function calling. Keep the
-model warm, disable its thinking mode for fast, and measure it rather than
+model warm, disable its thinking mode for the reflex, and measure it rather than
 assuming parameter count predicts reaction time. `keyframe` is the direct
 low-latency path; narration remains useful persistent trajectory text but adds
 another model call before a narration-only actor can ground a click.

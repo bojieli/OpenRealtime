@@ -54,6 +54,43 @@ export ANTHROPIC_API_KEY=...
 `./openrealtime providers` lists every provider for all three roles and shows
 which credentials are set. See [providers](providers.md).
 
+## Runtime profiles
+
+The default is the existing voice-only construction:
+
+```sh
+./openrealtime serve -profile voice
+```
+
+`voice` is an identity profile: it selects the same observers, voice and slow
+providers, prompts, policies, token limits, tools, and rollout as the legacy
+flags. A voice+vision deployment uses the same runtime and adds roles through
+configuration rather than a second implementation:
+
+```sh
+./openrealtime serve \
+  -profile voice+vision \
+  -computer-use \
+  -visual-reflex-provider vllm \
+  -visual-reflex-url http://127.0.0.1:8004/v1 \
+  -visual-reflex-model qwen-vl-fast-local \
+  -slow-provider google
+```
+
+Naming `-visual-reflex-model` enables the reflex and implies the voice+vision
+profile unless `-profile` was explicitly set. Its shipped bounds are 48 output
+tokens and 650 ms. It receives the latest user task, only the newest retained
+image per source, and only direct standard computer-action schemas. One call
+means `act`; `WAIT` waits for new visual evidence; `ABSTAIN`, malformed output,
+or timeout delegates to the unchanged fast/slow rollout. The reflex is silent
+and cannot replace the voice. Audio-only sessions do not instantiate it.
+
+With the reflex enabled, the profile defaults the video observer to
+`keyframe`: pixels reach the reflex without first waiting for a narration model.
+Explicit observer, model, policy, token, and timeout flags always win, so use
+`-observer-components keyframe+narration` when durable rich descriptions are
+worth that additional call.
+
 ## Check it works
 
 ```sh

@@ -131,7 +131,7 @@ that a continuation is generating and not that speech was enqueued. Synthesised
 audio takes real time to play, and a design that conflates the decision to
 speak with the user hearing it gets every overlap decision wrong.
 
-## The two cognition boundaries
+## Cognition roles and boundaries
 
 > **Fast is proposal-only by default and can execute only an explicitly
 > filtered bounded tool lane. Slow cannot speak.**
@@ -142,12 +142,23 @@ provider's emitted call becomes a `tool_proposal` — structured working state
 with no execution authority — and the dispatcher re-checks the trajectory
 before any effect, so a proposal cannot become an action however it is routed.
 
-The cascade binding has one explicit exception for visual reaction:
-`-fast-computer-use`. It is narrower than granting the fast model tools in
-general:
+The recommended voice+vision profile adds a separate silent visual reflex role.
+It is not a second runtime and does not replace Fast: all roles read and commit
+through the same trajectory and action boundary. The reflex receives a compact
+projection—the latest user task, the newest image observation per source, and
+only the exact direct action schemas selected by the live filter—and returns
+one `act`, `wait`, or `abstain` decision under a hard timeout. It cannot speak,
+iterate screenshots, sleep, or see arbitrary tools. Timeout and malformed
+output fall through to the ordinary rollout; the default voice profile does not
+instantiate it at all.
 
-- cognition attaches filtered tools only to a committed-observation turn (or
-  speculation that can be adopted only by that same observation), never a
+The older `-fast-computer-use` flag remains a compatible explicit exception
+for deployments that intentionally use the voice model for visual reaction.
+Both bounded lanes are narrower than granting a model tools in general:
+
+- cognition attaches filtered tools to the reflex only on a committed visual
+  observation; the compatible voice-model lane may also prepare work that can
+  be adopted only by the matching observation. Neither opens the lane for a
   holding line, interjection, or background-result narration;
 - only exact direct actions from the standard `computer.*` vocabulary qualify,
   not a name that merely shares the prefix; `computer.screenshot` and

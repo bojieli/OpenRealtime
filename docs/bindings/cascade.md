@@ -21,7 +21,8 @@ manufactured by the runtime.
 | Role | Default | Flags |
 | --- | --- | --- |
 | Recogniser | Qwen3-ASR | `-asr-url`, `-asr-model`, `-asr-cadence` |
-| Fast provider | a local OpenAI-compatible model | `-fast-url`, `-fast-model`, `-fast-max-tokens` |
+| Voice/fast provider | a local OpenAI-compatible model | `-fast-url`, `-fast-model`, `-fast-max-tokens` |
+| Visual reflex | disabled | `-visual-reflex-provider`, `-visual-reflex-model`, `-visual-reflex-timeout` |
 | Slow provider | Gemini | `-slow-provider`, `-slow-model`, `-slow-effort`, `-slow-max-tokens` |
 | Speech | an OpenAI-compatible endpoint | `-tts-url`, `-tts-model`, `-tts-voice` |
 
@@ -121,14 +122,23 @@ For cue-sensitive browser control, the cascade can open a bounded reflex lane:
 
 ```sh
 openrealtime serve \
-  -computer-use -fast-computer-use \
-  -fast-provider google -fast-sees \
-  -observers audio+video -observer-components keyframe
+  -profile voice+vision -computer-use \
+  -visual-reflex-provider vllm \
+  -visual-reflex-url http://127.0.0.1:8004/v1 \
+  -visual-reflex-model qwen-vl-fast-local
 ```
 
-This does not give the fast phase arbitrary tools. Only exact standard direct
-`computer.*` actions admitted by the live session filter are attached, and
-only on committed-observation turns. `computer.screenshot` and
+This is a separate model role; it does not change the fast voice provider or
+the slow reasoner. The reflex sees only the latest user task, newest image per
+source, and exact standard direct `computer.*` actions admitted by the live
+session filter. It produces exactly one of three typed outcomes:
+
+- `act`: exactly one offered tool call;
+- `wait`: no effect, awaiting newer visual evidence;
+- `abstain`: delegate to the ordinary fast/slow rollout.
+
+The default bound is 48 output tokens and a 650 ms hard deadline. Malformed
+output and timeout are safe abstentions. `computer.screenshot` and
 `computer.wait` remain slow-only observation control. Server-owned actions run
 through the declared browser target; client-owned computer environments must
 declare a target and `confirm: never` to enter the reflex lane. Every call
@@ -136,16 +146,22 @@ still crosses trajectory authority, confirmation, the action ledger, and
 audit. Slow remains active for planning and consumes fast action results from
 the shared trajectory.
 
-`keyframe` is the direct visual route for a vision-capable fast model.
+`keyframe` is the direct visual route for the reflex and is selected by the
+profile unless the operator explicitly chooses another component set.
 Narration is useful persistent context, but a narration-only reflex waits for
 the narrator and often lacks exact pixel coordinates; set-of-mark grounding is
 the robust browser alternative when coordinate-producing vision is weak.
 
+`-fast-computer-use` remains compatible for deployments that intentionally use
+the voice model for bounded actions. The independent visual role is preferred:
+model choice and timeout can change without touching voice-only behavior.
+
 ## Resource guidance
 
-A cascade session holds one recogniser stream, one fast continuation, one slow
-continuation, and one synthesis stream at a time. On a single GPU, the
-recogniser and the fast model are the components that must stay warm; the slow
+A voice cascade session holds one recogniser stream, one fast continuation,
+one slow continuation, and one synthesis stream at a time. A voice+vision
+session may additionally hold the optional reflex model. On a single GPU, the
+recogniser, voice, and reflex are the components that must stay warm; the slow
 model is where a hosted provider makes the most sense.
 
 Everything competes for capacity under one admission governor, with three

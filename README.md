@@ -55,7 +55,7 @@ Action      →  pace commitments back out into the world
 Interaction →  decide when each of those happens
 ```
 
-Two boundaries define the division of labour between the models:
+Two boundaries define the division of labour between the conversational models:
 
 > **Fast is proposal-only by default and may execute only an explicit bounded
 > computer-action lane. Slow cannot speak.**
@@ -68,6 +68,13 @@ only exact direct standard `computer.*` definitions admitted by a live filter;
 screenshot and wait remain slow-only observation control. Every other call is
 committed as a non-executable proposal. Confirmation, the target fence, the
 irreversible-action ledger, and audit still run at the point of effect.
+
+For voice+vision deployments, the recommended profile keeps that voice path
+unchanged and adds a separate silent visual reflex model. It sees only the
+current task, the newest image per source, and the exact bounded action schemas;
+it returns one typed `act`, `wait`, or `abstain` decision under a hard deadline.
+Abstention, malformed output, and timeout fall through to the existing slow
+reasoner. The default `voice` profile does not construct this controller.
 
 ## Bindings
 
@@ -92,8 +99,8 @@ so. See [transports](docs/transports.md).
 
 ## Safety
 
-- Fast calls are structurally non-executable by default. The opt-in reflex lane
-  exposes only exact bounded computer actions on committed observation turns;
+- Fast calls are structurally non-executable by default. The opt-in visual
+  reflex role exposes only exact bounded computer actions on current visual turns;
   arbitrary and confirmation-requiring client tools stay out of it.
 - Confirmation is a developer's declaration per tool, never an inference, and
   an unattended deployment refuses what it cannot get authorised.
