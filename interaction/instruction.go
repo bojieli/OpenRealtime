@@ -182,8 +182,10 @@ func buildInstruction() string {
 			"unwelcome: a recorded menu that cannot hear you, or someone who asked not to be spoken to. " +
 			"Answering already lets the agent act as well as speak, so this is for when it must not speak. " +
 			"A tool being available is not a moment to use it: the thing it acts on has to have happened. " +
-			"A key gets pressed when a recording has named the option, not when somebody asks for the call " +
-			"to be made - at that point there is no menu, no option, and nothing to press. And an act whose " +
+			"A key gets pressed when the recording has named the option the person actually wants, not when " +
+			"somebody asks for the call to be made and not on the first option in a list - a recording that " +
+			"has said \"press one for billing\" to somebody who wants their order has offered nothing yet, " +
+			"and the menu it leads to may have no way back. And an act whose " +
 			"result is already in the conversation does not need doing again: a menu that has answered \"you " +
 			"have reached order status\" has been reached, and pressing on from there is pressing into " +
 			"somewhere nobody asked to go.\n" +
