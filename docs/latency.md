@@ -163,3 +163,78 @@ Read the tails with the restraint in mind. A trigger the agent correctly stays
 silent for is still a trigger, and its wait runs until the agent next speaks
 for any reason, so the scenarios whose whole point is silence carry the longest
 p90s. Counting's 6.2s p90 is the pause it was right not to fill.
+
+## Where the time actually goes (F31)
+
+A third of the visual path was unaccounted for after every component had been
+measured on its own. Components measured apart do not add up to a path, so the
+runtime now times its own stages.
+
+One ordinary question, end to end, measured at 1951ms to first audio:
+
+| stage | cost | where |
+| --- | --- | --- |
+| the gate waiting out the endpoint silence | ~500ms | local, by design |
+| the voice: Gemini 3.5 Flash, first token | 674ms | cloud |
+| the voice: whole answer | 807ms | cloud |
+| the synthesiser: first byte | 289-911ms | local :8081 |
+| the interaction decision | 21-34ms | local |
+| everything else | ~150-300ms | local |
+
+Two things this settles.
+
+**The frame is not what makes the visual path slow.** An image costs the voice
+300-525ms of extra prefill (525 on 3.5 Flash, 304 on 3.6 - the newer model is
+faster with vision and slower on text), and it costs the decision nothing at
+all: 21ms with a frame against 23ms without, on a model that reads it correctly
+- shown a running build it says "41% complete", shown a finished one "all 214
+tests passed". Putting the picture in the decision is free.
+
+**The synthesiser is a bigger cost than the model that decides what to say, by
+a factor of thirty.** It had never been measured.
+
+### The synthesiser reads the whole text before it emits anything
+
+With streaming on and PCM out, the wait for the first byte is a function of the
+text handed over:
+
+| what it was given | first byte |
+| --- | --- |
+| one word | 289ms |
+| a short clause | 607ms |
+| one sentence | 911ms |
+| two sentences | 977ms |
+
+That is not what streaming is meant to mean. Whatever the engine does over the
+text - prosody, prefill, choosing a length - it does over all of it before the
+first sample comes out.
+
+Handing it the first sentence on its own is worth the difference between those
+rows, and costs nothing but a second request. It is in, behind
+`-speak-by-sentence`, and it saved 20ms on the control scenario - because
+"The capital of France is Paris" is one sentence and there was nothing to
+split. It will pay on multi-sentence answers and it does not touch the case
+that needed it most.
+
+**The honest state: the largest remaining cost in the system is a local
+synthesiser taking 900ms to begin a sentence, and the fix for that is in the
+engine or the model rather than in the caller.** Splitting further - at commas,
+to get the first piece down to the 289ms row - would trade the wait for a risk
+of gaps inside a breath, and a gap sounds like a fault where a wait sounds like
+thinking. That is a change worth making only with something listening to the
+result.
+
+### Streaming the voice into the synthesiser is not worth it
+
+The obvious next idea is to start synthesising the first sentence while the
+voice is still writing the rest. Measured, it is not worth the architecture:
+
+| | |
+| --- | --- |
+| first token | 674ms |
+| first complete sentence | 752ms |
+| whole answer | 807ms |
+
+Fifty-five milliseconds between the first sentence and the last. The voice is
+dominated by time-to-first-token, which is a round trip, and overlapping
+generation with synthesis buys almost nothing.
