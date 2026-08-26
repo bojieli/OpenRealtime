@@ -714,13 +714,13 @@ func buildCascade(
 	if err != nil {
 		return nil, fmt.Errorf("configure the recogniser: %w", err)
 	}
-	var listener *voices.Recogniser
+	var listener voices.Embedder
 	if endpoint := strings.TrimSpace(options.speakerURL); endpoint != "" {
 		embedder, err := speakerid.New(speakerid.Config{Endpoint: endpoint})
 		if err != nil {
 			return nil, fmt.Errorf("configure the speaker embedding: %w", err)
 		}
-		listener = voices.New(embedder, voices.DefaultThreshold, voices.DefaultMinimum)
+		listener = embedder
 	}
 	return cascade.New(cascade.Config{
 		Profile:           options.profile,

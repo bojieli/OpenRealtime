@@ -106,3 +106,25 @@ func TestNoEmbedderMeansNothingIsKnown(t *testing.T) {
 		t.Fatalf("with nobody to ask the verdict was %q", got)
 	}
 }
+
+// TestEachSessionLearnsItsOwnVoice is the regression for a suite that got
+// worse the longer it ran. The recogniser was built once for the process, so
+// the first speaker of the first scenario became the person every later
+// session was supposedly with, and every user after that was reported as a
+// stranger. An isolated run of the same scenario passed, because it was first.
+func TestEachSessionLearnsItsOwnVoice(t *testing.T) {
+	embedder := &scripted{vectors: [][]float32{{1, 0, 0}, {0, 1, 0}}}
+	first := voices.New(embedder, voices.DefaultThreshold, time.Second)
+	first.Begin("item-1")
+	first.Hear(context.Background(), second())
+	settle(t, first, voices.Familiar)
+
+	// A second conversation, with somebody else. They are not a stranger in
+	// their own session.
+	next := voices.New(embedder, voices.DefaultThreshold, time.Second)
+	next.Begin("item-1")
+	next.Hear(context.Background(), second())
+	if got := settle(t, next, voices.Familiar); got != voices.Familiar {
+		t.Fatalf("the second session's own user was reported as %q", got)
+	}
+}

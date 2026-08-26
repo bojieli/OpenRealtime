@@ -182,7 +182,9 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		prepared: newPreparations(),
 		window:   &interaction.Window{},
 		pinboard: &interaction.Pinboard{},
-		voices:   bind.config.Voices,
+		// One per session: the first voice of this conversation is the person
+		// this conversation is with, and that is not a fact about the process.
+		voices: voices.New(bind.config.Voices, voices.DefaultThreshold, voices.DefaultMinimum),
 	}
 	tracker, err := clientcalls.New(clientcalls.Config{
 		Timeout: bind.config.ClientToolTimeout, Scheduler: scheduler,

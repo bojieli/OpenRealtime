@@ -130,10 +130,16 @@ type Config struct {
 	// FrameDuration is the paced wire frame size.
 	FrameDuration time.Duration
 
-	// Voices tells the person the session is with from another voice in the
-	// room. Nil leaves the prior in place, which is that whoever is talking is
-	// the person whose session this is.
-	Voices *voices.Recogniser
+	// Voices answers who is speaking, so a voice that is not the person the
+	// session is with is not reported as the user. Nil leaves that prior in
+	// place.
+	//
+	// The embedder rather than the recogniser: a recogniser learns whose
+	// session it is from the first voice it hears, and one shared by every
+	// session learns it once. Held that way it enrolled the first speaker of
+	// the first scenario in a suite and reported every user after that as a
+	// stranger - which the agent then correctly declined to answer.
+	Voices voices.Embedder
 	// Policies is the interaction policy set. A zero value selects the
 	// shipped defaults.
 	Policies          interaction.Policies
