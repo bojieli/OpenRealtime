@@ -430,11 +430,23 @@ func apply(check Check, timeline Timeline, transcript bench.Transcript, menu *Me
 	// A latency is measured from the moment the trigger stopped, not from the
 	// moment it started: what a person waits through is the silence after
 	// somebody finishes talking.
+	//
+	// Unless the answer is an act rather than speech. A key is pressed while
+	// the recording is still reading the options - that is the whole of what
+	// this scenario is about, and the note on the check says so - so measuring
+	// the wait from the end asks the agent to wait for the one thing it is
+	// being told not to wait for. Measured, the agent pressed 2 at 14.1
+	// seconds, reached order status, and the check reported that it never
+	// answered, because the line it was answering ran until 17.9.
 	if check.Kind == CheckAnsweredWithin {
 		if check.Sight > 0 && check.Sight <= len(timeline.Sights) {
 			from = timeline.Sights[check.Sight-1]
 		} else if check.Line >= 0 && check.Line < len(timeline.Spans) {
-			from = timeline.Spans[check.Line].EndMS
+			span := timeline.Spans[check.Line]
+			from = span.EndMS
+			if check.Tool != "" {
+				from = span.StartMS
+			}
 		}
 	}
 	where := fmt.Sprintf("%d-%dms", from, to)
@@ -464,15 +476,23 @@ func apply(check Check, timeline Timeline, transcript bench.Transcript, menu *Me
 		// moves on, and a key pressed after it has is pressed into the next
 		// option" - and the key is what gets measured.
 		wait, ok := transcript.FirstAudioAfter(float64(from))
+		// The deadline is still "not later than AfterMS past the trigger
+		// ending". Measuring from the start moves where the clock starts, not
+		// when the agent is late.
+		deadline := float64(check.AfterMS)
 		if check.Tool != "" {
 			wait, ok = transcript.FirstToolCallAfter(check.Tool, float64(from))
+			if check.Line >= 0 && check.Line < len(timeline.Spans) {
+				span := timeline.Spans[check.Line]
+				deadline += float64(span.EndMS - span.StartMS)
+			}
 		}
 		if !ok {
 			return fmt.Sprintf("never answered after %dms (%s)", from, check.Note)
 		}
-		if wait > float64(check.AfterMS) {
-			return fmt.Sprintf("answered %.0fms after %dms, later than %dms (%s)",
-				wait, from, check.AfterMS, check.Note)
+		if wait > deadline {
+			return fmt.Sprintf("answered %.0fms after %dms, later than %.0fms (%s)",
+				wait, from, deadline, check.Note)
 		}
 	case CheckReachedMenu:
 		if menu == nil {
