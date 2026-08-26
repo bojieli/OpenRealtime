@@ -260,6 +260,21 @@ type Timeline struct {
 // part of what is under test rather than something the harness should do for
 // it. A line that runs longer than its slot simply overlaps the next one,
 // which is also what happens in a room.
+// breathMS is the least quiet between two lines from the same speaker.
+//
+// Long enough that the endpoint gate closes between them at any setting a
+// deployment would use, and short enough to still be a breath rather than a
+// pause somebody would read as the end of the conversation.
+const breathMS = 600
+
+// speakerOf names whoever says a line, the empty speaker being the user.
+func speakerOf(line Line) string {
+	if line.Speaker == "" {
+		return "user"
+	}
+	return line.Speaker
+}
+
 func Compose(ctx context.Context, voice Voice, item Scenario) (Timeline, error) {
 	const rate = 24_000
 	total := item.TrailingMS
@@ -270,16 +285,30 @@ func Compose(ctx context.Context, voice Voice, item Scenario) (Timeline, error) 
 	}
 	spoken := make([][]int16, len(item.Script))
 	spans := make([]Span, len(item.Script))
+	// Where each speaker's last line finished. Two people talking at once is
+	// the point of several of these scenarios, and two lines out of one mouth
+	// at once is not a thing that happens.
+	finished := make(map[string]int, len(item.Script))
 	for index, line := range item.Script {
 		samples, err := voice.Speak(ctx, line.Speaker, line.Text)
 		if err != nil {
 			return Timeline{}, fmt.Errorf("synthesise %q: %w", line.Text, err)
 		}
 		spoken[index] = samples
-		end := line.AtMS + len(samples)*1000/rate
-		spans[index] = Span{StartMS: line.AtMS, EndMS: end}
-		if end > total {
-			total = end
+		start := line.AtMS
+		// A script says when a line starts, against durations the author heard
+		// from whatever synthesiser was in use that day. A slower one runs the
+		// lines together, and a story told in three sentences eight seconds
+		// apart becomes one utterance twenty-seven seconds long that never
+		// reaches an endpoint - measured, the agent heard the first sentence
+		// and nothing after it for the rest of the scenario.
+		if end, spoken := finished[speakerOf(line)]; spoken && end+breathMS > start {
+			start = end + breathMS
+		}
+		spans[index] = Span{StartMS: start, EndMS: start + len(samples)*1000/rate}
+		finished[speakerOf(line)] = spans[index].EndMS
+		if spans[index].EndMS > total {
+			total = spans[index].EndMS
 		}
 	}
 	if item.TrailingMS > 0 {
@@ -287,7 +316,7 @@ func Compose(ctx context.Context, voice Voice, item Scenario) (Timeline, error) 
 	}
 	mixed := make([]int16, total*rate/1000)
 	for index, samples := range spoken {
-		offset := item.Script[index].AtMS * rate / 1000
+		offset := spans[index].StartMS * rate / 1000
 		for position, sample := range samples {
 			if offset+position >= len(mixed) {
 				break
