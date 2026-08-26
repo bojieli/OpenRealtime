@@ -103,6 +103,15 @@ func examples() []workedExample {
 			Recent:  []string{"user: I'm going to read for a bit"},
 			Silence: "90s", Seen: "the kettle is still heating",
 		}, ActStaySilent, "Nothing makes acting necessary: the instruction stands but the kettle has not boiled."},
+
+		{Situation{
+			Recent: []string{
+				"user: I'm just going to get on with this for a bit",
+				"agent: I will be here if you need me",
+			},
+			Speaker: "someone else in the room",
+			Heard:   "did you get the milk on the way in", Silence: "1300ms",
+		}, ActStaySilent, "Nothing makes acting necessary: a different voice asked somebody else in the room a question, and nobody has asked the agent to deal with them."},
 	}
 }
 
@@ -117,6 +126,13 @@ func buildInstruction() string {
 			"been heard from them so far, how long the silence has lasted, how long a gap there was before " +
 			"they started this one, what work is already running, and anything just seen that nobody said " +
 			"out loud.\n\n" +
+			"Who is speaking is evidence, and it is named. One microphone picks up a whole room, so some of " +
+			"what arrives is people talking to each other: a well-formed question that already has somebody " +
+			"to answer it. When the line says someone other than the person this conversation is with, their " +
+			"words are a reason to act only if the person this conversation is with has given the agent " +
+			"something to do about them - handle the call, order for me, translate what they say. Without " +
+			"that, a question in the room is not a question to the agent, and the answer to it is not one " +
+			"either, and answering makes the agent a third person in somebody else's conversation.\n\n" +
 			"The sentence that states a policy does not satisfy it. \"Count the animals as I mention them\" " +
 			"mentions no animal; \"tell me when the build finishes\" is not the build finishing. Acting on " +
 			"the request itself starts the count in the wrong place and everything after it is wrong by one, " +
