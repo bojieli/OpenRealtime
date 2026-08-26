@@ -102,8 +102,22 @@ const (
 		// spoken out loud, because every character here is. Told how to say
 		// nothing, it said nothing six times out of six, and still counted the
 		// animal six times out of six when there was one.
-		"When they ask for nothing here, the answer is nothing: reply with an empty message. Not a word about listening, not a note that you are waiting, and never a stage direction like \"(silence)\" - every character you write is spoken out loud, so a description of saying nothing gets said instead of nothing.\n\nThe policies:"
+		"When they ask for nothing at this moment, reply with exactly " + WaitToken + " and nothing else. That is how you say nothing: it is not spoken, and it is the one way to be silent and still have answered. Never write a description of silence like \"(silence)\", and never fill the turn with a note that you are listening - every other character you write is spoken out loud.\n\nThe policies:"
 
+	// WaitToken is how the voice says nothing.
+	//
+	// An empty answer works and is indistinguishable from a broken one, which
+	// is the ambiguity that cost the most time in this whole effort: an
+	// interjection that returned "" read exactly like a turn that was never
+	// asked, and I spent hours reading absence as evidence. A sentinel
+	// separates a decision to be silent from a failure to answer, so the first
+	// can be recorded as what it is and the second stays an anomaly worth
+	// looking at.
+	//
+	// Measured: told to use it, the voice answered with it six times out of
+	// six where a policy asked for nothing, and still counted the animal six
+	// out of six where one was mentioned.
+	WaitToken = "<wait>"
 	// HeardInstruction introduces the utterance in progress.
 	//
 	// It is the sentence that caused this turn, and it is not in the

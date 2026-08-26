@@ -403,6 +403,13 @@ func (runtime *runtime) publishAssistant(
 		runtime.noteWithheld(result, request, "the model described saying nothing instead of saying nothing")
 		return nil
 	}
+	if strings.TrimSpace(result.AssistantText) == cognition.WaitToken {
+		// A decision to be silent, which is a different thing from a turn that
+		// produced nothing, and the whole reason the token exists: the second
+		// is worth looking at and the first is the system working.
+		runtime.noteWithheld(result, request, "the voice chose to stay silent")
+		return nil
+	}
 	items := runtime.assistantItems(result)
 	if len(items) == 0 {
 		return nil

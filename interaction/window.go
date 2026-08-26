@@ -118,6 +118,13 @@ func windowLine(item trajectory.Item) string {
 		}
 		return SpeakerOf(item) + ": " + text
 	case trajectory.KindAssistant:
+		if text == WaitToken {
+			// The voice choosing to be silent is a decision, not a line of
+			// conversation. Rendered as one it teaches the next turn that the
+			// agent says "<wait>" out loud, which is exactly the confusion the
+			// token exists to remove.
+			return ""
+		}
 		return "agent: " + text
 	default:
 		return ""
@@ -143,6 +150,11 @@ func RecentLines(items []trajectory.Item, max int) []string {
 	}
 	return lines
 }
+
+// WaitToken is how the voice says nothing. It is duplicated from cognition
+// rather than imported, because interaction must not depend on the layer that
+// produces the content it governs - the third authority rule in ADR-0009.
+const WaitToken = "<wait>"
 
 // SpeakerOf names whoever produced an observation.
 //
