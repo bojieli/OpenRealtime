@@ -480,8 +480,14 @@ func (runtime *runtime) heardSinceSpeaking(heard string) string {
 	runtime.audioMu.Lock()
 	mark := runtime.heardWhenSpoke
 	runtime.audioMu.Unlock()
+	// The agent has not spoken yet, or it last spoke before a different
+	// utterance began. Either way none of this has been answered, so all of it
+	// is new. Returning nothing here said the opposite: it collapsed "the
+	// agent has never spoken" into "nothing has been said since it did", and
+	// the control scenario - a finished question with nothing standing in the
+	// way - went to 0/5 the moment a rule started reading the line.
 	if mark == "" || !strings.HasPrefix(heard, mark) {
-		return ""
+		return heard
 	}
 	return strings.TrimSpace(heard[len(mark):])
 }
