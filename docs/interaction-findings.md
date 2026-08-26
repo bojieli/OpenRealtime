@@ -332,3 +332,38 @@ saying so is more useful than a score: the gap is in perception, before the
 decision is ever taken. It is also the strongest argument yet for putting audio
 into the model directly - voice identity is in the waveform, and an
 ASR-to-text pipeline throws it away before anything can reason about it.
+
+## The audio path answers the question the cascade cannot ask
+
+Two people in a room discussing the shopping is the one scenario no decision
+model can pass through the cascade, and the reason is structural rather than a
+matter of quality: a single undiarised microphone reaches the recogniser, the
+recogniser emits text, and by the time any decision is taken the fact that a
+different person said it has been discarded. The decision layer is told the
+user asked about the milk, and answers - correctly, given what it was told.
+
+Voice identity is in the waveform. So the question is whether a model that
+hears the waveform can do what a model reading the transcript cannot.
+
+The same twelve seconds, synthesised with the harness's own two voices, handed
+to Gemini 3.5 Flash as audio with the agent's contract and the seven acts:
+
+| what the clip contains | what it chose |
+| --- | --- |
+| the user speaks, then a **different voice** asks about the milk | `listen` x5 |
+| the user speaks, then **the same voice** asks the agent to look something up | `answer` x5 |
+
+Five out of five each way, and the control matters more than the result: a
+model biased towards silence would pass the first row and fail the second, and
+this one does not. It is hearing who spoke.
+
+It costs 1145ms on 3.5 Flash and 1463ms on 3.6 for twelve seconds of audio,
+against 21-34ms for the local text decision - so this is not a replacement for
+the decision taken several times a second. What it is, is proof that the
+information the cascade throws away is recoverable, and that a scenario filed
+as "not passable by any decision model" is only unpassable on one of the two
+paths this project maintains.
+
+Which is the argument for the omni path in one measurement: the cascade's
+recogniser is not a neutral component that turns sound into text, it is a lossy
+one that decides what the rest of the system is allowed to know.
