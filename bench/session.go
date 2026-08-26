@@ -604,6 +604,19 @@ func (recorder *recorder) collect(
 			}
 		case event, open := <-client.Events():
 			if !open {
+				// The stream ended. If the audio is still playing, this run
+				// measured nothing: whatever the agent would have done for the
+				// rest of the scenario never had a chance to happen, and every
+				// check about staying silent passes by default. Measured, six
+				// runs in one suite ended between one and eight seconds into a
+				// thirty-five second scenario and three of them were scored as
+				// passes.
+				recorder.mu.Lock()
+				truncated := recorder.playbackFinishedAt.IsZero()
+				if truncated && recorder.failure == "" {
+					recorder.failure = "the session stream ended while the scenario was still playing"
+				}
+				recorder.mu.Unlock()
 				return recorder.snapshot()
 			}
 			lastEvent = time.Now()
