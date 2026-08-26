@@ -29,7 +29,7 @@ func (runtime *runtime) situation(decision interaction.Context) interaction.Situ
 		Pins:          runtime.pinboard.Lines(decision.NowNS),
 		Recent:        runtime.window.Lines(snapshot.Items),
 		AgentSpeaking: decision.Duplex.AgentSpeaking,
-		Speaker:       "user",
+		Speaker:       runtime.speakerNow(snapshot),
 		Speaking:      decision.Duplex.UserSpeaking,
 		Heard:         strings.TrimSpace(decision.Revision.Text()),
 		HeardSince:    runtime.heardSinceSpeaking(strings.TrimSpace(decision.Revision.Text())),
@@ -564,4 +564,30 @@ func (runtime *runtime) lastFrame(snapshot trajectory.Snapshot) []interaction.Im
 		return frames
 	}
 	return nil
+}
+
+// speakerNow names whoever the runtime believes is talking.
+//
+// It was the constant "user", which is a false statement rather than a
+// simplification: every voice that reached the microphone was reported to the
+// decision layer as the person the agent is working for. Measured on two
+// people discussing the milk in a room, the situation read "heard from user so
+// far: did you get the milk on the way in" and the agent answered them,
+// inventing having added it to a list. No model would do otherwise.
+//
+// The answer comes from the observation's own source, so a deployment that
+// separates channels - a phone line's far end, a second microphone, a
+// recogniser that reports who spoke - is described correctly without anything
+// here changing. One undiarised microphone still calls everybody in the room
+// the user, which is the honest reading of what it knows.
+func (runtime *runtime) speakerNow(snapshot trajectory.Snapshot) string {
+	for index := len(snapshot.Items) - 1; index >= 0; index-- {
+		item := snapshot.Items[index]
+		if item.Kind != trajectory.KindObservation ||
+			trajectory.AuthorityOf(item) != trajectory.AuthorityUser {
+			continue
+		}
+		return interaction.SpeakerOf(item)
+	}
+	return "user"
 }

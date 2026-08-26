@@ -280,3 +280,55 @@ number.
 Both sat behind the same 40k context and the same guided decoding. The 8B needs
 16GB of weights against the 30B's FP8 footprint, so on a single card the choice
 also costs nothing in memory that matters.
+
+## Everybody in the room was called the user
+
+The decision layer's situation carries a `Speaker` field, and for the whole of
+this work one line set it:
+
+```go
+Speaker: "user",
+```
+
+Every voice that reached the microphone was reported to the model as the person
+the agent works for. The conversation window did the same, prefixing every
+observation with `user:`.
+
+That is a false statement, not a simplification, and it is worth separating the
+two. Reading back what the model was actually handed when it answered two
+people discussing the shopping:
+
+```
+Recent conversation:
+user: I'm just going to get on with this for a bit.
+agent: Sounds good. I'll be right here if you need anything.
+
+Now:
+heard from user so far: "Did you get the milk on the way in, I looked in the
+                         fridge, and there wasn't any."
+```
+
+It answered, and invented having added milk to a list. **No model would do
+otherwise.** It was told the user asked it a question. This had been filed as
+the decision model being over-eager, and a whole model comparison was read
+through it.
+
+Four of eleven scenarios have a third party in them and all four were affected.
+Two pass anyway, because acting is the right answer there and being wrong about
+who is speaking does not change the act: a waiter naming the dish, a colleague
+speaking Mandarin. Two do not: a recorded phone menu, reported as the user
+reciting menu options, and two people in a room, reported as the user asking
+for the shopping.
+
+The label now comes from the observation's own source, which is what the
+runtime actually knows. A deployment that separates channels - a phone line's
+far end, a second microphone, a recogniser that reports who spoke - is
+described correctly with nothing further to change.
+
+**One undiarised microphone still calls everybody in the room the user**, and
+that is the honest reading of what it knows rather than a claim. Which means
+the side-speech scenario is not passable today by any decision model, and
+saying so is more useful than a score: the gap is in perception, before the
+decision is ever taken. It is also the strongest argument yet for putting audio
+into the model directly - voice identity is in the waveform, and an
+ASR-to-text pipeline throws it away before anything can reason about it.

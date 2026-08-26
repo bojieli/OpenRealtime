@@ -116,7 +116,7 @@ func windowLine(item trajectory.Item) string {
 		if trajectory.AuthorityOf(item) == trajectory.AuthorityObserver {
 			return "seen: " + text
 		}
-		return "user: " + text
+		return SpeakerOf(item) + ": " + text
 	case trajectory.KindAssistant:
 		return "agent: " + text
 	default:
@@ -142,4 +142,30 @@ func RecentLines(items []trajectory.Item, max int) []string {
 		}
 	}
 	return lines
+}
+
+// SpeakerOf names whoever produced an observation.
+//
+// Everything that reaches a microphone used to be labelled "user", and that is
+// not a simplification, it is a false statement about who said something.
+// Measured: two people in a room discussing the milk were reported to the
+// decision layer as the user asking the agent about milk, and it answered -
+// inventing having added it to a list. Read the situation back and no model
+// would do otherwise, because it was told the user asked.
+//
+// The label is the observation's own source, which is what the runtime
+// actually knows. A deployment that separates channels - a phone line's far
+// end, a second microphone, a recogniser that says who spoke - gets the truth
+// here for free. One undiarised microphone still says "user" for everybody in
+// the room, and that is a limit of the perception rather than a claim.
+func SpeakerOf(item trajectory.Item) string {
+	if item.Observation == nil {
+		return "user"
+	}
+	switch source := strings.TrimSpace(item.Observation.Source); source {
+	case "", "microphone", "voice", "text":
+		return "user"
+	default:
+		return source
+	}
 }
