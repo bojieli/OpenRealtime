@@ -1260,3 +1260,54 @@ score. What it is not yet good for is comparing two systems that are close,
 and no amount of care in reading a single number fixes that. That needs more
 passes per model than a night has room for, or scenarios whose outcome does not
 turn on a recogniser hearing "build" rather than "bill".
+
+### Eleven scenarios, everything in (F32)
+
+39 of 55. Six of the eleven pass every run: asked not to be interrupted,
+cutting in on something wrong, ordering from a waiter, waiting out a silence
+they asked for, an acknowledgement is not an interruption, an ordinary
+question.
+
+What the remaining five say, read from their traces rather than their scores.
+
+**telling them what it saw, 1/5.** It was 5/5 an hour earlier, and the drop is
+a check I added rather than a regression. The trace is why:
+
+```
+ 4301  I will let you know as soon as the build finishes.
+ 7935  The build has finished.
+19087  Actually, correction: the build is still running.
+```
+
+It announces the finish at 7.9 seconds, looking at a frame that says 41%, and
+corrects itself eleven seconds later. Every other check here asks whether it
+said the right thing near the right moment; none of them asked whether it knew.
+A model that can see is not thereby a model that looks.
+
+**count-as-they-go, 3/5.** Still speaking where nothing was asked: "I'm
+listening. Tell me about your afternoon." on a line with no animal in it. The
+wait token did not fire once in the whole pass, and the instruction carrying it
+is only attached when a policy is already in force - so the next question is
+whether the policy is pinned by then, not whether the voice ignored a rule it
+had.
+
+**a recorded menu, 1/5.** The state machine works: the call reaches order
+status, so the key is right. It takes 5.6 seconds to press it, because a silent
+act runs through the reasoner - the only phase with executable authority - and
+a reasoner deliberating over a full trajectory is not a reflex. The act is
+correct and the path to it is the wrong shape.
+
+**somebody else's conversation, 0/5.** Structural, and measured to be so: the
+cascade discards who spoke before any decision is taken. The same twelve
+seconds handed to an audio-native model chose listen five times out of five,
+and answer five out of five when it was really the user. Not a defect in the
+decision layer.
+
+**translating as they speak, 4/5.** One run in five.
+
+The shape of what is left is worth stating: one scenario is blocked by the
+architecture rather than the implementation, one by a synthesiser and a
+reasoner being on paths that want a reflex, and two by a model acting on
+conditions that have not been met - which is the same failure the step-by-step
+eval predicts for this model, and the one thing here that a better decision
+model would actually fix.
