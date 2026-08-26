@@ -111,6 +111,7 @@ const (
 		// spoken out loud, because every character here is. Told how to say
 		// nothing, it said nothing six times out of six, and still counted the
 		// animal six times out of six when there was one.
+		"A policy that names a length of quiet has not come due the moment it is set. Each one below says how long ago it was pinned, and one that waits on quiet says how much. Pinned two seconds ago and waiting on fifteen seconds, its first occasion is thirteen seconds away, and saying the thing now answers a condition that has not happened - to somebody who has just told you they were about to go quiet.\n\n" +
 		"When they ask for nothing at this moment, reply with exactly " + WaitToken + " and nothing else. That is how you say nothing: it is not spoken, and it is the one way to be silent and still have answered. Never write a description of silence like \"(silence)\", and never fill the turn with a note that you are listening - every other character you write is spoken out loud.\n\nThe policies:"
 
 	// WaitToken is how the voice says nothing.
