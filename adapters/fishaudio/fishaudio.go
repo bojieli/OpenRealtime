@@ -26,11 +26,11 @@ import (
 )
 
 const (
-	// DefaultEndpoint is the native Fish Speech TTS endpoint.
-	DefaultEndpoint = "http://127.0.0.1:8080/v1/tts"
-	// DefaultModel records the server-side checkpoint expected by the initial
-	// study. The native request has no model selector.
-	DefaultModel = "fishaudio/s2-pro"
+	// DefaultEndpoint is where tools/fish15 serves Fish Speech 1.5.
+	DefaultEndpoint = "http://127.0.0.1:8123/v1/tts"
+	// DefaultModel records the server-side checkpoint. The native request has
+	// no model selector, so this only names what the endpoint is serving.
+	DefaultModel = "fishaudio/fish-speech-1.5"
 
 	defaultServerRate = uint32(44_100)
 	defaultOutputRate = uint32(24_000)
