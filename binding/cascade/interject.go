@@ -296,12 +296,23 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 		runtime.noteInterject("a tool call is already awaiting its result")
 		return
 	}
+	heard := strings.TrimSpace(decision.Revision.Text())
 	runtime.audioMu.Lock()
-	if runtime.lastSilentActRev == decision.Revision.ID {
+	sameRevision := runtime.lastSilentActRev == decision.Revision.ID
+	// The same stretch of speech, grown longer. This is the rule the floor
+	// already applies to interrupting, for the same reason: acting twice on
+	// one stretch is acting twice for one reason, and a revision boundary is
+	// not a new reason. Measured on a phone menu, without it the agent pressed
+	// a key nine times in a single call - a person doing that lands three
+	// menus deep.
+	sameStretch := runtime.actedOnHeard != "" && strings.HasPrefix(heard, runtime.actedOnHeard)
+	if sameRevision || sameStretch {
 		runtime.audioMu.Unlock()
+		runtime.noteInterject("already acted on this stretch of speech")
 		return
 	}
 	runtime.lastSilentActRev = decision.Revision.ID
+	runtime.actedOnHeard = heard
 	runtime.audioMu.Unlock()
 	if !runtime.claimInterjection() {
 		runtime.noteInterject("acting silently, but something is already in flight")

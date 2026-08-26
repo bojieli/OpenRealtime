@@ -111,8 +111,15 @@ type runtime struct {
 	heardWhenSpoke string
 	// interjectStartNS is when the in-flight interjection claimed its slot.
 	interjectStartNS uint64
-	// lastSilentActRev is the revision the last silent act answered.
+	// lastSilentActRev is the revision the last silent act answered, and
+	// actedOnHeard is what had been heard when it was taken.
+	//
+	// Both, because a revision is a fresh question and "I already did this" is
+	// a property of the stretch of speech rather than of one revision. A
+	// recorded menu is one utterance producing a revision every few hundred
+	// milliseconds, and one press per revision is nine presses in a call.
 	lastSilentActRev uint64
+	actedOnHeard     string
 	lastCanonical    uint64
 	// interjecting is set when the turn about to run was taken from somebody
 	// still speaking rather than offered by somebody who had finished.
