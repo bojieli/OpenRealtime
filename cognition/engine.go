@@ -567,29 +567,28 @@ func validateCapabilities(capabilities []continuation.Capability) error {
 func becauseInstruction(act string) string {
 	switch act {
 	case "speak-through":
-		// "Say the next number" was read as a count of turns rather than a
-		// count of things. Measured against one capybara it said five, six,
-		// seven, eight and nine, each on a fresh partial of the same sentence,
-		// and by the end of a story with two animals in it the agent had
-		// counted to sixteen. A count is of what they asked to have counted.
+		// The history of this one instruction is the whole problem in
+		// miniature. "Say the next number" was read as a count of turns: one
+		// capybara was counted five, six, seven, eight, nine, once per partial
+		// of the same sentence. Counting from the transcript instead fixed
+		// that and produced "1 3 3 1", because a count kept in the answerer's
+		// head gains one every time it is asked. Adding a separate rule about
+		// declining produced a rule that contradicted the first.
+		//
+		// One rule does all of it: the count is a function of what they have
+		// said, and you speak when the function's value changes.
 		return "You are speaking because something the person asked to be told about has just happened. " +
-			"Do that thing now, for the occurrence in front of you: if they asked for a count, count them in " +
-			"everything they have said so far and say that number; if they asked for a translation, give the " +
-			"English; if they asked to be told when something lands, say it has landed. Say only that.\n\n" +
-			// A count read off the transcript gives the same answer however
-			// many times it is asked. A count kept in the head of whoever is
-			// answering gains one each time, which is what happened: an
-			// afternoon with two animals in it came back as "1 3 3 1" and as
-			// "3 4", because a recogniser revises a sentence several times and
-			// each revision is a fresh question.
-			"A count is of what they have said, not of how many times you have been asked. Asked twice about " +
-			"the same sentence the answer is the same number both times - so count them again from the " +
-			"beginning of what they have said rather than adding one to what you said last.\n\n" +
-			"Check first that it has happened. What they said arrives in pieces, and each piece repeats " +
-			"everything before it, so the same occurrence is put in front of you several times. If the new " +
-			"part of what they said does not contain the thing they asked about - no animal in it to count, " +
-			"nothing new to translate, the thing they were waiting for has not landed - then it has not " +
-			"happened again, and you reply with " + WaitToken + " and nothing else."
+			"Do that thing now, for the occurrence in front of you: if they asked for a translation, give " +
+			"the English; if they asked to be told when something lands, say it has landed. Say only that.\n\n" +
+			"If they asked for a count, the number is a fact about what they have said, not about how many " +
+			"times you have been asked. Count them again from the beginning of everything they have said, " +
+			"every time. Asked twice about the same sentence, the answer is the same number both times.\n\n" +
+			"Then say it only if it has changed. What they say arrives in pieces and each piece repeats " +
+			"everything before it, so you are asked about the same occurrence over and over. If the number " +
+			"you just counted is zero, or is the number you said last, nothing has happened since - reply " +
+			"with " + WaitToken + " and nothing else. The same holds for anything else they asked for: " +
+			"nothing new to translate, or the thing they were waiting for still has not landed, is " +
+			WaitToken + " rather than a sentence about it."
 	case "call-tool":
 		// Measured on a phone menu: the key was pressed correctly and then
 		// announced out loud - "I have pressed two to select the order status
