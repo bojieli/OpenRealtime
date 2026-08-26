@@ -35,18 +35,20 @@ func TestOneSpeakerDoesNotSayTwoThingsAtOnce(t *testing.T) {
 	}
 }
 
-// Two people, on the other hand, is the whole point of half these scenarios.
-func TestTwoSpeakersStillTalkOverEachOther(t *testing.T) {
+// And across speakers too. The caller asking for the call and the recording
+// answering it ran together into one utterance - "and find out where my order
+// has got to Thank you for calling Press one for billing" - and the agent
+// pressed a key at the person who had asked for the call to be made.
+func TestOneSpeakerDoesNotRunIntoTheNext(t *testing.T) {
 	item := Scenario{Script: []Line{
 		{Speaker: "user", AtMS: 0, Text: "one"},
-		{Speaker: "other", AtMS: 1_000, Text: "two"},
+		{Speaker: "other", AtMS: 5_000, Text: "two"},
 	}}
 	timeline, err := Compose(context.Background(), fixedVoice{ms: 9_000}, item)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if timeline.Spans[1].StartMS != 1_000 {
-		t.Fatalf("a second speaker was pushed to %dms instead of talking over the first",
-			timeline.Spans[1].StartMS)
+	if gap := timeline.Spans[1].StartMS - timeline.Spans[0].EndMS; gap < breathMS {
+		t.Fatalf("the second speaker starts %dms after the first stopped", gap)
 	}
 }

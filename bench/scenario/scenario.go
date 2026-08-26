@@ -267,14 +267,6 @@ type Timeline struct {
 // pause somebody would read as the end of the conversation.
 const breathMS = 600
 
-// speakerOf names whoever says a line, the empty speaker being the user.
-func speakerOf(line Line) string {
-	if line.Speaker == "" {
-		return "user"
-	}
-	return line.Speaker
-}
-
 func Compose(ctx context.Context, voice Voice, item Scenario) (Timeline, error) {
 	const rate = 24_000
 	total := item.TrailingMS
@@ -285,10 +277,12 @@ func Compose(ctx context.Context, voice Voice, item Scenario) (Timeline, error) 
 	}
 	spoken := make([][]int16, len(item.Script))
 	spans := make([]Span, len(item.Script))
-	// Where each speaker's last line finished. Two people talking at once is
-	// the point of several of these scenarios, and two lines out of one mouth
-	// at once is not a thing that happens.
-	finished := make(map[string]int, len(item.Script))
+	// Where the last line finished, whoever said it. The scenarios that are
+	// about simultaneous speech are about the agent talking over somebody, or
+	// somebody talking over the agent; every script here is a conversation
+	// between people taking turns, written seconds apart.
+	finished := 0
+	spokenYet := false
 	for index, line := range item.Script {
 		samples, err := voice.Speak(ctx, line.Speaker, line.Text)
 		if err != nil {
@@ -301,12 +295,16 @@ func Compose(ctx context.Context, voice Voice, item Scenario) (Timeline, error) 
 		// lines together, and a story told in three sentences eight seconds
 		// apart becomes one utterance twenty-seven seconds long that never
 		// reaches an endpoint - measured, the agent heard the first sentence
-		// and nothing after it for the rest of the scenario.
-		if end, spoken := finished[speakerOf(line)]; spoken && end+breathMS > start {
-			start = end + breathMS
+		// and nothing after it for the rest of the scenario. Across speakers
+		// it is worse than a lost endpoint: the caller asking for the call and
+		// the recording answering it arrived as one sentence, "and find out
+		// where my order has got to Thank you for calling Press one for
+		// billing", and the agent pressed a key at the person who asked.
+		if spokenYet && finished+breathMS > start {
+			start = finished + breathMS
 		}
 		spans[index] = Span{StartMS: start, EndMS: start + len(samples)*1000/rate}
-		finished[speakerOf(line)] = spans[index].EndMS
+		finished, spokenYet = spans[index].EndMS, true
 		if spans[index].EndMS > total {
 			total = spans[index].EndMS
 		}
