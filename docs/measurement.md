@@ -1444,3 +1444,81 @@ answered.
 
 The ambiguity had been harmless for as long as no rule depended on the line. It
 became a scenario-wide failure the moment one did.
+
+### The failure was in a different process (F38)
+
+The control scenario - a finished question with nothing standing in the way -
+scored 0/5, and its transcript held two events: the environment became ready,
+and the user started speaking. Nothing was ever recognised, the gate never
+closed, and eighteen seconds of playback went by with nobody answering a
+question about the capital of France. Read as a decision it says the model
+chose silence. It was not a decision.
+
+The synthesiser had grown from 3.7GB to 38GB over a few hundred utterances and
+filled a 98GB GPU, and the recogniser had no room left. Removing the upstream
+server's per-request `empty_cache()` bought 245ms and, over a few hours of
+utterances of every length, cost the whole machine. The allocator was
+fragmenting rather than leaking, which is what expandable segments exist for;
+they cost nothing per request. The trim stays as a backstop and runs when the
+process is holding more than 8GB rather than after every request.
+
+Worth stating plainly because it cost most of a suite run to find: a benchmark
+that scores behaviour cannot tell a model that decided to stay quiet from a
+pipeline that stopped feeding it. Both look like silence.
+
+### A line that runs into the next one (F39)
+
+Three of the failures this session were one bug in the harness. A script says
+when a line starts, against durations the author heard from whatever
+synthesiser was in use that day, and a slower one runs the lines together.
+
+Within one speaker it destroys the endpoint: the counting story is three
+sentences eight seconds apart, and joined into one utterance the gate opened at
+13.2 seconds and did not close for the remaining twenty-seven, so the agent
+heard the first sentence and nothing after it.
+
+Across speakers it is worse, because the utterance is still well formed. The
+caller asking for the call and the recording answering it arrived as one
+sentence - "and find out where my order has got to Thank you for calling Press
+one for billing" - and the agent pressed a key at the person who had asked for
+the call to be made.
+
+Every script in this suite is a conversation between people taking turns. The
+scenarios about simultaneous speech are about the agent talking over somebody
+or somebody talking over the agent, and neither is two scripted lines at once.
+
+### A tool being available is not a moment to use it (F40)
+
+The phone menu chose call-tool 283 times in one call. The first was at 2.5
+seconds, on the partial "Ca." - it was acting on the user asking for the call
+to be made, and there was no menu, no option and nothing to press. Four got
+through the guards and spent the silent-act budget before the recording had
+said a word; the guards then refused the 279 that followed, including the one
+that mattered.
+
+call-tool appeared in exactly one worked example, where a recording had just
+named an option and acting was right. What that taught was that press_key plus
+somebody mentioning a call is enough. This is the third time in this file the
+same shape has appeared - visual evidence, third-party speech, and now an
+attached tool - and each time the fix was an example on the other side.
+
+The pattern is worth naming, because it is cheap to check and expensive to
+miss: **any kind of evidence that appears in the examples only where it
+justifies acting teaches that it is a reason to act.**
+
+### Saying nothing has to be sayable (F41)
+
+The voice is told to agree to a request once, to say a holding line once, and
+not to answer the tail of a sentence it has already answered. All three ask for
+silence, and the paragraph explaining how to produce silence was attached only
+when a standing policy was already in force.
+
+On every other turn the rules asked for something the model had no way to do,
+and a model whose only channel is speech says something instead. Measured on
+one instruction the recogniser split into three: "I'm ready. Please tell me
+about your afternoon", "I'm listening. Please start telling me", "I'm ready.
+Please begin describing your afternoon."
+
+The comment beside that paragraph already recorded this exact failure from an
+earlier measurement. The fix had been applied to one prompt path and not the
+other.
