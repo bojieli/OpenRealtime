@@ -164,6 +164,21 @@ func (transcript Transcript) FirstAudioAfter(fromMS float64) (float64, bool) {
 	return 0, false
 }
 
+// FirstToolCallAfter is the wait from a moment in the recording to the next
+// time a named tool was called.
+//
+// A silent act is still an answer. Measuring how soon it happened as a wait
+// for speech asks an agent whose right move is to press a key and say nothing
+// to fail either the latency check or the silence one beside it.
+func (transcript Transcript) FirstToolCallAfter(name string, fromMS float64) (float64, bool) {
+	for _, moment := range transcript.Moments {
+		if moment.Kind == MomentToolCall && moment.Name == name && moment.AtMS >= fromMS {
+			return moment.AtMS - fromMS, true
+		}
+	}
+	return 0, false
+}
+
 // SessionConfig configures one conversation.
 type SessionConfig struct {
 	// Endpoint is the protocol endpoint.

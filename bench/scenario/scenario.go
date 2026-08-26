@@ -376,7 +376,18 @@ func apply(check Check, timeline Timeline, transcript bench.Transcript) string {
 		// FirstAudioAfter returns the wait, not the moment. Subtracting the
 		// offset again turned every late reply into a large negative number
 		// and every latency bound into one nothing could fail.
+		//
+		// When the check names a tool the answer is that tool being called,
+		// not the agent speaking. A phone menu is the case: the useful act is
+		// silent by design and the scenario says so in the check above this
+		// one, so measuring the wait as a wait for speech asks the agent to
+		// fail one check or the other. Its own note is about the key - "a menu
+		// moves on, and a key pressed after it has is pressed into the next
+		// option" - and the key is what gets measured.
 		wait, ok := transcript.FirstAudioAfter(float64(from))
+		if check.Tool != "" {
+			wait, ok = transcript.FirstToolCallAfter(check.Tool, float64(from))
+		}
 		if !ok {
 			return fmt.Sprintf("never answered after %dms (%s)", from, check.Note)
 		}

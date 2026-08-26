@@ -80,7 +80,7 @@ func Suite() []Scenario {
 					Note: "the menu named the option the user asked for"},
 				{Kind: CheckSilent, Line: 1, AfterMS: 500,
 					Note: "a recording cannot hear you, so speaking over it is wasted and covers the menu"},
-				{Kind: CheckAnsweredWithin, Line: 1, AfterMS: 4000,
+				{Kind: CheckAnsweredWithin, Line: 1, AfterMS: 4000, Tool: "press_key",
 					Note: "a menu moves on, and a key pressed after it has is pressed into the next option"},
 			},
 		},
