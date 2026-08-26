@@ -207,6 +207,18 @@ The slow provider is the one that has to be able to call tools — the fast one
 structurally cannot, which is the whole differentiator — so an endpoint whose
 slow model refuses tool calls fails at the first assertion, and should.
 
+**Its endpoint has to return tool calls as tool calls.** A self-hosted server
+started without tool-call parsing answers with the call written out as text in
+the content field — `<tool_call><function=read_file>…` — which is a model doing
+exactly the right thing and a client that can never see it. Nothing fires, no
+error is raised, and the tool and artifact channels sit at zero looking like a
+model that chose not to act. For vLLM that means
+`--enable-auto-tool-choice --tool-call-parser <parser for your model>`; the
+symptom is worth recognising because every layer above it behaves correctly.
+
+The model names above are one machine's; the flags that matter are which
+provider, which endpoint, and whether it parses tool calls.
+
 The three video channels need the server to have negotiated `video.input`,
 which needs a video observer, which needs a model that can see. A deployment
 with no vision model connects fine and reports no video input, and the live run
