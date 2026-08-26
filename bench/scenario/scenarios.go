@@ -70,6 +70,10 @@ func Suite() []Scenario {
 				Name: "press_key", Description: "Send a keypad tone on the open call.",
 				Parameters: []string{"digit"},
 			}},
+			// A menu that answers. Pressing two reaches order status and
+			// pressing anything else reaches somewhere with no way back, so
+			// hurrying costs what it costs on a real call.
+			Menu: OrderStatusMenu(),
 			Script: []Line{
 				{Speaker: "user", AtMS: 0, Text: "Call them and find out where my order has got to."},
 				{Speaker: "other", AtMS: 7000, Text: "Thank you for calling. Press one for billing. Press two for order status. Press three for technical support. Press four to repeat these options."},
@@ -82,6 +86,12 @@ func Suite() []Scenario {
 					Note: "a recording cannot hear you, so speaking over it is wasted and covers the menu"},
 				{Kind: CheckAnsweredWithin, Line: 1, AfterMS: 4000, Tool: "press_key",
 					Note: "a menu moves on, and a key pressed after it has is pressed into the next option"},
+				// The menu answers now, so where the call ended is a fact
+				// rather than an inference. Nine presses on one call was
+				// invisible while the recording played to the end whatever the
+				// agent did.
+				{Kind: CheckReachedMenu,
+					Note: "the call has to end at order status, which is what it was for"},
 			},
 		},
 		{

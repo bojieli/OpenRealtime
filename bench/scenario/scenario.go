@@ -92,6 +92,14 @@ const (
 	CheckSpoke CheckKind = "spoke"
 	// CheckToolCalled asserts a named tool was called.
 	CheckToolCalled CheckKind = "tool"
+	// CheckReachedMenu asserts the call ended where it was going.
+	//
+	// It is the check a fixed recording could not support. Pressing the right
+	// key once and pressing it six times sound identical to a script that
+	// plays to the end regardless; against a menu that moves, the second lands
+	// somewhere with no way back, and the difference is a fact about where the
+	// call ended rather than an inference from how many tones went out.
+	CheckReachedMenu CheckKind = "reached"
 	// CheckAnsweredWithin asserts the agent could be heard within AfterMS of
 	// the trigger finishing, in waveform time.
 	//
@@ -165,6 +173,11 @@ type Scenario struct {
 	// that fires with nobody talking cannot be scripted any other way.
 	Sees   []Sight
 	Checks []Check
+	// Menu is a world that answers, for a scenario where what happens next
+	// depends on what the agent did. A phone menu is the case: pressing a key
+	// moves the call, and a fixed recording cannot tell an agent that pressed
+	// once from one that pressed six times.
+	Menu *Menu
 	// TrailingMS is quiet held after the last line, so that a scenario about
 	// staying silent has somewhere to be silent.
 	TrailingMS int
@@ -299,9 +312,14 @@ func Play(ctx context.Context, voice Voice, config bench.SessionConfig, item Sce
 	}
 	config.Instructions = item.Instructions
 	config.Tools = declare(item.Tools)
+	// A scenario is about when the agent acts, not about what the world
+	// answers, so a call succeeds with nothing in it - unless the scenario
+	// brought a world that answers, which is what a phone menu is.
+	menu := item.Menu
 	config.Respond = func(name string, arguments json.RawMessage) (json.RawMessage, error) {
-		// A scenario is about when the agent acts, not about what the world
-		// answers, so every call succeeds with nothing in it.
+		if menu != nil {
+			return menu.Respond(name, arguments)
+		}
 		return json.RawMessage(`{"ok":true}`), nil
 	}
 	config.Realtime = true
@@ -326,7 +344,7 @@ func Play(ctx context.Context, voice Voice, config bench.SessionConfig, item Sce
 func Score(item Scenario, timeline Timeline, transcript bench.Transcript) Result {
 	result := Result{Scenario: item.Name, Transcript: transcript, Passed: true}
 	for _, check := range item.Checks {
-		if failure := apply(check, timeline, transcript); failure != "" {
+		if failure := apply(check, timeline, transcript, item.Menu); failure != "" {
 			result.Passed = false
 			result.Failures = append(result.Failures, failure)
 		}
@@ -341,7 +359,7 @@ func Score(item Scenario, timeline Timeline, transcript bench.Transcript) Result
 // the room would have heard.
 const audibleMS = 120
 
-func apply(check Check, timeline Timeline, transcript bench.Transcript) string {
+func apply(check Check, timeline Timeline, transcript bench.Transcript, menu *Menu) string {
 	from, to := 0, timeline.TotalMS
 	switch {
 	case check.Sight > 0 && check.Sight <= len(timeline.Sights):
@@ -406,6 +424,14 @@ func apply(check Check, timeline Timeline, transcript bench.Transcript) string {
 		if wait > float64(check.AfterMS) {
 			return fmt.Sprintf("answered %.0fms after %dms, later than %dms (%s)",
 				wait, from, check.AfterMS, check.Note)
+		}
+	case CheckReachedMenu:
+		if menu == nil {
+			return ""
+		}
+		if !menu.Reached() {
+			return fmt.Sprintf("the call ended at %s after %d presses (%s)",
+				menu.Where(), menu.Presses(), check.Note)
 		}
 	case CheckToolCalled:
 		for _, called := range transcript.ToolCalls() {
