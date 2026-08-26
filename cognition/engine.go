@@ -68,6 +68,11 @@ type Config struct {
 	// Request.AllowFastTools; otherwise no executable schemas are attached and
 	// any emitted call is downgraded to a proposal by the runner.
 	FastToolFilter func(continuation.ToolDefinition) bool
+	// VisualReflex is an optional, silent visual action role. It is separate
+	// from Fast so enabling vision never changes the voice model, its prompt,
+	// or its authority. The controller gives it a compact current-frame
+	// projection and one bounded act/wait/abstain decision.
+	VisualReflex *VisualReflexConfig
 	// RequireSilentSlow enforces the second cognition boundary at
 	// construction. A single-provider arrangement sets it false.
 	RequireSilentSlow bool
@@ -90,6 +95,10 @@ type Config struct {
 type Engine struct {
 	config Config
 	runner *continuation.Runner
+	// reflexMu makes per-session modality updates able to add or remove the
+	// optional controller without rebuilding voice cognition.
+	reflexMu sync.RWMutex
+	reflex   *visualReflex
 	// promptMu guards the phase prompts, which change when a session's
 	// instruction does.
 	promptMu   sync.RWMutex
@@ -184,8 +193,12 @@ func New(config Config) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
+	reflex, err := newVisualReflex(config.VisualReflex, config.Catalog, runner)
+	if err != nil {
+		return nil, err
+	}
 	return &Engine{
-		config: config, runner: runner,
+		config: config, runner: runner, reflex: reflex,
 		fastPrompt: Compose(config.AgentInstruction, config.FastInstruction),
 		slowPrompt: Compose(config.AgentInstruction, config.SlowInstruction),
 	}, nil
@@ -257,6 +270,30 @@ type Request struct {
 // Descriptors reports the configured providers, for evidence and health.
 func (engine *Engine) Descriptors() (fast, slow continuation.Descriptor) {
 	return engine.config.Fast.Descriptor(), engine.config.Slow.Descriptor()
+}
+
+// VisualReflexDescriptor reports the optional visual action provider.
+func (engine *Engine) VisualReflexDescriptor() (continuation.Descriptor, bool) {
+	engine.reflexMu.RLock()
+	defer engine.reflexMu.RUnlock()
+	if engine.reflex == nil {
+		return continuation.Descriptor{}, false
+	}
+	return engine.reflex.provider.Descriptor(), true
+}
+
+// ConfigureVisualReflex adds, replaces, or removes the optional controller.
+// It changes no voice/slow engine configuration and is safe between session
+// observer updates and an in-flight decision.
+func (engine *Engine) ConfigureVisualReflex(config *VisualReflexConfig) error {
+	reflex, err := newVisualReflex(config, engine.config.Catalog, engine.runner)
+	if err != nil {
+		return err
+	}
+	engine.reflexMu.Lock()
+	engine.reflex = reflex
+	engine.reflexMu.Unlock()
+	return nil
 }
 
 // RunFast appends one low-latency continuation. The fast provider sees the
