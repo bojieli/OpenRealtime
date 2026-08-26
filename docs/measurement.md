@@ -1573,3 +1573,46 @@ different: the third-party case was structurally impossible before and is now
 by a path that wants a reflex; the silence and the counting are a policy read
 off a fragment of the sentence that set it; the visual case is a model claiming
 to have seen something before any frame arrived.
+
+### Nothing at zero (F44)
+
+```
+                                          suite17   suite20
+count-as-they-go                            2/5       3/5
+asked not to be interrupted                 5/5       5/5
+a recorded menu                             0/5       2/5
+cutting in on something wrong               5/5       4/5
+ordering from a waiter                      5/5       5/5
+translating as they speak                   4/5       4/5
+waiting out a silence they asked for        1/5       1/5
+somebody else's conversation                5/5       3/5
+an acknowledgement is not an interruption   5/5       4/5
+telling them what it saw                    3/5       3/5
+an ordinary question                        5/5       4/5
+                                           40/55     38/55
+```
+
+The totals are the same number twice, and the movement inside them is mostly
+the variance this file has already measured: four of these scenarios span
+nearly their whole range across passes on identical code. What did change is
+that nothing sits at zero any more, which had not been true of the menu at any
+point before.
+
+The menu took five separate fixes to get off zero, and only the first was about
+deciding:
+
+- the interaction model chose call-tool on the request for the call rather than
+  on the menu, and spent the silent-act budget before the recording spoke;
+- the guard against acting twice refused every revision that extended what it
+  had acted on, so one press at a greeting disabled the rest of the call;
+- the check measured the wait from the moment the menu line ended, so a key
+  pressed while the options were still being read counted as never answering;
+- the holding line fired during the silent act and read "I'm calling now,
+  please hold" to a recording that could not hear it;
+- and the voice wrote "Pressing the key for order status. <wait>", which the
+  publish path spoke in full because it matched the token only when it stood
+  alone.
+
+Four of the five are the same bug class as everything else in this file: the
+act was decided correctly and something between the decision and the world
+undid it.
