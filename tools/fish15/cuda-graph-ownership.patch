@@ -1,0 +1,26 @@
+diff --git a/fish_speech/models/text2semantic/inference.py b/fish_speech/models/text2semantic/inference.py
+index acf31ee..f3ca9c2 100644
+--- a/fish_speech/models/text2semantic/inference.py
++++ b/fish_speech/models/text2semantic/inference.py
+@@ -386,6 +386,10 @@ def decode_n_tokens(
+                 semantic_ids=semantic_ids,
+                 **sampling_kwargs,
+             )
++            # decode_one_token is captured as a CUDA graph, so its result lives
++            # in a buffer the next call overwrites. cur_token is a view of this
++            # token and is read by that next call, so it has to own its memory.
++            next_token = next_token.clone()
+ 
+         input_pos += 1
+         cur_token = next_token.view(1, model.config.num_codebooks + 1, -1)
+@@ -514,6 +518,10 @@ def decode_n_tokens_agent(
+                 semantic_ids=semantic_ids,
+                 **sampling_kwargs,
+             )
++            # decode_one_token is captured as a CUDA graph, so its result lives
++            # in a buffer the next call overwrites. cur_token is a view of this
++            # token and is read by that next call, so it has to own its memory.
++            next_token = next_token.clone()
+ 
+         input_pos += 1
+         cur_token = next_token.view(batch_size, model.config.num_codebooks + 1, -1)
