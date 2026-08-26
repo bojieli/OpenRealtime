@@ -589,13 +589,11 @@ func becauseInstruction(act string) string {
 			"Then say it only if it has changed. What they say arrives in pieces and each piece repeats " +
 			"everything before it, so you are asked about the same occurrence over and over, and the " +
 			"answer to most of those times is nothing.\n\n" +
-			"A count said out loud starts at one. Before the first one there is nothing to say, and saying " +
-			"a number you have already said says that another one happened when none did - so if you " +
-			"counted none, or counted the same as last time, reply with " + WaitToken + " and nothing " +
-			"else. Never say zero: zero is not a count of anything, it is the absence of one, and it is " +
-			"read out loud like every other character you write. The same holds for whatever else they " +
-			"asked for - nothing new to translate, or the thing they were waiting for still has not " +
-			"landed, is " + WaitToken + " rather than a sentence about it."
+			"If you counted none of them, or counted the same number you last said, there is nothing new " +
+			"to tell them: reply with " + WaitToken + " and nothing else. Never say zero out loud - it " +
+			"is read aloud like everything else you write, and nobody counting things aloud says zero.\n\n" +
+			"The same holds for whatever else they asked for. Nothing new to translate, or the thing they " +
+			"were waiting for still has not landed, is " + WaitToken + " rather than a sentence about it."
 	case "call-tool":
 		// Measured on a phone menu: the key was pressed correctly and then
 		// announced out loud - "I have pressed two to select the order status
