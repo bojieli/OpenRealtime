@@ -71,6 +71,12 @@ func TestOneSilentActPerStretchOfSpeech(t *testing.T) {
 	for index := 0; index < 8; index++ {
 		pushAudio(t, runtime, tone(2400, 8000), 1)
 	}
+	// A second utterance, which is what the recogniser produces every few
+	// seconds out of one recorded menu - and what the prefix test alone
+	// cannot tell from a genuinely new prompt.
+	for index := 0; index < 8; index++ {
+		pushAudio(t, runtime, tone(2400, 8000), 1)
+	}
 	waitFor(t, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
@@ -87,7 +93,7 @@ func TestOneSilentActPerStretchOfSpeech(t *testing.T) {
 		}
 	}
 	if taken > 1 {
-		t.Fatalf("acted %d times on one stretch of speech: %q", taken, acts)
+		t.Fatalf("acted %d times in three seconds: %q", taken, acts)
 	}
 }
 

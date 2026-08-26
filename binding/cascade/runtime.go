@@ -125,6 +125,9 @@ type runtime struct {
 	// recorded menu is one utterance producing a revision every few hundred
 	// milliseconds, and one press per revision is nine presses in a call.
 	lastSilentActRev uint64
+	// lastSilentActNS is when the last one happened, because a fresh utterance
+	// looks like a fresh stretch and the prefix test lets it through.
+	lastSilentActNS uint64
 	// lastQuietNS is when the quiet was last asked about, so a stretch of
 	// nothing costs one decision a second rather than one a frame.
 	// quietSpokeSince is the stretch already spoken into, because a silence

@@ -284,6 +284,15 @@ func (runtime *runtime) releaseInterjection() {
 //
 // It is ADR-0006's second boundary under another name: the slow phase acts and
 // cannot speak, which is exactly what pressing a key at a recording needs.
+// minimumBetweenSilentActs is how long must pass before the agent may act on
+// the world again without saying anything.
+//
+// Three seconds. A recorded menu reads its options a few seconds apart, so a
+// bound much longer than this would miss a real second choice, and a bound
+// much shorter is no bound at all against a recogniser that starts a fresh
+// utterance every few seconds.
+const minimumBetweenSilentActs = 3 * time.Second
+
 func (runtime *runtime) actSilently(decision interaction.Context) {
 	if runtime.policies.Interaction == nil {
 		return
@@ -298,6 +307,7 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 		return
 	}
 	heard := strings.TrimSpace(decision.Revision.Text())
+	nowNS := runtime.scheduler.NowNS()
 	runtime.audioMu.Lock()
 	sameRevision := runtime.lastSilentActRev == decision.Revision.ID
 	// The same stretch of speech, grown longer. This is the rule the floor
@@ -307,11 +317,25 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 	// a key nine times in a single call - a person doing that lands three
 	// menus deep.
 	sameStretch := runtime.actedOnHeard != "" && strings.HasPrefix(heard, runtime.actedOnHeard)
-	if sameRevision || sameStretch {
+	// And a bound in time behind it, for the reason the interruption bound
+	// carries one: the recogniser commits and starts a fresh utterance every
+	// few seconds, so each piece of one recorded menu looks like a new stretch
+	// of speech and the prefix test lets it through. Measured after the prefix
+	// test was added, a single call still took six key presses - which lands
+	// three menus deep.
+	//
+	// It is deliberately not the interruption's five seconds. Pressing a key
+	// is not talking over somebody: a menu that genuinely offers a second
+	// choice does so within a few seconds of the first, and a bound long
+	// enough to be safe here would be long enough to miss it.
+	tooSoon := runtime.lastSilentActNS != 0 && nowNS >= runtime.lastSilentActNS &&
+		nowNS-runtime.lastSilentActNS < uint64(minimumBetweenSilentActs)
+	if sameRevision || sameStretch || tooSoon {
 		runtime.audioMu.Unlock()
-		runtime.noteInterject("already acted on this stretch of speech")
+		runtime.noteInterject("already acted, and nothing new has asked for another")
 		return
 	}
+	runtime.lastSilentActNS = nowNS
 	runtime.lastSilentActRev = decision.Revision.ID
 	runtime.actedOnHeard = heard
 	runtime.audioMu.Unlock()
