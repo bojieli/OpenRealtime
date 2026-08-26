@@ -143,3 +143,43 @@ func TestAnAttachedPictureStillArrivesWithoutANarrator(t *testing.T) {
 		return false
 	}, "a picture with no narrator produced no observation at all")
 }
+
+// A narration in front of a decider that can see is a cloud round trip added
+// to an observation that already carries the picture. Measured at 1.45
+// seconds, on the critical path of every visual turn.
+func TestADeciderThatSeesDoesNotWaitForANarration(t *testing.T) {
+	runtime, _ := startSession(t, cascade.Config{
+		Fast: newFast(), Slow: newSlow(), DeciderSees: true,
+		Narrator: describingNarrator{text: "a terminal, the build at 41 percent"},
+	}, binding.Settings{})
+
+	if err := runtime.Text(t.Context(), binding.TextInput{
+		ItemID: "item-1", Role: "user",
+		Images: []binding.Image{{MIMEType: "image/png", Bytes: []byte("not really a png"), Width: 8, Height: 8}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		for _, item := range runtime.Trajectory().Items {
+			if strings.Contains(item.Content, "attached an image") {
+				return true
+			}
+		}
+		return false
+	}, "the picture never reached the trajectory")
+
+	// The handle is on it, which is what the decision reads. The narrator's
+	// sentence is not, because nothing waited for it.
+	for _, item := range runtime.Trajectory().Items {
+		if !strings.Contains(item.Content, "attached an image") {
+			continue
+		}
+		if strings.Contains(item.Content, "41 percent") {
+			t.Fatal("the observation waited for a narration a seeing decider does not need")
+		}
+		if item.Observation == nil || len(item.Observation.Media) == 0 {
+			t.Fatal("the picture itself was dropped, which is the whole of what it has")
+		}
+		return
+	}
+}

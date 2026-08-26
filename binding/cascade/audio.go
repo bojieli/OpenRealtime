@@ -614,7 +614,7 @@ func (runtime *runtime) Text(ctx context.Context, input binding.TextInput) error
 		// about it still gets a line saying it arrived, so the trajectory has
 		// something to hang the handle on.
 		text = "The user attached an image."
-		if runtime.config.Narrator != nil {
+		if runtime.config.Narrator != nil && !runtime.config.DeciderSees {
 			// And that line is all anything without eyes ever got. The fast
 			// provider is handed the image; the interaction model, which
 			// decides whether this is a moment to speak at, was handed the
@@ -622,6 +622,11 @@ func (runtime *runtime) Text(ctx context.Context, input binding.TextInput) error
 			// choosing between silence and speech about a screen it had been
 			// told nothing about. Describing it is what the video observer
 			// already does with every frame, and for the same reason.
+			//
+			// Unless the decider can see, in which case describing it is a
+			// cloud round trip in front of an observation that already
+			// carries the picture. It commits at once and the frame goes to
+			// the decision itself.
 			runtime.describeAttachment(input.Images, media, authority)
 			return nil
 		}
