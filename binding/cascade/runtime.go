@@ -127,9 +127,12 @@ type runtime struct {
 	lastSilentActRev uint64
 	// lastQuietNS is when the quiet was last asked about, so a stretch of
 	// nothing costs one decision a second rather than one a frame.
-	lastQuietNS   uint64
-	actedOnHeard  string
-	lastCanonical uint64
+	// quietSpokeSince is the stretch already spoken into, because a silence
+	// does not stop being evidence once it has been acted on.
+	lastQuietNS     uint64
+	quietSpokeSince uint64
+	actedOnHeard    string
+	lastCanonical   uint64
 	// interjecting is set when the turn about to run was taken from somebody
 	// still speaking rather than offered by somebody who had finished.
 	interjectingRev uint64

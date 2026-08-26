@@ -401,11 +401,28 @@ func (runtime *runtime) considerQuiet(ctx context.Context, nowNS uint64, state s
 	runtime.lastQuietNS = nowNS
 	runtime.audioMu.Unlock()
 
-	decision := interaction.Context{NowNS: nowNS, Duplex: state}
-	situation := runtime.situation(decision)
-	if len(situation.Pins) == 0 {
+	// Only for a policy that waits on a stretch of quiet and has had it.
+	//
+	// A policy with no delay is not about quiet at all - it waits for
+	// something to happen, and nothing happening is not that. Gating on the
+	// number here is what lets the model be asked a question it can answer:
+	// asked to compare fifteen seconds against a silence line reading 8199ms
+	// it said speak five times out of five, and a paragraph telling it to
+	// compare fixed one phrasing of the transcript and left a near-identical
+	// one still wrong.
+	quiet := time.Duration(nowNS - since)
+	due := false
+	for _, standing := range runtime.pinboard.InForce() {
+		if standing.After > 0 && standing.Due(quiet) {
+			due = true
+			break
+		}
+	}
+	if !due {
 		return
 	}
+	decision := interaction.Context{NowNS: nowNS, Duplex: state}
+	situation := runtime.situation(decision)
 	situation.Quiet = true
 	situation.Silence = renderSilence(nowNS - since)
 	decision.Situation = &situation
@@ -416,8 +433,68 @@ func (runtime *runtime) considerQuiet(ctx context.Context, nowNS uint64, state s
 			Predicates: map[string]string{"where": "quiet"}, Error: errorText(err),
 		})
 	}
-	if err != nil || act != interaction.ActSpeakThrough {
+	// answer, not only speak-through. Nobody holds the floor here, so the act
+	// for saying something is the ordinary one - and measured, the model chose
+	// it sixty-six times out of sixty-six while the runtime listened for the
+	// other one and dropped every one of them. Speaking through is what you do
+	// over somebody; there is nobody to speak over in a silence.
+	if err != nil || (act != interaction.ActAnswer && act != interaction.ActSpeakThrough) {
 		return
 	}
-	runtime.interject(decision)
+	runtime.audioMu.Lock()
+	spoken := runtime.quietSpokeSince == since
+	runtime.quietSpokeSince = since
+	runtime.audioMu.Unlock()
+	if spoken {
+		// One per stretch of quiet, for the reason every other act here is
+		// bounded that way: the silence does not stop being evidence once it
+		// has been acted on, so without this the agent asks whether they are
+		// still there once a second for as long as they are not.
+		return
+	}
+	runtime.speakIntoSilence(decision, act, quiet)
+}
+
+// speakIntoSilence runs a turn when nobody is speaking and nothing arrived.
+//
+// interject cannot serve this. It guards on somebody still holding the floor -
+// "speaking into a turn that has since ended is worse than not speaking" -
+// which is right for every case it was written for and false for this one,
+// where the whole point is that the turn ended long ago and nothing has
+// happened since.
+func (runtime *runtime) speakIntoSilence(
+	decision interaction.Context, act interaction.Act, quiet time.Duration,
+) {
+	if !runtime.claimInterjection() {
+		runtime.noteInterject("the quiet is worth speaking into, but something is already in flight")
+		return
+	}
+	runtime.wait.Add(1)
+	go func() {
+		defer runtime.wait.Done()
+		defer runtime.releaseInterjection()
+		standing, _, _ := runtime.cognitionExtras()
+		request := cognition.Request{
+			SourceRevision: decision.Revision.ID,
+			Standing:       standing,
+			Because:        string(act),
+			// The silence is the thing that happened, and a turn with nothing
+			// new in front of it produces nothing at all.
+			Observed: "nobody has said anything for " + renderSilence(uint64(quiet)),
+		}
+		ctx, cancel := context.WithTimeout(runtime.ctx, interjectionDeadline)
+		defer cancel()
+		err := runtime.runFast(ctx, request, &turnReport{}, true)
+		if recorder := runtime.policies.ShadowInteraction; recorder != nil {
+			outcome := "spoke"
+			if err != nil {
+				outcome = "refused"
+			}
+			recorder(interaction.ShadowDecision{
+				NowNS: runtime.scheduler.NowNS(), Situation: "quiet: spoke into the silence",
+				Act: outcome, Predicates: map[string]string{"where": "quiet"},
+				Error: errorText(err),
+			})
+		}
+	}()
 }

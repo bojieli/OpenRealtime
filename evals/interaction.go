@@ -329,6 +329,24 @@ func InteractionCases() []Case {
 			[]Action{ActStaySilent}, ActInterrupt, ActAnswer, ActStopSpeaking),
 
 		// --- restraint: doing nothing is the common answer ---
+		// --- a policy about time, at the moment it is met ---
+		//
+		// The only situation in this suite where nothing has arrived and the
+		// answer is still to speak. How long is a number the extraction pass
+		// read out of the sentence and the runtime compared, because asked to
+		// compare it itself the model chose to speak at four seconds of
+		// silence exactly as readily as at forty - five times out of five
+		// either way. It is asked here only once the wait is over.
+		act("time-policy-arrived", interaction.Situation{
+			Pins: []string{"check whether they are still there (20s ago)"},
+			Recent: []string{
+				"user: I'm going to read for a while. If I haven't said anything for about fifteen seconds, ask whether I'm still there.",
+				"agent: Understood, I'll check in.",
+			},
+			Silence: "16200ms", Quiet: true,
+		}, "the condition is met by nothing happening, which is true nowhere else here",
+			[]Action{ActAnswer, ActSpeakThrough}, ActStaySilent),
+
 		act("nothing-happening", interaction.Situation{
 			Recent:  []string{"user: thanks", "agent: anytime"},
 			Silence: "12s",

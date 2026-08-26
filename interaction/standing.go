@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 )
@@ -34,6 +36,31 @@ type StandingInstruction struct {
 	// an hour and three topics back, and a decision that cannot see which one
 	// it is has been handed the words without the context.
 	SetNS uint64
+	// After is the delay a policy names, when it names one: "ask if I go quiet
+	// for fifteen seconds" is not due until fifteen seconds of quiet have
+	// passed. Zero means the policy is about something happening rather than
+	// about time.
+	//
+	// It is read once, here, rather than compared on every decision by the
+	// model. Measured against the model that takes those decisions, at four
+	// seconds of silence and at forty it chose to speak five times out of five
+	// either way; a paragraph telling it to compare the numbers fixed one
+	// phrasing of the transcript and left a near-identical one still wrong.
+	// A capability that turns on how somebody phrased a sentence is not one.
+	//
+	// The division that does work: a model reads the language, and the runtime
+	// compares the numbers. Reading "fifteen seconds" out of a sentence is
+	// what the extraction pass is already for, and it does it once, off the
+	// critical path, with the whole utterance in front of it.
+	After time.Duration
+}
+
+// Due reports whether a policy that waits on a stretch of quiet has had it.
+//
+// A policy that names no delay is always due; what it waits for is something
+// happening, and that is the model's to recognise.
+func (instruction StandingInstruction) Due(quiet time.Duration) bool {
+	return instruction.After <= 0 || quiet >= instruction.After
 }
 
 // ExtractionInstruction governs the pass that notices when somebody has set an
@@ -92,6 +119,10 @@ func buildExtraction() string {
 			"pin conversation <policy> - they set one that stands from now until somebody lifts it.\n" +
 			"pin turn <policy> - they set one that expires when they finish what they are currently saying.\n" +
 			"revoke <policy> - they lifted one already in force. Quote the one they lifted, from the list above.\n\n" +
+			"When the policy waits on a stretch of quiet and says how long, put that first as \"after <n>s\": " +
+			"\"if I go quiet for fifteen seconds, ask whether I'm still there\" is " +
+			"\"pin conversation after 15s ask whether they are still there\". Only for a length of silence, " +
+			"and only when they named one - a policy waiting on something happening does not take it.\n\n" +
 			"A policy names a trigger: a condition to watch for, and speech or action to produce when it happens. " +
 			"\"Stop me if I get a date wrong\", \"tell me the moment it lands\", \"count them out loud as I " +
 			"mention them\" each name one. Work names no trigger - \"finish the report by Friday\" says what to " +
@@ -176,9 +207,9 @@ func ParsePin(text string) (kind string, instruction StandingInstruction, ok boo
 	case lowered == "none" || strings.HasPrefix(lowered, "none "):
 		return "none", StandingInstruction{}, true
 	case strings.HasPrefix(lowered, "pin turn "):
-		return "pin", StandingInstruction{Text: strings.TrimSpace(line[len("pin turn "):]), Scope: ScopeTurn}, true
+		return "pin", withDelay(StandingInstruction{Text: strings.TrimSpace(line[len("pin turn "):]), Scope: ScopeTurn}), true
 	case strings.HasPrefix(lowered, "pin conversation "):
-		return "pin", StandingInstruction{Text: strings.TrimSpace(line[len("pin conversation "):]), Scope: ScopeConversation}, true
+		return "pin", withDelay(StandingInstruction{Text: strings.TrimSpace(line[len("pin conversation "):]), Scope: ScopeConversation}), true
 	case strings.HasPrefix(lowered, "revoke "):
 		return "revoke", StandingInstruction{Text: strings.TrimSpace(line[len("revoke "):])}, true
 	}
@@ -254,4 +285,27 @@ func truncateAnswer(text string) string {
 		return text[:80] + "…"
 	}
 	return text
+}
+
+// withDelay lifts a leading "after <n>s" off a pinned policy.
+//
+// The delay is written into the answer rather than left in the text, because
+// what the runtime needs is a number and what the voice needs is the sentence.
+// Both come out of the one reading.
+func withDelay(instruction StandingInstruction) StandingInstruction {
+	rest, ok := strings.CutPrefix(strings.ToLower(instruction.Text), "after ")
+	if !ok {
+		return instruction
+	}
+	end := strings.IndexByte(rest, ' ')
+	if end <= 0 {
+		return instruction
+	}
+	seconds, err := strconv.Atoi(strings.TrimSuffix(rest[:end], "s"))
+	if err != nil || seconds <= 0 {
+		return instruction
+	}
+	instruction.After = time.Duration(seconds) * time.Second
+	instruction.Text = strings.TrimSpace(instruction.Text[len("after ")+end:])
+	return instruction
 }

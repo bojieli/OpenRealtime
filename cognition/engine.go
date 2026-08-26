@@ -236,6 +236,11 @@ type Request struct {
 	// reasonable answers to "say something short"; neither is an answer to the
 	// question that was actually asked.
 	Because string
+	// Observed is something the runtime noticed that nobody said - so far, a
+	// stretch of silence long enough to meet a policy that was waiting for
+	// one. It reaches the provider the same way a live utterance does, because
+	// a turn with nothing new in front of it produces nothing.
+	Observed string
 	// Heard is what the current speaker has said so far in an utterance that
 	// has not been committed yet.
 	//
@@ -265,7 +270,7 @@ func (engine *Engine) RunFast(ctx context.Context, request Request, observer Str
 		Instruction: engine.instruction(engine.prompt(trajectory.PhaseFast), request), SourceRevision: request.SourceRevision,
 		Capabilities: engine.capabilityManifest(), Tools: engine.fastTools(request.AllowFastTools),
 		MaxOutputTokens: engine.config.FastMaxTokens,
-	}, observer, request.Heard)
+	}, observer, request.live())
 }
 
 // PrepareFast generates a fast continuation before the endpoint, against a
@@ -316,7 +321,7 @@ func (engine *Engine) RunSlow(ctx context.Context, request Request, observer Str
 		Instruction: engine.instruction(engine.prompt(trajectory.PhaseSlow), request), SourceRevision: request.SourceRevision,
 		Capabilities: engine.capabilityManifest(), Tools: engine.executableTools(),
 		MaxOutputTokens: engine.config.SlowMaxTokens,
-	}, observer, request.Heard)
+	}, observer, request.live())
 }
 
 func (engine *Engine) instruction(prompt string, request Request) string {
@@ -338,6 +343,9 @@ func Instruct(prompt string, request Request) string {
 	}
 	if strings.TrimSpace(request.Heard) != "" {
 		prompt += "\n\n" + HeardInstruction + " \"" + strings.TrimSpace(request.Heard) + "\""
+	}
+	if observed := strings.TrimSpace(request.Observed); observed != "" {
+		prompt += "\n\n" + ObservedInstruction + " " + observed
 	}
 	if request.Interjecting {
 		prompt += "\n\n" + InterjectingInstruction
@@ -554,4 +562,14 @@ func (engine *Engine) SetAgentInstruction(instruction string) {
 	defer engine.promptMu.Unlock()
 	engine.fastPrompt = Compose(instruction, engine.config.FastInstruction)
 	engine.slowPrompt = Compose(instruction, engine.config.SlowInstruction)
+}
+
+// live is what the provider is given to continue from when the trajectory
+// ends with the agent's own last words: an utterance still being spoken, or
+// something the runtime noticed that nobody said.
+func (request Request) live() string {
+	if heard := strings.TrimSpace(request.Heard); heard != "" {
+		return heard
+	}
+	return strings.TrimSpace(request.Observed)
 }

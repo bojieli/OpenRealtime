@@ -104,6 +104,15 @@ const (
 	// was taken on a partial. Without it the voice is answering a conversation
 	// that stops one sentence short of the reason it was called.
 	HeardInstruction = "They are still speaking. What they have said so far in this sentence, which is not yet in the conversation above, is:"
+	// ObservedInstruction introduces something the runtime noticed rather than
+	// something anybody said.
+	//
+	// A turn caused by a stretch of silence has no utterance behind it, and a
+	// provider handed a conversation ending with its own last words and
+	// nothing new addressed to it says nothing at all - measured, three runs
+	// out of three. What happened is real and belongs in the conversation; it
+	// simply was not spoken.
+	ObservedInstruction = "Nobody said anything. What just happened is:"
 
 	// InterjectingInstruction is injected when the turn is not the agent's.
 	//
