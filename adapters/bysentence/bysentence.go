@@ -84,12 +84,13 @@ func (provider Provider) minimum() int {
 	return defaultMinimum
 }
 
-// Split cuts text at sentence ends, keeping each piece at least minimum runes
-// long so a stray "Mr." does not produce a one-word request.
+// Split cuts text at the first place a speaker would pause, keeping each piece
+// at least minimum runes long so a stray "Mr." does not produce a one-word
+// request.
 //
 // Only the first cut earns anything - it is what the agent starts talking on -
-// so the rest is left whole rather than chopped into as many requests as there
-// are full stops, each paying its own round trip.
+// so the rest is left whole rather than chopped at every comma, each piece
+// paying its own round trip while the ear is already occupied.
 func Split(text string, minimum int) []string {
 	trimmed := strings.TrimSpace(text)
 	if len([]rune(trimmed)) < minimum*2 {
@@ -100,7 +101,7 @@ func Split(text string, minimum int) []string {
 		if index+1 < minimum {
 			continue
 		}
-		if !isSentenceEnd(symbol) {
+		if !isBreak(symbol) {
 			continue
 		}
 		// A boundary is only a boundary if what follows it is a gap. "3.5" and
@@ -118,9 +119,18 @@ func Split(text string, minimum int) []string {
 	return []string{trimmed}
 }
 
-func isSentenceEnd(symbol rune) bool {
+// isBreak reports punctuation a speaker would pause at.
+//
+// Not only sentence ends. The synthesiser's wait for its first byte is a
+// function of the text it was handed - 261ms for a word, 607ms for a clause,
+// 919ms for a sentence - so the first piece should be the shortest thing that
+// is still a natural unit of speech. A comma is one: it is where the speaker
+// would draw breath anyway, so cutting there costs nothing that cutting
+// mid-phrase would.
+func isBreak(symbol rune) bool {
 	switch symbol {
-	case '.', '!', '?', '。', '！', '？':
+	case '.', '!', '?', ',', ';', ':', '—',
+		'。', '！', '？', '，', '、', '；', '：':
 		return true
 	}
 	return false

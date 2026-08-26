@@ -56,3 +56,35 @@ func TestASplitNeedsAGapAfterIt(t *testing.T) {
 		t.Fatalf("nothing follows the stop: %q", got)
 	}
 }
+
+// A comma is where the speaker would draw breath anyway, so it is the cheapest
+// honest place to cut. The synthesiser's wait scales with what it was handed -
+// 261ms for a word, 607ms for a clause, 919ms for a sentence - so the first
+// piece should be the shortest thing that is still a unit of speech.
+func TestTheFirstCutTakesAnyPauseNotJustAFullStop(t *testing.T) {
+	pieces := Split("The build has finished successfully, and all the tests passed as well.", 12)
+	if len(pieces) != 2 {
+		t.Fatalf("a comma is a place to cut: %q", pieces)
+	}
+	if pieces[0] != "The build has finished successfully," {
+		t.Fatalf("the first piece is the clause: %q", pieces[0])
+	}
+	for _, mark := range []string{";", ":"} {
+		got := Split("I checked the order twice"+mark+" it has not shipped yet at all.", 12)
+		if len(got) != 2 {
+			t.Fatalf("%q should be a break: %q", mark, got)
+		}
+	}
+	// The earliest break past the minimum wins, because every rune after it is
+	// another few milliseconds before anybody hears anything - but "Right,"
+	// on its own is half a second of audio against most of a second to
+	// synthesise what follows, so the minimum still refuses it. The guard is
+	// about covering the next piece, not about tidiness.
+	if got := Split("Right, the deadline has moved to the third of next month.", 12); len(got) != 1 {
+		t.Fatalf("a six-rune opening would run out before the rest arrived: %q", got)
+	}
+	early := Split("Once the review is done, we can ship it by the third.", 12)
+	if len(early) != 2 || early[0] != "Once the review is done," {
+		t.Fatalf("the first break past the minimum wins: %q", early)
+	}
+}
