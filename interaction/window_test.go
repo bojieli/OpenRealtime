@@ -101,3 +101,33 @@ func TestWindowCarriesOnlyConversation(t *testing.T) {
 		t.Fatalf("an observer's report was dropped or mislabelled as speech:\n%s", joined)
 	}
 }
+
+// TestOneSentenceIsOneLineHoweverOftenItWasCommitted is the regression for a
+// count of three animals in an afternoon that had two. A recogniser commits its
+// stable text as it goes, so one sentence reaches the trajectory several times,
+// each version longer than the last. Rendered line by line, somebody who
+// mentioned a capybara once appears to have mentioned it three times.
+func TestOneSentenceIsOneLineHoweverOftenItWasCommitted(t *testing.T) {
+	said := func(text string) trajectory.Item {
+		return trajectory.Item{
+			Kind: trajectory.KindObservation, Content: text,
+			Observation: &trajectory.ObservationMeta{Source: "microphone"},
+		}
+	}
+	window := &interaction.Window{}
+	lines := window.Lines([]trajectory.Item{
+		said("It was a warm afternoon"),
+		said("It was a warm afternoon and a capybara wandered over"),
+		said("It was a warm afternoon and a capybara wandered over and sat down"),
+		said("Then a heron landed"),
+	})
+	if len(lines) != 2 {
+		t.Fatalf("one sentence and one more rendered as %d lines: %v", len(lines), lines)
+	}
+	if !strings.Contains(lines[0], "sat down") {
+		t.Fatalf("the kept line is not the longest: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "heron") {
+		t.Fatalf("a different sentence was folded away: %v", lines)
+	}
+}
