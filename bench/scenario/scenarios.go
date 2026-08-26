@@ -172,9 +172,16 @@ func Suite() []Scenario {
 				// scenarios beside this one depend on it happening.
 				{Kind: CheckSilent, Line: 0, FromMS: 5000, AfterMS: 12000,
 					Note: "they said fifteen seconds; speaking at eight is not waiting"},
-				{Kind: CheckSaid, Line: 0, AfterMS: 26000,
-					Any:  []string{"still there", "still with", "everything all right", "you there", "all right"},
-					Note: "and when it does arrive it is the thing they asked for"},
+				// From twelve seconds, and not from the line. The agreement to
+				// do this contains the words the check-in would - "I'll check
+				// in to see if you're still there" - so a window that opens at
+				// the line is satisfied by the promise instead of the act, and
+				// one run passed that way while saying nothing afterwards at
+				// all. "all right" is gone for the same reason: it matches an
+				// acknowledgement that agrees to anything.
+				{Kind: CheckSaid, Line: 0, FromMS: 12000, AfterMS: 26000,
+					Any:  []string{"still there", "still with", "you there", "everything all right"},
+					Note: "and when it does arrive it is the thing they asked for, not the promise to do it"},
 			},
 		},
 		{
