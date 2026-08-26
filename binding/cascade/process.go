@@ -106,6 +106,26 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		AllowFastTools: runtime.observationHasUserIntent(batch),
 		PendingRepair:  len(trajectory.PendingRepairs(runtime.store.Snapshot())) > 0,
 	}
+	// A visual reflex is a separate optional cognition role, not a mutation of
+	// the voice. It gets first refusal only on a batch carrying current visual
+	// evidence. Act and wait complete this event; abstain, timeout, or malformed
+	// output fall through to the unchanged fast/slow rollout below.
+	if visualObservation(batch) {
+		outcome, reflexErr := runtime.engine.RunVisualReflex(ctx, request)
+		if !errors.Is(reflexErr, cognition.ErrVisualReflexDisabled) {
+			turn.record(outcome.Result)
+		}
+		if reflexErr == nil {
+			switch outcome.Kind {
+			case cognition.VisualReflexAct:
+				return runtime.dispatch(ctx, outcome.Result)
+			case cognition.VisualReflexWait:
+				return nil
+			case cognition.VisualReflexAbstain:
+				// The ordinary rollout is the fallback.
+			}
+		}
+	}
 	// A plan that already contains the reasoner does not need the voice to ask
 	// for it, and asking would run it twice.
 	plansSlow := slices.ContainsFunc(plan, func(step interaction.Step) bool {
@@ -138,6 +158,20 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		}
 	}
 	return errors.Join(failures...)
+}
+
+func visualObservation(batch eventloop.Batch) bool {
+	for _, item := range batch.Items {
+		if item.Kind != trajectory.KindObservation || item.Observation == nil {
+			continue
+		}
+		for _, media := range item.Observation.Media {
+			if strings.HasPrefix(strings.ToLower(media.MIMEType), "image/") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // signal opens a safe point because a cognition phase finished. It appends

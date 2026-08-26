@@ -272,10 +272,12 @@ var ErrUnsupported = errors.New("capability not supported by this binding")
 // Status is what a session is running, for the health endpoint and evidence.
 type Status struct {
 	Binding   string             `json:"binding"`
+	Profile   string             `json:"profile,omitempty"`
 	Ownership Ownership          `json:"ownership"`
 	Policies  interaction.Report `json:"policies"`
 	Observers []string           `json:"observers"`
 	Fast      string             `json:"fast,omitempty"`
+	Reflex    string             `json:"reflex,omitempty"`
 	Slow      string             `json:"slow,omitempty"`
 	Speech    string             `json:"speech,omitempty"`
 }

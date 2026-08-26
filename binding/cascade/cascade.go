@@ -27,6 +27,7 @@ import (
 	"github.com/bojieli/OpenRealtime/internal/clock"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/session"
+	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 // ObservationPolicy controls which perception revisions may enter the
@@ -60,6 +61,9 @@ func ParseObservationPolicy(value string) (ObservationPolicy, error) {
 
 // Config is the cascade's component set and its defaults.
 type Config struct {
+	// Profile names the normalized deployment shape for health and evidence.
+	// Empty preserves the pre-profile voice configuration.
+	Profile string
 	// Perception creates one streaming recogniser per utterance, so
 	// recogniser state cannot leak between turns.
 	Perception func() (v1.PerceptionProvider, error)
@@ -89,6 +93,13 @@ type Config struct {
 	Slow          continuation.Provider
 	FastMaxTokens int
 	SlowMaxTokens int
+	// VisualReflex is an optional, separately configured visual action model.
+	// It never replaces Fast: Fast remains the voice, so a voice-only profile
+	// and a voice+vision profile use the same runtime and differ only here and
+	// in their observer selection.
+	VisualReflex          continuation.Provider
+	VisualReflexMaxTokens int
+	VisualReflexTimeout   time.Duration
 
 	// Speech synthesises what the fast provider says.
 	Speech v1.StreamingSpeechProvider
@@ -173,6 +184,12 @@ type Binding struct {
 
 // New validates the component set and creates the binding.
 func New(config Config) (*Binding, error) {
+	if config.Profile == "" {
+		config.Profile = "voice"
+	}
+	if config.Profile != "voice" && config.Profile != "voice+vision" {
+		return nil, errors.New("cascade profile must be voice or voice+vision")
+	}
 	if config.Perception == nil {
 		return nil, errors.New("cascade requires a perception provider factory")
 	}
@@ -189,6 +206,20 @@ func New(config Config) (*Binding, error) {
 		}
 	} else if fastAuthority == continuation.ToolAuthorityExecute {
 		return nil, errors.New("fast provider execution authority requires the explicit fast computer-use mode")
+	}
+	if config.VisualReflex != nil {
+		descriptor := config.VisualReflex.Descriptor()
+		if err := continuation.ValidateDescriptor(descriptor); err != nil {
+			return nil, fmt.Errorf("invalid visual reflex provider: %w", err)
+		}
+		if descriptor.Phase != trajectory.PhaseFast || !descriptor.Vision ||
+			descriptor.EffectiveToolAuthority() != continuation.ToolAuthorityExecute ||
+			descriptor.EffectiveSpeechAuthority() != continuation.SpeechAuthoritySilent {
+			return nil, errors.New("visual reflex must be a silent, vision-capable fast provider with execution authority")
+		}
+		if config.VisualReflexMaxTokens < 0 || config.VisualReflexTimeout < 0 {
+			return nil, errors.New("visual reflex token limit and timeout cannot be negative")
+		}
 	}
 	policy, err := ParseObservationPolicy(string(config.ObservationPolicy))
 	if err != nil {

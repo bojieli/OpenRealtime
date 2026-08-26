@@ -237,7 +237,6 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		cancel(err)
 		return nil, err
 	}
-
 	var fastToolFilter func(continuation.ToolDefinition) bool
 	if bind.config.FastComputerUse {
 		fastToolFilter = func(tool continuation.ToolDefinition) bool {
@@ -250,6 +249,7 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		AgentInstruction: cognition.Compose(bind.config.AgentInstruction, result.settings.Instruction),
 		FastMaxTokens:    bind.config.FastMaxTokens, SlowMaxTokens: bind.config.SlowMaxTokens,
 		FastToolFilter:    fastToolFilter,
+		VisualReflex:      result.selectedVisualReflexConfig(),
 		RequireSilentSlow: true, RetainReasoning: true,
 		// Without this a provider that can see gets the narration and nothing
 		// else, which is enough to reason about a screen and not enough to
@@ -396,10 +396,16 @@ func (runtime *runtime) observerNames() []string {
 // Status reports what this session is running.
 func (runtime *runtime) Status() binding.Status {
 	fast, slow := runtime.engine.Descriptors()
+	reflex := ""
+	if descriptor, enabled := runtime.engine.VisualReflexDescriptor(); enabled {
+		reflex = descriptor.Provider + "/" + descriptor.Model
+	}
 	return binding.Status{
-		Binding: runtime.binding.Name(), Ownership: runtime.binding.Ownership(),
-		Policies: runtime.policyReport(), Observers: runtime.observerNames(),
-		Fast: fast.Provider + "/" + fast.Model, Slow: slow.Provider + "/" + slow.Model,
+		Binding: runtime.binding.Name(), Profile: runtime.config.Profile,
+		Ownership: runtime.binding.Ownership(),
+		Policies:  runtime.policyReport(), Observers: runtime.observerNames(),
+		Fast: fast.Provider + "/" + fast.Model, Reflex: reflex,
+		Slow:   slow.Provider + "/" + slow.Model,
 		Speech: runtime.config.Speech.Descriptor().Name,
 	}
 }
@@ -448,6 +454,11 @@ func (runtime *runtime) Update(_ context.Context, settings binding.Settings) err
 	}
 	if err := runtime.selectObservers(selection); err != nil {
 		return err
+	}
+	if runtime.engine != nil {
+		if err := runtime.engine.ConfigureVisualReflex(runtime.selectedVisualReflexConfig()); err != nil {
+			return err
+		}
 	}
 	if settings.ManualTurns != runtime.manualTurns() {
 		// Turn detection changed hands. The gate has to be rebound, because
@@ -693,6 +704,41 @@ func (runtime *runtime) fastExecutableTool(name string) bool {
 	if !runtime.config.FastComputerUse {
 		return false
 	}
+	return runtime.boundedComputerTool(name)
+}
+
+func (runtime *runtime) visualReflexExecutableTool(name string) bool {
+	if runtime.config.VisualReflex == nil {
+		return false
+	}
+	return runtime.boundedComputerTool(name)
+}
+
+func (runtime *runtime) selectedVisualReflexConfig() *cognition.VisualReflexConfig {
+	if runtime.config.VisualReflex == nil {
+		return nil
+	}
+	selectedVisualObserver := false
+	for _, factory := range runtime.config.Observers {
+		if factory.Kind == perception.FrameImage && runtime.observing(factory.Name) {
+			selectedVisualObserver = true
+			break
+		}
+	}
+	if !selectedVisualObserver {
+		return nil
+	}
+	return &cognition.VisualReflexConfig{
+		Provider: runtime.config.VisualReflex,
+		ToolFilter: func(tool continuation.ToolDefinition) bool {
+			return runtime.visualReflexExecutableTool(tool.Name)
+		},
+		MaxOutputTokens: runtime.config.VisualReflexMaxTokens,
+		Timeout:         runtime.config.VisualReflexTimeout,
+	}
+}
+
+func (runtime *runtime) boundedComputerTool(name string) bool {
 	if !computeruse.IsReflexAction(name) {
 		return false
 	}
