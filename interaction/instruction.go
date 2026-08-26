@@ -187,7 +187,9 @@ func buildInstruction() string {
 			"the same words arrive again and again inside a longer line, and something already counted, " +
 			"translated or warned about has not happened twice because it was heard twice. If what is new " +
 			"since the agent last spoke does not contain the thing they asked to be told about, the " +
-			"condition has not occurred again.\n\n" +
+			"condition has not occurred again. That line is always shown, and it says one of three " +
+			"things: nothing has been said since the agent last spoke, or all of what was heard is new, " +
+			"or it names the part that is.\n\n" +
 			"Two rules that are easy to get backwards. Silence is neither necessary nor sufficient: someone who " +
 			"paused mid-thought has not finished, and someone who never pauses may already have said the thing " +
 			"worth acting on. And work already running has already been decided: do not start the same work a " +

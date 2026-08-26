@@ -129,3 +129,29 @@ func TestAvailableActsWithholdAnswerWhileSomebodyIsSpeaking(t *testing.T) {
 		t.Fatal("answer was withheld from a floor nobody was using")
 	}
 }
+
+// TestNothingNewAndEverythingNewDoNotLookTheSame is the regression for a
+// scenario that went from counting too much to counting nothing at all. The
+// line was omitted when HeardSince was empty and again when it equalled Heard,
+// so "the agent has already answered all of this" and "the agent has not
+// spoken during any of this" rendered identically, and a rule that told the
+// model to judge a standing instruction against what was new could not be
+// followed.
+func TestNothingNewAndEverythingNewDoNotLookTheSame(t *testing.T) {
+	nothingNew := interaction.Situation{
+		Heard: "a capybara wandered over and sat down next to me", HeardSince: "",
+	}.Render()
+	allNew := interaction.Situation{
+		Heard:      "a capybara wandered over and sat down next to me",
+		HeardSince: "a capybara wandered over and sat down next to me",
+	}.Render()
+	if nothingNew == allNew {
+		t.Fatalf("two opposite situations render the same:\n%s", nothingNew)
+	}
+	if !strings.Contains(nothingNew, "nothing has been said since the agent last spoke") {
+		t.Fatalf("a situation with nothing new does not say so:\n%s", nothingNew)
+	}
+	if !strings.Contains(allNew, "all of this is new since the agent last spoke") {
+		t.Fatalf("a situation where everything is new does not say so:\n%s", allNew)
+	}
+}

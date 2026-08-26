@@ -225,8 +225,20 @@ func (state Situation) Render() string {
 	if state.Heard != "" {
 		block.WriteString("heard from " + who + " so far: \"" + state.Heard + "\"\n")
 	}
-	if trimmed := strings.TrimSpace(state.HeardSince); trimmed != "" && trimmed != strings.TrimSpace(state.Heard) {
-		block.WriteString("new since the agent last spoke: \"" + trimmed + "\"\n")
+	// Always said, and never by omission. Leaving the line out when there is
+	// nothing new and again when everything is new renders two opposite
+	// situations identically, and a model reading the absence has to guess
+	// which one it is in. Told to count animals as they were mentioned, it
+	// guessed "nothing new" every time and counted none of them.
+	if state.Heard != "" {
+		switch trimmed := strings.TrimSpace(state.HeardSince); {
+		case trimmed == "":
+			block.WriteString("nothing has been said since the agent last spoke\n")
+		case trimmed == strings.TrimSpace(state.Heard):
+			block.WriteString("all of this is new since the agent last spoke\n")
+		default:
+			block.WriteString("new since the agent last spoke: \"" + trimmed + "\"\n")
+		}
 	}
 	if state.Seen != "" {
 		block.WriteString("just seen: " + state.Seen + "\n")
