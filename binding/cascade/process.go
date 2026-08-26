@@ -223,8 +223,10 @@ func (runtime *runtime) runFast(
 	var err error
 	if !adopted {
 		began := runtime.scheduler.NowNS()
-		result, err = runtime.engine.RunFast(ctx, request, nil)
+		watch := runtime.watchFirstPhrase(began)
+		result, err = runtime.engine.RunFast(ctx, request, watch.observe)
 		turn.stage("voice", runtime.scheduler.NowNS()-began)
+		watch.report(turn)
 	}
 	turn.record(result)
 	// A bounded reflex action crosses the action boundary before speech is
@@ -261,7 +263,11 @@ func (runtime *runtime) runSlow(
 		runtime.store.Snapshot(), request.SourceRevision))
 	var err error
 	if !adopted {
-		result, err = runtime.engine.RunSlow(ctx, request, nil)
+		began := runtime.scheduler.NowNS()
+		watch := runtime.watchFirstPhrase(began)
+		result, err = runtime.engine.RunSlow(ctx, request, watch.observe)
+		turn.stage("reason", runtime.scheduler.NowNS()-began)
+		watch.reportAs(turn, "reason")
 	}
 	if err != nil {
 		if ctx.Err() != nil {

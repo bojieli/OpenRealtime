@@ -5,7 +5,15 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/bojieli/OpenRealtime/adapters/bysentence"
+	"github.com/bojieli/OpenRealtime/cognition"
+	"github.com/bojieli/OpenRealtime/continuation"
 )
+
+// speakableMinimum is how short the first spoken piece may be, matching the
+// synthesiser's own cut so the measurement and the behaviour agree.
+const speakableMinimum = 12
 
 // stageTimer records how long each part of a turn took.
 //
@@ -73,4 +81,61 @@ func (timer *stageTimer) Report() string {
 			strconv.FormatUint(entry.total/1e6, 10) + "ms total)\n")
 	}
 	return out.String()
+}
+
+// phraseWatch times how much of a voice turn happens before there is something
+// worth saying out loud.
+//
+// The turn report timed the voice as one stage, which answers "how long did the
+// model take" and not "how long was the person waiting". Those differ by the
+// tail: speech cannot start until publishAssistant has the whole text, so a
+// model that produces a speakable phrase in 300ms and finishes in 800ms costs
+// 500ms that nobody is reading and nobody is hearing.
+type phraseWatch struct {
+	runtime *runtime
+	began   uint64
+	text    strings.Builder
+	token   uint64
+	phrase  uint64
+}
+
+func (runtime *runtime) watchFirstPhrase(began uint64) *phraseWatch {
+	return &phraseWatch{runtime: runtime, began: began}
+}
+
+func (watch *phraseWatch) observe(event cognition.StreamEvent) error {
+	if watch == nil || event.Event.Kind != continuation.EventAssistantDelta || event.Event.Text == "" {
+		return nil
+	}
+	if watch.token == 0 {
+		watch.token = watch.runtime.scheduler.NowNS() - watch.began
+	}
+	if watch.phrase == 0 {
+		watch.text.WriteString(event.Event.Text)
+		// The same cut the synthesiser would make, so the number measures the
+		// moment speech could have started rather than a moment near it.
+		if pieces := bysentence.Split(watch.text.String(), speakableMinimum); len(pieces) > 1 {
+			watch.phrase = watch.runtime.scheduler.NowNS() - watch.began
+		}
+	}
+	return nil
+}
+
+func (watch *phraseWatch) report(turn *turnReport) {
+	watch.reportAs(turn, "voice")
+}
+
+// reportAs names the stage, because the voice and the reasoner are the same
+// measurement of two different models and reading one as the other has cost a
+// day before.
+func (watch *phraseWatch) reportAs(turn *turnReport, stage string) {
+	if watch == nil {
+		return
+	}
+	if watch.token > 0 {
+		turn.stage(stage+"-first-token", watch.token)
+	}
+	if watch.phrase > 0 {
+		turn.stage(stage+"-first-phrase", watch.phrase)
+	}
 }
