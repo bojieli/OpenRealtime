@@ -217,6 +217,13 @@ uses the suite's `slow-only` reference authority. A server option cannot be
 inferred through the benchmark WebSocket, so the runner requires the operator
 to record the paired cell explicitly.
 
+When a later experiment holds an earlier change fixed, record that shared
+configuration with `-reference-levels`. For example, an F9 hosted-versus-local
+vision pair that keeps the bounded fast action lane in both cells uses
+`-reference-levels F10=bounded-fast -vary F9 -level local-vlm`. The baseline
+uses the same reference override without `-vary`; the two artifacts then differ
+only in F9.
+
 `-categories`, `-grounding`, and `-limit` are diagnostic filters. A filtered
 run always declares the full sixteen-case suite as expected and is therefore
 incomplete and non-reportable. `-list` prints the owned tasks without starting

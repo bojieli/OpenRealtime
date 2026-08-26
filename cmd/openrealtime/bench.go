@@ -56,20 +56,21 @@ func runBench(arguments []string, output io.Writer) error {
 func runRealtimeCU(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench realtime-cu", flag.ContinueOnError)
 	var (
-		endpoint   string
-		tokenEnv   string
-		model      string
-		out        string
-		browser    string
-		groundings string
-		categories string
-		limit      int
-		fps        int
-		timeout    time.Duration
-		cellName   string
-		varyFactor string
-		varyLevel  string
-		list       bool
+		endpoint        string
+		tokenEnv        string
+		model           string
+		out             string
+		browser         string
+		groundings      string
+		categories      string
+		limit           int
+		fps             int
+		timeout         time.Duration
+		cellName        string
+		referenceLevels string
+		varyFactor      string
+		varyLevel       string
+		list            bool
 	)
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
 	flags.StringVar(&tokenEnv, "token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token")
@@ -82,6 +83,7 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 	flags.IntVar(&fps, "fps", 3, "screen and camera capture rate")
 	flags.DurationVar(&timeout, "task-timeout", 45*time.Second, "bound one browser task")
 	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
+	flags.StringVar(&referenceLevels, "reference-levels", "", "comma-separated factor=level overrides held fixed across a pair")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F2")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
 	flags.BoolVar(&list, "list", false, "list repository-owned tasks and stop")
@@ -95,7 +97,7 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 		}
 		return nil
 	}
-	cell, err := resolveRealtimeCUCell(cellName, varyFactor, varyLevel)
+	cell, err := resolveRealtimeCUCell(cellName, referenceLevels, varyFactor, varyLevel)
 	if err != nil {
 		return err
 	}
@@ -168,8 +170,24 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 	return nil
 }
 
-func resolveRealtimeCUCell(name, factor, level string) (bench.Cell, error) {
+func resolveRealtimeCUCell(name, referenceLevels, factor, level string) (bench.Cell, error) {
 	reference := realtimecu.ReferenceCell()
+	for _, assignment := range strings.Split(referenceLevels, ",") {
+		assignment = strings.TrimSpace(assignment)
+		if assignment == "" {
+			continue
+		}
+		factorName, value, found := strings.Cut(assignment, "=")
+		fixedFactor := bench.Factor(strings.ToUpper(strings.TrimSpace(factorName)))
+		value = strings.TrimSpace(value)
+		if !found || fixedFactor == "" || value == "" {
+			return bench.Cell{}, fmt.Errorf("invalid reference level %q; want factor=level", assignment)
+		}
+		if _, known := reference.Levels[fixedFactor]; !known {
+			return bench.Cell{}, fmt.Errorf("unknown reference factor %q", fixedFactor)
+		}
+		reference.Levels[fixedFactor] = value
+	}
 	if strings.TrimSpace(factor) == "" {
 		if strings.TrimSpace(name) != "" && name != "reference" {
 			reference.Name = name
