@@ -346,6 +346,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 
 	consumedInvocations := make(map[string]struct{})
 	elapsed := continuation.ElapsedNotes(request.Trajectory.Items)
+	selectedMedia := continuation.LatestMediaHandles(request.Trajectory.Items)
 	var lastSemanticKind trajectory.Kind
 	for _, item := range request.Trajectory.Items {
 		if item.Kind == trajectory.KindInstruction || item.Kind == trajectory.KindAssistantState {
@@ -377,7 +378,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 		if _, consumed := consumedInvocations[item.InvocationID]; modelItem && consumed && item.InvocationID != "" {
 			continue
 		}
-		content, ok, err := compilePortableItem(item, request.Media, elapsed)
+		content, ok, err := compilePortableItem(item, request.Media, selectedMedia, elapsed)
 		if err != nil {
 			return geminiRequest{}, err
 		}
@@ -434,7 +435,8 @@ func isModelOutputItem(kind trajectory.Kind) bool {
 }
 
 func compilePortableItem(
-	item trajectory.Item, media continuation.MediaResolver, elapsed map[string]string,
+	item trajectory.Item, media continuation.MediaResolver, selectedMedia map[string]struct{},
+	elapsed map[string]string,
 ) (geminiContent, bool, error) {
 	part := make(map[string]any)
 	role := "user"
@@ -446,7 +448,7 @@ func compilePortableItem(
 		// what survives after they are pruned, but while they exist a model
 		// that can see should see them: reasoning about a screen and clicking
 		// on one are different tasks, and only the second needs pixels.
-		attachments = attachMedia(item, media)
+		attachments = attachMedia(item, media, selectedMedia)
 	case trajectory.KindReasoning:
 		role = "model"
 		part["text"] = continuation.InternalStatePreamble + item.Content
@@ -511,12 +513,17 @@ func compilePortableItem(
 // continuation: retention is bounded on purpose, and a model that gets the
 // narration without the image is in exactly the state this design expects
 // after the window has passed.
-func attachMedia(item trajectory.Item, media continuation.MediaResolver) []json.RawMessage {
+func attachMedia(
+	item trajectory.Item, media continuation.MediaResolver, selected map[string]struct{},
+) []json.RawMessage {
 	if media == nil || item.Observation == nil || len(item.Observation.Media) == 0 {
 		return nil
 	}
 	var parts []json.RawMessage
 	for _, reference := range item.Observation.Media {
+		if _, ok := selected[reference.Handle]; !ok {
+			continue
+		}
 		resolved, err := media(reference.Handle)
 		if err != nil || len(resolved.Bytes) == 0 {
 			continue

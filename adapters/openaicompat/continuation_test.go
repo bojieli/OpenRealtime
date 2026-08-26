@@ -13,6 +13,62 @@ import (
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
+func TestBuildRequestAttachesOnlyLatestMediaPerSource(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		Model: "qwen-vl-test", Provider: "vllm", Phase: trajectory.PhaseFast, Vision: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := []trajectory.Item{
+		visionObservationItem("screen-old", "screen", "old screen narration"),
+		visionObservationItem("camera-current", "camera", "current camera narration"),
+		visionObservationItem("screen-current", "screen", "current screen narration"),
+	}
+	resolved := make(map[string]int)
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), Trajectory: trajectory.Snapshot{Items: items},
+		Invocation: continuation.Invocation{Instruction: "Act on the current frame."},
+		Media: func(handle string) (continuation.Media, error) {
+			resolved[handle]++
+			return continuation.Media{MIMEType: "image/jpeg", Bytes: []byte(handle)}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved["screen-old"] != 0 || resolved["screen-current"] != 1 || resolved["camera-current"] != 1 {
+		t.Fatalf("unexpected media resolutions: %#v", resolved)
+	}
+	encoded, _ := json.Marshal(body)
+	requestJSON := string(encoded)
+	for _, narration := range []string{"old screen narration", "current camera narration", "current screen narration"} {
+		if !strings.Contains(requestJSON, narration) {
+			t.Errorf("historical observation text %q was lost: %s", narration, requestJSON)
+		}
+	}
+	if strings.Contains(requestJSON, "c2NyZWVuLW9sZA==") {
+		t.Fatalf("stale screen bytes were attached: %s", requestJSON)
+	}
+	if strings.Count(requestJSON, `"type":"image_url"`) != 2 {
+		t.Fatalf("expected one current screen and camera image: %s", requestJSON)
+	}
+}
+
+func visionObservationItem(handle, source, narration string) trajectory.Item {
+	return trajectory.Item{
+		ID: handle, Kind: trajectory.KindObservation, Content: narration,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseObserver},
+		Observation: &trajectory.ObservationMeta{
+			Observer: "video", Source: source, Authority: trajectory.AuthorityObserver,
+			Media: []trajectory.MediaRef{{
+				Handle: handle, MIMEType: "image/jpeg", Source: source,
+			}},
+		},
+	}
+}
+
 func TestAdapterStreamsReasoningContentAndToolCall(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

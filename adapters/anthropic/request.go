@@ -57,6 +57,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (messagesRequ
 	var blocks []compiledBlock
 	consumed := make(map[string]struct{})
 	elapsed := continuation.ElapsedNotes(request.Trajectory.Items)
+	selectedMedia := continuation.LatestMediaHandles(request.Trajectory.Items)
 	for _, item := range request.Trajectory.Items {
 		if _, cancelled := cancelledInvocations[item.InvocationID]; cancelled && item.InvocationID != "" {
 			continue
@@ -92,7 +93,9 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (messagesRequ
 		if _, already := consumed[item.InvocationID]; modelItem && already && item.InvocationID != "" {
 			continue
 		}
-		compiled, err := compileItem(item, request.Media, adapter.descriptor.Vision, resolved, elapsed)
+		compiled, err := compileItem(
+			item, request.Media, adapter.descriptor.Vision, selectedMedia, resolved, elapsed,
+		)
 		if err != nil {
 			return messagesRequest{}, err
 		}
@@ -276,8 +279,8 @@ func isModelOutputItem(kind trajectory.Kind) bool {
 
 // compileItem renders one trajectory item as portable content blocks.
 func compileItem(
-	item trajectory.Item, media continuation.MediaResolver, vision bool, resolved map[string]struct{},
-	elapsed map[string]string,
+	item trajectory.Item, media continuation.MediaResolver, vision bool, selectedMedia map[string]struct{},
+	resolved map[string]struct{}, elapsed map[string]string,
 ) ([]compiledBlock, error) {
 	switch item.Kind {
 	case trajectory.KindObservation:
@@ -287,7 +290,7 @@ func compileItem(
 		}
 		blocks := []compiledBlock{{role: "user", raw: raw}}
 		if vision {
-			for _, image := range attachMedia(item, media) {
+			for _, image := range attachMedia(item, media, selectedMedia) {
 				blocks = append(blocks, compiledBlock{role: "user", raw: image})
 			}
 		}
@@ -430,12 +433,17 @@ func groupMessages(blocks []compiledBlock) ([]message, error) {
 // continuation: retention is bounded on purpose, and a model that gets the
 // narration without the image is in exactly the state this design expects
 // after the window has passed.
-func attachMedia(item trajectory.Item, media continuation.MediaResolver) []json.RawMessage {
+func attachMedia(
+	item trajectory.Item, media continuation.MediaResolver, selected map[string]struct{},
+) []json.RawMessage {
 	if media == nil || item.Observation == nil || len(item.Observation.Media) == 0 {
 		return nil
 	}
 	var blocks []json.RawMessage
 	for _, reference := range item.Observation.Media {
+		if _, ok := selected[reference.Handle]; !ok {
+			continue
+		}
 		resolved, err := media(reference.Handle)
 		if err != nil || len(resolved.Bytes) == 0 {
 			continue

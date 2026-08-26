@@ -295,12 +295,17 @@ type contentImage struct {
 // continuation: retention is bounded on purpose, and a model that gets the
 // narration without the image is in exactly the state this design expects
 // once the window has passed.
-func attachMedia(item trajectory.Item, media continuation.MediaResolver, vision bool) []contentPart {
+func attachMedia(
+	item trajectory.Item, media continuation.MediaResolver, vision bool, selected map[string]struct{},
+) []contentPart {
 	if !vision || media == nil || item.Observation == nil || len(item.Observation.Media) == 0 {
 		return nil
 	}
 	var parts []contentPart
 	for _, reference := range item.Observation.Media {
+		if _, ok := selected[reference.Handle]; !ok {
+			continue
+		}
 		resolved, err := media(reference.Handle)
 		if err != nil || len(resolved.Bytes) == 0 {
 			continue
@@ -671,6 +676,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 
 	consumedInvocations := make(map[string]struct{})
 	elapsed := continuation.ElapsedNotes(request.Trajectory.Items)
+	selectedMedia := continuation.LatestMediaHandles(request.Trajectory.Items)
 	for _, item := range request.Trajectory.Items {
 		if item.Kind == trajectory.KindInstruction || item.Kind == trajectory.KindAssistantState {
 			continue
@@ -697,7 +703,9 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 		if _, consumed := consumedInvocations[item.InvocationID]; modelItem && consumed && item.InvocationID != "" {
 			continue
 		}
-		message, ok, err := compilePortableItem(item, request.Media, request.Descriptor.Vision, elapsed)
+		message, ok, err := compilePortableItem(
+			item, request.Media, request.Descriptor.Vision, selectedMedia, elapsed,
+		)
 		if err != nil {
 			return chatRequest{}, err
 		}
@@ -736,7 +744,8 @@ func isModelOutputItem(kind trajectory.Kind) bool {
 }
 
 func compilePortableItem(
-	item trajectory.Item, media continuation.MediaResolver, vision bool, elapsed map[string]string,
+	item trajectory.Item, media continuation.MediaResolver, vision bool, selectedMedia map[string]struct{},
+	elapsed map[string]string,
 ) (chatMessage, bool, error) {
 	switch item.Kind {
 	case trajectory.KindObservation:
@@ -744,7 +753,7 @@ func compilePortableItem(
 		// An observation may carry images an observer retained. A model that
 		// can see should see them while they exist: reasoning about a screen
 		// and clicking on one are different tasks.
-		if parts := attachMedia(item, media, vision); len(parts) > 0 {
+		if parts := attachMedia(item, media, vision, selectedMedia); len(parts) > 0 {
 			message.Parts = append([]contentPart{{Type: "text", Text: message.Content}}, parts...)
 			message.Content = ""
 		}
