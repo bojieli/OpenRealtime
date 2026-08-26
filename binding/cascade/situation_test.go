@@ -48,3 +48,19 @@ func TestRepunctuatingIsNotSayingSomethingNew(t *testing.T) {
 		t.Fatalf("a new sentence reported %q as new", got)
 	}
 }
+
+// TestSpeakingAgainNeedsSomethingNewToSpeakAbout is the deterministic half of
+// the rule that a standing instruction fires on its condition rather than on
+// the arrival of text. A recogniser emits a revision every couple of hundred
+// milliseconds and most add nothing but a comma; asked once per revision, an
+// afternoon with two animals in it was counted "1 3 3 1".
+func TestSpeakingAgainNeedsSomethingNewToSpeakAbout(t *testing.T) {
+	runtime := &runtime{}
+	runtime.markSpoken("a capybara wandered over")
+	if got := runtime.heardSinceSpeaking("a capybara wandered over,"); got != "" {
+		t.Fatalf("a comma counted as something new: %q", got)
+	}
+	if got := runtime.heardSinceSpeaking("a capybara wandered over and a heron landed"); got == "" {
+		t.Fatal("a second animal counted as nothing new")
+	}
+}

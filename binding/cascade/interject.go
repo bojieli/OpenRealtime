@@ -86,6 +86,19 @@ func (runtime *runtime) interject(decision interaction.Context) {
 	}
 	runtime.lastInterjectRev = decision.Revision.ID
 	runtime.audioMu.Unlock()
+	// And something they have not already been answered about. One revision
+	// per interjection is not enough on its own: a recogniser emits one every
+	// couple of hundred milliseconds, and most of them add nothing but a comma
+	// to a sentence the agent has already spoken into. Measured on an
+	// afternoon with two animals in it, the counts came out "1 3 3 1".
+	//
+	// This is the deterministic half of the rule the instruction states - the
+	// condition fires the policy, not the arrival of more text - and it is the
+	// half that does not depend on a model reading a line correctly.
+	if runtime.heardSinceSpeaking(strings.TrimSpace(decision.Revision.Text())) == "" {
+		runtime.noteInterject("nothing new since the agent last spoke")
+		return
+	}
 	// One at a time, but not forever. An interjection runs a continuation and
 	// commits it through a loop with one driver, so it can sit behind other
 	// work for seconds - and a flag held for that long silences every later
