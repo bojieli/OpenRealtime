@@ -1616,3 +1616,29 @@ deciding:
 Four of the five are the same bug class as everything else in this file: the
 act was decided correctly and something between the decision and the world
 undid it.
+
+### The voice was blind (F45)
+
+The visual case scored 0/5 and the agent, looking at a screen that reads BUILD
+FINISHED SUCCESSFULLY, said "the build finish condition has not been met yet. I
+am monitoring for it." Handed the same PNG directly, the same model answers:
+"Yes, the build has finished successfully, as indicated by the message BUILD
+FINISHED SUCCESSFULLY and the confirmation that all 214 tests passed in 41
+seconds."
+
+`-fast-sees` defaults to false, which is correct - a text-only voice handed an
+image fails in a worse way - and the deployment never turned it on. The Gemini
+adapter declares vision unconditionally, so the cloud voice had been seeing
+frames all along and the local one never had. Every comparison of the two on
+the visual case was a comparison of a model that could see against a model that
+had been blindfolded.
+
+With it on, 3/3 and 391ms from the frame to speech.
+
+Two things are worth taking from this beyond the flag. The scenario had a check
+for exactly this failure - "nothing has been seen yet, so there is nothing it
+can know has finished" - and it did not fire, because a blind model that
+declines to claim anything passes a check about not claiming things. And the
+situation handed to the decider said `just seen: The user attached an image.`
+in both cases, which is what the runtime says when it has decided the picture
+itself is going to the model. It reads identically whether that happened.
