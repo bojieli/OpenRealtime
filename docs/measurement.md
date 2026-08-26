@@ -1311,3 +1311,136 @@ reasoner being on paths that want a reflex, and two by a model acting on
 conditions that have not been met - which is the same failure the step-by-step
 eval predicts for this model, and the one thing here that a better decision
 model would actually fix.
+
+### The synthesiser was not the model's fault (F33)
+
+Nine hundred milliseconds to synthesise one sentence is too slow for speech
+somebody is waiting on, and almost none of it was the model. Measured against
+the Fish Speech 1.5 checkpoint on this GPU:
+
+```
+generating the semantic tokens for a one-second phrase    ~90ms
+firefly-gan vocoder                                        ~40ms
+the upstream API server, same request                      375ms
+```
+
+The upstream server routes every request through `TTSInferenceEngine`, which
+calls `torch.cuda.empty_cache()` and `gc.collect()` after each synthesis, so
+every request pays to rebuild the allocator state the last one tore down. Going
+straight from the semantic token queue to the decoder, with CUDA graphs
+compiled and warmed at startup, a comma-length phrase returns first audio in
+111-230ms. Inside a real turn it is 161ms.
+
+Serving it at all needed one fix in the vendored tree, and it is the kind worth
+recording because nothing about it looks like a TTS problem: `decode_one_token`
+is captured as a CUDA graph, and `decode_n_tokens` kept a view of its output in
+`cur_token` and fed that view to the next call, which overwrites the buffer.
+Torch detects this and refuses. The release predates the version that checks,
+so upstream never hit it.
+
+### Where the wait actually was (F34)
+
+With synthesis at 161ms the control scenario still took 933ms, and the
+instrumentation that answers why is one number: `voice-first-token` was 673 to
+871ms against a `voice` stage of 713 to 907ms. The first token and the last
+arrived together. Everything downstream of the word-model - streaming text into
+the synthesiser, cutting at commas, any pipelining at all - was chasing about
+40ms.
+
+The word-model was Gemini 3.5 Flash and the wait was its time to first token.
+Qwen3-VL-30B-A3B-FP8, already served locally for the interaction policy,
+answers the same prompt in 15 to 45ms with prompt size barely mattering. The
+control scenario went to 238ms:
+
+```
+endpoint-silence gate                    120ms
+word-model (local), whole stage           58ms   of which 20-48ms to first token
+synthesis, first audio                   161ms
+```
+
+Interrupting a wrong statement measures 17ms p50 in the same pass, and ordering
+from a waiter 69ms.
+
+A turn also read `turn=3619ms voice=840ms`, and the missing 2.8 seconds was the
+reasoner, which recorded no stage at all. It is 2.6 to 3.2s and sits off the
+first-response path.
+
+### A speaker who was a different person every sentence (F35)
+
+The suite's third-party scenarios rely on a voice name to tell the user from
+somebody else in the room. The name changed nothing that mattered. Fish is
+zero-shot, and asked for speech with no reference it invents a speaker - a
+different one on every call. Measured with ECAPA-TDNN embeddings over the
+benchmark's own cached audio:
+
+```
+two lines from the same scripted speaker      0.27
+a user line against a third-party line        0.43
+```
+
+Two lines from one speaker scored what two strangers score, and the pair that
+was supposed to differ scored higher. So the scenario about a third party
+talking near the microphone was not posing that case, and no amount of work on
+the decision layer could have fixed it.
+
+Enrolling each named voice once from a fixed reference and keeping it: the same
+speaker now scores 0.60 and 0.77, different speakers 0.15 to 0.17.
+
+### The model was answering a false premise (F36)
+
+An earlier note called this scenario structural - "the cascade discards who
+spoke before any decision is taken" - and left it there. That was half right.
+The cascade does discard it, but the situation did not report the loss: it
+named whoever was heard as the user. The trace is unarguable.
+
+```
+Now:
+agent: not speaking
+user: speaking right now
+heard from user so far: "Did you get the milk."
+```
+
+Every partial decided listen and every endpoint decided answer. The model was
+answering correctly; the premise was wrong.
+
+With an ECAPA embedding of the first second of each utterance compared against
+the voice the session was opened with, the same instant reads:
+
+```
+someone else in the room: speaking right now
+heard from someone else in the room so far: "Do you get the milk."
+```
+
+The verdict settles within about 300ms of an utterance starting and is asked
+for off the decision path. No evidence leaves the prior in place, which is that
+whoever is talking is the person whose session it is - under a second of audio,
+or no endpoint configured, and nothing changes.
+
+That alone did not fix the scenario. The model had the evidence and no rule for
+it, and the worked examples contained third-party speech exactly once, in the
+phone menu, where acting was right - the same one-sided teaching the file's own
+comment warns about for visual evidence. With both, 0/5 to 2/3.
+
+### Two ways to get a standing instruction wrong (F37)
+
+Counting an afternoon with two animals in it, the agent counted to sixteen: one
+before any animal was mentioned, two three and four through a sentence about a
+river, and five through eleven during the sentence with the capybara - one
+number per revision of the same utterance.
+
+Two instructions were telling it to. The interaction instruction said a
+standing policy "applies to every piece of a broken-up sentence exactly as it
+would to a whole one", which is true of the obligation and false of the
+trigger. The voice was told "if they asked for a count, say the next number",
+which counts turns rather than animals.
+
+Correcting both moved it from counting sixteen to counting nothing at all, and
+the reason is worth more than either fix. The new rule said to judge the
+condition against what was new since the agent last spoke. The renderer omitted
+that line when there was nothing new **and** when everything was new, so the
+two opposite situations rendered identically. Told to judge against what was
+new, and shown nothing about it, the model read every partial as already
+answered.
+
+The ambiguity had been harmless for as long as no rule depended on the line. It
+became a scenario-wide failure the moment one did.
