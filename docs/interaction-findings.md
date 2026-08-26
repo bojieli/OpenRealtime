@@ -407,9 +407,25 @@ the answer was still turn five out of five - while the build case stayed
 conversation. The model appears to read "as I mention them" as bounded by the
 telling, which is a reasonable thing to think and is not what turn scope means.
 
-So the honest statement of the defect: **the two scopes on offer are one
-utterance and forever, and "for as long as I am telling you this" is neither.**
-A policy that recurs across a story has no scope that fits it, and the model
-picks the one whose words match rather than the one whose mechanism does. That
-is a gap in the design and not a failure of the model to follow instructions -
-which is why three attempts to instruct around it all failed.
+So the defect is not that the model ignores a rule. It is that the distinction
+lives in the mechanism rather than in the words: "as I mention them" and "until
+I finish" sound alike and mean opposite things about how long a policy lasts,
+and no amount of restating the rule teaches a difference the sentences do not
+carry.
+
+What taught it was a pair of examples that differ only in that:
+
+    "I'll read out the numbers - add them up as I go and say the running total."
+        -> pin conversation
+    "Let me finish reading this out before you say anything."
+        -> pin turn
+
+Counting then extracts as a conversation policy five times out of five, with
+the build case and "hang on" both unmoved. In the live runtime every pin in the
+run comes back conversation-scoped, and the failure it was causing - speaking
+where nothing was asked - is gone.
+
+The example pays for itself rather than costing capacity, which is not what the
+record here would have predicted: the standing-instruction eval goes from 52/66
+to 56/66 with it. An example that names a distinction the prose cannot appears
+to be worth more than the room it takes.
