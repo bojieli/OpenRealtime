@@ -567,7 +567,21 @@ func validateCapabilities(capabilities []continuation.Capability) error {
 func becauseInstruction(act string) string {
 	switch act {
 	case "speak-through":
-		return "You are speaking because something the person asked to be told about has just happened. Do that thing now, for the occurrence in front of you: if they asked for a count, say the next number; if they asked for a translation, give the English; if they asked to be told when something lands, say it has landed. Say only that."
+		// "Say the next number" was read as a count of turns rather than a
+		// count of things. Measured against one capybara it said five, six,
+		// seven, eight and nine, each on a fresh partial of the same sentence,
+		// and by the end of a story with two animals in it the agent had
+		// counted to sixteen. A count is of what they asked to have counted.
+		return "You are speaking because something the person asked to be told about has just happened. " +
+			"Do that thing now, for the occurrence in front of you: if they asked for a count, say how many " +
+			"of the thing they are counting have been mentioned so far, counting the one that has just been " +
+			"mentioned and nothing else; if they asked for a translation, give the English; if they asked to " +
+			"be told when something lands, say it has landed. Say only that.\n\n" +
+			"Check first that it has happened. What they said arrives in pieces, and each piece repeats " +
+			"everything before it, so the same occurrence is put in front of you several times. If the new " +
+			"part of what they said does not contain the thing they asked about - no animal in it to count, " +
+			"nothing new to translate, the thing they were waiting for has not landed - then it has not " +
+			"happened again, and you reply with " + WaitToken + " and nothing else."
 	case "call-tool":
 		// Measured on a phone menu: the key was pressed correctly and then
 		// announced out loud - "I have pressed two to select the order status

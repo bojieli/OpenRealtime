@@ -57,6 +57,13 @@ func examples() []workedExample {
 		}, ActSpeakThrough, "They asked for a running total and have just added items, and they are still going."},
 
 		{Situation{
+			Pins:    []string{"count the animals out loud as I mention them (40s ago)"},
+			Recent:  []string{"user: a capybara wandered over and sat", "agent: one"},
+			Speaker: "user", Speaking: true,
+			Heard: "a capybara wandered over and sat down next to me", HeardSince: "down next to me",
+		}, ActStaySilent, "Nothing makes acting necessary: the capybara was counted already, and what is new since is the rest of the same sentence with no animal in it."},
+
+		{Situation{
 			Pins:    []string{"stop me if I quote a price under fifty (3m ago)"},
 			Recent:  []string{"user: I'm going to tell you how the call went"},
 			Speaker: "user", Speaking: true,
@@ -173,9 +180,14 @@ func buildInstruction() string {
 			"milliseconds means it is the tail of what came just before, and if the agent has already " +
 			"answered that, there is nothing left to answer. Seconds mean a new thing was said.\n\n" +
 			"That is about answering, and about nothing else. A standing instruction that asks for " +
-			"something each time a condition occurs applies to every piece of a broken-up sentence exactly " +
-			"as it would to a whole one - somebody who asked to be counted at, or interpreted for, is not " +
-			"asking any less because the recogniser split their sentence.\n\n" +
+			"something each time a condition occurs is not asking any less because the recogniser split the " +
+			"sentence: the pieces are still what was said, and a condition that occurs in a later piece has " +
+			"occurred. But it is the condition that fires it, not the arrival of more text. Judge it against " +
+			"what is new since the agent last spoke. Partials grow by repeating everything heard so far, so " +
+			"the same words arrive again and again inside a longer line, and something already counted, " +
+			"translated or warned about has not happened twice because it was heard twice. If what is new " +
+			"since the agent last spoke does not contain the thing they asked to be told about, the " +
+			"condition has not occurred again.\n\n" +
 			"Two rules that are easy to get backwards. Silence is neither necessary nor sufficient: someone who " +
 			"paused mid-thought has not finished, and someone who never pauses may already have said the thing " +
 			"worth acting on. And work already running has already been decided: do not start the same work a " +

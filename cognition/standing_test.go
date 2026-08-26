@@ -95,8 +95,17 @@ func TestTheVoiceIsToldWhatTheTurnWasCalledFor(t *testing.T) {
 		Interjecting: true, Because: "speak-through",
 		Standing: []string{"count the animals out loud (1m ago)"},
 	})
-	if !strings.Contains(counting, "say the next number") {
+	if !strings.Contains(counting, "how many") {
 		t.Fatalf("a running commentary was not told what it is for:\n%s", counting)
+	}
+	// A count is of the things counted, not of the turns spent counting.
+	// Told to "say the next number" it counted to sixteen through a story
+	// with two animals in it, one number per partial of the same sentence.
+	if strings.Contains(counting, "the next number") {
+		t.Fatalf("a running commentary was told to count its own turns:\n%s", counting)
+	}
+	if !strings.Contains(counting, cognition.WaitToken) {
+		t.Fatalf("a running commentary had no way to say the condition had not recurred:\n%s", counting)
 	}
 	// An ordinary turn is not told anything of the sort.
 	if plain := instructionFor(t, cognition.Request{}); strings.Contains(plain, "Say the correction itself") {
