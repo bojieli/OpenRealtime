@@ -139,3 +139,27 @@ is what every other row pays. The visual case pays both.
 That is a real cost of the capability rather than a defect, and it is worth
 stating plainly: an agent watching a screen answers about a second and a half
 slower than one listening to a voice, unless the model deciding can see.
+
+### The final pass, five runs of every scenario
+
+| what triggered the reply | p50 | p90 | worst | triggers |
+| --- | --- | --- | --- | --- |
+| translating a sentence as it lands | 521ms | 1878ms | 1971ms | 15 |
+| counting an animal as it is mentioned | 1134ms | 6196ms | 7597ms | 20 |
+| cutting in on something wrong | 1230ms | 1616ms | 1634ms | 4 |
+| an ordinary finished question | 1578ms | 1627ms | 1800ms | 5 |
+| a backchannel that must not stop the agent | 1799ms | 2621ms | 3588ms | 10 |
+| a waiter naming the right dish | 1827ms | 4914ms | 6780ms | 10 |
+| a phone menu naming an option | 2944ms | 4429ms | 9981ms | 8 |
+| a frame showing a build finished | 89ms | 4874ms | 5087ms | 15 |
+
+The ordering from the earlier pass survives: interrupting is faster than
+answering, because answering waits out a silence threshold and interrupting
+fires on content. Interpreting is now the fastest row in the suite at half a
+second, which is the same effect - a policy never to yield the floor never
+waits for one.
+
+Read the tails with the restraint in mind. A trigger the agent correctly stays
+silent for is still a trigger, and its wait runs until the agent next speaks
+for any reason, so the scenarios whose whole point is silence carry the longest
+p90s. Counting's 6.2s p90 is the pause it was right not to fill.
