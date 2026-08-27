@@ -288,21 +288,36 @@ func (runtime *runtime) noticeStanding(text string) {
 	}()
 }
 
-// setInterjecting records that the turn for a particular revision was taken
-// rather than offered.
-//
-// Keyed by revision, because a single shared flag does not survive the trip.
-// The floor is consulted on every partial and clears the flag for every act
-// that is not an interruption, so between the decision that set it and the
-// turn that reads it there are several chances for it to be reset - and
-// measured, the voice that answers perfectly when told it is correcting
-// something invented a date instead, because by then nothing was telling it.
-func (runtime *runtime) setInterjecting(revision uint64, interjecting bool) {
+// setInterjecting records that the endpoint about to be committed was taken
+// rather than offered. The canonical source revision does not exist until the
+// final observation is committed, so this first marks that hand-off as pending.
+func (runtime *runtime) setInterjecting(_ uint64, interjecting bool) {
 	if !interjecting {
 		return
 	}
 	runtime.audioMu.Lock()
-	runtime.interjectingRev = revision
+	runtime.interjectingPending = true
+	runtime.audioMu.Unlock()
+}
+
+// bindInterjectingRevision attaches a pending floor act to the canonical
+// revision the event loop will later process. Acoustic onset may already have
+// cleared runtime.heard by then; the act must survive independently of that
+// newer utterance.
+func (runtime *runtime) bindInterjectingRevision(revision uint64) {
+	runtime.audioMu.Lock()
+	defer runtime.audioMu.Unlock()
+	if runtime.interjectingPending {
+		if runtime.interjectingRevs == nil {
+			runtime.interjectingRevs = make(map[uint64]struct{})
+		}
+		runtime.interjectingRevs[revision] = struct{}{}
+	}
+}
+
+func (runtime *runtime) finishInterjectingEndpoint() {
+	runtime.audioMu.Lock()
+	runtime.interjectingPending = false
 	runtime.audioMu.Unlock()
 }
 
@@ -311,7 +326,8 @@ func (runtime *runtime) setInterjecting(revision uint64, interjecting bool) {
 func (runtime *runtime) tookTheFloor(revision uint64) bool {
 	runtime.audioMu.Lock()
 	defer runtime.audioMu.Unlock()
-	return revision != 0 && runtime.interjectingRev == revision
+	_, interjecting := runtime.interjectingRevs[revision]
+	return revision != 0 && interjecting
 }
 
 // cognitionExtras is what cognition needs beyond the trajectory, so that the
@@ -324,11 +340,11 @@ func (runtime *runtime) tookTheFloor(revision uint64) bool {
 // cognition reads committed items, so anything still in a partial is invisible
 // to the voice unless it is carried across - and a turn triggered by a partial
 // then reaches the voice with its own cause missing.
-func (runtime *runtime) cognitionExtras() (standing []string, interjecting bool, heard string) {
+func (runtime *runtime) cognitionExtras(sourceRevision uint64) (standing []string, interjecting bool, heard string) {
 	runtime.audioMu.Lock()
 	latest := runtime.heard
 	runtime.audioMu.Unlock()
-	interjecting = runtime.tookTheFloor(latest.ID)
+	interjecting = runtime.tookTheFloor(sourceRevision)
 	// Only while they are still talking. Once the utterance is committed it is
 	// in the log, and repeating it there would show the voice the same sentence
 	// twice with no way to tell that it is one.

@@ -281,6 +281,58 @@ func TestSlowIsSilentAndFastKnowsCapabilitiesWithoutTools(t *testing.T) {
 	}
 }
 
+func TestSlowReceivesToolPrerequisitesAfterTheDeploymentInstruction(t *testing.T) {
+	store := trajectory.NewStore()
+	seed(t, store)
+	slow := slowProvider()
+	const deployment = "Authenticate the account before reading private records."
+	engine, err := cognition.New(cognition.Config{
+		Store: store, Fast: fastProvider(), Slow: slow, AgentInstruction: deployment,
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	if _, err := engine.RunSlow(context.Background(), cognition.Request{SourceRevision: 1}, nil); err != nil {
+		t.Fatalf("run slow: %v", err)
+	}
+	instruction := slow.seen.Invocation.Instruction
+	deploymentAt := strings.Index(instruction, deployment)
+	prerequisiteAt := strings.Index(instruction, cognition.SlowToolPrerequisiteInstruction)
+	if deploymentAt < 0 || prerequisiteAt < 0 || prerequisiteAt <= deploymentAt {
+		t.Fatalf("slow tool guidance did not reinforce the deployment prerequisite:\n%s", instruction)
+	}
+	if !strings.Contains(instruction, cognition.SlowNoResultInstruction) ||
+		!strings.Contains(instruction, continuation.CompletionMarker) {
+		t.Fatalf("slow phase has no control-only way to report that nothing new remains:\n%s", instruction)
+	}
+}
+
+func TestSlowNoResultMarkerCommitsNoConversationalText(t *testing.T) {
+	store := trajectory.NewStore()
+	seed(t, store)
+	slow := slowProvider(continuation.Event{
+		Kind: continuation.EventAssistantDelta, Text: continuation.CompletionMarker,
+	})
+	engine, err := cognition.New(cognition.Config{
+		Store: store, Fast: fastProvider(), Slow: slow, RequireSilentSlow: true,
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	result, err := engine.RunSlow(context.Background(), cognition.Request{SourceRevision: 1}, nil)
+	if err != nil {
+		t.Fatalf("run slow: %v", err)
+	}
+	if result.AssistantText != "" || !result.Finished {
+		t.Fatalf("no-result marker escaped as content: %#v", result)
+	}
+	for _, item := range store.Snapshot().Items {
+		if item.Kind == trajectory.KindAssistant && item.Producer.Phase == trajectory.PhaseSlow {
+			t.Fatalf("control-only result became conversational history: %#v", item)
+		}
+	}
+}
+
 func TestRepairObligationIsInjectedFromTypedStateOnly(t *testing.T) {
 	store := trajectory.NewStore()
 	seed(t, store)

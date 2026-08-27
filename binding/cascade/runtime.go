@@ -66,10 +66,21 @@ type runtime struct {
 	continuing inFlight
 	// interjecting_ guards the single in-flight interjection.
 	interjecting_ inFlight
+	// ordinaryFastRunning includes the interval after an ordinary voice
+	// continuation starts and before it has queued speech. Duplex state cannot
+	// cover that interval: no audio is audible yet. A user who resumes then has
+	// nevertheless overtaken the response. Deliberate interjections are excluded:
+	// continued user speech is their premise, not a reason to cancel them.
+	ordinaryFastRunning atomic.Int32
 
 	settingsMu sync.RWMutex
 	settings   binding.Settings
 
+	// inputMu serialises media-driven endpoint transitions. Audio normally
+	// arrives on one protocol reader, but a time-based floor retry is a second
+	// producer; without one owner, resumed speech could start between a retry's
+	// ForceStop and UserSpeechStopped and be erased by the older transition.
+	inputMu       sync.Mutex
 	audioMu       sync.Mutex
 	acoustic      *perception.EnergyGate
 	acousticRate  uint32
@@ -82,14 +93,24 @@ type runtime struct {
 	// gate usually carries no new ones - an unchanged transcript produces no
 	// observation, which is right for the log and useless for judging a pause.
 	heard interaction.Revision
-	// pauseStartNS is when the silence now being held through began. The gate
-	// cannot time it: reopening resets its counter, so a bound measured from
-	// there would restart on every hold and never expire.
-	pauseStartNS uint64
+	// pauseStartNS is when the floor first held the current pause, and
+	// pauseSilenceNS is how much silence the gate had already accumulated then.
+	// Together they form a clock the gate cannot reset by reopening. Keeping an
+	// explicit active bit matters for uploaded audio, which may contain 600 ms
+	// of silence while only a few milliseconds of wall time have elapsed; zero
+	// is a valid monotonic start in deterministic tests and cannot be a sentinel.
+	pauseStartNS   uint64
+	pauseSilenceNS uint64
+	pauseActive    bool
 	// pauseHeard is what had been heard when the current pause began, so that a
 	// speaker talking through a hold starts a new pause rather than extending
 	// one that ended when they spoke.
 	pauseHeard string
+	// pauseTimer is the wake-up a temporary floor hold owes when no more audio
+	// arrives. pauseGeneration makes its callback conditional on this still
+	// being the same uninterrupted pause.
+	pauseTimer      clock.Timer
+	pauseGeneration uint64
 	// extractedText is the stretch extraction last read, so an utterance that
 	// keeps growing is not re-read from the beginning on every partial.
 	extractedText string
@@ -139,9 +160,12 @@ type runtime struct {
 	quietSpokeSince uint64
 	actedOnHeard    string
 	lastCanonical   uint64
-	// interjecting is set when the turn about to run was taken from somebody
-	// still speaking rather than offered by somebody who had finished.
-	interjectingRev uint64
+	// interjectingPending bridges the floor's decision to the canonical
+	// observation committed by that endpoint; interjectingRevs then key the act
+	// to every exact source revision the event loop will process. This is a set
+	// because several projected endpoints can queue before cognition catches up.
+	interjectingPending bool
+	interjectingRevs    map[uint64]struct{}
 	// lastInterjectRev is the revision the last interjection answered, so a
 	// speaker who keeps talking is not answered once per partial.
 	lastInterjectRev uint64
@@ -283,10 +307,27 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 	}
 	result.speech = speech
 
+	audit := func(record action.Record) {
+		if bind.config.ActionAudit != nil {
+			bind.config.ActionAudit(record)
+		}
+		phase := "decision"
+		if record.Error != "" {
+			phase = "error"
+		}
+		result.debug(result.ctx, binding.DebugEvent{
+			Category: "policy", Name: "policy.tool_authorization", Phase: phase,
+			CorrelationID: record.CallID, Message: record.Error, Attributes: map[string]any{
+				"name": record.Name, "target": record.Target,
+				"producer_phase": record.ProducerPhase, "confirmed": record.Confirmed,
+				"executed": record.Executed,
+			},
+		})
+	}
 	tools, err := action.NewTools(action.ToolsConfig{
 		Registry: result.registry, Ledger: result.ledger, Store: result.store,
 		Confirmer: bind.config.Confirmer, Policy: bind.config.ConfirmPolicy,
-		Audit: bind.config.ActionAudit,
+		Audit: audit,
 	})
 	if err != nil {
 		cancel(err)
@@ -591,7 +632,12 @@ func (runtime *runtime) Close(ctx context.Context, cause error) error {
 		cause = errors.New("session closed")
 	}
 	runtime.cancel(cause)
+	runtime.inputMu.Lock()
+	defer runtime.inputMu.Unlock()
 	runtime.discardPreparations()
+	runtime.audioMu.Lock()
+	runtime.cancelPauseRetryLocked()
+	runtime.audioMu.Unlock()
 	// Release the recogniser. One instance exists per utterance and the
 	// endpoint is what normally retires it, but a session that ends while the
 	// user is still speaking never reaches an endpoint - and that is the

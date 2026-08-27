@@ -13,6 +13,7 @@ import (
 	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/session"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -24,6 +25,8 @@ import (
 // which every interaction policy reads. An observer that hid that answer
 // inside itself would make the rest of the system ask it a second time.
 func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error {
+	runtime.inputMu.Lock()
+	defer runtime.inputMu.Unlock()
 	if err := frame.Validate(); err != nil {
 		return err
 	}
@@ -44,6 +47,33 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 	}
 	now := runtime.scheduler.NowNS()
 	started, stopped := result.Started, result.Stopped
+	// Reopening a held pause preserves its original silence clock. The first
+	// audible frame proves that pause ended and invalidates its bounded retry;
+	// using the gate's acoustic verdict here is both earlier and more reliable
+	// than waiting for a recogniser revision to change.
+	if !started && len(result.Audio) > 0 && result.SilenceNS == 0 && runtime.pauseActive {
+		runtime.pauseActive = false
+		runtime.pauseStartNS, runtime.pauseSilenceNS = 0, 0
+		runtime.cancelPauseRetryLocked()
+	}
+	if started {
+		runtime.debug(ctx, binding.DebugEvent{
+			Category: "vad", Name: "vad.gate_opened", Phase: "decision",
+			Attributes: map[string]any{
+				"audio_start_ms": result.AudioStartMS, "sample_rate_hz": frame.SampleRateHz,
+				"threshold": runtime.Settings().Gate.Threshold,
+			},
+		})
+	}
+	if stopped {
+		runtime.debug(ctx, binding.DebugEvent{
+			Category: "vad", Name: "vad.endpoint_detected", Phase: "decision",
+			Attributes: map[string]any{
+				"audio_end_ms": result.AudioEndMS,
+				"silence_ms":   float64(result.SilenceNS) / float64(time.Millisecond),
+			},
+		})
+	}
 	if manual && stopped {
 		// The client owns the floor. Silence is not an endpoint here; it is
 		// silence, and the turn ends when the client says so. The gate has
@@ -53,11 +83,13 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 		runtime.acoustic.Reopen()
 	}
 	if started {
+		runtime.cancelPauseRetryLocked()
 		runtime.utteranceID = idFor("item", runtime.sequence.Add(1))
 		runtime.speechStartNS = now
 		runtime.lastStable, runtime.lastCanonical = "", 0
 		runtime.heard = interaction.Revision{}
-		runtime.pauseStartNS = 0
+		runtime.pauseActive = false
+		runtime.pauseStartNS, runtime.pauseSilenceNS = 0, 0
 	}
 	if manual {
 		// The client owns the buffer. What it appended is the turn, whether or
@@ -70,11 +102,13 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 		}
 		result.Audio = admittedByClient
 		if runtime.utteranceID == "" {
+			runtime.cancelPauseRetryLocked()
 			runtime.utteranceID = idFor("item", runtime.sequence.Add(1))
 			runtime.speechStartNS = now
 			runtime.lastStable, runtime.lastCanonical = "", 0
 			runtime.heard = interaction.Revision{}
-			runtime.pauseStartNS = 0
+			runtime.pauseActive = false
+			runtime.pauseStartNS, runtime.pauseSilenceNS = 0, 0
 			started = true
 		}
 	}
@@ -144,8 +178,14 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 			runtime.considerQuiet(ctx, now, state)
 		}
 	}
-	if stopped && runtime.holdsThroughPause(now, latest, silenceNS) {
-		stopped = false
+	if stopped {
+		held, retryAfter := runtime.holdsThroughPause(now, latest, silenceNS)
+		if held {
+			stopped = false
+			if retryAfter > 0 {
+				runtime.armPauseRetry(retryAfter, utteranceID)
+			}
+		}
 	}
 	if stopped {
 		return runtime.onUserSpeechStopped(ctx, utteranceID, result.AudioEndMS, now)
@@ -168,17 +208,16 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 // verdict, and the gate's verdict is what is under review here: the floor is
 // being asked what the words and the silence say, not to agree with the
 // mechanism that called it.
-func (runtime *runtime) holdsThroughPause(nowNS uint64, latest interaction.Revision, silenceNS uint64) bool {
+func (runtime *runtime) holdsThroughPause(
+	nowNS uint64, latest interaction.Revision, silenceNS uint64,
+) (bool, time.Duration) {
 	if !runtime.policies.Floor.EngineOwned() {
-		return false
+		return false, 0
 	}
 	if latest.Empty() {
 		runtime.audioMu.Lock()
 		latest = runtime.heard
 		runtime.audioMu.Unlock()
-	}
-	if latest.Empty() {
-		return false
 	}
 	latest.Final = false
 	// A turn cannot be held open forever. The bound below is measured from the
@@ -187,7 +226,7 @@ func (runtime *runtime) holdsThroughPause(nowNS uint64, latest interaction.Revis
 	// says something new - so a speaker who keeps talking resets it forever.
 	if runtime.heldTooLong(nowNS) {
 		runtime.noteInterject("the turn was held open longer than a turn lasts")
-		return false
+		return false, 0
 	}
 	// How long this pause has actually lasted, which is what the hold is
 	// bounded by. Each Reopen zeroes the gate's own counter, so asking the
@@ -207,15 +246,19 @@ func (runtime *runtime) holdsThroughPause(nowNS uint64, latest interaction.Revis
 	// been asked not to interrupt.
 	if spoken := latest.Text(); spoken != runtime.pauseHeard {
 		runtime.pauseHeard = spoken
-		runtime.pauseStartNS = 0
+		runtime.pauseActive = false
+		runtime.pauseStartNS, runtime.pauseSilenceNS = 0, 0
 	}
-	if runtime.pauseStartNS == 0 && nowNS > silenceNS {
-		runtime.pauseStartNS = nowNS - silenceNS
+	if !runtime.pauseActive {
+		runtime.pauseActive = true
+		runtime.pauseStartNS = nowNS
+		runtime.pauseSilenceNS = silenceNS
 	}
 	pauseStart := runtime.pauseStartNS
+	pauseSilence := runtime.pauseSilenceNS
 	runtime.audioMu.Unlock()
-	if pauseStart != 0 && nowNS > pauseStart {
-		silenceNS = nowNS - pauseStart
+	if nowNS >= pauseStart {
+		silenceNS = pauseSilence + nowNS - pauseStart
 	}
 	latest.SilenceNS = silenceNS
 	// The duplex state still says the user is speaking, because the transition
@@ -238,6 +281,13 @@ func (runtime *runtime) holdsThroughPause(nowNS uint64, latest interaction.Revis
 		decision.Situation = &situation
 	}
 	endpoint := runtime.policies.Floor.Endpoint(decision)
+	runtime.debug(context.Background(), binding.DebugEvent{
+		Category: "policy", Name: "policy.floor.pause", Phase: "decision",
+		CorrelationID: strconv.FormatUint(latest.ID, 10), Attributes: map[string]any{
+			"ended": endpoint.Ended, "act": endpoint.Act,
+			"silence_ms": float64(silenceNS) / float64(time.Millisecond),
+		}, Payload: map[string]any{"heard": latest.Text()},
+	})
 	// The pause decision is recorded like any other. It was invisible until it
 	// was, and it is the one that decides whether a silence ends a turn - the
 	// single most consequential call the floor makes.
@@ -262,19 +312,102 @@ func (runtime *runtime) holdsThroughPause(nowNS uint64, latest interaction.Revis
 	if endpoint.Ended {
 		runtime.setInterjecting(decision.Revision.ID, endpoint.Act == interaction.ActInterrupt)
 		runtime.audioMu.Lock()
-		runtime.pauseStartNS = 0
+		runtime.pauseActive = false
+		runtime.pauseStartNS, runtime.pauseSilenceNS = 0, 0
 		runtime.audioMu.Unlock()
-		return false
+		return false, 0
 	}
 	runtime.audioMu.Lock()
 	defer runtime.audioMu.Unlock()
 	if runtime.acoustic == nil {
-		return false
+		return false, 0
 	}
 	// The gate has already closed itself, so it is reopened and this turn
 	// continues on the next audible frame.
 	runtime.acoustic.Reopen()
-	return true
+	return true, endpoint.ReconsiderAfter
+}
+
+// armPauseRetry supplies the wake-up promised by EndpointDecision. A normal
+// microphone keeps sending frames and will usually settle the turn first; a
+// finite upload may not, so time itself must be able to ask again.
+func (runtime *runtime) armPauseRetry(after time.Duration, utteranceID string) {
+	if after <= 0 {
+		return
+	}
+	runtime.audioMu.Lock()
+	if runtime.pauseTimer != nil {
+		runtime.pauseTimer.Stop()
+	}
+	runtime.pauseGeneration++
+	generation := runtime.pauseGeneration
+	runtime.pauseTimer = runtime.scheduler.AfterFunc(after, func() {
+		runtime.retryHeldPause(generation, utteranceID)
+	})
+	runtime.audioMu.Unlock()
+}
+
+func (runtime *runtime) retryHeldPause(generation uint64, utteranceID string) {
+	runtime.inputMu.Lock()
+	defer runtime.inputMu.Unlock()
+	if runtime.ctx.Err() != nil {
+		return
+	}
+	runtime.audioMu.Lock()
+	if generation != runtime.pauseGeneration || utteranceID == "" || utteranceID != runtime.utteranceID ||
+		!runtime.pauseActive || runtime.acoustic == nil {
+		runtime.audioMu.Unlock()
+		return
+	}
+	runtime.pauseTimer = nil
+	latest := runtime.heard
+	nowNS := runtime.scheduler.NowNS()
+	silenceNS := runtime.pauseSilenceNS
+	if nowNS >= runtime.pauseStartNS {
+		silenceNS += nowNS - runtime.pauseStartNS
+	}
+	runtime.audioMu.Unlock()
+
+	held, retryAfter := runtime.holdsThroughPause(nowNS, latest, silenceNS)
+	if held {
+		// A resumed voice invalidates generation before this can re-arm.
+		runtime.audioMu.Lock()
+		current := generation == runtime.pauseGeneration && utteranceID == runtime.utteranceID &&
+			runtime.pauseActive
+		runtime.audioMu.Unlock()
+		if current {
+			runtime.armPauseRetry(retryAfter, utteranceID)
+		}
+		return
+	}
+
+	// The decision was made without the audio lock. Revalidate it before
+	// closing the gate so a voice frame that arrived meanwhile wins the race.
+	runtime.audioMu.Lock()
+	if generation != runtime.pauseGeneration || utteranceID != runtime.utteranceID || runtime.acoustic == nil {
+		runtime.audioMu.Unlock()
+		return
+	}
+	endMS, stopped := runtime.acoustic.ForceStop()
+	if !stopped {
+		runtime.audioMu.Unlock()
+		return
+	}
+	runtime.cancelPauseRetryLocked()
+	runtime.audioMu.Unlock()
+	if err := runtime.onUserSpeechStopped(runtime.ctx, utteranceID, endMS, nowNS); err != nil {
+		runtime.fail("endpoint_retry_error", err)
+	}
+}
+
+// cancelPauseRetryLocked invalidates callbacks even when Stop loses a race.
+// audioMu must be held.
+func (runtime *runtime) cancelPauseRetryLocked() {
+	runtime.pauseGeneration++
+	if runtime.pauseTimer != nil {
+		runtime.pauseTimer.Stop()
+		runtime.pauseTimer = nil
+	}
 }
 
 // heldTooLong reports that this utterance has been held open past the bound,
@@ -310,6 +443,16 @@ func (runtime *runtime) onUserSpeechStarted(ctx context.Context, utteranceID str
 	runtime.audioMu.Lock()
 	runtime.holdStartNS = 0
 	runtime.audioMu.Unlock()
+	// There is a reversible interval between beginning a voice continuation and
+	// publishing its action. Duplex state quite correctly calls that interval
+	// silent, but silence must not let an answer to an earlier fragment escape
+	// after the user has resumed. Interrupt only in-flight voice cognition here;
+	// considerBargeIn below cancels pending synthesis according to policy, while
+	// unrelated slow deliberation remains free to continue under speech.
+	if runtime.ordinaryFastRunning.Load() > 0 {
+		runtime.coordinator.Interrupt(fmt.Errorf(
+			"user resumed before the response began: %w", eventloop.ErrInterrupted))
+	}
 	if err := runtime.considerBargeIn(ctx, interaction.Revision{}, 0); err != nil {
 		return err
 	}
@@ -334,8 +477,19 @@ func (runtime *runtime) considerBargeIn(
 	ctx context.Context, revision interaction.Revision, overlapNS uint64,
 ) error {
 	state := runtime.duplex.Snapshot()
-	if !state.Overlapping() {
+	// A synthesiser may have claimed an ordinary utterance without producing
+	// its first frame yet. It is still fully reversible, and from the barge-in
+	// policy's point of view it is precisely an agent response the user has
+	// overtaken. Present that pending response as overlap so an immediate
+	// policy cancels it before it can become audible. Deliberate speak-through
+	// output is excluded by ActiveOrdinary.
+	pending := state.UserSpeaking && !state.AgentSpeaking && runtime.speech.ActiveOrdinary()
+	if !state.Overlapping() && !pending {
 		return nil
+	}
+	if pending {
+		state.AgentSpeaking = true
+		state.Phase = session.PhaseOverlap
 	}
 	decision := interaction.Context{
 		NowNS: runtime.scheduler.NowNS(), Duplex: state, Revision: revision,
@@ -380,13 +534,33 @@ func (runtime *runtime) considerBargeIn(
 }
 
 func (runtime *runtime) onUserSpeechStopped(ctx context.Context, utteranceID string, endMS int, now uint64) error {
+	defer runtime.finishInterjectingEndpoint()
+	runtime.audioMu.Lock()
+	runtime.cancelPauseRetryLocked()
+	runtime.pauseActive = false
+	runtime.pauseStartNS, runtime.pauseSilenceNS = 0, 0
+	runtime.audioMu.Unlock()
 	runtime.duplex.UserSpeechStopped(now)
 	var observations []perception.Observation
 	var flushErr error
 	durationMS := uint64(0)
 	if runtime.observing(audioObserverName) {
+		began := time.Now()
+		runtime.debug(ctx, binding.DebugEvent{
+			Category: "asr", Name: "asr.finalize", Phase: "start", CorrelationID: utteranceID,
+		})
 		observations, flushErr = runtime.audio.Flush(ctx)
 		durationMS = runtime.audio.DurationMS()
+		phase, message := "end", ""
+		if flushErr != nil {
+			phase, message = "error", flushErr.Error()
+		}
+		runtime.debug(ctx, binding.DebugEvent{
+			Category: "asr", Name: "asr.finalize", Phase: phase, CorrelationID: utteranceID,
+			DurationMS: elapsedMS(began), Message: message, Attributes: map[string]any{
+				"audio_duration_ms": durationMS, "observation_count": len(observations),
+			},
+		})
 		runtime.audio.Reset()
 	}
 	runtime.policies.Trigger.Reset()
@@ -431,11 +605,32 @@ func (runtime *runtime) observeAudio(
 	// arrives a revision late costs nothing while a request that blocks costs
 	// every turn.
 	runtime.voices.Hear(ctx, frames)
+	began := time.Now()
+	correlationID := runtime.currentUtterance()
+	runtime.debug(ctx, binding.DebugEvent{
+		Category: "asr", Name: "asr.observe", Phase: "start", CorrelationID: correlationID,
+		Attributes: map[string]any{"frame_count": len(frames)},
+	})
 	observations, err := runtime.audio.Observe(ctx, frames)
 	if err != nil {
+		runtime.debug(ctx, binding.DebugEvent{
+			Category: "asr", Name: "asr.observe", Phase: "error", CorrelationID: correlationID,
+			DurationMS: elapsedMS(began), Message: err.Error(),
+		})
 		return latest, err
 	}
+	runtime.debug(ctx, binding.DebugEvent{
+		Category: "asr", Name: "asr.observe", Phase: "end", CorrelationID: correlationID,
+		DurationMS: elapsedMS(began), Attributes: map[string]any{"observation_count": len(observations)},
+	})
 	for _, observation := range observations {
+		runtime.debug(ctx, binding.DebugEvent{
+			Category: "asr", Name: "asr.revision", Phase: "update", CorrelationID: correlationID,
+			Attributes: map[string]any{
+				"revision": observation.Revision, "final": observation.Final,
+				"stable_chars": len(observation.StableText),
+			}, Payload: map[string]any{"text": observation.Text, "stable_text": observation.StableText},
+		})
 		revision := interaction.Revision{
 			ID: observation.Revision, StableText: observation.StableText,
 			UnstableText: strings.TrimPrefix(observation.Text, observation.StableText),
@@ -556,6 +751,9 @@ func (runtime *runtime) commitObservation(ctx context.Context, observation perce
 		runtime.lastCanonical = revision
 	}
 	runtime.audioMu.Unlock()
+	if observation.Authority == trajectory.AuthorityUser {
+		runtime.bindInterjectingRevision(revision)
+	}
 
 	if supersedes != 0 {
 		// A promoted revision replaces an earlier partial. Work derived from

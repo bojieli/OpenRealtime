@@ -178,6 +178,7 @@ type recordingSink struct {
 	toolCalls    []binding.ToolCallEvent
 	observations []perception.Observation
 	failures     []binding.ErrorEvent
+	activities   []binding.ActivityEvent
 }
 
 func (sink *recordingSink) TurnBegin(context.Context) error { return nil }
@@ -195,7 +196,18 @@ func (sink *recordingSink) turnOutcomes() []binding.TurnOutcome {
 	return append([]binding.TurnOutcome(nil), sink.outcomes...)
 }
 
-func (sink *recordingSink) Activity(context.Context, binding.ActivityEvent) error { return nil }
+func (sink *recordingSink) Activity(_ context.Context, event binding.ActivityEvent) error {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	sink.activities = append(sink.activities, event)
+	return nil
+}
+
+func (sink *recordingSink) activityEvents() []binding.ActivityEvent {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	return append([]binding.ActivityEvent(nil), sink.activities...)
+}
 
 func (sink *recordingSink) Transcript(_ context.Context, event binding.TranscriptEvent) error {
 	sink.mu.Lock()
@@ -410,6 +422,43 @@ func TestTurnAnswersFastThenVoicesSlow(t *testing.T) {
 	}
 }
 
+// A silent reasoner that has nothing new can still leave behind a paraphrase
+// of what the voice just said. The background voicing turn must not turn that
+// into the same answer twice, while a later user revision remains free to ask
+// for the same words again.
+func TestBackgroundResultDoesNotRepeatTheSameResponseForOneRevision(t *testing.T) {
+	const (
+		response = "Could you confirm the order ID?"
+		initial  = "I can help with that. " + response
+	)
+	fast := newFast(
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: initial}},
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: response}},
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: initial}},
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: response}},
+	)
+	slow := newSlow(
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "No additional result."}},
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Still no additional result."}},
+	)
+	runtime, sink := startSession(t, cascade.Config{Fast: fast, Slow: slow}, binding.Settings{})
+
+	speak(t, runtime, 3)
+	waitFor(t, func() bool { return fast.invocations() >= 2 }, "the first background result was never voiced")
+	if spoken := sink.spokenTexts(); len(spoken) != 1 || spoken[0] != initial {
+		t.Fatalf("one observation repeated the same response: %#v", spoken)
+	}
+
+	// The text is identical, but this is a new user observation and therefore
+	// a new answer rather than a duplicate of the first one.
+	speak(t, runtime, 3)
+	waitFor(t, func() bool { return fast.invocations() >= 4 }, "the second background result was never voiced")
+	waitFor(t, func() bool { return len(sink.spokenTexts()) >= 2 }, "the new observation's response was suppressed")
+	if spoken := sink.spokenTexts(); len(spoken) != 2 || spoken[0] != initial || spoken[1] != initial {
+		t.Fatalf("revision-scoped suppression produced %#v", spoken)
+	}
+}
+
 func TestSlowToolCallsReachTheClientAndResultsResumeTheTurn(t *testing.T) {
 	fast := newFast(
 		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking."}},
@@ -461,6 +510,67 @@ func TestSlowToolCallsReachTheClientAndResultsResumeTheTurn(t *testing.T) {
 	if !sawResult {
 		t.Fatal("the result must be committed to the trajectory")
 	}
+}
+
+func TestFailedToolReportDoesNotAutomaticallyRetrySlow(t *testing.T) {
+	fast := newFast(
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking."}},
+		[]continuation.Event{
+			{Kind: continuation.EventAssistantDelta, Text: "That lookup failed; please check the account."},
+			{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+				CallID: "proposed_retry_1", Name: "get_balance", Arguments: json.RawMessage(`{"account":"guessed"}`),
+			}},
+		},
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "I will try with that new information."}},
+	)
+	slow := newSlow(
+		[]continuation.Event{{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+			CallID: "lookup_1", Name: "get_balance", Arguments: json.RawMessage(`{"account":"A1"}`),
+		}}},
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "The new information is enough to continue."}},
+	)
+	var dispatched atomic.Int32
+	runtime, _ := startSession(t, cascade.Config{
+		Fast: fast, Slow: slow,
+		Tools: []action.ToolSpec{{
+			Name: "get_balance", Description: "read a balance",
+			Parameters: json.RawMessage(`{"type":"object"}`), Confirm: action.ConfirmNever,
+			Dispatcher: action.DispatcherFunc(func(
+				_ context.Context, call trajectory.ToolCall,
+			) (trajectory.ToolResult, error) {
+				dispatched.Add(1)
+				return trajectory.ToolResult{}, errors.New("balance service unavailable")
+			}),
+		}},
+	}, binding.Settings{})
+
+	speak(t, runtime, 3)
+	waitFor(t, func() bool {
+		if fast.invocations() < 2 {
+			return false
+		}
+		for _, item := range runtime.Trajectory().Items {
+			if item.Kind == trajectory.KindToolProposal && item.ToolCall != nil &&
+				item.ToolCall.CallID == "proposed_retry_1" {
+				return true
+			}
+		}
+		return false
+	}, "the failed result was not returned to the voice")
+	// The deliberately unfinished failure report and its proposal are both
+	// escalation-shaped. Neither is new evidence, so neither may reopen slow.
+	time.Sleep(150 * time.Millisecond)
+	if got := slow.invocations(); got != 1 {
+		t.Fatalf("a failure report automatically retried slow: got %d invocations", got)
+	}
+	if got := dispatched.Load(); got != 1 {
+		t.Fatalf("the failed action crossed the dispatcher %d times", got)
+	}
+
+	// A later user observation is new evidence and starts an ordinary rollout;
+	// the terminal failure handoff must not disable future reasoning.
+	speak(t, runtime, 3)
+	waitFor(t, func() bool { return slow.invocations() >= 2 }, "new user evidence did not reopen slow cognition")
 }
 
 func TestFastProposalsNeverBecomeExecutableCalls(t *testing.T) {
@@ -555,6 +665,59 @@ func TestOptInFastComputerActionDispatchesInProcess(t *testing.T) {
 	sink.mu.Unlock()
 	if remoteCalls != 0 {
 		t.Fatal("a fast server-owned action was handed to the client")
+	}
+}
+
+func TestSlowToolCallIsNotDispatchedAfterUserResumes(t *testing.T) {
+	t.Parallel()
+	const toolName = "lookup"
+	slow := &slowProvider{
+		scriptedProvider: *newSlow([]continuation.Event{{
+			Kind: continuation.EventToolCall,
+			ToolCall: &trajectory.ToolCall{
+				CallID: "slow_lookup_1", Name: toolName, Arguments: json.RawMessage(`{"key":"old"}`),
+			},
+		}}),
+		delay: 150 * time.Millisecond, entered: make(chan struct{}),
+	}
+	var dispatched atomic.Int32
+	runtime, _ := startSession(t, cascade.Config{
+		// Keep the voice silent so barge-in does not cancel the whole processor;
+		// this isolates the later action-boundary check in runSlow.
+		Fast: newFast(),
+		Slow: slow,
+		Tools: []action.ToolSpec{{
+			Name: toolName, Description: "look up a value",
+			Parameters: json.RawMessage(`{"type":"object"}`), Confirm: action.ConfirmNever,
+			Dispatcher: action.DispatcherFunc(func(
+				_ context.Context, call trajectory.ToolCall,
+			) (trajectory.ToolResult, error) {
+				dispatched.Add(1)
+				return trajectory.ToolResult{CallID: call.CallID, Name: call.Name}, nil
+			}),
+		}},
+	}, binding.Settings{})
+
+	speak(t, runtime, 3)
+	select {
+	case <-slow.entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the slow continuation never started")
+	}
+	// Start a new stretch but do not endpoint it. There are deliberately no
+	// words yet: acoustic onset alone must fence the older action.
+	pushAudio(t, runtime, tone(2400, 8000), 3)
+	waitFor(t, func() bool {
+		for _, item := range runtime.Trajectory().Items {
+			if item.Kind == trajectory.KindToolPlaceholder && item.ToolPlaceholder != nil &&
+				item.ToolPlaceholder.CallID == "slow_lookup_1" {
+				return true
+			}
+		}
+		return false
+	}, "the overtaken tool call was not closed with a placeholder")
+	if dispatched.Load() != 0 {
+		t.Fatal("a slow tool call crossed the action boundary after the user resumed")
 	}
 }
 

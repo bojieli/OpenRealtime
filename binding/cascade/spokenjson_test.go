@@ -10,6 +10,7 @@ func TestAToolCallWrittenAsProseIsNotSpeech(t *testing.T) {
 		`[{"name":"press_key","arguments":{"key":"2"}}]`,
 		`{"name": "track_order", "arguments": {"id": "AB1"}}`,
 		` {"function":"press_key","parameters":{"key":"9"}} `,
+		`<tool_call> {"name":"find_user","arguments":{"email":"a@example.com"}} </tool_call>`,
 	} {
 		if !looksLikeToolCall(text) {
 			t.Fatalf("a call written as prose was treated as speech: %s", text)

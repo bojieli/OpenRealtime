@@ -27,6 +27,11 @@ type EndpointDecision struct {
 	Ended     bool   `json:"ended"`
 	Projected bool   `json:"projected,omitempty"`
 	Reason    string `json:"reason,omitempty"`
+	// ReconsiderAfter is the bounded wake-up owed by a temporary hold. Audio
+	// frames usually ask again naturally, but a client is allowed to stop
+	// sending after its last sample; without an explicit wake-up a time-based
+	// floor could then hold a finished turn forever.
+	ReconsiderAfter time.Duration `json:"reconsider_after,omitempty"`
 	// Act names the choice behind the decision, when a floor made one.
 	//
 	// It carries because the two acts that end a turn end it for opposite
@@ -56,6 +61,7 @@ type EngineFloorOptions struct {
 	// matching the Realtime default.
 	SilenceDuration time.Duration
 	// MinimumSpeech guards against a cough ending a turn that never started.
+	// Zero selects 800 ms.
 	MinimumSpeech time.Duration
 	// Projection, when set, may end a turn before silence confirms it, and
 	// may hold one open past the silence threshold.
@@ -86,6 +92,9 @@ func NewEngineFloor(options EngineFloorOptions) Floor {
 	if options.SilenceDuration <= 0 {
 		options.SilenceDuration = 500 * time.Millisecond
 	}
+	if options.MinimumSpeech <= 0 {
+		options.MinimumSpeech = 800 * time.Millisecond
+	}
 	if options.ProjectionHold <= 0 {
 		options.ProjectionHold = time.Second
 	}
@@ -93,11 +102,13 @@ func NewEngineFloor(options EngineFloorOptions) Floor {
 }
 
 func (floor engineFloor) Name() string {
+	base := fmt.Sprintf("engine-%dms+min%dms", floor.options.SilenceDuration.Milliseconds(),
+		floor.options.MinimumSpeech.Milliseconds())
 	if floor.options.Projection != nil && floor.options.Projection.Name() != "vad-only" {
-		return fmt.Sprintf("engine-%dms+%dms+%s", floor.options.SilenceDuration.Milliseconds(),
+		return fmt.Sprintf("%s+%dms+%s", base,
 			floor.options.ProjectionHold.Milliseconds(), floor.options.Projection.Name())
 	}
-	return fmt.Sprintf("engine-%dms", floor.options.SilenceDuration.Milliseconds())
+	return base
 }
 
 func (floor engineFloor) EngineOwned() bool { return true }
@@ -106,7 +117,50 @@ func (floor engineFloor) Endpoint(context Context) EndpointDecision {
 	if context.Revision.Final {
 		return EndpointDecision{Ended: true, Reason: "perception reported a final revision"}
 	}
+	// Silence is only evidence that an utterance ended after there has been an
+	// utterance long enough to end. A cough, clipped onset, or recogniser's
+	// first one-character hypothesis can otherwise spend most of the silence
+	// threshold looking exactly like a complete short turn and release a reply
+	// just before the person resumes.
+	//
+	// Measure the lifetime from the acoustic start rather than transcript
+	// length. That keeps the rule language-independent, and includes the
+	// endpoint silence: a genuine short answer is not delayed when its speech
+	// plus the ordinary silence threshold has already crossed this minimum.
+	// An explicit perception final above remains authoritative. A missing or
+	// inconsistent timestamp leaves existing text/manual paths unchanged.
+	started := context.Duplex.UserSpeechStartedNS
+	if started != 0 && context.NowNS >= started &&
+		context.NowNS-started < uint64(floor.options.MinimumSpeech.Nanoseconds()) {
+		remaining := uint64(floor.options.MinimumSpeech.Nanoseconds()) - (context.NowNS - started)
+		reconsiderAfter := time.Duration(remaining)
+		// This verdict rejects an acoustic endpoint, so the caller reopens the
+		// gate. If no more samples arrive, its timer substitutes for that gate
+		// and must require the same silence window the gate would have required;
+		// retrying at the minimum alone would silently turn 600 ms endpointing
+		// into an 80 ms endpoint after a 720 ms false start.
+		if reconsiderAfter < floor.options.SilenceDuration {
+			reconsiderAfter = floor.options.SilenceDuration
+		}
+		return EndpointDecision{
+			Reason: "minimum speech duration has not elapsed", ReconsiderAfter: reconsiderAfter,
+		}
+	}
 	if context.Revision.Empty() {
+		// A fast acoustic gate can close before a streaming recogniser has
+		// produced its first hypothesis. No text is not evidence that the turn
+		// ended; it is also not evidence that it should be held forever. Give
+		// perception the same silence window as every other endpoint decision,
+		// then fall back to acoustics if language evidence still has not arrived.
+		//
+		// This belongs in the floor rather than the runtime. The floor owns the
+		// threshold, and bypassing it for an empty revision made the effective
+		// endpoint depend on whether the recogniser happened to answer within the
+		// first 120ms of quiet.
+		if !context.Duplex.UserSpeaking &&
+			context.Revision.SilenceNS >= uint64(floor.options.SilenceDuration.Nanoseconds()) {
+			return EndpointDecision{Ended: true, Reason: "no transcript arrived before the silence threshold"}
+		}
 		return EndpointDecision{}
 	}
 	held := false
@@ -129,7 +183,11 @@ func (floor engineFloor) Endpoint(context Context) EndpointDecision {
 	// whatever the model thinks, because a floor that can be talked out of
 	// ending is not a floor.
 	if held && context.Revision.SilenceNS < uint64((floor.options.SilenceDuration+floor.options.ProjectionHold).Nanoseconds()) {
-		return EndpointDecision{Projected: true, Reason: heldReason}
+		remaining := uint64((floor.options.SilenceDuration + floor.options.ProjectionHold).Nanoseconds()) -
+			context.Revision.SilenceNS
+		return EndpointDecision{
+			Projected: true, Reason: heldReason, ReconsiderAfter: time.Duration(remaining),
+		}
 	}
 	return EndpointDecision{Ended: true, Reason: "silence exceeded the endpoint threshold"}
 }

@@ -485,6 +485,54 @@ func TestFunctionCallingRoundTripsUnmodified(t *testing.T) {
 	}
 }
 
+func TestExplicitClientToolFailureDoesNotAutomaticallyRetry(t *testing.T) {
+	server := startServer(t,
+		fast(
+			[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking."}},
+			[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "That lookup failed; please check the name."}},
+			[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "I will try again with that new information."}},
+		),
+		slow(
+			[]continuation.Event{{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+				CallID: "call_1", Name: "lookup", Arguments: json.RawMessage(`{"name":"heard"}`),
+			}}},
+			[]continuation.Event{{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+				CallID: "call_2", Name: "lookup", Arguments: json.RawMessage(`{"name":"corrected"}`),
+			}}},
+		),
+		"find my account")
+	client := dial(t, server)
+	client.await("session.created", 5*time.Second)
+	client.send(map[string]any{"type": "session.update", "session": map[string]any{
+		"type": "realtime",
+		"audio": map[string]any{
+			"input":  map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
+			"output": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
+		},
+		"tools": []map[string]any{{
+			"type": "function", "name": "lookup", "description": "find an account",
+			"parameters": map[string]any{"type": "object"},
+		}},
+	}})
+	client.await("session.updated", 5*time.Second)
+	client.speak()
+
+	call := client.await("response.function_call_arguments.done", 10*time.Second)
+	if call["call_id"] != "call_1" {
+		t.Fatalf("unexpected first call: %v", call)
+	}
+	// Realtime has no separate error field on function_call_output. This is the
+	// explicit failure representation used by OpenAI-compatible tool clients,
+	// including tau2-bench's audio-native agent.
+	client.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{
+		"type": "function_call_output", "call_id": "call_1", "output": "Error: User not found",
+	}})
+	client.await("conversation.item.created", 5*time.Second)
+	if retried, ok := client.awaitOptional("response.function_call_arguments.done", 2*time.Second); ok {
+		t.Fatalf("a failed function output automatically reopened slow cognition: %v", retried)
+	}
+}
+
 // A client that never mentions the extension gets an ordinary session, and the
 // server never volunteers the key.
 func TestBaseProtocolClientSeesNoExtension(t *testing.T) {

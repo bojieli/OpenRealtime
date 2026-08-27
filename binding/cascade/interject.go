@@ -123,7 +123,7 @@ func (runtime *runtime) interject(decision interaction.Context) {
 			runtime.noteInterject("the moment passed while starting")
 			return
 		}
-		standing, _, _ := runtime.cognitionExtras()
+		standing, _, _ := runtime.cognitionExtras(0)
 		// The sentence that caused this. It is in no committed item yet, and
 		// without it the voice is asked to speak about something it cannot see.
 		//
@@ -365,7 +365,7 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 	go func() {
 		defer runtime.wait.Done()
 		defer runtime.releaseInterjection()
-		standing, _, _ := runtime.cognitionExtras()
+		standing, _, _ := runtime.cognitionExtras(0)
 		request := cognition.Request{
 			SourceRevision: decision.Revision.ID,
 			Standing:       standing,
@@ -516,7 +516,7 @@ func (runtime *runtime) speakIntoSilence(
 	go func() {
 		defer runtime.wait.Done()
 		defer runtime.releaseInterjection()
-		standing, _, _ := runtime.cognitionExtras()
+		standing, _, _ := runtime.cognitionExtras(0)
 		request := cognition.Request{
 			SourceRevision: decision.Revision.ID,
 			Standing:       standing,

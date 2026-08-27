@@ -381,6 +381,22 @@ func userAudioItem(id, transcript string) map[string]any {
 }
 
 func encodeToolResult(callID, name, output string) trajectory.ToolResult {
+	// The base Realtime function-call-output item has no error member. Clients
+	// therefore use the convention shared by the OpenAI-compatible tool stacks:
+	// a plain output beginning with "Error:" is a failed invocation. Normalize
+	// that transport encoding here so the interaction policy can distinguish a
+	// failure from a successful result and avoid retrying it without new input.
+	//
+	// Keep the inference deliberately narrow and anchored. An ordinary payload
+	// may contain an error field, an error log, or the word later in its text;
+	// none of those says that the invocation itself failed.
+	trimmed := strings.TrimSpace(output)
+	const errorPrefix = "error:"
+	if len(trimmed) > len(errorPrefix) && strings.EqualFold(trimmed[:len(errorPrefix)], errorPrefix) {
+		if message := strings.TrimSpace(trimmed[len(errorPrefix):]); message != "" {
+			return trajectory.ToolResult{CallID: callID, Name: name, Error: message}
+		}
+	}
 	raw := json.RawMessage(output)
 	if !json.Valid(raw) {
 		raw, _ = json.Marshal(output)

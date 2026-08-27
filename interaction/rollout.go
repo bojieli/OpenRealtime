@@ -41,6 +41,12 @@ const (
 // than opening another one.
 const ReasonBackgroundResult = "the background reasoner finished"
 
+// ReasonToolFailure names the fast step that explains a failed action. A
+// binding reads it to keep that explanation terminal: an unfinished sentence
+// or a proposed correction from the voice must not reopen deliberation and
+// automatically retry the failed action without new evidence.
+const ReasonToolFailure = "report tool failure"
+
 // ReasonHolding names a spoken turn that exists because the reasoner is taking
 // a while. It belongs to the turn already in progress rather than starting one:
 // the base protocol has a single active response, and a second one would be a
@@ -70,6 +76,11 @@ func (step Step) Phase() trajectory.Phase {
 type Cause struct {
 	Observation bool `json:"observation"`
 	ToolResult  bool `json:"tool_result"`
+	// ToolError distinguishes a failed action from a result that can advance a
+	// tool chain. Retrying a failed call without new user evidence is not
+	// progress: it turns one bad argument or unavailable dependency into an
+	// automated retry storm. A failure goes back to the voice for clarification.
+	ToolError bool `json:"tool_error"`
 	// PendingRepair is set when the batch left an unresolved audible-repair
 	// obligation, which is a reason to deliberate even with nothing else new.
 	PendingRepair bool `json:"pending_repair"`
@@ -163,8 +174,16 @@ func (rollout fastThenSlowRollout) Plan(input RolloutInput) []Step {
 		steps = append(steps, Step{Kind: StepFast, Reason: "answer now"})
 	case input.Cause.BackgroundResult:
 		steps = append(steps, Step{Kind: StepFast, Reason: ReasonBackgroundResult})
+	case input.Cause.ToolError:
+		steps = append(steps, Step{Kind: StepFast, Reason: ReasonToolFailure})
 	case input.Cause.ToolResult && rollout.options.ToolResultProgress:
 		steps = append(steps, Step{Kind: StepFast, Reason: "report progress"})
+	}
+	if input.Cause.ToolError {
+		// A successful result may advance a dependent tool chain. An error is
+		// terminal until the user or environment contributes new evidence;
+		// continuing here merely invites a guessed spelling or parameter variant.
+		return steps
 	}
 	if input.Cause.SlowInvocations >= rollout.options.MaxSlowInvocations {
 		return steps
@@ -197,6 +216,9 @@ func NewFastOnlyRollout() Rollout { return fastOnlyRollout{} }
 func (fastOnlyRollout) Name() string { return "fast-only" }
 
 func (fastOnlyRollout) Plan(input RolloutInput) []Step {
+	if input.Cause.ToolError {
+		return []Step{{Kind: StepFast, Reason: ReasonToolFailure}}
+	}
 	if input.Cause.Observation {
 		return []Step{{Kind: StepFast, Reason: "answer now"}}
 	}
@@ -228,6 +250,9 @@ func (rollout slowOnlyRollout) Plan(input RolloutInput) []Step {
 	// is the same fast turn, for the same reason.
 	if input.Cause.BackgroundResult {
 		return []Step{{Kind: StepFast, Reason: "the background reasoner finished"}}
+	}
+	if input.Cause.ToolError {
+		return []Step{{Kind: StepFast, Reason: ReasonToolFailure}}
 	}
 	if input.Cause.SlowInvocations >= rollout.options.MaxSlowInvocations {
 		return nil

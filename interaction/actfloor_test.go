@@ -116,6 +116,22 @@ func TestActFloorWithoutASituationIsTheSilenceRule(t *testing.T) {
 	}
 }
 
+func TestActFloorUsesTheSilenceFallbackWhileTheFirstPartialIsPending(t *testing.T) {
+	floor := floorFor(t, interaction.ActStaySilent, false)
+	before := interaction.Context{
+		Revision:  interaction.Revision{SilenceNS: uint64(120 * time.Millisecond)},
+		Situation: &interaction.Situation{},
+	}
+	if verdict := floor.Endpoint(before); verdict.Ended {
+		t.Fatal("the acoustic sensing threshold bypassed the act floor while ASR was pending")
+	}
+	after := before
+	after.Revision.SilenceNS = uint64(500 * time.Millisecond)
+	if verdict := floor.Endpoint(after); !verdict.Ended {
+		t.Fatal("an unrecognised acoustic event was held to the interaction liveness bound")
+	}
+}
+
 // Answering means the speaker has finished. While they are still audible that
 // is a fact the model has contradicted rather than a judgement it may make,
 // and acting on it cuts the utterance mid-word - the recogniser is handed a

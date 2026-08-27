@@ -111,6 +111,13 @@ func (floor *actFloor) Endpoint(decision Context) EndpointDecision {
 		return EndpointDecision{}
 	}
 	if decision.Revision.Empty() {
+		// There is nothing for the interaction model to classify yet. Use the
+		// acoustic fallback after its full window, just as an unavailable model
+		// does, rather than either cutting at the gate's shorter sensing window
+		// or holding an unrecognised noise event to the liveness bound.
+		if silence >= uint64(floor.options.SilenceDuration.Nanoseconds()) {
+			return EndpointDecision{Ended: true, Reason: "no transcript arrived before the silence threshold"}
+		}
 		return EndpointDecision{}
 	}
 	// Cached on the whole situation, not on the revision.

@@ -59,11 +59,22 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 			Observation:      batch.Contains(trajectory.KindObservation),
 			Escalated:        batch.Signalled(interaction.SignalEscalated),
 			ToolResult:       batch.Contains(trajectory.KindToolResult),
+			ToolError:        batchHasToolError(batch),
 			PendingRepair:    len(trajectory.PendingRepairs(runtime.store.Snapshot())) > 0,
 			BackgroundResult: batch.Signalled(interaction.SignalBackgroundResult),
 			SlowInvocations:  runtime.engine.SlowInvocations(revision),
 			Parallel:         batch.Triage == eventloop.TriageParallel,
 		},
+	})
+	planned := make([]map[string]any, 0, len(plan))
+	for _, step := range plan {
+		planned = append(planned, map[string]any{"kind": step.Kind, "reason": step.Reason})
+	}
+	runtime.debug(ctx, binding.DebugEvent{
+		Category: "policy", Name: "policy.rollout", Phase: "decision",
+		CorrelationID: fmt.Sprint(revision), Attributes: map[string]any{
+			"step_count": len(plan), "triage": batch.Triage,
+		}, Payload: map[string]any{"steps": planned},
 	})
 	if len(plan) == 0 {
 		return nil
@@ -101,7 +112,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		}
 	}()
 
-	standing, interjecting, heard := runtime.cognitionExtras()
+	standing, interjecting, heard := runtime.cognitionExtras(revision)
 	because := ""
 	if interjecting {
 		// The floor took this turn from somebody mid-sentence, which is what
@@ -200,10 +211,6 @@ func (runtime *runtime) runStep(
 ) error {
 	switch step.Kind {
 	case interaction.StepFast:
-		// A background result is worth saying, and not necessarily now. Where
-		// somebody has asked for a stretch of quiet it waits for the moment
-		// they named - the trajectory keeps it, and the turn that comes due
-		// reads it.
 		// A background result is worth saying, and not necessarily now. It
 		// arrives with no utterance to answer, which is the shape the holding
 		// line has - and, like the holding line, it used to go out whatever
@@ -214,7 +221,8 @@ func (runtime *runtime) runStep(
 			runtime.noteInterject("the result is worth saying, and not at this moment")
 			return nil
 		}
-		handsOn := step.Reason == interaction.ReasonBackgroundResult || plansSlow
+		handsOn := step.Reason == interaction.ReasonBackgroundResult ||
+			step.Reason == interaction.ReasonToolFailure || plansSlow
 		return runtime.runFast(ctx, request, turn, handsOn)
 	case interaction.StepSlow:
 		return runtime.runSlow(ctx, request, turn)
@@ -225,12 +233,28 @@ func (runtime *runtime) runStep(
 
 // runFast speaks, and hands the turn on unless the voice declared it finished.
 //
-// A turn that is itself speaking a background result never hands on again. The
-// reasoner has just answered; asking it to answer once more is a loop, and the
-// next thing the user says opens the question again anyway.
+// A turn that is itself speaking a background result or reporting a tool
+// failure never hands on again. In the first case the reasoner has just
+// answered; in the second, handing on would retry a failed action without new
+// evidence. The next thing the user says opens the question again either way.
 func (runtime *runtime) runFast(
 	ctx context.Context, request cognition.Request, turn *turnReport, alreadyHandedOn bool,
 ) error {
+	if !request.Interjecting {
+		runtime.ordinaryFastRunning.Add(1)
+		defer runtime.ordinaryFastRunning.Add(-1)
+	}
+	debugBegan := time.Now()
+	runtime.debug(ctx, binding.DebugEvent{
+		Category: "cognition", Name: "cognition.fast", Phase: "start",
+		CorrelationID: fmt.Sprint(request.SourceRevision),
+	})
+	defer func() {
+		runtime.debug(ctx, binding.DebugEvent{
+			Category: "cognition", Name: "cognition.fast", Phase: "end",
+			CorrelationID: fmt.Sprint(request.SourceRevision), DurationMS: elapsedMS(debugBegan),
+		})
+	}()
 	// A preparation that answered this exact sentence is adopted rather than
 	// regenerated. It is the same continuation, produced earlier.
 	result, adopted := runtime.adopt(trajectory.PhaseFast, canonicalText(
@@ -245,6 +269,14 @@ func (runtime *runtime) runFast(
 		watch.report(turn)
 	}
 	turn.record(result)
+	if cause := context.Cause(ctx); cause != nil {
+		// The user resumed after the provider reached a safe point but before
+		// anything crossed the action boundary. The result answered the earlier
+		// fragment; neither its speech nor any executable proposal may escape
+		// after the turn has moved on.
+		runtime.noteWithheld(result, request, "overtaken before action")
+		return errors.Join(err, cause)
+	}
 	// A bounded reflex action crosses the action boundary before speech is
 	// queued. Both happen only after the continuation commits at its terminal
 	// safe point; ordering the cheap enqueue second keeps it off the critical
@@ -274,6 +306,17 @@ func (runtime *runtime) runFast(
 func (runtime *runtime) runSlow(
 	ctx context.Context, request cognition.Request, turn *turnReport,
 ) error {
+	debugBegan := time.Now()
+	runtime.debug(ctx, binding.DebugEvent{
+		Category: "cognition", Name: "cognition.slow", Phase: "start",
+		CorrelationID: fmt.Sprint(request.SourceRevision),
+	})
+	defer func() {
+		runtime.debug(ctx, binding.DebugEvent{
+			Category: "cognition", Name: "cognition.slow", Phase: "end",
+			CorrelationID: fmt.Sprint(request.SourceRevision), DurationMS: elapsedMS(debugBegan),
+		})
+	}()
 	defer runtime.breakSilenceWhileDeliberating(ctx, request, turn)()
 	result, adopted := runtime.adopt(trajectory.PhaseSlow, canonicalText(
 		runtime.store.Snapshot(), request.SourceRevision))
@@ -297,6 +340,17 @@ func (runtime *runtime) runSlow(
 		return err
 	}
 	if len(result.ToolCalls) > 0 {
+		if runtime.toolCallPrefixOvertaken(request.SourceRevision) {
+			// The call is already in the append-only trajectory because the
+			// provider reached its terminal safe point. It has not crossed the
+			// action boundary, though, and renewed user speech is newer evidence
+			// even before recognition turns it into words. Close the pending call
+			// so no later continuation mistakes it for in-flight work.
+			if _, placeholderErr := runtime.engine.PlaceholderForInterrupted("user resumed before action"); placeholderErr != nil {
+				return placeholderErr
+			}
+			return fmt.Errorf("user resumed before action dispatch: %w", continuation.ErrStalePrefix)
+		}
 		return runtime.dispatch(ctx, result)
 	}
 	if strings.TrimSpace(result.AssistantText) != "" {
@@ -310,6 +364,24 @@ func (runtime *runtime) runSlow(
 		return runtime.signal(interaction.SignalBackgroundResult)
 	}
 	return nil
+}
+
+// toolCallPrefixOvertaken reports whether a slow call has lost the safe point
+// it was computed for. Acoustic speech onset is evidence before it has words;
+// revision is incremented before a finalized observation enters the event
+// loop, which also covers the short flush interval after duplex state becomes
+// quiet but before that newer observation can be processed.
+func (runtime *runtime) toolCallPrefixOvertaken(sourceRevision uint64) bool {
+	return runtime.duplex.Snapshot().UserSpeaking || runtime.revision.Load() > sourceRevision
+}
+
+func batchHasToolError(batch eventloop.Batch) bool {
+	for _, item := range batch.Items {
+		if item.Kind == trajectory.KindToolResult && item.ToolResult != nil && item.ToolResult.Error != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // breakSilenceWhileDeliberating arms one spoken turn to fill the gap the
@@ -556,6 +628,21 @@ func (runtime *runtime) publishAssistant(
 		runtime.noteWithheld(result, request, "the voice chose to stay silent")
 		return nil
 	}
+	// A background result is voiced by a fresh fast continuation. If the slow
+	// phase added nothing, that continuation can produce the same sentence the
+	// first fast turn already queued. Both are individually valid outputs, but
+	// together they are one answer spoken twice with no user event between
+	// them.
+	//
+	// Keep this deliberately exact and revision-scoped. A tiny textual change
+	// can be a material correction ("$14" rather than "$40"), and the same
+	// words after a new observation can be a requested repetition. Cancelled or
+	// merely prepared content was never committed to the listener and therefore
+	// cannot suppress anything.
+	if runtime.alreadyPublishedForRevision(result) {
+		runtime.noteWithheld(result, request, "the same response was already queued for this observation")
+		return nil
+	}
 	items := runtime.assistantItems(result)
 	if len(items) == 0 {
 		return nil
@@ -618,6 +705,67 @@ func (runtime *runtime) publishAssistant(
 	return nil
 }
 
+func (runtime *runtime) alreadyPublishedForRevision(result continuation.RunResult) bool {
+	candidate := comparableSpeech(result.AssistantText)
+	if candidate == "" {
+		return false
+	}
+	appended := make(map[string]struct{}, len(result.AppendedIDs))
+	for _, id := range result.AppendedIDs {
+		appended[id] = struct{}{}
+	}
+	snapshot := runtime.store.Snapshot()
+	visibility := trajectory.AssistantVisibility(snapshot)
+	for _, item := range snapshot.Items {
+		if item.Kind != trajectory.KindAssistant || item.SourceRevision != result.SourceRevision {
+			continue
+		}
+		if _, current := appended[item.ID]; current {
+			continue
+		}
+		state := visibility[item.ID]
+		if state != trajectory.VisibilityQueued && state != trajectory.VisibilityPlayed {
+			continue
+		}
+		if repeatsPublishedSpeech(comparableSpeech(item.Content), candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+// comparableSpeech removes differences that cannot change what was said.
+// Punctuation and word content remain significant so a correction is never
+// mistaken for a duplicate merely because most of its sentence is the same.
+func comparableSpeech(text string) string {
+	return strings.ToLower(strings.Join(strings.Fields(text), " "))
+}
+
+// repeatsPublishedSpeech also recognises a second sentence lifted verbatim
+// from the end of an already-published response. Voice models commonly drop
+// the acknowledgement and repeat only its question on the background pass:
+// "I can help. What is the order ID?" followed by "What is the order ID?".
+// Requiring a sentence boundary before the suffix keeps negation and other
+// meaning-changing prefixes significant.
+func repeatsPublishedSpeech(published, candidate string) bool {
+	if published == candidate {
+		return true
+	}
+	if candidate == "" || len(candidate) >= len(published) || !strings.HasSuffix(published, candidate) {
+		return false
+	}
+	prefix := strings.TrimSpace(published[:len(published)-len(candidate)])
+	if prefix == "" {
+		return false
+	}
+	for _, boundary := range []string{".", "!", "?", "。", "！", "？"} {
+		if strings.HasSuffix(prefix, boundary) {
+			return true
+		}
+	}
+	return false
+}
+
 func (runtime *runtime) assistantItems(result continuation.RunResult) []trajectory.Item {
 	appended := make(map[string]struct{}, len(result.AppendedIDs))
 	for _, id := range result.AppendedIDs {
@@ -671,6 +819,14 @@ func (runtime *runtime) recordCancellations(
 // executes and the tools the client executes, and reports whether results were
 // appended here.
 func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunResult) error {
+	for _, call := range result.ToolCalls {
+		runtime.debug(ctx, binding.DebugEvent{
+			Category: "tool", Name: "tool.call.planned", Phase: "start",
+			CorrelationID: call.CallID, Attributes: map[string]any{
+				"name": call.Name, "invocation_id": result.InvocationID,
+			}, Payload: map[string]any{"arguments": string(call.Arguments)},
+		})
+	}
 	var local, remote []trajectory.ToolCall
 	immediate := make(map[string]trajectory.ToolResult, len(result.ToolCalls))
 	for _, call := range result.ToolCalls {
@@ -751,6 +907,16 @@ func (runtime *runtime) sendToClient(ctx context.Context, result continuation.Ru
 func (runtime *runtime) commitToolResults(invocationID string, results []trajectory.ToolResult) error {
 	for _, result := range results {
 		runtime.tools.Complete(result.CallID)
+		phase := "end"
+		if result.Error != "" {
+			phase = "error"
+		}
+		runtime.debug(runtime.ctx, binding.DebugEvent{
+			Category: "tool", Name: "tool.result.committed", Phase: phase,
+			CorrelationID: result.CallID, Message: result.Error,
+			Attributes: map[string]any{"name": result.Name, "invocation_id": invocationID},
+			Payload:    map[string]any{"output": string(result.Output)},
+		})
 	}
 	_, err := runtime.coordinator.Submit(eventloop.Event{
 		Type: "tool.results", Source: "client", Channel: "tool",
@@ -822,14 +988,21 @@ func looksLikeToolCall(text string) bool {
 	if len(trimmed) < 2 {
 		return false
 	}
-	if trimmed[0] != '{' && trimmed[0] != '[' {
-		return false
-	}
 	lowered := strings.ToLower(trimmed)
 	if !strings.Contains(lowered, `"name"`) && !strings.Contains(lowered, `"function"`) {
 		return false
 	}
-	return strings.Contains(lowered, `"arguments"`) || strings.Contains(lowered, `"parameters"`)
+	if !strings.Contains(lowered, `"arguments"`) && !strings.Contains(lowered, `"parameters"`) {
+		return false
+	}
+	if trimmed[0] == '{' || trimmed[0] == '[' {
+		return true
+	}
+	// Qwen-class chat templates use this tagged representation when a model
+	// writes a call into content instead of the structured tool channel. It is
+	// just as non-conversational as the JSON inside it and, observed in a real
+	// voice benchmark, otherwise reaches synthesis literally as "tool call".
+	return strings.HasPrefix(lowered, "<tool_call>") && strings.HasSuffix(lowered, "</tool_call>")
 }
 
 // isStageDirection reports text that describes an absence of speech rather

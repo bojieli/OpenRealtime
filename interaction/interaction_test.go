@@ -142,6 +142,21 @@ func TestToolResultProgressIsARolloutLever(t *testing.T) {
 	}
 }
 
+func TestToolFailureReturnsToVoiceWithoutAutomaticRetry(t *testing.T) {
+	t.Parallel()
+	cause := interaction.Cause{ToolResult: true, ToolError: true}
+	for name, rollout := range map[string]interaction.Rollout{
+		"fast+slow": interaction.NewFastThenSlowRollout(interaction.RolloutOptions{ToolResultProgress: true}),
+		"fast-only": interaction.NewFastOnlyRollout(),
+		"slow-only": interaction.NewEndpointedSlowOnlyRollout(interaction.RolloutOptions{}),
+	} {
+		plan := rollout.Plan(interaction.RolloutInput{Cause: cause})
+		if len(plan) != 1 || plan[0].Kind != interaction.StepFast || plan[0].Reason != interaction.ReasonToolFailure {
+			t.Errorf("%s planned an automatic retry after a tool failure: %+v", name, plan)
+		}
+	}
+}
+
 func TestParallelBranchAnswersWithoutStartingSlowWork(t *testing.T) {
 	rollout := interaction.NewFastThenSlowRollout(interaction.RolloutOptions{})
 	plan := rollout.Plan(interaction.RolloutInput{Cause: interaction.Cause{Observation: true, Parallel: true}})
@@ -181,6 +196,77 @@ func TestEngineFloorEndpointsOnSilenceAndProjection(t *testing.T) {
 	}
 	if !floor.EngineOwned() {
 		t.Fatal("the engine floor is engine owned")
+	}
+}
+
+func TestEngineFloorHoldsAShortFalseStart(t *testing.T) {
+	floor := interaction.NewEngineFloor(interaction.EngineFloorOptions{
+		SilenceDuration: 600 * time.Millisecond,
+	})
+	decision := floor.Endpoint(interaction.Context{
+		NowNS: uint64(1180 * time.Millisecond),
+		Duplex: session.Snapshot{
+			UserSpeechStartedNS: uint64(460 * time.Millisecond),
+		},
+		Revision: interaction.Revision{
+			ID: 1, StableText: "A.", SilenceNS: uint64(600 * time.Millisecond),
+		},
+	})
+	if decision.Ended {
+		t.Fatalf("a 720ms false start must not release the floor: %+v", decision)
+	}
+	if decision.Reason != "minimum speech duration has not elapsed" {
+		t.Fatalf("the hold must explain the invariant it applied: %+v", decision)
+	}
+	if decision.ReconsiderAfter != 600*time.Millisecond {
+		t.Fatalf("a reopened gate owes another configured silence window, got %+v", decision)
+	}
+}
+
+func TestEngineFloorEndsNormallyPastMinimumSpeech(t *testing.T) {
+	floor := interaction.NewEngineFloor(interaction.EngineFloorOptions{
+		SilenceDuration: 600 * time.Millisecond,
+	})
+	decision := floor.Endpoint(interaction.Context{
+		NowNS: uint64(1300 * time.Millisecond),
+		Duplex: session.Snapshot{
+			UserSpeechStartedNS: uint64(400 * time.Millisecond),
+		},
+		Revision: interaction.Revision{
+			ID: 1, StableText: "yes", SilenceNS: uint64(600 * time.Millisecond),
+		},
+	})
+	if !decision.Ended {
+		t.Fatalf("a short answer plus endpoint silence already exceeds 800ms: %+v", decision)
+	}
+}
+
+func TestEngineFloorStillTrustsAnExplicitFinalBeforeMinimumSpeech(t *testing.T) {
+	floor := interaction.NewEngineFloor(interaction.EngineFloorOptions{})
+	decision := floor.Endpoint(interaction.Context{
+		NowNS: uint64(700 * time.Millisecond),
+		Duplex: session.Snapshot{
+			UserSpeechStartedNS: uint64(400 * time.Millisecond),
+		},
+		Revision: interaction.Revision{ID: 1, StableText: "yes", Final: true},
+	})
+	if !decision.Ended {
+		t.Fatalf("an explicit perception final remains authoritative: %+v", decision)
+	}
+}
+
+func TestEngineFloorWithoutSpeechTimestampKeepsExistingEndpoint(t *testing.T) {
+	floor := interaction.NewEngineFloor(interaction.EngineFloorOptions{
+		SilenceDuration: time.Millisecond,
+	})
+	decision := floor.Endpoint(interaction.Context{
+		NowNS: uint64(100 * time.Millisecond),
+		Revision: interaction.Revision{
+			ID: 1, StableText: "typed input", SilenceNS: uint64(time.Millisecond),
+		},
+	})
+	if !decision.Ended {
+		t.Fatalf("a path with no acoustic start timestamp must retain its endpoint: %+v", decision)
 	}
 }
 
@@ -467,6 +553,30 @@ func TestAProjectedPauseCannotHoldTheTurnForever(t *testing.T) {
 	})
 	if !decision.Ended {
 		t.Fatalf("past the hold the floor ends the turn whatever the model thinks: %+v", decision)
+	}
+}
+
+// A streaming recogniser can be a few hundred milliseconds behind the audio
+// gate. Whether it has emitted its first partial yet must not silently select a
+// shorter endpoint policy: the configured floor threshold still owns the
+// decision, with acoustics as the bounded fallback if no words ever arrive.
+func TestEngineFloorGivesAnEmptyStreamingRevisionItsSilenceWindow(t *testing.T) {
+	floor := interaction.NewEngineFloor(interaction.EngineFloorOptions{
+		SilenceDuration: 500 * time.Millisecond,
+	})
+	for _, silence := range []time.Duration{120 * time.Millisecond, 499 * time.Millisecond} {
+		decision := floor.Endpoint(interaction.Context{
+			Revision: interaction.Revision{SilenceNS: uint64(silence)},
+		})
+		if decision.Ended {
+			t.Fatalf("an empty revision ended at %s before the floor threshold: %+v", silence, decision)
+		}
+	}
+	decision := floor.Endpoint(interaction.Context{
+		Revision: interaction.Revision{SilenceNS: uint64(500 * time.Millisecond)},
+	})
+	if !decision.Ended {
+		t.Fatal("an event that never produced a transcript was held past the floor threshold")
 	}
 }
 

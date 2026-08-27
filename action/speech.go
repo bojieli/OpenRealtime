@@ -375,6 +375,22 @@ func (speech *Speech) ActiveSpokeOver() bool {
 	return speech.activeID != "" && speech.active.SpokeOver
 }
 
+// ActiveOrdinary reports whether an ordinary response has claimed the speech
+// planner but has not necessarily emitted audio yet.
+//
+// Duplex state deliberately begins at the first audio frame, because that is
+// what the user can hear. Turn-taking needs one additional fact at the other
+// side of that boundary: a synthesiser can be working on a response while the
+// agent is still acoustically silent. If the user resumes during that window,
+// treating the response as nonexistent lets it begin after they have already
+// taken the floor. This method exposes only the pending fact; the barge-in
+// policy still decides whether to cancel it.
+func (speech *Speech) ActiveOrdinary() bool {
+	speech.mu.Lock()
+	defer speech.mu.Unlock()
+	return speech.activeID != "" && !speech.active.SpokeOver
+}
+
 // Close stops accepting work and cancels what is queued.
 func (speech *Speech) Close(reason string) []Commitment {
 	speech.mu.Lock()

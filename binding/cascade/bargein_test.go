@@ -1,7 +1,11 @@
 package cascade_test
 
 import (
+	"context"
+	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/binding"
@@ -10,6 +14,39 @@ import (
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/session"
 )
+
+// waitingSpeech claims an utterance and then waits before producing its first
+// frame. That interval is the race this test exercises: the response exists in
+// the action plane, but duplex state must still report that no agent audio has
+// reached the user.
+type waitingSpeech struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (speech *waitingSpeech) Descriptor() v1.Descriptor {
+	return v1.Descriptor{Name: "waiting-speech", Version: "1", Capabilities: v1.Capabilities{}}
+}
+
+func (speech *waitingSpeech) Synthesize(context.Context, v1.SpeechPlan) ([]v1.SpeechChunk, error) {
+	return nil, errors.New("unused")
+}
+
+func (speech *waitingSpeech) Stream(
+	ctx context.Context, plan v1.SpeechPlan, emit func(v1.SpeechChunk) error,
+) error {
+	speech.once.Do(func() { close(speech.started) })
+	select {
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case <-speech.release:
+	}
+	return emit(v1.SpeechChunk{
+		ChunkID: "waiting", CandidateID: plan.CandidateID, SampleRateHz: 24_000,
+		PCM16LE: make([]byte, 4800), Final: true,
+	})
+}
 
 // interruptingFloor takes the floor from somebody who is still talking, which
 // is what the interrupt act means.
@@ -61,14 +98,19 @@ func TestAnInterruptionIsNotCancelledByWhatItInterrupted(t *testing.T) {
 	for index := 0; index < 12; index++ {
 		pushAudio(t, runtime, tone(2400, 8000), 1)
 	}
-	waitFor(t, func() bool {
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
 		for _, outcome := range sink.speechOutcomes() {
 			if outcome.utterance.SpokeOver {
-				return true
+				goto correctionSpoken
 			}
 		}
-		return false
-	}, "the correction never went out over them at all")
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("the correction never went out over them at all; speech=%+v turns=%+v activities=%+v",
+		sink.speechOutcomes(), sink.turnOutcomes(), sink.activityEvents())
+
+correctionSpoken:
 
 	for _, outcome := range sink.speechOutcomes() {
 		if !outcome.utterance.SpokeOver {
@@ -113,4 +155,85 @@ func TestAnOrdinaryTurnIsStillInterruptible(t *testing.T) {
 		}
 		return false
 	}, "the answer kept playing over somebody who had taken the floor back")
+}
+
+// If the user resumes after a response has entered synthesis but before its
+// first frame, there is no audible overlap for duplex state to report. The
+// pending response is still stale and fully reversible; allowing it to start
+// produces the characteristic failure where an agent begins answering a
+// fragment in the middle of the sentence that continued.
+func TestRenewedSpeechCancelsAResponseBeforeItsFirstFrame(t *testing.T) {
+	speech := &waitingSpeech{started: make(chan struct{}), release: make(chan struct{})}
+	fast := newFast([]continuation.Event{{
+		Kind: continuation.EventAssistantDelta, Text: "Please repeat that fragment.",
+	}})
+	runtime, sink := startSession(t, cascade.Config{
+		Fast: fast, Slow: newSlow(), Speech: speech,
+	}, binding.Settings{})
+
+	// Finish one short turn and wait until its answer has claimed the speech
+	// planner but has emitted no audio.
+	speak(t, runtime, 3)
+	select {
+	case <-speech.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the response never entered synthesis")
+	}
+
+	// Start speaking again. Four 100ms voiced blocks leave ample margin over
+	// the onset hysteresis; require the second gate-open event so this test
+	// cannot pass or fail by exercising only the synthesiser release race.
+	pushAudio(t, runtime, tone(2400, 8000), 4)
+	started := 0
+	for _, event := range sink.activityEvents() {
+		if event.Started {
+			started++
+		}
+	}
+	if started < 2 {
+		t.Fatalf("renewed speech did not reopen the acoustic gate: %+v", sink.activityEvents())
+	}
+	close(speech.release)
+	waitFor(t, func() bool { return len(sink.speechOutcomes()) > 0 }, "the pending response never terminated")
+
+	outcome := sink.speechOutcomes()[0].outcome
+	if outcome.Completed || outcome.PlayedMS != 0 {
+		t.Fatalf("a response to the old fragment became audible after speech resumed: %+v", outcome)
+	}
+	sink.mu.Lock()
+	frames := sink.frames
+	sink.mu.Unlock()
+	if frames != 0 {
+		t.Fatalf("%d stale audio frames crossed after the user had resumed", frames)
+	}
+}
+
+// Pending synthesis is evidence for the barge-in policy, not a cancellation
+// rule of its own. A deployment that deliberately disables barge-in must keep
+// that choice even in the pre-playback interval.
+func TestPendingResponseStillRespectsNeverBargeIn(t *testing.T) {
+	speech := &waitingSpeech{started: make(chan struct{}), release: make(chan struct{})}
+	policies := interaction.Defaults()
+	policies.BargeIn = interaction.NewNeverBargeIn()
+	runtime, sink := startSession(t, cascade.Config{
+		Fast: newFast([]continuation.Event{{
+			Kind: continuation.EventAssistantDelta, Text: "This response must finish.",
+		}}),
+		Slow: newSlow(), Speech: speech, Policies: policies,
+	}, binding.Settings{})
+
+	speak(t, runtime, 3)
+	select {
+	case <-speech.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the response never entered synthesis")
+	}
+	pushAudio(t, runtime, tone(2400, 8000), 4)
+	close(speech.release)
+	waitFor(t, func() bool { return len(sink.speechOutcomes()) > 0 }, "the response never terminated")
+
+	outcome := sink.speechOutcomes()[0].outcome
+	if !outcome.Completed || outcome.PlayedMS != 100 {
+		t.Fatalf("never-barge-in policy did not preserve pending speech: %+v", outcome)
+	}
 }

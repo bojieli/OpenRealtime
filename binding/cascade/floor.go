@@ -45,12 +45,14 @@ func (runtime *runtime) projectEndpoint(ctx context.Context, decision interactio
 	runtime.audioMu.Lock()
 	if runtime.acoustic == nil {
 		runtime.audioMu.Unlock()
+		runtime.finishInterjectingEndpoint()
 		return false, nil
 	}
 	endMS, stopped := runtime.acoustic.ForceStop()
 	utteranceID := runtime.utteranceID
 	runtime.audioMu.Unlock()
 	if !stopped {
+		runtime.finishInterjectingEndpoint()
 		return false, nil
 	}
 	return true, runtime.onUserSpeechStopped(ctx, utteranceID, endMS, runtime.scheduler.NowNS())

@@ -38,6 +38,8 @@ func (runtime *runtime) manualTurns() bool {
 // than silently accepted: a client that commits nothing is not declaring a
 // turn, and manufacturing one would put an empty observation in the log.
 func (runtime *runtime) CommitAudio(ctx context.Context) error {
+	runtime.inputMu.Lock()
+	defer runtime.inputMu.Unlock()
 	if !runtime.manualTurns() {
 		return errors.New(
 			"this session runs server voice-activity detection, which owns input commitment: " +
