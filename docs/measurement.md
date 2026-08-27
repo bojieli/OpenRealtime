@@ -2383,6 +2383,30 @@ judgement about whether an occurrence has happened, which is content.
 Left standing at 2/5, with the reproduction recorded, rather than fixed by
 adding instructions until a number moves.
 
+Corrected after four attempts. The voice is not failing to translate. Asked
+with the colleague's speech in front of it, from the same dump, it answers
+"Hello, nice to meet you." and "Hello, I'm very happy to meet you." - which is
+what the check wants. What fails is that the answer arrives after the window,
+because the window was spent playing six acknowledgements, and speech takes
+seconds to play even when the decision behind it took fifty milliseconds.
+
+So the defect is not the voice ignoring a rule. It is the agent taking six
+turns where one was asked for, and each of those turns costing real time on the
+wire. The acknowledgements are the fault; the late translation is the symptom,
+and I had them the wrong way round.
+
+Four wordings were tried against the reproduction and none moved it: pointing
+the rule at the coverage fact, naming the trailing clause, generalising to
+qualifying detail, and scoping the acknowledgement to once per arrangement.
+Three were neutral and one made a different case worse. The first of them did
+fix a separate failure - a sentence with nothing in it to count went from
+"One." to <wait>, eight out of eight - and was kept for that.
+
+The interaction model already sees that this is new since it last spoke, and
+chooses to answer anyway. Whether the fix belongs there, in a bound on how
+often one stretch of speech may be answered aloud, is the open question. It is
+not another paragraph in the voice's prompt.
+
 ## F62 - the suite's variance is larger than the differences I was reading
 
 Two full runs of identical code, suite65 and suite68, with nothing changed
