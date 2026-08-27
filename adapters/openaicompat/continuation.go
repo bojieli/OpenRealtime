@@ -846,6 +846,11 @@ func compilePortableItem(
 		return chatMessage{Role: "assistant", Content: continuation.InternalStatePreamble + item.Content}, true, nil
 	case trajectory.KindAssistant:
 		if continuation.ProducedSilently(item) {
+			if !continuation.HasBackgroundContent(item.Content) {
+				// A wait is not a result, and the hint below would announce it
+				// as one.
+				return chatMessage{}, false, nil
+			}
 			// A provider that cannot be heard does not take turns. Its result
 			// is state the next spoken turn reads, and this dialect has a role
 			// that says exactly that.

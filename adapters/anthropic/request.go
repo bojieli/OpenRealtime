@@ -338,6 +338,11 @@ func compileItem(
 			return nil, nil
 		}
 		if continuation.ProducedSilently(item) {
+			if !continuation.HasBackgroundContent(item.Content) {
+				// A wait is not a result, and the hint below would announce it
+				// as one.
+				return nil, nil
+			}
 			// A provider that cannot be heard does not take turns. This
 			// dialect keeps system content out of the message list, so the
 			// hint rides where every other runtime hint here does.

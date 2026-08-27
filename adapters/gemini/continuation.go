@@ -491,6 +491,11 @@ func compilePortableItem(
 		part["text"] = continuation.InternalStatePreamble + item.Content
 	case trajectory.KindAssistant:
 		if continuation.ProducedSilently(item) {
+			if !continuation.HasBackgroundContent(item.Content) {
+				// A wait is not a result, and the hint below would announce it
+				// as one.
+				return geminiContent{}, false, nil
+			}
 			// A provider that cannot be heard does not take turns. This
 			// dialect has no system role inside the conversation, so the hint
 			// rides where every other runtime hint here does, marked for what

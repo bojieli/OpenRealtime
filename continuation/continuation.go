@@ -88,6 +88,35 @@ func ProducedSilently(item trajectory.Item) bool {
 	return item.Producer.SpeechAuthority == string(SpeechAuthoritySilent)
 }
 
+// WaitToken is how a phase says it has nothing to say. It is duplicated from
+// cognition rather than imported, because continuation must not depend on the
+// layer that produces the content it carries.
+const WaitToken = "<wait>"
+
+// CarriesBackgroundResult reports whether a silently-produced item left
+// anything for the next spoken turn to work from.
+//
+// A wait is not a result. It is the reasoner deciding there is nothing to say,
+// and rendering it as one manufactures a reason to speak out of a decision to
+// stay silent: the hint that carries background state tells the voice a result
+// has arrived and to answer from it in its own words, so four consecutive
+// waits reached the voice as four instructions to say something. Measured on a
+// story with two animals in it, that is where the count that arrived before
+// the first animal came from.
+//
+// The window that renders a conversation for the interaction model already
+// drops a wait, for the same reason and in almost the same words. This is that
+// rule reaching the other place a trajectory is rendered.
+func CarriesBackgroundResult(item trajectory.Item) bool {
+	return ProducedSilently(item) && HasBackgroundContent(item.Content)
+}
+
+// HasBackgroundContent reports whether content is anything more than a wait.
+func HasBackgroundContent(content string) bool {
+	text, _ := StripMarkers(content)
+	return strings.TrimSpace(text) != "" && strings.TrimSpace(text) != WaitToken
+}
+
 // ObserverContentPrefix opens the block that observed content is rendered
 // inside. It is exported so a test can prove that observed text appears there
 // and nowhere else.
