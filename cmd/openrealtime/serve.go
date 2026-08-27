@@ -730,6 +730,7 @@ func buildCascade(
 		Narrator:          narrator,
 		DeciderSees:       options.interactionSees,
 		ProfileTurns:      options.profileTurns,
+		HoldLimit:         options.interactionLiveness,
 		EndpointSilenceMS: options.endpointSilenceMS,
 		FastComputerUse:   options.fastComputerUse,
 		Governor:          governor,

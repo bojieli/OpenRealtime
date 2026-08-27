@@ -95,6 +95,20 @@ type Config struct {
 	// deployment and the only way to answer "what was the person waiting
 	// through" in a measurement.
 	ProfileTurns bool
+	// HoldLimit is the longest one utterance may be held open across pauses.
+	//
+	// The floor's own liveness bound is measured from the last pause, and the
+	// pause clock resets whenever the speaker says something new - which is
+	// right for "don't interrupt me while I think this through" and lets a
+	// speaker who never stops hold the turn for as long as they keep talking.
+	// Measured on an interpreting policy that says not to wait for the speaker
+	// to finish, the gate opened four seconds in and did not close for the
+	// remaining thirty-one: nothing was ever committed, the conversation never
+	// advanced, and the agent said nothing at all.
+	//
+	// Zero selects the same twenty seconds, measured from the first pause the
+	// floor declined to end the turn at.
+	HoldLimit time.Duration
 	// EndpointSilenceMS overrides how much quiet closes an utterance. Zero
 	// keeps the recogniser default.
 	EndpointSilenceMS int

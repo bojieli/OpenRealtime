@@ -47,6 +47,7 @@ type runtime struct {
 	observers   *perception.Set
 	audio       *perception.AudioObserver
 	voices      *voices.Recogniser
+	holdStartNS uint64
 
 	ctx    context.Context
 	cancel context.CancelCauseFunc

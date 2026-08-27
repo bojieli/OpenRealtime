@@ -181,6 +181,14 @@ func (runtime *runtime) holdsThroughPause(nowNS uint64, latest interaction.Revis
 		return false
 	}
 	latest.Final = false
+	// A turn cannot be held open forever. The bound below is measured from the
+	// first pause the floor declined to end this utterance at, rather than
+	// from the last pause, because the pause clock resets whenever the speaker
+	// says something new - so a speaker who keeps talking resets it forever.
+	if runtime.heldTooLong(nowNS) {
+		runtime.noteInterject("the turn was held open longer than a turn lasts")
+		return false
+	}
 	// How long this pause has actually lasted, which is what the hold is
 	// bounded by. Each Reopen zeroes the gate's own counter, so asking the
 	// gate would restart the clock on every hold and the bound would never
@@ -269,6 +277,26 @@ func (runtime *runtime) holdsThroughPause(nowNS uint64, latest interaction.Revis
 	return true
 }
 
+// heldTooLong reports that this utterance has been held open past the bound,
+// and starts the clock the first time it is asked about one.
+//
+// The clock belongs to the utterance: onUserSpeechStarted clears it, so every
+// turn gets the whole bound and a held turn cannot inherit a spent one.
+func (runtime *runtime) heldTooLong(nowNS uint64) bool {
+	limit := runtime.config.HoldLimit
+	if limit <= 0 {
+		limit = 20 * time.Second
+	}
+	runtime.audioMu.Lock()
+	defer runtime.audioMu.Unlock()
+	if runtime.holdStartNS == 0 {
+		runtime.holdStartNS = nowNS
+		return false
+	}
+	return nowNS > runtime.holdStartNS &&
+		time.Duration(nowNS-runtime.holdStartNS) > limit
+}
+
 // onUserSpeechStarted applies the barge-in policy at the moment sound begins.
 //
 // At this instant there are no words yet, so there is nothing to classify: an
@@ -279,6 +307,9 @@ func (runtime *runtime) onUserSpeechStarted(ctx context.Context, utteranceID str
 	// A new utterance is a new question about who is talking. What was
 	// heard of the last one is not evidence about this one.
 	runtime.voices.Begin(utteranceID)
+	runtime.audioMu.Lock()
+	runtime.holdStartNS = 0
+	runtime.audioMu.Unlock()
 	if err := runtime.considerBargeIn(ctx, interaction.Revision{}, 0); err != nil {
 		return err
 	}
