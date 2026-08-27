@@ -226,19 +226,12 @@ func (runtime *runtime) noticeStanding(text string) {
 	current := runtime.currentUtterance()
 	runtime.audioMu.Lock()
 	if current != runtime.extractUtterance {
-		runtime.previousUtterance = runtime.extractUtteranceText
 		runtime.previousPin, runtime.lastPin = runtime.lastPin, interaction.StandingInstruction{}
 		runtime.lastPinSource = ""
 		runtime.extractUtterance = current
-		runtime.extractUtteranceText = ""
 	}
 	runtime.audioMu.Unlock()
 	whole, stale := runtime.wholeUtterance(snapshot, text)
-	// The joined text, not this piece: a sentence cut into three joins onto
-	// what the first two already made.
-	runtime.audioMu.Lock()
-	runtime.extractUtteranceText = whole
-	runtime.audioMu.Unlock()
 	runtime.wait.Add(1)
 	go func() {
 		defer runtime.wait.Done()
@@ -445,49 +438,132 @@ func (runtime *runtime) gapBeforeUtteranceNS(snapshot trajectory.Snapshot) (uint
 	return 0, false
 }
 
-// breathGap is how soon after one utterance another has to start to be the
-// same sentence carrying on.
+// wholeUtterance joins a piece of a sentence back onto the rest of what the
+// person is saying, and names the policy that was read off an earlier piece.
 //
-// The gate needs half a second of quiet before it closes an utterance at all,
-// so a speaker who was only drawing breath is heard again almost the instant
-// the previous piece is committed - measured at 115 and 210 milliseconds on
-// the two recogniser splits that broke a standing policy in half. Somebody
-// starting a genuinely new turn has been quiet far longer than this: the lines
-// of a conversation in this suite are seconds apart, and a person who has
-// finished waits for an answer.
-const breathGap = time.Second
-
-// wholeUtterance joins a piece of a sentence back onto the piece before it,
-// and names the policy that was read off that earlier piece.
+// A recogniser cuts where somebody breathes, and every piece read alone means
+// something other than what they said. "Count the animals out loud as I
+// mention them, and say nothing else" arrives in pieces, and the tail - "and
+// say nothing else." - capitalised and punctuated like a sentence of its own,
+// was read as a revocation and deleted the policy the same sentence had just
+// set. The agent then stood with no policy at all through the story, fell back
+// on an ordinary reply at the first pause, and said "one" at a sentence with
+// no animal in it.
 //
-// A recogniser cuts where somebody breathes. "Tell me the moment the build
-// finishes and don't say anything else" arrives as two utterances, and both
-// halves read alone are wrong: the front half pins "tell me the moment the
-// build", and the back half - capitalised and punctuated like a sentence of
-// its own - revokes it. Read whole, the same model pins the whole instruction,
-// with the right scope, five times out of five.
+// This used to join on the clock: pieces less than a second apart were one
+// sentence carrying on. That is the right observation about recognisers and
+// the wrong unit. People pause where they qualify - measured, the breath
+// before "and say nothing else" ran past a second and the join was lost - and
+// no threshold separates a breath from a turn, because the same silence is
+// both depending on whether the speaker was finished.
 //
-// Which pieces belong together is a fact about the clock rather than the
-// words, and the runtime already measures it for the interaction model.
+// The unit that does hold is the turn. Somebody sets a policy inside a stretch
+// of their own speech, and it stays one request until the agent answers it. So
+// the pieces to read together are everything they have said since the agent
+// last said anything out loud, however they were cut up and however long the
+// speaker paused inside them.
 func (runtime *runtime) wholeUtterance(
 	snapshot trajectory.Snapshot, text string,
 ) (whole string, stale interaction.StandingInstruction) {
-	gap, ok := runtime.gapBeforeUtteranceNS(snapshot)
-	if !ok || gap >= uint64(breathGap) {
-		return text, interaction.StandingInstruction{}
-	}
 	runtime.audioMu.Lock()
-	previous := runtime.previousUtterance
 	// Taken rather than read: the piece before is retired once, by the first
-	// reading that joins onto it. Every later reading of the same utterance
-	// joins onto the same text, and by then the pin worth keeping is the one
-	// the joined text produced.
+	// reading that joins onto it.
 	stale, runtime.previousPin = runtime.previousPin, interaction.StandingInstruction{}
 	runtime.audioMu.Unlock()
-	if previous == "" {
-		return text, interaction.StandingInstruction{}
+	pieces := speechSoFar(snapshot)
+	// The live piece is that same last one further along when it carries it on,
+	// and a piece of its own when it does not.
+	if trimmed := strings.TrimSpace(text); trimmed != "" {
+		switch {
+		case len(pieces) == 0:
+			pieces = []string{trimmed}
+		case trajectory.SaidFurther(pieces[len(pieces)-1], trimmed):
+			pieces[len(pieces)-1] = trimmed
+		case pieces[len(pieces)-1] != trimmed:
+			pieces = append(pieces, trimmed)
+		}
 	}
-	return strings.TrimSpace(previous) + " " + text, stale
+	if len(pieces) == 0 {
+		return text, stale
+	}
+	return strings.Join(pieces, " "), stale
+}
+
+// speechSoFar is everything this person has said since the agent last spoke
+// out loud, oldest first.
+//
+// It stops at the agent's own speech rather than at a length, because that is
+// what ends a request: once the agent has answered, what the person says next
+// is a new thing they are asking for. Background the reasoner wrote is not
+// speech and does not end anything - nobody heard it.
+//
+// Except when they were cut off. An agent that speaks while somebody is still
+// mid-sentence has not been answered and has not ended their turn, and the
+// rest of the sentence arriving afterwards is still the same request: "tell me
+// the moment the build" / "finishes and don't say anything else", with the
+// agent's "will do" landing between the two halves. Whether they had finished
+// is not a guess - a recogniser punctuates what it commits, and a piece that
+// stops without reaching the end of a sentence stopped because the speaker had
+// not.
+func speechSoFar(snapshot trajectory.Snapshot) []string {
+	items := trajectory.WithoutSupersededPartials(snapshot.Items)
+	var pieces []string
+	for index := len(items) - 1; index >= 0; index-- {
+		item := items[index]
+		text := strings.TrimSpace(item.Content)
+		if item.Kind == trajectory.KindAssistant && text != "" &&
+			text != interaction.WaitToken &&
+			item.Producer.SpeechAuthority != string(continuation.SpeechAuthoritySilent) {
+			// The agent spoke here. That ends the person's turn only if they
+			// had finished the sentence it landed in - looking back at what
+			// they had said by then, not forward at what they say next, which
+			// on the reading that matters has not been committed yet.
+			if said, ok := lastSpokenBefore(items[:index]); !ok || endsASentence(said) {
+				break
+			}
+			continue
+		}
+		if item.Kind != trajectory.KindObservation || text == "" {
+			continue
+		}
+		if trajectory.AuthorityOf(item) != trajectory.AuthorityUser {
+			continue
+		}
+		pieces = append([]string{text}, pieces...)
+	}
+	return pieces
+}
+
+// lastSpokenBefore is the most recent thing this person had said by some point
+// in the log.
+func lastSpokenBefore(items []trajectory.Item) (string, bool) {
+	for index := len(items) - 1; index >= 0; index-- {
+		item := items[index]
+		if item.Kind != trajectory.KindObservation {
+			continue
+		}
+		if trajectory.AuthorityOf(item) != trajectory.AuthorityUser {
+			continue
+		}
+		if text := strings.TrimSpace(item.Content); text != "" {
+			return text, true
+		}
+	}
+	return "", false
+}
+
+// endsASentence reports that a committed piece of speech reached the end of
+// one. The recogniser punctuates as it commits, so this is reading what it
+// decided rather than guessing where a sentence stops.
+func endsASentence(text string) bool {
+	trimmed := strings.TrimRightFunc(strings.TrimSpace(text), func(r rune) bool {
+		return r == '"' || r == '\'' || r == ')' || r == ']' || r == '”' || r == '’'
+	})
+	if trimmed == "" {
+		return false
+	}
+	last := []rune(trimmed)[len([]rune(trimmed))-1]
+	return strings.ContainsRune(".!?。！？…", last)
 }
 
 // noticeStandingInPartial runs extraction before an utterance has finished.

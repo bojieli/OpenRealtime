@@ -40,7 +40,14 @@ func Continues(earlier, later Item) bool {
 	if AuthorityOf(earlier) != AuthorityOf(later) {
 		return false
 	}
-	was, now := SpokenWords(earlier.Content), SpokenWords(later.Content)
+	return SaidFurther(earlier.Content, later.Content)
+}
+
+// SaidFurther reports that later is earlier carried on: the same words, and
+// then more of them. It is the text-level half of Continues, separate because
+// a recogniser's pieces are compared before they are ever items.
+func SaidFurther(earlier, later string) bool {
+	was, now := SpokenWords(earlier), SpokenWords(later)
 	if len(was) == 0 || len(now) <= len(was) {
 		return false
 	}

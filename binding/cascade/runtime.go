@@ -113,20 +113,8 @@ type runtime struct {
 	pauseGeneration uint64
 	// extractedText is the stretch extraction last read, so an utterance that
 	// keeps growing is not re-read from the beginning on every partial.
-	extractedText string
-	// previousUtterance is the last thing the speaker finished saying, and
-	// lastPin is the policy that was read out of it. Both exist for the case
-	// where the recogniser cut one sentence into two: the pieces are joined
-	// back up before the next reading, and the policy read off the first piece
-	// alone goes with it.
-	//
-	// extractUtterance and its text track which utterance the standing pass is
-	// currently reading, because it reads an utterance many times as it grows.
-	// Without that, every partial would be joined onto the last joined text
-	// and the sentence would compound with itself.
-	previousUtterance    string
-	extractUtterance     string
-	extractUtteranceText string
+	extractedText    string
+	extractUtterance string
 	// lastPin is the policy read out of the utterance being read now;
 	// previousPin is the one read out of the piece before it, which is what a
 	// join retires. Kept apart because a revocation matches loosely, so
