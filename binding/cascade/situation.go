@@ -563,8 +563,21 @@ func (runtime *runtime) settingAPolicy(snapshot trajectory.Snapshot) bool {
 	// sentence in front of it. Measured, the guard went silent and the voice
 	// counted through the instruction itself: "One." after "as I mentioned
 	// them", then "Two." four times after "and say nothing else".
+	//
+	// Still the setting utterance, though, not merely starting with it. A
+	// prefix test alone is true forever once a policy is set - everything they
+	// go on to say still starts with the sentence that set it - so the
+	// carrying-out instruction would never be attached again, and the agent
+	// agrees to do the thing and then never does it: "i will translate
+	// everything he says into english", said twice, while the colleague talked.
 	said := everythingSaid(snapshot)
-	return said != "" && beganWith(pinnedFrom, said)
+	return said != "" && beganWith(pinnedFrom, said) && !saidMoreThan(pinnedFrom, said)
+}
+
+// saidMoreThan reports that they have carried on past some earlier point in
+// their own speech.
+func saidMoreThan(mark, said string) bool {
+	return len(trajectory.SpokenWords(said)) > len(trajectory.SpokenWords(mark))
 }
 
 // withoutEchoesOf drops conversation lines whose words are already inside the
