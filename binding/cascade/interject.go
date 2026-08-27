@@ -153,27 +153,32 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		runtime.noteInterject("nothing new since the agent last spoke")
 		return
 	}
-	if newly != stable {
-		// Inside a stretch of speech the agent has already answered, wait for
-		// them to finish saying something before answering again.
+	// Wait for them to finish saying something. Always when answering a
+	// stretch the agent has already spoken into, and on the first answer too
+	// when the policy is a running count.
+	//
+	// The count is the one kind whose next answer depends on its last, so
+	// being asked several times about one occurrence corrupts it rather than
+	// merely repeating it: the voice is asked again every time the recogniser
+	// extends the text, and each ask that says a number moves the count on.
+	// Measured, allowing the first answer mid-sentence took counting from five
+	// in five to one in five, saying "three" where the second animal was two.
+	//
+	// Nothing else has that property, and making everything wait was measured
+	// too: a correction is useless once they have finished the sentence it was
+	// about, which is the whole reason interrupting exists, and the wait took
+	// cutting in from five in five to one in five and the visual case with it.
+	//
+	// So the rule follows the property rather than the act. Whether a policy
+	// is a count was read off the person's own words when it was pinned, which
+	// is the same reading the arithmetic instruction hangs on.
+	if newly != stable || runtime.countingIsInForce() {
 		//
-		// The first answer does not wait, and an attempt to make it wait was
-		// reverted rather than kept. It was compensating for the voice saying
-		// a number at a sentence with nothing in it to count, on the reasoning
-		// that fewer asks means fewer chances to be wrong. The cause of those
-		// numbers turned out to be a dropped restriction - a recogniser's full
-		// stop swallowing "and say nothing else" - and with that fixed the
-		// voice declines on its own.
-		//
-		// What the delay cost was the case that cannot afford it. A correction
-		// is useless once they have finished the sentence it was about, and
-		// waiting took cutting in from five in five to one.
-		//
-		// What stops the same occurrence being answered twice is the fact the
-		// voice is handed: how much of what they are saying it has already
-		// spoken for. That is the layer that can tell a second look at one
-		// sentence from a second thing to say about it, which is a judgement
-		// about content and was never available here.
+		// What stops the same occurrence being answered twice once it is
+		// through is the fact the voice is handed: how much of what they are
+		// saying it has already spoken for. That is the layer that can tell a
+		// second look at one sentence from a second thing to say about it,
+		// which is a judgement about content and is not available here.
 		if !finishedSomething(newly) {
 			runtime.noteInterject("they have not finished saying anything since the agent last spoke")
 			return
