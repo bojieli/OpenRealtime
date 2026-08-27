@@ -48,10 +48,10 @@
   },
   "local_integration": {
     "patch": "datasets/patches/0001-local-openai-fish-audio.patch",
-    "patch_sha256": "f34fe88d5ca6342a272b7f64b13da690acb390ef9b30b951b9c6d97466d301ac",
+    "patch_sha256": "546488a8481c87f9b0af529fc80b06c0d2ba6a3c5d2faf7426df075462ced4bc",
     "preparation_script": "scripts/prepare-tau-voice.sh",
     "wire_protocol_changed": false,
-    "agent_transport": "standard upstream OpenAI Realtime adapter with explicit local WebSocket base_url",
+    "agent_transport": "standard upstream OpenAI Realtime adapter with explicit local WebSocket base_url and explicit fixed voice/transcription identities",
     "transport_liveness": "20 second keepalive pings remain enabled; the Pong timeout is explicitly disabled for publishable local runs because the official discrete simulator can pause application receives while its user LLM generates",
     "retry_policy": "at most three exception-only whole-task infrastructure retries with a fixed one-second delay and the same task seed; semantic outcomes are never retried and all attempt artifacts are preserved",
     "caller_synthesis_provider": "fish_audio",
@@ -62,7 +62,7 @@
     "verification": {
       "fresh_checkout_patch_applied": true,
       "ruff_passed": true,
-      "affected_tests_passed": 89,
+      "affected_tests_passed": 91,
       "live_provider_suite_passed": true,
       "live_provider_suite_passed_tests": 12,
       "live_provider_suite_execution_condition": "final full pass used CPU affinity and FIFO priority 10 for the unchanged benchmark client on a 0%-idle shared host; two ordinary-scheduler reruns each had one wall-clock tick above 300 ms",

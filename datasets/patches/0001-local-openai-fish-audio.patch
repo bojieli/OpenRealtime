@@ -1,5 +1,5 @@
 diff --git a/src/tau2/agent/base/voice.py b/src/tau2/agent/base/voice.py
-index 6127f38713d987f611e311d6b204286455ac440d..426afc9a13ca83e355f471e315cbd3c00e367845 100644
+index 6127f38..426afc9 100644
 --- a/src/tau2/agent/base/voice.py
 +++ b/src/tau2/agent/base/voice.py
 @@ -10,13 +10,13 @@ from tau2.agent.base.streaming_utils import format_transcript_comparison
@@ -25,11 +25,11 @@ index 6127f38713d987f611e311d6b204286455ac440d..426afc9a13ca83e355f471e315cbd3c0
 +        provider_config.voice_id = resolve_synthesis_voice_id(
 +            synthesis_config, speech_env.persona_name
 +        )
- 
+
          # Generate per-turn effects (complexity overrides already merged into synthesis_config)
          speech_effects, source_effects, channel_effects = generate_turn_effects(
 diff --git a/src/tau2/agent/discrete_time_audio_native_agent.py b/src/tau2/agent/discrete_time_audio_native_agent.py
-index 04609294af19a7292d7f443b3b3517e18aca4d38..f8ddd794ff8a262526bb5045b6562ae7439b8a02 100644
+index 0460929..f8ddd79 100644
 --- a/src/tau2/agent/discrete_time_audio_native_agent.py
 +++ b/src/tau2/agent/discrete_time_audio_native_agent.py
 @@ -60,6 +60,7 @@ from tau2.config import (
@@ -67,7 +67,7 @@ index 04609294af19a7292d7f443b3b3517e18aca4d38..f8ddd794ff8a262526bb5045b6562ae7
 +        self.openai_ping_timeout_seconds = openai_ping_timeout_seconds
          self.max_inactive_seconds = max_inactive_seconds
          self.cascaded_config = cascaded_config
- 
+
 @@ -367,6 +375,8 @@ class DiscreteTimeAudioNativeAgent(FullDuplexAgent[DiscreteTimeAgentState]):
                  send_audio_instant=self.send_audio_instant,
                  model=self.model,
@@ -87,14 +87,14 @@ index 04609294af19a7292d7f443b3b3517e18aca4d38..f8ddd794ff8a262526bb5045b6562ae7
              cascaded_config=getattr(audio_native_config, "cascaded_config", None),
              audio_taps_dir=audio_taps_dir,
 diff --git a/src/tau2/cli.py b/src/tau2/cli.py
-index 96295ef2315c606082db935cafe613ccc1491610..17e43778421efa04cfeb31f9a758ad820f06d92c 100644
+index 96295ef..17e4377 100644
 --- a/src/tau2/cli.py
 +++ b/src/tau2/cli.py
 @@ -1,5 +1,6 @@
  import argparse
  import json
 +from pathlib import Path
- 
+
  from tau2.config import (
      DEFAULT_AGENT_IMPLEMENTATION,
 @@ -19,6 +20,7 @@ from tau2.config import (
@@ -119,12 +119,12 @@ index 96295ef2315c606082db935cafe613ccc1491610..17e43778421efa04cfeb31f9a758ad82
 +    DEFAULT_FISH_AUDIO_TTS_MODEL,
 +    DEFAULT_FISH_AUDIO_TTS_VOICE,
 +)
- 
- 
+
+
  def get_all_retrieval_config_names():
      return get_all_variant_names()
- 
- 
+
+
 +def load_string_map(path: str) -> dict[str, str]:
 +    """Load a JSON object whose keys and values are non-empty strings."""
 +    try:
@@ -210,7 +210,7 @@ index 96295ef2315c606082db935cafe613ccc1491610..17e43778421efa04cfeb31f9a758ad82
 +        default=DEFAULT_FISH_AUDIO_SOURCE_SAMPLE_RATE,
 +        help="Fallback PCM sample rate when Fish omits X-Sample-Rate.",
 +    )
- 
+
      # Audio-native: Sample rates
      parser.add_argument(
 @@ -628,6 +708,8 @@ def main():
@@ -224,7 +224,7 @@ index 96295ef2315c606082db935cafe613ccc1491610..17e43778421efa04cfeb31f9a758ad82
                  max_steps_seconds=args.max_steps_seconds,
 @@ -682,10 +764,28 @@ def main():
          )
- 
+
          if audio_native_config is not None:
 +            user_voice_settings = None
 +            if args.voice_synthesis_provider == "fish_audio":
@@ -252,7 +252,7 @@ index 96295ef2315c606082db935cafe613ccc1491610..17e43778421efa04cfeb31f9a758ad82
                  audio_taps=getattr(args, "audio_taps", False),
              )
 diff --git a/src/tau2/config.py b/src/tau2/config.py
-index f5187fa611227a8b3c43630a4b2723b973416c42..dc880448abcbc1fe41b7ba11a1407db7e20b8f62 100644
+index f5187fa..dc88044 100644
 --- a/src/tau2/config.py
 +++ b/src/tau2/config.py
 @@ -138,6 +138,7 @@ DEFAULT_AUDIO_NATIVE_MAX_INACTIVE_SECONDS = 40.0  # fixed, stall detection
@@ -264,7 +264,7 @@ index f5187fa611227a8b3c43630a4b2723b973416c42..dc880448abcbc1fe41b7ba11a1407db7
  DEFAULT_OPENAI_NOISE_REDUCTION = "near_field"  # fixed: "near_field", "far_field", None
  DEFAULT_OPENAI_VAD_THRESHOLD_LOW = 0.2  # fixed
 diff --git a/src/tau2/data_model/simulation.py b/src/tau2/data_model/simulation.py
-index 585abfadac084c9410e960d05c429ed4daf83bd5..0bc8fcfa1541da8145d862faf5eceb77e6827e58 100644
+index 585abfa..0bc8fcf 100644
 --- a/src/tau2/data_model/simulation.py
 +++ b/src/tau2/data_model/simulation.py
 @@ -33,6 +33,7 @@ from tau2.config import (
@@ -291,23 +291,23 @@ index 585abfadac084c9410e960d05c429ed4daf83bd5..0bc8fcfa1541da8145d862faf5eceb77
 +            "pings enabled but disables timeout-based disconnects."
 +        ),
 +    )
- 
+
      # Timing configuration
      tick_duration_seconds: float = Field(
 diff --git a/src/tau2/data_model/voice.py b/src/tau2/data_model/voice.py
-index 753a340f0bf71634fcfa9d85260a5769be51d96e..a92ab6afda9aa5f8323d9f7e7588e9d9aa902f6d 100644
+index 753a340..a92ab6a 100644
 --- a/src/tau2/data_model/voice.py
 +++ b/src/tau2/data_model/voice.py
 @@ -2,9 +2,9 @@
  """Voice data models for synthesis, transcription, and audio effects."""
- 
+
  from pathlib import Path
 -from typing import Any, Literal, Optional
 +from typing import Any, Literal, Optional, Union
- 
+
 -from pydantic import BaseModel, Field, computed_field
 +from pydantic import BaseModel, Field, computed_field, model_validator
- 
+
  from tau2.config import DEFAULT_SEED
  from tau2.data_model.audio import AudioEncoding, AudioFormat
 @@ -17,6 +17,10 @@ from tau2.data_model.persona import PersonaConfig
@@ -324,15 +324,15 @@ index 753a340f0bf71634fcfa9d85260a5769be51d96e..a92ab6afda9aa5f8323d9f7e7588e9d9
 @@ -80,6 +84,7 @@ DEFAULT_ELEVEN_LAB_AUDIO_FORMAT = AudioFormat(
  class ElevenLabsTTSConfig(BaseModel):
      """Configuration for ElevenLabs TTS."""
- 
+
 +    provider: Literal["elevenlabs"] = "elevenlabs"
      model_id: str = Field(default="eleven_v3")
      voice_id: Optional[str] = Field(default=None)
      api_key: Optional[str] = Field(default=None)
 @@ -98,7 +103,30 @@ class ElevenLabsTTSConfig(BaseModel):
      seed: Optional[int] = Field(default=None)
- 
- 
+
+
 -ProviderConfig = ElevenLabsTTSConfig
 +class FishAudioTTSConfig(BaseModel):
 +    """Configuration for a local Fish Audio OpenAI-compatible TTS endpoint."""
@@ -358,13 +358,13 @@ index 753a340f0bf71634fcfa9d85260a5769be51d96e..a92ab6afda9aa5f8323d9f7e7588e9d9
 +
 +
 +ProviderConfig = Union[ElevenLabsTTSConfig, FishAudioTTSConfig]
- 
- 
+
+
  # ============================================================================
 @@ -109,7 +137,7 @@ ProviderConfig = ElevenLabsTTSConfig
  class SynthesisConfig(BaseModel):
      """Voice synthesis configuration with 3-tier effect taxonomy."""
- 
+
 -    provider: str = Field(default="elevenlabs")
 +    provider: Literal["elevenlabs", "fish_audio"] = Field(default="elevenlabs")
      provider_config: Optional[ProviderConfig] = Field(default=ElevenLabsTTSConfig())
@@ -373,7 +373,7 @@ index 753a340f0bf71634fcfa9d85260a5769be51d96e..a92ab6afda9aa5f8323d9f7e7588e9d9
 @@ -121,6 +149,14 @@ class SynthesisConfig(BaseModel):
          default_factory=SpeechEffectsConfig
      )
- 
+
 +    @model_validator(mode="after")
 +    def provider_matches_config(self) -> "SynthesisConfig":
 +        if self.provider_config is None:
@@ -382,11 +382,11 @@ index 753a340f0bf71634fcfa9d85260a5769be51d96e..a92ab6afda9aa5f8323d9f7e7588e9d9
 +            raise ValueError("Synthesis provider and provider_config must match")
 +        return self
 +
- 
+
  class SynthesisResult(BaseModel):
      """Result of a voice synthesis operation."""
 diff --git a/src/tau2/runner/batch.py b/src/tau2/runner/batch.py
-index 8b9c81894a395e2037b44c7805afd80347af73be..0ecb175bbdcac119e547edfb4a1efd4637792d5d 100644
+index 8b9c818..0ecb175 100644
 --- a/src/tau2/runner/batch.py
 +++ b/src/tau2/runner/batch.py
 @@ -18,6 +18,7 @@ import threading
@@ -415,7 +415,7 @@ index 8b9c81894a395e2037b44c7805afd80347af73be..0ecb175bbdcac119e547edfb4a1efd46
      complexity_config = COMPLEXITY_CONFIGS[config.speech_complexity]
      user_persona_config = PersonaConfig(
 diff --git a/src/tau2/runner/build.py b/src/tau2/runner/build.py
-index 0eb6bdcb2d599d74d7020834eff6ea11f4f24a12..2f443b542887d702c8f21a1d1715578cb163cb07 100644
+index 0eb6bdc..2f443b5 100644
 --- a/src/tau2/runner/build.py
 +++ b/src/tau2/runner/build.py
 @@ -32,6 +32,7 @@ from tau2.user.user_simulator_base import FullDuplexUser, HalfDuplexUser
@@ -423,11 +423,11 @@ index 0eb6bdcb2d599d74d7020834eff6ea11f4f24a12..2f443b542887d702c8f21a1d1715578c
      get_or_load_task_voice_config,
  )
 +from tau2.voice.synthesis.voice_selection import resolve_synthesis_voice_id
- 
+
  # =============================================================================
  # Low-level build functions (no RunConfig needed)
 @@ -259,6 +260,10 @@ def build_voice_user(
- 
+
      # Set speech environment
      speech_environment = sampled_voice_config.to_speech_environment(task_seed)
 +    speech_environment.voice_id = resolve_synthesis_voice_id(
@@ -435,10 +435,136 @@ index 0eb6bdcb2d599d74d7020834eff6ea11f4f24a12..2f443b542887d702c8f21a1d1715578c
 +        speech_environment.persona_name,
 +    )
      task_voice_settings.speech_environment = speech_environment
- 
+
      # Use provided persona config or fall back to sampled config
+diff --git a/src/tau2/runner/checkpoint.py b/src/tau2/runner/checkpoint.py
+index 2b4f04b..b34b729 100644
+--- a/src/tau2/runner/checkpoint.py
++++ b/src/tau2/runner/checkpoint.py
+@@ -28,7 +28,24 @@ from tau2.data_model.simulation import (
+ )
+ from tau2.utils.display import ConsoleDisplay, Text
+ from tau2.utils.pydantic_utils import get_pydantic_hash
+-from tau2.utils.utils import show_dict_diff
++from tau2.utils.utils import get_dict_hash, show_dict_diff
++
++
++def _normalize_json_numbers(value):
++    """Canonicalize numerically equal JSON values for config identity.
++
++    Pydantic can round-trip a nested provider setting as ``100.0`` while the
++    same preset constructs it as ``100``. JSON assigns those values the same
++    numeric meaning; treating their representation as a changed experiment
++    makes an identical checkpoint impossible to resume.
++    """
++    if isinstance(value, float) and value.is_integer():
++        return int(value)
++    if isinstance(value, dict):
++        return {name: _normalize_json_numbers(entry) for name, entry in value.items()}
++    if isinstance(value, list):
++        return [_normalize_json_numbers(entry) for entry in value]
++    return value
+
+
+ def try_resume(
+@@ -98,18 +115,19 @@ def try_resume(
+
+     # Check if the run config has changed (exclude policy which may change between runs)
+     exclude_fields = {"environment_info": {"policy"}}
+-    if get_pydantic_hash(
+-        prev_simulation_results.info, exclude=exclude_fields
+-    ) != get_pydantic_hash(simulation_results.info, exclude=exclude_fields):
+-        diff = show_dict_diff(
+-            prev_simulation_results.info.model_dump(exclude=exclude_fields),
+-            simulation_results.info.model_dump(exclude=exclude_fields),
+-        )
++    previous_config = _normalize_json_numbers(
++        prev_simulation_results.info.model_dump(exclude=exclude_fields)
++    )
++    current_config = _normalize_json_numbers(
++        simulation_results.info.model_dump(exclude=exclude_fields)
++    )
++    if get_dict_hash(previous_config) != get_dict_hash(current_config):
++        diff = show_dict_diff(previous_config, current_config)
+         if auto_resume:
+-            logger.warning(
+-                f"Run config has changed, continuing with auto-resume:\n{diff}"
++            raise ValueError(
++                "Run config has changed; unattended resume refuses to mix "
++                f"results from different experiments:\n{diff}"
+             )
+-            response = "y"
+         else:
+             ConsoleDisplay.console.print(
+                 f"The run config has changed.\n\n{diff}\n\nDo you want to resume the run? (y/n)"
+diff --git a/src/tau2/user/user_simulator_streaming.py b/src/tau2/user/user_simulator_streaming.py
+index 8d5936c..6a8a847 100644
+--- a/src/tau2/user/user_simulator_streaming.py
++++ b/src/tau2/user/user_simulator_streaming.py
+@@ -1,3 +1,5 @@
++import json
++import os
+ import random
+ import time
+ from copy import deepcopy
+@@ -90,6 +92,27 @@ Respond with ONLY "YES" if the user should interrupt now, or "NO" if they should
+ # - Is the agent currently in the middle of a sentence which seems to be "filler" sentence with not much additional information?
+
+
++def _voice_user_decision_config() -> tuple[str, dict]:
++    """Resolve the model used for caller interruption and backchannel decisions.
++
++    The main caller can be pointed at an OpenAI-compatible endpoint, but these
++    auxiliary decisions historically remained hard-coded to the hosted default.
++    Environment overrides let an external runner keep every caller-side LLM call
++    on the same explicitly configured model and endpoint while preserving the
++    upstream default for ordinary runs.
++    """
++    model = os.environ.get(
++        "TAU2_VOICE_USER_DECISION_MODEL", VOICE_USER_SIMULATOR_DECISION_MODEL
++    )
++    raw_args = os.environ.get("TAU2_VOICE_USER_DECISION_ARGS", "")
++    if not raw_args:
++        return model, {}
++    args = json.loads(raw_args)
++    if not isinstance(args, dict):
++        raise ValueError("TAU2_VOICE_USER_DECISION_ARGS must contain a JSON object")
++    return model, args
++
++
+ # Prompt for backchannel decision - CONTINUER version (separate from interruption).
+ # Continuers are brief sounds ("uh-huh", "mm-hmm") that signal attention without responding to content.
+ BACKCHANNEL_DECISION_PROMPT_CONTINUER = """You simulate a natural listener who occasionally says "uh-huh" or "mm-hmm" to show they're following along.
+@@ -290,10 +313,12 @@ def user_interruption_policy(
+     decision_messages = [UserMessage(role="user", content=interruption_prompt)]
+
+     try:
++        decision_model, decision_args = _voice_user_decision_config()
+         response = generate(
+-            model=VOICE_USER_SIMULATOR_DECISION_MODEL,
++            model=decision_model,
+             messages=decision_messages,
+             call_name="interruption_decision",
++            **decision_args,
+         )
+
+         decision_text = response.content.strip().upper()
+@@ -358,10 +383,12 @@ def user_backchannel_policy(
+     decision_messages = [UserMessage(role="user", content=decision_prompt)]
+
+     try:
++        decision_model, decision_args = _voice_user_decision_config()
+         response = generate(
+-            model=VOICE_USER_SIMULATOR_DECISION_MODEL,
++            model=decision_model,
+             messages=decision_messages,
+             call_name="backchannel_decision",
++            **decision_args,
+         )
+
+         decision_text = response.content.strip().upper()
 diff --git a/src/tau2/voice/audio_native/adapter.py b/src/tau2/voice/audio_native/adapter.py
-index 7d9459da47fce950e6638bd5fff87ea54538ede9..e4a148317d33aa5a9fd207e04a6d935b603295ea 100644
+index 7d9459d..e4a1483 100644
 --- a/src/tau2/voice/audio_native/adapter.py
 +++ b/src/tau2/voice/audio_native/adapter.py
 @@ -18,6 +18,7 @@ from tau2.config import (
@@ -520,7 +646,7 @@ index 7d9459da47fce950e6638bd5fff87ea54538ede9..e4a148317d33aa5a9fd207e04a6d935b
          from tau2.voice.audio_native.livekit.discrete_time_adapter import (
              LiveKitCascadedAdapter,
 diff --git a/src/tau2/voice/audio_native/openai/discrete_time_adapter.py b/src/tau2/voice/audio_native/openai/discrete_time_adapter.py
-index 8d9dc9aa4b9d9ad5372c2e6c816cd43e4c5422ad..1175fce32579c640b71ef87b56d1dbc1daecaf7d 100644
+index 8d9dc9a..1175fce 100644
 --- a/src/tau2/voice/audio_native/openai/discrete_time_adapter.py
 +++ b/src/tau2/voice/audio_native/openai/discrete_time_adapter.py
 @@ -31,6 +31,7 @@ from tau2.config import (
@@ -543,7 +669,7 @@ index 8d9dc9aa4b9d9ad5372c2e6c816cd43e4c5422ad..1175fce32579c640b71ef87b56d1dbc1
 @@ -83,11 +86,19 @@ class DiscreteTimeOpenAIAdapter(DiscreteTimeAdapter):
              self.audio_format.bytes_per_second * self._voip_interval_ms / 1000
          )
- 
+
 -        if model is not None and provider is not None:
 -            raise ValueError("model and provider cannot be provided together")
 +        if provider is not None and (
@@ -554,14 +680,14 @@ index 8d9dc9aa4b9d9ad5372c2e6c816cd43e4c5422ad..1175fce32579c640b71ef87b56d1dbc1
 +            raise ValueError(
 +                "model/base_url/ping_timeout and provider cannot be provided together"
 +            )
- 
+
          self.model = model
          self.reasoning_effort = reasoning_effort
 +        self.base_url = base_url
 +        self.ping_timeout_seconds = ping_timeout_seconds
          self._provider = provider
          self._owns_provider = provider is None
- 
+
 @@ -100,6 +111,8 @@ class DiscreteTimeOpenAIAdapter(DiscreteTimeAdapter):
              self._provider = OpenAIRealtimeProvider(
                  model=self.model,
@@ -570,9 +696,9 @@ index 8d9dc9aa4b9d9ad5372c2e6c816cd43e4c5422ad..1175fce32579c640b71ef87b56d1dbc1
 +                ping_timeout_seconds=self.ping_timeout_seconds,
              )
          return self._provider
- 
+
 diff --git a/src/tau2/voice/audio_native/openai/provider.py b/src/tau2/voice/audio_native/openai/provider.py
-index 03eb2bb40fefbf360e021b295d5927a81f78b4b9..9ea36117af8cb2c58b9e2e92b15df82845d1500c 100644
+index 03eb2bb..6c444a3 100644
 --- a/src/tau2/voice/audio_native/openai/provider.py
 +++ b/src/tau2/voice/audio_native/openai/provider.py
 @@ -18,6 +18,7 @@ from tau2.config import (
@@ -591,7 +717,7 @@ index 03eb2bb40fefbf360e021b295d5927a81f78b4b9..9ea36117af8cb2c58b9e2e92b15df828
 +        ping_timeout_seconds: float = DEFAULT_OPENAI_REALTIME_PING_TIMEOUT_SECONDS,
      ):
          """Initialize the OpenAI Realtime provider.
- 
+
 @@ -131,12 +134,30 @@ class OpenAIRealtimeProvider:
              model: Model identifier to use. Defaults to DEFAULT_MODEL.
              reasoning_effort: Reasoning effort for thinking models ("minimal",
@@ -603,7 +729,7 @@ index 03eb2bb40fefbf360e021b295d5927a81f78b4b9..9ea36117af8cb2c58b9e2e92b15df828
 +                protocol pings enabled but disables timeout-based disconnects,
 +                which is useful when a discrete-time simulator intentionally
 +                pauses application reads while generating its next utterance.
- 
+
          Raises:
              ValueError: If no API key is provided or found in environment.
          """
@@ -624,21 +750,28 @@ index 03eb2bb40fefbf360e021b295d5927a81f78b4b9..9ea36117af8cb2c58b9e2e92b15df828
              self.base_url = os.environ.get(PINE_REALTIME_BASE_URL_ENV)
              self.api_key = api_key or os.environ.get(PINE_API_KEY_ENV)
              if not self.base_url:
-@@ -154,7 +175,10 @@ class OpenAIRealtimeProvider:
+@@ -154,7 +175,17 @@ class OpenAIRealtimeProvider:
                      "OpenAI API key not provided. Set OPENAI_API_KEY env var."
                  )
- 
+
 +        if ping_timeout_seconds < 0:
 +            raise ValueError("OpenAI Realtime ping timeout must be non-negative")
          self.reasoning_effort = reasoning_effort
 +        self.ping_timeout_seconds = ping_timeout_seconds
++        self.voice = (
++            os.environ.get("OPENAI_REALTIME_VOICE") or DEFAULT_OPENAI_VOICE
++        )
++        self.transcription_model = (
++            os.environ.get("OPENAI_REALTIME_TRANSCRIPTION_MODEL")
++            or DEFAULT_OPENAI_TRANSCRIPTION_MODEL
++        )
          self.ws: Optional[websockets.WebSocketClientProtocol] = None
          self._current_vad_config: Optional[OpenAIVADConfig] = None
          self._audio_format: AudioFormat = TELEPHONY_AUDIO_FORMAT
-@@ -198,7 +222,14 @@ class OpenAIRealtimeProvider:
+@@ -198,7 +229,14 @@ class OpenAIRealtimeProvider:
          url = f"{self.base_url}?model={self.model}"
          headers = {"Authorization": f"Bearer {self.api_key}"}
- 
+
 -        self.ws = await websockets.connect(url, additional_headers=headers)
 +        ping_timeout = (
 +            None if self.ping_timeout_seconds == 0 else self.ping_timeout_seconds
@@ -648,20 +781,38 @@ index 03eb2bb40fefbf360e021b295d5927a81f78b4b9..9ea36117af8cb2c58b9e2e92b15df828
 +            additional_headers=headers,
 +            ping_timeout=ping_timeout,
 +        )
- 
+
          response = await self.ws.recv()
          data = json.loads(response)
-@@ -450,7 +481,7 @@ class OpenAIRealtimeProvider:
+@@ -351,7 +389,7 @@ class OpenAIRealtimeProvider:
+                 "input": {
+                     "format": audio_fmt,
+                     "transcription": {
+-                        "model": DEFAULT_OPENAI_TRANSCRIPTION_MODEL,
++                        "model": self.transcription_model,
+                         "language": "en",
+                     },
+                     "noise_reduction": {"type": DEFAULT_OPENAI_NOISE_REDUCTION},
+@@ -362,7 +400,7 @@ class OpenAIRealtimeProvider:
+         if modality == "audio":
+             session.setdefault("audio", {})["output"] = {
+                 "format": audio_fmt,
+-                "voice": DEFAULT_OPENAI_VOICE,
++                "voice": self.voice,
+             }
+
+         await self.ws.send(json.dumps({"type": "session.update", "session": session}))
+@@ -450,7 +488,7 @@ class OpenAIRealtimeProvider:
          if not self.is_connected:
              raise RuntimeError("Not connected to API")
- 
+
 -        while self.is_connected:
 +        while True:
              try:
                  raw_message = await asyncio.wait_for(self.ws.recv(), timeout=0.01)
                  data = json.loads(raw_message)
 diff --git a/src/tau2/voice/synthesis/audio_effects/speech_generator.py b/src/tau2/voice/synthesis/audio_effects/speech_generator.py
-index b67d1331f83f759b9dabd656cc6e3093a616f6c8..69c5a52a0b4684ebb6376aace277fcf664e8e43c 100644
+index b67d133..69c5a52 100644
 --- a/src/tau2/voice/synthesis/audio_effects/speech_generator.py
 +++ b/src/tau2/voice/synthesis/audio_effects/speech_generator.py
 @@ -13,9 +13,9 @@ from tau2.config import DEFAULT_TELEPHONY_RATE
@@ -674,10 +825,10 @@ index b67d1331f83f759b9dabd656cc6e3093a616f6c8..69c5a52a0b4684ebb6376aace277fcf6
 +from tau2.voice.synthesis.voice_selection import resolve_synthesis_voice_id
  from tau2.voice.utils.audio_preprocessing import resample_audio
  from tau2.voice.utils.probability import poisson_should_trigger
- 
+
 @@ -124,7 +124,7 @@ def create_streaming_audio_generators(
      out_of_turn_items = speech_config.get_out_of_turn_speech_inserts()
- 
+
      if out_of_turn_items:
 -        voice_id = get_elevenlabs_voice_id(persona_name)
 +        voice_id = resolve_synthesis_voice_id(synthesis_config, persona_name)
@@ -685,12 +836,12 @@ index b67d1331f83f759b9dabd656cc6e3093a616f6c8..69c5a52a0b4684ebb6376aace277fcf6
          provider_config_with_voice.voice_id = voice_id
          out_of_turn_speech_generator = OutOfTurnSpeechGenerator(
 diff --git a/src/tau2/voice/synthesis/synthesize.py b/src/tau2/voice/synthesis/synthesize.py
-index e9a7ab98a35340b9283d6eb63d6578af18784dc2..da207d4db1f9c396fab5b70d50007c85b17b9b7c 100644
+index e9a7ab9..da207d4 100644
 --- a/src/tau2/voice/synthesis/synthesize.py
 +++ b/src/tau2/voice/synthesis/synthesize.py
 @@ -3,14 +3,17 @@
  from dotenv import load_dotenv
- 
+
  from tau2.data_model.audio import AudioData
 -from tau2.data_model.voice import ElevenLabsTTSConfig
 +from tau2.data_model.voice import (
@@ -701,12 +852,12 @@ index e9a7ab98a35340b9283d6eb63d6578af18784dc2..da207d4db1f9c396fab5b70d50007c85
  from tau2.utils.retry import tts_retry
  from tau2.voice.utils.elevenlabs_utils import tts_elevenlabs
 +from tau2.voice.utils.fish_audio_utils import tts_fish_audio
- 
+
  load_dotenv()
- 
+
 -ProviderConfig = ElevenLabsTTSConfig
 -
- 
+
  @tts_retry
  def synthesize_voice(
 @@ -20,7 +23,13 @@ def synthesize_voice(
@@ -722,10 +873,10 @@ index e9a7ab98a35340b9283d6eb63d6578af18784dc2..da207d4db1f9c396fab5b70d50007c85
 +        audio_data = tts_fish_audio(text=text, config=provider_config)
      else:
          raise ValueError(f"Unsupported synthesis provider: {provider}")
- 
+
 diff --git a/src/tau2/voice/synthesis/voice_selection.py b/src/tau2/voice/synthesis/voice_selection.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..fbfe5d3061bd74ef5681347a4c73f794b92eb352
+index 0000000..fbfe5d3
 --- /dev/null
 +++ b/src/tau2/voice/synthesis/voice_selection.py
 @@ -0,0 +1,26 @@
@@ -757,7 +908,7 @@ index 0000000000000000000000000000000000000000..fbfe5d3061bd74ef5681347a4c73f794
 +    return voice_id
 diff --git a/src/tau2/voice/utils/fish_audio_utils.py b/src/tau2/voice/utils/fish_audio_utils.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..88894b57b1927e1cdf9a4f71616b81c724150b03
+index 0000000..88894b5
 --- /dev/null
 +++ b/src/tau2/voice/utils/fish_audio_utils.py
 @@ -0,0 +1,57 @@
@@ -819,11 +970,11 @@ index 0000000000000000000000000000000000000000..88894b57b1927e1cdf9a4f71616b81c7
 +    )
 +    return resample_audio(audio, config.output_sample_rate)
 diff --git a/src/tau2/voice_config.py b/src/tau2/voice_config.py
-index 2c4bdb3ffcb908b381ecc00d2a1a205ac1bd99f4..de32703063910ae317d13e4c62b781ed354e93b3 100644
+index 2c4bdb3..de32703 100644
 --- a/src/tau2/voice_config.py
 +++ b/src/tau2/voice_config.py
 @@ -31,6 +31,10 @@ def resolve_burst_noise_paths(filenames: list[str]) -> list[Path]:
- 
+
  # Voice Synthesis & Transcription
  DEFAULT_VOICE_SYNTHESIS_PROVIDER = "elevenlabs"
 +DEFAULT_FISH_AUDIO_TTS_ENDPOINT = "http://127.0.0.1:8081/v1/audio/speech"
@@ -833,8 +984,120 @@ index 2c4bdb3ffcb908b381ecc00d2a1a205ac1bd99f4..de32703063910ae317d13e4c62b781ed
  DEFAULT_TRANSCRIPTION_MODEL = "nova-3"
  ASSUMED_TURNS_PER_MINUTE = 10
  ELEVENLABS_ENABLE_AUDIO_TAGS = True
+diff --git a/tests/test_checkpoint.py b/tests/test_checkpoint.py
+index 1eeb840..109a03b 100644
+--- a/tests/test_checkpoint.py
++++ b/tests/test_checkpoint.py
+@@ -3,6 +3,8 @@
+ import json
+ import multiprocessing
+
++import pytest
++
+ from tau2.data_model.simulation import (
+     Info,
+     Results,
+@@ -235,6 +237,58 @@ class TestTryResumeInfraErrorRemoval:
+
+         assert save_path.stat().st_mtime == original_mtime
+
++    def test_auto_resume_refuses_a_changed_run_configuration(self, tmp_path):
++        """Unattended recovery must not combine two experiment configs."""
++        tasks = [_make_task("t0")]
++        previous_info = _make_info()
++        previous = Results(
++            info=previous_info,
++            tasks=tasks,
++            simulations=[_make_sim("t0")],
++        )
++        save_path = tmp_path / "results.json"
++        previous.save(save_path)
++
++        changed_info = previous_info.model_copy(update={"max_steps": 101})
++        current = Results(info=changed_info, tasks=tasks, simulations=[])
++
++        with pytest.raises(ValueError, match="different experiments"):
++            try_resume(
++                save_path,
++                current,
++                tasks,
++                num_trials=1,
++                auto_resume=True,
++            )
++
++    def test_auto_resume_accepts_equivalent_json_number_representations(
++        self, tmp_path
++    ):
++        """A nested 100.0-to-100 round trip is not a different experiment."""
++        tasks = [_make_task("t0")]
++        previous_info = _make_info()
++        previous_info.agent_info.llm_args = {"duration_ms": 100.0}
++        previous = Results(
++            info=previous_info,
++            tasks=tasks,
++            simulations=[_make_sim("t0")],
++        )
++        save_path = tmp_path / "results.json"
++        previous.save(save_path)
++
++        current_info = _make_info()
++        current_info.agent_info.llm_args = {"duration_ms": 100}
++        current = Results(info=current_info, tasks=tasks, simulations=[])
++
++        resumed, _, _ = try_resume(
++            save_path,
++            current,
++            tasks,
++            num_trials=1,
++            auto_resume=True,
++        )
++        assert len(resumed.simulations) == 1
++
+
+ class TestCheckpointSaver:
+     """Tests for checkpoint save function."""
+diff --git a/tests/test_streaming/test_voice_streaming_user_simulator.py b/tests/test_streaming/test_voice_streaming_user_simulator.py
+index 81c87c0..fe341c5 100644
+--- a/tests/test_streaming/test_voice_streaming_user_simulator.py
++++ b/tests/test_streaming/test_voice_streaming_user_simulator.py
+@@ -15,7 +15,10 @@ import pytest
+ from tau2.data_model.audio import AudioEncoding, AudioFormat
+ from tau2.data_model.message import AssistantMessage, ToolCall, UserMessage
+ from tau2.data_model.voice import SynthesisConfig, VoiceSettings
+-from tau2.user.user_simulator_streaming import VoiceStreamingUserSimulator
++from tau2.user.user_simulator_streaming import (
++    VoiceStreamingUserSimulator,
++    _voice_user_decision_config,
++)
+
+
+ @pytest.fixture
+@@ -71,6 +74,23 @@ def audio_format():
+     )
+
+
++def test_voice_decisions_accept_an_explicit_local_model(monkeypatch):
++    """Auxiliary caller decisions must follow a locally configured caller."""
++    monkeypatch.setenv("TAU2_VOICE_USER_DECISION_MODEL", "openai/local-caller")
++    monkeypatch.setenv(
++        "TAU2_VOICE_USER_DECISION_ARGS",
++        '{"api_base":"http://127.0.0.1:8000/v1","api_key":"local"}',
++    )
++
++    model, args = _voice_user_decision_config()
++
++    assert model == "openai/local-caller"
++    assert args == {
++        "api_base": "http://127.0.0.1:8000/v1",
++        "api_key": "local",
++    }
++
++
+ # --- Basic Interface Tests ---
+
+
 diff --git a/tests/test_voice/test_audio_native/test_openai_provider_config.py b/tests/test_voice/test_audio_native/test_openai_provider_config.py
-index 591da87e944fdd9a4183ce423324b2bd67aa598c..c6b3daf50bfbeb85738c013339957ca70f6a829f 100644
+index 591da87..58fe0fa 100644
 --- a/tests/test_voice/test_audio_native/test_openai_provider_config.py
 +++ b/tests/test_voice/test_audio_native/test_openai_provider_config.py
 @@ -1,6 +1,12 @@
@@ -843,17 +1106,17 @@ index 591da87e944fdd9a4183ce423324b2bd67aa598c..c6b3daf50bfbeb85738c013339957ca7
 +from unittest.mock import AsyncMock
 +
  import pytest
- 
+
  from tau2.config import DEFAULT_OPENAI_REALTIME_BASE_URL
 +from tau2.voice.audio_native.adapter import create_adapter
 +from tau2.voice.audio_native.openai import provider as provider_module
  from tau2.voice.audio_native.openai.provider import OpenAIRealtimeProvider
- 
- 
-@@ -13,6 +19,88 @@ def test_openai_model_uses_openai_environment(monkeypatch):
+
+
+@@ -13,6 +19,102 @@ def test_openai_model_uses_openai_environment(monkeypatch):
      assert provider.base_url == DEFAULT_OPENAI_REALTIME_BASE_URL
- 
- 
+
+
 +def test_explicit_base_url_uses_standard_openai_credentials(monkeypatch):
 +    monkeypatch.setenv("OPENAI_REALTIME_API_KEY", "local-development-token")
 +    monkeypatch.setenv("PINE_API_KEY", "pine-key")
@@ -865,6 +1128,20 @@ index 591da87e944fdd9a4183ce423324b2bd67aa598c..c6b3daf50bfbeb85738c013339957ca7
 +
 +    assert provider.api_key == "local-development-token"
 +    assert provider.base_url == "ws://127.0.0.1:8765/v1/realtime"
++
++
++def test_local_realtime_session_identities_are_configurable(monkeypatch):
++    monkeypatch.setenv("OPENAI_REALTIME_API_KEY", "local-development-token")
++    monkeypatch.setenv("OPENAI_REALTIME_VOICE", "fish-default")
++    monkeypatch.setenv("OPENAI_REALTIME_TRANSCRIPTION_MODEL", "local-asr")
++
++    provider = OpenAIRealtimeProvider(
++        model="openrealtime-local",
++        base_url="ws://127.0.0.1:8765/v1/realtime",
++    )
++
++    assert provider.voice == "fish-default"
++    assert provider.transcription_model == "local-asr"
 +
 +
 +def test_explicit_base_url_requires_websocket_scheme(monkeypatch):
@@ -941,7 +1218,7 @@ index 591da87e944fdd9a4183ce423324b2bd67aa598c..c6b3daf50bfbeb85738c013339957ca7
      monkeypatch.setenv("PINE_API_KEY", "pine-key")
 diff --git a/tests/test_voice/test_fish_audio_synthesis.py b/tests/test_voice/test_fish_audio_synthesis.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..1b9eefdfaa0777c8cd8d81bd0cd385b32cd9ade2
+index 0000000..1b9eefd
 --- /dev/null
 +++ b/tests/test_voice/test_fish_audio_synthesis.py
 @@ -0,0 +1,83 @@
@@ -1029,11 +1306,11 @@ index 0000000000000000000000000000000000000000..1b9eefdfaa0777c8cd8d81bd0cd385b3
 +    with pytest.raises(ValueError, match="no entry for persona"):
 +        resolve_synthesis_voice_id(config, "matt_delaney")
 diff --git a/uv.lock b/uv.lock
-index 09f0b4a86b4aaf82bf87511df1ff970ff23ec6bd..7a133cdfe4ba3fcc09b4878dba0c9d9542aba170 100644
+index 09f0b4a..7a133cd 100644
 --- a/uv.lock
 +++ b/uv.lock
 @@ -2741,7 +2741,7 @@ wheels = [
- 
+
  [[package]]
  name = "tau2"
 -version = "1.0.0"

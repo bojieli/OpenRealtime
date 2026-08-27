@@ -171,7 +171,15 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 }
 
 func resolveRealtimeCUCell(name, referenceLevels, factor, level string) (bench.Cell, error) {
-	reference := realtimecu.ReferenceCell()
+	return resolveCellFrom(realtimecu.ReferenceCell(), name, referenceLevels, factor, level)
+}
+
+// resolveCellFrom builds a paired cell while allowing explicit levels that are
+// held fixed on both sides. A diagnostic often starts from a non-global
+// baseline (for example SenseVoice instead of Qwen ASR) and varies one other
+// factor; without recording that fixed level, the artifact describes machinery
+// that was never run.
+func resolveCellFrom(reference bench.Cell, name, referenceLevels, factor, level string) (bench.Cell, error) {
 	for _, assignment := range strings.Split(referenceLevels, ",") {
 		assignment = strings.TrimSpace(assignment)
 		if assignment == "" {
@@ -661,32 +669,35 @@ func defaultAOIDir() string {
 func runTauVoice(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench tau-voice", flag.ContinueOnError)
 	var (
-		tau2Dir    string
-		endpoint   string
-		model      string
-		domain     string
-		condition  string
-		userModel  string
-		python     string
-		tokenEnv   string
-		synthesis  string
-		ttsURL     string
-		ttsModel   string
-		ttsVoice   string
-		userURL    string
-		thinking   bool
-		halluRetry int
-		runPrefix  string
-		out        string
-		trials     int
-		limit      int
-		cadence    float64
-		cellName   string
-		varyFactor string
-		varyLevel  string
-		timeout    time.Duration
-		verifyOnly bool
-		metrics    bool
+		tau2Dir         string
+		endpoint        string
+		model           string
+		domain          string
+		condition       string
+		userModel       string
+		python          string
+		tokenEnv        string
+		agentVoice      string
+		agentASR        string
+		synthesis       string
+		ttsURL          string
+		ttsModel        string
+		ttsVoice        string
+		userURL         string
+		thinking        bool
+		halluRetry      int
+		runPrefix       string
+		out             string
+		trials          int
+		limit           int
+		cadence         float64
+		cellName        string
+		referenceLevels string
+		varyFactor      string
+		varyLevel       string
+		timeout         time.Duration
+		verifyOnly      bool
+		metrics         bool
 	)
 	flags.StringVar(&tau2Dir, "tau2", ".runtime/tau2-bench", "prepared tau2-bench checkout")
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
@@ -702,6 +713,10 @@ func runTauVoice(arguments []string, output io.Writer) error {
 		"tau2 re-rolls when it judges the caller to have hallucinated; the check calls a model")
 	flags.StringVar(&tokenEnv, "token-env", "OPENREALTIME_TOKEN",
 		"environment variable holding the bearer token the agent presents")
+	flags.StringVar(&agentVoice, "agent-voice", "default",
+		"fixed voice identity used by the OpenRealtime endpoint")
+	flags.StringVar(&agentASR, "agent-transcription-model", "Qwen/Qwen3-ASR-0.6B",
+		"transcription model identity used by the OpenRealtime endpoint")
 	flags.StringVar(&synthesis, "synthesis", "fish_audio",
 		"voice for the simulated caller: fish_audio (local) or elevenlabs")
 	flags.StringVar(&ttsURL, "synthesis-url", "", "local speech endpoint for the caller's voice")
@@ -715,6 +730,8 @@ func runTauVoice(arguments []string, output io.Writer) error {
 	flags.IntVar(&limit, "limit", 0, "stop after this many tasks per domain")
 	flags.Float64Var(&cadence, "cadence", 0.2, "trigger cadence in seconds, matching factor F4")
 	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
+	flags.StringVar(&referenceLevels, "reference-levels", "",
+		"comma-separated factor=level overrides held fixed across a pair")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F2")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
 	flags.DurationVar(&timeout, "task-timeout", 10*time.Minute, "how long one simulation may take")
@@ -724,7 +741,7 @@ func runTauVoice(arguments []string, output io.Writer) error {
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
-	cell, err := resolveCell(cellName, varyFactor, varyLevel)
+	cell, err := resolveCellFrom(bench.Reference(), cellName, referenceLevels, varyFactor, varyLevel)
 	if err != nil {
 		return err
 	}
@@ -741,6 +758,7 @@ func runTauVoice(arguments []string, output io.Writer) error {
 		Condition: speech, Trials: trials, Limit: limit, UserModel: userModel,
 		UserModelURL: userURL, UserModelThinking: thinking, HallucinationRetries: halluRetry,
 		Cadence: cadence, Timeout: timeout, Cell: cell, Python: python, TokenEnv: tokenEnv,
+		AgentVoice: agentVoice, AgentTranscriptionModel: agentASR,
 		SynthesisProvider: synthesis, SynthesisEndpoint: ttsURL,
 		SynthesisModel: ttsModel, SynthesisVoice: ttsVoice,
 		RunPrefix: runPrefix,

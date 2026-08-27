@@ -153,6 +153,12 @@ type Config struct {
 	// agent presents to the endpoint. tau2's adapter requires one to be set
 	// even when the endpoint accepts anything.
 	TokenEnv string
+	// AgentVoice and AgentTranscriptionModel name the fixed local providers as
+	// they must appear in tau2's ordinary Realtime session.update. Tau2's
+	// hosted defaults are alloy and gpt-4o-transcribe; sending those to a local
+	// endpoint either lies about the measured stack or is correctly refused.
+	AgentVoice              string
+	AgentTranscriptionModel string
 	// SynthesisProvider gives the simulated caller a voice. tau2 defaults to a
 	// hosted service; the pinned patch adds a local one, which is what makes a
 	// measurement run without sending every caller utterance to a third party
@@ -212,6 +218,12 @@ func (config *Config) applyDefaults() {
 	}
 	if strings.TrimSpace(config.TokenEnv) == "" {
 		config.TokenEnv = "OPENREALTIME_TOKEN"
+	}
+	if strings.TrimSpace(config.AgentVoice) == "" {
+		config.AgentVoice = "default"
+	}
+	if strings.TrimSpace(config.AgentTranscriptionModel) == "" {
+		config.AgentTranscriptionModel = "Qwen/Qwen3-ASR-0.6B"
 	}
 	if strings.TrimSpace(config.SynthesisProvider) == "" {
 		config.SynthesisProvider = "fish_audio"
@@ -392,6 +404,11 @@ func (config *Config) runDomain(ctx context.Context, domain, runName string) ([]
 		"--domain", domain,
 		"--num-trials", fmt.Sprint(config.Trials),
 		"--save-to", runName,
+		// A benchmark cell takes hours and tau2 checkpoints it specifically so
+		// an interrupted run can continue. The subprocess has no interactive
+		// stdin, so tau2's default yes/no resume prompt can only fail with EOF.
+		// Make the unattended contract explicit.
+		"--auto-resume",
 		"--audio-native",
 		"--audio-native-provider", "openai",
 		"--audio-native-base-url", config.Endpoint,
@@ -435,6 +452,15 @@ func (config *Config) runDomain(ctx context.Context, domain, runName string) ([]
 		// accepts anything, so the runner supplies the one the endpoint
 		// actually wants rather than leaving it to the operator's shell.
 		"OPENAI_REALTIME_API_KEY="+token,
+		"OPENAI_REALTIME_VOICE="+config.AgentVoice,
+		"OPENAI_REALTIME_TRANSCRIPTION_MODEL="+config.AgentTranscriptionModel,
+		// Regular speech asks a caller-side LLM whether to interrupt or
+		// backchannel. Upstream defaults those auxiliary calls to hosted
+		// gpt-4.1 even when --user-llm points at a local endpoint, producing a
+		// mixed and often unrunnable condition. Keep every caller decision on
+		// the caller model the operator selected.
+		"TAU2_VOICE_USER_DECISION_MODEL="+config.userModelName(),
+		"TAU2_VOICE_USER_DECISION_ARGS="+config.userModelArgs(),
 		"OPENAI_API_KEY="+os.Getenv("OPENAI_API_KEY"),
 	)
 	// tau2 writes its progress and its summary to stdout and its logging to

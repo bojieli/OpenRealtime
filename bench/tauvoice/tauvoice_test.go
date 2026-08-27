@@ -234,6 +234,68 @@ func TestANonZeroExitWithNoResultsIsAFailure(t *testing.T) {
 	}
 }
 
+func TestTheRunnerNamesTheMeasuredLocalVoiceAndTranscriber(t *testing.T) {
+	checkout := t.TempDir()
+	saveTo := filepath.Join(checkout, "data", "simulations", "cell-airline-control")
+	if err := os.MkdirAll(saveTo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	results := filepath.Join(saveTo, "results.json")
+	stub := filepath.Join(checkout, "fake-tau2")
+	script := "#!/bin/sh\n" +
+		"test \"$OPENAI_REALTIME_VOICE\" = fish-fixed || exit 41\n" +
+		"test \"$OPENAI_REALTIME_TRANSCRIPTION_MODEL\" = local-asr || exit 42\n" +
+		"test \"$TAU2_VOICE_USER_DECISION_MODEL\" = openai/qwen-caller || exit 43\n" +
+		"case \"$TAU2_VOICE_USER_DECISION_ARGS\" in *\"http://127.0.0.1:8000/v1\"*) ;; *) exit 44;; esac\n" +
+		"case \" $* \" in *\" --auto-resume \"*) ;; *) exit 45;; esac\n" +
+		"printf '%s\\n' '{\"simulation_index\":[{\"id\":\"a\",\"task_id\":\"airline_1\",\"trial\":0,\"reward\":1.0}]}' > " + results + "\n"
+	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	outcomes, err := tauvoice.RunDomainForTest(context.Background(), tauvoice.Config{
+		Tau2Dir: checkout, Endpoint: "ws://127.0.0.1:8765/v1/realtime", Python: stub,
+		AgentVoice: "fish-fixed", AgentTranscriptionModel: "local-asr",
+		UserModel: "qwen-caller", UserModelURL: "http://127.0.0.1:8000/v1",
+	}, "airline", "cell-airline-control")
+	if err != nil {
+		t.Fatalf("run with explicit local identities: %v", err)
+	}
+	if len(outcomes) != 1 || !outcomes[0].Passed {
+		t.Fatalf("expected the stubbed result, got %+v", outcomes)
+	}
+}
+
+// tau2 checkpoints voice runs so a multi-hour cell can recover after an
+// interruption. Its default resume path prompts on stdin, but the runner does
+// not attach one; without --auto-resume, an existing checkpoint fails with
+// EOF before any missing tasks are scheduled.
+func TestTheRunnerResumesWithoutAnInteractivePrompt(t *testing.T) {
+	checkout := t.TempDir()
+	saveTo := filepath.Join(checkout, "data", "simulations", "cell-airline-control")
+	if err := os.MkdirAll(saveTo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	results := filepath.Join(saveTo, "results.json")
+	stub := filepath.Join(checkout, "fake-tau2")
+	script := "#!/bin/sh\n" +
+		"case \" $* \" in *\" --auto-resume \"*) ;; *) echo 'missing unattended resume' >&2; exit 43;; esac\n" +
+		"printf '%s\\n' '{\"simulation_index\":[{\"id\":\"a\",\"task_id\":\"airline_1\",\"trial\":0,\"reward\":1.0}]}' > " + results + "\n"
+	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	outcomes, err := tauvoice.RunDomainForTest(context.Background(), tauvoice.Config{
+		Tau2Dir: checkout, Endpoint: "ws://127.0.0.1:8765/v1/realtime", Python: stub,
+	}, "airline", "cell-airline-control")
+	if err != nil {
+		t.Fatalf("resume an existing checkpoint: %v", err)
+	}
+	if len(outcomes) != 1 || !outcomes[0].Passed {
+		t.Fatalf("expected the resumed result, got %+v", outcomes)
+	}
+}
+
 // A local endpoint with authentication disabled has no key, and demanding the
 // operator invent one protects nothing. A remote one with no credential is a
 // run that will fail 278 times, and that is worth refusing in advance.
