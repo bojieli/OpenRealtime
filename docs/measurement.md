@@ -1804,3 +1804,103 @@ do not do, the runtime has been made to ask as rarely as it correctly can, and
 the remaining gap is a capability rather than a defect. Contorting the system
 further to close it would be tuning for one benchmark, which is the one thing
 this work is not allowed to do.
+
+## F52 - a wait rendered as a result manufactures a reason to speak
+
+The reasoner is asked on most turns and mostly has nothing to add, so it answers
+`<wait>`. Every adapter rendered that as background state, behind the hint that
+says a tool-call chain has finished and left a written result below, and to
+answer from it in your own words. Four consecutive waits reached the voice as
+four instructions to say something.
+
+Under a counting policy, what it said was a number, at a sentence about a river
+with no animal in it. Asked with the same conversation and no waits in it, the
+voice answers `<wait>` eight times out of eight.
+
+The window that renders a conversation for the interaction model already
+dropped a wait, in almost these words: a decision to say nothing is not a line
+of conversation and not a piece of background state either, it is the absence of
+both. The rule existed in one of the two places a trajectory is rendered.
+
+Same shape one layer over: retained reasoning with empty content rendered the
+preamble and nothing else, so the voice saw five assistant turns in which the
+agent had apparently said nothing. Removing both took hearing from 3157ms p50
+to 701ms, because the prompts stopped carrying them.
+
+## F53 - the speaker recogniser was never enrolling, and the prior took over
+
+A speaker telling one uninterrupted story was reported as somebody else in the
+room 122 times in one suite run.
+
+The threshold was not the problem. One voice against itself scores 0.47 to 0.77
+on whole utterances, against another voice 0.04 to 0.27, so 0.40 sits in a wide
+gap. Two duration bounds were wrong.
+
+How much speech a verdict needs, measured as same voice / another voice:
+
+	 300ms   0.219 / 0.145
+	 500ms   0.321 / 0.177
+	 750ms   0.301 / 0.243
+	1000ms   0.430 / 0.219
+	1500ms   0.584 / 0.202
+	3000ms   0.722 / 0.246
+
+At the old one-second bound the same speaker scores 0.430 against a threshold of
+0.40, which is a coin toss, and every toss that lands wrong relabels the person
+mid-sentence.
+
+How much speech a reference needs, measured the way one is actually used - built
+from one utterance, compared against different utterances later:
+
+	1000ms   0.415..0.429 / 0.093..0.114
+	1500ms   0.509..0.563 / 0.060..0.097
+	2000ms   0.571..0.616 / 0.114..0.168
+	3000ms   0.576..0.667 / 0.091..0.147
+
+Three seconds buys nothing over one and a half. The earlier three-second figure
+came from segments of one recording, which is the easy case: same speaker, same
+breath, same conditions, words that follow on.
+
+What three seconds cost was the whole mechanism, because the buffer is per
+utterance and nobody speaks in three-second sentences on purpose. Somebody who
+opened with "I'm just going to get on with this for a bit" - 2.09 seconds -
+never enrolled, and the failure is not degraded identification. With no
+reference the prior takes over: whoever is talking is the person whose session
+this is. The stranger asking somebody else about the milk was read as the user
+in every run.
+
+Failing to enrol is worse than enrolling on less. Third-party scenario 0/5 to
+3/5, waiter to 5/5.
+
+## F54 - a guard whose escape needs the guarded thing to succeed cannot escape
+
+The guard that stops the agent counting the sentence which asked it to count
+compared what it heard against the text extraction last read. Those were the
+same thing until extraction began re-reading a whole turn on every word, at
+which point "the text extraction last read" became "whatever they are saying
+now" and the guard refused every occurrence there was - eighty times in one run.
+
+The bound added to release it was that a policy cannot have been carried out
+before it was set, so once the agent has spoken under one the moment is over.
+That is true and it could never fire, because the guard was refusing the first
+carry-out. A bound that needs the thing it guards to succeed once cannot be the
+only bound.
+
+The runtime now records the speech that set a policy at the moment the pinboard
+gains one it did not have. Counting 0/5 to 3/5.
+
+## F55 - the suite has run-to-run noise that a single pass cannot see through
+
+Three consecutive full runs on nearly identical code returned 38/55, 38/55 and
+36/55, and the per-scenario distributions moved much more than the totals: the
+silence scenario went 4/5 to 1/5, the third-party scenario 3/5 to 1/5, and the
+control - an ordinary question, which should never fail - returned 4/5.
+
+Synthesised audio is already cached between runs, so this is not synthesis
+variance. What is left is the system: sampling, and the timing of a pipeline
+whose parts race.
+
+The consequence for method is that a single pass cannot rank two versions that
+differ by a scenario or two, and reporting one as an improvement over the other
+is reading noise. Scenario-level probes at five repeats are what moved this
+work; full-suite totals are for direction.
