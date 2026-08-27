@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -582,6 +583,13 @@ func (runtime *runtime) noteVoiceTurn(request cognition.Request) {
 		Predicates: map[string]string{
 			"where": "voice", "because": request.Because,
 			"heard": request.Heard, "standing": strings.Join(request.Standing, " | "),
+			// The flags decide which paragraphs get composed into the
+			// instruction, so a turn that behaved unlike the same prompt tried
+			// by hand differs in one of these or in nothing.
+			"holding":      strconv.FormatBool(request.Holding),
+			"interjecting": strconv.FormatBool(request.Interjecting),
+			"repair":       strconv.FormatBool(request.PendingRepair),
+			"observed":     request.Observed,
 		},
 	})
 }
