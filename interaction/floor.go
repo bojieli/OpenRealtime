@@ -205,8 +205,9 @@ func (floor engineFloor) Holder(state session.Snapshot) Holder {
 
 type modelFloor struct{ name string }
 
-// NewModelFloor hands endpointing to the binding's model. Only a model that
-// actually owns its own floor - a full-duplex one - should be given this.
+// NewModelFloor hands endpointing to the binding's model. It is selected only
+// when ownership says the model supplies a native floor; concurrent I/O is a
+// separate capability and neither implies the other.
 func NewModelFloor(name string) Floor {
 	if strings.TrimSpace(name) == "" {
 		name = "model"

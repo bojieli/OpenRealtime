@@ -102,6 +102,64 @@ func TestToolResultRequiresExactlyOneOutcome(t *testing.T) {
 	}
 }
 
+func TestTypedInteractionActsCarryTheirFloorMeaning(t *testing.T) {
+	floors := map[string]string{
+		"listen": "unchanged", "speak-through": "preserve", "answer": "take",
+		"interrupt": "take", "act-silently": "unchanged",
+		"keep-speaking": "unchanged", "stop-speaking": "yield",
+	}
+	for act, floor := range floors {
+		message := sidecar.Message{
+			Type: sidecar.TypeInteractionAct, Act: act, Floor: floor,
+			Policy: "test", EvidenceRef: "revision:1", Confidence: .8,
+			DeadlineMS: time.Now().Add(time.Second).UnixMilli(),
+		}
+		if err := message.Validate(); err != nil {
+			t.Fatalf("%s: %v", act, err)
+		}
+		message.Floor = "take"
+		if floor != "take" && message.Validate() == nil {
+			t.Fatalf("%s accepted the wrong floor semantics", act)
+		}
+	}
+}
+
+func TestProtocolV2HelloSelectsOwnersSeparatelyFromCapabilities(t *testing.T) {
+	hello := sidecar.Message{
+		Type: sidecar.TypeHello, Version: sidecar.VersionInteraction, SampleRate: 24_000,
+		InteractionOwner: "engine", FloorOwner: "model",
+	}
+	if err := hello.Validate(); err != nil {
+		t.Fatalf("independent ownership selection was rejected: %v", err)
+	}
+	hello.InteractionOwner = "duplex"
+	if err := hello.Validate(); err == nil {
+		t.Fatal("a model species must not be accepted where an owner is required")
+	}
+}
+
+func TestClientRefusesAnExpiredTypedActBeforeWritingIt(t *testing.T) {
+	binary := writeEchoSidecar(t)
+	client, err := sidecar.Dial(context.Background(), sidecar.Config{
+		Command: []string{binary}, ProtocolVersion: sidecar.VersionInteraction,
+		Environment: []string{"ECHO_SIDECAR_VERSION=2"},
+	}, sidecar.Message{
+		SampleRate: 24_000, InteractionOwner: "engine", FloorOwner: "engine",
+	})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer client.Close()
+	err = client.Send(sidecar.Message{
+		Type: sidecar.TypeInteractionAct, Act: "answer", Floor: "take",
+		Policy: "test", EvidenceRef: "revision:1",
+		DeadlineMS: time.Now().Add(-time.Millisecond).UnixMilli(),
+	})
+	if err == nil || !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("expired plan error = %v", err)
+	}
+}
+
 // writeEchoSidecar builds a minimal conformant sidecar as a Go program, so the
 // suite is verified against something that actually speaks the protocol
 // without needing Python in the test path.
@@ -258,7 +316,7 @@ func main() {
 		case "hello":
 			send(message{
 				Type: "ready", Version: version, Model: "echo", OutputRate: 24000,
-				Capabilities: []string{"transcript", "text_injection"},
+				Capabilities: []string{"transcript", "text_injection", "interaction_acts"},
 			}, nil)
 		case "respond":
 			if silent {

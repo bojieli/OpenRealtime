@@ -185,7 +185,7 @@ func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
 	payload := map[string]any{
 		"status": "ok", "model": server.config.Model,
 		"binding":      server.config.Binding.Name(),
-		"ownership":    server.config.Binding.Ownership(),
+		"ownership":    server.config.Binding.Ownership().Effective(),
 		"capabilities": server.config.Binding.Capabilities(),
 		"protocol": map[string]any{
 			"openai_realtime": "pinned",

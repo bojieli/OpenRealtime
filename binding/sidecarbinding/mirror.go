@@ -41,19 +41,30 @@ func (runtime *runtime) mirror() {
 func (runtime *runtime) mirrorMessage(message sidecar.Message) error {
 	switch message.Type {
 	case sidecar.TypeSpeechStarted:
-		if runtime.spec.Floor != binding.OwnerModel {
+		if runtime.spec.Ownership.Floor != binding.OwnerModel {
 			return nil
 		}
-		runtime.duplex.UserSpeechStarted(runtime.scheduler.NowNS())
-		return runtime.sink.Activity(runtime.ctx, binding.ActivityEvent{Started: true})
+		utteranceID := runtime.nativeSpeechStarted()
+		return runtime.sink.Activity(runtime.ctx, binding.ActivityEvent{Started: true, ItemID: utteranceID})
 	case sidecar.TypeSpeechStopped:
-		if runtime.spec.Floor != binding.OwnerModel {
+		if runtime.spec.Ownership.Floor != binding.OwnerModel {
 			return nil
 		}
-		runtime.duplex.UserSpeechStopped(runtime.scheduler.NowNS())
-		return runtime.sink.Activity(runtime.ctx, binding.ActivityEvent{Stopped: true})
+		utteranceID, err := runtime.nativeSpeechStopped(runtime.ctx)
+		if err != nil {
+			return err
+		}
+		return runtime.sink.Activity(runtime.ctx, binding.ActivityEvent{Stopped: true, ItemID: utteranceID})
 	case sidecar.TypeTranscript:
 		if !message.Final {
+			return nil
+		}
+		if runtime.spec.Ownership.Interaction == binding.OwnerEngine &&
+			runtime.policies.Interaction != nil && runtime.interactionAudio != nil {
+			// The policy recogniser is the canonical evidence in this
+			// composition. Committing the sidecar's second transcript first would
+			// start cognition before the controller chose an act, and committing it
+			// afterwards would make one utterance happen twice.
 			return nil
 		}
 		return runtime.commitUserSpeech(message.Text)
@@ -82,30 +93,62 @@ func (runtime *runtime) mirrorMessage(message sidecar.Message) error {
 
 // commitUserSpeech records what the model heard as a canonical observation.
 func (runtime *runtime) commitUserSpeech(text string) error {
+	_, err := runtime.commitUserSpeechAs(text, "sidecar", nil)
+	return err
+}
+
+// commitUserSpeechAs records one transcript source and optionally associates
+// the interaction act that admitted it. The association is consumed by the
+// event-loop processor, so "listen" can still enter the canonical history
+// without quietly starting background work and speech.
+func (runtime *runtime) commitUserSpeechAs(
+	text, observer string, act *interaction.Act,
+) (uint64, error) {
 	if strings.TrimSpace(text) == "" {
-		return nil
-	}
-	observation := perception.Observation{
-		Text: text, Observer: "sidecar", Source: "microphone",
-		Authority: trajectory.AuthorityUser, Final: true,
+		return 0, nil
 	}
 	runtime.audioMu.Lock()
 	utteranceID := runtime.utteranceID
 	runtime.audioMu.Unlock()
+	runtime.stateMu.Lock()
+	if utteranceID != "" && runtime.committedUtterance == utteranceID {
+		// Two recognisers may describe the same audio in the text-policy
+		// composition. The first final transcript is canonical; committing the
+		// second as another user turn would make one utterance happen twice.
+		runtime.stateMu.Unlock()
+		return 0, nil
+	}
+	runtime.committedUtterance = utteranceID
+	runtime.stateMu.Unlock()
+	observation := perception.Observation{
+		Text: text, Observer: observer, Source: "microphone",
+		Authority: trajectory.AuthorityUser, Final: true,
+	}
 	if err := runtime.sink.Transcript(runtime.ctx, binding.TranscriptEvent{
 		ItemID: utteranceID, Text: text, Final: true,
 	}); err != nil {
-		return err
+		return 0, err
 	}
 	if err := runtime.sink.Observation(runtime.ctx, observation); err != nil {
-		return err
+		return 0, err
+	}
+	revision := runtime.nextRevision()
+	if act != nil {
+		runtime.stateMu.Lock()
+		runtime.policyActions[revision] = *act
+		runtime.stateMu.Unlock()
 	}
 	_, err := runtime.coordinator.Submit(eventloop.Event{
-		Type: "sidecar.transcript", Source: "sidecar", Channel: "voice",
+		Type: observer + ".transcript", Source: observer, Channel: "voice",
 		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindObservation,
-		SourceRevision: runtime.nextRevision(), Producer: observation.Producer(), Content: text,
+		SourceRevision: revision, Producer: observation.Producer(), Content: text,
 	})
-	return err
+	if err != nil && act != nil {
+		runtime.stateMu.Lock()
+		delete(runtime.policyActions, revision)
+		runtime.stateMu.Unlock()
+	}
+	return revision, err
 }
 
 // commitModelSpeech records what the model said.
@@ -241,6 +284,21 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		return nil
 	}
 	revision := runtime.latestRevision(batch)
+	if cause.Observation {
+		if act, controlled := runtime.policyAction(batch); controlled {
+			switch act {
+			case interaction.ActStaySilent, interaction.ActKeepSpeaking, interaction.ActStopSpeaking:
+				// Listening still commits the utterance to history. It does not
+				// secretly start a background turn through the event loop.
+				return nil
+			case interaction.ActActSilently:
+				// The slow phase may execute but must not hand prose back to the
+				// voice. The flag remains across tool results until the slow phase
+				// reaches a terminal non-tool answer.
+				runtime.silentToolWork.Store(true)
+			}
+		}
+	}
 	cause.SlowInvocations = runtime.engine.SlowInvocations(revision)
 	plan := runtime.policies.Rollout.Plan(interaction.RolloutInput{
 		Context: interaction.Context{
@@ -275,10 +333,20 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 func (runtime *runtime) runSlow(ctx context.Context, request cognition.Request) error {
 	result, err := runtime.engine.RunSlow(ctx, request, nil)
 	if err != nil {
+		runtime.silentToolWork.Store(false)
 		return err
 	}
 	if len(result.ToolCalls) > 0 {
-		return runtime.dispatch(ctx, result)
+		if err := runtime.dispatch(ctx, result); err != nil {
+			runtime.silentToolWork.Store(false)
+			return err
+		}
+		return nil
+	}
+	if runtime.silentToolWork.Swap(false) {
+		// act-silently authorises engagement and explicitly withholds speech, including
+		// an empty terminal result.
+		return nil
 	}
 	if strings.TrimSpace(result.AssistantText) != "" {
 		runtime.stateMu.Lock()
@@ -287,6 +355,28 @@ func (runtime *runtime) runSlow(ctx context.Context, request cognition.Request) 
 		return runtime.signal(interaction.SignalBackgroundResult)
 	}
 	return nil
+}
+
+func (runtime *runtime) policyAction(batch eventloop.Batch) (interaction.Act, bool) {
+	runtime.stateMu.Lock()
+	defer runtime.stateMu.Unlock()
+	var selected interaction.Act
+	var selectedRevision uint64
+	for _, item := range batch.Items {
+		if item.Kind != trajectory.KindObservation ||
+			trajectory.AuthorityOf(item) != trajectory.AuthorityUser {
+			continue
+		}
+		act, controlled := runtime.policyActions[item.SourceRevision]
+		if !controlled {
+			continue
+		}
+		delete(runtime.policyActions, item.SourceRevision)
+		if item.SourceRevision >= selectedRevision {
+			selected, selectedRevision = act, item.SourceRevision
+		}
+	}
+	return selected, selectedRevision != 0
 }
 
 // signal opens a safe point because a cognition phase finished. It appends
@@ -329,9 +419,11 @@ func (runtime *runtime) handOff() error {
 	}); err != nil {
 		return err
 	}
-	if runtime.ready.Has(sidecar.CapabilityTextInjection) && runtime.spec.FullDuplex {
-		// A full-duplex model decides for itself when to say what it now
-		// knows. Demanding a turn would take back the floor it owns.
+	if runtime.ready.Has(sidecar.CapabilityTextInjection) &&
+		runtime.spec.Ownership.Interaction == binding.OwnerModel {
+		// A model selected as interaction owner decides for itself when to say
+		// what it now knows. Demanding a turn would override that selection;
+		// floor ownership is independent.
 		return nil
 	}
 	return runtime.model.Send(sidecar.Message{Type: sidecar.TypeRespond})

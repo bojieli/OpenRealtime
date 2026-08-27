@@ -1,12 +1,11 @@
 // Package sidecarbinding is the runtime shared by every binding whose model
 // lives behind a process boundary.
 //
-// Omni and full-duplex models differ in what they own - an Omni model is a
-// turn-based generator handed a turn by an external detector, while a duplex
-// model owns its own floor - but they need the same machinery: a sidecar
-// connection, a mirrored trajectory, a background reasoner, and a way to hand
-// that reasoner's answer back. One runtime with two declarations over it is
-// honest about that; two runtimes would drift.
+// Turn generation, concurrent I/O, native floor, and native interaction are
+// independent capabilities, but every combination needs the same machinery:
+// a sidecar connection, mirrored trajectory, background reasoner, and a way to
+// hand that reasoner's answer back. One runtime selected by ownership and
+// capabilities is honest about that; one runtime per model species would drift.
 package sidecarbinding
 
 import (
@@ -16,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/interaction"
@@ -27,19 +27,15 @@ import (
 
 // Spec is what a concrete binding declares about itself.
 type Spec struct {
-	// Name is the registry identifier: "omni", "duplex", or a third party's.
+	// Name is a preset or deployment identity used in configuration and evidence.
 	Name string
-	// Floor says who decides when a turn ends.
-	//
-	// The engine keeps it for Omni deliberately: an Omni model assumes
-	// turn-taking and leans on voice activity detection, which mis-endpoints
-	// on spelled identifiers and digit strings - exactly the inputs a
-	// tool-using voice agent depends on getting right. A full-duplex model
-	// genuinely owns its floor and is given it.
-	Floor binding.Owner
-	// FullDuplex means the model listens and speaks at once, so the engine
-	// must not gate its audio or ask it to take turns.
-	FullDuplex bool
+	// Ownership selects providers for this session. It is independent of
+	// Capabilities: a model can have a native interaction head while an engine
+	// controller owns interaction for one benchmark cell.
+	Ownership binding.Ownership
+	// Capabilities declares what the configured stack can do. The sidecar's
+	// ready frame augments this with runtime-discovered transport features.
+	Capabilities binding.StackCapabilities
 }
 
 // Config configures one sidecar-backed binding.
@@ -58,9 +54,28 @@ type Config struct {
 	// that already speaks, so it is required.
 	Slow          continuation.Provider
 	SlowMaxTokens int
+	// ModelCapabilities augments the preset's minimum capability declaration.
+	// It is how a deployment describes a hybrid model without adding another
+	// binding package or teaching this runtime a new species name.
+	ModelCapabilities binding.StackCapabilities
 
 	// Policies overrides the interaction policy set.
 	Policies interaction.Policies
+	// InteractionPerception is an optional policy-only streaming recogniser.
+	// Its transcript is evidence for an engine-owned interaction model; the
+	// voice model still receives raw audio and still produces speech directly,
+	// so configuring it does not turn the foreground into an ASR/LLM/TTS
+	// cascade.
+	InteractionPerception func() (v1.PerceptionProvider, error)
+	// InteractionPerceptionDescriptor identifies the policy-only evidence path
+	// before the first utterance lazily opens it. It is evidence metadata, not a
+	// second configuration source; the factory remains authoritative.
+	InteractionPerceptionDescriptor v1.Descriptor
+	// InteractionCadence is how often that recogniser is advanced. Zero uses
+	// the audio observer's 200 ms reference cadence.
+	InteractionCadence time.Duration
+	// InteractionTimeout bounds one policy decision on the live path.
+	InteractionTimeout time.Duration
 	// Gate configures the engine's acoustic floor. It is unused when the model
 	// owns the floor.
 	Gate perception.GateConfig
@@ -88,10 +103,25 @@ func New(spec Spec, config Config) (*Binding, error) {
 	if strings.TrimSpace(spec.Name) == "" {
 		return nil, errors.New("a binding requires a name")
 	}
-	switch spec.Floor {
-	case binding.OwnerEngine, binding.OwnerModel:
-	default:
-		return nil, fmt.Errorf("binding %q must give the floor to the engine or the model", spec.Name)
+	spec.Ownership = spec.Ownership.Effective()
+	if err := spec.Ownership.Validate(); err != nil {
+		return nil, fmt.Errorf("binding %q: %w", spec.Name, err)
+	}
+	if spec.Ownership.Perception != binding.OwnerModel ||
+		spec.Ownership.FastCognition != binding.OwnerModel ||
+		spec.Ownership.SlowCognition != binding.OwnerEngine ||
+		spec.Ownership.Action != binding.OwnerModel {
+		return nil, fmt.Errorf("binding %q is sidecar-backed and requires model perception, fast cognition, and action with engine slow cognition", spec.Name)
+	}
+	stack := spec.Capabilities.Merge(config.ModelCapabilities)
+	if !stack.AudioInput || !stack.AudioOutput {
+		return nil, fmt.Errorf("binding %q requires sidecar audio input and output capabilities", spec.Name)
+	}
+	if spec.Ownership.Floor == binding.OwnerModel && !stack.NativeFloor {
+		return nil, fmt.Errorf("binding %q gives the floor to a model that declares no native-floor capability", spec.Name)
+	}
+	if spec.Ownership.Interaction == binding.OwnerModel && !stack.NativeInteraction {
+		return nil, fmt.Errorf("binding %q gives interaction to a model that declares no native-interaction capability", spec.Name)
 	}
 	if len(config.Sidecar.Command) == 0 && strings.TrimSpace(config.Sidecar.Address) == "" {
 		return nil, fmt.Errorf("binding %q needs a sidecar command or address", spec.Name)
@@ -111,6 +141,9 @@ func New(spec Spec, config Config) (*Binding, error) {
 	if config.HandoffTimeout <= 0 {
 		config.HandoffTimeout = 30 * time.Second
 	}
+	if config.InteractionTimeout <= 0 {
+		config.InteractionTimeout = 150 * time.Millisecond
+	}
 	if config.Scheduler == nil {
 		config.Scheduler = clock.NewSystem()
 	}
@@ -123,7 +156,27 @@ func New(spec Spec, config Config) (*Binding, error) {
 	if config.Policies.Validate() != nil {
 		config.Policies = DefaultPolicies(spec)
 	}
+	if config.Policies.Interaction != nil {
+		if spec.Ownership.Interaction != binding.OwnerEngine {
+			return nil, fmt.Errorf("binding %q configured an engine interaction model while interaction is owned by %s", spec.Name, spec.Ownership.Interaction)
+		}
+		if config.InteractionPerception == nil {
+			return nil, fmt.Errorf("binding %q needs interaction perception to run an engine interaction model over live audio", spec.Name)
+		}
+	}
 	return &Binding{spec: spec, config: config}, nil
+}
+
+// ExternalInteractionPolicies adapts the engine's general policy assembly to
+// a sidecar voice. The sidecar is the only fast provider, so its event-loop
+// rollout must remain slow-only; this copies only the policies that constitute
+// the external interaction controller.
+func ExternalInteractionPolicies(spec Spec, policies interaction.Policies) interaction.Policies {
+	selected := DefaultPolicies(spec)
+	selected.Interaction = policies.Interaction
+	selected.Extraction = policies.Extraction
+	selected.ShadowInteraction = policies.ShadowInteraction
+	return selected
 }
 
 // DefaultPolicies is the policy set a sidecar-backed binding runs by default.
@@ -137,13 +190,15 @@ func DefaultPolicies(spec Spec) interaction.Policies {
 	policies.Rollout = interaction.NewEndpointedSlowOnlyRollout(interaction.RolloutOptions{})
 	policies.Trigger = interaction.NewEndpointTrigger()
 	policies.Preparation = interaction.NewEndpointPreparation()
-	if spec.Floor == binding.OwnerModel {
+	if spec.Ownership.Floor == binding.OwnerModel {
 		policies.Floor = interaction.NewModelFloor(spec.Name)
-		// A model that owns its floor handles overlap itself; the engine
-		// cancelling its speech would be the engine overruling the thing it
-		// delegated to.
-		policies.BargeIn = interaction.NewNeverBargeIn()
 		policies.Deferral = interaction.AlwaysRun{}
+	}
+	if spec.Ownership.Interaction == binding.OwnerModel {
+		// Barge-in is an interaction act, not an endpoint detector. An engine
+		// floor may establish the boundary while a native interaction policy
+		// still decides whether overlap should cancel or be spoken through.
+		policies.BargeIn = interaction.NewNeverBargeIn()
 	}
 	return policies
 }
@@ -153,11 +208,7 @@ func (bind *Binding) Name() string { return bind.spec.Name }
 
 // Ownership declares what the model provides and what the engine supplies.
 func (bind *Binding) Ownership() binding.Ownership {
-	return binding.Ownership{
-		Perception: binding.OwnerModel, FastCognition: binding.OwnerModel,
-		SlowCognition: binding.OwnerEngine, Action: binding.OwnerModel,
-		Floor: bind.spec.Floor,
-	}
+	return bind.spec.Ownership
 }
 
 // Capabilities reports what a session supports. Video and computer use depend
@@ -170,11 +221,12 @@ func (bind *Binding) Capabilities() binding.Capabilities {
 	return binding.Capabilities{
 		Observations: true, FastSlow: true,
 		Voice: binding.VoiceControl{Selectable: true, InForce: bind.config.Voice},
-		// Only the engine can hand over a floor it holds. A full-duplex model
-		// owns its own, and that is the binding's whole ownership claim - the
-		// client cannot take it, and saying otherwise would be the engine
-		// promising on the model's behalf.
-		ManualTurns: bind.spec.Floor == binding.OwnerEngine,
+		// Only the engine can hand over a floor it holds. When the selected
+		// floor owner is the model, the client cannot take it; saying otherwise
+		// would be the engine promising on the model's behalf. Concurrent I/O
+		// is an independent capability.
+		ManualTurns: bind.spec.Ownership.Floor == binding.OwnerEngine,
+		Stack:       bind.spec.Capabilities.Merge(bind.config.ModelCapabilities),
 	}
 }
 

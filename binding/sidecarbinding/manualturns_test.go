@@ -94,9 +94,10 @@ func TestAClientThatTookTheFloorGetsNoTurnsItDidNotAskFor(t *testing.T) {
 	}, "the client asked for a response and must get one")
 }
 
-// A full-duplex model owns its floor, so there is nothing for the engine to
-// hand over. Saying so is the binding refusing to promise on the model's
-// behalf; the gateway turns that into an error naming the field.
+// The duplex preset selects a model-owned floor, so there is nothing for the
+// engine to hand over in this composition. Saying so is the binding refusing
+// to promise on the selected owner's behalf; the gateway turns that into an
+// error naming the field.
 func TestAModelThatOwnsItsFloorCannotGiveItAway(t *testing.T) {
 	binary, received := buildFakeSidecar(t)
 	bind, err := duplex.New(duplex.Config{

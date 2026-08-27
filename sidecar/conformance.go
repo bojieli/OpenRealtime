@@ -54,7 +54,11 @@ func RunConformance(ctx context.Context, options ConformanceOptions) Conformance
 	if options.TurnTimeout <= 0 {
 		options.TurnTimeout = 120 * time.Second
 	}
-	report := ConformanceReport{Suite: fmt.Sprintf("sidecar-protocol-v%d", Version)}
+	version := options.Config.ProtocolVersion
+	if version == 0 {
+		version = Version
+	}
+	report := ConformanceReport{Suite: fmt.Sprintf("sidecar-protocol-v%d", version)}
 	record := func(name string, required, passed bool, detail string) {
 		report.Checks = append(report.Checks, ConformanceCheck{
 			Name: name, Required: required, Passed: passed, Detail: detail,
@@ -71,9 +75,10 @@ func RunConformance(ctx context.Context, options ConformanceOptions) Conformance
 
 	const sampleRate = 24_000
 	client, err := Dial(ctx, options.Config, Message{
-		SampleRate:   sampleRate,
-		Instructions: "You are a helpful assistant. Answer briefly.",
-		Voice:        "default",
+		SampleRate:       sampleRate,
+		Instructions:     "You are a helpful assistant. Answer briefly.",
+		Voice:            "default",
+		InteractionOwner: "engine", FloorOwner: "engine",
 	})
 	if err != nil {
 		record("handshake completes", true, false, err.Error())
@@ -85,7 +90,7 @@ func RunConformance(ctx context.Context, options ConformanceOptions) Conformance
 	report.Version, report.Model = ready.Version, ready.Model
 	report.OutputRate, report.Capabilities = ready.OutputRate, ready.Capabilities
 	record("handshake completes", true, true, fmt.Sprintf("%s at %d Hz", ready.Model, ready.OutputRate))
-	record("declares the protocol version it speaks", true, ready.Version == Version,
+	record("declares the protocol version it speaks", true, ready.Version == version,
 		fmt.Sprintf("declared %d", ready.Version))
 	record("declares its model identity", true, strings.TrimSpace(ready.Model) != "", ready.Model)
 	record("declares an output sample rate", true, ready.OutputRate > 0,
@@ -147,6 +152,27 @@ func RunConformance(ctx context.Context, options ConformanceOptions) Conformance
 		skip("declares tool support with a tools capability", "tools capability not declared")
 	}
 
+	if version >= VersionInteraction && ready.Has(CapabilityInteractionActs) {
+		listenErr := client.Send(Message{
+			Type: TypeInteractionAct, Act: "listen", Floor: "unchanged",
+			Policy: "conformance", EvidenceRef: "synthetic:listen", DeadlineMS: time.Now().Add(time.Second).UnixMilli(),
+		})
+		listenSilent := listenErr == nil && noGeneratedTurn(client, 100*time.Millisecond)
+		record("a listen act is accepted without requesting speech", true, listenSilent, fmt.Sprint(listenErr))
+		err := client.Send(Message{
+			Type: TypeInteractionAct, Act: "answer", Floor: "take",
+			Policy: "conformance", EvidenceRef: "synthetic:1", DeadlineMS: time.Now().Add(options.TurnTimeout).UnixMilli(),
+		})
+		record("accepts a typed interaction act", true, err == nil, fmt.Sprint(err))
+		if err == nil {
+			acted := collectTurn(ctx, client, options.TurnTimeout)
+			record("an answer act produces a turn", true, acted.turnDone,
+				fmt.Sprintf("text=%q audio=%d bytes", acted.text, acted.audioBytes))
+		}
+	} else {
+		skip("accepts a typed interaction act", "protocol v2 interaction-acts capability not selected")
+	}
+
 	// Interrupting mid-turn must be accepted and must not end the session.
 	if err := client.Send(Message{Type: TypeRespond}); err == nil {
 		time.Sleep(50 * time.Millisecond)
@@ -164,6 +190,24 @@ func RunConformance(ctx context.Context, options ConformanceOptions) Conformance
 
 	report.Passed = len(report.Failures) == 0
 	return report
+}
+
+func noGeneratedTurn(client *Client, window time.Duration) bool {
+	deadline := time.After(window)
+	for {
+		select {
+		case <-deadline:
+			return true
+		case message, open := <-client.Frames():
+			if !open {
+				return false
+			}
+			switch message.Type {
+			case TypeTextDelta, TypeTextDone, TypeOutputAudio, TypeTurnDone:
+				return false
+			}
+		}
+	}
 }
 
 type turnResult struct {

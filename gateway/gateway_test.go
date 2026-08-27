@@ -19,6 +19,7 @@ import (
 	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/cascade"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/gateway"
@@ -36,6 +37,14 @@ type staticASR struct {
 	// for a recogniser under GPU contention - long enough for a client
 	// keepalive to give up on the connection.
 	block chan struct{}
+}
+
+type legacyOwnershipBinding struct{ binding.Binding }
+
+func (bind legacyOwnershipBinding) Ownership() binding.Ownership {
+	ownership := bind.Binding.Ownership()
+	ownership.Interaction = ""
+	return ownership
 }
 
 func (staticASR) Descriptor() v1.Descriptor {
@@ -623,6 +632,27 @@ func TestHealthReportsTheBindingAndProtocol(t *testing.T) {
 	ownership := health["ownership"].(map[string]any)
 	if ownership["slow_cognition"] != "engine" {
 		t.Fatalf("slow cognition is always the engine's, got %v", ownership["slow_cognition"])
+	}
+}
+
+func TestHealthExpandsLegacyInteractionOwnership(t *testing.T) {
+	bind, err := cascade.New(cascade.Config{
+		Perception: func() (v1.PerceptionProvider, error) { return staticASR{text: "hi"}, nil },
+		Fast:       fast(), Slow: slow(), Speech: toneSpeech{},
+	})
+	if err != nil {
+		t.Fatalf("new cascade: %v", err)
+	}
+	server, err := gateway.New(gateway.Config{Binding: legacyOwnershipBinding{bind}})
+	if err != nil {
+		t.Fatalf("new gateway: %v", err)
+	}
+	listening := httptest.NewServer(server.Handler())
+	defer listening.Close()
+	health := getHealth(t, listening.URL)
+	ownership := health["ownership"].(map[string]any)
+	if ownership["interaction"] != ownership["floor"] || ownership["interaction"] != "engine" {
+		t.Fatalf("legacy ownership was not expanded at the public seam: %v", ownership)
 	}
 }
 

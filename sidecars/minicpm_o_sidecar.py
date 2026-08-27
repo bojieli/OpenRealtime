@@ -42,6 +42,7 @@ class MiniCPMOSidecar(Sidecar):
     capabilities = (
         Capability.TRANSCRIPT,
         Capability.TEXT_INJECTION,
+        Capability.INTERACTION_ACTS,
         # The model reports listen-versus-speak per chunk, which is a native
         # activity signal even though the engine does not act on it here.
         Capability.NATIVE_VAD,

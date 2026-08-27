@@ -26,7 +26,69 @@ func engineOwned() binding.Ownership {
 	return binding.Ownership{
 		Perception: binding.OwnerEngine, FastCognition: binding.OwnerEngine,
 		SlowCognition: binding.OwnerEngine, Action: binding.OwnerEngine,
-		Floor: binding.OwnerEngine,
+		Interaction: binding.OwnerEngine, Floor: binding.OwnerEngine,
+	}
+}
+
+func TestInteractionAndFloorOwnershipAreIndependent(t *testing.T) {
+	ownership := engineOwned()
+	ownership.Interaction = binding.OwnerModel
+	if err := ownership.Validate(); err != nil {
+		t.Fatalf("a model interaction policy with an engine floor is composable: %v", err)
+	}
+	ownership.Interaction = binding.OwnerEngine
+	ownership.Floor = binding.OwnerModel
+	if err := ownership.Validate(); err != nil {
+		t.Fatalf("an engine interaction policy with a model floor is composable: %v", err)
+	}
+}
+
+func TestLegacyOwnershipCouplesInteractionToItsFloor(t *testing.T) {
+	ownership := engineOwned()
+	ownership.Interaction = ""
+	if err := ownership.Validate(); err != nil {
+		t.Fatalf("a pre-interaction-column binding must remain loadable: %v", err)
+	}
+	if got := ownership.Effective().Interaction; got != binding.OwnerEngine {
+		t.Fatalf("legacy effective interaction owner = %q", got)
+	}
+}
+
+func TestStackCapabilitiesComposeByUnion(t *testing.T) {
+	turnModel := binding.StackCapabilities{AudioInput: true, TurnGeneration: true}
+	interactionHead := binding.StackCapabilities{NativeInteraction: true, ConcurrentIO: true}
+	combined := turnModel.Merge(interactionHead)
+	if !combined.AudioInput || !combined.TurnGeneration || !combined.NativeInteraction || !combined.ConcurrentIO {
+		t.Fatalf("capability composition lost a feature: %+v", combined)
+	}
+}
+
+func TestInteractionEvidenceCapabilitiesComposeIndependently(t *testing.T) {
+	text := binding.InteractionEvidenceCapabilities{
+		Transcript: true, ConversationState: true,
+	}
+	timing := binding.InteractionEvidenceCapabilities{
+		AcousticActivity: true, SilenceClock: true,
+	}
+	combined := text.Merge(timing)
+	if !combined.Transcript || !combined.ConversationState ||
+		!combined.AcousticActivity || !combined.SilenceClock {
+		t.Fatalf("evidence composition lost a channel: %+v", combined)
+	}
+	if combined.DirectVisualInput || combined.NativeModelState {
+		t.Fatalf("evidence composition invented a channel: %+v", combined)
+	}
+}
+
+func TestInteractionControllersComposeWithoutImplicitArbitration(t *testing.T) {
+	predicates := binding.InteractionControllers{Predicates: true}
+	text := binding.InteractionControllers{TextPolicy: true}
+	composed := predicates.Merge(text)
+	if composed != (binding.InteractionControllers{Predicates: true, TextPolicy: true}) {
+		t.Fatalf("controller composition lost a selector: %+v", composed)
+	}
+	if got := composed.Names(); len(got) != 2 || got[0] != "predicates" || got[1] != "text-policy" {
+		t.Fatalf("controller names = %v", got)
 	}
 }
 

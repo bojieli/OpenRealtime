@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 )
@@ -65,6 +66,16 @@ func NewInteractionModel(decider Decider) (*InteractionModel, error) {
 }
 
 func (model *InteractionModel) Name() string { return "model:" + model.decider.Name() }
+
+// DecisionTimeout reports the decider's own live deadline when it declares
+// one. Zero means the caller did not expose a bound; evidence retains that as
+// unknown rather than inventing a default.
+func (model *InteractionModel) DecisionTimeout() time.Duration {
+	if bounded, ok := model.decider.(interface{ DecisionTimeout() time.Duration }); ok {
+		return bounded.DecisionTimeout()
+	}
+	return 0
+}
 
 // Decide chooses one act.
 //

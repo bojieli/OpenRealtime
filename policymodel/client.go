@@ -115,6 +115,9 @@ func New(config Config) (*Client, error) {
 // Name identifies the model in reports.
 func (client *Client) Name() string { return client.config.Model }
 
+// DecisionTimeout is the live deadline retained in architecture evidence.
+func (client *Client) DecisionTimeout() time.Duration { return client.config.Timeout }
+
 type chatRequest struct {
 	Model       string        `json:"model"`
 	Messages    []chatMessage `json:"messages"`

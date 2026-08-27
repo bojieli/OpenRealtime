@@ -7,10 +7,10 @@
 // the control plane decides how.
 //
 // It is a structural claim and not a ranking. Interaction is the most
-// important subsystem in this project: a full-duplex model has turn-taking
-// trained into its weights, but a cascade and an Omni model have none
-// whatsoever, so for two of the four bindings every bit of responsiveness and
-// naturalness the system exhibits is manufactured here and nowhere else.
+// important subsystem in this project. It may be implemented by engine
+// predicates, an engine policy model, or a native interaction-capable model;
+// binding ownership selects among capabilities rather than inferring the
+// answer from a cascade, Omni, or duplex label.
 //
 // Every row is a named policy with an interface and a shipped default, because
 // a policy that cannot be swapped cannot be measured, and measuring and
@@ -182,6 +182,8 @@ type Report struct {
 	TurnProjection string `json:"turn_projection"`
 	Overlap        string `json:"overlap"`
 	Deferral       string `json:"deferral"`
+	Interaction    string `json:"interaction"`
+	Extraction     string `json:"extraction"`
 }
 
 func (policies Policies) Report() Report {
@@ -191,13 +193,18 @@ func (policies Policies) Report() Report {
 		}
 		return policy.Name()
 	}
+	interactionName := "unset"
+	if policies.Interaction != nil {
+		interactionName = policies.Interaction.Name()
+	}
 	return Report{
 		Trigger: name(policies.Trigger), Preparation: name(policies.Preparation),
 		Rollout: name(policies.Rollout), Floor: name(policies.Floor),
 		BargeIn: name(policies.BargeIn), Commitment: name(policies.Commitment),
 		Repair: name(policies.Repair), Backchannel: name(policies.Backchannel),
 		TurnProjection: name(policies.TurnProjection), Overlap: name(policies.Overlap),
-		Deferral: name(policies.Deferral),
+		Deferral: name(policies.Deferral), Interaction: interactionName,
+		Extraction: name(policies.Extraction),
 	}
 }
 

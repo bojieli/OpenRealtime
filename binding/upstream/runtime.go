@@ -247,8 +247,21 @@ func remoteInstruction(agent string) string {
 func (runtime *runtime) Status() binding.Status {
 	_, slow := runtime.engine.Descriptors()
 	return binding.Status{
-		Binding: runtime.binding.Name(), Ownership: runtime.binding.Ownership(),
-		Policies: runtime.policies.Report(), Observers: []string{"remote"},
+		Binding: runtime.binding.Name(), Profile: "voice", Ownership: runtime.binding.Ownership(),
+		Stack:    runtime.binding.Capabilities().Stack,
+		Policies: runtime.policies.Report(), Interaction: binding.InteractionStatus{
+			Evidence: "remote-multimodal",
+			EvidenceCapabilities: binding.InteractionEvidenceCapabilities{
+				NativeModelState: true,
+			},
+			Transport: "upstream", ActHandoff: "none",
+			Control: binding.InteractionControl{
+				Selectors: binding.InteractionControllers{Remote: true}, Arbitration: "single",
+			},
+		}, Tools: binding.ToolStatus{
+			Fast: "propose", Slow: string(slow.EffectiveToolAuthority()),
+			Authorization: "engine", Execution: "engine-or-client",
+		}, Observers: []string{"remote"},
 		Fast: "remote/" + runtime.config.Model, Slow: slow.Provider + "/" + slow.Model,
 	}
 }

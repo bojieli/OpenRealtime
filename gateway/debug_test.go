@@ -37,6 +37,13 @@ func TestDebugEventsAreNegotiatedTimestampedAndRedactedByDefault(t *testing.T) {
 		t.Fatalf("debug entries require an absolute millisecond timestamp: %v", entry["timestamp_ms"])
 	}
 	attributes := entry["attributes"].(map[string]any)
+	runtime, ok := attributes["runtime"].(map[string]any)
+	if !ok || runtime["binding"] != "cascade" {
+		t.Fatalf("session evidence did not include the live runtime: %v", attributes)
+	}
+	if tools, ok := runtime["tools"].(map[string]any); !ok || tools["authorization"] != "engine" {
+		t.Fatalf("session evidence did not retain tool authority: %v", runtime)
+	}
 	if attributes["payloads_redacted"] != true {
 		t.Fatalf("the prompt must be redacted unless payloads were opted into: %v", attributes)
 	}

@@ -21,6 +21,10 @@ import (
 // DefaultEndpoint is where tools/speakerid serves embeddings.
 const DefaultEndpoint = "http://127.0.0.1:8124/embed"
 
+// AdapterVersion identifies the HTTP/PCM contract implemented here. The
+// embedding model and its immutable weights are separate deployment pins.
+const AdapterVersion = "speakerid-http-pcm16-1"
+
 const maxErrorBody = 1 << 16
 
 // Config configures the client.

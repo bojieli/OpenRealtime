@@ -34,6 +34,9 @@ type Config struct {
 	Handshake time.Duration
 	// Logf receives the sidecar's own log frames and any process stderr.
 	Logf func(string, ...any)
+	// ProtocolVersion selects the wire contract. Zero keeps frozen v1.
+	// VersionInteraction must be selected to send typed interaction acts.
+	ProtocolVersion int
 }
 
 // Client is one connection to a sidecar.
@@ -50,6 +53,7 @@ type Client struct {
 	closed  atomic.Bool
 	once    sync.Once
 	readErr atomic.Pointer[error]
+	version int
 }
 
 // Dial starts or connects to a sidecar and completes the handshake.
@@ -63,13 +67,20 @@ func Dial(ctx context.Context, config Config, hello Message) (*Client, error) {
 	if config.Logf == nil {
 		config.Logf = func(string, ...any) {}
 	}
-	client := &Client{config: config, frames: make(chan Message, 256)}
+	version := config.ProtocolVersion
+	if version == 0 {
+		version = Version
+	}
+	if version != Version && version != VersionInteraction {
+		return nil, fmt.Errorf("unsupported sidecar protocol version %d", version)
+	}
+	client := &Client{config: config, frames: make(chan Message, 256), version: version}
 	if err := client.open(ctx); err != nil {
 		return nil, err
 	}
 
 	hello.Type = TypeHello
-	hello.Version = Version
+	hello.Version = version
 	if err := client.writer.Write(hello); err != nil {
 		_ = client.Close()
 		return nil, fmt.Errorf("send hello: %w", err)
@@ -161,10 +172,10 @@ func (client *Client) awaitReady(ctx context.Context) (Message, error) {
 		if result.err != nil {
 			return Message{}, fmt.Errorf("sidecar handshake: %w", result.err)
 		}
-		if result.message.Version != Version {
+		if result.message.Version != client.version {
 			return Message{}, fmt.Errorf(
 				"sidecar speaks protocol version %d, this engine speaks %d",
-				result.message.Version, Version)
+				result.message.Version, client.version)
 		}
 		return result.message, nil
 	case <-ctx.Done():
@@ -192,6 +203,17 @@ func (client *Client) Err() error {
 func (client *Client) Send(message Message) error {
 	if client.closed.Load() {
 		return errors.New("sidecar connection is closed")
+	}
+	if message.Type == TypeInteractionAct {
+		if client.version < VersionInteraction {
+			return errors.New("typed interaction acts require sidecar protocol v2")
+		}
+		if !client.ready.Has(CapabilityInteractionActs) {
+			return errors.New("sidecar did not declare the interaction-acts capability")
+		}
+		if message.DeadlineMS <= time.Now().UnixMilli() {
+			return errors.New("typed interaction plan expired before it could be sent")
+		}
 	}
 	return client.writer.Write(message)
 }

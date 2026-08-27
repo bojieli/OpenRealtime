@@ -51,16 +51,34 @@ type runtime struct {
 	settingsMu sync.RWMutex
 	settings   binding.Settings
 
-	audioMu      sync.Mutex
-	acoustic     *perception.EnergyGate
-	acousticRate uint32
-	utteranceID  string
+	inputMu                  sync.Mutex
+	audioMu                  sync.Mutex
+	acoustic                 *perception.EnergyGate
+	acousticRate             uint32
+	utteranceID              string
+	interactionAudio         *perception.AudioObserver
+	interactionPending       []perception.Frame
+	interactionLastObserveNS uint64
+	interactionHeard         interaction.Revision
 
 	stateMu     sync.Mutex
 	utterance   *action.Utterance
 	spokenText  string
 	answer      string
 	clientCalls *clientcalls.Tracker
+	// The policy state is independent from the model's generation state. One
+	// decision runs at a time; the window and pinboard are stateful and are
+	// therefore read under the same lock as the decision they feed.
+	interactionMu       sync.Mutex
+	interactionWindow   *interaction.Window
+	interactionPinboard *interaction.Pinboard
+	interactionInFlight atomic.Bool
+	lastPlanAct         interaction.Act
+	lastPlanHeard       string
+	lastPlanUtterance   string
+	policyActions       map[uint64]interaction.Act
+	committedUtterance  string
+	silentToolWork      atomic.Bool
 }
 
 func newRuntime(parent context.Context, bind *Binding, options binding.Options) (*runtime, error) {
@@ -81,6 +99,8 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		duplex: session.NewDuplex(session.DuplexConfig{Scheduler: bind.config.Scheduler}),
 		ledger: action.NewLedger(), registry: action.NewRegistry(),
 		ctx: ctx, cancel: cancel, settings: binding.CloneSettings(options.Settings),
+		interactionWindow: &interaction.Window{}, interactionPinboard: &interaction.Pinboard{},
+		policyActions: make(map[uint64]interaction.Act),
 	}
 	if result.settings.Gate.SilenceDurationMS == 0 {
 		// The session said nothing about endpointing, so the deployment's
@@ -98,6 +118,17 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		return nil, err
 	}
 	result.clientCalls = tracker
+	if bind.config.InteractionPerception != nil {
+		observer, observerErr := perception.NewAudioObserver(perception.AudioConfig{
+			Provider: bind.config.InteractionPerception, Name: "interaction-asr",
+			Cadence: bind.config.InteractionCadence, Source: "microphone",
+		})
+		if observerErr != nil {
+			cancel(observerErr)
+			return nil, observerErr
+		}
+		result.interactionAudio = observer
+	}
 	prefix := strings.TrimSpace(options.SessionID)
 	if prefix == "" {
 		prefix = bind.spec.Name
@@ -113,16 +144,49 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 	}
 
 	model, err := sidecar.Dial(ctx, bind.config.Sidecar, sidecar.Message{
-		SampleRate:   bind.config.InputRate,
-		Instructions: cognition.Compose(bind.config.Instructions, result.settings.Instruction),
-		Voice:        firstNonEmpty(result.settings.Voice, bind.config.Voice),
-		Tools:        sidecarTools(result.registry),
+		SampleRate:       bind.config.InputRate,
+		Instructions:     cognition.Compose(bind.config.Instructions, result.settings.Instruction),
+		Voice:            firstNonEmpty(result.settings.Voice, bind.config.Voice),
+		Tools:            sidecarTools(result.registry),
+		InteractionOwner: string(bind.spec.Ownership.Interaction),
+		FloorOwner:       string(bind.spec.Ownership.Floor),
 	})
 	if err != nil {
 		cancel(err)
 		return nil, err
 	}
 	result.model, result.ready = model, model.Ready()
+	if bind.spec.Ownership.Floor == binding.OwnerModel &&
+		!result.ready.Has(sidecar.CapabilityNativeVAD) {
+		failure := errors.New("model floor ownership requires a sidecar that declares native_vad")
+		cancel(failure)
+		_ = model.Close()
+		return nil, failure
+	}
+	if bind.spec.Ownership.Interaction == binding.OwnerModel &&
+		!result.ready.Has(sidecar.CapabilityNativeInteraction) {
+		failure := errors.New("model interaction ownership requires a sidecar that declares native_interaction")
+		cancel(failure)
+		_ = model.Close()
+		return nil, failure
+	}
+	if bind.config.Sidecar.ProtocolVersion >= sidecar.VersionInteraction &&
+		bind.spec.Ownership.Interaction == binding.OwnerEngine &&
+		!result.ready.Has(sidecar.CapabilityInteractionActs) {
+		failure := errors.New("engine interaction over protocol v2 requires a sidecar that declares interaction_acts")
+		cancel(failure)
+		_ = model.Close()
+		return nil, failure
+	}
+	if bind.spec.Ownership.Interaction == binding.OwnerEngine &&
+		result.ready.Has(sidecar.CapabilityNativeInteraction) &&
+		(bind.config.Sidecar.ProtocolVersion < sidecar.VersionInteraction ||
+			!result.ready.Has(sidecar.CapabilityInteractionActs)) {
+		failure := errors.New("externally selecting interaction on a native-interaction sidecar requires protocol v2 and interaction_acts")
+		cancel(failure)
+		_ = model.Close()
+		return nil, failure
+	}
 
 	engine, err := cognition.New(cognition.Config{
 		Store: result.store, Fast: modelStandIn{name: bind.spec.Name}, Slow: bind.config.Slow,
@@ -181,11 +245,88 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 // Status reports what this session is running.
 func (runtime *runtime) Status() binding.Status {
 	_, slow := runtime.engine.Descriptors()
-	return binding.Status{
-		Binding: runtime.spec.Name, Ownership: runtime.binding.Ownership(),
-		Policies: runtime.policies.Report(), Observers: []string{"sidecar:" + runtime.ready.Model},
-		Fast: "sidecar/" + runtime.ready.Model, Slow: slow.Provider + "/" + slow.Model,
+	fastAuthority := "none"
+	if runtime.ready.Has(sidecar.CapabilityTools) {
+		fastAuthority = "propose"
 	}
+	return binding.Status{
+		Binding: runtime.spec.Name, Profile: "voice",
+		Ownership: runtime.binding.Ownership(), Stack: runtime.stackCapabilities(),
+		Policies: runtime.policies.Report(), Interaction: runtime.interactionStatus(),
+		Tools: binding.ToolStatus{
+			Fast: fastAuthority, Slow: string(slow.EffectiveToolAuthority()),
+			Authorization: "engine", Execution: "engine-or-client",
+		},
+		Observers: []string{"sidecar:" + runtime.ready.Model},
+		Fast:      "sidecar/" + runtime.ready.Model, Slow: slow.Provider + "/" + slow.Model,
+	}
+}
+
+func (runtime *runtime) interactionStatus() binding.InteractionStatus {
+	status := binding.InteractionStatus{Transport: "sidecar"}
+	status.ProtocolVersion = runtime.config.Sidecar.ProtocolVersion
+	if status.ProtocolVersion == 0 {
+		status.ProtocolVersion = sidecar.Version
+	}
+	switch {
+	case runtime.spec.Ownership.Interaction == binding.OwnerModel:
+		status.Evidence = "native-multimodal"
+		status.EvidenceCapabilities = binding.InteractionEvidenceCapabilities{
+			NativeModelState: true,
+		}
+		status.ActHandoff = "none"
+		status.Control = binding.InteractionControl{
+			Selectors: binding.InteractionControllers{Native: true}, Arbitration: "single",
+		}
+	case runtime.policies.Interaction != nil:
+		status.Evidence = "transcript"
+		status.EvidenceCapabilities = binding.InteractionEvidenceCapabilities{
+			Transcript: true, AcousticActivity: true, SilenceClock: true,
+			ConversationState: true, ToolState: true,
+		}
+		status.DecisionTimeoutMS = int(runtime.config.InteractionTimeout.Milliseconds())
+		descriptor := runtime.config.InteractionPerceptionDescriptor
+		status.Recognizer, status.RecognizerRevision = descriptor.Name, descriptor.Version
+		status.Control = binding.InteractionControl{
+			Selectors: binding.InteractionControllers{TextPolicy: true}, Arbitration: "single",
+		}
+	default:
+		status.Evidence = "acoustic-predicates"
+		status.EvidenceCapabilities = binding.InteractionEvidenceCapabilities{
+			AcousticActivity: true, SilenceClock: true,
+		}
+		status.Control = binding.InteractionControl{
+			Selectors: binding.InteractionControllers{Predicates: true}, Arbitration: "single",
+		}
+	}
+	if runtime.spec.Ownership.Interaction == binding.OwnerEngine {
+		if status.ProtocolVersion >= sidecar.VersionInteraction &&
+			runtime.ready.Has(sidecar.CapabilityInteractionActs) {
+			status.ActHandoff = "typed"
+		} else {
+			status.ActHandoff = "translated"
+		}
+		if runtime.ready.Has(sidecar.CapabilityNativeInteraction) {
+			status.NativeSuppression = "hello selects engine interaction; only typed interaction acts may initiate policy-controlled generation"
+		}
+	}
+	return status
+}
+
+// stackCapabilities combines deployment knowledge with what the connected
+// sidecar actually declared. The former carries structural capabilities such
+// as turn generation; the latter carries optional protocol surfaces that can
+// only be known after the handshake.
+func (runtime *runtime) stackCapabilities() binding.StackCapabilities {
+	declared := binding.StackCapabilities{
+		Transcription:     runtime.ready.Has(sidecar.CapabilityTranscript),
+		ConcurrentIO:      runtime.ready.Has(sidecar.CapabilityFullDuplex),
+		NativeFloor:       runtime.ready.Has(sidecar.CapabilityNativeVAD),
+		NativeInteraction: runtime.ready.Has(sidecar.CapabilityNativeInteraction),
+		InteractionActs:   runtime.ready.Has(sidecar.CapabilityInteractionActs),
+		TextInjection:     runtime.ready.Has(sidecar.CapabilityTextInjection),
+	}
+	return runtime.spec.Capabilities.Merge(runtime.config.ModelCapabilities).Merge(declared)
 }
 
 func (runtime *runtime) Trajectory() trajectory.Snapshot { return runtime.store.Snapshot() }
@@ -233,16 +374,24 @@ func (runtime *runtime) Update(_ context.Context, settings binding.Settings) err
 // Audio forwards input to the model and, when the engine owns the floor, runs
 // the acoustic gate that decides when the turn ended.
 func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error {
+	runtime.inputMu.Lock()
+	defer runtime.inputMu.Unlock()
 	if err := frame.Validate(); err != nil {
 		return err
+	}
+	if frame.Kind != perception.FrameAudio {
+		return errors.New("audio path requires an audio frame")
 	}
 	if err := runtime.model.Audio(frame.PCM16LE); err != nil {
 		return err
 	}
-	if runtime.spec.Floor == binding.OwnerModel {
-		// The model reports its own voice activity; running a second detector
-		// over the same audio would give the session two answers to one
-		// question.
+	if runtime.spec.Ownership.Floor == binding.OwnerModel {
+		// The model reports its own boundaries. A policy-only recogniser may
+		// still read the frames, but its acoustic gate must not become a second
+		// floor just because the controller needs text evidence.
+		if runtime.interactionAudio != nil {
+			return runtime.observeModelFloorInteractionAudio(ctx, frame)
+		}
 		return nil
 	}
 	runtime.audioMu.Lock()
@@ -266,6 +415,20 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 		runtime.utteranceID = fmt.Sprintf("%s_item_%d", runtime.spec.Name, runtime.sequence.Add(1))
 	}
 	utteranceID := runtime.utteranceID
+	var interactionBatch []perception.Frame
+	if runtime.interactionAudio != nil && len(result.Audio) > 0 {
+		runtime.interactionPending = append(runtime.interactionPending, perception.Frame{
+			Kind: perception.FrameAudio, Source: "microphone", CapturedNS: frame.CapturedNS,
+			SampleRateHz: frame.SampleRateHz, PCM16LE: result.Audio,
+		})
+		cadence := uint64(runtime.interactionAudio.Cadence().Nanoseconds())
+		now := runtime.scheduler.NowNS()
+		if result.Stopped || runtime.interactionLastObserveNS == 0 ||
+			now-runtime.interactionLastObserveNS >= cadence {
+			interactionBatch, runtime.interactionPending = runtime.interactionPending, nil
+			runtime.interactionLastObserveNS = now
+		}
+	}
 	runtime.audioMu.Unlock()
 
 	now := runtime.scheduler.NowNS()
@@ -278,6 +441,11 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 			Started: true, ItemID: utteranceID, AudioStartMS: result.AudioStartMS,
 		}); err != nil {
 			return err
+		}
+	}
+	if len(interactionBatch) > 0 {
+		if err := runtime.observeInteractionAudio(ctx, interactionBatch, result.SilenceNS); err != nil {
+			runtime.sink.Failed(ctx, binding.ErrorEvent{Code: "interaction_asr_error", Message: err.Error()})
 		}
 	}
 	if result.Stopped {
@@ -294,7 +462,23 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 		// declared its own turns and got a server-created one alongside them
 		// hears the agent answer twice.
 		if runtime.Settings().ManualTurns {
+			_ = runtime.finishInteractionTurn(ctx, interaction.ActStaySilent, false)
 			return nil
+		}
+		if runtime.spec.Ownership.Interaction == binding.OwnerModel {
+			// The engine selected the endpoint, but the model still owns the
+			// conversational act. Commit the boundary without converting it into
+			// an answer request; a native interaction policy may listen instead.
+			return runtime.model.Send(sidecar.Message{Type: sidecar.TypeCommit})
+		}
+		if runtime.policies.Interaction != nil {
+			return runtime.finishInteractionTurn(ctx, "", true)
+		}
+		if runtime.config.Sidecar.ProtocolVersion >= sidecar.VersionInteraction {
+			return runtime.finishInteractionTurn(ctx, interaction.ActAnswer, true)
+		}
+		if runtime.interactionAudio != nil {
+			_ = runtime.finishInteractionTurn(ctx, interaction.ActAnswer, false)
 		}
 		return runtime.model.Send(sidecar.Message{Type: sidecar.TypeRespond})
 	}
@@ -302,6 +486,13 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 }
 
 func (runtime *runtime) onBargeIn() error {
+	if runtime.policies.Interaction != nil && runtime.spec.Ownership.Interaction == binding.OwnerEngine {
+		// Acoustic onset says that something made sound, not whether it was a
+		// correction, a continuer, or a cough. The policy-only recogniser supplies
+		// the words shortly; interrupting before it can decide would make the
+		// external controller decorative.
+		return nil
+	}
 	decision := runtime.policies.BargeIn.Decide(interaction.BargeInInput{
 		Context: interaction.Context{
 			NowNS: runtime.scheduler.NowNS(), Duplex: runtime.duplex.Snapshot(),
@@ -340,7 +531,7 @@ func (runtime *runtime) Text(_ context.Context, input binding.TextInput) error {
 // acoustic gate closed here, which is the same endpoint silence would have
 // produced, arriving when the client said so instead.
 func (runtime *runtime) CommitAudio(ctx context.Context) error {
-	if runtime.spec.Floor == binding.OwnerModel {
+	if runtime.spec.Ownership.Floor == binding.OwnerModel {
 		return runtime.model.Send(sidecar.Message{Type: sidecar.TypeCommit})
 	}
 	runtime.audioMu.Lock()
@@ -390,6 +581,9 @@ func (runtime *runtime) Close(_ context.Context, cause error) error {
 	err := runtime.model.Close()
 	runtime.duplex.Close()
 	runtime.clientCalls.Close()
+	if runtime.interactionAudio != nil {
+		runtime.interactionAudio.Reset()
+	}
 	runtime.wait.Wait()
 	return err
 }

@@ -3,6 +3,7 @@ package sidecarbinding_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,11 +13,13 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/action"
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/duplex"
 	"github.com/bojieli/OpenRealtime/binding/omni"
 	"github.com/bojieli/OpenRealtime/binding/sidecarbinding"
 	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/sidecar"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -62,6 +65,65 @@ type collectingSink struct {
 	toolCalls   []binding.ToolCallEvent
 	activity    []binding.ActivityEvent
 	failures    []binding.ErrorEvent
+}
+
+type policyASR struct{ text string }
+
+func (provider *policyASR) Descriptor() v1.Descriptor {
+	return v1.Descriptor{Name: "policy-asr", Version: "1", Capabilities: v1.Capabilities{}}
+}
+
+func (provider *policyASR) PushFrame(
+	context.Context, v1.AudioFrame,
+) ([]v1.PerceptionRevision, error) {
+	return []v1.PerceptionRevision{{StableText: provider.text}}, nil
+}
+
+func (provider *policyASR) Finalize(context.Context, uint64) (v1.PerceptionRevision, error) {
+	return v1.PerceptionRevision{StableText: provider.text, Final: true}, nil
+}
+
+// finalOffsetASR deliberately emits nothing provisionally. Its only evidence
+// is the final sample offset, so a model-owned floor test can prove that audio
+// waiting for the next controller cadence is advanced before finalization.
+type finalOffsetASR struct {
+	mu     sync.Mutex
+	offset uint64
+	text   string
+}
+
+func (provider *finalOffsetASR) Descriptor() v1.Descriptor {
+	return v1.Descriptor{Name: "final-offset-asr", Version: "1", Capabilities: v1.Capabilities{}}
+}
+
+func (provider *finalOffsetASR) PushFrame(
+	context.Context, v1.AudioFrame,
+) ([]v1.PerceptionRevision, error) {
+	return nil, nil
+}
+
+func (provider *finalOffsetASR) Finalize(
+	_ context.Context, offset uint64,
+) (v1.PerceptionRevision, error) {
+	provider.mu.Lock()
+	provider.offset = offset
+	provider.mu.Unlock()
+	return v1.PerceptionRevision{StableText: provider.text, Final: true}, nil
+}
+
+type fixedActDecider struct{ act interaction.Act }
+
+func (decider fixedActDecider) Name() string { return "fixed-" + string(decider.act) }
+
+func (decider fixedActDecider) Decide(
+	_ context.Context, decision interaction.Decision,
+) (interaction.Outcome, error) {
+	for index, option := range decision.Options {
+		if option == string(decider.act) {
+			return interaction.Outcome{Index: index, Option: option, Confidence: .9, Measured: true}, nil
+		}
+	}
+	return interaction.Outcome{}, fmt.Errorf("act %s was not offered in %v", decider.act, decision.Options)
 }
 
 func (sink *collectingSink) TurnBegin(context.Context) error                    { return nil }
@@ -272,7 +334,7 @@ func TestDuplexGivesTheModelItsFloor(t *testing.T) {
 		t.Fatalf("new duplex: %v", err)
 	}
 	if bind.Ownership().Floor != binding.OwnerModel {
-		t.Fatal("a full-duplex model owns its floor")
+		t.Fatal("the duplex preset must select its model-owned floor")
 	}
 	sink := &collectingSink{}
 	runtime, err := bind.Start(context.Background(), binding.Options{Sink: sink, SessionID: "test"})
@@ -318,6 +380,63 @@ func TestDuplexGivesTheModelItsFloor(t *testing.T) {
 	for _, message := range sidecarReceived(t, received) {
 		if message["type"] == "respond" {
 			t.Fatal("the engine must not demand turns from a model that owns its floor")
+		}
+	}
+}
+
+func TestEngineFloorDoesNotTakeInteractionFromTheModel(t *testing.T) {
+	binary, received := buildFakeSidecar(t)
+	bind, err := duplex.NewWithEngineFloor(duplex.Config{
+		Sidecar: sidecar.Config{
+			Command: []string{binary},
+			Environment: []string{
+				"FAKE_SIDECAR_LOG=" + received, "FAKE_SIDECAR_DUPLEX=1",
+			},
+		},
+		Slow: &scriptedSlow{},
+	})
+	if err != nil {
+		t.Fatalf("new composition: %v", err)
+	}
+	runtime, err := bind.Start(context.Background(), binding.Options{
+		Sink: &collectingSink{}, SessionID: "independent-owners",
+	})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer runtime.Close(context.Background(), nil)
+	if report := runtime.Status().Policies; report.BargeIn != "never" {
+		t.Fatalf("model interaction must retain barge-in, got policy %q", report.BargeIn)
+	}
+
+	loud := make([]byte, 4800)
+	for index := 0; index < len(loud); index += 2 {
+		loud[index+1] = 0x40
+	}
+	quiet := make([]byte, 4800)
+	for index := 0; index < 12; index++ {
+		payload := loud
+		if index >= 3 {
+			payload = quiet
+		}
+		if err := runtime.Audio(context.Background(), perception.Frame{
+			Kind: perception.FrameAudio, Source: "microphone", SampleRateHz: 24_000,
+			PCM16LE: payload,
+		}); err != nil {
+			t.Fatalf("audio: %v", err)
+		}
+	}
+	waitFor(t, func() bool {
+		for _, message := range sidecarReceived(t, received) {
+			if message["type"] == "commit" {
+				return true
+			}
+		}
+		return false
+	}, "the engine-owned floor must report its boundary to model interaction")
+	for _, message := range sidecarReceived(t, received) {
+		if message["type"] == "respond" {
+			t.Fatal("an engine floor must not silently take interaction ownership")
 		}
 	}
 }
@@ -385,6 +504,239 @@ func TestABindingWithoutAReasonerIsRefused(t *testing.T) {
 	}
 }
 
+func TestEngineInteractionPolicyHandsEveryActAcrossAsTypedControl(t *testing.T) {
+	binary, received := buildFakeSidecar(t)
+	cases := []struct {
+		act           interaction.Act
+		agentSpeaking bool
+		concurrent    bool
+		tool          bool
+	}{
+		{act: interaction.ActStaySilent},
+		{act: interaction.ActAnswer},
+		{act: interaction.ActInterrupt},
+		{act: interaction.ActSpeakThrough, concurrent: true},
+		{act: interaction.ActActSilently, tool: true},
+		{act: interaction.ActKeepSpeaking, agentSpeaking: true},
+		{act: interaction.ActStopSpeaking, agentSpeaking: true},
+	}
+	for _, test := range cases {
+		t.Run(string(test.act), func(t *testing.T) {
+			model, err := interaction.NewInteractionModel(fixedActDecider{act: test.act})
+			if err != nil {
+				t.Fatalf("interaction model: %v", err)
+			}
+			policies := interaction.Defaults()
+			policies.Interaction = model
+			slow := &scriptedSlow{}
+			environment := []string{"FAKE_SIDECAR_LOG=" + received}
+			if test.agentSpeaking {
+				environment = append(environment, "FAKE_SIDECAR_LONG_AUDIO=1")
+			}
+			bind, err := omni.NewWithTextPolicy(omni.Config{
+				Sidecar: sidecar.Config{
+					Command: []string{binary}, Environment: environment,
+					ProtocolVersion: sidecar.VersionInteraction,
+				},
+				Slow: slow, Policies: policies,
+				InteractionPerception: func() (v1.PerceptionProvider, error) {
+					return &policyASR{text: "please handle this now"}, nil
+				},
+				ModelCapabilities: binding.StackCapabilities{ConcurrentIO: test.concurrent},
+			})
+			if err != nil {
+				t.Fatalf("new policy stack: %v", err)
+			}
+			sink := &collectingSink{}
+			settings := binding.Settings{}
+			if test.tool {
+				settings.Tools = []action.ToolSpec{{
+					Name: "press_key", Description: "send a keypad tone",
+					Parameters: json.RawMessage(`{"type":"object"}`),
+				}}
+			}
+			runtime, err := bind.Start(context.Background(), binding.Options{
+				Sink: sink, Settings: settings, SessionID: "policy",
+			})
+			if err != nil {
+				t.Fatalf("start: %v", err)
+			}
+			defer runtime.Close(context.Background(), nil)
+
+			if test.agentSpeaking {
+				if err := runtime.CreateResponse(context.Background()); err != nil {
+					t.Fatalf("open model turn: %v", err)
+				}
+				waitFor(t, func() bool {
+					sink.mu.Lock()
+					defer sink.mu.Unlock()
+					return sink.audioFrames > 0
+				}, "the model must be speaking before the overlap decision")
+			}
+			pushPolicyUtterance(t, runtime)
+			waitFor(t, func() bool {
+				for _, message := range sidecarReceived(t, received) {
+					if message["type"] == "interaction_act" && message["act"] == string(test.act) {
+						return true
+					}
+				}
+				return false
+			}, "the selected act must cross the sidecar boundary without being collapsed")
+
+			for _, message := range sidecarReceived(t, received) {
+				if message["type"] == "interaction_act" && message["act"] == string(test.act) {
+					if message["policy"] == "" || message["evidence_ref"] == "" || message["floor"] == "" {
+						t.Fatalf("typed act lost its plan fields: %v", message)
+					}
+				}
+			}
+			if test.act == interaction.ActActSilently {
+				waitFor(t, func() bool {
+					slow.mu.Lock()
+					defer slow.mu.Unlock()
+					return slow.calls > 0
+				}, "act-silently must start silent slow work")
+			}
+		})
+	}
+}
+
+func TestModelFloorAndEngineInteractionComposeWithoutASecondFloor(t *testing.T) {
+	binary, received := buildFakeSidecar(t)
+	recogniser := &finalOffsetASR{text: "please answer"}
+	model, err := interaction.NewInteractionModel(fixedActDecider{act: interaction.ActAnswer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policies := interaction.Defaults()
+	policies.Interaction = model
+	spec := sidecarbinding.Spec{
+		Name: "native-floor-engine-policy",
+		Ownership: binding.Ownership{
+			Perception: binding.OwnerModel, FastCognition: binding.OwnerModel,
+			SlowCognition: binding.OwnerEngine, Action: binding.OwnerModel,
+			Interaction: binding.OwnerEngine, Floor: binding.OwnerModel,
+		},
+		Capabilities: binding.StackCapabilities{
+			AudioInput: true, AudioOutput: true, TurnGeneration: true,
+			NativeFloor: true, NativeInteraction: true, ConcurrentIO: true,
+			InteractionActs: true,
+		},
+	}
+	bind, err := sidecarbinding.New(spec, sidecarbinding.Config{
+		Sidecar: sidecar.Config{
+			Command: []string{binary}, ProtocolVersion: sidecar.VersionInteraction,
+			Environment: []string{"FAKE_SIDECAR_LOG=" + received, "FAKE_SIDECAR_DUPLEX=1"},
+		},
+		Slow: &scriptedSlow{}, Policies: policies,
+		InteractionPerception: func() (v1.PerceptionProvider, error) {
+			return recogniser, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("compose: %v", err)
+	}
+	sink := &collectingSink{}
+	runtime, err := bind.Start(context.Background(), binding.Options{Sink: sink})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer runtime.Close(context.Background(), nil)
+
+	loud := make([]byte, 4800)
+	for index := 0; index < len(loud); index += 2 {
+		loud[index+1] = 0x40
+	}
+	for index := 0; index < 6; index++ {
+		if err := runtime.Audio(context.Background(), perception.Frame{
+			Kind: perception.FrameAudio, Source: "microphone", SampleRateHz: 24_000,
+			PCM16LE: loud,
+		}); err != nil {
+			t.Fatalf("audio: %v", err)
+		}
+	}
+	waitFor(t, func() bool {
+		for _, message := range sidecarReceived(t, received) {
+			if message["type"] == "interaction_act" && message["act"] == "answer" {
+				return true
+			}
+		}
+		return false
+	}, "the native floor boundary must drive the engine interaction act")
+	waitFor(t, func() bool {
+		sink.mu.Lock()
+		defer sink.mu.Unlock()
+		started, stopped := 0, 0
+		for _, event := range sink.activity {
+			if event.Started {
+				started++
+			}
+			if event.Stopped {
+				stopped++
+			}
+		}
+		return started == 1 && stopped == 1
+	}, "the model-owned floor must report one complete boundary")
+
+	sink.mu.Lock()
+	activity := append([]binding.ActivityEvent(nil), sink.activity...)
+	sink.mu.Unlock()
+	started, stopped := 0, 0
+	for _, event := range activity {
+		if event.Started {
+			started++
+		}
+		if event.Stopped {
+			stopped++
+		}
+	}
+	if started != 1 || stopped != 1 {
+		t.Fatalf("the model floor must be the only reported floor, started=%d stopped=%d: %v", started, stopped, activity)
+	}
+	recogniser.mu.Lock()
+	offset := recogniser.offset
+	recogniser.mu.Unlock()
+	if offset != 6*2400 {
+		t.Fatalf("policy ASR finalized after %d samples, want all %d samples", offset, 6*2400)
+	}
+	sink.mu.Lock()
+	finalTranscripts := 0
+	for _, transcript := range sink.transcripts {
+		if transcript.Final {
+			finalTranscripts++
+		}
+	}
+	sink.mu.Unlock()
+	if finalTranscripts != 1 {
+		t.Fatalf("the policy and sidecar transcripts must produce one canonical final, got %d", finalTranscripts)
+	}
+}
+
+func pushPolicyUtterance(t *testing.T, runtime binding.Runtime) {
+	t.Helper()
+	loud := make([]byte, 4800)
+	for index := 0; index < len(loud); index += 2 {
+		loud[index+1] = 0x40
+	}
+	quiet := make([]byte, 4800)
+	for index := 0; index < 3; index++ {
+		if err := runtime.Audio(context.Background(), perception.Frame{
+			Kind: perception.FrameAudio, Source: "microphone", SampleRateHz: 24_000,
+			PCM16LE: loud,
+		}); err != nil {
+			t.Fatalf("speech: %v", err)
+		}
+	}
+	for index := 0; index < 8; index++ {
+		if err := runtime.Audio(context.Background(), perception.Frame{
+			Kind: perception.FrameAudio, Source: "microphone", SampleRateHz: 24_000,
+			PCM16LE: quiet,
+		}); err != nil {
+			t.Fatalf("silence: %v", err)
+		}
+	}
+}
+
 const fakeSidecarSource = `package main
 
 import (
@@ -409,6 +761,8 @@ type message struct {
 	Arguments    json.RawMessage ` + "`json:\"arguments,omitempty\"`" + `
 	Error        string          ` + "`json:\"error,omitempty\"`" + `
 	Role         string          ` + "`json:\"role,omitempty\"`" + `
+	Act          string          ` + "`json:\"act,omitempty\"`" + `
+	Floor        string          ` + "`json:\"floor,omitempty\"`" + `
 }
 
 func main() {
@@ -450,8 +804,8 @@ func main() {
 			log.Write(line)
 			log.Sync()
 		}
-		// A full-duplex model owns its floor, so it reports what it heard on
-		// its own initiative rather than when the engine asks. Nothing else in
+		// This fake is running the preset with a model-owned floor, so it reports
+		// what it heard on its own initiative rather than when the engine asks. Nothing else in
 		// this fake would ever produce a transcript without a respond, and a
 		// duplex binding never sends one - so without this the reasoner would
 		// have no user speech to work over and every duplex assertion below
@@ -469,9 +823,16 @@ func main() {
 		}
 		switch incoming.Type {
 		case "hello":
+			capabilities := []string{"transcript", "text_injection", "tools"}
+			if os.Getenv("FAKE_SIDECAR_DUPLEX") != "" {
+				capabilities = append(capabilities, "native_vad", "full_duplex", "native_interaction")
+			}
+			if incoming.Version >= 2 {
+				capabilities = append(capabilities, "interaction_acts")
+			}
 			send(message{
-				Type: "ready", Version: 1, Model: "fake-omni", OutputRate: 24000,
-				Capabilities: []string{"transcript", "text_injection", "tools"},
+				Type: "ready", Version: incoming.Version, Model: "fake-omni", OutputRate: 24000,
+				Capabilities: capabilities,
 			}, nil)
 		case "respond":
 			if os.Getenv("FAKE_SIDECAR_TOOL_CALL") != "" {
@@ -484,8 +845,15 @@ func main() {
 			send(message{Type: "transcript", Text: "what is my balance", Final: true}, nil)
 			send(message{Type: "text_delta", Text: "Let me check."}, nil)
 			send(message{Type: "text_done", Text: "Let me check."}, nil)
-			send(message{Type: "output_audio"}, make([]byte, 4800))
+			audioBytes := 4800
+			if os.Getenv("FAKE_SIDECAR_LONG_AUDIO") != "" {
+				audioBytes = 480000
+			}
+			send(message{Type: "output_audio"}, make([]byte, audioBytes))
 			send(message{Type: "turn_done"}, nil)
+		case "interaction_act":
+			// Recorded above. The Python protocol tests own act dispatch; this
+			// fake lets the Go runtime prove it preserves the typed plan.
 		case "bye":
 			return
 		}

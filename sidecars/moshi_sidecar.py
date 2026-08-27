@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Reference sidecar for Moshi, a full-duplex interaction model.
+"""Reference sidecar for Moshi under a native-interaction preset.
 
-Moshi is different in kind from the Omni models. It listens and speaks at the
-same time, and turn-taking, overlap, and interruption are in its weights rather
-than in a policy around it. So this sidecar declares full duplex and a native
-floor, and the engine stops asking it to take turns.
+Moshi exposes concurrent I/O, a native floor, and native interaction. The
+``duplex`` preset selects that bundle, but the capabilities are independent:
+they do not make Moshi a mutually exclusive model species, and another
+deployment can select external ownership for any capability the sidecar makes
+controllable.
 
 What Moshi does not have, and cannot have, is a background reasoner: a single
 model has no second model and no shared log to put one on. That is what the
@@ -53,6 +54,7 @@ class MoshiSidecar(Sidecar):
     output_rate = MODEL_RATE
     capabilities = (
         Capability.FULL_DUPLEX,
+        Capability.NATIVE_INTERACTION,
         Capability.NATIVE_VAD,
         Capability.BARGE_IN,
         Capability.TRANSCRIPT,
@@ -154,9 +156,10 @@ class MoshiSidecar(Sidecar):
     def on_respond(self) -> None:
         """Answer an explicit turn request.
 
-        A full-duplex model owns its floor, so the engine does not normally ask.
-        When it does - the hand-off fallback, or a client driving turns
-        explicitly - the pending text is spoken rather than left as context.
+        The native-interaction preset gives this model its floor, so the engine
+        does not normally ask. When a different ownership composition does -
+        the hand-off fallback, or a client driving turns explicitly - pending
+        text is spoken rather than left as context.
         """
         with self._text_lock:
             pending = "\n".join(self._pending_text)

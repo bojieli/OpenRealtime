@@ -1,8 +1,8 @@
 // Package sidecar defines the process boundary between the engine and a model
 // that is not written in Go.
 //
-// Omni and full-duplex models live in Python. Letting that Python into the
-// build, the test path, or the analysis path would make every one of them
+// Many audio-model inference stacks live in Python. Letting that Python into
+// the build, the test path, or the analysis path would make every one of them
 // slower and more fragile, so it stays on the other side of a process
 // boundary with a documented, versioned protocol between. The conformance
 // suite is the contract: a sidecar that passes it works, whatever it is
@@ -29,11 +29,16 @@ import (
 	"strings"
 )
 
-// Version is the protocol version this implementation speaks. A sidecar
-// declares the version it speaks in its ready message, and a mismatch is
-// refused rather than negotiated down: a model that half-understands the
-// protocol is worse than one that does not start.
+// Version is the frozen, legacy protocol version and remains the default.
+// VersionInteraction adds typed interaction-act handoff. Selecting it is
+// explicit in Config so existing sidecars are never reinterpreted as v2 merely
+// because the engine learned a new frame.
 const Version = 1
+
+const (
+	VersionInteraction = 2
+	LatestVersion      = VersionInteraction
+)
 
 // MessageType names one frame.
 type MessageType string
@@ -58,6 +63,10 @@ const (
 	TypeRespond MessageType = "respond"
 	// TypeInterrupt stops generation at the model's next safe point.
 	TypeInterrupt MessageType = "interrupt"
+	// TypeInteractionAct carries a policy decision rather than collapsing it
+	// into respond or interrupt. It is available in protocol v2 when the
+	// sidecar declares CapabilityInteractionActs.
+	TypeInteractionAct MessageType = "interaction_act"
 	// TypeToolResult returns the outcome of a call the model requested.
 	TypeToolResult MessageType = "tool_result"
 	// TypeBye ends the session cleanly.
@@ -107,6 +116,10 @@ type Message struct {
 	Voice        string   `json:"voice,omitempty"`
 	Capabilities []string `json:"capabilities,omitempty"`
 	Tools        []Tool   `json:"tools,omitempty"`
+	// Selected ownership (protocol v2). Capabilities say what the stack can
+	// do; these fields tell a sidecar which available provider is active.
+	InteractionOwner string `json:"interaction_owner,omitempty"`
+	FloorOwner       string `json:"floor_owner,omitempty"`
 
 	// Transcript, text, and log.
 	Text  string `json:"text,omitempty"`
@@ -129,6 +142,15 @@ type Message struct {
 
 	// Timing.
 	TimestampMS int64 `json:"timestamp_ms,omitempty"`
+
+	// Typed interaction plan (protocol v2).
+	Act         string  `json:"act,omitempty"`
+	Policy      string  `json:"policy,omitempty"`
+	EvidenceRef string  `json:"evidence_ref,omitempty"`
+	Floor       string  `json:"floor,omitempty"`
+	DeadlineMS  int64   `json:"deadline_ms,omitempty"`
+	Confidence  float64 `json:"confidence,omitempty"`
+	Abstained   bool    `json:"abstained,omitempty"`
 
 	// Payload is the binary body. It is never marshalled into the header.
 	Payload []byte `json:"-"`
@@ -160,9 +182,17 @@ const (
 	CapabilityTools Capability = "tools"
 	// CapabilityBargeIn means the model handles overlap itself.
 	CapabilityBargeIn Capability = "barge_in"
-	// CapabilityFullDuplex means the model can listen and speak at once. It
-	// implies the model owns its own floor.
+	// CapabilityFullDuplex means the model can listen and speak at once. Floor
+	// and interaction ownership are selected independently by the binding.
 	CapabilityFullDuplex Capability = "full_duplex"
+	// CapabilityNativeInteraction means the model chooses conversational acts
+	// from its own multimodal state. It is independent of full duplex and of
+	// native VAD: those are capabilities a model often has alongside it, not
+	// synonyms for it.
+	CapabilityNativeInteraction Capability = "native_interaction"
+	// CapabilityInteractionActs means the sidecar accepts protocol-v2 typed
+	// plans from an external interaction controller.
+	CapabilityInteractionActs Capability = "interaction_acts"
 )
 
 // Validate rejects a malformed frame before it reaches either side.
@@ -184,6 +214,15 @@ func (message Message) Validate() error {
 	case TypeHello:
 		if message.Version <= 0 || message.SampleRate <= 0 {
 			return errors.New("hello requires a version and an input sample rate")
+		}
+		if message.Version >= VersionInteraction {
+			for field, owner := range map[string]string{
+				"interaction_owner": message.InteractionOwner, "floor_owner": message.FloorOwner,
+			} {
+				if owner != "engine" && owner != "model" && owner != "remote" {
+					return fmt.Errorf("v2 hello %s must be engine, model, or remote", field)
+				}
+			}
 		}
 	case TypeReady:
 		if message.Version <= 0 || message.OutputRate <= 0 {
@@ -222,6 +261,28 @@ func (message Message) Validate() error {
 		hasError := strings.TrimSpace(message.Error) != ""
 		if hasOutput == hasError {
 			return errors.New("a tool result requires exactly one of output or error")
+		}
+	case TypeInteractionAct:
+		validActs := map[string]string{
+			"listen": "unchanged", "speak-through": "preserve", "answer": "take",
+			"interrupt": "take", "act-silently": "unchanged",
+			"keep-speaking": "unchanged", "stop-speaking": "yield",
+		}
+		floor, valid := validActs[strings.TrimSpace(message.Act)]
+		if !valid {
+			return fmt.Errorf("interaction act %q is not in the protocol vocabulary", message.Act)
+		}
+		if message.Floor != floor {
+			return fmt.Errorf("interaction act %q requires floor %q, got %q", message.Act, floor, message.Floor)
+		}
+		if strings.TrimSpace(message.Policy) == "" || strings.TrimSpace(message.EvidenceRef) == "" {
+			return errors.New("an interaction act requires policy and evidence identities")
+		}
+		if message.DeadlineMS <= 0 {
+			return errors.New("an interaction act requires a positive deadline")
+		}
+		if message.Confidence < 0 || message.Confidence > 1 {
+			return errors.New("interaction confidence must be between zero and one")
 		}
 	case TypeError:
 		if strings.TrimSpace(message.Message()) == "" {

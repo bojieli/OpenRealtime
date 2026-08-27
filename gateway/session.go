@@ -615,6 +615,11 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 		Attributes: map[string]any{
 			"manual_turns": current.manualTurns, "modalities": slices.Clone(current.modalities),
 			"observers": slices.Clone(current.observers), "tool_count": len(current.tools),
+			// This is the live session status, after sidecar handshake and session
+			// policy resolution. Architecture benchmarks retain it separately from
+			// their intended manifest so a preset label cannot stand in for what
+			// actually ran.
+			"runtime": session.runtime.Status(),
 		},
 		Payload: map[string]any{"instructions": current.instruction},
 	})

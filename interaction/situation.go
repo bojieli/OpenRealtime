@@ -172,6 +172,11 @@ type Situation struct {
 	// speaking, and offering the act when it has none asks for a decision that
 	// cannot be carried out.
 	Tools []string
+	// AllowedActs narrows the semantic act set to what the composed stack can
+	// execute. Empty means the full vocabulary for backwards compatibility.
+	// A turn-based speech model, for example, is not offered speak-through
+	// unless it also declares concurrent input/output.
+	AllowedActs []Act
 }
 
 // AvailableActs is the act set this instant admits.
@@ -200,6 +205,19 @@ func (state Situation) AvailableActs() []Act {
 	}
 	if len(state.Tools) > 0 {
 		acts = append(acts, ActActSilently)
+	}
+	if len(state.AllowedActs) > 0 {
+		allowed := make(map[Act]struct{}, len(state.AllowedActs))
+		for _, act := range state.AllowedActs {
+			allowed[act] = struct{}{}
+		}
+		filtered := acts[:0]
+		for _, act := range acts {
+			if _, ok := allowed[act]; ok {
+				filtered = append(filtered, act)
+			}
+		}
+		acts = filtered
 	}
 	return acts
 }

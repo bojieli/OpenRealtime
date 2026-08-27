@@ -58,7 +58,10 @@ func NewActFloor(model *InteractionModel, options ActFloorOptions) (Floor, error
 		return nil, errors.New("an act floor requires an interaction model")
 	}
 	if options.Timeout <= 0 {
-		options.Timeout = 150 * time.Millisecond
+		options.Timeout = model.DecisionTimeout()
+		if options.Timeout <= 0 {
+			options.Timeout = 150 * time.Millisecond
+		}
 	}
 	if options.SilenceDuration <= 0 {
 		options.SilenceDuration = 500 * time.Millisecond

@@ -191,7 +191,7 @@ func (bind *Binding) Ownership() binding.Ownership {
 	return binding.Ownership{
 		Perception: binding.OwnerRemote, FastCognition: binding.OwnerRemote,
 		SlowCognition: binding.OwnerEngine, Action: binding.OwnerRemote,
-		Floor: bind.config.FloorOwner,
+		Interaction: binding.OwnerRemote, Floor: bind.config.FloorOwner,
 	}
 }
 
@@ -207,6 +207,10 @@ func (bind *Binding) Capabilities() binding.Capabilities {
 		// The remote runs the floor, and it speaks this protocol: a client
 		// taking the floor is forwarded rather than interpreted.
 		ManualTurns: true,
+		Stack: binding.StackCapabilities{
+			AudioInput: true, AudioOutput: true, TurnGeneration: true,
+			TextInjection: true,
+		},
 	}
 }
 

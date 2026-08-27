@@ -70,8 +70,9 @@ func TestOmniKeepsTheFloorInTheEngineByDefault(t *testing.T) {
 	}
 }
 
-// A full-duplex model owns its floor - that is what full-duplex means - and
-// the engine still supplies the background reasoner it cannot have.
+// The duplex preset selects a model-owned floor, independently of its
+// concurrent-I/O capability, and the engine still supplies the background
+// reasoner it cannot have.
 func TestDuplexOwnsItsFloorAndStillBorrowsTheReasoner(t *testing.T) {
 	bind, err := duplex.New(config())
 	if err != nil {
@@ -82,7 +83,7 @@ func TestDuplexOwnsItsFloorAndStillBorrowsTheReasoner(t *testing.T) {
 		t.Fatalf("ownership: %v", err)
 	}
 	if ownership.Floor != binding.OwnerModel {
-		t.Fatalf("a duplex model owns its own floor, got %q", ownership.Floor)
+		t.Fatalf("the duplex preset selected floor owner %q", ownership.Floor)
 	}
 	if ownership.SlowCognition != binding.OwnerEngine {
 		t.Fatalf("slow cognition is always the engine's, got %q", ownership.SlowCognition)
@@ -117,5 +118,35 @@ func TestTheTwoBindingsAreDistinguishableInAReport(t *testing.T) {
 		if err := registry.Register(bind); err != nil {
 			t.Fatalf("register %s: %v", bind.Name(), err)
 		}
+	}
+}
+
+func TestCapabilitiesComposeWithoutAddingAModelSpecies(t *testing.T) {
+	spec := sidecarbinding.Spec{
+		Name: "hybrid-experiment",
+		Ownership: binding.Ownership{
+			Perception: binding.OwnerModel, FastCognition: binding.OwnerModel,
+			SlowCognition: binding.OwnerEngine, Action: binding.OwnerModel,
+			// Select the engine controller while retaining the model's native
+			// interaction and floor capabilities as available controls.
+			Interaction: binding.OwnerEngine, Floor: binding.OwnerEngine,
+		},
+		Capabilities: binding.StackCapabilities{
+			AudioInput: true, AudioOutput: true, TurnGeneration: true,
+			ConcurrentIO: true, NativeFloor: true, NativeInteraction: true,
+			InteractionActs: true, TextInjection: true, Transcription: true,
+		},
+	}
+	bind, err := sidecarbinding.New(spec, config())
+	if err != nil {
+		t.Fatalf("compose hybrid stack: %v", err)
+	}
+	stack := bind.Capabilities().Stack
+	if bind.Name() != "hybrid-experiment" || !stack.TurnGeneration || !stack.ConcurrentIO ||
+		!stack.NativeInteraction || !stack.InteractionActs {
+		t.Fatalf("the generic binding lost composed capabilities: %s %+v", bind.Name(), stack)
+	}
+	if bind.Ownership().Interaction != binding.OwnerEngine {
+		t.Fatal("selecting the engine policy must not require deleting the native capability")
 	}
 }

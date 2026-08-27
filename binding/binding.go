@@ -1,10 +1,9 @@
 // Package binding is the seam between the runtime and a voice stack.
 //
 // A binding is not a pipeline. It is a declaration of which subsystems the
-// model owns, and the runtime supplies the rest. That is the whole idea: a
-// cascade owns nothing, so the engine supplies perception, cognition, action,
-// and the floor; a full-duplex model owns almost everything, so the engine
-// supplies the background reasoner and the policies around it.
+// model owns, which capabilities are available, and the runtime supplies the
+// rest. Named cascade, Omni, and duplex bindings are presets over those two
+// declarations rather than mutually exclusive model species.
 //
 // One column never varies. Slow cognition is always the engine's, because no
 // foreground model provides it - which is exactly the thing this project adds
@@ -45,17 +44,38 @@ type Ownership struct {
 	FastCognition Owner `json:"fast_cognition"`
 	SlowCognition Owner `json:"slow_cognition"`
 	Action        Owner `json:"action"`
-	// Floor is the one interaction policy a model can take over. Every other
-	// interaction policy stays with the engine even when the model owns the
-	// floor, so ownership is not all-or-nothing.
+	// Interaction names who chooses conversational acts such as listen,
+	// answer, interrupt, and stop-speaking. It is deliberately separate from
+	// Floor: a model can detect that a turn ended while an engine policy still
+	// decides whether that ending should be answered, and a model capable of
+	// full duplex can still be run under an external policy as a controlled
+	// comparison.
+	Interaction Owner `json:"interaction"`
+	// Floor names who establishes the acoustic/turn boundary. Owning it does
+	// not imply owning interaction policy, and supporting full duplex does not
+	// force either ownership choice.
 	Floor Owner `json:"floor"`
+}
+
+// Effective fills the interaction column for a binding compiled against the
+// earlier ownership shape. Legacy bindings implicitly coupled interaction to
+// floor; new bindings should always set Interaction explicitly. Keeping this
+// compatibility rule at the seam lets old extensions load while all current
+// evidence reports the expanded vector.
+func (ownership Ownership) Effective() Ownership {
+	if ownership.Interaction == "" {
+		ownership.Interaction = ownership.Floor
+	}
+	return ownership
 }
 
 // Validate rejects a declaration that contradicts the architecture.
 func (ownership Ownership) Validate() error {
+	ownership = ownership.Effective()
 	for name, owner := range map[string]Owner{
 		"perception": ownership.Perception, "fast_cognition": ownership.FastCognition,
-		"slow_cognition": ownership.SlowCognition, "action": ownership.Action, "floor": ownership.Floor,
+		"slow_cognition": ownership.SlowCognition, "action": ownership.Action,
+		"interaction": ownership.Interaction, "floor": ownership.Floor,
 	} {
 		switch owner {
 		case OwnerEngine, OwnerModel, OwnerRemote:
@@ -293,15 +313,253 @@ var ErrUnsupported = errors.New("capability not supported by this binding")
 
 // Status is what a session is running, for the health endpoint and evidence.
 type Status struct {
-	Binding   string             `json:"binding"`
-	Profile   string             `json:"profile,omitempty"`
-	Ownership Ownership          `json:"ownership"`
-	Policies  interaction.Report `json:"policies"`
-	Observers []string           `json:"observers"`
-	Fast      string             `json:"fast,omitempty"`
-	Reflex    string             `json:"reflex,omitempty"`
-	Slow      string             `json:"slow,omitempty"`
-	Speech    string             `json:"speech,omitempty"`
+	// Architecture is the immutable project-level composition selected for
+	// this session. Binding remains the concrete adapter that realised it. The
+	// distinction lets several evolving architectures use the same sidecar
+	// runtime without losing which definition was actually launched.
+	Architecture       ArchitectureIdentity `json:"architecture,omitempty"`
+	Binding            string               `json:"binding"`
+	Profile            string               `json:"profile,omitempty"`
+	Ownership          Ownership            `json:"ownership"`
+	Stack              StackCapabilities    `json:"stack"`
+	Policies           interaction.Report   `json:"policies"`
+	Interaction        InteractionStatus    `json:"interaction"`
+	Tools              ToolStatus           `json:"tools"`
+	Observers          []string             `json:"observers"`
+	Fast               string               `json:"fast,omitempty"`
+	Reflex             string               `json:"reflex,omitempty"`
+	Slow               string               `json:"slow,omitempty"`
+	Perception         string               `json:"perception,omitempty"`
+	PerceptionRevision string               `json:"perception_revision,omitempty"`
+	// SpeakerIdentity names the optional speaker-embedding adapter. The model
+	// artifact behind that adapter is pinned by an experiment manifest, just as
+	// it is for Perception and Speech; this live pair proves which adapter path
+	// was actually present in the session.
+	SpeakerIdentity         string `json:"speaker_identity,omitempty"`
+	SpeakerIdentityRevision string `json:"speaker_identity_revision,omitempty"`
+	VisualNarrator          string `json:"visual_narrator,omitempty"`
+	Speech                  string `json:"speech,omitempty"`
+	SpeechRevision          string `json:"speech_revision,omitempty"`
+}
+
+// ArchitectureIdentity pins one resolved architecture definition. ID and
+// Revision are for people and lineage; Fingerprint protects against a catalog
+// entry being edited in place while retaining the same apparent revision.
+type ArchitectureIdentity struct {
+	ID          string `json:"id,omitempty"`
+	Revision    int    `json:"revision,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+}
+
+// Empty reports that a runtime was launched through the legacy binding-only
+// path rather than through a versioned architecture definition.
+func (identity ArchitectureIdentity) Empty() bool {
+	return strings.TrimSpace(identity.ID) == "" && identity.Revision == 0 &&
+		strings.TrimSpace(identity.Fingerprint) == ""
+}
+
+// ToolStatus records authority rather than mere schema visibility. The model
+// that can name a call is not necessarily allowed to execute it; authorization
+// and the final dispatcher remain separate evidence fields.
+type ToolStatus struct {
+	Fast          string `json:"fast"`
+	Slow          string `json:"slow"`
+	Authorization string `json:"authorization"`
+	Execution     string `json:"execution"`
+}
+
+// InteractionStatus is the live control boundary selected for this session.
+// Stack says which capabilities exist and Ownership says which provider is in
+// force; this records how evidence and acts actually cross the remaining seam.
+// It exists separately from policy names because "model:qwen" cannot say
+// whether that model saw a transcript or native audio, or whether its answer
+// crossed a typed v2 boundary or was translated into a generic respond signal.
+type InteractionStatus struct {
+	Evidence string `json:"evidence"`
+	// EvidenceCapabilities is the exact set of channels selected into the
+	// interaction owner for this live session. It is deliberately separate
+	// from StackCapabilities: a foreground may be capable of native audio and
+	// direct vision while an external controller is selected to receive only a
+	// transcript and a clock. These are active inputs, not model-family labels
+	// or a list of everything some component could theoretically expose.
+	EvidenceCapabilities InteractionEvidenceCapabilities `json:"evidence_capabilities"`
+	Recognizer           string                          `json:"recognizer,omitempty"`
+	RecognizerRevision   string                          `json:"recognizer_revision,omitempty"`
+	Transport            string                          `json:"transport"`
+	ProtocolVersion      int                             `json:"protocol_version,omitempty"`
+	ActHandoff           string                          `json:"act_handoff"`
+	DecisionTimeoutMS    int                             `json:"decision_timeout_ms,omitempty"`
+	NativeSuppression    string                          `json:"native_suppression,omitempty"`
+	// Control is the exact set of interaction selectors in force and the rule
+	// which gives one of them authority. It closes an ambiguity left by Mode and
+	// evidence alone: a text policy may own every act, or it may be composed with
+	// a narrow predicate floor. Those are different treatments even though both
+	// see the same transcript-and-state evidence and are owned by the engine.
+	Control InteractionControl `json:"control,omitempty"`
+}
+
+// InteractionControllers is a composable vector of selected interaction
+// mechanisms. It describes active selectors, not model families and not every
+// selector a foreground could theoretically provide. More than one bit is
+// valid only with an explicit arbitration rule in InteractionControl.
+type InteractionControllers struct {
+	Predicates bool `json:"predicates"`
+	TextPolicy bool `json:"text_policy"`
+	Native     bool `json:"native"`
+	Remote     bool `json:"remote"`
+}
+
+// Names returns stable external spellings for the selected mechanisms.
+func (controllers InteractionControllers) Names() []string {
+	var names []string
+	for _, item := range []struct {
+		name    string
+		enabled bool
+	}{
+		{"predicates", controllers.Predicates},
+		{"text-policy", controllers.TextPolicy},
+		{"native", controllers.Native},
+		{"remote", controllers.Remote},
+	} {
+		if item.enabled {
+			names = append(names, item.name)
+		}
+	}
+	return names
+}
+
+// Merge returns the union of independently selected controller mechanisms.
+// Arbitration is deliberately not merged: composing selectors without also
+// naming who wins would create two writers for the same conversational act.
+func (controllers InteractionControllers) Merge(other InteractionControllers) InteractionControllers {
+	return InteractionControllers{
+		Predicates: controllers.Predicates || other.Predicates,
+		TextPolicy: controllers.TextPolicy || other.TextPolicy,
+		Native:     controllers.Native || other.Native,
+		Remote:     controllers.Remote || other.Remote,
+	}
+}
+
+// InteractionControl makes composition operational rather than taxonomic.
+// Selectors says which mechanisms are active. Arbitration says how their
+// outputs become one authoritative act. "single" requires exactly one
+// selector; "predicate-floor" gives acoustic predicates endpoint and overlap
+// decisions while the text policy governs semantic, visual, quiet, and silent
+// tool acts.
+type InteractionControl struct {
+	Selectors   InteractionControllers `json:"selectors"`
+	Arbitration string                 `json:"arbitration"`
+}
+
+// InteractionEvidenceCapabilities is a composable vector of the evidence an
+// interaction owner actually receives.
+//
+// It replaces phrases such as "transcript policy" as a complete description.
+// A transcript-conditioned controller may independently receive acoustic
+// activity, a silence clock, durable instructions, tool state, speaker
+// identity, addressing, narrated vision, or pixels. NativeModelState records
+// the opaque audio/latent state available to an in-model interaction head; it
+// must not be inferred merely because a stack has NativeInteraction.
+type InteractionEvidenceCapabilities struct {
+	Transcript        bool `json:"transcript"`
+	AcousticActivity  bool `json:"acoustic_activity"`
+	SilenceClock      bool `json:"silence_clock"`
+	ConversationState bool `json:"conversation_state"`
+	ToolState         bool `json:"tool_state"`
+	SpeakerIdentity   bool `json:"speaker_identity"`
+	Addressing        bool `json:"addressing"`
+	VisualDescription bool `json:"visual_description"`
+	DirectVisualInput bool `json:"direct_visual_input"`
+	NativeModelState  bool `json:"native_model_state"`
+}
+
+// Names returns stable external spellings for the selected evidence channels.
+func (capabilities InteractionEvidenceCapabilities) Names() []string {
+	var names []string
+	for _, item := range []struct {
+		name    string
+		enabled bool
+	}{
+		{"transcript", capabilities.Transcript},
+		{"acoustic-activity", capabilities.AcousticActivity},
+		{"silence-clock", capabilities.SilenceClock},
+		{"conversation-state", capabilities.ConversationState},
+		{"tool-state", capabilities.ToolState},
+		{"speaker-identity", capabilities.SpeakerIdentity},
+		{"addressing", capabilities.Addressing},
+		{"visual-description", capabilities.VisualDescription},
+		{"direct-visual-input", capabilities.DirectVisualInput},
+		{"native-model-state", capabilities.NativeModelState},
+	} {
+		if item.enabled {
+			names = append(names, item.name)
+		}
+	}
+	return names
+}
+
+// Missing returns the required evidence channels which are not selected.
+func (capabilities InteractionEvidenceCapabilities) Missing(
+	required InteractionEvidenceCapabilities,
+) []string {
+	var missing []string
+	for _, name := range required.Names() {
+		available := false
+		switch name {
+		case "transcript":
+			available = capabilities.Transcript
+		case "acoustic-activity":
+			available = capabilities.AcousticActivity
+		case "silence-clock":
+			available = capabilities.SilenceClock
+		case "conversation-state":
+			available = capabilities.ConversationState
+		case "tool-state":
+			available = capabilities.ToolState
+		case "speaker-identity":
+			available = capabilities.SpeakerIdentity
+		case "addressing":
+			available = capabilities.Addressing
+		case "visual-description":
+			available = capabilities.VisualDescription
+		case "direct-visual-input":
+			available = capabilities.DirectVisualInput
+		case "native-model-state":
+			available = capabilities.NativeModelState
+		}
+		if !available {
+			missing = append(missing, name)
+		}
+	}
+	return missing
+}
+
+// Satisfies reports whether every required evidence channel is selected.
+func (capabilities InteractionEvidenceCapabilities) Satisfies(
+	required InteractionEvidenceCapabilities,
+) bool {
+	return len(capabilities.Missing(required)) == 0
+}
+
+// Merge returns the union of two independently supplied evidence channel
+// sets. Architecture selection still records the exact resulting vector; the
+// union is assembly machinery, not permission for an undeclared channel to
+// enter a measured cell.
+func (capabilities InteractionEvidenceCapabilities) Merge(
+	other InteractionEvidenceCapabilities,
+) InteractionEvidenceCapabilities {
+	return InteractionEvidenceCapabilities{
+		Transcript:        capabilities.Transcript || other.Transcript,
+		AcousticActivity:  capabilities.AcousticActivity || other.AcousticActivity,
+		SilenceClock:      capabilities.SilenceClock || other.SilenceClock,
+		ConversationState: capabilities.ConversationState || other.ConversationState,
+		ToolState:         capabilities.ToolState || other.ToolState,
+		SpeakerIdentity:   capabilities.SpeakerIdentity || other.SpeakerIdentity,
+		Addressing:        capabilities.Addressing || other.Addressing,
+		VisualDescription: capabilities.VisualDescription || other.VisualDescription,
+		DirectVisualInput: capabilities.DirectVisualInput || other.DirectVisualInput,
+		NativeModelState:  capabilities.NativeModelState || other.NativeModelState,
+	}
 }
 
 // Binding creates session runtimes.
@@ -350,6 +608,113 @@ type Capabilities struct {
 	// makes that reason unintelligible - the client is told a limit it was
 	// told did not exist is what cut its turn off.
 	MaxOutputTokens int `json:"max_output_tokens,omitempty"`
+	// Stack describes the independently composable capabilities of the voice
+	// stack. These are things the stack can do, not declarations that it owns
+	// them in this session; Ownership selects the active provider. Keeping the
+	// two separate is what permits a native-interaction model to be evaluated
+	// under an engine policy without pretending it stopped having the native
+	// capability.
+	Stack StackCapabilities `json:"stack"`
+}
+
+// StackCapabilities is a feature vector, not a model taxonomy.
+//
+// In particular, TurnGeneration, ConcurrentIO, and NativeInteraction are not
+// mutually exclusive. A model may expose all three, and may additionally
+// accept InteractionActs from an external controller. The old cascade, Omni,
+// and duplex names are useful presets and benchmark labels over this vector;
+// they are not closed species that runtime code should switch on.
+type StackCapabilities struct {
+	AudioInput        bool `json:"audio_input"`
+	AudioOutput       bool `json:"audio_output"`
+	Transcription     bool `json:"transcription"`
+	TurnGeneration    bool `json:"turn_generation"`
+	ConcurrentIO      bool `json:"concurrent_io"`
+	NativeFloor       bool `json:"native_floor"`
+	NativeInteraction bool `json:"native_interaction"`
+	InteractionActs   bool `json:"interaction_acts"`
+	TextInjection     bool `json:"text_injection"`
+}
+
+// Names returns the stable external spellings of every available capability.
+func (capabilities StackCapabilities) Names() []string {
+	var names []string
+	for _, item := range []struct {
+		name    string
+		enabled bool
+	}{
+		{"audio-input", capabilities.AudioInput},
+		{"audio-output", capabilities.AudioOutput},
+		{"transcription", capabilities.Transcription},
+		{"turn-generation", capabilities.TurnGeneration},
+		{"concurrent-io", capabilities.ConcurrentIO},
+		{"native-floor", capabilities.NativeFloor},
+		{"native-interaction", capabilities.NativeInteraction},
+		{"interaction-acts", capabilities.InteractionActs},
+		{"text-injection", capabilities.TextInjection},
+	} {
+		if item.enabled {
+			names = append(names, item.name)
+		}
+	}
+	return names
+}
+
+// Missing returns the requirements this capability vector does not satisfy.
+// Extra capabilities are deliberately harmless: selecting external policy
+// does not require pretending the foreground lost its native interaction head.
+func (capabilities StackCapabilities) Missing(required StackCapabilities) []string {
+	var missing []string
+	for _, name := range required.Names() {
+		available := false
+		switch name {
+		case "audio-input":
+			available = capabilities.AudioInput
+		case "audio-output":
+			available = capabilities.AudioOutput
+		case "transcription":
+			available = capabilities.Transcription
+		case "turn-generation":
+			available = capabilities.TurnGeneration
+		case "concurrent-io":
+			available = capabilities.ConcurrentIO
+		case "native-floor":
+			available = capabilities.NativeFloor
+		case "native-interaction":
+			available = capabilities.NativeInteraction
+		case "interaction-acts":
+			available = capabilities.InteractionActs
+		case "text-injection":
+			available = capabilities.TextInjection
+		}
+		if !available {
+			missing = append(missing, name)
+		}
+	}
+	return missing
+}
+
+// Satisfies reports whether every required capability is available.
+func (capabilities StackCapabilities) Satisfies(required StackCapabilities) bool {
+	return len(capabilities.Missing(required)) == 0
+}
+
+// Merge returns the union of two capability declarations. Capability
+// composition is monotonic: learning that a sidecar accepts text injection,
+// for example, must not erase the fact that its preset supports concurrent
+// audio.
+func (capabilities StackCapabilities) Merge(other StackCapabilities) StackCapabilities {
+	return StackCapabilities{
+		AudioInput:        capabilities.AudioInput || other.AudioInput,
+		AudioOutput:       capabilities.AudioOutput || other.AudioOutput,
+		Transcription:     capabilities.Transcription || other.Transcription,
+		TurnGeneration:    capabilities.TurnGeneration || other.TurnGeneration,
+		ConcurrentIO:      capabilities.ConcurrentIO || other.ConcurrentIO,
+		NativeFloor:       capabilities.NativeFloor || other.NativeFloor,
+		NativeInteraction: capabilities.NativeInteraction || other.NativeInteraction,
+		InteractionActs:   capabilities.InteractionActs || other.InteractionActs,
+		TextInjection:     capabilities.TextInjection || other.TextInjection,
+	}
 }
 
 // VoiceControl is how a session's voice is decided.

@@ -1,7 +1,9 @@
-// Package duplex binds a full-duplex interaction model.
+// Package duplex provides the native-interaction preset for a model that can
+// listen and speak concurrently.
 //
-// A full-duplex model has turn-taking, overlap, and interruption trained into
-// its weights, so it owns its floor and the engine does not second-guess it.
+// The preset selects concurrent I/O, model interaction, and model floor. Those
+// are independent capabilities and ownership choices rather than implications
+// of one "duplex" species.
 // What such a model does not have is a background reasoner, and it cannot: a
 // single model has no second model and no shared log to put one on.
 //
@@ -24,7 +26,16 @@ type Config = sidecarbinding.Config
 // New creates the binding.
 func New(config Config) (*sidecarbinding.Binding, error) {
 	return sidecarbinding.New(sidecarbinding.Spec{
-		Name: "duplex", Floor: binding.OwnerModel, FullDuplex: true,
+		Name: "duplex",
+		Ownership: binding.Ownership{
+			Perception: binding.OwnerModel, FastCognition: binding.OwnerModel,
+			SlowCognition: binding.OwnerEngine, Action: binding.OwnerModel,
+			Interaction: binding.OwnerModel, Floor: binding.OwnerModel,
+		},
+		Capabilities: binding.StackCapabilities{
+			AudioInput: true, AudioOutput: true, TurnGeneration: true,
+			ConcurrentIO: true, NativeFloor: true, NativeInteraction: true,
+		},
 	}, config)
 }
 
@@ -33,6 +44,15 @@ func New(config Config) (*sidecarbinding.Binding, error) {
 // duplex model's own floor is better than a measured one.
 func NewWithEngineFloor(config Config) (*sidecarbinding.Binding, error) {
 	return sidecarbinding.New(sidecarbinding.Spec{
-		Name: "duplex", Floor: binding.OwnerEngine, FullDuplex: true,
+		Name: "duplex",
+		Ownership: binding.Ownership{
+			Perception: binding.OwnerModel, FastCognition: binding.OwnerModel,
+			SlowCognition: binding.OwnerEngine, Action: binding.OwnerModel,
+			Interaction: binding.OwnerModel, Floor: binding.OwnerEngine,
+		},
+		Capabilities: binding.StackCapabilities{
+			AudioInput: true, AudioOutput: true, TurnGeneration: true,
+			ConcurrentIO: true, NativeFloor: true, NativeInteraction: true,
+		},
 	}, config)
 }

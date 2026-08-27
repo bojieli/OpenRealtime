@@ -34,6 +34,20 @@ func TestAvailableActsDependOnWhetherTheAgentIsSpeaking(t *testing.T) {
 	}
 }
 
+func TestAvailableActsRespectExecutorCapabilities(t *testing.T) {
+	state := interaction.Situation{
+		Speaker: "user", Speaking: true, Heard: "one more thing",
+		AllowedActs: []interaction.Act{interaction.ActStaySilent, interaction.ActInterrupt},
+	}
+	acts := state.AvailableActs()
+	if contains(acts, interaction.ActSpeakThrough) {
+		t.Fatal("a model without concurrent I/O must not be offered speak-through")
+	}
+	if !contains(acts, interaction.ActInterrupt) || !contains(acts, interaction.ActStaySilent) {
+		t.Fatalf("supported acts were lost: %v", acts)
+	}
+}
+
 // Collapsing these hid every completed utterance the instant its speaker
 // stopped: a model told a turn had ended and never told what the turn said.
 func TestRenderKeepsWhatWasHeardAfterTheSpeakerStops(t *testing.T) {

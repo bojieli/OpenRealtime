@@ -40,7 +40,11 @@ class Qwen3OmniSidecar(Sidecar):
     output_rate = MODEL_OUTPUT_RATE
     #: No native voice activity detection and no full duplex: the engine keeps
     #: the floor, which is the point of running this model here.
-    capabilities = (Capability.TRANSCRIPT, Capability.TEXT_INJECTION)
+    capabilities = (
+        Capability.TRANSCRIPT,
+        Capability.TEXT_INJECTION,
+        Capability.INTERACTION_ACTS,
+    )
 
     def __init__(self, input_stream, output_stream, *, model_path: str, mock: bool,
                  device: str, max_new_tokens: int) -> None:
