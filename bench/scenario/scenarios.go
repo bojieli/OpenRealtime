@@ -42,7 +42,7 @@ func Suite() []Scenario {
 					Note: "and the second animal is two"},
 				{Kind: CheckNotSaid, Line: 2, AfterMS: 5000, Any: []string{"?"},
 					Note: "they asked to be counted at, not interviewed"},
-				{Kind: CheckAnsweredWithin, Line: 2, AfterMS: 5000,
+				{Kind: CheckAnsweredWithin, Line: 2, AfterMS: 5000, DuringTrigger: true,
 					Note: "counting as somebody goes is a claim about timing, so it is measured as one"},
 			},
 		},

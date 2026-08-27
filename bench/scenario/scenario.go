@@ -53,6 +53,25 @@ type Check struct {
 	// a picture arrives when it is sent, while a sentence takes as long as a
 	// synthesiser decides to take.
 	Sight int
+	// DuringTrigger says the answer this check is waiting for is expected
+	// while the line is still being spoken, not after it.
+	//
+	// A latency is normally measured from the moment the trigger stopped,
+	// because what a person waits through is the silence after somebody
+	// finishes talking. A policy carried out while they keep talking has no
+	// such silence: "count the animals out loud as I mention them" is answered
+	// mid-sentence by design, and measuring from the end looks past the answer
+	// entirely and finds whatever the agent said next. Measured, the agent
+	// counted the capybara correctly at 24.2 seconds and the check reported it
+	// answered 6.9 seconds late, because the line it was answering ran to
+	// 25.4.
+	//
+	// This is the same fact the Tool case below already relies on - a key
+	// pressed while the recording is still reading the options - said once,
+	// about when the answer is expected rather than about what kind of thing
+	// it is. The deadline still means "not later than AfterMS past the line
+	// ending", so a genuinely late answer still fails.
+	DuringTrigger bool
 	// AfterMS extends the window past the end of the line, which is where the
 	// interesting part of a pause lives.
 	//
@@ -444,7 +463,7 @@ func apply(check Check, timeline Timeline, transcript bench.Transcript, menu *Me
 		} else if check.Line >= 0 && check.Line < len(timeline.Spans) {
 			span := timeline.Spans[check.Line]
 			from = span.EndMS
-			if check.Tool != "" {
+			if check.Tool != "" || check.DuringTrigger {
 				from = span.StartMS
 			}
 		}
@@ -482,10 +501,13 @@ func apply(check Check, timeline Timeline, transcript bench.Transcript, menu *Me
 		deadline := float64(check.AfterMS)
 		if check.Tool != "" {
 			wait, ok = transcript.FirstToolCallAfter(check.Tool, float64(from))
-			if check.Line >= 0 && check.Line < len(timeline.Spans) {
-				span := timeline.Spans[check.Line]
-				deadline += float64(span.EndMS - span.StartMS)
-			}
+		}
+		// Measuring from the start moves where the clock starts, not when the
+		// agent is late, so the line's own length goes back into the deadline.
+		if (check.Tool != "" || check.DuringTrigger) &&
+			check.Line >= 0 && check.Line < len(timeline.Spans) {
+			span := timeline.Spans[check.Line]
+			deadline += float64(span.EndMS - span.StartMS)
 		}
 		if !ok {
 			return fmt.Sprintf("never answered after %dms (%s)", from, check.Note)
