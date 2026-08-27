@@ -68,6 +68,9 @@ type Config struct {
 	// Perception creates one streaming recogniser per utterance, so
 	// recogniser state cannot leak between turns.
 	Perception func() (v1.PerceptionProvider, error)
+	// PerceptionDescriptor identifies the lazily created recogniser before an
+	// utterance starts, for session evidence and controlled experiments.
+	PerceptionDescriptor v1.Descriptor
 	// Narrator turns a picture a client put into the conversation into text.
 	//
 	// A video observer has one because a frame nobody describes is a frame
@@ -154,6 +157,10 @@ type Config struct {
 	// the first scenario in a suite and reported every user after that as a
 	// stranger - which the agent then correctly declined to answer.
 	Voices voices.Embedder
+	// SpeakerIdentityDescriptor identifies the live adapter used by Voices.
+	// Its immutable model artifact remains a deployment pin; this is the
+	// independently observed runtime spelling and adapter revision.
+	SpeakerIdentityDescriptor v1.Descriptor
 	// Policies is the interaction policy set. A zero value selects the
 	// shipped defaults.
 	Policies          interaction.Policies
@@ -240,6 +247,19 @@ func New(config Config) (*Binding, error) {
 	}
 	if config.Speech == nil {
 		return nil, errors.New("cascade requires a streaming speech provider")
+	}
+	if config.Voices == nil {
+		if config.SpeakerIdentityDescriptor.Name != "" ||
+			config.SpeakerIdentityDescriptor.Version != "" ||
+			config.SpeakerIdentityDescriptor.Capabilities != nil {
+			return nil, errors.New("a speaker identity descriptor requires a speaker embedder")
+		}
+	} else if config.SpeakerIdentityDescriptor.Name != "" ||
+		config.SpeakerIdentityDescriptor.Version != "" ||
+		config.SpeakerIdentityDescriptor.Capabilities != nil {
+		if err := config.SpeakerIdentityDescriptor.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid speaker identity descriptor: %w", err)
+		}
 	}
 	fastAuthority := config.Fast.Descriptor().EffectiveToolAuthority()
 	if config.FastComputerUse {
@@ -330,7 +350,7 @@ func (bind *Binding) Ownership() binding.Ownership {
 	return binding.Ownership{
 		Perception: binding.OwnerEngine, FastCognition: binding.OwnerEngine,
 		SlowCognition: binding.OwnerEngine, Action: binding.OwnerEngine,
-		Floor: binding.OwnerEngine,
+		Interaction: binding.OwnerEngine, Floor: binding.OwnerEngine,
 	}
 }
 
@@ -371,6 +391,10 @@ func (bind *Binding) Capabilities() binding.Capabilities {
 		MaxOutputTokens: bind.config.FastMaxTokens,
 		Video:           video, ComputerUse: true, Observations: true, FastSlow: true,
 		Observers: bind.ObserverNames(),
+		Stack: binding.StackCapabilities{
+			AudioInput: true, AudioOutput: true, Transcription: true,
+			TurnGeneration: true, ConcurrentIO: true,
+		},
 	}
 }
 

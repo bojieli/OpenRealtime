@@ -499,6 +499,10 @@ func (runtime *runtime) considerBargeIn(
 	decision := interaction.Context{
 		NowNS: runtime.scheduler.NowNS(), Duplex: state, Revision: revision,
 	}
+	if runtime.policies.Interaction != nil {
+		situation := runtime.situation(decision)
+		decision.Situation = &situation
+	}
 	if runtime.speech.ActiveSpokeOver() {
 		// The agent is talking over speech it chose to talk over, so this
 		// overlap is not somebody taking the floor from it - it is the reason

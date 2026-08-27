@@ -451,18 +451,100 @@ func (runtime *runtime) observerNames() []string {
 // Status reports what this session is running.
 func (runtime *runtime) Status() binding.Status {
 	fast, slow := runtime.engine.Descriptors()
+	speech := runtime.config.Speech.Descriptor()
 	reflex := ""
 	if descriptor, enabled := runtime.engine.VisualReflexDescriptor(); enabled {
 		reflex = descriptor.Provider + "/" + descriptor.Model
 	}
+	narrator := ""
+	if runtime.config.Narrator != nil {
+		narrator = runtime.config.Narrator.Name()
+	}
 	return binding.Status{
 		Binding: runtime.binding.Name(), Profile: runtime.config.Profile,
-		Ownership: runtime.binding.Ownership(),
-		Policies:  runtime.policyReport(), Observers: runtime.observerNames(),
-		Fast: fast.Provider + "/" + fast.Model, Reflex: reflex,
-		Slow:   slow.Provider + "/" + slow.Model,
-		Speech: runtime.config.Speech.Descriptor().Name,
+		Ownership: runtime.binding.Ownership(), Stack: runtime.binding.Capabilities().Stack,
+		Policies: runtime.policyReport(), Interaction: runtime.interactionStatus(),
+		Tools: binding.ToolStatus{
+			Fast: string(fast.EffectiveToolAuthority()), Slow: string(slow.EffectiveToolAuthority()),
+			Authorization: "engine", Execution: "engine-or-client",
+		},
+		Observers: runtime.observerNames(),
+		Fast:      fast.Provider + "/" + fast.Model, Reflex: reflex,
+		Slow:                    slow.Provider + "/" + slow.Model,
+		Perception:              runtime.config.PerceptionDescriptor.Name,
+		PerceptionRevision:      runtime.config.PerceptionDescriptor.Version,
+		SpeakerIdentity:         runtime.config.SpeakerIdentityDescriptor.Name,
+		SpeakerIdentityRevision: runtime.config.SpeakerIdentityDescriptor.Version,
+		VisualNarrator:          narrator,
+		Speech:                  speech.Name,
+		SpeechRevision:          speech.Version,
 	}
+}
+
+func (runtime *runtime) interactionStatus() binding.InteractionStatus {
+	status := binding.InteractionStatus{
+		Evidence: "acoustic-predicates",
+		EvidenceCapabilities: binding.InteractionEvidenceCapabilities{
+			AcousticActivity: true, SilenceClock: true,
+		},
+		Transport: "in-process", ActHandoff: "direct",
+		Control: binding.InteractionControl{
+			Selectors:   binding.InteractionControllers{Predicates: true},
+			Arbitration: "single",
+		},
+	}
+	// Narrow predicate implementations are usually acoustic-only, but the
+	// individually composable model-backed backchannel, projection, and
+	// overlap policies read partial transcript text. Report that channel when
+	// selected rather than letting it hide behind the predicates label. An
+	// exact acoustic-only catalog definition will consequently refuse such a
+	// deployment unless it evolves to select transcript evidence too.
+	report := runtime.policyReport()
+	if strings.HasPrefix(report.Backchannel, "model:") ||
+		strings.HasPrefix(report.TurnProjection, "model:") ||
+		strings.HasPrefix(report.Overlap, "model:") {
+		status.EvidenceCapabilities.Transcript = true
+	}
+	if runtime.policies.Interaction != nil {
+		status.Evidence = "transcript"
+		status.EvidenceCapabilities = binding.InteractionEvidenceCapabilities{
+			Transcript: true, AcousticActivity: true, SilenceClock: true,
+			ConversationState: true, ToolState: true,
+			SpeakerIdentity:   runtime.config.Voices != nil,
+			VisualDescription: runtime.config.Narrator != nil,
+			DirectVisualInput: runtime.config.DeciderSees,
+		}
+		status.Recognizer = runtime.config.PerceptionDescriptor.Name
+		status.RecognizerRevision = runtime.config.PerceptionDescriptor.Version
+		status.DecisionTimeoutMS = int(runtime.policies.Interaction.DecisionTimeout().Milliseconds())
+		modelFloor := strings.HasPrefix(runtime.policies.Floor.Name(), "act:")
+		modelBargeIn := strings.HasPrefix(runtime.policies.BargeIn.Name(), "act:")
+		status.Control = binding.InteractionControl{
+			Selectors:   binding.InteractionControllers{TextPolicy: true},
+			Arbitration: "single",
+		}
+		// Keeping the shipped engine floor and barge-in while installing the whole-act model
+		// is an intentional composition, not a partially enabled text policy. The
+		// predicates decide acoustic endpoints and overlap cancellation; the text
+		// policy decides semantic, visual, quiet, and silent-tool acts. Attest that arbitration independently
+		// from the policy names so one architecture reference cannot hide both
+		// arrangements.
+		if !modelFloor && !modelBargeIn {
+			status.Control = binding.InteractionControl{
+				Selectors:   binding.InteractionControllers{Predicates: true, TextPolicy: true},
+				Arbitration: "predicate-floor",
+			}
+		} else if modelFloor != modelBargeIn {
+			// A partial installation is historical behavior, not a supported
+			// controller composition. Report it so every current definition
+			// refuses the session instead of hiding whichever predicate remains.
+			status.Control = binding.InteractionControl{
+				Selectors:   binding.InteractionControllers{Predicates: true, TextPolicy: true},
+				Arbitration: "mixed-jurisdiction",
+			}
+		}
+	}
+	return status
 }
 
 // resolveMedia adapts the session's media store to what a provider adapter

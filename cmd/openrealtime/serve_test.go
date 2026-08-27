@@ -70,6 +70,38 @@ func TestEveryBargeInLevelIsADistinctPolicy(t *testing.T) {
 	}
 }
 
+func TestSidecarCapabilitiesComposeIndependently(t *testing.T) {
+	stack, err := parseStackCapabilities(
+		"audio-input,audio-output,turn-generation,concurrent-io,native-floor," +
+			"native-interaction,interaction-acts,transcription,text-injection",
+	)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !stack.AudioInput || !stack.AudioOutput || !stack.TurnGeneration ||
+		!stack.ConcurrentIO || !stack.NativeFloor || !stack.NativeInteraction ||
+		!stack.InteractionActs || !stack.Transcription || !stack.TextInjection {
+		t.Fatalf("a composed capability was lost: %+v", stack)
+	}
+	if _, err := parseStackCapabilities("audio-input,telepathy"); err == nil {
+		t.Fatal("an unknown capability must be refused rather than ignored")
+	}
+}
+
+func TestSidecarOwnershipAxesParseIndependently(t *testing.T) {
+	interactionOwner, err := parseSidecarOwner("interaction", "model", "engine")
+	if err != nil || interactionOwner != "model" {
+		t.Fatalf("interaction owner: %q %v", interactionOwner, err)
+	}
+	floorOwner, err := parseSidecarOwner("floor", "engine", "model")
+	if err != nil || floorOwner != "engine" {
+		t.Fatalf("floor owner: %q %v", floorOwner, err)
+	}
+	if _, err := parseSidecarOwner("interaction", "duplex", "engine"); err == nil {
+		t.Fatal("a species name is not an ownership declaration")
+	}
+}
+
 // Preparation now really starts continuations, so the two levels have to be
 // two things and the default has to be the one that spends nothing.
 func TestPreparationDefaultsToOffAndIsSelectable(t *testing.T) {

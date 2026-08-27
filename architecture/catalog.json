@@ -1,0 +1,1322 @@
+{
+  "version": 1,
+  "architectures": [
+    {
+      "id": "cascade.controlled",
+      "revision": 1,
+      "family": "cascade",
+      "stage": "stable",
+      "summary": "Componentized ASR, fast and slow cognition, and synthesis under engine interaction control.",
+      "change": "Initial reference architecture with narrow acoustic predicates.",
+      "ownership": {
+        "perception": "engine",
+        "fast_cognition": "engine",
+        "slow_cognition": "engine",
+        "action": "engine",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "predicates",
+        "evidence": "acoustic-predicates",
+        "transport": "in-process",
+        "handoff": "direct"
+      }
+    },
+    {
+      "id": "cascade.text-policy",
+      "revision": 1,
+      "family": "cascade",
+      "stage": "experimental",
+      "derived_from": [{"id": "cascade.controlled", "revision": 1}],
+      "summary": "The componentized foreground is controlled by a transcript-conditioned interaction model.",
+      "change": "Replace narrow interaction predicates with one enumerated-act policy while retaining every data-plane component.",
+      "ownership": {
+        "perception": "engine",
+        "fast_cognition": "engine",
+        "slow_cognition": "engine",
+        "action": "engine",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "text-policy",
+        "evidence": "transcript",
+        "transport": "in-process",
+        "handoff": "direct"
+      }
+    },
+    {
+      "id": "omni.external-predicates",
+      "revision": 1,
+      "family": "omni-external",
+      "stage": "candidate",
+      "summary": "A speech-to-speech foreground generates turns while engine predicates choose interaction acts.",
+      "change": "Initial speech-to-speech architecture with an explicit external control plane.",
+      "ownership": {
+        "perception": "model",
+        "fast_cognition": "model",
+        "slow_cognition": "engine",
+        "action": "model",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": false,
+        "turn_generation": true,
+        "concurrent_io": false,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": true,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "predicates",
+        "evidence": "acoustic-predicates",
+        "transport": "sidecar",
+        "protocol_version": 2,
+        "handoff": "typed"
+      }
+    },
+    {
+      "id": "omni.external-policy",
+      "revision": 1,
+      "family": "omni-external",
+      "stage": "experimental",
+      "derived_from": [{"id": "omni.external-predicates", "revision": 1}],
+      "summary": "A speech-to-speech foreground accepts typed acts from a policy-only transcript controller.",
+      "change": "Add streaming policy perception and replace acoustic predicates with an enumerated-act model.",
+      "ownership": {
+        "perception": "model",
+        "fast_cognition": "model",
+        "slow_cognition": "engine",
+        "action": "model",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": false,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": true,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "text-policy",
+        "evidence": "transcript",
+        "transport": "sidecar",
+        "protocol_version": 2,
+        "handoff": "typed"
+      }
+    },
+    {
+      "id": "omni.external-predicates",
+      "revision": 2,
+      "family": "omni-external",
+      "stage": "experimental",
+      "derived_from": [{"id": "omni.external-predicates", "revision": 1}],
+      "summary": "A native-interaction-capable foreground is deliberately controlled by external acoustic predicates.",
+      "change": "Retain native interaction and concurrent I/O while adding explicit suppression and typed control for the controlled P/T/N matrix.",
+      "ownership": {
+        "perception": "model",
+        "fast_cognition": "model",
+        "slow_cognition": "engine",
+        "action": "model",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": true,
+        "interaction_acts": true,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "predicates",
+        "evidence": "acoustic-predicates",
+        "transport": "sidecar",
+        "protocol_version": 2,
+        "handoff": "typed",
+        "native_suppression": "hello selects engine interaction; only typed interaction acts may initiate policy-controlled generation"
+      }
+    },
+    {
+      "id": "omni.external-policy",
+      "revision": 2,
+      "family": "omni-external",
+      "stage": "experimental",
+      "derived_from": [{"id": "omni.external-policy", "revision": 1}],
+      "summary": "A native-interaction-capable foreground is deliberately controlled by an external transcript policy.",
+      "change": "Retain native interaction and concurrent I/O as available capabilities, adding explicit suppression and typed control for a same-foreground T/N experiment.",
+      "ownership": {
+        "perception": "model",
+        "fast_cognition": "model",
+        "slow_cognition": "engine",
+        "action": "model",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": true,
+        "interaction_acts": true,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "text-policy",
+        "evidence": "transcript",
+        "transport": "sidecar",
+        "protocol_version": 2,
+        "handoff": "typed",
+        "native_suppression": "hello selects engine interaction; only typed interaction acts may initiate policy-controlled generation"
+      }
+    },
+    {
+      "id": "omni.native-policy",
+      "revision": 1,
+      "family": "omni-native",
+      "stage": "experimental",
+      "derived_from": [{"id": "omni.external-policy", "revision": 2}],
+      "summary": "The same hybrid-capable foreground selects its native multimodal interaction head while the engine retains the floor.",
+      "change": "Move only interaction ownership and evidence into the foreground, preserving the capability vector needed for the controlled T/N pair.",
+      "ownership": {
+        "perception": "model",
+        "fast_cognition": "model",
+        "slow_cognition": "engine",
+        "action": "model",
+        "interaction": "model",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": true,
+        "interaction_acts": true,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "native",
+        "evidence": "native-multimodal",
+        "transport": "sidecar",
+        "protocol_version": 2,
+        "handoff": "none"
+      }
+    },
+    {
+      "id": "omni.native-full",
+      "revision": 1,
+      "family": "omni-native",
+      "stage": "experimental",
+      "derived_from": [{"id": "omni.native-policy", "revision": 1}],
+      "summary": "A concurrent multimodal foreground owns native interaction and its acoustic floor; slow cognition and authority remain external.",
+      "change": "Move floor ownership into the foreground to represent the standard native-interaction composition without absorbing the session core.",
+      "ownership": {
+        "perception": "model",
+        "fast_cognition": "model",
+        "slow_cognition": "engine",
+        "action": "model",
+        "interaction": "model",
+        "floor": "model"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": true,
+        "native_interaction": true,
+        "interaction_acts": true,
+        "text_injection": true
+      },
+      "interaction": {
+        "mode": "native",
+        "evidence": "native-multimodal",
+        "transport": "sidecar",
+        "protocol_version": 2,
+        "handoff": "none"
+      }
+    },
+    {
+      "id": "realtime.remote",
+      "revision": 1,
+      "family": "realtime-remote",
+      "stage": "stable",
+      "summary": "A remote Realtime foreground owns the live voice loop while OpenRealtime supplies the shared slow trajectory.",
+      "change": "Initial remote foreground architecture with explicit answer handoff.",
+      "ownership": {
+        "perception": "remote",
+        "fast_cognition": "remote",
+        "slow_cognition": "engine",
+        "action": "remote",
+        "interaction": "remote",
+        "floor": "remote"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": false,
+        "turn_generation": true,
+        "concurrent_io": false,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": true
+      },
+      "interaction": {
+        "mode": "remote",
+        "evidence": "remote-multimodal",
+        "transport": "upstream",
+        "handoff": "none"
+      }
+    },
+    {
+      "id": "cascade.controlled",
+      "revision": 2,
+      "family": "cascade",
+      "stage": "candidate",
+      "derived_from": [{"id": "cascade.controlled", "revision": 1}],
+      "summary": "Componentized voice under engine interaction predicates with an exactly attested acoustic evidence boundary.",
+      "change": "Replace the coarse acoustic-predicates label with an exact acoustic-activity and silence-clock evidence vector.",
+      "ownership": {
+        "perception": "engine",
+        "fast_cognition": "engine",
+        "slow_cognition": "engine",
+        "action": "engine",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "predicates",
+        "evidence": "acoustic-predicates",
+        "evidence_capabilities": {
+          "transcript": false,
+          "acoustic_activity": true,
+          "silence_clock": true,
+          "conversation_state": false,
+          "tool_state": false,
+          "speaker_identity": false,
+          "addressing": false,
+          "visual_description": false,
+          "direct_visual_input": false,
+          "native_model_state": false
+        },
+        "transport": "in-process",
+        "handoff": "direct"
+      }
+    },
+    {
+      "id": "cascade.text-policy",
+      "revision": 2,
+      "family": "cascade",
+      "stage": "experimental",
+      "derived_from": [
+        {"id": "cascade.text-policy", "revision": 1},
+        {"id": "cascade.controlled", "revision": 2}
+      ],
+      "summary": "The componentized foreground is controlled by an external interaction model with an exact text-and-state evidence vector.",
+      "change": "Attest transcript, acoustic activity, silence clock, conversation state, and tool state independently; select neither vision nor speaker identity.",
+      "ownership": {
+        "perception": "engine",
+        "fast_cognition": "engine",
+        "slow_cognition": "engine",
+        "action": "engine",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "text-policy",
+        "evidence": "transcript",
+        "evidence_capabilities": {
+          "transcript": true,
+          "acoustic_activity": true,
+          "silence_clock": true,
+          "conversation_state": true,
+          "tool_state": true,
+          "speaker_identity": false,
+          "addressing": false,
+          "visual_description": false,
+          "direct_visual_input": false,
+          "native_model_state": false
+        },
+        "transport": "in-process",
+        "handoff": "direct"
+      }
+    },
+    {
+      "id": "cascade.text-policy-visual",
+      "revision": 1,
+      "family": "cascade",
+      "stage": "experimental",
+      "derived_from": [{"id": "cascade.text-policy", "revision": 2}],
+      "summary": "The external interaction model also receives narrated visual observations, while pixels remain outside its boundary.",
+      "change": "Compose visual-description evidence into the text-policy selection without changing the component or ownership topology.",
+      "ownership": {
+        "perception": "engine",
+        "fast_cognition": "engine",
+        "slow_cognition": "engine",
+        "action": "engine",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "text-policy",
+        "evidence": "transcript",
+        "evidence_capabilities": {
+          "transcript": true,
+          "acoustic_activity": true,
+          "silence_clock": true,
+          "conversation_state": true,
+          "tool_state": true,
+          "speaker_identity": false,
+          "addressing": false,
+          "visual_description": true,
+          "direct_visual_input": false,
+          "native_model_state": false
+        },
+        "transport": "in-process",
+        "handoff": "direct"
+      }
+    },
+    {
+      "id": "cascade.text-policy-direct-visual",
+      "revision": 1,
+      "family": "cascade",
+      "stage": "experimental",
+      "derived_from": [{"id": "cascade.text-policy-visual", "revision": 1}],
+      "summary": "The external interaction model receives both persistent visual descriptions and the latest retained image.",
+      "change": "Compose direct visual input into the narrated visual text-policy boundary so the extra pixels cannot hide behind a transcript label.",
+      "ownership": {
+        "perception": "engine",
+        "fast_cognition": "engine",
+        "slow_cognition": "engine",
+        "action": "engine",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "text-policy",
+        "evidence": "transcript",
+        "evidence_capabilities": {
+          "transcript": true,
+          "acoustic_activity": true,
+          "silence_clock": true,
+          "conversation_state": true,
+          "tool_state": true,
+          "speaker_identity": false,
+          "addressing": false,
+          "visual_description": true,
+          "direct_visual_input": true,
+          "native_model_state": false
+        },
+        "transport": "in-process",
+        "handoff": "direct"
+      }
+    },
+    {
+      "id": "cascade.text-policy-speaker",
+      "revision": 1,
+      "family": "cascade",
+      "stage": "experimental",
+      "derived_from": [{"id": "cascade.text-policy", "revision": 2}],
+      "summary": "The external interaction model receives speaker-identity evidence from a separately pinned embedder.",
+      "change": "Compose speaker identity without claiming the unavailable, semantically distinct capability to determine who an utterance addresses.",
+      "ownership": {
+        "perception": "engine",
+        "fast_cognition": "engine",
+        "slow_cognition": "engine",
+        "action": "engine",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "text-policy",
+        "evidence": "transcript",
+        "evidence_capabilities": {
+          "transcript": true,
+          "acoustic_activity": true,
+          "silence_clock": true,
+          "conversation_state": true,
+          "tool_state": true,
+          "speaker_identity": true,
+          "addressing": false,
+          "visual_description": false,
+          "direct_visual_input": false,
+          "native_model_state": false
+        },
+        "transport": "in-process",
+        "handoff": "direct"
+      }
+    },
+    {
+      "id": "omni.external-predicates",
+      "revision": 3,
+      "family": "omni-external",
+      "stage": "experimental",
+      "derived_from": [{"id": "omni.external-predicates", "revision": 2}],
+      "summary": "A native-interaction-capable foreground is externally controlled from exactly attested acoustic activity and silence.",
+      "change": "Attest the selected predicate evidence vector while preserving the hybrid foreground and native-suppression contract.",
+      "ownership": {
+        "perception": "model",
+        "fast_cognition": "model",
+        "slow_cognition": "engine",
+        "action": "model",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": true,
+        "interaction_acts": true,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "predicates",
+        "evidence": "acoustic-predicates",
+        "evidence_capabilities": {
+          "transcript": false,
+          "acoustic_activity": true,
+          "silence_clock": true,
+          "conversation_state": false,
+          "tool_state": false,
+          "speaker_identity": false,
+          "addressing": false,
+          "visual_description": false,
+          "direct_visual_input": false,
+          "native_model_state": false
+        },
+        "transport": "sidecar",
+        "protocol_version": 2,
+        "handoff": "typed",
+        "native_suppression": "hello selects engine interaction; only typed interaction acts may initiate policy-controlled generation"
+      }
+    },
+    {
+      "id": "omni.external-policy",
+      "revision": 3,
+      "family": "omni-external",
+      "stage": "experimental",
+      "derived_from": [
+        {"id": "omni.external-policy", "revision": 2},
+        {"id": "omni.external-predicates", "revision": 3}
+      ],
+      "summary": "A native-interaction-capable foreground accepts typed acts from an external controller with an exact text-and-state evidence vector.",
+      "change": "Attest transcript, acoustic activity, silence clock, conversation state, and tool state while selecting no native, visual, speaker, or addressing channel.",
+      "ownership": {
+        "perception": "model",
+        "fast_cognition": "model",
+        "slow_cognition": "engine",
+        "action": "model",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": true,
+        "interaction_acts": true,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "text-policy",
+        "evidence": "transcript",
+        "evidence_capabilities": {
+          "transcript": true,
+          "acoustic_activity": true,
+          "silence_clock": true,
+          "conversation_state": true,
+          "tool_state": true,
+          "speaker_identity": false,
+          "addressing": false,
+          "visual_description": false,
+          "direct_visual_input": false,
+          "native_model_state": false
+        },
+        "transport": "sidecar",
+        "protocol_version": 2,
+        "handoff": "typed",
+        "native_suppression": "hello selects engine interaction; only typed interaction acts may initiate policy-controlled generation"
+      }
+    },
+    {
+      "id": "omni.native-policy",
+      "revision": 2,
+      "family": "omni-native",
+      "stage": "experimental",
+      "derived_from": [
+        {"id": "omni.native-policy", "revision": 1},
+        {"id": "omni.external-policy", "revision": 3}
+      ],
+      "summary": "The same hybrid-capable foreground selects its native interaction state while the engine retains the floor.",
+      "change": "Attest native model state as the selected evidence capability for a controlled same-foreground T/N experiment.",
+      "ownership": {
+        "perception": "model",
+        "fast_cognition": "model",
+        "slow_cognition": "engine",
+        "action": "model",
+        "interaction": "model",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": true,
+        "interaction_acts": true,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "native",
+        "evidence": "native-multimodal",
+        "evidence_capabilities": {
+          "transcript": false,
+          "acoustic_activity": false,
+          "silence_clock": false,
+          "conversation_state": false,
+          "tool_state": false,
+          "speaker_identity": false,
+          "addressing": false,
+          "visual_description": false,
+          "direct_visual_input": false,
+          "native_model_state": true
+        },
+        "transport": "sidecar",
+        "protocol_version": 2,
+        "handoff": "none"
+      }
+    },
+    {
+      "id": "omni.native-full",
+      "revision": 2,
+      "family": "omni-native",
+      "stage": "experimental",
+      "derived_from": [
+        {"id": "omni.native-full", "revision": 1},
+        {"id": "omni.native-policy", "revision": 2}
+      ],
+      "summary": "A concurrent multimodal foreground owns native interaction and floor with its evidence boundary explicitly attested.",
+      "change": "Attest native model state without absorbing slow cognition, trajectory, tools, audit, or lifecycle into a model-species label.",
+      "ownership": {
+        "perception": "model",
+        "fast_cognition": "model",
+        "slow_cognition": "engine",
+        "action": "model",
+        "interaction": "model",
+        "floor": "model"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": true,
+        "native_interaction": true,
+        "interaction_acts": true,
+        "text_injection": true
+      },
+      "interaction": {
+        "mode": "native",
+        "evidence": "native-multimodal",
+        "evidence_capabilities": {
+          "transcript": false,
+          "acoustic_activity": false,
+          "silence_clock": false,
+          "conversation_state": false,
+          "tool_state": false,
+          "speaker_identity": false,
+          "addressing": false,
+          "visual_description": false,
+          "direct_visual_input": false,
+          "native_model_state": true
+        },
+        "transport": "sidecar",
+        "protocol_version": 2,
+        "handoff": "none"
+      }
+    },
+    {
+      "id": "realtime.remote",
+      "revision": 2,
+      "family": "realtime-remote",
+      "stage": "candidate",
+      "derived_from": [{"id": "realtime.remote", "revision": 1}],
+      "summary": "A remote Realtime foreground owns its native live interaction loop with an attested opaque-state boundary.",
+      "change": "Make selected remote native model state explicit while retaining external slow cognition and authority.",
+      "ownership": {
+        "perception": "remote",
+        "fast_cognition": "remote",
+        "slow_cognition": "engine",
+        "action": "remote",
+        "interaction": "remote",
+        "floor": "remote"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": false,
+        "turn_generation": true,
+        "concurrent_io": false,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": true
+      },
+      "interaction": {
+        "mode": "remote",
+        "evidence": "remote-multimodal",
+        "evidence_capabilities": {
+          "transcript": false,
+          "acoustic_activity": false,
+          "silence_clock": false,
+          "conversation_state": false,
+          "tool_state": false,
+          "speaker_identity": false,
+          "addressing": false,
+          "visual_description": false,
+          "direct_visual_input": false,
+          "native_model_state": true
+        },
+        "transport": "upstream",
+        "handoff": "none"
+      }
+    },
+    {
+      "id": "cascade.text-policy-visual-speaker",
+      "revision": 1,
+      "family": "cascade",
+      "stage": "experimental",
+      "derived_from": [
+        {"id": "cascade.text-policy-visual", "revision": 1},
+        {"id": "cascade.text-policy-speaker", "revision": 1}
+      ],
+      "summary": "The external interaction model receives narrated visual state and speaker identity through independently pinned evidence producers.",
+      "change": "Compose the visual-description and speaker-identity branches for a voice-and-vision experiment without enabling direct pixels or claiming addressing.",
+      "ownership": {
+        "perception": "engine",
+        "fast_cognition": "engine",
+        "slow_cognition": "engine",
+        "action": "engine",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "text-policy",
+        "evidence": "transcript",
+        "evidence_capabilities": {
+          "transcript": true,
+          "acoustic_activity": true,
+          "silence_clock": true,
+          "conversation_state": true,
+          "tool_state": true,
+          "speaker_identity": true,
+          "addressing": false,
+          "visual_description": true,
+          "direct_visual_input": false,
+          "native_model_state": false
+        },
+        "transport": "in-process",
+        "handoff": "direct"
+      }
+    },
+    {
+      "id": "cascade.text-policy-addressing",
+      "revision": 1,
+      "family": "cascade",
+      "stage": "experimental",
+      "derived_from": [{"id": "cascade.text-policy-speaker", "revision": 1}],
+      "summary": "A desired speaker-aware external policy also receives evidence that an utterance addresses the agent.",
+      "change": "Declare addressing as an independent desired capability; current startup refuses this definition until a real addressing producer is configured.",
+      "ownership": {
+        "perception": "engine",
+        "fast_cognition": "engine",
+        "slow_cognition": "engine",
+        "action": "engine",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "text-policy",
+        "evidence": "transcript",
+        "evidence_capabilities": {
+          "transcript": true,
+          "acoustic_activity": true,
+          "silence_clock": true,
+          "conversation_state": true,
+          "tool_state": true,
+          "speaker_identity": true,
+          "addressing": true,
+          "visual_description": false,
+          "direct_visual_input": false,
+          "native_model_state": false
+        },
+        "transport": "in-process",
+        "handoff": "direct"
+      }
+    },
+    {
+      "id": "cascade.controlled",
+      "revision": 3,
+      "family": "cascade",
+      "stage": "candidate",
+      "derived_from": [{"id": "cascade.controlled", "revision": 2}],
+      "summary": "Componentized voice under one exactly attested predicate interaction controller.",
+      "change": "Attest the selected predicate controller and single-writer arbitration in addition to its acoustic evidence vector.",
+      "ownership": {
+        "perception": "engine",
+        "fast_cognition": "engine",
+        "slow_cognition": "engine",
+        "action": "engine",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "predicates",
+        "evidence": "acoustic-predicates",
+        "evidence_capabilities": {
+          "transcript": false,
+          "acoustic_activity": true,
+          "silence_clock": true,
+          "conversation_state": false,
+          "tool_state": false,
+          "speaker_identity": false,
+          "addressing": false,
+          "visual_description": false,
+          "direct_visual_input": false,
+          "native_model_state": false
+        },
+        "transport": "in-process",
+        "handoff": "direct",
+        "control": {
+          "selectors": {"predicates": true, "text_policy": false, "native": false, "remote": false},
+          "arbitration": "single"
+        }
+      }
+    },
+    {
+      "id": "cascade.text-policy",
+      "revision": 3,
+      "family": "cascade",
+      "stage": "experimental",
+      "derived_from": [
+        {"id": "cascade.text-policy", "revision": 2},
+        {"id": "cascade.controlled", "revision": 3}
+      ],
+      "summary": "The componentized foreground is controlled by one external enumerated-act policy, including floor and overlap decisions.",
+      "change": "Attest a single text-policy controller and route both endpoint and barge-in acts through it; engine liveness bounds remain safety invariants.",
+      "ownership": {
+        "perception": "engine",
+        "fast_cognition": "engine",
+        "slow_cognition": "engine",
+        "action": "engine",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "text-policy",
+        "evidence": "transcript",
+        "evidence_capabilities": {
+          "transcript": true,
+          "acoustic_activity": true,
+          "silence_clock": true,
+          "conversation_state": true,
+          "tool_state": true,
+          "speaker_identity": false,
+          "addressing": false,
+          "visual_description": false,
+          "direct_visual_input": false,
+          "native_model_state": false
+        },
+        "transport": "in-process",
+        "handoff": "direct",
+        "control": {
+          "selectors": {"predicates": false, "text_policy": true, "native": false, "remote": false},
+          "arbitration": "single"
+        }
+      }
+    },
+    {
+      "id": "cascade.composed-policy",
+      "revision": 1,
+      "family": "cascade",
+      "stage": "experimental",
+      "derived_from": [
+        {"id": "cascade.controlled", "revision": 3},
+        {"id": "cascade.text-policy", "revision": 3}
+      ],
+      "summary": "Predicate endpoint and overlap control is composed with a transcript policy for semantic, quiet, visual, and silent-tool acts.",
+      "change": "Select both predicate and text-policy controllers with an explicit predicate-floor arbitration contract instead of inventing a hybrid model species.",
+      "ownership": {
+        "perception": "engine",
+        "fast_cognition": "engine",
+        "slow_cognition": "engine",
+        "action": "engine",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "composed-policy",
+        "evidence": "transcript",
+        "evidence_capabilities": {
+          "transcript": true,
+          "acoustic_activity": true,
+          "silence_clock": true,
+          "conversation_state": true,
+          "tool_state": true,
+          "speaker_identity": false,
+          "addressing": false,
+          "visual_description": false,
+          "direct_visual_input": false,
+          "native_model_state": false
+        },
+        "transport": "in-process",
+        "handoff": "direct",
+        "control": {
+          "selectors": {"predicates": true, "text_policy": true, "native": false, "remote": false},
+          "arbitration": "predicate-floor"
+        }
+      }
+    },
+    {
+      "id": "cascade.text-policy-visual-speaker",
+      "revision": 2,
+      "family": "cascade",
+      "stage": "experimental",
+      "derived_from": [
+        {"id": "cascade.text-policy-visual-speaker", "revision": 1},
+        {"id": "cascade.text-policy", "revision": 3}
+      ],
+      "summary": "One external interaction policy owns all acts and receives independently pinned narrated vision and speaker identity.",
+      "change": "Add exact single-controller arbitration to the composed visual-description and speaker-identity evidence branch.",
+      "ownership": {
+        "perception": "engine",
+        "fast_cognition": "engine",
+        "slow_cognition": "engine",
+        "action": "engine",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "text-policy",
+        "evidence": "transcript",
+        "evidence_capabilities": {
+          "transcript": true,
+          "acoustic_activity": true,
+          "silence_clock": true,
+          "conversation_state": true,
+          "tool_state": true,
+          "speaker_identity": true,
+          "addressing": false,
+          "visual_description": true,
+          "direct_visual_input": false,
+          "native_model_state": false
+        },
+        "transport": "in-process",
+        "handoff": "direct",
+        "control": {
+          "selectors": {"predicates": false, "text_policy": true, "native": false, "remote": false},
+          "arbitration": "single"
+        }
+      }
+    },
+    {
+      "id": "cascade.composed-policy-visual-speaker",
+      "revision": 1,
+      "family": "cascade",
+      "stage": "experimental",
+      "derived_from": [
+        {"id": "cascade.composed-policy", "revision": 1},
+        {"id": "cascade.text-policy-visual-speaker", "revision": 2}
+      ],
+      "summary": "Predicate endpoint and overlap control is composed with a narrated-vision and speaker-aware external policy.",
+      "change": "Hold the enriched evidence vector fixed while selecting explicit predicate-floor arbitration for a controlled pure-versus-composed policy experiment.",
+      "ownership": {
+        "perception": "engine",
+        "fast_cognition": "engine",
+        "slow_cognition": "engine",
+        "action": "engine",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "composed-policy",
+        "evidence": "transcript",
+        "evidence_capabilities": {
+          "transcript": true,
+          "acoustic_activity": true,
+          "silence_clock": true,
+          "conversation_state": true,
+          "tool_state": true,
+          "speaker_identity": true,
+          "addressing": false,
+          "visual_description": true,
+          "direct_visual_input": false,
+          "native_model_state": false
+        },
+        "transport": "in-process",
+        "handoff": "direct",
+        "control": {
+          "selectors": {"predicates": true, "text_policy": true, "native": false, "remote": false},
+          "arbitration": "predicate-floor"
+        }
+      }
+    },
+    {
+      "id": "omni.external-predicates",
+      "revision": 4,
+      "family": "omni-external",
+      "stage": "experimental",
+      "derived_from": [{"id": "omni.external-predicates", "revision": 3}],
+      "summary": "A native-interaction-capable foreground is controlled by one exactly attested external predicate selector.",
+      "change": "Attest single predicate-controller arbitration without changing the hybrid foreground, typed act boundary, or native-suppression contract.",
+      "ownership": {
+        "perception": "model", "fast_cognition": "model", "slow_cognition": "engine",
+        "action": "model", "interaction": "engine", "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true, "audio_output": true, "transcription": true,
+        "turn_generation": true, "concurrent_io": true, "native_floor": false,
+        "native_interaction": true, "interaction_acts": true, "text_injection": false
+      },
+      "interaction": {
+        "mode": "predicates", "evidence": "acoustic-predicates",
+        "evidence_capabilities": {
+          "transcript": false, "acoustic_activity": true, "silence_clock": true,
+          "conversation_state": false, "tool_state": false, "speaker_identity": false,
+          "addressing": false, "visual_description": false, "direct_visual_input": false,
+          "native_model_state": false
+        },
+        "transport": "sidecar", "protocol_version": 2, "handoff": "typed",
+        "native_suppression": "hello selects engine interaction; only typed interaction acts may initiate policy-controlled generation",
+        "control": {
+          "selectors": {"predicates": true, "text_policy": false, "native": false, "remote": false},
+          "arbitration": "single"
+        }
+      }
+    },
+    {
+      "id": "omni.external-policy",
+      "revision": 4,
+      "family": "omni-external",
+      "stage": "experimental",
+      "derived_from": [
+        {"id": "omni.external-policy", "revision": 3},
+        {"id": "omni.external-predicates", "revision": 4}
+      ],
+      "summary": "A native-interaction-capable foreground accepts typed acts from one exactly attested external text controller.",
+      "change": "Attest single text-policy arbitration while retaining the exact text-and-state evidence vector and native-suppression contract.",
+      "ownership": {
+        "perception": "model", "fast_cognition": "model", "slow_cognition": "engine",
+        "action": "model", "interaction": "engine", "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true, "audio_output": true, "transcription": true,
+        "turn_generation": true, "concurrent_io": true, "native_floor": false,
+        "native_interaction": true, "interaction_acts": true, "text_injection": false
+      },
+      "interaction": {
+        "mode": "text-policy", "evidence": "transcript",
+        "evidence_capabilities": {
+          "transcript": true, "acoustic_activity": true, "silence_clock": true,
+          "conversation_state": true, "tool_state": true, "speaker_identity": false,
+          "addressing": false, "visual_description": false, "direct_visual_input": false,
+          "native_model_state": false
+        },
+        "transport": "sidecar", "protocol_version": 2, "handoff": "typed",
+        "native_suppression": "hello selects engine interaction; only typed interaction acts may initiate policy-controlled generation",
+        "control": {
+          "selectors": {"predicates": false, "text_policy": true, "native": false, "remote": false},
+          "arbitration": "single"
+        }
+      }
+    },
+    {
+      "id": "omni.native-policy",
+      "revision": 3,
+      "family": "omni-native",
+      "stage": "experimental",
+      "derived_from": [
+        {"id": "omni.native-policy", "revision": 2},
+        {"id": "omni.external-policy", "revision": 4}
+      ],
+      "summary": "The same hybrid-capable foreground selects one native interaction controller while the engine retains the floor boundary.",
+      "change": "Attest single native-controller arbitration for a controlled same-foreground external/native experiment.",
+      "ownership": {
+        "perception": "model", "fast_cognition": "model", "slow_cognition": "engine",
+        "action": "model", "interaction": "model", "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true, "audio_output": true, "transcription": true,
+        "turn_generation": true, "concurrent_io": true, "native_floor": false,
+        "native_interaction": true, "interaction_acts": true, "text_injection": false
+      },
+      "interaction": {
+        "mode": "native", "evidence": "native-multimodal",
+        "evidence_capabilities": {
+          "transcript": false, "acoustic_activity": false, "silence_clock": false,
+          "conversation_state": false, "tool_state": false, "speaker_identity": false,
+          "addressing": false, "visual_description": false, "direct_visual_input": false,
+          "native_model_state": true
+        },
+        "transport": "sidecar", "protocol_version": 2, "handoff": "none",
+        "control": {
+          "selectors": {"predicates": false, "text_policy": false, "native": true, "remote": false},
+          "arbitration": "single"
+        }
+      }
+    },
+    {
+      "id": "omni.native-full",
+      "revision": 3,
+      "family": "omni-native",
+      "stage": "experimental",
+      "derived_from": [
+        {"id": "omni.native-full", "revision": 2},
+        {"id": "omni.native-policy", "revision": 3}
+      ],
+      "summary": "A concurrent multimodal foreground owns native interaction and floor under one exactly attested native controller.",
+      "change": "Add exact single-controller arbitration without absorbing slow cognition, trajectory, tools, audit, or lifecycle.",
+      "ownership": {
+        "perception": "model", "fast_cognition": "model", "slow_cognition": "engine",
+        "action": "model", "interaction": "model", "floor": "model"
+      },
+      "requires": {
+        "audio_input": true, "audio_output": true, "transcription": true,
+        "turn_generation": true, "concurrent_io": true, "native_floor": true,
+        "native_interaction": true, "interaction_acts": true, "text_injection": true
+      },
+      "interaction": {
+        "mode": "native", "evidence": "native-multimodal",
+        "evidence_capabilities": {
+          "transcript": false, "acoustic_activity": false, "silence_clock": false,
+          "conversation_state": false, "tool_state": false, "speaker_identity": false,
+          "addressing": false, "visual_description": false, "direct_visual_input": false,
+          "native_model_state": true
+        },
+        "transport": "sidecar", "protocol_version": 2, "handoff": "none",
+        "control": {
+          "selectors": {"predicates": false, "text_policy": false, "native": true, "remote": false},
+          "arbitration": "single"
+        }
+      }
+    },
+    {
+      "id": "realtime.remote",
+      "revision": 3,
+      "family": "realtime-remote",
+      "stage": "candidate",
+      "derived_from": [{"id": "realtime.remote", "revision": 2}],
+      "summary": "A remote Realtime foreground owns its live loop through one exactly attested remote controller.",
+      "change": "Add exact remote-controller arbitration while retaining external slow cognition and authority.",
+      "ownership": {
+        "perception": "remote", "fast_cognition": "remote", "slow_cognition": "engine",
+        "action": "remote", "interaction": "remote", "floor": "remote"
+      },
+      "requires": {
+        "audio_input": true, "audio_output": true, "transcription": false,
+        "turn_generation": true, "concurrent_io": false, "native_floor": false,
+        "native_interaction": false, "interaction_acts": false, "text_injection": true
+      },
+      "interaction": {
+        "mode": "remote", "evidence": "remote-multimodal",
+        "evidence_capabilities": {
+          "transcript": false, "acoustic_activity": false, "silence_clock": false,
+          "conversation_state": false, "tool_state": false, "speaker_identity": false,
+          "addressing": false, "visual_description": false, "direct_visual_input": false,
+          "native_model_state": true
+        },
+        "transport": "upstream", "handoff": "none",
+        "control": {
+          "selectors": {"predicates": false, "text_policy": false, "native": false, "remote": true},
+          "arbitration": "single"
+        }
+      }
+    }
+  ]
+}

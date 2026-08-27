@@ -24,6 +24,7 @@ import (
 	"github.com/bojieli/OpenRealtime/adapters/speakerid"
 	"github.com/bojieli/OpenRealtime/admission"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	projectarch "github.com/bojieli/OpenRealtime/architecture"
 	"github.com/bojieli/OpenRealtime/asrbuffer"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/cascade"
@@ -49,11 +50,13 @@ import (
 )
 
 type serveOptions struct {
-	listen   string
-	binding  string
-	profile  string
-	model    string
-	tokenEnv string
+	listen              string
+	binding             string
+	architectureRef     string
+	architectureCatalog string
+	profile             string
+	model               string
+	tokenEnv            string
 
 	requestTimeout  time.Duration
 	shutdownTimeout time.Duration
@@ -149,10 +152,13 @@ type serveOptions struct {
 	browserTarget   string
 	computerConfirm string
 
-	sidecarCommand string
-	sidecarAddress string
-	sidecarFloor   string
-	sidecarVoice   string
+	sidecarCommand      string
+	sidecarAddress      string
+	sidecarFloor        string
+	sidecarInteraction  string
+	sidecarCapabilities string
+	sidecarProtocol     int
+	sidecarVoice        string
 
 	clientToolTimeout time.Duration
 
@@ -182,7 +188,9 @@ func runServe(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime serve", flag.ContinueOnError)
 	var options serveOptions
 	flags.StringVar(&options.listen, "listen", "127.0.0.1:8765", "HTTP and WebSocket listen address")
-	flags.StringVar(&options.binding, "binding", "cascade", "voice stack: cascade, upstream, omni, or duplex")
+	flags.StringVar(&options.binding, "binding", "cascade", "voice stack preset: cascade, upstream, omni, omni+text-policy, duplex, or sidecar")
+	flags.StringVar(&options.architectureRef, "architecture", "", "exact architecture id@revision; resolves structural binding, ownership, capabilities, and interaction")
+	flags.StringVar(&options.architectureCatalog, "architecture-catalog", "", "external architecture catalog; empty uses the repository-owned catalog")
 	flags.StringVar(&options.profile, "profile", "voice", "runtime profile: voice or voice+vision")
 	flags.StringVar(&options.model, "model", "openrealtime", "compatibility model identifier reported to clients")
 	flags.StringVar(&options.tokenEnv, "token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token; empty disables authentication")
@@ -323,11 +331,14 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.policyModel, "policy-model", "", "policy model identity; required when a policy model is enabled")
 	flags.StringVar(&options.policyTokenEnv, "policy-token-env", "OPENREALTIME_POLICY_API_KEY", "environment variable holding the policy model credential")
 	flags.BoolVar(&options.policyGuided, "policy-guided-choice", true, "ask the policy server to constrain decoding to the enumerated options")
-	flags.StringVar(&options.sidecarCommand, "sidecar", "", "command that runs the model sidecar for the omni and duplex bindings")
+	flags.StringVar(&options.sidecarCommand, "sidecar", "", "command that runs a model sidecar")
 	flags.StringVar(&options.sidecarAddress, "sidecar-address", "", "connect to a running sidecar as tcp:host:port or unix:/path")
 	flags.DurationVar(&options.clientToolTimeout, "client-tool-timeout", clientcalls.DefaultTimeout,
 		"how long a client has to return a result for a tool it executes; a negative value waits forever")
 	flags.StringVar(&options.sidecarFloor, "floor", "", "who decides endpoints: engine or model; empty selects the binding's default")
+	flags.StringVar(&options.sidecarInteraction, "interaction-owner", "", "who selects interaction acts for a composed sidecar: engine or model")
+	flags.StringVar(&options.sidecarCapabilities, "sidecar-capabilities", "audio-input,audio-output,turn-generation", "available capabilities for -binding sidecar: audio-input, audio-output, transcription, turn-generation, concurrent-io, native-floor, native-interaction, interaction-acts, text-injection")
+	flags.IntVar(&options.sidecarProtocol, "sidecar-protocol", 0, "sidecar protocol version; 0 selects the preset default (v1, or v2 for typed interaction)")
 	flags.StringVar(&options.sidecarVoice, "sidecar-voice", "",
 		"voice for a model that has more than one; empty leaves the choice to the model")
 	flags.SetOutput(output)
@@ -405,6 +416,10 @@ func serve(options serveOptions, output io.Writer) error {
 // accumulator: there is no recogniser in the process to report on.
 func buildBinding(options serveOptions) (binding.Binding, *asrbuffer.Accumulator, error) {
 	var err error
+	options, definition, err := applyArchitectureDefinition(options)
+	if err != nil {
+		return nil, nil, err
+	}
 	options, err = normalizeProfile(options)
 	if err != nil {
 		return nil, nil, err
@@ -425,26 +440,207 @@ func buildBinding(options serveOptions) (binding.Binding, *asrbuffer.Accumulator
 	if err != nil {
 		return nil, nil, err
 	}
+	var bind binding.Binding
+	var recogniser *asrbuffer.Accumulator
 	switch bindingName {
 	case "cascade":
-		recogniser := asrbuffer.NewAccumulator()
-		bind, err := buildCascade(options, policies, governor, recogniser)
+		recogniser = asrbuffer.NewAccumulator()
+		bind, err = buildCascade(options, policies, governor, recogniser)
+	case "upstream":
+		bind, err = buildUpstream(options)
+	case "omni":
+		bind, err = buildSidecarBinding(options, "omni", interaction.Policies{}, nil)
+	case "omni+text-policy":
+		if policies.Interaction == nil {
+			return nil, nil, errors.New("omni+text-policy needs -policy-models interaction and -policy-model")
+		}
+		recogniser = asrbuffer.NewAccumulator()
+		bind, err = buildSidecarBinding(options, "omni+text-policy", policies, recogniser)
+	case "duplex":
+		bind, err = buildSidecarBinding(options, "duplex", interaction.Policies{}, nil)
+	case "sidecar":
+		if policies.Interaction != nil {
+			recogniser = asrbuffer.NewAccumulator()
+		}
+		bind, err = buildSidecarBinding(options, "sidecar", policies, recogniser)
+	default:
+		return nil, nil, fmt.Errorf("binding must be cascade, upstream, omni, omni+text-policy, duplex, or sidecar, got %q", options.binding)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	if definition != nil {
+		bind, err = projectarch.Bind(*definition, bind)
 		if err != nil {
 			return nil, nil, err
 		}
-		return bind, recogniser, nil
-	case "upstream":
-		bind, err := buildUpstream(options)
-		return bind, nil, err
-	case "omni":
-		bind, err := buildSidecarBinding(options, "omni")
-		return bind, nil, err
-	case "duplex":
-		bind, err := buildSidecarBinding(options, "duplex")
-		return bind, nil, err
-	default:
-		return nil, nil, fmt.Errorf("binding must be cascade, upstream, omni, or duplex, got %q", options.binding)
 	}
+	return bind, recogniser, nil
+}
+
+// applyArchitectureDefinition resolves the project-level architecture before
+// constructing providers. Deployment flags continue to supply concrete model
+// endpoints, credentials, and voices; the catalog is authoritative for the
+// structural choices that should not drift between serve and benchmark.
+func applyArchitectureDefinition(
+	options serveOptions,
+) (serveOptions, *projectarch.Definition, error) {
+	if strings.TrimSpace(options.architectureRef) == "" {
+		if strings.TrimSpace(options.architectureCatalog) != "" {
+			return options, nil, errors.New("-architecture-catalog requires -architecture")
+		}
+		return options, nil, nil
+	}
+	catalog, err := loadArchitectureCatalog(options.architectureCatalog)
+	if err != nil {
+		return options, nil, err
+	}
+	definition, err := catalog.Resolve(options.architectureRef)
+	if err != nil {
+		return options, nil, err
+	}
+	topology, err := definition.Topology()
+	if err != nil {
+		return options, nil, err
+	}
+	bindingName := map[projectarch.Topology]string{
+		projectarch.TopologyComponents: "cascade",
+		projectarch.TopologySidecar:    "sidecar",
+		projectarch.TopologyUpstream:   "upstream",
+	}[topology]
+	if options.chose("binding") && !strings.EqualFold(strings.TrimSpace(options.binding), bindingName) {
+		return options, nil, fmt.Errorf("architecture %s requires %s binding machinery, not %q",
+			definition.Ref(), bindingName, options.binding)
+	}
+	options.binding = bindingName
+
+	if topology == projectarch.TopologySidecar {
+		floor := string(definition.Ownership.Floor)
+		interactionOwner := string(definition.Ownership.Interaction)
+		if options.chose("floor") && strings.TrimSpace(options.sidecarFloor) != floor {
+			return options, nil, fmt.Errorf("architecture %s selects %s floor ownership", definition.Ref(), floor)
+		}
+		if options.chose("interaction-owner") && strings.TrimSpace(options.sidecarInteraction) != interactionOwner {
+			return options, nil, fmt.Errorf("architecture %s selects %s interaction ownership", definition.Ref(), interactionOwner)
+		}
+		options.sidecarFloor = floor
+		options.sidecarInteraction = interactionOwner
+		if options.chose("sidecar-capabilities") {
+			available, err := parseStackCapabilities(options.sidecarCapabilities)
+			if err != nil {
+				return options, nil, err
+			}
+			if missing := available.Missing(definition.Requires); len(missing) > 0 {
+				return options, nil, fmt.Errorf("architecture %s needs sidecar capabilities %s",
+					definition.Ref(), strings.Join(missing, ", "))
+			}
+		} else {
+			options.sidecarCapabilities = strings.Join(definition.Requires.Names(), ",")
+		}
+		if options.chose("sidecar-protocol") && options.sidecarProtocol != definition.Interaction.ProtocolVersion {
+			return options, nil, fmt.Errorf("architecture %s requires sidecar protocol v%d",
+				definition.Ref(), definition.Interaction.ProtocolVersion)
+		}
+		options.sidecarProtocol = definition.Interaction.ProtocolVersion
+	}
+
+	hasInteraction := policySelectionHasInteraction(options.policies)
+	switch definition.Interaction.Mode {
+	case projectarch.InteractionTextPolicy, projectarch.InteractionComposed:
+		if options.chose("policy-models") && !hasInteraction {
+			return options, nil, fmt.Errorf("architecture %s requires the interaction policy model", definition.Ref())
+		}
+		if !hasInteraction {
+			options.policies = "interaction"
+		}
+	case projectarch.InteractionPredicates, projectarch.InteractionNative, projectarch.InteractionRemote:
+		if hasInteraction {
+			return options, nil, fmt.Errorf("architecture %s does not select an external interaction model", definition.Ref())
+		}
+	}
+	if control := definition.Interaction.Control; control != nil {
+		if topology == projectarch.TopologyComponents {
+			modelOwnsFloor := control.Selectors.TextPolicy && control.Arbitration == "single"
+			if options.chose("interaction-floor") && options.interactionFloor != modelOwnsFloor {
+				return options, nil, fmt.Errorf(
+					"architecture %s selects interaction-floor=%t through %q arbitration",
+					definition.Ref(), modelOwnsFloor, control.Arbitration)
+			}
+			options.interactionFloor = modelOwnsFloor
+		} else if control.Arbitration == "predicate-floor" {
+			return options, nil, fmt.Errorf(
+				"architecture %s selects predicate-floor arbitration, which the %s topology cannot currently realise",
+				definition.Ref(), topology)
+		}
+	}
+	if expected := definition.Interaction.EvidenceCapabilities; expected != nil {
+		if expected.Addressing {
+			return options, nil, fmt.Errorf(
+				"architecture %s selects addressing evidence, but no configured runtime component can produce it",
+				definition.Ref())
+		}
+		// These composition slots currently belong to the component topology.
+		// They are derived from data in the definition rather than from an
+		// architecture-name switch, so an external catalog can compose another
+		// supported vector without adding a new binding species.
+		if topology == projectarch.TopologyComponents && definition.Interaction.UsesTextPolicy() {
+			if options.chose("interaction-sees") && options.interactionSees != expected.DirectVisualInput {
+				return options, nil, fmt.Errorf(
+					"architecture %s selects direct_visual_input=%t",
+					definition.Ref(), expected.DirectVisualInput)
+			}
+			options.interactionSees = expected.DirectVisualInput
+
+			if expected.VisualDescription && !options.chose("observers") {
+				options.observers = "audio+video"
+			}
+			observerSet, parseErr := perception.ParseObserverSet(options.observers)
+			if parseErr != nil {
+				return options, nil, parseErr
+			}
+			hasVisualDescription := observerSet != perception.SetAudioOnly
+			if hasVisualDescription != expected.VisualDescription {
+				return options, nil, fmt.Errorf(
+					"architecture %s selects visual_description=%t, while observer set %q supplies it=%t",
+					definition.Ref(), expected.VisualDescription, options.observers, hasVisualDescription)
+			}
+			if expected.DirectVisualInput {
+				if !options.chose("observer-components") {
+					options.components = string(perception.ComponentKeyframeNarration)
+				}
+				components, componentsErr := perception.ParseComponents(options.components)
+				if componentsErr != nil {
+					return options, nil, componentsErr
+				}
+				if components == perception.ComponentNarrationOnly {
+					return options, nil, fmt.Errorf(
+						"architecture %s selects direct visual input and requires retained keyframes",
+						definition.Ref())
+				}
+			}
+			hasSpeakerIdentity := strings.TrimSpace(options.speakerURL) != ""
+			if expected.SpeakerIdentity && !hasSpeakerIdentity {
+				return options, nil, fmt.Errorf(
+					"architecture %s selects speaker_identity evidence and needs -speaker-url",
+					definition.Ref())
+			}
+			if !expected.SpeakerIdentity && hasSpeakerIdentity {
+				return options, nil, fmt.Errorf(
+					"architecture %s excludes speaker_identity evidence; select a speaker-aware architecture revision",
+					definition.Ref())
+			}
+		}
+	}
+	return options, &definition, nil
+}
+
+func policySelectionHasInteraction(value string) bool {
+	for _, name := range strings.Split(strings.ToLower(value), ",") {
+		if strings.TrimSpace(name) == "interaction" {
+			return true
+		}
+	}
+	return false
 }
 
 // recogniserReport adapts the accumulator to the gateway's reporting shape.
@@ -658,6 +854,12 @@ func applyPolicyModels(
 			return err
 		}
 		policies.Floor = floor
+		bargeIn, err := interaction.NewActBargeIn(
+			policies.Interaction, interaction.ActBargeInOptions{})
+		if err != nil {
+			return err
+		}
+		policies.BargeIn = bargeIn
 	}
 	return nil
 }
@@ -714,19 +916,33 @@ func buildCascade(
 	if err != nil {
 		return nil, fmt.Errorf("configure the recogniser: %w", err)
 	}
+	probe, err := recognise()
+	if err != nil {
+		return nil, fmt.Errorf("describe the recogniser: %w", err)
+	}
+	perceptionDescriptor := probe.Descriptor()
+	if closer, ok := probe.(io.Closer); ok {
+		_ = closer.Close()
+	}
 	var listener voices.Embedder
+	var speakerDescriptor v1.Descriptor
 	if endpoint := strings.TrimSpace(options.speakerURL); endpoint != "" {
 		embedder, err := speakerid.New(speakerid.Config{Endpoint: endpoint})
 		if err != nil {
 			return nil, fmt.Errorf("configure the speaker embedding: %w", err)
 		}
 		listener = embedder
+		speakerDescriptor = v1.Descriptor{
+			Name: "speakerid/http", Version: speakerid.AdapterVersion,
+			Capabilities: v1.Capabilities{},
+		}
 	}
 	return cascade.New(cascade.Config{
-		Profile:           options.profile,
-		Voices:            listener,
-		ClientToolTimeout: options.clientToolTimeout,
-		Observers:         observers, DefaultObservers: defaults, Tools: computer.specs,
+		Profile:                   options.profile,
+		Voices:                    listener,
+		SpeakerIdentityDescriptor: speakerDescriptor,
+		ClientToolTimeout:         options.clientToolTimeout,
+		Observers:                 observers, DefaultObservers: defaults, Tools: computer.specs,
 		Narrator:          narrator,
 		DeciderSees:       options.interactionSees,
 		ProfileTurns:      options.profileTurns,
@@ -750,7 +966,8 @@ func buildCascade(
 			}
 			return recogniserMetrics.New(asrbuffer.Config{Provider: recogniser, MinimumChunk: options.asrCadence})
 		},
-		ASRCadence: options.asrCadence, HoldingAfter: options.holdingAfter,
+		PerceptionDescriptor: perceptionDescriptor,
+		ASRCadence:           options.asrCadence, HoldingAfter: options.holdingAfter,
 		Fast: fast, Slow: slow, Speech: speech,
 		Voice:         options.ttsVoice,
 		FastMaxTokens: options.fastTokens, SlowMaxTokens: options.slowTokens,
@@ -1180,13 +1397,13 @@ func startWebRTC(options serveOptions, serveError chan error) (*http.Server, err
 }
 
 // buildSidecarBinding configures a model that lives behind a process boundary.
-//
-// The floor flag is the F5 comparison made available on the command line: an
-// Omni model defaults to the engine's floor because voice activity detection
-// mis-endpoints on spelled identifiers, and a duplex model defaults to its own
-// because turn-taking is in its weights. Either can be flipped, which is what
-// makes the claim measurable rather than asserted.
-func buildSidecarBinding(options serveOptions, name string) (binding.Binding, error) {
+// Named presets remain convenient defaults; the generic sidecar case parses a
+// capability vector and independent floor/interaction owners, so a new
+// combination is configuration rather than a new switch branch.
+func buildSidecarBinding(
+	options serveOptions, name string, policies interaction.Policies,
+	recogniserMetrics *asrbuffer.Accumulator,
+) (binding.Binding, error) {
 	if strings.TrimSpace(options.sidecarCommand) == "" && strings.TrimSpace(options.sidecarAddress) == "" {
 		return nil, fmt.Errorf("the %s binding needs -sidecar or -sidecar-address", name)
 	}
@@ -1196,8 +1413,9 @@ func buildSidecarBinding(options serveOptions, name string) (binding.Binding, er
 	}
 	config := sidecarbinding.Config{
 		Sidecar: sidecar.Config{
-			Command: strings.Fields(options.sidecarCommand),
-			Address: options.sidecarAddress,
+			Command:         strings.Fields(options.sidecarCommand),
+			Address:         options.sidecarAddress,
+			ProtocolVersion: options.sidecarProtocol,
 			Logf: func(format string, values ...any) {
 				fmt.Fprintf(os.Stderr, format+"\n", values...)
 			},
@@ -1206,19 +1424,147 @@ func buildSidecarBinding(options serveOptions, name string) (binding.Binding, er
 		Voice:             options.sidecarVoice,
 		ClientToolTimeout: options.clientToolTimeout,
 	}
+	if policies.Interaction != nil {
+		recognise, err := buildRecogniser(options)
+		if err != nil {
+			return nil, fmt.Errorf("configure interaction recogniser: %w", err)
+		}
+		if recogniserMetrics == nil {
+			return nil, errors.New("engine interaction policy requires recogniser metrics")
+		}
+		// Capture the descriptor now, before the first utterance lazily opens its
+		// recogniser. Constructors validate configuration but do no recognition;
+		// this gives session evidence an exact adapter/model revision without
+		// moving a network call onto startup or sharing utterance state.
+		probe, err := recognise()
+		if err != nil {
+			return nil, fmt.Errorf("describe interaction recogniser: %w", err)
+		}
+		config.InteractionPerceptionDescriptor = probe.Descriptor()
+		if closer, ok := probe.(io.Closer); ok {
+			_ = closer.Close()
+		}
+		config.Policies = policies
+		config.InteractionCadence = options.asrCadence
+		config.InteractionPerception = func() (v1.PerceptionProvider, error) {
+			provider, err := recognise()
+			if err != nil {
+				return nil, err
+			}
+			return recogniserMetrics.New(asrbuffer.Config{
+				Provider: provider, MinimumChunk: options.asrCadence,
+			})
+		}
+		if config.Sidecar.ProtocolVersion == 0 {
+			config.Sidecar.ProtocolVersion = sidecar.VersionInteraction
+		}
+	}
 	floor := strings.ToLower(strings.TrimSpace(options.sidecarFloor))
 	switch name {
 	case "omni":
+		if owner := strings.TrimSpace(options.sidecarInteraction); owner != "" && owner != "engine" {
+			return nil, errors.New("the omni preset selects engine interaction; use -binding sidecar for another composition")
+		}
 		if floor == "model" {
 			return omni.NewWithModelFloor(config)
 		}
+		if floor != "" && floor != "engine" {
+			return nil, fmt.Errorf("floor must be engine or model, got %q", floor)
+		}
 		return omni.New(config)
-	default:
+	case "omni+text-policy":
+		if floor != "" && floor != "engine" {
+			return nil, errors.New("omni+text-policy selects an engine floor; use -binding sidecar for another composition")
+		}
+		if owner := strings.TrimSpace(options.sidecarInteraction); owner != "" && owner != "engine" {
+			return nil, errors.New("omni+text-policy selects engine interaction")
+		}
+		return omni.NewWithTextPolicy(config)
+	case "duplex":
+		if owner := strings.TrimSpace(options.sidecarInteraction); owner != "" && owner != "model" {
+			return nil, errors.New("the duplex preset selects model interaction; use -binding sidecar for another composition")
+		}
 		if floor == "engine" {
 			return duplex.NewWithEngineFloor(config)
 		}
+		if floor != "" && floor != "model" {
+			return nil, fmt.Errorf("floor must be engine or model, got %q", floor)
+		}
 		return duplex.New(config)
+	case "sidecar":
+		capabilities, err := parseStackCapabilities(options.sidecarCapabilities)
+		if err != nil {
+			return nil, err
+		}
+		floorOwner, err := parseSidecarOwner("floor", floor, binding.OwnerEngine)
+		if err != nil {
+			return nil, err
+		}
+		interactionOwner, err := parseSidecarOwner(
+			"interaction", strings.ToLower(strings.TrimSpace(options.sidecarInteraction)), binding.OwnerEngine)
+		if err != nil {
+			return nil, err
+		}
+		spec := sidecarbinding.Spec{
+			Name: "sidecar",
+			Ownership: binding.Ownership{
+				Perception: binding.OwnerModel, FastCognition: binding.OwnerModel,
+				SlowCognition: binding.OwnerEngine, Action: binding.OwnerModel,
+				Interaction: interactionOwner, Floor: floorOwner,
+			},
+			Capabilities: capabilities,
+		}
+		if config.Policies.Interaction != nil {
+			config.Policies = sidecarbinding.ExternalInteractionPolicies(spec, config.Policies)
+		}
+		return sidecarbinding.New(spec, config)
+	default:
+		return nil, fmt.Errorf("unknown sidecar preset %q", name)
 	}
+}
+
+func parseSidecarOwner(field, value string, fallback binding.Owner) (binding.Owner, error) {
+	switch value {
+	case "":
+		return fallback, nil
+	case "engine":
+		return binding.OwnerEngine, nil
+	case "model":
+		return binding.OwnerModel, nil
+	default:
+		return "", fmt.Errorf("%s owner must be engine or model, got %q", field, value)
+	}
+}
+
+func parseStackCapabilities(raw string) (binding.StackCapabilities, error) {
+	var capabilities binding.StackCapabilities
+	for _, item := range strings.Split(strings.ToLower(raw), ",") {
+		name := strings.ReplaceAll(strings.TrimSpace(item), "_", "-")
+		switch name {
+		case "":
+		case "audio-input":
+			capabilities.AudioInput = true
+		case "audio-output":
+			capabilities.AudioOutput = true
+		case "transcription":
+			capabilities.Transcription = true
+		case "turn-generation":
+			capabilities.TurnGeneration = true
+		case "concurrent-io", "full-duplex":
+			capabilities.ConcurrentIO = true
+		case "native-floor":
+			capabilities.NativeFloor = true
+		case "native-interaction":
+			capabilities.NativeInteraction = true
+		case "interaction-acts":
+			capabilities.InteractionActs = true
+		case "text-injection":
+			capabilities.TextInjection = true
+		default:
+			return binding.StackCapabilities{}, fmt.Errorf("unknown sidecar capability %q", item)
+		}
+	}
+	return capabilities, nil
 }
 
 // buildComputerUse declares the action vocabulary against a real target.
