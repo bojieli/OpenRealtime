@@ -303,7 +303,7 @@ func (runtime *runtime) runFast(
 		// committed pieces got four replies: "I'm listening", "I'm ready,
 		// please list the animals", twice more, and then a count before any
 		// animal had been mentioned.
-		runtime.markSpoken(strings.Join(mustSpeechSoFar(runtime.store.Snapshot()), " "))
+		runtime.markSpoken(everythingSaid(runtime.store.Snapshot()))
 	}
 	var signalErr error
 	// A turn the voice did not declare finished goes to the reasoner. So does

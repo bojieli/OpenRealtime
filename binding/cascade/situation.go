@@ -563,13 +563,6 @@ func (runtime *runtime) settingAPolicy(snapshot trajectory.Snapshot) bool {
 	return beganWith(pinnedFrom, strings.Join(pieces, " "))
 }
 
-// mustSpeechSoFar is speechSoFar without the turn key, for callers that only
-// need what was said.
-func mustSpeechSoFar(snapshot trajectory.Snapshot) []string {
-	pieces, _ := speechSoFar(snapshot)
-	return pieces
-}
-
 // withoutEchoesOf drops conversation lines whose words are already inside the
 // utterance being read.
 func withoutEchoesOf(lines []string, utterance string) []string {
@@ -734,21 +727,45 @@ func (runtime *runtime) alreadyAnsweredFor(snapshot trajectory.Snapshot) string 
 	if mark == "" {
 		return ""
 	}
-	// The whole of what they are saying, not the last piece of it. A
-	// recogniser commits where the speaker breathes, so one sentence arrives
-	// as several: "A capybara wandered over." then "and sat down next to me."
-	// Compared against the last piece, the mark left by speaking into the
-	// first one is not a prefix of the second, so the turn that ran on it was
-	// told nothing had been answered - and one animal got two numbers. It is
-	// the same unit a request is read in, for the same reason.
-	pieces, _ := speechSoFar(snapshot)
-	if len(pieces) == 0 {
-		return ""
-	}
-	if !beganWith(mark, strings.Join(pieces, " ")) {
+	// Everything they have said, not the turn they are in. These are two
+	// different questions and they were sharing an answer.
+	//
+	// A request is read in the turn it was made in, and a turn ends when the
+	// agent speaks. How much the agent has covered cannot use that unit: the
+	// mark is taken at the moment the agent speaks, so the turn it would be
+	// compared against starts immediately after it, and the mark is never a
+	// prefix of it. Measured, the fact went missing from the voice entirely on
+	// every reading after the first interjection, and one animal collected
+	// "one two three four".
+	//
+	// Speaking does not unsay what somebody said. The person's own speech runs
+	// on through the agent's interjections, so that is what this measures
+	// against, and the mark is always a prefix of it.
+	said := everythingSaid(snapshot)
+	if said == "" || !beganWith(mark, said) {
 		return ""
 	}
 	return mark
+}
+
+// everythingSaid is all of this person's speech in the conversation, joined,
+// oldest first. It is not bounded by the agent's own turns: an agent speaking
+// does not unsay what somebody said.
+func everythingSaid(snapshot trajectory.Snapshot) string {
+	items := trajectory.WithoutSupersededPartials(snapshot.Items)
+	var pieces []string
+	for _, item := range items {
+		if item.Kind != trajectory.KindObservation {
+			continue
+		}
+		if trajectory.AuthorityOf(item) != trajectory.AuthorityUser {
+			continue
+		}
+		if text := strings.TrimSpace(item.Content); text != "" {
+			pieces = append(pieces, text)
+		}
+	}
+	return strings.Join(pieces, " ")
 }
 
 // beganWith reports that a committed utterance starts with what the agent

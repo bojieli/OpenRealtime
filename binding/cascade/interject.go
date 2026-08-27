@@ -275,7 +275,7 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		// heardSinceSpeaking still trims what the voice is shown, which is a
 		// different question: what is new to say something about, rather than
 		// how much has been covered.
-		runtime.markSpoken(strings.Join(mustSpeechSoFar(runtime.store.Snapshot()), " "))
+		runtime.markSpoken(everythingSaid(runtime.store.Snapshot()))
 		if len(standing) > 0 {
 			// A policy has now been acted on, so no later sentence is the one
 			// that set it.
