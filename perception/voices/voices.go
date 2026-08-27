@@ -45,12 +45,24 @@ type Embedder interface {
 // DefaultThreshold is the cosine similarity above which two utterances are the
 // same person.
 //
-// Measured with ECAPA-TDNN over the benchmark's own voices, with each speaker
-// enrolled from a fixed reference: the same speaker scores 0.60 and 0.77
-// across different sentences, and different speakers score 0.15 to 0.17. The
-// gap is wide enough that the exact number hardly matters, which is the point
-// - a threshold picked in the middle of a gap that size is not a tuned
-// constant, it is a reading of a bimodal measurement.
+// Two corpora, deliberately, because a threshold read off the benchmark it is
+// then scored on is a property of the benchmark rather than of the embedder.
+//
+//	same speaker, unrelated corpus, whole recordings   0.796 to 0.950
+//	same speaker, unrelated corpus, halves of one      0.571 to 0.782
+//	same speaker, the benchmark's voices               0.60 and 0.77
+//	different speakers, the benchmark's voices         0.15 to 0.17
+//
+// The first two rows come from audio that has nothing to do with any scenario
+// here, measured by tools/speakerid/calibrate.py, which needs no labels: the
+// two halves of one recording are the same speaker by construction. They put
+// the same-speaker floor at about 0.57 even for segments only a second or two
+// long, which is the hard case. The benchmark supplies the other side.
+//
+// Nothing observed falls between 0.18 and 0.56. A threshold in the middle of a
+// gap that wide is a reading of a bimodal measurement rather than a tuned
+// constant, and the calibrator is checked in so the reading can be repeated on
+// any corpus - including one that disagrees.
 const DefaultThreshold = 0.40
 
 // DefaultMinimum is how much speech is needed before asking.
