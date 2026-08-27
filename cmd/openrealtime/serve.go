@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -367,11 +368,17 @@ func serve(options serveOptions, output io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// Set when the models a turn waits on have answered once. Health reports
+	// warming until then, because a caller that asks whether the server is
+	// ready is asking whether its next turn will be answered properly.
+	var warmed atomic.Bool
+
 	server, err := gateway.New(gateway.Config{
 		Binding: bind, Token: os.Getenv(options.tokenEnv), Model: options.model,
 		TranscriptionModel: options.asrModel, ValidateWire: options.validateWire,
 		Logger: logger, Demo: demoHandler(options.demo),
 		Recogniser: recogniserReport(recogniser),
+		Warm:       warmed.Load,
 	})
 	if err != nil {
 		return err
@@ -386,7 +393,10 @@ func serve(options serveOptions, output io.Writer) error {
 	go func() { serveError <- httpServer.ListenAndServe() }()
 	fmt.Fprintf(output, "OpenRealtime %s listening on http://%s/v1/realtime\n", bind.Name(), options.listen)
 	fmt.Fprintf(output, "  health   http://%s/healthz\n", options.listen)
-	go warmModels(ctx, options)
+	go func() {
+		warmModels(ctx, options)
+		warmed.Store(true)
+	}()
 
 	var webrtcServer *http.Server
 	if strings.TrimSpace(options.webrtcListen) != "" {

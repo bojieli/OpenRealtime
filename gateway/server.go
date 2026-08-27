@@ -79,6 +79,16 @@ type Config struct {
 	// than reported as zero. A zero would read as a recogniser answering
 	// instantly, which is the opposite of the truth.
 	Recogniser func() RecogniserSnapshot
+	// Warm reports whether the models a turn waits on have answered once. It
+	// is optional: unset means nothing to wait for.
+	//
+	// Health is what a caller asks before deciding the server is ready, and a
+	// local model server answers its own health long before it answers a
+	// request at speed. Reporting ok while the first turn will be degraded
+	// answers a different question than the one being asked - measured, the
+	// first call after start failed the control scenario and the next nine
+	// passed, ten times out of ten.
+	Warm func() bool
 	// Logger receives structured operational events. It never receives
 	// conversation content: a log that leaked what was said would be a worse
 	// problem than having no log.
@@ -181,9 +191,17 @@ func (server *Server) readLimit() int64 {
 
 func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
 	writer.Header().Set("Content-Type", "application/json")
-	writer.WriteHeader(http.StatusOK)
+	warm := server.config.Warm == nil || server.config.Warm()
+	status := "ok"
+	if !warm {
+		// Serving, and not yet ready to be measured or routed to.
+		status = "warming"
+		writer.WriteHeader(http.StatusServiceUnavailable)
+	} else {
+		writer.WriteHeader(http.StatusOK)
+	}
 	payload := map[string]any{
-		"status": "ok", "model": server.config.Model,
+		"status": status, "model": server.config.Model,
 		"binding":      server.config.Binding.Name(),
 		"ownership":    server.config.Binding.Ownership().Effective(),
 		"capabilities": server.config.Binding.Capabilities(),
