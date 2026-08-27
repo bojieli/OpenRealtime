@@ -243,7 +243,7 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		// worth saying then.
 		ctx, cancel := context.WithTimeout(runtime.ctx, interjectionDeadline)
 		defer cancel()
-		err := runtime.runFast(ctx, request, &turnReport{}, true)
+		err := runtime.runFast(ctx, request, &turnReport{}, true, false)
 		// Silent to the caller and not to the operator. Swallowing it outright
 		// traded a noisy bug for an invisible one, and worse: it made me read
 		// the absence of these records as the absence of the thing they record.
@@ -613,7 +613,7 @@ func (runtime *runtime) speakIntoSilence(
 		}
 		ctx, cancel := context.WithTimeout(runtime.ctx, interjectionDeadline)
 		defer cancel()
-		err := runtime.runFast(ctx, request, &turnReport{}, true)
+		err := runtime.runFast(ctx, request, &turnReport{}, true, false)
 		if recorder := runtime.policies.ShadowInteraction; recorder != nil {
 			outcome := "spoke"
 			if err != nil {

@@ -438,6 +438,10 @@ func (runtime *runtime) heldTooLong(nowNS uint64) bool {
 // revisions arrive. Both are the interaction plane's decision; carrying it out
 // is here.
 func (runtime *runtime) onUserSpeechStarted(ctx context.Context, utteranceID string, startMS int) error {
+	// Acoustic onset is new evidence before recognition has words for it. The
+	// caller has begun their opportunity to answer the outstanding request, so
+	// a later continuation may ask whatever that new utterance makes useful.
+	runtime.clearSolicitation("")
 	// A new utterance is a new question about who is talking. What was
 	// heard of the last one is not evidence about this one.
 	runtime.voices.Begin(utteranceID)
@@ -856,6 +860,9 @@ func (runtime *runtime) Text(ctx context.Context, input binding.TextInput) error
 		// A system message from a client is not the user talking. It is
 		// context, and it must not be able to act like a request.
 		authority = trajectory.AuthorityObserver
+	}
+	if authority == trajectory.AuthorityUser {
+		runtime.clearSolicitation("")
 	}
 	text := strings.TrimSpace(input.Text)
 	media, err := runtime.retain(input.Images)

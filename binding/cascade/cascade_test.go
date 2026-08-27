@@ -459,6 +459,68 @@ func TestBackgroundResultDoesNotRepeatTheSameResponseForOneRevision(t *testing.T
 	}
 }
 
+// A background result may teach the voice enough to ask a better question,
+// but the caller is already answering the one the voice asked first. Speaking
+// both before any new user evidence turns one request into an interrogation
+// pile-up: measured in a retail call, every identity answer received a second
+// clarification, the caller began spelling over it, and the agent eventually
+// treated the overlap it created as a communication failure.
+func TestBackgroundResultDoesNotAskASecondQuestionBeforeTheFirstIsAnswered(t *testing.T) {
+	const (
+		first  = "Please provide your email address."
+		second = "Could you provide your name and zip code?"
+	)
+	fast := newFast(
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: first}},
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: second}},
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: second}},
+	)
+	slow := newSlow([]continuation.Event{{
+		Kind: continuation.EventAssistantDelta,
+		Text: "Name and zip code are an alternative authentication path.",
+	}})
+	runtime, sink := startSession(t, cascade.Config{Fast: fast, Slow: slow}, binding.Settings{})
+
+	speak(t, runtime, 3)
+	waitFor(t, func() bool { return fast.invocations() >= 2 }, "the background result was never considered")
+	if spoken := sink.spokenTexts(); len(spoken) != 1 || spoken[0] != first {
+		t.Fatalf("one observation stacked questions before the caller could answer: %#v", spoken)
+	}
+
+	// The same question after another user observation is no longer stacked:
+	// what they just said may have answered the first question or changed what
+	// clarification is useful.
+	speak(t, runtime, 3)
+	waitFor(t, func() bool { return fast.invocations() >= 3 }, "the next observation was not answered")
+	waitFor(t, func() bool { return len(sink.spokenTexts()) >= 2 }, "the new observation's question was suppressed")
+	if spoken := sink.spokenTexts(); len(spoken) != 2 || spoken[1] != second {
+		t.Fatalf("a later observation did not reopen clarification: %#v", spoken)
+	}
+}
+
+func TestBackgroundResultStillAddsAFactAfterAQuestion(t *testing.T) {
+	fast := newFast(
+		[]continuation.Event{{
+			Kind: continuation.EventAssistantDelta, Text: "Could you provide your email address?",
+		}},
+		[]continuation.Event{{
+			Kind: continuation.EventAssistantDelta, Text: "Name and zip code are accepted instead.",
+		}},
+	)
+	slow := newSlow([]continuation.Event{{
+		Kind: continuation.EventAssistantDelta,
+		Text: "The authentication policy also accepts a name and zip code.",
+	}})
+	runtime, sink := startSession(t, cascade.Config{Fast: fast, Slow: slow}, binding.Settings{})
+
+	speak(t, runtime, 3)
+	waitFor(t, func() bool { return fast.invocations() >= 2 }, "the factual background result was never voiced")
+	waitFor(t, func() bool { return len(sink.spokenTexts()) >= 2 }, "the factual background result was suppressed")
+	if spoken := sink.spokenTexts(); len(spoken) != 2 || spoken[1] != "Name and zip code are accepted instead." {
+		t.Fatalf("a fact was mistaken for a second question: %#v", spoken)
+	}
+}
+
 func TestSlowToolCallsReachTheClientAndResultsResumeTheTurn(t *testing.T) {
 	fast := newFast(
 		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking."}},
@@ -571,6 +633,47 @@ func TestFailedToolReportDoesNotAutomaticallyRetrySlow(t *testing.T) {
 	// the terminal failure handoff must not disable future reasoning.
 	speak(t, runtime, 3)
 	waitFor(t, func() bool { return slow.invocations() >= 2 }, "new user evidence did not reopen slow cognition")
+}
+
+func TestFailedToolDoesNotAskASecondQuestionBeforeTheFirstIsAnswered(t *testing.T) {
+	const (
+		first  = "Could you confirm the account ID?"
+		second = "Please provide another account ID."
+	)
+	fast := newFast(
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: first}},
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: second}},
+		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: second}},
+	)
+	slow := newSlow([]continuation.Event{{
+		Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+			CallID: "lookup_1", Name: "get_balance", Arguments: json.RawMessage(`{"account":"A1"}`),
+		},
+	}})
+	runtime, sink := startSession(t, cascade.Config{
+		Fast: fast, Slow: slow,
+		Tools: []action.ToolSpec{{
+			Name: "get_balance", Description: "read a balance",
+			Parameters: json.RawMessage(`{"type":"object"}`), Confirm: action.ConfirmNever,
+			Dispatcher: action.DispatcherFunc(func(
+				context.Context, trajectory.ToolCall,
+			) (trajectory.ToolResult, error) {
+				return trajectory.ToolResult{}, errors.New("balance service unavailable")
+			}),
+		}},
+	}, binding.Settings{})
+
+	speak(t, runtime, 3)
+	waitFor(t, func() bool { return fast.invocations() >= 2 }, "the failed result was not returned to the voice")
+	if spoken := sink.spokenTexts(); len(spoken) != 1 || spoken[0] != first {
+		t.Fatalf("a failed tool stacked a second question without user evidence: %#v", spoken)
+	}
+
+	speak(t, runtime, 3)
+	waitFor(t, func() bool { return len(sink.spokenTexts()) >= 2 }, "new user evidence did not reopen clarification")
+	if spoken := sink.spokenTexts(); len(spoken) != 2 || spoken[1] != second {
+		t.Fatalf("a later user observation did not reopen the failed lookup: %#v", spoken)
+	}
 }
 
 func TestFastProposalsNeverBecomeSpeechOrExecutableCalls(t *testing.T) {

@@ -72,6 +72,12 @@ type runtime struct {
 	// nevertheless overtaken the response. Deliberate interjections are excluded:
 	// continued user speech is their premise, not a reason to cancel them.
 	ordinaryFastRunning atomic.Int32
+	// solicitationID is the ordinary spoken/text commitment currently waiting
+	// for the other person to answer. It is claimed synchronously at the action
+	// boundary so a continuation racing the append-only visibility event cannot
+	// queue a second request first.
+	solicitationMu sync.Mutex
+	solicitationID string
 
 	settingsMu sync.RWMutex
 	settings   binding.Settings

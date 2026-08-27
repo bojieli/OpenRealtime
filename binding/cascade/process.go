@@ -223,9 +223,10 @@ func (runtime *runtime) runStep(
 			runtime.noteInterject("the result is worth saying, and not at this moment")
 			return nil
 		}
-		handsOn := step.Reason == interaction.ReasonBackgroundResult ||
+		backgroundResult := step.Reason == interaction.ReasonBackgroundResult
+		handsOn := backgroundResult ||
 			step.Reason == interaction.ReasonToolFailure || plansSlow
-		return runtime.runFast(ctx, request, turn, handsOn)
+		return runtime.runFast(ctx, request, turn, handsOn, true)
 	case interaction.StepSlow:
 		return runtime.runSlow(ctx, request, turn)
 	default:
@@ -240,7 +241,8 @@ func (runtime *runtime) runStep(
 // answered; in the second, handing on would retry a failed action without new
 // evidence. The next thing the user says opens the question again either way.
 func (runtime *runtime) runFast(
-	ctx context.Context, request cognition.Request, turn *turnReport, alreadyHandedOn bool,
+	ctx context.Context, request cognition.Request, turn *turnReport,
+	alreadyHandedOn, guardSolicitation bool,
 ) error {
 	if !request.Interjecting {
 		runtime.ordinaryFastRunning.Add(1)
@@ -288,7 +290,7 @@ func (runtime *runtime) runFast(
 		dispatchErr = runtime.dispatch(ctx, result)
 	}
 	publishBegan := runtime.scheduler.NowNS()
-	publishErr := runtime.publishAssistant(ctx, result, request)
+	publishErr := runtime.publishAssistant(ctx, result, request, guardSolicitation)
 	turn.stage("publish", runtime.scheduler.NowNS()-publishBegan)
 	var signalErr error
 	// A turn the voice did not declare finished goes to the reasoner. So does
@@ -488,7 +490,7 @@ func (runtime *runtime) breakSilenceWhileDeliberating(
 			holding := request
 			holding.Holding = true
 			// Handed on already: the reasoning this is reporting on is running.
-			err := runtime.runFast(ctx, holding, turn, true)
+			err := runtime.runFast(ctx, holding, turn, true, false)
 			// A holding turn overtaken by the answer arriving is the outcome
 			// this whole mechanism is hoping for, not a fault. The reasoner
 			// finishing cancels the turn's context, and a continuation cut off
@@ -634,6 +636,7 @@ func (runtime *runtime) noteVoiceTurn(request cognition.Request) {
 // produced nothing.
 func (runtime *runtime) publishAssistant(
 	ctx context.Context, result continuation.RunResult, request cognition.Request,
+	guardSolicitation bool,
 ) error {
 	if strings.TrimSpace(result.AssistantText) == "" || !result.Committed {
 		runtime.noteWithheld(result, request, "the model said nothing that reached a safe point")
@@ -677,6 +680,14 @@ func (runtime *runtime) publishAssistant(
 		// to a recording that could not hear it and was still talking.
 		return runtime.withholdAssistant(result, request, "the voice chose to stay silent")
 	}
+	// A question creates an obligation for the other person to answer. Slow
+	// work finishing may give the voice a different clarification to ask, but
+	// it does not erase the first obligation and it contributes no new user
+	// evidence. Queuing both questions turns one request into an interrogation
+	// pile-up: measured in a retail call, every identity answer received a
+	// second clarification, the caller began spelling over it, and the agent
+	// eventually treated the overlap it created as a communication failure.
+	//
 	// A background result is voiced by a fresh fast continuation. If the slow
 	// phase added nothing, that continuation can produce the same sentence the
 	// first fast turn already queued. Both are individually valid outputs, but
@@ -715,12 +726,23 @@ func (runtime *runtime) publishAssistant(
 		Phase: items[0].Producer.Phase, SourceRevision: result.SourceRevision,
 		AssistantItemIDs: ids, SpokeOver: request.Interjecting,
 	}
+	claimedSolicitation := false
+	if guardSolicitation && asksForReply(result.AssistantText) {
+		if !runtime.claimSolicitation(utterance.ID) {
+			return runtime.withholdAssistant(result, request, "another question is already awaiting an answer")
+		}
+		claimedSolicitation = true
+	}
 
 	if runtime.textOnly() {
 		// No synthesiser, no pacing, no duplex state: a text turn is delivered
 		// the moment it is written. It crosses the same commit boundary, which
 		// is the whole reason the boundary is one boundary for every output.
-		return runtime.emitText(ctx, utterance, authority)
+		err := runtime.emitText(ctx, utterance, authority)
+		if err != nil && claimedSolicitation {
+			runtime.clearUncrossedSolicitation(utterance.ID)
+		}
+		return err
 	}
 	// The queued transition is committed before audio can be emitted, so the
 	// log's account of what the world heard never runs ahead of the world.
@@ -735,9 +757,15 @@ func (runtime *runtime) publishAssistant(
 		})
 	}
 	if _, err := runtime.coordinator.SubmitBatch(events); err != nil {
+		if claimedSolicitation {
+			runtime.clearSolicitation(utterance.ID)
+		}
 		return err
 	}
 	if err := runtime.speech.Enqueue(utterance, authority); err != nil {
+		if claimedSolicitation {
+			runtime.clearSolicitation(utterance.ID)
+		}
 		if errors.Is(err, action.ErrSilentProducer) {
 			// The commitment policy should have held this. Enforcing it again
 			// here is the point of having the boundary at the commit site.
@@ -774,6 +802,90 @@ func (runtime *runtime) withholdAssistant(
 	return runtime.recordCancellations([]action.Commitment{{
 		ID: "withheld-" + result.InvocationID, AssistantItemIDs: ids,
 	}}, "speech-withheld", eventloop.PriorityRoutine)
+}
+
+// claimSolicitation reserves the one ordinary request that may await an
+// answer. The reservation happens before the speech queue and its trajectory
+// visibility event, closing the small race in which both continuations could
+// otherwise decide they were first. A cancelled commitment never crossed and
+// therefore does not keep the reservation.
+func (runtime *runtime) claimSolicitation(id string) bool {
+	runtime.solicitationMu.Lock()
+	defer runtime.solicitationMu.Unlock()
+	if current := runtime.solicitationID; current != "" {
+		commitment, exists := runtime.ledger.Lookup(current)
+		if !exists || commitment.State != action.StateCancelled {
+			return false
+		}
+	}
+	runtime.solicitationID = id
+	return true
+}
+
+func (runtime *runtime) clearSolicitation(id string) {
+	runtime.solicitationMu.Lock()
+	defer runtime.solicitationMu.Unlock()
+	if id == "" || runtime.solicitationID == id {
+		runtime.solicitationID = ""
+	}
+}
+
+func (runtime *runtime) clearUncrossedSolicitation(id string) {
+	commitment, exists := runtime.ledger.Lookup(id)
+	if !exists || !commitment.State.Crossed() {
+		runtime.clearSolicitation(id)
+	}
+}
+
+// asksForReply identifies output that creates an obligation for the other
+// person to answer. Explicit question punctuation is the primary boundary.
+// Voice models also phrase requests as polite imperatives ("please spell that
+// again.") often enough that punctuation alone is not the conversational
+// boundary it appears to be, so this recognizes a deliberately narrow set of
+// reply-seeking constructions. It does not treat directions such as "please
+// hold" or "please note" as questions.
+
+func asksForReply(text string) bool {
+	if strings.ContainsAny(text, "?？") {
+		return true
+	}
+	words := strings.FieldsFunc(strings.ToLower(text), func(character rune) bool {
+		return character < 'a' || character > 'z'
+	})
+	for index, word := range words {
+		switch word {
+		case "please":
+			if index+1 < len(words) && replySeekingVerb(words[index+1]) {
+				return true
+			}
+			if index+2 < len(words) && words[index+1] == "double" && words[index+2] == "check" {
+				return true
+			}
+		case "can", "could", "will", "would":
+			verb := index + 2
+			if index+1 >= len(words) || words[index+1] != "you" {
+				continue
+			}
+			if verb < len(words) && words[verb] == "please" {
+				verb++
+			}
+			if verb < len(words) && replySeekingVerb(words[verb]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func replySeekingVerb(word string) bool {
+	switch word {
+	case "answer", "choose", "clarify", "confirm", "describe", "explain",
+		"give", "identify", "provide", "repeat", "say", "select", "share",
+		"spell", "state", "tell", "verify":
+		return true
+	default:
+		return false
+	}
 }
 
 func (runtime *runtime) alreadyPublishedForRevision(result continuation.RunResult) bool {
