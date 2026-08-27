@@ -97,27 +97,39 @@ const DefaultThreshold = 0.40
 const DefaultMinimum = 1500 * time.Millisecond
 
 // DefaultEnrolment is how much speech is needed before deciding whose session
-// this is, and it is deliberately longer.
+// this is.
 //
-// The asymmetry is the point. A comparison that goes wrong costs one utterance;
-// the reference is used for the rest of the session, so enrolling badly is
-// wrong about every utterance after it. Measured against segments of one
-// recording, which are the same speaker by construction:
+// It used to be three seconds, on the reasoning that a comparison that goes
+// wrong costs one utterance while a reference that goes wrong is wrong about
+// every utterance after it. The asymmetry is real. The number was measured
+// against segments of one recording, though, which is the easy case: the same
+// speaker in the same breath, in the same acoustic conditions, saying words
+// that follow on. Measured the way it is actually used - a reference built
+// from one utterance, compared against different utterances later in the
+// conversation - it plateaus far earlier:
 //
-//	1.0s of enrolment, compared with the rest   0.424 to 0.585
-//	1.3s                                        0.451 to 0.718
-//	2.0s                                        0.668 to 0.815
-//	3.0s                                        0.810 to 0.866
+//	enrolment   same speaker   another speaker
+//	   1000ms   0.415..0.429      0.093..0.114
+//	   1500ms   0.509..0.563      0.060..0.097
+//	   2000ms   0.571..0.616      0.114..0.168
+//	   3000ms   0.576..0.667      0.091..0.147
 //
-// At a second the margin over the threshold is 0.02, which is no margin: the
-// counting scenario has one speaker in it and the situation read "someone else
-// in the room: speaking right now", so the agent declined to act on its own
-// user and every check in that scenario measured the refusal. At three seconds
-// the same comparisons sit at 0.81 and above.
+// Three seconds buys nothing over two, and two buys little over one and a
+// half, which already clears the threshold by a tenth on one side and three
+// tenths on the other.
 //
-// Until there is that much, nobody is enrolled and everything is the prior:
-// whoever is talking is the person whose session this is.
-const DefaultEnrolment = 3 * time.Second
+// What three seconds cost is the whole mechanism, because the buffer is per
+// utterance and nobody speaks in three-second sentences on purpose. A person
+// who opened with "I'm just going to get on with this for a bit" - 2.09
+// seconds - never enrolled at all, and the failure is not that identification
+// degrades. It is that the prior takes over: with no reference, whoever is
+// talking is the person whose session this is. So the stranger who asked
+// somebody else about the milk was read as the user, twice, and the agent
+// answered a question that was not addressed to it in every run.
+//
+// Failing to enrol is worse than enrolling on less, and the measurement says
+// less is enough.
+const DefaultEnrolment = DefaultMinimum
 
 // Recogniser watches one session.
 type Recogniser struct {
