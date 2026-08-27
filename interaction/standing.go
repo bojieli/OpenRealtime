@@ -189,6 +189,12 @@ func buildExtraction() string {
 			"utterance against what was just said: a fragment that continues the previous sentence qualifies " +
 			"it and does not replace it. Revoke only when they are plainly taking back something on the list " +
 			"above, not when they are still finishing the thought that put it there.\n\n" +
+			"The punctuation is the recogniser's, not theirs. It writes a full stop wherever they paused for " +
+			"breath, so one request often reads as two sentences with the second starting mid-thought - " +
+			"\"count the animals out loud as I mention them. and say nothing else.\" is one instruction, and " +
+			"the part after the full stop is the half that says what not to do. Read a trailing clause as " +
+			"part of what precedes it and keep what it adds: a policy written back without the restriction " +
+			"they attached is not the policy they set.\n\n" +
 			"An immediate command is not a policy. The test is whether obeying it takes one action or requires " +
 			"watching for something: \"stop\" is finished the moment it is obeyed and is none, while \"let me " +
 			"finish\" means staying quiet until a condition holds and is a policy for this turn. Neither is a " +
