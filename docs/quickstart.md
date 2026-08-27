@@ -168,6 +168,49 @@ where it sits: a browser only grants a microphone in a secure context and
 that process instead of the page; and tools can reach your files, which a
 browser cannot. See [the console](../console/README.md).
 
+## The complete browser surface
+
+For all twelve input/output channels, downloadable files, and the searchable
+millisecond debug timeline, run the richer loopback surface:
+
+```sh
+openrealtime surface \
+  -root "$PWD" \
+  -browser-devtools-url http://127.0.0.1:9222
+```
+
+Open `http://127.0.0.1:8768`. It can send the microphone, typed text, selected
+screen, physical camera, and a CDP browser; receive speech and text; execute
+confirmed local tools and bounded browser actions; render interactive HTML;
+and offer generated files without putting their bytes in the transcript. The
+Timeline tab negotiates redacted server traces and reports absolute
+millisecond timestamps plus phase latency. See [the test surface](../surface/README.md).
+
+## Native macOS developer app
+
+The SwiftUI app adds real local filesystem/shell tools and an explicitly
+selected desktop target to the same session. It requires macOS 14+, Xcode 16+,
+and `uv` for the pinned browser-use bridge:
+
+```sh
+open -na "Google Chrome" --args \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$TMPDIR/openrealtime-browser"
+
+cd macos
+./prepare-browser-use.sh
+./build-app.sh
+open ".build/OpenRealtime Developer.app"
+```
+
+Choose the endpoint, workspace root, initial system prompt, and either Browser
+set-of-mark or selected-display pixel mode before connecting. Browser mode uses
+browser-use's DOM selector map and visible marks. Desktop mode requires Screen
+Recording and Accessibility permission and maps coordinates only into the
+chosen display; it never exposes an ambient, unbounded desktop. Writes, shell
+commands, and consequential actions wait for a native confirmation sheet. See
+[the macOS app](../macos/README.md).
+
 ## Connect an existing Realtime client
 
 An official client connects unchanged. Point it at

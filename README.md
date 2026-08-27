@@ -140,6 +140,7 @@ as its release gate. See [the benchmark harness](docs/benchmarks.md).
 | [OpenAI's own client](examples/sdk-client/README.md) | the compatibility claim, checked by the published SDK |
 | [The developer console](console/README.md) | both transports, video, and tools on your own machine |
 | [The test surface](surface/README.md) | every channel, both directions, on one page |
+| [The native macOS developer app](macos/README.md) | microphone, camera, screen, browser-use, desktop control, local tools, files, and millisecond traces |
 | [Architecture](docs/architecture.md) | the four subsystems and why they are separate |
 | [Bindings](docs/bindings/README.md) | which voice stack, and what each one owns |
 | [The OpenRealtime Protocol](docs/protocol/openrealtime-1.md) | normative spec for video, observations, and computer use |

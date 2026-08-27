@@ -31,6 +31,18 @@ The package is MIT-licensed by OpenAI; installing it is the reader's act
 rather than this project's, and no Go build, test, or analysis path depends on
 it.
 
+The optional native macOS browser bridge installs `browser-use==0.12.6` from
+PyPI with `uv`. browser-use is MIT-licensed, copyright 2024 Gregor Zunic. The
+dependency and its transitive Python packages are not vendored in this
+repository or embedded by a normal Go or Swift build;
+`macos/prepare-browser-use.sh` is the operator's locked installation step and
+places the environment in Application Support. The app bundle contains this
+project's small JSON-lines adapter, manifest, and lockfile and invokes the
+installed package offline for its DOM selector map, set-of-mark image renderer,
+and browser action implementation. Deployers distributing that environment
+must carry browser-use's MIT notice and review the notices of the resolved lock
+set.
+
 The τ-Voice benchmark is referenced through an external manifest only. Its
 `tau2-bench` source repository states the MIT License at pinned revision
 `c3398666e6559e3a063da3fc04b5acf7f941464e`; no upstream code, task data,
