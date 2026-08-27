@@ -516,6 +516,17 @@ func (extractor *modelExtractor) scopeOf(ctx context.Context, instruction Standi
 	if strings.TrimSpace(instruction.Text) == "" {
 		return instruction.Scope
 	}
+	// A policy that names a delay is waiting on something that has not
+	// happened yet, which this question's own rule makes standing. It must not
+	// be asked, because the delay has been lifted out of the text by the time
+	// this sees it: "if I go quiet for fifteen seconds, ask whether I'm still
+	// there" arrives here as "ask whether they are still there", which reads
+	// as a request about this moment and came back passing - so the policy
+	// expired with the turn and the check that fifteen seconds later nobody
+	// had said anything failed five times out of five.
+	if instruction.After > 0 {
+		return ScopeConversation
+	}
 	answer, err := extractor.generator.Generate(ctx, ScopeInstruction, instruction.Text, 4)
 	if err != nil {
 		return instruction.Scope

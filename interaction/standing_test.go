@@ -54,3 +54,19 @@ func TestRenderForExtractionShowsWhatIsInForce(t *testing.T) {
 		t.Fatalf("an empty policy list must say so rather than omit the section:\n%s", empty)
 	}
 }
+
+// A policy that names a delay waits on something that has not happened yet,
+// and is standing by construction. It must not be asked about, because the
+// delay is lifted out of the text before anything else reads it: "if I go
+// quiet for fifteen seconds, ask whether I'm still there" arrives as "ask
+// whether they are still there", which reads as a request about this moment.
+func TestADelayedPolicyStandsWithoutBeingAsked(t *testing.T) {
+	kind, instruction, ok := interaction.ParsePin(
+		"pin turn after 15s ask whether they are still there")
+	if !ok || kind != "pin" {
+		t.Fatalf("the pin did not parse: %q %v", kind, ok)
+	}
+	if instruction.After == 0 {
+		t.Fatal("the delay was not read out of the policy")
+	}
+}
