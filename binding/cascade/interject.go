@@ -70,10 +70,21 @@ func (runtime *runtime) interject(decision interaction.Context) {
 	// acting on the request rather than on anything it asked to watch for. The
 	// instruction says so too and the model does not follow it, which makes
 	// this the reliable half of the pair rather than a duplicate of it.
+	//
+	// Only until the policy has been carried out once. What this compares
+	// against is the text extraction last read, which is every utterance the
+	// person says - so once the pass began re-listing a standing policy from
+	// later sentences, the sentence being guarded against became whichever one
+	// they had just finished, and the second animal in a story was refused six
+	// times running. The bound that holds without asking whether two wordings
+	// are the same request: a policy cannot have been carried out before it was
+	// set, so once it has been, the moment this protects is over.
 	runtime.audioMu.Lock()
 	pinnedFrom := runtime.extractedText
+	carriedOut := runtime.carriedOutPolicy
 	runtime.audioMu.Unlock()
-	if heard := strings.TrimSpace(decision.Revision.Text()); pinnedFrom != "" && strings.HasPrefix(heard, pinnedFrom) {
+	if heard := strings.TrimSpace(decision.Revision.Text()); !carriedOut &&
+		pinnedFrom != "" && strings.HasPrefix(heard, pinnedFrom) {
 		runtime.noteInterject("this is the utterance the policy came from")
 		return
 	}
@@ -217,6 +228,13 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		// In the same units the guard compares against, or the comparison is
 		// between a stable prefix and a whole revision and never matches.
 		runtime.markSpoken(stable)
+		if len(standing) > 0 {
+			// A policy has now been acted on, so no later sentence is the one
+			// that set it.
+			runtime.audioMu.Lock()
+			runtime.carriedOutPolicy = true
+			runtime.audioMu.Unlock()
+		}
 		// Bounded, because an interjection that has missed its moment must not
 		// take the next one with it: it commits through a loop with a single
 		// driver, so it can sit behind other work indefinitely while every

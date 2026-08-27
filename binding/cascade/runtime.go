@@ -121,6 +121,11 @@ type runtime struct {
 	// concurrently over readings of different lengths, they do not necessarily
 	// land in the order they were started, and what a shorter one has to say
 	// about the request is strictly less.
+	// carriedOutPolicy records that the agent has spoken under a standing
+	// policy at least once, which is what ends the moment where an utterance
+	// might still be the one setting a policy rather than an occasion to act
+	// on it.
+	carriedOutPolicy  bool
 	extractTurn       uint64
 	extractTurnSource string
 	// lastPartialExtractNS bounds how often an unfinished utterance is re-read.
