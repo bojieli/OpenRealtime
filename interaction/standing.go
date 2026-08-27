@@ -193,6 +193,10 @@ func buildExtraction() string {
 			"not two: the second half says how to do the first and starts nothing of its own, so splitting it " +
 			"out leaves a policy that reads as though they never restricted it and a restriction attached to " +
 			"nothing. Write them together, as they said them.\n\n" +
+			"And never on its own. A restriction with nothing to qualify - \"say nothing else\" by itself - " +
+			"asks for nothing and forbids everything, so an agent holding it has been told to be silent " +
+			"without being told what it may still say. If they did not ask for something, there is nothing " +
+			"for a restriction to attach to and nothing to pin.\n\n" +
 			"The punctuation is the recogniser's, not theirs. It writes a full stop wherever they paused for " +
 			"breath, so one request often reads as two sentences with the second starting mid-thought - " +
 			"\"count the animals out loud as I mention them. and say nothing else.\" is one instruction, and " +
