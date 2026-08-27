@@ -567,33 +567,31 @@ func validateCapabilities(capabilities []continuation.Capability) error {
 func becauseInstruction(act string) string {
 	switch act {
 	case "speak-through":
-		// The history of this one instruction is the whole problem in
-		// miniature. "Say the next number" was read as a count of turns: one
-		// capybara was counted five, six, seven, eight, nine, once per partial
-		// of the same sentence. Counting from the transcript instead fixed
-		// that and produced "1 3 3 1", because a count kept in the answerer's
-		// head gains one every time it is asked. Adding a separate rule about
-		// declining produced a rule that contradicted the first.
-		//
-		// One rule does all of it: the count is a function of what they have
-		// said, and you speak when the function's value changes.
+		// Every rule here was added to fix a measured failure and the order
+		// matters as much as the content. Three paragraphs of counting detail
+		// in front of one conditional sentence taught a waiter scenario to
+		// count: asked to order the dish that fits, the agent said "4 4 4".
+		// The general rule goes first and counting is one paragraph of it.
 		return "You are speaking because something the person asked to be told about has just happened. " +
-			"Do that thing now, for the occurrence in front of you: if they asked for a translation, give " +
-			"the English; if they asked to be told when something lands, say it has landed. Say only that.\n\n" +
-			"If they asked for a count, the number is a fact about what they have said, not about how many " +
-			"times you have been asked. Count them again from the beginning of everything they have said, " +
-			"every time. Asked twice about the same sentence, the answer is the same number both times.\n\n" +
-			"Everything they have said includes the sentence they are in the middle of. It is shown after " +
-			"the conversation rather than inside it because they have not finished it, not because it does " +
-			"not count - it is the most recent thing they said and usually the reason you are being asked.\n\n" +
-			"Then say it only if it has changed. What they say arrives in pieces and each piece repeats " +
-			"everything before it, so you are asked about the same occurrence over and over, and the " +
-			"answer to most of those times is nothing.\n\n" +
-			"If you counted none of them, or counted the same number you last said, there is nothing new " +
-			"to tell them: reply with " + WaitToken + " and nothing else. Never say zero out loud - it " +
-			"is read aloud like everything else you write, and nobody counting things aloud says zero.\n\n" +
-			"The same holds for whatever else they asked for. Nothing new to translate, or the thing they " +
-			"were waiting for still has not landed, is " + WaitToken + " rather than a sentence about it."
+			"Do that thing now, for the occurrence in front of you, and say only that: the translation " +
+			"itself, the warning itself, the dish, that the thing has landed.\n\n" +
+			"What they say arrives in pieces and each piece repeats everything before it, so you are " +
+			"asked about the same occurrence over and over. Say something only when there is something " +
+			"new to say. Nothing new to translate, or the thing they were waiting for still has not " +
+			"landed, is " + WaitToken + " and nothing else.\n\n" +
+			// Worked through rather than stated. Every shorter form of this
+			// was read one way too far in one direction or the other: "count
+			// them from the beginning" alone waited through the first animal
+			// five times out of five, and "say the next number" counted turns
+			// instead of animals. Spelling out the comparison, and both ends
+			// of it, is the version that holds.
+			"Counting works the same way. Count every one of them in everything they have said, " +
+			"including the sentence they are still saying, which is shown after the conversation " +
+			"because they have not finished it. If that number is more than the last number you said, " +
+			"say it. If it is the same, or you counted none at all, say " + WaitToken + ". So the " +
+			"first one they mention is \"one\" even though you have said nothing yet, and the same one " +
+			"mentioned again is " + WaitToken + ". Never say zero out loud: it is read aloud like " +
+			"everything else you write, and nobody counting things aloud says zero."
 	case "call-tool":
 		// Measured on a phone menu: the key was pressed correctly and then
 		// announced out loud - "I have pressed two to select the order status

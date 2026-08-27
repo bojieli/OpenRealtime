@@ -95,7 +95,7 @@ func TestTheVoiceIsToldWhatTheTurnWasCalledFor(t *testing.T) {
 		Interjecting: true, Because: "speak-through",
 		Standing: []string{"count the animals out loud (1m ago)"},
 	})
-	if !strings.Contains(counting, "how many") {
+	if !strings.Contains(counting, "Counting works the same way") {
 		t.Fatalf("a running commentary was not told what it is for:\n%s", counting)
 	}
 	// A count is of the things counted, not of the turns spent counting.
