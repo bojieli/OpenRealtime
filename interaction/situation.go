@@ -78,6 +78,11 @@ type Situation struct {
 	// own age. They live outside the conversation window because truncating
 	// that window must never silently repeal a policy somebody set.
 	Pins []string
+	// Restricted says one of those policies closes off everything it did not
+	// ask for. It is kept beside the rendered lines rather than read out of
+	// them, because what governs the act set has to be a fact the runtime
+	// holds, not a phrase a model has to notice in a list.
+	Restricted bool
 	// Recent is the rolling conversation window, oldest first.
 	Recent []string
 	// AgentSpeaking says whether the agent's own voice is playing, and
@@ -174,7 +179,12 @@ func (state Situation) AvailableActs() []Act {
 		// speak-through. Offered anyway, a model reaches for answer whenever
 		// something is worth saying and the runtime then refuses it, so the
 		// thing worth saying is never said at all.
-		if !state.Speaking {
+		// The same judgement, made by the person instead of the runtime. Told
+		// to say nothing but the thing they asked for, an ordinary reply is
+		// not an act they have left available - and the thing they did ask
+		// for is still sayable, through speak-through, which is how every
+		// correct count in the measurements was delivered.
+		if !state.Speaking && !state.Restricted {
 			acts = append(acts, ActAnswer)
 		}
 	}

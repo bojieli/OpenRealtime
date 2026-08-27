@@ -45,6 +45,12 @@ type StandingInstruction struct {
 	// Set by the pass that reads the policy, from the person's own words,
 	// rather than by a list of nouns chosen after watching one benchmark.
 	Counting bool
+	// Restricting says the policy closes off everything it did not ask for:
+	// "and say nothing else", "only the number", "don't say anything apart
+	// from that". It is a fact about the whole channel rather than about the
+	// thing being watched for, which is why it changes the acts on offer and
+	// not just how one of them is carried out.
+	Restricting bool
 	// After is the delay a policy names, when it names one: "ask if I go quiet
 	// for fifteen seconds" is not due until fifteen seconds of quiet have
 	// passed. Zero means the policy is about something happening rather than
@@ -297,6 +303,7 @@ func (extractor modelExtractor) Extract(
 	}
 	if kind == "pin" {
 		instruction.Counting = extractor.asksForACount(ctx, instruction.Text)
+		instruction.Restricting = extractor.restrictsEverythingElse(ctx, instruction.Text)
 	}
 	return Extraction{Kind: kind, Instruction: instruction}, nil
 }
@@ -336,6 +343,50 @@ func (extractor modelExtractor) asksForACount(ctx context.Context, policy string
 		return false
 	}
 	answer, err := extractor.generator.Generate(ctx, CountingInstruction, policy, 4)
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(answer)), "yes")
+}
+
+// RestrictingInstruction asks whether a policy closes off everything else.
+//
+// People attach this to a policy constantly - count them and say nothing else,
+// just the translation, only tell me the price - and it is not a footnote to
+// the thing they asked for. It withdraws the ordinary reply. Measured, an
+// agent under "count the animals and say nothing else" answered the pause at
+// the end of a sentence with no animal in it, twice, because somebody
+// stopping mid-story is an overwhelming case for a reply and one line of
+// standing instruction does not outweigh it.
+//
+// Read from the person's own words, like the count, because the phrasings are
+// not enumerable and a list of them would be a list I wrote after watching one
+// benchmark.
+var RestrictingInstruction = "Somebody set a standing policy for a voice assistant.\n\n" +
+	"Does the policy explicitly forbid saying anything besides the thing it asks for? There has to be " +
+	"an actual exclusion in their words - and nothing else, only that, just the number, don't say " +
+	"anything apart from it. A policy that simply names one thing to do is not an exclusion, however " +
+	"narrow the thing is. A policy about when to speak or when to stay out of the way is not an " +
+	"exclusion either: it restricts the timing, not what may be said.\n\n" +
+	"Answer yes or no and nothing else.\n\n" +
+	"yes: count the animals out loud as I mention them, and say nothing else\n" +
+	"yes: just give me the translation, nothing around it\n" +
+	"yes: only say the price, no commentary\n" +
+	"no: count the animals out loud as I mention them\n" +
+	"no: tell me the moment the build finishes\n" +
+	"no: wait until I have finished before you say anything\n\n" +
+	"The policy:"
+
+// restrictsEverythingElse reads the policy once, when it is pinned.
+//
+// An unreadable answer is "no". Withholding the restriction leaves an agent
+// too talkative, which is the failure the person can hear and correct; adding
+// one nobody asked for leaves it mute for a reason they cannot see.
+func (extractor modelExtractor) restrictsEverythingElse(ctx context.Context, policy string) bool {
+	if strings.TrimSpace(policy) == "" {
+		return false
+	}
+	answer, err := extractor.generator.Generate(ctx, RestrictingInstruction, policy, 4)
 	if err != nil {
 		return false
 	}

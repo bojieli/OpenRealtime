@@ -29,6 +29,7 @@ func (runtime *runtime) situation(decision interaction.Context) interaction.Situ
 	state := interaction.Situation{
 		Contract:      runtime.Settings().Instruction,
 		Pins:          runtime.pinboard.Lines(decision.NowNS),
+		Restricted:    runtime.restrictionIsInForce(),
 		Recent:        runtime.window.Lines(snapshot.Items),
 		AgentSpeaking: decision.Duplex.AgentSpeaking,
 		Speaker:       runtime.speakerNow(snapshot),
@@ -380,6 +381,17 @@ func (runtime *runtime) cognitionExtras(sourceRevision uint64) (standing []strin
 // after watching one benchmark. The words people use for this are not
 // enumerable, and a system that only recognises the ones I happened to see is
 // a system tuned to what I happened to see.
+// restrictionIsInForce says whether any policy standing right now closes off
+// everything it did not ask for.
+func (runtime *runtime) restrictionIsInForce() bool {
+	for _, standing := range runtime.pinboard.InForce() {
+		if standing.Restricting {
+			return true
+		}
+	}
+	return false
+}
+
 func (runtime *runtime) countingIsInForce() bool {
 	for _, standing := range runtime.pinboard.InForce() {
 		if standing.Counting {

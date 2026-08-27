@@ -155,3 +155,42 @@ func TestNothingNewAndEverythingNewDoNotLookTheSame(t *testing.T) {
 		t.Fatalf("a situation where everything is new does not say so:\n%s", allNew)
 	}
 }
+
+// Told to say nothing but the thing they asked for, an ordinary reply is not
+// an act the person has left available. Measured, an agent under "count the
+// animals and say nothing else" answered the pause at the end of a sentence
+// with no animal in it - twice - because somebody stopping mid-story is an
+// overwhelming case for a reply, and the standing instruction was one line
+// against it. What they did ask for is still sayable: speak-through stays.
+func TestAnswerIsWithdrawnByAPolicyThatForbidsEverythingElse(t *testing.T) {
+	state := interaction.Situation{
+		Pins:       []string{"count the animals out loud as they mention them, and say nothing else"},
+		Restricted: true,
+	}
+	var sawAnswer, sawSpeakThrough bool
+	for _, act := range state.AvailableActs() {
+		switch act {
+		case interaction.ActAnswer:
+			sawAnswer = true
+		case interaction.ActSpeakThrough:
+			sawSpeakThrough = true
+		}
+	}
+	if sawAnswer {
+		t.Fatal("an ordinary reply was offered under a policy that forbids everything else")
+	}
+	if !sawSpeakThrough {
+		t.Fatal("the thing they did ask for has to stay sayable")
+	}
+}
+
+// And without such a policy it is offered as before, since the floor is free.
+func TestAnswerSurvivesAPolicyThatOnlyNamesSomethingToDo(t *testing.T) {
+	state := interaction.Situation{Pins: []string{"count the animals out loud as they mention them"}}
+	for _, act := range state.AvailableActs() {
+		if act == interaction.ActAnswer {
+			return
+		}
+	}
+	t.Fatal("answer should be available when nothing forbids it")
+}
