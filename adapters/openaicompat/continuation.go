@@ -843,6 +843,9 @@ func compilePortableItem(
 		}
 		return message, true, nil
 	case trajectory.KindReasoning:
+		if !continuation.CarriesInternalState(item.Content) {
+			return chatMessage{}, false, nil
+		}
 		return chatMessage{Role: "assistant", Content: continuation.InternalStatePreamble + item.Content}, true, nil
 	case trajectory.KindAssistant:
 		if continuation.ProducedSilently(item) {

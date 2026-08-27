@@ -487,6 +487,9 @@ func compilePortableItem(
 		// on one are different tasks, and only the second needs pixels.
 		attachments = attachMedia(item, media, selectedMedia)
 	case trajectory.KindReasoning:
+		if !continuation.CarriesInternalState(item.Content) {
+			return geminiContent{}, false, nil
+		}
 		role = "model"
 		part["text"] = continuation.InternalStatePreamble + item.Content
 	case trajectory.KindAssistant:

@@ -93,6 +93,19 @@ func ProducedSilently(item trajectory.Item) bool {
 // layer that produces the content it carries.
 const WaitToken = "<wait>"
 
+// CarriesInternalState reports whether retained reasoning has anything in it.
+//
+// An empty one is not a turn. The preamble announces working state and then
+// shows nothing, which reads as the agent having taken a turn and said
+// nothing at all - measured, five of them between four lines of a story, and
+// the voice counted an animal that had not been mentioned. Same shape as a
+// wait rendered as a result: the absence of something presented as its
+// presence.
+func CarriesInternalState(content string) bool {
+	text, _ := StripMarkers(content)
+	return strings.TrimSpace(text) != ""
+}
+
 // CarriesBackgroundResult reports whether a silently-produced item left
 // anything for the next spoken turn to work from.
 //

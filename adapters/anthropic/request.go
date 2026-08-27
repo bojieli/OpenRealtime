@@ -328,6 +328,9 @@ func compileItem(
 		}
 		return blocks, nil
 	case trajectory.KindReasoning:
+		if !continuation.CarriesInternalState(item.Content) {
+			return nil, nil
+		}
 		raw, err := textBlock(continuation.InternalStatePreamble + item.Content)
 		if err != nil {
 			return nil, err

@@ -31,3 +31,19 @@ func TestAWaitIsNotABackgroundResult(t *testing.T) {
 		t.Fatal("something the user heard is not background state")
 	}
 }
+
+// An empty piece of retained reasoning is not a turn. The preamble announces
+// working state and then shows nothing, which reads as the agent having taken
+// a turn and said nothing - five of them appeared between four lines of a
+// story, and the voice counted an animal nobody had mentioned.
+func TestEmptyInternalStateIsNotATurn(t *testing.T) {
+	if continuation.CarriesInternalState("") {
+		t.Fatal("nothing was carried as internal state")
+	}
+	if continuation.CarriesInternalState("   \n ") {
+		t.Fatal("whitespace was carried as internal state")
+	}
+	if !continuation.CarriesInternalState("checked the build log; it is still running") {
+		t.Fatal("real working state was dropped")
+	}
+}
