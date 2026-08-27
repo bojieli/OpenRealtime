@@ -91,14 +91,14 @@ func examples() []workedExample {
 		{Situation{
 			Recent:  []string{"agent: what can I do for you?"},
 			Speaker: "user", Heard: "ring them and get me through to a person", Silence: "900ms",
-			Tools:   []string{"press_key(digit) - send a keypad tone on the open call"},
+			Tools: []string{"press_key(digit) - send a keypad tone on the open call"},
 		}, ActAnswer, "They asked for the call to be made and have finished asking; no menu has offered a key yet, so there is no key to press and this is a turn to take."},
 
 		{Situation{
 			Recent:  []string{"user: ring them and get me through to a person"},
 			Speaker: "someone else in the room", Speaking: true,
-			Heard:   "thank you for calling",
-			Tools:   []string{"press_key(digit) - send a keypad tone on the open call"},
+			Heard: "thank you for calling",
+			Tools: []string{"press_key(digit) - send a keypad tone on the open call"},
 		}, ActStaySilent, "Nothing makes acting necessary: the recording has answered but has not offered anything yet, and a key pressed now is a key chosen at random."},
 
 		{Situation{
