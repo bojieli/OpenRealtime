@@ -2336,3 +2336,49 @@ compensating mechanism added to work around a symptom later cost more than it
 bought, and each dissolved once the cause was found. A blanket ban on
 mid-sentence counts, a delay before the first answer, a guard keyed on
 "whatever extraction last read" - all removed rather than tuned.
+
+## F61 - the interpreting failure, reproduced and unfixed
+
+One instruction reaches the standing pass as six committed pieces, and the
+agent answers every one of them:
+
+	user: "My colleague"                      agent: "I'm ready to interpret for you..."
+	user: "only speaks"                       agent: "I'm ready to interpret..."
+	user: "Mandarin."                         agent: "Your colleague"
+	user: "Translate everything he says..."   agent: "My colleague only speaks Mandarin."
+	                                          agent: "I will translate everything he says..."
+	user: "As he goes."                       agent: "Understood. I will translate..."
+	user: "And don't wait for him to finish." agent: "I will translate as he speaks..."
+
+By the time the colleague says anything there is no window left, and the
+sentence that was supposed to be interpreted goes past.
+
+What this is not: the fact is there. Replaying the request that produced
+"Understood. I will translate..." - the real one from the dump, not a
+reconstruction - the prompt carries "you have already spoken once for this much
+of what they are saying: My colleague only speaks Mandarin. Translate
+everything he says int...", correctly. The system prompt also says, in as many
+words, that a recogniser breaks a sentence wherever the speaker draws breath,
+that one request often arrives as several each looking complete on its own, and
+that if you have already said you would do the thing they are still describing
+you should say nothing rather than agree again.
+
+The voice answers anyway, eight times out of eight at temperature zero. It is a
+rule it has been given and does not follow, which is a different kind of defect
+from the twenty-odd in this document - every one of those was the situation
+being wrong, and this one is the situation being right.
+
+One attempt at it made things worse: an instruction to act rather than promise
+when the thing has already happened left interpreting unchanged at 2/5 and took
+the visual case from 5/5 to 1/5, where the agent stopped speaking when the
+build finished. Reverted.
+
+The structural fix is not obvious either. The guard that stops a stretch being
+answered twice releases when the new text finishes a sentence, and "As he
+goes." finishes one - the recogniser's punctuation says so, and this is one
+place where believing it is wrong. Distinguishing that from the counting case,
+where new text inside one sentence genuinely does warrant a new answer, is a
+judgement about whether an occurrence has happened, which is content.
+
+Left standing at 2/5, with the reproduction recorded, rather than fixed by
+adding instructions until a number moves.
