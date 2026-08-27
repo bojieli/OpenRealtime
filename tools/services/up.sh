@@ -52,6 +52,14 @@ if ! running 8002; then
       > "${logs}/sensevoice.log" 2>&1 & )
 fi
 
+# A second recogniser, more accurate and faster than the first on anything
+# with a proper noun in it.
+if ! running 8003; then
+  ( cd "${repository}" && setsid nohup \
+      "${shared}/.runtime/sensevoice/bin/python" tools/whisper/server.py --port 8003 \
+      > "${logs}/whisper.log" 2>&1 & )
+fi
+
 # The synthesiser. Startup compiles CUDA graphs and warms the decoder, about
 # twenty seconds, and anything arriving before that would pay for it.
 if ! running 8123; then
@@ -71,6 +79,6 @@ fi
 
 wait_for speaker-id http://127.0.0.1:8124/health 120
 wait_for synthesiser http://127.0.0.1:8123/health 300
-wait_for recogniser http://127.0.0.1:8002/docs 300
+wait_for recogniser http://127.0.0.1:8003/health 300
 wait_for decider http://127.0.0.1:8000/health 900
 echo "all four answering"
