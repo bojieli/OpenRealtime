@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -384,6 +386,7 @@ func serve(options serveOptions, output io.Writer) error {
 	go func() { serveError <- httpServer.ListenAndServe() }()
 	fmt.Fprintf(output, "OpenRealtime %s listening on http://%s/v1/realtime\n", bind.Name(), options.listen)
 	fmt.Fprintf(output, "  health   http://%s/healthz\n", options.listen)
+	go warmModels(ctx, options)
 
 	var webrtcServer *http.Server
 	if strings.TrimSpace(options.webrtcListen) != "" {
@@ -1030,6 +1033,67 @@ func buildFast(options serveOptions) (continuation.Provider, error) {
 		Vision:         visionOverride(options, "fast-sees", options.fastVision),
 		RequestTimeout: options.requestTimeout,
 	})
+}
+
+// warmModels sends one throwaway token through each model that a turn waits
+// on, so the first caller does not pay for the last mile of loading them.
+//
+// A local server answers its health check long before it answers a request at
+// speed: weights are mapped, the graph is not captured, the prefix cache is
+// empty. Measured on the control scenario at ten repeats, the first run failed
+// and the other nine passed, every time - the opening turn came back reasoner
+// led at two seconds where the rest were the voice alone at seventy
+// milliseconds, and the answer landed outside the window.
+//
+// It runs in the background because a server that refuses to listen until its
+// models are warm is a server that looks broken for a minute, and the first
+// caller is better served by a slow answer than by a refused connection.
+//
+// The recogniser already does this for itself. This is the same courtesy from
+// the side that calls it.
+func warmModels(ctx context.Context, options serveOptions) {
+	warm := func(baseURL, model, tokenEnv, fallbackEnv string) {
+		baseURL = strings.TrimSpace(baseURL)
+		model = strings.TrimSpace(model)
+		if baseURL == "" || model == "" {
+			return
+		}
+		body, err := json.Marshal(map[string]any{
+			"model": model, "max_tokens": 1, "temperature": 0,
+			"messages": []map[string]string{{"role": "user", "content": "hello"}},
+		})
+		if err != nil {
+			return
+		}
+		timed, cancel := context.WithTimeout(ctx, 90*time.Second)
+		defer cancel()
+		request, err := http.NewRequestWithContext(timed, http.MethodPost,
+			strings.TrimRight(baseURL, "/")+"/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			return
+		}
+		request.Header.Set("Content-Type", "application/json")
+		key := os.Getenv(strings.TrimSpace(tokenEnv))
+		if key == "" && fallbackEnv != "" {
+			key = os.Getenv(fallbackEnv)
+		}
+		if key != "" {
+			request.Header.Set("Authorization", "Bearer "+key)
+		}
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			return
+		}
+		_, _ = io.Copy(io.Discard, response.Body)
+		_ = response.Body.Close()
+	}
+	// The voice and the model that decides whether it speaks. Both sit on the
+	// path between hearing a word and answering it; the reasoner does not, and
+	// warming a metered cloud endpoint would be somebody else's money.
+	warm(options.fastURL, options.fastModel, options.fastTokenEnv, "OPENREALTIME_FAST_API_KEY")
+	if options.policyURL != options.fastURL || options.policyModel != options.fastModel {
+		warm(options.policyURL, options.policyModel, options.policyTokenEnv, "")
+	}
 }
 
 func float64Pointer(value float64) *float64 { return &value }
