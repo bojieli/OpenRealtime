@@ -211,6 +211,14 @@ const (
 	// trajectory yet: the log holds committed observations and this decision
 	// was taken on a partial. Without it the voice is answering a conversation
 	// that stops one sentence short of the reason it was called.
+	// AnsweredInstruction hands the voice the part of what they are saying that
+	// it has already spoken for, so it can tell a second look at one sentence
+	// from a second thing to say about it.
+	AnsweredInstruction = "You have already spoken once for this much of what they are saying, and they " +
+		"heard you. Say something now only for what comes after it - if everything you would say is for " +
+		"this part, you have already said it, and the answer is " + WaitToken + ". What you have already " +
+		"spoken for is:"
+
 	HeardInstruction = "They are still speaking. What they have said so far in this sentence, which is not yet in the conversation above, is:"
 	// ObservedInstruction introduces something the runtime noticed rather than
 	// something anybody said.

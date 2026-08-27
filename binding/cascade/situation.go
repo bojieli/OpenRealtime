@@ -651,6 +651,47 @@ func spokenWords(text string) (compare, original []string) {
 }
 
 // markSpoken records how much had been heard when the agent last spoke.
+// alreadyAnsweredFor is the part of what this person is saying that the agent
+// has already spoken once for, or nothing if it last spoke into some earlier
+// utterance.
+//
+// The prefix test is what ties the mark to the sentence in front of it. A mark
+// left over from a previous utterance says nothing about this one, and handing
+// it over would tell the voice it had already answered something it has not.
+// Compared as words, because a recogniser re-punctuates what it has already
+// given you between one commit and the next.
+func (runtime *runtime) alreadyAnsweredFor(snapshot trajectory.Snapshot) string {
+	runtime.audioMu.Lock()
+	mark := strings.TrimSpace(runtime.heardWhenSpoke)
+	runtime.audioMu.Unlock()
+	if mark == "" {
+		return ""
+	}
+	said, ok := lastSpokenBefore(snapshot.Items)
+	if !ok {
+		return ""
+	}
+	if !trajectory.SaidFurther(mark, said) && !sameWords(mark, said) {
+		return ""
+	}
+	return mark
+}
+
+// sameWords reports that two readings of speech say the same thing, allowing
+// for a recogniser having re-punctuated one of them.
+func sameWords(one, other string) bool {
+	first, second := trajectory.SpokenWords(one), trajectory.SpokenWords(other)
+	if len(first) != len(second) {
+		return false
+	}
+	for index := range first {
+		if first[index] != second[index] {
+			return false
+		}
+	}
+	return true
+}
+
 func (runtime *runtime) markSpoken(heard string) {
 	runtime.audioMu.Lock()
 	runtime.heardWhenSpoke = heard

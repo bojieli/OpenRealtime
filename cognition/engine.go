@@ -272,6 +272,23 @@ type Request struct {
 	// Told to count animals as they are mentioned, it counted from one to ten,
 	// because the animal was in a partial and the instruction was all it had.
 	Heard string
+	// Answered is how much of what they are saying the agent has already
+	// spoken for.
+	//
+	// Without it the agent answers one stretch of speech twice. It speaks into
+	// a sentence while the person is still saying it, the sentence commits a
+	// moment later, and to the turn that runs on the commit it is a line in
+	// the conversation like any other with nothing to say it has been dealt
+	// with. Measured under a counting policy, every line of a story got two
+	// numbers - "one two" at a sentence with no animal in it, "three four" at
+	// the one with the capybara.
+	//
+	// The runtime is what knows this, and knowing it is not the same as being
+	// able to act on it: whether what remains contains another occurrence is a
+	// judgement about content, and a sentence that commits whole can carry a
+	// second animal after the point the agent spoke. So the fact is handed
+	// over and the judgement is left where it belongs.
+	Answered string
 }
 
 // Descriptors reports the configured providers, for evidence and health.
@@ -423,6 +440,9 @@ func Instruct(prompt string, request Request) string {
 	}
 	if strings.TrimSpace(request.Heard) != "" {
 		prompt += "\n\n" + HeardInstruction + " \"" + strings.TrimSpace(request.Heard) + "\""
+	}
+	if answered := strings.TrimSpace(request.Answered); answered != "" {
+		prompt += "\n\n" + AnsweredInstruction + " \"" + answered + "\""
 	}
 	if observed := strings.TrimSpace(request.Observed); observed != "" {
 		prompt += "\n\n" + ObservedInstruction + " " + observed
