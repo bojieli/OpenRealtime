@@ -44,6 +44,47 @@ func (board *Pinboard) Pin(instruction StandingInstruction) {
 	board.pinned = append(board.pinned, instruction)
 }
 
+// Supersede replaces a policy with a later, fuller reading of the same
+// request. It is not Revoke-then-Pin: the two differ in who is acting.
+//
+// Revoke is the person lifting a rule, and matches loosely because the words
+// that lift a policy are rarely the words that set it. Supersession is the
+// recogniser catching up. A sentence reaches the standing pass in pieces, the
+// pass reads each piece as soon as it lands, and the early reads are answers
+// to half a question - so "I'm going to tell you about my afternoon. Count the
+// animals out loud as I mention them, and say nothing else" arrived as three
+// pieces and pinned three policies: one that said not to reply until the story
+// was over, one that said to count, and one that said to count and say nothing
+// else. Two of those are the same request read early, and the first
+// contradicts the other two outright. Nobody asked for three rules.
+//
+// The age carries over from what it replaces. The person asked once, when they
+// started saying it; re-reading their sentence as more of it arrives is not
+// them asking again, and a policy whose age resets on every fragment looks
+// freshly set for as long as they keep talking.
+func (board *Pinboard) Supersede(previous string, instruction StandingInstruction) {
+	previous = strings.TrimSpace(previous)
+	if previous == "" || strings.EqualFold(previous, instruction.Text) {
+		board.Pin(instruction)
+		return
+	}
+	if strings.TrimSpace(instruction.Text) == "" {
+		return
+	}
+	board.mu.Lock()
+	for index, existing := range board.pinned {
+		if !strings.EqualFold(existing.Text, previous) {
+			continue
+		}
+		instruction.SetNS = existing.SetNS
+		board.pinned[index] = instruction
+		board.mu.Unlock()
+		return
+	}
+	board.mu.Unlock()
+	board.Pin(instruction)
+}
+
 // Revoke lifts a policy. It matches loosely because the words that lift a
 // policy are rarely the words that set it, and a revocation that fails to
 // match leaves somebody governed by a rule they just cancelled out loud.

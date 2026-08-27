@@ -227,6 +227,7 @@ func (runtime *runtime) noticeStanding(text string) {
 	if current != runtime.extractUtterance {
 		runtime.previousUtterance = runtime.extractUtteranceText
 		runtime.previousPin, runtime.lastPin = runtime.lastPin, interaction.StandingInstruction{}
+		runtime.lastPinSource = ""
 		runtime.extractUtterance = current
 		runtime.extractUtteranceText = ""
 	}
@@ -278,10 +279,21 @@ func (runtime *runtime) noticeStanding(text string) {
 		case "pin":
 			instruction := extraction.Instruction
 			instruction.SetNS = runtime.scheduler.NowNS()
-			runtime.pinboard.Pin(instruction)
 			runtime.audioMu.Lock()
-			runtime.lastPin = instruction
+			if len(whole) < len(runtime.lastPinSource) {
+				// A shorter reading of this same sentence, finishing late.
+				// What it has to say about the request is strictly less.
+				runtime.audioMu.Unlock()
+				return
+			}
+			superseded := runtime.lastPin.Text
+			runtime.lastPin, runtime.lastPinSource = instruction, whole
 			runtime.audioMu.Unlock()
+			// Within one utterance the pass runs again every time the text
+			// grows, and each run reads the whole request as it stands. The
+			// later reading replaces the earlier one rather than joining it:
+			// they are one request, not one per fragment.
+			runtime.pinboard.Supersede(superseded, instruction)
 		case "revoke":
 			runtime.pinboard.Revoke(extraction.Instruction.Text)
 		}

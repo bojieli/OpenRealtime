@@ -132,8 +132,13 @@ type runtime struct {
 	// join retires. Kept apart because a revocation matches loosely, so
 	// revoking the wrong one lifts a policy nobody cancelled - and because the
 	// pin produced from the joined text is the good one and must survive.
-	lastPin     interaction.StandingInstruction
-	previousPin interaction.StandingInstruction
+	lastPin interaction.StandingInstruction
+	// lastPinSource is the text that produced lastPin. The pass runs
+	// concurrently over readings of different lengths, and they do not
+	// necessarily land in the order they were started - so a short reading
+	// finishing late must not replace what a longer one already established.
+	lastPinSource string
+	previousPin   interaction.StandingInstruction
 	// lastPartialExtractNS bounds how often an unfinished utterance is re-read.
 	lastPartialExtractNS uint64
 	// heardWhenSpoke is how much of the current utterance had been heard when

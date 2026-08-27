@@ -92,3 +92,55 @@ func TestAPinnedDelayIsShownToWhoeverDecides(t *testing.T) {
 		t.Fatalf("the pinned line does not say how long to wait: %q", lines[0])
 	}
 }
+
+// One sentence reaches the standing pass in pieces, and the pass reads each
+// piece as it lands. The early reads are answers to half a question: measured,
+// "I'm going to tell you about my afternoon. Count the animals out loud as I
+// mention them, and say nothing else" pinned three policies, the first of
+// which told the agent not to reply until the story was over.
+func TestALaterReadingOfOneRequestReplacesTheEarlierOne(t *testing.T) {
+	board := &interaction.Pinboard{}
+	first := interaction.StandingInstruction{
+		Text:  "do not reply until they have finished telling you about their afternoon",
+		Scope: interaction.ScopeConversation, SetNS: 1_000,
+	}
+	board.Pin(first)
+	second := interaction.StandingInstruction{
+		Text:  "count the animals out loud as they mention them",
+		Scope: interaction.ScopeConversation, SetNS: 4_000,
+	}
+	board.Supersede(first.Text, second)
+	third := interaction.StandingInstruction{
+		Text:  "count the animals out loud as they mention them, and say nothing else",
+		Scope: interaction.ScopeConversation, SetNS: 9_000, Counting: true,
+	}
+	board.Supersede(second.Text, third)
+
+	inForce := board.InForce()
+	if len(inForce) != 1 {
+		t.Fatalf("one request should leave one policy, got %d: %v", len(inForce), inForce)
+	}
+	if inForce[0].Text != third.Text {
+		t.Fatalf("the fullest reading should stand, got %q", inForce[0].Text)
+	}
+	if !inForce[0].Counting {
+		t.Fatal("what the last reading found should carry over")
+	}
+	// They asked once, when they started saying it.
+	if inForce[0].SetNS != first.SetNS {
+		t.Fatalf("age should carry from the request, got %d want %d", inForce[0].SetNS, first.SetNS)
+	}
+}
+
+// Superseding something nobody pinned still leaves the policy in force, since
+// the alternative is a request read correctly and then dropped.
+func TestSupersedingSomethingAbsentStillPins(t *testing.T) {
+	board := &interaction.Pinboard{}
+	board.Supersede("a policy that was never pinned", interaction.StandingInstruction{
+		Text: "count the animals out loud", Scope: interaction.ScopeConversation, SetNS: 7,
+	})
+	inForce := board.InForce()
+	if len(inForce) != 1 || inForce[0].SetNS != 7 {
+		t.Fatalf("policy should stand with its own age, got %v", inForce)
+	}
+}
