@@ -226,7 +226,15 @@ func (runtime *runtime) noticeStanding(text string) {
 		defer runtime.wait.Done()
 		// The conversation, not just the utterance: a recogniser splits where a
 		// speaker breathes, and a fragment read alone means something else.
-		recent := interaction.RecentLines(snapshot.Items, 6)
+		//
+		// Minus the pieces the utterance is made of. The utterance is the whole
+		// turn joined, so the lines that make it up are already in it, and
+		// showing both puts the same words in front of the pass twice - which
+		// reads as emphasis. Measured on "Right? So let me plan this out",
+		// with "user: Right?" also in the recent lines, an announcement was
+		// pinned as a rule of silence one reading in six; without the
+		// duplicate, none in six.
+		recent := withoutEchoesOf(interaction.RecentLines(snapshot.Items, 6), whole)
 		extraction, err := runtime.policies.Extraction.Extract(
 			runtime.ctx, runtime.pinboard.InForceExcept(turn), recent, whole)
 		if recorder := runtime.policies.ShadowInteraction; recorder != nil {
@@ -560,6 +568,25 @@ func (runtime *runtime) settingAPolicy(snapshot trajectory.Snapshot) bool {
 func mustSpeechSoFar(snapshot trajectory.Snapshot) []string {
 	pieces, _ := speechSoFar(snapshot)
 	return pieces
+}
+
+// withoutEchoesOf drops conversation lines whose words are already inside the
+// utterance being read.
+func withoutEchoesOf(lines []string, utterance string) []string {
+	spoken := strings.ToLower(strings.Join(trajectory.SpokenWords(utterance), " "))
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		said := line
+		if index := strings.Index(line, ": "); index >= 0 {
+			said = line[index+2:]
+		}
+		words := strings.Join(trajectory.SpokenWords(said), " ")
+		if words != "" && strings.Contains(spoken, strings.ToLower(words)) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return kept
 }
 
 // lastSpokenBefore is the most recent thing this person had said by some point
