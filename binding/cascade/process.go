@@ -576,6 +576,13 @@ func (runtime *runtime) noteVoiceTurn(request cognition.Request) {
 	}
 	snapshot := runtime.store.Snapshot()
 	lines := interaction.RecentLines(snapshot.Items, 12)
+	// What the request actually adds to the phase prompt. Recorded because
+	// four rounds of reasoning about which paragraph might differ would each
+	// have been one round of reading it, and three of those four rounds were
+	// wrong: it was not the scenario preamble, not the holding paragraph, and
+	// not the sampling temperature, all of which reproduce the wanted answer
+	// ten times out of ten when tried by hand.
+	composed := cognition.Instruct("", request)
 	recorder(interaction.ShadowDecision{
 		NowNS:     runtime.scheduler.NowNS(),
 		Situation: "voice: " + strings.Join(lines, "\n"),
@@ -586,6 +593,7 @@ func (runtime *runtime) noteVoiceTurn(request cognition.Request) {
 			// The flags decide which paragraphs get composed into the
 			// instruction, so a turn that behaved unlike the same prompt tried
 			// by hand differs in one of these or in nothing.
+			"composed":     composed,
 			"holding":      strconv.FormatBool(request.Holding),
 			"interjecting": strconv.FormatBool(request.Interjecting),
 			"repair":       strconv.FormatBool(request.PendingRepair),
