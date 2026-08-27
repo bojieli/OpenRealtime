@@ -173,11 +173,22 @@ const (
 	// count, and only then: attached to every policy it taught a waiter
 	// scenario to count, and asked to order the dish that fits the agent said
 	// "4 4 4".
-	CountingInstruction = "Count every one of them in everything they have said. If that number is more " +
-		"than the last number you said, say it. If it is the same, or you counted none at all, say " +
-		WaitToken + ". So the first one they mention is \"one\" even though you have said nothing yet, " +
-		"and the same one mentioned again is " + WaitToken + ". Never say zero out loud: it is read aloud " +
-		"like everything else you write, and nobody counting things aloud says zero."
+	// The zero case first, and unconditionally. It used to end on a worked
+	// example of saying a number - "the first one they mention is one even
+	// though you have said nothing yet" - and against the real prompt, on a
+	// sentence with nothing in it to count, that produced a number three times
+	// in ten. The voice is asked several times a sentence, so a wrong answer
+	// three times in ten is a wrong count on nearly every sentence: the story
+	// opened "one two three" at a line about a river. Leading with the case
+	// where the answer is silence: ten times in ten, with the real first count
+	// still right ten times in ten.
+	CountingInstruction = "Count every one of them in everything they have said. If they have not mentioned " +
+		"any at all, say " + WaitToken + " - however long they have been talking and whatever else was in " +
+		"what they said. A number is only ever the answer once you have counted at least one of the things " +
+		"they asked about: the first of those is \"one\", and that same one mentioned again is " + WaitToken +
+		". Otherwise, if what you counted is more than the last number you said, say it; if it is the same, " +
+		"say " + WaitToken + ". Never say zero out loud: it is read aloud like everything else you write, " +
+		"and nobody counting things aloud says zero."
 
 	StandingInstruction = "The person you are talking to asked for these, and has not taken them back. They govern what you say and when, and they outrank the general guidance above.\n\n" +
 		"Each names something to watch for and what to do when it happens. Do that thing when it happens, once, and not before: if what you have just been told does not contain the thing being watched for, these require nothing of you at all. Asked to say something each time a condition occurs, say it for the occurrence in front of you - not for every occurrence you can imagine, and not to demonstrate that you understood.\n\n" +
