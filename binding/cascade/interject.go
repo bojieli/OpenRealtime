@@ -154,25 +154,22 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		return
 	}
 	if newly != stable {
-		// Inside a stretch of speech the agent has already answered. What it
-		// takes to answer again depends on whether the policy's answer depends
-		// on its own previous answers.
+		// Inside a stretch of speech the agent has already answered, wait for
+		// them to finish saying something before answering again.
 		//
-		// A running count is stateful: the number it says next is a function
-		// of the number it said last, and asking twice about one occurrence
-		// corrupts it permanently - with "1 2 3" in the conversation the model
-		// answers "4" eight times out of eight, and so does Gemini, whatever
-		// the instruction says. So a count is answered once per stretch of
-		// speech and no more.
+		// A running count used to be barred here outright, on the reasoning
+		// that its next number is a function of its last one so asking twice
+		// about one occurrence corrupts it permanently. The reasoning holds.
+		// The bar did not: counting as somebody goes is a mid-sentence act by
+		// definition, so refusing every mid-sentence count refused the count -
+		// measured, the guard fired twenty-two times in one run and the second
+		// animal in the story was never counted at all.
 		//
-		// A translation or an order is not: each sentence stands on its own,
-		// the second answer does not depend on the first, and refusing to
-		// answer again is how the dish that fits goes past unordered. Those
-		// wait for a finished sentence and then answer it.
-		if runtime.countingIsInForce() {
-			runtime.noteInterject("a running count is answered once for each thing they say")
-			return
-		}
+		// What stops the same occurrence being answered twice is now the fact
+		// the voice is handed: how much of what they are saying it has already
+		// spoken for. That is the layer that can tell a second look at one
+		// sentence from a second thing to say about it, which is a judgement
+		// about content and was never available here.
 		if !finishedSomething(newly) {
 			runtime.noteInterject("they have not finished saying anything since the agent last spoke")
 			return
