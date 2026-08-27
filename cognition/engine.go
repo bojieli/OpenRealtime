@@ -232,6 +232,12 @@ type Request struct {
 	// one kind of policy the voice needs different guidance for. It is read
 	// from the policy when it is pinned, by the pass that reads the policy.
 	Counting bool
+	// Setting says the speech this turn is answering is the speech a policy
+	// was read out of. A policy is not in force for the sentence that set it:
+	// "count the animals out loud as I mention them" mentions no animal, and
+	// carrying it out there leaves the count wrong by one for the rest of the
+	// conversation.
+	Setting bool
 	// Standing are the interaction policies people set out loud and have not
 	// lifted.
 	//
@@ -448,7 +454,7 @@ func Instruct(prompt string, request Request) string {
 		// act, because the agent speaks on ordinary turns too and the rules
 		// are the same ones there. A phase that is never heard needs none of
 		// it: it is not the one carrying them out.
-		if !request.Silent {
+		if !request.Silent && !request.Setting {
 			prompt += "\n\n" + CarryingOutInstruction
 			if request.Counting {
 				prompt += "\n\n" + CountingInstruction

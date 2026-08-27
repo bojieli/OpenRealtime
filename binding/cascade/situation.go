@@ -529,6 +529,32 @@ func speechSoFar(snapshot trajectory.Snapshot) ([]string, uint64) {
 	return pieces, began
 }
 
+// settingAPolicy reports that what this person is saying now is the speech a
+// policy was read out of.
+//
+// A policy is not in force for the sentence that set it. "Count the animals
+// out loud as I mention them" mentions no animal, and an agent that carries it
+// out there is wrong by one for the rest of the conversation - measured, the
+// voice said "one" four times during the instruction itself, having found the
+// word "animals" in it.
+//
+// The interjection path has refused this from the start. The ordinary turn had
+// no equivalent, and it is the path that answers while somebody is setting a
+// policy, because setting one is a thing people do in whole sentences.
+func (runtime *runtime) settingAPolicy(snapshot trajectory.Snapshot) bool {
+	runtime.audioMu.Lock()
+	pinnedFrom := strings.TrimSpace(runtime.pinnedFromText)
+	runtime.audioMu.Unlock()
+	if pinnedFrom == "" {
+		return false
+	}
+	pieces, _ := speechSoFar(snapshot)
+	if len(pieces) == 0 {
+		return false
+	}
+	return beganWith(pinnedFrom, strings.Join(pieces, " "))
+}
+
 // mustSpeechSoFar is speechSoFar without the turn key, for callers that only
 // need what was said.
 func mustSpeechSoFar(snapshot trajectory.Snapshot) []string {
