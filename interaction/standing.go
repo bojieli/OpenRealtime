@@ -195,6 +195,13 @@ func buildExtraction() string {
 			"the part after the full stop is the half that says what not to do. Read a trailing clause as " +
 			"part of what precedes it and keep what it adds: a policy written back without the restriction " +
 			"they attached is not the policy they set.\n\n" +
+			"Saying what they are about to do is not a policy either. \"Let me plan this out\", \"I'm going to " +
+			"tell you about my afternoon\", \"so here's the situation\" announce a topic; they name nothing to " +
+			"watch for and ask for nothing. A request for quiet says so, about the agent: don't interrupt me, " +
+			"hang on, not yet, let me finish before you say anything. The difference is whether the sentence " +
+			"is about what they are doing or about what the agent should do, and reading the first as the " +
+			"second invents a rule of silence nobody asked for - which then outranks the deployment's own " +
+			"instructions, because policies are meant to.\n\n" +
 			"An immediate command is not a policy. The test is whether obeying it takes one action or requires " +
 			"watching for something: \"stop\" is finished the moment it is obeyed and is none, while \"let me " +
 			"finish\" means staying quiet until a condition holds and is a policy for this turn. Neither is a " +
