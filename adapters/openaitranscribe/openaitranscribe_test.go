@@ -134,7 +134,9 @@ func TestPartialsFireOnAScheduleRatherThanEveryFrame(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Ten frames of 100 ms each is one second of audio, which is two
-	// intervals: two partials, not ten.
+	// intervals: two partials, not ten. Let the first asynchronous request
+	// complete before crossing the second threshold so this tests the schedule
+	// rather than the deliberate one-request backpressure.
 	offset := uint64(0)
 	for index := range uint64(10) {
 		revisions, err := adapter.PushFrame(context.Background(), v1.AudioFrame{
@@ -152,9 +154,191 @@ func TestPartialsFireOnAScheduleRatherThanEveryFrame(t *testing.T) {
 				t.Fatalf("partial text: %+v", revision)
 			}
 		}
+		if index == 4 {
+			await(t, func() bool {
+				adapter.mu.Lock()
+				defer adapter.mu.Unlock()
+				return adapter.partialDone != nil && len(adapter.partialDone) == 1
+			})
+		}
 	}
+	await(t, func() bool { return calls.Load() == 2 })
+	await(t, func() bool {
+		adapter.mu.Lock()
+		defer adapter.mu.Unlock()
+		return adapter.partialDone != nil && len(adapter.partialDone) == 1
+	})
 	if got := calls.Load(); got != 2 {
 		t.Fatalf("expected two scheduled partials over one second, got %d", got)
+	}
+	if err := adapter.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A configured partial on a batch endpoint is speculative. It must never turn
+// the provider's HTTP latency into acoustic latency: frames still have to
+// reach VAD while that request is outstanding, and the endpoint must replace
+// the stale snapshot with one terminal transcription.
+func TestAPartialDoesNotBlockAudioIngestionOrEndpointFinalization(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if calls.Add(1) == 1 {
+			close(started)
+			select {
+			case <-request.Context().Done():
+			case <-release:
+			}
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"text":"complete utterance","language":"en"}`))
+	}))
+	defer server.Close()
+	defer close(release)
+
+	adapter, err := New(Config{
+		BaseURL: server.URL + "/v1", APIKey: "secret",
+		PartialInterval: 500 * time.Millisecond, SampleRateHz: 16_000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	type pushResult struct {
+		revisions []v1.PerceptionRevision
+		err       error
+	}
+	firstDone := make(chan pushResult, 1)
+	go func() {
+		revisions, err := adapter.PushFrame(context.Background(), v1.AudioFrame{
+			Index: 0, SampleOffset: 0, SampleRateHz: 16_000, PCM16LE: tone(8_000),
+		})
+		firstDone <- pushResult{revisions: revisions, err: err}
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("the scheduled partial did not reach the endpoint")
+	}
+	select {
+	case result := <-firstDone:
+		if result.err != nil || len(result.revisions) != 0 {
+			t.Fatalf("start partial: revisions=%+v error=%v", result.revisions, result.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("starting a remote partial blocked the audio frame that scheduled it")
+	}
+
+	secondDone := make(chan pushResult, 1)
+	go func() {
+		revisions, err := adapter.PushFrame(context.Background(), v1.AudioFrame{
+			Index: 1, SampleOffset: 8_000, SampleRateHz: 16_000, PCM16LE: tone(8_000),
+		})
+		secondDone <- pushResult{revisions: revisions, err: err}
+	}()
+	select {
+	case result := <-secondDone:
+		if result.err != nil || len(result.revisions) != 0 {
+			t.Fatalf("ingest while partial is pending: revisions=%+v error=%v", result.revisions, result.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("a pending batch partial blocked the next audio frame")
+	}
+
+	final, err := adapter.Finalize(context.Background(), 16_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !final.Final || final.StableText != "complete utterance" {
+		t.Fatalf("final revision: %+v", final)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("one obsolete partial and one terminal request should cross the endpoint, got %d", got)
+	}
+}
+
+func TestASlowPartialCoalescesMissedIntervals(t *testing.T) {
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var calls atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if calls.Add(1) == 1 {
+			close(firstStarted)
+			select {
+			case <-releaseFirst:
+			case <-request.Context().Done():
+				return
+			}
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"text":"current partial","language":"en"}`))
+	}))
+	defer server.Close()
+
+	adapter, err := New(Config{
+		BaseURL: server.URL + "/v1", APIKey: "secret",
+		PartialInterval: 500 * time.Millisecond, SampleRateHz: 16_000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapter.PushFrame(context.Background(), v1.AudioFrame{
+		Index: 0, SampleOffset: 0, SampleRateHz: 16_000, PCM16LE: tone(8_000),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("the first partial did not start")
+	}
+	// Four more intervals arrive while the first partial is still in flight.
+	// They are one current snapshot, not four future requests.
+	if _, err := adapter.PushFrame(context.Background(), v1.AudioFrame{
+		Index: 1, SampleOffset: 8_000, SampleRateHz: 16_000, PCM16LE: tone(32_000),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	close(releaseFirst)
+	await(t, func() bool {
+		adapter.mu.Lock()
+		defer adapter.mu.Unlock()
+		return adapter.partialDone != nil && len(adapter.partialDone) == 1
+	})
+	if _, err := adapter.PushFrame(context.Background(), v1.AudioFrame{
+		Index: 2, SampleOffset: 40_000, SampleRateHz: 16_000, PCM16LE: tone(1_600),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	await(t, func() bool {
+		adapter.mu.Lock()
+		defer adapter.mu.Unlock()
+		return calls.Load() == 2 && adapter.partialDone != nil && len(adapter.partialDone) == 1
+	})
+	if _, err := adapter.PushFrame(context.Background(), v1.AudioFrame{
+		Index: 3, SampleOffset: 41_600, SampleRateHz: 16_000, PCM16LE: tone(1_600),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("stale intervals became a request backlog: got %d calls, want 2", got)
+	}
+	if err := adapter.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func await(t *testing.T, ready func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for !ready() {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for asynchronous transcription work")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 

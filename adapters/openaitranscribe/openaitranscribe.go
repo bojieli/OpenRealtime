@@ -11,9 +11,11 @@
 // once, at the endpoint of the utterance, and emits exactly one final
 // revision. A deployment that wants earlier text sets a partial interval and
 // pays for it in re-transcribed audio, because re-sending the utterance is the
-// only way a batch endpoint can produce a partial at all. For genuinely
-// streaming recognition, use a provider that streams - the Deepgram adapter,
-// or the local Qwen3-ASR service.
+// only way a batch endpoint can produce a partial at all. Those speculative
+// requests run one at a time off the audio path: a slow partial is coalesced
+// rather than delaying VAD, and terminal recognition replaces any older
+// snapshot. For genuinely streaming recognition, use a provider that streams
+// - the Deepgram adapter, or the local Qwen3-ASR service.
 package openaitranscribe
 
 import (
@@ -29,6 +31,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -107,10 +110,19 @@ type Adapter struct {
 	nextSourceSample uint64
 	partialAtSamples int
 	partialCount     int
+	partialDone      chan partialResult
+	partialCancel    context.CancelFunc
 	lastEmittedText  string
 	language         string
 	revisionID       uint64
 	finalized        bool
+}
+
+type partialResult struct {
+	text         string
+	language     string
+	sourceSample uint64
+	err          error
 }
 
 // New validates configuration and returns a fresh single-utterance adapter.
@@ -216,6 +228,10 @@ func (adapter *Adapter) PushFrame(ctx context.Context, frame v1.AudioFrame) ([]v
 	if adapter.finalized {
 		return nil, errors.New("transcription session is finalized")
 	}
+	revisions, err := adapter.collectPartial()
+	if err != nil {
+		return nil, err
+	}
 	if err := adapter.validateFrame(frame); err != nil {
 		return nil, err
 	}
@@ -240,27 +256,23 @@ func (adapter *Adapter) PushFrame(ctx context.Context, frame v1.AudioFrame) ([]v
 	adapter.nextSourceSample = frame.SampleOffset + uint64(len(frame.PCM16LE)/2)
 
 	if adapter.partialAtSamples == 0 || len(adapter.buffer) == 0 {
-		return nil, nil
+		return revisions, nil
 	}
-	// A partial costs a full re-transcription of the utterance, so the
-	// interval is measured in buffered audio rather than wall clock: the same
-	// recording produces the same number of requests every run, which is what
-	// makes a measured cell reproducible.
+	// A partial costs a full re-transcription of the utterance, so its base
+	// schedule is measured in buffered audio rather than wall clock. A provider
+	// that keeps up is asked at the same points in every recording; a slow one
+	// coalesces the decode opportunities that arrived while it was busy.
 	pending := len(adapter.buffer)/2 - adapter.partialCount*adapter.partialAtSamples
-	if pending < adapter.partialAtSamples {
-		return nil, nil
+	if pending < adapter.partialAtSamples || adapter.partialDone != nil {
+		return revisions, nil
 	}
-	text, language, err := adapter.transcribe(ctx, adapter.buffer)
-	if err != nil {
-		return nil, err
-	}
-	adapter.language = language
-	if text == adapter.lastEmittedText {
-		adapter.partialCount++
-		return nil, nil
-	}
-	adapter.partialCount++
-	return []v1.PerceptionRevision{adapter.revision(text, adapter.nextSourceSample, false)}, nil
+	adapter.startPartial(ctx)
+	// This snapshot covers every interval currently buffered. If the previous
+	// request was slower than the configured cadence, the intermediate
+	// snapshots are already obsolete; counting only one here would replay that
+	// backlog one full-utterance transcription at a time.
+	adapter.partialCount = len(adapter.buffer) / 2 / adapter.partialAtSamples
+	return revisions, nil
 }
 
 // Finalize transcribes the whole utterance and emits one final revision.
@@ -277,6 +289,13 @@ func (adapter *Adapter) Finalize(ctx context.Context, sourceSample uint64) (v1.P
 		return v1.PerceptionRevision{}, fmt.Errorf(
 			"transcription final source sample is %d; expected %d", sourceSample, adapter.nextSourceSample)
 	}
+	// A partial is speculative. Once the acoustic endpoint is known, waiting
+	// for an older snapshot before asking for the terminal transcript makes the
+	// endpoint pay for obsolete work and delays every downstream response.
+	// Cancel it first; the final request below contains all admitted audio.
+	if err := adapter.stopPartial(); err != nil {
+		return v1.PerceptionRevision{}, err
+	}
 	converted, err := adapter.resampler.Finalize()
 	if err != nil {
 		return v1.PerceptionRevision{}, fmt.Errorf("finalize transcription resampler: %w", err)
@@ -292,6 +311,83 @@ func (adapter *Adapter) Finalize(ctx context.Context, sourceSample uint64) (v1.P
 	adapter.language = language
 	adapter.finalized = true
 	return adapter.revision(text, sourceSample, true), nil
+}
+
+// Close cancels a speculative partial when an utterance is abandoned before
+// its endpoint. The adapter owns asynchronous partial requests, so it also
+// owns their lifetime rather than borrowing the lifetime of one PushFrame
+// call.
+func (adapter *Adapter) Close() error {
+	adapter.mu.Lock()
+	defer adapter.mu.Unlock()
+	err := adapter.stopPartial()
+	adapter.finalized = true
+	return err
+}
+
+// startPartial re-transcribes a snapshot without holding up audio ingestion.
+//
+// A batch transcription endpoint cannot truly stream. When partials are
+// enabled, every hypothesis is a remote transcription of the growing buffer;
+// doing that synchronously makes provider latency block the acoustic gate
+// itself. Audio arriving during the request must keep advancing the gate, and
+// a later frame collects the result if it is still useful. At most one request
+// is in flight, so a slow endpoint coalesces stale decode opportunities rather
+// than building an unbounded request queue.
+func (adapter *Adapter) startPartial(ctx context.Context) {
+	requestContext, cancel := context.WithCancel(ctx)
+	done := make(chan partialResult, 1)
+	samples := slices.Clone(adapter.buffer)
+	sourceSample := adapter.nextSourceSample
+	adapter.partialDone, adapter.partialCancel = done, cancel
+	go func() {
+		text, language, err := adapter.transcribe(requestContext, samples)
+		done <- partialResult{
+			text: text, language: language, sourceSample: sourceSample, err: err,
+		}
+	}()
+}
+
+// collectPartial publishes a completed partial at the next provider advance.
+// It never waits on the realtime input path.
+func (adapter *Adapter) collectPartial() ([]v1.PerceptionRevision, error) {
+	if adapter.partialDone == nil {
+		return nil, nil
+	}
+	var result partialResult
+	select {
+	case result = <-adapter.partialDone:
+	default:
+		return nil, nil
+	}
+	adapter.partialDone = nil
+	adapter.partialCancel = nil
+	if result.err != nil {
+		return nil, result.err
+	}
+	adapter.language = result.language
+	if result.text == adapter.lastEmittedText {
+		return nil, nil
+	}
+	return []v1.PerceptionRevision{adapter.revision(result.text, result.sourceSample, false)}, nil
+}
+
+// stopPartial removes work for a superseded snapshot before terminal
+// recognition or cleanup. A request that already failed still reports its
+// failure; cancellation initiated here is expected and is replaced by the
+// final request.
+func (adapter *Adapter) stopPartial() error {
+	if adapter.partialDone == nil {
+		return nil
+	}
+	adapter.partialCancel()
+	result := <-adapter.partialDone
+	adapter.partialDone = nil
+	adapter.partialCancel = nil
+	if result.err != nil && !errors.Is(result.err, context.Canceled) {
+		return result.err
+	}
+	return nil
 }
 
 func (adapter *Adapter) validateFrame(frame v1.AudioFrame) error {
