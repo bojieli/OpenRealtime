@@ -1718,3 +1718,50 @@ its place. A benchmark that scores behaviour cannot tell a model that chose
 silence from a pipeline that stopped, and this file now contains three
 different ways that has happened: a session stream that ended early, a
 synthesiser that ate the GPU, and the GPU itself.
+
+### The recogniser was deleting the thing being counted (F49)
+
+The counting scenario oscillated for a dozen builds - "1 3 3 1", then "4 5",
+then silence, then "four five six" - and every fix traded one failure mode for
+another. Asked the four cases directly, the model answered all four correctly
+five times out of five. The prompt was not the problem.
+
+Round-tripped through this project's own synthesiser:
+
+```
+said:  "A capybara wandered over and sat down next to me."
+SenseVoice:  "A ki bara wandered over and SAT down next to me."     271ms
+turbo:       "A capybara wandered over and sat down next to me."    103ms
+```
+
+In the live pipeline SenseVoice rendered the same line as "A cap borroworer"
+and "A capy borroworough1". Every prompt fix that oscillated was asking a model
+to count animals in a sentence with no animal left in it.
+
+Whisper large-v3-turbo is both more accurate and faster - it decodes with a
+fraction of large-v3's layers - and this is not an accommodation for one
+scenario. A recogniser that loses proper nouns loses names, places, order
+numbers and dish names, and three of the eleven scenarios here turn on hearing
+one correctly.
+
+Two things follow beyond the model choice. The first is that a benchmark cannot
+measure a decision layer through a perception layer that destroys the input,
+and nothing in the scoring said so: the scenario reported "none of [one 1]" as
+though the agent had declined to count. The second is the discipline that found
+it - recording the inputs rather than reasoning about them. Four rounds went to
+the scenario preamble, the holding paragraph, the sampling temperature and the
+position of the instruction, all wrong, all disproved in one command each once
+the actual prompt and the actual transcript were written down.
+
+### What "stable" meant, and what nothing computed (F50)
+
+The guard meant to stop the agent answering one occurrence twenty times never
+fired. It asked the revision what the recogniser had committed to, and every
+partial said nothing: the adapter set StableText only on the final revision, so
+until then the whole transcript was reported as unstable and the guard fell
+back to comparing whole revisions - which is exactly the guard it replaced.
+
+A partial is a whole re-transcription of the buffer. The recogniser revises its
+own tail constantly while the front of the sentence stops moving almost at
+once, and that settled front is what stable means. Both fields have been in the
+perception contract from the beginning and nothing had ever computed them.
