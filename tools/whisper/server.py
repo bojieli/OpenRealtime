@@ -54,9 +54,17 @@ class Recogniser:
             #
             # A recogniser that rewrites what somebody said is worse than one
             # that hears them badly, because nothing downstream can tell.
+            # A speech gate in front of the decoder, because Whisper does not
+            # decline to transcribe. Given pure silence it returns "Thank
+            # you." - every time, at every length tried - and a phantom
+            # utterance is worse than a missed one: the agent answers
+            # something nobody said. Measured in the interpreting scenario,
+            # that reached the conversation as the agent apparently saying
+            # "Thank you for watching." and as user lines in languages nobody
+            # in the room was speaking.
             segments, info = self.model.transcribe(
                 io.BytesIO(audio), language=self.language, task="transcribe",
-                beam_size=1, condition_on_previous_text=False,
+                beam_size=1, condition_on_previous_text=False, vad_filter=True,
             )
             return "".join(segment.text for segment in segments).strip(), info.language
 
