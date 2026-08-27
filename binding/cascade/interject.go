@@ -30,6 +30,12 @@ import (
 //
 // It never escalates. An interjection is not an answer, and handing it to the
 // reasoner would start work on a turn nobody has finished.
+// finishedSomething reports that a stretch of new speech completes a sentence
+// or a clause, which is the smallest thing somebody can finish saying.
+func finishedSomething(text string) bool {
+	return strings.ContainsAny(text, ".!?;:,。！？；：、")
+}
+
 func (runtime *runtime) interject(decision interaction.Context) {
 	if runtime.policies.Interaction == nil {
 		return
@@ -109,8 +115,28 @@ func (runtime *runtime) interject(decision interaction.Context) {
 	if stable == "" {
 		stable = strings.TrimSpace(decision.Revision.Text())
 	}
-	if runtime.heardSinceSpeaking(stable) == "" {
+	// Something new, and - if the agent has already spoken into this same
+	// stretch of speech - something finished.
+	//
+	// Asking twice about one occurrence is what corrupts a running count, and
+	// no wording fixes it: with "1 2 3" already in the conversation the model
+	// answers "4" eight times out of eight, even told in as many words that
+	// its own numbers are not a sequence to continue. The first count is
+	// right and everything after it follows from the second one.
+	//
+	// A sentence is the unit, not a number of words. A count I tried at three
+	// new words cut the duplicates and took the phone menu from four in five
+	// to none, because those scenarios turn on answering the moment something
+	// is named. This delays nothing that has not already been answered: the
+	// first act on a new stretch of speech is always allowed, and only acting
+	// again inside the same one waits for them to finish saying something.
+	newly := runtime.heardSinceSpeaking(stable)
+	if newly == "" {
 		runtime.noteInterject("nothing new since the agent last spoke")
+		return
+	}
+	if newly != stable && !finishedSomething(newly) {
+		runtime.noteInterject("they have not finished saying anything since the agent last spoke")
 		return
 	}
 	// One at a time, but not forever. An interjection runs a continuation and
