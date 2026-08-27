@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
@@ -334,12 +335,34 @@ func NewExtractor(generator Generator) (Extractor, error) {
 	if generator == nil {
 		return nil, errors.New("an extractor requires a generator")
 	}
-	return modelExtractor{generator: generator}, nil
+	return &modelExtractor{generator: generator}, nil
 }
 
-type modelExtractor struct{ generator Generator }
+type modelExtractor struct {
+	generator Generator
+	// read caches what the three questions about a policy answered, keyed by
+	// its words.
+	//
+	// A turn is re-read every time the speaker adds to it, and each reading
+	// lists the same policies again, so classifying on every pin meant three
+	// model calls per policy per reading - dozens of them, on the same local
+	// model the voice and the interaction model are waiting on. Measured, that
+	// took hearing from half a second to four, and a count that was correct
+	// arrived two seconds after the window it was correct for.
+	//
+	// What the questions ask about is the policy's own words, which do not
+	// change. Asked once, they stay answered.
+	read sync.Map
+}
 
-func (extractor modelExtractor) Name() string { return "extract:" + extractor.generator.Name() }
+// policyReading is what the three questions found.
+type policyReading struct {
+	counting    bool
+	restricting bool
+	scope       Scope
+}
+
+func (extractor *modelExtractor) Name() string { return "extract:" + extractor.generator.Name() }
 
 // Extract runs the pass and refuses to guess.
 //
@@ -348,7 +371,7 @@ func (extractor modelExtractor) Name() string { return "extract:" + extractor.ge
 // and a spurious one is merely never triggered - but that argument is about
 // what the model should lean towards, not about what this should invent when
 // the model has said something it does not understand.
-func (extractor modelExtractor) Extract(
+func (extractor *modelExtractor) Extract(
 	ctx context.Context, existing []StandingInstruction, recent []string, utterance string,
 ) (Extraction, error) {
 	if !v1.CarriesSpeech(utterance) {
@@ -364,9 +387,10 @@ func (extractor modelExtractor) Extract(
 		return Extraction{}, err
 	}
 	for index := range extraction.Pins {
-		extraction.Pins[index].Counting = extractor.asksForACount(ctx, extraction.Pins[index].Text)
-		extraction.Pins[index].Restricting = extractor.restrictsEverythingElse(ctx, extraction.Pins[index].Text)
-		extraction.Pins[index].Scope = extractor.scopeOf(ctx, extraction.Pins[index])
+		reading := extractor.readingOf(ctx, extraction.Pins[index])
+		extraction.Pins[index].Counting = reading.counting
+		extraction.Pins[index].Restricting = reading.restricting
+		extraction.Pins[index].Scope = reading.scope
 	}
 	return extraction, nil
 }
@@ -401,7 +425,7 @@ var CountingInstruction = "Somebody set a standing policy for a voice assistant.
 // and turns happen many times a second. An unreadable answer is "no": the
 // arithmetic is help for one kind of policy, and withholding it from a count
 // costs a scenario while attaching it to everything else costs several.
-func (extractor modelExtractor) asksForACount(ctx context.Context, policy string) bool {
+func (extractor *modelExtractor) asksForACount(ctx context.Context, policy string) bool {
 	if strings.TrimSpace(policy) == "" {
 		return false
 	}
@@ -445,7 +469,7 @@ var RestrictingInstruction = "Somebody set a standing policy for a voice assista
 // An unreadable answer is "no". Withholding the restriction leaves an agent
 // too talkative, which is the failure the person can hear and correct; adding
 // one nobody asked for leaves it mute for a reason they cannot see.
-func (extractor modelExtractor) restrictsEverythingElse(ctx context.Context, policy string) bool {
+func (extractor *modelExtractor) restrictsEverythingElse(ctx context.Context, policy string) bool {
 	if strings.TrimSpace(policy) == "" {
 		return false
 	}
@@ -488,7 +512,7 @@ var ScopeInstruction = "A policy was set for a voice assistant. Does it stand fr
 // standing on its own: a passing policy wrongly left standing keeps an agent
 // quiet until somebody tells it to speak, which they can do, while a standing
 // one wrongly expired fails silently at the moment it was set for.
-func (extractor modelExtractor) scopeOf(ctx context.Context, instruction StandingInstruction) Scope {
+func (extractor *modelExtractor) scopeOf(ctx context.Context, instruction StandingInstruction) Scope {
 	if strings.TrimSpace(instruction.Text) == "" {
 		return instruction.Scope
 	}
@@ -503,6 +527,25 @@ func (extractor modelExtractor) scopeOf(ctx context.Context, instruction Standin
 		return ScopeTurn
 	}
 	return instruction.Scope
+}
+
+// readingOf answers the three questions about a policy, once.
+func (extractor *modelExtractor) readingOf(ctx context.Context, instruction StandingInstruction) policyReading {
+	key := strings.ToLower(strings.TrimSpace(instruction.Text))
+	if cached, ok := extractor.read.Load(key); ok {
+		return cached.(policyReading)
+	}
+	reading := policyReading{
+		counting:    extractor.asksForACount(ctx, instruction.Text),
+		restricting: extractor.restrictsEverythingElse(ctx, instruction.Text),
+		scope:       extractor.scopeOf(ctx, instruction),
+	}
+	// Only a complete reading is kept. A model call that failed answers with
+	// the safe default, and caching that would make one bad moment permanent.
+	if ctx.Err() == nil {
+		extractor.read.Store(key, reading)
+	}
+	return reading
 }
 
 func truncateAnswer(text string) string {
