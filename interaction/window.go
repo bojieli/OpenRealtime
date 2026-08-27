@@ -107,6 +107,11 @@ func cost(items []trajectory.Item) int {
 // that are not conversation. What an interaction model needs from the past is
 // who said what; reasoning, tool plumbing and assistant state are the agent
 // talking to itself.
+// silentAuthority marks a producer that is never heard. It is the string form
+// of continuation.SpeechAuthoritySilent, spelled out here because interaction
+// cannot import continuation without a cycle.
+const silentAuthority = "silent"
+
 func windowLine(item trajectory.Item) string {
 	text := strings.TrimSpace(item.Content)
 	if text == "" {
@@ -119,6 +124,20 @@ func windowLine(item trajectory.Item) string {
 		}
 		return SpeakerOf(item) + ": " + text
 	case trajectory.KindAssistant:
+		// The reasoner is never heard. What it writes is background state the
+		// voice reads before it speaks next, and rendering it as "agent:" tells
+		// the voice it said something it never said - measured, a conversation
+		// in which the agent appeared to have replied "The user wants to finish
+		// a task but has not yet specified what the task is. Please ask the
+		// user to provide the details", in the third person, to somebody who
+		// was mid-sentence.
+		//
+		// Kept rather than dropped, because it is often the only record of what
+		// the reasoner found, and labelled rather than kept quietly, because a
+		// line that reads as speech is read as speech.
+		if item.Producer.SpeechAuthority == silentAuthority {
+			return "background (not said out loud): " + text
+		}
 		if text == WaitToken {
 			// The voice choosing to be silent is a decision, not a line of
 			// conversation. Rendered as one it teaches the next turn that the

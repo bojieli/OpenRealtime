@@ -131,3 +131,38 @@ func TestOneSentenceIsOneLineHoweverOftenItWasCommitted(t *testing.T) {
 		t.Fatalf("a different sentence was folded away: %v", lines)
 	}
 }
+
+// TestBackgroundStateIsNotRenderedAsSpeech is the regression for a
+// conversation in which the agent appeared to have said "The user wants to
+// finish a task but has not yet specified what the task is. Please ask the
+// user to provide the details" - in the third person, to somebody who was
+// mid-sentence. The reasoner is never heard; what it writes is background
+// state the voice reads before it speaks next.
+func TestBackgroundStateIsNotRenderedAsSpeech(t *testing.T) {
+	window := &interaction.Window{}
+	lines := window.Lines([]trajectory.Item{
+		{
+			Kind: trajectory.KindObservation, Content: "what is my balance",
+			Observation: &trajectory.ObservationMeta{
+				Source: "microphone", Authority: trajectory.AuthorityUser,
+			},
+		},
+		{Kind: trajectory.KindAssistant, Content: "One moment."},
+		{
+			Kind: trajectory.KindAssistant, Content: "The balance call returned 412 pounds.",
+			Producer: trajectory.Producer{SpeechAuthority: "silent"},
+		},
+	})
+	if len(lines) != 3 {
+		t.Fatalf("expected three lines, got %v", lines)
+	}
+	if !strings.HasPrefix(lines[1], "agent: ") {
+		t.Fatalf("something the agent said does not read as speech: %q", lines[1])
+	}
+	if strings.HasPrefix(lines[2], "agent: ") {
+		t.Fatalf("background state reads as something the agent said: %q", lines[2])
+	}
+	if !strings.Contains(lines[2], "412") {
+		t.Fatalf("background state was dropped rather than labelled: %q", lines[2])
+	}
+}
