@@ -20,9 +20,12 @@ in both directions is validated against the pinned OpenAI schema on every
 session, because a compatibility claim that is not continuously checked is a
 compatibility claim that decays.
 
-**It runs any voice stack.** A cascade of recogniser, language model, and
-synthesiser; a speech-to-speech Omni model; a full-duplex interaction model; or
-a remote Realtime endpoint. Four bindings, one runtime.
+**It runs composable, evolving architectures.** A cascade of recogniser,
+language model, and synthesiser; a speech-to-speech foreground under external
+predicates or a policy model; a native-interaction foreground; or a remote
+Realtime endpoint. The repository-owned architecture catalog versions those
+compositions over shared binding machinery instead of treating them as closed
+model species.
 
 **On any provider.** Thirty language models, ten recognisers, and nine
 synthesisers resolve through one catalogue — OpenAI, Anthropic, Google, xAI,
@@ -76,17 +79,28 @@ it returns one typed `act`, `wait`, or `abstain` decision under a hard deadline.
 Abstention, malformed output, and timeout fall through to the existing slow
 reasoner. The default `voice` profile does not construct this controller.
 
-## Bindings
+## Architectures and bindings
 
-| Binding | Perception | Fast | Slow | Action | Floor |
-| --- | --- | --- | --- | --- | --- |
-| `cascade` | engine | engine | engine | engine | engine |
-| `omni` | model | model | **engine** | model | engine |
-| `duplex` | model | model | **engine** | model | model |
-| `upstream` | remote | remote | **engine** | remote | remote or engine |
+| Example architecture | Perception | Fast | Slow | Action | Interaction | Floor |
+| --- | --- | --- | --- | --- | --- | --- |
+| `cascade.controlled@3` | engine | engine | engine | engine | one predicate controller | engine |
+| `cascade.composed-policy@1` | engine | engine | engine | engine | predicates + policy, arbitrated | engine |
+| `omni.external-policy@4` | model | model | **engine** | model | one engine policy | engine |
+| `omni.native-policy@3` | model | model | **engine** | model | one native controller | engine |
+| `omni.native-full@3` | model | model | **engine** | model | one native controller | model |
+| `realtime.remote@3` | remote | remote | **engine** | remote | one remote controller | remote |
 
-The slow column never varies — that is the whole differentiator. See
-[bindings](docs/bindings/README.md).
+The slow column never varies — that is the whole differentiator. List the
+immutable catalog with `openrealtime architectures list`, inspect a revision
+with `openrealtime architectures show omni.external-policy@4`, and launch one
+with `openrealtime serve -architecture omni.external-policy@4 ...`. Each current
+revision selects both an exact interaction-evidence capability vector and an
+exact selected-controller vector plus arbitration rule. Direct vision, speaker
+identity, a silence clock, or a predicate/text composition cannot hide behind
+one coarse `transcript` label. Named
+bindings remain concrete adapters and compatibility presets. See
+[architecture](docs/architecture.md), [architecture experiments](docs/architecture-experiments.md),
+and [bindings](docs/bindings/README.md).
 
 ## Transports
 
@@ -142,6 +156,7 @@ as its release gate. See [the benchmark harness](docs/benchmarks.md).
 | [The test surface](surface/README.md) | every channel, both directions, on one page |
 | [The native macOS developer app](macos/README.md) | microphone, camera, screen, browser-use, desktop control, local tools, files, and millisecond traces |
 | [Architecture](docs/architecture.md) | the four subsystems and why they are separate |
+| [Evolving architectures](docs/architecture-experiments.md) | catalog revisions, live attestation, and controlled P/T/C/N experiments |
 | [Bindings](docs/bindings/README.md) | which voice stack, and what each one owns |
 | [The OpenRealtime Protocol](docs/protocol/openrealtime-1.md) | normative spec for video, observations, and computer use |
 | [The sidecar protocol](docs/sidecar-protocol-1.md) | the process boundary for models not written in Go |

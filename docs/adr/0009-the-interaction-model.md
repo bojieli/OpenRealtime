@@ -161,7 +161,8 @@ and act-now, and leave the predicates in place. Smaller and lands sooner, but
 keeps four components that each see a slice, which is the disease rather than
 the symptom.
 
-**Let the interaction model own the floor for model-native bindings too.**
-Rejected. A full-duplex model owns its own turn-taking, and an external policy
-would fight it. The existing `EngineOwned()` seam is exactly the right
-boundary.
+**Infer interaction ownership from a model-native floor.** Rejected by
+ADR-0011. A floor boundary and an interaction act are separate decisions, and
+a native-capable model may be run under an external controller as a controlled
+selection. The ownership vector must say which one is active; capability must
+continue to report that both are available.

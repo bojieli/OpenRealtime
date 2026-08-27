@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted, v1.0.
+Accepted, v1.0; model-taxonomy language amended by
+[ADR-0011](0011-capabilities-not-model-species.md).
 
 ## Context
 
@@ -44,11 +45,12 @@ shipped default.
 measurement program varies is now a constructor argument and a command-line
 flag, so a measured cell is a command line rather than a build.
 
-**"Control plane" is structural, not a ranking.** Interaction is the most
-important subsystem in this project: a full-duplex model has turn-taking in its
-weights, but a cascade and an Omni model have none, so for two of the four
-bindings every bit of responsiveness the system exhibits is manufactured there
-and nowhere else.
+**"Control plane" is structural, not a ranking.** Interaction may be selected
+from an engine policy or a native model capability. Concurrent I/O, native
+floor, and native interaction often occur together but are independent. For a
+composition with engine interaction, responsiveness is manufactured here;
+selecting native interaction moves that policy into the foreground model
+without moving slow cognition, authority, or audit with it.
 
 **Two things stayed out of it, deliberately.** The division of labour between
 fast and slow, and the granularity of a spoken answer, live in the phase

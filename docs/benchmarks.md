@@ -22,6 +22,8 @@ openrealtime bench fdb --limit 4           # a suite against it
 
 | Command | Suite | Measures |
 | --- | --- | --- |
+| `scenario -architecture-manifest …` | OpenRealtime interaction scenarios | F52 predicate/text/composed/native cells with live architecture attestation |
+| `bench architecture` | F52 comparison gate | architecture-only versus system claims |
 | `bench fdb` | FDB v1.5 | overlap: yielding to interruptions, holding through backchannels |
 | `bench fdbv3` | FDB v3 | tool use under disfluent speech, including spelled identifiers |
 | `bench fdbench` | FD-Bench | endpointing and response timing at scale |
@@ -33,6 +35,41 @@ Every suite here plays a recording at the system. For conversations where both
 sides are live — a support call, an interview, an argument over a large
 document — see [simulation.md](simulation.md), which connects two agents ear to
 mouth and checks what happened between them.
+
+Architecture experiments need more identity than the generic factor table can
+carry. [Architecture experiments](architecture-experiments.md) defines the
+versioned manifest, live session evidence, unavailable-cell handling, and the
+P/T/C/N pairing rules.
+
+Their authoring path is part of the binary and shares production parsers with
+the server; it is not a set of launch scripts:
+
+```sh
+# Start and inspect an exact immutable definition.
+openrealtime serve -architecture cascade.controlled@3 &
+openrealtime bench architecture inspect \
+  -out results/cascade-P-status.json
+
+# Combine structure, negotiated status, and immutable deployment pins.
+openrealtime bench architecture cell \
+  -name cascade-P -definition cascade.controlled@3 \
+  -status results/cascade-P-status.json \
+  -pins experiments/local-pins.json \
+  -out experiments/cascade-P-cell.json
+
+# Assemble all reviewed desired cells, then run one at a time.
+openrealtime bench architecture manifest \
+  -name f52-local -fixture-revision git-blob:012345... \
+  -cell experiments/cascade-P-cell.json \
+  -cell experiments/cascade-T-cell.json \
+  -cell experiments/cascade-C-cell.json \
+  -out experiments/f52-local.json
+```
+
+`inspect` refuses a server with no architecture identity. `cell` refuses a
+definition/status/pins disagreement. `manifest` refuses an invalid or duplicate
+cell. `scenario` still independently validates the live status on every task,
+so a server replacement after authoring cannot inherit the authored label.
 
 ## Cells and pairing
 

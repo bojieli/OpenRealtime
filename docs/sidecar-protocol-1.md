@@ -5,7 +5,7 @@
 Unix socket, or TCP.
 
 A sidecar is a model that is not written in Go, running behind a process
-boundary. Omni and full-duplex models live in Python; letting that into the
+boundary. Models with many different capability combinations live in Python; letting that into the
 engine's build, test, and analysis path would make every one of them slower and
 more fragile. This protocol is what keeps it out.
 
@@ -71,7 +71,7 @@ a partial implementation useful rather than broken.
 | `text_injection` | text can be added to context between turns | falls back to explicit hand-off |
 | `tools` | the model can request function calls | ignores calls it never expects |
 | `barge_in` | the model handles overlap itself | applies its own barge-in policy |
-| `full_duplex` | the model listens and speaks at once | stops asking it to take turns |
+| `full_duplex` | the model listens and speaks at once | treats input/output concurrency as unavailable |
 
 ## 4. Engine to sidecar
 
@@ -130,8 +130,9 @@ it exactly as they apply to a provider inside the engine:
   question.
 
 The background reasoner's completed answer reaches the model as injected
-`text`, followed by `respond` where the model does not own its floor. Where it
-does, the text is injected and the model decides for itself when to say it.
+`text`, followed by `respond` where the engine selected interaction ownership.
+Where model-native interaction is selected, the text is injected and the model
+decides for itself when to say it. Floor ownership is a separate selection.
 
 ## 7. Failure
 
@@ -144,7 +145,7 @@ does, the text is injected and the model decides for itself when to say it.
 
 ## 8. Reference sidecars
 
-| Sidecar | Model | Binding |
+| Sidecar | Model | Usual preset |
 | --- | --- | --- |
 | `sidecars/qwen3_omni_sidecar.py` | Qwen3-Omni | `omni` |
 | `sidecars/minicpm_o_sidecar.py` | MiniCPM-o 4.5 | `omni` |

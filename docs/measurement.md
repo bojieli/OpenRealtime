@@ -26,7 +26,7 @@ audio observer only.
 
 | | Factor | Levels | How it is set |
 | --- | --- | --- | --- |
-| F1 | Binding | cascade · omni-Qwen3 · omni-MiniCPM-o · duplex-Moshi · upstream | `-binding`, `-sidecar` |
+| F1 | Preset/model | cascade · omni-Qwen3 · omni-MiniCPM-o · duplex-Moshi · upstream | `-binding`, `-sidecar` |
 | F2 | Cognition | fast-only · fast+slow · endpointed slow-only | `-rollout`, `-tool-progress` |
 | F3 | Observers | audio · audio+video · video-only | `-observers` |
 | F4 | Trigger cadence | 50 · 100 · 200 · 400 · 800 ms | `-trigger-cadence` |
@@ -38,6 +38,7 @@ audio observer only.
 | F10 | Fast action lane | slow-only · bounded fast computer use | `-fast-computer-use` |
 | F11 | Video frame rate | 1 · 3 · 5 · 10 fps | client/evaluator `-fps` |
 | F12 | Recogniser | Qwen3-ASR · SenseVoiceSmall · hosted transcription · local Whisper | `-asr-provider`, `-asr-model` |
+| F52 | Interaction composition | engine predicates · engine text policy · model-native interaction | ownership + stack capabilities + sidecar protocol |
 
 Every factor is a command-line flag, because a policy that cannot be swapped
 cannot be measured. A cell is a command line rather than a build.
@@ -51,6 +52,12 @@ F8 answers the sizing question before the implementation is fixed: whether a
 ~3B policy model can actually make these calls, or whether ~8B is needed. The
 policy-model client counts refusals — answers outside the enumerated list —
 which is the signal that a model is too small for the job.
+
+F1 is a deployable preset/model comparison and must not be read as an
+architecture-only ranking. F52 is the architectural factor. Its evidence must
+record both selected ownership and the full available capability vector, so a
+native-capable model run under an engine policy remains identifiable as that
+control condition.
 
 ## Suites
 
@@ -1963,3 +1970,257 @@ at bf16 - so the parameter count in the name is the wrong thing to compare, and
 on this GPU there is no quality-for-speed trade to make here at all.
 
 The 30B-A3B stays.
+
+## Capability-composed interaction architectures (F52)
+
+The architectural question is no longer encoded as mutually exclusive
+binding names. A reportable cell records the selected ownership vector and the
+available stack capabilities. The controlled matrix has four levels:
+
+| Cell | Foreground | Interaction evidence/owner | What it isolates |
+| --- | --- | --- | --- |
+| P | cascade or speech model with shipped predicates | engine acoustics and narrow predicates | established baseline |
+| T | component or speech-to-speech foreground + policy ASR | one engine `InteractionModel`, including endpoint/overlap acts | replaceable full text-policy controller |
+| C | the same T foreground and evidence plus predicates | explicit predicate-floor arbitration | whether grounded endpoint/overlap control complements learned semantic acts |
+| N | the same capable foreground with native interaction selected | model multimodal state | information and integration gain from native interaction |
+
+P→T and T→C may be run on the current cascade as controller ablations. T→N is
+an architecture comparison only when the same foreground model can expose both
+selections. Comparing Qwen in T to Moshi in N is useful system evidence but does
+not identify the cause: model family, training data, audio codec, model size,
+and interaction architecture all changed.
+
+The minimum retained identity for every cell is:
+
+- foreground model and revision;
+- ownership for interaction and floor;
+- full stack capability vector;
+- interaction policy model, prompt/instruction revision, and decision timeout;
+- broad policy evidence source, exact selected evidence-capability vector, and
+  recognizer, speaker-identity, and visual-narrator revisions (`text-policy` is
+  never relabeled audio-native);
+- exact selected predicate/text/native/remote controller vector and its
+  single-writer arbitration rule;
+- sidecar protocol version and whether typed acts were accepted or translated;
+- slow provider, tool authority, hardware, and audio fixture identity.
+
+Primary outcomes are act correctness by act and speaker state, false
+interruption rate, missed-intervention rate, decision-to-act latency, endpoint
+latency, tool success, and task success. ASR destruction rate is reported
+separately because a controller cannot decide from evidence its recognizer
+removed. Confidence and abstention are retained rather than coerced into the
+chosen act.
+
+The repository now supports the T cell as `omni+text-policy`. Raw audio still
+goes to the speech-to-speech foreground; a second recognizer exists only on the
+control plane. Protocol v2 carries the selected act, policy identity, evidence
+reference, floor semantics, deadline, and confidence. All seven acts have
+binding and protocol behavior tests. No ranking is claimed until paired,
+complete P/T/C/N cells exist under the identity rules above.
+
+### F52 experiment gate and local conformance diagnostic (2026-08-27)
+
+F52 is now executable as a versioned architecture experiment rather than an
+informal binding label. `bench/architecture` validates the full identity above,
+the scenario driver captures post-handshake `binding.Status()` for every task,
+and `bench architecture` distinguishes an adjacent, controlled
+`architecture-only` comparison from a confounded but still useful `system`
+comparison. Desired cells can be retained as `unavailable` with a reason, so a
+missing same-foreground N cell cannot silently disappear from the matrix.
+
+A local P/T conformance diagnostic ran `count-as-they-go` once on the same
+cascade foreground, SenseVoice recognizer, Fish Speech voice, slow provider,
+hardware, and scenario fixture. P passed; T failed two count-order checks after
+saying later numbers instead of one and two. P's per-run reaction-latency P50
+was 4,660 ms and T's was 2,518 ms. This is deliberately **not an architecture
+result**: one of eleven scenarios ran, each latency distribution has one
+conversation sample, and the worktree was modified. The comparison artifact
+refused publication for all three reasons. Its value is narrower: both live
+sessions matched their declared ownership, capability, policy, evidence,
+component-adapter, deadline, and tool-authority identities, proving the P/T
+experimental path is mechanically controlled.
+
+No N score was manufactured. The locally available foregrounds still do not
+offer one honest model under both external typed-act selection and native
+interaction selection. Qwen-T versus Moshi-N remains a system comparison until
+that compatibility gap closes.
+
+### Architecture-catalog conformance and requested-silence diagnostic (2026-08-27)
+
+The structural source of truth is now the versioned project catalog rather
+than the F52 manifest itself. `cascade.controlled@1` and
+`cascade.text-policy@1` were launched through `serve -architecture`, inspected
+through normal sessions, authored into cells from live status plus separate
+immutable deployment pins, and assembled into a version-2 experiment manifest.
+Both sessions attested their exact definition fingerprint and matched the
+catalog's ownership, required capability subset, evidence source, transport,
+and handoff boundary after provider negotiation.
+
+One paired diagnostic ran `waiting out a silence they asked for`, chosen because
+its decisive event is elapsed time rather than answer knowledge. Under the
+local Qwen/Whisper/Fish deployment, P did not perform the requested later
+check-in; T did and passed, with the one recorded check-in heard about 1,219 ms
+after its trigger. P's one other heard reaction was about 920 ms. The
+comparison reported `0/1` versus `1/1` and then correctly refused the apparent
+100-point difference: ten of eleven scenarios were not attempted and the tree
+was modified. One sample cannot support a latency claim either.
+
+This diagnostic supports two narrower facts only. First, the catalog-backed
+definition → runtime handshake → authored cell → scenario artifact chain is
+mechanically coherent. Second, this scenario distinguishes the two current
+controllers and is worth retaining in the full experiment. It is not evidence
+that transcript policy is generally better. The next reportable P/T run must
+use the complete suite and clean provenance; the N cell still waits for a
+foreground satisfying the shared hybrid capability definition.
+
+Two additional paired interaction cases were used as counterchecks rather than
+selected because they favored T. Both P and T passed `asked not to be
+interrupted`. Both failed `somebody else's conversation`, speaking to the two
+nearby third-party turns. The latter is important negative evidence: replacing
+predicates with the current transcript policy did not supply speaker/addressing
+understanding that the evidence path itself does not contain. These remain
+single-run, filtered, dirty-tree diagnostics and support no rate or latency
+claim. Together with requested silence they suggest the next architecture
+revision should enrich policy evidence with speaker/addressing state rather
+than merely enlarging the text-policy model or treating T as a universal fix.
+
+### Exact evidence attestation and the invalid complete diagnostic (2026-08-27)
+
+A later diagnostic completed all eleven scenarios for P and T. It is not an
+architecture result even though both processes completed and every task
+carried a live architecture identity. T was launched with direct visual input
+while its immutable definition claimed only the coarse `transcript` evidence
+source. The old status shape could not report that extra channel, so the
+authoring and per-task gates could not discover the confound. The observed
+pass totals therefore support no P/T ranking and are intentionally omitted
+from the claims above.
+
+The defect was architectural rather than a one-off benchmark check.
+`InteractionStatus` now attests transcript, acoustic activity, silence clock,
+conversation state, tool state, speaker identity, addressing, visual
+description, direct visual input, and native model state independently. Stack
+capabilities remain a lower bound—unselected native capabilities may honestly
+remain present—but selected interaction evidence must equal the definition
+exactly. An extra visual channel now closes the runtime and independently fails
+cell authoring and per-task validation.
+
+New exact-evidence revisions supersede the coarse experiment definitions
+without mutating them: `cascade.controlled@2`, `cascade.text-policy@2`,
+`omni.external-predicates@3`, `omni.external-policy@3`, and
+`omni.native-policy@2`. Narrated visual, direct visual, and speaker-aware text
+policies are separate derived definitions over the same component runtime.
+The speaker embedder and visual narrator are pinned as non-treatment component
+identities. Addressing remains false: voice identity does not prove who an
+utterance addresses.
+
+The failure shape remains useful engineering evidence. Predicate control did
+better on some immediate menu/waiter cases; text policy did better on durable
+instructions, immediate correction, counting, and a clock-triggered check-in;
+both missed third-party conversation and spoke too early on one still-running
+visual task. That pattern argues for composable architectures and evidence
+channels, not a universal controller. A complete rerun must use the current
+exact definitions, remove undeclared direct vision, control speaker and
+narrator identity, repeat cells, and start from clean provenance before any
+performance claim is reportable.
+
+An exact-evidence rerun then exercised every scenario once with the current
+definitions. P passed 6/11 and T passed 8/11. Both cells used the same Qwen
+foreground and slow model, Whisper recognizer, Fish Speech voice, SpeechBrain
+speaker embedder, session narrator, video observer, tools, authority, and
+fixture. All twenty-two task sessions carried live evidence vectors matching
+their definitions. The run is still non-reportable: its worktree was modified
+and one sample per scenario is not a population estimate.
+
+The per-scenario shape is more useful than the aggregate. T alone passed
+counting as the user went, interrupting a user who was doing something wrong,
+waiting out requested silence, and reporting what it saw. P alone passed the
+recorded-menu and waiter-ordering cases. Both passed the no-interruption,
+simultaneous-translation, acknowledgement, and ordinary-question cases. Both
+failed the third-party-conversation case.
+
+Three engineering conclusions follow without turning the diagnostic into a
+ranking. First, T solved the visual case from pinned narration while its exact
+evidence correctly reported no direct pixels; retaining pixels in the policy
+was not necessary for that case. Second, the shared speaker embedder did not
+solve third-party speech: identity is not addressing, and the addressing-aware
+catalog branch must remain unavailable until a real producer exists. Third, a
+general text policy can express durable semantic and clock-driven acts that
+narrow predicates miss, but it can also add latency and content error: T
+missed the menu deadline and invented waiter dishes, while the grounded narrow
+mechanism passed those cases.
+
+The next clean experiment should repeat the exact P and T cells across the
+complete suite. It should add addressing only after an independently attested
+addressing producer exists, and should not manufacture an N result until one
+foreground genuinely supports both external typed-act and native-interaction
+selection over the same weights.
+
+### Exact controller composition and T/C experiment authoring (2026-08-27)
+
+The evidence diagnostic exposed another treatment that the version-3 artifact
+could not state. The old T process reported an act-model floor but retained
+immediate predicate barge-in, and the architecture definition did not attest
+either choice. Thus “T” could mean a model-controlled floor, a predicate floor,
+or a mixed controller depending on launch flags. Exact evidence alone did not
+make those runs exact controller experiments.
+
+`InteractionStatus` now independently attests selected predicate, text-policy,
+native, and remote controllers plus their arbitration. A single selector uses
+`single`. The new C level selects predicates plus text policy under
+`predicate-floor`: predicates retain endpoint and overlap decisions; the text
+policy retains durable semantic, visual, quiet, and silent-tool acts. Pure T
+now routes overlap through the same enumerated-act model as the floor, choosing
+`keep-speaking` or `stop-speaking` after transcript evidence rather than
+canceling at bare acoustic onset. Its floor and overlap adapters inherit the
+same policy deadline the cell attests rather than hiding a shorter local
+timeout. Liveness, stale-decision, duplicate-action, and authority fences
+remain engine safety invariants rather than policy votes.
+
+New immutable revisions preserve all historical fingerprints:
+`cascade.controlled@3`, `cascade.text-policy@3`,
+`cascade.composed-policy@1`, `cascade.text-policy-visual-speaker@2`, and
+`cascade.composed-policy-visual-speaker@1`. Current Omni, native, full-native,
+and remote revisions likewise attest one selected controller. Benchmark
+manifest and result schemas are version 4; version-2 and version-3 results stay
+readable diagnostics but cannot become current evidence.
+
+The enriched T and C cells were launched, inspected through ordinary Realtime
+sessions, and authored into one version-4 manifest. They used identical Qwen
+foreground/policy/slow models, Whisper recognizer, Fish Speech voice,
+SpeechBrain embedder, session narrator, observer set, evidence vector, tools,
+authority, fixture, and hardware. T attested `text-policy/single` with act-owned
+floor and barge-in; C attested `predicates,text-policy/predicate-floor` with the
+shipped endpoint and immediate-barge-in policies. Scoring waited until the
+unrelated audit stopped using the shared model services, so compute contention
+was not silently added to the treatment.
+
+The full eleven-scenario diagnostic then completed once per cell. T passed
+7/11 and C passed 6/11. The cells satisfy the T/C architecture-only adjacency
+and non-treatment identity checks, but the comparison refused publication
+before emitting a claim because the worktree was modified; one run per scenario
+also remains engineering evidence rather than a rate estimate. T alone passed
+requested no-interruption and cutting in on something wrong. C alone passed
+the recorded-menu and waiter-ordering cases. Both passed
+simultaneous translation, a requested clock-triggered check-in,
+acknowledgement overlap, and an ordinary question; both failed durable counting
+and third-party conversation. T passed the narrated visual completion case
+while C did not in this sample.
+
+The aggregate does not select a winner. It falsifies the stronger claim that
+the first fixed composition is automatically the best of both mechanisms.
+Predicate endpoint/overlap jurisdiction recovered two narrow, time-critical
+action windows, but it also removed the learned controller's semantic
+interruption behavior and failed one explicit long-silence policy that T
+honored. Pure T retained those semantic decisions but missed the menu and
+waiter deadlines. Both cells had `addressing=false`, and both answered nearby
+third-party speech; controller arbitration cannot reconstruct evidence neither
+controller receives.
+
+The next controller experiment should therefore vary jurisdiction or
+arbitration, not invent another binding or model family. Candidate cells should
+make endpoint, take-floor, yield-floor, response veto, concurrent speech, and
+silent action authority explicit enough that a durable quiet policy can veto a
+predicate response opportunity while a grounded fast path can still preserve a
+deadline. Those routes must be catalog-selected and live-attested before they
+are scored. Repeating T and C from clean provenance remains necessary; this
+single diagnostic is a design input, not a performance conclusion.

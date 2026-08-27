@@ -1,8 +1,8 @@
 # The `duplex` binding
 
-A full-duplex interaction model listens and speaks at once. Turn-taking,
-overlap, and interruption are in its weights, so it owns its floor and the
-engine does not second-guess it.
+The `duplex` preset selects a model's concurrent I/O, native floor, and native
+interaction capabilities. Those are three capabilities that happen to be
+present in Moshi, not a single indivisible type.
 
 ```sh
 openrealtime serve \
@@ -14,9 +14,14 @@ The reference sidecar is **Moshi**.
 
 ## What the engine still supplies
 
-Everything except the floor. Trigger, rollout, holding behaviour, admission,
-and — the reason this binding exists — the background reasoner. A single model
-has no second model and no shared log to put one on.
+The background reasoner, trajectory, tool and authorization boundary, audit,
+and session lifecycle stay outside. A single foreground model has no
+independent slow lane and no shared log on which to run one.
+
+Engine interaction and engine floor remain valid controlled selections over a
+duplex-capable model. They do not require deleting its native capabilities or
+adding a new binding package; use a generic `sidecarbinding.Spec` with the
+desired ownership vector.
 
 ## Where a background answer splices in
 
@@ -35,10 +40,17 @@ why this binding ships regardless of how the research resolves.
 
 ## Overlap
 
-The engine's barge-in policy is off by default here. A model that owns its floor
-handles overlap itself, and the engine cancelling its speech would be the engine
-overruling the thing it delegated to. `-floor engine` flips both, which is the
-honest way to ask whether a duplex model's own floor beats a measured one.
+The engine's barge-in policy is off by default here. A model that owns
+interaction handles overlap itself, and the engine cancelling its speech would
+overrule the thing it delegated to. `-floor engine` changes only the selected
+floor owner. To select engine interaction as well, use the generic `sidecar`
+preset with `-interaction-owner engine` and declare `interaction-acts`; the
+model retains its native capabilities in the reported vector either way.
+
+With engine floor and model interaction, an endpoint is sent as `commit`, not
+`respond`: the selected floor establishes that the utterance ended, while the
+native interaction policy still decides whether ending it should produce an
+answer.
 
 ## Resource guidance
 
@@ -53,5 +65,6 @@ As with `omni`, the model and the engine can be separate machines - point
 right shape when a model is expensive to load and worth sharing between
 sessions.
 
-There is no recogniser and no synthesiser to budget for. That is the whole
-economy of this binding, and the reason its floor belongs to the model.
+There is no separate recogniser or synthesiser to budget for in this preset.
+That economy does not logically force floor or interaction ownership; those
+are explicit selections and can be changed independently for measurement.

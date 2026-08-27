@@ -12,8 +12,8 @@ the fourth decides *when* the other three act.
 │                    barge-in · fast/slow rollout · backchannel · │
 │                    turn projection · commitment · repair ·     │
 │                    deferral                                    │
-│                    ── the only source of interaction quality   │
-│                       for cascade and omni bindings ──         │
+│                    ── selected from engine predicates, an      │
+│                       external policy, or a native model head ─│
 ├──────────────────┬──────────────────┬──────────────────────────┤
 │ Perception       │ Cognition        │ Action                   │
 │                  │                  │                          │
@@ -27,8 +27,8 @@ the fourth decides *when* the other three act.
 │                    append-only log, safe points, atomic commit,│
 │                    cancellation, irreversibility ledger        │
 ├────────────────────────────────────────────────────────────────┤
-│ Bindings           declare which subsystems the model owns     │
-│                    cascade │ omni │ duplex │ upstream          │
+│ Bindings           compose ownership + available capabilities │
+│                    named presets are benchmark identities      │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -52,11 +52,12 @@ from all three. Nothing flows through them. The borrowing from networking is
 exact rather than metaphorical: the data plane moves things, the control plane
 decides how.
 
-"Control plane" is a structural claim, not a ranking. Interaction is the most
-important subsystem here. A full-duplex model has turn-taking trained into its
-weights; a cascade and an Omni model have none whatsoever, so for two of the
-four bindings every bit of responsiveness the system exhibits is manufactured
-in `interaction` and nowhere else.
+"Control plane" is a structural claim, not a ranking. Interaction may be an
+engine policy, a native model head, or an engine policy handing typed acts to a
+model that is also capable of native interaction. Full duplex, native
+endpointing, and native interaction often arrive together, but none implies
+the others. Treating that bundle as one model species prevents the controlled
+combinations the architecture exists to measure.
 
 Each row is a named policy with an interface and a shipped default, because a
 policy that cannot be swapped cannot be measured:
@@ -189,21 +190,83 @@ trajectory before slow continues, so the reasoner plans from what already
 happened instead of repeating it. `fast-only` and `endpointed-slow-only` remain
 separate rollout controls for measuring what each lane contributes.
 
-## Bindings declare ownership
+## Bindings compose ownership and capabilities
 
-A binding is not a pipeline. It is a declaration of which subsystems the model
-owns.
+A binding is not a pipeline or a model taxonomy. It reports two independent
+things: the selected owner for each subsystem, and the capabilities available
+in the composed stack whether or not they are selected in this cell. That
+distinction permits a native-interaction, concurrent model to run under an
+engine policy without pretending those native capabilities ceased to exist.
+Runtime behavior keys off these fields, never off the string `omni` or
+`duplex`.
 
-| Binding | Perception | Fast | Slow | Action | Floor |
-| --- | --- | --- | --- | --- | --- |
-| `cascade` | engine | engine | engine | engine | engine |
-| `omni` | model | model | **engine** | model | engine |
-| `duplex` | model | model | **engine** | model | model |
-| `upstream` | remote | remote | **engine** | remote | remote or engine |
+| Preset | Perception | Fast | Slow | Action | Interaction | Floor |
+| --- | --- | --- | --- | --- | --- | --- |
+| `cascade` | engine | engine | engine | engine | engine | engine |
+| `omni` | model | model | **engine** | model | engine | engine |
+| `omni+text-policy` | model | model | **engine** | model | engine | engine |
+| `duplex` | model | model | **engine** | model | model | model |
+| `upstream` | remote | remote | **engine** | remote | remote | remote or engine |
+
+The available capability vector is orthogonal: audio input/output,
+transcription, explicit turn generation, concurrent input/output, native
+floor, native interaction, typed interaction-act acceptance, and text
+injection. `sidecarbinding.Spec` is the generic composition surface. The named
+constructors are compatibility presets and evidence labels over it.
 
 The slow column never varies. No binding delegates slow cognition, because no
 foreground model provides it — and supplying it over a shared trajectory is
 what this project adds to whatever stack it is given.
+
+## Architecture definitions evolve above bindings
+
+The repository-owned `architecture` package is the structural authority above
+the adapter layer. A definition is an immutable `id@revision` containing the
+ownership vector, required capability lower bound, interaction evidence,
+selected controllers and arbitration, handoff boundary, maturity stage, and
+explicit lineage. For example,
+`omni.external-policy@2` and `omni.native-policy@1` require the same available
+capabilities and differ in the selected interaction owner. Current exact-
+evidence revisions `omni.external-policy@3` and `omni.native-policy@2` preserve
+that relationship while replacing the old coarse evidence label. Current
+controller-attested revisions `omni.external-policy@4` and
+`omni.native-policy@3` additionally prove which selector is in force.
+
+Controller composition is another independent axis. `cascade.text-policy@3`
+selects one external act policy for endpoint, overlap, semantic, visual, quiet,
+and silent-tool decisions. `cascade.composed-policy@1` selects the same text
+policy plus narrow predicates under `predicate-floor` arbitration: predicates
+retain endpoint and overlap decisions while the text policy owns the remaining
+acts. Both use the same component topology. This is the controlled T/C question
+represented directly in the project, not a new binding species.
+
+Bindings still do the work. A definition derives one of three provider
+topologies—components, sidecar, or upstream—and several definitions can use
+the same topology. Deployment configuration supplies exact models and
+endpoints. After the live provider handshake, the architecture wrapper refuses
+missing requirements or a different evidence/controller/arbitration/protocol/
+handoff boundary and attests the definition fingerprint in session status.
+
+This gives the layers distinct responsibilities:
+
+| Layer | Authority |
+| --- | --- |
+| architecture catalog | structural selection and evolution lineage |
+| deployment configuration | model endpoints, credentials, voices, operating limits |
+| binding | concrete adapter and session machinery |
+| benchmark cell | immutable deployment pins, policies, fixtures, and measured evidence |
+
+Adding a capability combination therefore does not require another binding
+package. Changing an architecture does require a new revision, so old runtime
+and benchmark artifacts never silently acquire a new meaning.
+
+Interaction evidence is itself a capability vector, independent of the voice
+stack vector. It records transcript, acoustic activity, silence clock,
+conversation and tool state, speaker identity, addressing, narrated vision,
+direct pixels, and native model state separately. It is an exact selection,
+not a lower bound: extra live evidence is a different architecture and startup
+refuses it. This is what caught the otherwise invisible difference between a
+text policy launched with and without direct vision.
 
 ## Where things live
 
@@ -228,5 +291,6 @@ what this project adds to whatever stack it is given.
 ## Extension points
 
 `Binding`, `Observer`, `Narrator`, `Vision`, `Decider`, `computeruse.Surface`,
-and the sidecar protocol are what third parties write against. They are
-versioned from v1.0: a binding written against v1.0 keeps working.
+and the sidecar protocol are what third parties write against. Sidecar protocol
+v1 remains frozen and is still the default. Typed interaction plans use the
+explicitly selected v2 contract.

@@ -3,6 +3,11 @@
 Status: proposal for review. Nothing here is implemented. `api/v1` remains the
 supported contract and the frozen M8–M10 study is unaffected.
 
+> Historical note: the mutually exclusive cascade/Omni/duplex taxonomy in this
+> proposal is superseded by [ADR-0011](adr/0011-capabilities-not-model-species.md).
+> Current bindings compose an ownership vector and independent capabilities;
+> the old names remain presets and evidence labels only.
+
 **Contents** — [1 What it is](#1-what-openrealtime-is) · [2 Architecture](#2-architecture-a-data-plane-and-an-interaction-control-plane) · [3 Protocol & transports](#3-the-openrealtime-protocol-version-1) · [4 Efficiency](#4-efficiency) · [5 Safety](#5-safety-and-authority) · [6 Exists vs new](#6-what-exists-versus-what-is-new) · [7 Build phases](#7-build-phases) · [8 Definition of done](#8-definition-of-done-for-v10) · [9 Measurement](#9-measurement-program-post-launch-continuous) · [10 Risks](#10-risks) · [11 Decisions](#11-decisions-taken-and-what-remains-open)
 
 ## 1. What OpenRealtime is

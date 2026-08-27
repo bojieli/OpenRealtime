@@ -90,6 +90,35 @@ Backchannel decides off the audio path — a model call that made the recogniser
 wait would trade what makes a system feel alive for what makes it feel slow —
 and one decision is in flight at a time.
 
+### Composing interaction controllers
+
+An interaction policy is not automatically the only interaction controller.
+The selected controller vector and its arbitration rule make that distinction
+explicit:
+
+| Selection | Endpoint and overlap | Other typed interaction acts | Arbitration |
+| --- | --- | --- | --- |
+| predicates (P) | shipped predicates | shipped predicates | `single` |
+| text policy (T) | text policy | text policy | `single` |
+| predicates + text policy (C) | shipped predicates | text policy | `predicate-floor` |
+
+Pure T routes both floor and barge-in through the same typed act model. At bare
+acoustic onset it has no transcript evidence yet, so it keeps speaking until a
+transcript revision permits a semantic `keep-speaking` or `stop-speaking`
+decision. C deliberately retains the immediate barge-in and endpoint predicates
+while the text policy owns durable semantic, visual, quiet, and silent-tool
+acts. Runtime liveness bounds, stale-decision refusal, duplicate suppression,
+and authorization remain safety fences; they can reject an act but are not
+additional conversational controllers.
+
+Use immutable definitions such as `cascade.text-policy@3` and
+`cascade.composed-policy@1` to select these arrangements. Their controller and
+arbitration fields drive generic component-topology construction and are
+attested in live status. A contradictory `-interaction-floor` override is
+refused instead of silently changing the treatment. Adding another supported
+combination therefore means catalog data plus a named generic arbitration rule,
+not a cascade/Omni/duplex species or an architecture-ID code branch.
+
 ## Adding video
 
 ```sh

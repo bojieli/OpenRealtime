@@ -6,6 +6,24 @@
 openrealtime serve -listen 0.0.0.0:8765 -token-env OPENREALTIME_TOKEN
 ```
 
+For a versioned deployment, select an exact architecture revision as well:
+
+```sh
+openrealtime architectures show cascade.controlled@3
+openrealtime serve \
+  -architecture cascade.controlled@3 \
+  -listen 0.0.0.0:8765 -token-env OPENREALTIME_TOKEN
+```
+
+The architecture definition owns structural choices. Model/provider flags own
+deployment choices. If an explicit `-binding`, `-floor`,
+`-interaction-owner`, `-sidecar-capabilities`, `-sidecar-protocol`, or
+`-policy-models`, `-interaction-floor`, `-interaction-sees`, observer, or
+speaker-evidence setting
+contradicts the selected definition, startup refuses
+instead of silently changing the architecture. External catalogs use
+`-architecture-catalog`; unpinned names are never accepted.
+
 Authentication is a bearer token when `-token-env` names a variable that is
 set, and absent when it is not. There is no middle setting: a deployment that
 is reachable from anywhere and has no token is one you want to notice.
@@ -24,6 +42,22 @@ Reports the binding, its ownership declaration, its capabilities, the protocol
 versions, and session counters. It is the fastest way to answer "what is this
 process actually running", which is a question that comes up more often than it
 should.
+
+The process-level health response names the adapter. The post-handshake session
+status is stronger evidence because it also carries the selected architecture
+ID, revision, definition fingerprint, live stack capability vector, interaction
+evidence representation, exact selected evidence-capability vector,
+selected-controller vector and arbitration, transport/handoff,
+speaker-identity adapter, and tool authority. Capture and validate it with:
+
+```sh
+openrealtime bench architecture inspect \
+  -endpoint ws://127.0.0.1:8765/v1/realtime \
+  -out results/runtime-status.json
+```
+
+Inspection refuses a legacy binding-only launch and any live status that does
+not satisfy its catalog definition.
 
 ```jsonc
 {
@@ -184,9 +218,10 @@ older than it looks.
   slow one is the one that has not finished — a total that only moved at the
   endpoint would go quiet during exactly the stall it exists to report.
 
-  It is absent rather than zero on `omni`, `duplex`, and `upstream`. Those
-  models hear the user directly and there is no recogniser to time; a zero
-  would read as one answering instantly.
+  It is absent rather than zero on ordinary `omni`, `duplex`, and `upstream`:
+  those models hear the user directly and there is no recogniser to time; a
+  zero would read as one answering instantly. `omni+text-policy` reports its
+  policy-only recognizer here.
 
 - **A policy model fails or times out.** The policy falls back to its rule:
   backchannel to silence, projection to silence-only endpointing.

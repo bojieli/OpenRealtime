@@ -1,14 +1,29 @@
-# Bindings
+# Bindings and capability composition
 
-A binding declares which subsystems the model owns. The runtime supplies the
-rest.
+A binding declares selected ownership and available capabilities. The runtime
+supplies the missing pieces. `cascade`, `omni`, and `duplex` are useful presets
+and benchmark labels; they are not mutually exclusive model species.
+
+Bindings are the adapter layer beneath the versioned architecture catalog.
+For a durable deployment or experiment, prefer an exact architecture reference:
+
+```sh
+openrealtime architectures list
+openrealtime serve -architecture cascade.controlled@3
+```
+
+The catalog derives the structural binding, ownership, capability requirements,
+interaction boundary, and sidecar protocol. Provider flags still select actual
+models and endpoints. Direct `-binding` launches remain useful compatibility
+and extension surfaces, but do not attest an immutable architecture revision.
 
 | Binding | Models | Best for |
 | --- | --- | --- |
 | [`cascade`](cascade.md) | recogniser + language model + synthesiser | the default: fully local, every policy in your hands |
 | [`upstream`](upstream.md) | any Realtime-compatible endpoint | a hosted voice stack with a background reasoner behind it |
-| [`omni`](omni.md) | Qwen3-Omni, MiniCPM-o 4.5 | one speech-to-speech model, engine-owned timing |
-| [`duplex`](duplex.md) | Moshi | genuine full duplex, model-owned floor |
+| [`omni`](omni.md) | Qwen3-Omni, MiniCPM-o 4.5 | turn generation with engine floor |
+| `omni+text-policy` | any turn generator plus policy ASR | speech-to-speech foreground with engine interaction controller |
+| [`duplex`](duplex.md) | Moshi | preset selecting native interaction and floor |
 
 One column never varies. **Slow cognition is always the engine's**, because no
 foreground model provides it, and supplying it over a shared trajectory is what
@@ -25,15 +40,62 @@ manufactured by the runtime.
 **Use `upstream`** when you already have a voice stack you like, or no GPU. It
 is one flag and one credential.
 
-**Use `omni`** when you want a single speech-to-speech model but still want the
-engine deciding *when*. An Omni model leans on voice activity detection, which
-mis-endpoints on spelled identifiers and digit strings — exactly the inputs a
-tool-using voice agent depends on getting right — so the engine keeps the floor
-by default. `-floor model` is the comparison.
+**Use `omni`** when you want a single speech-to-speech generator and an engine
+floor. Add the `omni+text-policy` composition when a separate interaction model
+should choose typed acts from a policy-only streaming transcript. Raw audio
+still goes straight to the speech model; the recognizer is control-plane
+evidence, not a foreground ASR→LLM→TTS path.
 
-**Use `duplex`** when overlap and interruption matter more than anything else.
-A full-duplex model has them in its weights, and the engine stops asking it to
-take turns.
+**Use the `duplex` preset** when a model exposes concurrent I/O, native floor,
+and native interaction and you want all three selected. A hybrid experiment can
+retain those capabilities while selecting engine interaction or engine floor;
+construct a `sidecarbinding.Spec` instead of adding another binding species.
+
+The generic capability vector is:
+
+| Capability | Independent question |
+| --- | --- |
+| `turn_generation` | can an explicit request produce one model turn? |
+| `concurrent_io` | can input continue while output is generated? |
+| `native_floor` | can the model establish speech/turn boundaries? |
+| `native_interaction` | can the model choose listen/speak/interrupt acts itself? |
+| `interaction_acts` | can it accept a typed external policy plan? |
+| `transcription` | can the stack expose what was heard? |
+| `text_injection` | can background state enter context without posing as user speech? |
+
+Any combination is representable. Ownership selects which available provider
+is active for a session.
+
+The evidence selected into that owner is another independent vector:
+transcript, acoustic activity, silence clock, conversation state, tool state,
+speaker identity, addressing, visual description, direct visual input, and
+native model state. The runtime reports the exact active set. An external
+catalog can compose supported evidence channels without creating another Go
+binding; a new immutable definition revision records the changed selection.
+
+Selected interaction mechanisms form a third vector: predicates, external text
+policy, native interaction, and remote interaction. One selector uses `single`
+arbitration. A supported multi-selector composition must name its arbiter; the
+current component topology implements `predicate-floor`, where predicates keep
+endpoint and overlap decisions and the text policy owns the other acts. Merely
+installing two policies never lets both race to speak.
+
+For a combination outside the named presets, use the generic sidecar binding:
+
+```sh
+openrealtime serve \
+  -binding sidecar \
+  -sidecar "python3 my_model_sidecar.py" \
+  -sidecar-capabilities audio-input,audio-output,turn-generation,concurrent-io,native-floor,native-interaction,interaction-acts,text-injection \
+  -interaction-owner engine \
+  -floor model \
+  -sidecar-protocol 2
+```
+
+This example retains both native capabilities but selects an engine
+interaction controller and the model's floor. An engine controller additionally
+requires `-policy-models interaction`, `-policy-model`, and a configured ASR
+provider for its live evidence.
 
 ## Observers, and the default set
 
