@@ -667,11 +667,18 @@ func (runtime *runtime) alreadyAnsweredFor(snapshot trajectory.Snapshot) string 
 	if mark == "" {
 		return ""
 	}
-	said, ok := lastSpokenBefore(snapshot.Items)
-	if !ok {
+	// The whole of what they are saying, not the last piece of it. A
+	// recogniser commits where the speaker breathes, so one sentence arrives
+	// as several: "A capybara wandered over." then "and sat down next to me."
+	// Compared against the last piece, the mark left by speaking into the
+	// first one is not a prefix of the second, so the turn that ran on it was
+	// told nothing had been answered - and one animal got two numbers. It is
+	// the same unit a request is read in, for the same reason.
+	pieces, _ := speechSoFar(snapshot)
+	if len(pieces) == 0 {
 		return ""
 	}
-	if !beganWith(mark, said) {
+	if !beganWith(mark, strings.Join(pieces, " ")) {
 		return ""
 	}
 	return mark
