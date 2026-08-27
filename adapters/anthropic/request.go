@@ -215,10 +215,10 @@ func (adapter *Adapter) applyThinking(result *messagesRequest, maxTokens int) er
 
 // systemBlocks composes the instruction the model runs under.
 func (adapter *Adapter) systemBlocks(request continuation.Request) ([]systemBlock, error) {
-	instructions := []string{request.Invocation.Instruction}
-	if len(trajectory.PendingRepairs(request.Trajectory)) > 0 {
-		instructions = append(instructions, continuation.PendingRepairInstruction)
-	}
+	// Capability data establishes what exists; the current phase policy governs
+	// its use and therefore follows it. An audible-repair obligation is more
+	// specific still and remains last.
+	var instructions []string
 	if len(request.Invocation.Capabilities) > 0 {
 		encoded, err := json.Marshal(request.Invocation.Capabilities)
 		if err != nil {
@@ -228,6 +228,10 @@ func (adapter *Adapter) systemBlocks(request continuation.Request) ([]systemBloc
 			"The following is the complete capability manifest for this agent. "+
 				"Do not deny an available capability merely because another continuation phase executes it:\n"+
 				string(encoded))
+	}
+	instructions = append(instructions, request.Invocation.Instruction)
+	if len(trajectory.PendingRepairs(request.Trajectory)) > 0 {
+		instructions = append(instructions, continuation.PendingRepairInstruction)
 	}
 	text := strings.TrimSpace(strings.Join(instructions, "\n\n"))
 	if text == "" {

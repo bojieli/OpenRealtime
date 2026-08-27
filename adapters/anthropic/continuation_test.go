@@ -409,6 +409,43 @@ func TestTheAdapterRefusesAMismatchedDescriptor(t *testing.T) {
 	}
 }
 
+func TestSystemPolicyGovernsCapabilitiesAndRepairGovernsBoth(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		APIKey: "secret", Model: "claude-test", Phase: trajectory.PhaseSlow,
+		Effort: continuation.EffortHigh,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks, err := adapter.systemBlocks(continuation.Request{
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			{ID: "fast", Kind: trajectory.KindAssistant, Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "old answer"},
+			{ID: "played", Kind: trajectory.KindAssistantState, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, AssistantState: &trajectory.AssistantState{AssistantItemID: "fast", Visibility: trajectory.VisibilityPlayed, PlayedAudioMS: 80}},
+			{ID: "repair", Kind: trajectory.KindRepair, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, Repair: &trajectory.RepairState{TargetAssistantItemID: "fast", Status: trajectory.RepairRequired, PlayedAudioMS: 80}},
+		}},
+		Invocation: continuation.Invocation{
+			Instruction: "CURRENT PHASE POLICY",
+			Capabilities: []continuation.Capability{{
+				Name: "lookup", Description: "Lookup values.", Available: true,
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("got %d system blocks, want one", len(blocks))
+	}
+	text := blocks[0].Text
+	manifestAt := strings.Index(text, "complete capability manifest")
+	policyAt := strings.Index(text, "CURRENT PHASE POLICY")
+	repairAt := strings.Index(text, continuation.PendingRepairInstruction)
+	if manifestAt < 0 || policyAt <= manifestAt || repairAt <= policyAt {
+		t.Fatalf("system instruction order is manifest, phase policy, repair:\n%s", text)
+	}
+}
+
 func TestAStreamErrorIsReported(t *testing.T) {
 	t.Parallel()
 	server := serve(t, []string{

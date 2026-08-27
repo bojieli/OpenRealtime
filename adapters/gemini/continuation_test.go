@@ -152,6 +152,11 @@ func TestBuildRequestReusesNativeStateAndCompilesToolResult(t *testing.T) {
 		!strings.Contains(string(encoded), "complete set of capabilities") || !strings.Contains(string(encoded), "parametersJsonSchema") {
 		t.Fatalf("unexpected compiled request: %s", encoded)
 	}
+	system, _ := json.Marshal(body.SystemInstruction)
+	if manifestAt, policyAt := strings.Index(string(system), "complete set of capabilities"),
+		strings.LastIndex(string(system), "Continue."); manifestAt < 0 || policyAt <= manifestAt {
+		t.Fatalf("current phase policy must govern the capability data: %s", system)
+	}
 }
 
 func TestBuildRequestDoesNotTreatAnotherGeminiModelStateAsNative(t *testing.T) {
@@ -284,5 +289,9 @@ func TestBuildRequestInjectsPendingAudibleRepairObligation(t *testing.T) {
 	encoded, _ := json.Marshal(body.SystemInstruction)
 	if !strings.Contains(string(encoded), continuation.PendingRepairInstruction) {
 		t.Fatalf("pending repair policy missing: %s", encoded)
+	}
+	if policyAt, repairAt := strings.Index(string(encoded), "Continue."),
+		strings.Index(string(encoded), continuation.PendingRepairInstruction); policyAt < 0 || repairAt <= policyAt {
+		t.Fatalf("repair obligation must follow the ordinary phase policy: %s", encoded)
 	}
 }

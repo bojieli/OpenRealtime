@@ -341,17 +341,20 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 			nativeInvocations[item.InvocationID] = content
 		}
 	}
+	// Capability data establishes what exists; the current phase policy governs
+	// its use and therefore follows it. An audible-repair obligation is more
+	// specific still and remains last.
 	var systemInstructions []string
-	systemInstructions = append(systemInstructions, request.Invocation.Instruction)
-	if len(trajectory.PendingRepairs(request.Trajectory)) > 0 {
-		systemInstructions = append(systemInstructions, continuation.PendingRepairInstruction)
-	}
 	if len(request.Invocation.Capabilities) > 0 {
 		encoded, err := json.Marshal(request.Invocation.Capabilities)
 		if err != nil {
 			return geminiRequest{}, fmt.Errorf("encode capability manifest: %w", err)
 		}
 		systemInstructions = append(systemInstructions, "The following is the complete set of capabilities this agent has. Schema visibility is not execution authority: the runtime records whether a tool-channel call is executable or only a non-executable proposal, and reasoning may revise or reject a proposal. Never tell the user the agent lacks a capability that is listed here:\n"+string(encoded))
+	}
+	systemInstructions = append(systemInstructions, request.Invocation.Instruction)
+	if len(trajectory.PendingRepairs(request.Trajectory)) > 0 {
+		systemInstructions = append(systemInstructions, continuation.PendingRepairInstruction)
 	}
 	if len(systemInstructions) > 0 {
 		part, _ := json.Marshal(map[string]string{"text": strings.Join(systemInstructions, "\n\n")})

@@ -213,6 +213,10 @@ func TestBuildRequestReusesOnlyMatchingNativeState(t *testing.T) {
 		!strings.Contains(string(encoded), "complete set of capabilities") {
 		t.Fatalf("unexpected compiled request: %s", encoded)
 	}
+	system := body.Messages[0].Content
+	if manifestAt, policyAt := strings.Index(system, "complete set of capabilities"), strings.LastIndex(system, "Continue."); manifestAt < 0 || policyAt <= manifestAt {
+		t.Fatalf("current phase policy must govern the capability data:\n%s", system)
+	}
 }
 
 func TestBuildRequestDoesNotTreatAnotherModelStateAsNative(t *testing.T) {
@@ -327,6 +331,10 @@ func TestBuildRequestInjectsOnlyPendingAudibleRepairObligation(t *testing.T) {
 	}
 	if !strings.Contains(body.Messages[0].Content, continuation.PendingRepairInstruction) {
 		t.Fatalf("pending repair policy missing: %#v", body.Messages[0])
+	}
+	if policyAt, repairAt := strings.Index(body.Messages[0].Content, "Continue."),
+		strings.Index(body.Messages[0].Content, continuation.PendingRepairInstruction); policyAt < 0 || repairAt <= policyAt {
+		t.Fatalf("repair obligation must follow the ordinary phase policy:\n%s", body.Messages[0].Content)
 	}
 	items = append(items,
 		trajectory.Item{ID: "correction", Kind: trajectory.KindAssistant, Producer: trajectory.Producer{Phase: trajectory.PhaseSlow}, Content: "Correction: new answer."},

@@ -230,6 +230,11 @@ func TestFastEmittedCallsCommitAsNonExecutableProposals(t *testing.T) {
 	if !strings.Contains(fast.seen.Invocation.Instruction, cognition.FastProposalInstruction) {
 		t.Fatal("proposal-only guidance did not reach the fast provider")
 	}
+	proposalAt := strings.Index(fast.seen.Invocation.Instruction, cognition.FastProposalInstruction)
+	clarificationAt := strings.Index(fast.seen.Invocation.Instruction, cognition.FastClarificationInstruction)
+	if proposalAt < 0 || clarificationAt <= proposalAt {
+		t.Fatalf("tool ownership must govern the proposal instruction:\n%s", fast.seen.Invocation.Instruction)
+	}
 	for _, item := range store.Snapshot().Items {
 		if item.Kind == trajectory.KindToolCall {
 			t.Fatal("fast must never append an executable call")
@@ -295,10 +300,11 @@ func TestSlowIsSilentAndFastKnowsCapabilitiesWithoutTools(t *testing.T) {
 func TestSlowReceivesToolPrerequisitesAfterTheDeploymentInstruction(t *testing.T) {
 	store := trajectory.NewStore()
 	seed(t, store)
+	fast := fastProvider()
 	slow := slowProvider()
 	const deployment = "Authenticate the account before reading private records."
 	engine, err := cognition.New(cognition.Config{
-		Store: store, Fast: fastProvider(), Slow: slow, AgentInstruction: deployment,
+		Store: store, Fast: fast, Slow: slow, Catalog: catalog{}, AgentInstruction: deployment,
 	})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
@@ -315,6 +321,41 @@ func TestSlowReceivesToolPrerequisitesAfterTheDeploymentInstruction(t *testing.T
 	if !strings.Contains(instruction, cognition.SlowNoResultInstruction) ||
 		!strings.Contains(instruction, continuation.CompletionMarker) {
 		t.Fatalf("slow phase has no control-only way to report that nothing new remains:\n%s", instruction)
+	}
+	if _, err := engine.RunFast(context.Background(), cognition.Request{SourceRevision: 1}, nil); err != nil {
+		t.Fatalf("run fast: %v", err)
+	}
+	if !strings.Contains(fast.seen.Invocation.Instruction, cognition.FastClarificationInstruction) {
+		t.Fatalf("voice with a live capability did not receive tool-aware clarification guidance:\n%s", fast.seen.Invocation.Instruction)
+	}
+}
+
+func TestToolFreeProviderRequestsKeepTheBasePrompts(t *testing.T) {
+	store := trajectory.NewStore()
+	if err := store.Append(trajectory.Item{
+		ID: "fact", Kind: trajectory.KindObservation, MonotonicNS: 1, SourceRevision: 1,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "What does refundable mean?",
+	}); err != nil {
+		t.Fatalf("seed factual question: %v", err)
+	}
+	fast := fastProvider()
+	slow := slowProvider()
+	engine, err := cognition.New(cognition.Config{Store: store, Fast: fast, Slow: slow})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	request := cognition.Request{SourceRevision: 1}
+	if _, err := engine.RunFast(context.Background(), request, nil); err != nil {
+		t.Fatalf("run fast: %v", err)
+	}
+	if _, err := engine.RunSlow(context.Background(), request, nil); err != nil {
+		t.Fatalf("run slow: %v", err)
+	}
+	if strings.Contains(fast.seen.Invocation.Instruction, cognition.FastClarificationInstruction) {
+		t.Fatal("a tool-free factual voice request acquired tool clarification guidance")
+	}
+	if strings.Contains(slow.seen.Invocation.Instruction, cognition.SlowToolPrerequisiteInstruction) {
+		t.Fatal("a tool-free factual reasoning request acquired action-planning guidance")
 	}
 }
 

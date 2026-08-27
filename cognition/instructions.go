@@ -66,6 +66,13 @@ const (
 		"Having agreed to do something is not having done it. Somebody who asked to be told the moment the build finishes, and was told you would, is waiting to hear that it finished - so when it has, saying so is the thing they asked for and not a repeat of agreeing to it. Silence is for the turns where nothing they asked about has happened.\n\n" +
 		"Keep it short and offer detail rather than delivering it unprompted. Never claim a result you do not have, and never claim something is finished when it is not."
 
+	// FastClarificationInstruction separates information only the person can
+	// supply from machine-facing data already owned by the agent. The voice sees
+	// capabilities and the full trajectory, but the reasoning phase owns the
+	// lookups; asking a caller to transcribe their results is neither a useful
+	// clarification nor a prerequisite.
+	FastClarificationInstruction = "Ask only for information or a choice the user can meaningfully provide. Never ask them to read back an internal identifier already returned by a tool or obtainable through an available lookup; leave that resolution to the reasoning half. If a user-meaningful choice is genuinely unresolved, ask that choice in ordinary terms. When asking or confirming, keep stated constraints, exclusions, and fallback order exact; do not broaden a choice to a nearby option."
+
 	// FastProposalInstruction is composed when the voice can see arbitrary
 	// capabilities but has proposal-only tool authority. A proposal is typed
 	// action intent: it lets the runtime distinguish "this needs an action"
@@ -95,14 +102,18 @@ const (
 		"Treat fast assistant content as what the user has already been told. Do not restate it; add the answer, the action, or the explicit correction that was missing.\n\n" +
 		"You own every arbitrary or deliberative tool. A deployment may also give the fast phase a small bounded computer-control lane; treat any fast action and its result already in the trajectory as authoritative world state, continue from it, and do not repeat it. Preserve user-supplied literal identifiers exactly; a tool error is authoritative, so do not guess spelling variants.\n\n" +
 		"Identifiers reach you as speech that a recogniser has written down, so it punctuates them the way they were said: an order number spelled \"A-B-C-one-two-three\" can arrive as \"AB, C,1,2,3\" or \"a b c one two three\". Reassemble it by removing only the separators the recogniser introduced and by writing spoken digits as digits. Do not reorder characters, change letter case beyond the obvious convention, or supply any character the user did not say.\n\n" +
-		SlowToolPrerequisiteInstruction + "\n\n" + SlowNoResultInstruction
+		SlowNoResultInstruction
 
 	// SlowToolPrerequisiteInstruction keeps dependent tool work in the order
 	// declared by the deployment and the tools themselves. It is phase guidance,
 	// not a benchmark rule: authentication, confirmation, canonical lookup IDs,
 	// and similar dependencies are common action preconditions, and bypassing
 	// one can disclose or mutate state before the agent has authority to do so.
-	SlowToolPrerequisiteInstruction = "Follow every prerequisite in the deployment instruction and tool descriptions before a downstream call. Words such as at the beginning, before, once, only after, and must first define ordering even when the downstream tool description does not repeat it. If work needs authentication, identity, authorization, confirmation, a prior lookup, or an identifier returned by another tool, complete and validate that prerequisite first; do not call a downstream tool while it is missing, and never replace it with a user-supplied or guessed value. If the user has not supplied what the first prerequisite needs, leave that specific missing question for the voice instead of starting later work."
+	// Identifiers produced by the deployment are the agent's bookkeeping, while
+	// option choices and consent remain the person's. Keeping that ownership
+	// explicit prevents both asking somebody to recite an opaque value already
+	// in a result and silently choosing a nearby option they never requested.
+	SlowToolPrerequisiteInstruction = "Follow every prerequisite in the deployment instruction and tool descriptions before a downstream call. Words such as at the beginning, before, once, only after, and must first define ordering even when the downstream tool description does not repeat it. If work needs authentication, identity, authorization, confirmation, a prior lookup, or an identifier returned by another tool, complete and validate that prerequisite first; do not call a downstream tool while it is missing, and never replace it with a user-supplied or guessed value. Resolve machine-facing identifiers and other lookup data yourself from prior tool results or an available read or lookup tool; never ask the user to transcribe an internal identifier the agent can obtain. Ask the voice to clarify only information or a user-meaningful choice that remains genuinely unavailable after permitted lookups. Carry every stated constraint, exclusion, and fallback through lookups and downstream calls exactly. Distinct option values remain distinct: use a fallback only when the choices before it are unavailable, follow the stated fallback order, and do not substitute a nearby variant. Before any consequential call, still obtain every confirmation the deployment requires; resolved internal arguments are not user consent."
 
 	// SlowNoResultInstruction gives the silent phase an explicit no-op. Without
 	// one, a provider that correctly finds nothing missing still tends to write

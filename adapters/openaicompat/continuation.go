@@ -671,14 +671,12 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 		result.extra[name] = value
 	}
 
-	// Invocation.Instruction is the complete policy for this continuation.
-	// Historical instruction items are audit records, not additional system
-	// prompts; replaying every fast/slow control instruction grows context and
+	// Capability data establishes what exists; Invocation.Instruction says how
+	// this phase must use it. Keep the governing policy after the manifest, and
+	// an urgent repair after both. Historical instruction items are audit
+	// records, not additional system prompts; replaying them grows context and
 	// presents contradictory phase policies on long conversations.
-	instructions := []string{request.Invocation.Instruction}
-	if len(trajectory.PendingRepairs(request.Trajectory)) > 0 {
-		instructions = append(instructions, continuation.PendingRepairInstruction)
-	}
+	var instructions []string
 	assistantVisibility := trajectory.AssistantVisibility(request.Trajectory)
 	cancelledInvocations := trajectory.CancelledAssistantInvocations(request.Trajectory)
 	nativeInvocations := make(map[string]chatMessage)
@@ -706,6 +704,10 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 			return chatRequest{}, fmt.Errorf("encode capability manifest: %w", err)
 		}
 		instructions = append(instructions, "The following is the complete set of capabilities this agent has. Schema visibility is not execution authority: the runtime records whether a tool-channel call is executable or only a non-executable proposal, and reasoning may revise or reject a proposal. Never tell the user the agent lacks a capability that is listed here:\n"+string(encoded))
+	}
+	instructions = append(instructions, request.Invocation.Instruction)
+	if len(trajectory.PendingRepairs(request.Trajectory)) > 0 {
+		instructions = append(instructions, continuation.PendingRepairInstruction)
 	}
 	if len(instructions) > 0 {
 		result.Messages = append(result.Messages, chatMessage{Role: "system", Content: strings.Join(instructions, "\n\n")})

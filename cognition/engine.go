@@ -354,13 +354,19 @@ func (engine *Engine) PrepareFast(
 // right condition.
 func (engine *Engine) fastInvocation(request Request) continuation.Invocation {
 	tools := engine.fastTools(request.AllowFastTools)
+	capabilities := engine.capabilityManifest()
 	instruction := engine.instruction(engine.prompt(trajectory.PhaseFast), request)
 	if len(tools) > 0 && engine.config.Fast.Descriptor().EffectiveToolAuthority() == continuation.ToolAuthorityPropose {
 		instruction = Compose(instruction, FastProposalInstruction)
 	}
+	if len(capabilities) > 0 {
+		// The ownership rule governs both ordinary clarification and tool
+		// proposals, so it is the most specific instruction and comes last.
+		instruction = Compose(instruction, FastClarificationInstruction)
+	}
 	return continuation.Invocation{
 		Instruction: instruction, SourceRevision: request.SourceRevision,
-		Capabilities: engine.capabilityManifest(), Tools: tools,
+		Capabilities: capabilities, Tools: tools,
 		MaxOutputTokens: engine.config.FastMaxTokens,
 	}
 }
@@ -375,11 +381,7 @@ func (engine *Engine) PrepareSlow(
 	ctx context.Context, request Request, provisional trajectory.Item,
 ) (*continuation.Prepared, error) {
 	request.Silent = true
-	return engine.runner.Prepare(ctx, engine.config.Slow, continuation.Invocation{
-		Instruction: engine.instruction(engine.prompt(trajectory.PhaseSlow), request), SourceRevision: request.SourceRevision,
-		Capabilities: engine.capabilityManifest(), Tools: engine.executableTools(),
-		MaxOutputTokens: engine.config.SlowMaxTokens,
-	}, provisional, nil)
+	return engine.runner.Prepare(ctx, engine.config.Slow, engine.slowInvocation(request), provisional, nil)
 }
 
 // Adopt commits prepared output at a real safe point.
@@ -394,11 +396,26 @@ func (engine *Engine) RunSlow(ctx context.Context, request Request, observer Str
 	// The reasoner is never heard, and the policies people set out loud read
 	// as instructions to whoever is speaking.
 	request.Silent = true
-	return engine.run(ctx, engine.config.Slow, trajectory.PhaseSlow, continuation.Invocation{
-		Instruction: engine.instruction(engine.prompt(trajectory.PhaseSlow), request), SourceRevision: request.SourceRevision,
-		Capabilities: engine.capabilityManifest(), Tools: engine.executableTools(),
+	return engine.run(
+		ctx, engine.config.Slow, trajectory.PhaseSlow, engine.slowInvocation(request), observer, request.live(),
+	)
+}
+
+// slowInvocation attaches action-planning guidance only when this invocation
+// has an action surface. Tool-free help and factual turns keep the exact base
+// reasoning prompt; a live tool declaration gets both its schemas and the
+// rules for resolving their prerequisites in the same provider request.
+func (engine *Engine) slowInvocation(request Request) continuation.Invocation {
+	tools := engine.executableTools()
+	instruction := engine.instruction(engine.prompt(trajectory.PhaseSlow), request)
+	if len(tools) > 0 {
+		instruction = Compose(instruction, SlowToolPrerequisiteInstruction)
+	}
+	return continuation.Invocation{
+		Instruction: instruction, SourceRevision: request.SourceRevision,
+		Capabilities: engine.capabilityManifest(), Tools: tools,
 		MaxOutputTokens: engine.config.SlowMaxTokens,
-	}, observer, request.live())
+	}
 }
 
 func (engine *Engine) instruction(prompt string, request Request) string {

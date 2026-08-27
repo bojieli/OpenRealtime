@@ -86,3 +86,38 @@ func TestProposalOnlyVoiceSeparatesActionIntentFromSpeech(t *testing.T) {
 		}
 	}
 }
+
+// Internal identifiers belong to the agent once a lookup can resolve them;
+// preferences and consent still belong to the person. A voice run asked a
+// caller for four item IDs already present in tool results, while the reasoner
+// later replaced the caller's explicit fallback with a neighboring variant.
+func TestToolDataIsResolvedWithoutBroadeningTheUsersChoice(t *testing.T) {
+	for _, obligation := range []string{
+		"choice the user can meaningfully provide",
+		"internal identifier already returned by a tool",
+		"available lookup",
+		"user-meaningful choice is genuinely unresolved",
+		"keep stated constraints, exclusions, and fallback order exact",
+		"do not broaden a choice to a nearby option",
+	} {
+		if !strings.Contains(cognition.FastClarificationInstruction, obligation) {
+			t.Fatalf("voice clarification guidance lost %q", obligation)
+		}
+	}
+
+	for _, obligation := range []string{
+		"prior tool results",
+		"available read or lookup tool",
+		"never ask the user to transcribe an internal identifier",
+		"user-meaningful choice that remains genuinely unavailable",
+		"every stated constraint, exclusion, and fallback",
+		"Distinct option values remain distinct",
+		"follow the stated fallback order",
+		"do not substitute a nearby variant",
+		"resolved internal arguments are not user consent",
+	} {
+		if !strings.Contains(cognition.SlowToolPrerequisiteInstruction, obligation) {
+			t.Fatalf("reasoning guidance lost tool-grounding obligation %q", obligation)
+		}
+	}
+}
