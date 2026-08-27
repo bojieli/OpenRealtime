@@ -95,8 +95,21 @@ func TestTheVoiceIsToldWhatTheTurnWasCalledFor(t *testing.T) {
 		Interjecting: true, Because: "speak-through",
 		Standing: []string{"count the animals out loud (1m ago)"},
 	})
-	if !strings.Contains(counting, "Counting works the same way") {
+	if !strings.Contains(counting, "Count every one of them") {
 		t.Fatalf("a running commentary was not told what it is for:\n%s", counting)
+	}
+	// And a running commentary that is not a count is not told how to count.
+	// Attached to every one of them, the arithmetic taught a waiter scenario
+	// to count: asked to order the dish that fits, the agent said "4 4 4".
+	ordering := instructionFor(t, cognition.Request{
+		Interjecting: true, Because: "speak-through",
+		Standing: []string{"order the dish that fits when the waiter names one (1m ago)"},
+	})
+	if strings.Contains(ordering, "Count every one of them") {
+		t.Fatalf("ordering a dish was told how to count:\n%s", ordering)
+	}
+	if !strings.Contains(ordering, "Do exactly what their standing policy asks") {
+		t.Fatalf("a running commentary was not told what it is for:\n%s", ordering)
 	}
 	// A count is of the things counted, not of the turns spent counting.
 	// Told to "say the next number" it counted to sixteen through a story

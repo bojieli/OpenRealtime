@@ -387,7 +387,7 @@ func Instruct(prompt string, request Request) string {
 	if request.Interjecting {
 		prompt += "\n\n" + InterjectingInstruction
 	}
-	if reason := becauseInstruction(request.Because); reason != "" {
+	if reason := becauseInstruction(request.Because, request.Standing); reason != "" {
 		prompt += "\n\n" + reason
 	}
 	if request.PendingRepair {
@@ -564,34 +564,65 @@ func validateCapabilities(capabilities []continuation.Capability) error {
 // there are seven of them; only the two that mean "say something into a turn
 // that is not yours" need explaining, because those are the two where the
 // voice cannot work out from the conversation alone what it is for.
-func becauseInstruction(act string) string {
+// asksForACount reports that one of the policies in force asks for a running
+// count.
+//
+// It reads the person's own words, and it chooses which guidance to attach
+// rather than what to do - the acts, the conditions and the content are all
+// decided elsewhere. Attaching the arithmetic to every running commentary is
+// what taught a waiter to count; attaching it to none of them loses the first
+// animal four times in five.
+func asksForACount(standing []string) bool {
+	for _, policy := range standing {
+		lowered := strings.ToLower(policy)
+		for _, asking := range []string{"count", "how many", "running total", "tally", "number of"} {
+			if strings.Contains(lowered, asking) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func becauseInstruction(act string, standing []string) string {
 	switch act {
 	case "speak-through":
-		// Every rule here was added to fix a measured failure and the order
-		// matters as much as the content. Three paragraphs of counting detail
-		// in front of one conditional sentence taught a waiter scenario to
-		// count: asked to order the dish that fits, the agent said "4 4 4".
-		// The general rule goes first and counting is one paragraph of it.
-		return "You are speaking because something the person asked to be told about has just happened. " +
-			"Do that thing now, for the occurrence in front of you, and say only that: the translation " +
-			"itself, the warning itself, the dish, that the thing has landed.\n\n" +
+		// Composed for what the policy asks, not enumerated for every kind of
+		// policy at once. Three paragraphs of counting detail attached to
+		// every running commentary taught a waiter scenario to count: asked to
+		// order the dish that fits, the agent said "4 4 4", and then "1 order
+		// the sea there".
+		//
+		// Measured, five samples each, with the general rule alone: the waiter
+		// waits through the steak and orders the sea bass, and an interpreter
+		// gives the English - and counting manages the first animal once in
+		// five. With the arithmetic attached, counting manages it five times
+		// in five. Neither rule is right for both, and which one a turn needs
+		// is a fact about what the person asked for.
+		general := "You are speaking because something the person asked to be told about has just " +
+			"happened. Do exactly what their standing policy asks, for the occurrence in front of " +
+			"you, and say only that.\n\n" +
 			"What they say arrives in pieces and each piece repeats everything before it, so you are " +
-			"asked about the same occurrence over and over. Say something only when there is something " +
-			"new to say. Nothing new to translate, or the thing they were waiting for still has not " +
-			"landed, is " + WaitToken + " and nothing else.\n\n" +
-			// Worked through rather than stated. Every shorter form of this
-			// was read one way too far in one direction or the other: "count
-			// them from the beginning" alone waited through the first animal
-			// five times out of five, and "say the next number" counted turns
-			// instead of animals. Spelling out the comparison, and both ends
-			// of it, is the version that holds.
-			"Counting works the same way. Count every one of them in everything they have said, " +
-			"including the sentence they are still saying, which is shown after the conversation " +
-			"because they have not finished it. If that number is more than the last number you said, " +
-			"say it. If it is the same, or you counted none at all, say " + WaitToken + ". So the " +
-			"first one they mention is \"one\" even though you have said nothing yet, and the same one " +
-			"mentioned again is " + WaitToken + ". Never say zero out loud: it is read aloud like " +
-			"everything else you write, and nobody counting things aloud says zero."
+			"asked about the same occurrence over and over. Say something only when there is " +
+			"something new to say: if what they asked for has not changed since you last spoke, " +
+			"reply with " + WaitToken + " and nothing else. The sentence they are still saying is " +
+			"shown after the conversation because they have not finished it, not because it does " +
+			"not count."
+		if !asksForACount(standing) {
+			return general
+		}
+		// Worked through rather than stated. Every shorter form was read one
+		// way too far in one direction or the other: "say the next number"
+		// counted turns, and "count them from the beginning" waited through
+		// the first animal five times out of five, having nothing to compare
+		// against.
+		return general + "\n\n" +
+			"Count every one of them in everything they have said. If that number is more than the " +
+			"last number you said, say it. If it is the same, or you counted none at all, say " +
+			WaitToken + ". So the first one they mention is \"one\" even though you have said " +
+			"nothing yet, and the same one mentioned again is " + WaitToken + ". Never say zero out " +
+			"loud: it is read aloud like everything else you write, and nobody counting things " +
+			"aloud says zero."
 	case "call-tool":
 		// Measured on a phone menu: the key was pressed correctly and then
 		// announced out loud - "I have pressed two to select the order status
