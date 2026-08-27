@@ -1904,3 +1904,62 @@ The consequence for method is that a single pass cannot rank two versions that
 differ by a scenario or two, and reporting one as an improvement over the other
 is reading noise. Scenario-level probes at five repeats are what moved this
 work; full-suite totals are for direction.
+
+## F56 - Qwen3-VL-30B-A3B beats Qwen3-VL-8B on this GPU, on both axes
+
+Run one at a time on the same GPU, same port, same served-model-name, so
+nothing else in the system changed. Co-residency was rejected deliberately: only
+one model serves the fast phase in deployment, and two would contend for memory
+and scheduling and make the latency meaningless.
+
+End to end, the full suite at five repeats:
+
+	Qwen3-VL-30B-A3B-Instruct-FP8   35, 38, 38, 36 / 55
+	Qwen3-VL-8B-Instruct            24 / 55
+
+The gap is far outside the run-to-run spread of F55, so one pass is enough to
+separate them. Per scenario the 8B loses everywhere it matters and holds only
+the easy cases:
+
+	                              30B      8B
+	an ordinary question (control) 4-5/5   5/5
+	asked not to be interrupted    5/5     5/5
+	a recorded menu                4-5/5   5/5
+	an acknowledgement             5/5     4/5
+	cutting in on something wrong  4-5/5   3/5
+	ordering from a waiter         3-5/5   2/5
+	count-as-they-go               0-3/5   0/5
+	translating as they speak      2-3/5   0/5
+	waiting out a silence          1-4/5   0/5
+	somebody else's conversation   0-3/5   0/5
+	telling them what it saw       4-5/5   0/5
+
+Two of those are worth naming. The visual case goes to zero: both are VL models
+and the 8B does not hold up on it. And the silence case goes to zero, which was
+predicted before the suite ran, from the judgement tests below.
+
+The judgements the system actually depends on, measured directly:
+
+	                        30B      8B
+	extraction              5/5      5/5
+	restriction classifier  12/14    11/14
+	scope classifier        10/11    7/11
+	voice: nothing to count 10/10    10/10
+
+Scope is the one that predicts the end-to-end result. F51 and the silence
+scenario showed what a scope error costs: a policy read as passing expires with
+the turn, nothing is in force, and the agent falls back on an ordinary reply. A
+model wrong four times in eleven produces that failure constantly, and the 8B's
+0/5 on the silence scenario is exactly it.
+
+Latency goes the same way, which is the part worth remembering:
+
+	30B-A3B-FP8   17ms p50 on a short decision
+	8B-Instruct   33ms p50
+
+The bigger model is twice as fast. Thirty billion parameters with three billion
+active, quantised to FP8, moves less weight per token than eight billion dense
+at bf16 - so the parameter count in the name is the wrong thing to compare, and
+on this GPU there is no quality-for-speed trade to make here at all.
+
+The 30B-A3B stays.
