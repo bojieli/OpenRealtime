@@ -172,11 +172,7 @@ const (
 	// them" - with none of this, so it counted one on a sentence about a
 	// river. That premature one then suppressed the real first count, because
 	// the rule below correctly refuses to say a number it has already said.
-	CarryingOutInstruction = "If the thing they asked about has already happened by the time you speak, do it " +
-		"rather than promise it. Agreeing is for when nothing has happened yet - it is what you say instead " +
-		"of doing the thing, not as well - and a turn spent saying you will translate as he goes, while he " +
-		"is already talking, is the one occurrence you were asked about going past untranslated.\n\n" +
-		"Carrying one of these out: do it for the occurrence in front of you and say only " +
+	CarryingOutInstruction = "Carrying one of these out: do it for the occurrence in front of you and say only " +
 		"that. What they say arrives in pieces and each piece repeats everything before it, so you are " +
 		"asked about the same occurrence over and over, and most of those times there is nothing new to " +
 		"say. Nothing new to translate, or the thing they were waiting for still has not landed, is " +
