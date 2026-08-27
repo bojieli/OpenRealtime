@@ -1642,3 +1642,79 @@ declines to claim anything passes a check about not claiming things. And the
 situation handed to the decider said `just seen: The user attached an image.`
 in both cases, which is what the runtime says when it has decided the picture
 itself is going to the model. It reads identically whether that happened.
+
+### The prompt is evidence, and it was the last thing anybody looked at (F46)
+
+Four rounds of reasoning went into why a counting policy answered "3 4" from a
+model that answers the same question correctly five times out of five when the
+conversation is assembled by hand. Each round proposed a difference, fixed it,
+and measured no improvement. The interaction shadow could not settle it: it
+records what the deciding model saw, and this was the other model.
+
+Recording what the voice is given took twenty lines and answered it
+immediately. Three things were wrong at once and none of them was arithmetic:
+
+```
+agent: I do not have an active task or any previous details on record...
+agent: No animals have been mentioned yet. Please tell me about your afternoon...
+agent: 0
+```
+
+The first two are answers to "I'm going to tell you." - a recogniser hands over
+an unfinished sentence as though it were a turn, and the voice, having nothing
+to answer, asks what the task is. Spoken aloud, into a policy that said to say
+nothing else, and then part of the context every later turn had to count
+through. The third is the voice writing a zero it had been told to replace with
+the wait token, which is then read out and becomes the number every later count
+was measured from.
+
+The lesson is not about counting. A system with two models in it needs both
+their inputs recorded, and this one had recorded one of them all along.
+
+### One instruction, four wordings, and the shape of the fix (F47)
+
+The running-commentary instruction has been rewritten five times, each time to
+fix a measured failure, and the sequence is worth keeping because every step
+looked right when it was made:
+
+```
+"say the next number"                   counted turns: one capybara became 5,6,7,8,9
+"count them from the transcript"        gave "1 3 3 1": each partial a fresh question
++ "wait if the new part has none"       contradicted the line above it
+"count from the beginning, say if changed"  waited through the first animal 5/5
+worked through, both ends stated        5/5 on all four counting cases
+```
+
+And then the waiter scenario started counting - "4 4 4" for a dish - because
+three paragraphs of counting arithmetic sat in front of one conditional
+sentence, and the shape of an instruction teaches as much as its content.
+
+Removing the arithmetic fixes the waiter and the interpreter and breaks the
+count: measured five samples each, the general rule alone gets the sea bass 5/5
+and the first animal 1/5, and with the arithmetic attached the first animal is
+5/5. Neither rule is right for both, and which one a turn needs is a fact about
+what the person asked for - which the composer already has, in their own words.
+
+### The GPU fell over (F48)
+
+Two services stopped answering in the middle of a suite - the recogniser first,
+then the policy model - and both looked exactly like bugs in the work that had
+just been done. They were not:
+
+```
+Fan  Temp   Perf   Pwr:Usage/Cap
+ERR!  ERR!  ERR!          N/A / N/A     58222MiB / 97887MiB
+No running processes found
+temperature.gpu -> [GPU requires reset]
+```
+
+`nvidia-smi -r` answers "Not Supported" on this card, and the driver modules
+hold 44 and 183 references with no live process behind them, so the modules
+cannot be unloaded either. A reboot is the remaining path.
+
+The suite reported it correctly - "ERR ... context deadline exceeded" rather
+than five quiet zeroes - which is the third instrument fix in this file earning
+its place. A benchmark that scores behaviour cannot tell a model that chose
+silence from a pipeline that stopped, and this file now contains three
+different ways that has happened: a session stream that ended early, a
+synthesiser that ate the GPU, and the GPU itself.
