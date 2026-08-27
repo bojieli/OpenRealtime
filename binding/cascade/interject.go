@@ -140,9 +140,30 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		runtime.noteInterject("nothing new since the agent last spoke")
 		return
 	}
-	if newly != stable && !finishedSomething(newly) {
-		runtime.noteInterject("they have not finished saying anything since the agent last spoke")
-		return
+	if newly != stable {
+		// Inside a stretch of speech the agent has already answered. What it
+		// takes to answer again depends on whether the policy's answer depends
+		// on its own previous answers.
+		//
+		// A running count is stateful: the number it says next is a function
+		// of the number it said last, and asking twice about one occurrence
+		// corrupts it permanently - with "1 2 3" in the conversation the model
+		// answers "4" eight times out of eight, and so does Gemini, whatever
+		// the instruction says. So a count is answered once per stretch of
+		// speech and no more.
+		//
+		// A translation or an order is not: each sentence stands on its own,
+		// the second answer does not depend on the first, and refusing to
+		// answer again is how the dish that fits goes past unordered. Those
+		// wait for a finished sentence and then answer it.
+		if runtime.countingIsInForce() {
+			runtime.noteInterject("a running count is answered once for each thing they say")
+			return
+		}
+		if !finishedSomething(newly) {
+			runtime.noteInterject("they have not finished saying anything since the agent last spoke")
+			return
+		}
 	}
 	// One at a time, but not forever. An interjection runs a continuation and
 	// commits it through a loop with one driver, so it can sit behind other
