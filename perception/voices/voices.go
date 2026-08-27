@@ -67,11 +67,34 @@ const DefaultThreshold = 0.40
 
 // DefaultMinimum is how much speech is needed before asking who is talking.
 //
-// Under about a second the embedding is dominated by whatever phonemes
+// Under a second and a half the embedding is dominated by whatever phonemes
 // happened to be in it, and a wrong answer here is worse than no answer: no
 // answer leaves the prior in place, and a wrong one tells the agent the person
 // it is talking to is a stranger.
-const DefaultMinimum = time.Second
+//
+// A second was an estimate of where that stops being true, and measurement put
+// it exactly on the line. One voice against itself, and against another, at
+// the threshold above:
+//
+//	window   same voice   another voice
+//	 300ms        0.219           0.145
+//	 500ms        0.321           0.177
+//	 750ms        0.301           0.243
+//	1000ms        0.430           0.219
+//	1500ms        0.584           0.202
+//	3000ms        0.722           0.246
+//
+// At a second the same speaker scores 0.430 against a threshold of 0.40, which
+// is a coin toss, and every toss that lands wrong relabels the person mid
+// sentence. Measured in the suite, a speaker telling one uninterrupted story
+// was reported as somebody else in the room 122 times. At a second and a half
+// there is a third of a point of clearance on both sides of the threshold.
+//
+// The cost of waiting is that a genuine second speaker is recognised half a
+// second later, which is affordable: somebody else in the room talks for
+// seconds at a time, and until the verdict arrives the prior stands rather
+// than a guess.
+const DefaultMinimum = 1500 * time.Millisecond
 
 // DefaultEnrolment is how much speech is needed before deciding whose session
 // this is, and it is deliberately longer.
