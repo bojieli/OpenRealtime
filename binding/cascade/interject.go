@@ -264,9 +264,18 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		// nature - the turn it would have spoken into belongs to somebody else
 		// - and reporting it reached the client as a session error for a
 		// moment that had simply passed.
-		// In the same units the guard compares against, or the comparison is
-		// between a stable prefix and a whole revision and never matches.
-		runtime.markSpoken(stable)
+		// The whole of what they have said in this turn, which is the unit the
+		// mark is read back in. Recording the stable text of the current
+		// utterance instead recorded a fragment from the middle of the turn,
+		// and the mark is tested as a prefix of the turn - which a fragment
+		// from the middle never is. So every reading after an interjection was
+		// told nothing had been answered, and one animal collected "two three
+		// four five" before the next one arrived.
+		//
+		// heardSinceSpeaking still trims what the voice is shown, which is a
+		// different question: what is new to say something about, rather than
+		// how much has been covered.
+		runtime.markSpoken(strings.Join(mustSpeechSoFar(runtime.store.Snapshot()), " "))
 		if len(standing) > 0 {
 			// A policy has now been acted on, so no later sentence is the one
 			// that set it.
