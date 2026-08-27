@@ -17,8 +17,16 @@ func TestTheVoiceIsAlwaysToldHowToSayNothing(t *testing.T) {
 	if !strings.Contains(cognition.FastInstruction, cognition.WaitToken) {
 		t.Fatal("the voice's own instruction never names the way to say nothing")
 	}
-	if !strings.Contains(cognition.FastInstruction, "say nothing rather than agreeing again") {
+	// Anchored on the rule rather than on one phrasing of it. The wording has
+	// changed once already - the test used to name a clause that was rewritten
+	// when the rule was pointed at the fact the runtime hands the voice - and
+	// what this regression is about is that the rule exists and that silence
+	// is sayable, not which sentence carries it.
+	if !strings.Contains(cognition.FastInstruction, "Agree to something once") {
 		t.Fatal("the rule that needs it is gone")
+	}
+	if !strings.Contains(cognition.FastInstruction, "say nothing") {
+		t.Fatal("the rule no longer asks for silence")
 	}
 }
 
