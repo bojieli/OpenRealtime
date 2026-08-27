@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Developer experience
+
+- **A native macOS client carries the complete session.** The SwiftUI app sends
+  PCM16 microphone audio and typed text, plays audio and renders written text,
+  captures a selected display and physical camera with ScreenCaptureKit and
+  AVFoundation, renders interactive HTML artifacts, exposes generated files,
+  and separates observations, actions, raw protocol, and server latency into
+  inspectable views. Its initial system prompt is explicit session
+  configuration rather than hidden client prose.
+
+- **Browser and desktop computer use are different bounded targets.** Browser
+  mode pins browser-use 0.12.6 and consumes its actual DOM selector map,
+  highlighted set-of-mark screenshot, and action paths over a JSON-lines
+  subprocess. Desktop mode maps CGEvents only into one selected display and
+  requires Screen Recording and Accessibility permission. Files resolve after
+  symlinks inside one workspace; writes, shell commands, and consequential
+  actions wait for native confirmation.
+
+- **The optional debug stream explains where milliseconds went.** A session
+  can opt into timestamped, correlated VAD, ASR, video, cognition, policy, TTS,
+  tool, session, and error events. Payloads are redacted unless separately
+  requested, and raw media is never included. Both developer clients render a
+  searchable timeline with duration distributions; ordinary Realtime sessions
+  see no new event.
+
 ### Computer use
 
 - **The source field names the sources.** A live run produced source
@@ -21,7 +46,8 @@
   second local client, and deliberately not a second console: the console is
   the minimal worked example of the protocol, and this is the bench. Six
   channels in — audio, typed text, screen, camera, a browser, tool results —
-  and five out: speech, text, computer use, tool calls, and HTML artifacts.
+  and six out: speech, text, computer use, tool calls, HTML artifacts, and
+  downloadable files.
   Each one shows whether it is carrying anything and how much, because a
   channel at zero when you expected traffic is the most common finding in an
   end-to-end run and is invisible in a transcript, which only shows what did
@@ -44,12 +70,20 @@
   the one way out is `postMessage`, and a person clicking a button inside an
   artifact reaches the session as a person speaking.
 
-- **Every channel carries against real models.** A local stack - Qwen3-30B
-  reasoning, Qwen2.5-VL-7B narrating, SenseVoice listening, FishAudio speaking -
-  hears real speech, reads a real file, renders a real HTML table, and presses a
-  button on a real page that it was only ever told about in words. The two
-  channels that stay silent are named rather than counted: a headless browser
-  has no display to share, and a model that speaks its answer never writes one.
+- **Generated files are ordinary tools too.** `publish_download` accepts one
+  safe filename and at most 8 MiB of text or base64, stores it in a bounded
+  in-memory shelf, and serves a revisioned same-origin attachment with
+  `nosniff`. The browser test fetches the published CSV and checks the twelfth
+  channel rather than treating a tool result containing bytes as a file.
+
+- **Channel coverage is separated from model choice.** A deterministic real-
+  browser test now carries all twelve channels in one session over WebSocket
+  and WebRTC, including a changing canvas display-capture stream and a text-
+  only response turn. A separate local-model run - Qwen3-30B reasoning,
+  Qwen2.5-VL-7B narrating, SenseVoice listening, FishAudio speaking - hears
+  real speech, reads a real file, renders a real HTML table, and presses a real
+  browser button; channels a selected model elects not to use remain reported
+  separately from transport coverage.
 
 - **A fragment is wrapped.** Found by a real model doing it: asked for a table,
   a good one returns a style block and a table and stops, because that is what
