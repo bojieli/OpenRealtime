@@ -56,6 +56,34 @@ func TestBuildRequestAttachesOnlyLatestMediaPerSource(t *testing.T) {
 	}
 }
 
+func TestBuildRequestProjectsAdjacentUserObservationsAsOneMessage(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		Model: "qwen-test", Provider: "vllm", Phase: trajectory.PhaseFast,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(),
+		Trajectory: trajectory.Snapshot{Version: 2, Items: []trajectory.Item{
+			{ID: "fragment-1", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "I know."},
+			{ID: "fragment-2", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "I need to exchange two items for my recent order."},
+		}},
+		Invocation: continuation.Invocation{Instruction: "Help the user."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Messages) != 2 || body.Messages[0].Role != "system" || body.Messages[1].Role != "user" {
+		t.Fatalf("unexpected projected messages: %#v", body.Messages)
+	}
+	want := "I know.\nI need to exchange two items for my recent order."
+	if body.Messages[1].Content != want {
+		t.Fatalf("projected user content = %q, want %q", body.Messages[1].Content, want)
+	}
+}
+
 func visionObservationItem(handle, source, narration string) trajectory.Item {
 	return trajectory.Item{
 		ID: handle, Kind: trajectory.KindObservation, Content: narration,
@@ -331,8 +359,9 @@ func TestBuildRequestRendersTypedObservationSupersession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(body.Messages) != 3 || body.Messages[2].Content == "book a flight tomorrow" ||
-		!strings.Contains(body.Messages[2].Content, "replace the earlier partial observation") {
+	if len(body.Messages) != 2 || body.Messages[1].Content == "book a flight tomorrow" ||
+		!strings.Contains(body.Messages[1].Content, "book a flight\nUpdated user speech revision") ||
+		!strings.Contains(body.Messages[1].Content, "replace the earlier partial observation") {
 		t.Fatalf("typed observation supersession was not rendered: %#v", body.Messages)
 	}
 }

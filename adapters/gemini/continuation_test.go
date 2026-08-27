@@ -52,6 +52,35 @@ func TestAdapterStreamsTextAndPreservesSignature(t *testing.T) {
 	}
 }
 
+func TestBuildRequestProjectsAdjacentUserObservationsAsOneContent(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		APIKey: "secret", Model: "gemini-test", Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortMinimal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(),
+		Trajectory: trajectory.Snapshot{Version: 2, Items: []trajectory.Item{
+			{ID: "fragment-1", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "I know."},
+			{ID: "fragment-2", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "I need to exchange two items for my recent order."},
+		}},
+		Invocation: continuation.Invocation{Instruction: "Help the user."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Contents) != 1 || body.Contents[0].Role != "user" || len(body.Contents[0].Parts) != 2 {
+		t.Fatalf("unexpected projected contents: %#v", body.Contents)
+	}
+	encoded, _ := json.Marshal(body.Contents[0])
+	if strings.Index(string(encoded), "I know.") >= strings.Index(string(encoded), "I need to exchange") {
+		t.Fatalf("user fragments were reordered: %s", encoded)
+	}
+}
+
 func TestBuildRequestReusesNativeStateAndCompilesToolResult(t *testing.T) {
 	t.Parallel()
 	adapter, err := New(Config{

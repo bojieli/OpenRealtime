@@ -348,7 +348,15 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 	elapsed := continuation.ElapsedNotes(request.Trajectory.Items)
 	selectedMedia := continuation.LatestMediaHandles(request.Trajectory.Items)
 	var lastSemanticKind trajectory.Kind
-	for _, item := range request.Trajectory.Items {
+	for _, run := range continuation.ProviderRuns(request.Trajectory.Items) {
+		if run.UserObservations {
+			lastSemanticKind = trajectory.KindObservation
+			result.Contents = appendGeminiContent(
+				result.Contents, compileUserObservationRun(run, request.Media, selectedMedia, elapsed),
+			)
+			continue
+		}
+		item := run.Items[0]
 		if item.Kind == trajectory.KindInstruction || item.Kind == trajectory.KindAssistantState {
 			continue
 		}
@@ -427,6 +435,21 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 		result.Tools = []geminiTool{{FunctionDeclarations: declarations}}
 	}
 	return result, nil
+}
+
+func compileUserObservationRun(
+	run continuation.ProviderRun, media continuation.MediaResolver,
+	selectedMedia map[string]struct{}, elapsed map[string]string,
+) geminiContent {
+	content := geminiContent{Role: "user"}
+	for _, item := range run.Items {
+		part, _ := json.Marshal(map[string]string{
+			"text": continuation.ObservationContent(item, elapsed[item.ID]),
+		})
+		content.Parts = append(content.Parts, part)
+		content.Parts = append(content.Parts, attachMedia(item, media, selectedMedia)...)
+	}
+	return content
 }
 
 func isModelOutputItem(kind trajectory.Kind) bool {

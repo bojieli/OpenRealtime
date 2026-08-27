@@ -93,6 +93,29 @@ func run(t *testing.T, adapter *Adapter, items []trajectory.Item) ([]continuatio
 	return events, completion
 }
 
+func TestBuildRequestProjectsAdjacentUserObservationsAsOneMessage(t *testing.T) {
+	t.Parallel()
+	adapter := slowAdapter(t, "http://127.0.0.1")
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(),
+		Trajectory: trajectory.Snapshot{Version: 2, Items: []trajectory.Item{
+			observation("fragment-1", "I know."),
+			observation("fragment-2", "I need to exchange two items for my recent order."),
+		}},
+		Invocation: continuation.Invocation{Instruction: "Help the user."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Messages) != 1 || body.Messages[0].Role != "user" || len(body.Messages[0].Content) != 2 {
+		t.Fatalf("unexpected projected messages: %#v", body.Messages)
+	}
+	encoded, _ := json.Marshal(body.Messages[0])
+	if strings.Index(string(encoded), "I know.") >= strings.Index(string(encoded), "I need to exchange") {
+		t.Fatalf("user fragments were reordered: %s", encoded)
+	}
+}
+
 func TestAdapterStreamsThinkingTextAndAToolCall(t *testing.T) {
 	t.Parallel()
 	var seen capture

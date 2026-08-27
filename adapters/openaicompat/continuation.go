@@ -677,7 +677,15 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 	consumedInvocations := make(map[string]struct{})
 	elapsed := continuation.ElapsedNotes(request.Trajectory.Items)
 	selectedMedia := continuation.LatestMediaHandles(request.Trajectory.Items)
-	for _, item := range request.Trajectory.Items {
+	for _, run := range continuation.ProviderRuns(request.Trajectory.Items) {
+		if run.UserObservations {
+			message := compileUserObservationRun(
+				run, request.Media, request.Descriptor.Vision, selectedMedia, elapsed,
+			)
+			result.Messages = append(result.Messages, message)
+			continue
+		}
+		item := run.Items[0]
 		if item.Kind == trajectory.KindInstruction || item.Kind == trajectory.KindAssistantState {
 			continue
 		}
@@ -736,6 +744,44 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 		}
 	}
 	return result, nil
+}
+
+func compileUserObservationRun(
+	run continuation.ProviderRun, media continuation.MediaResolver, vision bool,
+	selectedMedia map[string]struct{}, elapsed map[string]string,
+) chatMessage {
+	message := chatMessage{Role: "user"}
+	type observationParts struct {
+		text  string
+		media []contentPart
+	}
+	compiled := make([]observationParts, 0, len(run.Items))
+	withMedia := false
+	for _, item := range run.Items {
+		parts := observationParts{
+			text:  continuation.ObservationContent(item, elapsed[item.ID]),
+			media: attachMedia(item, media, vision, selectedMedia),
+		}
+		compiled = append(compiled, parts)
+		if len(parts.media) > 0 {
+			withMedia = true
+		}
+	}
+	if !withMedia {
+		texts := make([]string, 0, len(compiled))
+		for _, parts := range compiled {
+			texts = append(texts, parts.text)
+		}
+		message.Content = strings.Join(texts, "\n")
+		return message
+	}
+	for _, parts := range compiled {
+		message.Parts = append(message.Parts, contentPart{
+			Type: "text", Text: parts.text,
+		})
+		message.Parts = append(message.Parts, parts.media...)
+	}
+	return message
 }
 
 func isModelOutputItem(kind trajectory.Kind) bool {

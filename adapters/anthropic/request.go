@@ -58,7 +58,18 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (messagesRequ
 	consumed := make(map[string]struct{})
 	elapsed := continuation.ElapsedNotes(request.Trajectory.Items)
 	selectedMedia := continuation.LatestMediaHandles(request.Trajectory.Items)
-	for _, item := range request.Trajectory.Items {
+	for _, run := range continuation.ProviderRuns(request.Trajectory.Items) {
+		if run.UserObservations {
+			compiled, err := compileUserObservationRun(
+				run, request.Media, adapter.descriptor.Vision, selectedMedia, elapsed,
+			)
+			if err != nil {
+				return messagesRequest{}, err
+			}
+			blocks = append(blocks, compiled...)
+			continue
+		}
+		item := run.Items[0]
 		if _, cancelled := cancelledInvocations[item.InvocationID]; cancelled && item.InvocationID != "" {
 			continue
 		}
@@ -145,6 +156,26 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (messagesRequ
 		result.Tools = tools
 	}
 	return result, nil
+}
+
+func compileUserObservationRun(
+	run continuation.ProviderRun, media continuation.MediaResolver, vision bool,
+	selectedMedia map[string]struct{}, elapsed map[string]string,
+) ([]compiledBlock, error) {
+	var blocks []compiledBlock
+	for _, item := range run.Items {
+		raw, err := textBlock(continuation.ObservationContent(item, elapsed[item.ID]))
+		if err != nil {
+			return nil, err
+		}
+		blocks = append(blocks, compiledBlock{role: "user", raw: raw})
+		if vision {
+			for _, image := range attachMedia(item, media, selectedMedia) {
+				blocks = append(blocks, compiledBlock{role: "user", raw: image})
+			}
+		}
+	}
+	return blocks, nil
 }
 
 // applyThinking renders the extended-thinking request for this profile.
