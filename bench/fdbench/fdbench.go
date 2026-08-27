@@ -29,8 +29,12 @@ import (
 	"github.com/bojieli/OpenRealtime/bench"
 )
 
-// SampleRate is the rate the dataset's offsets are expressed in.
-const SampleRate = 24_000
+// TimestampRate is the rate the released .timestamps offsets are expressed
+// in. The prepared WAVs are 24 kHz, but the annotations retain the 16 kHz
+// sample indices of FD-Bench's source audio. Treating those indices as 24 kHz
+// compresses every turn to two thirds of its real position and scores agent
+// audio against the wrong speaker turn.
+const TimestampRate = 16_000
 
 // Turn is one span of user speech.
 type Turn struct {
@@ -125,8 +129,8 @@ func loadConversation(directory, condition, name string) (Conversation, error) {
 	}
 	for _, turn := range raw {
 		conversation.Turns = append(conversation.Turns, Turn{
-			StartMS: float64(turn.Start) * 1000 / SampleRate,
-			EndMS:   float64(turn.End) * 1000 / SampleRate,
+			StartMS: float64(turn.Start) * 1000 / TimestampRate,
+			EndMS:   float64(turn.End) * 1000 / TimestampRate,
 		})
 	}
 	return conversation, nil
