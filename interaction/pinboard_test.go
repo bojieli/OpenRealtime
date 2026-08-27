@@ -177,3 +177,25 @@ func TestAPolicysOriginDoesNotMoveWhenALaterTurnListsItAgain(t *testing.T) {
 		t.Fatalf("origin moved: turn=%d setNS=%d", inForce[0].Turn, inForce[0].SetNS)
 	}
 }
+
+// The extraction pass must not be shown its own answer for the turn it is
+// re-reading. Told both to list everything that stretch of speech sets and not
+// to repeat what is already in force, it sees its own pin on the list and
+// declines to repeat it - and since the answer replaces that turn's policies,
+// declining deletes them.
+func TestATurnsOwnPoliciesAreHiddenFromTheReadingOfIt(t *testing.T) {
+	board := &interaction.Pinboard{}
+	board.SetForTurn(1, []interaction.StandingInstruction{
+		{Text: "tell them when the kettle boils", Scope: interaction.ScopeConversation},
+	})
+	board.SetForTurn(2, []interaction.StandingInstruction{
+		{Text: "count the animals out loud", Scope: interaction.ScopeConversation},
+	})
+	shown := board.InForceExcept(2)
+	if len(shown) != 1 || shown[0].Text != "tell them when the kettle boils" {
+		t.Fatalf("a turn should see every policy but its own: %v", shown)
+	}
+	if len(board.InForceExcept(9)) != 2 {
+		t.Fatal("an unrelated turn should see both")
+	}
+}

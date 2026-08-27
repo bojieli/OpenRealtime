@@ -147,6 +147,33 @@ func (board *Pinboard) InForce() []StandingInstruction {
 	return append([]StandingInstruction(nil), board.pinned...)
 }
 
+// InForceExcept copies out what is standing apart from one turn's own
+// policies.
+//
+// It is what the extraction pass is shown. That pass is asked what a stretch of
+// speech establishes, and it is asked again every time the speaker adds to it,
+// so showing it what it answered last time invites it to defer: told both to
+// list everything this stretch sets and not to repeat what is already in
+// force, it sees its own answer on the list and declines to repeat it - and
+// since the answer replaces that turn's policies, declining deletes them.
+// Measured, "count the animals out loud as I mention them and say nothing
+// else" was pinned correctly at eleven seconds and gone by twenty-one.
+//
+// Policies from other turns stay visible, because a revocation is invisible
+// without them.
+func (board *Pinboard) InForceExcept(turn uint64) []StandingInstruction {
+	board.mu.Lock()
+	defer board.mu.Unlock()
+	kept := make([]StandingInstruction, 0, len(board.pinned))
+	for _, existing := range board.pinned {
+		if existing.Turn == turn {
+			continue
+		}
+		kept = append(kept, existing)
+	}
+	return kept
+}
+
 // Lines renders the board for a decision, each policy carrying its age.
 func (board *Pinboard) Lines(nowNS uint64) []string {
 	inForce := board.InForce()

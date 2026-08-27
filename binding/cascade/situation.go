@@ -228,7 +228,7 @@ func (runtime *runtime) noticeStanding(text string) {
 		// speaker breathes, and a fragment read alone means something else.
 		recent := interaction.RecentLines(snapshot.Items, 6)
 		extraction, err := runtime.policies.Extraction.Extract(
-			runtime.ctx, runtime.pinboard.InForce(), recent, whole)
+			runtime.ctx, runtime.pinboard.InForceExcept(turn), recent, whole)
 		if recorder := runtime.policies.ShadowInteraction; recorder != nil {
 			outcome := "none"
 			if len(extraction.Pins) > 0 {
