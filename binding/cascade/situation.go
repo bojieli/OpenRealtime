@@ -671,25 +671,33 @@ func (runtime *runtime) alreadyAnsweredFor(snapshot trajectory.Snapshot) string 
 	if !ok {
 		return ""
 	}
-	if !trajectory.SaidFurther(mark, said) && !sameWords(mark, said) {
+	if !beganWith(mark, said) {
 		return ""
 	}
 	return mark
 }
 
-// sameWords reports that two readings of speech say the same thing, allowing
-// for a recogniser having re-punctuated one of them.
-func sameWords(one, other string) bool {
-	first, second := trajectory.SpokenWords(one), trajectory.SpokenWords(other)
-	if len(first) != len(second) {
+// beganWith reports that a committed utterance starts with what the agent
+// spoke into.
+//
+// The last word is allowed to be a prefix of its counterpart, because a
+// recogniser's partial cuts wherever the audio has got to and that is usually
+// mid-word: the agent speaks into "A cap", the sentence commits as "A capybara
+// wandered over and sat down next to me", and compared strictly the mark is
+// not a prefix of it at all. Which made this return nothing in precisely the
+// case it exists for - the agent had spoken into that sentence, and the turn
+// that ran when it committed was told it had not.
+func beganWith(mark, said string) bool {
+	spoken, whole := trajectory.SpokenWords(mark), trajectory.SpokenWords(said)
+	if len(spoken) == 0 || len(spoken) > len(whole) {
 		return false
 	}
-	for index := range first {
-		if first[index] != second[index] {
+	for index := range spoken[:len(spoken)-1] {
+		if spoken[index] != whole[index] {
 			return false
 		}
 	}
-	return true
+	return strings.HasPrefix(whole[len(spoken)-1], spoken[len(spoken)-1])
 }
 
 func (runtime *runtime) markSpoken(heard string) {
