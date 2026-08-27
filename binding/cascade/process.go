@@ -121,12 +121,15 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		// the turn is not its own.
 		because = string(interaction.ActInterrupt)
 	}
+	// One snapshot for the whole request. Two calls read the same log twice
+	// on the path between hearing a word and answering it.
+	snapshot := runtime.store.Snapshot()
 	request := cognition.Request{
 		Standing: standing, Counting: runtime.countingIsInForce(), Interjecting: interjecting, Heard: heard, Because: because,
-		Answered:       runtime.alreadyAnsweredFor(runtime.store.Snapshot()),
+		Answered:       runtime.alreadyAnsweredFor(snapshot),
 		SourceRevision: revision,
 		AllowFastTools: runtime.observationHasUserIntent(batch),
-		PendingRepair:  len(trajectory.PendingRepairs(runtime.store.Snapshot())) > 0,
+		PendingRepair:  len(trajectory.PendingRepairs(snapshot)) > 0,
 	}
 	// A visual reflex is a separate optional cognition role, not a mutation of
 	// the voice. It gets first refusal only on a batch carrying current visual
