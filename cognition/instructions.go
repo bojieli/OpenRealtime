@@ -124,6 +124,18 @@ const (
 	// what they are: somebody said them, they have not been lifted, and they
 	// govern until they are. Reaching the voice as another line of transcript
 	// makes them advice it may take or leave.
+	// SilentStandingInstruction introduces the same policies to a phase that
+	// is never heard.
+	//
+	// The wording matters more than it looks. Told that these govern what you
+	// say and when, a phase that never says anything answers them anyway:
+	// with "count the animals out loud" in force, the reasoner wrote "0", and
+	// that zero reached the conversation as a thing the agent had produced and
+	// every count afterwards was measured from it.
+	SilentStandingInstruction = "The person you are talking to asked for these, and has not taken them back. " +
+		"They govern what the voice says and when. You are not the voice and nothing here is for you to " +
+		"say; they are here so that the work you do fits what they asked for.\n\nThe policies:"
+
 	StandingInstruction = "The person you are talking to asked for these, and has not taken them back. They govern what you say and when, and they outrank the general guidance above.\n\n" +
 		"Each names something to watch for and what to do when it happens. Do that thing when it happens, once, and not before: if what you have just been told does not contain the thing being watched for, these require nothing of you at all. Asked to say something each time a condition occurs, say it for the occurrence in front of you - not for every occurrence you can imagine, and not to demonstrate that you understood.\n\n" +
 		"One that both asks for something and restricts everything else - count them and say nothing else - is two rules, and the restriction is the smaller. It means keep to the thing they asked for; it does not mean say nothing. When the condition has just been met, say the thing, only the thing, and nothing around it: the number by itself, not a sentence about whether to give it.\n\n" +

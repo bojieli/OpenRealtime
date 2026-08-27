@@ -21,3 +21,32 @@ func TestTheVoiceIsAlwaysToldHowToSayNothing(t *testing.T) {
 		t.Fatal("the rule that needs it is gone")
 	}
 }
+
+// TestAPhaseThatIsNeverHeardIsNotToldToSpeak is the regression for a zero that
+// reached the conversation. The policies people set out loud are written as
+// instructions to whoever is speaking - "count the animals out loud as I
+// mention them" - and the reasoner, which is never heard, answered them: it
+// wrote "0", the conversation recorded it, and every count afterwards was
+// measured from there.
+func TestAPhaseThatIsNeverHeardIsNotToldToSpeak(t *testing.T) {
+	policies := []string{"count the animals out loud as I mention them (1m ago)"}
+	spoken := cognition.Instruct("", cognition.Request{Standing: policies})
+	silent := cognition.Instruct("", cognition.Request{Standing: policies, Silent: true})
+
+	if !strings.Contains(spoken, "govern what you say and when") {
+		t.Fatalf("the voice was not told the policies govern it:\n%s", spoken)
+	}
+	if strings.Contains(silent, "govern what you say and when") {
+		t.Fatalf("a phase that is never heard was told the policies govern what it says:\n%s", silent)
+	}
+	if !strings.Contains(silent, "You are not the voice") {
+		t.Fatalf("a phase that is never heard was not told so:\n%s", silent)
+	}
+	// Both still carry the policy itself: the reasoner needs to know what was
+	// asked for, it just must not answer it out loud.
+	for _, composed := range []string{spoken, silent} {
+		if !strings.Contains(composed, "count the animals out loud") {
+			t.Fatalf("the policy itself was dropped:\n%s", composed)
+		}
+	}
+}

@@ -135,15 +135,15 @@ func windowLine(item trajectory.Item) string {
 		// Kept rather than dropped, because it is often the only record of what
 		// the reasoner found, and labelled rather than kept quietly, because a
 		// line that reads as speech is read as speech.
+		if text == WaitToken {
+			// Whoever produced it. A decision to say nothing is not a line of
+			// conversation and not a piece of background state either; it is
+			// the absence of both, and rendering it teaches the next turn that
+			// the agent says "<wait>" out loud.
+			return ""
+		}
 		if item.Producer.SpeechAuthority == silentAuthority {
 			return "background (not said out loud): " + text
-		}
-		if text == WaitToken {
-			// The voice choosing to be silent is a decision, not a line of
-			// conversation. Rendered as one it teaches the next turn that the
-			// agent says "<wait>" out loud, which is exactly the confusion the
-			// token exists to remove.
-			return ""
 		}
 		return "agent: " + text
 	default:

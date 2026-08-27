@@ -225,6 +225,9 @@ type Request struct {
 	// trajectory in which it has already spoken and nothing has changed, and
 	// the most natural thing to write is what it wrote last time.
 	Holding bool
+	// Silent says this request is for a phase that is never heard, which
+	// changes how the policies people set out loud are introduced to it.
+	Silent bool
 	// Counting says a policy in force asks for a running count, which is the
 	// one kind of policy the voice needs different guidance for. It is read
 	// from the policy when it is pinned, by the pass that reads the policy.
@@ -342,6 +345,7 @@ func (engine *Engine) PrepareFast(
 func (engine *Engine) PrepareSlow(
 	ctx context.Context, request Request, provisional trajectory.Item,
 ) (*continuation.Prepared, error) {
+	request.Silent = true
 	return engine.runner.Prepare(ctx, engine.config.Slow, continuation.Invocation{
 		Instruction: engine.instruction(engine.prompt(trajectory.PhaseSlow), request), SourceRevision: request.SourceRevision,
 		Capabilities: engine.capabilityManifest(), Tools: engine.executableTools(),
@@ -358,6 +362,9 @@ func (engine *Engine) Adopt(prepared *continuation.Prepared) (continuation.RunRe
 // terminal safe point. If it emitted calls, the action plane executes them and
 // their results are appended before the next call.
 func (engine *Engine) RunSlow(ctx context.Context, request Request, observer StreamObserver) (continuation.RunResult, error) {
+	// The reasoner is never heard, and the policies people set out loud read
+	// as instructions to whoever is speaking.
+	request.Silent = true
 	return engine.run(ctx, engine.config.Slow, trajectory.PhaseSlow, continuation.Invocation{
 		Instruction: engine.instruction(engine.prompt(trajectory.PhaseSlow), request), SourceRevision: request.SourceRevision,
 		Capabilities: engine.capabilityManifest(), Tools: engine.executableTools(),
@@ -379,8 +386,18 @@ func Instruct(prompt string, request Request) string {
 	// Standing policies come first among the injected ones because they
 	// outrank the rest: somebody asked for this out loud, and the others are
 	// the runtime describing its own state.
+	//
+	// A phase that is never heard is told so here, because the policies are
+	// written as instructions to a speaker and a phase told to say something
+	// says it. Measured: with "count the animals out loud" in force the
+	// reasoner wrote "0", which reached the conversation and became the number
+	// every later count was measured from.
 	if len(request.Standing) > 0 {
-		prompt += "\n\n" + StandingInstruction + "\n- " + strings.Join(request.Standing, "\n- ")
+		preamble := StandingInstruction
+		if request.Silent {
+			preamble = SilentStandingInstruction
+		}
+		prompt += "\n\n" + preamble + "\n- " + strings.Join(request.Standing, "\n- ")
 	}
 	if strings.TrimSpace(request.Heard) != "" {
 		prompt += "\n\n" + HeardInstruction + " \"" + strings.TrimSpace(request.Heard) + "\""
