@@ -131,7 +131,11 @@ type runtime struct {
 	// policy at least once, which is what ends the moment where an utterance
 	// might still be the one setting a policy rather than an occasion to act
 	// on it.
-	carriedOutPolicy  bool
+	carriedOutPolicy bool
+	// pinnedFromText is the stretch of speech that set a policy, which is the
+	// one thing the agent must not act on: the sentence asking to be told
+	// about something is not an instance of that something.
+	pinnedFromText    string
 	extractTurn       uint64
 	extractTurnSource string
 	// lastPartialExtractNS bounds how often an unfinished utterance is re-read.

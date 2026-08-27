@@ -281,7 +281,14 @@ func (runtime *runtime) noticeStanding(text string) {
 		}
 		// The whole of what this turn asked for, replacing whatever an earlier
 		// reading of the same turn made of it.
-		runtime.pinboard.SetForTurn(turn, pins)
+		if runtime.pinboard.SetForTurn(turn, pins) > 0 {
+			// And this is the speech that set it, which is the one thing the
+			// agent must not act on: "count the animals as I mention them"
+			// mentions no animal.
+			runtime.audioMu.Lock()
+			runtime.pinnedFromText = whole
+			runtime.audioMu.Unlock()
+		}
 	}()
 }
 

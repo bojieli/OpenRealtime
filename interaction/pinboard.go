@@ -60,7 +60,9 @@ func (board *Pinboard) Pin(instruction StandingInstruction) {
 //
 // The age of a policy that is still here carries over. Re-reading somebody's
 // sentence as more of it arrives is not them asking again.
-func (board *Pinboard) SetForTurn(turn uint64, instructions []StandingInstruction) {
+// It reports how many of them the board did not already have, which is what
+// tells the runtime that this stretch of speech is the one that set something.
+func (board *Pinboard) SetForTurn(turn uint64, instructions []StandingInstruction) (added int) {
 	board.mu.Lock()
 	defer board.mu.Unlock()
 	was := make(map[string]uint64, len(board.pinned))
@@ -92,9 +94,12 @@ func (board *Pinboard) SetForTurn(turn uint64, instructions []StandingInstructio
 		instruction.Turn = turn
 		if setNS, ok := was[strings.ToLower(instruction.Text)]; ok {
 			instruction.SetNS = setNS
+		} else {
+			added++
 		}
 		board.pinned = append(board.pinned, instruction)
 	}
+	return added
 }
 
 // find reports which turn set a policy already in force.

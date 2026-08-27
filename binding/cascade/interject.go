@@ -71,16 +71,18 @@ func (runtime *runtime) interject(decision interaction.Context) {
 	// instruction says so too and the model does not follow it, which makes
 	// this the reliable half of the pair rather than a duplicate of it.
 	//
-	// Only until the policy has been carried out once. What this compares
-	// against is the text extraction last read, which is every utterance the
-	// person says - so once the pass began re-listing a standing policy from
-	// later sentences, the sentence being guarded against became whichever one
-	// they had just finished, and the second animal in a story was refused six
-	// times running. The bound that holds without asking whether two wordings
-	// are the same request: a policy cannot have been carried out before it was
-	// set, so once it has been, the moment this protects is over.
+	// Against the speech that actually set a policy, not against whatever
+	// extraction last read. Those used to be the same thing and are not any
+	// more: the pass re-reads a whole turn every time the speaker adds a word,
+	// so "the text extraction last read" became "whatever they are saying now"
+	// and this refused every occurrence there was - eighty times in one run,
+	// which is the whole scenario.
+	//
+	// And only until the policy has been carried out once, since a policy
+	// cannot have been carried out before it was set. That bound needs the
+	// first one to get through, which is why it cannot be the only one.
 	runtime.audioMu.Lock()
-	pinnedFrom := runtime.extractedText
+	pinnedFrom := runtime.pinnedFromText
 	carriedOut := runtime.carriedOutPolicy
 	runtime.audioMu.Unlock()
 	if heard := strings.TrimSpace(decision.Revision.Text()); !carriedOut &&
