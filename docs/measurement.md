@@ -2224,3 +2224,95 @@ predicate response opportunity while a grounded fast path can still preserve a
 deadline. Those routes must be catalog-selected and live-attested before they
 are scored. Repeating T and C from clean provenance remains necessary; this
 single diagnostic is a design input, not a performance conclusion.
+
+## F57 - the first caller pays for loading the models, and health says otherwise
+
+The control - one finished question, nothing in the way - failed its first run
+and passed the other nine, twice in a row at ten repeats. The opening turn came
+back reasoner-led at two seconds where every later one was the voice alone at
+seventy milliseconds.
+
+A local model server answers its health check long before it answers a request
+at speed: weights are mapped, the graph is not captured, the prefix cache is
+empty. Nothing was wrong with any decision.
+
+Warming the models was not enough on its own, because health still answered ok
+the instant the listener bound and the first session raced the warm-up. Health
+is what a caller asks before deciding the server is ready, and a caller asking
+that is asking whether its next turn will be answered properly. It now reports
+warming until the voice and the model that decides whether it speaks have each
+answered once.
+
+Control 9/10 to 10/10, and hearing latency in the counting scenario from ~5000ms
+p50 to 467ms - the cold-start tax was being paid by more than the first
+scenario, and by all sixty-odd suite runs before this.
+
+## F58 - every rewrite of somebody's request is a chance to ask for something else
+
+The agent said "capybara. heron." where a count belonged. The policy it was
+carrying out said "say the animals out loud as I mention them"; the person had
+said "count".
+
+Three rewrites in sequence, each plausible alone:
+
+  - the restriction split into a policy of its own, leaving the counting policy
+    reading as though nobody had restricted it
+  - "count" generalised to "say", which drops the operation and leaves the
+    agent naming the animal instead of numbering it
+  - a bare "say nothing else" emitted as a policy with nothing to qualify,
+    which asks for nothing and forbids everything - and since a restricting
+    policy withdraws the ordinary reply, the agent went mute through the
+    sentence it was meant to correct
+
+Stating the principle did not fix the second: told to keep the operation verb,
+the pass still rewrote it away on all six readings of one phrasing. What held
+was the rule underneath. "Count the animals out loud as I mention them and say
+nothing else" is already an instruction to an agent and needs nothing done to
+it. Rewrite only what must be rewritten - their you and me into the agent and
+them - and leave the rest as they said it.
+
+The third came from an instruction added two commits earlier that used "say
+nothing else" as an example. An example of half a policy is a thing a model
+will occasionally emit whole.
+
+## F59 - the pass was shown the pieces its own utterance was made of
+
+The utterance the standing pass reads is the whole turn joined, so the
+conversation lines that make up that turn are already inside it. Both were
+shown, and a repetition reads as emphasis.
+
+Measured on the sentence that had been costing the interrupting scenario:
+"Right? So let me plan this out" with "user: Right?" also among the recent
+lines pinned "do not reply until they have finished planning this out" one
+reading in six; without the duplicate, none in six. Reproducing it took
+rendering the prompt exactly as the runtime does - the same sentence tested
+with a hand-written wrapper came back none six times out of six, and that
+disagreement was the whole clue.
+
+Same de-duplication the conversation window already does for the interaction
+model, arriving at the other reader of the same trajectory.
+
+## F60 - where the suite stands, and what the session's failures had in common
+
+48/55, no scenario below 4/5. Five at 5/5: asked not to be interrupted, a
+recorded menu, cutting in on something wrong, an acknowledgement is not an
+interruption, and - since the cold-start fix - the control.
+
+Against the start of this work: count-as-they-go 0/5 to 4/5, a recorded menu
+0/5 to 5/5, waiting out a silence 0/5 to 4/5, somebody else's conversation 0/5
+to 4/5, cutting in 3/5 to 5/5, ordering from a waiter 2/5 to 4/5.
+
+Twenty-odd distinct defects were found and fixed. Not one of them was the
+interaction model deciding wrongly. Every one was something upstream corrupting
+what it was asked: a recogniser translating instead of transcribing, silence
+rendered as "Thank you.", a wait rendered as a result, an empty continuation
+rendered as a turn, an announcement read as a rule of silence, a request
+rewritten into a different request, a guard pointed at the wrong text, a server
+reporting ready before it was. The model was consistently right about the
+situation it was shown. The situation was wrong.
+
+The second pattern is about the fixes rather than the faults: every
+compensating mechanism added to work around a symptom later cost more than it
+bought, and each dissolved once the cause was found. A blanket ban on
+mid-sentence counts, a delay before the first answer, a guard keyed on
+"whatever extraction last read" - all removed rather than tuned.
