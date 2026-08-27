@@ -51,6 +51,11 @@ type StandingInstruction struct {
 	// thing being watched for, which is why it changes the acts on offer and
 	// not just how one of them is carried out.
 	Restricting bool
+	// Turn identifies the stretch of speech that set this policy. Policies are
+	// replaced a turn at a time rather than one at a time, because the pass
+	// reads a turn many times as it grows and each reading answers for the
+	// whole of it.
+	Turn uint64
 	// After is the delay a policy names, when it names one: "ask if I go quiet
 	// for fifteen seconds" is not due until fifteen seconds of quiet have
 	// passed. Zero means the policy is about something happening rather than
@@ -147,9 +152,13 @@ func extractionExamples() []extractionExample {
 func buildExtraction() string {
 	var text strings.Builder
 	text.WriteString(
-		"Someone in a voice conversation has just finished speaking. Decide whether they set a policy about " +
-			"*when* the agent should speak or act, and reply with one line and nothing else.\n\n" +
-			"none - they set no such policy. This is the usual answer.\n" +
+		"Someone in a voice conversation is speaking. Decide which policies about *when* the agent should " +
+			"speak or act their words below establish, and reply with one line for each and nothing else.\n\n" +
+			"Answer for all of what they said, not for the last part of it. You are shown the whole of what " +
+			"they have said since the agent last spoke, and you are shown it again each time they add to it, " +
+			"so every reading answers for the same turn - list every policy it sets, every time, including " +
+			"ones you would have listed before. A policy you leave out is one they no longer have.\n\n" +
+			"none - they set no such policy. This is the usual answer, and it is a whole answer on its own.\n" +
 			"pin conversation <policy> - they set one that stands from now until somebody lifts it.\n" +
 			"pin turn <policy> - they set one that expires when they finish what they are currently saying.\n" +
 			"revoke <policy> - they lifted one already in force. Quote the one they lifted, from the list above.\n\n" +
@@ -194,7 +203,7 @@ func buildExtraction() string {
 		text.WriteString("\n---\n" + RenderForExtraction(example.existing, example.recent, example.utterance) +
 			"\n-> " + example.answer + "\n")
 	}
-	text.WriteString("\n---\nNow decide the case below. Reply with one line and nothing else.")
+	text.WriteString("\n---\nNow decide the case below. One line per policy, and nothing else.")
 	return text.String()
 }
 
@@ -237,6 +246,33 @@ func RenderForExtraction(existing []StandingInstruction, recent []string, uttera
 // ParsePin reads what the extraction pass returned. An unrecognised answer is
 // reported as unrecognised rather than guessed at: a pass that silently
 // invents a policy nobody set is worse than one that misses.
+// ParseExtraction reads the whole answer: one line per policy.
+func ParseExtraction(text string) (Extraction, error) {
+	var extraction Extraction
+	var read bool
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		kind, instruction, ok := ParsePin(line)
+		if !ok {
+			return Extraction{}, fmt.Errorf("extraction returned %q, which is not an answer", truncateAnswer(line))
+		}
+		read = true
+		switch kind {
+		case "pin":
+			extraction.Pins = append(extraction.Pins, instruction)
+		case "revoke":
+			extraction.Revokes = append(extraction.Revokes, instruction.Text)
+		}
+	}
+	if !read {
+		return Extraction{}, fmt.Errorf("extraction returned %q, which is not an answer", truncateAnswer(text))
+	}
+	return extraction, nil
+}
+
 func ParsePin(text string) (kind string, instruction StandingInstruction, ok bool) {
 	line := strings.TrimSpace(text)
 	if index := strings.IndexByte(line, '\n'); index >= 0 {
@@ -275,11 +311,19 @@ type Extractor interface {
 	Extract(ctx context.Context, existing []StandingInstruction, recent []string, utterance string) (Extraction, error)
 }
 
-// Extraction is what an utterance did to the set of standing policies.
+// Extraction is what a turn did to the set of standing policies.
+//
+// Every policy the turn sets, not the first one a reading happened to notice.
+// One-at-a-time was the source of a class of failures rather than a detail of
+// the format: the pass reads a turn over and over as the words arrive, so the
+// runtime saw a sequence of single answers and had to guess whether each
+// replaced the last or joined it. Both guesses are wrong somewhere - joining
+// accumulates one request into three policies that each fire, replacing
+// destroys a real second policy - and there is no third guess. Answering for
+// the whole turn removes the question.
 type Extraction struct {
-	// Kind is "none", "pin", or "revoke".
-	Kind        string
-	Instruction StandingInstruction
+	Pins    []StandingInstruction
+	Revokes []string
 }
 
 // NewExtractor builds the pass over a generator.
@@ -305,22 +349,23 @@ func (extractor modelExtractor) Extract(
 	ctx context.Context, existing []StandingInstruction, recent []string, utterance string,
 ) (Extraction, error) {
 	if !v1.CarriesSpeech(utterance) {
-		return Extraction{Kind: "none"}, nil
+		return Extraction{}, nil
 	}
 	answer, err := extractor.generator.Generate(
-		ctx, ExtractionInstruction, RenderForExtraction(existing, recent, utterance), 96)
+		ctx, ExtractionInstruction, RenderForExtraction(existing, recent, utterance), 160)
 	if err != nil {
 		return Extraction{}, err
 	}
-	kind, instruction, ok := ParsePin(answer)
-	if !ok {
-		return Extraction{}, fmt.Errorf("extraction returned %q, which is not an answer", truncateAnswer(answer))
+	extraction, err := ParseExtraction(answer)
+	if err != nil {
+		return Extraction{}, err
 	}
-	if kind == "pin" {
-		instruction.Counting = extractor.asksForACount(ctx, instruction.Text)
-		instruction.Restricting = extractor.restrictsEverythingElse(ctx, instruction.Text)
+	for index := range extraction.Pins {
+		extraction.Pins[index].Counting = extractor.asksForACount(ctx, extraction.Pins[index].Text)
+		extraction.Pins[index].Restricting = extractor.restrictsEverythingElse(ctx, extraction.Pins[index].Text)
+		extraction.Pins[index].Scope = extractor.scopeOf(ctx, extraction.Pins[index])
 	}
-	return Extraction{Kind: kind, Instruction: instruction}, nil
+	return extraction, nil
 }
 
 // CountingInstruction asks what kind of thing a policy is asking for.
@@ -406,6 +451,55 @@ func (extractor modelExtractor) restrictsEverythingElse(ctx context.Context, pol
 		return false
 	}
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(answer)), "yes")
+}
+
+// ScopeInstruction asks how long a policy lasts.
+//
+// The extraction pass decides this badly and the reason is structural: it is
+// answering several questions at once about a turn it is re-reading, and scope
+// is the one where the words give least away. Measured, "count the animals out
+// loud as I mention them, and say nothing else" came back turn-scoped, which
+// expires the moment the speaker finishes a sentence - so the policy was gone
+// before the first animal, nothing was in force, and the agent fell back on an
+// ordinary reply.
+//
+// Asked on its own, about one policy, it is the same kind of question as the
+// count and the restriction, and gets the same kind of answer.
+var ScopeInstruction = "A policy was set for a voice assistant. Does it stand from now on, until somebody " +
+	"lifts it, or does it expire as soon as the speaker finishes what they are currently saying?\n\n" +
+	"Answer standing or passing, and nothing else.\n\n" +
+	"Watching for something that has not happened yet is always standing, because the thing being " +
+	"watched for has not happened yet. Asking for a few more seconds is passing.\n\n" +
+	"standing: count the animals out loud each time they mention one\n" +
+	"standing: tell them the moment the build finishes\n" +
+	"standing: never speak while they are reading something out\n" +
+	"standing: say the running total each time they read out a number\n" +
+	"passing: do not reply until they have made their point\n" +
+	"passing: do not reply until they have finished reading it out\n" +
+	"passing: wait, they have not got to the point yet\n\n" +
+	"The policy:"
+
+// scopeOf reads how long one policy lasts, once, when it is pinned.
+//
+// An unreadable answer keeps what the extraction pass said. This leans towards
+// standing on its own: a passing policy wrongly left standing keeps an agent
+// quiet until somebody tells it to speak, which they can do, while a standing
+// one wrongly expired fails silently at the moment it was set for.
+func (extractor modelExtractor) scopeOf(ctx context.Context, instruction StandingInstruction) Scope {
+	if strings.TrimSpace(instruction.Text) == "" {
+		return instruction.Scope
+	}
+	answer, err := extractor.generator.Generate(ctx, ScopeInstruction, instruction.Text, 4)
+	if err != nil {
+		return instruction.Scope
+	}
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "standing":
+		return ScopeConversation
+	case "passing":
+		return ScopeTurn
+	}
+	return instruction.Scope
 }
 
 func truncateAnswer(text string) string {

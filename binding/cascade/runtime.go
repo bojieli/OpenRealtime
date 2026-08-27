@@ -115,18 +115,14 @@ type runtime struct {
 	// keeps growing is not re-read from the beginning on every partial.
 	extractedText    string
 	extractUtterance string
-	// lastPin is the policy read out of the utterance being read now;
-	// previousPin is the one read out of the piece before it, which is what a
-	// join retires. Kept apart because a revocation matches loosely, so
-	// revoking the wrong one lifts a policy nobody cancelled - and because the
-	// pin produced from the joined text is the good one and must survive.
-	lastPin interaction.StandingInstruction
-	// lastPinSource is the text that produced lastPin. The pass runs
-	// concurrently over readings of different lengths, and they do not
-	// necessarily land in the order they were started - so a short reading
-	// finishing late must not replace what a longer one already established.
-	lastPinSource string
-	previousPin   interaction.StandingInstruction
+	// extractTurn identifies the stretch of speech the last accepted reading
+	// answered for, and extractTurnSource is the text it read. Together they
+	// drop a shorter reading of the same turn that finishes late: the pass runs
+	// concurrently over readings of different lengths, they do not necessarily
+	// land in the order they were started, and what a shorter one has to say
+	// about the request is strictly less.
+	extractTurn       uint64
+	extractTurnSource string
 	// lastPartialExtractNS bounds how often an unfinished utterance is re-read.
 	lastPartialExtractNS uint64
 	// heardWhenSpoke is how much of the current utterance had been heard when

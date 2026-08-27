@@ -220,45 +220,37 @@ func (runtime *runtime) noticeStanding(text string) {
 	runtime.extractedText = text
 	runtime.audioMu.Unlock()
 	snapshot := runtime.store.Snapshot()
-	// A new utterance retires the one before it. Within one utterance this
-	// runs many times as the text grows, and the piece to join onto has to
-	// stay the piece before rather than becoming what the last reading made.
-	current := runtime.currentUtterance()
-	runtime.audioMu.Lock()
-	if current != runtime.extractUtterance {
-		runtime.previousPin, runtime.lastPin = runtime.lastPin, interaction.StandingInstruction{}
-		runtime.lastPinSource = ""
-		runtime.extractUtterance = current
-	}
-	runtime.audioMu.Unlock()
-	whole, stale := runtime.wholeUtterance(snapshot, text)
+	whole, turn := runtime.wholeUtterance(snapshot, text)
 	runtime.wait.Add(1)
 	go func() {
 		defer runtime.wait.Done()
-		if stale.Text != "" {
-			// The policy the front half produced was read off half a sentence.
-			// It goes before the whole one is read, or the pass is comparing
-			// what somebody said against a truncation of it - measured, with
-			// "tell me the moment the build" standing, the tail "finishes and
-			// don't say anything else" revoked it five times out of five.
-			runtime.pinboard.Revoke(stale.Text)
-		}
 		// The conversation, not just the utterance: a recogniser splits where a
 		// speaker breathes, and a fragment read alone means something else.
 		recent := interaction.RecentLines(snapshot.Items, 6)
 		extraction, err := runtime.policies.Extraction.Extract(
 			runtime.ctx, runtime.pinboard.InForce(), recent, whole)
 		if recorder := runtime.policies.ShadowInteraction; recorder != nil {
-			outcome := extraction.Kind
+			outcome := "none"
+			if len(extraction.Pins) > 0 {
+				outcome = "pin"
+			}
+			if len(extraction.Revokes) > 0 {
+				outcome = "revoke"
+			}
 			if err != nil {
 				outcome = "error"
+			}
+			var texts, scopes []string
+			for _, instruction := range extraction.Pins {
+				texts = append(texts, instruction.Text)
+				scopes = append(scopes, string(instruction.Scope))
 			}
 			recorder(interaction.ShadowDecision{
 				NowNS: runtime.scheduler.NowNS(), Situation: "extract: " + whole,
 				Act: outcome,
 				Predicates: map[string]string{
-					"where": "extract", "scope": string(extraction.Instruction.Scope),
-					"text": extraction.Instruction.Text,
+					"where": "extract", "scope": strings.Join(scopes, " | "),
+					"text": strings.Join(texts, " | "),
 				},
 				Error: errorText(err),
 			})
@@ -269,28 +261,27 @@ func (runtime *runtime) noticeStanding(text string) {
 			// from an answer nobody understood is worse.
 			return
 		}
-		switch extraction.Kind {
-		case "pin":
-			instruction := extraction.Instruction
-			instruction.SetNS = runtime.scheduler.NowNS()
-			runtime.audioMu.Lock()
-			if len(whole) < len(runtime.lastPinSource) {
-				// A shorter reading of this same sentence, finishing late.
-				// What it has to say about the request is strictly less.
-				runtime.audioMu.Unlock()
-				return
-			}
-			superseded := runtime.lastPin.Text
-			runtime.lastPin, runtime.lastPinSource = instruction, whole
+		runtime.audioMu.Lock()
+		if turn == runtime.extractTurn && len(whole) < len(runtime.extractTurnSource) {
+			// A shorter reading of this same turn, finishing late. What it has
+			// to say about the request is strictly less.
 			runtime.audioMu.Unlock()
-			// Within one utterance the pass runs again every time the text
-			// grows, and each run reads the whole request as it stands. The
-			// later reading replaces the earlier one rather than joining it:
-			// they are one request, not one per fragment.
-			runtime.pinboard.Supersede(superseded, instruction)
-		case "revoke":
-			runtime.pinboard.Revoke(extraction.Instruction.Text)
+			return
 		}
+		runtime.extractTurn, runtime.extractTurnSource = turn, whole
+		runtime.audioMu.Unlock()
+		for _, lifted := range extraction.Revokes {
+			runtime.pinboard.Revoke(lifted)
+		}
+		now := runtime.scheduler.NowNS()
+		pins := make([]interaction.StandingInstruction, 0, len(extraction.Pins))
+		for _, instruction := range extraction.Pins {
+			instruction.SetNS = now
+			pins = append(pins, instruction)
+		}
+		// The whole of what this turn asked for, replacing whatever an earlier
+		// reading of the same turn made of it.
+		runtime.pinboard.SetForTurn(turn, pins)
 	}()
 }
 
@@ -464,13 +455,8 @@ func (runtime *runtime) gapBeforeUtteranceNS(snapshot trajectory.Snapshot) (uint
 // speaker paused inside them.
 func (runtime *runtime) wholeUtterance(
 	snapshot trajectory.Snapshot, text string,
-) (whole string, stale interaction.StandingInstruction) {
-	runtime.audioMu.Lock()
-	// Taken rather than read: the piece before is retired once, by the first
-	// reading that joins onto it.
-	stale, runtime.previousPin = runtime.previousPin, interaction.StandingInstruction{}
-	runtime.audioMu.Unlock()
-	pieces := speechSoFar(snapshot)
+) (whole string, turn uint64) {
+	pieces, began := speechSoFar(snapshot)
 	// The live piece is that same last one further along when it carries it on,
 	// and a piece of its own when it does not.
 	if trimmed := strings.TrimSpace(text); trimmed != "" {
@@ -484,9 +470,9 @@ func (runtime *runtime) wholeUtterance(
 		}
 	}
 	if len(pieces) == 0 {
-		return text, stale
+		return text, began
 	}
-	return strings.Join(pieces, " "), stale
+	return strings.Join(pieces, " "), began
 }
 
 // speechSoFar is everything this person has said since the agent last spoke
@@ -505,9 +491,10 @@ func (runtime *runtime) wholeUtterance(
 // is not a guess - a recogniser punctuates what it commits, and a piece that
 // stops without reaching the end of a sentence stopped because the speaker had
 // not.
-func speechSoFar(snapshot trajectory.Snapshot) []string {
+func speechSoFar(snapshot trajectory.Snapshot) ([]string, uint64) {
 	items := trajectory.WithoutSupersededPartials(snapshot.Items)
 	var pieces []string
+	var began uint64
 	for index := len(items) - 1; index >= 0; index-- {
 		item := items[index]
 		text := strings.TrimSpace(item.Content)
@@ -530,8 +517,9 @@ func speechSoFar(snapshot trajectory.Snapshot) []string {
 			continue
 		}
 		pieces = append([]string{text}, pieces...)
+		began = item.MonotonicNS
 	}
-	return pieces
+	return pieces, began
 }
 
 // lastSpokenBefore is the most recent thing this person had said by some point

@@ -113,7 +113,7 @@ func (extractor *countingExtractor) Extract(
 	extractor.mu.Lock()
 	defer extractor.mu.Unlock()
 	extractor.utterances = append(extractor.utterances, utterance)
-	return interaction.Extraction{Kind: "none"}, nil
+	return interaction.Extraction{}, nil
 }
 
 func (extractor *countingExtractor) seen() []string {

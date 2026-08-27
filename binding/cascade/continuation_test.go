@@ -32,9 +32,8 @@ func (extractor *pinningExtractor) Extract(
 	extractor.force = append([]interaction.StandingInstruction(nil), existing...)
 	extractor.mu.Unlock()
 	return interaction.Extraction{
-		Kind: "pin",
-		Instruction: interaction.StandingInstruction{
-			Text: utterance, Scope: interaction.ScopeConversation,
+		Pins: []interaction.StandingInstruction{
+			{Text: utterance, Scope: interaction.ScopeConversation},
 		},
 	}, nil
 }

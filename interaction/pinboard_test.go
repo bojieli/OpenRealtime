@@ -93,54 +93,65 @@ func TestAPinnedDelayIsShownToWhoeverDecides(t *testing.T) {
 	}
 }
 
-// One sentence reaches the standing pass in pieces, and the pass reads each
-// piece as it lands. The early reads are answers to half a question: measured,
-// "I'm going to tell you about my afternoon. Count the animals out loud as I
-// mention them, and say nothing else" pinned three policies, the first of
-// which told the agent not to reply until the story was over.
-func TestALaterReadingOfOneRequestReplacesTheEarlierOne(t *testing.T) {
+// A turn is read many times as the words arrive, and every reading answers for
+// the whole of it. Measured, "I'm going to tell you about my afternoon. Count
+// the animals out loud as I mention them, and say nothing else" pinned three
+// policies one at a time, the first of which told the agent not to reply until
+// the story was over.
+func TestATurnsPoliciesAreReplacedByItsLaterReading(t *testing.T) {
 	board := &interaction.Pinboard{}
-	first := interaction.StandingInstruction{
-		Text:  "do not reply until they have finished telling you about their afternoon",
-		Scope: interaction.ScopeConversation, SetNS: 1_000,
-	}
-	board.Pin(first)
-	second := interaction.StandingInstruction{
-		Text:  "count the animals out loud as they mention them",
-		Scope: interaction.ScopeConversation, SetNS: 4_000,
-	}
-	board.Supersede(first.Text, second)
-	third := interaction.StandingInstruction{
-		Text:  "count the animals out loud as they mention them, and say nothing else",
-		Scope: interaction.ScopeConversation, SetNS: 9_000, Counting: true,
-	}
-	board.Supersede(second.Text, third)
-
+	board.SetForTurn(7, []interaction.StandingInstruction{
+		{Text: "do not reply until they have finished telling you about their afternoon",
+			Scope: interaction.ScopeConversation, SetNS: 1_000},
+	})
+	board.SetForTurn(7, []interaction.StandingInstruction{
+		{Text: "count the animals out loud as they mention them, and say nothing else",
+			Scope: interaction.ScopeConversation, SetNS: 9_000, Counting: true, Restricting: true},
+	})
 	inForce := board.InForce()
 	if len(inForce) != 1 {
-		t.Fatalf("one request should leave one policy, got %d: %v", len(inForce), inForce)
+		t.Fatalf("one turn should leave the policies it last named, got %d: %v", len(inForce), inForce)
 	}
-	if inForce[0].Text != third.Text {
-		t.Fatalf("the fullest reading should stand, got %q", inForce[0].Text)
-	}
-	if !inForce[0].Counting {
+	if !inForce[0].Counting || !inForce[0].Restricting {
 		t.Fatal("what the last reading found should carry over")
-	}
-	// They asked once, when they started saying it.
-	if inForce[0].SetNS != first.SetNS {
-		t.Fatalf("age should carry from the request, got %d want %d", inForce[0].SetNS, first.SetNS)
 	}
 }
 
-// Superseding something nobody pinned still leaves the policy in force, since
-// the alternative is a request read correctly and then dropped.
-func TestSupersedingSomethingAbsentStillPins(t *testing.T) {
+// Two policies from one turn both stand. Replacing one with the next was what
+// a one-at-a-time reading forced, and it destroyed a live counting policy the
+// moment the same turn also asked not to be interrupted.
+func TestATurnMaySetMoreThanOnePolicy(t *testing.T) {
 	board := &interaction.Pinboard{}
-	board.Supersede("a policy that was never pinned", interaction.StandingInstruction{
-		Text: "count the animals out loud", Scope: interaction.ScopeConversation, SetNS: 7,
+	board.SetForTurn(3, []interaction.StandingInstruction{
+		{Text: "do not interrupt them", Scope: interaction.ScopeConversation, SetNS: 10},
+		{Text: "count the animals out loud as they mention them", Scope: interaction.ScopeConversation, SetNS: 10},
+	})
+	if len(board.InForce()) != 2 {
+		t.Fatalf("both policies should stand: %v", board.InForce())
+	}
+}
+
+// An earlier turn's policies are separate requests and nobody lifted them. The
+// age of one that is still there carries over, since re-reading somebody's
+// sentence as more of it arrives is not them asking again.
+func TestAnotherTurnLeavesEarlierPoliciesAloneAndKeepsTheirAge(t *testing.T) {
+	board := &interaction.Pinboard{}
+	board.SetForTurn(1, []interaction.StandingInstruction{
+		{Text: "tell them when the kettle boils", Scope: interaction.ScopeConversation, SetNS: 500},
+	})
+	board.SetForTurn(2, []interaction.StandingInstruction{
+		{Text: "count the animals out loud", Scope: interaction.ScopeConversation, SetNS: 4_000},
+	})
+	board.SetForTurn(2, []interaction.StandingInstruction{
+		{Text: "count the animals out loud", Scope: interaction.ScopeConversation, SetNS: 9_000},
 	})
 	inForce := board.InForce()
-	if len(inForce) != 1 || inForce[0].SetNS != 7 {
-		t.Fatalf("policy should stand with its own age, got %v", inForce)
+	if len(inForce) != 2 {
+		t.Fatalf("the earlier turn's policy should survive: %v", inForce)
+	}
+	for _, existing := range inForce {
+		if existing.Text == "count the animals out loud" && existing.SetNS != 4_000 {
+			t.Fatalf("age should not reset on re-reading, got %d", existing.SetNS)
+		}
 	}
 }

@@ -44,45 +44,45 @@ func (board *Pinboard) Pin(instruction StandingInstruction) {
 	board.pinned = append(board.pinned, instruction)
 }
 
-// Supersede replaces a policy with a later, fuller reading of the same
-// request. It is not Revoke-then-Pin: the two differ in who is acting.
+// SetForTurn makes the policies from one stretch of speech exactly these.
 //
-// Revoke is the person lifting a rule, and matches loosely because the words
-// that lift a policy are rarely the words that set it. Supersession is the
-// recogniser catching up. A sentence reaches the standing pass in pieces, the
-// pass reads each piece as soon as it lands, and the early reads are answers
-// to half a question - so "I'm going to tell you about my afternoon. Count the
-// animals out loud as I mention them, and say nothing else" arrived as three
-// pieces and pinned three policies: one that said not to reply until the story
-// was over, one that said to count, and one that said to count and say nothing
-// else. Two of those are the same request read early, and the first
-// contradicts the other two outright. Nobody asked for three rules.
+// A turn is read many times as the words arrive, and every reading answers for
+// the whole of it, so the answer replaces what that turn said before rather
+// than adding to it. Policies from earlier turns are untouched: they were
+// separate requests and nobody has lifted them.
 //
-// The age carries over from what it replaces. The person asked once, when they
-// started saying it; re-reading their sentence as more of it arrives is not
-// them asking again, and a policy whose age resets on every fragment looks
-// freshly set for as long as they keep talking.
-func (board *Pinboard) Supersede(previous string, instruction StandingInstruction) {
-	previous = strings.TrimSpace(previous)
-	if previous == "" || strings.EqualFold(previous, instruction.Text) {
-		board.Pin(instruction)
-		return
-	}
-	if strings.TrimSpace(instruction.Text) == "" {
-		return
-	}
+// This is what Supersede tried to be and could not, given one policy per
+// reading. Watching a sequence of single answers, the runtime had to guess
+// whether each replaced the last or joined it, and the guess was wrong in both
+// directions - measured, replacing destroyed a live counting policy the moment
+// the same turn also asked not to be interrupted, leaving nothing in force at
+// all, and joining turned one request into three policies that each fired.
+//
+// The age of a policy that is still here carries over. Re-reading somebody's
+// sentence as more of it arrives is not them asking again.
+func (board *Pinboard) SetForTurn(turn uint64, instructions []StandingInstruction) {
 	board.mu.Lock()
-	for index, existing := range board.pinned {
-		if !strings.EqualFold(existing.Text, previous) {
+	defer board.mu.Unlock()
+	was := make(map[string]uint64, len(board.pinned))
+	kept := board.pinned[:0]
+	for _, existing := range board.pinned {
+		if existing.Turn == turn {
+			was[strings.ToLower(existing.Text)] = existing.SetNS
 			continue
 		}
-		instruction.SetNS = existing.SetNS
-		board.pinned[index] = instruction
-		board.mu.Unlock()
-		return
+		kept = append(kept, existing)
 	}
-	board.mu.Unlock()
-	board.Pin(instruction)
+	board.pinned = kept
+	for _, instruction := range instructions {
+		if strings.TrimSpace(instruction.Text) == "" {
+			continue
+		}
+		instruction.Turn = turn
+		if setNS, ok := was[strings.ToLower(instruction.Text)]; ok {
+			instruction.SetNS = setNS
+		}
+		board.pinned = append(board.pinned, instruction)
+	}
 }
 
 // Revoke lifts a policy. It matches loosely because the words that lift a
