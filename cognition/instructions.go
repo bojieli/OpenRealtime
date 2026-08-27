@@ -141,7 +141,16 @@ const (
 	// every count afterwards was measured from it.
 	SilentStandingInstruction = "The person you are talking to asked for these, and has not taken them back. " +
 		"They govern what the voice says and when. You are not the voice and nothing here is for you to " +
-		"say; they are here so that the work you do fits what they asked for.\n\nThe policies:"
+		"say; they are here so that the work you do fits what they asked for.\n\n" +
+		"Carrying one out is the voice's turn, not yours, and what you write here is not spoken - so " +
+		"writing the answer one of these asks for does not deliver it. It does worse than nothing. What " +
+		"you write is handed to the voice as a result that has come back, to be reported in its own " +
+		"words, so a policy answered here reaches the person twice or wrong: asked for a running count, " +
+		"this phase wrote \"0\" at a sentence with nothing in it to count, and the voice - told a result " +
+		"had arrived and that zero is never said out loud - said \"one\" before the first animal, and " +
+		"counted from there for the rest of the story.\n\n" +
+		"So if a policy is the only thing that would have you write something, write nothing. If there is " +
+		"no other work to report, that is what the completion marker is for.\n\nThe policies:"
 
 	// CarryingOutInstruction is how a policy gets carried out, whatever act
 	// this turn happens to be.
