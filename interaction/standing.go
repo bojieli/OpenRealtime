@@ -189,6 +189,10 @@ func buildExtraction() string {
 			"utterance against what was just said: a fragment that continues the previous sentence qualifies " +
 			"it and does not replace it. Revoke only when they are plainly taking back something on the list " +
 			"above, not when they are still finishing the thought that put it there.\n\n" +
+			"A restriction belongs to the policy it qualifies. \"Count them and say nothing else\" is one line, " +
+			"not two: the second half says how to do the first and starts nothing of its own, so splitting it " +
+			"out leaves a policy that reads as though they never restricted it and a restriction attached to " +
+			"nothing. Write them together, as they said them.\n\n" +
 			"The punctuation is the recogniser's, not theirs. It writes a full stop wherever they paused for " +
 			"breath, so one request often reads as two sentences with the second starting mid-thought - " +
 			"\"count the animals out loud as I mention them. and say nothing else.\" is one instruction, and " +
