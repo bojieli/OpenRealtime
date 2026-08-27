@@ -41,6 +41,21 @@ func finishedSomething(text string) bool {
 	return strings.ContainsAny(text, ".!?。！？")
 }
 
+// pausedAsIfFinished reports that they have stopped for as long as this
+// deployment treats as the end of an utterance.
+//
+// It is the operator's own endpoint threshold rather than a number chosen
+// here: whatever they set is what this deployment means by "they stopped", and
+// a second opinion about that would be a second answer to a question already
+// settled.
+func (runtime *runtime) pausedAsIfFinished(decision interaction.Context) bool {
+	silence := runtime.config.EndpointSilenceMS
+	if silence <= 0 {
+		return false
+	}
+	return decision.Revision.SilenceNS >= uint64(silence)*uint64(time.Millisecond)
+}
+
 func (runtime *runtime) interject(decision interaction.Context) {
 	if runtime.policies.Interaction == nil {
 		return
@@ -179,7 +194,15 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		// saying it has already spoken for. That is the layer that can tell a
 		// second look at one sentence from a second thing to say about it,
 		// which is a judgement about content and is not available here.
-		if !finishedSomething(newly) {
+		// Punctuation is the recogniser's guess at where a sentence ended, and
+		// it arrives late: the final partial of "Then a heron landed on the
+		// far bank and stared at us" often carries no full stop until the
+		// utterance commits, so a count that was ready waited for a mark that
+		// had not been written yet and the second animal went uncounted.
+		//
+		// A pause is the same fact from the audio, which is where it actually
+		// lives, and the runtime measures it for the interaction model already.
+		if !finishedSomething(newly) && !runtime.pausedAsIfFinished(decision) {
 			runtime.noteInterject("they have not finished saying anything since the agent last spoke")
 			return
 		}
