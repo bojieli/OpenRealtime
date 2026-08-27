@@ -454,7 +454,15 @@ func Instruct(prompt string, request Request) string {
 		// act, because the agent speaks on ordinary turns too and the rules
 		// are the same ones there. A phase that is never heard needs none of
 		// it: it is not the one carrying them out.
-		if !request.Silent && !request.Setting {
+		// Setting suppresses the carrying-out instruction on the speech that
+		// set a policy. It must not suppress a turn that is answering
+		// something else: the visual case sets its policy in one line and then
+		// the person goes quiet, so "they have not said anything past it" is
+		// true for the rest of the conversation, and the build finished with
+		// the agent never told there was anything to report. What ends the
+		// setting moment there is not more speech, it is the thing the policy
+		// was watching for happening.
+		if !request.Silent && !(request.Setting && strings.TrimSpace(request.Observed) == "") {
 			prompt += "\n\n" + CarryingOutInstruction
 			if request.Counting {
 				prompt += "\n\n" + CountingInstruction
