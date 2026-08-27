@@ -366,3 +366,62 @@ func TestSessionProtocolFailureIsTypedAndRetainsEvidence(t *testing.T) {
 	}
 	t.Fatalf("session error moment was lost: %+v", transcript.Moments)
 }
+
+func TestSessionCapturesNegotiatedRuntimeEvidence(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(writer, request, &websocket.AcceptOptions{})
+		if err != nil {
+			return
+		}
+		defer connection.Close(websocket.StatusNormalClosure, "fixture complete")
+		for {
+			_, raw, err := connection.Read(request.Context())
+			if err != nil {
+				return
+			}
+			var message map[string]any
+			if json.Unmarshal(raw, &message) != nil || message["type"] != "session.update" {
+				continue
+			}
+			updated, _ := json.Marshal(map[string]any{"type": "session.updated", "session": map[string]any{}})
+			_ = connection.Write(request.Context(), websocket.MessageText, updated)
+			evidence, _ := json.Marshal(map[string]any{
+				"type": openrealtime.EventDebug, "category": "session", "name": "session.updated",
+				"attributes": map[string]any{"runtime": map[string]any{
+					"binding": "sidecar", "profile": "voice",
+					"ownership": map[string]any{
+						"perception": "model", "fast_cognition": "model", "slow_cognition": "engine",
+						"action": "model", "interaction": "engine", "floor": "model",
+					},
+					"stack": map[string]any{
+						"audio_input": true, "audio_output": true, "turn_generation": true,
+						"native_floor": true, "native_interaction": true, "interaction_acts": true,
+					},
+					"interaction": map[string]any{
+						"evidence": "transcript", "transport": "sidecar", "protocol_version": 2,
+						"act_handoff": "typed",
+					},
+					"tools": map[string]any{
+						"fast": "propose", "slow": "execute", "authorization": "engine",
+						"execution": "engine-or-client",
+					},
+				}},
+			})
+			_ = connection.Write(request.Context(), websocket.MessageText, evidence)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	transcript, err := bench.PlaySamples(context.Background(), bench.SessionConfig{
+		Endpoint: "ws" + strings.TrimPrefix(server.URL, "http"), Timeout: 5 * time.Second,
+		TrailingSilence: time.Millisecond, CaptureRuntimeEvidence: true,
+	}, nil)
+	if err != nil {
+		t.Fatalf("play: %v", err)
+	}
+	if transcript.Runtime == nil || transcript.Runtime.Binding != "sidecar" ||
+		transcript.Runtime.Interaction.ActHandoff != "typed" ||
+		transcript.Runtime.Tools.Authorization != "engine" {
+		t.Fatalf("runtime evidence was not retained: %+v", transcript.Runtime)
+	}
+}

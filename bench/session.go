@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/internal/audio"
 	"github.com/bojieli/OpenRealtime/pcm"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
@@ -71,6 +72,10 @@ type Transcript struct {
 	// PlaybackMS is how long the input recording was.
 	PlaybackMS float64 `json:"playback_ms"`
 	Failure    string  `json:"failure,omitempty"`
+	// Runtime is the handshake-resolved architecture evidence emitted after
+	// session.update. It is present only when CaptureRuntimeEvidence was set;
+	// ordinary benchmark clients retain their existing wire behavior.
+	Runtime *binding.Status `json:"runtime,omitempty"`
 }
 
 // UserTurns returns what the user was heard to say, in order.
@@ -222,6 +227,10 @@ type SessionConfig struct {
 	Timeout time.Duration
 	// Quiet suppresses per-task progress.
 	Quiet bool
+	// CaptureRuntimeEvidence negotiates the session debug category and retains
+	// the live binding status. Architecture experiments set it for every task;
+	// it is opt-in because the developer trace is not application behavior.
+	CaptureRuntimeEvidence bool
 	// Scheduled are protocol events to send at points in the playback.
 	//
 	// A conversation is not only speech. A screen changes, a camera sees
@@ -342,16 +351,22 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 		copy(tools, config.Tools)
 		update["tools"] = tools
 	}
-	if len(config.Video) > 0 {
-		update["openrealtime"] = map[string]any{
-			"version": openrealtime.Version,
-			"supports": []string{
+	if len(config.Video) > 0 || config.CaptureRuntimeEvidence {
+		extension := map[string]any{"version": openrealtime.Version}
+		if len(config.Video) > 0 {
+			extension["supports"] = []string{
 				string(openrealtime.FeatureVideoInput),
 				string(openrealtime.FeatureObservations),
 				string(openrealtime.FeatureComputerUse),
-			},
-			"observers": []string{"audio", "video"},
+			}
+			extension["observers"] = []string{"audio", "video"}
 		}
+		if config.CaptureRuntimeEvidence {
+			extension["debug"] = map[string]any{
+				"enabled": true, "categories": []string{string(openrealtime.DebugSession)},
+			}
+		}
+		update["openrealtime"] = extension
 	}
 	if err := client.Send(timed, map[string]any{"type": "session.update", "session": update}); err != nil {
 		return Transcript{}, err
@@ -515,6 +530,7 @@ type recorder struct {
 	openResponses      int
 	playbackFinishedAt time.Time
 	failure            string
+	runtime            *binding.Status
 }
 
 func (recorder *recorder) at() float64 {
@@ -542,7 +558,14 @@ func (recorder *recorder) snapshot() Transcript {
 	sort.SliceStable(moments, func(left, right int) bool {
 		return moments[left].AtMS < moments[right].AtMS
 	})
-	return Transcript{Moments: moments, PlaybackMS: recorder.playbackMS, Failure: recorder.failure}
+	var runtime *binding.Status
+	if recorder.runtime != nil {
+		copied := *recorder.runtime
+		runtime = &copied
+	}
+	return Transcript{
+		Moments: moments, PlaybackMS: recorder.playbackMS, Failure: recorder.failure, Runtime: runtime,
+	}
 }
 
 // collect reads the session until it goes quiet after playback.
@@ -709,6 +732,25 @@ func (recorder *recorder) handle(
 			Kind: MomentObservation, Observer: decoded.Observer,
 			Source: decoded.Source, Text: decoded.Text,
 		})
+	case openrealtime.EventDebug:
+		if !config.CaptureRuntimeEvidence {
+			break
+		}
+		var decoded struct {
+			Category   string `json:"category"`
+			Name       string `json:"name"`
+			Attributes struct {
+				Runtime *binding.Status `json:"runtime"`
+			} `json:"attributes"`
+		}
+		_ = event.Decode(&decoded)
+		if decoded.Category == string(openrealtime.DebugSession) &&
+			decoded.Name == "session.updated" && decoded.Attributes.Runtime != nil {
+			recorder.mu.Lock()
+			copied := *decoded.Attributes.Runtime
+			recorder.runtime = &copied
+			recorder.mu.Unlock()
+		}
 	case "error":
 		var decoded struct {
 			Error struct {

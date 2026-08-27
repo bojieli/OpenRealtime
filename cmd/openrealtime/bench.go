@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	archbench "github.com/bojieli/OpenRealtime/bench/architecture"
 	"github.com/bojieli/OpenRealtime/bench/dynacu"
 	"github.com/bojieli/OpenRealtime/bench/fdb"
 	"github.com/bojieli/OpenRealtime/bench/fdbench"
@@ -31,10 +32,12 @@ import (
 // users get is not a measurement of anything.
 func runBench(arguments []string, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: openrealtime bench <realtime-cu|fdb|fdbv3|fdbench|tau-voice|dynacu> [flags]")
+		return errors.New("usage: openrealtime bench <architecture|realtime-cu|fdb|fdbv3|fdbench|tau-voice|dynacu> [flags]")
 	}
 	suite := strings.ToLower(strings.TrimSpace(arguments[0]))
 	switch suite {
+	case "architecture", "architecture-pair", "f52":
+		return runArchitecturePair(arguments[1:], output)
 	case "fdb", "fdb-v1.5":
 		return runFDB(arguments[1:], output)
 	case "fdbench", "fd-bench":
@@ -50,6 +53,227 @@ func runBench(arguments []string, output io.Writer) error {
 	default:
 		return fmt.Errorf("unknown suite %q", suite)
 	}
+}
+
+// runArchitecturePair classifies two measured F52 cells. A comparison can be
+// useful and reportable while still being a system comparison; only a paired
+// P/T or T/N run with identical non-treatment identities is architecture-only
+// evidence.
+func runArchitecturePair(arguments []string, output io.Writer) error {
+	if len(arguments) > 0 {
+		switch strings.ToLower(strings.TrimSpace(arguments[0])) {
+		case "inspect":
+			return runArchitectureInspect(arguments[1:], output)
+		case "cell":
+			return runArchitectureCell(arguments[1:], output)
+		case "manifest":
+			return runArchitectureManifest(arguments[1:], output)
+		}
+	}
+	flags := flag.NewFlagSet("openrealtime bench architecture", flag.ContinueOnError)
+	baselinePath := flags.String("baseline", "", "baseline architecture result JSON")
+	variantPath := flags.String("variant", "", "variant architecture result JSON")
+	out := flags.String("out", "", "write the comparison to this path as JSON")
+	flags.SetOutput(output)
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || strings.TrimSpace(*baselinePath) == "" || strings.TrimSpace(*variantPath) == "" {
+		return errors.New("architecture comparison requires -baseline and -variant result paths")
+	}
+	baseline, err := archbench.ReadResult(*baselinePath)
+	if err != nil {
+		return fmt.Errorf("read baseline: %w", err)
+	}
+	variant, err := archbench.ReadResult(*variantPath)
+	if err != nil {
+		return fmt.Errorf("read variant: %w", err)
+	}
+	comparison := archbench.Pair(baseline, variant)
+	fmt.Fprintf(output, "baseline   : %s (%s)\n", baseline.Cell.Name, baseline.Cell.Architecture.Level)
+	fmt.Fprintf(output, "variant    : %s (%s)\n", variant.Cell.Name, variant.Cell.Architecture.Level)
+	fmt.Fprintf(output, "pass rate  : %.1f%% -> %.1f%% (%+.1f points)\n",
+		comparison.Measurement.BaselineRate*100, comparison.Measurement.VariantRate*100,
+		comparison.Measurement.Difference*100)
+	if comparison.Reportable {
+		fmt.Fprintf(output, "claim       : %s comparison\n", comparison.Claim)
+		if len(comparison.Differences) > 0 {
+			fmt.Fprintf(output, "confounders : %s\n", strings.Join(comparison.Differences, ", "))
+		}
+	} else {
+		fmt.Fprintf(output, "NOT REPORTABLE: %s\n", comparison.Refusal)
+	}
+	if strings.TrimSpace(*out) != "" {
+		payload, err := json.MarshalIndent(comparison, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(*out), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(*out, append(payload, '\n'), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// runArchitectureInspect opens an ordinary protocol session and prints the
+// handshake-resolved binding status that a manifest must match. It is a
+// read-only authoring aid; inspection is not a benchmark result.
+func runArchitectureInspect(arguments []string, output io.Writer) error {
+	flags := flag.NewFlagSet("openrealtime bench architecture inspect", flag.ContinueOnError)
+	endpoint := flags.String("endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
+	tokenEnv := flags.String("token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token")
+	model := flags.String("model", "", "model to request; empty selects the server's own")
+	out := flags.String("out", "", "write live status JSON to this path")
+	catalogPath := flags.String("catalog", "", "external architecture catalog; empty uses the repository-owned catalog")
+	timeout := flags.Duration("timeout", 10*time.Second, "bound the inspection session")
+	flags.SetOutput(output)
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("architecture inspect accepts flags only")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+	transcript, err := bench.PlaySamples(ctx, bench.SessionConfig{
+		Endpoint: *endpoint, Token: os.Getenv(*tokenEnv), Model: *model,
+		Timeout: *timeout, TrailingSilence: time.Millisecond,
+		CaptureRuntimeEvidence: true, Quiet: true,
+	}, nil)
+	if err != nil {
+		return err
+	}
+	if transcript.Runtime == nil {
+		return errors.New("the server did not emit negotiated runtime evidence")
+	}
+	catalog, err := loadArchitectureCatalog(*catalogPath)
+	if err != nil {
+		return err
+	}
+	if transcript.Runtime.Architecture.Empty() {
+		return errors.New("the server was not launched through an immutable architecture definition")
+	}
+	definition, err := catalog.LookupIdentity(transcript.Runtime.Architecture)
+	if err != nil {
+		return err
+	}
+	if err := definition.ValidateStatus(*transcript.Runtime); err != nil {
+		return err
+	}
+	payload, err := json.MarshalIndent(transcript.Runtime, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(output, string(payload))
+	if strings.TrimSpace(*out) != "" {
+		if err := os.MkdirAll(filepath.Dir(*out), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(*out, append(payload, '\n'), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// runArchitectureCell authors one experiment cell from three independent
+// authorities: a project definition, a post-handshake status, and immutable
+// deployment pins. This replaces copy-pasted JSON and launch-script labels.
+func runArchitectureCell(arguments []string, output io.Writer) error {
+	flags := flag.NewFlagSet("openrealtime bench architecture cell", flag.ContinueOnError)
+	name := flags.String("name", "", "cell name")
+	definitionRef := flags.String("definition", "", "exact architecture id@revision")
+	catalogPath := flags.String("catalog", "", "external architecture catalog; empty uses the repository-owned catalog")
+	statusPath := flags.String("status", "", "post-handshake status from architecture inspect")
+	pinsPath := flags.String("pins", "", "immutable deployment pins JSON")
+	out := flags.String("out", "", "write the authored cell JSON")
+	flags.SetOutput(output)
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || strings.TrimSpace(*name) == "" ||
+		strings.TrimSpace(*definitionRef) == "" || strings.TrimSpace(*statusPath) == "" ||
+		strings.TrimSpace(*pinsPath) == "" || strings.TrimSpace(*out) == "" {
+		return errors.New("architecture cell requires -name, -definition, -status, -pins, and -out")
+	}
+	catalog, err := loadArchitectureCatalog(*catalogPath)
+	if err != nil {
+		return err
+	}
+	definition, err := catalog.Resolve(*definitionRef)
+	if err != nil {
+		return err
+	}
+	status, err := archbench.ReadStatus(*statusPath)
+	if err != nil {
+		return err
+	}
+	pins, err := archbench.ReadPins(*pinsPath)
+	if err != nil {
+		return err
+	}
+	cell, err := archbench.BuildCell(*name, definition, status, pins)
+	if err != nil {
+		return err
+	}
+	if err := archbench.WriteCell(*out, cell); err != nil {
+		return err
+	}
+	fmt.Fprintf(output, "wrote %s  F52=%s  definition=%s\n", *out, cell.Architecture.Level, definition.Ref())
+	return nil
+}
+
+type architectureCellPaths []string
+
+func (paths *architectureCellPaths) String() string { return strings.Join(*paths, ",") }
+func (paths *architectureCellPaths) Set(value string) error {
+	if strings.TrimSpace(value) == "" {
+		return errors.New("architecture cell path cannot be empty")
+	}
+	*paths = append(*paths, value)
+	return nil
+}
+
+// runArchitectureManifest assembles reviewed cells into the exact experiment
+// consumed by scenario. Cells remain separately inspectable and reusable.
+func runArchitectureManifest(arguments []string, output io.Writer) error {
+	flags := flag.NewFlagSet("openrealtime bench architecture manifest", flag.ContinueOnError)
+	name := flags.String("name", "", "experiment name")
+	suite := flags.String("suite", "scenario", "benchmark suite")
+	fixture := flags.String("fixture-revision", "", "immutable suite fixture revision")
+	out := flags.String("out", "", "write the experiment manifest JSON")
+	var cellPaths architectureCellPaths
+	flags.Var(&cellPaths, "cell", "authored cell JSON; repeat for every desired cell")
+	flags.SetOutput(output)
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || strings.TrimSpace(*name) == "" ||
+		strings.TrimSpace(*fixture) == "" || strings.TrimSpace(*out) == "" || len(cellPaths) == 0 {
+		return errors.New("architecture manifest requires -name, -fixture-revision, -out, and one or more -cell")
+	}
+	manifest := archbench.Manifest{
+		Version: archbench.ManifestVersion, Name: *name, Suite: *suite,
+		FixtureRevision: *fixture,
+	}
+	for _, path := range cellPaths {
+		cell, err := archbench.ReadCell(path)
+		if err != nil {
+			return fmt.Errorf("read cell %s: %w", path, err)
+		}
+		manifest.Cells = append(manifest.Cells, cell)
+	}
+	if err := manifest.Validate(); err != nil {
+		return err
+	}
+	if err := archbench.WriteManifest(*out, manifest); err != nil {
+		return err
+	}
+	fmt.Fprintf(output, "wrote %s  %d cells  manifest=%s\n", *out, len(manifest.Cells), manifest.ID())
+	return nil
 }
 
 // runRealtimeCU executes the repository-owned audiovisual computer-use suite.

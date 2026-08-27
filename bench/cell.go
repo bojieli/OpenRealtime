@@ -23,6 +23,13 @@ const (
 	FactorFastAction Factor = "F10"
 	FactorVideoRate  Factor = "F11"
 	FactorRecognizer Factor = "F12"
+	// FactorInteractionArchitecture selects who makes interaction decisions and
+	// from what evidence: shipped predicates (P), an external text-policy model
+	// (T), or a model-native interaction head (N). The level is only the compact
+	// column used by the generic report machinery. A reportable F52 comparison
+	// also carries the structured architecture identity in bench/architecture;
+	// this string by itself is never sufficient evidence.
+	FactorInteractionArchitecture Factor = "F52"
 )
 
 // Description is what a factor varies, for reports that a person reads.
@@ -52,6 +59,8 @@ func (factor Factor) Description() string {
 		return "video frame rate"
 	case FactorRecognizer:
 		return "recogniser"
+	case FactorInteractionArchitecture:
+		return "interaction architecture"
 	default:
 		return string(factor)
 	}

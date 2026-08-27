@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	archbench "github.com/bojieli/OpenRealtime/bench/architecture"
 	"github.com/bojieli/OpenRealtime/bench/scenario"
 )
 
@@ -27,21 +28,54 @@ func runScenario(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("scenario", flag.ContinueOnError)
 	flags.SetOutput(output)
 	var (
-		endpoint = flags.String("url", "ws://127.0.0.1:8765/v1/realtime", "session endpoint")
-		tokenEnv = flags.String("token-env", "", "environment variable holding the session credential")
-		model    = flags.String("model", "", "model to request; empty selects the server's own")
-		speech   = flags.String("speech-url", "http://127.0.0.1:8081/v1/audio/speech", "speech endpoint that gives the participants voices")
-		voice    = flags.String("speech-model", "fishaudio/s2-pro", "speech model")
-		only     = flags.String("only", "", "run one scenario by name")
-		timeout  = flags.Duration("timeout", 3*time.Minute, "bound on one scenario")
-		record   = flags.String("record", "", "write the timed record of each scenario to this file")
-		repeat   = flags.Int("repeat", 1, "runs per scenario; latency from one run is noise, so a latency claim needs several")
+		endpoint         = flags.String("url", "ws://127.0.0.1:8765/v1/realtime", "session endpoint")
+		tokenEnv         = flags.String("token-env", "", "environment variable holding the session credential")
+		model            = flags.String("model", "", "model to request; empty selects the server's own")
+		speech           = flags.String("speech-url", "http://127.0.0.1:8081/v1/audio/speech", "speech endpoint that gives the participants voices")
+		voice            = flags.String("speech-model", "fishaudio/s2-pro", "speech model")
+		only             = flags.String("only", "", "run one scenario by name")
+		timeout          = flags.Duration("timeout", 3*time.Minute, "bound on one scenario")
+		record           = flags.String("record", "", "write the timed record of each scenario to this file")
+		repeat           = flags.Int("repeat", 1, "runs per scenario; latency from one run is noise, so a latency claim needs several")
+		experiment       = flags.String("architecture-manifest", "", "versioned P/T/C/N architecture experiment manifest")
+		architectureCell = flags.String("architecture-cell", "", "cell name in -architecture-manifest")
 	)
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
 		return errors.New("scenario accepts flags only")
+	}
+
+	var manifest archbench.Manifest
+	var selectedCell archbench.Cell
+	architectureRun := strings.TrimSpace(*experiment) != ""
+	if architectureRun {
+		var err error
+		manifest, err = archbench.Read(*experiment)
+		if err != nil {
+			return err
+		}
+		if manifest.Suite != "scenario" {
+			return fmt.Errorf("architecture manifest suite must be scenario, got %q", manifest.Suite)
+		}
+		name := strings.TrimSpace(*architectureCell)
+		if name == "" && len(manifest.Cells) == 1 {
+			name = manifest.Cells[0].Name
+		}
+		if name == "" {
+			return errors.New("-architecture-cell is required when the manifest has multiple cells")
+		}
+		selectedCell, err = manifest.Cell(name)
+		if err != nil {
+			return err
+		}
+		if selectedCell.Availability != archbench.AvailabilityRunnable {
+			return fmt.Errorf("architecture cell %q is unavailable: %s",
+				selectedCell.Name, selectedCell.UnavailableReason)
+		}
+	} else if strings.TrimSpace(*architectureCell) != "" {
+		return errors.New("-architecture-cell requires -architecture-manifest")
 	}
 
 	speaker := scenario.SpeechVoice{
@@ -53,18 +87,36 @@ func runScenario(arguments []string, output io.Writer) error {
 	}
 	config := bench.SessionConfig{
 		Endpoint: *endpoint, Token: os.Getenv(*tokenEnv), Model: *model,
-		Timeout: *timeout, Quiet: true,
+		Timeout: *timeout, Quiet: true, CaptureRuntimeEvidence: architectureRun,
+	}
+
+	var selected []scenario.Scenario
+	fullSuite := scenario.Suite()
+	for _, item := range fullSuite {
+		if *only == "" || item.Name == *only {
+			selected = append(selected, item)
+		}
+	}
+	if len(selected) == 0 {
+		return fmt.Errorf("no scenario named %q", *only)
 	}
 
 	var results []scenario.Result
 	passed := 0
 	runs := max(1, *repeat)
-	for _, item := range scenario.Suite() {
-		if *only != "" && item.Name != *only {
-			continue
-		}
+	var architectureResult *archbench.Result
+	if architectureRun {
+		// -only is a diagnostic filter, not a smaller definition of the suite.
+		// The missing scenarios stay expected so a convenient smoke run cannot
+		// become a publishable architecture result.
+		started := archbench.NewResult(manifest, selectedCell, len(fullSuite)*runs)
+		architectureResult = &started
+		fmt.Fprintf(output, "  architecture %s  F52=%s\n", selectedCell.Name, selectedCell.Architecture.Level)
+	}
+	for _, item := range selected {
 		var attempts []scenario.Result
 		for run := 0; run < runs; run++ {
+			taskID := fmt.Sprintf("%s#%d", item.Name, run+1)
 			ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 			result, err := scenario.Play(ctx, speaker, config, item)
 			cancel()
@@ -76,12 +128,41 @@ func runScenario(arguments []string, output io.Writer) error {
 			if result.Passed {
 				passed++
 			}
+			if architectureResult != nil {
+				architectureResult.Measurement.Tasks = append(
+					architectureResult.Measurement.Tasks, scenarioTask(taskID, result, err))
+				if result.Transcript.Runtime != nil {
+					architectureResult.Observed = append(architectureResult.Observed, archbench.Observation{
+						TaskID: taskID, Status: *result.Transcript.Runtime,
+					})
+				}
+				record, marshalErr := json.Marshal(result)
+				if marshalErr != nil {
+					return marshalErr
+				}
+				architectureResult.Records = append(architectureResult.Records, record)
+			}
 		}
 		reportScenario(output, item, attempts)
 	}
 	fmt.Fprintf(output, "\n  scenarios %d/%d\n", passed, len(results))
 
-	if strings.TrimSpace(*record) != "" {
+	if architectureResult != nil {
+		architectureResult.Finish()
+		fmt.Fprintf(output, "  measured    %d/%d tasks completed\n",
+			architectureResult.Measurement.Summary.Completed, architectureResult.Measurement.Expected)
+		if err := architectureResult.Reportable(); err != nil {
+			fmt.Fprintf(output, "  NOT REPORTABLE: %v\n", err)
+		} else {
+			fmt.Fprintln(output, "  reportable architecture cell")
+		}
+	}
+
+	if strings.TrimSpace(*record) != "" && architectureResult != nil {
+		if err := architectureResult.Write(*record); err != nil {
+			return fmt.Errorf("write the architecture record: %w", err)
+		}
+	} else if strings.TrimSpace(*record) != "" {
 		encoded, err := json.MarshalIndent(results, "", "  ")
 		if err != nil {
 			return err
@@ -91,6 +172,41 @@ func runScenario(arguments []string, output io.Writer) error {
 		}
 	}
 	return nil
+}
+
+// scenarioTask adapts one owned interaction scenario to the generic benchmark
+// result without throwing away its richer raw record.
+func scenarioTask(id string, result scenario.Result, runErr error) bench.TaskOutcome {
+	outcome := bench.TaskOutcome{ID: id, Completed: runErr == nil, Passed: result.Passed}
+	if runErr != nil {
+		outcome.Error = runErr.Error()
+	}
+	var heard []float64
+	missed, negative := 0, 0
+	for _, latency := range result.Latencies {
+		switch {
+		case !latency.Heard:
+			missed++
+		case latency.MS < 0:
+			negative++
+		default:
+			heard = append(heard, latency.MS)
+		}
+	}
+	outcome.Metrics = map[string]float64{
+		"missed_reaction_triggers": float64(missed),
+		"overlap_before_trigger":   float64(negative),
+		"failed_checks":            float64(len(result.Failures)),
+	}
+	if len(heard) > 0 {
+		distribution := bench.Summarise(heard)
+		outcome.Metrics["reaction_latency_p50_ms"] = distribution.P50
+		outcome.Metrics["reaction_latency_p90_ms"] = distribution.P90
+	}
+	if len(result.Failures) > 0 {
+		outcome.Notes = map[string]string{"failures": strings.Join(result.Failures, " | ")}
+	}
+	return outcome
 }
 
 // report renders one scenario's attempts.
