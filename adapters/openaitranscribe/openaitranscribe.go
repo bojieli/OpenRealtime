@@ -327,10 +327,41 @@ func (adapter *Adapter) revision(text string, sourceSample uint64, final bool) v
 	if final {
 		revision.StableText = text
 	} else {
-		revision.UnstableText = text
+		// The part this revision and the one before it agree on. A partial is
+		// a whole re-transcription of the buffer, so the recogniser revises
+		// its own tail constantly - re-punctuating, re-spelling a name, taking
+		// a word back - while the front of the sentence stops moving almost at
+		// once. That settled front is what "stable" means, and until this
+		// computed it every partial was reported as entirely unstable and
+		// anything downstream that asked what had been committed got nothing.
+		revision.StableText, revision.UnstableText = settled(adapter.lastEmittedText, text)
 	}
 	adapter.lastEmittedText = text
 	return revision
+}
+
+// settled splits text into the part the previous revision already agreed with
+// and the part that is new or has changed.
+//
+// Compared as words, because a recogniser re-punctuates and re-capitalises
+// what it has already given you: "a warm afternoon and I" becomes "a warm
+// afternoon. And I" and back again, and compared as characters neither is a
+// prefix of the other.
+func settled(previous, current string) (stable, unstable string) {
+	was, now := strings.Fields(previous), strings.Fields(current)
+	agreed := 0
+	for agreed < len(was) && agreed < len(now) &&
+		strings.EqualFold(strings.Trim(was[agreed], ".,!?;:"), strings.Trim(now[agreed], ".,!?;:")) {
+		agreed++
+	}
+	if agreed == 0 {
+		return "", current
+	}
+	stable = strings.Join(now[:agreed], " ")
+	if agreed == len(now) {
+		return stable, ""
+	}
+	return stable, " " + strings.Join(now[agreed:], " ")
 }
 
 func textDelta(previous, current string) string {

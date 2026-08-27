@@ -245,3 +245,29 @@ func TestAnEndpointErrorIsReported(t *testing.T) {
 		t.Fatalf("an endpoint failure must be reported: %v", err)
 	}
 }
+
+// TestAPartialReportsWhatHasSettled is the regression for a guard that never
+// fired. A partial is a whole re-transcription of the buffer, so the recogniser
+// revises its own tail constantly while the front of the sentence stops moving
+// almost at once - and every partial was reported as entirely unstable, so
+// anything downstream asking what had been committed got nothing and fell back
+// to the whole revision. Measured, that was twenty chances to answer one
+// occurrence and counts of "1 3 3 1".
+func TestAPartialReportsWhatHasSettled(t *testing.T) {
+	stable, unstable := settled("a capybara wandered", "a capybara wandered over and sat")
+	if stable != "a capybara wandered" {
+		t.Fatalf("the settled front was %q", stable)
+	}
+	if strings.TrimSpace(unstable) != "over and sat" {
+		t.Fatalf("the moving tail was %q", unstable)
+	}
+	// Re-punctuating and re-capitalising is not a change of words.
+	stable, _ = settled("a warm afternoon and I", "A warm afternoon. And I was walking")
+	if stable == "" {
+		t.Fatal("re-punctuating threw the settled front away")
+	}
+	// A different sentence settles nothing.
+	if stable, _ := settled("a capybara wandered", "then a heron landed"); stable != "" {
+		t.Fatalf("a different sentence reported %q as settled", stable)
+	}
+}
