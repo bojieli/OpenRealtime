@@ -44,6 +44,43 @@ func TestAnUnknownCapabilityNameIsRefused(t *testing.T) {
 	}
 }
 
+func TestDebugNegotiationIsExplicitAndPayloadsRequireOptIn(t *testing.T) {
+	ordinary, err := openrealtime.Negotiate(
+		openrealtime.Request{Version: openrealtime.Version}, openrealtime.Features())
+	if err != nil {
+		t.Fatalf("ordinary negotiation: %v", err)
+	}
+	if ordinary.Debug != nil {
+		t.Fatal("debugging must not appear unless the client asked for it")
+	}
+
+	traced, err := openrealtime.Negotiate(openrealtime.Request{
+		Version: openrealtime.Version,
+		Debug: &openrealtime.DebugRequest{
+			Enabled: true, Categories: []openrealtime.DebugCategory{
+				openrealtime.DebugVAD, openrealtime.DebugTool, openrealtime.DebugVAD,
+			}, IncludePayloads: true,
+		},
+	}, openrealtime.Features())
+	if err != nil {
+		t.Fatalf("debug negotiation: %v", err)
+	}
+	if traced.Debug == nil || !traced.Debug.Enabled || !traced.Debug.IncludePayloads ||
+		len(traced.Debug.Categories) != 2 || traced.Debug.TimestampResolution != "milliseconds" {
+		t.Fatalf("unexpected debug response: %+v", traced.Debug)
+	}
+}
+
+func TestUnknownDebugCategoryIsRefused(t *testing.T) {
+	_, err := openrealtime.Negotiate(openrealtime.Request{
+		Version: openrealtime.Version,
+		Debug:   &openrealtime.DebugRequest{Enabled: true, Categories: []openrealtime.DebugCategory{"secrets"}},
+	}, openrealtime.Features())
+	if err == nil {
+		t.Fatal("a category this server cannot emit must be refused")
+	}
+}
+
 // A capability the server cannot provide is absent from the answer rather than
 // fatal. The session works and the client can see what it did not get.
 func TestAnUnprovidableCapabilityIsDeclinedWithoutFailing(t *testing.T) {

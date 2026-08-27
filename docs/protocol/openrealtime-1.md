@@ -126,6 +126,65 @@ conform rather than discover them by being rejected.
 | `max_dimension` | maximum pixels on either edge of a declared source |
 | `max_frame_bytes` | maximum decoded size of one frame, optional |
 
+### 2.5 Optional developer debug stream (implementation extension)
+
+The portable version 1 application surface remains the three events counted
+in §8. OpenRealtime's reference server additionally offers an opt-in developer
+trace under the same namespace. It is an implementation extension, not a
+portable capability: another conforming server may ignore `debug`, omit it from
+the response, and never emit a debug event.
+
+A developer client requests it inside the negotiation object:
+
+```jsonc
+"debug": {
+  "enabled": true,
+  "categories": ["vad", "asr", "video", "cognition", "policy", "tts", "tool", "session", "error"],
+  "include_payloads": false
+}
+```
+
+The server answers with the configuration actually in force:
+
+```jsonc
+"debug": {
+  "enabled": true,
+  "categories": ["vad", "asr", "video", "cognition", "policy", "tts", "tool", "session", "error"],
+  "include_payloads": false,
+  "timestamp_resolution": "milliseconds"
+}
+```
+
+When enabled, an event has this shape:
+
+```jsonc
+{
+  "type": "openrealtime.debug.event",
+  "event_id": "event_000000000123",
+  "timestamp_ms": 1787760000123,
+  "category": "asr",
+  "name": "asr.observe",
+  "phase": "end",
+  "duration_ms": 27.4,
+  "correlation_id": "item_000000000019",
+  "attributes": { "final": true },
+  "payload": null
+}
+```
+
+`timestamp_ms` is an absolute Unix timestamp with millisecond resolution;
+`duration_ms` is optional elapsed time. `correlation_id` joins phases or work
+that belongs to one frame, utterance, tool call, or response. Category and
+event names describe server internals and may grow without a protocol version
+change.
+
+Prompts, transcripts, tool arguments, and tool results are payloads. They MUST
+be omitted unless `include_payloads` was explicitly requested and accepted.
+With the default `false`, the reference server reports
+`attributes.payloads_redacted: true` when such a payload existed. Raw audio and
+image bytes are never debug payloads; video traces contain geometry, byte
+counts, admission decisions, and latency only.
+
 ## 3. Video input
 
 Two client-to-server events.
@@ -338,7 +397,9 @@ continuously checked is a compatibility claim that decays.
 | New transports | 0 |
 
 Three events for vision and computer use, on a base protocol with 66 wire
-names, is the bar this design was written to.
+names, is the bar this design was written to. The optional implementation
+debug event in §2.5 is deliberately not counted as portable application
+surface and is never emitted without an explicit opt-in.
 
 ## 9. Versioning
 

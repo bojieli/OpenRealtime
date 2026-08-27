@@ -86,9 +86,10 @@ type session struct {
 	sourcesMu sync.Mutex
 	sources   map[string]*videoSource
 
-	itemsMu    sync.Mutex
-	utterances map[string]*wireUtterance
-	callNames  map[string]string
+	itemsMu     sync.Mutex
+	utterances  map[string]*wireUtterance
+	callNames   map[string]string
+	callStarted map[string]time.Time
 
 	responseMu sync.Mutex
 	// response is the turn currently producing output. One response carries
@@ -124,6 +125,7 @@ type wireUtterance struct {
 	sourceRate  uint32
 	text        string
 	outputIndex int
+	startedAt   time.Time
 	// textOnly records which modality this turn was announced in, so its end
 	// is rendered the same way its beginning was even if the session is
 	// reconfigured mid-turn.
@@ -141,7 +143,7 @@ func newSession(parent context.Context, connection *websocket.Conn, config Confi
 		validator: protocol.NewValidator(), sendChannel: make(chan []byte, 512),
 		events:  make(chan queuedEvent, 512),
 		sources: make(map[string]*videoSource), utterances: make(map[string]*wireUtterance),
-		callNames: make(map[string]string),
+		callNames: make(map[string]string), callStarted: make(map[string]time.Time),
 	}
 	// The session's own identity comes from the server, not from its item
 	// counter: every session's counter starts at zero, so deriving it here
@@ -499,6 +501,12 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 	if update.Audio.Output.Voice != "" {
 		if voice := session.config.Binding.Capabilities().Voice; voice.Selectable {
 			current.voice = update.Audio.Output.Voice
+		} else if voice.InForce != "" && update.Audio.Output.Voice == voice.InForce {
+			// A client generated from the base Realtime API normally repeats a
+			// voice in every session.update. A fixed-voice binding cannot honor a
+			// change, but asking for the voice it already uses is not a change and
+			// must not turn an otherwise compatible update into an error.
+			current.voice = voice.InForce
 		} else {
 			refused = append(refused, clientError{
 				code:  "unsupported_value",
@@ -602,6 +610,14 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 	if err := session.send(session.sessionEvent("session.updated")); err != nil {
 		return err
 	}
+	_ = session.Debug(session.ctx, binding.DebugEvent{
+		Category: string(openrealtime.DebugSession), Name: "session.updated", Phase: "instant",
+		Attributes: map[string]any{
+			"manual_turns": current.manualTurns, "modalities": slices.Clone(current.modalities),
+			"observers": slices.Clone(current.observers), "tool_count": len(current.tools),
+		},
+		Payload: map[string]any{"instructions": current.instruction},
+	})
 	for _, failure := range refused {
 		failure.causedBy = causedBy
 		session.sendClientError(failure)
@@ -681,6 +697,9 @@ func (session *session) onItemCreate(create conversationItemCreateEvent) error {
 	}
 	session.itemsMu.Lock()
 	name := session.callNames[create.Item.CallID]
+	started := session.callStarted[create.Item.CallID]
+	delete(session.callNames, create.Item.CallID)
+	delete(session.callStarted, create.Item.CallID)
 	session.itemsMu.Unlock()
 	itemID := create.Item.ID
 	if itemID == "" {
@@ -692,6 +711,16 @@ func (session *session) onItemCreate(create conversationItemCreateEvent) error {
 	})); err != nil {
 		return err
 	}
+	durationMS := float64(0)
+	if !started.IsZero() {
+		durationMS = float64(time.Since(started)) / float64(time.Millisecond)
+	}
+	_ = session.Debug(session.ctx, binding.DebugEvent{
+		Category: string(openrealtime.DebugTool), Name: "tool.result.received", Phase: "end",
+		DurationMS:    durationMS,
+		CorrelationID: create.Item.CallID, Attributes: map[string]any{"name": name},
+		Payload: map[string]any{"output": create.Item.Output},
+	})
 	return session.runtime.ToolResult(session.ctx, encodeToolResult(create.Item.CallID, name, create.Item.Output))
 }
 
@@ -820,6 +849,10 @@ func (session *session) sendClientError(failure clientError) {
 	body := map[string]any{
 		"type": "invalid_request_error", "code": failure.code, "message": failure.message,
 	}
+	_ = session.Debug(session.ctx, binding.DebugEvent{
+		Category: string(openrealtime.DebugError), Name: "session.error", Phase: "error",
+		Message: failure.message, Attributes: map[string]any{"code": failure.code, "param": failure.param},
+	})
 	if failure.param != "" {
 		body["param"] = failure.param
 	}
@@ -832,7 +865,9 @@ func (session *session) sendClientError(failure clientError) {
 func (session *session) recordCallNames(calls []trajectory.ToolCall) {
 	session.itemsMu.Lock()
 	defer session.itemsMu.Unlock()
+	now := time.Now()
 	for _, call := range calls {
 		session.callNames[call.CallID] = call.Name
+		session.callStarted[call.CallID] = now
 	}
 }

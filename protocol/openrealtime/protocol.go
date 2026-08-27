@@ -51,6 +51,51 @@ const (
 	FeatureComputerUse Feature = "computer_use"
 )
 
+// DebugCategory names one subsystem in the optional developer trace stream.
+//
+// Debugging is deliberately configured separately from Features. The three
+// portable v1 capabilities describe application behaviour; the debug stream
+// describes this implementation and is useful precisely because it can name
+// implementation details such as its acoustic gate and cognition phases.
+type DebugCategory string
+
+const (
+	DebugVAD       DebugCategory = "vad"
+	DebugASR       DebugCategory = "asr"
+	DebugVideo     DebugCategory = "video"
+	DebugCognition DebugCategory = "cognition"
+	DebugPolicy    DebugCategory = "policy"
+	DebugTTS       DebugCategory = "tts"
+	DebugTool      DebugCategory = "tool"
+	DebugSession   DebugCategory = "session"
+	DebugError     DebugCategory = "error"
+)
+
+// DebugCategories is every category this implementation may emit.
+func DebugCategories() []DebugCategory {
+	return []DebugCategory{
+		DebugVAD, DebugASR, DebugVideo, DebugCognition, DebugPolicy,
+		DebugTTS, DebugTool, DebugSession, DebugError,
+	}
+}
+
+// DebugRequest opts a developer client into timestamped implementation
+// events. Payloads are separate because transcripts, tool arguments, and tool
+// results may contain secrets; a client has to ask for them explicitly.
+type DebugRequest struct {
+	Enabled         bool            `json:"enabled"`
+	Categories      []DebugCategory `json:"categories,omitempty"`
+	IncludePayloads bool            `json:"include_payloads,omitempty"`
+}
+
+// DebugResponse states the trace configuration actually in force.
+type DebugResponse struct {
+	Enabled             bool            `json:"enabled"`
+	Categories          []DebugCategory `json:"categories,omitempty"`
+	IncludePayloads     bool            `json:"include_payloads,omitempty"`
+	TimestampResolution string          `json:"timestamp_resolution"`
+}
+
 // Features is every capability this implementation can offer.
 func Features() []Feature {
 	return []Feature{FeatureVideoInput, FeatureObservations, FeatureComputerUse}
@@ -77,6 +122,10 @@ const (
 	// are already committed to the trajectory; this event exists so a client
 	// can display and audit them, and it is purely outbound.
 	EventObservationAdded = "openrealtime.observation.added"
+	// EventDebug is an opt-in developer event. It is not an application
+	// capability and is never emitted unless session.openrealtime.debug was
+	// explicitly enabled.
+	EventDebug = "openrealtime.debug.event"
 )
 
 // Request is what a client declares inside session.update.
@@ -93,6 +142,9 @@ type Request struct {
 	// factor - two sessions against one server can differ in exactly this and
 	// nothing else, which is the shape every cell of the matrix needs.
 	Observers []string `json:"observers,omitempty"`
+	// Debug opts this session into implementation traces. Nil means no trace
+	// and preserves the v1 wire surface for every existing client.
+	Debug *DebugRequest `json:"debug,omitempty"`
 }
 
 // Response is what the server echoes inside session.updated.
@@ -111,7 +163,8 @@ type Response struct {
 	Observers []string `json:"observers,omitempty"`
 	// AvailableObservers is everything this deployment could select from, so a
 	// client can choose without guessing at names.
-	AvailableObservers []string `json:"available_observers,omitempty"`
+	AvailableObservers []string       `json:"available_observers,omitempty"`
+	Debug              *DebugResponse `json:"debug,omitempty"`
 }
 
 // Limits are the server's declared bounds on video input. They are stated at
@@ -203,6 +256,13 @@ func NegotiateSession(
 		}
 	}
 	response := Response{Version: Version, Enabled: enabled}
+	if request.Debug != nil {
+		debug, err := negotiateDebug(*request.Debug)
+		if err != nil {
+			return Response{}, err
+		}
+		response.Debug = &debug
+	}
 	if len(available) > 0 {
 		response.AvailableObservers = slices.Clone(available)
 		response.Observers = slices.Clone(available)
@@ -239,6 +299,47 @@ func NegotiateSession(
 		response.Video = &declared
 	}
 	return response, nil
+}
+
+func negotiateDebug(request DebugRequest) (DebugResponse, error) {
+	response := DebugResponse{
+		Enabled: request.Enabled, IncludePayloads: request.Enabled && request.IncludePayloads,
+		TimestampResolution: "milliseconds",
+	}
+	if !request.Enabled {
+		return response, nil
+	}
+	if len(request.Categories) == 0 {
+		response.Categories = DebugCategories()
+		return response, nil
+	}
+	for _, declared := range request.Categories {
+		category := DebugCategory(strings.TrimSpace(string(declared)))
+		if !slices.Contains(DebugCategories(), category) {
+			return DebugResponse{}, fmt.Errorf("unknown openrealtime debug category %q", declared)
+		}
+		if !slices.Contains(response.Categories, category) {
+			response.Categories = append(response.Categories, category)
+		}
+	}
+	return response, nil
+}
+
+// DebugEvent is one timestamped implementation trace entry. Attributes are
+// safe operational metadata. Payload is present only when the client opted in
+// to potentially sensitive content.
+type DebugEvent struct {
+	Type          string         `json:"type"`
+	EventID       string         `json:"event_id"`
+	TimestampMS   int64          `json:"timestamp_ms"`
+	Category      DebugCategory  `json:"category"`
+	Name          string         `json:"name"`
+	Phase         string         `json:"phase,omitempty"`
+	DurationMS    float64        `json:"duration_ms,omitempty"`
+	CorrelationID string         `json:"correlation_id,omitempty"`
+	Message       string         `json:"message,omitempty"`
+	Attributes    map[string]any `json:"attributes,omitempty"`
+	Payload       map[string]any `json:"payload,omitempty"`
 }
 
 // SourceState is the lifecycle of a declared video source.

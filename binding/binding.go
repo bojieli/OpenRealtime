@@ -123,6 +123,28 @@ type ErrorEvent struct {
 	Message string `json:"message"`
 }
 
+// DebugEvent is implementation evidence a developer client may inspect.
+// It is intentionally not part of Sink: ordinary bindings and test harnesses
+// do not have to implement debugging. A runtime emits it only when its sink
+// also implements DebugSink.
+type DebugEvent struct {
+	Category      string         `json:"category"`
+	Name          string         `json:"name"`
+	Phase         string         `json:"phase,omitempty"`
+	DurationMS    float64        `json:"duration_ms,omitempty"`
+	CorrelationID string         `json:"correlation_id,omitempty"`
+	Message       string         `json:"message,omitempty"`
+	Attributes    map[string]any `json:"attributes,omitempty"`
+	// Payload can contain transcript text, tool arguments, or outputs and is
+	// therefore withheld unless the client explicitly requests payloads.
+	Payload map[string]any `json:"payload,omitempty"`
+}
+
+// DebugSink is the optional developer trace side-channel.
+type DebugSink interface {
+	Debug(context.Context, DebugEvent) error
+}
+
 // TextInput is something a client typed rather than said.
 //
 // It is the same participant either way: a text client and a voice client are

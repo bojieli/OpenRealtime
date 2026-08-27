@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"slices"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/binding"
@@ -18,6 +20,21 @@ import (
 // decided here.
 
 func (session *session) Activity(_ context.Context, activity binding.ActivityEvent) error {
+	name := "vad.activity"
+	phase := "instant"
+	if activity.Started {
+		name, phase = "vad.speech_started", "start"
+	} else if activity.Stopped {
+		name, phase = "vad.speech_stopped", "end"
+	} else if activity.Committed {
+		name, phase = "vad.client_committed", "end"
+	}
+	_ = session.Debug(session.ctx, binding.DebugEvent{
+		Category: string(openrealtime.DebugVAD), Name: name, Phase: phase,
+		CorrelationID: activity.ItemID, Attributes: map[string]any{
+			"audio_start_ms": activity.AudioStartMS, "audio_end_ms": activity.AudioEndMS,
+		},
+	})
 	if activity.Committed {
 		return session.send(event("input_audio_buffer.committed", session.nextID("event"), map[string]any{
 			"item_id": activity.ItemID, "previous_item_id": nil,
@@ -37,6 +54,12 @@ func (session *session) Activity(_ context.Context, activity binding.ActivityEve
 }
 
 func (session *session) Transcript(_ context.Context, transcript binding.TranscriptEvent) error {
+	_ = session.Debug(session.ctx, binding.DebugEvent{
+		Category: string(openrealtime.DebugASR), Name: "asr.transcript", Phase: map[bool]string{true: "end", false: "update"}[transcript.Final],
+		CorrelationID: transcript.ItemID, Attributes: map[string]any{
+			"final": transcript.Final, "duration_seconds": transcript.DurationSec,
+		}, Payload: map[string]any{"text": transcript.Text},
+	})
 	if !transcript.Final {
 		// Partial transcripts are runtime evidence. The base protocol has no
 		// event for them, so they are not invented onto the wire: a client
@@ -70,12 +93,54 @@ func (session *session) Observation(_ context.Context, observation perception.Ob
 	})
 }
 
+// Debug renders an optional binding trace into the negotiated developer event
+// stream. No negotiation means no event and no observable change for ordinary
+// clients.
+func (session *session) Debug(_ context.Context, entry binding.DebugEvent) error {
+	session.settingsMu.RLock()
+	config := session.settings.extension.Debug
+	session.settingsMu.RUnlock()
+	if config == nil || !config.Enabled {
+		return nil
+	}
+	category := openrealtime.DebugCategory(entry.Category)
+	if !slices.Contains(config.Categories, category) {
+		return nil
+	}
+	debug := openrealtime.DebugEvent{
+		Type: openrealtime.EventDebug, EventID: session.nextID("event"),
+		TimestampMS: time.Now().UnixMilli(), Category: category,
+		Name: entry.Name, Phase: entry.Phase, DurationMS: entry.DurationMS,
+		CorrelationID: entry.CorrelationID, Message: entry.Message,
+		Attributes: entry.Attributes,
+	}
+	if config.IncludePayloads {
+		debug.Payload = entry.Payload
+	} else if len(entry.Payload) > 0 {
+		if debug.Attributes == nil {
+			debug.Attributes = map[string]any{}
+		}
+		debug.Attributes["payloads_redacted"] = true
+	}
+	return session.send(map[string]any{
+		"type": debug.Type, "event_id": debug.EventID, "timestamp_ms": debug.TimestampMS,
+		"category": debug.Category, "name": debug.Name, "phase": debug.Phase,
+		"duration_ms": debug.DurationMS, "correlation_id": debug.CorrelationID,
+		"message": debug.Message, "attributes": debug.Attributes, "payload": debug.Payload,
+	})
+}
+
 // SpeechBegin adds this turn's spoken output item to the response.
 //
 // The response itself is opened by whatever crosses into the world first,
 // which may be this or may be a function call: one response carries the whole
 // turn, and the client is told it is done once.
 func (session *session) SpeechBegin(ctx context.Context, utterance action.Utterance) error {
+	startedAt := time.Now()
+	_ = session.Debug(ctx, binding.DebugEvent{
+		Category: string(openrealtime.DebugTTS), Name: "tts.utterance_started", Phase: "start",
+		CorrelationID: utterance.ID, Payload: map[string]any{"text": utterance.Text},
+	})
 	session.settingsMu.RLock()
 	format, voice := session.settings.outputFormat, session.settings.voice
 	session.settingsMu.RUnlock()
@@ -95,7 +160,7 @@ func (session *session) SpeechBegin(ctx context.Context, utterance action.Uttera
 	session.itemsMu.Lock()
 	session.utterances[utterance.ID] = &wireUtterance{
 		responseID: responseID, itemID: itemID, format: format, voice: voice,
-		text: "", textOnly: text, outputIndex: index,
+		text: "", textOnly: text, outputIndex: index, startedAt: startedAt,
 	}
 	session.itemsMu.Unlock()
 
@@ -150,7 +215,7 @@ func (session *session) SpeechText(_ context.Context, utterance action.Utterance
 // here is resampling and encoding into whatever format the client asked for,
 // which is exactly the split that lets a WebRTC adapter use the same paced
 // frames without going through mu-law.
-func (session *session) SpeechAudio(_ context.Context, utterance action.Utterance, frame action.Frame) error {
+func (session *session) SpeechAudio(ctx context.Context, utterance action.Utterance, frame action.Frame) error {
 	session.itemsMu.Lock()
 	wire := session.utterances[utterance.ID]
 	session.itemsMu.Unlock()
@@ -174,6 +239,17 @@ func (session *session) SpeechAudio(_ context.Context, utterance action.Utteranc
 	if len(encoded) == 0 {
 		return nil
 	}
+	first := wire.frameBytes == 0
+	wire.frameBytes += len(encoded)
+	if first {
+		_ = session.Debug(ctx, binding.DebugEvent{
+			Category: string(openrealtime.DebugTTS), Name: "tts.first_audio", Phase: "update",
+			DurationMS:    float64(time.Since(wire.startedAt)) / float64(time.Millisecond),
+			CorrelationID: utterance.ID, Attributes: map[string]any{
+				"sample_rate_hz": frame.SampleRateHz, "encoded_bytes": len(encoded),
+			},
+		})
+	}
 	session.config.Metrics.audioFramesOut.Add(1)
 	return session.send(event("response.output_audio.delta", session.nextID("event"), map[string]any{
 		"response_id": wire.responseID, "item_id": wire.itemID,
@@ -182,7 +258,7 @@ func (session *session) SpeechAudio(_ context.Context, utterance action.Utteranc
 	}))
 }
 
-func (session *session) SpeechEnd(_ context.Context, utterance action.Utterance, outcome action.Outcome) error {
+func (session *session) SpeechEnd(ctx context.Context, utterance action.Utterance, outcome action.Outcome) error {
 	session.itemsMu.Lock()
 	wire := session.utterances[utterance.ID]
 	delete(session.utterances, utterance.ID)
@@ -190,6 +266,14 @@ func (session *session) SpeechEnd(_ context.Context, utterance action.Utterance,
 	if wire == nil {
 		return nil
 	}
+	_ = session.Debug(ctx, binding.DebugEvent{
+		Category: string(openrealtime.DebugTTS), Name: "tts.utterance_completed", Phase: "end",
+		DurationMS:    float64(time.Since(wire.startedAt)) / float64(time.Millisecond),
+		CorrelationID: utterance.ID, Attributes: map[string]any{
+			"completed": outcome.Completed, "played_ms": outcome.PlayedMS,
+			"encoded_bytes": wire.frameBytes, "text_only": wire.textOnly,
+		},
+	})
 	itemStatus := "completed"
 	if !outcome.Completed {
 		itemStatus = "incomplete"
@@ -245,9 +329,17 @@ func (session *session) SpeechEnd(_ context.Context, utterance action.Utterance,
 // They are output items of the turn that produced them, not a turn of their
 // own: a client that was told the response was done before the calls arrived
 // would have stopped reading exactly where the work was.
-func (session *session) ToolCalls(_ context.Context, calls binding.ToolCallEvent) error {
+func (session *session) ToolCalls(ctx context.Context, calls binding.ToolCallEvent) error {
 	session.config.Metrics.toolCallsOut.Add(uint64(len(calls.Calls)))
 	session.recordCallNames(calls.Calls)
+	for _, call := range calls.Calls {
+		_ = session.Debug(ctx, binding.DebugEvent{
+			Category: string(openrealtime.DebugTool), Name: "tool.call.emitted", Phase: "start",
+			CorrelationID: call.CallID, Attributes: map[string]any{
+				"name": call.Name, "invocation_id": calls.InvocationID,
+			}, Payload: map[string]any{"arguments": string(call.Arguments)},
+		})
+	}
 	responseID, first, _, err := session.openOutput()
 	if err != nil {
 		return err
@@ -295,6 +387,8 @@ func (session *session) ToolCalls(_ context.Context, calls binding.ToolCallEvent
 func (session *session) Failed(_ context.Context, failure binding.ErrorEvent) {
 	session.sendError(failure.Code, failure.Message)
 }
+
+var _ binding.DebugSink = (*session)(nil)
 
 func hasFeature(response openrealtime.Response, feature openrealtime.Feature) bool {
 	for _, enabled := range response.Enabled {

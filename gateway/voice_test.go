@@ -52,6 +52,30 @@ func TestTheReportedVoiceIsTheVoiceInForce(t *testing.T) {
 	}
 }
 
+func TestRepeatingTheFixedVoiceIsAnIdempotentUpdate(t *testing.T) {
+	server := startServer(t, fast([]continuation.Event{}), slow([]continuation.Event{}), "hello")
+	client := dial(t, server)
+	client.await("session.created", 5*time.Second)
+
+	client.send(map[string]any{"type": "session.update", "session": map[string]any{
+		"type": "realtime",
+		"audio": map[string]any{
+			"input": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
+			"output": map[string]any{
+				"format": map[string]any{"type": "audio/pcm", "rate": 24000},
+				"voice":  "test-voice",
+			},
+		},
+	}})
+	updated := client.await("session.updated", 5*time.Second)
+	if got := voiceOf(updated); got != "test-voice" {
+		t.Fatalf("the idempotent update changed the fixed voice to %q", got)
+	}
+	if event, ok := client.awaitOptional("error", 250*time.Millisecond); ok {
+		t.Fatalf("asking for the voice already in force must not be refused: %v", event)
+	}
+}
+
 // A session that says nothing about the limit is told what it is, because a
 // turn cut short reports max_output_tokens as the reason it stopped - and a
 // client told there was no maximum cannot make sense of that.
