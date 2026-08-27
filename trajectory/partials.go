@@ -18,7 +18,7 @@ import (
 // conversation it was shown. Measured on an afternoon with two animals in it,
 // the counts came back "3 4".
 //
-// Only consecutive items, only from the same speaker and authority, and only
+// Only consecutive items, only from the same authority, and only
 // where the earlier is a word-prefix of the later, which is what "the same
 // sentence, further along" means and what nothing else looks like.
 func WithoutSupersededPartials(items []Item) []Item {
@@ -40,9 +40,6 @@ func Continues(earlier, later Item) bool {
 	if AuthorityOf(earlier) != AuthorityOf(later) {
 		return false
 	}
-	if sourceOf(earlier) != sourceOf(later) {
-		return false
-	}
 	was, now := SpokenWords(earlier.Content), SpokenWords(later.Content)
 	if len(was) == 0 || len(now) <= len(was) {
 		return false
@@ -53,13 +50,6 @@ func Continues(earlier, later Item) bool {
 		}
 	}
 	return true
-}
-
-func sourceOf(item Item) string {
-	if item.Observation == nil {
-		return ""
-	}
-	return item.Observation.Source
 }
 
 // SpokenWords lowercases and drops punctuation, because a recogniser

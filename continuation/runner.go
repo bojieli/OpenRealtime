@@ -215,12 +215,6 @@ func (runner *Runner) run(
 			visibleInstruction.CausalParentIDs = []string{providerPrefix.Items[len(providerPrefix.Items)-1].ID}
 		}
 	}
-	// One sentence is one thing somebody said, however many times the
-	// recogniser committed it on the way. Applied here rather than in each
-	// adapter because it is true of every provider, and after any projection
-	// because a projection that has already dropped items leaves nothing for
-	// this to do.
-	providerPrefix.Items = trajectory.WithoutSupersededPartials(providerPrefix.Items)
 	prefix := providerPrefix
 	if prepared != nil && prepared.provisional.ID != "" {
 		provisional = prepared.provisional
@@ -240,6 +234,16 @@ func (runner *Runner) run(
 		prefix.Version++
 		visibleInstruction.CausalParentIDs = []string{provisional.ID}
 	}
+	// One sentence is one thing somebody said, however many times the
+	// recogniser committed it on the way - and the sentence still being spoken
+	// is the fullest version of it, so the collapse runs after the provisional
+	// is in place and lets it supersede the partials it continues.
+	//
+	// Applied here rather than in each adapter because it is true of every
+	// provider and every phase, and projections are already permitted to drop
+	// items: validateProjection forbids fabricating, duplicating and
+	// reordering, and nothing else.
+	prefix.Items = trajectory.WithoutSupersededPartials(prefix.Items)
 	prefix.Items = append(prefix.Items, visibleInstruction)
 	prefix.Version++
 	request := Request{
