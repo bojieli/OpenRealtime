@@ -122,7 +122,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		because = string(interaction.ActInterrupt)
 	}
 	request := cognition.Request{
-		Standing: standing, Interjecting: interjecting, Heard: heard, Because: because,
+		Standing: standing, Counting: runtime.countingIsInForce(), Interjecting: interjecting, Heard: heard, Because: because,
 		SourceRevision: revision,
 		AllowFastTools: runtime.observationHasUserIntent(batch),
 		PendingRepair:  len(trajectory.PendingRepairs(runtime.store.Snapshot())) > 0,

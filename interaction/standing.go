@@ -36,6 +36,15 @@ type StandingInstruction struct {
 	// an hour and three topics back, and a decision that cannot see which one
 	// it is has been handed the words without the context.
 	SetNS uint64
+	// Counting says this policy asks for a running count, which is the one
+	// distinction that has turned out to change what the voice must be told
+	// about carrying a policy out: a count needs the arithmetic spelled out,
+	// and attaching that to every running commentary taught a waiter scenario
+	// to count - asked to order the dish that fits, the agent said "4 4 4".
+	//
+	// Set by the pass that reads the policy, from the person's own words,
+	// rather than by a list of nouns chosen after watching one benchmark.
+	Counting bool
 	// After is the delay a policy names, when it names one: "ask if I go quiet
 	// for fifteen seconds" is not due until fifteen seconds of quiet have
 	// passed. Zero means the policy is about something happening rather than
@@ -286,7 +295,51 @@ func (extractor modelExtractor) Extract(
 	if !ok {
 		return Extraction{}, fmt.Errorf("extraction returned %q, which is not an answer", truncateAnswer(answer))
 	}
+	if kind == "pin" {
+		instruction.Counting = extractor.asksForACount(ctx, instruction.Text)
+	}
 	return Extraction{Kind: kind, Instruction: instruction}, nil
+}
+
+// CountingInstruction asks what kind of thing a policy is asking for.
+//
+// One question, because only one distinction has turned out to change what the
+// voice needs to be told: a running count needs arithmetic spelled out - count
+// them all again, compare with the last number, say it only if it went up -
+// and attaching that to every running commentary taught a waiter scenario to
+// count. Asked to order the dish that fits, the agent said "4 4 4".
+//
+// A model reading the person's own words rather than a list of nouns I chose
+// after watching one benchmark. The words people use for this are not
+// enumerable: count them, keep a tally, say how many so far, give me the
+// running total, number them as they come.
+var CountingInstruction = "Somebody set a standing policy for a voice assistant. Does it ask for a " +
+	"running count of things - a number that goes up as more of them are mentioned? Answer yes or no " +
+	"and nothing else.\n\n" +
+	"yes: count the animals out loud as I mention them\n" +
+	"yes: keep a tally and tell me where we are each time I add one\n" +
+	"yes: say how many we are up to whenever another one comes in\n" +
+	"no: order the dish that fits when the waiter names one\n" +
+	"no: translate what he says into English as he goes\n" +
+	"no: tell me the moment the build finishes\n" +
+	"no: stop me if I quote a price under fifty\n\n" +
+	"The policy:"
+
+// asksForACount reads the policy once, when it is pinned.
+//
+// Once per policy rather than once per turn, because policies are set rarely
+// and turns happen many times a second. An unreadable answer is "no": the
+// arithmetic is help for one kind of policy, and withholding it from a count
+// costs a scenario while attaching it to everything else costs several.
+func (extractor modelExtractor) asksForACount(ctx context.Context, policy string) bool {
+	if strings.TrimSpace(policy) == "" {
+		return false
+	}
+	answer, err := extractor.generator.Generate(ctx, CountingInstruction, policy, 4)
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(answer)), "yes")
 }
 
 func truncateAnswer(text string) string {

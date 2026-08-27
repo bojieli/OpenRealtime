@@ -140,7 +140,7 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		}
 		request := cognition.Request{
 			SourceRevision: decision.Revision.ID,
-			Standing:       standing, Interjecting: true, Because: string(interaction.ActSpeakThrough),
+			Standing:       standing, Counting: runtime.countingIsInForce(), Interjecting: true, Because: string(interaction.ActSpeakThrough),
 			Heard: heard,
 		}
 		// An interjection that cannot run is an interjection that does not
@@ -368,9 +368,9 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 		standing, _, _ := runtime.cognitionExtras(0)
 		request := cognition.Request{
 			SourceRevision: decision.Revision.ID,
-			Standing:       standing,
-			Because:        string(interaction.ActCallTool),
-			Heard:          decision.Revision.Text(),
+			Standing:       standing, Counting: runtime.countingIsInForce(),
+			Because: string(interaction.ActCallTool),
+			Heard:   decision.Revision.Text(),
 		}
 		// runSlow rather than the engine directly: a proposal that nobody
 		// dispatches is a key nobody presses. The engine produces the call and
@@ -519,8 +519,8 @@ func (runtime *runtime) speakIntoSilence(
 		standing, _, _ := runtime.cognitionExtras(0)
 		request := cognition.Request{
 			SourceRevision: decision.Revision.ID,
-			Standing:       standing,
-			Because:        string(act),
+			Standing:       standing, Counting: runtime.countingIsInForce(),
+			Because: string(act),
 			// The silence is the thing that happened, and a turn with nothing
 			// new in front of it produces nothing at all.
 			Observed: "nobody has said anything for " + renderSilence(uint64(quiet)),

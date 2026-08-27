@@ -225,6 +225,10 @@ type Request struct {
 	// trajectory in which it has already spoken and nothing has changed, and
 	// the most natural thing to write is what it wrote last time.
 	Holding bool
+	// Counting says a policy in force asks for a running count, which is the
+	// one kind of policy the voice needs different guidance for. It is read
+	// from the policy when it is pinned, by the pass that reads the policy.
+	Counting bool
 	// Standing are the interaction policies people set out loud and have not
 	// lifted.
 	//
@@ -387,7 +391,7 @@ func Instruct(prompt string, request Request) string {
 	if request.Interjecting {
 		prompt += "\n\n" + InterjectingInstruction
 	}
-	if reason := becauseInstruction(request.Because, request.Standing); reason != "" {
+	if reason := becauseInstruction(request.Because, request.Counting); reason != "" {
 		prompt += "\n\n" + reason
 	}
 	if request.PendingRepair {
@@ -564,27 +568,7 @@ func validateCapabilities(capabilities []continuation.Capability) error {
 // there are seven of them; only the two that mean "say something into a turn
 // that is not yours" need explaining, because those are the two where the
 // voice cannot work out from the conversation alone what it is for.
-// asksForACount reports that one of the policies in force asks for a running
-// count.
-//
-// It reads the person's own words, and it chooses which guidance to attach
-// rather than what to do - the acts, the conditions and the content are all
-// decided elsewhere. Attaching the arithmetic to every running commentary is
-// what taught a waiter to count; attaching it to none of them loses the first
-// animal four times in five.
-func asksForACount(standing []string) bool {
-	for _, policy := range standing {
-		lowered := strings.ToLower(policy)
-		for _, asking := range []string{"count", "how many", "running total", "tally", "number of"} {
-			if strings.Contains(lowered, asking) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func becauseInstruction(act string, standing []string) string {
+func becauseInstruction(act string, counting bool) string {
 	switch act {
 	case "speak-through":
 		// Composed for what the policy asks, not enumerated for every kind of
@@ -608,7 +592,7 @@ func becauseInstruction(act string, standing []string) string {
 			"reply with " + WaitToken + " and nothing else. The sentence they are still saying is " +
 			"shown after the conversation because they have not finished it, not because it does " +
 			"not count."
-		if !asksForACount(standing) {
+		if !counting {
 			return general
 		}
 		// Worked through rather than stated. Every shorter form was read one

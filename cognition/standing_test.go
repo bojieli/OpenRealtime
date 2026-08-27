@@ -92,7 +92,7 @@ func TestTheVoiceIsToldWhatTheTurnWasCalledFor(t *testing.T) {
 		t.Fatalf("an interruption was not told it exists to correct something:\n%s", correcting)
 	}
 	counting := instructionFor(t, cognition.Request{
-		Interjecting: true, Because: "speak-through",
+		Interjecting: true, Because: "speak-through", Counting: true,
 		Standing: []string{"count the animals out loud (1m ago)"},
 	})
 	if !strings.Contains(counting, "Count every one of them") {
@@ -101,8 +101,9 @@ func TestTheVoiceIsToldWhatTheTurnWasCalledFor(t *testing.T) {
 	// And a running commentary that is not a count is not told how to count.
 	// Attached to every one of them, the arithmetic taught a waiter scenario
 	// to count: asked to order the dish that fits, the agent said "4 4 4".
+	// The same act, a policy that is not a count: the arithmetic is withheld.
 	ordering := instructionFor(t, cognition.Request{
-		Interjecting: true, Because: "speak-through",
+		Interjecting: true, Because: "speak-through", Counting: false,
 		Standing: []string{"order the dish that fits when the waiter names one (1m ago)"},
 	})
 	if strings.Contains(ordering, "Count every one of them") {

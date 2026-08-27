@@ -361,6 +361,22 @@ func (runtime *runtime) cognitionExtras(sourceRevision uint64) (standing []strin
 	return runtime.pinboard.Lines(runtime.scheduler.NowNS()), interjecting, heard
 }
 
+// countingIsInForce reports that one of the pinned policies asks for a running
+// count, which was read off the policy by the pass that pinned it.
+//
+// It replaces a list of words - count, tally, running total - that I chose
+// after watching one benchmark. The words people use for this are not
+// enumerable, and a system that only recognises the ones I happened to see is
+// a system tuned to what I happened to see.
+func (runtime *runtime) countingIsInForce() bool {
+	for _, standing := range runtime.pinboard.InForce() {
+		if standing.Counting {
+			return true
+		}
+	}
+	return false
+}
+
 func errorText(err error) string {
 	if err == nil {
 		return ""
