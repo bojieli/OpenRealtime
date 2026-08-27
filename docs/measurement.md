@@ -2294,7 +2294,27 @@ model, arriving at the other reader of the same trajectory.
 
 ## F60 - where the suite stands, and what the session's failures had in common
 
-48/55, no scenario below 4/5. Five at 5/5: asked not to be interrupted, a
+50/55, eight scenarios at 5/5, none below 3/5. An earlier reading of this
+finding said 48/55 and five at 5/5; the two unit fixes below took it further.
+
+The last structural fault was two questions sharing one unit. "What did they
+ask for" is read in the turn it was asked in, and a turn ends when the agent
+speaks - which is right, and is what lets a policy be read whole across a
+recogniser's splits. "How much has the agent covered" cannot use that unit: the
+mark is taken at the moment the agent speaks, so the turn it would be compared
+against begins immediately after it and the mark is never a prefix of it.
+
+The symptom was an absence rather than a wrong value. The fact the voice is
+handed about what it has already spoken for vanished from the prompt on every
+reading after the first interjection, and the same fault silenced the guard
+against acting on the sentence that set a policy - so the voice counted through
+the instruction itself, "One." after "as I mentioned them" and "Two." four
+times after "and say nothing else", before any animal existed.
+
+Speaking does not unsay what somebody said. Both are now measured against the
+person's own speech, which runs on through the agent's interjections.
+
+Five at 5/5: asked not to be interrupted, a
 recorded menu, cutting in on something wrong, an acknowledgement is not an
 interruption, and - since the cold-start fix - the control.
 
