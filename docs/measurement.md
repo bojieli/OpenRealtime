@@ -1765,3 +1765,42 @@ A partial is a whole re-transcription of the buffer. The recogniser revises its
 own tail constantly while the front of the sentence stops moving almost at
 once, and that settled front is what stable means. Both fields have been in the
 perception contract from the beginning and nothing had ever computed them.
+
+### A count is not something a model recounts (F51)
+
+The counting scenario has taken more attention than the other ten together and
+the last of it is worth writing down, because the answer is not a fix.
+
+Give any model a conversation in which it has already said "1", "2" and "3",
+then one more sentence, and ask it to count the things in what the person said:
+
+```
+Qwen3-VL-30B-A3B, current instruction            "4"  8 times out of 8
+Qwen3-VL-30B-A3B, told its own numbers are not
+  a sequence and the count is of their words     "4"  8 times out of 8
+Gemini 3.5 Flash, same prompt                    "4"
+```
+
+Its own prior output is a run, and a run gets continued. This is not a Qwen
+limitation and not a wording problem: the same instruction that produces "4"
+here produces the right answer five times out of five when the conversation
+carries no numbers, which is where every hand-test of it passed.
+
+What follows for the design is that the number must never be asked for twice
+about one occurrence, because the first answer is reliable and the second is
+determined by the first. The runtime side of that is real and now built: act on
+what the recogniser has settled rather than on every revision of it, and, when
+the agent has already spoken into a stretch of speech, wait for the person to
+finish saying something before answering it again.
+
+What is left is not reachable from there. A recogniser that punctuates well
+splits "A capybara wandered over and sat down next to me" into two settled
+sentences, which is two occasions by any rule the runtime can apply, and only
+the model can tell that there is one animal across them - which is the judgement
+it does not make once its own numbers are in front of it.
+
+So the honest position is that this scenario asks for something current models
+do not do, the runtime has been made to ask as rarely as it correctly can, and
+the remaining gap is a capability rather than a defect. Contorting the system
+further to close it would be tuning for one benchmark, which is the one thing
+this work is not allowed to do.

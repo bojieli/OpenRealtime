@@ -30,10 +30,15 @@ import (
 //
 // It never escalates. An interjection is not an answer, and handing it to the
 // reasoner would start work on a turn nobody has finished.
-// finishedSomething reports that a stretch of new speech completes a sentence
-// or a clause, which is the smallest thing somebody can finish saying.
+// finishedSomething reports that a stretch of new speech completes a sentence.
+//
+// Sentence-final marks only. A clause was the first attempt and commas are
+// far too common - a recogniser that punctuates well puts one in almost every
+// chunk it settles, so the test passed on nearly every revision and the count
+// still came back "four five". What a running commentary answers is a thing
+// somebody finished saying.
 func finishedSomething(text string) bool {
-	return strings.ContainsAny(text, ".!?;:,。！？；：、")
+	return strings.ContainsAny(text, ".!?。！？")
 }
 
 func (runtime *runtime) interject(decision interaction.Context) {
