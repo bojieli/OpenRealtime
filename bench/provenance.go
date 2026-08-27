@@ -30,6 +30,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -143,10 +144,34 @@ func describeMachine() Machine {
 			}
 		}
 	}
-	if payload, err := exec.Command("nvidia-smi", "--query-gpu=name", "--format=csv,noheader").Output(); err == nil {
-		result.GPU = strings.TrimSpace(strings.Split(string(payload), "\n")[0])
-	}
+	// A machine description must not make a benchmark depend on the health of
+	// the accelerator control plane. nvidia-smi can enter uninterruptible kernel
+	// wait after a driver fault, which used to stop a run before its first task
+	// merely because provenance wanted the card's name. Linux exposes that
+	// immutable identity directly; an absent file means the GPU is unknown, not
+	// that measurement should execute another program and wait indefinitely.
+	result.GPU = nvidiaGPUFromProc("/proc/driver/nvidia/gpus")
 	return result
+}
+
+func nvidiaGPUFromProc(root string) string {
+	paths, err := filepath.Glob(filepath.Join(root, "*", "information"))
+	if err != nil {
+		return ""
+	}
+	for _, path := range paths {
+		payload, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(payload), "\n") {
+			name, value, found := strings.Cut(line, ":")
+			if found && strings.TrimSpace(name) == "Model" {
+				return strings.TrimSpace(value)
+			}
+		}
+	}
+	return ""
 }
 
 // Fingerprint is a short, stable identity for a configuration, so two runs of
