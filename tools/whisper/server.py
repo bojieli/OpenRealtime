@@ -45,9 +45,18 @@ class Recogniser:
             # and the agent deciding whether to answer. A beam buys accuracy
             # that a partial re-transcribed three hundred milliseconds later
             # will supersede anyway.
+            # transcribe, never translate. Whisper can do both, and told the
+            # audio is English when it is not, it produces English - which is
+            # translation wearing a recogniser's clothes. Measured, a Mandarin
+            # line came back as "Hello. I'm very happy to meet you.", so an
+            # agent asked to interpret was handed the interpretation and asked
+            # to interpret it again. It said "man. man. man. man."
+            #
+            # A recogniser that rewrites what somebody said is worse than one
+            # that hears them badly, because nothing downstream can tell.
             segments, info = self.model.transcribe(
-                io.BytesIO(audio), language=self.language, beam_size=1,
-                condition_on_previous_text=False,
+                io.BytesIO(audio), language=self.language, task="transcribe",
+                beam_size=1, condition_on_previous_text=False,
             )
             return "".join(segment.text for segment in segments).strip(), info.language
 
@@ -134,13 +143,18 @@ def main():
     parser.add_argument("--model", default="mobiuslabsgmbh/faster-whisper-large-v3-turbo")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--compute-type", default="float16")
-    parser.add_argument("--language", default="en")
+    # Empty means detect it. A fixed language is a claim about what is about
+    # to be said, and it is wrong the moment somebody else in the room speaks
+    # another one - which is the case two scenarios in this suite exist to
+    # test. Detection costs a little on very short audio and buys not silently
+    # rewriting what people say.
+    parser.add_argument("--language", default="")
     parser.add_argument("--port", type=int, default=8003)
     arguments = parser.parse_args()
 
     started = time.perf_counter()
     recogniser = Recogniser(arguments.model, arguments.device,
-                            arguments.compute_type, arguments.language)
+                            arguments.compute_type, arguments.language or None)
     recogniser.warm(silence())
     print(f"ready on :{arguments.port} after {time.perf_counter() - started:.1f}s", flush=True)
     ThreadingHTTPServer(("127.0.0.1", arguments.port), handler_for(recogniser)).serve_forever()
