@@ -30,6 +30,8 @@ const (
 	ChannelComputer Channel = "computer"
 	// ChannelArtifact is HTML rendered for a person to look at.
 	ChannelArtifact Channel = "artifact"
+	// ChannelDownload is a generated file offered to the person.
+	ChannelDownload Channel = "download"
 )
 
 // Tool is one declared, runnable tool.
@@ -62,6 +64,8 @@ type result struct {
 	// display it without parsing the tool output back out of a string it just
 	// handed to the model.
 	Artifact *Artifact
+	// Download is set when a call published a generated file.
+	Download *Download
 }
 
 // ToolHost declares and runs everything on the action side that is not speech
@@ -76,17 +80,28 @@ type ToolHost struct {
 	files     *console.Host
 	browser   *BrowserContext
 	artifacts *ArtifactStore
+	downloads *DownloadStore
 	policy    action.PolicyDecision
 	tools     []Tool
 }
 
 // NewToolHost assembles the declared set. Any of the three may be nil, and the
 // corresponding channel is then simply absent rather than declared and broken.
-func NewToolHost(files *console.Host, browserContext *BrowserContext, artifacts *ArtifactStore) *ToolHost {
+func NewToolHost(
+	files *console.Host, browserContext *BrowserContext, artifacts *ArtifactStore,
+	downloadStores ...*DownloadStore,
+) *ToolHost {
 	if artifacts == nil {
 		artifacts = NewArtifactStore(0)
 	}
-	host := &ToolHost{files: files, browser: browserContext, artifacts: artifacts}
+	var downloads *DownloadStore
+	if len(downloadStores) > 0 {
+		downloads = downloadStores[0]
+	}
+	if downloads == nil {
+		downloads = NewDownloadStore(0)
+	}
+	host := &ToolHost{files: files, browser: browserContext, artifacts: artifacts, downloads: downloads}
 	if browserContext != nil {
 		host.policy = computeruse.TargetPolicy(browserContext.Target())
 	}
@@ -107,6 +122,7 @@ func NewToolHost(files *console.Host, browserContext *BrowserContext, artifacts 
 	}
 
 	host.tools = append(host.tools, host.artifactTool())
+	host.tools = append(host.tools, host.downloadTool())
 
 	if browserContext != nil {
 		// The narrowed vocabulary, not the target-free one: the model is told
@@ -159,6 +175,9 @@ func (host *ToolHost) Lookup(name string) (Tool, bool) {
 
 // Artifacts is the store, for a caller serving or inspecting them.
 func (host *ToolHost) Artifacts() *ArtifactStore { return host.artifacts }
+
+// Downloads is the generated-file store.
+func (host *ToolHost) Downloads() *DownloadStore { return host.downloads }
 
 // Run executes one declared tool.
 //
@@ -261,6 +280,58 @@ func (host *ToolHost) artifactTool() Tool {
 				return result{}, err
 			}
 			return result{Output: string(output), Artifact: artifact}, nil
+		},
+	}
+}
+
+// downloadTool publishes file output without granting an arbitrary filesystem
+// read. Text covers generated source/data documents; base64 covers binary
+// formats. The same id revises an existing download in place.
+func (host *ToolHost) downloadTool() Tool {
+	parameters := json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "artifact_id": {"type":"string","description":"Stable id; letters, digits, dash, or underscore."},
+    "filename": {"type":"string","description":"The safe file name shown to the person."},
+    "media_type": {"type":"string","description":"IANA media type, for example text/csv or application/json."},
+    "text": {"type":"string","description":"UTF-8 file contents. Use this for text formats."},
+    "base64": {"type":"string","description":"Base64 file contents. Use this instead of text for binary formats."}
+  },
+  "required": ["artifact_id", "filename", "media_type"],
+  "oneOf": [{"required":["text"]},{"required":["base64"]}],
+  "additionalProperties": false
+}`)
+	return Tool{
+		Name: "publish_download",
+		Description: fmt.Sprintf(
+			"Publish a generated file for the person to download (up to %d bytes). Use text for CSV, JSON, Markdown, source, and other text formats; use base64 for binary files. Reuse artifact_id to revise it.",
+			host.downloads.MaxBytes()),
+		Parameters: parameters, Confirm: string(action.ConfirmNever),
+		SessionConfirm: string(action.ConfirmNever), Channel: ChannelDownload,
+		run: func(_ context.Context, _ string, arguments json.RawMessage) (result, error) {
+			var parsed struct {
+				ArtifactID string `json:"artifact_id"`
+				Filename   string `json:"filename"`
+				MediaType  string `json:"media_type"`
+				Text       string `json:"text"`
+				Base64     string `json:"base64"`
+			}
+			if err := json.Unmarshal(arguments, &parsed); err != nil {
+				return result{}, fmt.Errorf("decode arguments: %w", err)
+			}
+			download, err := host.downloads.Put(
+				parsed.ArtifactID, parsed.Filename, parsed.MediaType, parsed.Text, parsed.Base64)
+			if err != nil {
+				return result{}, err
+			}
+			output, err := json.Marshal(map[string]any{
+				"artifact_id": download.ID, "filename": download.Filename,
+				"bytes": download.Bytes, "version": download.Version, "status": "available",
+			})
+			if err != nil {
+				return result{}, err
+			}
+			return result{Output: string(output), Download: download}, nil
 		},
 	}
 }

@@ -91,6 +91,7 @@ export class ToolBridge extends EventTarget {
       resolve({
         output: message.output, error: message.error,
         channel: message.channel, artifact: message.artifact,
+        download: message.download,
       });
     }
   }

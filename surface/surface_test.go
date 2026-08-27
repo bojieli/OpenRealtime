@@ -289,7 +289,7 @@ func TestArtifactRouteDeniesTheNetworkAndAllowsItsOwnScript(t *testing.T) {
 
 // --- what the surface declares ----------------------------------------------
 
-func TestArtifactChannelIsDeclaredWithNoBrowserAndNoFiles(t *testing.T) {
+func TestArtifactAndDownloadChannelsAreDeclaredWithNoBrowserAndNoFiles(t *testing.T) {
 	host := surface.NewToolHost(nil, nil, nil)
 	tool, declared := host.Lookup("display_artifact")
 	if !declared {
@@ -297,6 +297,10 @@ func TestArtifactChannelIsDeclaredWithNoBrowserAndNoFiles(t *testing.T) {
 	}
 	if tool.Channel != surface.ChannelArtifact {
 		t.Fatalf("display_artifact belongs to the artifact channel, got %q", tool.Channel)
+	}
+	download, declared := host.Lookup("publish_download")
+	if !declared || download.Channel != surface.ChannelDownload {
+		t.Fatalf("file output must be available without browser or disk: %+v", download)
 	}
 	for _, other := range host.Tools() {
 		if other.Channel == surface.ChannelComputer {
@@ -311,7 +315,7 @@ func TestArtifactChannelIsDeclaredWithNoBrowserAndNoFiles(t *testing.T) {
 func TestComputerUseIsDeclaredOnlyWithABrowser(t *testing.T) {
 	browserContext := connectFakeBrowser(t)
 	host := surface.NewToolHost(fileHost(t), browserContext, nil)
-	var computer, files, artifacts int
+	var computer, files, artifacts, downloads int
 	for _, tool := range host.Tools() {
 		switch tool.Channel {
 		case surface.ChannelComputer:
@@ -323,13 +327,16 @@ func TestComputerUseIsDeclaredOnlyWithABrowser(t *testing.T) {
 			files++
 		case surface.ChannelArtifact:
 			artifacts++
+		case surface.ChannelDownload:
+			downloads++
 		}
 	}
 	if computer != 10 {
 		t.Fatalf("the published vocabulary is ten actions, got %d", computer)
 	}
-	if files != 3 || artifacts != 1 {
-		t.Fatalf("expected three file tools and one artifact tool, got %d and %d", files, artifacts)
+	if files != 3 || artifacts != 1 || downloads != 1 {
+		t.Fatalf("expected three file tools, one UI artifact, and one download, got %d, %d, %d",
+			files, artifacts, downloads)
 	}
 	click, _ := host.Lookup(computeruse.Click)
 	if click.Confirm != string(action.ConfirmPolicy) {
@@ -408,7 +415,7 @@ func TestConfigNamesEveryChannelTheSurfaceCanCarry(t *testing.T) {
 			t.Fatalf("computer tool %q did not declare the client target", tool.Name)
 		}
 	}
-	for _, expected := range []string{"tool", "computer", "artifact"} {
+	for _, expected := range []string{"tool", "computer", "artifact", "download"} {
 		if !channels[expected] {
 			t.Fatalf("the page must be told which channel each tool is on; %q is missing", expected)
 		}

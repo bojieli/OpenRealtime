@@ -2,14 +2,16 @@ import { createTransport } from "./transport.js";
 import { Recorder, Player } from "./audio.js";
 import { VideoSource, RemoteVideoSource } from "./video.js";
 import { ToolBridge, declarations, channelOf } from "./tools.js";
-import { ArtifactPanel } from "./artifacts.js";
+import { ArtifactPanel, DownloadPanel } from "./artifacts.js";
 import { Channels, CHANNELS } from "./channels.js";
+import { DebugTimeline } from "./timeline.js";
 
 const element = (id) => document.getElementById(id);
 const elements = Object.fromEntries([
   "transport", "connect", "disconnect", "state", "dot", "meters",
-  "observation-cards", "action-cards", "artifact-tabs", "artifact-host",
+  "observation-cards", "action-cards", "artifact-tabs", "artifact-host", "downloads",
   "events", "filter-media", "clear-events", "save-events",
+  "timeline", "timeline-filter", "timeline-summary", "clear-timeline",
   "session-json", "apply-session", "reset-session", "negotiated",
   "instructions", "apply-instructions", "instructions-state",
   "stats", "tools-root", "tool-list",
@@ -25,6 +27,8 @@ let player = null;
 let tools = null;
 let channels = null;
 let artifacts = null;
+let downloads = null;
+let timeline = null;
 const sources = new Map();
 const transcript = [];
 
@@ -63,6 +67,7 @@ function defaultSession() {
       version: 1,
       supports: ["video.input", "observations", "computer_use"],
       observers: ["audio", "video"],
+      debug: { enabled: true, include_payloads: false },
     },
   };
   if (config.tools.length) session.tools = declarations(config.tools);
@@ -150,6 +155,7 @@ async function connect() {
   const name = elements.transport.value;
   channels.reset();
   artifacts.clear();
+  downloads.clear();
   elements.artifactHost.querySelector(".placeholder")?.removeAttribute("hidden");
   transcript.length = 0;
   endpointAt = firstAudioAt = negotiated = null;
@@ -347,6 +353,11 @@ function handle(event) {
       observed(event);
       break;
 
+    case "openrealtime.debug.event":
+      timeline.add(event);
+      setStat("last debug event", `${event.category} · ${event.name}`);
+      break;
+
     case "response.function_call_arguments.done":
       runTool(event);
       break;
@@ -453,7 +464,9 @@ function interrupt() {
 async function runTool(event) {
   const channel = channelOf(config.tools, event.name);
   const key = `call-${event.call_id}`;
-  const card = { computer: "act.computer", artifact: "act.artifact" }[channel] ?? "act.tools";
+  const card = {
+    computer: "act.computer", artifact: "act.artifact", download: "act.download",
+  }[channel] ?? "act.tools";
   channels.setState(card, "live");
   channels.record(card, {
     title: event.name, body: summarise(channel, event.arguments), kind: "mono", key,
@@ -482,6 +495,12 @@ async function runTool(event) {
       channels.record("obs.tools", {
         title: `${event.name} · displayed`,
         body: `${result.artifact.title} · version ${result.artifact.version}`,
+      });
+    } else if (result.download) {
+      downloads.show(result.download);
+      channels.record("obs.tools", {
+        title: `${event.name} · available`,
+        body: `${result.download.filename} · ${result.download.bytes} bytes`,
       });
     } else {
       const output = result.output ?? "";
@@ -519,6 +538,10 @@ function summarise(channel, args) {
   }
   if (channel === "artifact") {
     return `${parsed.title ?? parsed.artifact_id ?? "artifact"} · ${(parsed.html ?? "").length} bytes`;
+  }
+  if (channel === "download") {
+    return `${parsed.filename ?? parsed.artifact_id ?? "download"} · ` +
+      `${(parsed.text ?? parsed.base64 ?? "").length} encoded chars`;
   }
   if (channel === "computer") {
     const where = parsed.source ? `${parsed.source} ` : "";
@@ -670,7 +693,9 @@ async function load() {
   config = await response.json();
 
   channels = new Channels(elements.observationCards, elements.actionCards, elements.meters);
+  timeline = new DebugTimeline(elements.timeline, elements.timelineSummary, elements.timelineFilter);
   artifacts = new ArtifactPanel(elements.artifactTabs, elements.artifactHost);
+  downloads = new DownloadPanel(elements.downloads);
   artifacts.addEventListener("interaction", (message) => {
     submitText(message.detail.text, `artifact · ${message.detail.artifactId}`);
   });
@@ -699,6 +724,7 @@ elements.screen.addEventListener("click", () => toggleSource("screen", elements.
 elements.camera.addEventListener("click", () => toggleSource("camera", elements.camera));
 elements.browser.addEventListener("click", () => toggleSource("browser", elements.browser));
 elements.clearEvents.addEventListener("click", () => { elements.events.innerHTML = ""; });
+elements.clearTimeline.addEventListener("click", () => timeline.clear());
 elements.saveEvents.addEventListener("click", () => {
   const blob = new Blob([JSON.stringify({ transcript, coverage: channels.summary() }, null, 2)],
                         { type: "application/json" });

@@ -189,7 +189,7 @@ func startSurfaceServer(
 	return local.URL
 }
 
-// The whole point, in one run: six channels in, five out, on both transports.
+// The whole point, in one run: six channels in, six out, on both transports.
 func TestTheSurfaceCarriesEveryChannel(t *testing.T) {
 	node, chromium := requireBrowser(t)
 
@@ -213,7 +213,7 @@ func TestTheSurfaceCarriesEveryChannel(t *testing.T) {
 	defer browserContext.Close()
 
 	// One call per slow turn, in this order, because a client whose point is
-	// that it runs three different kinds of tool has to be seen doing each of
+	// that it runs four different kinds of tool has to be seen doing each of
 	// them separately.
 	stack := testserver.Start(t, testserver.Config{
 		Transcript: "please read the notes file",
@@ -221,6 +221,7 @@ func TestTheSurfaceCarriesEveryChannel(t *testing.T) {
 		ToolCalls: []testserver.ScriptedCall{
 			{Name: "read_file", Arguments: `{"path":"notes.txt"}`},
 			{Name: "display_artifact", Arguments: artifactArguments},
+			{Name: "publish_download", Arguments: downloadArguments},
 			{Name: "computer.click", Arguments: fmt.Sprintf(
 				`{"source":%q,"x":200,"y":152}`, browserContext.Source())},
 		},
@@ -258,6 +259,9 @@ const artifactArguments = `{"artifact_id":"deadline","title":"Deadline",` +
 	`onclick=\"window.parent.postMessage({text:'I acknowledged the deadline'},'*')\">Acknowledge</button>` +
 	`<script>document.getElementById('headline').dataset.ready='yes'</script>` +
 	`</body></html>"}`
+
+const downloadArguments = `{"artifact_id":"deadline-report","filename":"deadline.csv",` +
+	`"media_type":"text/csv","text":"owner,deadline\\ndeveloper,Friday\\n"}`
 
 // A surface with nothing attached is still a complete client for the channels
 // that need nothing attached, and the page has to say which ones those are

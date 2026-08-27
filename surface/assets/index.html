@@ -50,11 +50,18 @@
         sandbox that can draw anything and reach nothing.
       </p>
     </div>
+    <section class="download-shelf">
+      <h3>Generated files <span class="muted">agent &rarr; you</span></h3>
+      <div class="downloads" id="downloads">
+        <p class="hint">No downloadable files published yet.</p>
+      </div>
+    </section>
   </section>
 
   <aside class="inspector">
     <nav class="tabs">
       <button data-tab="events" class="active">Events</button>
+      <button data-tab="timeline">Timeline</button>
       <button data-tab="session">Session</button>
       <button data-tab="prompt">Prompt</button>
       <button data-tab="stats">Stats</button>
@@ -68,6 +75,21 @@
         <button id="save-events" class="small">Save</button>
       </div>
       <div class="events" id="events"></div>
+    </div>
+
+    <div class="panel" id="tab-timeline">
+      <div class="controls timeline-controls">
+        <input id="timeline-filter" type="text" autocomplete="off"
+               placeholder="Filter subsystem, event, or correlation id">
+        <button id="clear-timeline" class="small">Clear</button>
+      </div>
+      <p class="hint" id="timeline-summary">Waiting for debug events.</p>
+      <div class="timeline" id="timeline"></div>
+      <p class="hint">
+        Bars use a logarithmic scale so sub-10 ms policy decisions and
+        multi-second provider calls remain visible together. Select a row for
+        correlation metadata and any payload the session allowed.
+      </p>
     </div>
 
     <div class="panel" id="tab-session">

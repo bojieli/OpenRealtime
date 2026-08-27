@@ -62,6 +62,9 @@ type Config struct {
 	// Artifacts stores the HTML the agent renders. Never nil in a built
 	// server; New supplies one.
 	Artifacts *ArtifactStore
+	// Downloads stores files the agent publishes for the person. New supplies
+	// a bounded in-memory store when it is omitted.
+	Downloads *DownloadStore
 	// Logger receives operational messages.
 	Logger *slog.Logger
 	// DialTimeout bounds connecting to the endpoint.
@@ -99,9 +102,12 @@ func New(config Config) (*Server, error) {
 	if config.Artifacts == nil {
 		config.Artifacts = NewArtifactStore(0)
 	}
+	if config.Downloads == nil {
+		config.Downloads = NewDownloadStore(0)
+	}
 	return &Server{
 		config: config,
-		tools:  NewToolHost(config.Files, config.Browser, config.Artifacts),
+		tools:  NewToolHost(config.Files, config.Browser, config.Artifacts, config.Downloads),
 	}, nil
 }
 
@@ -115,6 +121,7 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/webrtc", server.webrtc)
 	mux.HandleFunc("GET /api/browser/frame", server.browserFrame)
 	mux.Handle("GET /artifacts/{id}", server.Artifacts())
+	mux.Handle("GET /downloads/{id}", server.Downloads())
 	return mux
 }
 
@@ -130,6 +137,9 @@ func (server *Server) Handler() http.Handler {
 // executes in a context that can reach neither this page's DOM nor its
 // storage.
 func (server *Server) Artifacts() http.Handler { return server.config.Artifacts }
+
+// Downloads serves generated files with attachment disposition.
+func (server *Server) Downloads() http.Handler { return server.config.Downloads }
 
 // ToolHost is what the page's tool socket dispatches to.
 func (server *Server) ToolHost() *ToolHost { return server.tools }

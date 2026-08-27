@@ -2,7 +2,7 @@
 //
 //   node surface.mjs <surface url> <websocket|webrtc>
 //
-// The surface exists because eleven channels running at once fail in ways that
+// The surface exists because twelve channels running at once fail in ways that
 // are invisible one at a time, and this file is the same argument applied to
 // testing it: what it checks is not that each piece works but that they all
 // carry something in one session, against one server, over one transport.
@@ -202,6 +202,34 @@ try {
       stream.getVideoTracks().forEach((track) => voice.addTrack(track));
       return voice;
     };
+
+    // Headless Chromium has no operating-system display picker, but display
+    // capture itself is still a browser media path. A changing canvas track
+    // gives getDisplayMedia a real MediaStreamTrack, which exercises source
+    // declaration, frame encoding, negotiated limits, transport, server
+    // observation, thumbnail rendering, and source shutdown without granting
+    // this test runner an ambient desktop.
+    const display = document.createElement('canvas');
+    display.width = 960;
+    display.height = 540;
+    const paint = display.getContext('2d');
+    let frame = 0;
+    const draw = () => {
+      paint.fillStyle = frame++ % 2 ? '#17365d' : '#244f7d';
+      paint.fillRect(0, 0, display.width, display.height);
+      paint.fillStyle = 'white';
+      paint.font = 'bold 48px system-ui';
+      paint.fillText('Shared development screen', 90, 220);
+      paint.font = '28px system-ui';
+      paint.fillText('frame ' + frame, 90, 280);
+    };
+    draw();
+    setInterval(draw, 250);
+    const displayStream = display.captureStream(4);
+    Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', {
+      configurable: true,
+      value: async () => new MediaStream(displayStream.getVideoTracks()),
+    });
     return "installed";
   })()`);
 
@@ -213,9 +241,9 @@ try {
 
   const declaredChannels = await evaluate(
     "document.querySelectorAll('.channel').length");
-  check("every channel has a card", declaredChannels === 11, `${declaredChannels} cards`);
+  check("every channel has a card", declaredChannels === 12, `${declaredChannels} cards`);
   const meters = await evaluate("document.querySelectorAll('.meter').length");
-  check("every channel has a meter", meters === 11, `${meters} meters`);
+  check("every channel has a meter", meters === 12, `${meters} meters`);
 
   const declared = JSON.parse(await evaluate("document.getElementById('session-json').value"));
   check("the session declares the extension",
@@ -226,6 +254,10 @@ try {
   check("generative UI is declared as an ordinary function tool",
     declared.tools?.some((tool) => tool.name === "display_artifact" && tool.type === "function"),
     JSON.stringify(declared.tools?.map((tool) => tool.name)));
+  check("downloadable files are declared as an ordinary function tool",
+    declared.tools?.some((tool) => tool.name === "publish_download" && tool.type === "function"));
+  check("the developer debug stream is explicitly requested",
+    declared.openrealtime?.debug?.enabled === true);
   check("the computer-use vocabulary is declared",
     declared.tools?.filter((tool) => tool.name.startsWith("computer.")).length === 10,
     `${declared.tools?.filter((tool) => tool.name.startsWith("computer.")).length} actions`);
@@ -253,6 +285,10 @@ try {
   check("the extension negotiated", negotiated.includes("video.input"), negotiated);
   check("the observers the server will actually run are reported",
     /Observers: [a-z]/.test(negotiated), negotiated);
+  await waitFor("a debug event to reach the timeline", async () =>
+    Number(await evaluate("document.querySelectorAll('.timeline-row').length")) > 0);
+  check("the debug timeline receives timestamped server evidence",
+    Number(await evaluate("document.querySelectorAll('.timeline-row').length")) > 0);
 
   if (MODE === "websocket") {
     await waitFor("captured audio to reach the protocol",
@@ -265,6 +301,15 @@ try {
     check("the peer connection reports connected",
       (await stats())["peer connection"] === "connected");
   }
+
+  // The fake microphone is already live. Assert its onset before long-running
+  // video coverage starts: the raw inspector is deliberately bounded, and a
+  // debug-heavy run can otherwise evict this early event while three visual
+  // sources are being narrated.
+  await waitFor("the gate to hear the fake microphone", () =>
+    sawEvent("in", "input_audio_buffer.speech_started"));
+  check("the server's voice activity gate hears the microphone",
+    await sawEvent("in", "input_audio_buffer.speech_started"));
 
   // --- the three video channels --------------------------------------------
 
@@ -281,6 +326,26 @@ try {
   check("the browser source was declared before any of its frames",
     firstBrowserEvent?.includes("input_video_source.update"),
     firstBrowserEvent?.slice(0, 120));
+
+  await evaluate("document.getElementById('screen').click()");
+  await waitFor("screen-share frames to reach the protocol", async () =>
+    (await events("out")).some((line) =>
+      line.includes("input_video_frame.append") && line.includes('"source":"screen"')));
+  check("the optional screen-share channel carries frames",
+    (await events("out")).some((line) =>
+      line.includes("input_video_frame.append") && line.includes('"source":"screen"')));
+  const firstScreenEvent = (await events("out")).find((line) => line.includes('"source":"screen"'));
+  check("the shared screen is declared before any of its frames",
+    firstScreenEvent?.includes("input_video_source.update"), firstScreenEvent?.slice(0, 120));
+
+  // The video observer intentionally samples at a much lower cadence than
+  // capture. Wait for this source to be committed before adding another one:
+  // seeing a screen frame leave the browser proves transport, while seeing a
+  // source-labelled observation come back proves the complete perception path.
+  const observedScreen = await waitFor("the shared screen to be narrated",
+    async () => (await channel("obs.screen")).entries.length > 0, 30000);
+  check("the agent receives observations from the shared screen",
+    Boolean(observedScreen), JSON.stringify((await channel("obs.screen")).entries));
 
   await evaluate("document.getElementById('camera').click()");
   await waitFor("camera frames to reach the protocol", async () =>
@@ -323,11 +388,6 @@ try {
     !(await events("in")).slice(-40).some((line) => line.includes("was never declared")));
 
   // --- a turn, and a tool that runs on this machine -------------------------
-
-  await waitFor("the gate to hear the fake microphone", () =>
-    sawEvent("in", "input_audio_buffer.speech_started"));
-  check("the server's voice activity gate hears the microphone",
-    await sawEvent("in", "input_audio_buffer.speech_started"));
 
   await evaluate("document.getElementById('mic').click()");
   await waitFor("the turn to end after muting", () =>
@@ -399,7 +459,29 @@ try {
     (await channel("obs.text")).entries.some((entry) =>
       entry.body.includes("I acknowledged the deadline")));
 
+  // The artifact interaction opened the next scripted turn, which publishes
+  // an actual file rather than placing bytes in the transcript.
+  await waitFor("a generated file to be published", async () =>
+    await evaluate("document.querySelectorAll('.download').length > 0"));
+  const download = await evaluate(`(() => {
+    const link = document.querySelector('.download');
+    return { href: link?.getAttribute('href'), filename: link?.getAttribute('download') };
+  })()`);
+  check("the generated file is offered as a bounded same-origin download",
+    download.href?.startsWith("/downloads/deadline-report?v=") && download.filename === "deadline.csv",
+    JSON.stringify(download));
+  const downloaded = await evaluate(
+    "fetch(document.querySelector('.download').href).then((response) => response.text())");
+  check("the download route serves the file the agent published",
+    downloaded.includes("developer,Friday"), downloaded);
+  check("the file is shown on the download action channel",
+    (await channel("act.download")).entries.some((entry) => entry.title === "publish_download"));
+
   // --- computer use ---------------------------------------------------------
+
+  await evaluate(`
+    document.getElementById('typed').value = 'press the browser button';
+    document.getElementById('compose').dispatchEvent(new Event('submit', {cancelable: true}));`);
 
   await waitFor("the agent to act on the browser", async () =>
     (await channel("act.computer")).entries.length > 0);
@@ -428,6 +510,30 @@ try {
   check("the browser the agent clicked really moved",
     Boolean(pressed), (await channel("obs.browser")).caption);
 
+  // Written output is a distinct action channel, not the transcript of audio.
+  // Reconfigure the same live session and require one real server turn to use
+  // it so the end-to-end test cannot pass on a page that merely has a card for
+  // text output.
+  const beforeText = (await events("in")).filter((line) =>
+    line.includes('"type":"session.updated"')).length;
+  await evaluate(`(() => {
+    const editor = document.getElementById('session-json');
+    const session = JSON.parse(editor.value);
+    session.output_modalities = ['text'];
+    editor.value = JSON.stringify(session, null, 2);
+    document.getElementById('apply-session').click();
+  })()`);
+  await waitFor("text output mode to be acknowledged", async () =>
+    (await events("in")).filter((line) => line.includes('"type":"session.updated"')).length > beforeText);
+  await evaluate(`
+    document.getElementById('typed').value = 'write one short status line';
+    document.getElementById('compose').dispatchEvent(new Event('submit', {cancelable: true}));`);
+  await waitFor("written output to reach its action channel", async () =>
+    (await channel("act.text")).entries.length > 0);
+  check("written output is rendered separately from speech",
+    (await channel("act.text")).entries.some((entry) => entry.body.length > 0),
+    JSON.stringify((await channel("act.text")).entries));
+
   // --- the prompt, and coverage ---------------------------------------------
 
   await evaluate(`
@@ -454,19 +560,14 @@ try {
   const carried = [];
   const silent = [];
   for (const id of ["obs.audio", "obs.text", "obs.screen", "obs.camera", "obs.browser", "obs.tools",
-                    "act.speech", "act.text", "act.computer", "act.tools", "act.artifact"]) {
+                    "act.speech", "act.text", "act.computer", "act.tools", "act.artifact", "act.download"]) {
     ((await channel(id)).count > 0 ? carried : silent).push(id);
   }
   console.log(`\ncarried: ${carried.join(", ")}`);
   console.log(`silent:  ${silent.join(", ") || "none"}`);
 
-  // The screen is the one channel a headless browser cannot give: there is no
-  // display to share. Everything else has to have carried something, and a
-  // channel silent at the end of a run is the finding this whole page exists
-  // to make visible.
-  const mustCarry = silent.filter((id) => id !== "obs.screen" && id !== "act.text");
-  check("every channel a headless run can exercise carried something",
-    mustCarry.length === 0, `silent: ${mustCarry.join(", ")}`);
+  check("all twelve input and output channels carried end to end",
+    silent.length === 0, `silent: ${silent.join(", ")}`);
 
   check("no uncaught exception during the session", pageErrors.length === 0, pageErrors.join("; "));
 } catch (failure) {

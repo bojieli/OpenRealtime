@@ -51,6 +51,7 @@ type toolMessage struct {
 	// model's JSON being what this host just said it was, which is a
 	// dependency with no upside.
 	Artifact *Artifact `json:"artifact,omitempty"`
+	Download *Download `json:"download,omitempty"`
 }
 
 type pendingDecision struct {
@@ -144,6 +145,7 @@ func (session *toolSession) dispatch(ctx context.Context, call toolMessage) {
 	} else {
 		message.Output = outcome.Output
 		message.Artifact = outcome.Artifact
+		message.Download = outcome.Download
 	}
 	if writeErr := session.write(ctx, message); writeErr != nil {
 		session.logger.Warn("tool result could not be delivered",

@@ -278,7 +278,7 @@ try {
 
   const ALL_CHANNELS = ["obs.audio", "obs.text", "obs.screen", "obs.camera", "obs.browser",
                         "obs.tools", "act.speech", "act.text", "act.computer", "act.tools",
-                        "act.artifact"];
+                        "act.artifact", "act.download"];
   const carriedSoFar = new Set();
   const noteCarried = async () => {
     for (const id of ALL_CHANNELS) {

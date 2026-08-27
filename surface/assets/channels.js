@@ -1,7 +1,7 @@
 // The two spaces, as a thing you can look at.
 //
-// Everything on this page is one of eleven channels: six the world uses to
-// reach the agent and five the agent uses to reach the world. They are all
+// Everything on this page is one of twelve channels: six the world uses to
+// reach the agent and six the agent uses to reach the world. They are all
 // live at once, which is the reason this page exists - a voice agent that can
 // also see three screens and click on one of them fails in ways that are
 // obvious when you can watch every channel together and nearly impossible to
@@ -42,6 +42,8 @@ export const CHANNELS = [
     hint: "what the agent asked this machine to do" },
   { id: "act.artifact", side: ACTION, label: "Artifacts", media: false,
     hint: "HTML it wrote for you to look at" },
+  { id: "act.download", side: ACTION, label: "Downloads", media: false,
+    hint: "generated files offered with a bounded attachment URL" },
 ];
 
 const MAX_ENTRIES = 40;

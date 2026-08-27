@@ -103,3 +103,39 @@ export class ArtifactPanel extends EventTarget {
     this.#current = null;
   }
 }
+
+// DownloadPanel renders same-origin attachment URLs returned by the local tool
+// host. It never turns model output into an arbitrary href: ids are validated
+// by the host, and only /downloads/{id} can be selected here.
+export class DownloadPanel {
+  #host;
+  #entries = new Map();
+
+  constructor(host) {
+    this.#host = host;
+  }
+
+  show(download) {
+    this.#host.querySelector(".hint")?.remove();
+    let entry = this.#entries.get(download.id);
+    if (!entry) {
+      entry = document.createElement("a");
+      entry.className = "download";
+      this.#host.append(entry);
+      this.#entries.set(download.id, entry);
+    }
+    entry.href = `/downloads/${encodeURIComponent(download.id)}?v=${download.version}`;
+    entry.download = download.filename;
+    entry.replaceChildren();
+    const name = document.createElement("strong");
+    name.textContent = download.filename;
+    const meta = document.createElement("span");
+    meta.textContent = `${download.media_type} · ${download.bytes.toLocaleString()} bytes · v${download.version}`;
+    entry.append(name, meta);
+  }
+
+  clear() {
+    this.#entries.clear();
+    this.#host.innerHTML = '<p class="hint">No downloadable files published yet.</p>';
+  }
+}
