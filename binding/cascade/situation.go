@@ -529,6 +529,13 @@ func speechSoFar(snapshot trajectory.Snapshot) ([]string, uint64) {
 	return pieces, began
 }
 
+// mustSpeechSoFar is speechSoFar without the turn key, for callers that only
+// need what was said.
+func mustSpeechSoFar(snapshot trajectory.Snapshot) []string {
+	pieces, _ := speechSoFar(snapshot)
+	return pieces
+}
+
 // lastSpokenBefore is the most recent thing this person had said by some point
 // in the log.
 func lastSpokenBefore(items []trajectory.Item) (string, bool) {

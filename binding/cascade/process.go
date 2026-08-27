@@ -295,6 +295,15 @@ func (runtime *runtime) runFast(
 	publishBegan := runtime.scheduler.NowNS()
 	publishErr := runtime.publishAssistant(ctx, result, request, guardSolicitation)
 	turn.stage("publish", runtime.scheduler.NowNS()-publishBegan)
+	if publishErr == nil && result.Committed && strings.TrimSpace(result.AssistantText) != "" {
+		// The agent has now answered this much of what they are saying. Only
+		// the interjection path recorded that, so an ordinary turn had no way
+		// to know it had spoken - and one instruction arriving as four
+		// committed pieces got four replies: "I'm listening", "I'm ready,
+		// please list the animals", twice more, and then a count before any
+		// animal had been mentioned.
+		runtime.markSpoken(strings.Join(mustSpeechSoFar(runtime.store.Snapshot()), " "))
+	}
 	var signalErr error
 	// A turn the voice did not declare finished goes to the reasoner. So does
 	// one carrying a proposal, which is the voice naming a capability it
