@@ -1,6 +1,11 @@
 package cascade
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/bojieli/OpenRealtime/interaction"
+	"github.com/bojieli/OpenRealtime/trajectory"
+)
 
 // TestBeforeTheAgentHasSpokenEverythingHeardIsNew is the regression for the
 // control scenario going to 0/5. heardSinceSpeaking returned nothing for three
@@ -62,5 +67,30 @@ func TestSpeakingAgainNeedsSomethingNewToSpeakAbout(t *testing.T) {
 	}
 	if got := runtime.heardSinceSpeaking("a capybara wandered over and a heron landed"); got == "" {
 		t.Fatal("a second animal counted as nothing new")
+	}
+}
+
+// TestWhoSpokeIsRecordedNotJustDecided is the regression for a conversation
+// that kept saying "user:" about somebody who was not the user. The speaker
+// verdict reached the situation the interaction model reads and stopped there,
+// so every later turn - the voice included - read a history in which the
+// person the session is with had asked about the milk.
+func TestWhoSpokeIsRecordedNotJustDecided(t *testing.T) {
+	if otherVoiceSource == "" {
+		t.Fatal("a voice that is not the user's has no name")
+	}
+	item := trajectory.Item{
+		Kind: trajectory.KindObservation, Content: "did you get the milk on the way in",
+		Observation: &trajectory.ObservationMeta{
+			Source: otherVoiceSource, Authority: trajectory.AuthorityUser,
+		},
+	}
+	if got := interaction.SpeakerOf(item); got != otherVoiceSource {
+		t.Fatalf("a recorded stranger reads back as %q", got)
+	}
+	// And the person the session is with still reads as the user.
+	item.Observation.Source = "microphone"
+	if got := interaction.SpeakerOf(item); got != "user" {
+		t.Fatalf("the session's own person reads back as %q", got)
 	}
 }

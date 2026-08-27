@@ -13,6 +13,7 @@ import (
 	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/perception/voices"
 	"github.com/bojieli/OpenRealtime/session"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -739,6 +740,22 @@ func (runtime *runtime) setStableText(text string) {
 func (runtime *runtime) commitObservation(ctx context.Context, observation perception.Observation) error {
 	if err := observation.Validate(); err != nil {
 		return err
+	}
+	// Who said it goes into the log, not only into the instant.
+	//
+	// The verdict reached the situation the interaction model reads and
+	// stopped there, so the conversation every later reader sees still said
+	// "user: did you get the milk on the way in" - for the rest of the
+	// session. The instant was right and the history was wrong, which is the
+	// worse half: a decision is taken once and the history is read by every
+	// turn after it.
+	//
+	// The source is where this belongs. SpeakerOf already derives the speaker
+	// from it, so naming it here is what makes the window, the voice and the
+	// reasoner agree without any of them learning about embeddings.
+	if observation.Authority == trajectory.AuthorityUser &&
+		runtime.voices.Verdict() == voices.Different {
+		observation.Source = otherVoiceSource
 	}
 	revision := runtime.nextRevision()
 	supersedes := uint64(0)

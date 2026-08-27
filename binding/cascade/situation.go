@@ -641,6 +641,12 @@ func (runtime *runtime) lastFrame(snapshot trajectory.Snapshot) []interaction.Im
 // recogniser that reports who spoke - is described correctly without anything
 // here changing. One undiarised microphone still calls everybody in the room
 // the user, which is the honest reading of what it knows.
+// otherVoiceSource names a voice that is not the one the session is with.
+//
+// One string, used both as the observation's source and as the live speaker,
+// so the conversation and the instant call the same person the same thing.
+const otherVoiceSource = "someone else in the room"
+
 func (runtime *runtime) speakerNow(snapshot trajectory.Snapshot) string {
 	// A voice that does not belong to the person this session is with is
 	// somebody else in the room, whatever the channel it arrived on. One
@@ -649,7 +655,7 @@ func (runtime *runtime) speakerNow(snapshot trajectory.Snapshot) string {
 	// the milk answers about the milk. It is a correct answer to a false
 	// premise, and the premise is the part that was wrong.
 	if runtime.voices.Verdict() == voices.Different {
-		return "someone else in the room"
+		return otherVoiceSource
 	}
 	for index := len(snapshot.Items) - 1; index >= 0; index-- {
 		item := snapshot.Items[index]
