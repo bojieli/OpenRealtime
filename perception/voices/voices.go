@@ -65,7 +65,7 @@ type Embedder interface {
 // any corpus - including one that disagrees.
 const DefaultThreshold = 0.40
 
-// DefaultMinimum is how much speech is needed before asking.
+// DefaultMinimum is how much speech is needed before asking who is talking.
 //
 // Under about a second the embedding is dominated by whatever phonemes
 // happened to be in it, and a wrong answer here is worse than no answer: no
@@ -73,11 +73,35 @@ const DefaultThreshold = 0.40
 // it is talking to is a stranger.
 const DefaultMinimum = time.Second
 
+// DefaultEnrolment is how much speech is needed before deciding whose session
+// this is, and it is deliberately longer.
+//
+// The asymmetry is the point. A comparison that goes wrong costs one utterance;
+// the reference is used for the rest of the session, so enrolling badly is
+// wrong about every utterance after it. Measured against segments of one
+// recording, which are the same speaker by construction:
+//
+//	1.0s of enrolment, compared with the rest   0.424 to 0.585
+//	1.3s                                        0.451 to 0.718
+//	2.0s                                        0.668 to 0.815
+//	3.0s                                        0.810 to 0.866
+//
+// At a second the margin over the threshold is 0.02, which is no margin: the
+// counting scenario has one speaker in it and the situation read "someone else
+// in the room: speaking right now", so the agent declined to act on its own
+// user and every check in that scenario measured the refusal. At three seconds
+// the same comparisons sit at 0.81 and above.
+//
+// Until there is that much, nobody is enrolled and everything is the prior:
+// whoever is talking is the person whose session this is.
+const DefaultEnrolment = 3 * time.Second
+
 // Recogniser watches one session.
 type Recogniser struct {
 	embedder  Embedder
 	threshold float64
 	minimum   time.Duration
+	enrolment time.Duration
 
 	mu        sync.Mutex
 	reference []float32
@@ -101,7 +125,14 @@ func New(embedder Embedder, threshold float64, minimum time.Duration) *Recognise
 	if minimum <= 0 {
 		minimum = DefaultMinimum
 	}
-	return &Recogniser{embedder: embedder, threshold: threshold, minimum: minimum, verdict: Unknown}
+	enrolment := DefaultEnrolment
+	if enrolment < minimum {
+		enrolment = minimum
+	}
+	return &Recogniser{
+		embedder: embedder, threshold: threshold,
+		minimum: minimum, enrolment: enrolment, verdict: Unknown,
+	}
 }
 
 // Begin starts a new utterance. What was heard of the last one is not evidence
@@ -138,8 +169,14 @@ func (recogniser *Recogniser) Hear(ctx context.Context, frames []perception.Fram
 	}
 	// Two bytes to a sample, the frames being 16-bit little-endian.
 	samples := len(recogniser.buffered) / 2
+	// Enrolling needs more speech than comparing, because the reference is
+	// used for the rest of the session and a comparison for one utterance.
+	needed := recogniser.minimum
+	if recogniser.reference == nil {
+		needed = recogniser.enrolment
+	}
 	enough := recogniser.rate > 0 &&
-		time.Duration(samples)*time.Second/time.Duration(recogniser.rate) >= recogniser.minimum
+		time.Duration(samples)*time.Second/time.Duration(recogniser.rate) >= needed
 	if recogniser.asked || !enough {
 		recogniser.mu.Unlock()
 		return

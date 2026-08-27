@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -614,6 +615,37 @@ func (adapter *Adapter) reasoningDelta(delta streamDelta) string {
 	return ""
 }
 
+// dumpRequests names a file every assembled request is appended to, one JSON
+// object per line, when the environment sets it.
+//
+// Reasoning about which part of a prompt differs from one tried by hand has
+// been wrong four times in this work - the scenario preamble, the holding
+// paragraph, the sampling temperature, the position of the instruction - and
+// each wrong answer cost a round. The messages that actually go out settle it
+// in one, and an environment variable keeps the facility out of the way until
+// somebody needs it.
+const dumpRequests = "OPENREALTIME_DUMP_REQUESTS"
+
+func (adapter *Adapter) dump(result chatRequest) {
+	path := strings.TrimSpace(os.Getenv(dumpRequests))
+	if path == "" {
+		return
+	}
+	encoded, err := json.Marshal(struct {
+		Model    string        `json:"model"`
+		Messages []chatMessage `json:"messages"`
+	}{Model: result.Model, Messages: result.Messages})
+	if err != nil {
+		return
+	}
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	_, _ = file.Write(append(encoded, '\n'))
+}
+
 func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest, error) {
 	maxTokens := request.Invocation.MaxOutputTokens
 	if maxTokens == 0 {
@@ -743,6 +775,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 			}})
 		}
 	}
+	adapter.dump(result)
 	return result, nil
 }
 

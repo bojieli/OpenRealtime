@@ -23,14 +23,17 @@ func (s *scripted) Embed(context.Context, []byte, uint32) ([]float32, error) {
 	return vector, nil
 }
 
-// second is a second of 16 kHz audio, which is the least the recogniser will
-// ask about.
-func second() []perception.Frame {
+// speech is that many seconds of 16 kHz audio.
+func speech(seconds float64) []perception.Frame {
 	return []perception.Frame{{
 		Kind: perception.FrameAudio, Source: "microphone",
-		PCM16LE: make([]byte, 16_000*2), SampleRateHz: 16_000,
+		PCM16LE: make([]byte, int(16_000*seconds)*2), SampleRateHz: 16_000,
 	}}
 }
+
+// enough is comfortably past the enrolment bar, which is longer than the bar
+// for comparing against a reference that already exists.
+func enough() []perception.Frame { return speech(4) }
 
 func settle(t *testing.T, recogniser *voices.Recogniser, want voices.Verdict) voices.Verdict {
 	t.Helper()
@@ -48,7 +51,7 @@ func TestTheFirstVoiceOfASessionIsWhoTheSessionIsWith(t *testing.T) {
 	embedder := &scripted{vectors: [][]float32{{1, 0, 0}}}
 	recogniser := voices.New(embedder, voices.DefaultThreshold, time.Second)
 	recogniser.Begin("item-1")
-	recogniser.Hear(context.Background(), second())
+	recogniser.Hear(context.Background(), enough())
 	if got := settle(t, recogniser, voices.Familiar); got != voices.Familiar {
 		t.Fatalf("the first voice was %q, not the one the session is with", got)
 	}
@@ -58,10 +61,10 @@ func TestADifferentVoiceIsReportedAsDifferent(t *testing.T) {
 	embedder := &scripted{vectors: [][]float32{{1, 0, 0}, {0, 1, 0}}}
 	recogniser := voices.New(embedder, voices.DefaultThreshold, time.Second)
 	recogniser.Begin("item-1")
-	recogniser.Hear(context.Background(), second())
+	recogniser.Hear(context.Background(), enough())
 	settle(t, recogniser, voices.Familiar)
 	recogniser.Begin("item-2")
-	recogniser.Hear(context.Background(), second())
+	recogniser.Hear(context.Background(), enough())
 	if got := settle(t, recogniser, voices.Different); got != voices.Different {
 		t.Fatalf("a stranger was reported as %q", got)
 	}
@@ -71,10 +74,10 @@ func TestTheSameVoiceSayingSomethingElseIsStillTheSameVoice(t *testing.T) {
 	embedder := &scripted{vectors: [][]float32{{1, 0, 0}, {0.9, 0.436, 0}}}
 	recogniser := voices.New(embedder, voices.DefaultThreshold, time.Second)
 	recogniser.Begin("item-1")
-	recogniser.Hear(context.Background(), second())
+	recogniser.Hear(context.Background(), enough())
 	settle(t, recogniser, voices.Familiar)
 	recogniser.Begin("item-2")
-	recogniser.Hear(context.Background(), second())
+	recogniser.Hear(context.Background(), enough())
 	if got := settle(t, recogniser, voices.Familiar); got != voices.Familiar {
 		t.Fatalf("the same person was reported as %q", got)
 	}
@@ -86,10 +89,7 @@ func TestTooLittleAudioIsNotAnAnswer(t *testing.T) {
 	embedder := &scripted{vectors: [][]float32{{1, 0, 0}}}
 	recogniser := voices.New(embedder, voices.DefaultThreshold, time.Second)
 	recogniser.Begin("item-1")
-	recogniser.Hear(context.Background(), []perception.Frame{{
-		Kind: perception.FrameAudio, Source: "microphone",
-		PCM16LE: make([]byte, 8_000*2), SampleRateHz: 16_000,
-	}})
+	recogniser.Hear(context.Background(), speech(0.5))
 	if got := recogniser.Verdict(); got != voices.Unknown {
 		t.Fatalf("half a second was judged %q", got)
 	}
@@ -101,7 +101,7 @@ func TestTooLittleAudioIsNotAnAnswer(t *testing.T) {
 func TestNoEmbedderMeansNothingIsKnown(t *testing.T) {
 	var recogniser *voices.Recogniser = voices.New(nil, 0, 0)
 	recogniser.Begin("item-1")
-	recogniser.Hear(context.Background(), second())
+	recogniser.Hear(context.Background(), enough())
 	if got := recogniser.Verdict(); got != voices.Unknown {
 		t.Fatalf("with nobody to ask the verdict was %q", got)
 	}
@@ -116,15 +116,42 @@ func TestEachSessionLearnsItsOwnVoice(t *testing.T) {
 	embedder := &scripted{vectors: [][]float32{{1, 0, 0}, {0, 1, 0}}}
 	first := voices.New(embedder, voices.DefaultThreshold, time.Second)
 	first.Begin("item-1")
-	first.Hear(context.Background(), second())
+	first.Hear(context.Background(), enough())
 	settle(t, first, voices.Familiar)
 
 	// A second conversation, with somebody else. They are not a stranger in
 	// their own session.
 	next := voices.New(embedder, voices.DefaultThreshold, time.Second)
 	next.Begin("item-1")
-	next.Hear(context.Background(), second())
+	next.Hear(context.Background(), enough())
 	if got := settle(t, next, voices.Familiar); got != voices.Familiar {
 		t.Fatalf("the second session's own user was reported as %q", got)
+	}
+}
+
+// TestEnrollingNeedsMoreThanComparing is the regression for a scenario with one
+// speaker in it that read "someone else in the room: speaking right now". The
+// reference was enrolled from about a second of speech, and a second of
+// enrolment sits 0.02 above the threshold when compared against the same
+// speaker - no margin at all - so the agent spent the session declining to act
+// on its own user.
+func TestEnrollingNeedsMoreThanComparing(t *testing.T) {
+	embedder := &scripted{vectors: [][]float32{{1, 0, 0}, {1, 0, 0}}}
+	recogniser := voices.New(embedder, voices.DefaultThreshold, time.Second)
+
+	// A second is enough to compare with, and not enough to enrol from.
+	recogniser.Begin("item-1")
+	recogniser.Hear(context.Background(), speech(1.2))
+	if got := recogniser.Verdict(); got != voices.Unknown {
+		t.Fatalf("a second and a bit enrolled somebody: %q", got)
+	}
+	if embedder.calls != 0 {
+		t.Fatalf("the embedder was asked %d times about too little speech", embedder.calls)
+	}
+
+	// More speech in the same utterance, and now it enrols.
+	recogniser.Hear(context.Background(), speech(4))
+	if got := settle(t, recogniser, voices.Familiar); got != voices.Familiar {
+		t.Fatalf("four seconds did not enrol anybody: %q", got)
 	}
 }
