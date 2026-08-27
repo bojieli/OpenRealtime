@@ -35,6 +35,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (messagesRequ
 	}
 	result := messagesRequest{
 		Model: adapter.descriptor.Model, MaxTokens: maxTokens, Stream: true,
+		Temperature: adapter.config.Temperature,
 	}
 	if err := adapter.applyThinking(&result, maxTokens); err != nil {
 		return messagesRequest{}, err

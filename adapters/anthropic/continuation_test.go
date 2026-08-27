@@ -93,6 +93,28 @@ func run(t *testing.T, adapter *Adapter, items []trajectory.Item) ([]continuatio
 	return events, completion
 }
 
+func TestExplicitZeroTemperatureReachesTheWireAndDescriptor(t *testing.T) {
+	t.Parallel()
+	zero := 0.0
+	adapter := slowAdapter(t, "http://127.0.0.1", func(config *Config) {
+		config.Temperature = &zero
+	})
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(),
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{observation("user", "hello")}},
+		Invocation: continuation.Invocation{Instruction: "Answer."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body.Temperature == nil || *body.Temperature != 0 {
+		t.Fatalf("temperature = %v", body.Temperature)
+	}
+	if adapter.Descriptor().SamplingTemperature != "0" {
+		t.Fatalf("descriptor temperature = %q", adapter.Descriptor().SamplingTemperature)
+	}
+}
+
 func TestBuildRequestProjectsAdjacentUserObservationsAsOneMessage(t *testing.T) {
 	t.Parallel()
 	adapter := slowAdapter(t, "http://127.0.0.1")

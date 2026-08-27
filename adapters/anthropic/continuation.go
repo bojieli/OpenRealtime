@@ -32,6 +32,7 @@ import (
 	"net/url"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -115,7 +116,10 @@ type Config struct {
 	// Betas are anthropic-beta header values.
 	Betas []string
 	// Headers are extra request headers.
-	Headers        map[string]string
+	Headers map[string]string
+	// Temperature is omitted when nil. Zero is useful for a deterministic
+	// voice and must therefore remain distinguishable from omission.
+	Temperature    *float64
 	HTTPClient     *http.Client
 	RequestTimeout time.Duration
 }
@@ -213,6 +217,13 @@ func New(config Config) (*Adapter, error) {
 	if config.RequestTimeout < 0 {
 		return nil, errors.New("Anthropic request timeout cannot be negative")
 	}
+	if config.Temperature != nil && (*config.Temperature < 0 || *config.Temperature > 1) {
+		return nil, errors.New("Anthropic temperature must be between 0 and 1")
+	}
+	temperature := ""
+	if config.Temperature != nil {
+		temperature = strconv.FormatFloat(*config.Temperature, 'g', -1, 64)
+	}
 	vision := true
 	if config.Vision != nil {
 		vision = *config.Vision
@@ -222,7 +233,8 @@ func New(config Config) (*Adapter, error) {
 		Effort: config.Effort, Streaming: true, NativeStateType: ProviderStateType,
 		RetainsToolCalls: true, ToolAuthority: config.ToolAuthority,
 		SpeechAuthority: config.SpeechAuthority, Vision: vision,
-		ExecutableTools: config.ToolAuthority == continuation.ToolAuthorityExecute,
+		SamplingTemperature: temperature,
+		ExecutableTools:     config.ToolAuthority == continuation.ToolAuthorityExecute,
 	}
 	if err := continuation.ValidateDescriptor(descriptor); err != nil {
 		return nil, err
@@ -243,6 +255,7 @@ type messagesRequest struct {
 	Thinking     json.RawMessage   `json:"thinking,omitempty"`
 	OutputConfig *outputConfig     `json:"output_config,omitempty"`
 	Metadata     map[string]string `json:"metadata,omitempty"`
+	Temperature  *float64          `json:"temperature,omitempty"`
 }
 
 type outputConfig struct {

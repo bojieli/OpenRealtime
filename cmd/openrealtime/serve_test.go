@@ -270,6 +270,21 @@ func TestFastComputerUseChangesAuthorityAndCannotBeASilentNoOp(t *testing.T) {
 	}
 }
 
+func TestFastVoiceUsesDeterministicSampling(t *testing.T) {
+	options := defaultOptions()
+	options.fastProvider = "vllm"
+	options.fastURL = "http://127.0.0.1:8000/v1"
+	options.fastModel = "voice-model"
+	options.explicit = map[string]bool{"fast-url": true, "fast-model": true}
+	provider, err := buildFast(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := provider.Descriptor().SamplingTemperature; got != "0" {
+		t.Fatalf("fast sampling temperature = %q, want deterministic zero", got)
+	}
+}
+
 // Factor F7's narrator composition was a label: both levels asked for
 // -vision-model and both used whatever it named, so a report could say
 // "session" about a separate model nobody in the session was using.

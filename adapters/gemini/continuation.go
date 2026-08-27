@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,8 +48,11 @@ type Config struct {
 	// AllowTools is a compatibility alias for ToolAuthorityExecute.
 	AllowTools      bool
 	IncludeThoughts bool
-	HTTPClient      *http.Client
-	RequestTimeout  time.Duration
+	// Temperature is omitted when nil. Zero gives the fast voice a stable
+	// control decision without changing the slow reasoner's provider default.
+	Temperature    *float64
+	HTTPClient     *http.Client
+	RequestTimeout time.Duration
 }
 
 // Adapter streams Gemini output and preserves provider-authenticated thought
@@ -97,11 +101,19 @@ func New(config Config) (*Adapter, error) {
 	if config.RequestTimeout < 0 {
 		return nil, errors.New("Gemini request timeout cannot be negative")
 	}
+	if config.Temperature != nil && (*config.Temperature < 0 || *config.Temperature > 2) {
+		return nil, errors.New("Gemini temperature must be between 0 and 2")
+	}
+	temperature := ""
+	if config.Temperature != nil {
+		temperature = strconv.FormatFloat(*config.Temperature, 'g', -1, 64)
+	}
 	descriptor := continuation.Descriptor{
 		Provider: "google", Model: config.Model, Phase: config.Phase,
 		Effort: config.Effort, Streaming: true, NativeStateType: ProviderStateType,
 		RetainsToolCalls: true, ToolAuthority: config.ToolAuthority,
-		SpeechAuthority: config.SpeechAuthority,
+		SpeechAuthority:     config.SpeechAuthority,
+		SamplingTemperature: temperature,
 		// Every Gemini model this adapter targets is multimodal, so the
 		// capability is a property of the provider rather than something a
 		// deployment has to remember to declare.
@@ -132,6 +144,7 @@ type geminiRequest struct {
 type geminiGenerationConfig struct {
 	ThinkingConfig  geminiThinkingConfig `json:"thinkingConfig"`
 	MaxOutputTokens int                  `json:"maxOutputTokens"`
+	Temperature     *float64             `json:"temperature,omitempty"`
 }
 
 type geminiThinkingConfig struct {
@@ -303,6 +316,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 				IncludeThoughts: adapter.config.IncludeThoughts,
 			},
 			MaxOutputTokens: maxTokens,
+			Temperature:     adapter.config.Temperature,
 		},
 	}
 	assistantVisibility := trajectory.AssistantVisibility(request.Trajectory)

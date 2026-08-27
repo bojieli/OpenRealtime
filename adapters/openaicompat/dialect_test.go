@@ -57,6 +57,26 @@ func sentRequest(t *testing.T, config Config) (map[string]json.RawMessage, http.
 	return body, header
 }
 
+func TestExplicitZeroTemperatureReachesTheWireAndDescriptor(t *testing.T) {
+	t.Parallel()
+	zero := 0.0
+	body, _ := sentRequest(t, Config{Temperature: &zero})
+	if string(body["temperature"]) != "0" {
+		t.Fatalf("temperature = %s", body["temperature"])
+	}
+	adapter, err := New(Config{
+		Model: "test", BaseURL: "https://example.invalid/v1",
+		Phase: trajectory.PhaseFast, Effort: continuation.EffortMinimal,
+		Temperature: &zero,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adapter.Descriptor().SamplingTemperature != "0" {
+		t.Fatalf("descriptor temperature = %q", adapter.Descriptor().SamplingTemperature)
+	}
+}
+
 func TestEveryReasoningControlReachesTheWireInItsOwnSpelling(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

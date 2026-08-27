@@ -291,6 +291,10 @@ type Descriptor struct {
 	RetainsToolCalls bool             `json:"retains_tool_calls"`
 	ToolAuthority    ToolAuthority    `json:"tool_authority,omitempty"`
 	SpeechAuthority  SpeechAuthority  `json:"speech_authority,omitempty"`
+	// SamplingTemperature records an explicit provider temperature in a
+	// comparable form. Empty means provider default; "0" is deliberately not
+	// empty because deterministic decoding is a material configuration choice.
+	SamplingTemperature string `json:"sampling_temperature,omitempty"`
 	// Vision declares that this provider can be given images.
 	//
 	// It is a property of the provider rather than of the runtime, and it is

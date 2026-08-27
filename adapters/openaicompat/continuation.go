@@ -181,12 +181,17 @@ func New(config Config) (*Adapter, error) {
 	if config.RequestTimeout < 0 {
 		return nil, errors.New("OpenAI-compatible request timeout cannot be negative")
 	}
+	temperature := ""
+	if config.Temperature != nil {
+		temperature = strconv.FormatFloat(*config.Temperature, 'g', -1, 64)
+	}
 	descriptor := continuation.Descriptor{
 		Provider: config.Provider, Model: config.Model, Phase: config.Phase,
 		Effort: config.Effort, Streaming: true, NativeStateType: ProviderStateType,
 		RetainsToolCalls: true, ToolAuthority: config.ToolAuthority,
 		SpeechAuthority: config.SpeechAuthority, Vision: config.Vision,
-		ExecutableTools: config.ToolAuthority == continuation.ToolAuthorityExecute,
+		SamplingTemperature: temperature,
+		ExecutableTools:     config.ToolAuthority == continuation.ToolAuthorityExecute,
 	}
 	if err := continuation.ValidateDescriptor(descriptor); err != nil {
 		return nil, err

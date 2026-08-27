@@ -81,6 +81,35 @@ func TestBuildRequestProjectsAdjacentUserObservationsAsOneContent(t *testing.T) 
 	}
 }
 
+func TestExplicitZeroTemperatureReachesTheWireAndDescriptor(t *testing.T) {
+	t.Parallel()
+	zero := 0.0
+	adapter, err := New(Config{
+		APIKey: "secret", Model: "gemini-test", Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortMinimal, Temperature: &zero,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(),
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{{
+			ID: "user", Kind: trajectory.KindObservation,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "hello",
+		}}},
+		Invocation: continuation.Invocation{Instruction: "Answer."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body.GenerationConfig.Temperature == nil || *body.GenerationConfig.Temperature != 0 {
+		t.Fatalf("temperature = %v", body.GenerationConfig.Temperature)
+	}
+	if adapter.Descriptor().SamplingTemperature != "0" {
+		t.Fatalf("descriptor temperature = %q", adapter.Descriptor().SamplingTemperature)
+	}
+}
+
 func TestBuildRequestReusesNativeStateAndCompilesToolResult(t *testing.T) {
 	t.Parallel()
 	adapter, err := New(Config{

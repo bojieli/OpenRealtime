@@ -806,10 +806,16 @@ func buildFast(options serveOptions) (continuation.Provider, error) {
 		ToolAuthority:   authority,
 		SpeechAuthority: continuation.SpeechAuthorityVoice,
 		Reason:          providers.ReasonOff,
-		Vision:          visionOverride(options, "fast-sees", options.fastVision),
-		RequestTimeout:  options.requestTimeout,
+		// The voice makes latency- and silence-controlling decisions. Sampling
+		// the same complete question into both speech and <wait> is not useful
+		// diversity; reserve provider-default sampling for the slow reasoner.
+		Temperature:    float64Pointer(0),
+		Vision:         visionOverride(options, "fast-sees", options.fastVision),
+		RequestTimeout: options.requestTimeout,
 	})
 }
+
+func float64Pointer(value float64) *float64 { return &value }
 
 // buildSlow configures the background reasoner. It is always silent: its
 // output is voiced by a fast continuation, never spoken directly.

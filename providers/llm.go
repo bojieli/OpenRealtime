@@ -417,7 +417,11 @@ type LLMRequest struct {
 	Vision *bool
 	// RetainReasoning asks a provider that can return its reasoning to do so.
 	RetainReasoning bool
-	RequestTimeout  time.Duration
+	// Temperature is an explicit sampling temperature. Nil leaves the
+	// provider's default intact; a pointer is required because zero is the
+	// deterministic setting rather than an omitted value.
+	Temperature    *float64
+	RequestTimeout time.Duration
 }
 
 // NewLLM builds the configured provider.
@@ -474,6 +478,7 @@ func NewLLM(request LLMRequest) (continuation.Provider, error) {
 			// it. Current models return empty thinking blocks otherwise, and
 			// asking for a summary that is discarded is paid-for latency.
 			IncludeThoughts: request.RetainReasoning && request.Reason != ReasonOff,
+			Temperature:     request.Temperature,
 			RequestTimeout:  request.RequestTimeout,
 		})
 	case DialectGemini:
@@ -482,6 +487,7 @@ func NewLLM(request LLMRequest) (continuation.Provider, error) {
 			Effort: request.Effort, ToolAuthority: request.ToolAuthority,
 			SpeechAuthority: request.SpeechAuthority,
 			IncludeThoughts: request.RetainReasoning && request.Reason != ReasonOff,
+			Temperature:     request.Temperature,
 			RequestTimeout:  request.RequestTimeout,
 		})
 	case DialectOpenAIChat:
@@ -506,6 +512,7 @@ func NewLLM(request LLMRequest) (continuation.Provider, error) {
 			ReasoningDeltaField:     entry.ReasoningDelta,
 			DisableReasoningCapture: request.Reason == ReasonOff,
 			Headers:                 entry.Headers,
+			Temperature:             request.Temperature,
 			RequestTimeout:          request.RequestTimeout,
 		})
 	default:
