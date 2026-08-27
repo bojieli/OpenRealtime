@@ -153,20 +153,29 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		runtime.noteInterject("nothing new since the agent last spoke")
 		return
 	}
-	if newly != stable {
-		// Inside a stretch of speech the agent has already answered, wait for
-		// them to finish saying something before answering again.
+	{
+		// Wait for them to finish saying something. Not only when answering a
+		// stretch the agent has already spoken into - the first answer needs
+		// it too, and needs it most.
 		//
-		// A running count used to be barred here outright, on the reasoning
-		// that its next number is a function of its last one so asking twice
-		// about one occurrence corrupts it permanently. The reasoning holds.
-		// The bar did not: counting as somebody goes is a mid-sentence act by
-		// definition, so refusing every mid-sentence count refused the count -
-		// measured, the guard fired twenty-two times in one run and the second
-		// animal in the story was never counted at all.
+		// The voice is asked again every time the recogniser extends the text,
+		// so a sentence is four or five separate chances to get it wrong, and
+		// the chances are independent. Measured against the real prompt on "It
+		// was a warm afternoon and I was walking along by the river" with a
+		// counting policy standing, the voice says a number about a fifth of
+		// the time - which over four asks is a wrong count on nearly every
+		// sentence, and the story opened "One. One. Two." with no animal in
+		// it. Nothing in the wording closes a gap that size; asking once does.
 		//
-		// What stops the same occurrence being answered twice is now the fact
-		// the voice is handed: how much of what they are saying it has already
+		// It costs nothing that was working. A policy is still carried out
+		// while they are still talking, which is what these scenarios turn on
+		// - just at the end of the thing they said rather than partway through
+		// it. Pressing a key at a recorded menu goes through act-silently and
+		// never reaches here, which is the case that actually turns on
+		// answering the moment something is named.
+		//
+		// What stops the same occurrence being answered twice is the fact the
+		// voice is handed: how much of what they are saying it has already
 		// spoken for. That is the layer that can tell a second look at one
 		// sentence from a second thing to say about it, which is a judgement
 		// about content and was never available here.
