@@ -556,11 +556,15 @@ func (runtime *runtime) settingAPolicy(snapshot trajectory.Snapshot) bool {
 	if pinnedFrom == "" {
 		return false
 	}
-	pieces, _ := speechSoFar(snapshot)
-	if len(pieces) == 0 {
-		return false
-	}
-	return beganWith(pinnedFrom, strings.Join(pieces, " "))
+	// Against everything they have said, for the reason coverage is: the agent
+	// answers while somebody is setting a policy - briefly agreeing is what it
+	// should do there - and its own speech would otherwise end the turn this
+	// compares against, so the sentence that set the policy stops being the
+	// sentence in front of it. Measured, the guard went silent and the voice
+	// counted through the instruction itself: "One." after "as I mentioned
+	// them", then "Two." four times after "and say nothing else".
+	said := everythingSaid(snapshot)
+	return said != "" && beganWith(pinnedFrom, said)
 }
 
 // withoutEchoesOf drops conversation lines whose words are already inside the
