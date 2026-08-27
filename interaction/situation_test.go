@@ -11,12 +11,12 @@ import (
 func TestAvailableActsOnlyOffersCallToolWhenAToolExists(t *testing.T) {
 	bare := interaction.Situation{}.AvailableActs()
 	for _, act := range bare {
-		if act == interaction.ActCallTool {
+		if act == interaction.ActActSilently {
 			t.Fatal("call-tool offered with no tool named; the phone-menu case failed exactly this way")
 		}
 	}
 	armed := interaction.Situation{Tools: []string{"press_key(digit)"}}.AvailableActs()
-	if !contains(armed, interaction.ActCallTool) {
+	if !contains(armed, interaction.ActActSilently) {
 		t.Fatal("a tool exists and call-tool was not offered")
 	}
 }
@@ -72,7 +72,7 @@ func TestRenderPutsStandingInstructionsAheadOfTheWindow(t *testing.T) {
 func TestInstructionCarriesEveryActItOffers(t *testing.T) {
 	for _, act := range []interaction.Act{
 		interaction.ActStaySilent, interaction.ActSpeakThrough, interaction.ActAnswer,
-		interaction.ActInterrupt, interaction.ActCallTool,
+		interaction.ActInterrupt, interaction.ActActSilently,
 		interaction.ActKeepSpeaking, interaction.ActStopSpeaking,
 	} {
 		if !strings.Contains(interaction.Instruction, string(act)) {

@@ -33,9 +33,17 @@ const (
 	ActAnswer Act = "answer"
 	// ActInterrupt takes the floor from someone who has not offered it.
 	ActInterrupt Act = "interrupt"
-	// ActCallTool acts without speaking. It is the phase that may act and may
-	// not speak, an authority rule the runtime already enforces.
-	ActCallTool Act = "call-tool"
+	// ActActSilently engages without being heard.
+	//
+	// It is about audibility, not about tools. The judgement it carries is
+	// that speech would be pointless or unwelcome - a recording that cannot
+	// hear it, somebody who asked not to be spoken to - and that the agent
+	// should still do something about what is happening. What it then does,
+	// press a key or look something up or simply work out where things stand,
+	// belongs to the phase that can read the content; deciding that here made
+	// this layer reason about which key applied, which is exactly the content
+	// judgement it is not allowed to make.
+	ActActSilently Act = "act-silently"
 	// ActKeepSpeaking carries on through someone else starting.
 	ActKeepSpeaking Act = "keep-speaking"
 	// ActStopSpeaking yields the floor mid-sentence.
@@ -158,9 +166,11 @@ type Situation struct {
 	InFlight string
 	// Seen is the newest thing an observer noticed that nobody said out loud.
 	Seen string
-	// Tools names what the agent could do without speaking. Offering the
-	// call-tool act while naming no tool asks a model to choose something it
-	// has no way to know is possible.
+	// Tools names what the agent could do without speaking. It is here as a
+	// capability rather than as a menu to choose from: acting silently is only
+	// a real option if the agent has some way to affect anything without
+	// speaking, and offering the act when it has none asks for a decision that
+	// cannot be carried out.
 	Tools []string
 }
 
@@ -189,7 +199,7 @@ func (state Situation) AvailableActs() []Act {
 		}
 	}
 	if len(state.Tools) > 0 {
-		acts = append(acts, ActCallTool)
+		acts = append(acts, ActActSilently)
 	}
 	return acts
 }

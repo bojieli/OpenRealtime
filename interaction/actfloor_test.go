@@ -65,7 +65,7 @@ func TestActFloorEndsOnlyOnAnsweringOrInterrupting(t *testing.T) {
 	// behaviour the next case checks.
 	armed := waiting(3*time.Second, 1)
 	armed.Situation.Tools = []string{"press_key(digit)"}
-	if verdict := floorFor(t, interaction.ActCallTool, false).Endpoint(armed); verdict.Ended {
+	if verdict := floorFor(t, interaction.ActActSilently, false).Endpoint(armed); verdict.Ended {
 		t.Fatal("acting silently ended the turn, though nothing was said into it")
 	}
 }
@@ -73,7 +73,7 @@ func TestActFloorEndsOnlyOnAnsweringOrInterrupting(t *testing.T) {
 // An act the situation does not offer cannot be acted on, and falling back is
 // what stops a model naming an impossible one from deciding anything.
 func TestActFloorRejectsAnActThatIsNotAvailable(t *testing.T) {
-	floor := floorFor(t, interaction.ActCallTool, false)
+	floor := floorFor(t, interaction.ActActSilently, false)
 	if verdict := floor.Endpoint(waiting(200*time.Millisecond, 1)); verdict.Ended {
 		t.Fatal("an unavailable act ended a turn 200ms into a pause")
 	}

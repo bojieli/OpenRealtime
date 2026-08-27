@@ -304,7 +304,7 @@ func (runtime *runtime) holdsThroughPause(
 	// not here, so a speak-through chosen at a pause was decided and dropped -
 	// nine of them in one conversation, and the two that did reach the
 	// interjection were the only ones anybody could have heard.
-	if endpoint.Act == interaction.ActCallTool {
+	if endpoint.Act == interaction.ActActSilently {
 		runtime.actSilently(decision)
 	}
 	if endpoint.Act == interaction.ActSpeakThrough {

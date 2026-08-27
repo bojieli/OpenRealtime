@@ -24,7 +24,7 @@ func (callingFloor) Endpoint(decision interaction.Context) interaction.EndpointD
 	if decision.Revision.Empty() {
 		return interaction.EndpointDecision{}
 	}
-	return interaction.EndpointDecision{Act: interaction.ActCallTool, Reason: "the menu named the option"}
+	return interaction.EndpointDecision{Act: interaction.ActActSilently, Reason: "the menu named the option"}
 }
 
 func (callingFloor) Holder(session.Snapshot) interaction.Holder { return interaction.HolderNobody }
@@ -47,7 +47,7 @@ func TestOneSilentActPerStretchOfSpeech(t *testing.T) {
 	// which is the arrangement this rule belongs to.
 	policies.Interaction = model
 	policies.ShadowInteraction = func(record interaction.ShadowDecision) {
-		if record.Predicates["where"] != "interject" && record.Predicates["where"] != "call-tool" {
+		if record.Predicates["where"] != "interject" && record.Predicates["where"] != "act-silently" {
 			return
 		}
 		mu.Lock()

@@ -21,7 +21,7 @@ const (
 	ActSpeakThrough = Action(interaction.ActSpeakThrough)
 	ActAnswer       = Action(interaction.ActAnswer)
 	ActInterrupt    = Action(interaction.ActInterrupt)
-	ActCallTool     = Action(interaction.ActCallTool)
+	ActActSilently  = Action(interaction.ActActSilently)
 	ActKeepSpeaking = Action(interaction.ActKeepSpeaking)
 	ActStopSpeaking = Action(interaction.ActStopSpeaking)
 	ActUnparsed     = Action("unparsed")
@@ -226,7 +226,7 @@ func InteractionCases() []Case {
 			Silence: "0ms",
 			Tools:   []string{"press_key(digit) - send a keypad tone on the open call"},
 		}, "a phone menu: the act is pressing a key, and saying anything is useless",
-			[]Action{ActCallTool}, ActAnswer, ActInterrupt, ActSpeakThrough),
+			[]Action{ActActSilently}, ActAnswer, ActInterrupt, ActSpeakThrough),
 
 		// --- work already in flight must not be started twice ---
 		act("ivr-already-pressed", interaction.Situation{
@@ -240,7 +240,7 @@ func InteractionCases() []Case {
 			Silence:  "0ms",
 			Tools:    []string{"press_key(digit) - send a keypad tone on the open call"},
 		}, "the menu keeps talking; the key is already sent and must not be sent again",
-			[]Action{ActStaySilent}, ActCallTool, ActInterrupt),
+			[]Action{ActStaySilent}, ActActSilently, ActInterrupt),
 
 		// --- visual trigger, nobody speaking ---
 		act("posture-slouching", interaction.Situation{
@@ -373,13 +373,13 @@ func InteractionCases() []Case {
 			Silence:  "4s",
 			InFlight: "reasoning pass running 4.1s, no result yet",
 		}, "the user has heard four seconds of nothing while work runs",
-			[]Action{ActSpeakThrough, ActAnswer}, ActCallTool, ActInterrupt),
+			[]Action{ActSpeakThrough, ActAnswer}, ActActSilently, ActInterrupt),
 	}
 }
 
 // actPattern finds an act name as a whole token. A model that reasons before
 // answering mentions several; the last one is its conclusion.
-var actPattern = regexp.MustCompile(`(?i)\b(listen|speak-through|answer|interrupt|call-tool|keep-speaking|stop-speaking)\b`)
+var actPattern = regexp.MustCompile(`(?i)\b(listen|speak-through|answer|interrupt|act-silently|keep-speaking|stop-speaking)\b`)
 
 var thinkPattern = regexp.MustCompile(`(?is)<think>.*?</think>`)
 

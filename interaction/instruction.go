@@ -86,13 +86,13 @@ func examples() []workedExample {
 			Speaker: "other", Speaking: true,
 			Heard: "to leave a message press star, to speak to an agent press nine",
 			Tools: []string{"press_key(digit) - send a keypad tone on the open call"},
-		}, ActCallTool, "The menu just named the option that gets them a person, and talking to a recording achieves nothing."},
+		}, ActActSilently, "A recording is talking and cannot hear a reply, so anything said now is wasted while something is worth doing about what it just offered."},
 
 		{Situation{
 			Recent:  []string{"agent: what can I do for you?"},
 			Speaker: "user", Heard: "ring them and get me through to a person", Silence: "900ms",
 			Tools: []string{"press_key(digit) - send a keypad tone on the open call"},
-		}, ActAnswer, "They asked for the call to be made and have finished asking; no menu has offered a key yet, so there is no key to press and this is a turn to take."},
+		}, ActAnswer, "They have finished asking and are waiting on a reply, and it is a person who will hear it, so the turn is the agent's and it should be audible."},
 
 		{Situation{
 			Recent:  []string{"user: ring them and get me through to a person"},
@@ -191,17 +191,12 @@ func buildInstruction() string {
 			"answer - the speaker has finished, or nobody is speaking, and the turn is the agent's.\n" +
 			"interrupt - the speaker has not finished, and what is happening is worth cutting into their " +
 			"sentence for.\n" +
-			"call-tool - do something without saying anything at all. Only when speech would be pointless or " +
-			"unwelcome: a recorded menu that cannot hear you, or someone who asked not to be spoken to. " +
-			"Answering already lets the agent act as well as speak, so this is for when it must not speak. " +
-			"A tool being available is not a moment to use it: the thing it acts on has to have happened. " +
-			"A key gets pressed when the recording has named the option the person actually wants, not when " +
-			"somebody asks for the call to be made and not on the first option in a list - a recording that " +
-			"has said \"press one for billing\" to somebody who wants their order has offered nothing yet, " +
-			"and the menu it leads to may have no way back. And an act whose " +
-			"result is already in the conversation does not need doing again: a menu that has answered \"you " +
-			"have reached order status\" has been reached, and pressing on from there is pressing into " +
-			"somewhere nobody asked to go.\n" +
+			"act-silently - engage without being heard. Only when speech would be pointless or unwelcome: a " +
+			"recorded menu that cannot hear you, or someone who asked not to be spoken to. Answering already " +
+			"lets the agent act as well as speak, so this is for when it must not speak. What it does once it " +
+			"engages - press a key, look something up, or work out where things stand - is not yours to " +
+			"decide and not something to reason about here. Only whether something has happened that is " +
+			"worth engaging over, and that saying it out loud would be wasted.\n" +
 			"keep-speaking - the agent is mid-sentence and someone else has started; carry on anyway.\n" +
 			"stop-speaking - the agent is mid-sentence; stop and let them have the floor.\n\n" +
 			"Anything other than staying silent, or carrying on with what the agent is already saying, needs a reason " +

@@ -26,7 +26,7 @@ func (runtime *runtime) projectEndpoint(ctx context.Context, decision interactio
 		return false, nil
 	}
 	endpoint := runtime.policies.Floor.Endpoint(decision)
-	if endpoint.Act == interaction.ActCallTool {
+	if endpoint.Act == interaction.ActActSilently {
 		runtime.actSilently(decision)
 	}
 	if endpoint.Act == interaction.ActSpeakThrough {

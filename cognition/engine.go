@@ -620,13 +620,13 @@ func becauseInstruction(act string, counting bool) string {
 		return "You are speaking because something the person asked to be told about has just happened. " +
 			"Do exactly what their standing policy asks, for the occurrence in front of you, and say " +
 			"only that. They have not finished talking and are not handing you the floor."
-	case "call-tool":
+	case "act-silently":
 		// Measured on a phone menu: the key was pressed correctly and then
 		// announced out loud - "I have pressed two to select the order status
 		// option" - to a recording, which cannot hear it and is still talking
 		// over the announcement. The act is the answer; saying it as well
 		// spends a turn describing what was already done.
-		return "You are acting rather than speaking: the tool call is the whole of what this turn is for. Make the call and reply with " + WaitToken + " - nothing you write here would reach anybody who needed it, and whoever is talking is still talking."
+		return "Nothing you write on this turn is heard by anybody. Do whatever the situation actually calls for - call a tool if there is one that applies, and nothing if there is not - and reply with " + WaitToken + ". Whoever is talking is still talking, and words aimed at them would be wasted."
 	case "interrupt":
 		return "You are cutting into their sentence because what they are saying needs correcting now, and waiting until they finish would make the correction useless. Say the correction itself - the right date, the right figure, the right name - not that you are listening and not a question about it."
 	}

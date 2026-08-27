@@ -136,17 +136,25 @@ func TestTheVoiceIsToldWhatTheTurnWasCalledFor(t *testing.T) {
 	}
 }
 
-// A tool call is the whole of what a silent act is for. Measured on a phone
-// menu, the key was pressed correctly and then announced out loud - "I have
-// pressed two to select the order status option" - to a recording, which
-// cannot hear it and is still talking over the announcement.
-func TestActingIsToldThatTheCallIsTheAnswer(t *testing.T) {
+// A silent act is told that nothing it writes is heard, and left to decide
+// what the situation calls for. Measured on a phone menu, the key was pressed
+// correctly and then announced out loud - "I have pressed two to select the
+// order status option" - to a recording, which cannot hear it and is still
+// talking over the announcement.
+//
+// What it must not be told is to make a call: whether one applies is the
+// judgement this phase is here to make, and an instruction that presumes one
+// leaves it pressing a key at a recording that has offered nothing yet.
+func TestActingIsToldNothingItWritesIsHeard(t *testing.T) {
 	acting := instructionFor(t, cognition.Request{
-		Because:  "call-tool",
+		Because:  "act-silently",
 		Standing: []string{"press the key when the menu offers what they asked for (20s ago)"},
 	})
-	if !strings.Contains(acting, "the tool call is the whole of what this turn is for") {
-		t.Fatalf("a silent act was not told the call is the answer:\n%s", acting)
+	if !strings.Contains(acting, "Nothing you write on this turn is heard") {
+		t.Fatalf("a silent act was not told it is inaudible:\n%s", acting)
+	}
+	if !strings.Contains(acting, "and nothing if there is not") {
+		t.Fatalf("a silent act was told to call something regardless:\n%s", acting)
 	}
 	if !strings.Contains(acting, cognition.WaitToken) {
 		t.Fatal("it was not told how to make the call without also announcing it")

@@ -437,7 +437,7 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 		request := cognition.Request{
 			SourceRevision: decision.Revision.ID,
 			Standing:       standing, Counting: runtime.countingIsInForce(),
-			Because: string(interaction.ActCallTool),
+			Because: string(interaction.ActActSilently),
 			Heard:   decision.Revision.Text(),
 		}
 		// runSlow rather than the engine directly: a proposal that nobody
@@ -453,8 +453,8 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 				outcome = "refused"
 			}
 			recorder(interaction.ShadowDecision{
-				NowNS: runtime.scheduler.NowNS(), Situation: "call-tool: " + decision.Revision.Text(),
-				Act: outcome, Predicates: map[string]string{"where": "call-tool"},
+				NowNS: runtime.scheduler.NowNS(), Situation: "act-silently: " + decision.Revision.Text(),
+				Act: outcome, Predicates: map[string]string{"where": "act-silently"},
 				Error: errorText(err),
 			})
 		}

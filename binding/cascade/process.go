@@ -341,7 +341,7 @@ func (runtime *runtime) runSlow(
 		return err
 	}
 	if len(result.ToolCalls) > 0 {
-		if runtime.toolCallPrefixOvertaken(request.SourceRevision) {
+		if runtime.toolCallPrefixOvertaken(request.SourceRevision, request.Because) {
 			// The call is already in the append-only trajectory because the
 			// provider reached its terminal safe point. It has not crossed the
 			// action boundary, though, and renewed user speech is newer evidence
@@ -372,7 +372,29 @@ func (runtime *runtime) runSlow(
 // revision is incremented before a finalized observation enters the event
 // loop, which also covers the short flush interval after duplex state becomes
 // quiet but before that newer observation can be processed.
-func (runtime *runtime) toolCallPrefixOvertaken(sourceRevision uint64) bool {
+//
+// Except for a turn that exists to act without speaking, where this was a
+// second authority quietly overruling the first. The interaction model decides
+// whether to act; it re-decides continuously; and it chose to act silently while
+// looking at a situation that said "user: speaking right now" - the very fact
+// this would veto on. Re-deciding it here is not a safety check, it is the
+// dispatch path disagreeing with the layer that owns the judgement.
+//
+// Against a recording it disagreed every time. A phone menu never stops
+// talking and never stops producing observations, so both clauses stand
+// permanently true: measured over five calls, twenty-two of twenty-three
+// keypresses were refused as stale and the one that landed was luck. The act
+// exists precisely because the other party cannot be replied to and will not
+// pause - waiting for them to stop is waiting for something that does not
+// happen.
+//
+// What bounds it instead is time. Acting silently already runs under
+// interjectionDeadline, and a key that cannot be pressed inside that window is
+// dropped for being late rather than for the menu having carried on.
+func (runtime *runtime) toolCallPrefixOvertaken(sourceRevision uint64, because string) bool {
+	if because == string(interaction.ActActSilently) {
+		return false
+	}
 	return runtime.duplex.Snapshot().UserSpeaking || runtime.revision.Load() > sourceRevision
 }
 
@@ -416,7 +438,7 @@ func (runtime *runtime) breakSilenceWhileDeliberating(
 	// "I'm calling now, please hold" is speech, addressed to whoever the agent
 	// decided not to address. Measured at a phone menu, it covered the options
 	// the agent was waiting to hear.
-	if request.Because == string(interaction.ActCallTool) {
+	if request.Because == string(interaction.ActActSilently) {
 		return func() {}
 	}
 	var mu sync.Mutex
