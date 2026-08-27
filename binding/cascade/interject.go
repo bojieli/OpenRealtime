@@ -30,16 +30,6 @@ import (
 //
 // It never escalates. An interjection is not an answer, and handing it to the
 // reasoner would start work on a turn nobody has finished.
-// newSettledWords is how much new settled speech there has to be before the
-// agent may speak into somebody's turn again.
-//
-// Three, because a recogniser settles its prefix a word or two at a time and
-// the shortest thing worth a running commentary - a name, a number, a dish -
-// arrives with at least a little around it. Below this the same occurrence is
-// put in front of the voice several times while one sentence is still being
-// said.
-const newSettledWords = 3
-
 func (runtime *runtime) interject(decision interaction.Context) {
 	if runtime.policies.Interaction == nil {
 		return
@@ -119,17 +109,8 @@ func (runtime *runtime) interject(decision interaction.Context) {
 	if stable == "" {
 		stable = strings.TrimSpace(decision.Revision.Text())
 	}
-	// And more than a fragment of it. A settled prefix grows a word or two at
-	// a time, so "something new" is true of almost every revision while a
-	// person is mid-sentence - measured, three answers to one animal, at
-	// 21.9s, 22.8s and 24.0s, before the sentence carrying it had even
-	// committed. A running commentary answers things people say, and two words
-	// is rarely one of them.
-	//
-	// It is a bound on re-asking rather than a judgement about content: what
-	// the new words mean is still entirely the model's to decide.
-	if newlySettled := runtime.heardSinceSpeaking(stable); len(strings.Fields(newlySettled)) < newSettledWords {
-		runtime.noteInterject("nothing new enough since the agent last spoke")
+	if runtime.heardSinceSpeaking(stable) == "" {
+		runtime.noteInterject("nothing new since the agent last spoke")
 		return
 	}
 	// One at a time, but not forever. An interjection runs a continuation and
