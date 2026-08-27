@@ -77,12 +77,34 @@ func (board *Pinboard) SetForTurn(turn uint64, instructions []StandingInstructio
 		if strings.TrimSpace(instruction.Text) == "" {
 			continue
 		}
+		// A policy set earlier, listed again by a later turn, stays where it
+		// was set. Where a policy came from is a fact about the moment
+		// somebody asked for it, and re-reading it somewhere else does not
+		// move it - the runtime declines to act on the utterance that set a
+		// policy, correctly, so letting the origin drift onto whatever the
+		// speaker happened to be saying makes that refusal land on an
+		// occurrence instead: measured, the second animal in a story went
+		// uncounted because the policy had been re-listed from the sentence
+		// that mentioned it.
+		if standing, ok := board.find(instruction.Text); ok && standing != turn {
+			continue
+		}
 		instruction.Turn = turn
 		if setNS, ok := was[strings.ToLower(instruction.Text)]; ok {
 			instruction.SetNS = setNS
 		}
 		board.pinned = append(board.pinned, instruction)
 	}
+}
+
+// find reports which turn set a policy already in force.
+func (board *Pinboard) find(text string) (uint64, bool) {
+	for _, existing := range board.pinned {
+		if strings.EqualFold(existing.Text, text) {
+			return existing.Turn, true
+		}
+	}
+	return 0, false
 }
 
 // Revoke lifts a policy. It matches loosely because the words that lift a

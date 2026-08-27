@@ -154,10 +154,13 @@ func buildExtraction() string {
 	text.WriteString(
 		"Someone in a voice conversation is speaking. Decide which policies about *when* the agent should " +
 			"speak or act their words below establish, and reply with one line for each and nothing else.\n\n" +
-			"Answer for all of what they said, not for the last part of it. You are shown the whole of what " +
+			"Answer for all of what they said below, not just the last part of it. You are shown everything " +
 			"they have said since the agent last spoke, and you are shown it again each time they add to it, " +
-			"so every reading answers for the same turn - list every policy it sets, every time, including " +
-			"ones you would have listed before. A policy you leave out is one they no longer have.\n\n" +
+			"so list every policy that this stretch of speech sets - all of them, every time, because your " +
+			"answer replaces whatever you said about this same stretch before. One left out is one they no " +
+			"longer have.\n\n" +
+			"Policies set earlier are already on the list above and are not yours to repeat. Only what the " +
+			"words below set. If they set nothing, that is none, however much is already in force.\n\n" +
 			"none - they set no such policy. This is the usual answer, and it is a whole answer on its own.\n" +
 			"pin conversation <policy> - they set one that stands from now until somebody lifts it.\n" +
 			"pin turn <policy> - they set one that expires when they finish what they are currently saying.\n" +

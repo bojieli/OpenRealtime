@@ -155,3 +155,25 @@ func TestAnotherTurnLeavesEarlierPoliciesAloneAndKeepsTheirAge(t *testing.T) {
 		}
 	}
 }
+
+// A policy set earlier and listed again by a later turn stays where it was
+// set. The runtime declines to act on the utterance that set a policy, so an
+// origin that drifts onto whatever the speaker is saying makes that refusal
+// land on an occurrence: measured, the second animal in a story went uncounted
+// because the policy had been re-listed from the sentence that mentioned it.
+func TestAPolicysOriginDoesNotMoveWhenALaterTurnListsItAgain(t *testing.T) {
+	board := &interaction.Pinboard{}
+	board.SetForTurn(1, []interaction.StandingInstruction{
+		{Text: "count the animals out loud", Scope: interaction.ScopeConversation, SetNS: 100},
+	})
+	board.SetForTurn(2, []interaction.StandingInstruction{
+		{Text: "count the animals out loud", Scope: interaction.ScopeConversation, SetNS: 9_000},
+	})
+	inForce := board.InForce()
+	if len(inForce) != 1 {
+		t.Fatalf("one policy, not one per turn that mentions it: %v", inForce)
+	}
+	if inForce[0].Turn != 1 || inForce[0].SetNS != 100 {
+		t.Fatalf("origin moved: turn=%d setNS=%d", inForce[0].Turn, inForce[0].SetNS)
+	}
+}
