@@ -398,6 +398,16 @@ func Instruct(prompt string, request Request) string {
 			preamble = SilentStandingInstruction
 		}
 		prompt += "\n\n" + preamble + "\n- " + strings.Join(request.Standing, "\n- ")
+		// How to carry one out goes with the policies rather than with the
+		// act, because the agent speaks on ordinary turns too and the rules
+		// are the same ones there. A phase that is never heard needs none of
+		// it: it is not the one carrying them out.
+		if !request.Silent {
+			prompt += "\n\n" + CarryingOutInstruction
+			if request.Counting {
+				prompt += "\n\n" + CountingInstruction
+			}
+		}
 	}
 	if strings.TrimSpace(request.Heard) != "" {
 		prompt += "\n\n" + HeardInstruction + " \"" + strings.TrimSpace(request.Heard) + "\""
@@ -588,42 +598,12 @@ func validateCapabilities(capabilities []continuation.Capability) error {
 func becauseInstruction(act string, counting bool) string {
 	switch act {
 	case "speak-through":
-		// Composed for what the policy asks, not enumerated for every kind of
-		// policy at once. Three paragraphs of counting detail attached to
-		// every running commentary taught a waiter scenario to count: asked to
-		// order the dish that fits, the agent said "4 4 4", and then "1 order
-		// the sea there".
-		//
-		// Measured, five samples each, with the general rule alone: the waiter
-		// waits through the steak and orders the sea bass, and an interpreter
-		// gives the English - and counting manages the first animal once in
-		// five. With the arithmetic attached, counting manages it five times
-		// in five. Neither rule is right for both, and which one a turn needs
-		// is a fact about what the person asked for.
-		general := "You are speaking because something the person asked to be told about has just " +
-			"happened. Do exactly what their standing policy asks, for the occurrence in front of " +
-			"you, and say only that.\n\n" +
-			"What they say arrives in pieces and each piece repeats everything before it, so you are " +
-			"asked about the same occurrence over and over. Say something only when there is " +
-			"something new to say: if what they asked for has not changed since you last spoke, " +
-			"reply with " + WaitToken + " and nothing else. The sentence they are still saying is " +
-			"shown after the conversation because they have not finished it, not because it does " +
-			"not count."
-		if !counting {
-			return general
-		}
-		// Worked through rather than stated. Every shorter form was read one
-		// way too far in one direction or the other: "say the next number"
-		// counted turns, and "count them from the beginning" waited through
-		// the first animal five times out of five, having nothing to compare
-		// against.
-		return general + "\n\n" +
-			"Count every one of them in everything they have said. If that number is more than the " +
-			"last number you said, say it. If it is the same, or you counted none at all, say " +
-			WaitToken + ". So the first one they mention is \"one\" even though you have said " +
-			"nothing yet, and the same one mentioned again is " + WaitToken + ". Never say zero out " +
-			"loud: it is read aloud like everything else you write, and nobody counting things " +
-			"aloud says zero."
+		// Only what this act is, now. How to carry a policy out lives with the
+		// policies, because the agent speaks on ordinary turns too and the
+		// rules do not change with the act.
+		return "You are speaking because something the person asked to be told about has just happened. " +
+			"Do exactly what their standing policy asks, for the occurrence in front of you, and say " +
+			"only that. They have not finished talking and are not handing you the floor."
 	case "call-tool":
 		// Measured on a phone menu: the key was pressed correctly and then
 		// announced out loud - "I have pressed two to select the order status

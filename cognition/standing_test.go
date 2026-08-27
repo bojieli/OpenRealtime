@@ -98,6 +98,15 @@ func TestTheVoiceIsToldWhatTheTurnWasCalledFor(t *testing.T) {
 	if !strings.Contains(counting, "Count every one of them") {
 		t.Fatalf("a running commentary was not told what it is for:\n%s", counting)
 	}
+	// And the same rules on an ordinary turn, because the agent speaks on
+	// those too: without them it counted one on a sentence about a river, and
+	// that premature one suppressed the real first count.
+	plain := instructionFor(t, cognition.Request{
+		Counting: true, Standing: []string{"count the animals out loud (1m ago)"},
+	})
+	if !strings.Contains(plain, "Count every one of them") {
+		t.Fatalf("an ordinary turn under a counting policy was not told how to count:\n%s", plain)
+	}
 	// And a running commentary that is not a count is not told how to count.
 	// Attached to every one of them, the arithmetic taught a waiter scenario
 	// to count: asked to order the dish that fits, the agent said "4 4 4".

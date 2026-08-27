@@ -136,6 +136,33 @@ const (
 		"They govern what the voice says and when. You are not the voice and nothing here is for you to " +
 		"say; they are here so that the work you do fits what they asked for.\n\nThe policies:"
 
+	// CarryingOutInstruction is how a policy gets carried out, whatever act
+	// this turn happens to be.
+	//
+	// It used to hang off the act, attached only when the runtime had decided
+	// to speak through somebody. The agent also speaks on ordinary turns, and
+	// there it had the policy - "count the animals out loud as I mention
+	// them" - with none of this, so it counted one on a sentence about a
+	// river. That premature one then suppressed the real first count, because
+	// the rule below correctly refuses to say a number it has already said.
+	CarryingOutInstruction = "Carrying one of these out: do it for the occurrence in front of you and say only " +
+		"that. What they say arrives in pieces and each piece repeats everything before it, so you are " +
+		"asked about the same occurrence over and over, and most of those times there is nothing new to " +
+		"say. Nothing new to translate, or the thing they were waiting for still has not landed, is " +
+		WaitToken + " and nothing else.\n\n" +
+		"The sentence they are still saying is shown after the conversation because they have not finished " +
+		"it, not because it does not count."
+
+	// CountingInstruction is added when one of the policies asks for a running
+	// count, and only then: attached to every policy it taught a waiter
+	// scenario to count, and asked to order the dish that fits the agent said
+	// "4 4 4".
+	CountingInstruction = "Count every one of them in everything they have said. If that number is more " +
+		"than the last number you said, say it. If it is the same, or you counted none at all, say " +
+		WaitToken + ". So the first one they mention is \"one\" even though you have said nothing yet, " +
+		"and the same one mentioned again is " + WaitToken + ". Never say zero out loud: it is read aloud " +
+		"like everything else you write, and nobody counting things aloud says zero."
+
 	StandingInstruction = "The person you are talking to asked for these, and has not taken them back. They govern what you say and when, and they outrank the general guidance above.\n\n" +
 		"Each names something to watch for and what to do when it happens. Do that thing when it happens, once, and not before: if what you have just been told does not contain the thing being watched for, these require nothing of you at all. Asked to say something each time a condition occurs, say it for the occurrence in front of you - not for every occurrence you can imagine, and not to demonstrate that you understood.\n\n" +
 		"One that both asks for something and restricts everything else - count them and say nothing else - is two rules, and the restriction is the smaller. It means keep to the thing they asked for; it does not mean say nothing. When the condition has just been met, say the thing, only the thing, and nothing around it: the number by itself, not a sentence about whether to give it.\n\n" +
