@@ -573,9 +573,9 @@ func TestFailedToolReportDoesNotAutomaticallyRetrySlow(t *testing.T) {
 	waitFor(t, func() bool { return slow.invocations() >= 2 }, "new user evidence did not reopen slow cognition")
 }
 
-func TestFastProposalsNeverBecomeExecutableCalls(t *testing.T) {
+func TestFastProposalsNeverBecomeSpeechOrExecutableCalls(t *testing.T) {
 	fast := newFast([]continuation.Event{
-		{Kind: continuation.EventAssistantDelta, Text: "Checking."},
+		{Kind: continuation.EventAssistantDelta, Text: "The balance lookup succeeded."},
 		{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
 			CallID: "proposed_1", Name: "get_balance", Arguments: json.RawMessage(`{}`),
 		}},
@@ -588,7 +588,6 @@ func TestFastProposalsNeverBecomeExecutableCalls(t *testing.T) {
 		}},
 	})
 	speak(t, runtime, 3)
-	waitFor(t, func() bool { return len(sink.spokenTexts()) >= 1 }, "expected a fast answer")
 	waitFor(t, func() bool {
 		for _, item := range runtime.Trajectory().Items {
 			if item.Kind == trajectory.KindToolProposal {
@@ -597,12 +596,104 @@ func TestFastProposalsNeverBecomeExecutableCalls(t *testing.T) {
 		}
 		return false
 	}, "expected the fast call to be recorded as a proposal")
+	if spoken := sink.spokenTexts(); len(spoken) != 0 {
+		t.Fatalf("prose accompanying an unresolved proposal crossed as speech: %#v", spoken)
+	}
+	for _, item := range runtime.Trajectory().Items {
+		if item.Kind == trajectory.KindAssistant && item.Content == "The balance lookup succeeded." {
+			t.Fatal("premature proposal prose became conversational history")
+		}
+	}
 
 	sink.mu.Lock()
 	toolCalls := len(sink.toolCalls)
 	sink.mu.Unlock()
 	if toolCalls != 0 {
 		t.Fatal("a proposal must never reach the client as an executable call")
+	}
+}
+
+// A user confirmation opens an action turn; it does not make the intended
+// effect true. The fast voice may identify that intent through a proposal, but
+// only a successful authoritative ToolResult lets a later voice turn report
+// the result. This is the regression for an exchange being announced as
+// processed before its write call had crossed the action boundary.
+func TestActionSuccessSpeechWaitsForTheCommittedToolResult(t *testing.T) {
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	fast := newFast(
+		[]continuation.Event{
+			{Kind: continuation.EventAssistantDelta, Text: "The change has been processed with value 999."},
+			{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+				CallID: "proposal_1", Name: "apply_change", Arguments: json.RawMessage(`{"value":7}`),
+			}},
+		},
+		[]continuation.Event{{
+			Kind: continuation.EventAssistantDelta, Text: "The change was applied with value 7.",
+		}},
+	)
+	slow := newSlow(
+		[]continuation.Event{{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
+			CallID: "apply_1", Name: "apply_change", Arguments: json.RawMessage(`{"value":7}`),
+		}}},
+		[]continuation.Event{{
+			Kind: continuation.EventAssistantDelta,
+			Text: `apply_change succeeded with {"value":7}`,
+		}},
+	)
+	runtime, sink := startSession(t, cascade.Config{
+		Fast: fast, Slow: slow,
+		Tools: []action.ToolSpec{{
+			Name: "apply_change", Description: "apply a requested change",
+			Parameters: json.RawMessage(`{"type":"object","properties":{"value":{"type":"integer"}},"required":["value"]}`),
+			Confirm:    action.ConfirmNever,
+			Dispatcher: action.DispatcherFunc(func(
+				ctx context.Context, call trajectory.ToolCall,
+			) (trajectory.ToolResult, error) {
+				started <- struct{}{}
+				select {
+				case <-release:
+					return trajectory.ToolResult{
+						CallID: call.CallID, Name: call.Name, Output: json.RawMessage(`{"value":7}`),
+					}, nil
+				case <-ctx.Done():
+					return trajectory.ToolResult{}, context.Cause(ctx)
+				}
+			}),
+		}},
+	}, binding.Settings{})
+
+	speak(t, runtime, 3)
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the authoritative action never reached its dispatcher")
+	}
+	if spoken := sink.spokenTexts(); len(spoken) != 0 {
+		t.Fatalf("success crossed before the tool returned: %#v", spoken)
+	}
+	for _, item := range runtime.Trajectory().Items {
+		if item.Kind == trajectory.KindAssistant && strings.Contains(item.Content, "value 999") {
+			t.Fatal("premature success became conversational history")
+		}
+	}
+
+	close(release)
+	waitFor(t, func() bool { return len(sink.spokenTexts()) == 1 }, "the committed result was never voiced")
+	if spoken := sink.spokenTexts(); len(spoken) != 1 || spoken[0] != "The change was applied with value 7." {
+		t.Fatalf("result-grounded speech = %#v", spoken)
+	}
+	var resultAt, groundedAt = -1, -1
+	for index, item := range runtime.Trajectory().Items {
+		if item.Kind == trajectory.KindToolResult && item.ToolResult != nil && item.ToolResult.CallID == "apply_1" {
+			resultAt = index
+		}
+		if item.Kind == trajectory.KindAssistant && item.Content == "The change was applied with value 7." {
+			groundedAt = index
+		}
+	}
+	if resultAt < 0 || groundedAt <= resultAt {
+		t.Fatalf("grounded narration did not follow its result: result=%d speech=%d", resultAt, groundedAt)
 	}
 }
 

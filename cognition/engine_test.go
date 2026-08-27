@@ -195,6 +195,9 @@ func TestFastAllowlistIsClosedOutsideAnObservationSafePoint(t *testing.T) {
 	if len(fast.seen.Invocation.Tools) != 0 || len(result.ToolCalls) != 0 || len(result.ToolProposals) != 1 {
 		t.Fatalf("a holding/background-style fast turn acquired action authority: %+v", result)
 	}
+	if strings.Contains(fast.seen.Invocation.Instruction, cognition.FastProposalInstruction) {
+		t.Fatal("a fast turn with no attached proposal schemas received proposal guidance")
+	}
 }
 
 func TestFastEmittedCallsCommitAsNonExecutableProposals(t *testing.T) {
@@ -212,12 +215,20 @@ func TestFastEmittedCallsCommitAsNonExecutableProposals(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}
-	result, err := engine.RunFast(context.Background(), cognition.Request{SourceRevision: 1}, nil)
+	result, err := engine.RunFast(context.Background(), cognition.Request{
+		SourceRevision: 1, AllowFastTools: true,
+	}, nil)
 	if err != nil {
 		t.Fatalf("run fast: %v", err)
 	}
 	if len(result.ToolProposals) != 1 || len(result.ToolCalls) != 0 {
 		t.Fatalf("fast output must be a proposal: %+v", result)
+	}
+	if len(fast.seen.Invocation.Tools) != 1 || fast.seen.Invocation.Tools[0].Name != "get_balance" {
+		t.Fatalf("proposal-only fast cognition did not receive the live schema: %+v", fast.seen.Invocation.Tools)
+	}
+	if !strings.Contains(fast.seen.Invocation.Instruction, cognition.FastProposalInstruction) {
+		t.Fatal("proposal-only guidance did not reach the fast provider")
 	}
 	for _, item := range store.Snapshot().Items {
 		if item.Kind == trajectory.KindToolCall {
@@ -260,8 +271,8 @@ func TestSlowIsSilentAndFastKnowsCapabilitiesWithoutTools(t *testing.T) {
 		t.Fatalf("the log must record that slow could not speak, got %q", slowAssistant.Producer.SpeechAuthority)
 	}
 
-	// Fast is told what the agent can do, and given no tools to call: its
-	// authority is to hand the turn on, not to act.
+	// A background-style fast turn is told what the agent can do, but has no
+	// current user authority to propose or execute an action.
 	if _, err := engine.RunFast(context.Background(), cognition.Request{SourceRevision: 1}, nil); err != nil {
 		t.Fatalf("run fast: %v", err)
 	}

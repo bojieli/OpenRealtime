@@ -304,17 +304,15 @@ func (engine *Engine) ConfigureVisualReflex(config *VisualReflexConfig) error {
 }
 
 // RunFast appends one low-latency continuation. The fast provider sees the
-// complete capability manifest and, only at an eligible safe point, the exact
-// tool schemas admitted to its execution lane.
+// complete capability manifest and, only at an eligible safe point, schemas
+// carrying either its proposal-only lane or its exact executable allowlist.
 func (engine *Engine) RunFast(ctx context.Context, request Request, observer StreamObserver) (continuation.RunResult, error) {
 	if engine.config.ExternalFast {
 		return continuation.RunResult{}, ErrExternalFast
 	}
-	return engine.run(ctx, engine.config.Fast, trajectory.PhaseFast, continuation.Invocation{
-		Instruction: engine.instruction(engine.prompt(trajectory.PhaseFast), request), SourceRevision: request.SourceRevision,
-		Capabilities: engine.capabilityManifest(), Tools: engine.fastTools(request.AllowFastTools),
-		MaxOutputTokens: engine.config.FastMaxTokens,
-	}, observer, request.live())
+	return engine.run(
+		ctx, engine.config.Fast, trajectory.PhaseFast, engine.fastInvocation(request), observer, request.live(),
+	)
 }
 
 // PrepareFast generates a fast continuation before the endpoint, against a
@@ -329,11 +327,25 @@ func (engine *Engine) PrepareFast(
 	if engine.config.ExternalFast {
 		return nil, ErrExternalFast
 	}
-	return engine.runner.Prepare(ctx, engine.config.Fast, continuation.Invocation{
-		Instruction: engine.instruction(engine.prompt(trajectory.PhaseFast), request), SourceRevision: request.SourceRevision,
-		Capabilities: engine.capabilityManifest(), Tools: engine.fastTools(request.AllowFastTools),
+	return engine.runner.Prepare(ctx, engine.config.Fast, engine.fastInvocation(request), provisional, nil)
+}
+
+// fastInvocation adds proposal guidance only when this exact safe point
+// carries proposal schemas. Session tools arrive after engine construction,
+// while tool-free voice sessions must not pay for an irrelevant action prompt
+// on every turn, so neither a static prompt nor catalog presence alone is the
+// right condition.
+func (engine *Engine) fastInvocation(request Request) continuation.Invocation {
+	tools := engine.fastTools(request.AllowFastTools)
+	instruction := engine.instruction(engine.prompt(trajectory.PhaseFast), request)
+	if len(tools) > 0 && engine.config.Fast.Descriptor().EffectiveToolAuthority() == continuation.ToolAuthorityPropose {
+		instruction = Compose(instruction, FastProposalInstruction)
+	}
+	return continuation.Invocation{
+		Instruction: instruction, SourceRevision: request.SourceRevision,
+		Capabilities: engine.capabilityManifest(), Tools: tools,
 		MaxOutputTokens: engine.config.FastMaxTokens,
-	}, provisional, nil)
+	}
 }
 
 // PrepareSlow generates a slow continuation before the endpoint.
@@ -556,17 +568,21 @@ func (engine *Engine) executableTools() []continuation.ToolDefinition {
 	return tools
 }
 
-// fastTools filters the live catalog through the immutable exact allowlist.
+// fastTools opens one of two typed lanes at an eligible user-observation safe
+// point. Proposal authority sees the live catalog so action intent can be
+// emitted structurally, but the runner records every such call as
+// non-executable. Execute authority sees only the immutable exact allowlist.
+//
 // Reading the catalog live matters because client session updates can replace
 // declarations after the engine was built. A removed or renamed declaration
-// disappears from the invocation and therefore cannot execute.
+// disappears from the invocation and therefore cannot be proposed or execute.
 func (engine *Engine) fastTools(allowedAtSafePoint bool) []continuation.ToolDefinition {
-	if !allowedAtSafePoint || engine.config.Catalog == nil || engine.config.FastToolFilter == nil {
+	if !allowedAtSafePoint || engine.config.Catalog == nil {
 		return nil
 	}
 	var result []continuation.ToolDefinition
 	for _, tool := range engine.config.Catalog.Tools() {
-		if !engine.config.FastToolFilter(tool) {
+		if engine.config.FastToolFilter != nil && !engine.config.FastToolFilter(tool) {
 			continue
 		}
 		tool.Parameters = slices.Clone(tool.Parameters)

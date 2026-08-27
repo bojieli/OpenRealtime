@@ -94,11 +94,11 @@ func TestRunnerAppendsOneInterleavedTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.AssistantText != "I'll check." || len(result.ToolCalls) != 1 || result.EndVersion != 5 || !result.Committed {
+	if result.AssistantText != "I'll check." || len(result.ToolCalls) != 1 || result.EndVersion != 4 || !result.Committed {
 		t.Fatalf("unexpected result: %#v", result)
 	}
 	items := store.Snapshot().Items
-	if items[1].Kind != trajectory.KindInstruction || items[2].Kind != trajectory.KindReasoning || items[3].Kind != trajectory.KindAssistant || items[4].Kind != trajectory.KindToolCall {
+	if items[1].Kind != trajectory.KindInstruction || items[2].Kind != trajectory.KindReasoning || items[3].Kind != trajectory.KindToolCall {
 		t.Fatalf("unexpected trajectory kinds: %#v", items)
 	}
 	if items[2].ProviderStateType != "test-state" || len(items[3].ProviderState) != 0 {
@@ -376,9 +376,12 @@ func TestRunnerRecordsProposalWithoutExecutionAuthorityOrNativeCallState(t *test
 			Effort: EffortMinimal, Streaming: true, NativeStateType: "test-state",
 			RetainsToolCalls: true, ToolAuthority: ToolAuthorityPropose,
 		},
-		events: []Event{{Kind: EventToolCall, ToolCall: &trajectory.ToolCall{
-			CallID: "proposal-1", Name: "lookup", Arguments: json.RawMessage(`{"key":"x"}`),
-		}}},
+		events: []Event{
+			{Kind: EventAssistantDelta, Text: "The lookup succeeded."},
+			{Kind: EventToolCall, ToolCall: &trajectory.ToolCall{
+				CallID: "proposal-1", Name: "lookup", Arguments: json.RawMessage(`{"key":"x"}`),
+			}},
+		},
 		completion: Completion{ProviderStateType: "test-state", ProviderState: json.RawMessage(`{"tool_calls":["proposal-1"]}`)},
 	}
 	result, err := runner.Run(context.Background(), provider, Invocation{
@@ -390,9 +393,12 @@ func TestRunnerRecordsProposalWithoutExecutionAuthorityOrNativeCallState(t *test
 	if len(result.ToolProposals) != 1 || len(result.ToolCalls) != 0 {
 		t.Fatalf("proposal authority escaped as execution: %#v", result)
 	}
+	if result.AssistantText != "The lookup succeeded." {
+		t.Fatalf("mixed prose was not retained for diagnostics: %#v", result)
+	}
 	items := store.Snapshot().Items
 	if len(items) != 2 || items[1].Kind != trajectory.KindToolProposal || len(items[1].ProviderState) != 0 {
-		t.Fatalf("proposal was not portably isolated: %#v", items)
+		t.Fatalf("proposal was not portably isolated from premature prose: %#v", items)
 	}
 	if err := store.Append(trajectory.Item{
 		ID: "result", Kind: trajectory.KindToolResult, MonotonicNS: 2,

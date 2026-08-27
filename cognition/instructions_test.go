@@ -72,3 +72,17 @@ func TestAnUnknownAnswerDoesNotTurnAQuestionIntoAnUnfinishedSentence(t *testing.
 		}
 	}
 }
+
+func TestProposalOnlyVoiceSeparatesActionIntentFromSpeech(t *testing.T) {
+	for _, obligation := range []string{
+		"non-executable proposal channel",
+		"asks for or confirms an action",
+		"write no spoken text in the same output",
+		"does not perform the action",
+		"owns execution",
+	} {
+		if !strings.Contains(cognition.FastProposalInstruction, obligation) {
+			t.Fatalf("fast proposal instruction lost %q", obligation)
+		}
+	}
+}

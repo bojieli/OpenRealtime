@@ -351,7 +351,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 		if err != nil {
 			return geminiRequest{}, fmt.Errorf("encode capability manifest: %w", err)
 		}
-		systemInstructions = append(systemInstructions, "The following is the complete set of capabilities this agent has. You cannot execute any of them yourself, and you are not given them as tools; the reasoning half executes, and may revise or reject what you propose. Never tell the user the agent lacks a capability that is listed here:\n"+string(encoded))
+		systemInstructions = append(systemInstructions, "The following is the complete set of capabilities this agent has. Schema visibility is not execution authority: the runtime records whether a tool-channel call is executable or only a non-executable proposal, and reasoning may revise or reject a proposal. Never tell the user the agent lacks a capability that is listed here:\n"+string(encoded))
 	}
 	if len(systemInstructions) > 0 {
 		part, _ := json.Marshal(map[string]string{"text": strings.Join(systemInstructions, "\n\n")})

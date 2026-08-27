@@ -616,6 +616,19 @@ func (runtime *runtime) publishAssistant(
 		runtime.noteWithheld(result, request, "the model said nothing that reached a safe point")
 		return nil
 	}
+	// Speech and action are separate commitment channels. When one continuation
+	// selected an executable call or a typed non-executable proposal, its prose
+	// cannot cross as well: before a ToolResult it has no authority to describe
+	// the outcome, and after one it would race the result-driven voice turn.
+	//
+	// This is intentionally about structured state, not words such as "done" or
+	// "processed". A sentence-level filter would miss paraphrases and swallow
+	// legitimate conversation. The proposal remains in the trajectory for the
+	// slow phase to validate, while ordinary speech without action intent keeps
+	// the same low-latency path.
+	if len(result.ToolProposals) > 0 || len(result.ToolCalls) > 0 {
+		return runtime.withholdAssistant(result, request, "speech accompanied an action proposal or call")
+	}
 	// A model that writes a tool call as prose instead of emitting one has not
 	// said anything a person should hear. Measured on a phone menu, the text
 	// [{"name":"press_key","arguments":{"key":"2"}}] was spoken aloud - the
@@ -623,12 +636,10 @@ func (runtime *runtime) publishAssistant(
 	// whoever is listening. There is nothing to salvage: the call is malformed
 	// as a call and the sentence is malformed as speech.
 	if looksLikeToolCall(result.AssistantText) {
-		runtime.noteWithheld(result, request, "the model wrote a tool call as prose")
-		return nil
+		return runtime.withholdAssistant(result, request, "the model wrote a tool call as prose")
 	}
 	if isStageDirection(result.AssistantText) {
-		runtime.noteWithheld(result, request, "the model described saying nothing instead of saying nothing")
-		return nil
+		return runtime.withholdAssistant(result, request, "the model described saying nothing instead of saying nothing")
 	}
 	if strings.Contains(result.AssistantText, cognition.WaitToken) {
 		// A decision to be silent, which is a different thing from a turn that
@@ -641,8 +652,7 @@ func (runtime *runtime) publishAssistant(
 		// where the other reading speaks a control token out loud. Measured at
 		// a phone menu, "Pressing the key for order status. <wait>" was read
 		// to a recording that could not hear it and was still talking.
-		runtime.noteWithheld(result, request, "the voice chose to stay silent")
-		return nil
+		return runtime.withholdAssistant(result, request, "the voice chose to stay silent")
 	}
 	// A background result is voiced by a fresh fast continuation. If the slow
 	// phase added nothing, that continuation can produce the same sentence the
@@ -656,8 +666,7 @@ func (runtime *runtime) publishAssistant(
 	// merely prepared content was never committed to the listener and therefore
 	// cannot suppress anything.
 	if runtime.alreadyPublishedForRevision(result) {
-		runtime.noteWithheld(result, request, "the same response was already queued for this observation")
-		return nil
+		return runtime.withholdAssistant(result, request, "the same response was already queued for this observation")
 	}
 	items := runtime.assistantItems(result)
 	if len(items) == 0 {
@@ -672,8 +681,7 @@ func (runtime *runtime) publishAssistant(
 		Text: result.AssistantText, Complete: !result.Interrupted, SpeechAuthority: authority,
 	})
 	if !decision.Committed() {
-		runtime.noteWithheld(result, request, decision.Reason)
-		return nil
+		return runtime.withholdAssistant(result, request, decision.Reason)
 	}
 	ids := make([]string, 0, len(items))
 	for _, item := range items {
@@ -719,6 +727,30 @@ func (runtime *runtime) publishAssistant(
 	}
 	_ = ctx
 	return nil
+}
+
+// withholdAssistant records that committed model text did not cross the
+// speech boundary and appends the matching visibility transition. Cancellation
+// is part of the semantic boundary, not only cleanup: provider projections
+// must not present unheard text to later cognition as something the user was
+// told. A mixed action result normally has no assistant item because the
+// continuation runner isolates its typed call; in that case this only records
+// the diagnostic reason.
+func (runtime *runtime) withholdAssistant(
+	result continuation.RunResult, request cognition.Request, why string,
+) error {
+	runtime.noteWithheld(result, request, why)
+	items := runtime.assistantItems(result)
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	return runtime.recordCancellations([]action.Commitment{{
+		ID: "withheld-" + result.InvocationID, AssistantItemIDs: ids,
+	}}, "speech-withheld", eventloop.PriorityRoutine)
 }
 
 func (runtime *runtime) alreadyPublishedForRevision(result continuation.RunResult) bool {
@@ -1018,7 +1050,7 @@ func looksLikeToolCall(text string) bool {
 	// writes a call into content instead of the structured tool channel. It is
 	// just as non-conversational as the JSON inside it and, observed in a real
 	// voice benchmark, otherwise reaches synthesis literally as "tool call".
-	return strings.HasPrefix(lowered, "<tool_call>") && strings.HasSuffix(lowered, "</tool_call>")
+	return strings.HasPrefix(lowered, "<tool_call>")
 }
 
 // isStageDirection reports text that describes an absence of speech rather

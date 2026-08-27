@@ -725,8 +725,9 @@ func idFor(prefix string, sequence uint64) string {
 
 // toolCatalog exposes the declared tool surface to cognition. Every tool is
 // visible as a capability, slow receives all executable schemas, and fast
-// receives only runtime.fastExecutableTool definitions at eligible safe
-// points.
+// receives either proposal-only schemas or only runtime.fastExecutableTool
+// definitions at eligible safe points. Schema visibility never changes the
+// authority recorded by the provider descriptor and continuation runner.
 type toolCatalog struct{ runtime *runtime }
 
 func (catalog toolCatalog) Tools() []continuation.ToolDefinition {

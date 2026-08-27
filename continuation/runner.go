@@ -533,6 +533,14 @@ func (runner *Runner) buildItems(
 		}
 		return descriptor.EffectiveToolAuthority() == ToolAuthorityPropose || segment.undeclared
 	})
+	// A provider sometimes returns both prose and a call despite being asked to
+	// choose one channel. The call is typed action intent; the prose has no
+	// result yet and cannot become conversational history as though it were
+	// heard. RunResult retains it for diagnostics, while the canonical prefix
+	// retains only the action for the next phase to validate.
+	hasAction := slices.ContainsFunc(segments, func(segment bufferedSegment) bool {
+		return segment.toolCall != nil
+	})
 	for _, segment := range segments {
 		// A tool call becomes executable only when the provider invocation
 		// reaches its terminal safe point. Interrupted reasoning and assistant
@@ -554,6 +562,11 @@ func (runner *Runner) buildItems(
 			item.Kind = trajectory.KindReasoning
 			item.Content = segment.text.String()
 		case EventAssistantDelta:
+			// An interrupted call has no action intent at its terminal safe
+			// point; retain its partial prose as interrupted diagnostic state.
+			if hasAction && !interrupted {
+				continue
+			}
 			// A turn whose whole content was the completion marker has nothing
 			// left once the marker is removed. The marker is control, so what
 			// remains is not an empty utterance to record - it is no utterance.

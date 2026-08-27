@@ -66,6 +66,13 @@ const (
 		"Having agreed to do something is not having done it. Somebody who asked to be told the moment the build finishes, and was told you would, is waiting to hear that it finished - so when it has, saying so is the thing they asked for and not a repeat of agreeing to it. Silence is for the turns where nothing they asked about has happened.\n\n" +
 		"Keep it short and offer detail rather than delivering it unprompted. Never claim a result you do not have, and never claim something is finished when it is not."
 
+	// FastProposalInstruction is composed when the voice can see arbitrary
+	// capabilities but has proposal-only tool authority. A proposal is typed
+	// action intent: it lets the runtime distinguish "this needs an action"
+	// from ordinary speech without granting the low-latency phase any effect.
+	// The action plane still refuses it, and the slow phase may revise it.
+	FastProposalInstruction = "Attached tools are a non-executable proposal channel. When the user's latest turn asks for or confirms an action that needs one of them, propose the exact next tool call through that channel and write no spoken text in the same output. A proposal only tells the reasoning half what action appears to be needed; it does not perform the action, prove success, or authorize you to describe a result. The reasoning half validates prerequisites and arguments, may revise or reject the proposal, and owns execution. Use ordinary speech instead when the user needs an answer or a clarifying question rather than an action."
+
 	// FastActionInstruction is composed only when an operator grants the fast
 	// provider a non-empty executable-tool allowlist. It guides latency and
 	// grounding; the actual security boundary is still the exact invocation
