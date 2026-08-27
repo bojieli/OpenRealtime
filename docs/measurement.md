@@ -2382,3 +2382,50 @@ judgement about whether an occurrence has happened, which is content.
 
 Left standing at 2/5, with the reproduction recorded, rather than fixed by
 adding instructions until a number moves.
+
+## F62 - the suite's variance is larger than the differences I was reading
+
+Two full runs of identical code, suite65 and suite68, with nothing changed
+between them but the clock:
+
+	scenario                 suite65   suite68
+	count-as-they-go               3         2
+	asked not to be interrupted    5         5
+	a recorded menu                5         5
+	cutting in on something wrong  5         2
+	ordering from a waiter         4         5
+	translating as they speak      3         2
+	waiting out a silence          5         4
+	somebody else's conversation   5         4
+	an acknowledgement             5         5
+	telling them what it saw       5         3
+	an ordinary question           5         5
+	                          --------  --------
+	                             50/55     42/55
+
+Eight points, and one scenario swinging five to two.
+
+This invalidates a stretch of work rather than merely qualifying it. The
+setting-guard narrowing was judged on suite66 against suite65 and called a net
+loss of three; its revert was judged on suite68 and looks like a loss of eight.
+Neither number means what I read into it. The same is true of the instruction I
+added and reverted before it: interpreting "stayed at 2/5" across runs whose
+own noise is wider than that.
+
+What the earlier findings established still holds, because those were measured
+the other way: a defect reproduced from the dump, replayed at temperature zero,
+fixed, and replayed again - the cold start at 9/10 to 10/10, the extraction
+cases at 6/6, the recogniser transcribing Mandarin as Mandarin, the speaker
+thresholds against measured cosine distributions. None of those rest on a suite
+delta.
+
+What does not hold is anything I concluded from comparing one full run against
+another. F55 said a single pass cannot separate versions differing by a
+scenario or two; the honest version is stronger. A single pass cannot separate
+versions differing by eight points, and the per-scenario numbers move by three
+and five on identical code.
+
+The instrument needs repeats before it can rank configurations at all. Until
+then, scenario-level probes at five or ten repeats against a reproduced input
+are the only measurements here that carry information, and the suite total is a
+direction rather than a score.
