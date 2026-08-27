@@ -153,26 +153,21 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		runtime.noteInterject("nothing new since the agent last spoke")
 		return
 	}
-	{
-		// Wait for them to finish saying something. Not only when answering a
-		// stretch the agent has already spoken into - the first answer needs
-		// it too, and needs it most.
+	if newly != stable {
+		// Inside a stretch of speech the agent has already answered, wait for
+		// them to finish saying something before answering again.
 		//
-		// The voice is asked again every time the recogniser extends the text,
-		// so a sentence is four or five separate chances to get it wrong, and
-		// the chances are independent. Measured against the real prompt on "It
-		// was a warm afternoon and I was walking along by the river" with a
-		// counting policy standing, the voice says a number about a fifth of
-		// the time - which over four asks is a wrong count on nearly every
-		// sentence, and the story opened "One. One. Two." with no animal in
-		// it. Nothing in the wording closes a gap that size; asking once does.
+		// The first answer does not wait, and an attempt to make it wait was
+		// reverted rather than kept. It was compensating for the voice saying
+		// a number at a sentence with nothing in it to count, on the reasoning
+		// that fewer asks means fewer chances to be wrong. The cause of those
+		// numbers turned out to be a dropped restriction - a recogniser's full
+		// stop swallowing "and say nothing else" - and with that fixed the
+		// voice declines on its own.
 		//
-		// It costs nothing that was working. A policy is still carried out
-		// while they are still talking, which is what these scenarios turn on
-		// - just at the end of the thing they said rather than partway through
-		// it. Pressing a key at a recorded menu goes through act-silently and
-		// never reaches here, which is the case that actually turns on
-		// answering the moment something is named.
+		// What the delay cost was the case that cannot afford it. A correction
+		// is useless once they have finished the sentence it was about, and
+		// waiting took cutting in from five in five to one.
 		//
 		// What stops the same occurrence being answered twice is the fact the
 		// voice is handed: how much of what they are saying it has already
