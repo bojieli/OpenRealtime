@@ -218,6 +218,14 @@ func (runtime *runtime) interject(decision interaction.Context) {
 			SourceRevision: decision.Revision.ID,
 			Standing:       standing, Counting: runtime.countingIsInForce(), Interjecting: true, Because: string(interaction.ActSpeakThrough),
 			Heard: heard,
+			// This is the path that speaks while somebody is still talking, so
+			// it is the path that answers one stretch of speech more than
+			// once. Trimming Heard to what is new is not enough on its own:
+			// the conversation above still holds the whole sentence, and a
+			// policy that says to count everything they have said is answered
+			// from there - with the agent's own earlier numbers in view, which
+			// is the one thing it cannot reconcile.
+			Answered: runtime.alreadyAnsweredFor(runtime.store.Snapshot()),
 		}
 		// An interjection that cannot run is an interjection that does not
 		// happen, not a fault in the conversation. It is opportunistic by
