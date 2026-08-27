@@ -218,8 +218,17 @@ func buildExtraction() string {
 			"Prefer pinning to missing, for a policy that is not already there. One set and not recorded fails " +
 			"silently and looks like the agent ignoring someone; one recorded that turns out not to apply is " +
 			"simply never triggered.\n\n" +
-			"Write the policy back as a short instruction to the agent, in the speaker's own words where you " +
-			"can.\n\nWorked examples. These are other conversations, not this one.\n")
+			"Write the policy back as a short instruction to the agent. Where their own words already read as " +
+			"one, use them unchanged - \"count the animals out loud as I mention them and say nothing else\" " +
+			"needs nothing done to it, and every rewrite is a chance to ask for something they did not. " +
+			"Rewrite only what has to be rewritten: their you and me into the agent and them, a request " +
+			"phrased about themselves into one phrased about the agent.\n\n" +
+			"What you write is what the agent will do, so it has to ask for the same thing they asked for, " +
+			"and the verb is where that lives. When their verb names an operation on the thing rather than " +
+			"the thing itself - count, add up, total, translate, convert - keep that operation. A general " +
+			"verb like \"say\" or \"mention\" drops it and leaves the agent producing the thing instead of " +
+			"the result: \"count the animals\" is a number that goes up, \"say the animals\" is the word " +
+			"capybara, and only one of those is what they asked for.\n\nWorked examples. These are other conversations, not this one.\n")
 	for _, example := range extractionExamples() {
 		text.WriteString("\n---\n" + RenderForExtraction(example.existing, example.recent, example.utterance) +
 			"\n-> " + example.answer + "\n")
