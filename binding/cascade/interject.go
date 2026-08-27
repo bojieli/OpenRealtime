@@ -95,7 +95,21 @@ func (runtime *runtime) interject(decision interaction.Context) {
 	// This is the deterministic half of the rule the instruction states - the
 	// condition fires the policy, not the arrival of more text - and it is the
 	// half that does not depend on a model reading a line correctly.
-	if runtime.heardSinceSpeaking(strings.TrimSpace(decision.Revision.Text())) == "" {
+	// Against the stable text, not the whole revision. A recogniser keeps
+	// revising its own tail - re-punctuating, re-spelling a proper noun,
+	// adding a word and taking it back - and every one of those is "something
+	// new" to a comparison that reads the lot. Measured on one afternoon, that
+	// is twenty chances to answer the same occurrence, each answer becoming
+	// the context for the next, and one slip compounds through all of them:
+	// the counts came back "1 3 3 1", then "4 5", then "four five six".
+	//
+	// The stable prefix is what the recogniser has committed to and only grows,
+	// so acting on it means acting once per thing actually said.
+	stable := strings.TrimSpace(decision.Revision.StableText)
+	if stable == "" {
+		stable = strings.TrimSpace(decision.Revision.Text())
+	}
+	if runtime.heardSinceSpeaking(stable) == "" {
 		runtime.noteInterject("nothing new since the agent last spoke")
 		return
 	}
@@ -148,7 +162,9 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		// nature - the turn it would have spoken into belongs to somebody else
 		// - and reporting it reached the client as a session error for a
 		// moment that had simply passed.
-		runtime.markSpoken(decision.Revision.Text())
+		// In the same units the guard compares against, or the comparison is
+		// between a stable prefix and a whole revision and never matches.
+		runtime.markSpoken(stable)
 		// Bounded, because an interjection that has missed its moment must not
 		// take the next one with it: it commits through a loop with a single
 		// driver, so it can sit behind other work indefinitely while every
