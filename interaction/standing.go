@@ -132,6 +132,15 @@ func extractionExamples() []extractionExample {
 		{nil, nil, "Never talk over me when I'm reading something out.", "pin conversation do not speak while they are reading something out"},
 		{watching, []string{"user: Shout if you see the train coming.", "agent: Will do."},
 			"And nothing else, please.", "none"},
+		// Ordinary speech while a policy stands. The bias towards pinning read
+		// this as the policy being set, pinned a second one worded
+		// differently, and the pinboard - comparing text - kept both. Measured,
+		// one instruction ended up as three policies and the agent counted
+		// every occurrence once per policy.
+		{[]StandingInstruction{{Text: "say the running total each time they read out a number",
+			Scope: ScopeConversation}},
+			[]string{"user: I'll read out the numbers, give me the running total.", "agent: Will do."},
+			"Four hundred and twelve.", "none"},
 	}
 }
 
@@ -171,8 +180,14 @@ func buildExtraction() string {
 			"watching for something: \"stop\" is finished the moment it is obeyed and is none, while \"let me " +
 			"finish\" means staying quiet until a condition holds and is a policy for this turn. Neither is a " +
 			"revocation: revoke is only for lifting something on the list above.\n\n" +
-			"Prefer pinning to missing. A policy set and not recorded fails silently and looks like the agent " +
-			"ignoring someone; one recorded that turns out not to apply is simply never triggered.\n\n" +
+			"A policy already on the list is in force, and somebody talking on under it is not setting it " +
+			"again. Once it is there, the answer for everything they say while it stands is none, unless they " +
+			"are lifting it or setting something new. This matters more than it looks: two policies asking for " +
+			"the same thing are two triggers, and the agent does the thing twice for every occurrence - so a " +
+			"running count pinned twice counts every animal twice.\n\n" +
+			"Prefer pinning to missing, for a policy that is not already there. One set and not recorded fails " +
+			"silently and looks like the agent ignoring someone; one recorded that turns out not to apply is " +
+			"simply never triggered.\n\n" +
 			"Write the policy back as a short instruction to the agent, in the speaker's own words where you " +
 			"can.\n\nWorked examples. These are other conversations, not this one.\n")
 	for _, example := range extractionExamples() {
