@@ -184,6 +184,24 @@ type Situation struct {
 // The runtime knows which acts are meaningful and there is no reason to make a
 // model rediscover it. Offering "listen" to an agent that is mid-sentence
 // invites an answer that means nothing.
+// AllActs is the whole vocabulary.
+//
+// The list was written out by hand wherever one was needed - validation, the
+// available set, dispatch - and a vocabulary that exists only as repeated
+// literals cannot be checked against anything. An act added to the constants
+// and missed in one of those places is not a compile error; it is an act that
+// silently means nothing wherever it was missed, which has happened twice in
+// the dispatch path.
+//
+// Order is the order they are declared, and callers that show acts to a model
+// rely on it being stable.
+func AllActs() []Act {
+	return []Act{
+		ActStaySilent, ActSpeakThrough, ActAnswer, ActInterrupt,
+		ActActSilently, ActKeepSpeaking, ActStopSpeaking,
+	}
+}
+
 func (state Situation) AvailableActs() []Act {
 	acts := []Act{ActKeepSpeaking, ActStopSpeaking}
 	if !state.AgentSpeaking {

@@ -68,10 +68,7 @@ func FloorForAct(act Act) FloorSemantics {
 // Validate rejects a plan that would become ambiguous at a process boundary.
 func (plan Plan) Validate() error {
 	valid := false
-	for _, act := range []Act{
-		ActStaySilent, ActSpeakThrough, ActAnswer, ActInterrupt,
-		ActActSilently, ActKeepSpeaking, ActStopSpeaking,
-	} {
+	for _, act := range AllActs() {
 		if plan.Act == act {
 			valid = true
 			break

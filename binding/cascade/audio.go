@@ -299,19 +299,14 @@ func (runtime *runtime) holdsThroughPause(
 			Agreed:     endpoint.Ended,
 		})
 	}
-	// The one act that produces speech without ending a turn has to be acted on
-	// wherever it is decided. It was handled where partials are processed and
-	// not here, so a speak-through chosen at a pause was decided and dropped -
-	// nine of them in one conversation, and the two that did reach the
-	// interjection were the only ones anybody could have heard.
-	if endpoint.Act == interaction.ActActSilently {
-		runtime.actSilently(decision)
-	}
-	if endpoint.Act == interaction.ActSpeakThrough {
-		runtime.interject(decision)
-	}
+	// An act has to be carried out wherever it is decided. This site handled
+	// some of them and the projection path handled others, so an act chosen at
+	// the site that did not know it was decided and dropped - nine
+	// speak-throughs in one conversation. See carryOut, which is now the one
+	// place that says what an act means.
+	runtime.carryOut(decision, endpoint.Act)
 	if endpoint.Ended {
-		runtime.setInterjecting(decision.Revision.ID, endpoint.Act == interaction.ActInterrupt)
+		runtime.setInterjecting(decision.Revision.ID, tookTheFloor(endpoint.Act))
 		runtime.audioMu.Lock()
 		runtime.pauseActive = false
 		runtime.pauseStartNS, runtime.pauseSilenceNS = 0, 0

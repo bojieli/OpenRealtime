@@ -26,49 +26,17 @@ func (runtime *runtime) projectEndpoint(ctx context.Context, decision interactio
 		return false, nil
 	}
 	endpoint := runtime.policies.Floor.Endpoint(decision)
-	if endpoint.Act == interaction.ActActSilently {
-		runtime.actSilently(decision)
-	}
-	if endpoint.Act == interaction.ActSpeakThrough {
-		// The one act that produces speech without ending a turn. It is handled
-		// here rather than by the caller because the caller only ever learns
-		// whether the turn ended, and this is the case where it did not and
-		// something still has to happen.
-		runtime.interject(decision)
-	}
-	if endpoint.Act == interaction.ActInterrupt {
-		// Cutting in takes the floor - that is what separates it from speaking
-		// through - and it was taking the floor *before* saying anything. The
-		// endpoint below projects the turn closed, the acoustic gate is forced
-		// to stop, the recogniser finalises the fragment it was cut off in, an
-		// ordinary turn is built from that, and only then does the voice speak.
-		// Every one of those steps happens after the moment worth interrupting
-		// at, so an interruption could not reach the world until it was no
-		// longer one.
-		//
-		// Measured on the interrupting scenario: the interaction model chose
-		// interrupt 153 times, the voice was shown the sentence only once the
-		// recogniser had committed it whole, and the correction it composed -
-		// "The third.", captured from the live request dump, exactly what was
-		// asked for - was written at 15150ms for a window that closed at
-		// 11902ms. Right, and useless.
-		//
-		// When a person cuts in, the words and the floor happen together. The
-		// other speaker trails off because you spoke, not before it. So the
-		// words start here and the endpoint below still closes the turn; what
-		// changes is that speaking is no longer waiting on it.
-		//
-		// The closing turn does not answer the same stretch twice: the mark of
-		// how much the agent has already spoken for is what stops it, which is
-		// the job that mark exists to do.
-		runtime.interjectFor(decision, interaction.ActInterrupt)
-	}
+	// Whatever the act means, carried out the same way here as at a pause.
+	// See carryOut: these two sites used to each decide for themselves and
+	// drifted twice, and both times an act chosen at the wrong site was
+	// silently dropped.
+	runtime.carryOut(decision, endpoint.Act)
 	if !endpoint.Ended || !endpoint.Projected {
 		return false, nil
 	}
 	// A turn taken from somebody still speaking is not a turn they offered,
 	// and what belongs in it is different. The voice is told which it got.
-	runtime.setInterjecting(decision.Revision.ID, endpoint.Act == interaction.ActInterrupt)
+	runtime.setInterjecting(decision.Revision.ID, tookTheFloor(endpoint.Act))
 	runtime.audioMu.Lock()
 	if runtime.acoustic == nil {
 		runtime.audioMu.Unlock()
