@@ -1147,7 +1147,6 @@ func warmModels(ctx context.Context, options serveOptions) {
 	}
 }
 
-
 func float64Pointer(value float64) *float64 { return &value }
 
 // buildSlow configures the background reasoner. It is always silent: its
