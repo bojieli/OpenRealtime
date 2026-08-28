@@ -347,6 +347,18 @@ type chatToolCall struct {
 	ID       string       `json:"id"`
 	Type     string       `json:"type"`
 	Function chatFunction `json:"function"`
+	// ExtraContent carries whatever a provider hangs off a tool call that is
+	// not part of the shape everyone shares. It is kept verbatim and sent back
+	// verbatim, because a field this adapter does not understand is exactly
+	// the field it must not drop.
+	//
+	// Gemini puts a thought_signature here when it is thinking, and refuses
+	// the next request without it: "Function call is missing a
+	// thought_signature in functionCall parts", HTTP 400, which took the
+	// recorded-menu scenario from passing to erroring the moment the voice was
+	// given a reasoning budget. Decoding into a struct and re-encoding is
+	// lossy by construction, and this is the loss that showed.
+	ExtraContent json.RawMessage `json:"extra_content,omitempty"`
 }
 
 type providerState struct {
