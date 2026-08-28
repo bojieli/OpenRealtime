@@ -206,24 +206,6 @@ func (runtime *runtime) interject(decision interaction.Context) {
 			runtime.noteInterject("they have not finished saying anything since the agent last spoke")
 			return
 		}
-		// And once the agent has already answered inside this stretch,
-		// punctuation alone is not enough to answer again. The recogniser
-		// punctuates every piece it commits, so an instruction arriving as
-		// "Translate everything he says." then "As he goes." then "And don't
-		// wait for him to finish." presents three finished sentences a tenth
-		// of a second apart, and the agent acknowledged each one. Six
-		// acknowledgements played over the speech they were about, and the
-		// interpreting that was asked for arrived after the moment for it.
-		//
-		// A pause is the speaker's own mark and the recogniser cannot invent
-		// it. Between those pieces it was 110ms; between the sentences of a
-		// story somebody is telling, six hundred. So a second answer waits for
-		// one, at the length this deployment already calls the end of an
-		// utterance.
-		if newly != stable && !runtime.pausedAsIfFinished(decision) {
-			runtime.noteInterject("already answered inside this stretch, and they have not paused since")
-			return
-		}
 	}
 	// One at a time, but not forever. An interjection runs a continuation and
 	// commits it through a loop with one driver, so it can sit behind other
