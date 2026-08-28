@@ -2710,3 +2710,43 @@ effort on the reasoning that it is never heard and therefore free, and that is
 true of its output and false of its timing: the voice defers to it on most
 turns, so it sits in front of the answer. "Never heard" was read as "not on the
 critical path", and those are different claims.
+
+## F71 - the whole comparison, with the tool-call bug out of it
+
+Both voices at fifteen repeats, everything else the same:
+
+	scenario                        qwen   gemini
+	count-as-they-go                   8       12   +4
+	asked not to be interrupted       15       15
+	a recorded menu                   15       14   -1
+	cutting in on something wrong     13        6   -7
+	ordering from a waiter             8       11   +3
+	translating as they speak         11       12   +1
+	waiting out a silence             15       15
+	somebody else's conversation      14       14
+	an acknowledgement                15       15
+	telling them what it saw          11       15   +4
+	an ordinary question              15       14   -1
+	                                -----   ------
+	                                  140      143
+
+The menu figure needed the tool-call fix before it meant anything: with the
+signature dropped it read 8/15 and errored outright, which is a measurement of
+a bug rather than of a voice. Fixed, it is 14/15 and the error count is zero.
+
+Three scenarios gain three or four. One loses seven, and it is the one that
+cannot afford to think: cutting into somebody's sentence is the most
+speed-critical act here, and the scenario's own note says waiting until they
+finish makes the correction useless. A voice that thinks for a second and a
+half cannot do it, and no amount of judgement compensates.
+
+So the finding is not "use the reasoning model". It is that the budget buys
+judgement and spends time, and this suite contains scenarios of both kinds. The
+totals are three apart and the per-scenario differences are four and seven -
+reporting the total alone would hide the only two facts worth having.
+
+What that implies for the design is a per-act budget rather than a per-provider
+one: the act the interaction model chose says how long there is. An interrupt
+has no time; a count being carried out while somebody keeps talking has
+seconds. Effort currently lives on the adapter descriptor, so this needs the
+request to carry it, which is the next change rather than one measured here.
