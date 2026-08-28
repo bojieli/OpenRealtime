@@ -2453,3 +2453,44 @@ The instrument needs repeats before it can rank configurations at all. Until
 then, scenario-level probes at five or ten repeats against a reproduced input
 are the only measurements here that carry information, and the suite total is a
 direction rather than a score.
+
+## F63 - a baseline at fifteen repeats, and what five could never have told us
+
+140/165, 85%, and for the first time these are rates rather than draws:
+
+	asked not to be interrupted        15/15   100%
+	a recorded menu                    15/15   100%
+	waiting out a silence they asked   15/15   100%
+	an acknowledgement is not an       15/15   100%
+	an ordinary question (control)     15/15   100%
+	somebody else's conversation       14/15    93%
+	cutting in on something wrong      13/15    87%
+	translating as they speak          11/15    73%
+	telling them what it saw           11/15    73%
+	count-as-they-go                    8/15    53%
+	ordering from a waiter              8/15    53%
+
+Five scenarios pass every run. Three of those - the menu, the silence, and
+somebody else's conversation at fourteen - were at nought in five when this
+work started.
+
+What five repeats could not have told us, taking counting at its measured 53%:
+a five-run sample lands on 2/5 or 3/5 six times in ten, on 1/5 or 4/5 three
+times in ten, and on 0/5 or 5/5 the rest. Every reading taken of that scenario
+today is inside that spread, which is why the swings between them carried no
+information about the changes made in between.
+
+It cuts both ways, and the correction matters as much as the retraction.
+Interpreting measures 73%, so the 2/5 readings that prompted four attempts at
+it were unlucky draws rather than evidence of a deep fault - F61 overstated it.
+Cutting in measures 87%, at which a 0/5 is a one-in-a-thousand event: those
+readings were not noise, and the bare-restriction fix that moved it really did
+move it.
+
+So the rule is not "suite numbers mean nothing". It is that a swing of two is
+noise at these rates and a swing of five is not, and telling them apart needs
+the repeats. This baseline is the reference every later change is measured
+against.
+
+Measured before the guard that makes a second answer inside one stretch wait
+for a pause rather than punctuation, which is therefore still unmeasured.
