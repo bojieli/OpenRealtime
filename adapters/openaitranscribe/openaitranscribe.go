@@ -35,6 +35,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/internal/audio"
@@ -444,6 +445,25 @@ func (adapter *Adapter) revision(text string, sourceSample uint64, final bool) v
 // afternoon. And I" and back again, and compared as characters neither is a
 // prefix of the other.
 func settled(previous, current string) (stable, unstable string) {
+	// The unit of agreement is the script's, not the format's. Chinese,
+	// Japanese and Thai are written without spaces between words, so splitting
+	// on whitespace returns the whole utterance as one token and it agrees
+	// with the previous revision only when nothing changed at all. Stable is
+	// then empty on every partial of every sentence, and a caller that falls
+	// back to the whole revision when stable is empty - which is what the
+	// interjection path does - acts on precisely the unsettled tail this
+	// exists to hold back.
+	//
+	// It costs more than a missing optimisation, because a truncated syllable
+	// in these scripts is usually another real word rather than a visibly
+	// broken one. Measured while interpreting Mandarin, a partial ending
+	// part-way through 很高兴 - "very pleased" - was transcribed 高雄, the city
+	// Kaohsiung, and the voice translated that faithfully. In English the same
+	// truncation gives "thir-", which is nothing, and the damage never
+	// appears.
+	if withoutWordSpacing(current) {
+		return settledByCharacter(previous, current)
+	}
 	was, now := strings.Fields(previous), strings.Fields(current)
 	agreed := 0
 	for agreed < len(was) && agreed < len(now) &&
@@ -458,6 +478,45 @@ func settled(previous, current string) (stable, unstable string) {
 		return stable, ""
 	}
 	return stable, " " + strings.Join(now[agreed:], " ")
+}
+
+// withoutWordSpacing reports whether the text is in a script that does not put
+// spaces between words. Tested on what is present rather than what is absent:
+// a single English word has no spaces either, and splitting that by character
+// would report half a word as settled, which is the opposite of the point.
+func withoutWordSpacing(text string) bool {
+	for _, r := range text {
+		if unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hiragana, r) ||
+			unicode.Is(unicode.Katakana, r) || unicode.Is(unicode.Thai, r) {
+			return true
+		}
+	}
+	return false
+}
+
+// settledByCharacter agrees on the longest common prefix, counted in
+// characters. In a script written without spaces the character is the unit a
+// recogniser revises, so it is the unit agreement is measured in.
+func settledByCharacter(previous, current string) (stable, unstable string) {
+	was, now := []rune(previous), []rune(current)
+	agreed := 0
+	for agreed < len(was) && agreed < len(now) && was[agreed] == now[agreed] {
+		agreed++
+	}
+	// The last character of the agreed run is the one still being decided:
+	// a recogniser that has heard 很高 may yet write 很高兴 or 高雄, and the
+	// difference is the character it has committed to least. Holding one back
+	// costs a character of latency and buys not translating a word nobody said.
+	if agreed > 0 && agreed < len(now) {
+		agreed--
+	}
+	if agreed == 0 {
+		return "", current
+	}
+	if agreed == len(now) {
+		return string(now), ""
+	}
+	return string(now[:agreed]), string(now[agreed:])
 }
 
 func textDelta(previous, current string) string {

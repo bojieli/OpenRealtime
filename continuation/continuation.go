@@ -232,12 +232,45 @@ func ObservationContent(item trajectory.Item, elapsed string) string {
 	return elapsed + " " + observationContent(item)
 }
 
+// speakerLabel names a voice that is not the one the session is with, and is
+// empty for the user's own speech. It reads the same observation source the
+// situation builder does, so the conversation and the instant call the same
+// person the same thing.
+func speakerLabel(item trajectory.Item) string {
+	if item.Observation == nil {
+		return ""
+	}
+	switch source := strings.TrimSpace(item.Observation.Source); source {
+	case "", "microphone", "voice", "text", "user":
+		return ""
+	default:
+		return source
+	}
+}
+
 func observationContent(item trajectory.Item) string {
 	content := item.Content
 	if item.Event != nil && item.Event.SupersedesRevision != 0 {
 		content = "Updated user speech revision; replace the earlier partial observation with this text:\n" + content
 	}
 	if trajectory.AuthorityOf(item) != trajectory.AuthorityObserver {
+		// Whose voice this was, when it was not the person the session is
+		// with. One microphone carries everybody, and speech from a third
+		// party arrives with the same authority as the user's own - so
+		// rendering it bare tells the model the user said it. That is a false
+		// premise, and a model answering it correctly still answers wrongly:
+		// asked to interpret for a colleague, the voice reads the colleague's
+		// Mandarin as the user's own words and has no way to tell that the
+		// thing it was asked to translate has arrived.
+		//
+		// Only when it was somebody else. "user" is what the model already
+		// assumes, so saying it adds nothing, and the whole cost of this is
+		// paid on the turns where the assumption is wrong. The interaction
+		// model has been told this all along - its situation names the speaker
+		// - and the voice, which has to decide what to do about it, was not.
+		if speaker := speakerLabel(item); speaker != "" {
+			return speaker + ": " + content
+		}
 		return content
 	}
 	observer, source := "observer", ""
