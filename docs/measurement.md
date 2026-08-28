@@ -3090,3 +3090,40 @@ an absent one, and it would be indistinguishable from switching the feature off.
 This is the same profile as its 30/45 acting on the interaction cases, seen
 without the ambiguity: the 8B is not trading accuracy for caution, it is
 declining to act.
+
+## F81
+
+F79's fix, measured. Cutting in now speaks and takes the floor at the same time
+rather than one after the other, and the scenarios that turn on a moment
+passing all moved together:
+
+                                    qwen   before  after
+    cutting in on something wrong    2/5     0/5    5/5
+    ordering from a waiter           5/5     2/5    5/5
+    a recorded menu                  5/5     4/5    5/5
+    count-as-they-go                 2/5     5/5    5/5
+    somebody else's conversation     4/5     3/5    5/5
+    translating as they speak        2/5     1/5    4/5
+    asked not to be interrupted      5/5     5/5    5/5
+    suite total                     42/55   40/55  49/55
+
+The waiter moved for the same reason as cutting in, which is the confirmation
+that matters more than either number: its moment also passes if you wait for a
+pause, and it was the scenario a thinking voice had been losing worst. One cause,
+two scenarios, neither of them touched directly.
+
+Asked-not-to-be-interrupted does not move, and that is the check on the change
+rather than a null result. It is the scenario most at risk from making
+interruptions cheaper, and what refuses those is the interaction model declining
+to choose the act - which this does not touch. Making interrupting work did not
+make it happen more.
+
+Two cells fell in the same run - the visual case to 2/5 and waiting out a
+silence to 3/5 - and both came back 5/5 when re-run against the identical
+binary. That is evidence these cells are noisy at five repeats, and it is not
+evidence the suite is really 54/55: re-running a failing cell until it passes is
+how a number is talked into existence. The total stands at 49/55 until a second
+independent run says otherwise.
+
+Neither scenario has a path to the change. Both have nobody speaking, so there
+is no floor to take and the interrupt branch is never reached.
