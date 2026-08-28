@@ -2655,3 +2655,31 @@ The honest summary of the model question: on this GPU, for the phase that
 decides whether to speak, a reasoning model with a budget beats a larger
 instruct model without one - and beats itself without one, which is the part
 worth remembering. The parameter count was never the variable that mattered.
+
+## F69 - the waiter's answer is right and two seconds late, and the reasoner is why
+
+The failing runs with a thinking voice do not order the wrong dish. They order
+the right one, after the window:
+
+	22557ms  heard  "The third is a seedless with pheno."   (sea bass with fennel, mangled)
+	25522ms  heard  "and new potatoes."
+	28368ms  window closes
+	30712ms  says   "I'll take the third special, please - the fish with fennel and new potatoes!"
+
+That answer contains "fish", which the check accepts. It is two and a third
+seconds too late.
+
+The turn profiles say where the time goes, and it is not the voice's thinking:
+voice turns run 161ms to 957ms. The turns that carry this answer read
+reason=1308ms then voice=957ms - the reasoner is in the path before the voice
+speaks, so the chain from the last committed piece to audio is the recogniser's
+lag plus 2.3 seconds of model, and the window is gone.
+
+With the small voice the same chain was about a second shorter, which is why it
+sometimes landed - not because its judgement was better. Its failures were
+wrong dishes; these are right dishes, late.
+
+So the waiter is not evidence against a thinking voice. It is evidence that a
+time-critical act must not wait on the reasoner, and that this scenario is the
+only one in the suite where the two are in tension: everywhere else the answer
+is worth more than the second it costs.
