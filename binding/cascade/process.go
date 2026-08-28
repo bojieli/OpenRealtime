@@ -35,12 +35,6 @@ type actionUtterance = action.Utterance
 // gate that owns that decision, which is how a turn ends up spoken over
 // another one or answered twice.
 func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) error {
-	transcriptAct, _, eventAware, ungovernedObservation := runtime.transcriptActFor(batch)
-	if eventAware {
-		defer runtime.forgetTranscriptActs(batch)
-	}
-	respondToObservation := batch.Contains(trajectory.KindObservation) &&
-		(!eventAware || ungovernedObservation || transcriptAct == interaction.ActAnswer)
 	// An obligation the ledger is holding becomes visible to the model here,
 	// at the first safe point after the evidence that created it committed.
 	// Raising it earlier is not possible - the log refuses a repair whose
@@ -54,7 +48,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	// stopped would be too early: they stop constantly while making the point
 	// the policy was protecting. Expiring it here, where the agent is about to
 	// respond to a completed turn, is the moment it was asking about.
-	if respondToObservation {
+	if batch.Contains(trajectory.KindObservation) {
 		defer runtime.pinboard.EndTurn()
 	}
 	revision := runtime.latestRevision(batch)
@@ -63,7 +57,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 			NowNS: runtime.scheduler.NowNS(), Duplex: runtime.duplex.Snapshot(),
 		},
 		Cause: interaction.Cause{
-			Observation:      respondToObservation,
+			Observation:      batch.Contains(trajectory.KindObservation),
 			Escalated:        batch.Signalled(interaction.SignalEscalated),
 			ToolResult:       batch.Contains(trajectory.KindToolResult),
 			ToolError:        batchHasToolError(batch),
