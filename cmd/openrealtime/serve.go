@@ -1041,7 +1041,14 @@ func buildFast(options serveOptions) (continuation.Provider, error) {
 	// interpreting cases right, which five rewordings of the prompt could not.
 	// It costs 1781ms a turn against 30ms, which is the trade a deployment
 	// makes rather than one this code should make for it.
-	fastEffort, err := parseEffort(options.fastEffort)
+	// Empty is the flag's default rather than an error: a caller building
+	// options in code has not asked for anything, and the answer to that is
+	// what the flag would have given them.
+	wanted := strings.TrimSpace(options.fastEffort)
+	if wanted == "" {
+		wanted = string(continuation.EffortMinimal)
+	}
+	fastEffort, err := parseEffort(wanted)
 	if err != nil {
 		return nil, err
 	}
