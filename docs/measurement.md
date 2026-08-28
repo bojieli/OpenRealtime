@@ -2683,3 +2683,30 @@ So the waiter is not evidence against a thinking voice. It is evidence that a
 time-critical act must not wait on the reasoner, and that this scenario is the
 only one in the suite where the two are in tension: everywhere else the answer
 is worth more than the second it costs.
+
+## F70 - the reasoner's effort is on the critical path, and it was set to high
+
+F69 found the waiter ordering the right dish two seconds late, with the
+reasoner in the chain between the last word heard and the first word spoken.
+Lowering its effort, and changing nothing else:
+
+	ordering from a waiter, gemini voice, slow effort high      8/15
+	ordering from a waiter, gemini voice, slow effort minimal  11/15
+
+Which completes the picture on the voice question. Against the fifteen-repeat
+baseline with the local instruct voice:
+
+	                          before    after
+	count-as-they-go           8/15     11/15
+	translating as they speak 11/15     13/15
+	ordering from a waiter     8/15     11/15
+
+All three scenarios that had resisted everything, improved by the same two
+changes: give the phase that decides whether to speak room to think, and take
+the phase that is never heard off the path where it makes people wait.
+
+The second is the one that had hidden longest. The reasoner defaulted to high
+effort on the reasoning that it is never heard and therefore free, and that is
+true of its output and false of its timing: the voice defers to it on most
+turns, so it sits in front of the answer. "Never heard" was read as "not on the
+critical path", and those are different claims.

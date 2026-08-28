@@ -31,11 +31,17 @@ fast:
 # The reasoner. Never heard: what it writes is background state the voice reads
 # before it speaks next. It is off the path between hearing a word and
 # answering, so it can afford to think.
+# effort here is not free even though this phase is never heard. When the voice
+# defers to it - which it does on most turns - the reasoner sits between the
+# last word somebody said and the first the agent speaks. Measured on the
+# waiter, where the moment passes in a second: 8/15 at high effort, 11/15 at
+# minimal, with nothing else changed. The failing runs at high effort ordered
+# the right dish two seconds after the window closed.
 slow:
   provider: gemini
   model: gemini-3.5-flash
   token-env: GEMINI_API_KEY
-  effort: high
+  effort: minimal
 
 # The interaction model, and the classifiers that read a policy when it is
 # pinned. These run many times a second and decide only whether to speak, not
