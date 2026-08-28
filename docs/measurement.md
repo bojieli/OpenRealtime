@@ -2494,3 +2494,35 @@ against.
 
 Measured before the guard that makes a second answer inside one stretch wait
 for a pause rather than punctuation, which is therefore still unmeasured.
+
+## F64 - a fix that is real offline and invisible in the scenario
+
+The agree-once rule, pointed at the coverage fact rather than at a judgement of
+sameness, took the sentence with nothing in it to count from "One." eight times
+out of eight to <wait> eight out of eight. That is a real change in a real
+request replayed from a dump.
+
+Counting measures 9/15 with it, against 8/15 without. One run at fifteen
+repeats is noise.
+
+Both readings are correct and they are about different things. The offline case
+is one turn: given this exact prompt, does the voice answer correctly. The
+scenario is a conversation: the same policy fires perhaps fifteen times, the
+recogniser splits differently on every run, and a turn that now answers
+correctly is one of many that must all go right for the run to pass. Fixing one
+of them moves the run's odds by less than the run-to-run spread.
+
+That is not an argument against offline cases - they are the only measurement
+here that reproduces a defect exactly and shows it gone. It is an argument
+against expecting a scenario to move when one turn improves, and against
+reading a scenario that does not move as evidence the turn did not.
+
+What still fails in counting, from the baseline run's own transcript: the agent
+says "one" 49ms after "It was a warm afternoon and I was walking along by the
+river" commits, then "two" and "three" before the capybara sentence arrives at
+all. The waiter fails the same way - "I will order the ribeye steak" at 14.6s,
+before any dish has been named, then the correct "sea bass with fennel and new
+potatoes" at 28.5s, outside the window it was needed in.
+
+Both are the agent acting before the thing it was watching for has happened,
+which is the judgement the voice makes and the runtime cannot check.
