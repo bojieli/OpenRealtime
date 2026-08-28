@@ -350,6 +350,19 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.sidecarVoice, "sidecar-voice", "",
 		"voice for a model that has more than one; empty leaves the choice to the model")
 	flags.SetOutput(output)
+	// The file first, the command line over it. A deployment keeps its choices
+	// in the file and varies one of them on the line without restating the
+	// other ninety-six.
+	flags.String("config", "", "path to a YAML settings file; anything given on the command line overrides it")
+	path, err := configPath(arguments)
+	if err != nil {
+		return err
+	}
+	if path != "" {
+		if err := loadConfig(flags, path); err != nil {
+			return err
+		}
+	}
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}

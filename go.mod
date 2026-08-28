@@ -16,7 +16,7 @@ require (
 	github.com/pion/ice/v4 v4.4.0 // indirect
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/mdns/v2 v2.1.0 // indirect
-	github.com/pion/opus v0.1.0 // indirect
+	github.com/pion/opus v0.1.0
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.17 // indirect
 	github.com/pion/rtp v1.10.5 // indirect
@@ -32,4 +32,5 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1
 )

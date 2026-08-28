@@ -1,0 +1,66 @@
+# Every setting here is a flag, and every flag can go here. Nesting is the flag
+# name split on dashes, so `fast: {provider: ...}` is -fast-provider. Anything
+# given on the command line overrides the file, which is how a deployment keeps
+# its choices in version control and varies one of them for a run.
+#
+# A key that matches no flag is an error rather than a silent typo.
+
+listen: 127.0.0.1:8765
+
+# The voice. Every word it writes is spoken the moment it writes it, and it
+# decides whether this is a turn to speak at all - the interaction model only
+# offers it the chance. That judgement is the hard one in this system.
+#
+# effort is how much room it has to think before answering. minimal suits a
+# small instruct model, which has nothing to think with. A reasoning model
+# given no budget makes the same mistakes as the small one: measured on eight
+# turns replayed from real runs, the local instruct model scores four, Gemini
+# 3.5 Flash with no budget scores four, and the same model with a budget scores
+# five - and the two it gains are the ones no rewording of the prompt could fix.
+#
+# It costs about 1.8s a turn against 30ms. A phone agent may want the speed; an
+# interpreter sitting behind a second speaker may want the judgement.
+fast:
+  provider: google-openai
+  model: gemini-3.5-flash
+  token-env: GEMINI_API_KEY
+  effort: low
+  sees: true
+  max-tokens: 96
+
+# The reasoner. Never heard: what it writes is background state the voice reads
+# before it speaks next. It is off the path between hearing a word and
+# answering, so it can afford to think.
+slow:
+  provider: gemini
+  model: gemini-3.5-flash
+  token-env: GEMINI_API_KEY
+  effort: high
+
+# The interaction model, and the classifiers that read a policy when it is
+# pinned. These run many times a second and decide only whether to speak, not
+# what to say, so they want a fast local model rather than a thoughtful one.
+# Measured at 17ms a decision on this GPU.
+policy:
+  models: interaction
+  model: qwen-fast
+  url: http://127.0.0.1:8000/v1
+  reasoning: chat_template_kwargs
+
+# Recognition, speech, and who is speaking. The speaker thresholds are measured
+# rather than chosen - see F53 in docs/measurement.md.
+asr:
+  provider: openai-compatible
+  url: http://127.0.0.1:8003/v1
+  model: whisper-turbo
+tts:
+  provider: fish-audio
+  url: http://127.0.0.1:8123/v1/tts
+  model: fishaudio/fish-speech-1.5
+speaker:
+  url: http://127.0.0.1:8124/embed
+
+observers: audio+video
+narrator: dedicated
+speak-by-sentence: true
+endpoint-silence: 120
