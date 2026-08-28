@@ -1,0 +1,144 @@
+# Parallel streaming-ASR experiment.
+#
+# This file deliberately does not replace openrealtime.example.yaml. The
+# existing VAD/batch-ASR tuning remains its own control path; selecting this
+# file opts into Deepgram and the separate partial/final transcript policy.
+# DEEPGRAM_API_KEY and GEMINI_API_KEY are read from the environment.
+
+listen: 127.0.0.1:8875
+
+# Deepgram emits hypotheses while audio is arriving. A 100 ms advance cadence
+# drains those events promptly without asking a batch recogniser to re-read a
+# growing recording.
+asr:
+  provider: deepgram
+  model: nova-3
+  # English is the measured-safe default. Nova-3's current multi mode covers
+  # English, Spanish, French, German, Hindi, Russian, Portuguese, Japanese,
+  # Italian, and Dutch; it does not cover Mandarin. Use multi only within that
+  # set, or choose a locale such as zh-CN for a Mandarin stream.
+  language: en-US
+  cadence: 100ms
+  endpointing: 300ms
+
+# The event-aware policy is a control-plane component, not recogniser logic.
+# These two blocks are the complete model rules for their respective event
+# kinds and can be varied independently in an experiment without recompiling.
+transcript:
+  policy: event-aware
+  timeout: 250ms
+  # Standing rules are extracted off the audio path and require several Qwen
+  # reads (policy, count/restriction, and scope), so they have a separate bound.
+  extraction-timeout: 2s
+  partial-acts: listen,speak-through,interrupt,act-silently,keep-speaking,stop-speaking
+  partial-rules: |
+    You choose when a voice agent acts at a PARTIAL streaming-transcript event.
+    The transcript is a provisional live hypothesis: later words may extend or
+    correct it, and the speaker owns the floor. Apply these gates in order:
+
+    1. If the agent already has output queued or is speaking: keep-speaking when
+       it deliberately interrupted or spoke through this same utterance and the
+       speaker is merely continuing it; a brief listener acknowledgement such
+       as "mhm" is also keep-speaking. A distinct phone menu, recording,
+       correction, or new request directed to the agent is stop-speaking.
+    2. For a recorded menu, act-silently only when the current transcript has
+       both the digit and the option label matching the user's stated goal.
+       "Press 1 for billing" is listen when the goal is order status; "Press
+       2" alone is also listen; "Press 2 for order status" is act-silently.
+    3. Choose speak-through immediately when, and only when, an in-force
+       standing instruction requires output during speech and its condition is
+       already in the current words. Judge "matches" from the recent
+       conversation as well as the standing line: the preference may have been
+       stated before the rule. A delegated rule still applies when the live
+       voice is labelled someone else. Paired examples:
+       - user wants fish + standing order when something fits + waiter says
+         ribeye or duck -> listen;
+       - the same context + waiter has now said "the third is a sea bass" ->
+         speak-through immediately. Do not wait for its garnish, punctuation,
+         or the final event;
+       - standing count plus "A capybara" -> speak-through; after the agent
+         said 1, standing count plus "Then a heron" -> speak-through;
+       - standing translate plus new speech -> speak-through.
+    4. Choose interrupt only when the exact wrong fact is already in "heard"
+       and the contract says delay is harmful. Never predict a contradiction.
+    5. Otherwise choose listen. Ordinary questions wait for their final event.
+
+    A condition described in an instruction is not the condition happening.
+    Do not act on a guessed completion, a revisable proper noun, a digit without
+    its label, or speech addressed to somebody else merely because text arrived.
+  final-acts: listen,answer,act-silently,keep-speaking,stop-speaking
+  final-rules: |
+    Choose one act for a FINAL transcript. Examples: speaker is someone else in
+    the room and says "I looked in the fridge and there was not any" -> listen.
+    Speaker is someone else in the room and says "Can you put it on the list
+    tomorrow?" -> listen. Apply the first matching rule:
+
+    1. If agent output is queued or audible: keep-speaking when it deliberately
+       interrupted or spoke through this same utterance and the speaker merely
+       continued it; a brief acknowledgement is also keep-speaking. A distinct
+       recording, correction, or new request is stop-speaking.
+    2. For a recorded menu: act-silently only when the current words contain
+       both a digit and the option label matching the user goal; every nonmatch
+       is listen. A request to begin the call is listen.
+    3. If the speaker is someone else in the room: obey an in-force standing
+       rule whose condition occurs now; otherwise listen, even for a direct
+       question or command. Never answer them.
+    4. A request establishing behavior for a future event is listen, especially
+       when it says nothing else.
+    5. If a partial already handled this occurrence, listen; if a required count
+       or translation was missed, answer.
+    6. A completed question or request addressed to the agent is answer.
+       Otherwise listen.
+
+# Qwen makes the low-latency enumerated interaction decisions. The ordinary
+# interaction model stays enabled for non-transcript evidence (quiet and
+# screen events) and for extracting standing instructions, but it does not own
+# the floor in this experiment; transcript events use the policy above.
+policy:
+  models: interaction
+  model: qwen-fast
+  url: http://127.0.0.1:8000/v1
+  reasoning: chat_template_kwargs
+
+# This Qwen deployment is vision-capable. Let the interaction decision inspect
+# an attached frame directly instead of putting a separate Gemini narration
+# round trip in front of the time-critical "tell me the moment" decision.
+interaction:
+  sees: true
+
+# Gemini supplies spoken cognition and background reasoning. Changing these
+# independently is useful for the Qwen-vs-Gemini comparisons while keeping the
+# Deepgram/event-policy axis fixed.
+fast:
+  provider: gemini
+  model: gemini-3.5-flash
+  token-env: GEMINI_API_KEY
+  effort: 512
+  sees: true
+slow:
+  provider: gemini
+  model: gemini-3.5-flash
+  token-env: GEMINI_API_KEY
+  effort: minimal
+
+tts:
+  provider: fish-audio
+  url: http://127.0.0.1:8123/v1/tts
+  model: fishaudio/fish-speech-1.5
+speaker:
+  url: http://127.0.0.1:8124/embed
+
+vision:
+  provider: google-openai
+  model: gemini-3.5-flash
+  token-env: GEMINI_API_KEY
+
+observers: audio+video
+narrator: dedicated
+observation-policy: endpoint-only
+speak-by-sentence: true
+# The local gate is a liveness fallback for this path. Deepgram's speech_final
+# normally closes the utterance first; the longer local bound avoids splitting
+# one sentence at every short breath if the service endpoint is merely late.
+endpoint-silence: 1200
+profile-turns: true

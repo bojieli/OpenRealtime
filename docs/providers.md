@@ -164,8 +164,18 @@ policy has nothing to observe without it:
 | `sensevoice` | no | local, non-autoregressive; the batch recogniser a long conversation can afford — see [deploy/sensevoice](../deploy/sensevoice/README.md) |
 | `whisper-server` | no | whisper.cpp, faster-whisper-server, anything local |
 
-`-language` gives every recogniser and synthesiser a hint; each decides for
-itself when it is empty.
+`-asr-language` chooses the recognition language and maps from
+`asr.language` in YAML. Deepgram defaults explicitly to `en-US`; set it to
+`multi` only for a stream that switches among languages supported by that
+model's multilingual mode. Deepgram currently documents Nova-3 `multi` for
+English, Spanish, French, German, Hindi, Russian, Portuguese, Japanese,
+Italian, and Dutch; Mandarin is not in that set. Select a Chinese locale such
+as `zh-CN` for a Mandarin stream, accepting that one fixed language cannot
+also preserve arbitrary English-to-Mandarin code-switching. Multilingual
+recognition is a model capability, not automatic language detection, and
+should be measured on the language pair in use. The historical `-language`
+flag remains a shared recognition/synthesis fallback; a role-specific setting
+wins.
 
 A batch endpoint cannot produce a partial hypothesis: it can only be asked what
 a recording said. So by default it recognises **once**, at the endpoint of the
@@ -196,6 +206,21 @@ means enabling partials too.
 Deepgram is dialled with the **caller's own sample rate**, declared from the
 first frame, so nothing is resampled on the way in. A recogniser that resamples
 before recognising has thrown away information no later stage can recover.
+
+The opt-in [Deepgram streaming example](../openrealtime.deepgram.yaml) keeps the
+existing local-VAD/Whisper configuration untouched and installs a parallel
+transcript-event policy. It calls the policy on explicitly marked `partial` and
+`final` events, gives each event its own YAML-authored instruction and allowed
+acts, and lets Deepgram's `speech_final` close the turn. The ordinary acoustic
+gate remains a longer liveness fallback. `transcript.timeout` bounds each live
+event decision; `transcript.extraction-timeout` separately bounds the off-path
+Qwen reads that extract and classify standing instructions, so lowering live
+latency does not truncate those follow-up reads. With `DEEPGRAM_API_KEY` and
+the model credentials in the environment, run it with:
+
+```sh
+openrealtime serve -config openrealtime.deepgram.yaml
+```
 
 ## Synthesisers
 

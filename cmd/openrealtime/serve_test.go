@@ -21,7 +21,8 @@ func defaultOptions() serveOptions {
 		preparation: "endpoint-only", preparationPace: time.Second,
 		bargeIn: "immediate", bargeInHold: 300 * time.Millisecond,
 		observation: "endpoint-only", observers: "audio", policies: "none",
-		narrator: "session", fastProvider: "openai-compatible",
+		transcriptPolicy: "none",
+		narrator:         "session", fastProvider: "openai-compatible",
 		visionTokenEnv: "OPENREALTIME_VISION_API_KEY",
 	}
 }
@@ -195,6 +196,61 @@ func TestPolicyModelsNeedAModel(t *testing.T) {
 	options.policies = "everything"
 	if _, err := buildPolicies(options, nil); err == nil {
 		t.Fatal("an unknown policy model name must be refused")
+	}
+}
+
+func TestEventAwareTranscriptPolicyIsDistinctAndRequiresStreamingEvidence(t *testing.T) {
+	options := defaultOptions()
+	options.asrProvider = "deepgram"
+	options.transcriptPolicy = "event-aware"
+	options.transcriptPartialRules = "rules for partials"
+	options.transcriptPartialActs = "listen,speak-through,interrupt"
+	options.transcriptFinalRules = "rules for finals"
+	options.transcriptFinalActs = "listen,answer"
+	options.transcriptTimeout = 175 * time.Millisecond
+	options.policyModel = "qwen-fast"
+	policies, err := buildPolicies(options, nil)
+	if err != nil {
+		t.Fatalf("build event-aware policy: %v", err)
+	}
+	if policies.TranscriptEvents == nil ||
+		!strings.Contains(policies.Report().TranscriptEvents, "qwen-fast") {
+		t.Fatalf("event-aware policy did not reach the policy set: %+v", policies.Report())
+	}
+	if policies.Interaction != nil {
+		t.Fatal("the transcript policy silently enabled or mutated the existing interaction path")
+	}
+
+	options.asrProvider = "whisper-server"
+	if _, err := buildPolicies(options, nil); err == nil || !strings.Contains(err.Error(), "streaming") {
+		t.Fatalf("a batch recogniser was accepted for streaming event policy: %v", err)
+	}
+	options.asrProvider = "deepgram"
+	options.transcriptPartialRules = ""
+	if _, err := buildPolicies(options, nil); err == nil || !strings.Contains(err.Error(), "partial") {
+		t.Fatalf("missing YAML-configurable partial rules were accepted: %v", err)
+	}
+}
+
+func TestDeepgramLanguageDefaultsToEnglishAndRemainsConfigurable(t *testing.T) {
+	options := defaultOptions()
+	options.asrProvider = "deepgram"
+	if got := recogniserLanguage(options); got != "en-US" {
+		t.Fatalf("Deepgram default language = %q, want en-US", got)
+	}
+	options.asrLanguage = "multi"
+	if got := recogniserLanguage(options); got != "multi" {
+		t.Fatalf("configured ASR language = %q, want multi", got)
+	}
+	options.asrLanguage = ""
+	options.language = "zh-CN"
+	if got := recogniserLanguage(options); got != "zh-CN" {
+		t.Fatalf("legacy shared language fallback = %q, want zh-CN", got)
+	}
+	options.asrProvider = "qwen-asr"
+	options.language = ""
+	if got := recogniserLanguage(options); got != "" {
+		t.Fatalf("another recogniser inherited Deepgram's default: %q", got)
 	}
 }
 

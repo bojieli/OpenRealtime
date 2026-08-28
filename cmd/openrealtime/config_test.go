@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A file sets what the command line does not, and the command line still wins.
@@ -72,5 +73,56 @@ func TestNestingMapsOntoFlagNames(t *testing.T) {
 	}
 	if *asr != "whisper-turbo" {
 		t.Fatalf("a nested setting did not apply: %q", *asr)
+	}
+}
+
+func TestMultilineTranscriptRulesComeFromNestedYAML(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "streaming.yaml")
+	body := "transcript:\n  policy: event-aware\n  partial-rules: |\n    Treat this as provisional.\n    Prefer listen.\n  final-rules: |\n    Treat this as settled.\n    Answer completed requests.\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	flags := flag.NewFlagSet("test", flag.ContinueOnError)
+	policy := flags.String("transcript-policy", "none", "")
+	partial := flags.String("transcript-partial-rules", "", "")
+	final := flags.String("transcript-final-rules", "", "")
+	if err := loadConfig(flags, path); err != nil {
+		t.Fatalf("loading: %v", err)
+	}
+	if *policy != "event-aware" {
+		t.Fatalf("policy = %q", *policy)
+	}
+	if !strings.Contains(*partial, "provisional") || !strings.Contains(*final, "settled") {
+		t.Fatalf("event-specific rules did not survive YAML: partial=%q final=%q", *partial, *final)
+	}
+}
+
+func TestASRLanguageComesFromNestedYAML(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deepgram.yaml")
+	if err := os.WriteFile(path, []byte("asr:\n  language: multi\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	flags := flag.NewFlagSet("test", flag.ContinueOnError)
+	language := flags.String("asr-language", "", "")
+	if err := loadConfig(flags, path); err != nil {
+		t.Fatalf("loading: %v", err)
+	}
+	if *language != "multi" {
+		t.Fatalf("ASR language = %q, want multi", *language)
+	}
+}
+
+func TestTranscriptExtractionTimeoutComesFromNestedYAML(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deepgram.yaml")
+	if err := os.WriteFile(path, []byte("transcript:\n  extraction-timeout: 1750ms\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	flags := flag.NewFlagSet("test", flag.ContinueOnError)
+	timeout := flags.Duration("transcript-extraction-timeout", 250*time.Millisecond, "")
+	if err := loadConfig(flags, path); err != nil {
+		t.Fatalf("loading: %v", err)
+	}
+	if *timeout != 1750*time.Millisecond {
+		t.Fatalf("transcript extraction timeout = %s, want 1.75s", *timeout)
 	}
 }

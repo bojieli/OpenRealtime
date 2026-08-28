@@ -64,12 +64,14 @@ type serveOptions struct {
 	requestTimeout  time.Duration
 	shutdownTimeout time.Duration
 
-	asrProvider string
-	asrURL      string
-	asrModel    string
-	language    string
-	asrCadence  time.Duration
-	asrPartial  time.Duration
+	asrProvider    string
+	asrURL         string
+	asrModel       string
+	asrLanguage    string
+	language       string
+	asrCadence     time.Duration
+	asrPartial     time.Duration
+	asrEndpointing time.Duration
 
 	fastProvider string
 	fastEffort   string
@@ -130,25 +132,32 @@ type serveOptions struct {
 	webrtcSTUN   string
 	webrtcOrigin string
 
-	gpuCapacity         int
-	policyURL           string
-	policyModel         string
-	policyTokenEnv      string
-	policyGuided        bool
-	policies            string
-	interactionShadow   string
-	speakerURL          string
-	interactionFloor    bool
-	interactionSees     bool
-	profileTurns        bool
-	speakBySentence     bool
-	endpointSilenceMS   int
-	interactionLiveness time.Duration
-	policyReasoning     string
-	projectionHold      time.Duration
-	holdingAfter        time.Duration
-	bargeIn             string
-	bargeInHold         time.Duration
+	gpuCapacity              int
+	policyURL                string
+	policyModel              string
+	policyTokenEnv           string
+	policyGuided             bool
+	policies                 string
+	interactionShadow        string
+	speakerURL               string
+	interactionFloor         bool
+	interactionSees          bool
+	profileTurns             bool
+	speakBySentence          bool
+	endpointSilenceMS        int
+	interactionLiveness      time.Duration
+	policyReasoning          string
+	transcriptPolicy         string
+	transcriptPartialRules   string
+	transcriptPartialActs    string
+	transcriptFinalRules     string
+	transcriptFinalActs      string
+	transcriptTimeout        time.Duration
+	transcriptExtractTimeout time.Duration
+	projectionHold           time.Duration
+	holdingAfter             time.Duration
+	bargeIn                  string
+	bargeInHold              time.Duration
 
 	computerUse     bool
 	fastComputerUse bool
@@ -207,12 +216,16 @@ func runServe(arguments []string, output io.Writer) error {
 		"recogniser endpoint; unset selects the provider's own")
 	flags.StringVar(&options.asrModel, "asr-model", qwenasr.DefaultModel,
 		"recogniser model identity; unset selects the provider's default")
+	flags.StringVar(&options.asrLanguage, "asr-language", "",
+		"recognition language; Deepgram defaults to en-US; multi is model-specific and excludes Mandarin on Nova-3; empty inherits -language")
 	flags.StringVar(&options.language, "language", "",
-		"language hint for the recogniser and the synthesiser; empty lets each decide")
+		"legacy shared language hint for recognition and synthesis; role-specific settings take precedence")
 	flags.DurationVar(&options.asrCadence, "asr-cadence", 200*time.Millisecond, "how often the recogniser is advanced")
 	flags.DurationVar(&options.asrPartial, "asr-partial-interval", 0,
 		"ask a batch recogniser for a hypothesis this often by re-transcribing the utterance; "+
 			"0 recognises only at the endpoint, and a streaming recogniser ignores it")
+	flags.DurationVar(&options.asrEndpointing, "asr-endpointing", 300*time.Millisecond,
+		"silence used by a streaming recogniser's own VAD; batch recognisers ignore it")
 
 	// vLLM rather than the generic entry, because the default endpoint below
 	// is vLLM's own port and the quickstart's local stack is vLLM. The
@@ -330,6 +343,22 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.DurationVar(&options.interactionLiveness, "interaction-liveness", 20*time.Second, "longest the interaction model may hold the floor past the silence threshold")
 	flags.StringVar(&options.policyReasoning, "policy-reasoning", "chat_template_kwargs",
 		"how the policy endpoint is told not to think: chat_template_kwargs, enable_thinking, reasoning_effort, thinking_object, or none for an instruct model")
+	flags.StringVar(&options.transcriptPolicy, "transcript-policy", "none",
+		"streaming transcript interaction policy: event-aware or none")
+	flags.StringVar(&options.transcriptPartialRules, "transcript-partial-rules", "",
+		"interaction-model instruction for provisional transcript events; required by event-aware policy")
+	flags.StringVar(&options.transcriptPartialActs, "transcript-partial-acts",
+		"listen,speak-through,interrupt,act-silently,keep-speaking,stop-speaking",
+		"acts permitted on a provisional transcript event")
+	flags.StringVar(&options.transcriptFinalRules, "transcript-final-rules", "",
+		"interaction-model instruction for final transcript events; required by event-aware policy")
+	flags.StringVar(&options.transcriptFinalActs, "transcript-final-acts",
+		"listen,answer,act-silently,keep-speaking,stop-speaking",
+		"acts permitted on a final transcript event")
+	flags.DurationVar(&options.transcriptTimeout, "transcript-timeout", 250*time.Millisecond,
+		"deadline for each partial or final transcript interaction decision")
+	flags.DurationVar(&options.transcriptExtractTimeout, "transcript-extraction-timeout", 2*time.Second,
+		"deadline for Qwen to extract and classify standing interaction rules off the live path")
 	flags.DurationVar(&options.holdingAfter, "holding-after", 2500*time.Millisecond,
 		"how long the reasoner may run before the voice says what is happening; 0 leaves the user in silence")
 	flags.DurationVar(&options.projectionHold, "projection-hold", time.Second,
@@ -465,6 +494,10 @@ func buildBinding(options serveOptions) (binding.Binding, *asrbuffer.Accumulator
 	if options.fastComputerUse && bindingName != "cascade" {
 		return nil, nil, fmt.Errorf(
 			"fast computer use is implemented by the cascade binding, not %q", bindingName)
+	}
+	if transcriptPolicyEnabled(options.transcriptPolicy) && bindingName != "cascade" {
+		return nil, nil, fmt.Errorf(
+			"the transcript-event policy is implemented by the cascade binding, not %q", bindingName)
 	}
 	governor, err := buildGovernor(options)
 	if err != nil {
@@ -808,21 +841,53 @@ func applyPolicyModels(
 				"policy models must be backchannel, turn-projection, overlap, interaction, all, or none, got %q", name)
 		}
 	}
-	if !backchannel && !projection && !overlap && !wholeDecision {
+	eventAware, err := parseTranscriptPolicy(options.transcriptPolicy)
+	if err != nil {
+		return err
+	}
+	if eventAware {
+		if options.interactionFloor {
+			return errors.New("event-aware transcript policy and -interaction-floor are parallel floor policies; select one")
+		}
+		observation, err := cascade.ParseObservationPolicy(options.observation)
+		if err != nil {
+			return err
+		}
+		if observation != cascade.ObservationEndpointOnly {
+			return errors.New("event-aware transcript policy owns partial-event actions and requires endpoint-only canonical observations")
+		}
+		recogniser, err := providers.LookupASR(options.asrProvider)
+		if err != nil {
+			return err
+		}
+		if !recogniser.Streaming {
+			return fmt.Errorf(
+				"event-aware transcript policy needs a streaming recogniser; %q is batch", recogniser.Name)
+		}
+	}
+	if !backchannel && !projection && !overlap && !wholeDecision && !eventAware {
 		return nil
 	}
 	if strings.TrimSpace(options.policyModel) == "" {
 		return errors.New("enabling a policy model needs -policy-model")
 	}
-	decider, err := policymodel.New(policymodel.Config{
-		BaseURL: options.policyURL, Model: options.policyModel,
-		APIKey: os.Getenv(options.policyTokenEnv), GuidedChoice: options.policyGuided,
-		Reasoning: openaicompat.ReasoningControl(options.policyReasoning),
-		// Interactive: above speculative preparation, below the foreground
-		// continuation. A backchannel that arrives after the moment for it has
-		// passed is worse than no backchannel.
-		Governor: governor, Class: admission.ClassInteractive,
-	})
+	policyClient := func(timeout time.Duration) (*policymodel.Client, error) {
+		return policymodel.New(policymodel.Config{
+			BaseURL: options.policyURL, Model: options.policyModel,
+			APIKey: os.Getenv(options.policyTokenEnv), GuidedChoice: options.policyGuided,
+			Reasoning: openaicompat.ReasoningControl(options.policyReasoning),
+			Timeout:   timeout,
+			// Interactive: above speculative preparation, below the foreground
+			// continuation. A backchannel that arrives after the moment for it has
+			// passed is worse than no backchannel.
+			Governor: governor, Class: admission.ClassInteractive,
+		})
+	}
+	liveTimeout := time.Duration(0)
+	if eventAware {
+		liveTimeout = options.transcriptTimeout
+	}
+	decider, err := policyClient(liveTimeout)
 	if err != nil {
 		return err
 	}
@@ -839,6 +904,30 @@ func applyPolicyModels(
 			}
 			policies.ShadowInteraction = recorder
 		}
+	}
+	if eventAware {
+		partialActs, err := parseTranscriptActs(options.transcriptPartialActs)
+		if err != nil {
+			return fmt.Errorf("partial transcript acts: %w", err)
+		}
+		finalActs, err := parseTranscriptActs(options.transcriptFinalActs)
+		if err != nil {
+			return fmt.Errorf("final transcript acts: %w", err)
+		}
+		policy, err := interaction.NewTranscriptEventPolicy(decider, interaction.TranscriptEventOptions{
+			Partial: interaction.TranscriptEventRules{
+				Instruction: options.transcriptPartialRules, Acts: partialActs,
+				Timeout: options.transcriptTimeout,
+			},
+			Final: interaction.TranscriptEventRules{
+				Instruction: options.transcriptFinalRules, Acts: finalActs,
+				Timeout: options.transcriptTimeout,
+			},
+		})
+		if err != nil {
+			return err
+		}
+		policies.TranscriptEvents = policy
 	}
 	if backchannel {
 		policy, err := interaction.NewModelBackchannel(decider, interaction.BackchannelOptions{})
@@ -867,10 +956,22 @@ func applyPolicyModels(
 			Projection: policy, ProjectionHold: options.projectionHold,
 		})
 	}
-	if wholeDecision {
+	if wholeDecision || eventAware {
 		// Extraction shares the endpoint but not the call shape: it needs a
-		// policy back, which no enumeration can contain.
-		extractor, err := interaction.NewExtractor(decider)
+		// policy back, which no enumeration can contain. Event-aware decisions
+		// stay under their live deadline, while extraction is off the audio path
+		// and needs enough time for its follow-up count/restriction/scope reads.
+		// Sharing the 250 ms HTTP client silently turned those reads into their
+		// false defaults under ordinary local contention.
+		extractionGenerator := interaction.Generator(decider)
+		if eventAware {
+			extractionClient, err := policyClient(options.transcriptExtractTimeout)
+			if err != nil {
+				return err
+			}
+			extractionGenerator = extractionClient
+		}
+		extractor, err := interaction.NewExtractor(extractionGenerator)
 		if err != nil {
 			return err
 		}
@@ -896,6 +997,38 @@ func applyPolicyModels(
 		policies.BargeIn = bargeIn
 	}
 	return nil
+}
+
+func parseTranscriptPolicy(value string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "none", "off":
+		return false, nil
+	case "event-aware", "events", "streaming-events":
+		return true, nil
+	default:
+		return false, fmt.Errorf(
+			"transcript policy must be event-aware or none, got %q", value)
+	}
+}
+
+func transcriptPolicyEnabled(value string) bool {
+	enabled, _ := parseTranscriptPolicy(value)
+	return enabled
+}
+
+func parseTranscriptActs(value string) ([]interaction.Act, error) {
+	var acts []interaction.Act
+	for _, name := range strings.Split(value, ",") {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		acts = append(acts, interaction.Act(trimmed))
+	}
+	if len(acts) == 0 {
+		return nil, errors.New("at least one act is required")
+	}
+	return acts, nil
 }
 
 func buildCascade(
@@ -1207,9 +1340,30 @@ func buildRecogniser(options serveOptions) (func() (v1.PerceptionProvider, error
 		Model:    options.override("asr-model", options.asrModel),
 		BaseURL:  options.override("asr-url", options.asrURL),
 		APIKey:   os.Getenv("OPENREALTIME_ASR_API_KEY"),
-		Language: options.language, PartialInterval: options.asrPartial,
+		Language: recogniserLanguage(options), PartialInterval: options.asrPartial,
+		Endpointing:    options.asrEndpointing,
 		RequestTimeout: recogniserTimeout(options.asrCadence, options.requestTimeout),
 	})
+}
+
+// recogniserLanguage keeps the historical shared -language setting as a
+// fallback while giving recognition its own YAML-addressable choice. Deepgram
+// otherwise relies on a service default that is easy to mistake for automatic
+// multilingual recognition; make the actual default explicit and let a
+// deployment opt into `multi` after checking the model's supported set (which
+// does not include Mandarin for Nova-3) and measuring it on its languages.
+func recogniserLanguage(options serveOptions) string {
+	if language := strings.TrimSpace(options.asrLanguage); language != "" {
+		return language
+	}
+	if language := strings.TrimSpace(options.language); language != "" {
+		return language
+	}
+	if recogniser, err := providers.LookupASR(options.asrProvider); err == nil &&
+		recogniser.Dialect == providers.DialectDeepgramListen {
+		return "en-US"
+	}
+	return ""
 }
 
 // recogniserTimeout bounds one advance of the recogniser.
