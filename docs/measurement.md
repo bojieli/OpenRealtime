@@ -2784,3 +2784,36 @@ but so is one that never comes, and at minimal effort it mostly never comes.
 
 Reverted. The per-turn effort field stays: it is the right mechanism and this
 was the wrong policy for it.
+
+## F73 - the thinking voice is more reluctant to speak, which is usually right
+
+Cutting in, with only the voice's budget changed:
+
+	qwen (no budget)      13/15
+	gemini, minimal        2/15
+	gemini, low            6/15
+	gemini, high           2/15
+
+Effort is not the variable. Neither is latency: at high effort the agent was
+heard 67ms after a trigger at the median, and it still said nothing at all
+through the window. It declines.
+
+That single fact explains every other result in F71. A voice with room to think
+is more conservative about speaking, and this suite is mostly scenarios where
+speaking was the failure: counting a sentence with no animal in it, ordering a
+dish nobody named, acknowledging an instruction for the fourth time,
+interpreting the transcription instead of the speech. Restraint gains three or
+four runs in each. Cutting in is the one scenario that punishes restraint - it
+asks the agent to talk over somebody who is mid-sentence and wrong - and the
+same disposition loses seven.
+
+Which is the asymmetry from the other side. The interaction model should offer
+generously because a withheld turn cannot be recovered; the voice should judge
+carefully because it can still decline. A voice that judges more carefully
+declines more often, and that is the intended behaviour right up until the
+moment the right answer was to speak.
+
+So the model question has no single answer, and the honest configuration advice
+is by deployment rather than by benchmark total: an agent whose job is to stay
+out of the way wants the budget, and an agent whose job is to catch people
+before they finish a wrong sentence does not.
