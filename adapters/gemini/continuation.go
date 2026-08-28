@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -228,6 +229,7 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 	if err != nil {
 		return continuation.Completion{}, fmt.Errorf("encode Gemini request: %w", err)
 	}
+	adapter.dump(encoded)
 	if adapter.config.RequestTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, adapter.config.RequestTimeout)
@@ -326,6 +328,28 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 		return completion, err
 	}
 	return completion, nil
+}
+
+// dumpRequests names a file to append every outgoing request to.
+//
+// Reasoning about which part of a prompt differs from one tried by hand has
+// been wrong repeatedly in this work, and each wrong answer costs a round. The
+// body that actually goes out settles it in one. The OpenAI-compatible adapter
+// has had this for a while; the native one did not, so moving the voice onto
+// it silently gave up the diagnostic that found most of these defects.
+const dumpRequests = "OPENREALTIME_DUMP_REQUESTS"
+
+func (adapter *Adapter) dump(body []byte) {
+	path := strings.TrimSpace(os.Getenv(dumpRequests))
+	if path == "" {
+		return
+	}
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	_, _ = file.Write(append(append([]byte(nil), body...), '\n'))
 }
 
 func (adapter *Adapter) buildRequest(request continuation.Request) (geminiRequest, error) {
