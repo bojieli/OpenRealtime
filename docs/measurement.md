@@ -2946,3 +2946,52 @@ The interaction model was not deciding wrongly. It was being asked about a
 world that had already moved on, which is the same shape as every other defect
 in this file. Image requests are heavy and text decisions are 17ms, so sharing
 the GPU does not slow the decisions down evenly - it stops them happening.
+
+## F78
+
+Four defects stood between the interaction model choosing to interrupt and
+anything being heard. All four were upstream of the choice, and the interaction
+model was right every time - it offered the interrupt 153 times in one episode.
+
+**A policy nobody set.** The extractor read "Right? So... Let me plan this out"
+as "pin turn do not reply until they have finished planning this out". Policies
+outrank the deployment's instructions by design, so an agent told to correct a
+wrong date mid-sentence was told by nobody to stay quiet instead. The prompt's
+prose already forbade this and named the sentence; the worked examples showed
+the opposite, and the examples won.
+
+**Being spoken over read as being refuted.** A composed reply was discarded when
+the turn was overtaken while the provider was writing it. For an answer that is
+right. For the three acts that mean "do this while they are still talking" the
+condition tested is the premise, so it holds permanently and the veto never
+loses. With a voice that thinks, a third of everything composed died here,
+against six per cent for an instant voice - the rule converts latency into
+silence.
+
+**A turn that said nothing counted as having spoken.** The mark that tells the
+next turn "you have already spoken for this much of what they are saying" was
+set in two places that could not know. The interjection path set it before the
+model was asked; the publish path set it whenever publishing returned no error,
+and withholding is not an error - it succeeds at not speaking. <wait> is text,
+so the emptiness test beside it did not catch it either. Twenty voice turns were
+told they had already covered the sentence containing the wrong date.
+
+**The narrator starving the decision loop**, F77, which made the situation say
+nobody was speaking at all.
+
+With all four fixed the voice produces the correction. Captured from the live
+request dump, the fast phase answered "The third." - and the scenario still
+fails, for a fifth reason that is structural rather than a defect:
+
+    interrupt offered by the interaction model : 153
+    voice calls actually made                  :  22
+    fast calls reaching the model per repeat   :   3
+
+The three that reach the model arrive at finalized-utterance boundaries. The
+voice is not shown "by the 13th" until the sentence containing it has ended, at
+15150ms, and the moment worth interrupting closes at 11902ms. So the correction
+is right, and late, and the reason it is late is that the admission path between
+the act and the model is coarse where the act is fine-grained.
+
+Counting, which turns on the same machinery without the timing, went 2/5 to 5/5
+across these fixes.
