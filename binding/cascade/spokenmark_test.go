@@ -1,6 +1,10 @@
 package cascade
 
-import "testing"
+import (
+	"os"
+	"strings"
+	"testing"
+)
 
 // The mark says the agent has already spoken for this much of what they are
 // saying, and the voice is told to say nothing that is only about that part.
@@ -31,5 +35,33 @@ func TestNothingIsCoveredUntilSomethingWasActuallySaid(t *testing.T) {
 	runtime.markSpoken(said)
 	if got := runtime.heardSinceSpeaking(said); got != "" {
 		t.Fatalf("after speaking, what is new was %q", got)
+	}
+}
+
+// Withholding is not a failure - it succeeds at not speaking - so it cannot be
+// reported as one. Every way of withholding returned nil, which the caller read
+// as "published", and <wait> is text so the emptiness test did not catch it
+// either. publishAssistant says whether anything was spoken, separately from
+// whether anything went wrong, because those are different facts.
+func TestWithholdingIsNotAnErrorAndIsNotSpeaking(t *testing.T) {
+	source, err := os.ReadFile("process.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(source)
+	start := strings.Index(body, "func (runtime *runtime) publishAssistant(")
+	if start < 0 {
+		t.Fatal("publishAssistant is gone")
+	}
+	signature := body[start : start+220]
+	if !strings.Contains(signature, "(spoke bool, err error)") {
+		t.Fatalf("publishing no longer reports whether it spoke: %q", signature)
+	}
+	// A withheld turn must never be reported as having spoken.
+	for _, line := range strings.Split(body[start:], "\n") {
+		if strings.Contains(line, "withholdAssistant(") && strings.Contains(line, "return") &&
+			!strings.Contains(line, "return false,") {
+			t.Fatalf("a withheld turn is reported as spoken: %q", strings.TrimSpace(line))
+		}
 	}
 }

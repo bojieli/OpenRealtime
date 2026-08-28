@@ -35,6 +35,12 @@ type actionUtterance = action.Utterance
 // gate that owns that decision, which is how a turn ends up spoken over
 // another one or answered twice.
 func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) error {
+	transcriptAct, _, eventAware, ungovernedObservation := runtime.transcriptActFor(batch)
+	if eventAware {
+		defer runtime.forgetTranscriptActs(batch)
+	}
+	respondToObservation := batch.Contains(trajectory.KindObservation) &&
+		(!eventAware || ungovernedObservation || transcriptAct == interaction.ActAnswer)
 	// An obligation the ledger is holding becomes visible to the model here,
 	// at the first safe point after the evidence that created it committed.
 	// Raising it earlier is not possible - the log refuses a repair whose
@@ -48,7 +54,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	// stopped would be too early: they stop constantly while making the point
 	// the policy was protecting. Expiring it here, where the agent is about to
 	// respond to a completed turn, is the moment it was asking about.
-	if batch.Contains(trajectory.KindObservation) {
+	if respondToObservation {
 		defer runtime.pinboard.EndTurn()
 	}
 	revision := runtime.latestRevision(batch)
@@ -57,7 +63,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 			NowNS: runtime.scheduler.NowNS(), Duplex: runtime.duplex.Snapshot(),
 		},
 		Cause: interaction.Cause{
-			Observation:      batch.Contains(trajectory.KindObservation),
+			Observation:      respondToObservation,
 			Escalated:        batch.Signalled(interaction.SignalEscalated),
 			ToolResult:       batch.Contains(trajectory.KindToolResult),
 			ToolError:        batchHasToolError(batch),
@@ -298,15 +304,24 @@ func (runtime *runtime) runFast(
 		dispatchErr = runtime.dispatch(ctx, result)
 	}
 	publishBegan := runtime.scheduler.NowNS()
-	publishErr := runtime.publishAssistant(ctx, result, request, guardSolicitation)
+	spoke, publishErr := runtime.publishAssistant(ctx, result, request, guardSolicitation)
 	turn.stage("publish", runtime.scheduler.NowNS()-publishBegan)
-	if publishErr == nil && result.Committed && strings.TrimSpace(result.AssistantText) != "" {
+	if spoke {
 		// The agent has now answered this much of what they are saying. Only
 		// the interjection path recorded that, so an ordinary turn had no way
 		// to know it had spoken - and one instruction arriving as four
 		// committed pieces got four replies: "I'm listening", "I'm ready,
 		// please list the animals", twice more, and then a count before any
 		// animal had been mentioned.
+		//
+		// It is the publish that reports this, not the absence of an error.
+		// Withholding is not a failure - it succeeds at not speaking - so
+		// every one of the seven ways to withhold returned nil, and a turn
+		// that answered <wait> marked itself as having spoken for everything
+		// said up to that point. <wait> is text, so the emptiness test did not
+		// catch it either. The mark then told the next turn it had already
+		// covered the very sentence it was being asked to interrupt over, and
+		// each refusal made the next one likelier.
 		runtime.markSpoken(everythingSaid(runtime.store.Snapshot()))
 	}
 	var signalErr error
@@ -684,10 +699,10 @@ func (runtime *runtime) noteVoiceTurn(request cognition.Request) {
 func (runtime *runtime) publishAssistant(
 	ctx context.Context, result continuation.RunResult, request cognition.Request,
 	guardSolicitation bool,
-) error {
+) (spoke bool, err error) {
 	if strings.TrimSpace(result.AssistantText) == "" || !result.Committed {
 		runtime.noteWithheld(result, request, "the model said nothing that reached a safe point")
-		return nil
+		return false, nil
 	}
 	// Speech and action are separate commitment channels. When one continuation
 	// selected an executable call or a typed non-executable proposal, its prose
@@ -700,7 +715,7 @@ func (runtime *runtime) publishAssistant(
 	// slow phase to validate, while ordinary speech without action intent keeps
 	// the same low-latency path.
 	if len(result.ToolProposals) > 0 || len(result.ToolCalls) > 0 {
-		return runtime.withholdAssistant(result, request, "speech accompanied an action proposal or call")
+		return false, runtime.withholdAssistant(result, request, "speech accompanied an action proposal or call")
 	}
 	// A model that writes a tool call as prose instead of emitting one has not
 	// said anything a person should hear. Measured on a phone menu, the text
@@ -709,10 +724,10 @@ func (runtime *runtime) publishAssistant(
 	// whoever is listening. There is nothing to salvage: the call is malformed
 	// as a call and the sentence is malformed as speech.
 	if looksLikeToolCall(result.AssistantText) {
-		return runtime.withholdAssistant(result, request, "the model wrote a tool call as prose")
+		return false, runtime.withholdAssistant(result, request, "the model wrote a tool call as prose")
 	}
 	if isStageDirection(result.AssistantText) {
-		return runtime.withholdAssistant(result, request, "the model described saying nothing instead of saying nothing")
+		return false, runtime.withholdAssistant(result, request, "the model described saying nothing instead of saying nothing")
 	}
 	if strings.Contains(result.AssistantText, cognition.WaitToken) {
 		// A decision to be silent, which is a different thing from a turn that
@@ -725,7 +740,7 @@ func (runtime *runtime) publishAssistant(
 		// where the other reading speaks a control token out loud. Measured at
 		// a phone menu, "Pressing the key for order status. <wait>" was read
 		// to a recording that could not hear it and was still talking.
-		return runtime.withholdAssistant(result, request, "the voice chose to stay silent")
+		return false, runtime.withholdAssistant(result, request, "the voice chose to stay silent")
 	}
 	// A question creates an obligation for the other person to answer. Slow
 	// work finishing may give the voice a different clarification to ask, but
@@ -747,11 +762,11 @@ func (runtime *runtime) publishAssistant(
 	// merely prepared content was never committed to the listener and therefore
 	// cannot suppress anything.
 	if runtime.alreadyPublishedForRevision(result) {
-		return runtime.withholdAssistant(result, request, "the same response was already queued for this observation")
+		return false, runtime.withholdAssistant(result, request, "the same response was already queued for this observation")
 	}
 	items := runtime.assistantItems(result)
 	if len(items) == 0 {
-		return nil
+		return false, nil
 	}
 	authority := items[0].Producer.SpeechAuthority
 	decision := runtime.policies.Commitment.Decide(interaction.CommitmentInput{
@@ -762,7 +777,7 @@ func (runtime *runtime) publishAssistant(
 		Text: result.AssistantText, Complete: !result.Interrupted, SpeechAuthority: authority,
 	})
 	if !decision.Committed() {
-		return runtime.withholdAssistant(result, request, decision.Reason)
+		return false, runtime.withholdAssistant(result, request, decision.Reason)
 	}
 	ids := make([]string, 0, len(items))
 	for _, item := range items {
@@ -776,7 +791,7 @@ func (runtime *runtime) publishAssistant(
 	claimedSolicitation := false
 	if guardSolicitation && asksForReply(result.AssistantText) {
 		if !runtime.claimSolicitation(utterance.ID) {
-			return runtime.withholdAssistant(result, request, "another question is already awaiting an answer")
+			return false, runtime.withholdAssistant(result, request, "another question is already awaiting an answer")
 		}
 		claimedSolicitation = true
 	}
@@ -789,7 +804,7 @@ func (runtime *runtime) publishAssistant(
 		if err != nil && claimedSolicitation {
 			runtime.clearUncrossedSolicitation(utterance.ID)
 		}
-		return err
+		return err == nil, err
 	}
 	// The queued transition is committed before audio can be emitted, so the
 	// log's account of what the world heard never runs ahead of the world.
@@ -807,7 +822,7 @@ func (runtime *runtime) publishAssistant(
 		if claimedSolicitation {
 			runtime.clearSolicitation(utterance.ID)
 		}
-		return err
+		return false, err
 	}
 	if err := runtime.speech.Enqueue(utterance, authority); err != nil {
 		if claimedSolicitation {
@@ -816,15 +831,15 @@ func (runtime *runtime) publishAssistant(
 		if errors.Is(err, action.ErrSilentProducer) {
 			// The commitment policy should have held this. Enforcing it again
 			// here is the point of having the boundary at the commit site.
-			return nil
+			return false, nil
 		}
 		cancelErr := runtime.recordCancellations([]action.Commitment{{
 			ID: utterance.ID, AssistantItemIDs: ids,
 		}}, "speech-enqueue", eventloop.PriorityRoutine)
-		return errors.Join(err, cancelErr)
+		return false, errors.Join(err, cancelErr)
 	}
 	_ = ctx
-	return nil
+	return true, nil
 }
 
 // withholdAssistant records that committed model text did not cross the
