@@ -83,13 +83,20 @@ speaker:
   url: http://127.0.0.1:8124/embed
 
 # What the voice is given of the video. A dedicated narrator keeps seeing
-# separate from speaking: the local model watches and writes down what is on
-# screen, and the voice reads that. The alternative is handing frames to the
-# voice itself, which costs a round trip to a hosted model on every frame.
+# separate from speaking: something watches and writes down what is on screen,
+# and the voice reads that.
+#
+# Not the server the interaction model is on. Images are heavy and a turn-taking
+# decision is 17ms, so sharing a GPU does not slow the decisions down evenly, it
+# stops them happening: measured, decisions fell from 1.66/s to 0.25/s and the
+# situation then never once said anybody was speaking, because every decision
+# that would have landed during speech never ran. Cutting in, the waiter and
+# somebody else's conversation went to 0/5, 1/5 and 0/5 - the interaction model
+# was answering about a world that had already moved on. See F77.
 vision:
-  provider: openai-compatible
-  url: http://127.0.0.1:8000/v1
-  model: qwen-fast
+  provider: google-openai
+  model: gemini-3.5-flash
+  token-env: GEMINI_API_KEY
 
 observers: audio+video
 narrator: dedicated

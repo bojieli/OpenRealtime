@@ -2890,3 +2890,59 @@ waiter and interpreting were measured against checks that ask for a specific
 thing at a specific moment, and the thinking voice gains three or four runs in
 each. Those scenarios were never vulnerable to this, because saying more does
 not produce the word they look for.
+
+## F76
+
+An output-token ceiling is spent on thinking before it is spent on speech, so a
+number chosen to keep a spoken turn short silences a voice that reasons.
+Measured against the live Gemini endpoint on the interrupting turn, varying
+only the ceiling:
+
+    maxOutputTokens=96   MAX_TOKENS   93 thought    0 spoken  ''
+    maxOutputTokens=128  MAX_TOKENS  118 thought    6 spoken  'Wait, the thirteenth? The'
+    maxOutputTokens=512  STOP        281 thought   20 spoken  "Wait, actually, the client's deadline is..."
+    no ceiling, LOW      STOP        367 thought   18 spoken  "Actually, the client's deadline is the third..."
+
+Two conclusions. The ceiling was never what kept turns short: uncapped, the
+same turns answer in eighteen to thirty-two tokens, because the instruction
+asks for something said out loud. And every uncapped setting corrects the date,
+including a thinking budget of zero, so the content failure recorded in F75 was
+this - the reply that "reaches the moment and misses the error" was a truncated
+one, not a wrong one.
+
+The two quantities are separate and only one belongs in a limit. Thinking gets
+a budget; speech gets an instruction. Gemini rejects a level and a budget
+together - "you can only set only one of thinking budget and thinking level" -
+so an effort is one field holding either.
+
+The budget is a target rather than a cap. Asking for 128 produced 258 to 300
+thought tokens; asking for 512 produced 281 to 311. Latency follows whether it
+thinks at all rather than how much:
+
+    MINIMAL / budget 0    first word 0.5-0.8s     0 thought
+    budget 128            first word 1.6-2.1s   258-300 thought
+    budget 512            first word 1.5-1.9s   281-311 thought
+    level LOW             first word 2.2s       369-393 thought
+
+So thinking costs about 1.2s a turn, and buying more of it past the first
+budget costs almost nothing.
+
+## F77
+
+The narrator starves the interaction model when they share a server. With the
+video narrator moved onto the same local vLLM that serves the interaction model
+- everything else unchanged - interaction decisions fell from 1.66/s to 0.25/s,
+and their median latency stopped being measurable at all.
+
+The effect on behaviour is total rather than gradual. Across 1310 logged rows
+the situation never once said anybody else was speaking: every decision landed
+in a gap, because the decisions that would have landed during speech never ran.
+`interrupt` and `speak-through` stayed on the menu of available acts while the
+world they described had nobody to interrupt, and the model correctly never
+chose them. Cutting in, the waiter, and somebody else's conversation - the
+three scenarios that turn on acting mid-speech - scored 0/5, 1/5 and 0/5.
+
+The interaction model was not deciding wrongly. It was being asked about a
+world that had already moved on, which is the same shape as every other defect
+in this file. Image requests are heavy and text decisions are 17ms, so sharing
+the GPU does not slow the decisions down evenly - it stops them happening.
