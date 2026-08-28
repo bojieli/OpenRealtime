@@ -120,6 +120,16 @@ func extractionExamples() []extractionExample {
 	return []extractionExample{
 		{nil, nil, "Book me a table for four at eight.", "none"},
 		{nil, nil, "Keep your answers to a sentence or two.", "none"},
+		// Style wearing a standing marker. "From now on" and "always" are what
+		// conversation scope sounds like, and read as the whole question they
+		// carry any sentence over the line: measured, two style rules phrased
+		// this way pinned three times out of three, while the paragraph
+		// forbidding it named them both. The marker says how long a rule would
+		// last if there were one; it does not make one. What decides is whether
+		// anything new would ever make the agent speak, and shaping replies it
+		// was already going to make starts nothing.
+		{nil, nil, "From now on, speak a little more formally.", "none"},
+		{nil, nil, "Always use metric when you give me a measurement.", "none"},
 		{nil, nil, "Shout if you see the train coming.", "pin conversation shout if you see the train coming"},
 		{nil, nil, "Hang on, I haven't got to the point yet.", "pin turn do not reply until they have made their point"},
 		// The pair that turn scope keeps getting wrong. Both of these bound
@@ -132,6 +142,25 @@ func extractionExamples() []extractionExample {
 			"pin conversation say the running total each time they read out a number"},
 		{nil, nil, "Let me finish reading this out before you say anything.",
 			"pin turn do not reply until they have finished reading it out"},
+		// A silence lifted by something they will do later outlives the
+		// sentence that asked for it. This one and the one above are both
+		// requests to stay quiet, and they end at different times: "before you
+		// say anything" ends when this reading ends, and a wait for them to
+		// come back ends whenever they come back, which may be minutes and may
+		// be never. Scored as the turn it was set in, a silence meant to hold
+		// across the conversation expires seconds later and the agent speaks
+		// into it.
+		{nil, nil, "Hold off saying anything until I come back to you.",
+			"pin conversation do not speak until they come back to you"},
+		// And a word for how temporary it feels does not decide it either.
+		// "For the moment" and "for now" sound like this sentence and only
+		// this sentence, but the rule is lifted by something they will do
+		// later, so that is when it ends. Scored on the feeling instead of the
+		// condition, a silence asked for until further notice expires when
+		// they draw breath - and the agent speaks into exactly the pause it
+		// was asked to leave alone.
+		{nil, nil, "Stay quiet for the moment, until I give you the word.",
+			"pin conversation do not speak until they give the word"},
 		// The pair the prose alone could not settle. Both begin "let me", and
 		// only the one above asks the agent for anything - "before you say
 		// anything" is the whole difference. Without a worked negative the
@@ -197,6 +226,15 @@ func buildExtraction() string {
 			"it was put. A request about this moment dies when the moment does: hang on, wait, not yet, let me " +
 			"finish this thought. Watching for something that has not happened yet is always a rule, because " +
 			"the thing being watched for has not happened yet.\n\n" +
+			"When they ask for silence, what ends it decides the scope. Read the word after \"until\": if it " +
+			"is them finishing what they are saying now, the silence ends there and it is a turn policy - let " +
+			"me finish, hang on, before you say anything. If it is anything they have to do afterwards - until " +
+			"I ask, until I come back, until I say so, until I give you the word - it lasts until they do that, " +
+			"which may be minutes away and may never come, so it is a conversation policy. How temporary it " +
+			"sounds decides nothing: for now, for the moment, just for a bit are how people ask for silence " +
+			"they intend to lift themselves. Scored on the sound instead of the condition, a silence asked for " +
+			"until further notice expires the moment they pause for breath, and the agent speaks into exactly " +
+			"the quiet it was asked to leave alone.\n\n" +
 			"Phrasing decides this, not subject. \"Don't interrupt me\" and \"hang on, I'm not finished\" are " +
 			"both about interruption and are not the same scope: the first says how the conversation should " +
 			"go, and the second asks for a few more seconds.\n\n" +
