@@ -3029,3 +3029,46 @@ the reason as a parameter so the voice knows it is correcting rather than
 carrying out a standing policy - is being written in this tree by another
 session and is not yet committed. Building a second copy of it would collide
 with that work rather than add to it.
+
+## F80
+
+Qwen3-VL-30B-A3B-Instruct-FP8 against Qwen3-VL-8B-Instruct as the interaction
+model, both served locally, measured on the current prompts at three repeats:
+
+                          30B-A3B      8B
+    interaction passed     72/96      78/96
+      acting               39/45      30/45
+      restraint            33/51      48/51
+    standing-instruction   78/78      75/78
+    slowest decision       112ms       62ms
+
+The 8B wins the aggregate and loses the number that decides it.
+
+Acting and restraint are not worth the same, and the whole shape of this system
+says so. The interaction model offers the voice a chance to speak; the voice
+still decides whether to take it. A turn offered wrongly costs a model call the
+voice can decline. A turn withheld wrongly cannot be recovered by anything
+downstream, because nothing downstream runs. So a point of acting is worth more
+than a point of restraint, and an aggregate that adds them ranks these two
+models backwards.
+
+Read that way the gap is wide. The 30B misses 6 of 45 moments; the 8B misses
+15, two and a half times as many, and every one of them is a moment no later
+layer can recover. The 8B's profile - cautious, restraint 48/51 - is precisely
+the failure this arrangement is built to avoid.
+
+The standing-instruction pass points the same way, and it matters more than its
+size suggests: it produces the policies that outrank the deployment's own
+instructions, so an error there governs everything afterwards. The 30B takes it
+perfectly. The 8B fails the silence-scope case 3/3 - the same case fixed today
+for the 30B, which shows the fix rests on capability the 8B does not have
+rather than on wording alone.
+
+Latency does not decide it. Both are far inside the budget for a decision taken
+many times a second, and the 50ms is bought back many times over by not having
+to recover a moment that was never offered.
+
+So the 30B-A3B, on the criterion that the offer is generous and the judgement is
+the voice's. Note that it is the lower aggregate score, deliberately: the
+aggregate is the wrong instrument here, not a tiebreaker to be overridden when
+inconvenient.
