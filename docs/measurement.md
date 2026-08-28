@@ -2584,3 +2584,43 @@ That is the honest shape of what is left. It is not a defect with a known fix
 being deferred; it is a judgement the voice makes from the words alone, wrong
 about a third of the time, and five attempts to improve it by instruction have
 each made something else worse.
+
+## F67 - the voice needs room to think, and it was the phase given least
+
+The voice decides whether this is a turn to speak at all. The interaction model
+only offers it the chance - a turn the interaction model withholds can never be
+recovered, while a turn it offers can still be declined, so the asymmetry says
+offer generously and judge carefully. Judging carefully is what the voice had
+no capacity for: its effort was compiled in as minimal, which is right for a
+small instruct model and wrong for a model that can think.
+
+Measured on eight turns replayed from real runs:
+
+	Qwen3-VL-30B-A3B-Instruct-FP8, no budget   4/8
+	Gemini 3.5 Flash, no budget                4/8
+	Gemini 3.5 Flash, with a budget            5/8
+
+The two it gains are the interpreting fragments that five rewordings of the
+prompt could not fix. Without a budget Gemini fails the way the small model
+does, including writing "*(Listening intently, ready to count the animals as
+soon as you mention them)*" - a stage direction the prompt forbids in as many
+words.
+
+End to end on the interpreting scenario at fifteen repeats:
+
+	Qwen voice      11/15   73%
+	Gemini voice    13/15   87%
+
+That is the turn-level gain surviving into conversations, which F64 warned is
+not guaranteed and did not happen for the agree-once fix.
+
+The cost is 1781ms a turn against 30ms, and it is a deployment's to make rather
+than this code's: a phone agent may want the speed, an interpreter sitting
+behind a second speaker may want the judgement. Hence -fast-effort, and hence
+the settings file - ninety-seven flags is not a place to record a decision like
+this one.
+
+What is left in that scenario is a new failure rather than the old one: the
+voice now comments on the transcription instead of interpreting it, and once
+acknowledged the instruction at length while the colleague was already talking.
+Better judgement, still imperfect.
