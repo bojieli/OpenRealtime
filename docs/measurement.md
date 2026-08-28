@@ -3072,3 +3072,21 @@ So the 30B-A3B, on the criterion that the offer is generous and the judgement is
 the voice's. Note that it is the lower aggregate score, deliberately: the
 aggregate is the wrong instrument here, not a tiebreaker to be overridden when
 inconvenient.
+
+The continuer decision settles it without needing the argument. Measured on the
+same models over the backchannel cases:
+
+                          30B-A3B      8B
+    backchannel passed     36/39      27/39
+      acting                9/9        0/9
+      restraint            27/30      27/30
+
+The 8B never says a continuer at all. Not rarely - never, across nine
+situations where a listener plainly owes one, three repeats each. The two models
+have identical restraint here and the whole difference is that one of them
+participates. A policy that always answers none is not a cautious policy, it is
+an absent one, and it would be indistinguishable from switching the feature off.
+
+This is the same profile as its 30/45 acting on the interaction cases, seen
+without the ambiguity: the 8B is not trading accuracy for caution, it is
+declining to act.
