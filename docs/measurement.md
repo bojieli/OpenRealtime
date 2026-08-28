@@ -2856,3 +2856,37 @@ before the mistake in which reacting is wrong.
 The general lesson is the one this document keeps arriving at from new
 directions. A check that looks for the right words in a wide window measures
 vocabulary, not judgement, and a model that says more will pass it more often.
+
+## F75 - measured against a scenario that measures it, neither voice can do this
+
+Cutting in, before and after the scenario was split where the mistake starts:
+
+	                      flawed check   corrected check
+	qwen voice                  13/15              1/15
+	gemini voice, low            6/15              1/15
+
+The seven-run gap was the check. With a moment before the error in which
+speaking is wrong, both models fail the same scenario the same amount, and the
+failures are different from each other but neither is the one the old numbers
+implied.
+
+The local voice chatters through the first line - "spoke 2322ms during
+0-5015ms, which should have been silent" - and then says nothing when the wrong
+date arrives. It was passing by talking, and the correction it appeared to make
+was a sentence it would have said anyway.
+
+The thinking voice stays quiet through the first line, which is right, and then
+speaks without correcting: "it sounds like you're mapping out a solid timeline.
+what's the next step". It reaches the moment and misses the error.
+
+So this scenario is unsolved by either model, and the honest ranking on it is a
+tie at the bottom rather than a win for the model that says more. Three
+readings of it are now retracted: 13/15 (chatter scored as judgement), the
+seven-run gap in F71, and F73's conclusion that a thinking voice is penalised
+here - it is not penalised, it simply also fails.
+
+What this does not change is the rest of F71. Counting, the visual case, the
+waiter and interpreting were measured against checks that ask for a specific
+thing at a specific moment, and the thinking voice gains three or four runs in
+each. Those scenarios were never vulnerable to this, because saying more does
+not produce the word they look for.
