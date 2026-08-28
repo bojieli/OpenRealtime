@@ -38,6 +38,15 @@ func (extractor *pinningExtractor) Extract(
 	}, nil
 }
 
+// A test extractor watches for nothing, so everything it is asked about has
+// already arrived - the guard this answers is meant to hold back an agent that
+// would act too early, not one that has no policy at all.
+func (extractor *pinningExtractor) HasArrived(
+	_ context.Context, _ []interaction.StandingInstruction, _ string,
+) bool {
+	return true
+}
+
 func (extractor *pinningExtractor) seen() []string {
 	extractor.mu.Lock()
 	defer extractor.mu.Unlock()

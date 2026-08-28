@@ -343,6 +343,11 @@ type Extractor interface {
 	// somebody breathes, and joining the pieces back up before they get here
 	// is the caller's job - a tail read on its own means something else.
 	Extract(ctx context.Context, existing []StandingInstruction, recent []string, utterance string) (Extraction, error)
+	// HasArrived reports whether the thing any of these policies watches for
+	// is in the speech in front of the agent. It is the fact the voice needs
+	// and cannot get from the runtime any other way, since knowing would mean
+	// reading the policy - which is the judgement being delegated.
+	HasArrived(ctx context.Context, policies []StandingInstruction, said string) bool
 }
 
 // Extraction is what a turn did to the set of standing policies.
@@ -587,6 +592,63 @@ func (extractor *modelExtractor) readingOf(ctx context.Context, instruction Stan
 		extractor.read.Store(key, reading)
 	}
 	return reading
+}
+
+// ArrivedInstruction asks whether the thing a policy watches for is in the
+// speech in front of the agent.
+//
+// It exists because of what F66 found: every rule the voice follows reliably
+// points at a fact the runtime supplies - how much it has already spoken for,
+// whether this policy asks for a count, whether it forbids everything else -
+// and "has the thing happened yet" had no such fact behind it. Five wordings
+// were measured against that gap and all five made something else worse. The
+// runtime could not supply the fact because knowing would mean reading the
+// policy, which is the judgement being delegated. So it is asked as its own
+// question, the way the count and the restriction are.
+//
+// The examples are paired, positive and negative, for a reason that cost two
+// attempts: given only negatives it answers no to everything, and given none
+// it performs the policy instead of judging it - one version replied "1" to a
+// counting policy and "hello" to a translating one. Saying it is a judgement
+// and not a script, in as many words, is what stopped that.
+var ArrivedInstruction = "You are judging one thing about a conversation you are not part of. Do not carry " +
+	"out anything it asks for: your answer is always the single word yes or no, never a number, a " +
+	"translation or an order.\n\n" +
+	"Somebody asked a voice assistant to watch for something. Given what they are watching for and one " +
+	"piece of what was said, has the thing being watched for arrived in that piece?\n\n" +
+	"yes: it is there in their words, and the assistant could act on it now.\n" +
+	"no: it has not arrived - they are announcing that it is coming, still saying what they want, or " +
+	"talking about something else.\n\n" +
+	"Judgements, not scripts:\n" +
+	"  a running count of animals / \"I was walking along by the river\"        -> no\n" +
+	"  a running count of animals / \"A capybara wandered over\"                -> yes\n" +
+	"  a dish that fits when the waiter names one / \"we have three specials\"  -> no\n" +
+	"  a dish that fits when the waiter names one / \"the first is a ribeye\"   -> yes\n" +
+	"  the build finishing / \"I'm going to read for a bit\"                    -> no\n" +
+	"  the build finishing / \"build succeeded in 41s\"                         -> yes\n"
+
+// HasArrived reports whether any policy in force has had its moment in this
+// speech. An unreadable answer is yes: refusing to act on something that did
+// happen is the failure people notice, and acting on something that did not is
+// the one this is trying to reduce, so it errs towards the agent still working.
+func (extractor *modelExtractor) HasArrived(
+	ctx context.Context, policies []StandingInstruction, said string,
+) bool {
+	said = strings.TrimSpace(said)
+	if said == "" || len(policies) == 0 {
+		return true
+	}
+	for _, policy := range policies {
+		question := "Watching for: " + policy.Text + "\n\nThe piece: " + said + "\n\nArrived? "
+		answer, err := extractor.generator.Generate(ctx, ArrivedInstruction, question, 3)
+		if err != nil {
+			return true
+		}
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(answer)), "yes") {
+			return true
+		}
+	}
+	return false
 }
 
 func truncateAnswer(text string) string {

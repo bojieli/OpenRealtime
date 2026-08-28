@@ -72,6 +72,7 @@ type serveOptions struct {
 	asrPartial  time.Duration
 
 	fastProvider string
+	fastEffort   string
 	fastURL      string
 	fastModel    string
 	fastTokenEnv string
@@ -255,6 +256,10 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.slowTokenEnv, "slow-token-env", "",
 		"environment variable holding the slow model credential; "+
 			"empty reads OPENREALTIME_SLOW_API_KEY and then the provider's conventional variable")
+	flags.StringVar(&options.fastEffort, "fast-effort", "minimal",
+		"how hard the voice thinks before it speaks: minimal, low, medium, or high. "+
+			"minimal suits a small instruct model, which has nothing to think with; a reasoning "+
+			"model needs a budget to judge whether this is a turn to speak at all")
 	flags.StringVar(&options.slowEffort, "slow-effort", "high", "slow reasoning effort: minimal, low, medium, or high")
 	flags.IntVar(&options.slowTokens, "slow-max-tokens", 2048, "slow continuation output-token limit")
 	flags.BoolVar(&options.slowVision, "slow-sees", false,
@@ -1027,12 +1032,25 @@ func buildFast(options serveOptions) (continuation.Provider, error) {
 	if options.fastComputerUse {
 		authority = continuation.ToolAuthorityExecute
 	}
+	// Minimal unless the deployment asks for more. A small instruct model has
+	// nothing to think with and the budget is wasted latency; a reasoning
+	// model given none makes the judgement this phase exists for badly.
+	// Measured on eight turns replayed from real runs: the local instruct
+	// model scores four, Gemini 3.5 Flash with no thinking scores four, and
+	// the same model with a 512-token budget scores five - getting both
+	// interpreting cases right, which five rewordings of the prompt could not.
+	// It costs 1781ms a turn against 30ms, which is the trade a deployment
+	// makes rather than one this code should make for it.
+	fastEffort, err := parseEffort(options.fastEffort)
+	if err != nil {
+		return nil, err
+	}
 	return providers.NewLLM(providers.LLMRequest{
 		Provider: options.fastProvider,
 		Model:    modelOverride(options, "fast-model", options.fastModel, options.fastProvider, trajectory.PhaseFast),
 		BaseURL:  options.override("fast-url", options.fastURL),
 		APIKey:   roleCredential(options, "fast-token-env", options.fastTokenEnv, "OPENREALTIME_FAST_API_KEY"),
-		Phase:    trajectory.PhaseFast, Effort: continuation.EffortMinimal,
+		Phase:    trajectory.PhaseFast, Effort: fastEffort,
 		ToolAuthority:   authority,
 		SpeechAuthority: continuation.SpeechAuthorityVoice,
 		Reason:          providers.ReasonOff,
