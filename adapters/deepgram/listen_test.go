@@ -71,8 +71,12 @@ func (fake *fakeDeepgram) url() string {
 }
 
 func results(transcript string, final bool) string {
+	return resultEvent(transcript, final, false)
+}
+
+func resultEvent(transcript string, final, speechFinal bool) string {
 	payload, _ := json.Marshal(map[string]any{
-		"type": "Results", "is_final": final,
+		"type": "Results", "is_final": final, "speech_final": speechFinal,
 		"channel": map[string]any{"alternatives": []map[string]any{{"transcript": transcript}}},
 	})
 	return string(payload)
@@ -118,6 +122,7 @@ func TestInterimResultsAreReplacedAndFinalSegmentsAccumulate(t *testing.T) {
 	// The reader is a separate goroutine, so the first drain may be empty.
 	// What matters is where the transcript ends up, not which push carried it.
 	var text string
+	var stable string
 	deadline := time.Now().Add(2 * time.Second)
 	offset := uint64(800)
 	for index := uint64(1); time.Now().Before(deadline); index++ {
@@ -125,7 +130,8 @@ func TestInterimResultsAreReplacedAndFinalSegmentsAccumulate(t *testing.T) {
 			if revision.Final {
 				t.Fatal("a mid-stream revision must not be marked final")
 			}
-			text = revision.UnstableText
+			text = revision.StableText + revision.UnstableText
+			stable = revision.StableText
 		}
 		offset += 800
 		if strings.Contains(text, "please") {
@@ -135,6 +141,9 @@ func TestInterimResultsAreReplacedAndFinalSegmentsAccumulate(t *testing.T) {
 	}
 	if text != "what is my balance please" {
 		t.Fatalf("settled text plus the current hypothesis = %q", text)
+	}
+	if stable != "what is my balance" {
+		t.Fatalf("Deepgram's settled segment must be exposed as stable text, got %q", stable)
 	}
 
 	final, err := listener.Finalize(context.Background(), offset)
@@ -151,7 +160,9 @@ func TestInterimResultsAreReplacedAndFinalSegmentsAccumulate(t *testing.T) {
 func TestTheStreamDeclaresTheCallersOwnSampleRate(t *testing.T) {
 	t.Parallel()
 	fake := newFakeDeepgram(t, []string{results("hi", true)})
-	listener, err := NewListener(ListenConfig{URL: fake.url(), APIKey: "secret", Model: "nova-test"})
+	listener, err := NewListener(ListenConfig{
+		URL: fake.url(), APIKey: "secret", Model: "nova-test", Language: "en-US",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +172,7 @@ func TestTheStreamDeclaresTheCallersOwnSampleRate(t *testing.T) {
 	query := <-fake.query
 	for _, want := range []string{
 		"encoding=linear16", "sample_rate=16000", "channels=1",
-		"interim_results=true", "model=nova-test",
+		"interim_results=true", "model=nova-test", "language=en-US",
 	} {
 		if !strings.Contains(query, want) {
 			t.Errorf("query %q is missing %q", query, want)
@@ -173,6 +184,40 @@ func TestTheStreamDeclaresTheCallersOwnSampleRate(t *testing.T) {
 	if sent := <-fake.audio; sent != 800 {
 		t.Errorf("audio must reach the service unresampled, got %d bytes", sent)
 	}
+}
+
+func TestSpeechFinalExposesDeepgramsEndpointAndEndpointingQuery(t *testing.T) {
+	t.Parallel()
+	fake := newFakeDeepgram(t, []string{resultEvent("that is all", true, true)})
+	listener, err := NewListener(ListenConfig{
+		URL: fake.url(), APIKey: "secret", Endpointing: 300 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	push(t, listener, 0, 0, 400)
+	query := <-fake.query
+	for _, want := range []string{"vad_events=true", "endpointing=300"} {
+		if !strings.Contains(query, want) {
+			t.Errorf("query %q is missing %q", query, want)
+		}
+	}
+
+	// The socket reader is asynchronous. Advance the stream until the result is
+	// folded into listener state; the endpoint must not depend on a changed text
+	// revision being emitted to its caller.
+	offset := uint64(400)
+	for index, deadline := uint64(1), time.Now().Add(2*time.Second); time.Now().Before(deadline); index++ {
+		push(t, listener, index, offset, 400)
+		offset += 400
+		if listener.SpeechEndpointed() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("speech_final was not exposed as a recogniser endpoint")
 }
 
 func TestAReportedErrorFailsTheUtterance(t *testing.T) {

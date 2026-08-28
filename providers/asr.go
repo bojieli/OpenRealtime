@@ -168,8 +168,11 @@ type ASRRequest struct {
 	// re-transcribing the utterance. It is ignored by a streaming provider,
 	// which produces them for free.
 	PartialInterval time.Duration
-	RequestTimeout  time.Duration
-	Header          http.Header
+	// Endpointing configures a streaming service's own VAD. Batch providers
+	// ignore it.
+	Endpointing    time.Duration
+	RequestTimeout time.Duration
+	Header         http.Header
 }
 
 // NewASRFactory returns a factory producing one recogniser per utterance.
@@ -211,7 +214,7 @@ func NewASRFactory(request ASRRequest) (func() (v1.PerceptionProvider, error), e
 		return func() (v1.PerceptionProvider, error) {
 			return deepgram.NewListener(deepgram.ListenConfig{
 				URL: baseURL, Model: model, APIKey: key, Language: request.Language,
-				Header: request.Header,
+				Header: request.Header, Endpointing: request.Endpointing,
 			})
 		}, nil
 	case DialectOpenAITranscriptions, DialectElevenLabsSTT:

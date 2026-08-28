@@ -52,8 +52,10 @@ type ListenConfig struct {
 	// APIKey is the Deepgram key. It is sent as an Authorization: Token
 	// header rather than in the URL, so it does not reach proxy logs.
 	APIKey string
-	// Language is an optional language hint. Empty lets Deepgram decide,
-	// which the multilingual models support.
+	// Language selects recognition language. Empty leaves Deepgram's service
+	// default in force. The model-specific "multi" value is not automatic
+	// detection for every language; for example, Nova-3 multi does not include
+	// Mandarin, which requires a Chinese locale such as zh-CN.
 	Language string
 	// InterimResults asks for hypotheses before a segment is finished. It
 	// defaults on, because the reason to choose a streaming recogniser is to
@@ -61,6 +63,13 @@ type ListenConfig struct {
 	InterimResults *bool
 	// SmartFormat applies Deepgram's punctuation and entity formatting.
 	SmartFormat *bool
+	// Endpointing is the silence Deepgram's own VAD requires before marking a
+	// Results event speech_final. Zero leaves the service default in force.
+	Endpointing time.Duration
+	// VADEvents asks Deepgram to expose its speech detector. It defaults on;
+	// the adapter currently consumes speech_final and retains the explicit
+	// switch so deployments can make the wire behavior reproducible.
+	VADEvents *bool
 	// Keywords biases recognition toward expected vocabulary.
 	Keywords []string
 	// Extra adds query parameters this adapter does not model.
@@ -94,6 +103,7 @@ type Listener struct {
 	lastEmittedText  string
 	revisionID       uint64
 	finalized        bool
+	speechEndpointed bool
 
 	// results carries revisions from the read goroutine. Nothing but reading
 	// happens on that goroutine: the connection answers protocol pings only
@@ -114,8 +124,9 @@ type Listener struct {
 
 // transcriptSegment is one recognised span as Deepgram reported it.
 type transcriptSegment struct {
-	text  string
-	final bool
+	text        string
+	final       bool
+	speechFinal bool
 }
 
 // NewListener validates configuration and returns a fresh utterance.
@@ -270,6 +281,10 @@ func (listener *Listener) dial(ctx context.Context, sampleRateHz uint32) error {
 	query.Set("channels", "1")
 	query.Set("interim_results", boolText(listener.config.InterimResults, true))
 	query.Set("smart_format", boolText(listener.config.SmartFormat, true))
+	query.Set("vad_events", boolText(listener.config.VADEvents, true))
+	if listener.config.Endpointing > 0 {
+		query.Set("endpointing", strconv.FormatInt(listener.config.Endpointing.Milliseconds(), 10))
+	}
 	if listener.config.Language != "" {
 		query.Set("language", listener.config.Language)
 	}
@@ -318,9 +333,10 @@ func (listener *Listener) read(connection *websocket.Conn) {
 			continue
 		}
 		var envelope struct {
-			Type    string `json:"type"`
-			IsFinal bool   `json:"is_final"`
-			Channel struct {
+			Type        string `json:"type"`
+			IsFinal     bool   `json:"is_final"`
+			SpeechFinal bool   `json:"speech_final"`
+			Channel     struct {
 				Alternatives []struct {
 					Transcript string `json:"transcript"`
 				} `json:"alternatives"`
@@ -348,7 +364,7 @@ func (listener *Listener) read(connection *websocket.Conn) {
 			}
 			segment := transcriptSegment{
 				text:  envelope.Channel.Alternatives[0].Transcript,
-				final: envelope.IsFinal,
+				final: envelope.IsFinal, speechFinal: envelope.SpeechFinal,
 			}
 			// An interim result with nothing in it is Deepgram saying it has
 			// not decided yet, not that the speaker said nothing. Forwarding
@@ -430,6 +446,9 @@ func (listener *Listener) drainUntilClosed(ctx context.Context) error {
 // final segment appends and clears the interim tail, and an interim segment
 // replaces the tail without touching what is already settled.
 func (listener *Listener) apply(segment transcriptSegment) {
+	if segment.speechFinal {
+		listener.speechEndpointed = true
+	}
 	if segment.final {
 		if strings.TrimSpace(segment.text) != "" {
 			if listener.committed != "" {
@@ -443,6 +462,15 @@ func (listener *Listener) apply(segment transcriptSegment) {
 	listener.interim = " " + strings.TrimSpace(segment.text)
 }
 
+// SpeechEndpointed reports that Deepgram's own VAD marked the current
+// utterance complete. It is an optional capability consumed by the
+// event-aware cascade path; the existing acoustic endpoint path never asks.
+func (listener *Listener) SpeechEndpointed() bool {
+	listener.mu.Lock()
+	defer listener.mu.Unlock()
+	return listener.speechEndpointed
+}
+
 func (listener *Listener) revision(text string, sourceSample uint64, final bool) v1.PerceptionRevision {
 	listener.revisionID++
 	revision := v1.PerceptionRevision{
@@ -452,7 +480,14 @@ func (listener *Listener) revision(text string, sourceSample uint64, final bool)
 	if final {
 		revision.StableText = text
 	} else {
-		revision.UnstableText = text
+		// Deepgram's is_final settles a segment even while the utterance as a
+		// whole remains open. Expose that settled prefix as stable evidence and
+		// leave only the current hypothesis in the unstable tail. Treating the
+		// whole live transcript as unstable threw away information the service
+		// had explicitly committed to and left stable-partial policies with
+		// nothing they were permitted to read.
+		revision.StableText = strings.TrimSpace(listener.committed)
+		revision.UnstableText = strings.TrimPrefix(text, revision.StableText)
 	}
 	listener.lastEmittedText = text
 	return revision

@@ -394,6 +394,16 @@ func (observer *AudioObserver) DurationMS() uint64 {
 	return observer.sampleOffset * 1_000 / uint64(observer.sampleRate)
 }
 
+// SpeechEndpointed reports an endpoint supplied by a recogniser that combines
+// ASR with VAD. It is optional: providers without that capability continue to
+// be endpointed by the acoustic floor exactly as before.
+func (observer *AudioObserver) SpeechEndpointed() bool {
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	provider, ok := observer.provider.(interface{ SpeechEndpointed() bool })
+	return ok && provider.SpeechEndpointed()
+}
+
 // carriesSpeech reports whether a transcript contains anything a person said.
 //
 // A recogniser asked about audio with no words in it has to answer somehow,
