@@ -117,6 +117,53 @@ func TestATurnsPoliciesAreReplacedByItsLaterReading(t *testing.T) {
 	}
 }
 
+// A policy may be stated before the exclusion attached to it. The cheap
+// classification pass once read the short policy as counting and the expanded
+// one as not counting, so replacing all metadata made final-event recovery
+// repeat the first animal and turn the second count into three.
+func TestAnExpandedReadingKeepsAPositiveCountingClassification(t *testing.T) {
+	board := &interaction.Pinboard{}
+	if added := board.SetForTurn(7, []interaction.StandingInstruction{{
+		Text:  "count the animals out loud as they mention them",
+		Scope: interaction.ScopeConversation, SetNS: 1_000, Counting: true,
+	}}); added != 1 {
+		t.Fatalf("the first reading added %d policies, want 1", added)
+	}
+	if added := board.SetForTurn(7, []interaction.StandingInstruction{{
+		Text:  "count the animals out loud as they mention them and say nothing else",
+		Scope: interaction.ScopeConversation, SetNS: 9_000, Restricting: true,
+	}}); added != 0 {
+		t.Fatalf("an expansion of the same policy added %d policies, want 0", added)
+	}
+	inForce := board.InForce()
+	if len(inForce) != 1 {
+		t.Fatalf("the expanded reading should leave one policy: %+v", inForce)
+	}
+	if !inForce[0].Counting || !inForce[0].Restricting {
+		t.Fatalf("the expanded policy lost a positive classification: %+v", inForce[0])
+	}
+	if inForce[0].SetNS != 1_000 {
+		t.Fatalf("the expanded policy moved from %d to %d", 1_000, inForce[0].SetNS)
+	}
+}
+
+// Positive metadata belongs to the policy that established it, not to every
+// later policy the same stretch of speech happens to establish.
+func TestADifferentLaterPolicyDoesNotInheritCounting(t *testing.T) {
+	board := &interaction.Pinboard{}
+	board.SetForTurn(7, []interaction.StandingInstruction{{
+		Text: "count the animals out loud", Scope: interaction.ScopeConversation,
+		Counting: true,
+	}})
+	board.SetForTurn(7, []interaction.StandingInstruction{{
+		Text: "translate each phrase into English", Scope: interaction.ScopeConversation,
+	}})
+	inForce := board.InForce()
+	if len(inForce) != 1 || inForce[0].Counting {
+		t.Fatalf("a different policy inherited counting: %+v", inForce)
+	}
+}
+
 // Two policies from one turn both stand. Replacing one with the next was what
 // a one-at-a-time reading forced, and it destroyed a live counting policy the
 // moment the same turn also asked not to be interrupted.

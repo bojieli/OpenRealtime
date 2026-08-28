@@ -680,7 +680,7 @@ func becauseInstruction(act string, counting bool) string {
 		// option" - to a recording, which cannot hear it and is still talking
 		// over the announcement. The act is the answer; saying it as well
 		// spends a turn describing what was already done.
-		return "Nothing you write on this turn is heard by anybody. Do whatever the situation actually calls for - call a tool if there is one that applies, and nothing if there is not - and reply with " + WaitToken + ". Whoever is talking is still talking, and words aimed at them would be wasted."
+		return "Nothing you write on this turn is heard by anybody. Do whatever the situation actually calls for - call a tool if there is one that applies, and nothing if there is not - and reply with " + WaitToken + ". Whoever is talking is still talking, and words aimed at them would be wasted. At a recorded menu, a key applies only when the current words contain both its digit and an option label matching the user's earlier goal. A greeting, a digit alone, or a different option means call no tool and reply " + WaitToken + "; never press the first key merely because it was named first."
 	case "interrupt":
 		return "You are cutting into their sentence because what they are saying needs correcting now, and waiting until they finish would make the correction useless. Say the correction itself - the right date, the right figure, the right name - not that you are listening and not a question about it."
 	}

@@ -248,17 +248,21 @@ func (runtime *runtime) noticeStanding(text string) {
 			if err != nil {
 				outcome = "error"
 			}
-			var texts, scopes []string
+			var texts, scopes, counting, restricting []string
 			for _, instruction := range extraction.Pins {
 				texts = append(texts, instruction.Text)
 				scopes = append(scopes, string(instruction.Scope))
+				counting = append(counting, strconv.FormatBool(instruction.Counting))
+				restricting = append(restricting, strconv.FormatBool(instruction.Restricting))
 			}
 			recorder(interaction.ShadowDecision{
 				NowNS: runtime.scheduler.NowNS(), Situation: "extract: " + whole,
 				Act: outcome,
 				Predicates: map[string]string{
 					"where": "extract", "scope": strings.Join(scopes, " | "),
-					"text": strings.Join(texts, " | "),
+					"text":        strings.Join(texts, " | "),
+					"counting":    strings.Join(counting, " | "),
+					"restricting": strings.Join(restricting, " | "),
 				},
 				Error: errorText(err),
 			})
@@ -486,6 +490,18 @@ func (runtime *runtime) wholeUtterance(
 	}
 	if len(pieces) == 0 {
 		return text, began
+	}
+	// A live utterance is deliberately not canonical yet, so after an
+	// assistant boundary speechSoFar has no item from which to derive its turn
+	// identity. Turn zero made every such utterance look like the same turn to
+	// the pinboard: extracting a later story sentence then replaced the rule
+	// that story was supposed to follow. The event-aware path already records
+	// acoustic onset; use that stable per-utterance identity until the final
+	// observation commits. Keep the legacy path byte-for-byte unchanged.
+	if began == 0 && runtime.policies.TranscriptEvents != nil {
+		runtime.audioMu.Lock()
+		began = runtime.speechStartNS
+		runtime.audioMu.Unlock()
 	}
 	return strings.Join(pieces, " "), began
 }

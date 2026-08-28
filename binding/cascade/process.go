@@ -35,6 +35,12 @@ type actionUtterance = action.Utterance
 // gate that owns that decision, which is how a turn ends up spoken over
 // another one or answered twice.
 func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) error {
+	transcriptAct, _, eventAware, ungovernedObservation := runtime.transcriptActFor(batch)
+	if eventAware {
+		defer runtime.forgetTranscriptActs(batch)
+	}
+	respondToObservation := batch.Contains(trajectory.KindObservation) &&
+		(!eventAware || ungovernedObservation || transcriptAct == interaction.ActAnswer)
 	// An obligation the ledger is holding becomes visible to the model here,
 	// at the first safe point after the evidence that created it committed.
 	// Raising it earlier is not possible - the log refuses a repair whose
@@ -48,7 +54,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	// stopped would be too early: they stop constantly while making the point
 	// the policy was protecting. Expiring it here, where the agent is about to
 	// respond to a completed turn, is the moment it was asking about.
-	if batch.Contains(trajectory.KindObservation) {
+	if respondToObservation {
 		defer runtime.pinboard.EndTurn()
 	}
 	revision := runtime.latestRevision(batch)
@@ -57,7 +63,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 			NowNS: runtime.scheduler.NowNS(), Duplex: runtime.duplex.Snapshot(),
 		},
 		Cause: interaction.Cause{
-			Observation:      batch.Contains(trajectory.KindObservation),
+			Observation:      respondToObservation,
 			Escalated:        batch.Signalled(interaction.SignalEscalated),
 			ToolResult:       batch.Contains(trajectory.KindToolResult),
 			ToolError:        batchHasToolError(batch),
@@ -301,6 +307,15 @@ func (runtime *runtime) runFast(
 	spoke, publishErr := runtime.publishAssistant(ctx, result, request, guardSolicitation)
 	turn.stage("publish", runtime.scheduler.NowNS()-publishBegan)
 	if spoke {
+		if request.Interjecting && request.Counting &&
+			request.Because == string(interaction.ActSpeakThrough) {
+			// This is the exact fact final-event recovery needs. Record it only
+			// after publish reports audible output: a continuation that returned
+			// <wait>, was withheld, or lost its safe point did not count anything.
+			runtime.audioMu.Lock()
+			runtime.countSpokeThisUtterance = true
+			runtime.audioMu.Unlock()
+		}
 		// The agent has now answered this much of what they are saying. Only
 		// the interjection path recorded that, so an ordinary turn had no way
 		// to know it had spoken - and one instruction arriving as four
@@ -316,7 +331,15 @@ func (runtime *runtime) runFast(
 		// catch it either. The mark then told the next turn it had already
 		// covered the very sentence it was being asked to interrupt over, and
 		// each refusal made the next one likelier.
-		runtime.markSpoken(everythingSaid(runtime.store.Snapshot()))
+		spokenFor := everythingSaid(runtime.store.Snapshot())
+		if request.Interjecting && strings.TrimSpace(request.Heard) != "" {
+			// The live utterance is intentionally not canonical while an
+			// interjection runs. Include the exact fragment this output covered;
+			// otherwise the mark ends at the prior committed turn and every later
+			// partial looks wholly new, producing the same correction repeatedly.
+			spokenFor = strings.TrimSpace(spokenFor + " " + request.Heard)
+		}
+		runtime.markSpoken(spokenFor)
 	}
 	var signalErr error
 	// A turn the voice did not declare finished goes to the reasoner. So does

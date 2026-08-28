@@ -156,6 +156,9 @@ func TestActingIsToldNothingItWritesIsHeard(t *testing.T) {
 	if !strings.Contains(acting, "and nothing if there is not") {
 		t.Fatalf("a silent act was told to call something regardless:\n%s", acting)
 	}
+	if !strings.Contains(acting, "both its digit and an option label matching") {
+		t.Fatalf("a menu action was not told to verify the option against the user's goal:\n%s", acting)
+	}
 	if !strings.Contains(acting, cognition.WaitToken) {
 		t.Fatal("it was not told how to make the call without also announcing it")
 	}

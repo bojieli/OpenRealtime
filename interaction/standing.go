@@ -140,6 +140,12 @@ func extractionExamples() []extractionExample {
 		// rest of the story.
 		{nil, nil, "I'll read out the numbers - add them up as I go and say the running total.",
 			"pin conversation say the running total each time they read out a number"},
+		// Preserve the operation. Replacing "count" with the superficially
+		// similar "say" changes the requested output from a running number to an
+		// animal name; the prose above names this distinction, but the concrete
+		// paired shape is what keeps a short extractor from paraphrasing it away.
+		{nil, nil, "Count the animals out loud as I mention them, and say nothing else.",
+			"pin conversation count the animals out loud as they mention them and say nothing else"},
 		{nil, nil, "Let me finish reading this out before you say anything.",
 			"pin turn do not reply until they have finished reading it out"},
 		// A silence lifted by something they will do later outlives the

@@ -82,6 +82,12 @@ type runtime struct {
 	settingsMu sync.RWMutex
 	settings   binding.Settings
 
+	// transcriptActs carries an opt-in final transcript verdict across the
+	// unconditional commit boundary to the event-loop safe point that decides
+	// whether cognition runs. It is unused by the existing observation path.
+	transcriptMu   sync.Mutex
+	transcriptActs map[uint64]interaction.Act
+
 	// inputMu serialises media-driven endpoint transitions. Audio normally
 	// arrives on one protocol reader, but a time-based floor retry is a second
 	// producer; without one owner, resumed speech could start between a retry's
@@ -132,6 +138,19 @@ type runtime struct {
 	// might still be the one setting a policy rather than an occasion to act
 	// on it.
 	carriedOutPolicy bool
+	// countSpokeThisUtterance records an action boundary, not a transcript
+	// comparison: a running count actually became audible during the current
+	// live utterance. Deepgram may revise "capybara" to "tapi bara" at final,
+	// so text-prefix matching cannot reliably prove that occurrence was already
+	// handled. The final event uses this fact to avoid counting it twice.
+	countSpokeThisUtterance bool
+	// countRequestedThisUtterance records that the transcript policy saw a
+	// counting condition in a partial and explicitly chose speak-through. The
+	// delivery path may still wait for a complete phrase, and a later ASR
+	// revision can make the small policy retreat to listen. If no count crosses
+	// the action boundary before the final event, this is the evidence that the
+	// final must recover it once rather than silently losing the occurrence.
+	countRequestedThisUtterance bool
 	// pinnedFromText is the stretch of speech that set a policy, which is the
 	// one thing the agent must not act on: the sentence asking to be told
 	// about something is not an instance of that something.
@@ -144,7 +163,12 @@ type runtime struct {
 	// the agent last said something, so a decision can be told what is new.
 	heardWhenSpoke string
 	// interjectStartNS is when the in-flight interjection claimed its slot.
+	// interjectDone closes when that exact claim has finished. The event-aware
+	// path waits on it before committing the recogniser's final observation so
+	// a deliberate speak-through turn is not rejected merely because
+	// Deepgram's endpoint arrived while the voice was composing it.
 	interjectStartNS uint64
+	interjectDone    chan struct{}
 	// lastSilentActRev is the revision the last silent act answered, and
 	// actedOnHeard is what had been heard when it was taken.
 	//

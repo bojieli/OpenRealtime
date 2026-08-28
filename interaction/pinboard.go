@@ -65,11 +65,13 @@ func (board *Pinboard) Pin(instruction StandingInstruction) {
 func (board *Pinboard) SetForTurn(turn uint64, instructions []StandingInstruction) (added int) {
 	board.mu.Lock()
 	defer board.mu.Unlock()
-	was := make(map[string]uint64, len(board.pinned))
+	was := make(map[string]StandingInstruction, len(board.pinned))
+	var earlier []StandingInstruction
 	kept := board.pinned[:0]
 	for _, existing := range board.pinned {
 		if existing.Turn == turn {
-			was[strings.ToLower(existing.Text)] = existing.SetNS
+			was[strings.ToLower(existing.Text)] = existing
+			earlier = append(earlier, existing)
 			continue
 		}
 		kept = append(kept, existing)
@@ -92,14 +94,40 @@ func (board *Pinboard) SetForTurn(turn uint64, instructions []StandingInstructio
 			continue
 		}
 		instruction.Turn = turn
-		if setNS, ok := was[strings.ToLower(instruction.Text)]; ok {
-			instruction.SetNS = setNS
+		if existing, ok := was[strings.ToLower(instruction.Text)]; ok {
+			instruction.SetNS = existing.SetNS
+			instruction.Counting = instruction.Counting || existing.Counting
+		} else if existing, ok := expandedPolicy(earlier, instruction.Text); ok {
+			// The pass can phrase the same policy more fully as an utterance
+			// grows. Its auxiliary classifications are deliberately cheap and
+			// occasionally unstable: measured, adding "and say nothing else"
+			// to "count the animals ..." changed Counting from true to false.
+			// A longer reading has not made the already-established operation
+			// stop being a count. Carry that positive fact, and the policy's
+			// original age, across a strict textual expansion.
+			instruction.SetNS = existing.SetNS
+			instruction.Counting = instruction.Counting || existing.Counting
 		} else {
 			added++
 		}
 		board.pinned = append(board.pinned, instruction)
 	}
 	return added
+}
+
+// expandedPolicy finds a policy from the previous reading that the new text
+// only extends. Restrict this to a word-boundary prefix: two policies from one
+// turn may be entirely different, and sharing a few words is not enough to
+// merge their metadata.
+func expandedPolicy(earlier []StandingInstruction, text string) (StandingInstruction, bool) {
+	wanted := strings.Join(strings.Fields(strings.ToLower(text)), " ")
+	for _, existing := range earlier {
+		prefix := strings.Join(strings.Fields(strings.ToLower(existing.Text)), " ")
+		if prefix != "" && strings.HasPrefix(wanted, prefix+" ") {
+			return existing, true
+		}
+	}
+	return StandingInstruction{}, false
 }
 
 // find reports which turn set a policy already in force.

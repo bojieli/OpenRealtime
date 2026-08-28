@@ -89,6 +89,8 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 		runtime.speechStartNS = now
 		runtime.lastStable, runtime.lastCanonical = "", 0
 		runtime.heard = interaction.Revision{}
+		runtime.countSpokeThisUtterance = false
+		runtime.countRequestedThisUtterance = false
 		runtime.pauseActive = false
 		runtime.pauseStartNS, runtime.pauseSilenceNS = 0, 0
 	}
@@ -108,6 +110,8 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 			runtime.speechStartNS = now
 			runtime.lastStable, runtime.lastCanonical = "", 0
 			runtime.heard = interaction.Revision{}
+			runtime.countSpokeThisUtterance = false
+			runtime.countRequestedThisUtterance = false
 			runtime.pauseActive = false
 			runtime.pauseStartNS, runtime.pauseSilenceNS = 0, 0
 			started = true
@@ -158,6 +162,38 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 		}
 		latest = observed
 	}
+	// The transcript-event path deliberately lets a streaming recogniser own
+	// the semantic endpoint. Deepgram reports speech_final only after it has
+	// folded the last settled segment into the stream, so this check belongs
+	// after Observe and before the local pause policy. The acoustic gate still
+	// supplies onset, duplex state, and a liveness fallback; ForceStop merely
+	// makes its state agree with the recogniser that ended this utterance.
+	//
+	// A local endpoint and speech_final can arrive on the same frame. ForceStop
+	// reports false when Push already closed the gate, while stopped retains that
+	// local transition. Treating either as one claim and returning immediately
+	// makes that race exactly one finalization. Client-owned turns remain client
+	// owned even when their recogniser happens to expose this optional signal.
+	if !manual && runtime.policies.TranscriptEvents != nil && runtime.audio.SpeechEndpointed() {
+		endMS := result.AudioEndMS
+		forced := false
+		runtime.audioMu.Lock()
+		if runtime.acoustic != nil && utteranceID != "" && utteranceID == runtime.utteranceID {
+			if forcedEndMS, didStop := runtime.acoustic.ForceStop(); didStop {
+				endMS, forced = forcedEndMS, true
+			}
+		}
+		runtime.audioMu.Unlock()
+		if forced || stopped {
+			runtime.debug(ctx, binding.DebugEvent{
+				Category: "vad", Name: "vad.recognizer_endpoint_detected", Phase: "decision",
+				Attributes: map[string]any{
+					"audio_end_ms": endMS, "forced_acoustic_gate": forced,
+				},
+			})
+			return runtime.onUserSpeechStopped(ctx, utteranceID, endMS, now)
+		}
+	}
 	if !started && !stopped {
 		// A barge-in policy that waits needs its deadline driven by something.
 		// Revisions are too slow and too irregular to be that something: a
@@ -166,7 +202,7 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 		// timeout. Frames arrive every 100 ms whatever the recogniser is
 		// doing, so the deadline is checked here.
 		state := runtime.duplex.Snapshot()
-		if state.Overlapping() {
+		if state.Overlapping() && runtime.policies.TranscriptEvents == nil {
 			overlap := now - state.UserSpeechStartedNS
 			if err := runtime.considerBargeIn(ctx, interaction.Revision{}, overlap); err != nil {
 				return err
@@ -449,12 +485,14 @@ func (runtime *runtime) onUserSpeechStarted(ctx context.Context, utteranceID str
 	// after the user has resumed. Interrupt only in-flight voice cognition here;
 	// considerBargeIn below cancels pending synthesis according to policy, while
 	// unrelated slow deliberation remains free to continue under speech.
-	if runtime.ordinaryFastRunning.Load() > 0 {
+	if runtime.ordinaryFastRunning.Load() > 0 && runtime.policies.TranscriptEvents == nil {
 		runtime.coordinator.Interrupt(fmt.Errorf(
 			"user resumed before the response began: %w", eventloop.ErrInterrupted))
 	}
-	if err := runtime.considerBargeIn(ctx, interaction.Revision{}, 0); err != nil {
-		return err
+	if runtime.policies.TranscriptEvents == nil {
+		if err := runtime.considerBargeIn(ctx, interaction.Revision{}, 0); err != nil {
+			return err
+		}
 	}
 	if runtime.manualTurns() {
 		// Voice-activity events describe a detector the client turned off.
@@ -538,6 +576,10 @@ func (runtime *runtime) considerBargeIn(
 }
 
 func (runtime *runtime) onUserSpeechStopped(ctx context.Context, utteranceID string, endMS int, now uint64) error {
+	// A partial-event action is deliberate concurrent output. Let it reach its
+	// safe point before the final observation changes the canonical prefix; the
+	// ordinary path never takes this join.
+	runtime.waitForTranscriptInterjection(ctx)
 	defer runtime.finishInterjectingEndpoint()
 	runtime.audioMu.Lock()
 	runtime.cancelPauseRetryLocked()
@@ -585,13 +627,31 @@ func (runtime *runtime) onUserSpeechStopped(ctx context.Context, utteranceID str
 		return nil
 	}
 	for _, observation := range observations {
+		var transcriptAct *interaction.Act
+		if runtime.policies.TranscriptEvents != nil {
+			revision := revisionFromObservation(
+				observation, runtime.scheduler.NowNS(), 0)
+			runtime.audioMu.Lock()
+			runtime.heard = revision
+			runtime.audioMu.Unlock()
+			decision, act, _ := runtime.decideTranscriptEvent(
+				ctx, interaction.TranscriptFinal, revision)
+			if err := runtime.handleFinalTranscriptAct(ctx, decision, act); err != nil {
+				return err
+			}
+			// A final act-silently may have started its bounded action above. It
+			// owns this event just as a partial act does, so do not invalidate it
+			// with the commit it was selected from.
+			runtime.waitForTranscriptInterjection(ctx)
+			transcriptAct = &act
+		}
 		if err := runtime.sink.Transcript(ctx, binding.TranscriptEvent{
 			ItemID: utteranceID, Text: observation.Text, Final: true,
 			DurationSec: float64(durationMS) / 1000,
 		}); err != nil {
 			return err
 		}
-		if err := runtime.commitObservation(ctx, observation); err != nil {
+		if err := runtime.commitObservationWithTranscriptAct(ctx, observation, transcriptAct); err != nil {
 			return err
 		}
 	}
@@ -635,11 +695,8 @@ func (runtime *runtime) observeAudio(
 				"stable_chars": len(observation.StableText),
 			}, Payload: map[string]any{"text": observation.Text, "stable_text": observation.StableText},
 		})
-		revision := interaction.Revision{
-			ID: observation.Revision, StableText: observation.StableText,
-			UnstableText: strings.TrimPrefix(observation.Text, observation.StableText),
-			Final:        observation.Final, ObservedNS: runtime.scheduler.NowNS(), SilenceNS: silenceNS,
-		}
+		revision := revisionFromObservation(
+			observation, runtime.scheduler.NowNS(), silenceNS)
 		latest = revision
 		runtime.audioMu.Lock()
 		runtime.heard = revision
@@ -649,7 +706,7 @@ func (runtime *runtime) observeAudio(
 		}
 		// A waiting barge-in policy decides here rather than at onset, because
 		// this is the first point at which there are words to classify.
-		if decision.Duplex.Overlapping() {
+		if decision.Duplex.Overlapping() && runtime.policies.TranscriptEvents == nil {
 			overlap := decision.NowNS - decision.Duplex.UserSpeechStartedNS
 			if err := runtime.considerBargeIn(ctx, revision, overlap); err != nil {
 				return latest, err
@@ -660,6 +717,16 @@ func (runtime *runtime) observeAudio(
 		// talking - so waiting for a commit means waiting for the very thing
 		// the policy was meant to shape.
 		runtime.noticeStandingInPartial(observation.StableText)
+		if runtime.policies.TranscriptEvents != nil {
+			eventDecision, act, policyErr := runtime.decideTranscriptEvent(
+				ctx, interaction.TranscriptPartial, revision)
+			if policyErr != nil && eventDecision.Situation != nil {
+				act = interaction.InertialAct(*eventDecision.Situation)
+			}
+			if err := runtime.handlePartialTranscriptAct(ctx, eventDecision, act); err != nil {
+				return latest, err
+			}
+		}
 		// The conversation is attached here, before the predicates run, so
 		// that whoever reads it sees the instant they are about to act on
 		// rather than the one they leave behind. It is assembled once: the
@@ -674,13 +741,19 @@ func (runtime *runtime) observeAudio(
 		// A continuer is decided about here because here is where the words
 		// are: a policy that only saw the acoustic envelope could not tell a
 		// finished thought from a pause for breath.
-		runtime.backchannel(ctx, decision)
+		if runtime.policies.TranscriptEvents == nil {
+			runtime.backchannel(ctx, decision)
+		}
 		// The floor policy may end the turn before silence confirms it. It is
 		// asked before the trigger, because a projected endpoint makes the
 		// rest of this revision's processing part of the next turn.
-		projected, err := runtime.projectEndpoint(ctx, decision)
-		if err != nil {
-			return latest, err
+		projected := false
+		if runtime.policies.TranscriptEvents == nil {
+			var err error
+			projected, err = runtime.projectEndpoint(ctx, decision)
+			if err != nil {
+				return latest, err
+			}
 		}
 		if projected {
 			runtime.endShadow(shadow, decision, true, false)
@@ -699,7 +772,8 @@ func (runtime *runtime) observeAudio(
 		if !opportunity.Open {
 			continue
 		}
-		if runtime.config.ObservationPolicy != ObservationStablePartial {
+		if runtime.policies.TranscriptEvents != nil ||
+			runtime.config.ObservationPolicy != ObservationStablePartial {
 			continue
 		}
 		stable := strings.TrimSpace(observation.StableText)
@@ -741,6 +815,12 @@ func (runtime *runtime) setStableText(text string) {
 // that perception produced enters the log the moment it arrives. Whether a
 // continuation then runs is the deferral policy's decision, made by the gate.
 func (runtime *runtime) commitObservation(ctx context.Context, observation perception.Observation) error {
+	return runtime.commitObservationWithTranscriptAct(ctx, observation, nil)
+}
+
+func (runtime *runtime) commitObservationWithTranscriptAct(
+	ctx context.Context, observation perception.Observation, transcriptAct *interaction.Act,
+) error {
 	if err := observation.Validate(); err != nil {
 		return err
 	}
@@ -793,6 +873,9 @@ func (runtime *runtime) commitObservation(ctx context.Context, observation perce
 		runtime.owe(revision)
 	}
 	if err := runtime.sink.Observation(ctx, observation); err != nil {
+		if transcriptAct != nil {
+			runtime.forgetTranscriptAct(revision)
+		}
 		return err
 	}
 	if observation.Authority == trajectory.AuthorityUser && observation.Final && !observation.Described {
@@ -802,6 +885,13 @@ func (runtime *runtime) commitObservation(ctx context.Context, observation perce
 		// the standing policy the conversation was running on.
 		runtime.noticeStanding(observation.Text)
 	}
+	// Attach the event-aware verdict only once every operation before Submit has
+	// succeeded. Submit is the first point at which the event loop can observe
+	// this revision, so this is both late enough to avoid stale entries after a
+	// pre-submit failure and early enough to win the coordinator race.
+	if transcriptAct != nil {
+		runtime.rememberTranscriptAct(revision, *transcriptAct)
+	}
 	_, err := runtime.coordinator.Submit(eventloop.Event{
 		Type: observationEventType(observation), Source: observation.Observer, Channel: observationChannel(observation),
 		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindObservation,
@@ -809,6 +899,9 @@ func (runtime *runtime) commitObservation(ctx context.Context, observation perce
 		Producer: observation.Producer(), Content: observation.Text, Observation: observation.Meta(),
 		CorrelationID: runtime.currentUtterance(),
 	})
+	if err != nil && transcriptAct != nil {
+		runtime.forgetTranscriptAct(revision)
+	}
 	return err
 }
 

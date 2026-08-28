@@ -65,7 +65,7 @@ func (runtime *runtime) interject(decision interaction.Context) {
 // the delivery - words while somebody else is talking - and differ in why, so
 // the reason travels with the request and the voice is told which one it got.
 func (runtime *runtime) interjectFor(decision interaction.Context, reason interaction.Act) {
-	if runtime.policies.Interaction == nil {
+	if !runtime.hasActPolicy() {
 		return
 	}
 	// Speaking through somebody is how a standing policy gets honoured while
@@ -181,6 +181,19 @@ func (runtime *runtime) interjectFor(decision interaction.Context, reason intera
 		runtime.noteInterject("nothing new since the agent last spoke")
 		return
 	}
+	if reason == interaction.ActSpeakThrough && runtime.policies.TranscriptEvents != nil &&
+		runtime.countingIsInForce() {
+		// This records the event policy's content judgement, not successful
+		// delivery. It belongs after the guards for the utterance that set the
+		// policy: a model often chooses speak-through while somebody is still
+		// saying "count the animals", and retaining that as an occurrence would
+		// make the completed instruction count as the first animal. It belongs
+		// before the completeness guard because waiting there is exactly what a
+		// later completed partial has to recover.
+		runtime.audioMu.Lock()
+		runtime.countRequestedThisUtterance = true
+		runtime.audioMu.Unlock()
+	}
 	// Wait for them to finish saying something. Always when answering a
 	// stretch the agent has already spoken into, and on the first answer too
 	// when the policy is a running count.
@@ -229,14 +242,15 @@ func (runtime *runtime) interjectFor(decision interaction.Context, reason intera
 	// Speech that would overlap is already prevented where speech is
 	// scheduled. What this guards is two continuations at once, which is worth
 	// bounding rather than holding open.
-	if !runtime.claimInterjection() {
+	claim, claimed := runtime.claimInterjection()
+	if !claimed {
 		runtime.noteInterject("already in flight")
 		return
 	}
 	runtime.wait.Add(1)
 	go func() {
 		defer runtime.wait.Done()
-		defer runtime.releaseInterjection()
+		defer runtime.releaseInterjection(claim)
 		// The state may have moved while this was starting. Speaking into a
 		// turn that has since ended is worse than not speaking: the turn that
 		// ended will produce its own answer, and this would talk over it.
@@ -424,20 +438,26 @@ const interjectionStale = 3 * time.Second
 // late, and those differ by an order of magnitude rather than by a little.
 const interjectionDeadline = 12 * time.Second
 
-func (runtime *runtime) claimInterjection() bool {
+func (runtime *runtime) claimInterjection() (chan struct{}, bool) {
 	now := runtime.scheduler.NowNS()
 	runtime.audioMu.Lock()
 	defer runtime.audioMu.Unlock()
 	if runtime.interjectStartNS != 0 && now-runtime.interjectStartNS < uint64(interjectionStale) {
-		return false
+		return nil, false
 	}
+	claim := make(chan struct{})
 	runtime.interjectStartNS = now
-	return true
+	runtime.interjectDone = claim
+	return claim, true
 }
 
-func (runtime *runtime) releaseInterjection() {
+func (runtime *runtime) releaseInterjection(claim chan struct{}) {
 	runtime.audioMu.Lock()
-	runtime.interjectStartNS = 0
+	if runtime.interjectDone == claim {
+		runtime.interjectStartNS = 0
+		runtime.interjectDone = nil
+	}
+	close(claim)
 	runtime.audioMu.Unlock()
 }
 
@@ -461,7 +481,7 @@ func (runtime *runtime) releaseInterjection() {
 const minimumBetweenSilentActs = 3 * time.Second
 
 func (runtime *runtime) actSilently(decision interaction.Context) {
-	if runtime.policies.Interaction == nil {
+	if !runtime.hasActPolicy() {
 		return
 	}
 	// Something already sent and not yet answered is a decision already taken.
@@ -511,14 +531,15 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 	runtime.lastSilentActRev = decision.Revision.ID
 	runtime.actedOnHeard = heard
 	runtime.audioMu.Unlock()
-	if !runtime.claimInterjection() {
+	claim, claimed := runtime.claimInterjection()
+	if !claimed {
 		runtime.noteInterject("acting silently, but something is already in flight")
 		return
 	}
 	runtime.wait.Add(1)
 	go func() {
 		defer runtime.wait.Done()
-		defer runtime.releaseInterjection()
+		defer runtime.releaseInterjection(claim)
 		standing, _, _ := runtime.cognitionExtras(0)
 		request := cognition.Request{
 			SourceRevision: decision.Revision.ID,
@@ -662,14 +683,15 @@ func (runtime *runtime) considerQuiet(ctx context.Context, nowNS uint64, state s
 func (runtime *runtime) speakIntoSilence(
 	decision interaction.Context, act interaction.Act, quiet time.Duration,
 ) {
-	if !runtime.claimInterjection() {
+	claim, claimed := runtime.claimInterjection()
+	if !claimed {
 		runtime.noteInterject("the quiet is worth speaking into, but something is already in flight")
 		return
 	}
 	runtime.wait.Add(1)
 	go func() {
 		defer runtime.wait.Done()
-		defer runtime.releaseInterjection()
+		defer runtime.releaseInterjection(claim)
 		standing, _, _ := runtime.cognitionExtras(0)
 		request := cognition.Request{
 			SourceRevision: decision.Revision.ID,
