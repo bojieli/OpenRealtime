@@ -3127,3 +3127,35 @@ independent run says otherwise.
 
 Neither scenario has a path to the change. Both have nobody speaking, so there
 is no floor to take and the interrupt branch is never reached.
+
+A second full run, same binary and services, says 47/55. Both runs together:
+
+                                    run 1  run 2   before
+    asked not to be interrupted      5/5    5/5     5/5
+    a recorded menu                  5/5    5/5     4/5
+    cutting in on something wrong    5/5    5/5     0/5
+    ordering from a waiter           5/5    5/5     2/5
+    somebody else's conversation     5/5    5/5     3/5
+    an acknowledgement                5/5    5/5     5/5
+    an ordinary question             5/5    5/5     5/5
+    count-as-they-go                 5/5    3/5     5/5
+    translating as they speak        4/5    2/5     1/5
+    waiting out a silence            3/5    4/5     5/5
+    telling them what it saw         2/5    3/5     5/5
+    total                           49/55  47/55   40/55
+
+The three scenarios the change was aimed at hold at five out of five in both
+runs, from 0/5, 2/5 and 4/5. That is the result, and it is the part that
+reproduces.
+
+The rest of the table is the honest caveat. Four scenarios move by two or three
+runs between two runs of the same binary, so at five repeats they measure the
+day as much as the code, and no claim about them - in either direction - is
+supported by these numbers. The 2/5 on the visual case in run 1 and the 3/5 in
+run 2 are the same cell that returned 5/5 when run on its own; that spread is
+the measurement, not a trend.
+
+What the totals support is the difference between 47-49 and 40 on identical
+configuration, which is larger than the spread of either. What they do not
+support is a ranking of the four noisy scenarios, which needs more repeats than
+a scenario costing four minutes a run affords.
