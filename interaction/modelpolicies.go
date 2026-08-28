@@ -317,7 +317,18 @@ func (policy *modelOverlapClassifier) Classify(ctx context.Context, decision Con
 			"something new. Answer listener_backchannel for a short continuer that shows they are listening, " +
 			"such as mm-hm, right, yeah, or okay, with nothing else in it. Answer side_speech when they are " +
 			"clearly talking to somebody else. Answer ambiguous_speech when there is not enough to tell.\n\n" +
-			"A continuer is short. Anything with a question or a new subject in it is directed speech.",
+			"Who they are talking to is the first question, not the last. Speech aimed at somebody " +
+			"else is side speech however it is phrased - a request or a question put to another " +
+			"person is still put to another person, and answering it would be joining a " +
+			"conversation nobody invited the agent into. Look for a name, a reply to something the " +
+			"agent did not say, or a remark pitched across a room rather than into the microphone.\n\n" +
+			"A continuer is short, and being short is not enough to be one. A continuer is a word " +
+			"whose whole content is \"go on, I am still here\": it adds nothing, asks nothing and " +
+			"starts nothing. A short fragment that begins something - a word or two cut off before " +
+			"it has said what it is - has not shown itself to be a continuer, and there is not yet " +
+			"enough to tell.\n\n" +
+			"Anything addressed to the agent with a question or a new subject in it is directed " +
+			"speech.",
 		Options: []string{
 			string(OverlapDirected), string(OverlapBackchannel),
 			string(OverlapSide), string(OverlapAmbiguous),

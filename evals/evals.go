@@ -68,6 +68,10 @@ const (
 	// noise during another person's turn, and the interaction model governs
 	// none of it.
 	DecisionBackchannel Decision = "backchannel"
+	// DecisionOverlap is the classifier that reads what a second voice
+	// arriving over the agent is doing. It decides whether the agent gets to
+	// finish its sentence.
+	DecisionOverlap Decision = "overlap"
 )
 
 // Action is one observable thing a model did at a boundary.
@@ -88,6 +92,11 @@ const (
 	ActionNoContinuer Action = "no-continuer" // stayed silent while they talked
 	ActionAcknowledge Action = "acknowledge"  // said an ordinary continuer
 	ActionAffirm      Action = "affirm"       // said a continuer that agrees
+
+	ActionOverlapDirected    Action = "directed"    // read the overlap as taking the floor
+	ActionOverlapBackchannel Action = "backchannel" // read it as showing they are listening
+	ActionOverlapSide        Action = "side"        // read it as addressed to somebody else
+	ActionOverlapAmbiguous   Action = "ambiguous"   // too little to read
 )
 
 // Case is one frozen decision.
