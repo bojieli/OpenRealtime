@@ -521,6 +521,7 @@ func validateActBoundary(architecture Architecture) error {
 }
 
 func validatePolicyReport(report interaction.Report) error {
+	report = effectivePolicyReport(report)
 	values := reflect.ValueOf(report)
 	typeOf := values.Type()
 	for index := 0; index < values.NumField(); index++ {
@@ -529,6 +530,18 @@ func validatePolicyReport(report interaction.Report) error {
 		}
 	}
 	return nil
+}
+
+// effectivePolicyReport gives the additive transcript-event row a value in
+// manifests authored before that policy existed. Empty and "unset" describe
+// the same resolved architecture: no transcript-event controller is installed.
+// Keeping that normalization at the evidence boundary lets historical cells
+// remain inspectable without weakening validation for any established row.
+func effectivePolicyReport(report interaction.Report) interaction.Report {
+	if strings.TrimSpace(report.TranscriptEvents) == "" {
+		report.TranscriptEvents = "unset"
+	}
+	return report
 }
 
 // ValidateObserved checks that a live session resolved to the declared cell.
@@ -550,7 +563,7 @@ func (cell Cell) ValidateObserved(status binding.Status) error {
 	if status.Stack != expected.Capabilities {
 		differences = append(differences, "capability vector differs")
 	}
-	if status.Policies != expected.Policies {
+	if effectivePolicyReport(status.Policies) != effectivePolicyReport(expected.Policies) {
 		differences = append(differences, "policy report differs")
 	}
 	if status.Tools != expected.ToolAuthority {

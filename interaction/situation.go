@@ -72,6 +72,10 @@ type Image struct {
 }
 
 type Situation struct {
+	// TranscriptEvent marks a streaming recogniser observation as a live
+	// hypothesis or a settled utterance. Empty is the existing interaction
+	// observation space and renders no additional line.
+	TranscriptEvent TranscriptEventKind
 	// Contract is what this deployment told the agent to be and to do.
 	//
 	// It belongs here for the same reason the conversation does. A decision
@@ -215,9 +219,14 @@ func (state Situation) AvailableActs() []Act {
 		// The same judgement, made by the person instead of the runtime. Told
 		// to say nothing but the thing they asked for, an ordinary reply is
 		// not an act they have left available - and the thing they did ask
-		// for is still sayable, through speak-through, which is how every
-		// correct count in the measurements was delivered.
-		if !state.Speaking && !state.Restricted {
+		// for is still sayable, through speak-through, while speech is live.
+		//
+		// A final transcript is the one bounded recovery point when the live
+		// act missed its moment. Its event-specific policy can distinguish a
+		// required count/translation from unrelated end-of-story silence, so
+		// leave answer available there. Empty TranscriptEvent keeps the tuned
+		// legacy observation space exactly as before.
+		if !state.Speaking && (!state.Restricted || state.TranscriptEvent == TranscriptFinal) {
 			acts = append(acts, ActAnswer)
 		}
 	}
@@ -264,6 +273,9 @@ func (state Situation) Render() string {
 		block.WriteString("\n")
 	}
 	block.WriteString("Now:\n")
+	if state.TranscriptEvent != "" {
+		block.WriteString("transcript event: " + string(state.TranscriptEvent) + "\n")
+	}
 	if state.AgentSpeaking {
 		block.WriteString("agent: speaking out loud right now, has said \"" + state.AgentSaying + "\" so far\n")
 	} else {

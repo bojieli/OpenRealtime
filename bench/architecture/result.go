@@ -254,7 +254,7 @@ type controlIdentity struct {
 func controls(value Architecture) controlIdentity {
 	ownership := value.Ownership.Effective()
 	ownership.Interaction = ""
-	policies := value.Policies
+	policies := effectivePolicyReport(value.Policies)
 	// These rows are the interaction-architecture treatment. The text-policy
 	// model replaces the narrow predicate implementations of them; requiring
 	// their names to remain equal would make the P/T experiment impossible by
@@ -268,6 +268,7 @@ func controls(value Architecture) controlIdentity {
 	policies.TurnProjection = ""
 	policies.Overlap = ""
 	policies.Interaction = ""
+	policies.TranscriptEvents = ""
 	policies.Extraction = ""
 	return controlIdentity{
 		Profile: value.Profile, Foreground: value.Foreground, Perception: value.Perception,

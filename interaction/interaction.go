@@ -85,6 +85,11 @@ type Policies struct {
 	// the swap is a corpus of disagreements drawn from real recordings rather
 	// than an argument that the new shape is better.
 	Interaction *InteractionModel
+	// TranscriptEvents is the opt-in policy for a streaming recogniser's
+	// partial and final transcript events. It is deliberately parallel to
+	// Interaction: enabling it must not mutate the tuned observation space or
+	// instruction used by the existing interaction path.
+	TranscriptEvents *TranscriptEventPolicy
 	// ShadowInteraction records each decision taken twice. Non-nil implies
 	// shadowing.
 	ShadowInteraction func(ShadowDecision)
@@ -171,19 +176,20 @@ func (policies Policies) Validate() error {
 // Report is the policy set as evidence. It is what a measurement cell records
 // and what the health endpoint publishes.
 type Report struct {
-	Trigger        string `json:"trigger"`
-	Preparation    string `json:"preparation"`
-	Rollout        string `json:"rollout"`
-	Floor          string `json:"floor"`
-	BargeIn        string `json:"barge_in"`
-	Commitment     string `json:"commitment"`
-	Repair         string `json:"repair"`
-	Backchannel    string `json:"backchannel"`
-	TurnProjection string `json:"turn_projection"`
-	Overlap        string `json:"overlap"`
-	Deferral       string `json:"deferral"`
-	Interaction    string `json:"interaction"`
-	Extraction     string `json:"extraction"`
+	Trigger          string `json:"trigger"`
+	Preparation      string `json:"preparation"`
+	Rollout          string `json:"rollout"`
+	Floor            string `json:"floor"`
+	BargeIn          string `json:"barge_in"`
+	Commitment       string `json:"commitment"`
+	Repair           string `json:"repair"`
+	Backchannel      string `json:"backchannel"`
+	TurnProjection   string `json:"turn_projection"`
+	Overlap          string `json:"overlap"`
+	Deferral         string `json:"deferral"`
+	Interaction      string `json:"interaction"`
+	TranscriptEvents string `json:"transcript_events"`
+	Extraction       string `json:"extraction"`
 }
 
 func (policies Policies) Report() Report {
@@ -197,6 +203,10 @@ func (policies Policies) Report() Report {
 	if policies.Interaction != nil {
 		interactionName = policies.Interaction.Name()
 	}
+	transcriptEventsName := "unset"
+	if policies.TranscriptEvents != nil {
+		transcriptEventsName = policies.TranscriptEvents.Name()
+	}
 	return Report{
 		Trigger: name(policies.Trigger), Preparation: name(policies.Preparation),
 		Rollout: name(policies.Rollout), Floor: name(policies.Floor),
@@ -204,7 +214,8 @@ func (policies Policies) Report() Report {
 		Repair: name(policies.Repair), Backchannel: name(policies.Backchannel),
 		TurnProjection: name(policies.TurnProjection), Overlap: name(policies.Overlap),
 		Deferral: name(policies.Deferral), Interaction: interactionName,
-		Extraction: name(policies.Extraction),
+		TranscriptEvents: transcriptEventsName,
+		Extraction:       name(policies.Extraction),
 	}
 }
 

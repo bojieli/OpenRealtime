@@ -198,6 +198,25 @@ func TestAnswerIsWithdrawnByAPolicyThatForbidsEverythingElse(t *testing.T) {
 	}
 }
 
+// A final event can recover a required simultaneous act that missed its live
+// window. The event policy still decides whether the current words contain the
+// standing condition; filtering answer here made its explicit catch-up rule
+// impossible to carry out under "say nothing else".
+func TestFinalTranscriptCanCatchUpARestrictedStandingAct(t *testing.T) {
+	state := interaction.Situation{
+		TranscriptEvent: interaction.TranscriptFinal,
+		Pins:            []string{"count the animals out loud as they mention them, and say nothing else"},
+		Restricted:      true,
+		AllowedActs:     []interaction.Act{interaction.ActStaySilent, interaction.ActAnswer},
+	}
+	for _, act := range state.AvailableActs() {
+		if act == interaction.ActAnswer {
+			return
+		}
+	}
+	t.Fatal("a final transcript cannot recover the required restricted act")
+}
+
 // And without such a policy it is offered as before, since the floor is free.
 func TestAnswerSurvivesAPolicyThatOnlyNamesSomethingToDo(t *testing.T) {
 	state := interaction.Situation{Pins: []string{"count the animals out loud as they mention them"}}
