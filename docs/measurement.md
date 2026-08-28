@@ -2624,3 +2624,34 @@ What is left in that scenario is a new failure rather than the old one: the
 voice now comments on the transcription instead of interpreting it, and once
 acknowledged the instruction at length while the colleague was already talking.
 Better judgement, still imperfect.
+
+## F68 - what the thinking voice buys, and where it costs more than it buys
+
+Three scenarios at fifteen repeats, the same code with only the voice changed:
+
+	                          qwen    gemini   heard p50 (gemini)
+	count-as-they-go          8/15     11/15      6938ms
+	translating as they speak 11/15    13/15       610ms
+	ordering from a waiter    8/15      8/15      5541ms
+
+Counting and interpreting are the scenarios where the voice has to decide
+whether this is a moment to speak at all, and both improve by three and two.
+That is the judgement the budget buys, and it is the judgement no rewording of
+the prompt reached in five attempts.
+
+The waiter does not move, and it fails differently: with the small voice it
+ordered the wrong dish, with the thinking voice it says nothing. The scenario's
+own note explains why - the moment worth acting on passes if you wait for a
+pause - and 5.5 seconds to be heard is longer than the moment lasts. The
+judgement improved and arrived after the window it was needed in.
+
+So the trade is not one a single setting should make for every deployment. A
+policy that is answered while somebody keeps talking wants the thinking; a
+policy whose moment passes in a second cannot afford it. That is why this is a
+setting rather than a default, and why the settings file describes what each
+phase is for rather than listing what it can be set to.
+
+The honest summary of the model question: on this GPU, for the phase that
+decides whether to speak, a reasoning model with a budget beats a larger
+instruct model without one - and beats itself without one, which is the part
+worth remembering. The parameter count was never the variable that mattered.
