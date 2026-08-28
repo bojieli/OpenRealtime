@@ -2995,3 +2995,37 @@ the act and the model is coarse where the act is fine-grained.
 
 Counting, which turns on the same machinery without the timing, went 2/5 to 5/5
 across these fixes.
+
+## F79
+
+Interrupting is late by construction, and the reason is an ordering rather than
+a judgement.
+
+Choosing `interrupt` produces `EndpointDecision{Ended: true, Projected: true}`.
+The floor then forces the acoustic stop, the recogniser finalises the fragment
+it was cut off in, an ordinary turn is built from that, and the voice answers.
+Every one of those steps happens after the moment worth interrupting at, so the
+words cannot reach the world until the moment has passed. Measured on the
+interrupting scenario, with the four defects in F78 fixed: the interaction model
+chose interrupt 153 times, the voice was shown the sentence only once the
+recogniser had committed it whole, and the correction it composed - "The third.",
+captured from the live request dump, exactly what the scenario asks for -
+was written at 15150ms for a window that closed at 11902ms.
+
+Taking the floor is not the error. It is what separates interrupting from
+speaking through, and the act vocabulary means it: four tests in actfloor assert
+it and they are right to. The error is that taking the floor is a precondition
+for speaking rather than a consequence of it. When a person cuts in, the words
+and the floor happen together - the other speaker trails off because you spoke,
+not before it.
+
+So the fix is to start the speech on the interjection path at the moment the act
+is chosen, and let the endpoint close the turn alongside it rather than ahead of
+it. The already-spoken mark is what stops the closing turn answering the same
+stretch twice, which is the job it exists for.
+
+Not implemented here. The generalisation this needs - interjectFor, which takes
+the reason as a parameter so the voice knows it is correcting rather than
+carrying out a standing policy - is being written in this tree by another
+session and is not yet committed. Building a second copy of it would collide
+with that work rather than add to it.
