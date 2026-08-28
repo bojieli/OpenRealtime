@@ -277,11 +277,15 @@ func (runtime *runtime) runFast(
 		watch.report(turn)
 	}
 	turn.record(result)
-	if cause := context.Cause(ctx); cause != nil {
+	if cause := context.Cause(ctx); cause != nil && !acrossTheFloor(request.Because) {
 		// The user resumed after the provider reached a safe point but before
 		// anything crossed the action boundary. The result answered the earlier
 		// fragment; neither its speech nor any executable proposal may escape
 		// after the turn has moved on.
+		//
+		// Unless the turn was authorized to cross the floor, where being
+		// spoken over is the premise rather than the refutation - see
+		// acrossTheFloor.
 		runtime.noteWithheld(result, request, "overtaken before action")
 		return errors.Join(err, cause)
 	}
@@ -408,10 +412,40 @@ func (runtime *runtime) runSlow(
 // interjectionDeadline, and a key that cannot be pressed inside that window is
 // dropped for being late rather than for the menu having carried on.
 func (runtime *runtime) toolCallPrefixOvertaken(sourceRevision uint64, because string) bool {
-	if because == string(interaction.ActActSilently) {
+	if acrossTheFloor(because) {
 		return false
 	}
 	return runtime.duplex.Snapshot().UserSpeaking || runtime.revision.Load() > sourceRevision
+}
+
+// acrossTheFloor reports whether an act was chosen on the understanding that
+// somebody else holds the floor.
+//
+// Three of the acts mean "do this while they are still talking". Answering
+// means the opposite: it presumes they finished, so their carrying on is
+// evidence the answer was computed against half a question, and the answer is
+// rightly dropped. For the other three, their carrying on is the situation the
+// interaction model was looking at when it chose - so vetoing them for it is
+// the dispatch path re-deciding the judgement it does not own, and it decides
+// against every time, because the condition it tests is permanent for as long
+// as the act makes sense.
+//
+// What bounds these instead is time: an interjection runs under
+// interjectionDeadline and is dropped for being late, not for the other party
+// having carried on.
+//
+// The cost of getting this wrong is not symmetric. A turn withheld cannot be
+// recovered; a turn spoken can be judged and repaired. Measured with a voice
+// that thinks before it speaks, a third of everything composed was discarded
+// here, including corrections that were word-for-word right - and the slower
+// the voice, the more certain the veto, because a reply is overtaken by
+// whatever was said during the time it took to write.
+func acrossTheFloor(because string) bool {
+	switch interaction.Act(because) {
+	case interaction.ActActSilently, interaction.ActSpeakThrough, interaction.ActInterrupt:
+		return true
+	}
+	return false
 }
 
 func batchHasToolError(batch eventloop.Batch) bool {
