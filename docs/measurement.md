@@ -3273,3 +3273,46 @@ enough to support it, and held from there. That is a different change and is not
 made here.
 
 Reverted. The two fixes in F83 stand at 9/15 on their own.
+
+## F85
+
+Which of two runs of the same binary to use as the baseline. Neither: pooled,
+they answer a better question than either does alone.
+
+s75 and s76 are the same code and the same configuration, so 49/55 and 47/55
+are two samples of one quantity rather than two candidates. Taking the higher
+makes the baseline the upper tail of a noisy estimator, and every later change
+then has to beat a number the code does not actually produce - which turns real
+improvements into apparent regressions and argues them away.
+
+Pooled by scenario over both runs, the suite is not one population but two:
+
+    somebody else's conversation               10/10   spread 0
+    ordering from a waiter                     10/10   spread 0
+    cutting in on something wrong              10/10   spread 0
+    asked not to be interrupted                10/10   spread 0
+    a recorded menu                            10/10   spread 0
+    an ordinary question                       10/10   spread 0
+    an acknowledgement is not an interruption  10/10   spread 0
+    count-as-they-go                            8/10   spread 2
+    waiting out a silence they asked for        7/10   spread 1
+    translating as they speak                   6/10   spread 2
+    telling them what it saw                    5/10   spread 1
+
+Seven scenarios are solved and perfectly stable. Four are unsolved and unstable.
+The seven contribute 70 of 70 in both runs, so the entire difference between 49
+and 47 is different draws from the four - the same successes plus luckier coin
+flips.
+
+So the baseline is not a total. It is: seven scenarios at 10/10, and four
+scenarios whose level is between 5/10 and 8/10 and whose value is not yet
+established. Quoting 49/55, 47/55, or an average of them all assert a precision
+that is not there, and 48/55 is the least misleading of the three only by
+accident.
+
+Two consequences for how to measure from here. The four unstable scenarios need
+n of at least fifteen before any change to them means anything, which is what
+found interpreting's real level of 6/15 when five repeats had been reading 1/5
+to 5/5. And the seven stable ones are the best regression detector in the suite
+precisely because they sit at the ceiling with zero spread: any one of them
+dropping is signal on the first run, needing no repeats to believe.
