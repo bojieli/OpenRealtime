@@ -2551,3 +2551,36 @@ instance: whether a policy asks for a running count, whether it forbids
 everything else, whether the words already read as an instruction, how much of
 what they are saying has already been answered. Those are questions about the
 case in front of it, and they generalise because there is nothing to copy.
+
+## F66 - the premature-action failure resists prompt changes
+
+Both remaining weak scenarios fail the same way, and it is now reproduced at
+turn level in tools/voicecases. The agent acts before the thing it is watching
+for has arrived: it counts 49ms after a sentence with no animal in it, and it
+orders a dish at a waiter who has said only "tonight we have three specials".
+
+Current state on those eight cases: 4/8. Five candidates have been measured
+against it and all five rejected:
+
+	act rather than promise when it has already happened   scenario 5/5 to 1/5
+	a trailing clause belongs to the sentence before it    2/5 against 3/5
+	qualifying detail is not a new request                 2/5 against 3/5
+	somebody saying the thing is coming is not the thing   2/8 against 3/8
+	you must be able to name it from their words alone     3/8 against 4/8
+
+The last of these was written deliberately as a property rather than an
+instance, following F65, and it still lost - so the rule from F65 is necessary
+and not sufficient.
+
+What the surviving rules have in common is that they point at a fact the
+runtime supplies: how much has already been spoken for, whether this policy
+asks for a count, whether it forbids everything else, how long ago it was set.
+The voice can check those against the situation in front of it. "Has the thing
+happened yet" has no such fact behind it - the runtime does not know what the
+thing is, because knowing would mean reading the policy, which is the judgement
+being delegated in the first place.
+
+That is the honest shape of what is left. It is not a defect with a known fix
+being deferred; it is a judgement the voice makes from the words alone, wrong
+about a third of the time, and five attempts to improve it by instruction have
+each made something else worse.
