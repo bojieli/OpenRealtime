@@ -57,7 +57,7 @@ func (runtime *runtime) pausedAsIfFinished(decision interaction.Context) bool {
 }
 
 func (runtime *runtime) interject(decision interaction.Context) {
-	if runtime.policies.Interaction == nil {
+	if !runtime.hasActPolicy() {
 		return
 	}
 	// Speaking through somebody is how a standing policy gets honoured while
@@ -264,18 +264,25 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		// nature - the turn it would have spoken into belongs to somebody else
 		// - and reporting it reached the client as a session error for a
 		// moment that had simply passed.
-		// The whole of what they have said in this turn, which is the unit the
-		// mark is read back in. Recording the stable text of the current
-		// utterance instead recorded a fragment from the middle of the turn,
-		// and the mark is tested as a prefix of the turn - which a fragment
-		// from the middle never is. So every reading after an interjection was
-		// told nothing had been answered, and one animal collected "two three
-		// four five" before the next one arrived.
+		// The mark that records how much has been answered is set by runFast,
+		// once the turn has actually been published with something in it. It
+		// used to be set here as well, before the model had even been asked -
+		// so a turn that came back <wait>, or was withheld, still counted as
+		// having spoken for everything said up to that point.
 		//
-		// heardSinceSpeaking still trims what the voice is shown, which is a
-		// different question: what is new to say something about, rather than
-		// how much has been covered.
-		runtime.markSpoken(everythingSaid(runtime.store.Snapshot()))
+		// That is self-reinforcing, and it silences exactly the case this path
+		// exists for. Measured on the interrupting scenario: the agent said
+		// nothing at all, and was then told "you have already spoken once for
+		// this much of what they are saying" quoting the sentence containing
+		// the wrong date - so the one fact worth interrupting for was the one
+		// fact it believed it had already given. It answered <wait>, correctly,
+		// eleven times.
+		//
+		// The unit is unchanged, because runFast records the same whole turn:
+		// the mark is read back as a prefix of the turn, and a fragment from
+		// the middle never is one. heardSinceSpeaking still trims what the
+		// voice is shown, which is a different question - what is new to say
+		// something about, rather than how much has been covered.
 		if len(standing) > 0 {
 			// A policy has now been acted on, so no later sentence is the one
 			// that set it.
@@ -441,7 +448,7 @@ func (runtime *runtime) releaseInterjection() {
 const minimumBetweenSilentActs = 3 * time.Second
 
 func (runtime *runtime) actSilently(decision interaction.Context) {
-	if runtime.policies.Interaction == nil {
+	if !runtime.hasActPolicy() {
 		return
 	}
 	// Something already sent and not yet answered is a decision already taken.
