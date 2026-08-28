@@ -2526,3 +2526,28 @@ potatoes" at 28.5s, outside the window it was needed in.
 
 Both are the agent acting before the thing it was watching for has happened,
 which is the judgement the voice makes and the runtime cannot check.
+
+## F65 - an example inside these prompts gets imitated, not generalised
+
+Three times now, measured:
+
+  - the extraction pass was told a restriction belongs to its policy, with
+    "count them and say nothing else" as the example. It then emitted "say
+    nothing else" as a policy of its own, with nothing to qualify, and the
+    agent went mute through a sentence it was meant to correct.
+  - the agree-once rule was given the interpreting instruction as an example.
+    It scored worse than the wording it replaced: 2/5 against 3/5.
+  - the watched-for rule was given "a waiter who says there are three specials
+    has named no dish". It did not help the waiter and broke a counting case
+    that had been passing: 2/8 against 3/8.
+
+The pattern is not that examples are useless - the extraction prompt is built
+almost entirely from worked examples and they carry it. It is that an example
+of a thing not to do, or of one specific situation, is read as a template. The
+model produces the shape it was shown.
+
+What has worked instead, every time, is naming the property rather than the
+instance: whether a policy asks for a running count, whether it forbids
+everything else, whether the words already read as an instruction, how much of
+what they are saying has already been answered. Those are questions about the
+case in front of it, and they generalise because there is nothing to copy.
