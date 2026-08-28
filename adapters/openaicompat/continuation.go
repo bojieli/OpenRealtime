@@ -407,6 +407,9 @@ type streamToolCallDelta struct {
 		Name      string `json:"name,omitempty"`
 		Arguments string `json:"arguments,omitempty"`
 	} `json:"function"`
+	// ExtraContent is the provider extension on this call, sent whole rather
+	// than in pieces. Gemini puts a thought_signature here.
+	ExtraContent json.RawMessage `json:"extra_content,omitempty"`
 }
 
 type pendingToolCall struct {
@@ -414,6 +417,11 @@ type pendingToolCall struct {
 	typeName  strings.Builder
 	name      strings.Builder
 	arguments strings.Builder
+	// extras is whatever the provider hung off this call that is not part of
+	// the shape everyone shares. It arrives once rather than in pieces, and it
+	// has to survive into the retained message: Gemini refuses the next
+	// request without the thought_signature it put here.
+	extras json.RawMessage
 }
 
 // Continue implements continuation.Provider using streaming Chat Completions.
@@ -541,6 +549,9 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 				pending.typeName.WriteString(callDelta.Type)
 				pending.name.WriteString(callDelta.Function.Name)
 				pending.arguments.WriteString(callDelta.Function.Arguments)
+				if len(callDelta.ExtraContent) > 0 {
+					pending.extras = callDelta.ExtraContent
+				}
 			}
 		}
 		return nil
@@ -595,7 +606,8 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 		}
 		call := chatToolCall{
 			Index: index, ID: callID, Type: typeName,
-			Function: chatFunction{Name: pending.name.String(), Arguments: arguments},
+			Function:     chatFunction{Name: pending.name.String(), Arguments: arguments},
+			ExtraContent: pending.extras,
 		}
 		if emitErr := emit(continuation.Event{Kind: continuation.EventToolCall, ToolCall: &trajectory.ToolCall{
 			CallID: call.ID, Name: call.Function.Name, Arguments: json.RawMessage(call.Function.Arguments),
