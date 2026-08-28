@@ -230,7 +230,9 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.fastTokenEnv, "fast-token-env", "",
 		"environment variable holding the fast model credential; "+
 			"empty reads OPENREALTIME_FAST_API_KEY and then the provider's conventional variable")
-	flags.IntVar(&options.fastTokens, "fast-max-tokens", 96, "fast spoken turn output-token limit")
+	flags.IntVar(&options.fastTokens, "fast-max-tokens", 0,
+		"ceiling on fast-phase output tokens; zero means none, which is the default "+
+			"because a provider spends this allowance on thinking before it speaks")
 	flags.BoolVar(&options.fastVision, "fast-sees", false,
 		"the fast model accepts images; false withholds them, which a text-only model requires")
 
@@ -257,9 +259,10 @@ func runServe(arguments []string, output io.Writer) error {
 		"environment variable holding the slow model credential; "+
 			"empty reads OPENREALTIME_SLOW_API_KEY and then the provider's conventional variable")
 	flags.StringVar(&options.fastEffort, "fast-effort", "minimal",
-		"how hard the voice thinks before it speaks: minimal, low, medium, or high. "+
-			"minimal suits a small instruct model, which has nothing to think with; a reasoning "+
-			"model needs a budget to judge whether this is a turn to speak at all")
+		"how hard the voice thinks before it speaks: minimal, low, medium, high, or a "+
+			"number of thinking tokens. minimal suits a small instruct model, which has "+
+			"nothing to think with; a reasoning model needs a budget to judge whether this "+
+			"is a turn to speak at all. a number and a name are alternatives, never both")
 	flags.StringVar(&options.slowEffort, "slow-effort", "high", "slow reasoning effort: minimal, low, medium, or high")
 	flags.IntVar(&options.slowTokens, "slow-max-tokens", 2048, "slow continuation output-token limit")
 	flags.BoolVar(&options.slowVision, "slow-sees", false,
@@ -1001,7 +1004,7 @@ func buildCascade(
 		ASRCadence:           options.asrCadence, HoldingAfter: options.holdingAfter,
 		Fast: fast, Slow: slow, Speech: speech,
 		Voice:         options.ttsVoice,
-		FastMaxTokens: spokenAllowance(options), SlowMaxTokens: options.slowTokens,
+		FastMaxTokens: options.fastTokens, SlowMaxTokens: options.slowTokens,
 		VisualReflex: reflex, VisualReflexMaxTokens: options.reflexTokens,
 		VisualReflexTimeout: options.reflexTimeout,
 		Policies:            policies, ObservationPolicy: observation,
@@ -1144,37 +1147,6 @@ func warmModels(ctx context.Context, options serveOptions) {
 	}
 }
 
-// spokenAllowance is the fast phase's output limit, raised to leave room for
-// thinking when the voice has been given any.
-//
-// The limit means "how much speech", and ninety-six tokens is about as much as
-// anybody wants to hear in one turn. Providers that think count the thinking
-// against the same allowance, so a voice with a budget spends the whole limit
-// deliberating and emits nothing: measured on the interrupting scenario at the
-// default, the reply came back empty, at 128 it came back as "That sounds like
-// a", and only past 512 did a whole sentence arrive.
-//
-// So the deployment's number keeps meaning what it says - the length of a
-// spoken turn - and the room to think is added to it rather than taken out of
-// it. A voice at minimal effort is unchanged, and an explicit -fast-max-tokens
-// is still honoured exactly, because somebody who set the number themselves
-// has said what they want.
-func spokenAllowance(options serveOptions) int {
-	if options.explicit["fast-max-tokens"] {
-		return options.fastTokens
-	}
-	switch strings.TrimSpace(options.fastEffort) {
-	case "", string(continuation.EffortMinimal):
-		return options.fastTokens
-	default:
-		return options.fastTokens + thinkingHeadroom
-	}
-}
-
-// thinkingHeadroom is what a thinking voice needs before it can say anything.
-// It is the smallest budget the providers here offer, since a turn that thinks
-// less than that is not thinking.
-const thinkingHeadroom = 512
 
 func float64Pointer(value float64) *float64 { return &value }
 
@@ -1336,12 +1308,7 @@ func visionOverride(options serveOptions, flagName string, value bool) *bool {
 }
 
 func parseEffort(value string) (continuation.Effort, error) {
-	switch effort := continuation.Effort(strings.ToLower(strings.TrimSpace(value))); effort {
-	case continuation.EffortMinimal, continuation.EffortLow, continuation.EffortMedium, continuation.EffortHigh:
-		return effort, nil
-	default:
-		return "", fmt.Errorf("reasoning effort must be minimal, low, medium, or high, got %q", value)
-	}
+	return continuation.ParseEffort(value)
 }
 
 // buildObservers composes the session's perception.

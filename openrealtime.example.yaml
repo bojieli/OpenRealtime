@@ -20,13 +20,29 @@ listen: 127.0.0.1:8765
 #
 # It costs about 1.8s a turn against 30ms. A phone agent may want the speed; an
 # interpreter sitting behind a second speaker may want the judgement.
+#
+# effort is a name - minimal, low, medium, high - or a number of thinking
+# tokens. They are alternatives and never both: Gemini answers 400, "you can
+# only set only one of thinking budget and thinking level". A name lets the
+# provider decide how far to think; a number says how far. 512 is a reasonable
+# number for a Flash model. Measured on the date-contradiction turn, minimal
+# and a budget of 0 think nothing and still answer; low spends about 370
+# thinking tokens; and every setting from 0 upward corrects the date.
+#
+# There is deliberately no output limit here. How long the voice may think and
+# how long it may speak are different quantities, and a provider spends one
+# allowance on thinking before it speaks: at a 96-token ceiling with thinking
+# on, the reply came back empty, finishReason MAX_TOKENS, 93 tokens of thought
+# and none of speech. At 128 it came back as "Wait, the thirteenth? The". Left
+# uncapped the same turns answer in 18 to 32 tokens, so the ceiling was never
+# what kept them short - the instruction to speak aloud is. Set max-tokens only
+# as a runaway ceiling, well above any turn worth hearing.
 fast:
-  provider: google-openai
+  provider: gemini
   model: gemini-3.5-flash
   token-env: GEMINI_API_KEY
-  effort: low
+  effort: 512
   sees: true
-  max-tokens: 96
 
 # The reasoner. Never heard: what it writes is background state the voice reads
 # before it speaks next. It is off the path between hearing a word and
@@ -65,6 +81,15 @@ tts:
   model: fishaudio/fish-speech-1.5
 speaker:
   url: http://127.0.0.1:8124/embed
+
+# What the voice is given of the video. A dedicated narrator keeps seeing
+# separate from speaking: the local model watches and writes down what is on
+# screen, and the voice reads that. The alternative is handing frames to the
+# voice itself, which costs a round trip to a hosted model on every frame.
+vision:
+  provider: openai-compatible
+  url: http://127.0.0.1:8000/v1
+  model: qwen-fast
 
 observers: audio+video
 narrator: dedicated

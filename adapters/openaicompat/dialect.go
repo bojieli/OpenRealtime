@@ -154,9 +154,19 @@ func (adapter *Adapter) reasoningFields(turn continuation.Effort) (map[string]js
 	switch adapter.config.ReasoningControl {
 	case ReasoningControlNone:
 	case ReasoningControlEffort:
-		name := adapter.config.EffortNames[effort]
+		name, named := adapter.config.EffortNames[effort]
 		if thinking == ThinkingDisabled {
-			name = adapter.config.DisabledEffort
+			name, named = adapter.config.DisabledEffort, true
+		}
+		// A turn asking for an effort this endpoint has no name for is
+		// refused, not dropped. Chat Completions has no portable spelling for
+		// a numeric thinking budget - Gemini's compatibility layer answers 400
+		// to the nested thinking_config that its own API accepts - so silently
+		// omitting the field would run the turn at the deployment's effort
+		// while the caller believed it had asked for something else.
+		if !named {
+			return nil, fmt.Errorf("endpoint has no name for %q reasoning effort; "+
+				"a numeric thinking budget needs a provider-native adapter", effort)
 		}
 		if name == "" {
 			return fields, nil

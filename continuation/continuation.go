@@ -279,6 +279,19 @@ var ErrStalePrefix = errors.New("continuation computed from a stale trajectory p
 
 // Effort is a provider-neutral reasoning-effort request. Adapters must reject
 // unsupported values rather than silently selecting a different effort.
+//
+// It is either one of the four names or a number of thinking tokens, and it
+// cannot be both, because the thing being described admits only one answer at
+// a time. Gemini says so literally - asking for a level and a budget together
+// is "you can only set only one of thinking budget and thinking level", an
+// HTTP 400 - and a single field is the shape that makes the invalid request
+// impossible to write rather than caught after somebody writes it.
+//
+// A number says how far to think in tokens; a name lets the provider decide
+// how far. Neither says anything about how long the answer may be. That is a
+// separate quantity, and conflating the two is what silences a voice: a
+// provider spends one allowance on thinking first, so a limit meant to keep a
+// spoken turn short is spent before the turn begins.
 type Effort string
 
 const (
@@ -287,6 +300,47 @@ const (
 	EffortMedium  Effort = "medium"
 	EffortHigh    Effort = "high"
 )
+
+// Budget reads an effort written as a number of thinking tokens. Zero is a
+// real budget meaning do not think, and is distinct from an absent one.
+func (effort Effort) Budget() (int, bool) {
+	text := strings.TrimSpace(string(effort))
+	if text == "" {
+		return 0, false
+	}
+	budget, err := strconv.Atoi(text)
+	if err != nil || budget < 0 {
+		return 0, false
+	}
+	return budget, true
+}
+
+// Named reports whether this effort is one of the four names.
+func (effort Effort) Named() bool {
+	switch effort {
+	case EffortMinimal, EffortLow, EffortMedium, EffortHigh:
+		return true
+	}
+	return false
+}
+
+// ParseEffort accepts either form and rejects anything else. A negative
+// number is not a smaller budget, it is a typo.
+func ParseEffort(value string) (Effort, error) {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return "", errors.New("reasoning effort is empty")
+	}
+	effort := Effort(strings.ToLower(text))
+	if effort.Named() {
+		return effort, nil
+	}
+	if _, numeric := effort.Budget(); numeric {
+		return effort, nil
+	}
+	return "", fmt.Errorf("reasoning effort must be minimal, low, medium, high, "+
+		"or a number of thinking tokens, got %q", value)
+}
 
 // ToolAuthority separates knowledge of a tool schema from permission to cause
 // a side effect. A proposing continuation may emit a structured candidate
@@ -508,9 +562,7 @@ func ValidateDescriptor(descriptor Descriptor) error {
 	if descriptor.Phase != trajectory.PhaseFast && descriptor.Phase != trajectory.PhaseSlow {
 		return errors.New("continuation phase must be fast or slow")
 	}
-	switch descriptor.Effort {
-	case EffortMinimal, EffortLow, EffortMedium, EffortHigh:
-	default:
+	if _, err := ParseEffort(string(descriptor.Effort)); err != nil {
 		return fmt.Errorf("unsupported reasoning effort %q", descriptor.Effort)
 	}
 	if descriptor.NativeStateType != "" && strings.TrimSpace(descriptor.NativeStateType) == "" {

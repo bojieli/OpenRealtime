@@ -28,7 +28,6 @@ const (
 	// thought signatures and function calls.
 	ProviderStateType = "google.gemini.generate-content.model-content.v1"
 	defaultEndpoint   = "https://generativelanguage.googleapis.com/v1beta"
-	defaultMaxTokens  = 1_024
 	maxErrorBody      = 64 << 10
 	maxSSEEvent       = 16 << 20
 )
@@ -84,6 +83,14 @@ func New(config Config) (*Adapter, error) {
 	}
 	if config.Effort == "" {
 		config.Effort = continuation.EffortMedium
+	}
+	// Reject an unreadable effort here rather than sending it and letting the
+	// endpoint answer with a 400 mid-conversation.
+	if !config.Effort.Named() {
+		if _, numeric := config.Effort.Budget(); !numeric {
+			return nil, fmt.Errorf("Gemini reasoning effort must be a name or a "+
+				"number of thinking tokens, got %q", config.Effort)
+		}
 	}
 	if config.ToolAuthority == "" {
 		if config.AllowTools {
@@ -142,14 +149,31 @@ type geminiRequest struct {
 }
 
 type geminiGenerationConfig struct {
-	ThinkingConfig  geminiThinkingConfig `json:"thinkingConfig"`
-	MaxOutputTokens int                  `json:"maxOutputTokens"`
-	Temperature     *float64             `json:"temperature,omitempty"`
+	ThinkingConfig geminiThinkingConfig `json:"thinkingConfig"`
+	// MaxOutputTokens is omitted unless a deployment asks for a ceiling.
+	// Gemini counts thinking against it, so a number chosen to keep a spoken
+	// turn short is spent on thought before any speech is produced.
+	MaxOutputTokens int      `json:"maxOutputTokens,omitempty"`
+	Temperature     *float64 `json:"temperature,omitempty"`
 }
 
+// geminiThinkingConfig carries a level or a budget. The API rejects both at
+// once, so at most one field is ever populated.
 type geminiThinkingConfig struct {
-	ThinkingLevel   string `json:"thinkingLevel"`
+	ThinkingLevel   string `json:"thinkingLevel,omitempty"`
+	ThinkingBudget  *int   `json:"thinkingBudget,omitempty"`
 	IncludeThoughts bool   `json:"includeThoughts"`
+}
+
+// thinkingFor renders an effort into the one field that expresses it.
+func thinkingFor(effort continuation.Effort, thoughts bool) geminiThinkingConfig {
+	config := geminiThinkingConfig{IncludeThoughts: thoughts}
+	if budget, numeric := effort.Budget(); numeric {
+		config.ThinkingBudget = &budget
+		return config
+	}
+	config.ThinkingLevel = strings.ToUpper(string(effort))
+	return config
 }
 
 type geminiTool struct {
@@ -305,17 +329,18 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 }
 
 func (adapter *Adapter) buildRequest(request continuation.Request) (geminiRequest, error) {
-	maxTokens := request.Invocation.MaxOutputTokens
-	if maxTokens == 0 {
-		maxTokens = defaultMaxTokens
+	// A turn may ask for less thinking than the deployment configured,
+	// because how far to think depends on the act rather than on the setting.
+	// Before this the descriptor's effort was rendered unconditionally and the
+	// per-turn request was silently discarded.
+	effort := adapter.descriptor.Effort
+	if request.Invocation.Effort != "" {
+		effort = request.Invocation.Effort
 	}
 	result := geminiRequest{
 		GenerationConfig: geminiGenerationConfig{
-			ThinkingConfig: geminiThinkingConfig{
-				ThinkingLevel:   strings.ToUpper(string(adapter.descriptor.Effort)),
-				IncludeThoughts: adapter.config.IncludeThoughts,
-			},
-			MaxOutputTokens: maxTokens,
+			ThinkingConfig:  thinkingFor(effort, adapter.config.IncludeThoughts),
+			MaxOutputTokens: request.Invocation.MaxOutputTokens,
 			Temperature:     adapter.config.Temperature,
 		},
 	}

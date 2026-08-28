@@ -156,9 +156,12 @@ func New(config Config) (*Engine, error) {
 	if config.FastMaxTokens < 0 || config.SlowMaxTokens < 0 {
 		return nil, errors.New("output token limits cannot be negative")
 	}
-	if config.FastMaxTokens == 0 {
-		config.FastMaxTokens = 96
-	}
+	// Zero means no ceiling, and it is the default. A spoken turn is kept
+	// short by the instruction that asks for a spoken turn, not by cutting one
+	// off part-way: measured uncapped, the fast phase answers in eighteen to
+	// thirty-two tokens on its own. A ceiling only ever produced a broken
+	// utterance, and on a provider that thinks it produced silence, because
+	// the thinking is spent against the same allowance before any speech.
 	if config.SlowMaxTokens == 0 {
 		config.SlowMaxTokens = 2048
 	}
