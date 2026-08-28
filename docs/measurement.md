@@ -3198,3 +3198,44 @@ instead of transcribing, silence transcribed as "Thank you.", the narrator
 starving the decision loop, a health check answering before the models were
 warm. This is the same defect wearing the machine's clothes rather than the
 model's.
+
+## F83
+
+Interpreting, measured at fifteen repeats with the recogniser no longer running
+out of memory, is 6/15. It had been reading anywhere from 1/5 to 5/5, and the
+spread was the sampling; the level is the code. Two defects, both upstream of
+any judgement, take it to 9/15.
+
+**A third party's speech had no name on it.** One microphone carries everybody,
+and somebody else in the room arrives with the same authority as the user, so
+bare text tells the voice the user said it. Asked to interpret for a colleague,
+the voice reads the colleague's Mandarin as the user's own words and cannot tell
+that the thing it was asked to translate has arrived. The interaction model was
+never confused about this - its situation names the speaker - so the fact
+existed and was dropped on the way to the layer that had to act on it. 6/15 to
+7/15.
+
+**Stability was computed in the wrong unit.** The settled prefix of a partial
+came from `strings.Fields`, and Chinese, Japanese and Thai are written without
+spaces, so the whole utterance is one token that agrees only when nothing
+changed. Stable is therefore empty on every partial of every sentence in those
+scripts, and the interjection path falls back to the whole revision when stable
+is empty - acting on exactly the unsettled tail the mechanism exists to hold
+back. The mechanism did not fail loudly; it silently turned off, and the
+fallback undid it. 7/15 to 9/15.
+
+The cost is script-specific, which is why it never showed up in English. A
+truncation mid-syllable in Chinese usually lands on another real word:
+
+    said     你好，很高兴见到你      "hello, very pleased to meet you"
+    partial  ...很高|              cut mid-syllable
+    heard    高雄                  Kaohsiung, the city
+    spoken   "hello, nice to meet you in kaohsiung"
+
+The same truncation in English gives "thir-", which is nothing, and no damage
+appears. Synthesis and recognition round-trip cleanly end to end - 你好，很高兴
+见到你 comes back verbatim - so nothing that tested whole utterances could see
+this. It lives entirely in the partials.
+
+Both fixes are general rather than about Mandarin. The first is about any voice
+that is not the user's, the second about any script without word spacing.
