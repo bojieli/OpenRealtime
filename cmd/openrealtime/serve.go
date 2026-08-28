@@ -1001,7 +1001,7 @@ func buildCascade(
 		ASRCadence:           options.asrCadence, HoldingAfter: options.holdingAfter,
 		Fast: fast, Slow: slow, Speech: speech,
 		Voice:         options.ttsVoice,
-		FastMaxTokens: options.fastTokens, SlowMaxTokens: options.slowTokens,
+		FastMaxTokens: spokenAllowance(options), SlowMaxTokens: options.slowTokens,
 		VisualReflex: reflex, VisualReflexMaxTokens: options.reflexTokens,
 		VisualReflexTimeout: options.reflexTimeout,
 		Policies:            policies, ObservationPolicy: observation,
@@ -1143,6 +1143,38 @@ func warmModels(ctx context.Context, options serveOptions) {
 		warm(options.policyURL, options.policyModel, options.policyTokenEnv, "")
 	}
 }
+
+// spokenAllowance is the fast phase's output limit, raised to leave room for
+// thinking when the voice has been given any.
+//
+// The limit means "how much speech", and ninety-six tokens is about as much as
+// anybody wants to hear in one turn. Providers that think count the thinking
+// against the same allowance, so a voice with a budget spends the whole limit
+// deliberating and emits nothing: measured on the interrupting scenario at the
+// default, the reply came back empty, at 128 it came back as "That sounds like
+// a", and only past 512 did a whole sentence arrive.
+//
+// So the deployment's number keeps meaning what it says - the length of a
+// spoken turn - and the room to think is added to it rather than taken out of
+// it. A voice at minimal effort is unchanged, and an explicit -fast-max-tokens
+// is still honoured exactly, because somebody who set the number themselves
+// has said what they want.
+func spokenAllowance(options serveOptions) int {
+	if options.explicit["fast-max-tokens"] {
+		return options.fastTokens
+	}
+	switch strings.TrimSpace(options.fastEffort) {
+	case "", string(continuation.EffortMinimal):
+		return options.fastTokens
+	default:
+		return options.fastTokens + thinkingHeadroom
+	}
+}
+
+// thinkingHeadroom is what a thinking voice needs before it can say anything.
+// It is the smallest budget the providers here offer, since a turn that thinks
+// less than that is not thinking.
+const thinkingHeadroom = 512
 
 func float64Pointer(value float64) *float64 { return &value }
 
