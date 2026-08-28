@@ -105,6 +105,14 @@ func (policy *modelBackchannel) Decide(ctx context.Context, decision Context) (B
 			"Answer none unless the speaker has clearly finished a thought and would expect " +
 			"acknowledgement. Answer acknowledge for an ordinary continuer. Answer affirm only when " +
 			"the speaker said something that calls for agreement.\n\n" +
+			"A continuer is for when nothing is owed. Anything that asks for something owes a " +
+			"reply, and a noise is the one response worse than none: it takes the moment the reply " +
+			"belonged in and gives back nothing. So a question is none, however finished it sounds " +
+			"- asking is a finished thought that expects an answer, not acknowledgement, and " +
+			"something else decides what the answer is.\n\n" +
+			"None as well while they are still assembling what they are saying: mid-clause, " +
+			"searching for a word, counting or reading or spelling something out. A continuer " +
+			"lands on top of those rather than between them.\n\n" +
 			"Most of the time the right answer is none.",
 		Options:  options,
 		Evidence: "What the person has said so far: " + decision.Revision.Text(),

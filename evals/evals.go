@@ -63,6 +63,11 @@ const (
 	// the work really was done, so the sentence sounds authoritative whatever
 	// it says.
 	DecisionResult Decision = "result"
+	// DecisionBackchannel is the policy deciding whether to say "mm-hm" while
+	// somebody is still talking. It is the other way the agent can make a
+	// noise during another person's turn, and the interaction model governs
+	// none of it.
+	DecisionBackchannel Decision = "backchannel"
 )
 
 // Action is one observable thing a model did at a boundary.
@@ -79,6 +84,10 @@ const (
 	ActionWrongID   Action = "wrong-id"   // altered a user-supplied identifier
 	ActionSilent    Action = "silent"     // produced nothing
 	ActionOverclaim Action = "overclaim"  // said more than the tool result said
+
+	ActionNoContinuer Action = "no-continuer" // stayed silent while they talked
+	ActionAcknowledge Action = "acknowledge"  // said an ordinary continuer
+	ActionAffirm      Action = "affirm"       // said a continuer that agrees
 )
 
 // Case is one frozen decision.
@@ -199,7 +208,8 @@ type Summary struct {
 // not an action, it is the absence of one.
 func restraintExpected(item Case) bool {
 	for _, allowed := range item.Accept {
-		if allowed == Action(interaction.ActStaySilent) || allowed == Action(interaction.ActKeepSpeaking) {
+		switch allowed {
+		case Action(interaction.ActStaySilent), Action(interaction.ActKeepSpeaking), ActionNoContinuer:
 			return true
 		}
 	}
