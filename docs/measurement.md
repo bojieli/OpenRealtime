@@ -3239,3 +3239,37 @@ this. It lives entirely in the partials.
 
 Both fixes are general rather than about Mandarin. The first is about any voice
 that is not the user's, the second about any script without word spacing.
+
+## F84
+
+A fix that measured worse, kept here because the reasoning was sound and the
+result was not.
+
+The recogniser re-detects the language on every partial, and a fragment is not
+enough evidence for that. Measured, one interpreting run produced user lines in
+six languages nobody was speaking - "それでは、ご視聴ありがとうございました",
+"감사합니다", "Und Gott", "O meu...", "C'est pas un conçu", "Amen" - each a phrase
+common in that language's training data, each entering the conversation as
+something the user said. Not a mistranscription but an invention, and worse than
+a missed word because nothing downstream can tell.
+
+The obvious reading is that nobody changes language mid-utterance and a listener
+does not re-decide what they are hearing every three hundred milliseconds. So
+the first hypothesis of an utterance detects, and the rest are told what it
+found.
+
+Interpreting went 9/15 to 6/15.
+
+The reason is in a measurement already taken and not read carefully enough. The
+first 200ms of the Mandarin line detects as English - there is not enough of it
+to tell yet, which is the same fact the fix was built on. Holding the first
+answer therefore holds the least informed one, and locks the whole utterance
+into it. Re-detecting is wrong because it decides too often on too little;
+holding the first is wrong because it decides once on even less.
+
+What would follow the principle is holding the answer taken from the most
+evidence rather than the earliest - detection deferred until the buffer is long
+enough to support it, and held from there. That is a different change and is not
+made here.
+
+Reverted. The two fixes in F83 stand at 9/15 on their own.
