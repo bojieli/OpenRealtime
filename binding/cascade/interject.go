@@ -57,7 +57,7 @@ func (runtime *runtime) pausedAsIfFinished(decision interaction.Context) bool {
 }
 
 func (runtime *runtime) interject(decision interaction.Context) {
-	if !runtime.hasActPolicy() {
+	if runtime.policies.Interaction == nil {
 		return
 	}
 	// Speaking through somebody is how a standing policy gets honoured while
@@ -448,7 +448,7 @@ func (runtime *runtime) releaseInterjection() {
 const minimumBetweenSilentActs = 3 * time.Second
 
 func (runtime *runtime) actSilently(decision interaction.Context) {
-	if !runtime.hasActPolicy() {
+	if runtime.policies.Interaction == nil {
 		return
 	}
 	// Something already sent and not yet answered is a decision already taken.
