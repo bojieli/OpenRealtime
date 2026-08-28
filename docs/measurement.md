@@ -3159,3 +3159,42 @@ What the totals support is the difference between 47-49 and 40 on identical
 configuration, which is larger than the spread of either. What they do not
 support is a ranking of the four noisy scenarios, which needs more repeats than
 a scenario costing four minutes a run affords.
+
+## F82
+
+The noisy scenario cells in F81 are not only noise. The recogniser was failing.
+
+    transcription failed: CUDA failed with error out of memory
+
+repeated through the run, and the binding surfaces that as a session error which
+scores the whole run as failed. So a cell reading 2/5 can be one model behaving
+differently and three transcriptions that never happened, and nothing in the
+scenario output distinguishes them - the failure arrives as "the session
+reported a failure", which reads like the system rather than the machine.
+
+The GPU was at 97205 MiB of 97887, 682 free. Two vLLM servers (49.7GB and
+23.8GB), speech synthesis at 15.4GB, and three small services. A recogniser
+needing a few hundred megabytes for a forward pass gets them or does not,
+depending on what else is mid-request, which is exactly the shape of an
+intermittent failure that looks like variance.
+
+Some of it was mine. I had started a second copy of the recogniser to isolate
+my measurements from a shared one that was failing - for this same reason, which
+I had not diagnosed yet - and the duplicate was 2.7GB of the pressure that made
+it fail. Stopping it and going back to the shared instance freed 2.7GB and
+removed the duplication.
+
+So F81's phrasing needs correcting: "these cells are noisy at five repeats"
+attributes to sampling something that is at least partly a machine running out
+of memory. The three scenarios the interrupt change was aimed at held at 5/5 in
+both runs and are unaffected by this - a cell that fails this way fails, it does
+not pass twice by luck. But no reading of the four moving cells is worth
+anything until they are measured with headroom.
+
+The general form is the one this file keeps arriving at from a different
+direction: infrastructure failing quietly upstream of the thing being measured,
+and the measurement reading as behaviour. It was the recogniser translating
+instead of transcribing, silence transcribed as "Thank you.", the narrator
+starving the decision loop, a health check answering before the models were
+warm. This is the same defect wearing the machine's clothes rather than the
+model's.
