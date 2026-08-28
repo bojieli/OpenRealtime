@@ -100,14 +100,30 @@ func Suite() []Scenario {
 			Instructions: "You are a voice assistant helping plan a project. The deadline the client gave is " +
 				"the third of the month. If the person says a date that contradicts that, correct them " +
 				"immediately, even in the middle of their sentence.",
+			// Split where the mistake starts, because one line could not tell a
+			// correction from a guess. Measured on the single-line version, an
+			// agent said "the deadline is the third of the month, not the
+			// fifth" at 4.8 seconds - before the person had mentioned any date
+			// at all, inventing the fifth - and passed, because the check only
+			// looked for the word "third" somewhere in the window. Eleven runs
+			// of fifteen passed that way, and the agent that stayed quiet
+			// until it heard something wrong scored two.
+			//
+			// So the first line contains no mistake and is checked for
+			// silence, and the correction is required inside the line that
+			// does. What this scenario is about is reacting to an error, which
+			// means there has to be a moment before the error to be wrong in.
 			Script: []Line{
-				{Speaker: "user", AtMS: 0, Text: "Right, so let me plan this out. We'll do the design review next week, and then ship it by the thirteenth, which gives us plenty of time to get the documentation finished and send everything over to their team for sign off."},
+				{Speaker: "user", AtMS: 0, Text: "Right, so let me plan this out. We'll do the design review next week."},
+				{Speaker: "user", AtMS: 5000, Text: "And then ship it by the thirteenth, which gives us plenty of time to get the documentation finished and send everything over to their team for sign off."},
 			},
 			TrailingMS: 5000,
 			Checks: []Check{
-				{Kind: CheckSpoke, Line: 0, AfterMS: -3000,
+				{Kind: CheckSilent, Line: 0, AfterMS: 0,
+					Note: "nothing has been said wrong yet, so there is nothing to correct"},
+				{Kind: CheckSpoke, Line: 1, AfterMS: -3000,
 					Note: "cutting in means before they finish; waiting politely for the end is the behaviour this replaces"},
-				{Kind: CheckSaid, Line: 0, AfterMS: 2000, Any: []string{"third", "3rd", "the 3"},
+				{Kind: CheckSaid, Line: 1, AfterMS: 2000, Any: []string{"third", "3rd", "the 3"},
 					Note: "and it has to be the correction; interrupting with an unrelated question is worse than waiting"},
 			},
 		},

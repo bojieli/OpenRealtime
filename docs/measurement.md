@@ -2817,3 +2817,42 @@ So the model question has no single answer, and the honest configuration advice
 is by deployment rather than by benchmark total: an agent whose job is to stay
 out of the way wants the budget, and an agent whose job is to catch people
 before they finish a wrong sentence does not.
+
+## F74 - the interrupting scenario was rewarding the behaviour it exists to test against
+
+This retracts F73's reading of cutting in, and part of F71's.
+
+A passing run, with the local voice:
+
+	 956ms  user   "Right?"
+	4820ms  agent  "The deadline is the third of the month, not the fifth."
+	6393ms  user   "and then ship it by the third."
+
+The agent corrects a date before the person has mentioned one, invents "the
+fifth" to correct it to, and passes - because the check looked for the word
+"third" anywhere in a window covering the whole line. It then talks through the
+rest of the sentence: "Understood...", "Confirmed...", "Got it...", which is
+the behaviour every other scenario in this suite penalises.
+
+Eleven of fifteen passing runs corrected before any date had been said. That is
+where 13/15 came from. The voice that waited until it heard something wrong
+scored 2/15, and it was right every time it stayed quiet.
+
+Two runs in fifteen are worse than that. The recogniser commits "thirteenth"
+mid-word as "the third", which is a valid date and the correct one, so in those
+runs there is no error to catch and silence is the only right answer - scored
+as a failure.
+
+So the comparison in F71 said the local voice was better at cutting in by
+seven runs, and what it measured was which model chatters more. The thinking
+voice's restraint, which F73 correctly identified, was being punished for being
+right.
+
+The scenario is now split where the mistake starts: a first line with nothing
+wrong in it, checked for silence, and the correction required inside the line
+that contains the error. A scenario about reacting to a mistake needs a moment
+before the mistake in which reacting is wrong.
+
+The general lesson is the one this document keeps arriving at from new
+directions. A check that looks for the right words in a wide window measures
+vocabulary, not judgement, and a model that says more will pass it more often.
