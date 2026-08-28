@@ -132,6 +132,21 @@ func extractionExamples() []extractionExample {
 			"pin conversation say the running total each time they read out a number"},
 		{nil, nil, "Let me finish reading this out before you say anything.",
 			"pin turn do not reply until they have finished reading it out"},
+		// The pair the prose alone could not settle. Both begin "let me", and
+		// only the one above asks the agent for anything - "before you say
+		// anything" is the whole difference. Without a worked negative the
+		// example above generalises to every sentence that starts this way:
+		// measured, "Right, so let me plan this out" was pinned as "do not
+		// reply until they have finished planning this out", and because
+		// policies outrank the deployment's own instructions by design, an
+		// agent told to correct a wrong date mid-sentence was told by nobody
+		// to stay quiet instead. It stayed quiet, five times out of five.
+		//
+		// The paragraph forbidding this was already in the prompt, naming this
+		// very sentence. Prose describing a boundary and an example crossing it
+		// are not equal evidence, and the example wins.
+		{nil, nil, "Right, so let me plan this out.", "none"},
+		{nil, nil, "Let me think about this for a second.", "none"},
 		{watching, nil, "Forget about the train, I can see it now.", "revoke shout if you see the train coming"},
 		{watching, nil, "Also let me know if it starts raining.", "pin conversation say something if it starts raining"},
 		{nil, nil, "Give me a nudge if I start talking too fast.", "pin conversation tell them if they start talking too fast"},

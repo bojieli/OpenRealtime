@@ -83,11 +83,34 @@ func StandingInstructionCases() []Case {
 		said("stay-quiet-until-asked", "Just listen for now, don't say anything until I ask.", "",
 			policy, ActNoPolicy),
 
+		// --- narrating your own next move asks the agent for nothing ---
+		//
+		// These sit against let-me-finish and let-me-finish-first below, which
+		// begin the same way and do ask. The whole difference is whether the
+		// sentence mentions the agent at all. Read the wrong way, these pin a
+		// rule of silence nobody set, and a policy outranks the deployment's
+		// own instructions by design - so an agent told to correct a wrong
+		// date mid-sentence is told by nobody to stay quiet instead.
+		said("announce-planning", "Right, so let me plan this out.",
+			"a discourse marker opening a topic; nothing is asked of the agent",
+			nothing, ActPinConversation, ActPinTurn),
+		said("announce-thinking", "Let me think about this for a second.",
+			"the speaker describing themselves, not requesting silence",
+			nothing, ActPinConversation, ActPinTurn),
+		said("announce-topic", "I'm going to tell you about my afternoon.",
+			"announces what they will say, not when the agent may speak",
+			nothing, ActPinConversation, ActPinTurn),
+
 		// --- policies that govern only the current turn ---
 		said("let-me-finish", "Let me finish.",
 			"about this sentence, not about every future one",
 			forThisTurn, ActPinConversation, ActNoPolicy),
 		said("more-to-say", "Wait, I have more to say.", "",
+			forThisTurn, ActPinConversation, ActNoPolicy),
+		// The near-miss for announce-planning: same opening, and this one does
+		// ask, because "before you say anything" is about the agent.
+		said("let-me-finish-first", "Let me finish reading this out before you say anything.",
+			"the clause about the agent is what makes it a policy",
 			forThisTurn, ActPinConversation, ActNoPolicy),
 		said("thinking-out-loud", "I'm going to think out loud for a minute, don't answer yet.",
 			"explicitly bounded: a minute, not forever",
