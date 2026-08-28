@@ -401,6 +401,20 @@ type Invocation struct {
 	Capabilities    []Capability     `json:"capabilities,omitempty"`
 	Tools           []ToolDefinition `json:"tools,omitempty"`
 	MaxOutputTokens int              `json:"max_output_tokens,omitempty"`
+	// Effort overrides the provider's configured reasoning budget for this one
+	// turn. Empty leaves the provider's own setting alone.
+	//
+	// It is here rather than only on the descriptor because how much time
+	// there is depends on the act, not on the deployment. Measured at fifteen
+	// repeats, giving the voice a budget gains three or four runs on counting,
+	// the visual case and the waiter, and loses seven on cutting into
+	// somebody's sentence - where the scenario's own note says waiting until
+	// they finish makes the correction useless, and a voice that thinks for a
+	// second and a half has already waited.
+	//
+	// Adapters that cannot vary it per request ignore this, which is the same
+	// thing they do with a descriptor effort they cannot honour.
+	Effort Effort `json:"effort,omitempty"`
 }
 
 // Media is an attachment resolved from a trajectory handle.

@@ -686,7 +686,7 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 		Temperature:   adapter.config.Temperature, Seed: adapter.config.Seed,
 		maxTokens: maxTokens, maxTokensField: adapter.config.MaxTokensField,
 	}
-	reasoning, err := adapter.reasoningFields()
+	reasoning, err := adapter.reasoningFields(request.Invocation.Effort)
 	if err != nil {
 		return chatRequest{}, err
 	}

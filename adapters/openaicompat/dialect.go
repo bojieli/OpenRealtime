@@ -142,13 +142,19 @@ var reservedRequestFields = []string{
 // the only evidence used, because guessing from a model string is how an
 // adapter ends up sending `reasoning_effort` to a server that has never heard
 // of it.
-func (adapter *Adapter) reasoningFields() (map[string]json.RawMessage, error) {
+func (adapter *Adapter) reasoningFields(turn continuation.Effort) (map[string]json.RawMessage, error) {
 	fields := map[string]json.RawMessage{}
 	thinking := adapter.config.ThinkingMode
+	// A turn may ask for less thinking than the deployment configured, because
+	// how much time there is depends on the act rather than on the setting.
+	effort := adapter.config.Effort
+	if turn != "" {
+		effort = turn
+	}
 	switch adapter.config.ReasoningControl {
 	case ReasoningControlNone:
 	case ReasoningControlEffort:
-		name := adapter.config.EffortNames[adapter.config.Effort]
+		name := adapter.config.EffortNames[effort]
 		if thinking == ThinkingDisabled {
 			name = adapter.config.DisabledEffort
 		}
