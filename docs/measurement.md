@@ -2750,3 +2750,37 @@ one: the act the interaction model chose says how long there is. An interrupt
 has no time; a count being carried out while somebody keeps talking has
 seconds. Effort currently lives on the adapter descriptor, so this needs the
 request to carry it, which is the next change rather than one measured here.
+
+## F72 - an interrupt needs the judgement more than it needs the speed
+
+The act-shaped budget was wrong, and measuring it said so: cutting in went
+6/15 to 2/15 when an interrupt was given minimal effort.
+
+The reasoning behind it read well. A reasoning budget gains three or four runs
+on counting, the visual case and the waiter and loses seven on cutting in; the
+act says how much time there is; an interrupt has none, because waiting until
+they finish makes the correction useless. Every step is true except the
+conclusion.
+
+What the transcripts show is that the correction is a judgement before it is a
+race. The deployment instruction says the deadline is the third of the month;
+the person says they will ship by the thirteenth; the agent has to notice that
+those contradict. Thirteen of fifteen runs heard "13th" correctly and only two
+corrected it, so the evidence was there and the reading was not. Taking the
+thinking away took the reading away, and speed bought nothing because there was
+nothing to say quickly.
+
+Two other things fell out of the same transcripts and are worth keeping.
+
+A partial can be a different word rather than a shorter one. "Thirteenth" cut
+mid-word commits as "the third", which is a valid date and the right one, so
+the agent correctly declines to correct a sentence that no longer contains an
+error. That happened in two runs of fifteen here and three of fifteen earlier -
+not the dominant cause, but a real one, and it is not the agent being wrong.
+
+And the earlier 6/15 was never mostly latency either. The thinking voice loses
+this scenario because a correction that arrives after the sentence is useless -
+but so is one that never comes, and at minimal effort it mostly never comes.
+
+Reverted. The per-turn effort field stays: it is the right mechanism and this
+was the wrong policy for it.

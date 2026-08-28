@@ -374,36 +374,7 @@ func (engine *Engine) fastInvocation(request Request) continuation.Invocation {
 		Instruction: instruction, SourceRevision: request.SourceRevision,
 		Capabilities: capabilities, Tools: tools,
 		MaxOutputTokens: engine.config.FastMaxTokens,
-		Effort:          effortFor(request.Because),
 	}
-}
-
-// interruptAct is the one act with no time to think. It is spelled out here
-// rather than imported, because cognition must not depend on the layer that
-// decides when it runs - the same reason the wait token is spelled out twice.
-const interruptAct = "interrupt"
-
-// effortFor says how much time this act leaves for thinking.
-//
-// Cutting into somebody's sentence has none. The scenario that measures it
-// says why in its own note - waiting until they finish makes the correction
-// useless - and a voice given a reasoning budget takes a second and a half,
-// by which point it has waited. Measured at fifteen repeats, the budget gains
-// three or four runs on counting, the visual case and the waiter, and loses
-// seven on that one.
-//
-// Everything else keeps whatever the deployment configured. Speaking through
-// somebody is not urgent in the same way: the thing being spoken about is
-// still being said, and a beat of thought lands inside it rather than after
-// it - which is where the gains came from.
-//
-// Empty means "leave the provider's own setting alone", so a deployment that
-// configured no budget is not given one here.
-func effortFor(because string) continuation.Effort {
-	if because == interruptAct {
-		return continuation.EffortMinimal
-	}
-	return ""
 }
 
 // PrepareSlow generates a slow continuation before the endpoint.
