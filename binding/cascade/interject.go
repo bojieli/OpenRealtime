@@ -57,6 +57,14 @@ func (runtime *runtime) pausedAsIfFinished(decision interaction.Context) bool {
 }
 
 func (runtime *runtime) interject(decision interaction.Context) {
+	runtime.interjectFor(decision, interaction.ActSpeakThrough)
+}
+
+// interjectFor produces speech while another speaker still holds the acoustic
+// floor. Speaking through and cutting in share this path because they share
+// the delivery - words while somebody else is talking - and differ in why, so
+// the reason travels with the request and the voice is told which one it got.
+func (runtime *runtime) interjectFor(decision interaction.Context, reason interaction.Act) {
 	if runtime.policies.Interaction == nil {
 		return
 	}
@@ -70,7 +78,12 @@ func (runtime *runtime) interject(decision interaction.Context) {
 	// The guard below catches the same thing once a policy exists. This
 	// catches it in the seconds before, which is exactly when the request is
 	// being spoken.
-	if len(runtime.pinboard.InForce()) == 0 {
+	//
+	// Only for speaking through. Cutting in is not the honouring of a standing
+	// policy - it is a correction that cannot wait - and requiring a pinned
+	// policy for it would refuse every interruption a deployment asked for in
+	// its own instructions.
+	if reason == interaction.ActSpeakThrough && len(runtime.pinboard.InForce()) == 0 {
 		runtime.noteInterject("no standing policy to speak through for")
 		return
 	}
@@ -100,8 +113,8 @@ func (runtime *runtime) interject(decision interaction.Context) {
 	pinnedFrom := runtime.pinnedFromText
 	carriedOut := runtime.carriedOutPolicy
 	runtime.audioMu.Unlock()
-	if heard := strings.TrimSpace(decision.Revision.Text()); !carriedOut &&
-		pinnedFrom != "" && strings.HasPrefix(heard, pinnedFrom) {
+	if heard := strings.TrimSpace(decision.Revision.Text()); reason == interaction.ActSpeakThrough &&
+		!carriedOut && pinnedFrom != "" && strings.HasPrefix(heard, pinnedFrom) {
 		runtime.noteInterject("this is the utterance the policy came from")
 		return
 	}
@@ -248,7 +261,7 @@ func (runtime *runtime) interject(decision interaction.Context) {
 		}
 		request := cognition.Request{
 			SourceRevision: decision.Revision.ID,
-			Standing:       standing, Counting: runtime.countingIsInForce(), Interjecting: true, Because: string(interaction.ActSpeakThrough),
+			Standing:       standing, Counting: runtime.countingIsInForce(), Interjecting: true, Because: string(reason),
 			Heard: heard,
 			// This is the path that speaks while somebody is still talking, so
 			// it is the path that answers one stretch of speech more than

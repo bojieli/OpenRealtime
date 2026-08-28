@@ -36,6 +36,33 @@ func (runtime *runtime) projectEndpoint(ctx context.Context, decision interactio
 		// something still has to happen.
 		runtime.interject(decision)
 	}
+	if endpoint.Act == interaction.ActInterrupt {
+		// Cutting in takes the floor - that is what separates it from speaking
+		// through - and it was taking the floor *before* saying anything. The
+		// endpoint below projects the turn closed, the acoustic gate is forced
+		// to stop, the recogniser finalises the fragment it was cut off in, an
+		// ordinary turn is built from that, and only then does the voice speak.
+		// Every one of those steps happens after the moment worth interrupting
+		// at, so an interruption could not reach the world until it was no
+		// longer one.
+		//
+		// Measured on the interrupting scenario: the interaction model chose
+		// interrupt 153 times, the voice was shown the sentence only once the
+		// recogniser had committed it whole, and the correction it composed -
+		// "The third.", captured from the live request dump, exactly what was
+		// asked for - was written at 15150ms for a window that closed at
+		// 11902ms. Right, and useless.
+		//
+		// When a person cuts in, the words and the floor happen together. The
+		// other speaker trails off because you spoke, not before it. So the
+		// words start here and the endpoint below still closes the turn; what
+		// changes is that speaking is no longer waiting on it.
+		//
+		// The closing turn does not answer the same stretch twice: the mark of
+		// how much the agent has already spoken for is what stops it, which is
+		// the job that mark exists to do.
+		runtime.interjectFor(decision, interaction.ActInterrupt)
+	}
 	if !endpoint.Ended || !endpoint.Projected {
 		return false, nil
 	}
