@@ -1,0 +1,49 @@
+// Fast and deliberative streams meet only at an explicit, stream-aware
+// arbiter. Selection, queueing, and preemption arrive on policy ports; there
+// is no implicit slow-to-fast handoff and no phase-based speaking rule.
+graph interaction_both {
+    cognition.TextModel :: fast;
+    cognition.TextModel :: slow;
+    interaction.SpeechArbiter :: arbiter;
+    interaction.SegmentPreparedText :: segment;
+    flow.Tee :: fast_outcome_copy;
+    flow.Tee :: slow_outcome_copy;
+
+    fast.text -> arbiter.text;
+    slow.text -> arbiter.text;
+    fast.outcome -> fast_outcome_copy.in;
+    slow.outcome -> slow_outcome_copy.in;
+    fast_outcome_copy.out -> arbiter.terminal;
+    slow_outcome_copy.out -> arbiter.terminal;
+
+    arbiter.selected -> segment.text;
+    fast_outcome_copy.out -> segment.terminal;
+    slow_outcome_copy.out -> segment.terminal;
+
+    input fast_context = fast.context;
+    input fast_trigger = fast.trigger;
+    input fast_cancel = fast.cancel;
+    input slow_context = slow.context;
+    input slow_trigger = slow.trigger;
+    input slow_cancel = slow.cancel;
+    input selection = arbiter.selection;
+    input arbitration_cancel = arbiter.cancel;
+    input arbitration_timeout = arbiter.timeout;
+    input speech_timeout = segment.timeout;
+    input cancel = segment.cancel;
+
+    output speech = segment.segments;
+    output speech_cancel = segment.speech_cancel;
+    output speech_model_cancel_request = segment.model_cancel;
+    output arbitration_model_cancel_request = arbiter.cancel_upstream;
+    output segmentation_outcome = segment.outcome;
+    output arbitration_outcome = arbiter.outcome;
+    output fast_result = fast.result;
+    output fast_tools = fast.tools;
+    output fast_outcome = fast_outcome_copy.out;
+    output fast_resolution = fast.resolved;
+    output slow_result = slow.result;
+    output slow_tools = slow.tools;
+    output slow_outcome = slow_outcome_copy.out;
+    output slow_resolution = slow.resolved;
+}

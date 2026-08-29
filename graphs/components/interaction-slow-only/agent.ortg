@@ -1,0 +1,26 @@
+// A deliberative provider—including one carrying legacy "silent" provenance—
+// may speak when the developer explicitly routes it to the speech adapter.
+graph interaction_slow_only {
+    cognition.TextModel :: slow;
+    interaction.SegmentPreparedText :: segment;
+    flow.Tee :: outcome_copy;
+
+    slow.text -> segment.text;
+    slow.outcome -> outcome_copy.in;
+    outcome_copy.out -> segment.terminal;
+
+    input context = slow.context;
+    input trigger = slow.trigger;
+    input model_cancel = slow.cancel;
+    input timeout = segment.timeout;
+    input cancel = segment.cancel;
+
+    output speech = segment.segments;
+    output speech_cancel = segment.speech_cancel;
+    output model_cancel_request = segment.model_cancel;
+    output interaction_outcome = segment.outcome;
+    output model_result = slow.result;
+    output model_tools = slow.tools;
+    output model_outcome = outcome_copy.out;
+    output model_resolution = slow.resolved;
+}

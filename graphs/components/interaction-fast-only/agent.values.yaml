@@ -1,0 +1,6 @@
+apiVersion: openrealtime.ai/config/v1alpha1
+graph: interaction_fast_only
+nodes:
+  fast:
+    provider: deployment.fast
+  segment: {}

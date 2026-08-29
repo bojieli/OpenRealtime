@@ -1,0 +1,29 @@
+{
+  "format_version": 1,
+  "elements": [
+    {
+      "reference": "cognition.TextModel",
+      "identity": {
+        "name": "cognition.TextModel",
+        "revision": 1,
+        "digest": "sha256:a231f3846c391b07869c84135afacb61e17fd11e5482eab4be8d73142de4012f"
+      }
+    },
+    {
+      "reference": "flow.Tee",
+      "identity": {
+        "name": "flow.Tee",
+        "revision": 1,
+        "digest": "sha256:54c309b4fa80950ca8815b63de7bb84947c9aa890fc3f638cd6a5afc574e40d6"
+      }
+    },
+    {
+      "reference": "interaction.SegmentPreparedText",
+      "identity": {
+        "name": "interaction.SegmentPreparedText",
+        "revision": 1,
+        "digest": "sha256:7985e9425b21408316c23b086ddb6c9af75f8ddbfb783f49b6606f15a7903fae"
+      }
+    }
+  ]
+}

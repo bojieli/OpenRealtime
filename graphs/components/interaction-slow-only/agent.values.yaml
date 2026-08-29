@@ -1,0 +1,6 @@
+apiVersion: openrealtime.ai/config/v1alpha1
+graph: interaction_slow_only
+nodes:
+  slow:
+    provider: deployment.slow
+  segment: {}

@@ -1,0 +1,26 @@
+// One cognition stream speaks through an explicit prepared-text adapter.
+// No phase label grants speech: the edge into segment.text does.
+graph interaction_fast_only {
+    cognition.TextModel :: fast;
+    interaction.SegmentPreparedText :: segment;
+    flow.Tee :: outcome_copy;
+
+    fast.text -> segment.text;
+    fast.outcome -> outcome_copy.in;
+    outcome_copy.out -> segment.terminal;
+
+    input context = fast.context;
+    input trigger = fast.trigger;
+    input model_cancel = fast.cancel;
+    input timeout = segment.timeout;
+    input cancel = segment.cancel;
+
+    output speech = segment.segments;
+    output speech_cancel = segment.speech_cancel;
+    output model_cancel_request = segment.model_cancel;
+    output interaction_outcome = segment.outcome;
+    output model_result = fast.result;
+    output model_tools = fast.tools;
+    output model_outcome = outcome_copy.out;
+    output model_resolution = fast.resolved;
+}
