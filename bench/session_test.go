@@ -572,6 +572,11 @@ func TestSessionCapturesNegotiatedRuntimeEvidence(t *testing.T) {
 func TestSessionAttestorPropagatesIndependentGraphEvidence(t *testing.T) {
 	graph, configuration, resolution := attestationFixture(t)
 	var debugNegotiated atomic.Bool
+	inspection := openrealtime.InspectionAccess{
+		SessionID: "sess_driver", Path: "/v1/realtime/sessions/sess_driver/live",
+		Token:       "ins_" + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32)),
+		ExpiresAtMS: time.Now().Add(time.Minute).UnixMilli(),
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		connection, err := websocket.Accept(writer, request, &websocket.AcceptOptions{})
 		if err != nil {
@@ -591,7 +596,17 @@ func TestSessionAttestorPropagatesIndependentGraphEvidence(t *testing.T) {
 			extension, _ := session["openrealtime"].(map[string]any)
 			_, debugNegotiatedValue := extension["debug"]
 			debugNegotiated.Store(debugNegotiatedValue)
-			updated, _ := json.Marshal(map[string]any{"type": "session.updated", "session": map[string]any{}})
+			updated, _ := json.Marshal(map[string]any{
+				"type": "session.updated", "session": map[string]any{
+					"openrealtime": map[string]any{
+						"version": openrealtime.Version,
+						"debug": map[string]any{
+							"enabled": true, "timestamp_resolution": "milliseconds",
+							"inspection": inspection,
+						},
+					},
+				},
+			})
 			_ = connection.Write(request.Context(), websocket.MessageText, updated)
 			evidence, _ := json.Marshal(map[string]any{
 				"type": openrealtime.EventDebug, "category": "session", "name": "session.updated",
@@ -613,6 +628,10 @@ func TestSessionAttestorPropagatesIndependentGraphEvidence(t *testing.T) {
 			if request.Status.Graph.Fingerprint != graph.Fingerprint || request.Scope != "driver-task" {
 				t.Fatalf("resolver saw wrong request: %+v", request)
 			}
+			if request.Inspection == nil || *request.Inspection != inspection {
+				t.Fatalf("resolver did not receive the server-issued session capability: %+v",
+					request.Inspection)
+			}
 			resolved.Store(true)
 			return resolution, nil
 		},
@@ -632,6 +651,13 @@ func TestSessionAttestorPropagatesIndependentGraphEvidence(t *testing.T) {
 	}
 	if transcript.ExecutionError != "" || transcript.Execution == nil {
 		t.Fatalf("execution evidence was not propagated: %+v", transcript)
+	}
+	encodedTranscript, err := json.Marshal(transcript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encodedTranscript, []byte(inspection.Token)) {
+		t.Fatalf("benchmark transcript retained inspection authority: %s", encodedTranscript)
 	}
 	requirement, err := bench.RequireGraph(graph, configuration, resolution)
 	if err != nil {

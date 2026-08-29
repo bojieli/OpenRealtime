@@ -25,7 +25,7 @@ import (
 // InspectionTokenHeader carries the session-scoped management capability.
 // Keeping it out of the URL prevents ordinary access logs, browser history,
 // and referrer headers from retaining the secret.
-const InspectionTokenHeader = "OpenRealtime-Inspection-Token"
+const InspectionTokenHeader = openrealtime.InspectionTokenHeader
 
 const (
 	defaultInspectionTokenTTL = time.Hour

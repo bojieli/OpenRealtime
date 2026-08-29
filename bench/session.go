@@ -88,6 +88,9 @@ type Transcript struct {
 	// harness that merely waited too little after playback.
 	OutstandingResponses int `json:"outstanding_responses,omitempty"`
 	OutstandingTools     int `json:"outstanding_tools,omitempty"`
+	// inspection is deliberately not serialized or exposed as benchmark data.
+	// It exists only until attestTranscript spends the one-session bearer.
+	inspection *openrealtime.InspectionAccess
 }
 
 // UserTurns returns what the user was heard to say, in order.
@@ -574,6 +577,8 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 }
 
 func attestTranscript(ctx context.Context, config SessionConfig, transcript Transcript) Transcript {
+	inspection := transcript.inspection
+	transcript.inspection = nil
 	if config.RuntimeAttestor == nil {
 		return transcript
 	}
@@ -588,7 +593,7 @@ func attestTranscript(ctx context.Context, config SessionConfig, transcript Tran
 	attestationContext, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	evidence, err := config.RuntimeAttestor.Attest(attestationContext, AttestationRequest{
-		Scope: config.AttestationScope, Status: *transcript.Runtime,
+		Scope: config.AttestationScope, Status: *transcript.Runtime, Inspection: inspection,
 	})
 	if err == nil {
 		err = evidence.Validate()
@@ -696,6 +701,7 @@ type recorder struct {
 	lastActivity       time.Time
 	failure            string
 	runtime            *binding.Status
+	inspection         *openrealtime.InspectionAccess
 	configured         chan struct{}
 	configuredOnce     sync.Once
 }
@@ -749,9 +755,15 @@ func (recorder *recorder) snapshot() Transcript {
 		copied.Observers = append([]string(nil), recorder.runtime.Observers...)
 		runtime = &copied
 	}
+	var inspection *openrealtime.InspectionAccess
+	if recorder.inspection != nil {
+		copied := *recorder.inspection
+		inspection = &copied
+	}
 	return Transcript{
 		Moments: moments, PlaybackMS: recorder.playbackMS, Failure: recorder.failure, Runtime: runtime,
 		OutstandingResponses: recorder.openResponses, OutstandingTools: recorder.openTools,
+		inspection: inspection,
 	}
 }
 
@@ -850,6 +862,21 @@ func (recorder *recorder) handle(
 ) {
 	switch event.Type {
 	case "session.updated":
+		if config.CaptureRuntimeEvidence {
+			var decoded struct {
+				Session struct {
+					OpenRealtime *openrealtime.Response `json:"openrealtime"`
+				} `json:"session"`
+			}
+			if event.Decode(&decoded) == nil && decoded.Session.OpenRealtime != nil &&
+				decoded.Session.OpenRealtime.Debug != nil &&
+				decoded.Session.OpenRealtime.Debug.Inspection != nil {
+				access := *decoded.Session.OpenRealtime.Debug.Inspection
+				recorder.mu.Lock()
+				recorder.inspection = &access
+				recorder.mu.Unlock()
+			}
+		}
 		if recorder.configured != nil {
 			recorder.configuredOnce.Do(func() { close(recorder.configured) })
 		}

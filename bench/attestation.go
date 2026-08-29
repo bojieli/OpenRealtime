@@ -18,6 +18,7 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	"github.com/bojieli/OpenRealtime/internal/strictjson"
+	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 )
 
 // AttestationFormatVersion is the current execution-evidence schema.
@@ -184,12 +185,13 @@ type ExecutionRequirement struct {
 	Legacy        *LegacyRequirement `json:"legacy,omitempty"`
 }
 
-// AttestationRequest binds the live status to the benchmark task/session being
-// resolved. A deployment inspector can use Scope to select the right mounted
-// graph when several tasks run concurrently.
+// AttestationRequest binds the live status and server-issued inspection
+// capability to the benchmark task. Scope labels resulting evidence and route
+// attribution; it is never authority for selecting a mounted session.
 type AttestationRequest struct {
-	Scope  string
-	Status binding.Status
+	Scope      string
+	Status     binding.Status
+	Inspection *openrealtime.InspectionAccess
 }
 
 func (requirement ExecutionRequirement) canonicalized() ExecutionRequirement {
