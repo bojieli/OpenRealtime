@@ -51,6 +51,122 @@ func (decider *recordingDecider) decisions() []interaction.Decision {
 	return append([]interaction.Decision(nil), decider.seen...)
 }
 
+func TestVisualIntentPolicySeparatesAuthorityFromPixelGrounding(t *testing.T) {
+	decider := &recordingDecider{answer: string(interaction.VisualIntentMonitor)}
+	model, err := interaction.NewInteractionModel(decider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent, _, err := model.DecideVisualIntent(
+		context.Background(),
+		"Present the quarterly review; if an approval dialog appears, acknowledge it.",
+	)
+	if err != nil || intent != interaction.VisualIntentMonitor {
+		t.Fatalf("visual intent = %q, %v", intent, err)
+	}
+	decisions := decider.decisions()
+	if len(decisions) != 1 {
+		t.Fatalf("expected one visual policy call, got %d", len(decisions))
+	}
+	decision := decisions[0]
+	if len(decision.Options) != 3 || len(decision.Images) != 0 {
+		t.Fatalf("visual authority policy received the wrong surface: %+v", decision)
+	}
+	if strings.Contains(decision.Prompt, "coordinate") || strings.Contains(decision.Evidence, "pixel") {
+		t.Fatalf("authority classifier was asked to ground an action: %+v", decision)
+	}
+	if !strings.Contains(decision.Prompt, "semantic work") ||
+		!strings.Contains(decision.Evidence, "approval dialog") {
+		t.Fatalf("visual classification lost its decision-time contract: %+v", decision)
+	}
+}
+
+func TestExplicitVisualAuthorityCompilesOnlyUnambiguousImperatives(t *testing.T) {
+	tests := []struct {
+		name string
+		task string
+		want bool
+	}{
+		{name: "navigation while presenting", task: "Go to the summary slide and begin presenting.", want: true},
+		{name: "spoken correction", task: "Wait, go back to the Overview.", want: true},
+		{name: "polite switch", task: "Could you please switch to the Risks tab?", want: true},
+		{name: "named click", task: "Click the Acknowledge alert button now.", want: true},
+		{name: "open with article", task: "Open the launch review and present it.", want: true},
+		{name: "share screen", task: "Please share your screen.", want: true},
+		{name: "incomplete navigation", task: "Wait, go back to the.", want: false},
+		{name: "incomplete click", task: "Click the.", want: false},
+		{name: "semantic summary", task: "Summarize the launch review.", want: false},
+		{name: "descriptive open", task: "Open questions remain in the review.", want: false},
+		{name: "future condition", task: "If an alert appears, click Acknowledge.", want: false},
+		{name: "watch condition", task: "Watch for the warning, then go to Overview.", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			intent, ok := interaction.ExplicitVisualAuthority(test.task)
+			if ok != test.want {
+				t.Fatalf("ExplicitVisualAuthority(%q) = %q, %t", test.task, intent, ok)
+			}
+			if ok && intent != interaction.VisualIntentDirect {
+				t.Fatalf("explicit intent = %q, want direct", intent)
+			}
+		})
+	}
+}
+
+func TestExplicitVisualActionCountWaitsForCompleteOrderedCommands(t *testing.T) {
+	tests := []struct {
+		task string
+		want int
+	}{
+		{task: "Open the launch review.", want: 1},
+		{task: "Open the launch review share.", want: 1},
+		{task: "Open the launch review, share your.", want: 1},
+		{task: "Open the launch review, share your screen.", want: 2},
+		{task: "Open the launch review, share your screen, and tell everyone the latest conversion rate.", want: 2},
+		{task: "Go to Summary and begin presenting.", want: 1},
+		{task: "If an alert appears, click Acknowledge.", want: 0},
+		{task: "Open questions remain in the review.", want: 0},
+	}
+	for _, test := range tests {
+		if got := interaction.ExplicitVisualActionCount(test.task); got != test.want {
+			t.Fatalf("ExplicitVisualActionCount(%q) = %d, want %d", test.task, got, test.want)
+		}
+	}
+	task := "Open the launch review, share your screen, and tell everyone the latest conversion rate."
+	if got, ok := interaction.ExplicitVisualActionAt(task, 0); !ok || got != "open the launch review" {
+		t.Fatalf("first explicit action = %q, %t", got, ok)
+	}
+	if got, ok := interaction.ExplicitVisualActionAt(task, 1); !ok || got != "share your screen" {
+		t.Fatalf("second explicit action = %q, %t", got, ok)
+	}
+	if got, ok := interaction.ExplicitVisualActionAt(task, 2); ok || got != "" {
+		t.Fatalf("semantic tail became explicit action %q, %t", got, ok)
+	}
+}
+
+func TestImmediateNonvisualClauseRequiresEvidenceThatItIsDueNow(t *testing.T) {
+	tests := []struct {
+		task string
+		want string
+	}{
+		{task: "Present the launch overview. If an alert appears, acknowledge it.", want: "present the launch overview"},
+		{task: "Present the overview and if an alert appears acknowledge it.", want: "present the overview"},
+		{task: "Present the launch overview if an alert appears, acknowledge it without stopping your presentation.", want: "present the launch overview"},
+		{task: "Open the launch review, share your screen, and tell everyone the latest conversion rate.", want: "tell everyone the latest conversion rate"},
+		{task: "Go to Summary and begin presenting.", want: "begin presenting"},
+		{task: "Open the review and present it.", want: "present it"},
+		{task: "Open the review and tell everyone the latest.", want: ""},
+		{task: "Call me if the deployment succeeds.", want: ""},
+		{task: "If an alert appears, acknowledge it while presenting.", want: ""},
+		{task: "Watch for an alert and acknowledge it.", want: ""},
+	}
+	for _, test := range tests {
+		if got := interaction.ImmediateNonvisualClause(test.task); got != test.want {
+			t.Fatalf("ImmediateNonvisualClause(%q) = %q, want %q", test.task, got, test.want)
+		}
+	}
+}
+
 // A turn-projection model may see only what was available at the instant of
 // the decision. Prompted on hindsight - the final transcript, what the user
 // said next, whether the turn did end - it yields a judgement that cannot be

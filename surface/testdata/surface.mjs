@@ -259,7 +259,7 @@ try {
   check("the developer debug stream is explicitly requested",
     declared.openrealtime?.debug?.enabled === true);
   check("the computer-use vocabulary is declared",
-    declared.tools?.filter((tool) => tool.name.startsWith("computer.")).length === 10,
+    declared.tools?.filter((tool) => tool.name.startsWith("computer.")).length === 11,
     `${declared.tools?.filter((tool) => tool.name.startsWith("computer.")).length} actions`);
   check("client-hosted tools delegate server confirmation explicitly",
     declared.tools?.find((tool) => tool.name === "write_file")?.openrealtime?.confirm === "never");

@@ -165,6 +165,15 @@ func (floor *actFloor) Endpoint(decision Context) EndpointDecision {
 		// answers that instead. Taking a floor somebody still holds is what
 		// interrupt is for, and the model has to say so.
 		verdict = EndpointDecision{Act: act, Reason: "answering was chosen while the speaker was still audible"}
+	case act == ActAnswer && silence < uint64(floor.options.SilenceDuration.Nanoseconds()):
+		// A deployment may explicitly choose a minimum acoustic endpoint to
+		// protect natural within-turn pauses. The interaction model is still
+		// consulted at every micro-turn and may interrupt or drive silent/live
+		// actions, but an Answer verdict cannot make the spoken response commit
+		// earlier than that declared floor. Without this, a 700 ms meeting
+		// profile projected "go to Summary" at a 640 ms pause and split the
+		// trailing "and begin presenting" into a second user turn.
+		verdict = EndpointDecision{Act: act, Reason: "answering was chosen before the configured silence floor"}
 	case act == ActInterrupt && floor.alreadyInterrupted(decision.NowNS, decision.Situation.Heard):
 		// Not a refusal of the judgement, a refusal of its repetition. The
 		// model is asked again on every partial and cannot remember having
@@ -177,6 +186,16 @@ func (floor *actFloor) Endpoint(decision Context) EndpointDecision {
 		verdict = EndpointDecision{Ended: true, Projected: true, Act: act, Reason: "the interaction model chose " + string(act)}
 	default:
 		verdict = EndpointDecision{Act: act, Reason: "the interaction model chose " + string(act)}
+	}
+	if !verdict.Ended {
+		// A model hold is temporary even when no more microphone frames arrive.
+		// Finite uploads commonly end with just enough silence for one acoustic
+		// endpoint; reopening the gate and relying on another 500 ms of media
+		// leaves that utterance open forever. Reconsider exactly when the
+		// liveness bound expires. The audio path may ask sooner if speech or more
+		// silence arrives, and its generation guard cancels this older wake-up.
+		remaining := beyond - silence
+		verdict.ReconsiderAfter = time.Duration(remaining)
 	}
 	floor.mu.Lock()
 	floor.lastKey, floor.last = key, verdict

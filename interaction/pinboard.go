@@ -209,7 +209,19 @@ func (board *Pinboard) InForceExcept(turn uint64) []StandingInstruction {
 
 // Lines renders the board for a decision, each policy carrying its age.
 func (board *Pinboard) Lines(nowNS uint64) []string {
-	inForce := board.InForce()
+	return renderStandingLines(board.InForce(), nowNS)
+}
+
+// LinesExcept renders every standing policy except those extracted from one
+// turn. A composite request can contain work due now plus a future condition;
+// while the visual controller retains the latter, the voice must not be told
+// that the whole current request is a future-only standing policy. Policies
+// established by earlier turns remain fully in force, including their ages.
+func (board *Pinboard) LinesExcept(nowNS, turn uint64) []string {
+	return renderStandingLines(board.InForceExcept(turn), nowNS)
+}
+
+func renderStandingLines(inForce []StandingInstruction, nowNS uint64) []string {
 	if len(inForce) == 0 {
 		return nil
 	}

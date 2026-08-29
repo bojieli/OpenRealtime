@@ -57,6 +57,18 @@ type InteractionModel struct {
 	decider Decider
 }
 
+// VisualIntent is the typed authority an interaction decision grants to the
+// direct-pixel actor. It deliberately does not name a control or coordinate:
+// deciding whether the user's task engages the screen is interaction policy;
+// grounding what to do in pixels remains the visual actor's job.
+type VisualIntent string
+
+const (
+	VisualIntentNone    VisualIntent = "no-screen-action"
+	VisualIntentDirect  VisualIntent = "direct-visible-control"
+	VisualIntentMonitor VisualIntent = "monitor-visual-condition"
+)
+
 // NewInteractionModel builds the policy over a decider.
 func NewInteractionModel(decider Decider) (*InteractionModel, error) {
 	if decider == nil {
@@ -75,6 +87,36 @@ func (model *InteractionModel) DecisionTimeout() time.Duration {
 		return bounded.DecisionTimeout()
 	}
 	return 0
+}
+
+// DecideVisualIntent classifies coordinate authority from the user's current
+// task. It is an enumerated policy decision, never generation and never a tool
+// call. In particular, semantic work is not converted into screen authority
+// merely because a UI happens to contain a similarly named control.
+func (model *InteractionModel) DecideVisualIntent(ctx context.Context, task string) (VisualIntent, Outcome, error) {
+	options := []string{
+		string(VisualIntentNone), string(VisualIntentDirect), string(VisualIntentMonitor),
+	}
+	outcome, err := model.decider.Decide(ctx, Decision{
+		Prompt: "Classify screen-control authority from the user's task. Examine every clause, especially commands after words like if, then, and, but, or wait. " +
+			"Choose direct-visible-control if any currently applicable complete clause explicitly commands operating, navigating, clicking, opening, sharing, switching, or acknowledging a named visible UI control or destination. " +
+			"Choose monitor-visual-condition if any clause explicitly says to wait or watch for a named future visual condition and then operate or acknowledge a control when it appears. " +
+			"Choose no-screen-action only if no clause grants either kind of screen operation; presenting, reading, analyzing, explaining, summarizing, and speaking alone grant none. " +
+			"An incomplete live prefix grants no screen authority: 'Wait', 'Wait, go back', 'switch to the', and 'click the' are no-screen-action until the destination or control is named. The word wait by itself is a conversational correction marker, not a future visual condition. " +
+			"A correction such as 'Wait, go back to Overview' is a direct navigation command; 'if an alert appears, acknowledge it' is monitoring authority. " +
+			"When semantic work and an explicit screen operation are combined, classify the explicit screen operation. Classify authority only, never the target.",
+		Options: options, Evidence: "Current user task: " + strings.TrimSpace(task),
+	})
+	if err != nil {
+		return VisualIntentNone, outcome, err
+	}
+	intent := VisualIntent(strings.TrimSpace(outcome.Option))
+	for _, option := range []VisualIntent{VisualIntentNone, VisualIntentDirect, VisualIntentMonitor} {
+		if intent == option {
+			return intent, outcome, nil
+		}
+	}
+	return VisualIntentNone, outcome, fmt.Errorf("visual interaction policy chose %q", outcome.Option)
 }
 
 // Decide chooses one act.

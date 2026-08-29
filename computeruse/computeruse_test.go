@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/computeruse"
@@ -15,6 +16,8 @@ import (
 type fakeSurface struct {
 	mu      sync.Mutex
 	actions []string
+	lastX   int
+	lastY   int
 }
 
 func (surface *fakeSurface) Name() string { return "fake" }
@@ -27,7 +30,11 @@ func (surface *fakeSurface) note(text string) error {
 }
 
 func (surface *fakeSurface) Click(_ context.Context, x, y int, button string) error {
-	return surface.note("click")
+	surface.mu.Lock()
+	defer surface.mu.Unlock()
+	surface.lastX, surface.lastY = x, y
+	surface.actions = append(surface.actions, "click")
+	return nil
 }
 func (surface *fakeSurface) ClickElement(context.Context, string) error {
 	return surface.note("click-element")
@@ -71,10 +78,10 @@ func call(name, arguments string) trajectory.ToolCall {
 	return trajectory.ToolCall{CallID: "c1", Name: name, Arguments: json.RawMessage(arguments)}
 }
 
-func TestVocabularyIsTenActionsWithStrictSchemas(t *testing.T) {
+func TestVocabularyHasStrictSchemas(t *testing.T) {
 	definitions := computeruse.Definitions()
-	if len(definitions) != 10 || len(computeruse.Names()) != 10 {
-		t.Fatalf("expected ten actions, got %d", len(definitions))
+	if len(definitions) != 11 || len(computeruse.Names()) != 11 {
+		t.Fatalf("expected eleven actions, got %d", len(definitions))
 	}
 	for _, definition := range definitions {
 		if !computeruse.IsAction(definition.Name) {
@@ -96,6 +103,26 @@ func TestVocabularyIsTenActionsWithStrictSchemas(t *testing.T) {
 				t.Fatalf("%s must name the coordinate space it acts on", definition.Name)
 			}
 		}
+	}
+}
+
+func TestNormalizedClickMapsExplicitlyIntoTheTargetPixelSpace(t *testing.T) {
+	dispatcher, surface := newDispatcher(t)
+	result, err := dispatcher.Dispatch(context.Background(), call(
+		computeruse.ClickNormalized, `{"source":"screen","x":500,"y":500}`))
+	if err != nil || result.Error != "" {
+		t.Fatalf("normalized click: %v %s", err, result.Error)
+	}
+	surface.mu.Lock()
+	x, y := surface.lastX, surface.lastY
+	surface.mu.Unlock()
+	if x != 640 || y != 360 {
+		t.Fatalf("normalized midpoint mapped to (%d,%d), want (640,360)", x, y)
+	}
+	outside, _ := dispatcher.Dispatch(context.Background(), call(
+		computeruse.ClickNormalized, `{"source":"screen","x":500,"y":1001}`))
+	if !strings.Contains(outside.Error, "0..1000") {
+		t.Fatalf("out-of-range normalized click was not refused: %q", outside.Error)
 	}
 }
 
@@ -136,6 +163,78 @@ func TestSetOfMarkActionsResolveOnlyOnElementSurfaces(t *testing.T) {
 		computeruse.ClickElement, `{"source":"screen","element_id":"1"}`))
 	if !strings.Contains(refused.Error, "does not support set-of-mark") {
 		t.Fatalf("a pixel-only target must refuse element grounding, got %q", refused.Error)
+	}
+}
+
+type blockingElementSurface struct {
+	fakeSurface
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (surface *blockingElementSurface) ClickElement(ctx context.Context, _ string) error {
+	select {
+	case surface.entered <- struct{}{}:
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+	select {
+	case <-surface.release:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
+
+func TestConcurrentPhysicalActionsAreSerialized(t *testing.T) {
+	surface := &blockingElementSurface{
+		entered: make(chan struct{}), release: make(chan struct{}),
+	}
+	dispatcher, err := computeruse.NewDispatcher(computeruse.DispatcherConfig{
+		Target: computeruse.Target{
+			Name: "browser-1", Sources: []string{"screen"}, Width: 1280, Height: 720,
+		},
+		Surface: surface,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	done := make(chan error, 2)
+	dispatch := func(id string) {
+		result, dispatchErr := dispatcher.Dispatch(ctx, trajectory.ToolCall{
+			CallID: id, Name: computeruse.ClickElement,
+			Arguments: json.RawMessage(`{"source":"screen","element_id":"1"}`),
+		})
+		if dispatchErr == nil && result.Error != "" {
+			dispatchErr = context.Canceled
+		}
+		done <- dispatchErr
+	}
+	go dispatch("first")
+	select {
+	case <-surface.entered:
+	case <-ctx.Done():
+		t.Fatal("first physical action did not enter the surface")
+	}
+	go dispatch("second")
+	select {
+	case <-surface.entered:
+		t.Fatal("the second physical action interleaved with the first")
+	case <-time.After(50 * time.Millisecond):
+	}
+	surface.release <- struct{}{}
+	select {
+	case <-surface.entered:
+	case <-ctx.Done():
+		t.Fatal("the second physical action did not run after the first completed")
+	}
+	surface.release <- struct{}{}
+	for range 2 {
+		if err := <-done; err != nil {
+			t.Fatalf("serialized action failed: %v", err)
+		}
 	}
 }
 
@@ -222,7 +321,7 @@ func TestSpecsCarryTargetsAndConfirmationDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("specs: %v", err)
 	}
-	if len(specs) != 10 {
+	if len(specs) != 11 {
 		t.Fatalf("expected the whole vocabulary, got %d", len(specs))
 	}
 	byName := make(map[string]action.ToolSpec, len(specs))
@@ -399,9 +498,10 @@ func TestTargetSchemasNameTheExactCoordinateSpace(t *testing.T) {
 		t.Fatalf("definitions: %v", err)
 	}
 	want := map[string]map[string]float64{
-		computeruse.Click:       {"x": 1279, "y": 576},
-		computeruse.DoubleClick: {"x": 1279, "y": 576},
-		computeruse.Move:        {"x": 1279, "y": 576},
+		computeruse.Click:           {"x": 1279, "y": 576},
+		computeruse.ClickNormalized: {"x": 1000, "y": 1000},
+		computeruse.DoubleClick:     {"x": 1279, "y": 576},
+		computeruse.Move:            {"x": 1279, "y": 576},
 		computeruse.Drag: {
 			"from_x": 1279, "from_y": 576, "to_x": 1279, "to_y": 576,
 		},
@@ -434,6 +534,11 @@ func TestTargetSchemasNameTheExactCoordinateSpace(t *testing.T) {
 	// The portable vocabulary does not pretend to know a deployment's
 	// dimensions. Only DefinitionsFor may publish target-specific maxima.
 	for _, definition := range computeruse.Definitions() {
+		if definition.Name == computeruse.ClickNormalized {
+			// Its coordinate space is definitionally fixed, not guessed from a
+			// deployment target.
+			continue
+		}
 		var schema struct {
 			Properties map[string]struct {
 				Maximum *float64 `json:"maximum"`

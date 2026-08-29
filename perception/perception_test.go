@@ -288,6 +288,36 @@ func TestVideoObserverNarratesOnlyRealChange(t *testing.T) {
 	}
 }
 
+func TestVideoRefreshForcesExactlyOnePostActionObservation(t *testing.T) {
+	t.Parallel()
+	observer, err := perception.NewVideoObserver(perception.VideoConfig{
+		Narrator: perception.StaticNarrator{Text: "screen state"}, Cadence: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := imageFrame(encodeFrame(t, color.Gray{Y: 20}, image.Rect(0, 0, 320, 240)), 0)
+	if !observer.Gate(frame) {
+		t.Fatal("initial frame was not admitted")
+	}
+	if observations, err := observer.Observe(context.Background(), []perception.Frame{frame}); err != nil || len(observations) != 1 {
+		t.Fatalf("initial observe = %+v, %v", observations, err)
+	}
+	if observer.Gate(frame) {
+		t.Fatal("unchanged frame bypassed ordinary adaptive collapse")
+	}
+	observer.RefreshNext()
+	if !observer.Gate(frame) {
+		t.Fatal("post-action refresh did not admit an unchanged frame")
+	}
+	if observations, err := observer.Observe(context.Background(), []perception.Frame{frame}); err != nil || len(observations) != 1 {
+		t.Fatalf("forced post-action observe = %+v, %v", observations, err)
+	}
+	if observer.Gate(frame) {
+		t.Fatal("refresh disabled adaptive collapse beyond one frame")
+	}
+}
+
 // TestVideoCadenceLimitsSampling drives the sampling interval from the
 // observer's own clock rather than from the timestamps on the frames, which is
 // what the observer actually reads. A client's capture time cannot be trusted

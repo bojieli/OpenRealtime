@@ -87,6 +87,7 @@ type VideoObserver struct {
 	admitted        uint64
 	narrations      uint64
 	revision        uint64
+	refreshNext     bool
 }
 
 // NewVideoObserver creates the observer.
@@ -136,6 +137,9 @@ func (observer *VideoObserver) Gate(frame Frame) bool {
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
 	observer.frames++
+	if observer.refreshNext {
+		return true
+	}
 	if observer.admitted != 0 && now-observer.lastAdmitNS < uint64(observer.config.Cadence.Nanoseconds()) {
 		return false
 	}
@@ -211,8 +215,10 @@ func (observer *VideoObserver) Observe(ctx context.Context, frames []Frame) ([]O
 
 	observer.mu.Lock()
 	previous := observer.lastSignature
+	forced := observer.refreshNext
+	observer.refreshNext = false
 	changed := changedFraction(previous, signature)
-	if previous != nil && changed < observer.config.ChangeThreshold {
+	if !forced && previous != nil && changed < observer.config.ChangeThreshold {
 		observer.lastFingerprint, observer.lastBytes = fingerprint(frame.Image), len(frame.Image)
 		observer.mu.Unlock()
 		return nil, nil
@@ -269,6 +275,16 @@ func (observer *VideoObserver) Reset() {
 	observer.lastFingerprint, observer.lastBytes = 0, 0
 	observer.lastSignature, observer.lastAdmitNS = nil, 0
 	observer.admitted = 0
+	observer.refreshNext = false
+}
+
+// RefreshNext forces exactly one post-effect keyframe through the adaptive
+// gate. It does not discard the prior signature: the forced frame becomes the
+// new comparison baseline and normal collapse resumes on the frame after it.
+func (observer *VideoObserver) RefreshNext() {
+	observer.mu.Lock()
+	observer.refreshNext = true
+	observer.mu.Unlock()
 }
 
 // VideoMetrics is what the efficiency gates measure.
@@ -340,6 +356,7 @@ func changedFraction(previous, current []uint8) float64 {
 }
 
 var _ Observer = (*VideoObserver)(nil)
+var _ RefreshableObserver = (*VideoObserver)(nil)
 
 // controlPattern matches the control lines an actionable narration produces.
 var controlPattern = regexp.MustCompile(`(?i)CONTROL:\s*(.+?)\s+at\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)`)

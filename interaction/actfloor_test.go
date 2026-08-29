@@ -70,6 +70,21 @@ func TestActFloorEndsOnlyOnAnsweringOrInterrupting(t *testing.T) {
 	}
 }
 
+func TestActFloorAnswerHonorsConfiguredMinimumSilence(t *testing.T) {
+	floor := floorFor(t, interaction.ActAnswer, false)
+	if verdict := floor.Endpoint(waiting(499*time.Millisecond, 1)); verdict.Ended {
+		t.Fatal("answer projected through the configured acoustic safety floor")
+	}
+	if verdict := floor.Endpoint(waiting(500*time.Millisecond, 2)); !verdict.Ended {
+		t.Fatal("answer was not admitted at the configured acoustic safety floor")
+	}
+	// Interrupt is semantically different: it deliberately takes a floor that
+	// is not free and must remain available before the ordinary endpoint.
+	if verdict := floorFor(t, interaction.ActInterrupt, false).Endpoint(waiting(100*time.Millisecond, 3)); !verdict.Ended {
+		t.Fatal("the acoustic answer floor incorrectly disabled semantic interruption")
+	}
+}
+
 // An act the situation does not offer cannot be acted on, and falling back is
 // what stops a model naming an impossible one from deciding anything.
 func TestActFloorRejectsAnActThatIsNotAvailable(t *testing.T) {
@@ -92,6 +107,29 @@ func TestActFloorEndsAtTheLivenessBound(t *testing.T) {
 	verdict := floor.Endpoint(waiting(30*time.Second, 2))
 	if !verdict.Ended {
 		t.Fatal("a model holding the floor forever was never overruled")
+	}
+}
+
+func TestActFloorHoldOwesReconsiderationAtTheLivenessBound(t *testing.T) {
+	model, err := interaction.NewInteractionModel(answers{act: interaction.ActStaySilent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	floor, err := interaction.NewActFloor(model, interaction.ActFloorOptions{
+		SilenceDuration: 500 * time.Millisecond, Liveness: 750 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	verdict := floor.Endpoint(waiting(700*time.Millisecond, 1))
+	if verdict.Ended {
+		t.Fatal("the semantic hold ended before its liveness bound")
+	}
+	if verdict.ReconsiderAfter != 550*time.Millisecond {
+		t.Fatalf("hold reconsiders after %s, want 550ms", verdict.ReconsiderAfter)
+	}
+	if verdict := floor.Endpoint(waiting(1250*time.Millisecond, 2)); !verdict.Ended {
+		t.Fatal("the timed reconsideration did not end at the liveness bound")
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -70,8 +71,13 @@ type DispatcherConfig struct {
 type Dispatcher struct {
 	config DispatcherConfig
 
-	mu      sync.Mutex
-	records []Record
+	// A physical target has one pointer and keyboard. Concurrent model/tool
+	// lanes may submit actions at the same time, but their low-level event
+	// sequences must remain atomic: interleaving press/release pairs can make
+	// two individually successful clicks produce no click at all.
+	actionMu sync.Mutex
+	mu       sync.Mutex
+	records  []Record
 }
 
 // NewDispatcher validates the configuration.
@@ -134,12 +140,24 @@ func (dispatcher *Dispatcher) Dispatch(ctx context.Context, call trajectory.Tool
 				"target %q does not own source %q", dispatcher.config.Target.Name, parsed.Source))
 		}
 	}
+	if IsReflexAction(call.Name) {
+		dispatcher.actionMu.Lock()
+		defer dispatcher.actionMu.Unlock()
+	}
 
 	var err error
 	switch call.Name {
 	case Click:
 		if err = dispatcher.inside(parsed.X, parsed.Y); err == nil {
 			err = dispatcher.config.Surface.Click(ctx, parsed.X, parsed.Y, button(parsed.Button))
+		}
+	case ClickNormalized:
+		if parsed.X < 0 || parsed.X > 1000 || parsed.Y < 0 || parsed.Y > 1000 {
+			err = fmt.Errorf("normalized coordinate (%d, %d) is outside the 0..1000 space", parsed.X, parsed.Y)
+		} else {
+			x := int(math.Round(float64(parsed.X) * float64(dispatcher.config.Target.Width-1) / 1000))
+			y := int(math.Round(float64(parsed.Y) * float64(dispatcher.config.Target.Height-1) / 1000))
+			err = dispatcher.config.Surface.Click(ctx, x, y, button(parsed.Button))
 		}
 	case ClickElement:
 		grounded, ok := dispatcher.config.Surface.(ElementSurface)
@@ -266,7 +284,7 @@ func button(value string) string {
 
 func outcomeFor(name string) string {
 	switch name {
-	case Click, DoubleClick:
+	case Click, ClickNormalized, DoubleClick:
 		return "clicked"
 	case Move:
 		return "moved"

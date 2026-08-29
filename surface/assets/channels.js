@@ -246,9 +246,12 @@ export class Channels {
     dot.style.top = `${(y / canvas.height) * 100}%`;
     card.stage.append(dot);
     card.marks.push(dot);
-    // Marks fade rather than accumulating: what matters is where the last few
-    // actions went, and a screenshot under two hundred dots shows nothing.
-    setTimeout(() => dot.remove(), 6000);
+    // Marks fade rather than accumulating, but remain for a complete
+    // multi-step interaction. A six-second lifetime let a slow tool turn erase
+    // the click before the following screen explanation reached the person.
+    // The hard cap below still prevents a long-running actor from covering the
+    // screenshot in dots.
+    setTimeout(() => dot.remove(), 30000);
     while (card.marks.length > 12) card.marks.shift()?.remove();
     return true;
   }

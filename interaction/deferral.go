@@ -35,6 +35,11 @@ type Waiting struct {
 	Observation bool `json:"observation"`
 	ToolResult  bool `json:"tool_result"`
 	Repair      bool `json:"repair"`
+	// AutonomousObservation says every observation in the batch came from an
+	// observer rather than the user. Such evidence may be examined while agent
+	// audio is playing: action can stay silent, and any speech it motivates is
+	// queued behind the current utterance by the speech plane.
+	AutonomousObservation bool `json:"autonomous_observation,omitempty"`
 	// Parallel marks a batch the loop may run alongside work in flight.
 	Parallel bool `json:"parallel"`
 	// Deliberation marks a batch whose work is background reasoning: the fast
@@ -59,13 +64,25 @@ type Waiting struct {
 
 // WaitingFrom reduces a committed batch to what a deferral policy may see.
 func WaitingFrom(batch eventloop.Batch, state session.Snapshot) Waiting {
+	autonomous := false
+	if batch.Contains(trajectory.KindObservation) {
+		autonomous = true
+		for _, item := range batch.Items {
+			if item.Kind == trajectory.KindObservation &&
+				trajectory.AuthorityOf(item) != trajectory.AuthorityObserver {
+				autonomous = false
+				break
+			}
+		}
+	}
 	return Waiting{
-		Duplex:       state,
-		Observation:  batch.Contains(trajectory.KindObservation),
-		ToolResult:   batch.Contains(trajectory.KindToolResult),
-		Repair:       batch.Contains(trajectory.KindRepair),
-		Parallel:     batch.Triage == eventloop.TriageParallel,
-		Deliberation: batch.Signalled(SignalEscalated) || batch.Contains(trajectory.KindToolResult),
+		Duplex:                state,
+		Observation:           batch.Contains(trajectory.KindObservation),
+		ToolResult:            batch.Contains(trajectory.KindToolResult),
+		Repair:                batch.Contains(trajectory.KindRepair),
+		AutonomousObservation: autonomous,
+		Parallel:              batch.Triage == eventloop.TriageParallel,
+		Deliberation:          batch.Signalled(SignalEscalated) || batch.Contains(trajectory.KindToolResult),
 	}
 }
 
@@ -134,6 +151,13 @@ func (policy duplexDeferral) Admit(waiting Waiting) (bool, string) {
 	}
 	if waiting.Duplex.UserSpeaking && !policy.options.AllowWhileUserSpeaking {
 		return false, "user is speaking"
+	}
+	// Watching the environment is not a bid for the conversational floor. A
+	// presentation can continue playing while a direct-vision actor examines a
+	// changed screen; if that observation calls for speech, the speech queue
+	// serializes it after the utterance already playing.
+	if waiting.Duplex.AgentSpeaking && waiting.AutonomousObservation {
+		return true, ""
 	}
 	if waiting.Duplex.AgentSpeaking && !policy.options.AllowWhileAgentSpeaking {
 		return false, "agent audio is reaching the user"

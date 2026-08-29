@@ -68,6 +68,11 @@ type Config struct {
 	// Request.AllowFastTools; otherwise no executable schemas are attached and
 	// any emitted call is downgraded to a proposal by the runner.
 	FastToolFilter func(continuation.ToolDefinition) bool
+	// SlowToolFilter narrows the executable catalog for the slow provider. Nil
+	// preserves the default that slow owns every tool. A multimodal binding can
+	// use it to keep visually grounded effectors on a direct-vision lane when
+	// its slow reasoner cannot see; prompt text is not an authority boundary.
+	SlowToolFilter func(continuation.ToolDefinition) bool
 	// VisualReflex is an optional, silent visual action role. It is separate
 	// from Fast so enabling vision never changes the voice model, its prompt,
 	// or its authority. The controller gives it a compact current-frame
@@ -101,9 +106,10 @@ type Engine struct {
 	reflex   *visualReflex
 	// promptMu guards the phase prompts, which change when a session's
 	// instruction does.
-	promptMu   sync.RWMutex
-	fastPrompt string
-	slowPrompt string
+	promptMu    sync.RWMutex
+	agentPrompt string
+	fastPrompt  string
+	slowPrompt  string
 }
 
 // New validates the provider arrangement and creates an engine.
@@ -202,8 +208,9 @@ func New(config Config) (*Engine, error) {
 	}
 	return &Engine{
 		config: config, runner: runner, reflex: reflex,
-		fastPrompt: Compose(config.AgentInstruction, config.FastInstruction),
-		slowPrompt: Compose(config.AgentInstruction, config.SlowInstruction),
+		agentPrompt: config.AgentInstruction,
+		fastPrompt:  Compose(config.AgentInstruction, config.FastInstruction),
+		slowPrompt:  Compose(config.AgentInstruction, config.SlowInstruction),
 	}, nil
 }
 
@@ -215,6 +222,32 @@ var ErrExternalFast = errors.New("the fast provider is external to this engine")
 // Request binds one continuation to the perception revision it answers.
 type Request struct {
 	SourceRevision uint64
+	// ToolResult says this continuation was opened by an authoritative action
+	// result. The slow lane may legitimately add no prose after consuming that
+	// result; the runtime still needs this typed cause so it can wake the voice
+	// to render the result already present in the canonical trajectory.
+	ToolResult bool
+	// VisualIntentID identifies the user utterance that armed a visual action.
+	// It is runtime control state, not prompt content. The action plane uses it
+	// to join decisions made from a live ASR partial, its committed final text,
+	// and later retained frames without suppressing a genuinely new request to
+	// revisit the same coordinate.
+	VisualIntentID string
+	// VisualTask is the current user task reconstructed across adjacent ASR
+	// fragments. The visual projection remains direct pixels plus compact typed
+	// state; this text prevents a recognizer-created tail such as "and begin
+	// presenting" from being treated as independent coordinate authority.
+	VisualTask string
+	// VisualUnstable is the recognizer's provisional tail for a live visual
+	// decision. It lets the direct-pixel actor distinguish a complete named
+	// target from an ASR prefix such as "over" that may become "Overview" on
+	// the next 200 ms micro-turn, without reducing the image to narration.
+	VisualUnstable string
+	// CompletedVisualActions is the number of successful bounded action chunks
+	// already carried out for this visual intent. It is supplied only on a
+	// fresh observer-frame replan, so it cannot authorize a second action from
+	// the stale image that selected the first one.
+	CompletedVisualActions int
 	// AllowFastTools opens the configured fast-tool allowlist for this one
 	// invocation. The binding sets it only for a committed observation (or a
 	// preparation that can be adopted only by that same observation), never
@@ -265,6 +298,12 @@ type Request struct {
 	// reasonable answers to "say something short"; neither is an answer to the
 	// question that was actually asked.
 	Because string
+	// ImmediateNonvisual is a high-confidence semantic clause that the
+	// interaction controller separated from a future visual condition. It is
+	// typed decomposition state, not generated screen narration: pixels remain
+	// on the visual actor path, while the voice learns exactly which independent
+	// transcript clause is due now.
+	ImmediateNonvisual string
 	// Observed is something the runtime noticed that nobody said - so far, a
 	// stretch of silence long enough to meet a policy that was waiting for
 	// one. It reaches the provider the same way a live utterance does, because
@@ -298,6 +337,11 @@ type Request struct {
 	// second animal after the point the agent spoke. So the fact is handed
 	// over and the judgement is left where it belongs.
 	Answered string
+	// InFlight names authoritative tool work that has started and has no result
+	// yet. It prevents another cognition lane from approximating or repeating
+	// the same request while preserving independent obligations in a composite
+	// turn.
+	InFlight []string
 }
 
 // Descriptors reports the configured providers, for evidence and health.
@@ -478,6 +522,27 @@ func Instruct(prompt string, request Request) string {
 	if answered := strings.TrimSpace(request.Answered); answered != "" {
 		prompt += "\n\n" + AnsweredInstruction + " \"" + answered + "\""
 	}
+	if len(request.InFlight) > 0 {
+		prompt += "\n\nWork already in flight: " + strings.Join(request.InFlight, ", ") +
+			". Do not repeat or approximate that work with a different tool or screen control. " +
+			"A separate explicit obligation in the latest request may still be handled."
+	}
+	if task := strings.TrimSpace(request.VisualTask); task != "" {
+		prompt += "\n\nCurrent user task across recognition fragments, oldest to newest: \"" + task +
+			"\". Later corrections override earlier directions. This reconstruction supplies intent only; ground every effect in the current images."
+	}
+	if unstable := strings.TrimSpace(request.VisualUnstable); unstable != "" {
+		prompt += "\n\nThe trailing recognition text \"" + unstable +
+			"\" is provisional ASR output. It may be an unfinished word. Never autocomplete it into a visible label or destination. " +
+			"It grants action authority only if the provisional words already exactly name the visible requested control; otherwise WAIT for the next micro-turn."
+	}
+	if request.CompletedVisualActions > 0 {
+		prompt += fmt.Sprintf(
+			"\n\nCompleted visual action chunks for this user request: %d. Each succeeded. Do not repeat or restart them; "+
+				"on this fresh frame, advance to the next explicitly requested control in the user's order.",
+			request.CompletedVisualActions,
+		)
+	}
 	if observed := strings.TrimSpace(request.Observed); observed != "" {
 		prompt += "\n\n" + ObservedInstruction + " " + observed
 	}
@@ -486,6 +551,11 @@ func Instruct(prompt string, request Request) string {
 	}
 	if reason := becauseInstruction(request.Because, request.Counting); reason != "" {
 		prompt += "\n\n" + reason
+	}
+	if immediate := strings.TrimSpace(request.ImmediateNonvisual); immediate != "" {
+		prompt += "\n\nThe interaction controller has separated the immediate nonvisual clause due now: \"" +
+			immediate + "\". Speak the actual content requested by that clause now. This turn is not future-only, so " +
+			WaitToken + " is not a valid response. Do not announce the monitor or the screen action."
 	}
 	if request.PendingRepair {
 		prompt += "\n\n" + RepairInstruction
@@ -540,6 +610,38 @@ func (engine *Engine) run(
 func (engine *Engine) PlaceholderForInterrupted(reason string) ([]trajectory.ToolPlaceholder, error) {
 	snapshot := engine.config.Store.Snapshot()
 	pending := trajectory.UnresolvedToolCalls(snapshot)
+	return engine.placeholderCalls(snapshot, pending, reason)
+}
+
+// PlaceholderCalls closes only the named committed calls that did not cross
+// the action boundary. Visual target validation uses it after rejecting a
+// model-authored coordinate: leaving that call unresolved would make a later,
+// correctly grounded retry at the same coordinate look already in flight.
+// Selecting by call ID avoids disturbing independent slow/background work.
+func (engine *Engine) PlaceholderCalls(
+	calls []trajectory.ToolCall, reason string,
+) ([]trajectory.ToolPlaceholder, error) {
+	if len(calls) == 0 {
+		return nil, nil
+	}
+	wanted := make(map[string]struct{}, len(calls))
+	for _, call := range calls {
+		if id := strings.TrimSpace(call.CallID); id != "" {
+			wanted[id] = struct{}{}
+		}
+	}
+	snapshot := engine.config.Store.Snapshot()
+	pending := trajectory.UnresolvedToolCalls(snapshot)
+	pending = slices.DeleteFunc(pending, func(call trajectory.PendingToolCall) bool {
+		_, keep := wanted[call.Call.CallID]
+		return !keep
+	})
+	return engine.placeholderCalls(snapshot, pending, reason)
+}
+
+func (engine *Engine) placeholderCalls(
+	snapshot trajectory.Snapshot, pending []trajectory.PendingToolCall, reason string,
+) ([]trajectory.ToolPlaceholder, error) {
 	if len(pending) == 0 {
 		return nil, nil
 	}
@@ -615,9 +717,13 @@ func (engine *Engine) executableTools() []continuation.ToolDefinition {
 	if engine.config.Catalog == nil {
 		return nil
 	}
-	tools := engine.config.Catalog.Tools()
-	for index := range tools {
-		tools[index].Parameters = slices.Clone(tools[index].Parameters)
+	var tools []continuation.ToolDefinition
+	for _, tool := range engine.config.Catalog.Tools() {
+		if engine.config.SlowToolFilter != nil && !engine.config.SlowToolFilter(tool) {
+			continue
+		}
+		tool.Parameters = slices.Clone(tool.Parameters)
+		tools = append(tools, tool)
 	}
 	return tools
 }
@@ -681,6 +787,8 @@ func becauseInstruction(act string, counting bool) string {
 		// over the announcement. The act is the answer; saying it as well
 		// spends a turn describing what was already done.
 		return "Nothing you write on this turn is heard by anybody. Do whatever the situation actually calls for - call a tool if there is one that applies, and nothing if there is not - and reply with " + WaitToken + ". Whoever is talking is still talking, and words aimed at them would be wasted. At a recorded menu, a key applies only when the current words contain both its digit and an option label matching the user's earlier goal. A greeting, a digit alone, or a different option means call no tool and reply " + WaitToken + "; never press the first key merely because it was named first."
+	case "resume nonvisual work after silent visual branch":
+		return "A silent visual worker has completed or deferred its bounded screen-action branch. Separate the latest request clause by clause, using the deployment instruction as authoritative when speech recognition has removed commas or sentence boundaries. An imperative outside a future condition is due now even when a later clause begins with if, when, or once: in 'Present the overview, and if an alert appears acknowledge it', begin the actual overview now; only acknowledging the alert is conditional. A deployment instruction to present while watching or monitoring establishes exactly that decomposition even if the transcript arrives as 'present the overview if an alert appears acknowledge it'. Handle the independent nonvisual obligation now while the visual worker continues monitoring. Speak its actual content, not a promise to do it and not a statement about monitoring. Do not repeat, extend, or describe the screen action. If every requested act is inside the future condition, or the request only asked for silent monitoring or a silent screen action, reply with " + WaitToken + " and nothing else. Never announce that you are monitoring, waiting, or about to click."
 	case "interrupt":
 		return "You are cutting into their sentence because what they are saying needs correcting now, and waiting until they finish would make the correction useless. Say the correction itself - the right date, the right figure, the right name - not that you are listening and not a question about it."
 	}
@@ -697,6 +805,17 @@ func (engine *Engine) prompt(phase trajectory.Phase) string {
 	return engine.fastPrompt
 }
 
+// visualPrompt composes the live deployment/session contract with the narrow
+// visual role. The visual actor owns the pixels and the effect, so omitting the
+// session contract here gives the least informed cognition lane the final
+// authority. Session instructions arrive after construction and are updated
+// under the same lock as the voice and slow prompts.
+func (engine *Engine) visualPrompt(role string) string {
+	engine.promptMu.RLock()
+	defer engine.promptMu.RUnlock()
+	return Compose(engine.agentPrompt, role)
+}
+
 // SetAgentInstruction replaces the deployment's own instruction.
 //
 // A session's instruction arrives after the session exists - every client
@@ -710,6 +829,7 @@ func (engine *Engine) prompt(phase trajectory.Phase) string {
 func (engine *Engine) SetAgentInstruction(instruction string) {
 	engine.promptMu.Lock()
 	defer engine.promptMu.Unlock()
+	engine.agentPrompt = instruction
 	engine.fastPrompt = Compose(instruction, engine.config.FastInstruction)
 	engine.slowPrompt = Compose(instruction, engine.config.SlowInstruction)
 }

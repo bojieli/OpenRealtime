@@ -207,6 +207,16 @@ type Observer interface {
 	Reset()
 }
 
+// RefreshableObserver can be asked to admit its next frame even when ordinary
+// change detection would collapse it. Successful embodied actions use this
+// boundary: the next observation is the feedback for one action chunk, and an
+// unchanged screen is itself meaningful evidence that the effect did not
+// produce a new visual state. Only one frame is forced; adaptive observation
+// resumes immediately afterward.
+type RefreshableObserver interface {
+	RefreshNext()
+}
+
 // Narrator turns admitted frames into the persistent text that survives after
 // the images themselves are pruned.
 //

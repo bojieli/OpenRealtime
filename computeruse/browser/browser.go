@@ -409,11 +409,11 @@ func (surface *Surface) CaptureMarked(ctx context.Context) ([]byte, []MarkedElem
 	    marker.dataset.openrealtimeMarkerOverlay = 'true';
 	    marker.textContent = id;
 	    Object.assign(marker.style, {
-	      position: 'fixed', left: Math.max(0, rect.left - 10) + 'px',
-	      top: Math.max(0, rect.top - 10) + 'px', zIndex: '2147483647',
-	      minWidth: '20px', height: '20px', padding: '0 3px', boxSizing: 'border-box',
-	      border: '2px solid white', borderRadius: '10px', background: '#d00000',
-	      color: 'white', font: 'bold 12px/16px sans-serif', textAlign: 'center',
+	      position: 'fixed', left: Math.max(0, rect.left - 15) + 'px',
+	      top: Math.max(0, rect.top - 15) + 'px', zIndex: '2147483647',
+	      minWidth: '30px', height: '30px', padding: '0 4px', boxSizing: 'border-box',
+	      border: '3px solid white', borderRadius: '15px', background: '#d00000',
+	      color: 'white', font: 'bold 17px/24px sans-serif', textAlign: 'center',
 	      pointerEvents: 'none', boxShadow: '0 1px 3px rgba(0,0,0,.7)'
 	    });
 	    document.documentElement.appendChild(marker);

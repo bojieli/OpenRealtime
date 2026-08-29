@@ -59,6 +59,23 @@ func TestAPhaseThatIsNeverHeardIsNotToldToSpeak(t *testing.T) {
 	}
 }
 
+func TestImmediateCompositeClauseOverridesFutureOnlySilence(t *testing.T) {
+	prompt := cognition.Instruct("", cognition.Request{
+		Because:            "resume nonvisual work after silent visual branch",
+		ImmediateNonvisual: "present the launch overview",
+	})
+	for _, required := range []string{
+		"immediate nonvisual clause due now",
+		"present the launch overview",
+		cognition.WaitToken + " is not a valid response",
+		"Do not announce the monitor",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("immediate composite instruction omitted %q:\n%s", required, prompt)
+		}
+	}
+}
+
 // TestAnUnknownAnswerDoesNotTurnAQuestionIntoAnUnfinishedSentence guards the
 // distinction the fast voice has to make before it chooses silence. The model
 // used to return <wait> for a complete question about a memory it did not

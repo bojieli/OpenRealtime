@@ -126,6 +126,17 @@ func TestAnObservationIsAnsweredNowAndExaminedAnyway(t *testing.T) {
 	}
 }
 
+func TestCompositeVisualWaitResumesVoiceAndReasoning(t *testing.T) {
+	rollout := interaction.NewFastThenSlowRollout(interaction.RolloutOptions{})
+	plan := rollout.Plan(interaction.RolloutInput{Cause: interaction.Cause{CompositeResume: true}})
+	if len(plan) != 2 || plan[0].Kind != interaction.StepFast || plan[1].Kind != interaction.StepSlow {
+		t.Fatalf("a composite visual wait must preserve voice and reasoning work: %+v", plan)
+	}
+	if plan[0].Reason != interaction.ReasonCompositeResume {
+		t.Fatalf("composite resume lost its typed reason: %+v", plan[0])
+	}
+}
+
 func TestToolResultProgressIsARolloutLever(t *testing.T) {
 	quiet := interaction.NewFastThenSlowRollout(interaction.RolloutOptions{})
 	plan := quiet.Plan(interaction.RolloutInput{Cause: interaction.Cause{ToolResult: true}})
@@ -162,6 +173,23 @@ func TestParallelBranchAnswersWithoutStartingSlowWork(t *testing.T) {
 	plan := rollout.Plan(interaction.RolloutInput{Cause: interaction.Cause{Observation: true, Parallel: true}})
 	if len(plan) != 1 || plan[0].Kind != interaction.StepFast {
 		t.Fatalf("a parallel branch answers and stops: %+v", plan)
+	}
+}
+
+func TestAutonomousObservationRunsWhileAgentAudioPlays(t *testing.T) {
+	policy := interaction.NewDuplexDeferral(interaction.DeferralOptions{})
+	admitted, reason := policy.Admit(interaction.Waiting{
+		Observation: true, AutonomousObservation: true,
+		Duplex: session.Snapshot{AgentSpeaking: true},
+	})
+	if !admitted {
+		t.Fatalf("environment monitoring waited behind agent playout: %s", reason)
+	}
+	admitted, _ = policy.Admit(interaction.Waiting{
+		Observation: true, Duplex: session.Snapshot{AgentSpeaking: true},
+	})
+	if admitted {
+		t.Fatal("an ordinary user turn bypassed the configured playout deferral")
 	}
 }
 

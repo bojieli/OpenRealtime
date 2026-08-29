@@ -73,6 +73,21 @@ func TestPinboardLinesCarryAge(t *testing.T) {
 	}
 }
 
+func TestPinboardLinesExceptRetainsOnlyOtherTurns(t *testing.T) {
+	board := &interaction.Pinboard{}
+	board.SetForTurn(1, []interaction.StandingInstruction{{
+		Text: "count each animal", Scope: interaction.ScopeConversation, SetNS: uint64(time.Second),
+	}})
+	board.SetForTurn(2, []interaction.StandingInstruction{{
+		Text: "acknowledge an alert if it appears", Scope: interaction.ScopeConversation, SetNS: uint64(2 * time.Second),
+	}})
+	lines := board.LinesExcept(uint64(3*time.Second), 2)
+	if len(lines) != 1 || !strings.Contains(lines[0], "count each animal") ||
+		strings.Contains(lines[0], "acknowledge") {
+		t.Fatalf("LinesExcept current turn = %v", lines)
+	}
+}
+
 // TestAPinnedDelayIsShownToWhoeverDecides is the regression for an agent that
 // checked in at eight seconds when it had been asked to wait fifteen.
 // Extraction lifts "after 15s" out of the text and into a number, which is

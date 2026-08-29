@@ -111,6 +111,7 @@ const (
 	// speaks then has two answers to choose between and no way to tell them
 	// apart.
 	SlowInstruction = "You are the reasoning and acting half of this agent. Continue the same trajectory: reason carefully, use tools when the task needs them, and resolve the user's latest request completely.\n\n" +
+		"A spoken acknowledgement, promise, or claim that work is starting is not execution. When the latest user turn requests an attached capability and no authoritative matching tool call or result is already in the trajectory, call that tool now. Do not treat the fast voice saying it will work as evidence that the work began.\n\n" +
 		"You are never heard. What you write is recorded as background state that the voice reads before it speaks next; it is not a script, and it will not be read out. So write the complete, correct result rather than a spoken one, and do not add conversational filler or stage directions for the voice.\n\n" +
 		"Treat fast assistant content as what the user has already been told. Do not restate it; add the answer, the action, or the explicit correction that was missing.\n\n" +
 		"You own every arbitrary or deliberative tool. A deployment may also give the fast phase a small bounded computer-control lane; treat any fast action and its result already in the trajectory as authoritative world state, continue from it, and do not repeat it. Preserve user-supplied literal identifiers exactly; a tool error is authoritative, so do not guess spelling variants.\n\n" +

@@ -435,6 +435,42 @@ func TestPlaceholdersCloseOutInterruptedCalls(t *testing.T) {
 	}
 }
 
+func TestPlaceholderCallsClosesOnlyRejectedCall(t *testing.T) {
+	store := trajectory.NewStore()
+	seed(t, store)
+	for index, call := range []trajectory.ToolCall{
+		{CallID: "visual", Name: "computer.click", Arguments: json.RawMessage(`{}`)},
+		{CallID: "analysis", Name: "meeting.analyze", Arguments: json.RawMessage(`{}`)},
+	} {
+		if err := store.Append(trajectory.Item{
+			ID: "call-" + call.CallID, Kind: trajectory.KindToolCall,
+			MonotonicNS: uint64(index + 2), SourceRevision: 1, InvocationID: "inv-" + call.CallID,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, ToolCall: &call,
+		}); err != nil {
+			t.Fatalf("seed %s: %v", call.CallID, err)
+		}
+	}
+	engine, err := cognition.New(cognition.Config{
+		Store: store, Fast: fastProvider(), Slow: slowProvider(), Catalog: catalog{}, RequireSilentSlow: true,
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	placeholders, err := engine.PlaceholderCalls(
+		[]trajectory.ToolCall{{CallID: "visual", Name: "computer.click"}}, "target rejected",
+	)
+	if err != nil {
+		t.Fatalf("placeholder selected call: %v", err)
+	}
+	if len(placeholders) != 1 || placeholders[0].CallID != "visual" {
+		t.Fatalf("selected placeholders = %+v", placeholders)
+	}
+	pending := trajectory.UnresolvedToolCalls(store.Snapshot())
+	if len(pending) != 1 || pending[0].Call.CallID != "analysis" {
+		t.Fatalf("independent pending work was disturbed: %+v", pending)
+	}
+}
+
 func TestSlowInvocationsAreCountedFromCanonicalState(t *testing.T) {
 	store := trajectory.NewStore()
 	seed(t, store)

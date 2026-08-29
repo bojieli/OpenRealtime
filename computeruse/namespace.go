@@ -28,21 +28,24 @@ const Prefix = "computer."
 
 // Action names.
 const (
-	Click        = "computer.click"
-	ClickElement = "computer.click_element"
-	DoubleClick  = "computer.double_click"
-	Move         = "computer.move"
-	Drag         = "computer.drag"
-	Type         = "computer.type"
-	Key          = "computer.key"
-	Scroll       = "computer.scroll"
-	Screenshot   = "computer.screenshot"
-	Wait         = "computer.wait"
+	Click = "computer.click"
+	// ClickNormalized uses the 0..1000 coordinate convention emitted by many
+	// vision-language action models, independent of the captured frame size.
+	ClickNormalized = "computer.click_normalized"
+	ClickElement    = "computer.click_element"
+	DoubleClick     = "computer.double_click"
+	Move            = "computer.move"
+	Drag            = "computer.drag"
+	Type            = "computer.type"
+	Key             = "computer.key"
+	Scroll          = "computer.scroll"
+	Screenshot      = "computer.screenshot"
+	Wait            = "computer.wait"
 )
 
 // Names lists the vocabulary in specification order.
 func Names() []string {
-	return []string{Click, ClickElement, DoubleClick, Move, Drag, Type, Key, Scroll, Screenshot, Wait}
+	return []string{Click, ClickNormalized, ClickElement, DoubleClick, Move, Drag, Type, Key, Scroll, Screenshot, Wait}
 }
 
 // IsAction reports whether a tool name is in the namespace.
@@ -148,11 +151,23 @@ func definitions(sourceProperty string, width, height int) []Definition {
 			DefaultConfirm: action.ConfirmPolicy,
 		},
 		{
+			Name: ClickNormalized,
+			Description: "Click a point on a declared video source using normalized vision-model coordinates: " +
+				"0 is the left/top edge and 1000 is the right/bottom edge, independent of frame size.",
+			Parameters: object(
+				sourceProperty+","+
+					coordinate("x", "normalized horizontal coordinate: 0 left, 1000 right", 1001)+","+
+					coordinate("y", "normalized vertical coordinate: 0 top, 1000 bottom", 1001)+","+
+					`"button":{"type":"string","enum":["left","right","middle"],"description":"mouse button, left by default"}`,
+				`"source","x","y"`),
+			DefaultConfirm: action.ConfirmPolicy,
+		},
+		{
 			Name: ClickElement,
 			Description: "Click an element by the visible set-of-mark label on a declared video source. " +
 				"Use this instead of pixel coordinates only when the current frame displays numbered marks.",
 			Parameters: object(
-				sourceProperty+`,"element_id":{"type":"string","minLength":1,"description":"visible mark label exactly as shown in the current frame"}`,
+				sourceProperty+`,"element_id":{"type":"string","pattern":"^[0-9]+$","description":"red numeric mark label exactly as shown in the current frame; never use button text"}`,
 				`"source","element_id"`),
 			DefaultConfirm: action.ConfirmPolicy,
 		},

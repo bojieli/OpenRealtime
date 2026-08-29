@@ -34,12 +34,24 @@ const (
 	// result nobody has spoken from. What it starts is a spoken turn, so it
 	// passes the gate exactly as any other spoken turn does.
 	SignalBackgroundResult = "cognition.background_result"
+	// SignalCompositeResume says a silent visual worker completed or deferred
+	// its bounded branch, while the utterance that sent it there may still
+	// contain an independent obligation for the voice or reasoner. It re-enters
+	// through the normal rollout rather than speaking from the silent worker or
+	// continuing from a prefix that a completed action has advanced.
+	SignalCompositeResume = "cognition.composite_resume"
 )
 
 // ReasonBackgroundResult names the fast step that speaks what the reasoner
 // left behind. A binding reads it to know that this turn ends the chain rather
 // than opening another one.
 const ReasonBackgroundResult = "the background reasoner finished"
+
+// ReasonCompositeResume names the ordinary spoken/reasoning turn that
+// preserves nonvisual work after a silent visual branch. Cognition uses the
+// reason to separate "present this while monitoring" from "monitor silently"
+// without turning either case into a keyword rule in the runtime.
+const ReasonCompositeResume = "resume nonvisual work after silent visual branch"
 
 // ReasonToolFailure names the fast step that explains a failed action. A
 // binding reads it to keep that explanation terminal: an unfinished sentence
@@ -94,6 +106,11 @@ type Cause struct {
 	// BackgroundResult is set when a slow continuation finished and left a
 	// written result nobody has spoken from yet.
 	BackgroundResult bool `json:"background_result"`
+	// CompositeResume is set when a bounded silent visual worker returned WAIT
+	// or dispatched one action. The visual condition remains monitored by later
+	// observations; this cause preserves any separate speech, reasoning, or tool
+	// obligation in the same user request.
+	CompositeResume bool `json:"composite_resume"`
 	// SlowInvocations is how many slow continuations this turn has already
 	// run, so a rollout can stop rather than loop.
 	SlowInvocations int `json:"slow_invocations"`
@@ -172,6 +189,8 @@ func (rollout fastThenSlowRollout) Plan(input RolloutInput) []Step {
 	switch {
 	case input.Cause.Observation:
 		steps = append(steps, Step{Kind: StepFast, Reason: "answer now"})
+	case input.Cause.CompositeResume:
+		steps = append(steps, Step{Kind: StepFast, Reason: ReasonCompositeResume})
 	case input.Cause.BackgroundResult:
 		steps = append(steps, Step{Kind: StepFast, Reason: ReasonBackgroundResult})
 	case input.Cause.ToolError:
@@ -200,7 +219,7 @@ func (rollout fastThenSlowRollout) Plan(input RolloutInput) []Step {
 	// looking - a slow continuation with no tool call and nothing to add
 	// returns silently, so a turn that needed nothing costs a call and says
 	// nothing. That is the right price for not losing the ones that did.
-	if input.Cause.Observation || input.Cause.Escalated ||
+	if input.Cause.Observation || input.Cause.CompositeResume || input.Cause.Escalated ||
 		input.Cause.ToolResult || input.Cause.PendingRepair {
 		steps = append(steps, Step{Kind: StepSlow, Reason: "reason and act"})
 	}
@@ -219,8 +238,12 @@ func (fastOnlyRollout) Plan(input RolloutInput) []Step {
 	if input.Cause.ToolError {
 		return []Step{{Kind: StepFast, Reason: ReasonToolFailure}}
 	}
-	if input.Cause.Observation {
-		return []Step{{Kind: StepFast, Reason: "answer now"}}
+	if input.Cause.Observation || input.Cause.CompositeResume {
+		reason := "answer now"
+		if input.Cause.CompositeResume {
+			reason = ReasonCompositeResume
+		}
+		return []Step{{Kind: StepFast, Reason: reason}}
 	}
 	return nil
 }
@@ -257,7 +280,8 @@ func (rollout slowOnlyRollout) Plan(input RolloutInput) []Step {
 	if input.Cause.SlowInvocations >= rollout.options.MaxSlowInvocations {
 		return nil
 	}
-	if input.Cause.Observation || input.Cause.ToolResult || input.Cause.PendingRepair {
+	if input.Cause.Observation || input.Cause.CompositeResume ||
+		input.Cause.ToolResult || input.Cause.PendingRepair {
 		return []Step{{Kind: StepSlow, Reason: "reason and act"}}
 	}
 	return nil
