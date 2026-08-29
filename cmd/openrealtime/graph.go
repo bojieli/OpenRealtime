@@ -12,9 +12,11 @@ import (
 	"github.com/bojieli/OpenRealtime/element/codec"
 	"github.com/bojieli/OpenRealtime/elements"
 	graphcompiler "github.com/bojieli/OpenRealtime/graph"
+	graphdeployment "github.com/bojieli/OpenRealtime/graph/deployment"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/manifest"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
+	graphsecret "github.com/bojieli/OpenRealtime/graph/secret"
 	"github.com/bojieli/OpenRealtime/graph/syntax"
 	graphvalidate "github.com/bojieli/OpenRealtime/graph/validate"
 	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
@@ -154,6 +156,8 @@ func runGraphCompile(
 	warningsAsErrors := flags.Bool("warnings-as-errors", false, "fail when the selected lint profile reports a warning")
 	renderFormat := flags.String("format", "mermaid", "render output: mermaid or dot")
 	valuesPath := flags.String("values", "", "separate strict YAML/JSON element-values artifact")
+	deploymentPath := flags.String("deployment", "", "separate strict YAML/JSON deployment-binding artifact")
+	secretsPath := flags.String("secrets", "", "separate strict YAML/JSON secret-reference catalog (values are resolved only at mount)")
 	var descriptorPaths stringFlags
 	flags.Var(&descriptorPaths, "descriptor", "element descriptor bundle (.json/.yaml); repeatable")
 	if err := flags.Parse(arguments); err != nil {
@@ -171,6 +175,9 @@ func runGraphCompile(
 	}
 	if !emitIR && !render && *output != "" {
 		return errors.New("-out is valid only for graph compile or graph render")
+	}
+	if *secretsPath != "" && *deploymentPath == "" {
+		return errors.New("-secrets requires -deployment so reference coverage can be checked")
 	}
 	file, err := loadGraphTopology(graphPath)
 	if err != nil {
@@ -208,6 +215,26 @@ func runGraphCompile(
 		bound, bindErr := graphvalues.Bind(compiled.Graph, document)
 		if bindErr != nil {
 			return bindErr
+		}
+		compiled.Graph = bound.Graph
+	}
+	if *deploymentPath != "" {
+		document, loadErr := loadGraphDeployment(*deploymentPath)
+		if loadErr != nil {
+			return loadErr
+		}
+		bound, bindErr := graphdeployment.Bind(compiled.Graph, document)
+		if bindErr != nil {
+			return bindErr
+		}
+		if *secretsPath != "" {
+			catalog, secretErr := loadGraphSecrets(*secretsPath)
+			if secretErr != nil {
+				return secretErr
+			}
+			if secretErr := graphdeployment.ValidateSecretCatalog(bound.Nodes, catalog); secretErr != nil {
+				return secretErr
+			}
 		}
 		compiled.Graph = bound.Graph
 	}
@@ -284,6 +311,36 @@ func loadGraphValues(path string) (graphvalues.Document, error) {
 		return graphvalues.ParseJSON(path, body)
 	default:
 		return graphvalues.Document{}, fmt.Errorf("graph values %s must use .yaml, .yml, or .json", path)
+	}
+}
+
+func loadGraphDeployment(path string) (graphdeployment.Document, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return graphdeployment.Document{}, fmt.Errorf("read graph deployment %s: %w", path, err)
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml":
+		return graphdeployment.ParseYAML(path, body)
+	case ".json":
+		return graphdeployment.ParseJSON(path, body)
+	default:
+		return graphdeployment.Document{}, fmt.Errorf("graph deployment %s must use .yaml, .yml, or .json", path)
+	}
+}
+
+func loadGraphSecrets(path string) (graphsecret.Document, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return graphsecret.Document{}, fmt.Errorf("read graph secrets %s: %w", path, err)
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml":
+		return graphsecret.ParseYAML(path, body)
+	case ".json":
+		return graphsecret.ParseJSON(path, body)
+	default:
+		return graphsecret.Document{}, fmt.Errorf("graph secrets %s must use .yaml, .yml, or .json", path)
 	}
 }
 

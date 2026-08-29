@@ -44,8 +44,9 @@ func TestGraphDiffReportsEverySemanticLayerDeterministically(t *testing.T) {
 	}
 	source := first.Nodes[2]
 	for _, field := range []string{
-		"element", "implementation", "config_reference", "config_digest", "reaction",
-		"state_schema", "config_schema", "dependencies", "effects",
+		"element", "implementation", "config_reference", "config_digest",
+		"deployment_reference", "deployment_digest", "reaction", "state_schema",
+		"config_schema", "dependencies", "effects",
 	} {
 		if !slices.Contains(source.Fields, field) {
 			t.Fatalf("source node diff omitted %q: %+v", field, source)
@@ -53,7 +54,8 @@ func TestGraphDiffReportsEverySemanticLayerDeterministically(t *testing.T) {
 	}
 	if source.Before == nil || source.After == nil ||
 		source.After.Implementation != "go://test/source/v2" ||
-		source.After.ConfigReference != "values://source" {
+		source.After.ConfigReference != "values://source" ||
+		source.After.DeploymentReference != "deployment://diff/source" {
 		t.Fatalf("runtime/config selections are not inspectable: %+v", source)
 	}
 	if got := changeKeys(first.Ports, func(change inspect.PortChange) string {
@@ -172,6 +174,8 @@ func graphDiffFixture(t *testing.T) (ir.Graph, ir.Graph) {
 		node.Implementation = "go://test/source/v2"
 		node.ConfigReference = "values://source"
 		node.ConfigDigest = "sha256:" + strings.Repeat("8", 64)
+		node.DeploymentReference = "deployment://diff/source"
+		node.DeploymentDigest = "sha256:" + strings.Repeat("9", 64)
 		node.StateSchema = "state://source/v2"
 		node.ConfigSchema = "config://source/v2"
 		node.Dependencies = []element.Dependency{{Name: "clock.monotonic"}}

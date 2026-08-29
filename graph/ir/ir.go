@@ -70,18 +70,20 @@ type Graph struct {
 // references are non-secret identities; actual values live in separate
 // artifacts and are schema-checked before mount.
 type Node struct {
-	ID              string               `json:"id" yaml:"id"`
-	Element         element.Identity     `json:"element" yaml:"element"`
-	Implementation  string               `json:"implementation,omitempty" yaml:"implementation,omitempty"`
-	ConfigReference string               `json:"config_reference,omitempty" yaml:"config_reference,omitempty"`
-	ConfigDigest    string               `json:"config_digest,omitempty" yaml:"config_digest,omitempty"`
-	Ports           []Port               `json:"ports" yaml:"ports"`
-	Reaction        element.Reaction     `json:"reaction,omitempty" yaml:"reaction,omitempty"`
-	StateSchema     string               `json:"state_schema,omitempty" yaml:"state_schema,omitempty"`
-	ConfigSchema    string               `json:"config_schema,omitempty" yaml:"config_schema,omitempty"`
-	Dependencies    []element.Dependency `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
-	Effects         []element.Effect     `json:"effects,omitempty" yaml:"effects,omitempty"`
-	Source          *Source              `json:"source,omitempty" yaml:"source,omitempty"`
+	ID                  string               `json:"id" yaml:"id"`
+	Element             element.Identity     `json:"element" yaml:"element"`
+	Implementation      string               `json:"implementation,omitempty" yaml:"implementation,omitempty"`
+	ConfigReference     string               `json:"config_reference,omitempty" yaml:"config_reference,omitempty"`
+	ConfigDigest        string               `json:"config_digest,omitempty" yaml:"config_digest,omitempty"`
+	DeploymentReference string               `json:"deployment_reference,omitempty" yaml:"deployment_reference,omitempty"`
+	DeploymentDigest    string               `json:"deployment_digest,omitempty" yaml:"deployment_digest,omitempty"`
+	Ports               []Port               `json:"ports" yaml:"ports"`
+	Reaction            element.Reaction     `json:"reaction,omitempty" yaml:"reaction,omitempty"`
+	StateSchema         string               `json:"state_schema,omitempty" yaml:"state_schema,omitempty"`
+	ConfigSchema        string               `json:"config_schema,omitempty" yaml:"config_schema,omitempty"`
+	Dependencies        []element.Dependency `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
+	Effects             []element.Effect     `json:"effects,omitempty" yaml:"effects,omitempty"`
+	Source              *Source              `json:"source,omitempty" yaml:"source,omitempty"`
 }
 
 // Port is a resolved descriptor port group. A variadic port has one stable
@@ -377,6 +379,24 @@ func (graph Graph) validateStructure() error {
 			}
 			if _, err := hex.DecodeString(strings.TrimPrefix(node.ConfigDigest, "sha256:")); err != nil {
 				return fmt.Errorf("graph %s node %s has invalid config digest: %w", graph.ID, node.ID, err)
+			}
+		}
+		if (node.DeploymentReference == "") != (node.DeploymentDigest == "") {
+			return fmt.Errorf("graph %s node %s deployment reference and digest must be present together",
+				graph.ID, node.ID)
+		}
+		if node.DeploymentDigest != "" {
+			if strings.TrimSpace(node.DeploymentReference) != node.DeploymentReference {
+				return fmt.Errorf("graph %s node %s deployment reference has surrounding whitespace",
+					graph.ID, node.ID)
+			}
+			if !strings.HasPrefix(node.DeploymentDigest, "sha256:") ||
+				len(node.DeploymentDigest) != len("sha256:")+sha256.Size*2 {
+				return fmt.Errorf("graph %s node %s has invalid deployment digest %q",
+					graph.ID, node.ID, node.DeploymentDigest)
+			}
+			if _, err := hex.DecodeString(strings.TrimPrefix(node.DeploymentDigest, "sha256:")); err != nil {
+				return fmt.Errorf("graph %s node %s has invalid deployment digest: %w", graph.ID, node.ID, err)
 			}
 		}
 		nodes[node.ID] = node

@@ -41,9 +41,26 @@ func TestGeneratedViewsAttestExactGraphAndSemantics(t *testing.T) {
 
 func TestModelClassifiesTriggerInterruptAndState(t *testing.T) {
 	graph := fixture(t)
+	graph.Nodes[0].Implementation = "go://test/source/v1"
+	graph.Nodes[0].ConfigReference = "values://inspect/source"
+	graph.Nodes[0].ConfigDigest = "sha256:" + strings.Repeat("7", 64)
+	graph.Nodes[0].DeploymentReference = "deployment://inspect/source"
+	graph.Nodes[0].DeploymentDigest = "sha256:" + strings.Repeat("8", 64)
+	var err error
+	graph, err = ir.Freeze(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
 	model, err := inspect.Build(graph)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if model.Nodes[0].Implementation != "go://test/source/v1" ||
+		model.Nodes[0].ConfigReference != "values://inspect/source" ||
+		model.Nodes[0].ConfigDigest != "sha256:"+strings.Repeat("7", 64) ||
+		model.Nodes[0].DeploymentReference != "deployment://inspect/source" ||
+		model.Nodes[0].DeploymentDigest != "sha256:"+strings.Repeat("8", 64) {
+		t.Fatalf("inspection model omitted node selection identity: %+v", model.Nodes[0])
 	}
 	roles := map[string]bool{}
 	for _, node := range model.Nodes {

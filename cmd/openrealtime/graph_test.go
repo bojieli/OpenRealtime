@@ -19,6 +19,8 @@ func TestGraphCommandUpdateCheckCompileAndRender(t *testing.T) {
 	lockPath := filepath.Join(directory, "openrealtime.lock")
 	irPath := filepath.Join(directory, "agent.ir.json")
 	valuesPath := filepath.Join(directory, "agent.values.yaml")
+	deploymentPath := filepath.Join(directory, "agent.deployment.yaml")
+	secretsPath := filepath.Join(directory, "agent.secrets.yaml")
 	if err := os.WriteFile(graphPath, []byte(`graph agent {
     test.Source :: source;
     test.Sink :: sink;
@@ -42,6 +44,26 @@ nodes:
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(deploymentPath, []byte(`apiVersion: openrealtime.ai/deployment/v1alpha1
+graph: agent
+nodes:
+  source:
+    implementation: test/source-v1
+    placement: local
+    secrets:
+      token: secret://test/source-token
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secretsPath, []byte(`apiVersion: openrealtime.ai/secrets/v1alpha1
+catalog: agent
+secrets:
+  secret://test/source-token:
+    provider: environment
+    locator: TEST_SOURCE_TOKEN
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	var stdout, stderr bytes.Buffer
 	if err := runGraph([]string{"update", "-descriptor", descriptorPath, "-lock", lockPath, graphPath}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
@@ -50,14 +72,14 @@ nodes:
 		t.Fatalf("update output = %q", stdout.String())
 	}
 	stdout.Reset()
-	if err := runGraph([]string{"check", "-descriptor", descriptorPath, "-lock", lockPath, "-values", valuesPath, "-profile", "core", graphPath}, &stdout, &stderr); err != nil {
+	if err := runGraph([]string{"check", "-descriptor", descriptorPath, "-lock", lockPath, "-values", valuesPath, "-deployment", deploymentPath, "-secrets", secretsPath, "-profile", "core", graphPath}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stdout.String(), "sha256:") {
 		t.Fatalf("check output = %q", stdout.String())
 	}
 	stdout.Reset()
-	if err := runGraph([]string{"compile", "-descriptor", descriptorPath, "-lock", lockPath, "-values", valuesPath, "-profile", "core", "-out", irPath, graphPath}, &stdout, &stderr); err != nil {
+	if err := runGraph([]string{"compile", "-descriptor", descriptorPath, "-lock", lockPath, "-values", valuesPath, "-deployment", deploymentPath, "-secrets", secretsPath, "-profile", "core", "-out", irPath, graphPath}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
 	irSource, err := os.ReadFile(irPath)
@@ -71,8 +93,12 @@ nodes:
 	if compiled.Nodes[0].ConfigDigest == "" || compiled.Nodes[0].ConfigReference == "" {
 		t.Fatalf("compiled values identity is missing: %+v", compiled.Nodes[0])
 	}
+	if compiled.Nodes[0].Implementation == "" || compiled.Nodes[0].DeploymentDigest == "" ||
+		compiled.Nodes[0].DeploymentReference == "" {
+		t.Fatalf("compiled deployment identity is missing: %+v", compiled.Nodes[0])
+	}
 	stdout.Reset()
-	if err := runGraph([]string{"render", "-descriptor", descriptorPath, "-lock", lockPath, "-values", valuesPath, "-profile", "core", graphPath}, &stdout, &stderr); err != nil {
+	if err := runGraph([]string{"render", "-descriptor", descriptorPath, "-lock", lockPath, "-values", valuesPath, "-deployment", deploymentPath, "-secrets", secretsPath, "-profile", "core", graphPath}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stdout.String(), compiled.Fingerprint) || !strings.Contains(stdout.String(), "flowchart LR") {

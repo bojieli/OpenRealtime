@@ -48,16 +48,18 @@ type GraphMetadataChange struct {
 // Ports are diffed independently so a caller can highlight the exact port
 // that changed. Source provenance is intentionally absent.
 type NodeDefinition struct {
-	ID              string               `json:"id"`
-	Element         element.Identity     `json:"element"`
-	Implementation  string               `json:"implementation,omitempty"`
-	ConfigReference string               `json:"config_reference,omitempty"`
-	ConfigDigest    string               `json:"config_digest,omitempty"`
-	Reaction        element.Reaction     `json:"reaction,omitempty"`
-	StateSchema     string               `json:"state_schema,omitempty"`
-	ConfigSchema    string               `json:"config_schema,omitempty"`
-	Dependencies    []element.Dependency `json:"dependencies,omitempty"`
-	Effects         []element.Effect     `json:"effects,omitempty"`
+	ID                  string               `json:"id"`
+	Element             element.Identity     `json:"element"`
+	Implementation      string               `json:"implementation,omitempty"`
+	ConfigReference     string               `json:"config_reference,omitempty"`
+	ConfigDigest        string               `json:"config_digest,omitempty"`
+	DeploymentReference string               `json:"deployment_reference,omitempty"`
+	DeploymentDigest    string               `json:"deployment_digest,omitempty"`
+	Reaction            element.Reaction     `json:"reaction,omitempty"`
+	StateSchema         string               `json:"state_schema,omitempty"`
+	ConfigSchema        string               `json:"config_schema,omitempty"`
+	Dependencies        []element.Dependency `json:"dependencies,omitempty"`
+	Effects             []element.Effect     `json:"effects,omitempty"`
 }
 
 type NodeChange struct {
@@ -215,6 +217,7 @@ func nodeDefinition(node ir.Node) NodeDefinition {
 	return NodeDefinition{
 		ID: node.ID, Element: node.Element, Implementation: node.Implementation,
 		ConfigReference: node.ConfigReference, ConfigDigest: node.ConfigDigest,
+		DeploymentReference: node.DeploymentReference, DeploymentDigest: node.DeploymentDigest,
 		Reaction: reaction, StateSchema: node.StateSchema, ConfigSchema: node.ConfigSchema,
 		Dependencies: dependencies, Effects: effects,
 	}
@@ -244,6 +247,8 @@ func nodeFields(before, after NodeDefinition) []string {
 	addField(&fields, "implementation", before.Implementation, after.Implementation)
 	addField(&fields, "config_reference", before.ConfigReference, after.ConfigReference)
 	addField(&fields, "config_digest", before.ConfigDigest, after.ConfigDigest)
+	addField(&fields, "deployment_reference", before.DeploymentReference, after.DeploymentReference)
+	addField(&fields, "deployment_digest", before.DeploymentDigest, after.DeploymentDigest)
 	addField(&fields, "reaction", before.Reaction, after.Reaction)
 	addField(&fields, "state_schema", before.StateSchema, after.StateSchema)
 	addField(&fields, "config_schema", before.ConfigSchema, after.ConfigSchema)

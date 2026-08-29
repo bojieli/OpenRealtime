@@ -31,11 +31,16 @@ type Model struct {
 }
 
 type Node struct {
-	ID           string               `json:"id"`
-	Element      element.Identity     `json:"element"`
-	Ports        []Port               `json:"ports"`
-	Dependencies []element.Dependency `json:"dependencies,omitempty"`
-	Effects      []element.Effect     `json:"effects,omitempty"`
+	ID                  string               `json:"id"`
+	Element             element.Identity     `json:"element"`
+	Implementation      string               `json:"implementation,omitempty"`
+	ConfigReference     string               `json:"config_reference,omitempty"`
+	ConfigDigest        string               `json:"config_digest,omitempty"`
+	DeploymentReference string               `json:"deployment_reference,omitempty"`
+	DeploymentDigest    string               `json:"deployment_digest,omitempty"`
+	Ports               []Port               `json:"ports"`
+	Dependencies        []element.Dependency `json:"dependencies,omitempty"`
+	Effects             []element.Effect     `json:"effects,omitempty"`
 }
 
 type Port struct {
@@ -323,7 +328,9 @@ func Build(graph ir.Graph) (Model, error) {
 	}
 	for _, source := range graph.Nodes {
 		node := Node{
-			ID: source.ID, Element: source.Element,
+			ID: source.ID, Element: source.Element, Implementation: source.Implementation,
+			ConfigReference: source.ConfigReference, ConfigDigest: source.ConfigDigest,
+			DeploymentReference: source.DeploymentReference, DeploymentDigest: source.DeploymentDigest,
 			Dependencies: append([]element.Dependency(nil), source.Dependencies...),
 			Effects:      append([]element.Effect(nil), source.Effects...),
 		}

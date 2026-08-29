@@ -1747,7 +1747,7 @@ reference graphs, or conformance evidence.
 | 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, observation commit, trajectory, activation policy, cognition, interaction/result commit, speech, tools, explicit `Tee`/`Mux`, and full locked fast-only/slow-only/both-speaking reference graphs | Gateway integration, executed-turn regression, and safe-point trace parity |
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction parity, and removal of binding switches |
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Complete silent computer-use and independent voice/CU reference agents |
-| 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, exact live resolution evidence, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Deployment/secrets/evidence catalogs, legacy translation, normal graph-native launch, and executed parity artifacts |
+| 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment bindings and secret-reference catalogs, exact live resolution evidence, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Mount-time deployment/secret assembly and evidence, evidence profiles, legacy translation, normal graph-native launch, and executed parity artifacts |
 | 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, and a compiler-backed canonical `.ortg` language-service core | Trigger/cancel/authority views, recovery/schema/LSP/UI integration, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
 | 8 — legacy removal | Not started | Compatibility behavior is isolated behind a coarse element | Migrate every production/evaluation launch path, then remove obsolete flags, switches, and binding constraints |
@@ -1799,6 +1799,9 @@ Integrated checkpoint ledger:
   snapshots, source-mapped errors, stable revision cursors, and bounded results.
 - [x] Descriptor-derived element metadata drives element, compatible-node, and
   directional-port completion plus hover and go-to-definition.
+- [x] Separate strict deployment bindings and graph-scoped secret-reference
+  catalogs bind into Graph IR and the CLI without mixing topology, values,
+  placement, resource selection, or credential material.
 - [x] Bounded graph-aware rename and strict in-memory edit application reject
   stale cursors, overlapping edits, and ambiguous node references.
 - [x] Standard-catalog camera, screen, and video ingress exposes typed raw-frame
@@ -1835,6 +1838,23 @@ it has been reviewed, tested, and committed with its evidence):
     upstream-native external-model references.
   - [ ] Pass focused and repository-wide race, test, vet, and diff gates; then
     review and commit the slice with its tracker boxes.
+- [x] Complete the deployment and secret-artifact foundation checkpoint.
+  - [x] Expand sparse per-node deployment bindings to deterministic effective
+    implementation, placement, transport, resource, and secret-slot bindings.
+  - [x] Bind a public redacted per-node deployment identity into immutable
+    Graph IR while retaining a separate private deployment fingerprint, so a
+    credential-reference rotation cannot become guessable from public IR.
+  - [x] Parse strict bounded YAML/JSON secret-reference catalogs with exact
+    graph-scoped coverage, immutable provider selection, fresh bounded value
+    resolution, defensive copies, and erasable handles.
+  - [x] Make `graph check`, `compile`, and `render` accept separate values,
+    deployment, and secret artifacts and reject missing or excess secret
+    references before resolving credentials.
+  - [x] Expose deployment reference/digest changes in the static inspection
+    model and deterministic semantic graph diff.
+- [ ] Carry the exact private deployment and secret-catalog identities through
+  mount-time assembly, live inspection, trace recording/replay, and benchmark
+  evidence without exposing locators or credential bytes.
 - [x] The scenario CLI reconciles a reviewed execution requirement against the
   exact bound Graph IR before reading credentials or starting protocol work.
 - [x] All eleven scenario paths bind authenticated live graph evidence to the
@@ -2082,8 +2102,12 @@ diagnosis only.
   capability validation.
 - [ ] Load separate `.ortg` or normalized graph artifacts, typed element values,
   deployment bindings, secret references, and evidence profiles.
-  Topology, lock, and strict values artifacts exist; deployment, secret, and
-  evidence artifacts remain.
+  - [x] Topology, lock, strict values, deployment-binding, and secret-reference
+    artifacts have bounded parsers and a compiler/CLI binding path.
+  - [ ] Resolve deployment-selected implementations and secret providers at
+    mount time and attest their exact private artifact identities.
+  - [ ] Add separate evidence-profile artifacts and the normal graph-native
+    launch path over all of these planes.
 - [ ] Translate legacy flags/config into a legacy reference graph with explicit
   deprecation diagnostics.
 - [x] Update benchmark architecture cells and gateway inspection to attest exact
