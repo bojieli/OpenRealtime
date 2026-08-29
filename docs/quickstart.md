@@ -82,14 +82,143 @@ profile unless `-profile` was explicitly set. Its shipped bounds are 48 output
 tokens and 650 ms. It receives the latest user task, only the newest retained
 image per source, and only direct standard computer-action schemas. One call
 means `act`; `WAIT` waits for new visual evidence; `ABSTAIN`, malformed output,
-or timeout delegates to the unchanged fast/slow rollout. The reflex is silent
-and cannot replace the voice. Audio-only sessions do not instantiate it.
+or timeout at an ordinary endpoint delegates to the unchanged fast/slow
+rollout. Once the interaction controller has granted typed direct-screen
+authority on a live partial, failed pixel grounding stays on that visual lane:
+a later micro-turn or canonical endpoint retries it rather than sending a
+coordinate problem to a visionless slow reasoner. The reflex is silent and
+cannot replace the voice. Audio-only sessions do not instantiate it.
 
 With the reflex enabled, the profile defaults the video observer to
 `keyframe`: pixels reach the reflex without first waiting for a narration model.
 Explicit observer, model, policy, token, and timeout flags always win, so use
 `-observer-components keyframe+narration` when durable rich descriptions are
 worth that additional call.
+
+## Local live meeting assistant
+
+The reproducible meeting deployment keeps the existing Gemini background
+reasoner and compares two local foregrounds:
+
+| Cell | Foreground path | Shared controls |
+| --- | --- | --- |
+| cascade | SenseVoice streaming ASR → Qwen3-VL-8B → Fish speech | direct keyframes, Qwen interaction policy, bounded computer actions, Gemini slow cognition |
+| Omni | raw audio + direct images → Qwen3-Omni native speech | the same Qwen policy, SenseVoice control transcript, bounded actions, Gemini slow cognition |
+
+Run the long-lived pieces in separate terminals:
+
+```sh
+export GEMINI_API_KEY=...
+scripts/meeting-assistant.sh policy
+
+# Cascade cell: policy + the already-running SenseVoice and Fish services.
+scripts/meeting-assistant.sh cascade
+scripts/meeting-assistant.sh bench-cascade
+
+# Omni cell: policy + SenseVoice, plus one persistent model process.
+scripts/meeting-assistant.sh omni-sidecar
+scripts/meeting-assistant.sh conformance-omni
+scripts/meeting-assistant.sh omni
+scripts/meeting-assistant.sh bench-omni
+```
+
+Override paths and endpoints with the `MEETING_*` variables at the top of
+`scripts/meeting-assistant.sh`. The script builds its own binary under
+`.runtime/meeting-assistant`, writes result JSON there, keeps every server in
+the foreground, and never kills an existing GPU process. The default Omni
+checkpoint is about 35 GB; inspect available memory before starting it beside
+the 8B policy service.
+
+The recognizer is a controlled part of each measured cell. Select SenseVoice,
+Whisper, or another compatible endpoint without changing the meeting runtime:
+
+```sh
+export MEETING_ASR_PROVIDER=whisper
+export MEETING_ASR_URL=http://127.0.0.1:8003/v1
+export MEETING_ASR_MODEL=openai/whisper-large-v3-turbo
+```
+
+`MEETING_SLOW_PROVIDER`, `MEETING_SLOW_URL`, and `MEETING_SLOW_MODEL` similarly
+select the asynchronous reasoner. The benchmark launcher writes these actual
+recognizer, policy, foreground, and slow-model identities into the result
+cell; an override therefore cannot leave a result mislabeled as the default
+SenseVoice/Gemini deployment.
+
+Both servers expose WebSocket and direct WebRTC endpoints. The default WebRTC
+listeners are `127.0.0.1:28786` for cascade and `127.0.0.1:28787` for Omni.
+Microphone audio uses the media track; the repository console/surface sends
+selected screen or camera frames as direct protocol video events over the
+WebRTC data channel. The fast action path sees pixels, not an intermediate
+narration. Adaptive observation can still retain keyframes and optional
+narration for persistent context outside that reflex path.
+
+In the cascade deployment, the conversational 8B model is proposal-only for
+computer use. A separate silent visual actor is the sole owner of screen
+effects, which prevents a spoken answer and a visual monitor from both acting
+on the same obligation. It receives the newest retained screen frame even
+when a spoken command and a frame do not arrive in the same 200 ms batch. A
+visual `WAIT` completes only that visual branch: presentation speech and slow
+work continue, and later visual evidence resumes monitoring. Autonomous
+screen observations are admitted while agent audio is playing, so a silent
+alert acknowledgement does not wait for a presentation to finish.
+
+The actor can use `computer.click` for literal target pixels or
+`computer.click_normalized` for the 0–1000 coordinate convention learned by
+many vision-language models. Normalized coordinates are explicitly converted
+to target pixels by the dispatcher; the runtime never guesses which
+coordinate system a model intended. The actor also sees unresolved tool names
+and the latest computer action/result, and identical unresolved calls are
+suppressed. These state features make a 200 ms replan cadence safe without
+turning it into five duplicate actions per second.
+
+The shipped cascade meeting topology is intentionally asymmetric. The local
+Qwen3-VL-8B service owns interaction policy and the conversational fast voice;
+the local Qwen3-VL-30B service is a silent direct-pixel actor; Gemini 3.5 Flash
+is an asynchronous slow reasoner and authoritative semantic-tool user. The
+200 ms clock belongs to streaming ASR, interaction, and action opportunities.
+The one-second audible endpoint is a separate commitment clock for ordinary
+speech, so a clear UI command can act before the complete sentence ends while
+conversation does not fragment at every ASR partial.
+
+Visual control is receding-horizon action chunking: the actor may commit one
+bounded effect, then adaptive observation must admit a fresh post-action frame
+before another coordinate is grounded. While a VLM call is occupied, newer ASR
+or frames replace the pending request instead of forming a stale queue. A
+canonical endpoint cancels visual inference computed from the superseded live
+prefix and takes over immediately. The controller carries completed action
+chunks, the current reconstructed task in the user role, and the next
+unfulfilled explicit UI clause; an incomplete tail such as `share your` cannot
+authorize a guessed second click.
+
+Typed authority is enforced on every entry path. A conservative deterministic
+compiler recognizes only high-confidence UI imperatives; learned interaction
+policy handles ambiguous and future-monitoring language. The pixel actor must
+return a private grounded target label (Qwen's decoder-friendly `label` alias
+is accepted), which is checked against the next requested control and stripped
+before execution. Rejected model calls are closed as controller placeholders
+so a corrected retry is not mistaken for unresolved work. Nearby repeats of a
+completed normalized coordinate are no-ops, and within-word ASR completion
+such as `over` → `overview` updates the canonical task.
+
+Composite requests remain concurrent. Typed decomposition can resume an
+immediate semantic clause—present now, or report the tool-grounded value—while
+a visual condition stays armed. A slow tool result wakes the fast voice even
+when Gemini correctly emits no additional prose after consuming that result;
+the result already in the canonical trajectory remains the source of truth.
+
+The current Qwen3-Omni checkpoint does not independently emit a trustworthy
+user transcript. Consequently this production cell is deliberately
+`omni+text-policy`: raw audio still goes straight to Qwen3-Omni, while
+SenseVoice supplies control evidence and the canonical user text needed by
+Gemini. It is not a transcript-free Omni experiment. See the
+[meeting benchmark](benchmarks.md#openrealtime-meeting-assistant-v1) before
+interpreting the two result files as a ranking.
+
+The validated meeting runs described by this repository exercise the cascade
+cell above. They do not measure the Omni cell unless the separate persistent
+Omni sidecar is started and the same complete four-case suite is run. Do not
+infer Cascade-versus-Omni, interaction-model-versus-policy, or general
+architecture superiority from a Cascade-only result.
 
 ## Check it works
 

@@ -200,9 +200,31 @@ go run ./cmd/openrealtime-livekit \
   -endpoint ws://127.0.0.1:8765/v1/realtime
 ```
 
+The current participant subscribes to room audio and publishes agent audio.
+It also forwards protocol events carried as LiveKit data packets, so a custom
+room client can send `openrealtime.input_video_frame.append` exactly as the
+repository browser surface does. It does **not** yet decode an ordinary
+LiveKit screen-share or camera video track. A stock meeting client that only
+publishes a video track is therefore audio-only to this agent; use a protocol
+frame publisher or add a codec-to-JPEG bridge before calling that deployment
+voice+vision.
+
 ## Video
 
-Video always enters as protocol events, for every client. A WebRTC adapter that
-terminates a video track decodes it and emits those events on the client's
-behalf; it does not bypass them. One entrance means one thing to specify and
-one thing to test.
+Video always enters the engine as protocol events. The repository console and
+surface capture a selected screen/camera, encode retained JPEG/PNG frames, and
+send those events over the WebRTC data channel; the audio track remains RTP.
+The in-process adapter currently ignores inbound video tracks rather than
+pretending encoded RTP is a model image. Likewise, the LiveKit integration
+forwards video events in data packets but does not decode room video tracks.
+
+| Client path | Audio | Direct screen pixels |
+| --- | --- | --- |
+| repository console/surface over WebRTC | RTP media track | protocol frames on the data channel |
+| custom LiveKit client publishing protocol frames | room audio track | protocol frames in data packets |
+| stock WebRTC or LiveKit client publishing only a video track | RTP/room audio | not yet bridged |
+
+This still preserves one engine entrance and the same server-side adaptive
+observation gate. Transport adapters may decode a track into those events in a
+future implementation, but the current production boundary must be described
+by what it actually carries.

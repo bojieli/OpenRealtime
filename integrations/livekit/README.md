@@ -39,6 +39,14 @@ its own track. Anyone else in the room talks to the agent.
 Opus decoding is pure Go, so the agent stays a static binary with no codec
 library and no cgo.
 
+Protocol video events sent by a custom participant also cross the data-packet
+row unchanged. Ordinary LiveKit camera and screen-share tracks do not: this
+agent currently subscribes only to audio tracks and has no VP8/H.264-to-JPEG
+decoder. A stock meeting room is therefore audio-only to the agent until the
+publisher sends retained frames as
+`openrealtime.input_video_frame.append` events or a video-track bridge is
+deployed. Do not infer video-track support from the generic data path.
+
 ## Rules it follows
 
 The same two that govern the in-process WebRTC adapter:

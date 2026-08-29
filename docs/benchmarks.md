@@ -29,6 +29,7 @@ openrealtime bench fdb --limit 4           # a suite against it
 | `bench fdbench` | FD-Bench | endpointing and response timing at scale |
 | `bench tau-voice` | τ-Voice | tool-use success under voice, against a live environment |
 | `bench realtime-cu` | OpenRealtime Realtime-CU v1 | repository-owned realtime audio, video, camera, authorization, games, and computer use |
+| `bench meeting` | OpenRealtime Meeting Assistant v1 | concurrent listening, speaking, shared-screen action, correction, and slow document work |
 | `bench dynacu` | DynaCU-Bench | optional independent external validation of dynamic computer use |
 
 Every suite here plays a recording at the system. For conversations where both
@@ -280,6 +281,88 @@ The evaluator controls reset and scoring through a private browser control
 plane. Model actions travel only through declared `computer.*` tools and see
 the consequence in subsequent video frames. A separate camera source is
 observation-only; every action must still name the declared `screen` source.
+
+## OpenRealtime Meeting Assistant v1
+
+This four-case suite puts the voice, vision, action, and slow-cognition paths
+on one deterministic wall clock. The inputs are checked-in 24 kHz PCM
+recordings and a changing browser surface; `testdata/fixtures.json` records the
+exact transcript, cue intervals, audio hashes, format, and synthesis
+provenance. The model receives pixels and audio, never evaluator state or a
+visual narration substituted for the screen.
+
+| Case | Required evidence |
+| --- | --- |
+| `open-share-present` | open the launch review, share it, call `meeting.read_launch_review`, and speak the grounded `18.4%` value |
+| `follow-up-during-analysis` | navigate to risks in response to a later spoken request while the deliberately slow analysis tool is still running |
+| `visual-alert-during-presentation` | acknowledge a visual-only deployment alert within 1.4 seconds while agent audio exists before and after the action |
+| `spoken-navigation-correction` | first navigate to summary, then reverse to overview within two seconds of the correction |
+
+Tool handlers run concurrently in this suite. A long document-analysis call
+must not stop collection of audio, video, protocol output, or subsequent tool
+calls; quiet detection also waits for outstanding work. This is a runtime
+requirement, not benchmark convenience: serial tool handling would make the
+second case impossible by construction.
+
+```sh
+openrealtime bench meeting -list
+openrealtime bench meeting \
+  -foreground cascade \
+  -endpoint ws://127.0.0.1:18786/v1/realtime \
+  -fps 5 -analysis-delay 8s \
+  -out results/meeting-cascade.json
+```
+
+`-foreground omni` selects the registered Omni cell. Both full runs use the
+same recordings, frame cadence, deadlines, slow Gemini configuration, policy
+recognizer, action boundary, and scorer. The Omni cell changes the binding and
+foreground model/speech topology together, however, so the pair is an
+end-to-end **system treatment**, not a one-factor proof that Omni or cascade is
+intrinsically better. Report the task-level traces and latency distributions;
+do not turn a partial, filtered, dirty-tree, or unavailable-provider run into a
+ranking.
+
+The checked-in launcher passes `-reference-levels` derived from its active
+`MEETING_ASR_*`, `MEETING_POLICY_*`, `MEETING_SLOW_*`, and foreground-model
+configuration. This is part of measurement validity: a diagnostic run using
+Whisper and a local slow Qwen model must not retain the default F12
+SenseVoice/F6 Gemini labels. Direct CLI runs with non-default services must
+provide the same explicit level overrides.
+
+Five frames per second is an observation opportunity, not a promise of 200 ms
+cue-to-effect latency. The measured interval includes frame capture and
+admission, model queueing/prefill/decoding, tool dispatch, and browser effect.
+The suite therefore reports end-to-end latency distributions. Adaptive
+observation may collapse unchanged frames while retaining the newest pixels;
+it is preserved in both treatments and no visual narration is placed on the
+critical action path.
+
+For the cascade cell, 200 ms is also a control opportunity rather than an
+action-sequence length. The visual actor emits one bounded chunk, waits for a
+fresh post-effect frame, and replans from the newest ASR/task state. Pending
+visual work is latest-wins; the audible endpoint remains a separate one-second
+commitment clock. An action before `cue.End` is therefore valid when the spoken
+destination was already unambiguous, and latency remains reported relative to
+the endpoint (possibly negative) rather than erasing that action.
+
+Composite meeting requests are evaluated as concurrent obligations. A silent
+visual `WAIT` or action cannot consume pending speech, and presentation audio
+cannot block an autonomous visual action. Slow semantic tools remain
+asynchronous and in-flight calls are exposed to the visual actor; an identical
+unresolved call is returned as `already_in_flight` rather than launched again.
+For grounded screen effects, `computer.click_normalized` declares x/y in the
+0–1000 VLM coordinate space and the dispatcher maps them to target pixels.
+The controller additionally requires a private pixel-grounded label, validates
+it against the next unfulfilled explicit action rather than the whole request,
+and removes it before publishing the tool call. Rejected committed calls are
+closed with typed placeholders so a later corrected grounding is not suppressed
+as already in flight.
+
+`-categories` and `-limit` are smoke-test filters. As with the other owned
+suites, the result still declares all four expected tasks and is incomplete.
+The scorer retains page events, computer actions, knowledge-tool intervals,
+and recognized user turns so a miss can be assigned to ASR, interaction,
+vision/grounding, action execution, slow-work concurrency, or speech output.
 
 ## DynaCU-Bench (optional external validation)
 
