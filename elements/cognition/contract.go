@@ -130,6 +130,11 @@ type Generate struct {
 	// ExpectedContextVersion distinguishes an unconstrained trigger (nil)
 	// from one explicitly bound to the empty trajectory (pointer to zero).
 	ExpectedContextVersion *uint64 `json:"expected_context_version,omitempty"`
+	// ExpectedContextItemID optionally binds the version to the exact State
+	// envelope that released the policy trigger. This prevents two independently
+	// wired state sources from satisfying the same numeric version with different
+	// prefixes. A generation policy should set both fields from one sampled edge.
+	ExpectedContextItemID string `json:"expected_context_item_id,omitempty"`
 }
 
 // Cancel is an addressed control request. RunID may be omitted when the

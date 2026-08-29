@@ -323,6 +323,55 @@ func TestTextModelCanBindGenerationToExplicitEmptyContext(t *testing.T) {
 	}
 }
 
+func TestTextModelRefusesSameVersionFromDifferentContextEnvelope(t *testing.T) {
+	provider := &scriptedProvider{
+		descriptor: testDescriptor,
+		seen:       make(chan continuation.Request, 1),
+	}
+	providers := cognitionelements.NewProviderRegistry()
+	if err := providers.Register("primary", testDescriptor, func() (continuation.Provider, error) {
+		return provider, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mounted, done, stop := mountTextModel(t, providers, json.RawMessage(`{"provider":"primary"}`))
+	defer stopTextModel(t, mounted, done, stop)
+	_ = receive(t, mustEgress(t, mounted, "resolved"))
+	sendContext(t, mounted, 1, "context-authenticated")
+	version := uint64(1)
+	send(t, mustIngress(t, mounted, "trigger"), element.Envelope{
+		Type: element.Trigger(element.Named("cognition.Generate")), ItemID: "trigger-wrong-context",
+		RunID: "run-wrong-context", Payload: cognitionelements.Generate{
+			ExpectedContextVersion: &version,
+			ExpectedContextItemID:  "context-forged",
+			Invocation:             continuation.Invocation{Instruction: "answer"},
+		},
+	})
+	outcome := receive(t, mustEgress(t, mounted, "outcome")).Payload.(cognitionelements.Outcome)
+	if outcome.Kind != cognitionelements.OutcomeRefused ||
+		outcome.Code != "context_identity_mismatch" || outcome.ContextVersion != 1 {
+		t.Fatalf("identity mismatch outcome = %+v", outcome)
+	}
+	select {
+	case request := <-provider.seen:
+		t.Fatalf("provider received mismatched context request: %+v", request)
+	case <-time.After(20 * time.Millisecond):
+	}
+	send(t, mustIngress(t, mounted, "trigger"), element.Envelope{
+		Type: element.Trigger(element.Named("cognition.Generate")), ItemID: "trigger-incomplete-context",
+		RunID: "run-incomplete-context", Payload: cognitionelements.Generate{
+			ExpectedContextItemID: "context-authenticated",
+			Invocation:            continuation.Invocation{Instruction: "answer"},
+		},
+	})
+	incomplete := receive(t, mustEgress(t, mounted, "outcome")).Payload.(cognitionelements.Outcome)
+	if incomplete.Kind != cognitionelements.OutcomeRefused ||
+		incomplete.Code != "incomplete_context_constraint" {
+		t.Fatalf("incomplete context constraint outcome = %+v", incomplete)
+	}
+	assertNoEnvelope(t, mustEgress(t, mounted, "result"))
+}
+
 func TestTextModelDoesNotRetainPlaintextReasoningByDefault(t *testing.T) {
 	provider := &scriptedProvider{
 		descriptor: testDescriptor,

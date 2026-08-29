@@ -217,6 +217,7 @@ func (runner *textModelRunner) Run(parent context.Context) error {
 			}
 			sampled, canceled, err := runner.sampleForTrigger(
 				ctx, envelope, runID, generate.ExpectedContextVersion,
+				generate.ExpectedContextItemID,
 				contexts, interrupts, receiveErrors,
 			)
 			if err != nil {
@@ -344,6 +345,21 @@ func (runner *textModelRunner) prepareTrigger(
 			ProviderReference: runner.reference, Code: "invalid_invocation", Message: err.Error(),
 		}
 	}
+	if expected := generate.ExpectedContextItemID; expected != "" &&
+		(strings.TrimSpace(expected) != expected || strings.ContainsAny(expected, "\x00\r\n\t")) {
+		return Generate{}, runID, &Outcome{
+			Kind: OutcomeRefused, Operation: "generate", RunID: runID,
+			ProviderReference: runner.reference, Code: "invalid_context_identity",
+			Message: "expected context item ID is not canonical",
+		}
+	}
+	if generate.ExpectedContextItemID != "" && generate.ExpectedContextVersion == nil {
+		return Generate{}, runID, &Outcome{
+			Kind: OutcomeRefused, Operation: "generate", RunID: runID,
+			ProviderReference: runner.reference, Code: "incomplete_context_constraint",
+			Message: "expected context item ID requires an expected context version",
+		}
+	}
 	return generate, runID, nil
 }
 
@@ -351,6 +367,7 @@ func (runner *textModelRunner) prepareTrigger(
 // lets causally linked policies avoid accidentally sampling a later prefix.
 func (runner *textModelRunner) sampleForTrigger(
 	ctx context.Context, trigger element.Envelope, runID string, expected *uint64,
+	expectedItemID string,
 	contexts <-chan element.Envelope, interrupts <-chan element.Envelope,
 	receiveErrors <-chan error,
 ) (*sampledContext, bool, error) {
@@ -358,12 +375,25 @@ func (runner *textModelRunner) sampleForTrigger(
 		if runner.latest != nil {
 			version := runner.latest.snapshot.Version
 			switch {
-			case expected == nil || version == *expected:
+			case expected == nil || version == *expected &&
+				(expectedItemID == "" || runner.latest.envelope.ItemID == expectedItemID):
 				copy := *runner.latest
 				copy.envelope = runner.latest.envelope.Clone()
 				copy.snapshot = cloneSnapshot(runner.latest.snapshot)
 				return &copy, false, nil
-			case version > *expected:
+			case expected != nil && version == *expected && expectedItemID != "" &&
+				runner.latest.envelope.ItemID != expectedItemID:
+				cause := trigger.Clone()
+				cause.CausalParents = appendUnique(cause.CausalParents, runner.latest.envelope.ItemID)
+				outcome := Outcome{
+					Kind: OutcomeRefused, Operation: "generate", RunID: runID,
+					ProviderReference: runner.reference, ContextVersion: version,
+					Code: "context_identity_mismatch",
+					Message: fmt.Sprintf("generation requires context item %q, latest is %q",
+						expectedItemID, runner.latest.envelope.ItemID),
+				}
+				return nil, false, runner.publishOutcome(ctx, cause, outcome)
+			case expected != nil && version > *expected:
 				cause := trigger.Clone()
 				cause.CausalParents = appendUnique(cause.CausalParents, runner.latest.envelope.ItemID)
 				outcome := Outcome{

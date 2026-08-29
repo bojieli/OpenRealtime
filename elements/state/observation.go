@@ -23,6 +23,9 @@ var (
 	observationCommitOutcomeType = element.Event(element.Named("trajectory.ObservationCommitOutcome"))
 )
 
+func ObservationType() element.Type              { return observationRevisionType.Clone() }
+func ObservationCommitOutcomeType() element.Type { return observationCommitOutcomeType.Clone() }
+
 // ObservationCommitDescriptor converts provenance-carrying perception
 // revisions into atomic trajectory append transactions. Store replies feed
 // back explicitly, so later revisions cannot claim a predecessor committed

@@ -40,6 +40,13 @@ var (
 	snapshotType = element.State(element.Named("trajectory.Snapshot"))
 )
 
+// Public type helpers let policy and boundary adapters construct exact graph
+// envelopes without exporting mutable package-level Type values.
+func AppendType() element.Type    { return appendType.Clone() }
+func CommitType() element.Type    { return commitType.Clone() }
+func RejectionType() element.Type { return rejectionType.Clone() }
+func SnapshotType() element.Type  { return snapshotType.Clone() }
+
 // TrajectoryStoreDescriptor is the graph contract for the canonical causal
 // log. The state output is seeded, so it is an explicit causal break in a
 // feedback graph. Append is the only trigger; reading a snapshot never starts

@@ -13,6 +13,7 @@ import (
 	mediaelements "github.com/bojieli/OpenRealtime/elements/media"
 	modelelements "github.com/bojieli/OpenRealtime/elements/model"
 	perceptionelements "github.com/bojieli/OpenRealtime/elements/perception"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
@@ -47,10 +48,16 @@ func RegisterDescriptors(catalog *resolve.Catalog) error {
 	if err := perceptionelements.RegisterDescriptors(catalog); err != nil {
 		return err
 	}
+	if err := policyelements.RegisterDescriptors(catalog); err != nil {
+		return err
+	}
 	if err := speechelements.RegisterDescriptors(catalog); err != nil {
 		return err
 	}
-	return stateelements.RegisterDescriptors(catalog)
+	if err := stateelements.RegisterDescriptors(catalog); err != nil {
+		return err
+	}
+	return nil
 }
 
 func RegisterFactories(registry *graphruntime.Registry) error {
@@ -81,10 +88,16 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if err := perceptionelements.RegisterFactories(registry); err != nil {
 		return err
 	}
+	if err := policyelements.RegisterFactories(registry); err != nil {
+		return err
+	}
 	if err := speechelements.RegisterFactories(registry); err != nil {
 		return err
 	}
-	return stateelements.RegisterFactories(registry)
+	if err := stateelements.RegisterFactories(registry); err != nil {
+		return err
+	}
+	return nil
 }
 
 func Catalog() (*resolve.Catalog, error) {
