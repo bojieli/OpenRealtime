@@ -37,6 +37,13 @@ type VideoConfig struct {
 	// roughly three frames a second, which is the rate the measured result
 	// used and enough for a screen a person is working on.
 	Cadence time.Duration
+	// ExternalCadence disables the observer's wall-clock sampling gate. It is
+	// used when admission timing is already an explicit upstream graph element:
+	// every delivered trigger is then considered immediately, while byte and
+	// pixel change detection remain local to the observer. Keeping this opt-in
+	// preserves the legacy/session API's measured 333 ms default without
+	// hiding a second timing policy inside graph-native compositions.
+	ExternalCadence bool
 	// ChangeThreshold is the fraction of the downscaled image that must differ
 	// before a frame is worth narrating, in [0,1]. Zero selects 0.02.
 	ChangeThreshold float64
@@ -95,7 +102,7 @@ func NewVideoObserver(config VideoConfig) (*VideoObserver, error) {
 	if strings.TrimSpace(config.Name) == "" {
 		config.Name = "video"
 	}
-	if config.Cadence <= 0 {
+	if !config.ExternalCadence && config.Cadence <= 0 {
 		config.Cadence = 333 * time.Millisecond
 	}
 	if config.ChangeThreshold <= 0 {
@@ -140,7 +147,8 @@ func (observer *VideoObserver) Gate(frame Frame) bool {
 	if observer.refreshNext {
 		return true
 	}
-	if observer.admitted != 0 && now-observer.lastAdmitNS < uint64(observer.config.Cadence.Nanoseconds()) {
+	if !observer.config.ExternalCadence && observer.admitted != 0 &&
+		now-observer.lastAdmitNS < uint64(observer.config.Cadence.Nanoseconds()) {
 		return false
 	}
 	// A screen that has not changed usually re-encodes to identical bytes, so
@@ -274,7 +282,6 @@ func (observer *VideoObserver) Reset() {
 	defer observer.mu.Unlock()
 	observer.lastFingerprint, observer.lastBytes = 0, 0
 	observer.lastSignature, observer.lastAdmitNS = nil, 0
-	observer.admitted = 0
 	observer.refreshNext = false
 }
 

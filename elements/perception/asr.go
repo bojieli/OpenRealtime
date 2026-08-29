@@ -825,7 +825,9 @@ func terminal(ctx context.Context, err error) bool {
 	return err != nil && (ctx.Err() != nil || errors.Is(err, graphruntime.ErrChannelClosed))
 }
 
-func Descriptors() []element.Descriptor { return []element.Descriptor{ASRDescriptor()} }
+func Descriptors() []element.Descriptor {
+	return []element.Descriptor{ASRDescriptor(), VisualObserverDescriptor()}
+}
 
 func RegisterDescriptors(catalog *resolve.Catalog) error {
 	if catalog == nil {
@@ -843,5 +845,8 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if registry == nil {
 		return errors.New("register perception factories: nil registry")
 	}
-	return registry.Register("", asrFactory{})
+	if err := registry.Register("", asrFactory{}); err != nil {
+		return err
+	}
+	return registerVisualFactory(registry)
 }
