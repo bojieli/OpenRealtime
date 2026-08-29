@@ -1,0 +1,29 @@
+{
+  "format_version": 1,
+  "elements": [
+    {
+      "reference": "perception.VisualObserver",
+      "identity": {
+        "name": "perception.VisualObserver",
+        "revision": 1,
+        "digest": "sha256:f24893a377893064a4c2bb5b24bfff5ecea6413c57cf2318cf64df508af94a02"
+      }
+    },
+    {
+      "reference": "video.AdaptiveObservation",
+      "identity": {
+        "name": "video.AdaptiveObservation",
+        "revision": 1,
+        "digest": "sha256:01c98729656a60c40a85114d5ff17324141fb270d7c7226a52a0fe3c60defc8a"
+      }
+    },
+    {
+      "reference": "video.FrameIngress",
+      "identity": {
+        "name": "video.FrameIngress",
+        "revision": 1,
+        "digest": "sha256:384dad0fb417c315512d83b046e9f05684d8ab9b3df5e492bf1f9af769ae1058"
+      }
+    }
+  ]
+}

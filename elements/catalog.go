@@ -16,6 +16,7 @@ import (
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
+	videoelements "github.com/bojieli/OpenRealtime/elements/video"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 )
@@ -57,6 +58,9 @@ func RegisterDescriptors(catalog *resolve.Catalog) error {
 	if err := stateelements.RegisterDescriptors(catalog); err != nil {
 		return err
 	}
+	if err := videoelements.RegisterDescriptors(catalog); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -95,6 +99,9 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 		return err
 	}
 	if err := stateelements.RegisterFactories(registry); err != nil {
+		return err
+	}
+	if err := videoelements.RegisterFactories(registry); err != nil {
 		return err
 	}
 	return nil

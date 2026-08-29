@@ -1741,7 +1741,7 @@ already available. A phase is not complete until its exit gate is checked.
 | 1 — graph foundation | Exit evidence pending | Typed descriptors/runtime, `.ortg`, strict YAML/JSON interchange, Go SDK, lockfiles, Graph IR, validation, connectors, rendering, and coarse legacy mounting | Full reference-architecture regression and benchmark equivalence evidence |
 | 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, observation commit, trajectory, activation policy, cognition, interaction/result commit, speech, tools, explicit `Tee`/`Mux`, and focused component graphs | Complete conversational reference graphs, gateway integration, and safe-point trace parity |
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction parity, and removal of binding switches |
-| 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Streaming camera/screen cadence, complete silent computer-use and independent voice/CU reference agents |
+| 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Complete silent computer-use and independent voice/CU reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, exact live resolution evidence, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Deployment/secrets/evidence catalogs, legacy translation, normal graph-native launch, and executed parity artifacts |
 | 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, and a compiler-backed canonical `.ortg` language-service core | Trigger/cancel/authority views, recovery/schema/LSP/UI integration, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
@@ -1757,9 +1757,9 @@ Current checkpoint notes:
   interaction/speech routing, tool authority, and external-model topologies.
 - Deterministic graph diff, session-keyed bounded runtime recording, replayable
   payload-free trace artifacts, and the canonical `.ortg` language-service
-  core are committed. Editor recovery/schema/UI transport, adaptive video, and
-  sidecar media-format hardening remain unchecked until their independent
-  worktree slices are reviewed and committed.
+  core plus adaptive video ingress/cadence are committed. Editor
+  recovery/schema/UI transport and sidecar media-format hardening remain
+  unchecked until their independent worktree slices are reviewed and committed.
 - No item in the twelve-point definition of done is yet proven end to end.
   Several have foundation-level support, but benchmark migration, production
   inspection, reconciliation, and legacy removal are still outstanding.
@@ -1792,6 +1792,9 @@ Integrated checkpoint ledger:
 - [x] Compiler-backed canonical `.ortg` diagnostics, descriptor-derived editor
   metadata, bounded completion/hover/definition queries, stable revision
   cursors, graph-aware rename, and strict in-memory edit application.
+- [x] Standard-catalog camera/screen/video ingress with fixed, adaptive, and
+  manual cadence, explicit ticks/refresh/end/cancel, bounded change state,
+  generation fencing, and visibly lossy capture-pressure edges.
 - [ ] Full componentized conversational reference graphs and safe-point parity.
 - [ ] Complete recovery/schema/LSP/UI authoring, reconciliation, benchmark
   execution parity, and legacy launch-path removal.
@@ -1813,8 +1816,9 @@ Reference-agent tracker:
   contract; executed native/external parity remains open.
 - [ ] Live meeting assistant combining speech, screen control, concurrent slow
   document work, corrections, and output arbitration.
-- [ ] Adaptive-observation video/YouTube watcher with explicit cadence,
-  change detection, visual memory, and time-triggered policy.
+- [x] Adaptive-observation video/YouTube watcher with explicit external ticks,
+  fixed/adaptive/manual cadence, bounded change detection, latest-frame state,
+  raw/reference separation, and typed visual-observer lifecycle controls.
 - [ ] Vision-language and silent computer-use agent with typed authority,
   target fencing, confirmation, execution, and visual feedback.
 - [ ] Independent voice and computer-use policies composed in one graph.
@@ -1923,8 +1927,9 @@ artifacts rather than legacy architecture/config switches):
 
 - [x] Extract typed visual observation plus still-image, attachment, file, and
   multimodal-content ingress/retention/resolution elements.
-- [ ] Complete streaming camera/screen frame ingress, explicit observation
-  cadence, change detection, and visual-memory composition.
+- [x] Add streaming camera/screen/video frame and capability-free reference
+  ingress, explicit fixed/adaptive/manual observation cadence, bounded change
+  detection/latest-frame state, and visual-observer lifecycle composition.
 - [x] Extract action proposal admission, confirmation, target fencing, tool
   lookup, idempotent ledger commit, dispatch, and release/audit outcomes.
 - [ ] Compose visual reflex, slow planner, action arbitration, authority,

@@ -1,0 +1,20 @@
+apiVersion: openrealtime.ai/config/v1alpha1
+graph: adaptive_video
+nodes:
+  ingress: {}
+  policy:
+    source: youtube
+    mode: adaptive
+    min_interval_ms: 250
+    max_interval_ms: 2000
+    change_threshold: 0.08
+    max_frame_bytes: 8388608
+    max_change_samples: 512
+    max_metadata_bytes: 65536
+    terminal_memory: 256
+  vision:
+    provider: visual.youtube.narrator.v1
+    source: youtube
+    change_threshold: 0.02
+    max_frames_per_batch: 1
+    max_frame_bytes: 8388608

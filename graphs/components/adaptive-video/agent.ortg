@@ -1,0 +1,35 @@
+// Audio-free reference composition for externally clocked camera, screen, or
+// video observation. Capture pressure is visible on the two named lossy
+// edges; lifecycle controls and observer work remain lossless graph traffic.
+graph adaptive_video {
+    video.FrameIngress :: ingress;
+    video.AdaptiveObservation :: policy;
+    perception.VisualObserver :: vision;
+
+    edge live_frames = ingress.frames => policy.frames;
+    edge live_references = ingress.references => policy.references;
+
+    policy.observe -> vision.observe;
+    policy.observer_refresh -> vision.refresh;
+    policy.observer_close -> vision.close;
+    policy.observer_cancel -> vision.cancel;
+
+    input source = policy.source;
+    input frame = ingress.frame_in;
+    input reference = ingress.reference_in;
+    input tick = policy.tick;
+    input refresh = policy.refresh;
+    input end = policy.end;
+    input cancel = policy.cancel;
+
+    // Capability-free references remain distinct from raw observations. A
+    // developer may connect this output to an explicit fetch/retention graph.
+    output reference_observe = policy.observe_reference;
+    output policy_state = policy.state;
+    output decision = policy.decision;
+    output policy_outcome = policy.outcome;
+    output observations = vision.observations;
+    output visual_outcome = vision.outcome;
+    output visual_resolved = vision.resolved;
+    output visual_metrics = vision.metrics;
+}
