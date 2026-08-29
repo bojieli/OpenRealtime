@@ -71,7 +71,8 @@ func Dial(ctx context.Context, config Config, hello Message) (*Client, error) {
 	if version == 0 {
 		version = Version
 	}
-	if version != Version && version != VersionInteraction && version != VersionMultimodal {
+	if version != Version && version != VersionInteraction && version != VersionMultimodal &&
+		version != VersionElementGraph {
 		return nil, fmt.Errorf("unsupported sidecar protocol version %d", version)
 	}
 	client := &Client{config: config, frames: make(chan Message, 256), version: version}
@@ -85,7 +86,7 @@ func Dial(ctx context.Context, config Config, hello Message) (*Client, error) {
 		_ = client.Close()
 		return nil, fmt.Errorf("send hello: %w", err)
 	}
-	ready, err := client.awaitReady(ctx)
+	ready, err := client.awaitReady(ctx, hello)
 	if err != nil {
 		_ = client.Close()
 		return nil, err
@@ -142,7 +143,7 @@ func (client *Client) open(ctx context.Context) error {
 	return nil
 }
 
-func (client *Client) awaitReady(ctx context.Context) (Message, error) {
+func (client *Client) awaitReady(ctx context.Context, hello Message) (Message, error) {
 	type outcome struct {
 		message Message
 		err     error
@@ -176,6 +177,11 @@ func (client *Client) awaitReady(ctx context.Context) (Message, error) {
 			return Message{}, fmt.Errorf(
 				"sidecar speaks protocol version %d, this engine speaks %d",
 				result.message.Version, client.version)
+		}
+		if client.version == VersionElementGraph {
+			if err := ValidateElementReady(hello, result.message); err != nil {
+				return Message{}, fmt.Errorf("sidecar element readiness: %w", err)
+			}
 		}
 		return result.message, nil
 	case <-ctx.Done():
@@ -214,6 +220,9 @@ func (client *Client) Send(message Message) error {
 		if message.DeadlineMS <= time.Now().UnixMilli() {
 			return errors.New("typed interaction plan expired before it could be sent")
 		}
+	}
+	if message.Type == TypeElementFrame && client.version != VersionElementGraph {
+		return errors.New("generic element frames require sidecar protocol v4")
 	}
 	return client.writer.Write(message)
 }

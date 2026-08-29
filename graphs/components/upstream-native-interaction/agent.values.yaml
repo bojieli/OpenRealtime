@@ -1,0 +1,9 @@
+apiVersion: openrealtime.ai/config/v1alpha1
+graph: upstream_native_interaction
+nodes:
+  foreground:
+    deployment: deployment.upstream
+    settings: {}
+    required_capabilities:
+      - name: transport.upstream-realtime
+      - name: model.native-interaction

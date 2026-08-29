@@ -1,0 +1,13 @@
+{
+  "format_version": 1,
+  "elements": [
+    {
+      "reference": "model.External",
+      "identity": {
+        "name": "model.External",
+        "revision": 1,
+        "digest": "sha256:d657c09d18d011901964f2b8778c1e55e53410142dda0ac6365978965aace284"
+      }
+    }
+  ]
+}

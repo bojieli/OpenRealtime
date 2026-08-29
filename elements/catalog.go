@@ -8,6 +8,7 @@ import (
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	"github.com/bojieli/OpenRealtime/elements/flow"
 	interactionelements "github.com/bojieli/OpenRealtime/elements/interaction"
+	modelelements "github.com/bojieli/OpenRealtime/elements/model"
 	perceptionelements "github.com/bojieli/OpenRealtime/elements/perception"
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
@@ -26,6 +27,9 @@ func RegisterDescriptors(catalog *resolve.Catalog) error {
 		return err
 	}
 	if err := interactionelements.RegisterDescriptors(catalog); err != nil {
+		return err
+	}
+	if err := modelelements.RegisterDescriptor(catalog); err != nil {
 		return err
 	}
 	if err := perceptionelements.RegisterDescriptors(catalog); err != nil {
@@ -48,6 +52,9 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 		return err
 	}
 	if err := interactionelements.RegisterFactories(registry); err != nil {
+		return err
+	}
+	if err := modelelements.RegisterFactory(registry); err != nil {
 		return err
 	}
 	if err := perceptionelements.RegisterFactories(registry); err != nil {

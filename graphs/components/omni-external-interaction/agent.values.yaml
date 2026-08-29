@@ -1,0 +1,6 @@
+apiVersion: openrealtime.ai/config/v1alpha1
+graph: omni_external_interaction
+nodes:
+  foreground:
+    deployment: deployment.omni
+    settings: {}

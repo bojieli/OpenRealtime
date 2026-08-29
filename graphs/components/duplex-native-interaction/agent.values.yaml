@@ -1,0 +1,9 @@
+apiVersion: openrealtime.ai/config/v1alpha1
+graph: duplex_native_interaction
+nodes:
+  foreground:
+    deployment: deployment.duplex
+    settings: {}
+    required_capabilities:
+      - name: model.concurrent-io
+      - name: model.native-interaction

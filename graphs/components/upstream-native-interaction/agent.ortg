@@ -1,0 +1,26 @@
+// A remote Realtime endpoint adapted to the same external-model contract.
+// Background/slow output may be connected directly to context_injection;
+// response.create, manual commit, cancellation, and playback truncation remain
+// visible ports rather than methods hidden inside an upstream binding.
+graph upstream_native_interaction {
+    model.External :: foreground;
+
+    input audio = foreground.audio;
+    input context_injection = foreground.text;
+    input tools = foreground.tools;
+    input tool_result = foreground.tool_result;
+    input trigger = foreground.trigger;
+    input commit = foreground.commit;
+    input cancel = foreground.cancel;
+    input truncate = foreground.truncate;
+
+    output transcript = foreground.transcript;
+    output prepared_text = foreground.text_out;
+    output prepared_audio = foreground.audio_out;
+    output result = foreground.result;
+    output tool_proposal = foreground.tool_proposal;
+    output interaction_act = foreground.interaction_act;
+    output native_state = foreground.state;
+    output activity = foreground.activity;
+    output outcome = foreground.outcome;
+}

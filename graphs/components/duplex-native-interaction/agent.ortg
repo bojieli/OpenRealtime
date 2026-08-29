@@ -1,0 +1,27 @@
+// A concurrently listening/speaking foreground with native interaction. No
+// implicit response trigger or external interaction command is wired: native
+// acts are output for inspection, and cancellation/terminal handling remains
+// explicit. Concurrent I/O and native interaction are separate capabilities.
+graph duplex_native_interaction {
+    model.External :: foreground;
+
+    input audio = foreground.audio;
+    input video = foreground.video;
+    input context = foreground.context;
+    input context_injection = foreground.text;
+    input tools = foreground.tools;
+    input tool_result = foreground.tool_result;
+    input commit = foreground.commit;
+    input cancel = foreground.cancel;
+    input truncate = foreground.truncate;
+
+    output transcript = foreground.transcript;
+    output prepared_text = foreground.text_out;
+    output prepared_audio = foreground.audio_out;
+    output result = foreground.result;
+    output tool_proposal = foreground.tool_proposal;
+    output interaction_act = foreground.interaction_act;
+    output native_state = foreground.state;
+    output activity = foreground.activity;
+    output outcome = foreground.outcome;
+}

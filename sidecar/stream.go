@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"sync"
+
+	"github.com/bojieli/OpenRealtime/internal/strictjson"
 )
 
 // maxHeaderBytes bounds one JSON header. A header larger than this is a
@@ -78,6 +80,9 @@ func (reader *Reader) Read() (Message, error) {
 	}
 	if len(header) > maxHeaderBytes {
 		return Message{}, errors.New("sidecar header exceeds the frame limit")
+	}
+	if err := strictjson.Validate(header); err != nil {
+		return Message{}, fmt.Errorf("decode sidecar header: %w", err)
 	}
 	var message Message
 	if err := json.Unmarshal(header, &message); err != nil {

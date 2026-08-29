@@ -1,0 +1,29 @@
+// Speech-to-speech/multimodal foreground under externally selected
+// interaction. Endpoint, cadence, and act selection arrive through explicit
+// trigger/interaction/tick ports; the model is not granted native policy by
+// its family name.
+graph omni_external_interaction {
+    model.External :: foreground;
+
+    input audio = foreground.audio;
+    input video = foreground.video;
+    input context = foreground.context;
+    input context_injection = foreground.text;
+    input tools = foreground.tools;
+    input tool_result = foreground.tool_result;
+    input trigger = foreground.trigger;
+    input commit = foreground.commit;
+    input interaction = foreground.interaction;
+    input tick = foreground.tick;
+    input cancel = foreground.cancel;
+    input truncate = foreground.truncate;
+
+    output transcript = foreground.transcript;
+    output prepared_text = foreground.text_out;
+    output prepared_audio = foreground.audio_out;
+    output result = foreground.result;
+    output tool_proposal = foreground.tool_proposal;
+    output native_state = foreground.state;
+    output activity = foreground.activity;
+    output outcome = foreground.outcome;
+}

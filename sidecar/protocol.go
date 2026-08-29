@@ -27,19 +27,24 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/bojieli/OpenRealtime/element"
 )
 
 // Version is the frozen, legacy protocol version and remains the default.
 // VersionInteraction adds typed interaction-act handoff. VersionMultimodal
-// adds direct image frames and live tool-catalog updates. Selecting a later
-// version is explicit in Config so existing sidecars are never reinterpreted
-// merely because the engine learned a new frame.
+// adds direct image frames and live tool-catalog updates. VersionElementGraph
+// carries arbitrary descriptor-checked element ports rather than assuming an
+// audio binding. Selecting a later version is explicit in Config so existing
+// sidecars are never reinterpreted merely because the engine learned a new
+// frame.
 const Version = 1
 
 const (
-	VersionInteraction = 2
-	VersionMultimodal  = 3
-	LatestVersion      = VersionMultimodal
+	VersionInteraction  = 2
+	VersionMultimodal   = 3
+	VersionElementGraph = 4
+	LatestVersion       = VersionElementGraph
 )
 
 // MessageType names one frame.
@@ -80,6 +85,12 @@ const (
 	TypeToolResult MessageType = "tool_result"
 	// TypeBye ends the session cleanly.
 	TypeBye MessageType = "bye"
+	// TypeElementFrame carries one envelope on one descriptor-declared port.
+	// It is symmetric: the engine sends frames only to input ports and the
+	// sidecar sends frames only from output ports. Trigger, interrupt, timing,
+	// terminal, and state semantics remain in the port's element.Type rather
+	// than being collapsed into transport-specific message kinds.
+	TypeElementFrame MessageType = "element_frame"
 )
 
 // Sidecar to engine.
@@ -125,6 +136,20 @@ type Message struct {
 	Voice        string   `json:"voice,omitempty"`
 	Capabilities []string `json:"capabilities,omitempty"`
 	Tools        []Tool   `json:"tools,omitempty"`
+
+	// Generic element handshake and frames (protocol v4). The full descriptor
+	// is confirmed at readiness so a package declaration cannot silently drift
+	// from the process that actually started. SelectedPorts is the graph's
+	// active observation/action surface, not everything the implementation is
+	// theoretically capable of supporting.
+	ElementDescriptor    *element.Descriptor     `json:"element_descriptor,omitempty"`
+	ElementConfig        json.RawMessage         `json:"element_config,omitempty"`
+	SelectedPorts        []PortSelection         `json:"selected_ports,omitempty"`
+	RequiredCapabilities []CapabilityRequirement `json:"required_capabilities,omitempty"`
+	RuntimeArtifact      ArtifactIdentity        `json:"runtime_artifact,omitempty"`
+	ResolvedCapabilities []CapabilityIdentity    `json:"resolved_capabilities,omitempty"`
+	Port                 string                  `json:"port,omitempty"`
+	Envelope             *WireEnvelope           `json:"envelope,omitempty"`
 	// Selected ownership (protocol v2). Capabilities say what the stack can
 	// do; these fields tell a sidecar which available provider is active.
 	InteractionOwner string `json:"interaction_owner,omitempty"`
@@ -228,6 +253,9 @@ func (message Message) Validate() error {
 	}
 	switch message.Type {
 	case TypeHello:
+		if message.Version == VersionElementGraph {
+			return validateElementHello(message)
+		}
 		if message.Version <= 0 || message.SampleRate <= 0 {
 			return errors.New("hello requires a version and an input sample rate")
 		}
@@ -241,6 +269,9 @@ func (message Message) Validate() error {
 			}
 		}
 	case TypeReady:
+		if message.Version == VersionElementGraph {
+			return validateElementReady(message)
+		}
 		if message.Version <= 0 || message.OutputRate <= 0 {
 			return errors.New("ready requires a version and an output sample rate")
 		}
@@ -312,6 +343,8 @@ func (message Message) Validate() error {
 		if strings.TrimSpace(message.Message()) == "" {
 			return errors.New("an error requires a message")
 		}
+	case TypeElementFrame:
+		return validateElementFrame(message)
 	case TypeCommit, TypeRespond, TypeInterrupt, TypeBye, TypeSpeechStarted, TypeSpeechStopped,
 		TypeTextDone, TypeTurnDone, TypeLog, TypeToolsUpdate:
 	default:
