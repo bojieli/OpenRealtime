@@ -1844,11 +1844,21 @@ it has been reviewed, tested, and committed with its evidence):
 - [ ] Execute and compare the eleven interaction scenarios; scenario names
   remain individually tracked below.
 - [ ] Complete descriptor-driven values-schema authoring support.
-  - [ ] Review bounded immutable descriptor snapshots, strict values-envelope
-    schema generation, external-schema resolution, and unresolved-contract
-    reporting.
-  - [ ] Pass adversarial, determinism, and concurrent-reader tests before
-    checking the Phase 6 schema item.
+  - [x] Snapshot immutable exact descriptors and reject unknown identities or
+    Graph IR/descriptor contract drift before deriving a schema.
+  - [x] Generate a deterministic, bounded Draft 2020-12 values envelope with
+    exact graph/node identity, strict configless nodes, and no topology values.
+  - [x] Resolve caller-supplied self-contained config schemas into deterministic
+    `$defs` while rejecting invalid drafts, external references, nested resource
+    IDs, non-object contracts, and schema-ID collisions.
+  - [x] Keep opaque config references honest when unresolved: expose only the
+    object/node-index contract, mark the bundle incomplete, and support a
+    release gate that requires every reference to resolve.
+  - [x] Pass focused adversarial, mutation-isolation, determinism,
+    concurrent-reader race, cancellation, and bounds tests plus graph-wide race
+    and vet gates.
+  - [ ] Integrate generated contracts into configuration-value editor metadata
+    and recovery/LSP/UI transport before completing authoring support.
 - [ ] Complete the sound computer-use authority and trajectory feedback chain.
   - [ ] Join tool proposals to exact cognition-result provenance by run and
     call identity without trusting externally asserted causal metadata.
@@ -2055,6 +2065,12 @@ artifacts rather than legacy architecture/config switches):
   node, and directional port completion for canonical `.ortg` source.
 - [ ] Resolve separate values-schema references and generate JSON Schema and
   configuration-value editor metadata without mixing values into topology.
+  - [x] Generate and compile immutable descriptor-derived values schemas with
+    strict graph/node envelopes and deterministic content digests.
+  - [x] Support explicit schema resolution and truthful unresolved-contract
+    reports without inferring fields from opaque descriptor references.
+  - [ ] Expose resolved property metadata and diagnostics through the
+    configuration editor and its LSP/UI transport.
 - [x] Add bounded graph-aware node rename, hover, port completion, and
   go-to-definition for fully parsed canonical `.ortg`.
 - [ ] Add recovery parsing for incomplete authoring, formatter edits, LSP/UI
