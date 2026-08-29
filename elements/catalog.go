@@ -4,17 +4,45 @@
 package elements
 
 import (
+	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	"github.com/bojieli/OpenRealtime/elements/flow"
+	perceptionelements "github.com/bojieli/OpenRealtime/elements/perception"
+	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
+	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 )
 
 func RegisterDescriptors(catalog *resolve.Catalog) error {
-	return flow.RegisterDescriptors(catalog)
+	if err := flow.RegisterDescriptors(catalog); err != nil {
+		return err
+	}
+	if err := cognitionelements.RegisterDescriptors(catalog); err != nil {
+		return err
+	}
+	if err := perceptionelements.RegisterDescriptors(catalog); err != nil {
+		return err
+	}
+	if err := speechelements.RegisterDescriptors(catalog); err != nil {
+		return err
+	}
+	return stateelements.RegisterDescriptors(catalog)
 }
 
 func RegisterFactories(registry *graphruntime.Registry) error {
-	return flow.RegisterFactories(registry)
+	if err := flow.RegisterFactories(registry); err != nil {
+		return err
+	}
+	if err := cognitionelements.RegisterFactories(registry); err != nil {
+		return err
+	}
+	if err := perceptionelements.RegisterFactories(registry); err != nil {
+		return err
+	}
+	if err := speechelements.RegisterFactories(registry); err != nil {
+		return err
+	}
+	return stateelements.RegisterFactories(registry)
 }
 
 func Catalog() (*resolve.Catalog, error) {

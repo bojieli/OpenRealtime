@@ -262,6 +262,82 @@ func TestStoreEnforcesTypedSupersessionProvenance(t *testing.T) {
 	}
 }
 
+func TestObservationSupersessionIsOrderedPerSourceStream(t *testing.T) {
+	t.Parallel()
+	store := NewStore()
+	audio := func(id string, revision uint64, supersedes uint64, parent string) Item {
+		item := Item{
+			ID: id, Kind: KindObservation, SourceRevision: revision,
+			Producer: Producer{Phase: PhaseUser}, Content: id,
+			Event: &EventMetadata{
+				EventID: "event-" + id, Type: "audio.revision", Source: "audio", Channel: "microphone",
+				SupersedesRevision: supersedes,
+			},
+		}
+		if parent != "" {
+			item.CausalParentIDs = []string{parent}
+		}
+		return item
+	}
+	if err := store.Append(audio("audio-1", 1, 0, "")); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(Item{
+		ID: "vision-1", Kind: KindObservation, SourceRevision: 2,
+		Producer: Producer{Phase: PhaseObserver}, Content: "screen changed",
+		Observation: &ObservationMeta{Observer: "vision", Source: "screen", Authority: AuthorityObserver},
+		Event: &EventMetadata{
+			EventID: "event-vision", Type: "vision.revision", Source: "vision", Channel: "screen",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(audio("audio-2", 3, 1, "audio-1")); err != nil {
+		t.Fatalf("an interleaved visual observation made the audio revision stale: %v", err)
+	}
+	if err := store.Append(audio("audio-stale", 4, 1, "audio-1")); err == nil {
+		t.Fatal("a branch that skipped the latest audio revision was accepted")
+	}
+}
+
+func TestLegacyVoiceHandoffKeepsOneCanonicalRevisionStream(t *testing.T) {
+	t.Parallel()
+	store := NewStore()
+	if err := store.Append(Item{
+		ID: "spoken", Kind: KindObservation, SourceRevision: 1,
+		Producer: Producer{Phase: PhaseUser}, Content: "please read the notes file",
+		Event: &EventMetadata{
+			EventID: "audio-final", Type: "audio.endpoint", Source: "audio", Channel: "voice",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(Item{
+		ID: "typed", Kind: KindObservation, SourceRevision: 2,
+		CausalParentIDs: []string{"spoken"}, Producer: Producer{Phase: PhaseUser},
+		Content: "please read the notes file",
+		Event: &EventMetadata{
+			EventID: "client-final", Type: "client.endpoint", Source: "client", Channel: "voice",
+			SupersedesRevision: 1,
+		},
+	}); err != nil {
+		t.Fatalf("legacy audio-to-client voice handoff was split into different streams: %v", err)
+	}
+
+	if err := store.Append(Item{
+		ID: "observer", Kind: KindObservation, SourceRevision: 3,
+		CausalParentIDs: []string{"typed"}, Producer: Producer{Phase: PhaseObserver},
+		Content:     "screen changed",
+		Observation: &ObservationMeta{Observer: "vision", Source: "screen", Authority: AuthorityObserver},
+		Event: &EventMetadata{
+			EventID: "vision", Type: "vision.revision", Source: "vision", Channel: "voice",
+			SupersedesRevision: 2,
+		},
+	}); err == nil {
+		t.Fatal("observer input sharing a channel superseded authoritative participant input")
+	}
+}
+
 // A barge-in is reported twice, by two authorities: the server when playout
 // finishes, and the client when it says where playback actually stopped. The
 // second report is the one that knows what a person heard.

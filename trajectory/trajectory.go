@@ -821,22 +821,29 @@ func (store *Store) validateSupersessionLocked(item Item) error {
 		return errors.New("observation supersession must name an older positive source revision")
 	}
 	supersededID := ""
+	var superseded Item
 	for index := len(store.items) - 1; index >= 0; index-- {
 		candidate := store.items[index]
 		if candidate.Kind == KindObservation && candidate.SourceRevision == item.Event.SupersedesRevision {
 			supersededID = candidate.ID
+			superseded = candidate
 			break
 		}
 	}
 	if supersededID == "" {
 		return fmt.Errorf("observation supersedes unknown source revision %d", item.Event.SupersedesRevision)
 	}
+	if !sameObservationStream(superseded, item) {
+		return fmt.Errorf("observation supersession target %d belongs to a different source stream",
+			item.Event.SupersedesRevision)
+	}
 	for index := len(store.items) - 1; index >= 0; index-- {
-		if store.items[index].Kind != KindObservation {
+		candidate := store.items[index]
+		if candidate.Kind != KindObservation || !sameObservationStream(candidate, item) {
 			continue
 		}
-		if store.items[index].SourceRevision != item.Event.SupersedesRevision {
-			return errors.New("observation supersession must name the latest canonical observation")
+		if candidate.SourceRevision != item.Event.SupersedesRevision {
+			return errors.New("observation supersession must name the latest canonical observation in its source stream")
 		}
 		break
 	}
@@ -844,6 +851,34 @@ func (store *Store) validateSupersessionLocked(item Item) error {
 		return fmt.Errorf("observation supersession must causally reference item %q", supersededID)
 	}
 	return nil
+}
+
+// sameObservationStream uses graph-native event provenance when both items
+// carry it. A legacy item without event metadata retains the historical global
+// ordering rule, while camera, screen, microphone, and file revisions can now
+// interleave without making one another's next revision appear stale.
+//
+// Channel is the logical input lane; Source is the component that produced an
+// event on that lane. They are normally both stable across revisions. The
+// legacy cascade is the important exception: speech recognized by the audio
+// observer and text entered by the client are both authoritative participant
+// input on the "voice" lane, and the latter may replace the former while a
+// turn is still live. Treating the producer name as the stream identity makes
+// that valid handoff fail. Keep the compatibility rule deliberately narrow so
+// two observer sources sharing the generic "observation" channel cannot
+// supersede each other accidentally.
+func sameObservationStream(left, right Item) bool {
+	if left.Event == nil || right.Event == nil {
+		return true
+	}
+	if left.Event.Channel != right.Event.Channel {
+		return false
+	}
+	if left.Event.Source == right.Event.Source {
+		return true
+	}
+	return left.Event.Channel == "voice" &&
+		AuthorityOf(left) == AuthorityUser && AuthorityOf(right) == AuthorityUser
 }
 
 func (store *Store) transitionRepairLocked(item Item) error {

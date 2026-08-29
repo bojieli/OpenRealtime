@@ -267,8 +267,13 @@ type AudioObserver struct {
 	sampleOffset uint64
 	sampleRate   uint32
 	revision     uint64
-	lastText     string
-	lastStable   string
+	// predecessor is the latest emitted revision in the current utterance.
+	// revision remains session-monotonic across Reset so provenance IDs never
+	// collide, while predecessor is reset so a new utterance cannot claim to
+	// supersede the previous utterance's terminal observation.
+	predecessor uint64
+	lastText    string
+	lastStable  string
 }
 
 // NewAudioObserver creates the speech observer.
@@ -374,14 +379,25 @@ func (observer *AudioObserver) Flush(ctx context.Context) ([]Observation, error)
 // the session ever had. A provider with nothing to release does not implement
 // the interface and is unaffected.
 func (observer *AudioObserver) Reset() {
+	_ = observer.Close()
+}
+
+// Close resets the utterance and reports provider-release failures to a
+// lifecycle owner. Reset retains its historical best-effort signature for the
+// Observer interface; graph disposers use Close so cleanup evidence is not
+// silently discarded.
+func (observer *AudioObserver) Close() error {
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
+	var closeErr error
 	if closer, releases := observer.provider.(io.Closer); releases {
-		_ = closer.Close()
+		closeErr = closer.Close()
 	}
 	observer.provider = nil
 	observer.frameIndex, observer.sampleOffset, observer.sampleRate = 0, 0, 0
+	observer.predecessor = 0
 	observer.lastText, observer.lastStable = "", ""
+	return closeErr
 }
 
 // DurationMS is how much audio the current utterance has consumed.
@@ -430,8 +446,9 @@ func (observer *AudioObserver) observationFor(revision v1.PerceptionRevision, ca
 	if !final && text == observer.lastText {
 		return Observation{}, false
 	}
-	previous := observer.revision
 	observer.revision++
+	previous := observer.predecessor
+	observer.predecessor = observer.revision
 	observer.lastText = text
 	observer.lastStable = revision.StableText
 	observation := Observation{
@@ -440,7 +457,7 @@ func (observer *AudioObserver) observationFor(revision v1.PerceptionRevision, ca
 		StableText: revision.StableText, Provisional: !final, Final: final,
 		OccurredNS: capturedNS,
 	}
-	if final && previous > 0 {
+	if previous > 0 {
 		observation.Supersedes = previous
 	}
 	return observation, true

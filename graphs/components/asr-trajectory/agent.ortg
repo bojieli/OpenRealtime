@@ -1,0 +1,20 @@
+// Graph-native speech recognition and canonical observation commit.
+// Acoustic admission, cadence, and endpoint policy remain upstream choices;
+// recognition, interruption, provider evidence, and safe-point state commit
+// are separately inspectable here.
+graph asr_trajectory {
+    perception.ASR :: asr;
+    state.ObservationCommit :: observation_commit;
+    state.TrajectoryStore :: trajectory;
+    asr.observations -> observation_commit.observations;
+    observation_commit.append -> trajectory.append;
+    trajectory.committed -> observation_commit.committed;
+    trajectory.rejected -> observation_commit.rejected;
+    input observe = asr.observe;
+    input flush = asr.flush;
+    input cancel = asr.cancel;
+    output perception_outcome = asr.outcome;
+    output provider_resolution = asr.resolved;
+    output commit_outcome = observation_commit.outcome;
+    output snapshot = trajectory.snapshot;
+}

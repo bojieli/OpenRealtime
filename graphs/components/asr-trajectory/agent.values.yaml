@@ -1,0 +1,8 @@
+apiVersion: openrealtime.ai/config/v1alpha1
+graph: asr_trajectory
+nodes:
+  asr:
+    provider: deployment.asr
+    name: audio
+  observation_commit: {}
+  trajectory: {}

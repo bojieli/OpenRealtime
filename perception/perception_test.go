@@ -129,6 +129,9 @@ func TestAudioObserverProducesProvisionalRevisionsAndOneFinal(t *testing.T) {
 			t.Fatal("the audio observer reports the participant's own speech")
 		}
 	}
+	if provisional[0].Supersedes != 0 || provisional[1].Supersedes != provisional[0].Revision {
+		t.Fatalf("provisional revision chain = %+v", provisional)
+	}
 	final, err := observer.Flush(ctx)
 	if err != nil {
 		t.Fatalf("flush: %v", err)
@@ -153,15 +156,52 @@ func TestAudioObserverResetDropsRecogniserState(t *testing.T) {
 		t.Fatalf("new observer: %v", err)
 	}
 	ctx := context.Background()
-	if _, err := observer.Observe(ctx, []perception.Frame{audioFrame()}); err != nil {
+	first, err := observer.Observe(ctx, []perception.Frame{audioFrame()})
+	if err != nil {
 		t.Fatalf("observe: %v", err)
 	}
 	observer.Reset()
-	if _, err := observer.Observe(ctx, []perception.Frame{audioFrame()}); err != nil {
+	second, err := observer.Observe(ctx, []perception.Frame{audioFrame()})
+	if err != nil {
 		t.Fatalf("observe after reset: %v", err)
 	}
 	if created != 2 {
 		t.Fatalf("one recogniser per utterance, got %d", created)
+	}
+	if len(first) != 0 || len(second) != 0 {
+		t.Fatalf("empty partial recognisers unexpectedly emitted observations: first=%+v second=%+v", first, second)
+	}
+}
+
+func TestAudioObserverResetStartsANewSupersessionChain(t *testing.T) {
+	created := 0
+	observer, err := perception.NewAudioObserver(perception.AudioConfig{
+		Provider: func() (v1.PerceptionProvider, error) {
+			created++
+			return &revisionASR{revisions: []v1.PerceptionRevision{{StableText: "utterance"}}}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := observer.Observe(context.Background(), []perception.Frame{audioFrame()})
+	if err != nil || len(first) != 1 {
+		t.Fatalf("first utterance = %+v, %v", first, err)
+	}
+	observer.Reset()
+	second, err := observer.Observe(context.Background(), []perception.Frame{audioFrame()})
+	if err != nil || len(second) != 1 {
+		t.Fatalf("second utterance = %+v, %v", second, err)
+	}
+	if second[0].Revision <= first[0].Revision {
+		t.Fatalf("revision IDs are not session-monotonic: first=%d second=%d",
+			first[0].Revision, second[0].Revision)
+	}
+	if second[0].Supersedes != 0 {
+		t.Fatalf("new utterance superseded the prior utterance: %+v", second[0])
+	}
+	if created != 2 {
+		t.Fatalf("provider instances = %d", created)
 	}
 }
 
