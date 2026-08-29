@@ -11,6 +11,8 @@ import (
 	"slices"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/internal/elementconfig"
@@ -18,6 +20,12 @@ import (
 )
 
 const TrajectoryStoreService = "state.trajectory.store"
+
+const stateImplementationRevision = "implementation:1"
+
+func stateRuntimeID(descriptor element.Descriptor) string {
+	return "builtin://openrealtime/elements/" + descriptor.Name
+}
 
 var (
 	appendType = element.Request(
@@ -138,7 +146,7 @@ func (trajectoryStoreFactory) Mount(_ context.Context, mount element.MountContex
 	return &trajectoryStoreRunner{
 		instance: mount.InstanceID, store: store, appendInput: appendInput,
 		snapshotOutput: snapshotOutput, commitOutput: commitOutput,
-		rejectionOutput: rejectionOutput,
+		rejectionOutput: rejectionOutput, resolution: mount.Resolution,
 	}, nil
 }
 
@@ -149,9 +157,13 @@ type trajectoryStoreRunner struct {
 	snapshotOutput  element.OutputPort
 	commitOutput    element.OutputPort
 	rejectionOutput element.OutputPort
+	resolution      element.ResolutionReporter
 }
 
 func (runner *trajectoryStoreRunner) Run(ctx context.Context) error {
+	if err := reportStateResolution(runner.resolution, TrajectoryStoreDescriptor()); err != nil {
+		return err
+	}
 	initial := runner.store.Snapshot()
 	if err := runner.publishSnapshot(ctx, element.Envelope{}, initial); err != nil {
 		return err
@@ -294,6 +306,14 @@ func terminal(ctx context.Context, err error) bool {
 	return err != nil && (ctx.Err() != nil || errors.Is(err, graphruntime.ErrChannelClosed))
 }
 
+func reportStateResolution(
+	reporter element.ResolutionReporter, descriptor element.Descriptor,
+) error {
+	return liveidentity.Report(reporter, liveidentity.Artifact{
+		ID: stateRuntimeID(descriptor), Revision: stateImplementationRevision,
+	}, nil)
+}
+
 func Descriptors() []element.Descriptor {
 	return []element.Descriptor{TrajectoryStoreDescriptor(), ObservationCommitDescriptor()}
 }
@@ -315,7 +335,9 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 		return errors.New("register state factories: nil registry")
 	}
 	for _, factory := range []element.Factory{trajectoryStoreFactory{}, observationCommitFactory{}} {
-		if err := registry.Register("", factory); err != nil {
+		if err := registry.RegisterArtifact("", inspect.ArtifactIdentity{
+			ID: stateRuntimeID(factory.Descriptor()), Revision: stateImplementationRevision,
+		}, factory); err != nil {
 			return err
 		}
 	}

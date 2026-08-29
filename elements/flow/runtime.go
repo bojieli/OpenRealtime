@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 )
 
@@ -20,7 +21,7 @@ func (teeFactory) Mount(_ context.Context, mount element.MountContext) (element.
 	if err != nil {
 		return nil, err
 	}
-	return relay(input, output, false), nil
+	return relay(input, output, false, mount.Resolution, TeeDescriptor()), nil
 }
 
 type eventMuxFactory struct{}
@@ -36,6 +37,9 @@ func (eventMuxFactory) Mount(_ context.Context, mount element.MountContext) (ele
 		return nil, err
 	}
 	return element.RunnableFunc(func(ctx context.Context) error {
+		if err := reportFlowResolution(mount.Resolution, EventMuxDescriptor()); err != nil {
+			return err
+		}
 		for {
 			message, _, err := input.ReceiveAny(ctx)
 			if terminal(ctx, err) {
@@ -62,6 +66,9 @@ func (factory dropFactory) Mount(_ context.Context, mount element.MountContext) 
 		return nil, err
 	}
 	return element.RunnableFunc(func(ctx context.Context) error {
+		if err := reportFlowResolution(mount.Resolution, factory.descriptor); err != nil {
+			return err
+		}
 		for {
 			if _, err := input.Receive(ctx); terminal(ctx, err) {
 				return nil
@@ -84,11 +91,17 @@ func (latestFactory) Mount(_ context.Context, mount element.MountContext) (eleme
 	if err != nil {
 		return nil, err
 	}
-	return relay(input, output, true), nil
+	return relay(input, output, true, mount.Resolution, LatestDescriptor()), nil
 }
 
-func relay(input element.InputPort, output element.OutputPort, replaceType bool) element.Runnable {
+func relay(
+	input element.InputPort, output element.OutputPort, replaceType bool,
+	reporter element.ResolutionReporter, descriptor element.Descriptor,
+) element.Runnable {
 	return element.RunnableFunc(func(ctx context.Context) error {
+		if err := reportFlowResolution(reporter, descriptor); err != nil {
+			return err
+		}
 		for {
 			message, err := input.Receive(ctx)
 			if terminal(ctx, err) {
@@ -107,6 +120,14 @@ func relay(input element.InputPort, output element.OutputPort, replaceType bool)
 			}
 		}
 	})
+}
+
+func reportFlowResolution(
+	reporter element.ResolutionReporter, descriptor element.Descriptor,
+) error {
+	return liveidentity.Report(reporter, liveidentity.Artifact{
+		ID: flowRuntimeID(descriptor), Revision: flowImplementationRevision,
+	}, nil)
 }
 
 func terminal(ctx context.Context, err error) bool {

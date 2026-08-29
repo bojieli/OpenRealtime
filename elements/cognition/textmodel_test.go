@@ -15,6 +15,7 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	graphcompiler "github.com/bojieli/OpenRealtime/graph"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -103,6 +104,7 @@ func TestTextModelSamplesContextAndEmitsPreparedTypedOutputs(t *testing.T) {
 		resolution.RegistryRevision == 0 {
 		t.Fatalf("resolution = %+v", resolution)
 	}
+	assertTextModelLiveResolution(t, mounted, resolution.DescriptorDigest)
 
 	observation := trajectory.Item{
 		ID: "observation-1", Kind: trajectory.KindObservation, MonotonicNS: 10,
@@ -516,6 +518,31 @@ func TestTextModelStrictConfigAndLiveDescriptorDriftFailBeforeReadiness(t *testi
 	}
 }
 
+func TestTextModelRefusesMutableLiveModelIdentity(t *testing.T) {
+	descriptor := testDescriptor
+	descriptor.Model = "latest"
+	provider := &scriptedProvider{descriptor: descriptor, closed: &atomic.Int32{}}
+	providers := cognitionelements.NewProviderRegistry()
+	if err := providers.Register("primary", descriptor, func() (continuation.Provider, error) {
+		return provider, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, done, cancel := mountTextModel(t, providers, json.RawMessage(`{"provider":"primary"}`))
+	defer cancel()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "mutable or placeholder selector") {
+			t.Fatalf("mutable cognition identity error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("text model published readiness for a mutable provider identity")
+	}
+	if provider.closed.Load() != 1 {
+		t.Fatalf("provider close count after refused identity = %d", provider.closed.Load())
+	}
+}
+
 func TestTextModelBoundsUntrustedProviderOutput(t *testing.T) {
 	provider := &scriptedProvider{
 		descriptor: testDescriptor,
@@ -814,3 +841,28 @@ func contains(values []string, value string) bool {
 }
 
 func uint64Pointer(value uint64) *uint64 { return &value }
+
+func assertTextModelLiveResolution(
+	t *testing.T, mounted *graphruntime.Mounted, descriptorDigest string,
+) {
+	t.Helper()
+	resolution := mounted.Live().Nodes["model"].Resolution
+	if resolution == nil || resolution.RuntimeEvidence != inspect.EvidenceLive ||
+		resolution.Runtime.ID != "builtin://openrealtime/elements/cognition.TextModel" ||
+		resolution.Runtime.Revision != "implementation:1" ||
+		resolution.CapabilitiesEvidence != inspect.EvidenceLive {
+		t.Fatalf("text model live resolution = %+v", resolution)
+	}
+	for _, capability := range resolution.Capabilities {
+		if capability.Name == "cognition.continuation" &&
+			capability.Provider.ID == "model://test" &&
+			capability.Provider.Revision == "prepared-model" &&
+			capability.Provider.Digest == descriptorDigest && capability.Adapter != nil &&
+			capability.Adapter.ID == "builtin://openrealtime/adapters/cognition.TextModel-continuation" &&
+			capability.Adapter.Revision == "implementation:1" {
+			return
+		}
+	}
+	t.Fatalf("text model provider and adapter artifacts are not independently attested: %+v",
+		resolution.Capabilities)
+}

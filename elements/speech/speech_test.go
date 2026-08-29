@@ -17,6 +17,7 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	graphcompiler "github.com/bojieli/OpenRealtime/graph"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -267,6 +268,73 @@ func TestStrictValuesLiveResolutionAndLifecycleCleanup(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "descriptor drifted") {
 		t.Fatalf("provider drift error = %v", err)
 	}
+
+	lateDrift := &scriptedProvider{descriptor: cloneDescriptor(providerDescriptor)}
+	lateSink := newRecordingSink()
+	mounted, err := mountWithValues(providerDescriptor, func() v1.SpeechProvider { return lateDrift },
+		sinkDescriptor, func() speechelements.PlaybackSink { return lateSink }, defaultValues(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lateDrift.descriptor.Version = "changed-after-mount"
+	done := make(chan error, 1)
+	go func() { done <- mounted.graph.Run(context.Background()) }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "descriptor drifted") ||
+			!strings.Contains(err.Error(), "before readiness") {
+			t.Fatalf("provider drift after mount error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("provider drift after mount did not stop readiness")
+	}
+}
+
+func TestSpeechRefusesMutableProviderAndSinkIdentities(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		provider       v1.Descriptor
+		sink           v1.Descriptor
+		providerMarker string
+	}{
+		{
+			name: "TTS latest", provider: func() v1.Descriptor {
+				value := cloneDescriptor(providerDescriptor)
+				value.Version = "latest"
+				return value
+			}(), sink: cloneDescriptor(sinkDescriptor), providerMarker: "TTS",
+		},
+		{
+			name: "playback main", provider: cloneDescriptor(providerDescriptor),
+			sink: func() v1.Descriptor {
+				value := cloneDescriptor(sinkDescriptor)
+				value.Version = "main"
+				return value
+			}(), providerMarker: "playback",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &scriptedProvider{descriptor: test.provider}
+			sink := newRecordingSink()
+			sink.descriptor = test.sink
+			mounted, err := mountWithValues(test.provider, func() v1.SpeechProvider { return provider },
+				test.sink, func() speechelements.PlaybackSink { return sink }, defaultValues(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan error, 1)
+			go func() { done <- mounted.graph.Run(context.Background()) }()
+			select {
+			case err := <-done:
+				if err == nil || !strings.Contains(err.Error(), "mutable or placeholder selector") ||
+					!strings.Contains(err.Error(), test.providerMarker) {
+					t.Fatalf("mutable speech identity error = %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("speech graph published readiness for a mutable identity")
+			}
+		})
+	}
 }
 
 func TestLifecycleReportsProviderAndSinkCloseFailures(t *testing.T) {
@@ -441,6 +509,7 @@ func (fixture *speechFixture) receiveResolutions(t *testing.T) {
 	if provider.Reference != "primary" || sink.Reference != "speaker" {
 		t.Fatalf("resolutions provider=%+v sink=%+v", provider, sink)
 	}
+	assertSpeechLiveResolution(t, fixture.mounted)
 }
 
 func (fixture *speechFixture) sendText(t *testing.T, segment speechelements.TextSegment) {
@@ -692,6 +761,7 @@ func testChunks(id string, count, bytesPerChunk int) []v1.SpeechChunk {
 }
 
 type recordingSink struct {
+	descriptor     v1.Descriptor
 	mu             sync.Mutex
 	begins         []action.Utterance
 	frames         []action.Frame
@@ -706,7 +776,12 @@ func newRecordingSink() *recordingSink {
 	return &recordingSink{audioDelivered: make(chan struct{})}
 }
 
-func (*recordingSink) Descriptor() v1.Descriptor { return cloneDescriptor(sinkDescriptor) }
+func (sink *recordingSink) Descriptor() v1.Descriptor {
+	if sink.descriptor.Name != "" {
+		return cloneDescriptor(sink.descriptor)
+	}
+	return cloneDescriptor(sinkDescriptor)
+}
 func (sink *recordingSink) Begin(_ context.Context, utterance action.Utterance) error {
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
@@ -745,4 +820,46 @@ func cloneDescriptor(descriptor v1.Descriptor) v1.Descriptor {
 	}
 	descriptor.Capabilities = capabilities
 	return descriptor
+}
+
+func assertSpeechLiveResolution(t *testing.T, mounted *graphruntime.Mounted) {
+	t.Helper()
+	checks := []struct {
+		node, runtimeID, capability, providerID, adapterID string
+	}{
+		{
+			node: "tts", runtimeID: "builtin://openrealtime/elements/speech.TTS",
+			capability: "tts.synthesis",
+			providerID: "provider://openrealtime/api/v1/speech/tts/test-tts",
+			adapterID:  "builtin://openrealtime/adapters/speech.TTS-api-v1",
+		},
+		{
+			node: "playback", runtimeID: "builtin://openrealtime/elements/speech.Playback",
+			capability: "playback.output",
+			providerID: "device://openrealtime/api/v1/speech/playback/test-speaker",
+			adapterID:  "builtin://openrealtime/adapters/speech.Playback-api-v1",
+		},
+	}
+	for _, check := range checks {
+		resolution := mounted.Live().Nodes[check.node].Resolution
+		if resolution == nil || resolution.RuntimeEvidence != inspect.EvidenceLive ||
+			resolution.Runtime.ID != check.runtimeID ||
+			resolution.Runtime.Revision != "implementation:1" ||
+			resolution.CapabilitiesEvidence != inspect.EvidenceLive {
+			t.Fatalf("%s live resolution = %+v", check.node, resolution)
+		}
+		found := false
+		for _, capability := range resolution.Capabilities {
+			if capability.Name == check.capability && capability.Provider.ID == check.providerID &&
+				capability.Provider.Revision == "1" && capability.Adapter != nil &&
+				capability.Adapter.ID == check.adapterID &&
+				capability.Adapter.Revision == "implementation:1" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("%s provider/adapter resolution = %+v", check.node, resolution.Capabilities)
+		}
+	}
 }

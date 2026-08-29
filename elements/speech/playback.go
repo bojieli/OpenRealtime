@@ -139,6 +139,7 @@ func (playbackFactory) Mount(_ context.Context, mount element.MountContext) (ele
 		scheduler: scheduler, sinkReference: config.Sink, sinkDescriptor: entry.descriptor,
 		audioInput: audioInput, cancelInput: cancelInput,
 		statusOutput: statusOutput, outcomeOutput: outcomeOutput, resolvedOutput: resolvedOutput,
+		resolution:     mount.Resolution,
 		pendingCancels: newCancellationMemory(config.CancelMemory),
 	}, nil
 }
@@ -177,6 +178,7 @@ type playbackRunner struct {
 	statusOutput   element.OutputPort
 	outcomeOutput  element.OutputPort
 	resolvedOutput element.OutputPort
+	resolution     element.ResolutionReporter
 	pendingCancels *cancellationMemory
 	active         *activePlayback
 	discardID      string
@@ -185,6 +187,13 @@ type playbackRunner struct {
 func (runner *playbackRunner) Run(parent context.Context) (runErr error) {
 	ctx, stop := context.WithCancelCause(parent)
 	defer stop(nil)
+	actual, err := liveSinkDescriptor(runner.sinkReference, runner.sinkDescriptor, runner.sink)
+	if err != nil {
+		return fmt.Errorf("resolve playback sink %q before readiness: %w", runner.sinkReference, err)
+	}
+	if err := reportPlaybackLiveResolution(runner.resolution, actual); err != nil {
+		return fmt.Errorf("attest playback sink %q: %w", runner.sinkReference, err)
+	}
 	if err := runner.publishResolution(ctx); err != nil {
 		return err
 	}

@@ -117,6 +117,7 @@ func (textModelFactory) Mount(_ context.Context, mount element.MountContext) (el
 		contextInput:     contextInput, triggerInput: triggerInput, cancelInput: cancelInput,
 		textOutput: textOutput, resultOutput: resultOutput, toolOutput: toolOutput,
 		outcomeOutput: outcomeOutput, resolvedOutput: resolvedOutput,
+		resolution: mount.Resolution,
 	}, nil
 }
 
@@ -147,6 +148,7 @@ type textModelRunner struct {
 	toolOutput     element.OutputPort
 	outcomeOutput  element.OutputPort
 	resolvedOutput element.OutputPort
+	resolution     element.ResolutionReporter
 
 	latest *sampledContext
 }
@@ -162,6 +164,9 @@ func (runner *textModelRunner) Run(parent context.Context) error {
 		return errors.Join(err, providerCloseFailure(runner.reference, provider))
 	}
 	runner.provider = provider
+	if err := reportTextModelLiveResolution(runner.resolution, runner.entry.descriptor); err != nil {
+		return fmt.Errorf("attest cognition provider %q: %w", runner.reference, err)
+	}
 	if err := runner.publishResolution(ctx); err != nil {
 		return err
 	}

@@ -138,6 +138,7 @@ func (ttsFactory) Mount(_ context.Context, mount element.MountContext) (element.
 		providerReference: config.Provider, providerDescriptor: entry.descriptor,
 		textInput: textInput, cancelInput: cancelInput, audioOutput: audioOutput,
 		statusOutput: statusOutput, outcomeOutput: outcomeOutput, resolvedOutput: resolvedOutput,
+		resolution:     mount.Resolution,
 		pendingCancels: newCancellationMemory(config.CancelMemory),
 	}, nil
 }
@@ -167,12 +168,22 @@ type ttsRunner struct {
 	statusOutput       element.OutputPort
 	outcomeOutput      element.OutputPort
 	resolvedOutput     element.OutputPort
+	resolution         element.ResolutionReporter
 	pendingCancels     *cancellationMemory
 }
 
 func (runner *ttsRunner) Run(parent context.Context) error {
 	ctx, stop := context.WithCancelCause(parent)
 	defer stop(nil)
+	actual, err := liveProviderDescriptor(
+		runner.providerReference, runner.providerDescriptor, runner.provider,
+	)
+	if err != nil {
+		return fmt.Errorf("resolve TTS provider %q before readiness: %w", runner.providerReference, err)
+	}
+	if err := reportTTSLiveResolution(runner.resolution, actual); err != nil {
+		return fmt.Errorf("attest TTS provider %q: %w", runner.providerReference, err)
+	}
 	if err := runner.publishResolution(ctx); err != nil {
 		return err
 	}

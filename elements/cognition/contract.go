@@ -21,6 +21,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/internal/elementconfig"
@@ -428,5 +429,7 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if registry == nil {
 		return errors.New("register cognition factories: nil registry")
 	}
-	return registry.Register("", textModelFactory{})
+	return registry.RegisterArtifact("", inspect.ArtifactIdentity{
+		ID: textModelRuntimeID, Revision: cognitionImplementationRevision,
+	}, textModelFactory{})
 }

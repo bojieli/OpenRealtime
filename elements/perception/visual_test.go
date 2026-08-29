@@ -19,6 +19,7 @@ import (
 	"github.com/bojieli/OpenRealtime/elements"
 	perceptionelements "github.com/bojieli/OpenRealtime/elements/perception"
 	graphcompiler "github.com/bojieli/OpenRealtime/graph"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -55,6 +56,7 @@ func TestVisualElementMakesAdmissionRefreshAndTimingExplicit(t *testing.T) {
 		resolution.RegistryRevision == 0 {
 		t.Fatalf("visual resolution = %+v", resolution)
 	}
+	assertVisualLiveResolution(t, mounted, narrator.name)
 	metricsOutput, _ := mounted.Egress("metrics")
 	startup := receiveVisual(t, metricsOutput).Payload.(perceptionelements.VisualMetrics)
 	if startup.Source != "screen" || startup.Frames != 0 {
@@ -214,12 +216,12 @@ func TestVisualProviderDriftAndKeyframeDependencyFailBeforeRun(t *testing.T) {
 	providers := perceptionelements.NewVisualProviderRegistry()
 	if err := providers.Register("primary", perceptionelements.VisualProviderDescriptor{
 		Name: "declared", Revision: "1",
-	}, func() (coreperception.Narrator, error) {
+	}, func() (perceptionelements.VisualProvider, error) {
 		return &testNarrator{name: "actual", text: "x"}, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := mountVisualWithRegistry(t, providers, `{"provider":"primary","source":"screen"}`); err == nil || !strings.Contains(err.Error(), "identity drifted") {
+	if _, err := mountVisualWithRegistry(t, providers, `{"provider":"primary","source":"screen"}`); err == nil || !strings.Contains(err.Error(), "descriptor drifted") {
 		t.Fatalf("live provider drift was accepted: %v", err)
 	}
 
@@ -227,10 +229,34 @@ func TestVisualProviderDriftAndKeyframeDependencyFailBeforeRun(t *testing.T) {
 	if _, err := mountVisualWithRegistry(t, valid, `{"provider":"primary","source":"screen","attach_keyframes":true}`); err == nil || !strings.Contains(err.Error(), "media retainer") {
 		t.Fatalf("keyframe attachment without a retainer was accepted: %v", err)
 	}
+
+	mutableNarrator := &testNarrator{name: "vision/mutable@1", revision: "latest", text: "x"}
+	mutable := perceptionelements.NewVisualProviderRegistry()
+	if err := mutable.Register("primary", perceptionelements.VisualProviderDescriptor{
+		Name: mutableNarrator.Name(), Revision: "latest",
+	}, func() (perceptionelements.VisualProvider, error) { return mutableNarrator, nil }); err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := mountVisualWithRegistry(t, mutable, `{"provider":"primary","source":"screen"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- mounted.Run(context.Background()) }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "mutable or placeholder selector") {
+			t.Fatalf("mutable visual identity error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("visual graph published readiness for a mutable provider identity")
+	}
 }
 
 type testNarrator struct {
 	name     string
+	revision string
+	digest   string
 	text     string
 	block    bool
 	entered  chan struct{}
@@ -241,6 +267,16 @@ type testNarrator struct {
 }
 
 func (narrator *testNarrator) Name() string { return narrator.name }
+
+func (narrator *testNarrator) Descriptor() perceptionelements.VisualProviderDescriptor {
+	revision := narrator.revision
+	if revision == "" {
+		revision = "test:1"
+	}
+	return perceptionelements.VisualProviderDescriptor{
+		Name: narrator.name, Revision: revision, Digest: narrator.digest,
+	}
+}
 
 func (narrator *testNarrator) Narrate(
 	ctx context.Context, _ []coreperception.Frame, _ trajectory.Snapshot,
@@ -277,18 +313,22 @@ func visualFrame(t *testing.T, source string, fill color.RGBA) coreperception.Fr
 	}
 }
 
-func visualRegistry(t *testing.T, narrator coreperception.Narrator) *perceptionelements.VisualProviderRegistry {
+func visualRegistry(
+	t *testing.T, narrator perceptionelements.VisualProvider,
+) *perceptionelements.VisualProviderRegistry {
 	t.Helper()
 	registry := perceptionelements.NewVisualProviderRegistry()
 	if err := registry.Register("primary", perceptionelements.VisualProviderDescriptor{
 		Name: narrator.Name(), Revision: "test:1",
-	}, func() (coreperception.Narrator, error) { return narrator, nil }); err != nil {
+	}, func() (perceptionelements.VisualProvider, error) { return narrator, nil }); err != nil {
 		t.Fatal(err)
 	}
 	return registry
 }
 
-func mountVisual(t *testing.T, narrator coreperception.Narrator, values string) (*graphruntime.Mounted, <-chan error, context.CancelFunc) {
+func mountVisual(
+	t *testing.T, narrator perceptionelements.VisualProvider, values string,
+) (*graphruntime.Mounted, <-chan error, context.CancelFunc) {
 	t.Helper()
 	mounted, err := mountVisualWithRegistry(t, visualRegistry(t, narrator), values)
 	if err != nil {
@@ -367,6 +407,29 @@ func compileVisualGraph(t *testing.T) ir.Graph {
 }
 
 var (
-	_ coreperception.Narrator = (*testNarrator)(nil)
-	_ io.Closer               = (*testNarrator)(nil)
+	_ coreperception.Narrator           = (*testNarrator)(nil)
+	_ perceptionelements.VisualProvider = (*testNarrator)(nil)
+	_ io.Closer                         = (*testNarrator)(nil)
 )
+
+func assertVisualLiveResolution(
+	t *testing.T, mounted *graphruntime.Mounted, providerName string,
+) {
+	t.Helper()
+	resolution := mounted.Live().Nodes["vision"].Resolution
+	if resolution == nil || resolution.RuntimeEvidence != inspect.EvidenceLive ||
+		resolution.Runtime.ID != "builtin://openrealtime/elements/perception.VisualObserver" ||
+		resolution.Runtime.Revision != "implementation:1" ||
+		resolution.CapabilitiesEvidence != inspect.EvidenceLive ||
+		len(resolution.Capabilities) != 1 {
+		t.Fatalf("visual live resolution = %+v", resolution)
+	}
+	capability := resolution.Capabilities[0]
+	if capability.Name != "vision.narration" ||
+		capability.Provider.ID != "provider://openrealtime/visual/"+providerName ||
+		capability.Provider.Revision != "test:1" || capability.Adapter == nil ||
+		capability.Adapter.ID != "builtin://openrealtime/adapters/perception.VisualObserver-narrator" ||
+		capability.Adapter.Revision != "implementation:1" {
+		t.Fatalf("visual provider/adapter resolution = %+v", capability)
+	}
+}

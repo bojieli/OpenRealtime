@@ -7,9 +7,16 @@ import (
 	"errors"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 )
+
+const flowImplementationRevision = "implementation:1"
+
+func flowRuntimeID(descriptor element.Descriptor) string {
+	return "builtin://openrealtime/elements/" + descriptor.Name
+}
 
 func TeeDescriptor() element.Descriptor {
 	return element.Descriptor{
@@ -114,7 +121,9 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 		teeFactory{}, eventMuxFactory{}, dropFactory{descriptor: DropDescriptor()},
 		dropFactory{descriptor: IgnoreInterruptDescriptor()}, latestFactory{},
 	} {
-		if err := registry.Register("", factory); err != nil {
+		if err := registry.RegisterArtifact("", inspect.ArtifactIdentity{
+			ID: flowRuntimeID(factory.Descriptor()), Revision: flowImplementationRevision,
+		}, factory); err != nil {
 			return err
 		}
 	}

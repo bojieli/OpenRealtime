@@ -138,6 +138,7 @@ func (observationCommitFactory) Mount(
 		clock: clock, sequences: sequences,
 		observations: observations, committed: committed, rejected: rejected,
 		appendOutput: appendOutput, outcomeOutput: outcomeOutput,
+		resolution:         mount.Resolution,
 		pending:            make(map[string]pendingObservationCommit),
 		pendingStream:      make(map[string]string),
 		committedRevisions: make(map[string]map[uint64]committedObservation),
@@ -195,6 +196,7 @@ type observationCommitRunner struct {
 	rejected      element.InputPort
 	appendOutput  element.OutputPort
 	outcomeOutput element.OutputPort
+	resolution    element.ResolutionReporter
 
 	pending            map[string]pendingObservationCommit
 	pendingStream      map[string]string
@@ -203,6 +205,9 @@ type observationCommitRunner struct {
 }
 
 func (runner *observationCommitRunner) Run(ctx context.Context) error {
+	if err := reportStateResolution(runner.resolution, ObservationCommitDescriptor()); err != nil {
+		return err
+	}
 	inputs := make(chan observationCommitInput)
 	failures := make(chan error, 3)
 	ctx, cancel := context.WithCancelCause(ctx)

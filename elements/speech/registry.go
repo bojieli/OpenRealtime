@@ -143,45 +143,59 @@ func (registry *PlaybackSinkRegistry) resolve(reference string) (playbackSinkEnt
 }
 
 func verifyProvider(reference string, expected v1.Descriptor, provider v1.SpeechProvider) error {
+	_, err := liveProviderDescriptor(reference, expected, provider)
+	return err
+}
+
+func liveProviderDescriptor(
+	reference string, expected v1.Descriptor, provider v1.SpeechProvider,
+) (v1.Descriptor, error) {
 	if provider == nil || reflectedNil(provider) {
-		return fmt.Errorf("TTS provider %q factory returned nil", reference)
+		return v1.Descriptor{}, fmt.Errorf("TTS provider %q factory returned nil", reference)
 	}
 	actual := provider.Descriptor()
 	if err := actual.Validate(); err != nil {
-		return fmt.Errorf("TTS provider %q returned an invalid descriptor: %w", reference, err)
+		return v1.Descriptor{}, fmt.Errorf("TTS provider %q returned an invalid descriptor: %w", reference, err)
 	}
 	if !reflect.DeepEqual(actual, expected) {
-		return fmt.Errorf("TTS provider %q descriptor drifted: registered %+v, live %+v",
+		return v1.Descriptor{}, fmt.Errorf("TTS provider %q descriptor drifted: registered %+v, live %+v",
 			reference, expected, actual)
 	}
 	_, streaming := provider.(v1.StreamingSpeechProvider)
 	if actual.Capabilities.Has(v1.CapabilityStreamingOutput) != streaming {
-		return fmt.Errorf("TTS provider %q streaming_output capability is %t but live interface support is %t",
+		return v1.Descriptor{}, fmt.Errorf("TTS provider %q streaming_output capability is %t but live interface support is %t",
 			reference, actual.Capabilities.Has(v1.CapabilityStreamingOutput), streaming)
 	}
 	if !actual.Capabilities.Has(v1.CapabilityPCM16Output) {
-		return fmt.Errorf("TTS provider %q does not resolve to the PCM16 output required by speech.AudioFrame",
+		return v1.Descriptor{}, fmt.Errorf("TTS provider %q does not resolve to the PCM16 output required by speech.AudioFrame",
 			reference)
 	}
-	return nil
+	return cloneDescriptor(actual), nil
 }
 
 func verifySink(reference string, expected v1.Descriptor, sink PlaybackSink) error {
+	_, err := liveSinkDescriptor(reference, expected, sink)
+	return err
+}
+
+func liveSinkDescriptor(
+	reference string, expected v1.Descriptor, sink PlaybackSink,
+) (v1.Descriptor, error) {
 	if sink == nil || reflectedNil(sink) {
-		return fmt.Errorf("playback sink %q factory returned nil", reference)
+		return v1.Descriptor{}, fmt.Errorf("playback sink %q factory returned nil", reference)
 	}
 	actual := sink.Descriptor()
 	if err := actual.Validate(); err != nil {
-		return fmt.Errorf("playback sink %q returned an invalid descriptor: %w", reference, err)
+		return v1.Descriptor{}, fmt.Errorf("playback sink %q returned an invalid descriptor: %w", reference, err)
 	}
 	if !reflect.DeepEqual(actual, expected) {
-		return fmt.Errorf("playback sink %q descriptor drifted: registered %+v, live %+v",
+		return v1.Descriptor{}, fmt.Errorf("playback sink %q descriptor drifted: registered %+v, live %+v",
 			reference, expected, actual)
 	}
 	if !actual.Capabilities.Has(v1.CapabilityStreamingInput) {
-		return fmt.Errorf("playback sink %q does not accept streaming audio frames", reference)
+		return v1.Descriptor{}, fmt.Errorf("playback sink %q does not accept streaming audio frames", reference)
 	}
-	return nil
+	return cloneDescriptor(actual), nil
 }
 
 func cloneDescriptor(descriptor v1.Descriptor) v1.Descriptor {

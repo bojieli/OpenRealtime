@@ -16,6 +16,7 @@ import (
 	"github.com/bojieli/OpenRealtime/elements"
 	perceptionelements "github.com/bojieli/OpenRealtime/elements/perception"
 	graphcompiler "github.com/bojieli/OpenRealtime/graph"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -61,6 +62,7 @@ func TestASRElementStreamsRevisionsFlushesAndRecreatesPerUtterance(t *testing.T)
 		!reflect.DeepEqual(resolution.Descriptor, testASRDescriptor) {
 		t.Fatalf("provider resolution = %#v", resolvedEnvelope.Payload)
 	}
+	assertASRLiveResolution(t, mounted)
 
 	observe, _ := mounted.Ingress("observe")
 	flush, _ := mounted.Ingress("flush")
@@ -211,6 +213,32 @@ func TestASRResolutionRejectsLiveDescriptorDriftBeforeReadiness(t *testing.T) {
 	}
 }
 
+func TestASRResolutionRejectsMutableProviderIdentityBeforeReadiness(t *testing.T) {
+	descriptor := cloneDescriptor(testASRDescriptor)
+	descriptor.Version = "latest"
+	providers := perceptionelements.NewASRProviderRegistry()
+	if err := providers.Register("primary", descriptor, func() (v1.PerceptionProvider, error) {
+		return &describedASR{descriptor: descriptor}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mounted, runDone, cancelRun := mountASR(t, providers)
+	defer cancelRun()
+	select {
+	case err := <-runDone:
+		if err == nil || !strings.Contains(err.Error(), "mutable or placeholder selector") {
+			t.Fatalf("mutable provider identity error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ASR graph published readiness for a mutable provider identity")
+	}
+	resolution := mounted.Live().Nodes["asr"].Resolution
+	if resolution == nil || resolution.RuntimeEvidence == inspect.EvidenceLive ||
+		resolution.CapabilitiesEvidence == inspect.EvidenceLive {
+		t.Fatalf("refused ASR identity left partial live evidence: %+v", resolution)
+	}
+}
+
 type scriptedASR struct{}
 
 func (*scriptedASR) Descriptor() v1.Descriptor { return cloneDescriptor(testASRDescriptor) }
@@ -227,6 +255,15 @@ func (*driftedASR) Descriptor() v1.Descriptor {
 	descriptor := cloneDescriptor(testASRDescriptor)
 	descriptor.Version = "different"
 	return descriptor
+}
+
+type describedASR struct {
+	scriptedASR
+	descriptor v1.Descriptor
+}
+
+func (provider *describedASR) Descriptor() v1.Descriptor {
+	return cloneDescriptor(provider.descriptor)
 }
 
 type blockingASR struct {
@@ -320,9 +357,32 @@ func compileASRGraph(t *testing.T) ir.Graph {
 }
 
 func cloneDescriptor(descriptor v1.Descriptor) v1.Descriptor {
-	descriptor.Capabilities = make(v1.Capabilities, len(descriptor.Capabilities))
-	for capability, enabled := range testASRDescriptor.Capabilities {
+	capabilities := descriptor.Capabilities
+	descriptor.Capabilities = make(v1.Capabilities, len(capabilities))
+	for capability, enabled := range capabilities {
 		descriptor.Capabilities[capability] = enabled
 	}
 	return descriptor
+}
+
+func assertASRLiveResolution(t *testing.T, mounted *graphruntime.Mounted) {
+	t.Helper()
+	resolution := mounted.Live().Nodes["asr"].Resolution
+	if resolution == nil || resolution.RuntimeEvidence != inspect.EvidenceLive ||
+		resolution.Runtime.ID != "builtin://openrealtime/elements/perception.ASR" ||
+		resolution.Runtime.Revision != "implementation:1" ||
+		resolution.CapabilitiesEvidence != inspect.EvidenceLive {
+		t.Fatalf("ASR live resolution = %+v", resolution)
+	}
+	for _, capability := range resolution.Capabilities {
+		if capability.Name == "asr.transcription" &&
+			capability.Provider.ID == "provider://openrealtime/api/v1/perception/test-asr" &&
+			capability.Provider.Revision == "1" && capability.Adapter != nil &&
+			capability.Adapter.ID == "builtin://openrealtime/adapters/perception.ASR-api-v1" &&
+			capability.Adapter.Revision == "implementation:1" {
+			return
+		}
+	}
+	t.Fatalf("ASR provider and adapter artifacts are not independently attested: %+v",
+		resolution.Capabilities)
 }

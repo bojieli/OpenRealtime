@@ -16,6 +16,7 @@ import (
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/internal/elementconfig"
@@ -245,6 +246,7 @@ func (asrFactory) Mount(_ context.Context, mount element.MountContext) (element.
 		observeInput: observeInput, flushInput: flushInput,
 		cancelInput: cancelInput, observationsOutput: observationsOutput,
 		outcomeOutput: outcomeOutput, resolvedOutput: resolvedOutput,
+		resolution: mount.Resolution,
 	}, nil
 }
 
@@ -378,6 +380,7 @@ type asrRunner struct {
 	observationsOutput element.OutputPort
 	outcomeOutput      element.OutputPort
 	resolvedOutput     element.OutputPort
+	resolution         element.ResolutionReporter
 	currentStream      string
 }
 
@@ -386,6 +389,9 @@ func (runner *asrRunner) Run(parent context.Context) error {
 	defer cancel(nil)
 	if err := runner.primeProvider(); err != nil {
 		return fmt.Errorf("resolve ASR provider %q: %w", runner.providerReference, err)
+	}
+	if err := reportASRLiveResolution(runner.resolution, runner.providerDescriptor); err != nil {
+		return fmt.Errorf("attest ASR provider %q: %w", runner.providerReference, err)
 	}
 	if err := runner.publishResolution(ctx); err != nil {
 		return err
@@ -845,8 +851,16 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if registry == nil {
 		return errors.New("register perception factories: nil registry")
 	}
-	if err := registry.Register("", asrFactory{}); err != nil {
-		return err
+	for _, registration := range []struct {
+		factory  element.Factory
+		artifact inspect.ArtifactIdentity
+	}{
+		{asrFactory{}, inspect.ArtifactIdentity{ID: asrRuntimeID, Revision: perceptionImplementationRevision}},
+		{visualObserverFactory{}, inspect.ArtifactIdentity{ID: visualRuntimeID, Revision: perceptionImplementationRevision}},
+	} {
+		if err := registry.RegisterArtifact("", registration.artifact, registration.factory); err != nil {
+			return err
+		}
 	}
-	return registerVisualFactory(registry)
+	return nil
 }

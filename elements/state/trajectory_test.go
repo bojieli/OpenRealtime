@@ -12,6 +12,7 @@ import (
 	"github.com/bojieli/OpenRealtime/elements"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphcompiler "github.com/bojieli/OpenRealtime/graph"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -85,6 +86,7 @@ func TestTrajectoryStorePublishesSeedCommitsAndTypedRejections(t *testing.T) {
 	if !ok || seed.Version != 0 || len(seed.Items) != 0 {
 		t.Fatalf("seed snapshot = %#v", seedEnvelope.Payload)
 	}
+	assertPureStateResolution(t, mounted, "store", "state.TrajectoryStore")
 
 	requestType := element.Request(
 		element.Named("trajectory.Append"), element.Named("flow.RequestID"),
@@ -206,6 +208,8 @@ func TestObservationCommitSerializesRevisionsThroughAuthoritativeStoreReplies(t 
 	if seed := receiveState(t, snapshots).Payload.(trajectory.Snapshot); seed.Version != 0 {
 		t.Fatalf("seed = %+v", seed)
 	}
+	assertPureStateResolution(t, mounted, "store", "state.TrajectoryStore")
+	assertPureStateResolution(t, mounted, "commit", "state.ObservationCommit")
 	typeOf := element.Revisions(
 		element.Named("perception.Observation"), element.Named("perception.RevisionID"),
 	)
@@ -288,4 +292,25 @@ func receiveState(t *testing.T, input element.InputPort) element.Envelope {
 		t.Fatal(err)
 	}
 	return envelope
+}
+
+func assertPureStateResolution(
+	t *testing.T, mounted *graphruntime.Mounted, node, elementName string,
+) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		resolution := mounted.Live().Nodes[node].Resolution
+		if resolution != nil && resolution.RuntimeEvidence == inspect.EvidenceLive &&
+			resolution.Runtime.ID == "builtin://openrealtime/elements/"+elementName &&
+			resolution.Runtime.Revision == "implementation:1" &&
+			resolution.CapabilitiesEvidence == inspect.EvidenceLive &&
+			len(resolution.Capabilities) == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pure state node %s live resolution = %+v", node, resolution)
+		}
+		time.Sleep(time.Millisecond)
+	}
 }

@@ -13,7 +13,6 @@ import (
 	"sync"
 
 	"github.com/bojieli/OpenRealtime/element"
-	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/internal/elementconfig"
 	coreperception "github.com/bojieli/OpenRealtime/perception"
 )
@@ -150,7 +149,16 @@ type VisualMetrics struct {
 	Narrations uint64 `json:"narrations"`
 }
 
-type VisualProviderFactory func() (coreperception.Narrator, error)
+// VisualProvider exposes the exact identity returned by the constructed live
+// narrator. Name alone cannot distinguish a model revision or adapter image,
+// so graph-native providers must make the complete immutable descriptor
+// available at startup.
+type VisualProvider interface {
+	coreperception.Narrator
+	Descriptor() VisualProviderDescriptor
+}
+
+type VisualProviderFactory func() (VisualProvider, error)
 
 type visualProviderEntry struct {
 	descriptor VisualProviderDescriptor
@@ -273,10 +281,21 @@ func (visualObserverFactory) Mount(
 	if narrator == nil || reflectedNil(narrator) {
 		return nil, fmt.Errorf("visual provider %q factory returned nil", config.Provider)
 	}
-	if narrator.Name() != entry.descriptor.Name {
+	actual := narrator.Descriptor()
+	if err := actual.validate(); err != nil {
 		_ = closeNarrator(narrator)
-		return nil, fmt.Errorf("visual provider %q identity drifted: registered %q, live %q",
-			config.Provider, entry.descriptor.Name, narrator.Name())
+		return nil, fmt.Errorf("visual provider %q returned an invalid descriptor: %w",
+			config.Provider, err)
+	}
+	if narrator.Name() != actual.Name {
+		_ = closeNarrator(narrator)
+		return nil, fmt.Errorf("visual provider %q live name %q conflicts with descriptor name %q",
+			config.Provider, narrator.Name(), actual.Name)
+	}
+	if actual != entry.descriptor {
+		_ = closeNarrator(narrator)
+		return nil, fmt.Errorf("visual provider %q descriptor drifted: registered %+v, live %+v",
+			config.Provider, entry.descriptor, actual)
 	}
 	var retainer coreperception.Retainer
 	if config.AttachKeyframes {
@@ -313,9 +332,9 @@ func (visualObserverFactory) Mount(
 		return nil, err
 	}
 	return &visualObserverRunner{
-		instance: mount.InstanceID, config: config, observer: observer,
-		providerReference: config.Provider, providerDescriptor: entry.descriptor,
-		registryRevision: registryRevision, ports: ports,
+		instance: mount.InstanceID, config: config, observer: observer, provider: narrator,
+		providerReference: config.Provider, providerDescriptor: actual,
+		registryRevision: registryRevision, ports: ports, resolution: mount.Resolution,
 	}, nil
 }
 
@@ -405,16 +424,30 @@ type visualObserverRunner struct {
 	instance           string
 	config             VisualObserverConfig
 	observer           *coreperception.VideoObserver
+	provider           VisualProvider
 	providerReference  string
 	providerDescriptor VisualProviderDescriptor
 	registryRevision   uint64
 	ports              visualPorts
+	resolution         element.ResolutionReporter
 	activeStream       string
 }
 
 func (runner *visualObserverRunner) Run(parent context.Context) error {
 	ctx, stop := context.WithCancelCause(parent)
 	defer stop(nil)
+	actual := runner.provider.Descriptor()
+	if err := actual.validate(); err != nil {
+		return fmt.Errorf("visual provider %q changed to an invalid descriptor: %w",
+			runner.providerReference, err)
+	}
+	if runner.provider.Name() != actual.Name || actual != runner.providerDescriptor {
+		return fmt.Errorf("visual provider %q descriptor drifted before readiness: resolved %+v, live %+v",
+			runner.providerReference, runner.providerDescriptor, actual)
+	}
+	if err := reportVisualLiveResolution(runner.resolution, actual); err != nil {
+		return fmt.Errorf("attest visual provider %q: %w", runner.providerReference, err)
+	}
 	if err := runner.publishResolution(ctx); err != nil {
 		return err
 	}
@@ -796,8 +829,4 @@ func closeNarrator(narrator coreperception.Narrator) error {
 		return closer.Close()
 	}
 	return nil
-}
-
-func registerVisualFactory(registry *graphruntime.Registry) error {
-	return registry.Register("", visualObserverFactory{})
 }

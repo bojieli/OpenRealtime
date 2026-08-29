@@ -13,6 +13,7 @@ import (
 	"github.com/bojieli/OpenRealtime/action"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -277,8 +278,16 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if registry == nil {
 		return errors.New("register speech factories: nil registry")
 	}
-	for _, factory := range []element.Factory{ttsFactory{}, playbackFactory{}} {
-		if err := registry.Register("", factory); err != nil {
+	for _, registration := range []struct {
+		factory   element.Factory
+		runtimeID string
+	}{
+		{factory: ttsFactory{}, runtimeID: ttsRuntimeID},
+		{factory: playbackFactory{}, runtimeID: playbackRuntimeID},
+	} {
+		if err := registry.RegisterArtifact("", inspect.ArtifactIdentity{
+			ID: registration.runtimeID, Revision: speechImplementationRevision,
+		}, registration.factory); err != nil {
 			return err
 		}
 	}
