@@ -56,7 +56,6 @@ func (runtime *runtime) CommitAudio(ctx context.Context) error {
 	}
 	pending := runtime.pending
 	runtime.pending = nil
-	runtime.utteranceID = ""
 	runtime.audioMu.Unlock()
 	if utteranceID == "" {
 		return errors.New("the input audio buffer is empty")
@@ -75,7 +74,13 @@ func (runtime *runtime) CommitAudio(ctx context.Context) error {
 			runtime.fail("asr_provider_error", err)
 		}
 	}
-	return runtime.onUserSpeechStopped(ctx, utteranceID, endMS, runtime.scheduler.NowNS())
+	err := runtime.onUserSpeechStopped(ctx, utteranceID, endMS, runtime.scheduler.NowNS())
+	runtime.audioMu.Lock()
+	if runtime.utteranceID == utteranceID {
+		runtime.utteranceID = ""
+	}
+	runtime.audioMu.Unlock()
+	return err
 }
 
 // CreateResponse asks for a response now.

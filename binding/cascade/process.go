@@ -2,9 +2,11 @@ package cascade
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,10 +16,12 @@ import (
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/cognition"
+	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/internal/clock"
+	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -49,6 +53,24 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	if err := runtime.raiseRepairs(); err != nil {
 		runtime.fail("repair_error", err)
 	}
+	queuedFreshVisual := runtime.admitFreshVisualObservation(batch)
+	if !queuedFreshVisual && visualObservation(batch) && !batchHasUserObservation(batch) {
+		queuedFreshVisual = runtime.queueArmedVisualObservation(batch)
+	}
+	if queuedFreshVisual && !batchHasUserObservation(batch) {
+		return nil
+	}
+	// A live visual action's result is controller memory, not a new request for
+	// arbitrary reasoning while the same user utterance is still in progress.
+	// Starting the slow lane here races the required fresh-frame replan and can
+	// make that bounded decision stale. The endpoint observation will carry the
+	// complete utterance into ordinary fast/slow cognition independently.
+	if runtime.duplex.Snapshot().UserSpeaking && runtime.batchOnlyVisualToolResults(batch) {
+		return nil
+	}
+	if handled, err := runtime.processParallelVisual(ctx, batch); handled {
+		return err
+	}
 	// A turn-scoped policy suppresses one answer - wait, I have more to say -
 	// and is discharged once that answer happens. Expiring it when the speaker
 	// stopped would be too early: they stop constantly while making the point
@@ -69,6 +91,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 			ToolError:        batchHasToolError(batch),
 			PendingRepair:    len(trajectory.PendingRepairs(runtime.store.Snapshot())) > 0,
 			BackgroundResult: batch.Signalled(interaction.SignalBackgroundResult),
+			CompositeResume:  batch.Signalled(interaction.SignalCompositeResume),
 			SlowInvocations:  runtime.engine.SlowInvocations(revision),
 			Parallel:         batch.Triage == eventloop.TriageParallel,
 		},
@@ -110,7 +133,8 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	defer func() {
 		turn.stage("turn", runtime.scheduler.NowNS()-batchBegan)
 		if timings := turn.timings(); timings != "" && runtime.config.ProfileTurns {
-			fmt.Fprintf(os.Stderr, "turn-profile %s\n", timings)
+			fmt.Fprintf(os.Stderr, "turn-profile at=%s revision=%d %s\n",
+				time.Now().UTC().Format(time.RFC3339Nano), revision, timings)
 		}
 	}()
 	defer func() {
@@ -120,43 +144,161 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	}()
 
 	standing, interjecting, heard := runtime.cognitionExtras(revision)
+	compositeResume := batch.Signalled(interaction.SignalCompositeResume)
+	if compositeResume {
+		if pending := runtime.takeCompositeResumeHeard(); strings.TrimSpace(heard) == "" {
+			heard = pending
+		}
+	}
 	because := ""
 	if interjecting {
 		// The floor took this turn from somebody mid-sentence, which is what
 		// interrupt means, and the voice needs that rather than only knowing
 		// the turn is not its own.
 		because = string(interaction.ActInterrupt)
+	} else if compositeResume {
+		because = interaction.ReasonCompositeResume
 	}
 	// One snapshot for the whole request. Two calls read the same log twice
 	// on the path between hearing a word and answering it.
 	snapshot := runtime.store.Snapshot()
+	visualIntentID, visualTask := runtime.visualTask(snapshot, batchHasUserObservation(batch))
 	request := cognition.Request{
 		Standing: standing, Counting: runtime.countingIsInForce(), Interjecting: interjecting, Heard: heard, Because: because,
 		Answered:       runtime.alreadyAnsweredFor(snapshot),
 		Setting:        runtime.settingAPolicy(snapshot),
+		InFlight:       inFlightToolNames(snapshot),
+		VisualIntentID: visualIntentID,
+		VisualTask:     visualTask,
 		SourceRevision: revision,
+		ToolResult:     batch.Contains(trajectory.KindToolResult),
 		AllowFastTools: runtime.observationHasUserIntent(batch),
 		PendingRepair:  len(trajectory.PendingRepairs(snapshot)) > 0,
 	}
+	if request.VisualIntentID != "" {
+		request.CompletedVisualActions = runtime.completedVisualActionsForIntent(snapshot, request.VisualIntentID)
+	}
 	// A visual reflex is a separate optional cognition role, not a mutation of
 	// the voice. It gets first refusal only on a batch carrying current visual
-	// evidence. Act and wait complete this event; abstain, timeout, or malformed
-	// output fall through to the unchanged fast/slow rollout below.
-	if visualObservation(batch) {
+	// evidence. Act and wait complete an observer-only event. If the gate merged
+	// that frame with fresh user-authority input, WAIT completes only the visual
+	// branch and the independent voice/reasoning branch continues below. ACT
+	// re-enters that branch after dispatch: a local or promptly answered action
+	// can advance the canonical trajectory, so voice generated from the
+	// pre-action prefix would correctly be withheld as stale.
+	resumeAfterVisual := false
+	var visualDispatchErr error
+	userVisualTask := batchHasUserObservation(batch) && snapshotHasVisual(snapshot)
+	visualAuthority := runtime.visualInteractionIntent(
+		ctx, request.VisualIntentID, request.VisualTask, batchHasUserObservation(batch),
+	)
+	// Monitor authority already says that the requested action belongs to a
+	// future visual condition. Arm that condition from the user's words and let
+	// the next observer frame be the first grounding opportunity. Running the
+	// visual actor on the retained pre-condition frame here only makes it say
+	// WAIT, and—more importantly—serializes an independent spoken obligation
+	// such as "present this while watching for an alert" behind a full VLM
+	// deadline. At 5 fps the next direct-pixel observation is at most one frame
+	// away; no visual narration or coordinate guess is introduced.
+	monitorArmedFromUser := batchHasUserObservation(batch) &&
+		visualAuthority == interaction.VisualIntentMonitor
+	if monitorArmedFromUser {
+		runtime.armVisualMonitor(request.VisualIntentID)
+		// This is the same semantic handoff a visual WAIT produces: the silent
+		// branch is now monitoring, while the independent spoken/semantic part
+		// of the request still needs to run. Preserve that signal even though we
+		// avoided the unnecessary retained-frame VLM call that used to produce
+		// the WAIT token.
+		resumeAfterVisual = true
+		if runtime.config.ProfileTurns {
+			fmt.Fprintf(os.Stderr,
+				"visual-profile at=%s where=user-policy intent=%q task=%q outcome=armed-monitor\n",
+				time.Now().UTC().Format(time.RFC3339Nano), request.VisualIntentID, request.VisualTask)
+		}
+	}
+	visualAuthorized := visualAuthority != interaction.VisualIntentNone
+	userVisualTask = userVisualTask && visualAuthorized && runtime.visualIntentEligible(request.VisualIntentID)
+	userVisualTask = userVisualTask && !monitorArmedFromUser
+	if userVisualTask && runtime.visualPartial.Load() {
+		// The canonical observation supersedes the provider prefix used by any
+		// live partial decision. Cancel it before waiting so the endpoint can run
+		// one fresh decision instead of waiting for a guaranteed stale commit.
+		runtime.cancelVisualDecision()
+		if err := runtime.waitForLiveVisual(ctx); err != nil {
+			return err
+		}
+		// The live outcome may have armed or completed the task while this
+		// endpoint waited. Re-read the typed state instead of acting on the
+		// eligibility snapshot from before that bounded micro-turn finished.
+		userVisualTask = visualAuthorized && runtime.visualIntentEligible(request.VisualIntentID)
+	}
+	armedVisualUpdate := visualObservation(batch) && visualAuthorized &&
+		runtime.visualIntentEligible(request.VisualIntentID) && !monitorArmedFromUser
+	if explicitVisualActionsComplete(request) {
+		// A completed action chunk is not authority to guess the unfinished
+		// clause that currently follows it. Keep the controller eligible for a
+		// later ASR extension, while allowing an already-complete semantic tail
+		// to resume through the ordinary voice/slow path.
+		userVisualTask = false
+		armedVisualUpdate = false
+		resumeAfterVisual = interaction.ImmediateNonvisualClause(request.VisualTask) != ""
+	}
+	if userVisualTask || armedVisualUpdate {
 		outcome, reflexErr := runtime.engine.RunVisualReflex(ctx, request)
 		if !errors.Is(reflexErr, cognition.ErrVisualReflexDisabled) {
 			turn.record(outcome.Result)
 		}
 		if reflexErr == nil {
+			if targetErr := validateVisualTarget(request, outcome); targetErr != nil {
+				runtime.profileVisualOutcome("batch-rejected", request, outcome, targetErr)
+				if _, placeholderErr := runtime.engine.PlaceholderCalls(
+					outcome.Result.ToolCalls, "visual target rejected: "+targetErr.Error(),
+				); placeholderErr != nil {
+					return placeholderErr
+				}
+				resumeAfterVisual = batchHasUserObservation(batch)
+				outcome.Kind = cognition.VisualReflexAbstain
+				outcome.Result = continuation.RunResult{}
+			}
+			runtime.applyVisualOutcome(request.VisualIntentID, outcome)
+			runtime.profileVisualOutcome("batch", request, outcome, nil)
 			switch outcome.Kind {
 			case cognition.VisualReflexAct:
-				return runtime.dispatch(ctx, outcome.Result)
+				visualDispatchErr = runtime.dispatchVisual(ctx, outcome.Result, request.VisualIntentID)
+				if !batchHasUserObservation(batch) {
+					return visualDispatchErr
+				}
+				// Preserve a live partial that has not reached the canonical log,
+				// then let the ordinary rollout compile against the post-action
+				// prefix. The signal is submitted even when dispatch reports an
+				// error: the independent voice/reasoning obligation still exists,
+				// and the tool-result path (where one was committed) is not a
+				// substitute for it.
+				runtime.rememberCompositeResumeHeard(request.Heard)
+				signalErr := runtime.signal(interaction.SignalCompositeResume)
+				if signalErr != nil {
+					runtime.clearCompositeResumeHeard(request.Heard)
+				}
+				return errors.Join(visualDispatchErr, signalErr)
 			case cognition.VisualReflexWait:
-				return nil
+				if !batchHasUserObservation(batch) {
+					return nil
+				}
+				resumeAfterVisual = true
 			case cognition.VisualReflexAbstain:
 				// The ordinary rollout is the fallback.
 			}
 		}
+		if reflexErr != nil {
+			runtime.profileVisualOutcome("batch", request, outcome, reflexErr)
+		}
+	}
+	if resumeAfterVisual && !request.Interjecting {
+		request.Because = interaction.ReasonCompositeResume
+	}
+	if (compositeResume || resumeAfterVisual) && strings.TrimSpace(request.VisualTask) != "" {
+		request.Standing = runtime.standingExceptCurrentComposite(request.Standing, request.VisualTask)
+		request.ImmediateNonvisual = interaction.ImmediateNonvisualClause(request.VisualTask)
 	}
 	// A plan that already contains the reasoner does not need the voice to ask
 	// for it, and asking would run it twice.
@@ -167,7 +309,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	for _, step := range plan {
 		select {
 		case <-ctx.Done():
-			return errors.Join(append(failures, context.Cause(ctx))...)
+			return errors.Join(append(failures, visualDispatchErr, context.Cause(ctx))...)
 		default:
 		}
 		if err := runtime.runStep(ctx, step, request, turn, plansSlow); err != nil {
@@ -189,7 +331,330 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 			}
 		}
 	}
-	return errors.Join(failures...)
+	return errors.Join(append(failures, visualDispatchErr)...)
+}
+
+// standingExceptCurrentComposite removes only the policy extraction produced
+// from the same still-current request. The direct visual controller already
+// retains its future monitoring clause; showing that extraction to the voice
+// again can make a small model treat the whole mixed request as future-only
+// and answer <wait> instead of performing its independent immediate clause.
+// Policies from every earlier turn stay visible and authoritative.
+func (runtime *runtime) standingExceptCurrentComposite(current []string, task string) []string {
+	task = strings.TrimSpace(task)
+	if task == "" || len(current) == 0 {
+		return current
+	}
+	runtime.audioMu.Lock()
+	pinnedFrom, turn := strings.TrimSpace(runtime.pinnedFromText), runtime.extractTurn
+	runtime.audioMu.Unlock()
+	sameWords := slices.Equal(trajectory.SpokenWords(pinnedFrom), trajectory.SpokenWords(task))
+	if pinnedFrom == "" || turn == 0 ||
+		(!sameWords && !trajectory.SaidFurther(pinnedFrom, task) && !trajectory.SaidFurther(task, pinnedFrom)) {
+		return current
+	}
+	return runtime.pinboard.LinesExcept(runtime.scheduler.NowNS(), turn)
+}
+
+func (runtime *runtime) profileVisualOutcome(
+	where string, request cognition.Request, outcome cognition.VisualReflexOutcome, err error,
+) {
+	if !runtime.config.ProfileTurns {
+		return
+	}
+	tool := ""
+	if len(outcome.Result.ToolCalls) > 0 {
+		tool = outcome.Result.ToolCalls[0].Name + ":" + string(outcome.Result.ToolCalls[0].Arguments)
+	}
+	fmt.Fprintf(os.Stderr,
+		"visual-profile at=%s where=%s intent=%q task=%q completed=%d outcome=%s continue=%t target=%q tool=%q error=%q\n",
+		time.Now().UTC().Format(time.RFC3339Nano), where, request.VisualIntentID, request.VisualTask, request.CompletedVisualActions,
+		outcome.Kind, outcome.Continue, outcome.Target, tool, errorText(err),
+	)
+}
+
+// validateVisualTarget joins semantic authority to pixel grounding without
+// trusting either alone. The actor must name the visible control it grounded,
+// and that label must overlap a non-generic word the user actually supplied.
+// This rejects a model that autocompletes provisional "over" into the already
+// selected Summary tab while preserving arbitrary coordinates and direct
+// pixels as the source of spatial truth.
+func validateVisualTarget(request cognition.Request, outcome cognition.VisualReflexOutcome) error {
+	if outcome.Kind != cognition.VisualReflexAct {
+		return nil
+	}
+	target := strings.TrimSpace(outcome.Target)
+	if target == "" {
+		// Compatibility for providers/tests predating target metadata is safe
+		// only on committed text. A live provisional action without a declared
+		// label has no way to prove it did not autocomplete the ASR tail.
+		if strings.TrimSpace(request.VisualUnstable) != "" {
+			return errors.New("visual action omitted its grounded target for provisional speech")
+		}
+		return nil
+	}
+	generic := map[string]struct{}{
+		"button": {}, "control": {}, "dialog": {}, "menu": {}, "screen": {},
+		"slide": {}, "tab": {}, "the": {}, "this": {}, "that": {},
+		"open": {}, "share": {}, "go": {}, "back": {}, "navigate": {},
+		"switch": {}, "click": {}, "press": {}, "tap": {}, "select": {},
+		"start": {}, "sharing": {}, "acknowledge": {},
+	}
+	// Ordered action chunks narrow grounding to the next unfulfilled command.
+	// Comparing against the whole utterance would let a model repeat the first
+	// named control after its successful result merely because that old label
+	// still appears earlier in the user's sentence.
+	expectedTask := request.VisualTask
+	if next, ok := interaction.ExplicitVisualActionAt(
+		request.VisualTask, request.CompletedVisualActions,
+	); ok {
+		expectedTask = next
+	}
+	taskWords := make(map[string]struct{})
+	for _, word := range trajectory.SpokenWords(expectedTask) {
+		taskWords[word] = struct{}{}
+	}
+	for _, word := range trajectory.SpokenWords(target) {
+		if len([]rune(word)) < 3 {
+			continue
+		}
+		if _, skip := generic[word]; skip {
+			continue
+		}
+		for taskWord := range taskWords {
+			if visualTargetWordsEquivalent(word, taskWord) {
+				return nil
+			}
+		}
+	}
+	// Some real controls are labelled entirely with UI language (notably
+	// "Share screen"). Accept that only when the complete two-or-more-word
+	// label is present in the next action after articles/possessives are
+	// removed. A lone generic "button" or a shared verb such as "open" cannot
+	// grant this fallback.
+	targetLabelWords := visualLabelWords(target)
+	expectedLabelWords := visualLabelWords(expectedTask)
+	if len(targetLabelWords) >= 2 && visualWordsContained(targetLabelWords, expectedLabelWords) {
+		return nil
+	}
+	if len(targetLabelWords) == 1 && targetLabelWords[0] == "acknowledge" &&
+		visualWordsContained(targetLabelWords, expectedLabelWords) {
+		return nil
+	}
+	return fmt.Errorf("grounded visual target %q was not named by next action %q", target, expectedTask)
+}
+
+func visualLabelWords(text string) []string {
+	words := trajectory.SpokenWords(text)
+	return slices.DeleteFunc(words, func(word string) bool {
+		switch word {
+		case "the", "a", "an", "my", "your", "our", "this", "that", "to", "on":
+			return true
+		default:
+			return false
+		}
+	})
+}
+
+func visualWordsContained(needles, words []string) bool {
+	available := make(map[string]struct{}, len(words))
+	for _, word := range words {
+		available[word] = struct{}{}
+	}
+	for _, needle := range needles {
+		if _, ok := available[needle]; !ok {
+			return false
+		}
+	}
+	return len(needles) > 0
+}
+
+func visualTargetWordsEquivalent(left, right string) bool {
+	left, right = strings.ToLower(strings.TrimSpace(left)), strings.ToLower(strings.TrimSpace(right))
+	return left != "" && right != "" && singularVisualWord(left) == singularVisualWord(right)
+}
+
+func singularVisualWord(word string) string {
+	if len(word) > 3 && strings.HasSuffix(word, "ies") {
+		return strings.TrimSuffix(word, "ies") + "y"
+	}
+	if len(word) > 2 && strings.HasSuffix(word, "s") && !strings.HasSuffix(word, "ss") {
+		return strings.TrimSuffix(word, "s")
+	}
+	return word
+}
+
+func explicitVisualActionsComplete(request cognition.Request) bool {
+	count := interaction.ExplicitVisualActionCount(request.VisualTask)
+	return count > 0 && request.CompletedVisualActions >= count
+}
+
+func (runtime *runtime) waitForLiveVisual(ctx context.Context) error {
+	if !runtime.visualPartial.Load() {
+		return nil
+	}
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for runtime.visualPartial.Load() {
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case <-ticker.C:
+		}
+	}
+	return nil
+}
+
+func (runtime *runtime) beginVisualDecision(
+	parent context.Context, timeout time.Duration,
+) (context.Context, context.CancelFunc, uint64) {
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(parent, timeout)
+	} else {
+		ctx, cancel = context.WithCancel(parent)
+	}
+	runtime.visualActionMu.Lock()
+	runtime.visualDecisionGeneration++
+	generation := runtime.visualDecisionGeneration
+	runtime.visualDecisionCancel = cancel
+	runtime.visualActionMu.Unlock()
+	return ctx, cancel, generation
+}
+
+func (runtime *runtime) endVisualDecision(generation uint64, cancel context.CancelFunc) {
+	cancel()
+	runtime.visualActionMu.Lock()
+	if runtime.visualDecisionGeneration == generation {
+		runtime.visualDecisionCancel = nil
+	}
+	runtime.visualActionMu.Unlock()
+}
+
+func (runtime *runtime) cancelVisualDecision() {
+	runtime.visualActionMu.Lock()
+	cancel := runtime.visualDecisionCancel
+	runtime.visualActionMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// processParallelVisual keeps receding-horizon screen control independent of
+// a slow cognition call already in flight. It runs before response bracketing:
+// the lane cannot speak and may emit at most one bounded action, exactly like
+// the partial-triggered silent-act path which also operates outside an audible
+// turn. Abstention falls through to the ordinary rollout.
+func (runtime *runtime) processParallelVisual(ctx context.Context, batch eventloop.Batch) (bool, error) {
+	if batch.Triage != eventloop.TriageParallel || !visualObservation(batch) || batchHasUserObservation(batch) {
+		return false, nil
+	}
+	if runtime.visualPartial.Load() {
+		return false, nil
+	}
+	snapshot := runtime.store.Snapshot()
+	intentID, task := runtime.visualTask(snapshot, false)
+	if !runtime.parallelVisualIntentAuthorized(ctx, intentID, task) {
+		return false, nil
+	}
+	standing, _, _ := runtime.cognitionExtras(runtime.latestRevision(batch))
+	request := cognition.Request{
+		SourceRevision: runtime.latestRevision(batch), VisualIntentID: intentID,
+		VisualTask: task,
+		Standing:   standing, Counting: runtime.countingIsInForce(), Silent: true,
+		InFlight: inFlightToolNames(snapshot), PendingRepair: len(trajectory.PendingRepairs(snapshot)) > 0,
+		CompletedVisualActions: runtime.completedVisualActionsForIntent(snapshot, intentID),
+	}
+	if explicitVisualActionsComplete(request) {
+		// This observer frame satisfies the fresh-frame barrier after the last
+		// chunk, but the user has not completed another screen command yet. Do
+		// not spend the actor call or terminally consume the still-growing task.
+		return true, nil
+	}
+	outcome, err := runtime.engine.RunVisualReflex(ctx, request)
+	runtime.profileVisualOutcome("parallel", request, outcome, err)
+	if errors.Is(err, cognition.ErrVisualReflexDisabled) {
+		return false, nil
+	}
+	if err != nil {
+		return false, nil
+	}
+	if targetErr := validateVisualTarget(request, outcome); targetErr != nil {
+		runtime.profileVisualOutcome("parallel-rejected", request, outcome, targetErr)
+		if _, placeholderErr := runtime.engine.PlaceholderCalls(
+			outcome.Result.ToolCalls, "visual target rejected: "+targetErr.Error(),
+		); placeholderErr != nil {
+			return true, placeholderErr
+		}
+		return true, nil
+	}
+	runtime.applyVisualOutcome(request.VisualIntentID, outcome)
+	switch outcome.Kind {
+	case cognition.VisualReflexAct:
+		return true, runtime.dispatchVisual(ctx, outcome.Result, request.VisualIntentID)
+	case cognition.VisualReflexWait:
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
+// parallelVisualIntentAuthorized prevents an observer-only safe point from
+// spending (and terminally resolving) the pixel actor before user-derived
+// interaction policy has granted screen authority. In particular, a frame
+// arriving while ASR still says "go to the" must not let an ABSTAIN consume
+// the task just before the completed "go to the Summary" is classified.
+//
+// update=false is essential: pixels may reuse authority already derived from
+// user words, but an autonomous observer frame cannot create that authority.
+func (runtime *runtime) parallelVisualIntentAuthorized(
+	ctx context.Context, intentID, task string,
+) bool {
+	if strings.TrimSpace(intentID) == "" || strings.TrimSpace(task) == "" ||
+		!runtime.visualIntentEligible(intentID) {
+		return false
+	}
+	return runtime.visualInteractionIntent(ctx, intentID, task, false) != interaction.VisualIntentNone
+}
+
+func inFlightToolNames(snapshot trajectory.Snapshot) []string {
+	pending := trajectory.UnresolvedToolCalls(snapshot)
+	names := make([]string, 0, len(pending))
+	seen := make(map[string]struct{}, len(pending))
+	for _, call := range pending {
+		name := strings.TrimSpace(call.Call.Name)
+		if name == "" {
+			continue
+		}
+		if _, duplicate := seen[name]; duplicate {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	return names
+}
+
+func (runtime *runtime) batchOnlyVisualToolResults(batch eventloop.Batch) bool {
+	callIDs := make([]string, 0, len(batch.Items))
+	for _, item := range batch.Items {
+		if item.Kind != trajectory.KindToolResult || item.ToolResult == nil {
+			continue
+		}
+		callIDs = append(callIDs, item.ToolResult.CallID)
+	}
+	if len(callIDs) == 0 {
+		return false
+	}
+	runtime.visualActionMu.Lock()
+	defer runtime.visualActionMu.Unlock()
+	for _, callID := range callIDs {
+		if strings.TrimSpace(runtime.visualIntentByCall[callID]) == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func visualObservation(batch eventloop.Batch) bool {
@@ -201,6 +666,323 @@ func visualObservation(batch eventloop.Batch) bool {
 			if strings.HasPrefix(strings.ToLower(media.MIMEType), "image/") {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func snapshotHasVisual(snapshot trajectory.Snapshot) bool {
+	for index := len(snapshot.Items) - 1; index >= 0; index-- {
+		item := snapshot.Items[index]
+		if item.Kind != trajectory.KindObservation || item.Observation == nil {
+			continue
+		}
+		for _, media := range item.Observation.Media {
+			if strings.HasPrefix(strings.ToLower(media.MIMEType), "image/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func latestUserVisualIntent(snapshot trajectory.Snapshot) string {
+	for index := len(snapshot.Items) - 1; index >= 0; index-- {
+		item := snapshot.Items[index]
+		if item.Kind != trajectory.KindObservation || trajectory.AuthorityOf(item) != trajectory.AuthorityUser || item.Event == nil {
+			continue
+		}
+		if intent := strings.TrimSpace(item.Event.CorrelationID); intent != "" {
+			return intent
+		}
+	}
+	return ""
+}
+
+// A gap below this is a recognizer-created continuation unless another agent
+// turn has established a new conversational boundary. This is the same timing
+// evidence the interaction situation already exposes as SincePrevious: a few
+// hundred milliseconds is a breath/tail, while seconds is a new request.
+const visualTaskContinuationGap = 1500 * time.Millisecond
+
+// visualTask returns the stable controller identity and full current task.
+// It never derives screen meaning from text; pixels remain the grounding
+// evidence. The text only preserves user authority across ASR segmentation.
+func (runtime *runtime) visualTask(snapshot trajectory.Snapshot, update bool) (string, string) {
+	runtime.visualActionMu.Lock()
+	defer runtime.visualActionMu.Unlock()
+	if !update {
+		return runtime.visualTaskID, runtime.visualTaskText
+	}
+	var item *trajectory.Item
+	for index := len(snapshot.Items) - 1; index >= 0; index-- {
+		candidate := &snapshot.Items[index]
+		if candidate.Kind == trajectory.KindObservation &&
+			trajectory.AuthorityOf(*candidate) == trajectory.AuthorityUser {
+			item = candidate
+			break
+		}
+	}
+	if item == nil || item.Event == nil || strings.TrimSpace(item.Event.CorrelationID) == "" {
+		return runtime.visualTaskID, runtime.visualTaskText
+	}
+	rawID := strings.TrimSpace(item.Event.CorrelationID)
+	text := strings.TrimSpace(item.Content)
+	if runtime.visualTaskID == "" {
+		runtime.visualTaskID, runtime.visualTaskRawID, runtime.visualTaskText = rawID, rawID, text
+		return runtime.visualTaskID, runtime.visualTaskText
+	}
+	currentRawID := runtime.visualTaskRawID
+	if currentRawID == "" {
+		currentRawID = runtime.visualTaskID
+	}
+	if rawID == currentRawID {
+		if runtime.visualProvisionalTerminal[runtime.visualTaskID] {
+			runtime.visualEvaluated[runtime.visualTaskID] = false
+			delete(runtime.visualProvisionalTerminal, runtime.visualTaskID)
+		}
+		if trajectory.SaidFurther(runtime.visualTaskText, text) ||
+			asrWithinWordRegression(runtime.visualTaskText, text) {
+			runtime.visualTaskText = text
+			runtime.visualEvaluated[runtime.visualTaskID] = false
+		}
+		return runtime.visualTaskID, runtime.visualTaskText
+	}
+	gap, adjacent := runtime.gapBeforeUtteranceNS(snapshot)
+	if adjacent && gap <= uint64(visualTaskContinuationGap) {
+		runtime.visualTaskRawID = rawID
+		if text != "" && !strings.Contains(runtime.visualTaskText, text) {
+			runtime.visualTaskText = strings.TrimSpace(runtime.visualTaskText + " " + text)
+			// New user words can turn an earlier terminal fragment into a
+			// complete request ("Wait." / "go back to Overview"). Reopen one
+			// controller decision for those words. Observer frames do not call
+			// this update path and therefore cannot reopen authority themselves.
+			runtime.visualEvaluated[runtime.visualTaskID] = false
+		}
+		return runtime.visualTaskID, runtime.visualTaskText
+	}
+	runtime.visualTaskID, runtime.visualTaskRawID, runtime.visualTaskText = rawID, rawID, text
+	return runtime.visualTaskID, runtime.visualTaskText
+}
+
+func (runtime *runtime) visualIntentArmed(intentID string) bool {
+	runtime.visualActionMu.Lock()
+	defer runtime.visualActionMu.Unlock()
+	return strings.TrimSpace(intentID) != "" && runtime.visualArmed[strings.TrimSpace(intentID)]
+}
+
+func (runtime *runtime) visualIntentEligible(intentID string) bool {
+	runtime.visualActionMu.Lock()
+	defer runtime.visualActionMu.Unlock()
+	intentID = strings.TrimSpace(intentID)
+	return intentID != "" && (!runtime.visualEvaluated[intentID] || runtime.visualArmed[intentID])
+}
+
+func (runtime *runtime) applyVisualOutcome(intentID string, outcome cognition.VisualReflexOutcome) {
+	intentID = strings.TrimSpace(intentID)
+	if intentID == "" {
+		return
+	}
+	runtime.visualActionMu.Lock()
+	defer runtime.visualActionMu.Unlock()
+	runtime.visualEvaluated[intentID] = true
+	switch outcome.Kind {
+	case cognition.VisualReflexWait:
+		runtime.visualArmed[intentID] = true
+	case cognition.VisualReflexAct:
+		runtime.visualArmed[intentID] = outcome.Continue
+		runtime.visualNeedsFreshFrame = true
+	case cognition.VisualReflexAbstain:
+		delete(runtime.visualArmed, intentID)
+	}
+}
+
+// armVisualMonitor records typed interaction authority without pretending a
+// visual inference happened. Pixels still decide whether and where to act;
+// this state only lets future observer frames ask that question.
+func (runtime *runtime) armVisualMonitor(intentID string) {
+	intentID = strings.TrimSpace(intentID)
+	if intentID == "" {
+		return
+	}
+	runtime.visualActionMu.Lock()
+	runtime.visualEvaluated[intentID] = true
+	runtime.visualArmed[intentID] = true
+	runtime.visualActionMu.Unlock()
+}
+
+func (runtime *runtime) admitFreshVisualObservation(batch eventloop.Batch) bool {
+	if !visualObservation(batch) {
+		return false
+	}
+	return runtime.admitFreshVisualEvidence()
+}
+
+func (runtime *runtime) admitFreshVisualEvidence() bool {
+	runtime.visualActionMu.Lock()
+	needed := runtime.visualNeedsFreshFrame
+	runtime.visualNeedsFreshFrame = false
+	if !needed {
+		runtime.visualActionMu.Unlock()
+		return false
+	}
+	pending := runtime.visualDeferred
+	if pending == nil {
+		pending = runtime.visualLast
+	}
+	if pending == nil {
+		runtime.visualActionMu.Unlock()
+		return false
+	}
+	copy := *pending
+	copy.groundVisual = true
+	runtime.visualPending = &copy
+	runtime.visualLast = &copy
+	runtime.visualDeferred = nil
+	runtime.visualActionMu.Unlock()
+	runtime.startLiveVisualWorker()
+	return true
+}
+
+// queueArmedVisualObservation hands an ordinary observer frame to the same
+// latest-evidence worker used by live ASR and post-action replanning. A monitor
+// can receive frames faster than its VLM can decide; keeping one request in
+// flight and replacing its pending successor prevents both a stale-frame queue
+// and serialization of an independent endpoint voice behind visual latency.
+func (runtime *runtime) queueArmedVisualObservation(batch eventloop.Batch) bool {
+	snapshot := runtime.store.Snapshot()
+	intentID, task := runtime.visualTask(snapshot, false)
+	revision := runtime.latestRevision(batch)
+	if intentID == "" || task == "" || !runtime.visualIntentArmed(intentID) ||
+		!runtime.visualIntentEligible(intentID) || runtime.visualRevisionHandled(intentID, revision) {
+		return false
+	}
+	runtime.visualActionMu.Lock()
+	var pending liveVisualDecision
+	if runtime.visualLast != nil && runtime.visualLast.intentID == intentID {
+		pending = *runtime.visualLast
+	} else {
+		pending = liveVisualDecision{
+			context: interaction.Context{
+				NowNS: runtime.scheduler.NowNS(),
+				Revision: interaction.Revision{
+					ID: revision, StableText: task, Final: true,
+				},
+			},
+			intentID: intentID,
+		}
+	}
+	pending.context.NowNS = runtime.scheduler.NowNS()
+	pending.context.Revision = interaction.Revision{
+		ID: revision, StableText: task, Final: true, ObservedNS: runtime.scheduler.NowNS(),
+	}
+	pending.groundVisual = true
+	runtime.visualPending = &pending
+	runtime.visualLast = &pending
+	runtime.visualActionMu.Unlock()
+	runtime.startLiveVisualWorker()
+	return true
+}
+
+func (runtime *runtime) visualAwaitingFreshFrame() bool {
+	runtime.visualActionMu.Lock()
+	defer runtime.visualActionMu.Unlock()
+	return runtime.visualNeedsFreshFrame
+}
+
+// visualInteractionIntent couples semantic interaction policy to pixel
+// grounding without collapsing either into the other. The policy is asked
+// only when new user words change a task. Frames reuse that typed decision;
+// they remain direct evidence for grounding but cannot create user authority.
+func (runtime *runtime) visualInteractionIntent(
+	ctx context.Context, intentID, task string, update bool, provisional ...string,
+) interaction.VisualIntent {
+	intentID, task = strings.TrimSpace(intentID), strings.TrimSpace(task)
+	if intentID == "" {
+		return interaction.VisualIntentNone
+	}
+	// A deployment without an interaction model keeps the pre-existing visual
+	// actor contract. The visual actor still has ACT/WAIT/ABSTAIN and the action
+	// boundary; this classifier is the stronger composed treatment.
+	if runtime.policies.Interaction == nil {
+		return interaction.VisualIntentDirect
+	}
+	runtime.visualActionMu.Lock()
+	classified, exists := runtime.visualPolicy[intentID]
+	classifiedTask := runtime.visualPolicyTask[intentID]
+	runtime.visualActionMu.Unlock()
+	unstable := ""
+	if len(provisional) > 0 {
+		unstable = strings.TrimSpace(provisional[0])
+	}
+	if exists && classifiedTask == task && (unstable != "" || classified != interaction.VisualIntentNone) {
+		return classified
+	}
+	if !update {
+		return interaction.VisualIntentNone
+	}
+	// Compile unambiguous imperative UI clauses locally before asking the
+	// learned policy. This keeps the 200 ms action clock useful when a model
+	// overweights the provisional ASR warning in a mixed request such as "go to
+	// Summary and begin presenting". Conditional, incomplete, and semantic
+	// language deliberately falls through to the interaction model.
+	if explicit, ok := interaction.ExplicitVisualAuthority(task); ok {
+		runtime.visualActionMu.Lock()
+		runtime.visualPolicy[intentID], runtime.visualPolicyTask[intentID] = explicit, task
+		runtime.visualActionMu.Unlock()
+		if runtime.config.ProfileTurns {
+			fmt.Fprintf(os.Stderr,
+				"visual-policy at=%s intent=%q task=%q classified=%q source=explicit elapsed=0s error=%q\n",
+				time.Now().UTC().Format(time.RFC3339Nano), intentID, task, explicit, "")
+		}
+		return explicit
+	}
+	timeout := runtime.policies.Interaction.DecisionTimeout()
+	if timeout <= 0 {
+		timeout = 250 * time.Millisecond
+	}
+	bounded, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	evidenceTask := task
+	if unstable != "" {
+		evidenceTask += "\nProvisional ASR tail (possibly an unfinished word): \"" +
+			unstable + "\". Do not autocomplete it into a destination."
+	}
+	classified, outcome, err := runtime.policies.Interaction.DecideVisualIntent(bounded, evidenceTask)
+	if runtime.config.ProfileTurns {
+		fmt.Fprintf(os.Stderr,
+			"visual-policy at=%s intent=%q task=%q classified=%q elapsed=%s error=%q\n",
+			time.Now().UTC().Format(time.RFC3339Nano), intentID, task, classified,
+			time.Duration(outcome.ElapsedNS), errorText(err))
+	}
+	runtime.debug(ctx, binding.DebugEvent{
+		Category: "policy", Name: "policy.visual_intent", Phase: "decision",
+		CorrelationID: intentID, DurationMS: float64(outcome.ElapsedNS) / float64(time.Millisecond),
+		Attributes: map[string]any{"intent": classified}, Message: errorText(err),
+		Payload: map[string]any{"task": task},
+	})
+	if err != nil {
+		// Preserve compatibility on a transient policy failure. The direct
+		// visual actor is itself constrained and may abstain; caching a timeout
+		// as denial would make one missed 250 ms deadline silence the task for
+		// every later frame.
+		return interaction.VisualIntentDirect
+	}
+	runtime.visualActionMu.Lock()
+	runtime.visualPolicy[intentID], runtime.visualPolicyTask[intentID] = classified, task
+	runtime.visualActionMu.Unlock()
+	return classified
+}
+
+// batchHasUserObservation distinguishes a mixed user+screen safe point from
+// an autonomous observer update. A visual action may finish the latter; doing
+// so to the former would silently discard whatever the person asked for in
+// the same batch.
+func batchHasUserObservation(batch eventloop.Batch) bool {
+	for _, item := range batch.Items {
+		if item.Kind == trajectory.KindObservation &&
+			trajectory.AuthorityOf(item) == trajectory.AuthorityUser {
+			return true
 		}
 	}
 	return false
@@ -283,6 +1065,13 @@ func (runtime *runtime) runFast(
 		watch.report(turn)
 	}
 	turn.record(result)
+	if runtime.config.ProfileTurns {
+		fmt.Fprintf(os.Stderr,
+			"fast-profile at=%s revision=%d because=%q committed=%t finished=%t text=%q tools=%d proposals=%d error=%q\n",
+			time.Now().UTC().Format(time.RFC3339Nano), request.SourceRevision, request.Because,
+			result.Committed, result.Finished, result.AssistantText, len(result.ToolCalls),
+			len(result.ToolProposals), errorText(err))
+	}
 	if cause := context.Cause(ctx); cause != nil && !acrossTheFloor(request.Because) {
 		// The user resumed after the provider reached a safe point but before
 		// anything crossed the action boundary. The result answered the earlier
@@ -393,7 +1182,8 @@ func (runtime *runtime) runSlow(
 		return err
 	}
 	if len(result.ToolCalls) > 0 {
-		if runtime.toolCallPrefixOvertaken(request.SourceRevision, request.Because) {
+		if runtime.toolCallPrefixOvertaken(request.SourceRevision, request.Because) &&
+			!runtime.backgroundToolCalls(result.ToolCalls) {
 			// The call is already in the append-only trajectory because the
 			// provider reached its terminal safe point. It has not crossed the
 			// action boundary, though, and renewed user speech is newer evidence
@@ -416,7 +1206,33 @@ func (runtime *runtime) runSlow(
 		}
 		return runtime.signal(interaction.SignalBackgroundResult)
 	}
+	if request.ToolResult {
+		// The tool result is itself authoritative background state. Some
+		// providers consume it, decide no further call is needed, and emit no
+		// prose; without this signal the voice is never given a turn in which to
+		// tell the user what the action returned. The signal batch does not carry
+		// ToolResult, so this cannot reopen the slow lane in a loop.
+		return runtime.signal(interaction.SignalBackgroundResult)
+	}
 	return nil
+}
+
+// backgroundToolCalls reports whether every selected call was explicitly
+// declared safe to start while newer user speech is arriving. One undeclared
+// or ordinary call keeps the whole provider batch behind the stale-prefix
+// boundary: partially executing a model-authored batch would invent ordering
+// and dependency semantics the model never supplied.
+func (runtime *runtime) backgroundToolCalls(calls []trajectory.ToolCall) bool {
+	if len(calls) == 0 {
+		return false
+	}
+	for _, call := range calls {
+		spec, declared := runtime.registry.Lookup(call.Name)
+		if !declared || !spec.Background {
+			return false
+		}
+	}
+	return true
 }
 
 // toolCallPrefixOvertaken reports whether a slow call has lost the safe point
@@ -1093,6 +1909,35 @@ func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunRes
 	immediate := make(map[string]trajectory.ToolResult, len(result.ToolCalls))
 	for _, call := range result.ToolCalls {
 		call.Arguments = slices.Clone(call.Arguments)
+		snapshot := runtime.store.Snapshot()
+		if duplicate := earlierIdenticalPendingCall(snapshot, call); duplicate != "" {
+			immediate[call.CallID] = trajectory.ToolResult{
+				CallID: call.CallID, Name: call.Name,
+				Output: json.RawMessage(fmt.Sprintf(`{"status":"already_in_flight","call_id":%q}`, duplicate)),
+			}
+			continue
+		}
+		runtime.visualActionMu.Lock()
+		candidateIntent := runtime.visualIntentByCall[call.CallID]
+		intents := make(map[string]string, len(runtime.visualIntentByCall))
+		for callID, intent := range runtime.visualIntentByCall {
+			intents[callID] = intent
+		}
+		runtime.visualActionMu.Unlock()
+		if duplicate := earlierIdenticalCompletedVisualCall(snapshot, call, candidateIntent, intents); duplicate != "" {
+			// The provider has already committed this call to the canonical log,
+			// so refusal is represented as an ordinary result rather than by
+			// deleting history. This guard joins all visual entry paths: a partial,
+			// its final ASR revision, and a changed post-action frame can each ask
+			// the reflex, but they cannot execute the same completed click for one
+			// request. A new user request or a disappear/reappear visual cycle
+			// re-arms the same coordinate.
+			immediate[call.CallID] = trajectory.ToolResult{
+				CallID: call.CallID, Name: call.Name,
+				Output: json.RawMessage(fmt.Sprintf(`{"status":"already_completed","call_id":%q}`, duplicate)),
+			}
+			continue
+		}
 		spec, declared := runtime.registry.Lookup(call.Name)
 		if declared && spec.Dispatcher != nil {
 			local = append(local, call)
@@ -1141,6 +1986,317 @@ func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunRes
 	return runtime.commitToolResults(result.InvocationID, resultOrder(result.ToolCalls, immediate))
 }
 
+func (runtime *runtime) dispatchVisual(
+	ctx context.Context, result continuation.RunResult, intentID string,
+) error {
+	intentID = strings.TrimSpace(intentID)
+	runtime.visualActionMu.Lock()
+	for _, call := range result.ToolCalls {
+		runtime.visualIntentByCall[call.CallID] = intentID
+	}
+	intents := make(map[string]string, len(runtime.visualIntentByCall))
+	for callID, intent := range runtime.visualIntentByCall {
+		intents[callID] = intent
+	}
+	runtime.visualActionMu.Unlock()
+	// A visual model may repeat the coordinate selected on the preceding frame.
+	// Dispatch correctly records that as already_completed, but no effect means
+	// there will be no changed post-action frame for adaptive observation to
+	// emit. Clear the fresh-frame barrier after that no-op or a later correction
+	// is absorbed forever waiting for pixels that cannot arrive.
+	noEffect := false
+	snapshot := runtime.store.Snapshot()
+	for _, call := range result.ToolCalls {
+		if earlierIdenticalPendingCall(snapshot, call) != "" ||
+			earlierIdenticalCompletedVisualCall(snapshot, call, intentID, intents) != "" {
+			noEffect = true
+			break
+		}
+	}
+	err := runtime.dispatch(ctx, result)
+	if noEffect {
+		runtime.visualActionMu.Lock()
+		runtime.visualNeedsFreshFrame = false
+		// The no-op consumed neither the task nor a frame transition. Keep the
+		// intent eligible so a fuller ASR revision or canonical final can ground
+		// the actual correction without waiting for pixels that cannot change.
+		runtime.visualEvaluated[intentID] = false
+		runtime.visualActionMu.Unlock()
+	}
+	return err
+}
+
+func earlierIdenticalPendingCall(snapshot trajectory.Snapshot, call trajectory.ToolCall) string {
+	for _, pending := range trajectory.UnresolvedToolCalls(snapshot) {
+		if pending.Call.CallID == call.CallID {
+			return ""
+		}
+		if pending.Call.Name == call.Name && sameToolArguments(call.Name, pending.Call.Arguments, call.Arguments) {
+			return pending.Call.CallID
+		}
+	}
+	return ""
+}
+
+// earlierIdenticalCompletedVisualCall returns the prior successful screen
+// action when the candidate merely repeats it for the same user intent.
+//
+// Exact coordinates alone are not enough to suppress forever: a person can
+// later ask to revisit a tab, and a standing visual obligation can recur. A
+// genuinely new user observation re-arms it; observer feedback alone refines
+// the next action chunk but carries no new authority to repeat an effect
+// already completed for this intent.
+func earlierIdenticalCompletedVisualCall(
+	snapshot trajectory.Snapshot, call trajectory.ToolCall,
+	candidateIntent string, intents map[string]string,
+) string {
+	if !strings.HasPrefix(call.Name, "computer.") {
+		return ""
+	}
+	results := make(map[string]struct {
+		index  int
+		result trajectory.ToolResult
+	})
+	for index, item := range snapshot.Items {
+		if item.Kind == trajectory.KindToolResult && item.ToolResult != nil {
+			results[item.ToolResult.CallID] = struct {
+				index  int
+				result trajectory.ToolResult
+			}{index: index, result: *item.ToolResult}
+		}
+	}
+	for callIndex := len(snapshot.Items) - 1; callIndex >= 0; callIndex-- {
+		item := snapshot.Items[callIndex]
+		if item.Kind != trajectory.KindToolCall || item.ToolCall == nil ||
+			item.ToolCall.CallID == call.CallID || item.ToolCall.Name != call.Name ||
+			!sameToolArguments(call.Name, item.ToolCall.Arguments, call.Arguments) {
+			continue
+		}
+		resolved, ok := results[item.ToolCall.CallID]
+		if !ok || resolved.index <= callIndex || !successfulToolResult(resolved.result) {
+			continue
+		}
+		priorIntent := strings.TrimSpace(intents[item.ToolCall.CallID])
+		sameTypedIntent := priorIntent != "" && strings.TrimSpace(candidateIntent) != "" && priorIntent == strings.TrimSpace(candidateIntent)
+		if priorIntent != "" && strings.TrimSpace(candidateIntent) != "" && !sameTypedIntent {
+			return ""
+		}
+
+		lineage := map[uint64]struct{}{}
+		if item.SourceRevision != 0 {
+			lineage[item.SourceRevision] = struct{}{}
+		}
+		liveHeard := invocationHeard(snapshot.Items, item.InvocationID, callIndex)
+		for index := resolved.index + 1; index < len(snapshot.Items); index++ {
+			observation := snapshot.Items[index]
+			if observation.Kind != trajectory.KindObservation {
+				continue
+			}
+			switch trajectory.AuthorityOf(observation) {
+			case trajectory.AuthorityUser:
+				if sameTypedIntent {
+					// The same utterance can become a final canonical observation
+					// after an action chosen from its live partial. It is evidence
+					// refinement, not new authority to repeat the effect.
+					continue
+				}
+				supersedes := uint64(0)
+				if observation.Event != nil {
+					supersedes = observation.Event.SupersedesRevision
+				}
+				_, supersedesSame := lineage[supersedes]
+				if (supersedesSame && supersedes != 0) || extendsLiveUtterance(liveHeard, observation.Content) {
+					lineage[observation.SourceRevision] = struct{}{}
+					liveHeard = observation.Content
+					continue
+				}
+				return ""
+			case trajectory.AuthorityObserver:
+				// Visual feedback refines the state for the next action chunk; it
+				// does not create fresh user authority to repeat this completed
+				// effect. A genuinely new user utterance above re-arms it.
+			}
+		}
+		return item.ToolCall.CallID
+	}
+	return ""
+}
+
+func sameToolArguments(name string, left, right json.RawMessage) bool {
+	if string(left) == string(right) {
+		return true
+	}
+	var leftValue, rightValue any
+	if json.Unmarshal(left, &leftValue) != nil || json.Unmarshal(right, &rightValue) != nil {
+		return false
+	}
+	if reflect.DeepEqual(leftValue, rightValue) {
+		return true
+	}
+	return nearbyClickArguments(name, leftValue, rightValue)
+}
+
+func nearbyClickArguments(name string, left, right any) bool {
+	leftMap, leftOK := left.(map[string]any)
+	rightMap, rightOK := right.(map[string]any)
+	if !leftOK || !rightOK ||
+		(name != computeruse.Click && name != computeruse.ClickNormalized) {
+		return false
+	}
+	leftX, leftXOK := leftMap["x"].(float64)
+	leftY, leftYOK := leftMap["y"].(float64)
+	rightX, rightXOK := rightMap["x"].(float64)
+	rightY, rightYOK := rightMap["y"].(float64)
+	if !leftXOK || !leftYOK || !rightXOK || !rightYOK || leftMap["source"] != rightMap["source"] {
+		return false
+	}
+	tolerance := 20.0
+	if name == computeruse.ClickNormalized {
+		// Normalized coordinates span 0..1000. Vision models jitter by a few
+		// percent across identical frames and have repeatedly moved the centre of
+		// one large control by 21-39 units. Treat that as the same action chunk;
+		// genuinely distinct meeting controls are separated by far more, while
+		// raw pixel clicks retain the tighter 20-pixel identity below.
+		tolerance = 45
+	}
+	return reflect.DeepEqual(normalizedClickOptions(leftMap), normalizedClickOptions(rightMap)) &&
+		absFloat(leftX-rightX) <= tolerance && absFloat(leftY-rightY) <= tolerance
+}
+
+// normalizedClickOptions removes only schema-default-equivalent decoration.
+// Coordinate action models alternate between omitting these optional members
+// and spelling out the defaults; neither changes the physical effect. Unknown
+// members and non-default values remain significant.
+func normalizedClickOptions(arguments map[string]any) map[string]any {
+	options := make(map[string]any, len(arguments))
+	for key, value := range arguments {
+		if key != "x" && key != "y" {
+			options[key] = value
+		}
+	}
+	if button, present := options["button"]; !present || button == "left" {
+		delete(options, "button")
+	}
+	if actionType, present := options["type"]; !present || actionType == "click" {
+		delete(options, "type")
+	}
+	return options
+}
+
+func absFloat(value float64) float64 {
+	if value < 0 {
+		return -value
+	}
+	return value
+}
+
+func invocationHeard(items []trajectory.Item, invocationID string, before int) string {
+	if strings.TrimSpace(invocationID) == "" {
+		return ""
+	}
+	prefix := cognition.HeardInstruction + ` "`
+	for index := before - 1; index >= 0; index-- {
+		item := items[index]
+		if item.InvocationID != invocationID || item.Kind != trajectory.KindInstruction {
+			continue
+		}
+		start := strings.Index(item.Content, prefix)
+		if start < 0 {
+			return ""
+		}
+		remainder := item.Content[start+len(prefix):]
+		if end := strings.Index(remainder, `"\n\n`); end >= 0 {
+			return strings.TrimSpace(remainder[:end])
+		}
+		if end := strings.LastIndex(remainder, `"`); end >= 0 {
+			return strings.TrimSpace(remainder[:end])
+		}
+		return ""
+	}
+	return ""
+}
+
+func extendsLiveUtterance(heard, committed string) bool {
+	heard = strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(heard)), " "))
+	committed = strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(committed)), " "))
+	if heard == "" || committed == "" {
+		return false
+	}
+	return strings.HasPrefix(committed, heard) || strings.HasPrefix(heard, committed)
+}
+
+func successfulToolResult(result trajectory.ToolResult) bool {
+	if strings.TrimSpace(result.Error) != "" || len(result.Output) == 0 {
+		return false
+	}
+	var output map[string]json.RawMessage
+	if json.Unmarshal(result.Output, &output) == nil {
+		if raw, failed := output["error"]; failed && string(raw) != "null" && string(raw) != `""` {
+			return false
+		}
+	}
+	return true
+}
+
+func toolResultPerformedEffect(result trajectory.ToolResult) bool {
+	if !successfulToolResult(result) {
+		return false
+	}
+	var output map[string]json.RawMessage
+	if json.Unmarshal(result.Output, &output) != nil {
+		return true
+	}
+	if raw, present := output["status"]; present {
+		var status string
+		if json.Unmarshal(raw, &status) == nil && (status == "already_completed" || status == "already_in_flight") {
+			return false
+		}
+	}
+	return true
+}
+
+// completedVisualActionsForIntent renders effect memory as control state for
+// the next fresh-frame replan. Generic coordinate tools cannot name the button
+// they clicked, but the runtime does know whether the effect succeeded and
+// which user utterance authorized it. Synthetic deduplication results are not
+// action chunks: counting them would make one real click look like progress
+// through several ordered controls.
+func (runtime *runtime) completedVisualActionsForIntent(
+	snapshot trajectory.Snapshot, intentID string,
+) int {
+	intentID = strings.TrimSpace(intentID)
+	if intentID == "" {
+		return 0
+	}
+	runtime.visualActionMu.Lock()
+	intents := make(map[string]string, len(runtime.visualIntentByCall))
+	for callID, intent := range runtime.visualIntentByCall {
+		intents[callID] = intent
+	}
+	runtime.visualActionMu.Unlock()
+
+	effected := make(map[string]struct{})
+	for _, item := range snapshot.Items {
+		if item.Kind == trajectory.KindToolResult && item.ToolResult != nil &&
+			toolResultPerformedEffect(*item.ToolResult) {
+			effected[item.ToolResult.CallID] = struct{}{}
+		}
+	}
+	completed := 0
+	for _, item := range snapshot.Items {
+		if item.Kind != trajectory.KindToolCall || item.ToolCall == nil ||
+			item.Producer.Phase != trajectory.PhaseFast ||
+			!strings.HasPrefix(item.ToolCall.Name, "computer.") ||
+			strings.TrimSpace(intents[item.ToolCall.CallID]) != intentID {
+			continue
+		}
+		if _, succeeded := effected[item.ToolCall.CallID]; succeeded {
+			completed++
+		}
+	}
+	return completed
+}
+
 func resultOrder(calls []trajectory.ToolCall, indexed map[string]trajectory.ToolResult) []trajectory.ToolResult {
 	ordered := make([]trajectory.ToolResult, 0, len(indexed))
 	for _, call := range calls {
@@ -1167,6 +2323,7 @@ func (runtime *runtime) sendToClient(ctx context.Context, result continuation.Ru
 // commitToolResults appends a batch every call in which now has a result,
 // whether the client answered them or the deadline did.
 func (runtime *runtime) commitToolResults(invocationID string, results []trajectory.ToolResult) error {
+	runtime.refreshVisualObserversAfter(results)
 	for _, result := range results {
 		runtime.tools.Complete(result.CallID)
 		phase := "end"
@@ -1186,6 +2343,24 @@ func (runtime *runtime) commitToolResults(invocationID string, results []traject
 		InvocationID: invocationID, ToolResults: results,
 	})
 	return err
+}
+
+func (runtime *runtime) refreshVisualObserversAfter(results []trajectory.ToolResult) {
+	refresh := false
+	for _, result := range results {
+		if strings.HasPrefix(result.Name, "computer.") && toolResultPerformedEffect(result) {
+			refresh = true
+			break
+		}
+	}
+	if !refresh {
+		return
+	}
+	for _, observer := range runtime.observers.Observers() {
+		if visual, ok := observer.(perception.RefreshableObserver); ok {
+			visual.RefreshNext()
+		}
+	}
 }
 
 // reportUnanswered tells the client what its own silence cost.

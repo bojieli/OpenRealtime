@@ -20,6 +20,22 @@ import (
 // both.
 type speechSink struct{ runtime *runtime }
 
+func (sink speechSink) Reserve(utterance action.Utterance) error {
+	reserved, ok := sink.runtime.sink.(binding.SpeechReservationSink)
+	if !ok {
+		return nil
+	}
+	return reserved.SpeechReserved(sink.runtime.ctx, utterance)
+}
+
+func (sink speechSink) CancelReservation(utterance action.Utterance) {
+	reserved, ok := sink.runtime.sink.(binding.SpeechReservationSink)
+	if !ok {
+		return
+	}
+	reserved.SpeechReservationCancelled(sink.runtime.ctx, utterance)
+}
+
 func (sink speechSink) Begin(ctx context.Context, utterance action.Utterance) error {
 	// A planned utterance knows its whole text before the first frame, so the
 	// transcript is delivered at the announcement. A binding whose model

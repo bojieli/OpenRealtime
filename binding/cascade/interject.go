@@ -2,10 +2,13 @@ package cascade
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
-	"time"
 
 	"github.com/bojieli/OpenRealtime/cognition"
 	"github.com/bojieli/OpenRealtime/eventloop"
@@ -275,6 +278,7 @@ func (runtime *runtime) interjectFor(decision interaction.Context, reason intera
 		}
 		request := cognition.Request{
 			SourceRevision: decision.Revision.ID,
+			VisualIntentID: runtime.currentUtterance(),
 			Standing:       standing, Counting: runtime.countingIsInForce(), Interjecting: true, Because: string(reason),
 			Heard: heard,
 			// This is the path that speaks while somebody is still talking, so
@@ -359,8 +363,28 @@ func (runtime *runtime) worthActingOn(ctx context.Context, batch eventloop.Batch
 	if !batch.Contains(trajectory.KindObservation) {
 		return true
 	}
+	// A person's committed turn has already passed through the floor policy.
+	// It is authority to answer, not an autonomous observer update to gate a
+	// second time. Letting an interaction-model "listen" decision suppress it
+	// made a complete spoken request visible in the trajectory while starting
+	// no cognition at all.
+	if batchHasUserObservation(batch) {
+		return true
+	}
 	if !runtime.observationHasUserIntent(batch) {
 		return false
+	}
+	// Once the person has armed a visual task, direct pixels must reach the
+	// direct-vision actor before a text interaction policy can discard them.
+	// The reflex still has the narrower ACT/WAIT/ABSTAIN contract and the sole
+	// effect authority; this only preserves the evidence path. Without it, an
+	// alert could be present in the frame while a policy reasoning from weaker
+	// evidence selected stay-silent and prevented the pixel owner from seeing
+	// the condition at all.
+	if visualObservation(batch) && runtime.engine != nil {
+		if _, enabled := runtime.engine.VisualReflexDescriptor(); enabled {
+			return true
+		}
 	}
 	if runtime.policies.Interaction == nil {
 		return true
@@ -531,29 +555,51 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 	runtime.lastSilentActRev = decision.Revision.ID
 	runtime.actedOnHeard = heard
 	runtime.audioMu.Unlock()
+	visualIntentID := runtime.currentUtterance()
+	snapshot := runtime.store.Snapshot()
+	visualIntentID, visualTask := runtime.liveVisualTask(
+		snapshot, visualIntentID, decision.Revision.Text(), decision.Revision.ObservedNS,
+	)
 	claim, claimed := runtime.claimInterjection()
 	if !claimed {
 		runtime.noteInterject("acting silently, but something is already in flight")
+		return
+	}
+	if runtime.visualRevisionHandled(visualIntentID, decision.Revision.ID) {
+		runtime.releaseInterjection(claim)
+		runtime.noteInterject("acting silently, but this visual revision was already handled")
+		return
+	}
+	// The floor handoff and the fixed-cadence live trigger can be decided from
+	// the same revision on adjacent goroutines. They share one visual actor
+	// lane: whichever claims it first owns this micro-turn, and the other path
+	// must not spend a second VLM call on the same pixels and words.
+	if !runtime.visualPartial.CompareAndSwap(false, true) {
+		runtime.releaseInterjection(claim)
+		runtime.noteInterject("acting silently, but the live visual lane already owns this revision")
 		return
 	}
 	runtime.wait.Add(1)
 	go func() {
 		defer runtime.wait.Done()
 		defer runtime.releaseInterjection(claim)
+		defer runtime.releaseSilentVisualLane(visualIntentID, decision.Revision.ID)
 		standing, _, _ := runtime.cognitionExtras(0)
 		request := cognition.Request{
-			SourceRevision: decision.Revision.ID,
+			SourceRevision: decision.Revision.ID, VisualIntentID: visualIntentID, VisualTask: visualTask,
+			VisualUnstable: decision.Revision.UnstableText,
 			Standing:       standing, Counting: runtime.countingIsInForce(),
 			Because: string(interaction.ActActSilently),
-			Heard:   decision.Revision.Text(),
+			Heard:   decision.Revision.Text(), InFlight: inFlightToolNames(runtime.store.Snapshot()),
+			CompletedVisualActions: runtime.completedVisualActionsForIntent(runtime.store.Snapshot(), visualIntentID),
 		}
 		// runSlow rather than the engine directly: a proposal that nobody
 		// dispatches is a key nobody presses. The engine produces the call and
 		// the runtime is what executes it, and calling past that layer meant
 		// the phase ran nineteen times and the menu never heard a tone.
-		ctx, cancel := context.WithTimeout(runtime.ctx, interjectionDeadline)
-		defer cancel()
-		err := runtime.runSlow(ctx, request, &turnReport{})
+		ctx, cancel, generation := runtime.beginVisualDecision(runtime.ctx, interjectionDeadline)
+		defer runtime.endVisualDecision(generation, cancel)
+		err := runtime.runSilentAct(ctx, request)
 		if recorder := runtime.policies.ShadowInteraction; recorder != nil {
 			outcome := "acted"
 			if err != nil {
@@ -566,6 +612,545 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 			})
 		}
 	}()
+}
+
+func (runtime *runtime) releaseSilentVisualLane(intentID string, revision uint64) {
+	runtime.markVisualRevisionHandled(intentID, revision)
+	runtime.visualActionMu.Lock()
+	if runtime.visualPending != nil && runtime.visualPending.intentID == intentID &&
+		runtime.visualPending.context.Revision.ID <= revision {
+		runtime.visualPending = nil
+	}
+	runtime.visualActionMu.Unlock()
+	runtime.visualPartial.Store(false)
+
+	// Preserve a genuinely newer revision that arrived while the bounded floor
+	// act was in flight. The ordinary worker will coalesce and classify it; a
+	// same-or-older duplicate was removed above.
+	runtime.visualActionMu.Lock()
+	queued := runtime.visualPending != nil
+	runtime.visualActionMu.Unlock()
+	if queued {
+		runtime.startLiveVisualWorker()
+	}
+}
+
+// runSilentAct gives a configured visual actor first refusal before the
+// general reasoner. The interaction model has already decided that acting
+// without speech is appropriate; this method decides only which cognition
+// lane can ground the action. A visual tool call stays on the bounded fast
+// authority surface, while abstention, timeout, or malformed output retains
+// the existing slow fallback for arbitrary tools and deliberation.
+func (runtime *runtime) runSilentAct(ctx context.Context, request cognition.Request) error {
+	authority := interaction.VisualIntentNone
+	if _, enabled := runtime.engine.VisualReflexDescriptor(); enabled &&
+		strings.TrimSpace(request.VisualIntentID) != "" && strings.TrimSpace(request.VisualTask) != "" {
+		authority = runtime.visualInteractionIntent(
+			ctx, request.VisualIntentID, request.VisualTask, true, request.VisualUnstable,
+		)
+		switch authority {
+		case interaction.VisualIntentNone:
+			return runtime.runSlow(ctx, request, &turnReport{})
+		case interaction.VisualIntentMonitor:
+			runtime.armVisualMonitor(request.VisualIntentID)
+			return runtime.signalCompositeResumeOnce(request.VisualIntentID, request.Heard)
+		}
+	}
+	if explicitVisualActionsComplete(request) {
+		return runtime.resumeImmediateNonvisualOnce(
+			request.VisualIntentID, request.VisualTask, request.Heard,
+		)
+	}
+	if authority == interaction.VisualIntentDirect && runtime.visualAwaitingFreshFrame() {
+		// A delayed floor decision can arrive after the ordinary live worker has
+		// already dispatched this intent's preceding action and released the
+		// shared lane. It still sees the pre-action image; retain the newer words
+		// as controller state, but never ground another coordinate until adaptive
+		// observation admits post-action pixels.
+		return nil
+	}
+	outcome, reflexErr := runtime.engine.RunVisualReflex(ctx, request)
+	if reflexErr == nil {
+		if targetErr := validateVisualTarget(request, outcome); targetErr != nil {
+			runtime.profileVisualOutcome("silent-rejected", request, outcome, targetErr)
+			if _, placeholderErr := runtime.engine.PlaceholderCalls(
+				outcome.Result.ToolCalls, "visual target rejected: "+targetErr.Error(),
+			); placeholderErr != nil {
+				return placeholderErr
+			}
+			return targetErr
+		}
+		runtime.applyVisualOutcome(request.VisualIntentID, outcome)
+		switch outcome.Kind {
+		case cognition.VisualReflexAct:
+			return runtime.dispatchVisual(ctx, outcome.Result, request.VisualIntentID)
+		case cognition.VisualReflexWait:
+			// The current frame needs no action. A later visual observation will
+			// ask the reflex again; meanwhile, preserve any independent work in
+			// this utterance (for example, present now while monitoring). The
+			// signal re-enters normal turn bracketing so this silent goroutine
+			// never becomes a second speech path.
+			runtime.rememberCompositeResumeHeard(request.Heard)
+			if err := runtime.signal(interaction.SignalCompositeResume); err != nil {
+				runtime.clearCompositeResumeHeard(request.Heard)
+				return err
+			}
+			return nil
+		case cognition.VisualReflexAbstain:
+			// A typed direct-screen command stays on the direct-pixel lane. The
+			// next ASR revision or canonical endpoint may retry it; a visionless
+			// slow fallback would add latency and cannot ground coordinates.
+		}
+	}
+	if authority == interaction.VisualIntentDirect {
+		return reflexErr
+	}
+	return runtime.runSlow(ctx, request, &turnReport{})
+}
+
+// considerLiveVisual opens the fast pixel-grounded micro-turn directly from a
+// live ASR revision. The trigger already bounds opportunities to the selected
+// cadence (200 ms in the meeting profile); this adds one in-flight bound and
+// coalesces arrivals during that work to only their newest revision.
+//
+// Unlike ActActSilently, this is not a judgement that speech is unwelcome. It
+// is the independent computer-control branch of a multimodal request: a person
+// may keep speaking while a deadline-sensitive explicit UI operation becomes
+// clear. The visual-intent policy grants coordinate authority; the VLM grounds
+// at most one action; a fresh frame is required before any continuation.
+type liveVisualDecision struct {
+	context      interaction.Context
+	intentID     string
+	groundVisual bool
+}
+
+func (runtime *runtime) considerLiveVisual(decision interaction.Context) {
+	if runtime.policies.Interaction == nil || decision.Revision.Empty() ||
+		runtime.engine == nil || !snapshotHasVisual(runtime.store.Snapshot()) {
+		return
+	}
+	if _, enabled := runtime.engine.VisualReflexDescriptor(); !enabled {
+		return
+	}
+	// The interaction floor already selected a silent act for this instant.
+	// Let that path own it rather than racing two entries into the same actor.
+	runtime.audioMu.Lock()
+	interjectionRunning := runtime.interjectStartNS != 0
+	runtime.audioMu.Unlock()
+	if interjectionRunning {
+		return
+	}
+	intentID := runtime.currentUtterance()
+	if strings.TrimSpace(intentID) == "" {
+		return
+	}
+	if runtime.visualRevisionHandled(intentID, decision.Revision.ID) {
+		return
+	}
+	// Keep only the latest revision while the VLM is occupied. The next worker
+	// iteration observes all words heard so far without paying for obsolete
+	// intermediate prefixes. This is receding-horizon coalescing, not a model-
+	// call queue: there remains exactly one in-flight visual micro-turn.
+	runtime.visualActionMu.Lock()
+	pending := &liveVisualDecision{context: decision, intentID: intentID}
+	runtime.visualPending = pending
+	runtime.visualLast = pending
+	runtime.visualActionMu.Unlock()
+	runtime.startLiveVisualWorker()
+}
+
+func (runtime *runtime) startLiveVisualWorker() {
+	if !runtime.visualPartial.CompareAndSwap(false, true) {
+		return
+	}
+	runtime.wait.Add(1)
+	go func() {
+		defer runtime.wait.Done()
+		runtime.runLiveVisualMicroTurns()
+	}()
+}
+
+func (runtime *runtime) runLiveVisualMicroTurns() {
+	for runtime.ctx.Err() == nil {
+		runtime.visualActionMu.Lock()
+		pending := runtime.visualPending
+		runtime.visualPending = nil
+		runtime.visualActionMu.Unlock()
+		if pending != nil {
+			if runtime.visualAwaitingFreshFrame() {
+				runtime.absorbLiveVisualDecision(*pending)
+				continue
+			}
+			runtime.runLiveVisualMicroTurn(*pending)
+			continue
+		}
+
+		// Hand the lane back without losing a revision that races this edge.
+		// A caller that sees false starts its own worker; a revision queued while
+		// the flag was still true is claimed here.
+		runtime.visualPartial.Store(false)
+		runtime.visualActionMu.Lock()
+		queued := runtime.visualPending != nil
+		runtime.visualActionMu.Unlock()
+		if !queued || !runtime.visualPartial.CompareAndSwap(false, true) {
+			return
+		}
+	}
+	runtime.visualPartial.Store(false)
+}
+
+// absorbLiveVisualDecision retains semantic user evidence that arrived after
+// an ACT without grounding another coordinate against the pre-action frame.
+// The interaction policy may classify those new words now; the visual actor
+// remains blocked until admitFreshVisualObservation sees post-action pixels.
+func (runtime *runtime) absorbLiveVisualDecision(pending liveVisualDecision) {
+	snapshot := runtime.store.Snapshot()
+	intentID, task := "", ""
+	if pending.groundVisual {
+		// Observer work uses the controller task already reconstructed from the
+		// canonical utterance. Running wholeUtterance again with the final text
+		// can append that same utterance to itself and needlessly perturb both
+		// policy caching and pixel grounding.
+		intentID, task = runtime.visualTask(snapshot, false)
+	} else {
+		intentID, task = runtime.liveVisualTask(
+			snapshot, pending.intentID, pending.context.Revision.Text(),
+			pending.context.Revision.ObservedNS,
+		)
+	}
+	if intentID == "" || task == "" {
+		return
+	}
+	_ = runtime.visualInteractionIntent(runtime.ctx, intentID, task, true)
+	runtime.visualActionMu.Lock()
+	copy := pending
+	runtime.visualDeferred = &copy
+	runtime.visualLast = &copy
+	runtime.visualActionMu.Unlock()
+}
+
+func (runtime *runtime) runLiveVisualMicroTurn(pending liveVisualDecision) {
+	if runtime.visualRevisionHandled(pending.intentID, pending.context.Revision.ID) {
+		return
+	}
+	runtime.visualActionMu.Lock()
+	copy := pending
+	runtime.visualLast = &copy
+	runtime.visualActionMu.Unlock()
+	snapshot := runtime.store.Snapshot()
+	intentID, task := runtime.liveVisualTask(
+		snapshot, pending.intentID, pending.context.Revision.Text(),
+		pending.context.Revision.ObservedNS,
+	)
+	defer runtime.markVisualRevisionHandled(intentID, pending.context.Revision.ID)
+	if intentID == "" || task == "" || !runtime.visualIntentEligible(intentID) {
+		return
+	}
+	authority := runtime.visualInteractionIntent(
+		runtime.ctx, intentID, task, true, pending.context.Revision.UnstableText,
+	)
+	if authority == interaction.VisualIntentNone || runtime.ctx.Err() != nil {
+		return
+	}
+	// A monitor request is authority to evaluate later frames, not a reason to
+	// spend a VLM call proving that the named future condition has not happened
+	// on the retained frame. Arming here also keeps the independent fast voice
+	// free to begin speaking at the endpoint. The next observer frame remains
+	// direct pixel evidence and performs the actual act/wait decision.
+	if authority == interaction.VisualIntentMonitor && !pending.groundVisual {
+		runtime.armVisualMonitor(intentID)
+		if runtime.config.ProfileTurns {
+			fmt.Fprintf(os.Stderr,
+				"visual-profile at=%s where=live-policy intent=%q task=%q outcome=armed-monitor\n",
+				time.Now().UTC().Format(time.RFC3339Nano), intentID, task)
+		}
+		if err := runtime.signalCompositeResumeOnce(intentID, pending.context.Revision.Text()); err != nil {
+			runtime.fail("visual_composite_resume_error", err)
+		}
+		return
+	}
+	standing, _, _ := runtime.cognitionExtras(0)
+	request := cognition.Request{
+		SourceRevision: pending.context.Revision.ID, VisualIntentID: intentID, VisualTask: task,
+		VisualUnstable: pending.context.Revision.UnstableText,
+		Standing:       standing, Counting: runtime.countingIsInForce(), Silent: true,
+		Heard: pending.context.Revision.Text(), InFlight: inFlightToolNames(runtime.store.Snapshot()),
+		CompletedVisualActions: runtime.completedVisualActionsForIntent(runtime.store.Snapshot(), intentID),
+	}
+	if explicitVisualActionsComplete(request) {
+		// The newest ASR prefix contains no complete screen command beyond the
+		// chunks already executed. Wait for the clause to finish instead of
+		// asking the pixel actor to infer a second target from words like
+		// "share" or "share your".
+		if err := runtime.resumeImmediateNonvisualOnce(intentID, task, pending.context.Revision.Text()); err != nil {
+			runtime.fail("visual_composite_resume_error", err)
+		}
+		return
+	}
+	decisionCtx, cancel, generation := runtime.beginVisualDecision(runtime.ctx, 0)
+	outcome, err := runtime.engine.RunVisualReflex(decisionCtx, request)
+	runtime.endVisualDecision(generation, cancel)
+	where := "live"
+	if pending.groundVisual {
+		where = "observer"
+	}
+	runtime.profileVisualOutcome(where, request, outcome, err)
+	if err != nil {
+		return
+	}
+	if targetErr := validateVisualTarget(request, outcome); targetErr != nil {
+		runtime.profileVisualOutcome(where+"-rejected", request, outcome, targetErr)
+		if _, placeholderErr := runtime.engine.PlaceholderCalls(
+			outcome.Result.ToolCalls, "visual target rejected: "+targetErr.Error(),
+		); placeholderErr != nil {
+			runtime.fail("visual_target_placeholder_error", placeholderErr)
+			return
+		}
+		if strings.TrimSpace(request.VisualUnstable) != "" {
+			runtime.armProvisionalVisualRetry(intentID, task, pending)
+		}
+		return
+	}
+	if outcome.Kind == cognition.VisualReflexAbstain && !pending.context.Revision.Final {
+		runtime.visualActionMu.Lock()
+		runtime.visualProvisionalTerminal[intentID] = true
+		runtime.visualActionMu.Unlock()
+	}
+	runtime.applyVisualOutcome(intentID, outcome)
+	if outcome.Kind == cognition.VisualReflexAct {
+		if err := runtime.dispatchVisual(runtime.ctx, outcome.Result, intentID); err != nil {
+			if runtime.config.ProfileTurns {
+				fmt.Fprintf(os.Stderr,
+					"visual-profile at=%s where=%s-dispatch intent=%q task=%q error=%q\n",
+					time.Now().UTC().Format(time.RFC3339Nano), where, intentID, task, err.Error())
+			}
+			runtime.fail("live_visual_action_error", err)
+		} else if !outcome.Continue {
+			if err := runtime.resumeImmediateNonvisualOnce(intentID, task, pending.context.Revision.Text()); err != nil {
+				runtime.fail("visual_composite_resume_error", err)
+			}
+		}
+	} else if outcome.Kind == cognition.VisualReflexWait && !pending.groundVisual {
+		heard := pending.context.Revision.Text()
+		runtime.rememberCompositeResumeHeard(heard)
+		if err := runtime.signal(interaction.SignalCompositeResume); err != nil {
+			runtime.clearCompositeResumeHeard(heard)
+			runtime.fail("visual_composite_resume_error", err)
+		}
+	} else if outcome.Kind == cognition.VisualReflexAbstain && request.CompletedVisualActions > 0 {
+		if err := runtime.resumeImmediateNonvisualOnce(intentID, task, pending.context.Revision.Text()); err != nil {
+			runtime.fail("visual_composite_resume_error", err)
+		}
+	}
+}
+
+func (runtime *runtime) resumeImmediateNonvisualOnce(intentID, task, heard string) error {
+	if interaction.ImmediateNonvisualClause(task) == "" {
+		return nil
+	}
+	return runtime.signalCompositeResumeOnce(intentID, heard)
+}
+
+const provisionalVisualConfirmation = 200 * time.Millisecond
+
+// armProvisionalVisualRetry is temporal confirmation, not endpointing. If the
+// same reconstructed task survives one more 200 ms micro-turn without a newer
+// ASR revision, retry it as confirmed text against the same current pixels.
+// This preserves the fast loop while preventing one transient "over" from
+// being autocompleted into a visible destination.
+func (runtime *runtime) armProvisionalVisualRetry(
+	intentID, task string, pending liveVisualDecision,
+) {
+	if runtime.scheduler == nil || strings.TrimSpace(intentID) == "" || strings.TrimSpace(task) == "" {
+		return
+	}
+	revision := pending.context.Revision.ID
+	runtime.visualActionMu.Lock()
+	runtime.visualProvisionalRetry[intentID] = revision
+	runtime.visualActionMu.Unlock()
+	runtime.scheduler.AfterFunc(provisionalVisualConfirmation, func() {
+		if runtime.ctx.Err() != nil {
+			return
+		}
+		runtime.visualActionMu.Lock()
+		if runtime.visualProvisionalRetry[intentID] != revision ||
+			runtime.visualTaskID != intentID || runtime.visualTaskText != task {
+			runtime.visualActionMu.Unlock()
+			return
+		}
+		delete(runtime.visualProvisionalRetry, intentID)
+		copy := pending
+		copy.intentID = runtime.visualTaskRawID
+		copy.context.NowNS = runtime.scheduler.NowNS()
+		copy.context.Revision = interaction.Revision{
+			ID: revision, StableText: task, ObservedNS: runtime.scheduler.NowNS(),
+		}
+		runtime.visualPending = &copy
+		runtime.visualLast = &copy
+		runtime.visualActionMu.Unlock()
+		runtime.startLiveVisualWorker()
+	})
+}
+
+func (runtime *runtime) visualRevisionHandled(intentID string, revision uint64) bool {
+	intentID = strings.TrimSpace(intentID)
+	if intentID == "" || revision == 0 {
+		return false
+	}
+	runtime.visualActionMu.Lock()
+	defer runtime.visualActionMu.Unlock()
+	return runtime.visualHandledRev[intentID] >= revision
+}
+
+func (runtime *runtime) markVisualRevisionHandled(intentID string, revision uint64) {
+	intentID = strings.TrimSpace(intentID)
+	if intentID == "" || revision == 0 {
+		return
+	}
+	runtime.visualActionMu.Lock()
+	if revision > runtime.visualHandledRev[intentID] {
+		runtime.visualHandledRev[intentID] = revision
+	}
+	runtime.visualActionMu.Unlock()
+}
+
+// liveVisualTask preserves controller intent across recognition-created
+// fragments before any of them necessarily exists in the canonical log.
+func (runtime *runtime) liveVisualTask(
+	snapshot trajectory.Snapshot, rawID, heard string, observedNS uint64,
+) (string, string) {
+	rawID, heard = strings.TrimSpace(rawID), strings.TrimSpace(heard)
+	if rawID == "" || heard == "" {
+		return "", ""
+	}
+	gap, adjacent := runtime.gapBeforeUtteranceNS(snapshot)
+	runtime.visualActionMu.Lock()
+	defer runtime.visualActionMu.Unlock()
+	currentRawID := runtime.visualTaskRawID
+	if currentRawID == "" {
+		currentRawID = runtime.visualTaskID
+	}
+	liveGap := observedNS > runtime.visualTaskObservedNS && runtime.visualTaskObservedNS != 0 &&
+		observedNS-runtime.visualTaskObservedNS > uint64(visualTaskContinuationGap) &&
+		!trajectory.SaidFurther(runtime.visualTaskText, heard) &&
+		!trajectory.SaidFurther(heard, runtime.visualTaskText) && heard != runtime.visualTaskText
+	newControllerTask := runtime.visualTaskID == "" ||
+		liveGap || (rawID != currentRawID && (!adjacent || gap > uint64(visualTaskContinuationGap)))
+	if newControllerTask {
+		// wholeUtterance intentionally spans until the assistant audibly answers.
+		// That is the right scope for conversational policy, but not for effect
+		// authority: a person can correct a completed screen action while the
+		// assistant is still presenting or the slow lane is still working. The
+		// new acoustic utterance owns only its own cumulative ASR text.
+		controllerID := rawID
+		if liveGap && rawID == currentRawID {
+			// An interaction floor can deliberately hold one acoustic turn open
+			// across a long pause. The recognizer then retains its correlation ID,
+			// but screen-effect authority must still distinguish the later spoken
+			// correction. The observed-time suffix is internal controller lineage;
+			// the canonical audio event keeps its original correlation unchanged.
+			controllerID += "/visual-" + strconv.FormatUint(observedNS, 10)
+		}
+		runtime.visualTaskID, runtime.visualTaskRawID, runtime.visualTaskText = controllerID, rawID, heard
+		runtime.visualTaskObservedNS = observedNS
+		runtime.visualEvaluated[controllerID] = false
+		return runtime.visualTaskID, runtime.visualTaskText
+	}
+	if observedNS > runtime.visualTaskObservedNS {
+		runtime.visualTaskObservedNS = observedNS
+	}
+	if asrWithinWordRegression(heard, runtime.visualTaskText) {
+		return runtime.visualTaskID, runtime.visualTaskText
+	}
+	task := heard
+	if rawID != currentRawID {
+		// A recognizer-created acoustic tail has a new ID but belongs to the
+		// controller task inside the short continuation horizon. Join from the
+		// controller's own text, never from the wider unanswered voice turn.
+		switch {
+		case trajectory.SaidFurther(runtime.visualTaskText, heard):
+			task = heard
+		case trajectory.SaidFurther(heard, runtime.visualTaskText):
+			task = runtime.visualTaskText
+		case !strings.Contains(runtime.visualTaskText, heard):
+			task = strings.TrimSpace(runtime.visualTaskText + " " + heard)
+		default:
+			task = runtime.visualTaskText
+		}
+		runtime.visualTaskRawID = rawID
+	}
+	// A fresh frame may wake a decision captured before a newer ASR revision
+	// arrived. Never let that older work shrink the reconstructed task: doing
+	// so erases a trailing ordered control ("...and share your screen") and
+	// makes the next frame look as though only the first action was requested.
+	if trajectory.SaidFurther(task, runtime.visualTaskText) {
+		task = runtime.visualTaskText
+	}
+	if task != "" && task != runtime.visualTaskText {
+		runtime.visualTaskText = task
+		runtime.visualEvaluated[runtime.visualTaskID] = false
+	}
+	return runtime.visualTaskID, runtime.visualTaskText
+}
+
+func asrWithinWordRegression(candidate, current string) bool {
+	candidateWords, currentWords := trajectory.SpokenWords(candidate), trajectory.SpokenWords(current)
+	if len(candidateWords) == 0 || len(candidateWords) != len(currentWords) {
+		return false
+	}
+	for index := 0; index < len(candidateWords)-1; index++ {
+		if candidateWords[index] != currentWords[index] {
+			return false
+		}
+	}
+	last := len(candidateWords) - 1
+	return len(candidateWords[last]) < len(currentWords[last]) &&
+		strings.HasPrefix(currentWords[last], candidateWords[last])
+}
+
+func (runtime *runtime) rememberCompositeResumeHeard(heard string) {
+	runtime.audioMu.Lock()
+	runtime.compositeResumeHeard = strings.TrimSpace(heard)
+	runtime.audioMu.Unlock()
+}
+
+func (runtime *runtime) signalCompositeResumeOnce(intentID, heard string) error {
+	intentID = strings.TrimSpace(intentID)
+	if intentID == "" {
+		return nil
+	}
+	runtime.visualActionMu.Lock()
+	if runtime.visualResumed[intentID] {
+		runtime.visualActionMu.Unlock()
+		return nil
+	}
+	runtime.visualResumed[intentID] = true
+	runtime.visualActionMu.Unlock()
+	runtime.rememberCompositeResumeHeard(heard)
+	if err := runtime.signal(interaction.SignalCompositeResume); err != nil {
+		runtime.clearCompositeResumeHeard(heard)
+		runtime.visualActionMu.Lock()
+		delete(runtime.visualResumed, intentID)
+		runtime.visualActionMu.Unlock()
+		return err
+	}
+	return nil
+}
+
+func (runtime *runtime) clearCompositeResumeHeard(heard string) {
+	runtime.audioMu.Lock()
+	if runtime.compositeResumeHeard == strings.TrimSpace(heard) {
+		runtime.compositeResumeHeard = ""
+	}
+	runtime.audioMu.Unlock()
+}
+
+func (runtime *runtime) takeCompositeResumeHeard() string {
+	runtime.audioMu.Lock()
+	defer runtime.audioMu.Unlock()
+	heard := runtime.compositeResumeHeard
+	runtime.compositeResumeHeard = ""
+	return heard
 }
 
 // quietAfter is how long nothing may happen before the quiet is itself

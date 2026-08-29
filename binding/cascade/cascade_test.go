@@ -800,6 +800,52 @@ func TestActionSuccessSpeechWaitsForTheCommittedToolResult(t *testing.T) {
 	}
 }
 
+func TestEmptySlowContinuationAfterToolResultStillWakesTheVoice(t *testing.T) {
+	fast := newFast(
+		nil,
+		[]continuation.Event{{
+			Kind: continuation.EventAssistantDelta,
+			Text: "The latest conversion rate is 18.4 percent.",
+		}},
+	)
+	slow := newSlow([]continuation.Event{{
+		Kind: continuation.EventToolCall,
+		ToolCall: &trajectory.ToolCall{
+			CallID: "read_launch_review_1", Name: "read_launch_review",
+			Arguments: json.RawMessage(`{}`),
+		},
+	}})
+	runtime, sink := startSession(t, cascade.Config{
+		Fast: fast, Slow: slow,
+		Tools: []action.ToolSpec{{
+			Name: "read_launch_review", Description: "read authoritative launch facts",
+			Parameters: json.RawMessage(`{"type":"object"}`), Confirm: action.ConfirmNever,
+			Dispatcher: action.DispatcherFunc(func(
+				_ context.Context, call trajectory.ToolCall,
+			) (trajectory.ToolResult, error) {
+				return trajectory.ToolResult{
+					CallID: call.CallID, Name: call.Name,
+					Output: json.RawMessage(`{"conversion_rate":18.4}`),
+				}, nil
+			}),
+		}},
+	}, binding.Settings{})
+
+	speak(t, runtime, 3)
+	waitFor(t, func() bool { return len(sink.spokenTexts()) == 1 },
+		"an empty post-tool slow continuation never handed the authoritative result to the voice")
+	if spoken := sink.spokenTexts(); len(spoken) != 1 ||
+		spoken[0] != "The latest conversion rate is 18.4 percent." {
+		t.Fatalf("result-grounded speech = %#v", spoken)
+	}
+	if got := slow.invocations(); got != 2 {
+		t.Fatalf("slow invocations = %d, want tool selection plus post-result continuation", got)
+	}
+	if got := fast.invocations(); got != 2 {
+		t.Fatalf("fast invocations = %d, want initial turn plus background-result rendering", got)
+	}
+}
+
 func TestOptInFastComputerActionDispatchesInProcess(t *testing.T) {
 	dispatched := make(chan trajectory.ToolCall, 1)
 	fast := newFastComputer([]continuation.Event{{
@@ -915,6 +961,60 @@ func TestSlowToolCallIsNotDispatchedAfterUserResumes(t *testing.T) {
 	}
 }
 
+func TestDeclaredBackgroundSlowToolStartsAfterUserResumes(t *testing.T) {
+	t.Parallel()
+	const toolName = "analyze"
+	slow := &slowProvider{
+		scriptedProvider: *newSlow([]continuation.Event{{
+			Kind: continuation.EventToolCall,
+			ToolCall: &trajectory.ToolCall{
+				CallID: "background_analyze_1", Name: toolName, Arguments: json.RawMessage(`{}`),
+			},
+		}}),
+		delay: 150 * time.Millisecond, entered: make(chan struct{}),
+	}
+	dispatched := make(chan trajectory.ToolCall, 1)
+	runtime, _ := startSession(t, cascade.Config{
+		Fast: newFast(), Slow: slow,
+		Tools: []action.ToolSpec{{
+			Name: toolName, Description: "analyze in the background",
+			Parameters: json.RawMessage(`{"type":"object"}`), Confirm: action.ConfirmNever,
+			Background: true,
+			Dispatcher: action.DispatcherFunc(func(
+				_ context.Context, call trajectory.ToolCall,
+			) (trajectory.ToolResult, error) {
+				dispatched <- call
+				return trajectory.ToolResult{CallID: call.CallID, Name: call.Name}, nil
+			}),
+		}},
+	}, binding.Settings{})
+
+	speak(t, runtime, 3)
+	select {
+	case <-slow.entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the background continuation never started")
+	}
+	// New acoustic evidence overtakes the provider prefix before its tool call
+	// reaches the action boundary. The declaration says that this analysis is
+	// still valid and exists specifically to continue while listening.
+	pushAudio(t, runtime, tone(2400, 8000), 3)
+	select {
+	case call := <-dispatched:
+		if call.Name != toolName {
+			t.Fatalf("unexpected background dispatch: %+v", call)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a declared background call did not cross the action boundary")
+	}
+	for _, item := range runtime.Trajectory().Items {
+		if item.Kind == trajectory.KindToolPlaceholder && item.ToolPlaceholder != nil &&
+			item.ToolPlaceholder.CallID == "background_analyze_1" {
+			t.Fatal("the executed background call was also closed as interrupted")
+		}
+	}
+}
+
 func TestFastComputerLaneKeepsObservationControlSlowOnly(t *testing.T) {
 	fast := newFastComputer(
 		[]continuation.Event{{
@@ -979,6 +1079,50 @@ func TestFastComputerLaneKeepsObservationControlSlowOnly(t *testing.T) {
 	fast.mu.Unlock()
 	if len(request.Invocation.Tools) != 0 {
 		t.Fatalf("fast received observation-control schemas: %+v", request.Invocation.Tools)
+	}
+}
+
+func TestFastBackgroundLaneCanStartOnlyExplicitlyDeclaredBackgroundWork(t *testing.T) {
+	fast := newFastComputer([]continuation.Event{{
+		Kind: continuation.EventToolCall,
+		ToolCall: &trajectory.ToolCall{
+			CallID: "fast_analysis_1", Name: "analyze", Arguments: json.RawMessage(`{}`),
+		},
+	}})
+	policies := defaultPolicies()
+	rollout, _ := parseRollout("fast-only")
+	policies.Rollout = rollout
+	runtime, sink := startSession(t, cascade.Config{
+		Fast: fast, Slow: newSlow(), Policies: policies, FastBackgroundTools: true,
+	}, binding.Settings{})
+	if err := runtime.Update(context.Background(), binding.Settings{
+		Gate: perception.DefaultGateConfig(),
+		Tools: []action.ToolSpec{
+			{Name: "analyze", Description: "analyze while listening", Parameters: json.RawMessage(`{"type":"object"}`), Background: true},
+			{Name: "delete", Description: "delete a record", Parameters: json.RawMessage(`{"type":"object"}`)},
+		},
+	}); err != nil {
+		t.Fatalf("declare client tools: %v", err)
+	}
+
+	speak(t, runtime, 3)
+	waitFor(t, func() bool {
+		sink.mu.Lock()
+		defer sink.mu.Unlock()
+		return len(sink.toolCalls) == 1
+	}, "the fast background call never crossed the protocol boundary")
+	fast.mu.Lock()
+	request := fast.requests[0]
+	fast.mu.Unlock()
+	if len(request.Invocation.Tools) != 1 || request.Invocation.Tools[0].Name != "analyze" ||
+		!request.Invocation.Tools[0].Background {
+		t.Fatalf("fast background lane received more than its typed allowlist: %+v", request.Invocation.Tools)
+	}
+	sink.mu.Lock()
+	event := sink.toolCalls[0]
+	sink.mu.Unlock()
+	if len(event.Calls) != 1 || event.Calls[0].Name != "analyze" {
+		t.Fatalf("unexpected fast background call: %+v", event)
 	}
 }
 

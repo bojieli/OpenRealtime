@@ -13,6 +13,7 @@ import (
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/cascade"
 	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -136,6 +137,34 @@ func TestObserverEvidenceCannotStartAnAutonomousTurnBeforeUserIntent(t *testing.
 
 	speak(t, runtime, 3)
 	waitFor(t, func() bool { return fast.invocations() > 0 }, "user intent did not arm cognition")
+}
+
+func TestStaySilentInteractionDecisionCannotSuppressACommittedUserTurn(t *testing.T) {
+	model, err := interaction.NewInteractionModel(silentDecider{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policies := interaction.Defaults()
+	policies.Interaction = model
+	config := videoConfig(nil)
+	config.Policies = policies
+	fast := config.Fast.(*scriptedProvider)
+	runtime, _ := startSession(t, config, binding.Settings{})
+	if err := runtime.Video(context.Background(), screenFrame(t)); err != nil {
+		t.Fatalf("video: %v", err)
+	}
+	waitFor(t, func() bool {
+		for _, item := range runtime.Trajectory().Items {
+			if item.Kind == trajectory.KindObservation && trajectory.AuthorityOf(item) == trajectory.AuthorityObserver {
+				return true
+			}
+		}
+		return false
+	}, "observer context was not committed")
+
+	speak(t, runtime, 3)
+	waitFor(t, func() bool { return fast.invocations() > 0 },
+		"a stay-silent observer policy suppressed a committed user turn")
 }
 
 // The video-only level of factor F3 has to actually remove the recogniser.

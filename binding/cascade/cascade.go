@@ -192,6 +192,12 @@ type Config struct {
 	// remain slow-only, and every emitted call crosses the server's authority,
 	// confirmation, ledger, and audit path.
 	FastComputerUse bool
+	// FastBackgroundTools lets the fast provider start only tools whose
+	// declaration explicitly marks them Background. It is independent from
+	// FastComputerUse so a deployment can give the local foreground authority
+	// to launch safe asynchronous work without creating a second coordinate
+	// controller. The provider must still declare execution authority.
+	FastBackgroundTools bool
 
 	// Confirmer authorizes actions whose declared requirement is "always".
 	// Nil denies them, which is the right default and a real one: an action a
@@ -262,12 +268,12 @@ func New(config Config) (*Binding, error) {
 		}
 	}
 	fastAuthority := config.Fast.Descriptor().EffectiveToolAuthority()
-	if config.FastComputerUse {
+	if config.FastComputerUse || config.FastBackgroundTools {
 		if fastAuthority != continuation.ToolAuthorityExecute {
-			return nil, errors.New("fast computer use requires a fast provider with execution authority")
+			return nil, errors.New("fast tool execution requires a fast provider with execution authority")
 		}
 	} else if fastAuthority == continuation.ToolAuthorityExecute {
-		return nil, errors.New("fast provider execution authority requires the explicit fast computer-use mode")
+		return nil, errors.New("fast provider execution authority requires an explicit fast-tool mode")
 	}
 	if config.VisualReflex != nil {
 		descriptor := config.VisualReflex.Descriptor()

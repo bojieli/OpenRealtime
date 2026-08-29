@@ -66,6 +66,12 @@ type runtime struct {
 	continuing inFlight
 	// interjecting_ guards the single in-flight interjection.
 	interjecting_ inFlight
+	// visualPartial bounds the direct-pixel cognition lane to one live
+	// micro-turn. visualPending coalesces revisions that arrive while it is
+	// occupied to the newest evidence only; piling one model call per 200 ms
+	// revision behind a busy GPU would turn responsiveness into stale work,
+	// while dropping the final revision can erase the last requested action.
+	visualPartial inFlight
 	// ordinaryFastRunning includes the interval after an ordinary voice
 	// continuation starts and before it has queued speech. Duplex state cannot
 	// cover that interval: no audio is audible yet. A user who resumes then has
@@ -180,6 +186,12 @@ type runtime struct {
 	// lastSilentActNS is when the last one happened, because a fresh utterance
 	// looks like a fresh stretch and the prefix test lets it through.
 	lastSilentActNS uint64
+	// compositeResumeHeard preserves the live utterance that led a silent
+	// visual worker to WAIT. Signals intentionally carry no trajectory payload,
+	// and the utterance may still be an uncommitted ASR partial when the signal
+	// reaches the event loop, so the ordinary voice turn needs this one typed
+	// bridge back to the evidence that opened it.
+	compositeResumeHeard string
 	// lastQuietNS is when the quiet was last asked about, so a stretch of
 	// nothing costs one decision a second rather than one a frame.
 	// quietSpokeSince is the stretch already spoken into, because a silence
@@ -200,6 +212,51 @@ type runtime struct {
 	speechStartNS    uint64
 
 	clientCalls *clientcalls.Tracker
+	// visualIntentByCall joins every visual entry path at the effect boundary.
+	// A partial, its final transcript, and a post-action frame may each produce
+	// a model call; the user utterance identity is what makes them one intent.
+	visualActionMu     sync.Mutex
+	visualIntentByCall map[string]string
+	// visualArmed is receding-horizon control state. WAIT and an ACT whose
+	// private continuation bit is true keep an intent eligible for a fresh-frame
+	// replan. A terminal ACT or ABSTAIN removes it, so pixels are evidence but do
+	// not become autonomous coordinate authority after the requested chunk ends.
+	visualArmed map[string]bool
+	// visualEvaluated distinguishes a terminal task from a task whose first
+	// frame simply arrived after the user request. Both have armed=false; only
+	// the latter is owed one initial direct-pixel decision.
+	visualEvaluated map[string]bool
+	// visualTaskID/text join short recognition-created fragments into one
+	// controller task. The ASR can endpoint "go to Summary" and "and begin
+	// presenting" separately even though the speaker never yielded the turn;
+	// grounding the second fragment without the first erases both what was
+	// requested and what the preceding action already completed.
+	visualTaskID         string
+	visualTaskRawID      string
+	visualTaskText       string
+	visualTaskObservedNS uint64
+	// visualPolicy caches the interaction model's typed coordinate authority
+	// for the exact reconstructed task it classified. New ASR words invalidate
+	// the cache; observer frames reuse it and therefore cannot grant themselves
+	// authority merely by changing.
+	visualPolicy              map[string]interaction.VisualIntent
+	visualPolicyTask          map[string]string
+	visualResumed             map[string]bool
+	visualHandledRev          map[string]uint64
+	visualProvisionalTerminal map[string]bool
+	visualProvisionalRetry    map[string]uint64
+	visualPending             *liveVisualDecision
+	visualLast                *liveVisualDecision
+	visualDeferred            *liveVisualDecision
+	// visualDecisionCancel lets a canonical endpoint observation cancel a live
+	// pixel decision computed from the superseded prefix. Otherwise the endpoint
+	// waits for that doomed call and then pays for a second VLM call serially.
+	visualDecisionCancel     context.CancelFunc
+	visualDecisionGeneration uint64
+	// visualNeedsFreshFrame is set at every visual ACT boundary. Later user
+	// words may still update/classify the task, but no visual actor may consume
+	// them until an observer has delivered post-action pixels.
+	visualNeedsFreshFrame bool
 
 	// prepared holds speculative continuations that have been generated and
 	// committed to nothing.
@@ -231,10 +288,16 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		ledger:   action.NewLedger(),
 		registry: action.NewRegistry(),
 		ctx:      ctx, cancel: cancel,
-		settings: binding.CloneSettings(options.Settings),
-		prepared: newPreparations(),
-		window:   &interaction.Window{},
-		pinboard: &interaction.Pinboard{},
+		settings:           binding.CloneSettings(options.Settings),
+		prepared:           newPreparations(),
+		visualIntentByCall: make(map[string]string), visualArmed: make(map[string]bool),
+		visualEvaluated: make(map[string]bool),
+		visualPolicy:    make(map[string]interaction.VisualIntent), visualPolicyTask: make(map[string]string),
+		visualResumed: make(map[string]bool), visualHandledRev: make(map[string]uint64),
+		visualProvisionalTerminal: make(map[string]bool),
+		visualProvisionalRetry:    make(map[string]uint64),
+		window:                    &interaction.Window{},
+		pinboard:                  &interaction.Pinboard{},
 		// One per session: the first voice of this conversation is the person
 		// this conversation is with, and that is not a fact about the process.
 		voices: voices.New(bind.config.Voices, voices.DefaultThreshold, voices.DefaultMinimum),
@@ -300,9 +363,21 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		return nil, err
 	}
 	var fastToolFilter func(continuation.ToolDefinition) bool
-	if bind.config.FastComputerUse {
+	if bind.config.FastComputerUse || bind.config.FastBackgroundTools {
 		fastToolFilter = func(tool continuation.ToolDefinition) bool {
 			return result.fastExecutableTool(tool.Name)
+		}
+	}
+	visualReflex := result.selectedVisualReflexConfig()
+	var slowToolFilter func(continuation.ToolDefinition) bool
+	if visualReflex != nil {
+		// Selecting a direct-vision reflex also selects one owner for immediate
+		// screen effects. A vision-capable slow reasoner may inspect the same
+		// pixels and use semantic/knowledge tools, but giving it coordinate
+		// actions would create a second controller racing the bounded local lane.
+		// Screenshot and wait remain ordinary slow controls.
+		slowToolFilter = func(tool continuation.ToolDefinition) bool {
+			return !computeruse.IsReflexAction(tool.Name)
 		}
 	}
 	engine, err := cognition.New(cognition.Config{
@@ -310,8 +385,8 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		Catalog:          toolCatalog{runtime: result},
 		AgentInstruction: cognition.Compose(bind.config.AgentInstruction, result.settings.Instruction),
 		FastMaxTokens:    bind.config.FastMaxTokens, SlowMaxTokens: bind.config.SlowMaxTokens,
-		FastToolFilter:    fastToolFilter,
-		VisualReflex:      result.selectedVisualReflexConfig(),
+		FastToolFilter: fastToolFilter, SlowToolFilter: slowToolFilter,
+		VisualReflex:      visualReflex,
 		RequireSilentSlow: true, RetainReasoning: true,
 		// Without this a provider that can see gets the narration and nothing
 		// else, which is enough to reason about a screen and not enough to
@@ -846,6 +921,7 @@ func (catalog toolCatalog) Tools() []continuation.ToolDefinition {
 	for _, spec := range specs {
 		tools = append(tools, continuation.ToolDefinition{
 			Name: spec.Name, Description: spec.Description, Parameters: spec.Parameters,
+			Background: spec.Background,
 		})
 	}
 	return tools
@@ -869,10 +945,14 @@ func (catalog toolCatalog) Capabilities() []continuation.Capability {
 }
 
 func (runtime *runtime) fastExecutableTool(name string) bool {
-	if !runtime.config.FastComputerUse {
+	spec, declared := runtime.registry.Lookup(name)
+	if !declared {
 		return false
 	}
-	return runtime.boundedComputerTool(name)
+	if runtime.config.FastBackgroundTools && spec.Background {
+		return true
+	}
+	return runtime.config.FastComputerUse && runtime.boundedComputerTool(name)
 }
 
 func (runtime *runtime) visualReflexExecutableTool(name string) bool {

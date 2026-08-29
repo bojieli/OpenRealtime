@@ -8,6 +8,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/interaction"
+	"github.com/bojieli/OpenRealtime/sidecar"
 )
 
 // A flag that parses and then does nothing is the failure mode this file
@@ -274,6 +275,25 @@ func TestTurnProjectionRebuildsTheFloor(t *testing.T) {
 	}
 }
 
+func TestInteractionFloorUsesExplicitEndpointSilence(t *testing.T) {
+	options := defaultOptions()
+	options.policies = "interaction"
+	options.policyModel = "qwen-3b"
+	options.interactionFloor = true
+	options.endpointSilenceMS = 700
+	policies, err := buildPolicies(options, nil)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	verdict := policies.Floor.Endpoint(interaction.Context{
+		Revision:  interaction.Revision{ID: 1, StableText: "a complete request", SilenceNS: uint64(600 * time.Millisecond)},
+		Situation: &interaction.Situation{Heard: "a complete request", Silence: "600ms"},
+	})
+	if verdict.Ended {
+		t.Fatal("interaction floor ignored the explicit 700ms endpoint safety floor")
+	}
+}
+
 // Factor F3's video-only level has to remove the recogniser, not just add a
 // video observer alongside it.
 func TestVideoOnlySelectsAnObserverSetWithoutAudio(t *testing.T) {
@@ -350,6 +370,15 @@ func TestFastComputerUseChangesAuthorityAndCannotBeASilentNoOp(t *testing.T) {
 	}
 	if provider.Descriptor().EffectiveToolAuthority() != continuation.ToolAuthorityExecute {
 		t.Fatal("the fast-computer flag did not reach the provider descriptor")
+	}
+	options.fastComputerUse = false
+	options.fastBackgroundTools = true
+	provider, err = buildFast(options)
+	if err != nil {
+		t.Fatalf("fast background provider: %v", err)
+	}
+	if provider.Descriptor().EffectiveToolAuthority() != continuation.ToolAuthorityExecute {
+		t.Fatal("the fast-background flag did not reach the provider descriptor")
 	}
 
 	options.binding = "upstream"
@@ -626,6 +655,22 @@ func TestVoiceVisionProfilePreservesExplicitObserverPolicy(t *testing.T) {
 	}
 	if normalized.observers != "video" || normalized.components != "keyframe+narration" {
 		t.Fatalf("profile overrode explicit interaction/perception policy: %+v", normalized)
+	}
+}
+
+func TestVoiceVisionProfileAcceptsProtocolV3VisualSidecar(t *testing.T) {
+	options := defaultOptions()
+	options.binding = "omni+text-policy"
+	options.profile = "voice+vision"
+	options.sidecarCapabilities = "audio-input,audio-output,visual-input,turn-generation"
+	options.sidecarProtocol = sidecar.VersionMultimodal
+	options.explicit = map[string]bool{"profile": true, "binding": true}
+	normalized, err := normalizeProfile(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized.observers != "audio+video" {
+		t.Fatalf("visual sidecar profile selected observers %q", normalized.observers)
 	}
 }
 

@@ -763,6 +763,9 @@ func (runtime *runtime) observeAudio(
 		// starts before the endpoint; it never decides what gets committed.
 		runtime.prepare(ctx, decision)
 		opportunity := runtime.policies.Trigger.Next(decision)
+		if opportunity.Open {
+			runtime.considerLiveVisual(decision)
+		}
 		runtime.endShadow(shadow, decision, false, opportunity.Open)
 		if err := runtime.sink.Transcript(ctx, binding.TranscriptEvent{
 			ItemID: runtime.currentUtterance(), Text: observation.Text,
@@ -894,7 +897,7 @@ func (runtime *runtime) commitObservationWithTranscriptAct(
 	}
 	_, err := runtime.coordinator.Submit(eventloop.Event{
 		Type: observationEventType(observation), Source: observation.Observer, Channel: observationChannel(observation),
-		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindObservation,
+		Priority: observationPriority(observation), Kind: trajectory.KindObservation,
 		OccurredNS: observation.OccurredNS, SourceRevision: revision, SupersedesRevision: supersedes,
 		Producer: observation.Producer(), Content: observation.Text, Observation: observation.Meta(),
 		CorrelationID: runtime.currentUtterance(),
@@ -902,7 +905,42 @@ func (runtime *runtime) commitObservationWithTranscriptAct(
 	if err != nil && transcriptAct != nil {
 		runtime.forgetTranscriptAct(revision)
 	}
+	visualEvidence := false
+	if err == nil && observation.Authority == trajectory.AuthorityObserver {
+		for _, media := range observation.Media {
+			if strings.HasPrefix(strings.ToLower(media.MIMEType), "image/") {
+				visualEvidence = true
+				break
+			}
+		}
+	}
+	if visualEvidence {
+		// Submit is intentionally non-blocking and the ordinary driver may defer
+		// processing this observer batch while the user owns the floor. The live
+		// visual lane nevertheless needs the frame in the canonical snapshot
+		// before it runs. Commit performs only the unconditional append; it does
+		// not bypass the gate or run ordinary cognition.
+		if _, commitErr := runtime.coordinator.Commit(); commitErr != nil &&
+			!errors.Is(commitErr, eventloop.ErrIdle) {
+			return commitErr
+		}
+		runtime.admitFreshVisualEvidence()
+	}
 	return err
+}
+
+func observationPriority(observation perception.Observation) eventloop.Priority {
+	if observation.Authority == trajectory.AuthorityObserver {
+		// Environment feedback is allowed to join work already in flight. Its
+		// direct visual lane is silent and bounded; making it wait behind slow
+		// reasoning turns a 200 ms sensor into a multi-second action loop.
+		return eventloop.PriorityParallel
+	}
+	// Canonical supersession already cooperatively interrupts older cognition
+	// before submission. Keep the replacement batch routine so continuing
+	// speech cannot also cancel a speak-through or correction chosen precisely
+	// because the other person still owns the floor.
+	return eventloop.PriorityRoutine
 }
 
 // owe records that later evidence invalidated content the user already heard.

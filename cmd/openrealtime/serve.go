@@ -159,11 +159,12 @@ type serveOptions struct {
 	bargeIn                  string
 	bargeInHold              time.Duration
 
-	computerUse     bool
-	fastComputerUse bool
-	browserURL      string
-	browserTarget   string
-	computerConfirm string
+	computerUse         bool
+	fastComputerUse     bool
+	fastBackgroundTools bool
+	browserURL          string
+	browserTarget       string
+	computerConfirm     string
 
 	sidecarCommand      string
 	sidecarAddress      string
@@ -257,7 +258,7 @@ func runServe(arguments []string, output io.Writer) error {
 		"visual reflex model identity; empty disables the visual reflex lane")
 	flags.StringVar(&options.reflexTokenEnv, "visual-reflex-token-env", "",
 		"environment variable holding the visual reflex credential; empty reads OPENREALTIME_VISUAL_REFLEX_API_KEY and then the provider's conventional variable")
-	flags.IntVar(&options.reflexTokens, "visual-reflex-max-tokens", 48,
+	flags.IntVar(&options.reflexTokens, "visual-reflex-max-tokens", 96,
 		"visual reflex act/wait/abstain output-token limit")
 	flags.DurationVar(&options.reflexTimeout, "visual-reflex-timeout", 650*time.Millisecond,
 		"hard deadline for one visual reflex decision")
@@ -329,6 +330,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.BoolVar(&options.computerUse, "computer-use", false, "declare the computer.* tools against a browser target")
 	flags.BoolVar(&options.fastComputerUse, "fast-computer-use", false,
 		"let the fast provider execute only bounded standard computer.* actions")
+	flags.BoolVar(&options.fastBackgroundTools, "fast-background-tools", false,
+		"let the fast provider start only tools explicitly declared background-safe")
 	flags.StringVar(&options.browserURL, "browser-devtools-url", "http://127.0.0.1:9222", "browser DevTools endpoint for computer use")
 	flags.StringVar(&options.browserTarget, "browser-target", "", "connect directly to a known page WebSocket instead of discovering one")
 	flags.StringVar(&options.computerConfirm, "computer-confirm", "", "override every computer.* confirmation requirement: never, policy, or always")
@@ -377,8 +380,8 @@ func runServe(arguments []string, output io.Writer) error {
 		"how long a client has to return a result for a tool it executes; a negative value waits forever")
 	flags.StringVar(&options.sidecarFloor, "floor", "", "who decides endpoints: engine or model; empty selects the binding's default")
 	flags.StringVar(&options.sidecarInteraction, "interaction-owner", "", "who selects interaction acts for a composed sidecar: engine or model")
-	flags.StringVar(&options.sidecarCapabilities, "sidecar-capabilities", "audio-input,audio-output,turn-generation", "available capabilities for -binding sidecar: audio-input, audio-output, transcription, turn-generation, concurrent-io, native-floor, native-interaction, interaction-acts, text-injection")
-	flags.IntVar(&options.sidecarProtocol, "sidecar-protocol", 0, "sidecar protocol version; 0 selects the preset default (v1, or v2 for typed interaction)")
+	flags.StringVar(&options.sidecarCapabilities, "sidecar-capabilities", "audio-input,audio-output,turn-generation", "available capabilities for -binding sidecar: audio-input, audio-output, visual-input, transcription, turn-generation, concurrent-io, native-floor, native-interaction, interaction-acts, text-injection")
+	flags.IntVar(&options.sidecarProtocol, "sidecar-protocol", 0, "sidecar protocol version; 0 selects the preset default (v1, v2 for typed interaction, or v3 for visual input)")
 	flags.StringVar(&options.sidecarVoice, "sidecar-voice", "",
 		"voice for a model that has more than one; empty leaves the choice to the model")
 	flags.SetOutput(output)
@@ -491,9 +494,14 @@ func buildBinding(options serveOptions) (binding.Binding, *asrbuffer.Accumulator
 	if bindingName == "" {
 		bindingName = "cascade"
 	}
-	if options.fastComputerUse && bindingName != "cascade" {
+	if options.fastBackgroundTools && bindingName != "cascade" {
 		return nil, nil, fmt.Errorf(
-			"fast computer use is implemented by the cascade binding, not %q", bindingName)
+			"fast background tools are implemented by the cascade binding, not %q", bindingName)
+	}
+	if options.fastComputerUse && bindingName != "cascade" && bindingName != "omni" &&
+		bindingName != "omni+text-policy" && bindingName != "sidecar" {
+		return nil, nil, fmt.Errorf(
+			"fast computer use is implemented by the cascade and sidecar bindings, not %q", bindingName)
 	}
 	if transcriptPolicyEnabled(options.transcriptPolicy) && bindingName != "cascade" {
 		return nil, nil, fmt.Errorf(
@@ -982,8 +990,9 @@ func applyPolicyModels(
 	// it configured and overwritten - a flag that reports success and changes
 	// nothing, which is the failure mode a measured factor must never have.
 	if wholeDecision && options.interactionFloor {
+		minimumAnswerSilence := time.Duration(options.endpointSilenceMS) * time.Millisecond
 		floor, err := interaction.NewActFloor(policies.Interaction, interaction.ActFloorOptions{
-			Liveness: options.interactionLiveness,
+			Liveness: options.interactionLiveness, SilenceDuration: minimumAnswerSilence,
 		})
 		if err != nil {
 			return err
@@ -1110,14 +1119,15 @@ func buildCascade(
 		SpeakerIdentityDescriptor: speakerDescriptor,
 		ClientToolTimeout:         options.clientToolTimeout,
 		Observers:                 observers, DefaultObservers: defaults, Tools: computer.specs,
-		Narrator:          narrator,
-		DeciderSees:       options.interactionSees,
-		ProfileTurns:      options.profileTurns,
-		HoldLimit:         options.interactionLiveness,
-		EndpointSilenceMS: options.endpointSilenceMS,
-		FastComputerUse:   options.fastComputerUse,
-		Governor:          governor,
-		ConfirmPolicy:     computer.policy,
+		Narrator:            narrator,
+		DeciderSees:         options.interactionSees,
+		ProfileTurns:        options.profileTurns,
+		HoldLimit:           options.interactionLiveness,
+		EndpointSilenceMS:   options.endpointSilenceMS,
+		FastComputerUse:     options.fastComputerUse,
+		FastBackgroundTools: options.fastBackgroundTools,
+		Governor:            governor,
+		ConfirmPolicy:       computer.policy,
 		// Every executed action is already a trajectory item with causal
 		// parents. This is the operational mirror of that, so an operator
 		// reading logs can see a refusal without reading a transcript.
@@ -1178,7 +1188,7 @@ func buildUpstream(options serveOptions) (binding.Binding, error) {
 // answer the question that was actually asked, now.
 func buildFast(options serveOptions) (continuation.Provider, error) {
 	authority := continuation.ToolAuthorityPropose
-	if options.fastComputerUse {
+	if options.fastComputerUse || options.fastBackgroundTools {
 		authority = continuation.ToolAuthorityExecute
 	}
 	// Minimal unless the deployment asks for more. A small instruct model has
@@ -1687,6 +1697,26 @@ func buildSidecarBinding(
 		Instructions: options.instruction, Slow: slow, SlowMaxTokens: options.slowTokens,
 		Voice:             options.sidecarVoice,
 		ClientToolTimeout: options.clientToolTimeout,
+		FastComputerUse:   options.fastComputerUse,
+	}
+	capabilities, err := parseStackCapabilities(options.sidecarCapabilities)
+	if err != nil {
+		return nil, err
+	}
+	config.ModelCapabilities = capabilities
+	computer, err := buildComputerUse(options)
+	if err != nil {
+		return nil, err
+	}
+	config.Tools = computer.specs
+	config.ConfirmPolicy = computer.policy
+	config.ActionAudit = func(record action.Record) {
+		fmt.Fprintf(os.Stderr, "tool-dispatch %s %s phase=%s target=%s confirmed=%t executed=%t error=%q\n",
+			record.Name, record.CallID, record.ProducerPhase, record.Target,
+			record.Confirmed, record.Executed, record.Error)
+	}
+	if capabilities.VisualInput && config.Sidecar.ProtocolVersion == 0 {
+		config.Sidecar.ProtocolVersion = sidecar.VersionMultimodal
 	}
 	if policies.Interaction != nil {
 		recognise, err := buildRecogniser(options)
@@ -1810,6 +1840,8 @@ func parseStackCapabilities(raw string) (binding.StackCapabilities, error) {
 			capabilities.AudioInput = true
 		case "audio-output":
 			capabilities.AudioOutput = true
+		case "visual-input":
+			capabilities.VisualInput = true
 		case "transcription":
 			capabilities.Transcription = true
 		case "turn-generation":
