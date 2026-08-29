@@ -86,6 +86,10 @@ type Descriptor struct {
 	ConfigSchema  string       `json:"config_schema,omitempty" yaml:"config_schema,omitempty"`
 	Dependencies  []Dependency `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
 	Effects       []Effect     `json:"effects,omitempty" yaml:"effects,omitempty"`
+	// CompositeFingerprint is set only for a subgraph descriptor. It binds the
+	// exported contract identity to the exact frozen child Graph IR rather than
+	// allowing a body change behind an unchanged boundary signature.
+	CompositeFingerprint string `json:"composite_fingerprint,omitempty" yaml:"composite_fingerprint,omitempty"`
 }
 
 var (
@@ -171,6 +175,16 @@ func (descriptor Descriptor) Validate() error {
 	}
 	if err := validateNamedContracts(descriptor.Name, descriptor.Dependencies, descriptor.Effects); err != nil {
 		return err
+	}
+	if descriptor.CompositeFingerprint != "" {
+		if !strings.HasPrefix(descriptor.CompositeFingerprint, "sha256:") ||
+			len(descriptor.CompositeFingerprint) != len("sha256:")+sha256.Size*2 {
+			return fmt.Errorf("element %s has invalid composite fingerprint %q",
+				descriptor.Name, descriptor.CompositeFingerprint)
+		}
+		if _, err := hex.DecodeString(strings.TrimPrefix(descriptor.CompositeFingerprint, "sha256:")); err != nil {
+			return fmt.Errorf("element %s has invalid composite fingerprint: %w", descriptor.Name, err)
+		}
 	}
 	return nil
 }

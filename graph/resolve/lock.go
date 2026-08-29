@@ -10,6 +10,7 @@ import (
 	"sort"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/internal/strictjson"
 )
 
 const LockFormatVersion = 1
@@ -94,6 +95,9 @@ func (lock Lock) Marshal() ([]byte, error) {
 
 // ParseLock decodes strict JSON and rejects unknown fields and trailing data.
 func ParseLock(source []byte) (Lock, error) {
+	if err := strictjson.Validate(source); err != nil {
+		return Lock{}, fmt.Errorf("decode resolution lock: %w", err)
+	}
 	decoder := json.NewDecoder(bytes.NewReader(source))
 	decoder.DisallowUnknownFields()
 	var lock Lock

@@ -18,6 +18,7 @@ type Model struct {
 	Nodes       []Node     `json:"nodes"`
 	Edges       []Edge     `json:"edges,omitempty"`
 	Boundaries  []Boundary `json:"boundaries,omitempty"`
+	Scopes      []Scope    `json:"scopes,omitempty"`
 }
 
 type Node struct {
@@ -53,6 +54,21 @@ type Boundary struct {
 	Endpoint  ir.Endpoint          `json:"endpoint"`
 	Type      string               `json:"type"`
 	Role      string               `json:"role"`
+}
+
+type Scope struct {
+	ID         string           `json:"id"`
+	Parent     string           `json:"parent,omitempty"`
+	Composite  element.Identity `json:"composite"`
+	Nodes      []string         `json:"nodes"`
+	Boundaries []ScopeBoundary  `json:"boundaries,omitempty"`
+}
+
+type ScopeBoundary struct {
+	Name      string               `json:"name"`
+	Direction ir.BoundaryDirection `json:"direction"`
+	Endpoint  ir.Endpoint          `json:"endpoint"`
+	Type      string               `json:"type"`
 }
 
 // Live overlays runtime evidence without mutating the static graph model.
@@ -96,6 +112,7 @@ func Build(graph ir.Graph) (Model, error) {
 		GraphID: graph.ID, Revision: graph.Revision, Fingerprint: graph.Fingerprint,
 		Nodes: make([]Node, 0, len(graph.Nodes)), Edges: make([]Edge, 0, len(graph.Edges)),
 		Boundaries: make([]Boundary, 0, len(graph.Boundaries)),
+		Scopes:     make([]Scope, 0, len(graph.Scopes)),
 	}
 	for _, source := range graph.Nodes {
 		node := Node{
@@ -123,6 +140,19 @@ func Build(graph ir.Graph) (Model, error) {
 			Name: source.Name, Direction: source.Direction, Endpoint: source.Endpoint,
 			Type: source.Type.String(), Role: protocolRole(source.Type),
 		})
+	}
+	for _, source := range graph.Scopes {
+		scope := Scope{
+			ID: source.ID, Parent: source.Parent, Composite: source.Composite,
+			Nodes: append([]string(nil), source.Nodes...),
+		}
+		for _, boundary := range source.Boundaries {
+			scope.Boundaries = append(scope.Boundaries, ScopeBoundary{
+				Name: boundary.Name, Direction: boundary.Direction,
+				Endpoint: boundary.Endpoint, Type: boundary.Type.String(),
+			})
+		}
+		model.Scopes = append(model.Scopes, scope)
 	}
 	return model, nil
 }

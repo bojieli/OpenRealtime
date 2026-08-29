@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"html"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -28,14 +29,7 @@ func Mermaid(graph ir.Graph) (string, error) {
 		output.WriteString(mermaidText(string(boundary.Direction) + " " + boundary.Name + "\n" + boundary.Type))
 		output.WriteString("\"}}\n")
 	}
-	for _, node := range model.Nodes {
-		output.WriteString("    ")
-		output.WriteString(mermaidNodeID(node.ID))
-		output.WriteString("[\"")
-		output.WriteString(mermaidText(node.ID + "\n" + node.Element.Name + "@" +
-			strconv.FormatUint(node.Element.Revision, 10)))
-		output.WriteString("\"]\n")
-	}
+	writeMermaidHierarchy(&output, model)
 
 	linkIndex := 0
 	var styles []string
@@ -109,13 +103,7 @@ func DOT(graph ir.Graph) (string, error) {
 		output.WriteString(strconv.Quote(string(boundary.Direction) + " " + boundary.Name + "\n" + boundary.Type))
 		output.WriteString("];\n")
 	}
-	for _, node := range model.Nodes {
-		output.WriteString("  ")
-		output.WriteString(strconv.Quote(node.ID))
-		output.WriteString(" [label=")
-		output.WriteString(strconv.Quote(node.ID + "\n" + node.Element.Name + "@" + strconv.FormatUint(node.Element.Revision, 10)))
-		output.WriteString("];\n")
-	}
+	writeDOTHierarchy(&output, model)
 	writeEdge := func(from, to, label, role string, delivery ir.Delivery) {
 		output.WriteString("  ")
 		output.WriteString(strconv.Quote(from))
@@ -195,3 +183,138 @@ func dotRoleColor(role string) string {
 		return ""
 	}
 }
+
+func writeMermaidHierarchy(output *strings.Builder, model Model) {
+	nodes := make(map[string]Node, len(model.Nodes))
+	for _, node := range model.Nodes {
+		nodes[node.ID] = node
+	}
+	scopes := make(map[string]Scope, len(model.Scopes))
+	children := make(map[string][]string)
+	for _, scope := range model.Scopes {
+		scopes[scope.ID] = scope
+		children[scope.Parent] = append(children[scope.Parent], scope.ID)
+	}
+	for parent := range children {
+		sort.Strings(children[parent])
+	}
+	owner := deepestScopeOwners(model.Scopes)
+	writeNode := func(node Node, indentation string) {
+		output.WriteString(indentation)
+		output.WriteString(mermaidNodeID(node.ID))
+		output.WriteString("[\"")
+		output.WriteString(mermaidText(node.ID + "\n" + node.Element.Name + "@" +
+			strconv.FormatUint(node.Element.Revision, 10)))
+		output.WriteString("\"]\n")
+	}
+	var writeScope func(string, string)
+	writeScope = func(scopeID, indentation string) {
+		scope := scopes[scopeID]
+		output.WriteString(indentation)
+		output.WriteString("subgraph ")
+		output.WriteString(mermaidScopeID(scope.ID))
+		output.WriteString("[\"")
+		output.WriteString(mermaidText(scope.ID + "\n" + scope.Composite.Name + "@" +
+			strconv.FormatUint(scope.Composite.Revision, 10)))
+		output.WriteString("\"]\n")
+		for _, nodeID := range scope.Nodes {
+			if owner[nodeID] == scope.ID {
+				writeNode(nodes[nodeID], indentation+"    ")
+			}
+		}
+		for _, child := range children[scope.ID] {
+			writeScope(child, indentation+"    ")
+		}
+		output.WriteString(indentation)
+		output.WriteString("end\n")
+	}
+	for _, node := range model.Nodes {
+		if owner[node.ID] == "" {
+			writeNode(node, "    ")
+		}
+	}
+	for _, scope := range children[""] {
+		writeScope(scope, "    ")
+	}
+}
+
+func writeDOTHierarchy(output *strings.Builder, model Model) {
+	nodes := make(map[string]Node, len(model.Nodes))
+	for _, node := range model.Nodes {
+		nodes[node.ID] = node
+	}
+	scopes := make(map[string]Scope, len(model.Scopes))
+	children := make(map[string][]string)
+	for _, scope := range model.Scopes {
+		scopes[scope.ID] = scope
+		children[scope.Parent] = append(children[scope.Parent], scope.ID)
+	}
+	for parent := range children {
+		sort.Strings(children[parent])
+	}
+	owner := deepestScopeOwners(model.Scopes)
+	writeNode := func(node Node, indentation string) {
+		output.WriteString(indentation)
+		output.WriteString(strconv.Quote(node.ID))
+		output.WriteString(" [label=")
+		output.WriteString(strconv.Quote(node.ID + "\n" + node.Element.Name + "@" + strconv.FormatUint(node.Element.Revision, 10)))
+		output.WriteString("];\n")
+	}
+	var writeScope func(string, string)
+	writeScope = func(scopeID, indentation string) {
+		scope := scopes[scopeID]
+		output.WriteString(indentation)
+		output.WriteString("subgraph ")
+		output.WriteString(strconv.Quote("cluster:" + scope.ID))
+		output.WriteString(" {\n")
+		output.WriteString(indentation + "  label=")
+		output.WriteString(strconv.Quote(scope.ID + "\n" + scope.Composite.Name + "@" + strconv.FormatUint(scope.Composite.Revision, 10)))
+		output.WriteString(";\n")
+		for _, nodeID := range scope.Nodes {
+			if owner[nodeID] == scope.ID {
+				writeNode(nodes[nodeID], indentation+"  ")
+			}
+		}
+		for _, child := range children[scope.ID] {
+			writeScope(child, indentation+"  ")
+		}
+		output.WriteString(indentation + "}\n")
+	}
+	for _, node := range model.Nodes {
+		if owner[node.ID] == "" {
+			writeNode(node, "  ")
+		}
+	}
+	for _, scope := range children[""] {
+		writeScope(scope, "  ")
+	}
+}
+
+func deepestScopeOwners(scopes []Scope) map[string]string {
+	byID := make(map[string]Scope, len(scopes))
+	for _, scope := range scopes {
+		byID[scope.ID] = scope
+	}
+	depth := func(scope Scope) int {
+		result := 1
+		for scope.Parent != "" {
+			result++
+			scope = byID[scope.Parent]
+		}
+		return result
+	}
+	owners := map[string]string{}
+	ownerDepth := map[string]int{}
+	for _, scope := range scopes {
+		candidateDepth := depth(scope)
+		for _, node := range scope.Nodes {
+			if candidateDepth > ownerDepth[node] {
+				owners[node] = scope.ID
+				ownerDepth[node] = candidateDepth
+			}
+		}
+	}
+	return owners
+}
+
+func mermaidScopeID(identity string) string { return "s_" + shortHash("scope:"+identity) }

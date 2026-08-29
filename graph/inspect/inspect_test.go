@@ -58,6 +58,37 @@ func TestModelClassifiesTriggerInterruptAndState(t *testing.T) {
 	}
 }
 
+func TestGeneratedViewsPreserveSubgraphHierarchy(t *testing.T) {
+	graph := fixture(t)
+	composite := graph.Nodes[0].Element
+	graph.Scopes = []ir.Scope{{
+		ID: "voice", Composite: composite, Nodes: []string{"source"},
+		Boundaries: []ir.ScopeBoundary{{
+			Name: "trigger", Direction: ir.InputBoundary,
+			Endpoint: ir.Endpoint{Node: "source", Port: "trigger"},
+			Type:     element.Trigger(element.Named("test.Start")),
+		}},
+	}}
+	graph, err := ir.Freeze(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mermaid, err := inspect.Mermaid(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dot, err := inspect.DOT(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(mermaid, "subgraph s_") || !strings.Contains(mermaid, "voice<br/>") {
+		t.Fatalf("Mermaid lost hierarchy:\n%s", mermaid)
+	}
+	if !strings.Contains(dot, `subgraph "cluster:voice"`) {
+		t.Fatalf("DOT lost hierarchy:\n%s", dot)
+	}
+}
+
 func fixture(t *testing.T) ir.Graph {
 	t.Helper()
 	value := element.Event(element.Named("test.Value"))

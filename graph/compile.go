@@ -19,6 +19,10 @@ type Options struct {
 	ResolutionMode resolve.Mode
 	Revision       uint64
 	ChannelDepth   map[string]int
+	Loader         SourceLoader
+
+	lineage []string
+	scopes  []ir.Scope
 }
 
 // Result is the canonical IR and the exact minimal lock consumed or generated
@@ -65,7 +69,7 @@ type nodePort struct {
 
 // Compile resolves, checks, and freezes one parsed topology without acquiring
 // resources. The same function is used by every authoring frontend.
-func Compile(file syntax.File, options Options) (Result, error) {
+func compileFlat(file syntax.File, options Options) (Result, error) {
 	failures := &Errors{}
 	path := file.Path
 	if options.Catalog == nil {
@@ -142,6 +146,8 @@ func Compile(file syntax.File, options Options) (Result, error) {
 		FormatVersion: ir.FormatVersion,
 		ID:            file.Graph.Name,
 		Revision:      options.Revision,
+		Lineage:       append([]string(nil), options.lineage...),
+		Scopes:        append([]ir.Scope(nil), options.scopes...),
 	}
 	if resultGraph.Revision == 0 {
 		resultGraph.Revision = 1

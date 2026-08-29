@@ -56,6 +56,8 @@ func run(arguments []string, stdout, stderr io.Writer) error {
 		return runProviders(arguments[1:], stdout)
 	case "architectures", "architecture":
 		return runArchitectures(arguments[1:], stdout)
+	case "graph":
+		return runGraph(arguments[1:], stdout, stderr)
 	case "version":
 		fmt.Fprintln(stdout, version())
 		return nil
@@ -83,6 +85,7 @@ commands:
   datasets      inventory a prepared benchmark dataset
   providers     list the model providers this build can be pointed at
   architectures list and inspect immutable architecture revisions
+  graph         format, lock, type-check, compile, and render element graphs
   version       print the version
 
 run "openrealtime <command> -h" for a command's flags`

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/bojieli/OpenRealtime/graph/syntax"
+	"github.com/bojieli/OpenRealtime/internal/strictjson"
 	"gopkg.in/yaml.v3"
 )
 
@@ -105,6 +106,9 @@ func ParseYAML(path string, source []byte) (syntax.File, error) {
 // ParseJSON parses strict normalized JSON with unknown-field and trailing-data
 // rejection. JSON is a first-class equivalent of the YAML interchange form.
 func ParseJSON(path string, source []byte) (syntax.File, error) {
+	if err := strictjson.Validate(source); err != nil {
+		return syntax.File{}, &Error{Path: path, Line: 1, Column: 1, Message: "decode JSON: " + err.Error()}
+	}
 	decoder := json.NewDecoder(bytes.NewReader(source))
 	decoder.DisallowUnknownFields()
 	var document Document

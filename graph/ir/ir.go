@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/internal/strictjson"
 )
 
 const FormatVersion = 1
@@ -57,6 +58,7 @@ type Graph struct {
 	Nodes         []Node     `json:"nodes" yaml:"nodes"`
 	Edges         []Edge     `json:"edges,omitempty" yaml:"edges,omitempty"`
 	Boundaries    []Boundary `json:"boundaries,omitempty" yaml:"boundaries,omitempty"`
+	Scopes        []Scope    `json:"scopes,omitempty" yaml:"scopes,omitempty"`
 }
 
 // Node is one resolved element instance. Configuration and implementation
@@ -128,6 +130,23 @@ type Boundary struct {
 	Source    *Source           `json:"source,omitempty" yaml:"source,omitempty"`
 }
 
+// Scope retains one expanded subgraph instance so inspection can collapse or
+// expand hierarchy while runtime execution uses the same flattened channels.
+type Scope struct {
+	ID         string           `json:"id" yaml:"id"`
+	Parent     string           `json:"parent,omitempty" yaml:"parent,omitempty"`
+	Composite  element.Identity `json:"composite" yaml:"composite"`
+	Nodes      []string         `json:"nodes" yaml:"nodes"`
+	Boundaries []ScopeBoundary  `json:"boundaries,omitempty" yaml:"boundaries,omitempty"`
+}
+
+type ScopeBoundary struct {
+	Name      string            `json:"name" yaml:"name"`
+	Direction BoundaryDirection `json:"direction" yaml:"direction"`
+	Endpoint  Endpoint          `json:"endpoint" yaml:"endpoint"`
+	Type      element.Type      `json:"type" yaml:"type"`
+}
+
 // Freeze recursively clones, canonicalizes, validates, and fingerprints a
 // graph. The input is never mutated.
 func Freeze(graph Graph) (Graph, error) {
@@ -178,6 +197,9 @@ func (graph Graph) Marshal() ([]byte, error) {
 
 // Parse decodes strict JSON and verifies its fingerprint.
 func Parse(source []byte) (Graph, error) {
+	if err := strictjson.Validate(source); err != nil {
+		return Graph{}, fmt.Errorf("decode graph IR: %w", err)
+	}
 	decoder := json.NewDecoder(bytes.NewReader(source))
 	decoder.DisallowUnknownFields()
 	var graph Graph
@@ -245,6 +267,16 @@ func (graph *Graph) canonicalize() {
 		}
 		return graph.Boundaries[left].Name < graph.Boundaries[right].Name
 	})
+	sort.Slice(graph.Scopes, func(left, right int) bool { return graph.Scopes[left].ID < graph.Scopes[right].ID })
+	for index := range graph.Scopes {
+		sort.Strings(graph.Scopes[index].Nodes)
+		sort.Slice(graph.Scopes[index].Boundaries, func(left, right int) bool {
+			if graph.Scopes[index].Boundaries[left].Direction != graph.Scopes[index].Boundaries[right].Direction {
+				return graph.Scopes[index].Boundaries[left].Direction < graph.Scopes[index].Boundaries[right].Direction
+			}
+			return graph.Scopes[index].Boundaries[left].Name < graph.Scopes[index].Boundaries[right].Name
+		})
+	}
 }
 
 func (graph Graph) clone() Graph {
@@ -283,6 +315,15 @@ func (graph Graph) clone() Graph {
 		if result.Boundaries[index].Source != nil {
 			copy := *result.Boundaries[index].Source
 			result.Boundaries[index].Source = &copy
+		}
+	}
+	result.Scopes = slices.Clone(graph.Scopes)
+	for index := range result.Scopes {
+		result.Scopes[index].Nodes = slices.Clone(result.Scopes[index].Nodes)
+		result.Scopes[index].Boundaries = slices.Clone(result.Scopes[index].Boundaries)
+		for boundaryIndex := range result.Scopes[index].Boundaries {
+			boundary := &result.Scopes[index].Boundaries[boundaryIndex]
+			boundary.Type = boundary.Type.Clone()
 		}
 	}
 	return result
@@ -489,6 +530,99 @@ func (graph Graph) validateStructure() error {
 		if connectionCounts[key] < minimum {
 			return fmt.Errorf("graph %s port %s.%s requires at least %d connection(s), got %d",
 				graph.ID, key.node, key.port, minimum, connectionCounts[key])
+		}
+	}
+	scopes := make(map[string]Scope, len(graph.Scopes))
+	for _, scope := range graph.Scopes {
+		if len(scope.Nodes) == 0 {
+			return fmt.Errorf("graph %s scope %s contains no nodes", graph.ID, scope.ID)
+		}
+		if scope.ID == "" {
+			return fmt.Errorf("graph %s has a subgraph scope with an empty ID", graph.ID)
+		}
+		if _, duplicate := scopes[scope.ID]; duplicate {
+			return fmt.Errorf("graph %s repeats subgraph scope %q", graph.ID, scope.ID)
+		}
+		if err := element.ValidateIdentity(scope.Composite); err != nil {
+			return fmt.Errorf("graph %s scope %s: %w", graph.ID, scope.ID, err)
+		}
+		scopes[scope.ID] = scope
+		seenNodes := make(map[string]struct{}, len(scope.Nodes))
+		for _, node := range scope.Nodes {
+			if _, found := nodes[node]; !found {
+				return fmt.Errorf("graph %s scope %s names unknown node %q", graph.ID, scope.ID, node)
+			}
+			if _, duplicate := seenNodes[node]; duplicate {
+				return fmt.Errorf("graph %s scope %s repeats node %q", graph.ID, scope.ID, node)
+			}
+			seenNodes[node] = struct{}{}
+		}
+		boundaryNames := make(map[string]struct{}, len(scope.Boundaries))
+		for _, boundary := range scope.Boundaries {
+			if _, duplicate := boundaryNames[boundary.Name]; duplicate || boundary.Name == "" {
+				return fmt.Errorf("graph %s scope %s has duplicate or empty boundary %q",
+					graph.ID, scope.ID, boundary.Name)
+			}
+			boundaryNames[boundary.Name] = struct{}{}
+			port, found := ports[portKey{node: boundary.Endpoint.Node, port: boundary.Endpoint.Port}]
+			if !found {
+				return fmt.Errorf("graph %s scope %s boundary %s names unknown endpoint %s",
+					graph.ID, scope.ID, boundary.Name, boundary.Endpoint.String())
+			}
+			want := element.Input
+			if boundary.Direction == OutputBoundary {
+				want = element.Output
+			} else if boundary.Direction != InputBoundary {
+				return fmt.Errorf("graph %s scope %s boundary %s has invalid direction %q",
+					graph.ID, scope.ID, boundary.Name, boundary.Direction)
+			}
+			if port.Direction != want || !port.Type.Equal(boundary.Type) {
+				return fmt.Errorf("graph %s scope %s boundary %s disagrees with endpoint %s",
+					graph.ID, scope.ID, boundary.Name, boundary.Endpoint.String())
+			}
+			if port.Cardinality == element.One && boundary.Endpoint.Lane != "" {
+				return fmt.Errorf("graph %s scope %s boundary %s selects a lane on singular port %s",
+					graph.ID, scope.ID, boundary.Name, boundary.Endpoint.String())
+			}
+			if port.Cardinality == element.Variadic && boundary.Endpoint.Lane != "" &&
+				!slices.Contains(port.Lanes, boundary.Endpoint.Lane) {
+				return fmt.Errorf("graph %s scope %s boundary %s selects unknown lane %q on %s.%s",
+					graph.ID, scope.ID, boundary.Name, boundary.Endpoint.Lane,
+					boundary.Endpoint.Node, boundary.Endpoint.Port)
+			}
+		}
+	}
+	for _, scope := range graph.Scopes {
+		if scope.Parent != "" {
+			if _, found := scopes[scope.Parent]; !found {
+				return fmt.Errorf("graph %s scope %s names unknown parent scope %q", graph.ID, scope.ID, scope.Parent)
+			}
+			if scope.Parent == scope.ID {
+				return fmt.Errorf("graph %s scope %s is its own parent", graph.ID, scope.ID)
+			}
+		}
+	}
+	for _, scope := range graph.Scopes {
+		seenParents := map[string]struct{}{scope.ID: {}}
+		parent := scope.Parent
+		for parent != "" {
+			if _, cycle := seenParents[parent]; cycle {
+				return fmt.Errorf("graph %s subgraph scope parent cycle reaches %s", graph.ID, parent)
+			}
+			seenParents[parent] = struct{}{}
+			parent = scopes[parent].Parent
+		}
+		if scope.Parent != "" {
+			parentNodes := make(map[string]struct{}, len(scopes[scope.Parent].Nodes))
+			for _, node := range scopes[scope.Parent].Nodes {
+				parentNodes[node] = struct{}{}
+			}
+			for _, node := range scope.Nodes {
+				if _, contained := parentNodes[node]; !contained {
+					return fmt.Errorf("graph %s child scope %s node %s is absent from parent scope %s",
+						graph.ID, scope.ID, node, scope.Parent)
+				}
+			}
 		}
 	}
 	return nil

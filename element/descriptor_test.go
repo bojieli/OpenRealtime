@@ -1,6 +1,7 @@
 package element_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/element"
@@ -58,6 +59,24 @@ func TestConcretePortRequiresTemporalProtocol(t *testing.T) {
 	descriptor.Ports[0].Type = element.Named("text.String")
 	if err := descriptor.Validate(); err == nil {
 		t.Fatal("expected bare payload port to fail")
+	}
+}
+
+func TestCompositeFingerprintChangesDescriptorIdentity(t *testing.T) {
+	left := textModelDescriptor()
+	right := textModelDescriptor()
+	left.CompositeFingerprint = "sha256:" + strings.Repeat("1", 64)
+	right.CompositeFingerprint = "sha256:" + strings.Repeat("2", 64)
+	leftIdentity, err := left.Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rightIdentity, err := right.Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leftIdentity.Digest == rightIdentity.Digest {
+		t.Fatal("subgraph body fingerprint did not affect descriptor identity")
 	}
 }
 
