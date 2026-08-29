@@ -1,0 +1,49 @@
+apiVersion: openrealtime.ai/config/v1alpha1
+graph: conversational_slow_only
+nodes:
+  admission:
+    threshold: 0.5
+    prefix_padding_ms: 300
+    silence_duration_ms: 500
+    speech_duration_ms: 120
+    cancellation_memory: 128
+    terminal_memory: 128
+    max_frame_bytes: 1048576
+    max_sample_rate_hz: 384000
+  endpoint_policy:
+    mode: automatic
+    cancellation_memory: 128
+    terminal_memory: 128
+  asr:
+    provider: deployment.asr
+    name: conversational-audio
+  observation_commit: {}
+  trajectory: {}
+  fast_activation:
+    role: fast
+    invocation:
+      instruction: Respond promptly using the committed trajectory.
+      max_output_tokens: 512
+    max_pending: 64
+    terminal_memory: 512
+    cancel_memory: 256
+  slow_activation:
+    role: deliberative
+    invocation:
+      instruction: Deliberate over the committed trajectory and return a grounded response.
+      max_output_tokens: 2048
+    max_pending: 64
+    terminal_memory: 512
+    cancel_memory: 256
+  fast_model:
+    provider: deployment.fast
+  slow_model:
+    provider: deployment.slow
+    retain_reasoning: true
+  fast_result_commit: {}
+  slow_result_commit: {}
+  segment: {}
+  tts:
+    provider: deployment.tts
+  playback:
+    sink: deployment.playback

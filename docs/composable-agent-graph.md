@@ -1739,7 +1739,7 @@ already available. A phase is not complete until its exit gate is checked.
 | --- | --- | --- | --- |
 | 0 — contracts | Complete | Accepted design, terminology, authoring decisions, and migration oracle | Keep decisions and superseded ADRs synchronized as implementation lands |
 | 1 — graph foundation | Exit evidence pending | Typed descriptors/runtime, `.ortg`, strict YAML/JSON interchange, Go SDK, lockfiles, Graph IR, validation, connectors, rendering, and coarse legacy mounting | Full reference-architecture regression and benchmark equivalence evidence |
-| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, observation commit, trajectory, activation policy, cognition, interaction/result commit, speech, tools, explicit `Tee`/`Mux`, and focused component graphs | Complete conversational reference graphs, gateway integration, and safe-point trace parity |
+| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, observation commit, trajectory, activation policy, cognition, interaction/result commit, speech, tools, explicit `Tee`/`Mux`, and full locked fast-only/slow-only/both-speaking reference graphs | Gateway integration, executed-turn regression, and safe-point trace parity |
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction parity, and removal of binding switches |
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Complete silent computer-use and independent voice/CU reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, exact live resolution evidence, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Deployment/secrets/evidence catalogs, legacy translation, normal graph-native launch, and executed parity artifacts |
@@ -1757,9 +1757,10 @@ Current checkpoint notes:
   interaction/speech routing, tool authority, and external-model topologies.
 - Deterministic graph diff, session-keyed bounded runtime recording, replayable
   payload-free trace artifacts, and the canonical `.ortg` language-service
-  core plus adaptive video ingress/cadence are committed. Editor
-  recovery/schema/UI transport and sidecar media-format hardening remain
-  unchecked until their independent worktree slices are reviewed and committed.
+  core, adaptive video ingress/cadence, and the full conversational reference
+  family are committed. Editor recovery/schema/UI transport and sidecar
+  media-format hardening remain unchecked until their independent worktree
+  slices are reviewed and committed.
 - No item in the twelve-point definition of done is yet proven end to end.
   Several have foundation-level support, but benchmark migration, production
   inspection, reconciliation, and legacy removal are still outstanding.
@@ -1795,14 +1796,21 @@ Integrated checkpoint ledger:
 - [x] Standard-catalog camera/screen/video ingress with fixed, adaptive, and
   manual cadence, explicit ticks/refresh/end/cancel, bounded change state,
   generation fencing, and visibly lossy capture-pressure edges.
+- [x] Full locked conversational fast-only, slow-only, and both-speaking
+  reference graphs share one component backbone and differ only through
+  explicit direct or arbitrated speech routing; all mount with independent
+  ASR, cognition, TTS, playback, and trajectory providers.
 - [ ] Full componentized conversational reference graphs and safe-point parity.
 - [ ] Complete recovery/schema/LSP/UI authoring, reconciliation, benchmark
   execution parity, and legacy launch-path removal.
 
 Reference-agent tracker:
 
-- [ ] Componentized conversational voice agent with separate ASR, interaction,
-  fast cognition, deliberative cognition, TTS, pacing, playback, and state.
+- [x] Componentized conversational voice-agent family with separate acoustic
+  policy, ASR, observation commit, trajectory, independent fast/deliberative
+  activation and cognition, result commit, interaction routing, segmentation,
+  TTS, playback, cancellation/timing boundaries, and state. Executed-turn and
+  legacy safe-point parity remain tracked separately.
 - [x] Focused fast-only, slow-only, and both-speaking interaction graphs prove
   that either cognition stream can speak through explicit segmentation and
   arbitration topology.
@@ -1899,10 +1907,14 @@ artifacts rather than legacy architecture/config switches):
   binding-owned event loop.
 - [x] Preserve trajectory compare-and-append and event-loop wake invariants in
   the graph-native store/commit feedback loop and migration-oracle tests.
+- [x] Check in exact-lock conversational fast-only, slow-only, and
+  both-speaking reference graphs with an identical non-routing backbone,
+  explicit cancellation/timing boundaries, no model-to-model edge, fresh-lock
+  assertions, values binding, and mounted provider-resolution evidence.
 - [ ] Reproduce current behavior as a reference graph and compare traces at
   every safe point. Checked-in acoustic, ASR/trajectory, activation, and
-  interaction components cover the parts, but the complete conversational
-  composition and parity artifact are not committed yet.
+  interaction components plus the complete conversational family cover the
+  topology, but executed-turn and legacy-parity artifacts are not committed.
 - [x] Add alternative tests where deliberative output speaks directly or fast
   and deliberative streams meet at an explicit stream-aware arbiter.
 

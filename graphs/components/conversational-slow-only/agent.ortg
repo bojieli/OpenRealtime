@@ -1,0 +1,153 @@
+// Complete componentized conversational agent. Both cognition paths observe
+// and commit independently, and the deliberative model speaks directly by an
+// ordinary edge. There is no model-to-model edge or implicit handoff.
+graph conversational_slow_only {
+    acoustic.EnergyAdmission :: admission;
+    acoustic.EndpointPolicy :: endpoint_policy;
+    perception.ASR :: asr;
+    state.ObservationCommit :: observation_commit;
+    state.TrajectoryStore :: trajectory;
+    policy.GenerateOnObservation :: fast_activation;
+    policy.GenerateOnObservation :: slow_activation;
+    cognition.TextModel :: fast_model;
+    cognition.TextModel :: slow_model;
+    interaction.ModelResultCommit :: fast_result_commit;
+    interaction.ModelResultCommit :: slow_result_commit;
+    interaction.SegmentPreparedText :: segment;
+    speech.TTS :: tts;
+    speech.Playback :: playback;
+
+    flow.Tee :: endpoint_state_copy;
+    flow.Tee :: endpoint_candidate_copy;
+    flow.Tee :: endpoint_command_copy;
+    flow.Tee :: audio_cancel_copy;
+    flow.Mux :: append_mux;
+    flow.Tee :: committed_copy;
+    flow.Tee :: rejected_copy;
+    flow.Tee :: snapshot_copy;
+    flow.Tee :: observation_outcome_copy;
+    flow.Tee :: fast_text_copy;
+    flow.Tee :: slow_text_copy;
+    flow.Tee :: fast_result_copy;
+    flow.Tee :: slow_result_copy;
+    flow.Tee :: fast_outcome_copy;
+    flow.Tee :: slow_outcome_copy;
+    flow.Tee :: speech_cancel_copy;
+    flow.Mux :: tts_cancel_mux;
+    flow.Mux :: playback_cancel_mux;
+
+    endpoint_policy.state -> endpoint_state_copy.in;
+    endpoint_state_copy.out -> admission.policy;
+    admission.candidate -> endpoint_candidate_copy.in;
+    endpoint_candidate_copy.out -> endpoint_policy.candidate;
+    endpoint_policy.command -> endpoint_command_copy.in;
+    endpoint_command_copy.out -> admission.command;
+    audio_cancel_copy.out -> admission.cancel;
+    audio_cancel_copy.out -> endpoint_policy.cancel;
+    audio_cancel_copy.out -> asr.cancel;
+
+    admission.admitted -> asr.observe;
+    admission.endpoint -> asr.flush;
+    asr.observations -> observation_commit.observations;
+
+    observation_commit.append -> append_mux.in;
+    fast_result_commit.append -> append_mux.in;
+    slow_result_commit.append -> append_mux.in;
+    append_mux.out -> trajectory.append;
+
+    trajectory.committed -> committed_copy.in;
+    committed_copy.out -> observation_commit.committed;
+    committed_copy.out -> fast_result_commit.committed;
+    committed_copy.out -> slow_result_commit.committed;
+    trajectory.rejected -> rejected_copy.in;
+    rejected_copy.out -> observation_commit.rejected;
+    rejected_copy.out -> fast_result_commit.rejected;
+    rejected_copy.out -> slow_result_commit.rejected;
+
+    trajectory.snapshot -> snapshot_copy.in;
+    snapshot_copy.out => fast_activation.context;
+    snapshot_copy.out => slow_activation.context;
+    snapshot_copy.out => fast_model.context;
+    snapshot_copy.out => slow_model.context;
+    observation_commit.outcome -> observation_outcome_copy.in;
+    observation_outcome_copy.out -> fast_activation.committed;
+    observation_outcome_copy.out -> slow_activation.committed;
+
+    fast_activation.trigger -> fast_model.trigger;
+    slow_activation.trigger -> slow_model.trigger;
+    fast_model.text -> fast_text_copy.in;
+    slow_model.text -> slow_text_copy.in;
+    fast_model.result -> fast_result_copy.in;
+    slow_model.result -> slow_result_copy.in;
+    fast_result_copy.out -> fast_result_commit.result;
+    slow_result_copy.out -> slow_result_commit.result;
+    fast_model.outcome -> fast_outcome_copy.in;
+    slow_model.outcome -> slow_outcome_copy.in;
+
+    // Deliberative speech is a direct developer-authored route. The fast
+    // prepared stream remains visible and commits, but cannot reach speech.
+    slow_text_copy.out -> segment.text;
+    slow_outcome_copy.out -> segment.terminal;
+
+    segment.segments -> tts.text;
+    segment.speech_cancel -> speech_cancel_copy.in;
+    speech_cancel_copy.out -> tts_cancel_mux.in;
+    speech_cancel_copy.out -> playback_cancel_mux.in;
+    tts_cancel_mux.out -> tts.cancel;
+    tts.audio -> playback.audio;
+    playback_cancel_mux.out -> playback.cancel;
+
+    input audio = admission.audio;
+    input endpoint_tick = endpoint_policy.tick;
+    input endpoint_commit = endpoint_policy.commit;
+    input endpoint_verdict = endpoint_policy.verdict;
+    input audio_cancel = audio_cancel_copy.in;
+    input fast_activation_cancel = fast_activation.cancel;
+    input slow_activation_cancel = slow_activation.cancel;
+    input fast_model_cancel = fast_model.cancel;
+    input slow_model_cancel = slow_model.cancel;
+    input segmentation_timeout = segment.timeout;
+    input segmentation_cancel = segment.cancel;
+    input tts_cancel = tts_cancel_mux.in;
+    input playback_cancel = playback_cancel_mux.in;
+
+    output endpoint_policy_state = endpoint_state_copy.out;
+    output endpoint_candidate = endpoint_candidate_copy.out;
+    output endpoint_command = endpoint_command_copy.out;
+    output acoustic_activity = admission.activity;
+    output admission_state = admission.state;
+    output admission_outcome = admission.outcome;
+    output endpoint_outcome = endpoint_policy.outcome;
+    output audio_cancel_observed = audio_cancel_copy.out;
+    output perception_outcome = asr.outcome;
+    output asr_resolution = asr.resolved;
+    output store_commit = committed_copy.out;
+    output store_rejection = rejected_copy.out;
+    output trajectory_snapshot = snapshot_copy.out;
+    output observation_commit_outcome = observation_outcome_copy.out;
+    output fast_activation_state = fast_activation.state;
+    output fast_activation_outcome = fast_activation.outcome;
+    output slow_activation_state = slow_activation.state;
+    output slow_activation_outcome = slow_activation.outcome;
+    output fast_prepared_text = fast_text_copy.out;
+    output slow_prepared_text = slow_text_copy.out;
+    output fast_result = fast_result_copy.out;
+    output slow_result = slow_result_copy.out;
+    output fast_tools = fast_model.tools;
+    output slow_tools = slow_model.tools;
+    output fast_model_outcome = fast_outcome_copy.out;
+    output slow_model_outcome = slow_outcome_copy.out;
+    output fast_model_resolution = fast_model.resolved;
+    output slow_model_resolution = slow_model.resolved;
+    output fast_commit_outcome = fast_result_commit.outcome;
+    output slow_commit_outcome = slow_result_commit.outcome;
+    output segment_model_cancel_request = segment.model_cancel;
+    output segmentation_outcome = segment.outcome;
+    output speech_cancel_request = speech_cancel_copy.out;
+    output tts_status = tts.status;
+    output tts_outcome = tts.outcome;
+    output tts_resolution = tts.resolved;
+    output playback_status = playback.status;
+    output playback_outcome = playback.outcome;
+    output playback_resolution = playback.resolved;
+}
