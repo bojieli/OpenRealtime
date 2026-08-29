@@ -1,0 +1,44 @@
+// Audio-free typed ingress for participant text, still images, files, and
+// opaque attachments. Bytes cross only retention/fetch edges. Resolution is
+// a separate request path and produces media.UntrustedContent, never an
+// authority-bearing text observation.
+graph multimodal_content {
+    ingress.UserContent :: content;
+    media.RetainedMedia :: retention;
+    media.ResolveAttachment :: resolver;
+
+    content.retain -> retention.retain;
+    retention.retained -> content.retained;
+    content.release -> retention.release;
+
+    resolver.fetch -> retention.fetch;
+    retention.fetched -> resolver.fetched;
+    resolver.return_lease -> retention.return_lease;
+
+    // RetainedMedia.cancel is an explicit variadic arbitration point. Its
+    // runtime processes ingress and resolver interrupts fairly and serially.
+    content.store_cancel -> retention.cancel;
+    resolver.store_cancel -> retention.cancel;
+
+    input text = content.text;
+    input image = content.image;
+    input file = content.file;
+    input attachment = content.attachment;
+    input content_cancel = content.cancel;
+    input resolve = resolver.resolve;
+    input resolve_cancel = resolver.cancel;
+    // A downstream parser/vision consumer returns each successful resolved
+    // lease explicitly after reading it. The resolver uses the same variadic
+    // port to return leases from resolutions canceled during a fetch.
+    input return_lease = retention.return_lease;
+
+    output observations = content.observations;
+    output handles = content.handles;
+    output ingress_outcome = content.outcome;
+    output resolved = resolver.resolved;
+    output resolver_outcome = resolver.outcome;
+    output released = retention.released;
+    output lease_returned = retention.lease_returned;
+    output retention_outcome = retention.outcome;
+    output retention_metrics = retention.metrics;
+}

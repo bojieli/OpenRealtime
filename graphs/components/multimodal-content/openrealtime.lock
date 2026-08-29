@@ -1,0 +1,29 @@
+{
+  "format_version": 1,
+  "elements": [
+    {
+      "reference": "ingress.UserContent",
+      "identity": {
+        "name": "ingress.UserContent",
+        "revision": 1,
+        "digest": "sha256:5c667d597ba98724d46b318fe57a5c1a99a508921d9544839a6e776fa5e0b286"
+      }
+    },
+    {
+      "reference": "media.ResolveAttachment",
+      "identity": {
+        "name": "media.ResolveAttachment",
+        "revision": 1,
+        "digest": "sha256:c6492ff0c32c1050f929b37b6812dd1eefe688f538d4b9ddeab5da52e94dbd02"
+      }
+    },
+    {
+      "reference": "media.RetainedMedia",
+      "identity": {
+        "name": "media.RetainedMedia",
+        "revision": 1,
+        "digest": "sha256:6ae581ec85b07c34f158140cd4459ef48bacbb494e8e9f65bce98e4a60884ee9"
+      }
+    }
+  ]
+}

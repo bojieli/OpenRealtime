@@ -1,0 +1,8 @@
+apiVersion: openrealtime.ai/config/v1alpha1
+graph: multimodal_content
+nodes:
+  content:
+    retention_scope: session
+  retention:
+    scope: session
+  resolver: {}

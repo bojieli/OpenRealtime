@@ -4,10 +4,13 @@
 package elements
 
 import (
+	acousticelements "github.com/bojieli/OpenRealtime/elements/acoustic"
 	actionelements "github.com/bojieli/OpenRealtime/elements/action"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	"github.com/bojieli/OpenRealtime/elements/flow"
+	ingresselements "github.com/bojieli/OpenRealtime/elements/ingress"
 	interactionelements "github.com/bojieli/OpenRealtime/elements/interaction"
+	mediaelements "github.com/bojieli/OpenRealtime/elements/media"
 	modelelements "github.com/bojieli/OpenRealtime/elements/model"
 	perceptionelements "github.com/bojieli/OpenRealtime/elements/perception"
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
@@ -17,6 +20,9 @@ import (
 )
 
 func RegisterDescriptors(catalog *resolve.Catalog) error {
+	if err := acousticelements.RegisterDescriptors(catalog); err != nil {
+		return err
+	}
 	if err := flow.RegisterDescriptors(catalog); err != nil {
 		return err
 	}
@@ -27,6 +33,12 @@ func RegisterDescriptors(catalog *resolve.Catalog) error {
 		return err
 	}
 	if err := interactionelements.RegisterDescriptors(catalog); err != nil {
+		return err
+	}
+	if err := ingresselements.RegisterDescriptors(catalog); err != nil {
+		return err
+	}
+	if err := mediaelements.RegisterDescriptors(catalog); err != nil {
 		return err
 	}
 	if err := modelelements.RegisterDescriptor(catalog); err != nil {
@@ -42,6 +54,9 @@ func RegisterDescriptors(catalog *resolve.Catalog) error {
 }
 
 func RegisterFactories(registry *graphruntime.Registry) error {
+	if err := acousticelements.RegisterFactories(registry); err != nil {
+		return err
+	}
 	if err := flow.RegisterFactories(registry); err != nil {
 		return err
 	}
@@ -52,6 +67,12 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 		return err
 	}
 	if err := interactionelements.RegisterFactories(registry); err != nil {
+		return err
+	}
+	if err := ingresselements.RegisterFactories(registry); err != nil {
+		return err
+	}
+	if err := mediaelements.RegisterFactories(registry); err != nil {
 		return err
 	}
 	if err := modelelements.RegisterFactory(registry); err != nil {
