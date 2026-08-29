@@ -18,9 +18,10 @@ from dataclasses import dataclass, field
 from typing import Any, BinaryIO
 
 # Version 1 remains accepted and is what an engine requests by default.
-# Version 2 adds typed interaction-act handoff without changing v1 frames.
-VERSION = 2
-SUPPORTED_VERSIONS = (1, 2)
+# Version 2 adds typed interaction-act handoff. Version 3 adds direct encoded
+# images and tool-catalog updates without changing either earlier contract.
+VERSION = 3
+SUPPORTED_VERSIONS = (1, 2, 3)
 
 MAX_HEADER_BYTES = 1 << 20
 MAX_PAYLOAD_BYTES = 16 << 20
@@ -32,6 +33,8 @@ class MessageType:
     # Engine to sidecar.
     HELLO = "hello"
     AUDIO = "audio"
+    IMAGE = "image"
+    TOOLS_UPDATE = "tools_update"
     TEXT = "text"
     COMMIT = "commit"
     RESPOND = "respond"
@@ -69,6 +72,7 @@ class Capability:
     FULL_DUPLEX = "full_duplex"
     NATIVE_INTERACTION = "native_interaction"
     INTERACTION_ACTS = "interaction_acts"
+    VISUAL_INPUT = "visual_input"
 
 
 @dataclass

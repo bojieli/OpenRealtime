@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -493,6 +494,118 @@ func TestModelToolCallsAreRefusedWithAReason(t *testing.T) {
 	}
 }
 
+func TestProtocolV3DeliversDirectImagesAndLiveToolCatalogs(t *testing.T) {
+	binary, received := buildFakeSidecar(t)
+	bind, err := omni.New(omni.Config{
+		Sidecar: sidecar.Config{
+			Command: []string{binary}, ProtocolVersion: sidecar.VersionMultimodal,
+			Environment: []string{
+				"FAKE_SIDECAR_LOG=" + received, "FAKE_SIDECAR_VISUAL=1",
+			},
+		},
+		Slow:              &scriptedSlow{},
+		ModelCapabilities: binding.StackCapabilities{VisualInput: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if capabilities := bind.Capabilities(); !capabilities.Video ||
+		!slices.Contains(capabilities.Observers, "video") {
+		t.Fatalf("multimodal sidecar did not advertise video: %+v", capabilities)
+	}
+	runtime, err := bind.Start(context.Background(), binding.Options{
+		Sink: &collectingSink{}, SessionID: "visual",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close(context.Background(), nil)
+	if err := runtime.Update(context.Background(), binding.Settings{Tools: []action.ToolSpec{{
+		Name: "meeting.read", Description: "read the meeting document",
+		Parameters: json.RawMessage(`{"type":"object"}`),
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: "screen", MIMEType: "image/jpeg",
+		Width: 1280, Height: 720, CapturedNS: 123_000_000, Image: []byte{0xff, 0xd8, 0xff, 0xd9},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		var image, tools bool
+		for _, message := range sidecarReceived(t, received) {
+			image = image || message["type"] == "image" && message["source"] == "screen"
+			tools = tools || message["type"] == "tools_update"
+		}
+		return image && tools
+	}, "protocol v3 did not deliver pixels and the updated tool catalog")
+	if status := runtime.Status(); status.Profile != "voice+vision" ||
+		!status.Stack.VisualInput {
+		t.Fatalf("runtime evidence lost direct vision: %+v", status)
+	}
+}
+
+func TestExplicitFastComputerUseLetsSidecarExecuteOnlyThroughActionBoundary(t *testing.T) {
+	binary, received := buildFakeSidecar(t)
+	bind, err := omni.New(omni.Config{
+		Sidecar: sidecar.Config{
+			Command: []string{binary},
+			Environment: []string{
+				"FAKE_SIDECAR_LOG=" + received, "FAKE_SIDECAR_TOOL_CALL=1",
+				"FAKE_SIDECAR_TOOL_NAME=computer.click_element",
+			},
+		},
+		Slow: &scriptedSlow{}, FastComputerUse: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &collectingSink{}
+	runtime, err := bind.Start(context.Background(), binding.Options{
+		Sink: sink, SessionID: "fast-action",
+		Settings: binding.Settings{Tools: []action.ToolSpec{{
+			Name: "computer.click_element", Description: "click a numbered element",
+			Parameters: json.RawMessage(`{"type":"object"}`),
+			Confirm:    action.ConfirmNever, Target: "meeting-browser",
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close(context.Background(), nil)
+	if err := runtime.CreateResponse(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		sink.mu.Lock()
+		defer sink.mu.Unlock()
+		return len(sink.toolCalls) == 1
+	}, "authorized foreground action did not cross to the client")
+	if err := runtime.ToolResult(context.Background(), trajectory.ToolResult{
+		CallID: "c1", Output: json.RawMessage(`{"ok":true}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		for _, message := range sidecarReceived(t, received) {
+			if message["type"] == "tool_result" && message["call_id"] == "c1" {
+				return message["error"] == nil
+			}
+		}
+		return false
+	}, "foreground tool result did not return to the sidecar")
+	var call, result bool
+	for _, item := range runtime.Trajectory().Items {
+		call = call || item.Kind == trajectory.KindToolCall && item.Producer.Phase == trajectory.PhaseFast
+		result = result || item.Kind == trajectory.KindToolResult
+	}
+	if !call || !result || runtime.Status().Tools.Fast != "execute" {
+		t.Fatalf("fast action was not retained with executable authority: status=%+v trajectory=%+v",
+			runtime.Status(), runtime.Trajectory())
+	}
+}
+
 func TestABindingWithoutAReasonerIsRefused(t *testing.T) {
 	if _, err := omni.New(omni.Config{
 		Sidecar: sidecar.Config{Command: []string{"true"}},
@@ -830,14 +943,19 @@ func main() {
 			if incoming.Version >= 2 {
 				capabilities = append(capabilities, "interaction_acts")
 			}
+			if incoming.Version >= 3 && os.Getenv("FAKE_SIDECAR_VISUAL") != "" {
+				capabilities = append(capabilities, "visual_input")
+			}
 			send(message{
 				Type: "ready", Version: incoming.Version, Model: "fake-omni", OutputRate: 24000,
 				Capabilities: capabilities,
 			}, nil)
 		case "respond":
 			if os.Getenv("FAKE_SIDECAR_TOOL_CALL") != "" {
+				name := os.Getenv("FAKE_SIDECAR_TOOL_NAME")
+				if name == "" { name = "get_balance" }
 				send(message{
-					Type: "tool_call", CallID: "c1", Name: "get_balance",
+					Type: "tool_call", CallID: "c1", Name: name,
 					Arguments: json.RawMessage("{}"),
 				}, nil)
 				continue

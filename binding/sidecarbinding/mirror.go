@@ -2,6 +2,7 @@ package sidecarbinding
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -255,27 +256,106 @@ func (runtime *runtime) finishTurn() error {
 	return runtime.sink.SpeechEnd(runtime.ctx, *utterance, action.Outcome{Completed: true})
 }
 
-// modelToolCall reports that the model asked for a call.
-//
-// It is refused. The model is the fast provider, and the fast provider cannot
-// call tools - that boundary does not change because the provider happens to
-// live in another process. The refusal goes back as a tool result so the model
-// sees why rather than waiting.
+// modelToolCall commits and dispatches the bounded fast-action subset when the
+// deployment explicitly enabled it. Naming a call in another process grants
+// no ambient authority: the canonical trajectory, declared tool schema,
+// confirmation policy, target, ledger, and dispatcher are still engine-owned.
 func (runtime *runtime) modelToolCall(message sidecar.Message) error {
-	runtime.config.Logf("sidecar model proposed %q; only the background reasoner may execute tools", message.Name)
-	return runtime.model.Send(sidecar.Message{
-		Type: sidecar.TypeToolResult, CallID: message.CallID,
-		Error: "the fast provider has no execution authority; the background reasoner performs tool calls",
-	})
+	refuse := func(reason string) error {
+		runtime.config.Logf("sidecar model call %q refused: %s", message.Name, reason)
+		return runtime.model.Send(sidecar.Message{
+			Type: sidecar.TypeToolResult, CallID: message.CallID, Error: reason,
+		})
+	}
+	if !runtime.boundedComputerTool(message.Name) {
+		return refuse("the fast provider has execution authority only for declared, bounded computer actions")
+	}
+	call := trajectory.ToolCall{
+		CallID: message.CallID, Name: message.Name, Arguments: slices.Clone(message.Arguments),
+	}
+	if len(call.Arguments) == 0 || !json.Valid(call.Arguments) {
+		return refuse("tool arguments are not valid JSON")
+	}
+	snapshot := runtime.store.Snapshot()
+	invocationID := fmt.Sprintf("%s_foreground_%d", runtime.spec.Name, runtime.sequence.Add(1))
+	item := trajectory.Item{
+		ID:   fmt.Sprintf("%s_call_%d", runtime.spec.Name, runtime.sequence.Add(1)),
+		Kind: trajectory.KindToolCall, MonotonicNS: runtime.scheduler.NowNS(),
+		SourceRevision: runtime.revision.Load(), InvocationID: invocationID,
+		Producer: trajectory.Producer{
+			Phase: trajectory.PhaseFast, Provider: "sidecar", Model: runtime.ready.Model,
+			SpeechAuthority: string(continuation.SpeechAuthorityVoice),
+		},
+		ToolCall: &call,
+	}
+	if len(snapshot.Items) > 0 {
+		item.CausalParentIDs = []string{snapshot.Items[len(snapshot.Items)-1].ID}
+	}
+	if err := runtime.store.AppendBatchAt(snapshot.Version, []trajectory.Item{item}); err != nil {
+		return refuse("the visual action was overtaken by newer evidence")
+	}
+	runtime.foregroundInvocations.Store(invocationID, struct{}{})
+	spec, _ := runtime.registry.Lookup(call.Name)
+	if spec.Dispatcher != nil {
+		results, _ := runtime.tools.DispatchAll(runtime.ctx, []trajectory.ToolCall{call})
+		return runtime.commitToolResults(invocationID, results)
+	}
+	if err := runtime.clientCalls.Track(invocationID, []trajectory.ToolCall{call}); err != nil {
+		return runtime.commitToolResults(invocationID, []trajectory.ToolResult{{
+			CallID: call.CallID, Name: call.Name, Error: err.Error(),
+		}})
+	}
+	if err := runtime.tools.EmitRemote(runtime.ctx, call); err != nil {
+		return runtime.clientCalls.Result(trajectory.ToolResult{
+			CallID: call.CallID, Name: call.Name, Error: err.Error(),
+		})
+	}
+	if err := runtime.sink.ToolCalls(runtime.ctx, binding.ToolCallEvent{
+		InvocationID: invocationID, Calls: []trajectory.ToolCall{call},
+	}); err != nil {
+		return runtime.clientCalls.Result(trajectory.ToolResult{
+			CallID: call.CallID, Name: call.Name, Error: err.Error(),
+		})
+	}
+	return nil
 }
 
 // Process runs the background reasoner over the mirrored conversation.
 func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) error {
+	backgroundToolResult := false
+	foregroundToolResult := false
+	for _, event := range batch.Events {
+		if event.Kind != trajectory.KindToolResult {
+			continue
+		}
+		if _, foreground := runtime.foregroundInvocations.LoadAndDelete(event.InvocationID); !foreground {
+			backgroundToolResult = true
+			continue
+		}
+		foregroundToolResult = true
+		for _, result := range event.ToolResults {
+			runtime.tools.Complete(result.CallID)
+			message := sidecar.Message{
+				Type: sidecar.TypeToolResult, CallID: result.CallID,
+			}
+			if result.Error != "" {
+				message.Error = result.Error
+			} else {
+				message.Output = slices.Clone(result.Output)
+			}
+			if err := runtime.model.Send(message); err != nil {
+				return err
+			}
+		}
+	}
 	cause := interaction.Cause{
 		Observation:      batch.Contains(trajectory.KindObservation),
-		ToolResult:       batch.Contains(trajectory.KindToolResult),
+		ToolResult:       backgroundToolResult,
 		BackgroundResult: batch.Signalled(interaction.SignalBackgroundResult),
 		Parallel:         batch.Triage == eventloop.TriageParallel,
+	}
+	if foregroundToolResult && !cause.Observation && !cause.ToolResult && !cause.BackgroundResult {
+		return nil
 	}
 	if !cause.Observation && !cause.ToolResult && !cause.BackgroundResult {
 		return nil

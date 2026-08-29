@@ -17,13 +17,20 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
+import re
+import socketserver
 import sys
+import threading
+import time
+import uuid
 import wave
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import numpy as np  # noqa: E402
+from PIL import Image  # noqa: E402
 
 from openrealtime_sidecar import Capability, Sidecar, log, run  # noqa: E402
 
@@ -31,6 +38,34 @@ DEFAULT_MODEL = "Qwen/Qwen3-Omni-30B-A3B-Instruct"
 #: The model's audio encoder expects 16 kHz; its speech output is 24 kHz.
 MODEL_INPUT_RATE = 16_000
 MODEL_OUTPUT_RATE = 24_000
+
+
+class ModelBackend:
+    """One loaded checkpoint shared by sequential or concurrent sessions."""
+
+    def __init__(self, *, model_path: str, device: str, mock: bool) -> None:
+        self.model_path = model_path
+        self.device = device
+        self.mock = mock
+        self.model = None
+        self.processor = None
+        self.lock = threading.Lock()
+
+    def load(self) -> None:
+        if self.mock or self.model is not None:
+            return
+        from transformers import (  # noqa: PLC0415
+            AutoProcessor,
+            Qwen3OmniMoeForConditionalGeneration,
+        )
+
+        log(f"loading shared {self.model_path}")
+        self.processor = AutoProcessor.from_pretrained(self.model_path)
+        self.model = Qwen3OmniMoeForConditionalGeneration.from_pretrained(
+            self.model_path, dtype="auto", device_map=self.device,
+        )
+        self.model.eval()
+        log("shared model ready")
 
 
 class Qwen3OmniSidecar(Sidecar):
@@ -41,22 +76,34 @@ class Qwen3OmniSidecar(Sidecar):
     #: No native voice activity detection and no full duplex: the engine keeps
     #: the floor, which is the point of running this model here.
     capabilities = (
-        Capability.TRANSCRIPT,
         Capability.TEXT_INJECTION,
+        Capability.TOOLS,
         Capability.INTERACTION_ACTS,
+        Capability.VISUAL_INPUT,
     )
 
     def __init__(self, input_stream, output_stream, *, model_path: str, mock: bool,
-                 device: str, max_new_tokens: int) -> None:
+                 device: str, max_new_tokens: int,
+                 backend: ModelBackend | None = None) -> None:
         super().__init__(input_stream, output_stream)
         self.model_path = model_path
         self.mock = mock
         self.device = device
         self.max_new_tokens = max_new_tokens
+        self.backend = backend
         self.model = None
         self.processor = None
         self._audio = bytearray()
         self._history: list[dict] = []
+        self._images: dict[str, Image.Image] = {}
+        self._media_lock = threading.Lock()
+        self._generation_lock = backend.lock if backend is not None else threading.Lock()
+        self._visual_wakeup = threading.Event()
+        self._visual_stop = threading.Event()
+        self._visual_worker: threading.Thread | None = None
+        self._armed = False
+        self._pending_calls: dict[str, str] = {}
+        self._last_action_at = 0.0
 
     # --- lifecycle ----------------------------------------------------------
 
@@ -68,6 +115,12 @@ class Qwen3OmniSidecar(Sidecar):
             ]})
         if self.mock:
             log("qwen3-omni sidecar running in mock mode; no model is loaded")
+            return
+        if self.backend is not None:
+            self.backend.load()
+            self.processor = self.backend.processor
+            self.model = self.backend.model
+            self._start_visual_actor()
             return
         from transformers import (  # noqa: PLC0415 - imported only when a model is wanted
             AutoProcessor,
@@ -81,10 +134,16 @@ class Qwen3OmniSidecar(Sidecar):
         )
         self.model.eval()
         log("model ready")
+        self._start_visual_actor()
 
     def on_close(self) -> None:
-        self.model = None
-        self.processor = None
+        self._visual_stop.set()
+        self._visual_wakeup.set()
+        if self._visual_worker is not None:
+            self._visual_worker.join(timeout=5)
+        if self.backend is None:
+            self.model = None
+            self.processor = None
 
     # --- session ------------------------------------------------------------
 
@@ -92,7 +151,27 @@ class Qwen3OmniSidecar(Sidecar):
         # Audio accumulates until the engine says the turn ended. A turn-based
         # model has nothing useful to do with a partial utterance, and
         # pretending otherwise would burn a GPU on every frame.
-        self._audio.extend(pcm16)
+        # Audio arrives on the protocol reader while a response can be taking
+        # the preceding buffer on the worker. Protect the copy-and-clear pair:
+        # an append between those two operations would otherwise be erased and
+        # the first samples of the next utterance would disappear.
+        with self._media_lock:
+            self._audio.extend(pcm16)
+
+    def on_image(self, encoded: bytes, *, source: str, mime_type: str,
+                 width: int, height: int, timestamp_ms: int) -> None:
+        del mime_type, width, height, timestamp_ms
+        image = Image.open(io.BytesIO(encoded)).convert("RGB")
+        image.load()
+        with self._media_lock:
+            self._images[source or "screen"] = image
+        if self._armed and self.tools:
+            self._visual_wakeup.set()
+
+    def on_tools_update(self, tools: list[dict]) -> None:
+        super().on_tools_update(tools)
+        if self._armed and tools:
+            self._visual_wakeup.set()
 
     def on_text(self, text: str, role: str) -> None:
         # This is the background reasoner's completed answer arriving. It goes
@@ -103,42 +182,50 @@ class Qwen3OmniSidecar(Sidecar):
 
     def on_respond(self) -> None:
         audio = self._take_audio()
+        self._armed = True
         if self.mock:
             self._respond_mock(audio)
             return
         self._respond_model(audio)
 
+    def on_tool_result(self, message) -> None:
+        call_id = str(message.get("call_id", ""))
+        name = self._pending_calls.pop(call_id, "tool")
+        if message.get("error"):
+            result = json.dumps({"error": str(message.get("error"))})
+        else:
+            output = message.get("output", {})
+            result = output if isinstance(output, str) else json.dumps(output)
+        self._history.append({"role": "system", "content": [{
+            "type": "text", "text": f"The {name} tool returned: {result}",
+        }]})
+        self._last_action_at = time.monotonic()
+        if self.mock:
+            return
+        self._continue_model()
+        self.turn_done()
+
     # --- generation ---------------------------------------------------------
 
     def _take_audio(self) -> np.ndarray:
-        raw = bytes(self._audio)
-        self._audio.clear()
+        with self._media_lock:
+            raw = bytes(self._audio)
+            self._audio.clear()
         if not raw:
             return np.zeros(0, dtype=np.float32)
         samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
         return resample(samples, self.input_rate, MODEL_INPUT_RATE)
 
     def _respond_model(self, audio: np.ndarray) -> None:
-        content: list[dict] = []
+        content = self._current_images()
         if audio.size:
             content.append({"type": "audio", "audio": audio})
         if not content:
             content.append({"type": "text", "text": "(the user said nothing)"})
         self._history.append({"role": "user", "content": content})
-
-        text_prompt = self.processor.apply_chat_template(
-            self._history, add_generation_prompt=True, tokenize=False,
-        )
-        inputs = self.processor(
-            text=text_prompt, audio=[audio] if audio.size else None,
-            sampling_rate=MODEL_INPUT_RATE, return_tensors="pt", padding=True,
-        ).to(self.model.device)
-
-        outputs = self.model.generate(
-            **inputs, max_new_tokens=self.max_new_tokens,
-            return_audio=True, thinker_return_dict_in_generate=True,
-        )
-        text, waveform = split_outputs(outputs, self.processor, inputs)
+        text, waveform = self._generate(self._history, self.max_new_tokens, True)
+        if self._emit_tool_call(text):
+            return
         if text:
             self.text_delta(text)
             self.text_done(text)
@@ -147,6 +234,124 @@ class Qwen3OmniSidecar(Sidecar):
             ]})
         if waveform is not None and waveform.size:
             self._emit_audio(waveform)
+
+    def _continue_model(self) -> None:
+        content = self._current_images()
+        content.append({
+            "type": "text",
+            "text": "Continue from the tool result. Speak briefly, or call one next tool if required.",
+        })
+        temporary = self._history + [{"role": "user", "content": content}]
+        text, waveform = self._generate(temporary, self.max_new_tokens, True)
+        if self._emit_tool_call(text):
+            return
+        if text:
+            self.text_delta(text)
+            self.text_done(text)
+            self._history.append({"role": "assistant", "content": [
+                {"type": "text", "text": text},
+            ]})
+        if waveform is not None and waveform.size:
+            self._emit_audio(waveform)
+
+    def _generate(self, history: list[dict], max_tokens: int,
+                  return_audio: bool) -> tuple[str, np.ndarray | None]:
+        tools = self._chat_tools()
+        template_arguments = {
+            "add_generation_prompt": True,
+            "tokenize": False,
+        }
+        if tools:
+            template_arguments["tools"] = tools
+        text_prompt = self.processor.apply_chat_template(history, **template_arguments)
+        images, audios = collect_media(history)
+        processor_arguments = {
+            "text": text_prompt,
+            "sampling_rate": MODEL_INPUT_RATE,
+            "return_tensors": "pt",
+            "padding": True,
+        }
+        if images:
+            processor_arguments["images"] = images
+        if audios:
+            processor_arguments["audio"] = audios
+        with self._generation_lock:
+            # Qwen3-Omni's processor can combine images and audio in one call.
+            # Its official path moves floating multimodal tensors to the model
+            # dtype as well as the device; leaving them as float32 is both more
+            # expensive and incompatible with some quantized checkpoints.
+            inputs = self.processor(**processor_arguments).to(self.model.device)
+            inputs = inputs.to(self.model.dtype)
+            outputs = self.model.generate(
+                **inputs, thinker_max_new_tokens=max_tokens, return_audio=return_audio,
+                thinker_return_dict_in_generate=True,
+            )
+        return split_outputs(outputs, self.processor, inputs)
+
+    def _chat_tools(self) -> list[dict]:
+        result = []
+        for tool in self.tools:
+            result.append({"type": "function", "function": {
+                "name": str(tool.get("name", "")),
+                "description": str(tool.get("description", "")),
+                "parameters": tool.get("parameters") or {"type": "object"},
+            }})
+        return result
+
+    def _current_images(self) -> list[dict]:
+        with self._media_lock:
+            images = list(self._images.values())
+        return [{"type": "image", "image": image} for image in images]
+
+    def _emit_tool_call(self, text: str) -> bool:
+        calls = extract_tool_calls(text)
+        if not calls:
+            return False
+        name, arguments = calls[0]
+        allowed = {str(tool.get("name", "")) for tool in self.tools}
+        if name not in allowed:
+            return False
+        call_id = "qwen_" + uuid.uuid4().hex
+        self._pending_calls[call_id] = name
+        self._history.append({"role": "assistant", "content": [{
+            "type": "text", "text": text,
+        }]})
+        self.send(
+            "tool_call", call_id=call_id, name=name,
+            arguments=arguments,
+        )
+        return True
+
+    def _start_visual_actor(self) -> None:
+        if self._visual_worker is not None:
+            return
+        self._visual_worker = threading.Thread(
+            target=self._visual_loop, name="qwen-visual-actor", daemon=True,
+        )
+        self._visual_worker.start()
+
+    def _visual_loop(self) -> None:
+        while not self._visual_stop.is_set():
+            self._visual_wakeup.wait(timeout=0.5)
+            self._visual_wakeup.clear()
+            if self._visual_stop.is_set() or not self._armed or not self.tools:
+                continue
+            if self._pending_calls or time.monotonic() - self._last_action_at < 0.75:
+                continue
+            content = self._current_images()
+            if not content:
+                continue
+            content.append({"type": "text", "text": (
+                "This is a silent visual-control tick. From the current user task and current "
+                "screen, call exactly one offered computer tool only if an immediate action is "
+                "required now. Otherwise answer only WAIT. Never explain or speak."
+            )})
+            history = self._history + [{"role": "user", "content": content}]
+            try:
+                text, _ = self._generate(history, min(self.max_new_tokens, 64), False)
+                self._emit_tool_call(text)
+            except Exception as failure:  # noqa: BLE001
+                log(f"visual actor: {failure}")
 
     def _respond_mock(self, audio: np.ndarray) -> None:
         """Answer without a model.
@@ -220,6 +425,44 @@ def split_outputs(outputs, processor, inputs):
     return text, waveform
 
 
+def collect_media(history: list[dict]) -> tuple[list[Image.Image], list[np.ndarray]]:
+    images: list[Image.Image] = []
+    audios: list[np.ndarray] = []
+    for message in history:
+        content = message.get("content", [])
+        if not isinstance(content, list):
+            continue
+        for item in content:
+            if item.get("type") == "image" and item.get("image") is not None:
+                images.append(item["image"])
+            elif item.get("type") == "audio" and item.get("audio") is not None:
+                audios.append(item["audio"])
+    return images, audios
+
+
+def extract_tool_calls(text: str) -> list[tuple[str, dict]]:
+    """Parse Qwen's documented tool-call envelope without accepting prose."""
+    blocks = re.findall(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", text, re.DOTALL)
+    if not blocks and text.strip().startswith("{"):
+        blocks = [text.strip()]
+    calls: list[tuple[str, dict]] = []
+    for block in blocks:
+        try:
+            decoded = json.loads(block)
+        except json.JSONDecodeError:
+            continue
+        name = str(decoded.get("name", "")).strip()
+        arguments = decoded.get("arguments", {})
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                continue
+        if name and isinstance(arguments, dict):
+            calls.append((name, arguments))
+    return calls
+
+
 def wav_bytes(pcm16: bytes, rate: int) -> bytes:
     """Wrap PCM16 in a WAV container, for debugging by ear."""
     buffer = io.BytesIO()
@@ -237,14 +480,48 @@ def main() -> None:
     parser.add_argument("--device", default="cuda", help="device map for the model")
     parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument(
+        "--listen", default="",
+        help="persistent TCP address such as 127.0.0.1:9000; loads the model once",
+    )
+    parser.add_argument(
         "--mock", action="store_true",
         help="speak the protocol without loading a model, for plumbing and conformance",
     )
     arguments = parser.parse_args()
-    run(
-        Qwen3OmniSidecar, model_path=arguments.model, mock=arguments.mock,
-        device=arguments.device, max_new_tokens=arguments.max_new_tokens,
-    )
+    if arguments.listen:
+        host, separator, port = arguments.listen.rpartition(":")
+        if not separator or not port.isdigit():
+            parser.error("--listen must be host:port")
+        backend = ModelBackend(
+            model_path=arguments.model, device=arguments.device, mock=arguments.mock,
+        )
+        backend.load()
+
+        class Handler(socketserver.BaseRequestHandler):
+            def handle(self) -> None:
+                input_stream = self.request.makefile("rb")
+                output_stream = self.request.makefile("wb")
+                try:
+                    Qwen3OmniSidecar(
+                        input_stream, output_stream, model_path=arguments.model,
+                        mock=arguments.mock, device=arguments.device,
+                        max_new_tokens=arguments.max_new_tokens, backend=backend,
+                    ).run()
+                finally:
+                    input_stream.close()
+                    output_stream.close()
+
+        class Server(socketserver.ThreadingTCPServer):
+            allow_reuse_address = True
+            daemon_threads = True
+
+        with Server((host or "127.0.0.1", int(port)), Handler) as server:
+            log(f"qwen3-omni sidecar listening on {host or '127.0.0.1'}:{port}")
+            server.serve_forever()
+        return
+
+    run(Qwen3OmniSidecar, model_path=arguments.model, mock=arguments.mock,
+        device=arguments.device, max_new_tokens=arguments.max_new_tokens)
 
 
 if __name__ == "__main__":

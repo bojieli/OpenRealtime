@@ -32,11 +32,13 @@ func runConformance(arguments []string, output io.Writer) error {
 		sidecarAddress   string
 		sidecarSeconds   float64
 		sidecarTurnLimit time.Duration
+		sidecarProtocol  int
 	)
 	flags.StringVar(&out, "out", "", "write the report to this path as JSON")
 	flags.StringVar(&sidecarAddress, "address", "", "connect to a running sidecar as tcp:host:port or unix:/path")
 	flags.Float64Var(&sidecarSeconds, "speech-seconds", 1.5, "how much audio to send before asking for a turn")
 	flags.DurationVar(&sidecarTurnLimit, "turn-timeout", 120*time.Second, "how long one turn may take")
+	flags.IntVar(&sidecarProtocol, "protocol-version", 0, "sidecar protocol version; 0 selects legacy v1")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments[1:]); err != nil {
 		return err
@@ -65,6 +67,7 @@ func runConformance(arguments []string, output io.Writer) error {
 		report := sidecar.RunConformance(context.Background(), sidecar.ConformanceOptions{
 			Config: sidecar.Config{
 				Command: flags.Args(), Address: sidecarAddress,
+				ProtocolVersion: sidecarProtocol,
 				Logf: func(format string, values ...any) {
 					fmt.Fprintf(os.Stderr, format+"\n", values...)
 				},

@@ -108,6 +108,14 @@ class Sidecar:
     def on_audio(self, pcm16: bytes) -> None:
         """Receive input audio. Override in a sidecar that listens."""
 
+    def on_image(self, encoded: bytes, *, source: str, mime_type: str,
+                 width: int, height: int, timestamp_ms: int) -> None:
+        """Receive one direct JPEG/PNG frame. Protocol v3 only."""
+
+    def on_tools_update(self, tools: list[dict[str, Any]]) -> None:
+        """Replace the live function catalog. Protocol v3 only."""
+        self.tools = tools
+
     def on_commit(self) -> None:
         """The client declared its turn over rather than waiting for silence.
 
@@ -199,6 +207,11 @@ class Sidecar:
                 capability for capability in declared_capabilities
                 if capability != "interaction_acts"
             ]
+        if self.protocol_version < 3:
+            declared_capabilities = [
+                capability for capability in declared_capabilities
+                if capability != "visual_input"
+            ]
         self.send(
             MessageType.READY,
             version=self.protocol_version,
@@ -237,6 +250,20 @@ class Sidecar:
                 except Exception as failure:  # noqa: BLE001
                     log(traceback.format_exc())
                     self.error(f"audio: {failure}", code="audio_failed")
+                continue
+            if message.type == MessageType.IMAGE:
+                try:
+                    self.on_image(
+                        message.payload,
+                        source=str(message.get("source", "")),
+                        mime_type=str(message.get("mime_type", "")),
+                        width=int(message.get("width", 0)),
+                        height=int(message.get("height", 0)),
+                        timestamp_ms=int(message.get("timestamp_ms", 0)),
+                    )
+                except Exception as failure:  # noqa: BLE001
+                    log(traceback.format_exc())
+                    self.error(f"image: {failure}", code="image_failed")
                 continue
             if message.type == MessageType.INTERRUPT:
                 self._interrupted.set()
@@ -301,6 +328,8 @@ class Sidecar:
                     self.on_text(message.text, str(message.get("role", "user")))
                 elif message.type == MessageType.TOOL_RESULT:
                     self.on_tool_result(message)
+                elif message.type == MessageType.TOOLS_UPDATE:
+                    self.on_tools_update(list(message.get("tools") or []))
                 elif message.type == MessageType.INTERACTION_ACT:
                     self._interrupted.clear()
                     if self.on_interaction_act(message):

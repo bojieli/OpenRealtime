@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/sidecar"
 )
 
 // runtimeProfile is the normalized deployment shape. It does not own a
@@ -54,9 +55,23 @@ func normalizeProfile(options serveOptions) (serveOptions, error) {
 	default:
 		return serveOptions{}, errors.New("profile must be voice or voice+vision")
 	}
-	if strings.ToLower(strings.TrimSpace(options.binding)) != "" &&
-		strings.ToLower(strings.TrimSpace(options.binding)) != "cascade" {
-		return serveOptions{}, errors.New("the voice+vision profile currently requires the cascade binding")
+	bindingName := strings.ToLower(strings.TrimSpace(options.binding))
+	if bindingName == "" {
+		bindingName = "cascade"
+	}
+	if bindingName != "cascade" {
+		capabilities, capabilityErr := parseStackCapabilities(options.sidecarCapabilities)
+		if capabilityErr != nil {
+			return serveOptions{}, capabilityErr
+		}
+		if (bindingName != "sidecar" && bindingName != "omni" && bindingName != "omni+text-policy") ||
+			!capabilities.VisualInput {
+			return serveOptions{}, errors.New(
+				"a non-cascade voice+vision profile requires a sidecar binding with visual-input capability")
+		}
+		if options.sidecarProtocol != 0 && options.sidecarProtocol < sidecar.VersionMultimodal {
+			return serveOptions{}, errors.New("sidecar voice+vision requires protocol v3")
+		}
 	}
 	if !options.chose("observers") {
 		options.observers = "audio+video"

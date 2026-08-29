@@ -30,14 +30,16 @@ import (
 )
 
 // Version is the frozen, legacy protocol version and remains the default.
-// VersionInteraction adds typed interaction-act handoff. Selecting it is
-// explicit in Config so existing sidecars are never reinterpreted as v2 merely
-// because the engine learned a new frame.
+// VersionInteraction adds typed interaction-act handoff. VersionMultimodal
+// adds direct image frames and live tool-catalog updates. Selecting a later
+// version is explicit in Config so existing sidecars are never reinterpreted
+// merely because the engine learned a new frame.
 const Version = 1
 
 const (
 	VersionInteraction = 2
-	LatestVersion      = VersionInteraction
+	VersionMultimodal  = 3
+	LatestVersion      = VersionMultimodal
 )
 
 // MessageType names one frame.
@@ -50,6 +52,13 @@ const (
 	TypeHello MessageType = "hello"
 	// TypeAudio carries input PCM16 at the negotiated rate.
 	TypeAudio MessageType = "audio"
+	// TypeImage carries one encoded JPEG or PNG frame. It is protocol v3: the
+	// model sees pixels directly rather than a narration standing in for them.
+	TypeImage MessageType = "image"
+	// TypeToolsUpdate replaces the live function catalog after session.update.
+	// A Realtime binding starts before the client's tool declaration arrives,
+	// so a hello-only catalog would always be stale in production.
+	TypeToolsUpdate MessageType = "tools_update"
 	// TypeText injects text into the model's context without asking it to
 	// respond. It is how a background reasoner's answer reaches a model that
 	// owns its own voice.
@@ -141,7 +150,11 @@ type Message struct {
 	Fatal bool   `json:"fatal,omitempty"`
 
 	// Timing.
-	TimestampMS int64 `json:"timestamp_ms,omitempty"`
+	TimestampMS int64  `json:"timestamp_ms,omitempty"`
+	Source      string `json:"source,omitempty"`
+	MIMEType    string `json:"mime_type,omitempty"`
+	Width       int    `json:"width,omitempty"`
+	Height      int    `json:"height,omitempty"`
 
 	// Typed interaction plan (protocol v2).
 	Act         string  `json:"act,omitempty"`
@@ -178,6 +191,9 @@ const (
 	// between turns. Without it, a background reasoner cannot reach the model
 	// at all, and the binding must fall back to an explicit hand-off.
 	CapabilityTextInjection Capability = "text_injection"
+	// CapabilityVisualInput means protocol-v3 image frames reach the model as
+	// pixels. A narrated screen does not satisfy this capability.
+	CapabilityVisualInput Capability = "visual_input"
 	// CapabilityTools means the model can request function calls.
 	CapabilityTools Capability = "tools"
 	// CapabilityBargeIn means the model handles overlap itself.
@@ -238,6 +254,14 @@ func (message Message) Validate() error {
 		if len(message.Payload)%2 != 0 {
 			return fmt.Errorf("%s payload must contain whole PCM16 samples", message.Type)
 		}
+	case TypeImage:
+		if len(message.Payload) == 0 || strings.TrimSpace(message.Source) == "" ||
+			message.Width <= 0 || message.Height <= 0 {
+			return errors.New("image requires encoded bytes, a source, and positive geometry")
+		}
+		if message.MIMEType != "image/jpeg" && message.MIMEType != "image/png" {
+			return fmt.Errorf("image MIME type must be image/jpeg or image/png, got %q", message.MIMEType)
+		}
 	case TypeText:
 		if strings.TrimSpace(message.Text) == "" {
 			return errors.New("text injection requires text")
@@ -289,7 +313,7 @@ func (message Message) Validate() error {
 			return errors.New("an error requires a message")
 		}
 	case TypeCommit, TypeRespond, TypeInterrupt, TypeBye, TypeSpeechStarted, TypeSpeechStopped,
-		TypeTextDone, TypeTurnDone, TypeLog:
+		TypeTextDone, TypeTurnDone, TypeLog, TypeToolsUpdate:
 	default:
 		return fmt.Errorf("unknown sidecar message type %q", message.Type)
 	}

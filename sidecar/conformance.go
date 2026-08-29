@@ -1,10 +1,14 @@
 package sidecar
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"math"
 	"strings"
 	"time"
@@ -148,8 +152,25 @@ func RunConformance(ctx context.Context, options ConformanceOptions) Conformance
 
 	if ready.Has(CapabilityTools) {
 		record("declares tool support with a tools capability", true, true, "")
+		if version >= VersionMultimodal {
+			err := client.Send(Message{Type: TypeToolsUpdate, Tools: []Tool{{
+				Name: "conformance.noop", Description: "a conformance-only no-op",
+				Parameters: json.RawMessage(`{"type":"object","properties":{}}`),
+			}}})
+			record("accepts a live tool-catalog update", true, err == nil, fmt.Sprint(err))
+		}
 	} else {
 		skip("declares tool support with a tools capability", "tools capability not declared")
+	}
+	if version >= VersionMultimodal && ready.Has(CapabilityVisualInput) {
+		var encoded bytes.Buffer
+		canvas := image.NewRGBA(image.Rect(0, 0, 4, 4))
+		canvas.Set(1, 1, color.RGBA{R: 255, A: 255})
+		_ = jpeg.Encode(&encoded, canvas, nil)
+		err := client.Image(encoded.Bytes(), "screen", "image/jpeg", 4, 4, time.Now().UnixMilli())
+		record("accepts direct visual input", true, err == nil, fmt.Sprint(err))
+	} else {
+		skip("accepts direct visual input", "protocol v3 visual-input capability not selected")
 	}
 
 	if version >= VersionInteraction && ready.Has(CapabilityInteractionActs) {

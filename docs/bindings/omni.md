@@ -63,7 +63,8 @@ The suite is the contract. A sidecar that passes it works with the engine
 whatever it is written in; one that does not is broken before anybody spends a
 GPU-hour finding out. See the frozen [v1 sidecar
 protocol](../sidecar-protocol-1.md) and the [typed-act v2
-extension](../sidecar-protocol-2.md).
+extension](../sidecar-protocol-2.md). Direct pixels and live tool catalogs use
+the [v3 multimodal extension](../sidecar-protocol-3.md).
 
 ## Authority
 

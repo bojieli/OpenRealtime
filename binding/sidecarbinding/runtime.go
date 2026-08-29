@@ -12,6 +12,7 @@ import (
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/clientcalls"
 	"github.com/bojieli/OpenRealtime/cognition"
+	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/interaction"
@@ -69,16 +70,17 @@ type runtime struct {
 	// The policy state is independent from the model's generation state. One
 	// decision runs at a time; the window and pinboard are stateful and are
 	// therefore read under the same lock as the decision they feed.
-	interactionMu       sync.Mutex
-	interactionWindow   *interaction.Window
-	interactionPinboard *interaction.Pinboard
-	interactionInFlight atomic.Bool
-	lastPlanAct         interaction.Act
-	lastPlanHeard       string
-	lastPlanUtterance   string
-	policyActions       map[uint64]interaction.Act
-	committedUtterance  string
-	silentToolWork      atomic.Bool
+	interactionMu         sync.Mutex
+	interactionWindow     *interaction.Window
+	interactionPinboard   *interaction.Pinboard
+	interactionInFlight   atomic.Bool
+	lastPlanAct           interaction.Act
+	lastPlanHeard         string
+	lastPlanUtterance     string
+	policyActions         map[uint64]interaction.Act
+	committedUtterance    string
+	silentToolWork        atomic.Bool
+	foregroundInvocations sync.Map
 }
 
 func newRuntime(parent context.Context, bind *Binding, options binding.Options) (*runtime, error) {
@@ -138,7 +140,7 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 	}
 	now := func() uint64 { return bind.config.Scheduler.NowNS() }
 
-	if err := result.registry.Replace(result.settings.Tools); err != nil {
+	if err := result.applyTools(result.settings.Tools); err != nil {
 		cancel(err)
 		return nil, err
 	}
@@ -156,6 +158,20 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		return nil, err
 	}
 	result.model, result.ready = model, model.Ready()
+	stack := bind.spec.Capabilities.Merge(bind.config.ModelCapabilities)
+	if stack.VisualInput && (bind.config.Sidecar.ProtocolVersion < sidecar.VersionMultimodal ||
+		!result.ready.Has(sidecar.CapabilityVisualInput)) {
+		failure := errors.New("direct visual input requires sidecar protocol v3 and the visual_input capability")
+		cancel(failure)
+		_ = model.Close()
+		return nil, failure
+	}
+	if bind.config.FastComputerUse && !result.ready.Has(sidecar.CapabilityTools) {
+		failure := errors.New("fast computer use requires a sidecar that declares tools")
+		cancel(failure)
+		_ = model.Close()
+		return nil, failure
+	}
 	if bind.spec.Ownership.Floor == binding.OwnerModel &&
 		!result.ready.Has(sidecar.CapabilityNativeVAD) {
 		failure := errors.New("model floor ownership requires a sidecar that declares native_vad")
@@ -204,6 +220,7 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 
 	tools, err := action.NewTools(action.ToolsConfig{
 		Registry: result.registry, Ledger: result.ledger, Store: result.store,
+		Policy: bind.config.ConfirmPolicy, Audit: bind.config.ActionAudit,
 	})
 	if err != nil {
 		cancel(err)
@@ -246,18 +263,26 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 func (runtime *runtime) Status() binding.Status {
 	_, slow := runtime.engine.Descriptors()
 	fastAuthority := "none"
-	if runtime.ready.Has(sidecar.CapabilityTools) {
+	if runtime.config.FastComputerUse && runtime.ready.Has(sidecar.CapabilityTools) {
+		fastAuthority = "execute"
+	} else if runtime.ready.Has(sidecar.CapabilityTools) {
 		fastAuthority = "propose"
 	}
+	profile := "voice"
+	observers := []string{"sidecar:" + runtime.ready.Model}
+	if runtime.ready.Has(sidecar.CapabilityVisualInput) {
+		profile = "voice+vision"
+		observers = append(observers, "sidecar-video:"+runtime.ready.Model)
+	}
 	return binding.Status{
-		Binding: runtime.spec.Name, Profile: "voice",
+		Binding: runtime.spec.Name, Profile: profile,
 		Ownership: runtime.binding.Ownership(), Stack: runtime.stackCapabilities(),
 		Policies: runtime.policies.Report(), Interaction: runtime.interactionStatus(),
 		Tools: binding.ToolStatus{
 			Fast: fastAuthority, Slow: string(slow.EffectiveToolAuthority()),
 			Authorization: "engine", Execution: "engine-or-client",
 		},
-		Observers: []string{"sidecar:" + runtime.ready.Model},
+		Observers: observers,
 		Fast:      "sidecar/" + runtime.ready.Model, Slow: slow.Provider + "/" + slow.Model,
 	}
 }
@@ -319,6 +344,7 @@ func (runtime *runtime) interactionStatus() binding.InteractionStatus {
 // only be known after the handshake.
 func (runtime *runtime) stackCapabilities() binding.StackCapabilities {
 	declared := binding.StackCapabilities{
+		VisualInput:       runtime.ready.Has(sidecar.CapabilityVisualInput),
 		Transcription:     runtime.ready.Has(sidecar.CapabilityTranscript),
 		ConcurrentIO:      runtime.ready.Has(sidecar.CapabilityFullDuplex),
 		NativeFloor:       runtime.ready.Has(sidecar.CapabilityNativeVAD),
@@ -345,8 +371,16 @@ func (runtime *runtime) Settings() binding.Settings {
 // execution and can honour them immediately.
 func (runtime *runtime) Update(_ context.Context, settings binding.Settings) error {
 	settings = binding.CloneSettings(settings)
-	if err := runtime.registry.Replace(settings.Tools); err != nil {
+	if err := runtime.applyTools(settings.Tools); err != nil {
 		return err
+	}
+	if runtime.config.Sidecar.ProtocolVersion >= sidecar.VersionMultimodal &&
+		runtime.ready.Has(sidecar.CapabilityTools) {
+		if err := runtime.model.Send(sidecar.Message{
+			Type: sidecar.TypeToolsUpdate, Tools: sidecarTools(runtime.registry),
+		}); err != nil {
+			return err
+		}
 	}
 	if settings.Gate.SilenceDurationMS == 0 {
 		settings.Gate = runtime.config.Gate
@@ -369,6 +403,38 @@ func (runtime *runtime) Update(_ context.Context, settings binding.Settings) err
 		runtime.audioMu.Unlock()
 	}
 	return nil
+}
+
+// applyTools installs client declarations alongside server-owned actions. A
+// deployment-owned tool wins a collision because it is the declaration with
+// the real dispatcher and authorization policy behind it.
+func (runtime *runtime) applyTools(specs []action.ToolSpec) error {
+	combined := make([]action.ToolSpec, 0, len(specs)+len(runtime.config.Tools))
+	server := make(map[string]struct{}, len(runtime.config.Tools))
+	for _, spec := range runtime.config.Tools {
+		server[spec.Name] = struct{}{}
+		combined = append(combined, spec)
+	}
+	for _, spec := range specs {
+		if _, shadowed := server[spec.Name]; !shadowed {
+			combined = append(combined, spec)
+		}
+	}
+	return runtime.registry.Replace(combined)
+}
+
+func (runtime *runtime) boundedComputerTool(name string) bool {
+	if !runtime.config.FastComputerUse || !computeruse.IsReflexAction(name) {
+		return false
+	}
+	spec, declared := runtime.registry.Lookup(name)
+	if !declared {
+		return false
+	}
+	if spec.Dispatcher != nil {
+		return true
+	}
+	return spec.Confirm == action.ConfirmNever && strings.TrimSpace(spec.Target) != ""
 }
 
 // Audio forwards input to the model and, when the engine owns the floor, runs
@@ -506,10 +572,21 @@ func (runtime *runtime) onBargeIn() error {
 	return runtime.model.Send(sidecar.Message{Type: sidecar.TypeInterrupt})
 }
 
-// Video is not supported: the sidecar protocol carries audio, and a binding
-// should say what it cannot do rather than discard frames quietly.
-func (runtime *runtime) Video(context.Context, perception.Frame) error {
-	return fmt.Errorf("%w: video input over the %s binding", binding.ErrUnsupported, runtime.spec.Name)
+// Video hands direct pixels to a protocol-v3 multimodal sidecar. It does not
+// narrate or translate the frame: the native-audio treatment and the cascade
+// treatment must see the same visual evidence if their comparison is to mean
+// anything.
+func (runtime *runtime) Video(_ context.Context, frame perception.Frame) error {
+	if err := frame.Validate(); err != nil {
+		return err
+	}
+	if frame.Kind != perception.FrameImage {
+		return errors.New("video path requires an image frame")
+	}
+	return runtime.model.Image(
+		frame.Image, frame.Source, frame.MIMEType, frame.Width, frame.Height,
+		int64(frame.CapturedNS/1_000_000),
+	)
 }
 
 // Text injects something the client typed into the model's context.
@@ -644,6 +721,7 @@ func (catalog toolCatalog) Tools() []continuation.ToolDefinition {
 	for _, spec := range specs {
 		tools = append(tools, continuation.ToolDefinition{
 			Name: spec.Name, Description: spec.Description, Parameters: spec.Parameters,
+			Background: spec.Background,
 		})
 	}
 	return tools

@@ -71,7 +71,7 @@ func Dial(ctx context.Context, config Config, hello Message) (*Client, error) {
 	if version == 0 {
 		version = Version
 	}
-	if version != Version && version != VersionInteraction {
+	if version != Version && version != VersionInteraction && version != VersionMultimodal {
 		return nil, fmt.Errorf("unsupported sidecar protocol version %d", version)
 	}
 	client := &Client{config: config, frames: make(chan Message, 256), version: version}
@@ -221,6 +221,21 @@ func (client *Client) Send(message Message) error {
 // Audio sends one input frame.
 func (client *Client) Audio(payload []byte) error {
 	return client.Send(Message{Type: TypeAudio, Payload: payload})
+}
+
+// Image sends one direct visual frame. The capability and protocol checks are
+// made here so a caller cannot mistake a silently discarded frame for vision.
+func (client *Client) Image(payload []byte, source, mimeType string, width, height int, timestampMS int64) error {
+	if client.version < VersionMultimodal {
+		return errors.New("direct visual input requires sidecar protocol v3")
+	}
+	if !client.ready.Has(CapabilityVisualInput) {
+		return errors.New("sidecar did not declare the visual-input capability")
+	}
+	return client.Send(Message{
+		Type: TypeImage, Payload: payload, Source: source, MIMEType: mimeType,
+		Width: width, Height: height, TimestampMS: timestampMS,
+	})
 }
 
 // Close ends the session and reaps the process.

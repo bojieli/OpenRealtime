@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/action"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/continuation"
@@ -58,6 +59,13 @@ type Config struct {
 	// It is how a deployment describes a hybrid model without adding another
 	// binding package or teaching this runtime a new species name.
 	ModelCapabilities binding.StackCapabilities
+	// Tools are deployment-owned actions installed beside client declarations.
+	// FastComputerUse grants the sidecar only the bounded computer.* subset;
+	// every call still crosses the engine authorization and execution boundary.
+	Tools           []action.ToolSpec
+	FastComputerUse bool
+	ConfirmPolicy   action.PolicyDecision
+	ActionAudit     func(action.Record)
 
 	// Policies overrides the interaction policy set.
 	Policies interaction.Policies
@@ -218,15 +226,21 @@ func (bind *Binding) Capabilities() binding.Capabilities {
 	// The model may have more than one voice and takes the session's choice,
 	// so unlike a synthesiser configured once at startup, this one is
 	// selectable.
+	stack := bind.spec.Capabilities.Merge(bind.config.ModelCapabilities)
+	observers := []string{"audio"}
+	if stack.VisualInput {
+		observers = append(observers, "video")
+	}
 	return binding.Capabilities{
-		Observations: true, FastSlow: true,
+		Video: stack.VisualInput, ComputerUse: bind.config.FastComputerUse,
+		Observations: true, FastSlow: true, Observers: observers,
 		Voice: binding.VoiceControl{Selectable: true, InForce: bind.config.Voice},
 		// Only the engine can hand over a floor it holds. When the selected
 		// floor owner is the model, the client cannot take it; saying otherwise
 		// would be the engine promising on the model's behalf. Concurrent I/O
 		// is an independent capability.
 		ManualTurns: bind.spec.Ownership.Floor == binding.OwnerEngine,
-		Stack:       bind.spec.Capabilities.Merge(bind.config.ModelCapabilities),
+		Stack:       stack,
 	}
 }
 
