@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,12 +32,14 @@ type Config struct {
 	Now             func() uint64
 	ShutdownTimeout time.Duration
 	Inspection      InspectionConfig
+	TraceRecording  *TraceRecordingConfig
 }
 
 // InspectionConfig bounds payload-free per-correlation route retention.
 type InspectionConfig struct {
-	MaxFlows        int
-	MaxEdgesPerFlow int
+	MaxFlows            int
+	MaxEdgesPerFlow     int
+	MaxCorrelationBytes int
 }
 
 type mountedNode struct {
@@ -76,6 +79,8 @@ type Mounted struct {
 	sequence      atomic.Uint64
 	flows         *flowTracker
 	configuration *inspect.ArtifactIdentity
+	recorder      *traceRecorder
+	clock         func() uint64
 }
 
 // Mount validates the exact factory contracts, constructs every bounded
@@ -119,8 +124,18 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 	if config.Inspection.MaxEdgesPerFlow == 0 {
 		config.Inspection.MaxEdgesPerFlow = 256
 	}
-	if config.Inspection.MaxFlows > 1_000_000 || config.Inspection.MaxEdgesPerFlow > 65_536 {
+	if config.Inspection.MaxCorrelationBytes == 0 {
+		config.Inspection.MaxCorrelationBytes = 1024
+	}
+	if config.Inspection.MaxFlows < 1 || config.Inspection.MaxFlows > 1_000_000 ||
+		config.Inspection.MaxEdgesPerFlow < 1 || config.Inspection.MaxEdgesPerFlow > 65_536 ||
+		config.Inspection.MaxCorrelationBytes < 1 || config.Inspection.MaxCorrelationBytes > 65_536 {
 		return nil, errors.New("mount graph inspection bounds exceed safety limits")
+	}
+	for _, edge := range config.Graph.Edges {
+		if strings.HasPrefix(edge.ID, ir.BoundaryQueuePrefix) {
+			return nil, fmt.Errorf("mount graph edge %q uses reserved boundary queue namespace", edge.ID)
+		}
 	}
 	if err := validateValues(config.Graph, config.Values); err != nil {
 		return nil, err
@@ -178,6 +193,12 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 		}
 	}
 
+	recorder, err := newTraceRecorder(
+		config.Graph, config.Configuration, config.Inspection, config.TraceRecording,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("mount graph: %w", err)
+	}
 	var configuration *inspect.ArtifactIdentity
 	if config.Configuration != nil {
 		copy := *config.Configuration
@@ -188,16 +209,22 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 		ingress: make(map[string]*outputPort), egress: make(map[string]*inputPort),
 		changed: newCondition(), timeout: config.ShutdownTimeout,
 		done: make(chan struct{}), nodeLive: make(map[string]inspect.NodeLive),
-		flows:         newFlowTracker(config.Inspection.MaxFlows, config.Inspection.MaxEdgesPerFlow),
+		flows: newFlowTracker(
+			config.Inspection.MaxFlows, config.Inspection.MaxEdgesPerFlow,
+			config.Inspection.MaxCorrelationBytes,
+		),
 		configuration: configuration,
+		recorder:      recorder, clock: config.Now,
 	}
 	trace := func(queue *queue, kind TraceKind, envelope element.Envelope, occupancy int) {
-		mounted.flows.record(queue.id, kind, envelope, config.Now())
+		atNS := config.Now()
+		mounted.flows.record(queue.id, kind, envelope, atNS)
+		mounted.recorder.signal()
 		if config.Tracer == nil {
 			return
 		}
 		config.Tracer.Record(TraceEvent{
-			Kind: kind, AtNS: config.Now(), Graph: config.Graph.ID,
+			Kind: kind, AtNS: atNS, Graph: config.Graph.ID,
 			Fingerprint: config.Graph.Fingerprint, Channel: queue.id,
 			ItemID: envelope.ItemID, TraceID: envelope.TraceID, RunID: envelope.RunID,
 			Occupancy: occupancy, Depth: queue.depth,
@@ -220,10 +247,15 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 			queue.close()
 		}
 	}
+	abortMount := func() {
+		cleanupMountedScopes(mounted.nodes, config.ShutdownTimeout)
+		cleanupChannels()
+		mounted.recorder.discard()
+	}
 	for _, edge := range config.Graph.Edges {
 		channel, err := newQueue(edge.ID, edge.Type, edge.Delivery, edge.Depth, mounted.changed, config.Now, trace)
 		if err != nil {
-			cleanupChannels()
+			abortMount()
 			return nil, err
 		}
 		mounted.queues[edge.ID] = channel
@@ -233,10 +265,10 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 	for _, boundary := range config.Graph.Boundaries {
 		port := portIndex[boundary.Endpoint.Node][boundary.Endpoint.Port]
 		depth := boundaryDepth(port, boundary.Type)
-		identity := "boundary:" + boundary.Name
+		identity := ir.BoundaryQueuePrefix + boundary.Name
 		channel, err := newQueue(identity, boundary.Type, ir.Lossless, depth, mounted.changed, config.Now, trace)
 		if err != nil {
-			cleanupChannels()
+			abortMount()
 			return nil, err
 		}
 		mounted.queues[identity] = channel
@@ -256,7 +288,7 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 	for _, node := range config.Graph.Nodes {
 		ports, err := buildPortSet(node, builders[node.ID], mounted.changed)
 		if err != nil {
-			cleanupChannels()
+			abortMount()
 			return nil, fmt.Errorf("mount graph node %s ports: %w", node.ID, err)
 		}
 		scope := &lifecycleScope{instance: node.ID}
@@ -279,22 +311,28 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 		})
 		if err != nil {
 			_ = scope.close(context.Background())
-			cleanupMountedScopes(mounted.nodes, config.ShutdownTimeout)
-			cleanupChannels()
+			abortMount()
 			return nil, fmt.Errorf("mount graph node %s: %w", node.ID, err)
 		}
 		if runnable == nil {
 			_ = scope.close(context.Background())
-			cleanupMountedScopes(mounted.nodes, config.ShutdownTimeout)
-			cleanupChannels()
+			abortMount()
 			return nil, fmt.Errorf("mount graph node %s returned a nil runnable", node.ID)
 		}
 		mounted.nodes = append(mounted.nodes, mountedNode{id: node.ID, runnable: runnable, scope: scope})
 	}
+	mounted.recorder.start(mounted)
 	return mounted, nil
 }
 
 func (mounted *Mounted) Graph() ir.Graph { return mounted.graph }
+
+func (mounted *Mounted) now() uint64 {
+	if mounted == nil || mounted.clock == nil {
+		return 0
+	}
+	return mounted.clock()
+}
 
 func (mounted *Mounted) Ingress(name string) (element.OutputPort, error) {
 	port, found := mounted.ingress[name]

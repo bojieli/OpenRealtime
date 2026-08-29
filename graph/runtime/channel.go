@@ -20,17 +20,19 @@ type queue struct {
 	now       func() uint64
 	trace     func(*queue, TraceKind, element.Envelope, int)
 
-	mu       sync.Mutex
-	items    []element.Envelope
-	head     int
-	size     int
-	closed   bool
-	enqueued uint64
-	dequeued uint64
-	dropped  uint64
-	blocked  uint64
-	high     int
-	lastID   string
+	mu         sync.Mutex
+	items      []element.Envelope
+	enqueuedAt []uint64
+	head       int
+	size       int
+	closed     bool
+	enqueued   uint64
+	dequeued   uint64
+	dropped    uint64
+	blocked    uint64
+	queueWait  uint64
+	high       int
+	lastID     string
 }
 
 func newQueue(
@@ -54,10 +56,13 @@ func newQueue(
 	if delivery != ir.Lossless && delivery != ir.Lossy {
 		return nil, fmt.Errorf("graph queue %s has invalid delivery %q", id, delivery)
 	}
+	if now == nil {
+		return nil, fmt.Errorf("graph queue %s requires a monotonic clock", id)
+	}
 	return &queue{
 		id: id, valueType: valueType.Clone(), delivery: delivery, depth: depth,
 		changed: changed, now: now, trace: trace,
-		items: make([]element.Envelope, depth),
+		items: make([]element.Envelope, depth), enqueuedAt: make([]uint64, depth),
 	}, nil
 }
 
@@ -155,6 +160,7 @@ func (queue *queue) tryReceive() (element.Envelope, bool, bool) {
 func (queue *queue) enqueueLocked(envelope element.Envelope) {
 	index := (queue.head + queue.size) % queue.depth
 	queue.items[index] = envelope.Clone()
+	queue.enqueuedAt[index] = queue.now()
 	queue.size++
 	queue.enqueued++
 	queue.lastID = envelope.ItemID
@@ -165,11 +171,17 @@ func (queue *queue) enqueueLocked(envelope element.Envelope) {
 
 func (queue *queue) dequeueLocked() element.Envelope {
 	envelope := queue.items[queue.head]
+	enqueuedAt := queue.enqueuedAt[queue.head]
 	queue.items[queue.head] = element.Envelope{}
+	queue.enqueuedAt[queue.head] = 0
 	queue.head = (queue.head + 1) % queue.depth
 	queue.size--
 	queue.dequeued++
 	queue.lastID = envelope.ItemID
+	now := queue.now()
+	if now >= enqueuedAt {
+		queue.queueWait = saturatingAdd(queue.queueWait, now-enqueuedAt)
+	}
 	return envelope
 }
 
@@ -191,7 +203,7 @@ func (queue *queue) snapshot() inspect.EdgeLive {
 		Occupancy: queue.size, HighWater: queue.high,
 		Enqueued: queue.enqueued, Dequeued: queue.dequeued,
 		Dropped: queue.dropped, Backpressure: queue.blocked,
-		LastItemID: queue.lastID,
+		LastItemID: queue.lastID, QueueWaitNS: queue.queueWait,
 	}
 }
 

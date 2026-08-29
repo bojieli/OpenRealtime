@@ -31,6 +31,7 @@ func (mounted *Mounted) Run(parent context.Context) error {
 	ctx, cancel := context.WithCancelCause(parent)
 	mounted.cancel = cancel
 	mounted.mu.Unlock()
+	mounted.recorder.signal()
 
 	results := make(chan nodeResult, len(mounted.nodes))
 	active := make(map[string]struct{}, len(mounted.nodes))
@@ -107,8 +108,9 @@ func (mounted *Mounted) Run(parent context.Context) error {
 	mounted.mu.Lock()
 	mounted.runErr = primary
 	mounted.closed = true
-	close(mounted.done)
 	mounted.mu.Unlock()
+	_ = mounted.recorder.finish(mounted)
+	close(mounted.done)
 	return primary
 }
 
@@ -140,8 +142,9 @@ func (mounted *Mounted) Close(ctx context.Context) error {
 		err := mounted.shutdownResources()
 		mounted.mu.Lock()
 		mounted.runErr = ErrGraphClosed
-		close(mounted.done)
 		mounted.mu.Unlock()
+		_ = mounted.recorder.finish(mounted)
+		close(mounted.done)
 		return err
 	}
 	cancel := mounted.cancel
@@ -201,6 +204,7 @@ func (mounted *Mounted) setNodeState(node string, state inspect.NodeLive) {
 	}
 	mounted.nodeLive[node] = state
 	mounted.liveMu.Unlock()
+	mounted.recorder.signal()
 }
 
 func inspectState(state, failure string) inspect.NodeLive {

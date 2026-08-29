@@ -23,7 +23,10 @@ func (reporter nodeResolutionReporter) Runtime(artifactID, revision, digest stri
 		return errors.New("report live runtime: nil mount")
 	}
 	reporter.mounted.liveMu.Lock()
-	defer reporter.mounted.liveMu.Unlock()
+	defer func() {
+		reporter.mounted.liveMu.Unlock()
+		reporter.mounted.recorder.signal()
+	}()
 	live, found := reporter.mounted.nodeLive[reporter.node]
 	if !found || live.Resolution == nil {
 		return fmt.Errorf("report live runtime: unknown mounted node %q", reporter.node)
@@ -67,7 +70,10 @@ func (reporter nodeResolutionReporter) Capabilities(source []element.CapabilityR
 		return errors.New("report live capabilities: nil mount")
 	}
 	reporter.mounted.liveMu.Lock()
-	defer reporter.mounted.liveMu.Unlock()
+	defer func() {
+		reporter.mounted.liveMu.Unlock()
+		reporter.mounted.recorder.signal()
+	}()
 	live, found := reporter.mounted.nodeLive[reporter.node]
 	if !found || live.Resolution == nil {
 		return fmt.Errorf("report live capabilities: unknown mounted node %q", reporter.node)

@@ -1743,21 +1743,22 @@ already available. A phase is not complete until its exit gate is checked.
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction parity, and removal of binding switches |
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Streaming camera/screen cadence, complete silent computer-use and independent voice/CU reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, exact live resolution evidence, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Deployment/secrets/evidence catalogs, legacy translation, normal graph-native launch, and executed parity artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, bounded payload-free trace artifacts, and exact replay | Runtime recording integration, trigger/cancel/authority views, editor UI/LSP/schema work, and output-to-cause operator workflow |
+| 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, and exact replay | Trigger/cancel/authority views, editor UI/LSP/schema work, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
 | 8 — legacy removal | Not started | Compatibility behavior is isolated behind a coarse element | Migrate every production/evaluation launch path, then remove obsolete flags, switches, and binding constraints |
 
 Current checkpoint notes:
 
-- `origin/main` remains at the design checkpoint `1bf1de5`; local `main` is 22
-  verified commits ahead through `b7ce51a`.
+- `origin/main` remains at the design checkpoint `1bf1de5`; local `main`
+  contains the verified implementation checkpoints recorded in the ledger
+  below. `git log origin/main..main` is the authoritative commit list.
 - The committed graph-native slice now extends from acoustic and multimodal
   ingress through state, independently triggered cognition, explicit
   interaction/speech routing, tool authority, and external-model topologies.
-- Deterministic graph diff and replayable, payload-free trace artifact
-  contracts are committed. Runtime recording, editor services, adaptive video,
-  and sidecar media-format hardening remain unchecked until their independent
-  worktree slices are reviewed and committed.
+- Deterministic graph diff, session-keyed bounded runtime recording, and
+  replayable payload-free trace artifacts are committed. Editor services,
+  adaptive video, and sidecar media-format hardening remain unchecked until
+  their independent worktree slices are reviewed and committed.
 - No item in the twelve-point definition of done is yet proven end to end.
   Several have foundation-level support, but benchmark migration, production
   inspection, reconciliation, and legacy removal are still outstanding.
@@ -1784,9 +1785,12 @@ Integrated checkpoint ledger:
   configuration, selected paths, runtime, and capability identities.
 - [x] Deterministic semantic graph diff plus bounded, fingerprinted,
   payload-free trace artifact and exact replay validation.
+- [x] Opt-in per-mount trace recording with exact graph/config/runtime evidence,
+  session-keyed correlation pseudonyms, bounded compaction, queue residence
+  timing, deterministic export, and key erasure.
 - [ ] Full componentized conversational reference graphs and safe-point parity.
-- [ ] Production runtime recording, complete authoring UI/LSP, reconciliation,
-  benchmark execution parity, and legacy launch-path removal.
+- [ ] Complete authoring UI/LSP, reconciliation, benchmark execution parity,
+  and legacy launch-path removal.
 
 Reference-agent tracker:
 
@@ -1959,6 +1963,10 @@ artifacts rather than legacy architecture/config switches):
   operator views over those contracts.
 - [x] Add deterministic semantic graph diff plus bounded, fingerprinted,
   payload-free trace artifacts and exact Graph IR replay validation.
+- [x] Integrate opt-in runtime recording with nonblocking coalesced capture,
+  exact configuration/runtime/capability evidence, session-keyed correlation
+  pseudonyms, explicit dropped-record evidence, deterministic export, and key
+  erasure on shutdown.
 - [ ] Add a visual editor that reads and writes canonical `.ortg` or normalized
   YAML/JSON using the same descriptors and validator.
 - [ ] Generate syntax completion, JSON Schema, and editor metadata from element

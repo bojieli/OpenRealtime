@@ -77,6 +77,38 @@ func TestLossyQueueDropsNewestWhenFull(t *testing.T) {
 	}
 }
 
+func TestQueueReportsCumulativeResidenceTime(t *testing.T) {
+	valueType := element.Event(element.Named("test.Value"))
+	var now uint64 = 10
+	queue, err := newQueue("timed", valueType, ir.Lossless, 2, newCondition(), func() uint64 {
+		return now
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queue.send(context.Background(), envelope(valueType, "first")); err != nil {
+		t.Fatal(err)
+	}
+	now = 35
+	if _, err := queue.receive(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := queue.snapshot().QueueWaitNS; got != 25 {
+		t.Fatalf("queue residence time = %d, want 25", got)
+	}
+	now = 40
+	if _, err := queue.send(context.Background(), envelope(valueType, "second")); err != nil {
+		t.Fatal(err)
+	}
+	now = 55
+	if _, err := queue.receive(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := queue.snapshot().QueueWaitNS; got != 40 {
+		t.Fatalf("cumulative queue residence time = %d, want 40", got)
+	}
+}
+
 func TestBroadcastWaitsForEveryLosslessBranchBeforeAnyAdmission(t *testing.T) {
 	changed := newCondition()
 	valueType := element.Event(element.Named("test.Value"))

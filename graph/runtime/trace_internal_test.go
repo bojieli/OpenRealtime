@@ -7,7 +7,7 @@ import (
 )
 
 func TestFlowTrackerPreservesFeedbackAndBoundsRetention(t *testing.T) {
-	tracker := newFlowTracker(2, 3)
+	tracker := newFlowTracker(2, 3, 1024)
 	envelope := element.Envelope{ItemID: "same", TraceID: "feedback", Sequence: 1}
 	tracker.record("feedback-edge", TraceEnqueue, envelope, 1)
 	tracker.record("feedback-edge", TraceEnqueue, envelope, 2)
@@ -35,5 +35,24 @@ func TestFlowTrackerPreservesFeedbackAndBoundsRetention(t *testing.T) {
 	after, afterDropped := tracker.snapshot()
 	if len(after) != len(flows) || afterDropped != dropped {
 		t.Fatalf("non-route records changed flow retention: %+v dropped=%d", after, afterDropped)
+	}
+}
+
+func TestFlowTrackerBoundsCorrelationBytesAndClampsRegressingClock(t *testing.T) {
+	tracker := newFlowTracker(2, 3, 16)
+	tracker.record("edge", TraceEnqueue, element.Envelope{
+		ItemID: "item", TraceID: "this-correlation-is-too-large",
+	}, 10)
+	flows, dropped := tracker.snapshot()
+	if len(flows) != 0 || dropped != 1 {
+		t.Fatalf("oversized correlation retention = %+v, dropped=%d", flows, dropped)
+	}
+
+	tracker.record("edge", TraceEnqueue, element.Envelope{ItemID: "item", TraceID: "ok"}, 20)
+	tracker.record("edge", TraceEnqueue, element.Envelope{ItemID: "item", TraceID: "ok"}, 15)
+	flows, dropped = tracker.snapshot()
+	flow := flows["trace:ok"]
+	if flow.FirstNS != 20 || flow.LastNS != 20 || len(flow.Edges) != 2 || dropped != 2 {
+		t.Fatalf("regressing clock flow = %+v, dropped=%d", flow, dropped)
 	}
 }

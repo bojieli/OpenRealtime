@@ -83,20 +83,24 @@ type flowTracker struct {
 	mu       sync.Mutex
 	maxFlows int
 	maxEdges int
+	maxKey   int
 	order    []string
 	flows    map[string]*trackedFlow
 	dropped  uint64
 }
 
-func newFlowTracker(maxFlows, maxEdges int) *flowTracker {
+func newFlowTracker(maxFlows, maxEdges, maxCorrelationBytes int) *flowTracker {
 	if maxFlows < 1 {
 		maxFlows = 1
 	}
 	if maxEdges < 1 {
 		maxEdges = 1
 	}
+	if maxCorrelationBytes < 1 {
+		maxCorrelationBytes = 1024
+	}
 	return &flowTracker{
-		maxFlows: maxFlows, maxEdges: maxEdges,
+		maxFlows: maxFlows, maxEdges: maxEdges, maxKey: maxCorrelationBytes,
 		flows: make(map[string]*trackedFlow),
 	}
 }
@@ -113,6 +117,10 @@ func (tracker *flowTracker) record(
 	}
 	tracker.mu.Lock()
 	defer tracker.mu.Unlock()
+	if len(key) > tracker.maxKey {
+		tracker.dropped++
+		return
+	}
 	tracked := tracker.flows[key]
 	if tracked == nil {
 		if len(tracker.order) == tracker.maxFlows {
@@ -126,6 +134,9 @@ func (tracker *flowTracker) record(
 		}
 		tracker.flows[key] = tracked
 		tracker.order = append(tracker.order, key)
+	} else if atNS < tracked.flow.LastNS {
+		atNS = tracked.flow.LastNS
+		tracker.dropped++
 	}
 	tracked.flow.LastNS = atNS
 	// Enqueue is emitted exactly once per actual traversal. Do not de-duplicate
