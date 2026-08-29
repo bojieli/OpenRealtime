@@ -1766,7 +1766,7 @@ Current checkpoint notes:
   family are committed. Editor recovery/schema/UI transport and sidecar
   media-format hardening remain unchecked until their independent worktree
   slices are reviewed and committed.
-- No item in the twelve-point definition of done is yet proven end to end.
+- No item in the project-level definition of done is yet proven end to end.
   Several have foundation-level support, but benchmark migration, production
   inspection, reconciliation, and legacy removal are still outstanding.
 
@@ -1903,7 +1903,37 @@ Reference-agent tracker:
 
 Evaluation and parity tracker (the existing suites remain the migration
 oracle; a box closes only when the suite selects and attests the new graph
-artifacts rather than legacy architecture/config switches):
+artifacts rather than legacy architecture/config switches). Unit, race, vet,
+fuzz, synthetic integration, mount, and protocol-conformance tests may close a
+component checkpoint, but none of them establishes behavioral parity or closes
+a phase exit gate, this tracker, or the definition of done:
+
+- [ ] Establish clean, reportable migration baselines and predeclared
+  acceptance rules before judging the refactored candidate.
+  - [ ] Recover an immutable pre-refactor result or rerun the legacy reference
+    for every required suite; prose summaries and hand-picked successful runs
+    are not baseline artifacts.
+  - [ ] Pin the fixture revision, task set, model/provider revisions, voices,
+    tools, timing policy, machine class, concurrency, trial count/seeds where
+    applicable, and every non-treatment configuration field.
+  - [ ] Add a migration-parity comparator that permits the code/topology/config
+    change under test while refusing any undeclared model, fixture, provider,
+    hardware, scorer, or evidence change. The existing architecture-cell
+    comparator intentionally refuses different executables and therefore is
+    not by itself a before/after-refactor comparator.
+  - [ ] Predeclare a suite-specific paired non-inferiority margin and minimum
+    repetitions from baseline variance before inspecting candidate results.
+    Preserving an absolute pass rate above 80% is a sanity floor where the
+    accepted baseline exceeds 80%; it is not enough if it hides a large drop
+    from a materially stronger baseline.
+  - [ ] Check in every attempted candidate artifact, including failed and
+    regressed runs, so iteration cannot select only favorable samples.
+
+The historical measurement narrative records five-run scenario totals ranging
+from 30/45 to 37/45, with the best run above 80%. That is important prior
+evidence about both expected quality and variance, but it is not a clean,
+current eleven-scenario baseline artifact. The current suite requires all
+eleven cases and the predeclared repetitions, not a smaller historical subset.
 
 - [x] Migrate the shared benchmark/session evidence path to bind exact Graph IR,
   element/config/deployment identities, selected edges, authenticated live
@@ -1934,6 +1964,14 @@ artifacts rather than legacy architecture/config switches):
 - [ ] Preserve the DynaCU-Bench runner as independent optional validation.
 - [ ] Produce clean-worktree before/after parity artifacts for every required
   suite; investigate differences instead of accepting a merely runnable graph.
+- [ ] Demonstrate that the final graph-native configurations are non-inferior
+  to the accepted baselines in aggregate pass rate and per-case behavior, with
+  no safety regression and no material deadline or latency-distribution
+  regression.
+- [ ] For every failed non-regression gate, retain the artifact, trace the
+  changed outcome through exact graph/config/runtime evidence, fix the cause,
+  rerun the affected cases, and then rerun the complete suite. Repeat until the
+  full candidate—not only a patched subset—passes.
 
 ### Phase 0: accept contracts and terminology
 
@@ -2152,6 +2190,47 @@ artifacts rather than legacy architecture/config switches):
 - Run complete system benchmarks using immutable graph/config/profile
   identities rather than model-family labels.
 
+### 26.5 Benchmark and behavioral non-regression gates
+
+Repository tests answer whether local contracts and deliberately constructed
+examples behave as implemented. They do not answer whether the refactored
+agent still succeeds on real conversations, meeting work, computer use, tool
+calling, overlap, or latency. Project completion therefore requires measured
+before/after benchmark evidence in addition to all preceding test gates.
+
+Each required comparison must follow this protocol:
+
+1. Produce or recover a complete, clean-worktree, reportable pre-refactor
+   baseline artifact. Pin its source, executable, fixture/scorer, model and
+   provider revisions, deployment identities, machine class, task set,
+   repetitions, and non-treatment configuration.
+2. Run the candidate through the graph-native launch path and exact new values,
+   deployment, and policy artifacts. Every completed task must attest the
+   immutable Graph IR fingerprint and live element/config/capability identities;
+   a candidate that silently falls back to a legacy binding is invalid.
+3. Compare matched tasks and repetitions. Report aggregate pass rate, every
+   per-task/per-condition transition, safety and authority failures, deadline
+   success, interaction errors, and relevant latency distributions including
+   median and tail behavior. An aggregate can never erase a severe scenario or
+   safety regression.
+4. Use a predeclared paired non-inferiority rule appropriate to the suite and
+   its measured variance. A non-significant difference is not proof of parity,
+   and merely remaining above 80% is not acceptable when the verified baseline
+   was materially higher. Scenario evaluation uses at least five repetitions
+   per case, consistent with the observed variance; other suites must declare
+   their own minimum before the candidate is observed.
+5. Treat any material correctness, interaction, safety, deadline, or latency
+   regression as an implementation blocker. Preserve the failed artifact, use
+   graph diff plus runtime/trace evidence to locate the changed path, fix it,
+   rerun the affected diagnostic slice, and finally rerun the entire suite.
+   Only the final complete rerun can satisfy the gate.
+
+The required final matrix is the eleven interaction scenarios, Meeting
+Assistant v1, Realtime-CU v1, FDB v1.5, FDB v3, FD-Bench, and tau2-bench/
+tau-Voice control and regular conditions. DynaCU-Bench remains an independent
+optional validation. No phase exit gate or project-level completion claim may
+substitute a synthetic integration test for this matrix.
+
 ## 27. Compatibility and versioning
 
 - The external Realtime protocol remains backward compatible.
@@ -2275,9 +2354,13 @@ checked from foundation work alone; each requires end-to-end release evidence.
 - [ ] Mermaid/DOT and the live canvas are generated from that exact graph.
 - [ ] The action authority, target, confirmation, audit, and irreversibility
    guarantees remain intact or become stronger through typing.
-- [ ] Static reference graphs match current protocol and benchmark behavior, and
-    new non-audio and alternative speech compositions are covered by release
-    tests.
+- [ ] Static reference graphs match current protocol behavior, and new
+    non-audio and alternative speech compositions are covered by release tests.
+- [ ] Every required benchmark has complete, clean, exactly attested
+    pre-refactor and graph-native candidate artifacts; the candidate satisfies
+    the predeclared aggregate and per-case non-regression gates, and every
+    discovered regression has been fixed and followed by a complete-suite
+    rerun.
 - [ ] Supported graph changes mount and unmount without leaked resources or
     silently lost committed work.
 - [ ] Operators can trace an externally visible action back through its policy,
