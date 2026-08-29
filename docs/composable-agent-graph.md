@@ -1926,14 +1926,21 @@ a phase exit gate, this tracker, or the definition of done:
     Preserving an absolute pass rate above 80% is a sanity floor where the
     accepted baseline exceeds 80%; it is not enough if it hides a large drop
     from a materially stronger baseline.
-  - [ ] Check in every attempted candidate artifact, including failed and
-    regressed runs, so iteration cannot select only favorable samples.
+  - [ ] Retain every attempted candidate artifact, including failed and
+    regressed runs, in the immutable benchmark evidence store; check in their
+    redacted summaries, identities, and digests so iteration cannot select only
+    favorable samples or expose private benchmark content.
 
-The historical measurement narrative records five-run scenario totals ranging
-from 30/45 to 37/45, with the best run above 80%. That is important prior
-evidence about both expected quality and variance, but it is not a clean,
-current eleven-scenario baseline artifact. The current suite requires all
-eleven cases and the predeclared repetitions, not a smaller historical subset.
+The historical measurement narrative records early five-run subset totals from
+30/45 to 37/45, a later full eleven-scenario baseline of 140/165 (85%) at
+fifteen repetitions, and same-binary samples of 49/55 and 47/55. These are
+important variance priors and confirm the expected pass rate is above 80%, but
+no corresponding clean, exactly attested result artifact is checked into the
+repository. The migration gate must recover or rerun that baseline; prose and
+ignored diagnostic files cannot satisfy it. The same evidence shows that five
+repetitions can move substantially on identical code, so the final scenario
+comparison uses at least fifteen repetitions per case. Smaller runs are for
+diagnosis only.
 
 - [x] Migrate the shared benchmark/session evidence path to bind exact Graph IR,
   element/config/deployment identities, selected edges, authenticated live
@@ -2216,9 +2223,10 @@ Each required comparison must follow this protocol:
 4. Use a predeclared paired non-inferiority rule appropriate to the suite and
    its measured variance. A non-significant difference is not proof of parity,
    and merely remaining above 80% is not acceptable when the verified baseline
-   was materially higher. Scenario evaluation uses at least five repetitions
-   per case, consistent with the observed variance; other suites must declare
-   their own minimum before the candidate is observed.
+   was materially higher. Final scenario evaluation uses at least fifteen
+   repetitions per case; five-run samples are diagnostic only because identical
+   binaries have shown material per-scenario variation at that size. Other
+   suites must declare their own minimum before the candidate is observed.
 5. Treat any material correctness, interaction, safety, deadline, or latency
    regression as an implementation blocker. Preserve the failed artifact, use
    graph diff plus runtime/trace evidence to locate the changed path, fix it,
