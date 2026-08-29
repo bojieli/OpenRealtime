@@ -81,6 +81,7 @@ func runMeeting(arguments []string, output io.Writer) error {
 		varyLevel       string
 		foreground      string
 		executionPath   string
+		inspectionGraph string
 		list            bool
 	)
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "WebSocket or WebRTC SDP endpoint")
@@ -100,6 +101,7 @@ func runMeeting(arguments []string, output io.Writer) error {
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
 	flags.StringVar(&foreground, "foreground", "cascade", "fast foreground: cascade or omni")
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
+	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
 	flags.BoolVar(&list, "list", false, "list repository-owned meeting tasks and stop")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
@@ -130,7 +132,9 @@ func runMeeting(arguments []string, output io.Writer) error {
 	if err := attachBenchmarkExecution(&cell, executionPath); err != nil {
 		return err
 	}
-	attestor, err := sharedDriverAttestor(cell.Execution, nil)
+	attestor, deploymentToken, err := configureSessionBenchmarkAttestor(
+		cell.Execution, inspectionGraph, endpoint, tokenEnv, os.Getenv,
+	)
 	if err != nil {
 		return err
 	}
@@ -143,7 +147,7 @@ func runMeeting(arguments []string, output io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result, err := meeting.Run(ctx, meeting.Options{
-		Endpoint: endpoint, Transport: transport, Token: os.Getenv(tokenEnv), Model: model,
+		Endpoint: endpoint, Transport: transport, Token: deploymentToken, Model: model,
 		Cell: cell, Browser: browser, Categories: selectedCategories, Limit: limit,
 		FrameRate: fps, Timeout: timeout, AnalysisDelay: analysisDelay,
 		RuntimeAttestor: attestor,
@@ -450,6 +454,7 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 		varyFactor      string
 		varyLevel       string
 		executionPath   string
+		inspectionGraph string
 		list            bool
 	)
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
@@ -467,6 +472,7 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F2")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
+	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
 	flags.BoolVar(&list, "list", false, "list repository-owned tasks and stop")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
@@ -485,7 +491,9 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 	if err := attachBenchmarkExecution(&cell, executionPath); err != nil {
 		return err
 	}
-	attestor, err := sharedDriverAttestor(cell.Execution, nil)
+	attestor, deploymentToken, err := configureSessionBenchmarkAttestor(
+		cell.Execution, inspectionGraph, endpoint, tokenEnv, os.Getenv,
+	)
 	if err != nil {
 		return err
 	}
@@ -509,7 +517,7 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result, err := realtimecu.Run(ctx, realtimecu.Options{
-		Endpoint: endpoint, Token: os.Getenv(tokenEnv), Model: model,
+		Endpoint: endpoint, Token: deploymentToken, Model: model,
 		Cell: cell, Browser: browser, Groundings: selectedGroundings,
 		Categories: selectedCategories, Limit: limit, FrameRate: fps, Timeout: timeout,
 		RuntimeAttestor: attestor,
@@ -612,18 +620,19 @@ func axes(values []realtimecu.Axis) string {
 func runFDB(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench fdb", flag.ContinueOnError)
 	var (
-		root          string
-		endpoint      string
-		tokenEnv      string
-		model         string
-		out           string
-		categories    string
-		limit         int
-		cellName      string
-		varyFactor    string
-		varyLevel     string
-		executionPath string
-		timeout       time.Duration
+		root            string
+		endpoint        string
+		tokenEnv        string
+		model           string
+		out             string
+		categories      string
+		limit           int
+		cellName        string
+		varyFactor      string
+		varyLevel       string
+		executionPath   string
+		inspectionGraph string
+		timeout         time.Duration
 	)
 	flags.StringVar(&root, "dataset", ".runtime/full-duplex-bench-v1.5/dataset", "FDB v1.5 dataset root")
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
@@ -636,6 +645,7 @@ func runFDB(arguments []string, output io.Writer) error {
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies from the reference, such as F2")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
+	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
 	flags.DurationVar(&timeout, "task-timeout", 3*time.Minute, "how long one recording may take")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
@@ -649,7 +659,9 @@ func runFDB(arguments []string, output io.Writer) error {
 	if err := attachBenchmarkExecution(&cell, executionPath); err != nil {
 		return err
 	}
-	attestor, err := sharedDriverAttestor(cell.Execution, nil)
+	attestor, deploymentToken, err := configureSessionBenchmarkAttestor(
+		cell.Execution, inspectionGraph, endpoint, tokenEnv, os.Getenv,
+	)
 	if err != nil {
 		return err
 	}
@@ -664,7 +676,7 @@ func runFDB(arguments []string, output io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result, err := fdb.Run(ctx, fdb.Options{
-		Root: root, Endpoint: endpoint, Token: os.Getenv(tokenEnv), Model: model,
+		Root: root, Endpoint: endpoint, Token: deploymentToken, Model: model,
 		Cell: cell, Categories: wanted, Limit: limit, Timeout: timeout,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
@@ -769,20 +781,21 @@ func readResult(path string) (bench.Result, error) {
 func runFDBench(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench fdbench", flag.ContinueOnError)
 	var (
-		root          string
-		endpoint      string
-		tokenEnv      string
-		model         string
-		out           string
-		conditions    string
-		list          bool
-		limit         int
-		cellName      string
-		varyFactor    string
-		varyLevel     string
-		executionPath string
-		budget        time.Duration
-		timeout       time.Duration
+		root            string
+		endpoint        string
+		tokenEnv        string
+		model           string
+		out             string
+		conditions      string
+		list            bool
+		limit           int
+		cellName        string
+		varyFactor      string
+		varyLevel       string
+		executionPath   string
+		inspectionGraph string
+		budget          time.Duration
+		timeout         time.Duration
 	)
 	flags.StringVar(&root, "dataset", ".runtime/fd-bench/dataset", "FD-Bench dataset root")
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
@@ -796,6 +809,7 @@ func runFDBench(arguments []string, output io.Writer) error {
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F4")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
+	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
 	flags.DurationVar(&budget, "latency-budget", 2*time.Second, "how long a reply may take before it counts as late")
 	flags.DurationVar(&timeout, "task-timeout", 5*time.Minute, "how long one conversation may take")
 	flags.SetOutput(output)
@@ -829,7 +843,9 @@ func runFDBench(arguments []string, output io.Writer) error {
 	if err := attachBenchmarkExecution(&cell, executionPath); err != nil {
 		return err
 	}
-	attestor, err := sharedDriverAttestor(cell.Execution, nil)
+	attestor, deploymentToken, err := configureSessionBenchmarkAttestor(
+		cell.Execution, inspectionGraph, endpoint, tokenEnv, os.Getenv,
+	)
 	if err != nil {
 		return err
 	}
@@ -837,7 +853,7 @@ func runFDBench(arguments []string, output io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result, err := fdbench.Run(ctx, fdbench.Options{
-		Root: root, Conditions: selected, Endpoint: endpoint, Token: os.Getenv(tokenEnv),
+		Root: root, Conditions: selected, Endpoint: endpoint, Token: deploymentToken,
 		Model: model, Cell: cell, Limit: limit, LatencyBudget: budget, Timeout: timeout,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
@@ -883,17 +899,18 @@ func runFDBench(arguments []string, output io.Writer) error {
 func runFDBv3(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench fdbv3", flag.ContinueOnError)
 	var (
-		root          string
-		endpoint      string
-		tokenEnv      string
-		model         string
-		out           string
-		limit         int
-		cellName      string
-		varyFactor    string
-		varyLevel     string
-		executionPath string
-		timeout       time.Duration
+		root            string
+		endpoint        string
+		tokenEnv        string
+		model           string
+		out             string
+		limit           int
+		cellName        string
+		varyFactor      string
+		varyLevel       string
+		executionPath   string
+		inspectionGraph string
+		timeout         time.Duration
 	)
 	flags.StringVar(&root, "dataset", ".runtime/full-duplex-bench-v3/dataset/fdb_v3_data_released", "FDB v3 dataset root")
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
@@ -905,6 +922,7 @@ func runFDBv3(arguments []string, output io.Writer) error {
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F2")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
+	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
 	flags.DurationVar(&timeout, "task-timeout", 3*time.Minute, "how long one recording may take")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
@@ -917,7 +935,9 @@ func runFDBv3(arguments []string, output io.Writer) error {
 	if err := attachBenchmarkExecution(&cell, executionPath); err != nil {
 		return err
 	}
-	attestor, err := sharedDriverAttestor(cell.Execution, nil)
+	attestor, deploymentToken, err := configureSessionBenchmarkAttestor(
+		cell.Execution, inspectionGraph, endpoint, tokenEnv, os.Getenv,
+	)
 	if err != nil {
 		return err
 	}
@@ -925,7 +945,7 @@ func runFDBv3(arguments []string, output io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result, err := fdbv3.Run(ctx, fdbv3.Options{
-		Root: root, Endpoint: endpoint, Token: os.Getenv(tokenEnv), Model: model,
+		Root: root, Endpoint: endpoint, Token: deploymentToken, Model: model,
 		Cell: cell, Limit: limit, Timeout: timeout,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
