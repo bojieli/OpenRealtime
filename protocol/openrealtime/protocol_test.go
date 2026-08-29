@@ -223,7 +223,7 @@ func TestTheToolExtensionIsIgnorableByABaseServer(t *testing.T) {
 	encoded, err := json.Marshal(map[string]any{
 		"type": "function", "name": "computer.click",
 		"parameters":   map[string]any{"type": "object"},
-		"openrealtime": openrealtime.ToolExtension{Confirm: "always", Target: "browser-1"},
+		"openrealtime": openrealtime.ToolExtension{Confirm: "always", Target: "browser-1", Background: true},
 	})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)

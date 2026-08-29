@@ -159,6 +159,71 @@ func TestBuildRequestReusesNativeStateAndCompilesToolResult(t *testing.T) {
 	}
 }
 
+func TestBuildRequestMarksForeignToolCallAsManualAndKeepsResultPaired(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		APIKey: "secret", Model: "gemini-test", Phase: trajectory.PhaseSlow,
+		Effort: continuation.EffortHigh, AllowTools: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "gemini-slow",
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			{ID: "user", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "open the review"},
+			{ID: "foreign-call", Kind: trajectory.KindToolCall, InvocationID: "qwen-fast", Producer: trajectory.Producer{Phase: trajectory.PhaseFast, Provider: "openai-compatible", Model: "qwen-meeting-policy"}, ToolCall: &trajectory.ToolCall{CallID: "click-1", Name: "computer.click_normalized", Arguments: json.RawMessage(`{"x":112,"y":855}`)}},
+			{ID: "foreign-result", Kind: trajectory.KindToolResult, InvocationID: "qwen-fast", Producer: trajectory.Producer{Phase: trajectory.PhaseTool}, ToolResult: &trajectory.ToolResult{CallID: "click-1", Name: "computer.click_normalized", Output: json.RawMessage(`{"ok":true}`)}},
+		}},
+		Invocation: continuation.Invocation{
+			Instruction: "Continue.",
+			Tools:       []continuation.ToolDefinition{{Name: "computer.click_normalized", Parameters: json.RawMessage(`{"type":"object"}`)}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Contents) != 3 || body.Contents[1].Role != "model" || body.Contents[2].Role != "user" {
+		t.Fatalf("foreign call and result were not paired as adjacent model/user contents: %#v", body.Contents)
+	}
+	call, _ := json.Marshal(body.Contents[1])
+	result, _ := json.Marshal(body.Contents[2])
+	if !strings.Contains(string(call), `"thoughtSignature":"`+portableToolCallThoughtSignature+`"`) ||
+		!strings.Contains(string(call), `"id":"click-1"`) || !strings.Contains(string(result), `"id":"click-1"`) ||
+		!strings.Contains(string(result), `"functionResponse"`) {
+		t.Fatalf("unexpected portable call/result compilation: call=%s result=%s", call, result)
+	}
+}
+
+func TestBuildRequestPairsInterruptedToolCallWithExplicitNonExecution(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		APIKey: "secret", Model: "gemini-test", Phase: trajectory.PhaseSlow,
+		Effort: continuation.EffortHigh, AllowTools: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "gemini-slow",
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			{ID: "user", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "analyze it"},
+			{ID: "call", Kind: trajectory.KindToolCall, InvocationID: "slow-old", Producer: trajectory.Producer{Phase: trajectory.PhaseSlow}, ToolCall: &trajectory.ToolCall{CallID: "analysis-1", Name: "analyze", Arguments: json.RawMessage(`{}`)}},
+			{ID: "placeholder", Kind: trajectory.KindToolPlaceholder, InvocationID: "slow-old", Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, ToolPlaceholder: &trajectory.ToolPlaceholder{CallID: "analysis-1", Name: "analyze", Reason: "user resumed before action"}},
+		}},
+		Invocation: continuation.Invocation{Instruction: "Continue.", Tools: []continuation.ToolDefinition{{Name: "analyze", Parameters: json.RawMessage(`{"type":"object"}`)}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(body)
+	if !strings.Contains(string(encoded), `"functionResponse"`) ||
+		!strings.Contains(string(encoded), `"executed":false`) ||
+		!strings.Contains(string(encoded), "user resumed before action") {
+		t.Fatalf("interrupted call was not explicitly paired: %s", encoded)
+	}
+}
+
 func TestBuildRequestDoesNotTreatAnotherGeminiModelStateAsNative(t *testing.T) {
 	t.Parallel()
 	adapter, err := New(Config{

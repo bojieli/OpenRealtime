@@ -219,6 +219,35 @@ func TestBuildRequestReusesOnlyMatchingNativeState(t *testing.T) {
 	}
 }
 
+func TestBuildRequestPairsInterruptedToolCallWithExplicitNonExecution(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		Model: "qwen-test", Provider: "vllm", Phase: trajectory.PhaseSlow,
+		Effort: continuation.EffortHigh, AllowTools: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "slow-new",
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			{ID: "user", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "analyze it"},
+			{ID: "call", Kind: trajectory.KindToolCall, InvocationID: "slow-old", Producer: trajectory.Producer{Phase: trajectory.PhaseSlow}, ToolCall: &trajectory.ToolCall{CallID: "analysis-1", Name: "analyze", Arguments: json.RawMessage(`{}`)}},
+			{ID: "placeholder", Kind: trajectory.KindToolPlaceholder, InvocationID: "slow-old", Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, ToolPlaceholder: &trajectory.ToolPlaceholder{CallID: "analysis-1", Name: "analyze", Reason: "user resumed before action"}},
+		}},
+		Invocation: continuation.Invocation{Instruction: "Continue.", Tools: []continuation.ToolDefinition{{Name: "analyze", Parameters: json.RawMessage(`{"type":"object"}`)}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(body)
+	if !strings.Contains(string(encoded), `"role":"tool"`) ||
+		!strings.Contains(string(encoded), `\"executed\":false`) ||
+		!strings.Contains(string(encoded), "user resumed before action") {
+		t.Fatalf("interrupted call was not explicitly paired: %s", encoded)
+	}
+}
+
 func TestBuildRequestDoesNotTreatAnotherModelStateAsNative(t *testing.T) {
 	t.Parallel()
 	adapter, err := New(Config{Model: "model-b", Provider: "vllm", Phase: trajectory.PhaseFast, Effort: continuation.EffortMinimal})

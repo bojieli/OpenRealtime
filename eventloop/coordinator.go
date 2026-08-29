@@ -88,16 +88,18 @@ type Config struct {
 }
 
 type queuedEvent struct {
-	sequence uint64
-	event    Event
+	sequence   uint64
+	submission uint64
+	event      Event
 }
 
 // Coordinator owns ingress ordering, safe-point commits, deferral bookkeeping,
 // and interruption of the current processor invocation. Model output still
 // commits through the continuation runner's own version-checked transaction.
 type Coordinator struct {
-	mu   sync.Mutex
-	idMu sync.Mutex
+	mu       sync.Mutex
+	idMu     sync.Mutex
+	commitMu sync.Mutex
 
 	store     *trajectory.Store
 	processor Processor
@@ -105,9 +107,10 @@ type Coordinator struct {
 	now       func() uint64
 	nextID    func(string) string
 
-	pending      []queuedEvent
-	eventIDs     map[string]struct{}
-	nextSequence uint64
+	pending        []queuedEvent
+	eventIDs       map[string]struct{}
+	nextSequence   uint64
+	nextSubmission uint64
 
 	// deferred holds committed batches that no run has yet acted upon. This is
 	// the state that "committed but not yet acted upon" required and that the
@@ -270,10 +273,14 @@ func (coordinator *Coordinator) SubmitBatch(events []Event) ([]string, error) {
 	ids := make([]string, len(events))
 	shouldInterrupt := false
 	cancel := coordinator.activeCancel
+	coordinator.nextSubmission++
+	submission := coordinator.nextSubmission
 	for index, event := range events {
 		coordinator.eventIDs[event.EventID] = struct{}{}
 		coordinator.nextSequence++
-		coordinator.pending = append(coordinator.pending, queuedEvent{sequence: coordinator.nextSequence, event: event})
+		coordinator.pending = append(coordinator.pending, queuedEvent{
+			sequence: coordinator.nextSequence, submission: submission, event: event,
+		})
 		ids[index] = event.EventID
 		shouldInterrupt = shouldInterrupt || event.Priority == PriorityInterrupt
 	}
@@ -308,6 +315,13 @@ func (coordinator *Coordinator) RunNext(parent context.Context) (Batch, error) {
 // consults the gate: an external event enters the trajectory the moment it
 // arrives, whatever the conversational state.
 func (coordinator *Coordinator) Commit() (Batch, error) {
+	// Parallel workers may ask to drain at the same time. The store transaction
+	// itself is optimistic, but external ingress still has one ordered commit
+	// lane: two drains compiling from the same snapshot would turn ordinary
+	// concurrency into a version-conflict session failure.
+	coordinator.commitMu.Lock()
+	defer coordinator.commitMu.Unlock()
+
 	coordinator.mu.Lock()
 	if len(coordinator.pending) == 0 {
 		coordinator.mu.Unlock()
@@ -332,9 +346,70 @@ func (coordinator *Coordinator) Commit() (Batch, error) {
 	}
 	coordinator.committedBatches.Add(1)
 	coordinator.mu.Lock()
-	coordinator.deferred = append(coordinator.deferred, batch)
+	coordinator.deferred = append(coordinator.deferred, partitionCommittedBatch(batch, queued)...)
 	coordinator.mu.Unlock()
 	return batch, nil
+}
+
+// partitionCommittedBatch preserves submission boundaries after one atomic
+// store commit. The store should see every pending occurrence at once, but the
+// scheduler must not make an observer frame inherit the triage of an unrelated
+// routine signal merely because both happened before the same drain attempt.
+//
+// SubmitBatch remains inseparable: all events from one submission share one
+// partition, so an explicitly mixed group is still routine. Separate
+// submissions retain their own triage and selectRunnable can let only the
+// parallel visual group join work already in flight.
+func partitionCommittedBatch(batch Batch, queued []queuedEvent) []Batch {
+	if len(batch.Events) == 0 {
+		return []Batch{batch}
+	}
+	submissionByEvent := make(map[string]uint64, len(queued))
+	for _, queuedEvent := range queued {
+		submissionByEvent[queuedEvent.event.EventID] = queuedEvent.submission
+	}
+
+	var partitions []Batch
+	partitionBySubmission := make(map[uint64]int)
+	eventPartition := make(map[string]int, len(batch.Events))
+	for _, event := range batch.Events {
+		submission := submissionByEvent[event.EventID]
+		partitionIndex, exists := partitionBySubmission[submission]
+		if !exists {
+			partitionIndex = len(partitions)
+			partitionBySubmission[submission] = partitionIndex
+			partitions = append(partitions, Batch{
+				StartVersion: batch.StartVersion,
+				EndVersion:   batch.EndVersion,
+				Triage:       TriageParallel,
+			})
+		}
+		partition := &partitions[partitionIndex]
+		partition.Events = append(partition.Events, event)
+		eventPartition[event.EventID] = partitionIndex
+		if TriageOf(event.Priority) != TriageParallel {
+			partition.Triage = TriageQueue
+		}
+		if TriageOf(event.Priority) == TriageCancel {
+			partition.Triage = TriageCancel
+		}
+	}
+	for _, item := range batch.Items {
+		if item.Event == nil {
+			// External-event compilation always attaches metadata. Keep an
+			// unexpected unowned item with the first partition rather than
+			// losing committed evidence.
+			partitions[0].Items = append(partitions[0].Items, item)
+			continue
+		}
+		partitionIndex, exists := eventPartition[item.Event.EventID]
+		if !exists {
+			partitions[0].Items = append(partitions[0].Items, item)
+			continue
+		}
+		partitions[partitionIndex].Items = append(partitions[partitionIndex].Items, item)
+	}
+	return partitions
 }
 
 // commitAdmissible commits everything in the group the log will accept, and
@@ -360,6 +435,14 @@ func (coordinator *Coordinator) commitAdmissible(queued []queuedEvent) (Batch, [
 		batch, err := coordinator.commit(admissible)
 		if err == nil {
 			return batch, refused, nil
+		}
+		if errors.Is(err, trajectory.ErrVersionConflict) {
+			// Cognition output commits through the same canonical store without
+			// taking commitMu. Its safe point may advance the prefix between this
+			// lane's snapshot and append. External evidence remains valid; compile
+			// it again against the now-current prefix instead of surfacing an
+			// expected optimistic conflict as a provider failure.
+			continue
 		}
 		var item *trajectory.ItemError
 		if !errors.As(err, &item) || len(admissible) <= 1 {
@@ -618,16 +701,17 @@ func (coordinator *Coordinator) commit(queued []queuedEvent) (Batch, error) {
 	})
 	events := make([]Event, len(queued))
 	triage := TriageQueue
+	parallel := len(queued) > 0
 	for index := range queued {
 		events[index] = cloneEvent(queued[index].event)
 		switch TriageOf(events[index].Priority) {
 		case TriageCancel:
 			triage = TriageCancel
-		case TriageParallel:
-			if triage != TriageCancel {
-				triage = TriageParallel
-			}
 		}
+		parallel = parallel && TriageOf(events[index].Priority) == TriageParallel
+	}
+	if parallel && triage != TriageCancel {
+		triage = TriageParallel
 	}
 	snapshot := coordinator.store.Snapshot()
 	items, err := coordinator.compile(snapshot, events)

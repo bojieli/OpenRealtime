@@ -55,10 +55,10 @@ func TestLegacyOwnershipCouplesInteractionToItsFloor(t *testing.T) {
 }
 
 func TestStackCapabilitiesComposeByUnion(t *testing.T) {
-	turnModel := binding.StackCapabilities{AudioInput: true, TurnGeneration: true}
+	turnModel := binding.StackCapabilities{AudioInput: true, VisualInput: true, TurnGeneration: true}
 	interactionHead := binding.StackCapabilities{NativeInteraction: true, ConcurrentIO: true}
 	combined := turnModel.Merge(interactionHead)
-	if !combined.AudioInput || !combined.TurnGeneration || !combined.NativeInteraction || !combined.ConcurrentIO {
+	if !combined.AudioInput || !combined.VisualInput || !combined.TurnGeneration || !combined.NativeInteraction || !combined.ConcurrentIO {
 		t.Fatalf("capability composition lost a feature: %+v", combined)
 	}
 }

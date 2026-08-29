@@ -1,14 +1,86 @@
 package gateway_test
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
+
+type heldSpeech struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (held heldSpeech) Descriptor() v1.Descriptor {
+	return v1.Descriptor{Name: "held", Version: "1", Capabilities: v1.Capabilities{}}
+}
+
+func (held heldSpeech) Synthesize(context.Context, v1.SpeechPlan) ([]v1.SpeechChunk, error) {
+	return nil, nil
+}
+
+func (held heldSpeech) Stream(ctx context.Context, plan v1.SpeechPlan, emit func(v1.SpeechChunk) error) error {
+	select {
+	case held.started <- struct{}{}:
+	default:
+	}
+	select {
+	case <-held.release:
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+	return emit(v1.SpeechChunk{
+		ChunkID: "held-chunk", CandidateID: plan.CandidateID, SampleRateHz: 24_000,
+		PCM16LE: make([]byte, 4_800), Final: true,
+	})
+}
+
+func TestQueuedSpeechOpensAResponseBeforeSynthesisProducesAudio(t *testing.T) {
+	speech := heldSpeech{started: make(chan struct{}, 1), release: make(chan struct{})}
+	t.Cleanup(func() {
+		select {
+		case <-speech.release:
+		default:
+			close(speech.release)
+		}
+	})
+	server := startServerWithSpeech(t,
+		fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "The result is 18.4 percent."}}),
+		slow(), staticASR{text: "read the result"}, speech,
+	)
+	client := dial(t, server)
+	client.await("session.created", 5*time.Second)
+	client.send(map[string]any{
+		"type": "session.update",
+		"session": map[string]any{
+			"type": "realtime",
+			"audio": map[string]any{
+				"input":  map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
+				"output": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
+			},
+		},
+	})
+	client.await("session.updated", 5*time.Second)
+	client.speak()
+	select {
+	case <-speech.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("speech never entered synthesis")
+	}
+
+	// The provider remains held, so this can only be the reservation's
+	// lifecycle announcement; no SpeechBegin or audio exists yet.
+	client.await("response.created", 5*time.Second)
+	close(speech.release)
+	client.await("response.output_audio_transcript.delta", 5*time.Second)
+	client.await("response.done", 5*time.Second)
+}
 
 // A turn spans as many responses as the agent did things, and every output
 // item belongs to the response that produced it.

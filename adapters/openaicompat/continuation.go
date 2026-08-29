@@ -912,6 +912,19 @@ func compilePortableItem(
 			content = string(encoded)
 		}
 		return chatMessage{Role: "tool", ToolCallID: item.ToolResult.CallID, Content: content}, true, nil
+	case trajectory.KindToolPlaceholder:
+		if item.ToolPlaceholder == nil {
+			return chatMessage{}, false, nil
+		}
+		content, err := json.Marshal(map[string]any{
+			"status": "interrupted", "executed": false, "reason": item.ToolPlaceholder.Reason,
+		})
+		if err != nil {
+			return chatMessage{}, false, err
+		}
+		return chatMessage{
+			Role: "tool", ToolCallID: item.ToolPlaceholder.CallID, Content: string(content),
+		}, true, nil
 	default:
 		return chatMessage{}, false, nil
 	}

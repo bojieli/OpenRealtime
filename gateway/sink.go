@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/bojieli/OpenRealtime/action"
@@ -146,11 +147,11 @@ func (session *session) SpeechBegin(ctx context.Context, utterance action.Uttera
 	session.settingsMu.RUnlock()
 	text := session.textOnly()
 
-	// Claimed before the response is opened, not after. Opening it publishes
-	// the response to every other goroutine, and a rollout finishing in that
-	// window would find nothing outstanding and close a turn whose first
-	// output had not been announced yet.
-	session.startedSpeaking()
+	// Consume the queue reservation before the response is opened. Bindings
+	// that produce speech synchronously may not reserve, so this also claims an
+	// ordinary outstanding slot for them. Either way the count exists before
+	// opening publishes the response to another goroutine.
+	session.startedSpeaking(utterance.ID)
 	responseID, index, _, err := session.openOutput()
 	if err != nil {
 		session.finishedSpeaking()
@@ -182,6 +183,67 @@ func (session *session) SpeechBegin(ctx context.Context, utterance action.Uttera
 	}
 	_ = ctx
 	return nil
+}
+
+// SpeechReserved keeps a response open for speech the action plane accepted
+// even before its serial worker begins synthesis. It opens the response now so
+// the client can distinguish queued work from conversational quiet, but it
+// announces no output item until SpeechBegin: a reservation is lifecycle
+// state, not content that crossed into the world.
+func (session *session) SpeechReserved(_ context.Context, utterance action.Utterance) error {
+	if strings.TrimSpace(utterance.ID) == "" {
+		return errors.New("speech reservation requires an utterance ID")
+	}
+	session.responseMu.Lock()
+	if _, duplicate := session.reservations[utterance.ID]; duplicate {
+		session.responseMu.Unlock()
+		return fmt.Errorf("speech %q is already reserved", utterance.ID)
+	}
+	session.reservations[utterance.ID] = struct{}{}
+	session.outstanding++
+	if session.response != nil {
+		session.responseMu.Unlock()
+		return nil
+	}
+
+	// response.created is the protocol's only durable indication that work is
+	// still owed. A slow synthesiser can otherwise leave the wire quiet long
+	// enough for a meeting client to end the session before SpeechBegin. Keep
+	// the announcement under the response lock so it remains the first event
+	// even when a tool call and the speech worker race to publish output.
+	current := &wireResponse{id: session.nextID("resp")}
+	session.response = current
+	session.settingsMu.RLock()
+	format, voice := session.settings.outputFormat, session.settings.voice
+	session.settingsMu.RUnlock()
+	err := session.send(event("response.created", session.nextID("event"), map[string]any{
+		"response": responseObject(current.id, "in_progress", session.conversationID, nil, nil,
+			format, voice, session.outputModalities()),
+	}))
+	if err != nil {
+		session.response = nil
+		delete(session.reservations, utterance.ID)
+		if session.outstanding > 0 {
+			session.outstanding--
+		}
+	}
+	session.responseMu.Unlock()
+	return err
+}
+
+// SpeechReservationCancelled releases speech discarded before SpeechBegin.
+// Once Begin consumes the typed reservation, SpeechEnd owns the release and a
+// late cancellation notification is harmless.
+func (session *session) SpeechReservationCancelled(_ context.Context, utterance action.Utterance) {
+	session.responseMu.Lock()
+	if _, reserved := session.reservations[utterance.ID]; reserved {
+		delete(session.reservations, utterance.ID)
+		if session.outstanding > 0 {
+			session.outstanding--
+		}
+	}
+	session.responseMu.Unlock()
+	_ = session.closeIfComplete(context.Background())
 }
 
 // SpeechText renders one text delta: a transcript of the audio in an audio
@@ -595,11 +657,16 @@ func (session *session) recordUsage(usage *continuation.Usage) {
 	}
 }
 
-// startedSpeaking and finishedSpeaking track output the turn is still
-// producing after the rollout that planned it returned.
-func (session *session) startedSpeaking() {
+// startedSpeaking consumes a queued reservation or, for a binding that emits
+// synchronously, claims a fresh outstanding slot. finishedSpeaking releases
+// that slot after the utterance ends.
+func (session *session) startedSpeaking(utteranceID string) {
 	session.responseMu.Lock()
 	defer session.responseMu.Unlock()
+	if _, reserved := session.reservations[utteranceID]; reserved {
+		delete(session.reservations, utteranceID)
+		return
+	}
 	session.outstanding++
 }
 

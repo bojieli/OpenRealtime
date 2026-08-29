@@ -96,13 +96,16 @@ type session struct {
 	// the whole turn: text, audio, and function calls, indexed within it.
 	response *wireResponse
 	// planning is true while a rollout is deciding what this turn produces;
-	// outstanding counts utterances it started that are still playing. The
-	// response closes when both say the turn is over.
+	// outstanding counts utterances it queued that have not yet ended.
+	// reservations identifies the queued subset that has not reached
+	// SpeechBegin yet. The response closes when planning and all accepted
+	// asynchronous output are done.
 	planning bool
 	// incomplete carries why the turn stopped, for a turn that stopped for a
 	// reason the client cannot infer from what it received.
-	incomplete  *binding.TurnOutcome
-	outstanding int
+	incomplete   *binding.TurnOutcome
+	outstanding  int
+	reservations map[string]struct{}
 }
 
 // wireResponse is one turn as the protocol renders it.
@@ -144,6 +147,7 @@ func newSession(parent context.Context, connection *websocket.Conn, config Confi
 		events:  make(chan queuedEvent, 512),
 		sources: make(map[string]*videoSource), utterances: make(map[string]*wireUtterance),
 		callNames: make(map[string]string), callStarted: make(map[string]time.Time),
+		reservations: make(map[string]struct{}),
 	}
 	// The session's own identity comes from the server, not from its item
 	// counter: every session's counter starts at zero, so deriving it here
@@ -779,9 +783,9 @@ func (session *session) sessionEvent(eventType string) map[string]any {
 			"type": "function", "name": tool.Name, "description": tool.Description,
 			"parameters": parameters,
 		}
-		if tool.Confirm != action.ConfirmNever || tool.Target != "" {
+		if tool.Confirm != action.ConfirmNever || tool.Target != "" || tool.Background {
 			definition["openrealtime"] = openrealtime.ToolExtension{
-				Confirm: string(tool.Confirm), Target: tool.Target,
+				Confirm: string(tool.Confirm), Target: tool.Target, Background: tool.Background,
 			}
 		}
 		tools = append(tools, definition)

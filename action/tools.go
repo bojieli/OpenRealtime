@@ -81,6 +81,11 @@ type ToolSpec struct {
 	Description string          `json:"description"`
 	Parameters  json.RawMessage `json:"parameters"`
 	Confirm     Confirm         `json:"confirm,omitempty"`
+	// Background declares that starting this tool remains valid when newer
+	// user speech arrives. It is for non-consequential work whose purpose is to
+	// continue while the agent listens, not a general exemption from stale
+	// evidence: undeclared and mixed call batches still stop at that boundary.
+	Background bool `json:"background,omitempty"`
 	// Target names the declared context this tool acts on, when it acts on
 	// one. A computer-use tool always has one; an ordinary function need not.
 	Target     string     `json:"target,omitempty"`

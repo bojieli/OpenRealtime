@@ -165,6 +165,18 @@ type DebugSink interface {
 	Debug(context.Context, DebugEvent) error
 }
 
+// SpeechReservationSink is an optional extension for sinks that render a
+// response envelope around asynchronous speech. SpeechReserved happens after
+// the action plane accepts an utterance but before its worker begins
+// synthesis. SpeechReservationCancelled releases only work discarded before
+// SpeechBegin; after SpeechBegin, SpeechEnd is the matching release.
+//
+// A benchmark or transport without response envelopes need not implement it.
+type SpeechReservationSink interface {
+	SpeechReserved(context.Context, action.Utterance) error
+	SpeechReservationCancelled(context.Context, action.Utterance)
+}
+
 // TextInput is something a client typed rather than said.
 //
 // It is the same participant either way: a text client and a voice client are
@@ -627,6 +639,7 @@ type Capabilities struct {
 type StackCapabilities struct {
 	AudioInput        bool `json:"audio_input"`
 	AudioOutput       bool `json:"audio_output"`
+	VisualInput       bool `json:"visual_input"`
 	Transcription     bool `json:"transcription"`
 	TurnGeneration    bool `json:"turn_generation"`
 	ConcurrentIO      bool `json:"concurrent_io"`
@@ -645,6 +658,7 @@ func (capabilities StackCapabilities) Names() []string {
 	}{
 		{"audio-input", capabilities.AudioInput},
 		{"audio-output", capabilities.AudioOutput},
+		{"visual-input", capabilities.VisualInput},
 		{"transcription", capabilities.Transcription},
 		{"turn-generation", capabilities.TurnGeneration},
 		{"concurrent-io", capabilities.ConcurrentIO},
@@ -672,6 +686,8 @@ func (capabilities StackCapabilities) Missing(required StackCapabilities) []stri
 			available = capabilities.AudioInput
 		case "audio-output":
 			available = capabilities.AudioOutput
+		case "visual-input":
+			available = capabilities.VisualInput
 		case "transcription":
 			available = capabilities.Transcription
 		case "turn-generation":
@@ -707,6 +723,7 @@ func (capabilities StackCapabilities) Merge(other StackCapabilities) StackCapabi
 	return StackCapabilities{
 		AudioInput:        capabilities.AudioInput || other.AudioInput,
 		AudioOutput:       capabilities.AudioOutput || other.AudioOutput,
+		VisualInput:       capabilities.VisualInput || other.VisualInput,
 		Transcription:     capabilities.Transcription || other.Transcription,
 		TurnGeneration:    capabilities.TurnGeneration || other.TurnGeneration,
 		ConcurrentIO:      capabilities.ConcurrentIO || other.ConcurrentIO,

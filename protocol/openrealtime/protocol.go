@@ -442,4 +442,8 @@ type ToolExtension struct {
 	// Target names the declared context an action applies to - a browser
 	// context or a virtual display, never an ambient desktop by default.
 	Target string `json:"target,omitempty"`
+	// Background declares that the call may start even if user speech newer
+	// than the model prefix has arrived. The action plane still applies normal
+	// authority and confirmation checks.
+	Background bool `json:"background,omitempty"`
 }

@@ -155,6 +155,34 @@ func (runner *Runner) RunProjected(
 	return runner.run(ctx, provider, invocation, projection, observer, nil, trajectory.Item{})
 }
 
+// RunLiveProjected combines a read-only trajectory projection with the live
+// user observation that has not entered the canonical log yet. The temporary
+// item is provider-visible only; output still commits against the exact
+// canonical version captured before inference. This is useful when a compact
+// role-specific view must replace stale canonical user text with a newer ASR
+// reconstruction without mutating or fabricating projection items.
+func (runner *Runner) RunLiveProjected(
+	ctx context.Context,
+	provider Provider,
+	invocation Invocation,
+	live string,
+	projection TrajectoryProjection,
+	observer StreamObserver,
+) (RunResult, error) {
+	if projection == nil {
+		return RunResult{}, errors.New("live projected continuation requires a projection")
+	}
+	if strings.TrimSpace(live) == "" {
+		return runner.RunProjected(ctx, provider, invocation, projection, observer)
+	}
+	provisional := trajectory.Item{
+		ID: runner.nextID("live"), Kind: trajectory.KindObservation,
+		MonotonicNS: runner.now(), SourceRevision: invocation.SourceRevision,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: live,
+	}
+	return runner.run(ctx, provider, invocation, projection, observer, nil, provisional)
+}
+
 func (runner *Runner) run(
 	ctx context.Context,
 	provider Provider,

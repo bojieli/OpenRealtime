@@ -278,6 +278,88 @@ func TestParallelEventRunsAlongsideWorkInFlight(t *testing.T) {
 	}
 }
 
+// Store commitment is atomic across everything pending, but scheduling still
+// preserves the boundary between separate submissions. A video frame must not
+// wait behind an unrelated routine signal just because both reached the queue
+// before the same drain attempt.
+func TestParallelSubmissionDoesNotInheritRoutineTriageFromSameCommit(t *testing.T) {
+	store := trajectory.NewStore()
+	release := make(chan struct{})
+	started := make(chan struct{})
+	var mainRuns, parallelRuns atomic.Int64
+	var counter, clock atomic.Uint64
+	coordinator, err := eventloop.New(eventloop.Config{
+		Store: store, MaxPendingEvents: 16, ReservedInterruptEvents: 2,
+		Now:    func() uint64 { return clock.Add(1) },
+		NextID: func(prefix string) string { return prefix + "-" + strconv.FormatUint(counter.Add(1), 10) },
+		Processor: eventloop.ProcessorFunc(func(ctx context.Context, batch eventloop.Batch) error {
+			if batch.Triage == eventloop.TriageParallel {
+				parallelRuns.Add(1)
+				return nil
+			}
+			if mainRuns.Add(1) != 1 {
+				return nil
+			}
+			close(started)
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return context.Cause(ctx)
+			}
+		}),
+	})
+	if err != nil {
+		t.Fatalf("new coordinator: %v", err)
+	}
+	if _, err := coordinator.Submit(observation(1, "long work")); err != nil {
+		t.Fatalf("submit initial work: %v", err)
+	}
+	var wait sync.WaitGroup
+	wait.Add(1)
+	go func() {
+		defer wait.Done()
+		if _, err := coordinator.RunNext(context.Background()); err != nil {
+			t.Errorf("main run: %v", err)
+		}
+	}()
+	<-started
+
+	if _, err := coordinator.Submit(eventloop.Event{
+		Type: "routine.signal", Source: "cognition", Channel: "cognition",
+		Priority: eventloop.PriorityRoutine, Kind: eventloop.KindSignal,
+	}); err != nil {
+		t.Fatalf("submit routine signal: %v", err)
+	}
+	frame := observation(2, "changed frame")
+	frame.Priority = eventloop.PriorityParallel
+	if _, err := coordinator.Submit(frame); err != nil {
+		t.Fatalf("submit frame: %v", err)
+	}
+	run, err := coordinator.RunNext(context.Background())
+	if err != nil {
+		t.Fatalf("parallel run: %v", err)
+	}
+	if run.Triage != eventloop.TriageParallel || len(run.Events) != 1 || run.Events[0].Content != "changed frame" {
+		t.Fatalf("only the frame should join the active run: %+v", run)
+	}
+	if parallelRuns.Load() != 1 {
+		t.Fatalf("expected one parallel run, got %d", parallelRuns.Load())
+	}
+	if coordinator.Unacted() != 1 {
+		t.Fatalf("the routine signal should remain deferred, got %d batches", coordinator.Unacted())
+	}
+
+	close(release)
+	wait.Wait()
+	if _, err := coordinator.RunNext(context.Background()); err != nil {
+		t.Fatalf("run deferred routine signal: %v", err)
+	}
+	if mainRuns.Load() != 2 {
+		t.Fatalf("expected the held routine run after the main work, got %d", mainRuns.Load())
+	}
+}
+
 func TestRoutineEventWaitsForWorkInFlight(t *testing.T) {
 	store := trajectory.NewStore()
 	release := make(chan struct{})
@@ -606,6 +688,23 @@ func TestAParallelBranchDoesNotWaitBehindDeferredRoutineWork(t *testing.T) {
 	}
 	if len(held) != 1 || held[0].Events[0].Type != "routine" {
 		t.Fatalf("the routine work keeps its deferral rather than being dropped: %+v", held)
+	}
+}
+
+func TestACommitIsParallelOnlyWhenEveryQueuedEventIsParallel(t *testing.T) {
+	test := newHarness(t, nil)
+	if _, err := test.coordinator.SubmitBatch([]eventloop.Event{
+		{Type: "frame", Source: "video", Channel: "video", Priority: eventloop.PriorityParallel, Kind: trajectory.KindObservation, SourceRevision: 1, Producer: trajectory.Producer{Phase: trajectory.PhaseObserver}, Content: "changed", Observation: &trajectory.ObservationMeta{Observer: "video", Authority: trajectory.AuthorityObserver}},
+		{Type: "result", Source: "client", Channel: "tool", Priority: eventloop.PriorityRoutine, Kind: eventloop.KindSignal},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	batch, err := test.coordinator.Commit()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if batch.Triage != eventloop.TriageQueue {
+		t.Fatalf("mixed routine/parallel commit was %q, want queue", batch.Triage)
 	}
 }
 

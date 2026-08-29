@@ -184,6 +184,7 @@ func (tool wireTool) spec() (action.ToolSpec, error) {
 		}
 		spec.Confirm = confirm
 		spec.Target = strings.TrimSpace(tool.OpenRealtime.Target)
+		spec.Background = tool.OpenRealtime.Background
 	}
 	return spec, nil
 }

@@ -297,12 +297,19 @@ func replayable(content []json.RawMessage, resolved map[string]struct{}) bool {
 	return true
 }
 
-// resolvedToolCalls collects the call IDs a result was recorded for.
+// resolvedToolCalls collects the call IDs that can be rendered as a complete
+// provider turn. A placeholder is not an authoritative world result, but it
+// is the runtime's explicit response that the call was interrupted and never
+// crossed the effect boundary; without it the provider receives a dangling
+// tool_use and commonly assumes the work happened.
 func resolvedToolCalls(snapshot trajectory.Snapshot) map[string]struct{} {
 	resolved := make(map[string]struct{})
 	for _, item := range snapshot.Items {
 		if item.Kind == trajectory.KindToolResult && item.ToolResult != nil {
 			resolved[item.ToolResult.CallID] = struct{}{}
+		}
+		if item.Kind == trajectory.KindToolPlaceholder && item.ToolPlaceholder != nil {
+			resolved[item.ToolPlaceholder.CallID] = struct{}{}
 		}
 	}
 	return resolved
@@ -403,6 +410,24 @@ func compileItem(
 			block["content"] = string(item.ToolResult.Output)
 		}
 		raw, err := json.Marshal(block)
+		if err != nil {
+			return nil, err
+		}
+		return []compiledBlock{{role: "user", toolResult: true, raw: raw}}, nil
+	case trajectory.KindToolPlaceholder:
+		if item.ToolPlaceholder == nil {
+			return nil, nil
+		}
+		content, err := json.Marshal(map[string]any{
+			"status": "interrupted", "executed": false, "reason": item.ToolPlaceholder.Reason,
+		})
+		if err != nil {
+			return nil, err
+		}
+		raw, err := json.Marshal(map[string]any{
+			"type": "tool_result", "tool_use_id": item.ToolPlaceholder.CallID,
+			"is_error": true, "content": string(content),
+		})
 		if err != nil {
 			return nil, err
 		}

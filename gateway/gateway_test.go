@@ -494,6 +494,31 @@ func TestFunctionCallingRoundTripsUnmodified(t *testing.T) {
 	}
 }
 
+func TestBackgroundToolDeclarationRoundTripsInSessionState(t *testing.T) {
+	server := startServer(t, fast(), slow(), "hello")
+	client := dial(t, server)
+	client.await("session.created", 5*time.Second)
+	client.send(map[string]any{"type": "session.update", "session": map[string]any{
+		"type": "realtime",
+		"tools": []map[string]any{{
+			"type": "function", "name": "analyze", "description": "analyze while listening",
+			"parameters":   map[string]any{"type": "object"},
+			"openrealtime": map[string]any{"background": true},
+		}},
+	}})
+	updated := client.await("session.updated", 5*time.Second)
+	sessionObject := updated["session"].(map[string]any)
+	tools := sessionObject["tools"].([]any)
+	if len(tools) != 1 {
+		t.Fatalf("unexpected rendered tools: %+v", tools)
+	}
+	definition := tools[0].(map[string]any)
+	extension := definition["openrealtime"].(map[string]any)
+	if background, _ := extension["background"].(bool); !background {
+		t.Fatalf("session rendering dropped background execution policy: %+v", definition)
+	}
+}
+
 func TestExplicitClientToolFailureDoesNotAutomaticallyRetry(t *testing.T) {
 	server := startServer(t,
 		fast(

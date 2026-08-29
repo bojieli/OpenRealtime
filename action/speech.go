@@ -81,6 +81,19 @@ type SpeechSink interface {
 	End(context.Context, Utterance, Outcome) error
 }
 
+// SpeechReservationSink is the optional queue-lifecycle half of a speech
+// sink. A renderer whose response lifetime includes asynchronously queued
+// speech can reserve that work before the speech goroutine begins synthesis.
+//
+// Reserve is called before an utterance becomes visible to the queue worker.
+// CancelReservation is called only when that accepted utterance is discarded
+// before Begin. Once Begin is called, the ordinary Begin/End pair owns the
+// reservation's lifetime.
+type SpeechReservationSink interface {
+	Reserve(Utterance) error
+	CancelReservation(Utterance)
+}
+
 // SpeechConfig configures the planner.
 type SpeechConfig struct {
 	Provider v1.StreamingSpeechProvider
@@ -196,10 +209,21 @@ func (speech *Speech) Enqueue(utterance Utterance, speechAuthority string) error
 		_, _ = speech.config.Ledger.Cancel(utterance.ID, "speech planner closed")
 		return errors.New("speech planner is closed")
 	}
+	reserved := false
+	if sink, ok := speech.config.Sink.(SpeechReservationSink); ok {
+		if err := sink.Reserve(utterance); err != nil {
+			_, _ = speech.config.Ledger.Cancel(utterance.ID, "speech sink refused queue reservation")
+			return err
+		}
+		reserved = true
+	}
 	select {
 	case speech.queue <- queuedUtterance{utterance: utterance, epoch: epoch}:
 		return nil
 	default:
+		if reserved {
+			speech.cancelReservation(utterance)
+		}
 		_, _ = speech.config.Ledger.Cancel(utterance.ID, "speech queue full")
 		return ErrQueueFull
 	}
@@ -219,6 +243,7 @@ func (speech *Speech) Run(ctx context.Context) {
 			stale := queued.epoch != speech.epoch
 			speech.mu.Unlock()
 			if stale {
+				speech.cancelReservation(queued.utterance)
 				_, _ = speech.config.Ledger.Cancel(queued.utterance.ID, "superseded before emission")
 				continue
 			}
@@ -253,6 +278,7 @@ func (speech *Speech) Cancel(reason string) (cancelled []Commitment, heard bool)
 	for {
 		select {
 		case queued := <-speech.queue:
+			speech.cancelReservation(queued.utterance)
 			if _, stopped := speech.stop(queued.utterance.ID, reason); stopped != nil {
 				cancelled = append(cancelled, *stopped)
 			}
@@ -340,6 +366,7 @@ func (speech *Speech) CancelMatching(reason string, match func(Utterance) bool) 
 				keep = append(keep, queued)
 				continue
 			}
+			speech.cancelReservation(queued.utterance)
 			if _, stopped := speech.stop(queued.utterance.ID, reason); stopped != nil {
 				cancelled = append(cancelled, *stopped)
 			}
@@ -404,10 +431,17 @@ func (speech *Speech) drain(reason string) {
 	for {
 		select {
 		case queued := <-speech.queue:
+			speech.cancelReservation(queued.utterance)
 			_, _ = speech.config.Ledger.Cancel(queued.utterance.ID, reason)
 		default:
 			return
 		}
+	}
+}
+
+func (speech *Speech) cancelReservation(utterance Utterance) {
+	if sink, ok := speech.config.Sink.(SpeechReservationSink); ok {
+		sink.CancelReservation(utterance)
 	}
 }
 

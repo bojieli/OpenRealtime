@@ -330,6 +330,29 @@ func TestAToolResultLeadsItsMessageEvenAfterSpeech(t *testing.T) {
 	}
 }
 
+func TestInterruptedToolCallIsPairedWithExplicitNonExecution(t *testing.T) {
+	t.Parallel()
+	var seen capture
+	server := serve(t, []string{`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`}, &seen)
+	defer server.Close()
+
+	run(t, slowAdapter(t, server.URL), []trajectory.Item{
+		observation("obs-1", "analyze it"),
+		{ID: "call-item", Kind: trajectory.KindToolCall, InvocationID: "prior", Producer: trajectory.Producer{Phase: trajectory.PhaseSlow}, ToolCall: &trajectory.ToolCall{CallID: "analysis-1", Name: "analyze", Arguments: json.RawMessage(`{}`)}},
+		{ID: "placeholder-item", Kind: trajectory.KindToolPlaceholder, InvocationID: "prior", Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, ToolPlaceholder: &trajectory.ToolPlaceholder{CallID: "analysis-1", Name: "analyze", Reason: "user resumed before action"}},
+	})
+	encoded, err := json.Marshal(seen.request.Messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"tool_use"`) ||
+		!strings.Contains(string(encoded), `"tool_result"`) ||
+		!strings.Contains(string(encoded), `\"executed\":false`) ||
+		!strings.Contains(string(encoded), "user resumed before action") {
+		t.Fatalf("interrupted call was not explicitly paired: %s", encoded)
+	}
+}
+
 // Observed content is a quotation, and it has to reach the provider fenced.
 func TestObservedContentIsFencedForTheProvider(t *testing.T) {
 	t.Parallel()

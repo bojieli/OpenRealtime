@@ -478,6 +478,10 @@ type ToolDefinition struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	Parameters  json.RawMessage `json:"parameters"`
+	// Background is typed execution policy retained from the tool registry.
+	// Provider adapters need not expose it to model APIs; the runtime consumes
+	// it at the action boundary after a provider selects the tool.
+	Background bool `json:"background,omitempty"`
 }
 
 // Invocation configures one fast or slow continuation. Instruction is supplied

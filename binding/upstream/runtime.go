@@ -399,6 +399,7 @@ func (catalog toolCatalog) Tools() []continuation.ToolDefinition {
 	for _, spec := range specs {
 		tools = append(tools, continuation.ToolDefinition{
 			Name: spec.Name, Description: spec.Description, Parameters: spec.Parameters,
+			Background: spec.Background,
 		})
 	}
 	return tools

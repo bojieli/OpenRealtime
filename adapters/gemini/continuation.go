@@ -31,6 +31,11 @@ const (
 	defaultEndpoint   = "https://generativelanguage.googleapis.com/v1beta"
 	maxErrorBody      = 64 << 10
 	maxSSEEvent       = 16 << 20
+	// portableToolCallThoughtSignature is Gemini's documented sentinel for a
+	// manually constructed function call. Native Gemini content retains its
+	// provider-authenticated signature instead; only portable calls authored
+	// by another provider need this compatibility marker.
+	portableToolCallThoughtSignature = "skip_thought_signature_validator"
 )
 
 // Config configures one Gemini fast or slow continuation profile.
@@ -578,6 +583,7 @@ func compilePortableItem(
 			return geminiContent{}, false, fmt.Errorf("decode tool arguments on item %s: %w", item.ID, err)
 		}
 		part["functionCall"] = map[string]any{"id": item.ToolCall.CallID, "name": item.ToolCall.Name, "args": args}
+		part["thoughtSignature"] = portableToolCallThoughtSignature
 	case trajectory.KindToolResult:
 		var response any
 		if item.ToolResult.Error != "" {
@@ -593,6 +599,16 @@ func compilePortableItem(
 		}
 		part["functionResponse"] = map[string]any{
 			"id": item.ToolResult.CallID, "name": item.ToolResult.Name, "response": response,
+		}
+	case trajectory.KindToolPlaceholder:
+		if item.ToolPlaceholder == nil {
+			return geminiContent{}, false, nil
+		}
+		part["functionResponse"] = map[string]any{
+			"id": item.ToolPlaceholder.CallID, "name": item.ToolPlaceholder.Name,
+			"response": map[string]any{
+				"status": "interrupted", "executed": false, "reason": item.ToolPlaceholder.Reason,
+			},
 		}
 	default:
 		return geminiContent{}, false, nil
