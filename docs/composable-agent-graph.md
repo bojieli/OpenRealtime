@@ -1949,7 +1949,8 @@ diagnosis only.
 - [x] Wire the scenario CLI to that authenticated graph-native evidence path,
   with exact per-attempt scopes for all eleven cases and explicit
   legacy/unattested compatibility behavior.
-- [ ] Re-run and compare all eleven interaction scenarios:
+- [ ] Re-run and compare all eleven interaction scenarios with at least fifteen
+  matched repetitions per scenario (at least 165 baseline/candidate pairs):
   - [ ] `count-as-they-go`
   - [ ] `asked not to be interrupted`
   - [ ] `a recorded menu`
@@ -1961,13 +1962,16 @@ diagnosis only.
   - [ ] `an acknowledgement is not an interruption`
   - [ ] `telling them what it saw`
   - [ ] `an ordinary question`
-- [ ] Migrate and run OpenRealtime Meeting Assistant v1 (four tasks).
-- [ ] Migrate and run OpenRealtime Realtime-CU v1 (sixteen declared cases).
-- [ ] Migrate and run FDB v1.5 and FDB v3.
-- [ ] Migrate and run FD-Bench with comparable endpointing, overlap, answer,
-  and latency distributions.
-- [ ] Migrate and run tau2-bench/τ-Voice control and regular conditions with
-  task and interaction metrics.
+- [ ] Migrate and run all four OpenRealtime Meeting Assistant v1 tasks.
+- [ ] Migrate and run all sixteen OpenRealtime Realtime-CU v1 cases (eight
+  task families under pixel and set-of-mark observation variants).
+- [ ] Migrate and run all 498 FDB v1.5 tasks.
+- [ ] Migrate and run all 100 released FDB v3 examples.
+- [ ] Migrate and run all 6,147 FD-Bench conversations across all 21 released
+  conditions with comparable endpointing, overlap, answer, and latency
+  distributions; an aggregate over a subset of conditions is not a full run.
+- [ ] Migrate and run the complete 278-task tau2-bench/τ-Voice task set in
+  both control and regular conditions with task and interaction metrics.
 - [ ] Preserve the DynaCU-Bench runner as independent optional validation.
 - [ ] Produce clean-worktree before/after parity artifacts for every required
   suite; investigate differences instead of accepting a merely runnable graph.
@@ -2233,11 +2237,14 @@ Each required comparison must follow this protocol:
    rerun the affected diagnostic slice, and finally rerun the entire suite.
    Only the final complete rerun can satisfy the gate.
 
-The required final matrix is the eleven interaction scenarios, Meeting
-Assistant v1, Realtime-CU v1, FDB v1.5, FDB v3, FD-Bench, and tau2-bench/
-tau-Voice control and regular conditions. DynaCU-Bench remains an independent
-optional validation. No phase exit gate or project-level completion claim may
-substitute a synthetic integration test for this matrix.
+The required final matrix is the eleven interaction scenarios at no fewer than
+fifteen repetitions each, all four Meeting Assistant v1 tasks, all sixteen
+Realtime-CU v1 cases, all 498 FDB v1.5 tasks, all 100 FDB v3 examples, all
+6,147 FD-Bench conversations in all 21 conditions, and all 278 tau2-bench/
+tau-Voice tasks in both control and regular conditions. DynaCU-Bench remains an
+independent optional validation. No phase exit gate or project-level completion
+claim may substitute a test suite, protocol-conformance run, or synthetic
+integration test for this matrix.
 
 ## 27. Compatibility and versioning
 
