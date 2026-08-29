@@ -1727,10 +1727,11 @@ not required before the contracts exist.
 
 ### Living implementation tracker
 
-Last reconciled with the repository on **2026-08-29**, through local commit
-`cb6b04e`. This is the progress source of truth for the refactor. It must be
-updated in the same commit that closes or materially advances a migration
-item.
+Last reconciled with the repository on **2026-08-29**. This is the progress
+source of truth for the refactor. It must be updated in the same commit that
+closes or materially advances a migration item. The checked implementation
+ledger and `git log origin/main..main` together identify the accepted local
+checkpoints without relying on a self-referential “latest commit” marker.
 
 A checked box means the implementation and the evidence required by that item
 are both present. Partially implemented work stays unchecked and names what is
@@ -1834,11 +1835,14 @@ it has been reviewed, tested, and committed with its evidence):
     upstream-native external-model references.
   - [ ] Pass focused and repository-wide race, test, vet, and diff gates; then
     review and commit the slice with its tracker boxes.
-- [ ] Complete the scenario Graph IR evidence checkpoint.
-  - [ ] Review and commit authenticated exact-graph execution evidence while
-    retaining an explicitly unattested legacy compatibility mode.
-  - [ ] Execute and compare the eleven interaction scenarios; scenario names
-    remain individually tracked below.
+- [x] The scenario CLI reconciles a reviewed execution requirement against the
+  exact bound Graph IR before reading credentials or starting protocol work.
+- [x] All eleven scenario paths bind authenticated live graph evidence to the
+  exact `scenario-name#run` attempt scope without retaining inspection tokens.
+- [x] Omitted and reviewed-legacy scenario evidence modes remain explicit
+  compatibility paths; `-inspection-graph` fails closed for either mode.
+- [ ] Execute and compare the eleven interaction scenarios; scenario names
+  remain individually tracked below.
 - [ ] Complete descriptor-driven values-schema authoring support.
   - [ ] Review bounded immutable descriptor snapshots, strict values-envelope
     schema generation, external-schema resolution, and unresolved-contract
@@ -1895,6 +1899,9 @@ artifacts rather than legacy architecture/config switches):
   element/config/deployment identities, selected edges, authenticated live
   resolutions, and capability evidence. Executed before/after parity remains
   tracked by the suite-specific boxes below.
+- [x] Wire the scenario CLI to that authenticated graph-native evidence path,
+  with exact per-attempt scopes for all eleven cases and explicit
+  legacy/unattested compatibility behavior.
 - [ ] Re-run and compare all eleven interaction scenarios:
   - [ ] `count-as-they-go`
   - [ ] `asked not to be interrupted`

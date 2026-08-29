@@ -39,6 +39,7 @@ func runScenario(arguments []string, output io.Writer) error {
 		repeat           = flags.Int("repeat", 1, "runs per scenario; latency from one run is noise, so a latency claim needs several")
 		experiment       = flags.String("architecture-manifest", "", "versioned P/T/C/N architecture experiment manifest")
 		architectureCell = flags.String("architecture-cell", "", "cell name in -architecture-manifest")
+		inspectionGraph  = flags.String("inspection-graph", "", benchmarkInspectionGraphFlagHelp)
 	)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -78,16 +79,27 @@ func runScenario(arguments []string, output io.Writer) error {
 		return errors.New("-architecture-cell requires -architecture-manifest")
 	}
 
+	requirement := bench.ExecutionRequirement{}
+	if architectureRun {
+		requirement = selectedCell.Execution
+	}
+	config := bench.SessionConfig{
+		Endpoint: *endpoint, Model: *model,
+		Timeout: *timeout, Quiet: true, CaptureRuntimeEvidence: architectureRun,
+	}
+	config, err := configureScenarioSession(
+		config, requirement, *inspectionGraph, *tokenEnv, os.Getenv,
+	)
+	if err != nil {
+		return err
+	}
+
 	speaker := scenario.SpeechVoice{
 		Endpoint: *speech, Model: *voice, Default: "default",
 		// The second party gets a different voice. A phone menu that sounds
 		// exactly like the caller removes the difficulty the case exists to
 		// pose.
 		Voices: map[string]string{"other": "alloy"},
-	}
-	config := bench.SessionConfig{
-		Endpoint: *endpoint, Token: os.Getenv(*tokenEnv), Model: *model,
-		Timeout: *timeout, Quiet: true, CaptureRuntimeEvidence: architectureRun,
 	}
 
 	var selected []scenario.Scenario
@@ -118,7 +130,7 @@ func runScenario(arguments []string, output io.Writer) error {
 		for run := 0; run < runs; run++ {
 			taskID := fmt.Sprintf("%s#%d", item.Name, run+1)
 			ctx, cancel := context.WithTimeout(context.Background(), *timeout)
-			result, err := scenario.Play(ctx, speaker, config, item)
+			result, err := scenario.Play(ctx, speaker, scenarioSessionForTask(config, taskID), item)
 			cancel()
 			if err != nil {
 				fmt.Fprintf(output, "  ERR  %-28s %v\n", item.Name, err)
@@ -172,6 +184,43 @@ func runScenario(arguments []string, output io.Writer) error {
 		}
 	}
 	return nil
+}
+
+// configureScenarioSession selects evidence for a CLI-owned Realtime session.
+// The ordinary bearer remains SessionConfig.Token. GraphAttestor receives the
+// distinct, ephemeral management capability negotiated by each session via
+// AttestationRequest; no management token is accepted from flags or retained
+// in a result. The shared preparation path reconciles reviewed Graph IR before
+// getenv, speech synthesis, or Realtime protocol work.
+func configureScenarioSession(
+	config bench.SessionConfig,
+	requirement bench.ExecutionRequirement,
+	inspectionGraph string,
+	tokenEnvironment string,
+	getenv func(string) string,
+) (bench.SessionConfig, error) {
+	attestor, deploymentToken, err := configureSessionBenchmarkAttestor(
+		requirement, inspectionGraph, config.Endpoint, tokenEnvironment, getenv,
+	)
+	if err != nil {
+		return bench.SessionConfig{}, err
+	}
+	config.Token = deploymentToken
+	config.RuntimeAttestor = attestor
+	if attestor != nil {
+		config.CaptureRuntimeEvidence = true
+	}
+	return config, nil
+}
+
+// scenarioSessionForTask binds observed routes and live resolution to the
+// exact scenario attempt. A shared attestor is safe; the server-issued
+// InspectionAccess still selects the current session, never this task label.
+func scenarioSessionForTask(config bench.SessionConfig, taskID string) bench.SessionConfig {
+	if config.RuntimeAttestor != nil {
+		config.AttestationScope = taskID
+	}
+	return config
 }
 
 // scenarioTask adapts one owned interaction scenario to the generic benchmark

@@ -1,13 +1,408 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/bench/scenario"
 	"github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
+	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 )
+
+func TestScenarioGraphAttestorCoversAllElevenExactSessionScopes(t *testing.T) {
+	fixture := writeGraphExecutionFixture(t)
+	requirement := requirementForGraphFixture(t, fixture)
+	snapshot := inspectionSnapshotForFixture(fixture, requirement)
+	const deploymentBearer = "scenario-deployment-bearer"
+
+	suite := scenario.Suite()
+	if len(suite) != 11 {
+		t.Fatalf("scenario suite has %d paths, want the reviewed eleven", len(suite))
+	}
+	accessByPath := make(map[string]openrealtime.InspectionAccess, len(suite))
+	accessByScenario := make(map[string]openrealtime.InspectionAccess, len(suite))
+	for index, item := range suite {
+		access := scenarioInspectionAccess(fmt.Sprintf("sess_scenario_%02d", index+1), byte(index+1))
+		accessByPath[access.Path] = access
+		accessByScenario[item.Name] = access
+	}
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests.Add(1)
+		access, found := accessByPath[request.URL.EscapedPath()]
+		if !found {
+			t.Errorf("inspection requested unreviewed session path %q", request.URL.Path)
+		}
+		if got := request.Header.Get("Authorization"); got != "Bearer "+deploymentBearer {
+			t.Errorf("deployment bearer = %q", got)
+		}
+		if got := request.Header.Get(openrealtime.InspectionTokenHeader); got != access.Token {
+			t.Errorf("session management capability = %q, want %q", got, access.Token)
+		}
+		if access.Token == deploymentBearer {
+			t.Error("deployment bearer was reused as session inspection authority")
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		writer.Header().Set("Cache-Control", "no-store")
+		if err := json.NewEncoder(writer).Encode(snapshot); err != nil {
+			t.Errorf("encode inspection snapshot: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	var environmentReads atomic.Int32
+	config, err := configureScenarioSession(bench.SessionConfig{
+		Endpoint: "ws" + strings.TrimPrefix(server.URL, "http"), Timeout: time.Second,
+	}, requirement, fixture.graphPath, "SCENARIO_DEPLOYMENT_TOKEN", func(name string) string {
+		environmentReads.Add(1)
+		if name != "SCENARIO_DEPLOYMENT_TOKEN" {
+			t.Errorf("deployment credential environment = %q", name)
+		}
+		return deploymentBearer
+	})
+	if err != nil {
+		t.Fatalf("configure scenario graph attestor: %v", err)
+	}
+	if config.Token != deploymentBearer || environmentReads.Load() != 1 {
+		t.Fatalf("deployment token = %q, environment reads = %d",
+			config.Token, environmentReads.Load())
+	}
+	if _, ok := config.RuntimeAttestor.(bench.GraphAttestor); !ok ||
+		!config.CaptureRuntimeEvidence || config.AttestationScope != "" {
+		t.Fatalf("scenario session evidence configuration = %+v, attestor %T",
+			config, config.RuntimeAttestor)
+	}
+
+	for _, item := range suite {
+		taskID := item.Name + "#1"
+		taskConfig := scenarioSessionForTask(config, taskID)
+		if taskConfig.AttestationScope != taskID {
+			t.Fatalf("scenario %q scope = %q", item.Name, taskConfig.AttestationScope)
+		}
+		access := accessByScenario[item.Name]
+		evidence, err := taskConfig.RuntimeAttestor.Attest(context.Background(), bench.AttestationRequest{
+			Scope: taskConfig.AttestationScope,
+			Status: binding.Status{Graph: binding.ArchitectureIdentity{
+				ID: fixture.graph.ID, Revision: int(fixture.graph.Revision),
+				Fingerprint: fixture.graph.Fingerprint,
+			}},
+			Inspection: &access,
+		})
+		if err != nil {
+			t.Fatalf("scenario %q authenticated attestation: %v", item.Name, err)
+		}
+		if evidence.Scope != taskID {
+			t.Fatalf("scenario %q evidence scope = %q", item.Name, evidence.Scope)
+		}
+		if err := requirement.Match(&evidence); err != nil {
+			t.Fatalf("scenario %q evidence does not meet reviewed execution: %v", item.Name, err)
+		}
+		encoded, err := json.Marshal(evidence)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(encoded, []byte(deploymentBearer)) ||
+			bytes.Contains(encoded, []byte(access.Token)) {
+			t.Fatalf("scenario %q retained an authentication authority", item.Name)
+		}
+	}
+	if got := requests.Load(); got != int32(len(suite)) {
+		t.Fatalf("authenticated inspection requests = %d, want %d", got, len(suite))
+	}
+	if config.AttestationScope != "" {
+		t.Fatalf("shared scenario config was mutated to scope %q", config.AttestationScope)
+	}
+}
+
+func TestScenarioRejectsReviewedGraphDriftBeforeCredentialWork(t *testing.T) {
+	fixture := writeGraphExecutionFixture(t)
+	requirement := requirementForGraphFixture(t, fixture)
+	directory := t.TempDir()
+	differentGraphPath := filepath.Join(directory, "different.ir.json")
+	differentGraph, err := fixture.unbound.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(differentGraphPath, differentGraph, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	changeNode := func(change func(*bench.GraphNodeEvidence)) bench.ExecutionRequirement {
+		changed := requirement
+		graph := *requirement.Graph
+		graph.Nodes = append([]bench.GraphNodeEvidence(nil), requirement.Graph.Nodes...)
+		change(&graph.Nodes[0])
+		changed.Graph = &graph
+		return changed
+	}
+	tests := []struct {
+		name        string
+		requirement bench.ExecutionRequirement
+		graphPath   string
+		want        string
+	}{
+		{
+			name: "missing exact graph", requirement: requirement,
+			want: "-inspection-graph",
+		},
+		{
+			name: "absent graph", requirement: requirement,
+			graphPath: filepath.Join(directory, "absent.ir.json"), want: "read inspection Graph IR",
+		},
+		{
+			name: "graph identity", requirement: requirement,
+			graphPath: differentGraphPath, want: "inspection graph identity",
+		},
+		{
+			name: "node configuration",
+			requirement: changeNode(func(node *bench.GraphNodeEvidence) {
+				node.Config.Digest = "sha256:" + strings.Repeat("9", 64)
+			}),
+			graphPath: fixture.graphPath, want: "does not reproduce the reviewed node configuration",
+		},
+		{
+			name: "node implementation",
+			requirement: changeNode(func(node *bench.GraphNodeEvidence) {
+				node.Implementation = "go://test/drifted-model/v2"
+			}),
+			graphPath: fixture.graphPath, want: "Graph IR selects",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var environmentReads atomic.Int32
+			_, err := configureScenarioSession(bench.SessionConfig{
+				Endpoint: "ws://127.0.0.1:8765/v1/realtime",
+			}, test.requirement, test.graphPath, "SCENARIO_TOKEN", func(string) string {
+				environmentReads.Add(1)
+				return "credential-must-not-be-read"
+			})
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("scenario graph drift refusal = %v, want %q", err, test.want)
+			}
+			if environmentReads.Load() != 0 {
+				t.Fatalf("credential was read %d time(s) before graph refusal", environmentReads.Load())
+			}
+			if strings.Contains(err.Error(), "credential-must-not-be-read") {
+				t.Fatalf("scenario graph refusal exposed a credential: %v", err)
+			}
+		})
+	}
+}
+
+func TestScenarioGraphAttestorRejectsForgedLiveInspectionEvidence(t *testing.T) {
+	fixture := writeGraphExecutionFixture(t)
+	requirement := requirementForGraphFixture(t, fixture)
+	tests := []struct {
+		name       string
+		mutate     func(*inspect.Live)
+		attestWant string
+		matchWant  string
+	}{
+		{
+			name: "mounted graph",
+			mutate: func(snapshot *inspect.Live) {
+				snapshot.Fingerprint = "sha256:" + strings.Repeat("8", 64)
+			},
+			attestWant: "live graph is",
+		},
+		{
+			name: "configuration artifact",
+			mutate: func(snapshot *inspect.Live) {
+				snapshot.Configuration.Digest = "sha256:" + strings.Repeat("7", 64)
+			},
+			attestWant: "live configuration",
+		},
+		{
+			name: "node runtime",
+			mutate: func(snapshot *inspect.Live) {
+				node := snapshot.Nodes["model"]
+				node.Resolution.Runtime.Revision = "image:forged"
+				snapshot.Nodes["model"] = node
+			},
+			matchWant: "resolutions differ",
+		},
+		{
+			name: "node capability",
+			mutate: func(snapshot *inspect.Live) {
+				node := snapshot.Nodes["model"]
+				node.Resolution.Capabilities[0].Provider.Revision = "weights:forged"
+				snapshot.Nodes["model"] = node
+			},
+			matchWant: "capabilit",
+		},
+		{
+			name: "node implementation",
+			mutate: func(snapshot *inspect.Live) {
+				node := snapshot.Nodes["model"]
+				node.Resolution.Implementation = "go://test/forged/v9"
+				snapshot.Nodes["model"] = node
+			},
+			attestWant: "implementation",
+		},
+	}
+
+	for index, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			snapshot := inspectionSnapshotForFixture(fixture, requirement)
+			test.mutate(&snapshot)
+			access := scenarioInspectionAccess(fmt.Sprintf("sess_forged_%02d", index+1), byte(index+32))
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				if request.URL.EscapedPath() != access.Path ||
+					request.Header.Get(openrealtime.InspectionTokenHeader) != access.Token {
+					t.Errorf("forged-evidence request was not session authenticated")
+				}
+				writer.Header().Set("Content-Type", "application/json")
+				writer.Header().Set("Cache-Control", "no-store")
+				if err := json.NewEncoder(writer).Encode(snapshot); err != nil {
+					t.Errorf("encode forged inspection snapshot: %v", err)
+				}
+			}))
+			t.Cleanup(server.Close)
+
+			config, err := configureScenarioSession(bench.SessionConfig{
+				Endpoint: "ws" + strings.TrimPrefix(server.URL, "http"),
+			}, requirement, fixture.graphPath, "SCENARIO_TOKEN", func(string) string {
+				return "deployment-bearer"
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			taskConfig := scenarioSessionForTask(config, "an ordinary question#1")
+			evidence, err := taskConfig.RuntimeAttestor.Attest(
+				context.Background(), bench.AttestationRequest{
+					Scope: taskConfig.AttestationScope,
+					Status: binding.Status{Graph: binding.ArchitectureIdentity{
+						ID: fixture.graph.ID, Revision: int(fixture.graph.Revision),
+						Fingerprint: fixture.graph.Fingerprint,
+					}},
+					Inspection: &access,
+				},
+			)
+			if test.attestWant != "" {
+				if err == nil || !strings.Contains(err.Error(), test.attestWant) {
+					t.Fatalf("forged %s attestation refusal = %v, want %q",
+						test.name, err, test.attestWant)
+				}
+				if evidence.Fingerprint != "" || evidence.Graph != nil {
+					t.Fatalf("forged %s produced evidence: %+v", test.name, evidence)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("capture independently observed %s evidence: %v", test.name, err)
+			}
+			if matchErr := requirement.Match(&evidence); matchErr == nil ||
+				!strings.Contains(matchErr.Error(), test.matchWant) {
+				t.Fatalf("forged %s requirement refusal = %v, want %q",
+					test.name, matchErr, test.matchWant)
+			}
+		})
+	}
+}
+
+func TestScenarioInspectionGraphCannotAttestLegacyOrUnattestedExecution(t *testing.T) {
+	legacy, err := bench.RequireLegacy("cascade", binding.ArchitectureIdentity{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, requirement := range []bench.ExecutionRequirement{{}, legacy} {
+		var environmentReads atomic.Int32
+		_, err := configureScenarioSession(bench.SessionConfig{
+			Endpoint: "ws://127.0.0.1:8765/v1/realtime",
+		}, requirement, filepath.Join(t.TempDir(), "must-not-be-read.ir.json"),
+			"SCENARIO_TOKEN", func(string) string {
+				environmentReads.Add(1)
+				return "secret"
+			})
+		if err == nil || !strings.Contains(err.Error(),
+			"requires a graph-native -execution requirement") {
+			t.Fatalf("irrelevant scenario inspection graph refusal = %v", err)
+		}
+		if environmentReads.Load() != 0 {
+			t.Fatal("credential was read for a legacy/unattested inspection graph")
+		}
+	}
+
+	err = runScenario([]string{
+		"-inspection-graph", filepath.Join(t.TempDir(), "must-not-be-read.ir.json"),
+	}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(),
+		"requires a graph-native -execution requirement") {
+		t.Fatalf("top-level scenario inspection flag was silently ignored: %v", err)
+	}
+}
+
+func TestScenarioOmittedAndLegacyEvidencePathsRemainCompatible(t *testing.T) {
+	legacy, err := bench.RequireLegacy("cascade", binding.ArchitectureIdentity{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name        string
+		requirement bench.ExecutionRequirement
+		capture     bool
+		wantLegacy  bool
+	}{
+		{name: "historical unattested"},
+		{name: "architecture capture remains enabled", capture: true},
+		{name: "reviewed legacy", requirement: legacy, capture: true, wantLegacy: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var environmentReads atomic.Int32
+			config, err := configureScenarioSession(bench.SessionConfig{
+				Endpoint: "ws://127.0.0.1:8765/v1/realtime",
+				Model:    "compatibility-model", CaptureRuntimeEvidence: test.capture,
+			}, test.requirement, "", "SCENARIO_TOKEN", func(string) string {
+				environmentReads.Add(1)
+				return "compatibility-bearer"
+			})
+			if err != nil {
+				t.Fatalf("scenario compatibility path: %v", err)
+			}
+			if config.Token != "compatibility-bearer" || config.Model != "compatibility-model" ||
+				environmentReads.Load() != 1 || config.CaptureRuntimeEvidence != test.capture {
+				t.Fatalf("scenario compatibility config = %+v, reads=%d", config, environmentReads.Load())
+			}
+			_, isLegacy := config.RuntimeAttestor.(bench.LegacyStatusAttestor)
+			if isLegacy != test.wantLegacy || (!test.wantLegacy && config.RuntimeAttestor != nil) {
+				t.Fatalf("scenario compatibility attestor = %T", config.RuntimeAttestor)
+			}
+			taskConfig := scenarioSessionForTask(config, "an ordinary question#1")
+			if test.wantLegacy && taskConfig.AttestationScope != "an ordinary question#1" {
+				t.Fatalf("legacy scenario evidence scope = %q", taskConfig.AttestationScope)
+			}
+			if !test.wantLegacy && taskConfig.AttestationScope != "" {
+				t.Fatalf("unattested scenario gained scope %q", taskConfig.AttestationScope)
+			}
+		})
+	}
+}
+
+func scenarioInspectionAccess(sessionID string, fill byte) openrealtime.InspectionAccess {
+	return openrealtime.InspectionAccess{
+		SessionID: sessionID,
+		Path:      "/v1/realtime/sessions/" + sessionID + "/live",
+		Token: "ins_" + base64.RawURLEncoding.EncodeToString(
+			bytes.Repeat([]byte{fill}, 32),
+		),
+		ExpiresAtMS: time.Now().Add(time.Minute).UnixMilli(),
+	}
+}
 
 func TestScenarioTaskPreservesTaskExecutionEvidence(t *testing.T) {
 	evidence, err := (bench.LegacyStatusAttestor{}).Attest(
