@@ -348,6 +348,15 @@ func (coordinator *Coordinator) Commit() (Batch, error) {
 	coordinator.mu.Lock()
 	coordinator.deferred = append(coordinator.deferred, partitionCommittedBatch(batch, queued)...)
 	coordinator.mu.Unlock()
+	// Submit signals that pending work exists, but a caller may drain that
+	// signal immediately before a different goroutine moves the pending events
+	// into the committed/unacted set. Without a second level-trigger here, the
+	// driver can observe the transient state in which both sets are empty and
+	// sleep forever while this batch becomes deferred behind it. Commit is a
+	// state transition to runnable work in its own right, so it owes a signal.
+	// The channel has depth one; RunNext may leave one harmless redundant token,
+	// but cannot create an unbounded notification queue.
+	coordinator.notify()
 	return batch, nil
 }
 

@@ -179,6 +179,38 @@ func TestWakeWithoutDeferredWorkIsANoOp(t *testing.T) {
 	}
 }
 
+// Commit is also used as the unconditional half of observer ingestion: the
+// video caller can make evidence canonical immediately while the ordinary
+// driver is reacting to Submit on another goroutine. The submit notification
+// may therefore be consumed in the narrow interval after pending was drained
+// and before the committed batch entered the unacted set. Commit must publish
+// that second state transition or the canonical observation waits forever.
+func TestDirectCommitRenotifiesTheDriverAfterTheSubmitSignalWasConsumed(t *testing.T) {
+	test := newHarness(t, nil)
+	if _, err := test.coordinator.Submit(observation(1, "the screen changed")); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	select {
+	case <-test.coordinator.Signal():
+	default:
+		t.Fatal("submit did not signal")
+	}
+	if _, err := test.coordinator.Commit(); err != nil {
+		t.Fatalf("direct commit: %v", err)
+	}
+	select {
+	case <-test.coordinator.Signal():
+	case <-time.After(time.Second):
+		t.Fatal("committed unacted work lost its driver wake-up")
+	}
+	if _, err := test.coordinator.RunNext(context.Background()); err != nil {
+		t.Fatalf("run committed batch: %v", err)
+	}
+	if test.runs.Load() != 1 {
+		t.Fatalf("committed observation ran %d times, want one", test.runs.Load())
+	}
+}
+
 func TestBatchMarkersAppearOnlyForRealBatches(t *testing.T) {
 	test := newHarness(t, nil)
 	if _, err := test.coordinator.SubmitBatch([]eventloop.Event{
