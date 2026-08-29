@@ -1727,13 +1727,17 @@ not required before the contracts exist.
 
 ### Living implementation tracker
 
-Last reconciled with the repository on **2026-08-29**. This is the progress
-source of truth for the refactor. It must be updated in the same commit that
-closes or materially advances a migration item.
+Last reconciled with the repository on **2026-08-29**, through local commit
+`cb6b04e`. This is the progress source of truth for the refactor. It must be
+updated in the same commit that closes or materially advances a migration
+item.
 
 A checked box means the implementation and the evidence required by that item
 are both present. Partially implemented work stays unchecked and names what is
 already available. A phase is not complete until its exit gate is checked.
+Broad objectives must be split into independently reviewable boxes as work
+lands so that a remaining end-to-end gate does not hide completed primitives,
+reference graphs, or conformance evidence.
 
 | Phase | Current state | What exists now | Principal remaining work |
 | --- | --- | --- | --- |
@@ -1790,19 +1794,66 @@ Integrated checkpoint ledger:
 - [x] Opt-in per-mount trace recording with exact graph/config/runtime evidence,
   session-keyed correlation pseudonyms, bounded compaction, queue residence
   timing, deterministic export, and key erasure.
-- [x] Compiler-backed canonical `.ortg` diagnostics, descriptor-derived editor
-  metadata, bounded completion/hover/definition queries, stable revision
-  cursors, graph-aware rename, and strict in-memory edit application.
-- [x] Standard-catalog camera/screen/video ingress with fixed, adaptive, and
-  manual cadence, explicit ticks/refresh/end/cancel, bounded change state,
-  generation fencing, and visibly lossy capture-pressure edges.
-- [x] Full locked conversational fast-only, slow-only, and both-speaking
-  reference graphs share one component backbone and differ only through
-  explicit direct or arbitrated speech routing; all mount with independent
-  ASR, cognition, TTS, playback, and trajectory providers.
-- [ ] Full componentized conversational reference graphs and safe-point parity.
+- [x] Compiler-backed canonical `.ortg` diagnostics use immutable source
+  snapshots, source-mapped errors, stable revision cursors, and bounded results.
+- [x] Descriptor-derived element metadata drives element, compatible-node, and
+  directional-port completion plus hover and go-to-definition.
+- [x] Bounded graph-aware rename and strict in-memory edit application reject
+  stale cursors, overlapping edits, and ambiguous node references.
+- [x] Standard-catalog camera, screen, and video ingress exposes typed raw-frame
+  and capability-free reference outputs with generation/session fencing.
+- [x] Fixed, adaptive, and manual visual-observation cadence has explicit
+  tick/refresh/end/cancel contracts and bounded latest-frame/change state.
+- [x] The locked adaptive-video reference makes capture-pressure loss visible
+  and composes observer refresh, close, cancellation, and terminal paths.
+- [x] The locked conversational fast-only reference routes only the fast
+  prepared stream directly to segmentation and speech.
+- [x] The locked conversational slow-only reference routes only the
+  deliberative prepared stream directly to segmentation and speech.
+- [x] The locked conversational both-speaking reference routes both prepared
+  streams through an explicit interaction speech arbiter.
+- [x] All three conversational references share an asserted identical
+  non-routing backbone and compile, bind values, resolve providers, and mount.
+- [ ] Execute complete conversational turns through all three locked reference
+  graphs and retain the regression artifacts.
+- [ ] Compare graph-native and legacy traces at every declared safe point.
 - [ ] Complete recovery/schema/LSP/UI authoring, reconciliation, benchmark
   execution parity, and legacy launch-path removal.
+
+Active acceptance queue (work in the shared worktree remains unchecked until
+it has been reviewed, tested, and committed with its evidence):
+
+- [ ] Complete the sidecar/model protocol-v4 hardening checkpoint.
+  - [ ] Publish the deployment registry and codec with a genuinely atomic,
+    create-only service batch operation.
+  - [ ] Validate every frame's media metadata and byte lanes against the exact
+    negotiated per-port format profile.
+  - [ ] Add a standard protocol-v4 conformance CLI fixture rather than routing
+    version 4 through the legacy audio-only `Hello` path.
+  - [ ] Prove locked mount/dial negotiation for the omni, duplex-native, and
+    upstream-native external-model references.
+  - [ ] Pass focused and repository-wide race, test, vet, and diff gates; then
+    review and commit the slice with its tracker boxes.
+- [ ] Complete the scenario Graph IR evidence checkpoint.
+  - [ ] Review and commit authenticated exact-graph execution evidence while
+    retaining an explicitly unattested legacy compatibility mode.
+  - [ ] Execute and compare the eleven interaction scenarios; scenario names
+    remain individually tracked below.
+- [ ] Complete descriptor-driven values-schema authoring support.
+  - [ ] Review bounded immutable descriptor snapshots, strict values-envelope
+    schema generation, external-schema resolution, and unresolved-contract
+    reporting.
+  - [ ] Pass adversarial, determinism, and concurrent-reader tests before
+    checking the Phase 6 schema item.
+- [ ] Complete the sound computer-use authority and trajectory feedback chain.
+  - [ ] Join tool proposals to exact cognition-result provenance by run and
+    call identity without trusting externally asserted causal metadata.
+  - [ ] Promote an admitted proposal to an authorized trajectory tool call
+    without colliding with the proposal item.
+  - [ ] Commit dispatch results as typed tool-result trajectory items causally
+    linked to the authorized call.
+  - [ ] Compose and execute the locked silent computer-use reference only after
+    those trust and feedback paths exist.
 
 Reference-agent tracker:
 
