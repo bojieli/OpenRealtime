@@ -329,7 +329,11 @@ type Status struct {
 	// this session. Binding remains the concrete adapter that realised it. The
 	// distinction lets several evolving architectures use the same sidecar
 	// runtime without losing which definition was actually launched.
-	Architecture       ArchitectureIdentity `json:"architecture,omitempty"`
+	Architecture ArchitectureIdentity `json:"architecture,omitempty"`
+	// Graph is the immutable executable composition mounted for this session.
+	// Architecture remains the historical experiment/catalog identity during
+	// migration; new evidence keys execution and inspection on Graph.
+	Graph              ArchitectureIdentity `json:"graph,omitempty"`
 	Binding            string               `json:"binding"`
 	Profile            string               `json:"profile,omitempty"`
 	Ownership          Ownership            `json:"ownership"`

@@ -41,6 +41,7 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	browserdemo "github.com/bojieli/OpenRealtime/examples/browser"
 	"github.com/bojieli/OpenRealtime/gateway"
+	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/perception/voices"
@@ -549,6 +550,10 @@ func buildBinding(options serveOptions) (binding.Binding, *asrbuffer.Accumulator
 		if err != nil {
 			return nil, nil, err
 		}
+	}
+	bind, err = graphbinding.New(bind)
+	if err != nil {
+		return nil, nil, fmt.Errorf("mount binding through Graph IR: %w", err)
 	}
 	return bind, recogniser, nil
 }

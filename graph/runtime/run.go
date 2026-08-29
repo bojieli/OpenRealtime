@@ -171,9 +171,6 @@ func (mounted *Mounted) Err() error {
 
 func (mounted *Mounted) shutdownResources() error {
 	mounted.shutdown.Do(func() {
-		for _, queue := range mounted.queues {
-			queue.close()
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), mounted.timeout)
 		defer cancel()
 		var failures []error
@@ -181,6 +178,12 @@ func (mounted *Mounted) shutdownResources() error {
 			if err := mounted.nodes[index].scope.close(ctx); err != nil {
 				failures = append(failures, err)
 			}
+		}
+		// Elements own producers. Dispose them while output queues remain
+		// drainable, then close channels so consumers can observe EOF after the
+		// final lifecycle event rather than losing it.
+		for _, queue := range mounted.queues {
+			queue.close()
 		}
 		mounted.mu.Lock()
 		mounted.shutdownErr = errors.Join(failures...)

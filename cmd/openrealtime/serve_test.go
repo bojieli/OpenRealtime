@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/continuation"
+	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/sidecar"
 )
@@ -347,6 +348,41 @@ func TestServeRejectsFlagsItCannotHonour(t *testing.T) {
 		if err := runServe(arguments, &output); err == nil {
 			t.Fatalf("expected %v to be refused", arguments)
 		}
+	}
+}
+
+func TestProductionBuildBindingMountsTheSelectedStackThroughGraphIR(t *testing.T) {
+	options := defaultOptions()
+	options.binding = "upstream"
+	options.profile = "voice"
+	options.slowProvider = "openai-compatible"
+	options.slowURL = "http://127.0.0.1:1/v1"
+	options.slowModel = "slow-test"
+	options.slowEffort = "high"
+	options.slowTokens = 128
+	options.upstreamProvider = "openai"
+	options.upstreamURL = "ws://127.0.0.1:1/v1/realtime"
+	options.upstreamModel = "realtime-test"
+	options.requestTimeout = time.Second
+	options.clientToolTimeout = time.Second
+	options.explicit = map[string]bool{
+		"slow-url": true, "slow-model": true,
+		"upstream-url": true, "upstream-model": true,
+	}
+
+	bind, recogniser, err := buildBinding(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recogniser != nil {
+		t.Fatal("upstream binding unexpectedly constructed an engine recogniser")
+	}
+	graphBacked, ok := bind.(*graphbinding.Binding)
+	if !ok {
+		t.Fatalf("production build returned %T, want graph-backed binding", bind)
+	}
+	if graphBacked.Graph().Fingerprint == "" || graphBacked.Graph().Nodes[0].Implementation == "" {
+		t.Fatalf("production graph identity is incomplete: %+v", graphBacked.Graph())
 	}
 }
 

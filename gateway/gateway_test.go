@@ -23,6 +23,7 @@ import (
 	"github.com/bojieli/OpenRealtime/binding/cascade"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/gateway"
+	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	protocol "github.com/bojieli/OpenRealtime/protocol/openai"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -193,13 +194,17 @@ func startServerWith(
 	speech v1.StreamingSpeechProvider, logs io.Writer,
 ) *httptest.Server {
 	t.Helper()
-	bind, err := cascade.New(cascade.Config{
+	legacyBind, err := cascade.New(cascade.Config{
 		Perception: func() (v1.PerceptionProvider, error) { return asr, nil },
 		Fast:       fastProvider, Slow: slowProvider, Speech: speech,
 		Voice: "test-voice", FastMaxTokens: 512,
 	})
 	if err != nil {
 		t.Fatalf("new cascade: %v", err)
+	}
+	bind, err := graphbinding.New(legacyBind)
+	if err != nil {
+		t.Fatalf("mount cascade through graph: %v", err)
 	}
 	config := gateway.Config{Binding: bind, Model: "openrealtime-test", ValidateWire: true}
 	if logs != nil {
