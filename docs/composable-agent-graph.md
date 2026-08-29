@@ -1725,117 +1725,270 @@ not required before the contracts exist.
 
 ## 25. Migration plan
 
+### Living implementation tracker
+
+Last reconciled with the repository on **2026-08-29**. This is the progress
+source of truth for the refactor. It must be updated in the same commit that
+closes or materially advances a migration item.
+
+A checked box means the implementation and the evidence required by that item
+are both present. Partially implemented work stays unchecked and names what is
+already available. A phase is not complete until its exit gate is checked.
+
+| Phase | Current state | What exists now | Principal remaining work |
+| --- | --- | --- | --- |
+| 0 — contracts | Complete | Accepted design, terminology, authoring decisions, and migration oracle | Keep decisions and superseded ADRs synchronized as implementation lands |
+| 1 — graph foundation | Exit evidence pending | Typed descriptors/runtime, `.ortg`, strict YAML/JSON interchange, Go SDK, lockfiles, Graph IR, validation, connectors, rendering, and coarse legacy mounting | Full reference-architecture regression and benchmark equivalence evidence |
+| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, observation commit, trajectory, activation policy, cognition, interaction/result commit, speech, tools, explicit `Tee`/`Mux`, and focused component graphs | Complete conversational reference graphs, gateway integration, and safe-point trace parity |
+| 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction parity, and removal of binding switches |
+| 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Streaming camera/screen cadence, complete silent computer-use and independent voice/CU reference agents |
+| 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, exact live resolution evidence, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Deployment/secrets/evidence catalogs, legacy translation, normal graph-native launch, and executed parity artifacts |
+| 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, bounded payload-free trace artifacts, and exact replay | Runtime recording integration, trigger/cancel/authority views, editor UI/LSP/schema work, and output-to-cause operator workflow |
+| 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
+| 8 — legacy removal | Not started | Compatibility behavior is isolated behind a coarse element | Migrate every production/evaluation launch path, then remove obsolete flags, switches, and binding constraints |
+
+Current checkpoint notes:
+
+- `origin/main` remains at the design checkpoint `1bf1de5`; local `main` is 22
+  verified commits ahead through `b7ce51a`.
+- The committed graph-native slice now extends from acoustic and multimodal
+  ingress through state, independently triggered cognition, explicit
+  interaction/speech routing, tool authority, and external-model topologies.
+- Deterministic graph diff and replayable, payload-free trace artifact
+  contracts are committed. Runtime recording, editor services, adaptive video,
+  and sidecar media-format hardening remain unchecked until their independent
+  worktree slices are reviewed and committed.
+- No item in the twelve-point definition of done is yet proven end to end.
+  Several have foundation-level support, but benchmark migration, production
+  inspection, reconciliation, and legacy removal are still outstanding.
+
+Integrated checkpoint ledger:
+
+- [x] Typed `.ortg`/YAML/JSON/Go authoring, immutable Graph IR, lockfiles,
+  validation, bounded runtime, rendering, and coarse compatibility mounting.
+- [x] Graph-native ASR, observation commit, compare-and-append trajectory,
+  provider-neutral cognition, TTS, playback, and exact live resolution.
+- [x] Explicit acoustic admission/endpoint policies with visible tick, commit,
+  verdict, cancellation, flush, state, and terminal paths.
+- [x] Independent fast/deliberative activation policies joined to the exact
+  committed trajectory State envelope, with bounded cancellation memory.
+- [x] Explicit fast-only, slow-only, and both-speaking interaction components;
+  no kernel-owned slow-to-fast handoff or model-to-model edge.
+- [x] Typed tool proposal admission, confirmation, target fencing, idempotent
+  ledger commit, dispatch, and release/audit outcomes.
+- [x] Typed audio-free text/image/file/attachment ingress, bounded retention,
+  revocable leases, resolution, cancellation, and release paths.
+- [x] Graph-native external-model contract and locked omni, duplex, and
+  upstream topology variants over shared element contracts.
+- [x] Authenticated benchmark and gateway evidence bound to exact Graph IR,
+  configuration, selected paths, runtime, and capability identities.
+- [x] Deterministic semantic graph diff plus bounded, fingerprinted,
+  payload-free trace artifact and exact replay validation.
+- [ ] Full componentized conversational reference graphs and safe-point parity.
+- [ ] Production runtime recording, complete authoring UI/LSP, reconciliation,
+  benchmark execution parity, and legacy launch-path removal.
+
+Reference-agent tracker:
+
+- [ ] Componentized conversational voice agent with separate ASR, interaction,
+  fast cognition, deliberative cognition, TTS, pacing, playback, and state.
+- [x] Focused fast-only, slow-only, and both-speaking interaction graphs prove
+  that either cognition stream can speak through explicit segmentation and
+  arbitration topology.
+- [x] Deliberative prepared output can route directly toward speech
+  segmentation while result and tool paths remain independent; reusable
+  `Tee`/`Mux` connectors require no kernel-owned slow-to-fast handoff. A
+  complete foreground-context feedback variant remains part of the full agent.
+- [x] Locked full-duplex/end-to-end external-model topology with native
+  interaction ports.
+- [x] Locked external-interaction topology over the same `model.External`
+  contract; executed native/external parity remains open.
+- [ ] Live meeting assistant combining speech, screen control, concurrent slow
+  document work, corrections, and output arbitration.
+- [ ] Adaptive-observation video/YouTube watcher with explicit cadence,
+  change detection, visual memory, and time-triggered policy.
+- [ ] Vision-language and silent computer-use agent with typed authority,
+  target fencing, confirmation, execution, and visual feedback.
+- [ ] Independent voice and computer-use policies composed in one graph.
+- [x] Audio-free typed text, image, file, and multimodal-attachment ingress,
+  retention, and resolution component. A complete cognition/action agent over
+  that component remains open.
+- [x] Locked sidecar omni, duplex, and upstream topology graphs built over the
+  shared `model.External` element rather than separate binding species.
+
+Evaluation and parity tracker (the existing suites remain the migration
+oracle; a box closes only when the suite selects and attests the new graph
+artifacts rather than legacy architecture/config switches):
+
+- [x] Migrate the shared benchmark/session evidence path to bind exact Graph IR,
+  element/config/deployment identities, selected edges, authenticated live
+  resolutions, and capability evidence. Executed before/after parity remains
+  tracked by the suite-specific boxes below.
+- [ ] Re-run and compare all eleven interaction scenarios:
+  - [ ] `count-as-they-go`
+  - [ ] `asked not to be interrupted`
+  - [ ] `a recorded menu`
+  - [ ] `cutting in on something wrong`
+  - [ ] `ordering from a waiter`
+  - [ ] `translating as they speak`
+  - [ ] `waiting out a silence they asked for`
+  - [ ] `somebody else's conversation`
+  - [ ] `an acknowledgement is not an interruption`
+  - [ ] `telling them what it saw`
+  - [ ] `an ordinary question`
+- [ ] Migrate and run OpenRealtime Meeting Assistant v1 (four tasks).
+- [ ] Migrate and run OpenRealtime Realtime-CU v1 (sixteen declared cases).
+- [ ] Migrate and run FDB v1.5 and FDB v3.
+- [ ] Migrate and run FD-Bench with comparable endpointing, overlap, answer,
+  and latency distributions.
+- [ ] Migrate and run tau2-bench/τ-Voice control and regular conditions with
+  task and interaction metrics.
+- [ ] Preserve the DynaCU-Bench runner as independent optional validation.
+- [ ] Produce clean-worktree before/after parity artifacts for every required
+  suite; investigate differences instead of accepting a merely runnable graph.
+
 ### Phase 0: accept contracts and terminology
 
-- Review this design against current ADRs and measurement requirements.
-- Decide `.ortg`, normalized graph, and Graph IR versioning; the initial
+- [x] Review this design against current ADRs and measurement requirements.
+- [x] Decide `.ortg`, normalized graph, and Graph IR versioning; the initial
   grammar; the strict YAML subset; and stable type-identity rules.
-- Mark current audio/topology and slow-speech restrictions as compatibility
+- [x] Mark current audio/topology and slow-speech restrictions as compatibility
   behavior rather than future kernel invariants.
-- Add architecture tests that preserve current behavior as a migration oracle.
+- [x] Add architecture tests that preserve current behavior as a migration oracle.
 
 ### Phase 1: build the graph foundation without changing behavior
 
-- Implement element descriptors, the `.ortg` parser and formatter, normalized
+- [x] Implement element descriptors, the `.ortg` parser and formatter, normalized
   YAML/JSON loader, shared graph elaborator, Graph IR, bounded edge
   declarations, source-mapped diagnostics, and deterministic fingerprints.
-- Implement symbolic element resolution, generated lockfiles, generic type
+- [x] Implement symbolic element resolution, generated lockfiles, generic type
   unification, and inferred variadic lanes for `Tee`, `Mux`, and arbiters.
-- Add an optional typed Go builder for repository tests and generated graphs;
+- [x] Add an optional typed Go builder for repository tests and generated graphs;
   make it call the same elaboration and validation path.
-- Implement `Tee`, event `Mux`, state, explicit sinks, and core validation.
-- Implement Mermaid/DOT export and static inspection.
-- Wrap an entire existing binding runtime as one coarse legacy element so the
+- [x] Implement `Tee`, backward-compatible event `Mux`, protocol-generic typed
+  `Mux`, state, explicit sinks, and core validation.
+- [x] Implement Mermaid/DOT export and static inspection.
+- [x] Wrap an entire existing binding runtime as one coarse legacy element so the
   gateway can mount a graph without behavioral change.
 
-Exit gate: the current reference architectures run through Graph IR with
-identical protocol conformance and regression results.
+- [ ] **Exit gate:** the current reference architectures run through Graph IR
+  with identical protocol conformance and regression results. Protocol sessions
+  now cross Graph IR through the compatibility element; complete benchmark and
+  reference-architecture parity evidence remains to be recorded.
 
 ### Phase 2: decompose the component/cascade path
 
-- Extract gateway input, acoustic gate, ASR, observation commit, context,
-  interaction policies, fast and deliberative cognition, TTS, speech pacing,
-  tools, and output into elements.
-- Preserve trajectory compare-and-append and event-loop wake invariants.
-- Reproduce current behavior as a reference graph and compare traces at every
-  safe point.
-- Add alternative tests where deliberative output speaks directly or both
-  cognition elements share an explicit mux.
+- [x] Extract acoustic admission/endpointing, ASR, observation commit,
+  trajectory context, explicit generation activation, fast/deliberative text
+  cognition, model-result commit, interaction/segmentation, TTS, playback,
+  tool authority, and typed outcomes into independently registered elements.
+- [ ] Extract the remaining gateway/session adapters and any pacing/timing
+  adapters required by the complete reference without falling back to a
+  binding-owned event loop.
+- [x] Preserve trajectory compare-and-append and event-loop wake invariants in
+  the graph-native store/commit feedback loop and migration-oracle tests.
+- [ ] Reproduce current behavior as a reference graph and compare traces at
+  every safe point. Checked-in acoustic, ASR/trajectory, activation, and
+  interaction components cover the parts, but the complete conversational
+  composition and parity artifact are not committed yet.
+- [x] Add alternative tests where deliberative output speaks directly or fast
+  and deliberative streams meet at an explicit stream-aware arbiter.
 
-Exit gate: no binding-specific control flow is necessary to express the
-componentized reference graph.
+- [ ] **Exit gate:** no binding-specific control flow is necessary to express
+  the componentized reference graph.
 
 ### Phase 3: decompose sidecar, end-to-end, and upstream paths
 
-- Generalize sidecar capability/type handshake.
-- Expose native audio, transcription, interaction acts, model state, text
+- [x] Generalize the sidecar capability/type handshake through the versioned
+  element-graph protocol while preserving frozen legacy negotiation.
+- [x] Expose native audio, transcription, interaction acts, model state, text
   injection, tools, and cancellation as independent ports/capabilities.
-- Recreate `omni`, `duplex`, and upstream behavior as graphs over shared
-  elements.
-- Demonstrate native and external interaction over the same foreground model.
+- [x] Check in locked `omni`, `duplex`, and upstream topologies over the shared
+  `model.External` element. Full mount/dial and benchmark parity is still open.
+- [x] Express native and external interaction as topology changes over the same
+  foreground element contract. Executed behavior parity remains open.
 
-Exit gate: adding a new capability combination does not require a new binding
-package or runtime switch.
+- [ ] **Exit gate:** adding a new capability combination does not require a new
+  binding package or runtime switch.
 
 ### Phase 4: generalize modalities and authority
 
-- Extract camera, screen, still-image, attachment, file, and multimodal context
-  elements.
-- Express visual reflex, slow planner, action arbitration, authority, target
-  fencing, execution, and visual feedback as a graph.
-- Add text-and-files and silent computer-use reference graphs with no audio
-  requirement.
-- Preserve injection, confirmation, idempotency, and ledger release gates.
+- [x] Extract typed visual observation plus still-image, attachment, file, and
+  multimodal-content ingress/retention/resolution elements.
+- [ ] Complete streaming camera/screen frame ingress, explicit observation
+  cadence, change detection, and visual-memory composition.
+- [x] Extract action proposal admission, confirmation, target fencing, tool
+  lookup, idempotent ledger commit, dispatch, and release/audit outcomes.
+- [ ] Compose visual reflex, slow planner, action arbitration, authority,
+  execution, and visual feedback into complete computer-use reference graphs.
+- [x] Add an audio-free text/image/file/attachment component graph with typed
+  exported contracts.
+- [ ] Add the complete text-and-files cognition agent and silent computer-use
+  agent with no audio requirement.
+- [x] Preserve injection checks, confirmation, idempotency, target identity,
+  and ledger release gates in decomposed action elements and adversarial tests.
 
-Exit gate: the architecture catalog accepts graphs whose exported contracts
-contain no audio ports.
+- [ ] **Exit gate:** the architecture catalog accepts graphs whose exported
+  contracts contain no audio ports.
 
 ### Phase 5: replace configuration and catalog assembly
 
-- Catalog graph definitions and immutable element/config/profile revisions.
-- Replace topology-derived ownership validation with graph contract and live
+- [ ] Catalog graph definitions and immutable element/config/profile revisions.
+  Immutable element resolution and one reference graph exist; the production
+  graph/config/profile catalog does not.
+- [ ] Replace topology-derived ownership validation with graph contract and live
   capability validation.
-- Load separate `.ortg` or normalized graph artifacts, typed element values,
+- [ ] Load separate `.ortg` or normalized graph artifacts, typed element values,
   deployment bindings, secret references, and evidence profiles.
-- Translate legacy flags/config into a legacy reference graph with explicit
+  Topology, lock, and strict values artifacts exist; deployment, secret, and
+  evidence artifacts remain.
+- [ ] Translate legacy flags/config into a legacy reference graph with explicit
   deprecation diagnostics.
-- Update benchmark cells to attest graph fingerprints and selected edges.
+- [x] Update benchmark architecture cells and gateway inspection to attest exact
+  graph/config fingerprints, reviewed selected edges, live runtime identities,
+  and capability evidence before credential access.
 
-Exit gate: normal new deployments do not configure topology through the
-ninety-plus serve flags.
+- [ ] **Exit gate:** normal new deployments do not configure topology through
+  the ninety-plus serve flags.
 
 ### Phase 6: production inspection and authoring
 
-- Add live graph, queue, trigger, cancellation, authority, and latency views.
-- Add trace replay and graph diff.
-- Add a visual editor that reads and writes canonical `.ortg` or normalized
+- [x] Add live graph identity, exact node resolution, queue occupancy/counters,
+  bounded flow histories, and queue-wait telemetry contracts.
+- [ ] Add complete trigger, cancellation, authority, and per-stage latency
+  operator views over those contracts.
+- [x] Add deterministic semantic graph diff plus bounded, fingerprinted,
+  payload-free trace artifacts and exact Graph IR replay validation.
+- [ ] Add a visual editor that reads and writes canonical `.ortg` or normalized
   YAML/JSON using the same descriptors and validator.
-- Generate syntax completion, JSON Schema, and editor metadata from element
+- [ ] Generate syntax completion, JSON Schema, and editor metadata from element
   descriptors.
-- Add graph-aware rename, port completion, formatting, and go-to-definition
+- [ ] Add graph-aware rename, port completion, formatting, and go-to-definition
   for the default `.ortg` authoring path.
 
-Exit gate: an operator can understand a running graph and trace an output to
-its causes without reading binding source.
+- [ ] **Exit gate:** an operator can understand a running graph and trace an
+  output to its causes without reading binding source.
 
 ### Phase 7: dynamic reconciliation
 
-- Implement scoped dependencies and reversible lifecycle effects.
-- Add candidate validation, pre-mount, safe-point swap, state migration,
+- [ ] Implement scoped dependencies and reversible lifecycle effects. Initial
+  mount-scoped services, dependency lookup, disposal, and reversible-effect
+  declarations exist; reconciliation-scoped ownership is incomplete.
+- [ ] Add candidate validation, pre-mount, safe-point swap, state migration,
   rollback/refusal, and leak detection.
-- Begin with leaf config/implementation swaps, then expand to bounded topology
+- [ ] Begin with leaf config/implementation swaps, then expand to bounded topology
   changes.
 
-Exit gate: supported updates have deterministic lifecycle behavior and leave
-no workers, subscriptions, queues, or authority registrations behind.
+- [ ] **Exit gate:** supported updates have deterministic lifecycle behavior
+  and leave no workers, subscriptions, queues, or authority registrations behind.
 
 ### Phase 8: remove obsolete constraints
 
-- Retire legacy binding-only launch paths after a documented compatibility
+- [ ] Retire legacy binding-only launch paths after a documented compatibility
   window.
-- Remove kernel assumptions about slow ownership/speech and mandatory audio.
-- Reduce the architecture catalog and status model to graph-derived facts.
-- Amend or supersede ADRs whose statements became reference-graph choices.
+- [ ] Remove kernel assumptions about slow ownership/speech and mandatory audio.
+- [ ] Reduce the architecture catalog and status model to graph-derived facts.
+- [ ] Amend or supersede ADRs whose statements became reference-graph choices.
 
 ## 26. Testing and production gates
 
@@ -1991,32 +2144,33 @@ between typed authoring, Graph IR, execution, configuration, and evidence.
 
 ## 30. Definition of done
 
-The refactoring is complete when all of the following are true:
+The refactoring is complete when all of the following are checked. None is
+checked from foundation work alone; each requires end-to-end release evidence.
 
-1. A developer can construct and type-check a graph from arbitrary native,
+- [ ] A developer can construct and type-check a graph from arbitrary native,
    sidecar, and remote elements through `.ortg`, normalized YAML/JSON, a
    visual editor, or an optional SDK without adding a binding species or
    rebuilding the runtime.
-2. The graph can expose any supported combination of text, audio, video,
+- [ ] The graph can expose any supported combination of text, audio, video,
    images, files, tools, computer use, and control ports; audio is optional.
-3. Trigger, interrupt, timeout, failure, arbitration, authority, and terminal
+- [ ] Trigger, interrupt, timeout, failure, arbitration, authority, and terminal
    paths are statically inspectable.
-4. Slow/deliberative and fast/foreground roles can be rewired, forked, merged,
+- [ ] Slow/deliberative and fast/foreground roles can be rewired, forked, merged,
    or removed without kernel changes.
-5. The same full-duplex foreground can be run with native or external
+- [ ] The same full-duplex foreground can be run with native or external
    interaction as a graph change.
-6. Channel depth, loss, queue occupancy, and latency contribution are visible.
-7. Every running session reports an immutable Graph IR fingerprint and exact
+- [ ] Channel depth, loss, queue occupancy, and latency contribution are visible.
+- [ ] Every running session reports an immutable Graph IR fingerprint and exact
    live-resolved element/config/capability identities.
-8. Mermaid/DOT and the live canvas are generated from that exact graph.
-9. The action authority, target, confirmation, audit, and irreversibility
+- [ ] Mermaid/DOT and the live canvas are generated from that exact graph.
+- [ ] The action authority, target, confirmation, audit, and irreversibility
    guarantees remain intact or become stronger through typing.
-10. Static reference graphs match current protocol and benchmark behavior, and
+- [ ] Static reference graphs match current protocol and benchmark behavior, and
     new non-audio and alternative speech compositions are covered by release
     tests.
-11. Supported graph changes mount and unmount without leaked resources or
+- [ ] Supported graph changes mount and unmount without leaked resources or
     silently lost committed work.
-12. Operators can trace an externally visible action back through its policy,
+- [ ] Operators can trace an externally visible action back through its policy,
     trigger, observation, state revision, model run, queues, and authority
     decision.
 
