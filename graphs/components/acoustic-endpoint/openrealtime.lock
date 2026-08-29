@@ -1,0 +1,29 @@
+{
+  "format_version": 1,
+  "elements": [
+    {
+      "reference": "acoustic.EndpointPolicy",
+      "identity": {
+        "name": "acoustic.EndpointPolicy",
+        "revision": 1,
+        "digest": "sha256:530e2aa2b12f46b44d2c3a116d014612f49e774a41e4fcc16933e57b52614656"
+      }
+    },
+    {
+      "reference": "acoustic.EnergyAdmission",
+      "identity": {
+        "name": "acoustic.EnergyAdmission",
+        "revision": 1,
+        "digest": "sha256:cb0f3581ed3925d4153c55bc0d9034ad2caf9c706d0fdce09b57e3ce03f52f4a"
+      }
+    },
+    {
+      "reference": "flow.Tee",
+      "identity": {
+        "name": "flow.Tee",
+        "revision": 1,
+        "digest": "sha256:54c309b4fa80950ca8815b63de7bb84947c9aa890fc3f638cd6a5afc574e40d6"
+      }
+    }
+  ]
+}

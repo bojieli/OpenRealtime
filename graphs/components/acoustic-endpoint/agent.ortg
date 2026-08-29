@@ -1,0 +1,37 @@
+// Graph-native acoustic admission with endpoint ownership kept as a visible,
+// replaceable policy. The cancellation tee ensures pre-arrival cancellation
+// reaches both state machines and remains available to downstream ASR.
+graph acoustic_endpoint {
+    acoustic.EnergyAdmission :: admission;
+    acoustic.EndpointPolicy :: endpoint_policy;
+    flow.Tee :: policy_state_copy;
+    flow.Tee :: candidate_copy;
+    flow.Tee :: command_copy;
+    flow.Tee :: cancellation_copy;
+
+    endpoint_policy.state -> policy_state_copy.in;
+    policy_state_copy.out -> admission.policy;
+    admission.candidate -> candidate_copy.in;
+    candidate_copy.out -> endpoint_policy.candidate;
+    endpoint_policy.command -> command_copy.in;
+    command_copy.out -> admission.command;
+    cancellation_copy.out -> admission.cancel;
+    cancellation_copy.out -> endpoint_policy.cancel;
+
+    input audio = admission.audio;
+    input tick = endpoint_policy.tick;
+    input commit = endpoint_policy.commit;
+    input verdict = endpoint_policy.verdict;
+    input cancel = cancellation_copy.in;
+
+    output admitted = admission.admitted;
+    output flush = admission.endpoint;
+    output activity = admission.activity;
+    output candidate = candidate_copy.out;
+    output command = command_copy.out;
+    output admission_state = admission.state;
+    output policy_state = policy_state_copy.out;
+    output admission_outcome = admission.outcome;
+    output endpoint_outcome = endpoint_policy.outcome;
+    output cancel_downstream = cancellation_copy.out;
+}

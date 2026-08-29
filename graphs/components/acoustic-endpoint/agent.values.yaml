@@ -1,0 +1,20 @@
+apiVersion: openrealtime.ai/config/v1alpha1
+graph: acoustic_endpoint
+nodes:
+  admission:
+    threshold: 0.5
+    prefix_padding_ms: 300
+    silence_duration_ms: 500
+    speech_duration_ms: 120
+    cancellation_memory: 128
+    terminal_memory: 128
+    max_frame_bytes: 1048576
+    max_sample_rate_hz: 384000
+  endpoint_policy:
+    mode: automatic
+    cancellation_memory: 128
+    terminal_memory: 128
+  policy_state_copy: {}
+  candidate_copy: {}
+  command_copy: {}
+  cancellation_copy: {}
