@@ -568,3 +568,82 @@ func TestSessionCapturesNegotiatedRuntimeEvidence(t *testing.T) {
 		t.Fatalf("runtime evidence was not retained: %+v", transcript.Runtime)
 	}
 }
+
+func TestSessionAttestorPropagatesIndependentGraphEvidence(t *testing.T) {
+	graph, configuration, resolution := attestationFixture(t)
+	var debugNegotiated atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(writer, request, &websocket.AcceptOptions{})
+		if err != nil {
+			return
+		}
+		defer connection.Close(websocket.StatusNormalClosure, "fixture complete")
+		for {
+			_, raw, err := connection.Read(request.Context())
+			if err != nil {
+				return
+			}
+			var message map[string]any
+			if json.Unmarshal(raw, &message) != nil || message["type"] != "session.update" {
+				continue
+			}
+			session, _ := message["session"].(map[string]any)
+			extension, _ := session["openrealtime"].(map[string]any)
+			_, debugNegotiatedValue := extension["debug"]
+			debugNegotiated.Store(debugNegotiatedValue)
+			updated, _ := json.Marshal(map[string]any{"type": "session.updated", "session": map[string]any{}})
+			_ = connection.Write(request.Context(), websocket.MessageText, updated)
+			evidence, _ := json.Marshal(map[string]any{
+				"type": openrealtime.EventDebug, "category": "session", "name": "session.updated",
+				"attributes": map[string]any{"runtime": map[string]any{
+					"binding": "graph", "graph": map[string]any{
+						"id": graph.ID, "revision": graph.Revision, "fingerprint": graph.Fingerprint,
+					},
+				}},
+			})
+			_ = connection.Write(request.Context(), websocket.MessageText, evidence)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	var resolved atomic.Bool
+	attestor := bench.GraphAttestor{
+		Graph: graph, Configuration: configuration,
+		Resolve: func(_ context.Context, request bench.AttestationRequest) (bench.LiveResolution, error) {
+			if request.Status.Graph.Fingerprint != graph.Fingerprint || request.Scope != "driver-task" {
+				t.Fatalf("resolver saw wrong request: %+v", request)
+			}
+			resolved.Store(true)
+			return resolution, nil
+		},
+	}
+	transcript, err := bench.PlaySamples(context.Background(), bench.SessionConfig{
+		Endpoint: "ws" + strings.TrimPrefix(server.URL, "http"),
+		Timeout:  2 * time.Second, TrailingSilence: time.Millisecond,
+		PostPlaybackQuiet: 10 * time.Millisecond, RuntimeAttestor: attestor,
+		AttestationScope: "driver-task",
+	}, nil)
+	if err != nil {
+		t.Fatalf("play attested session: %v", err)
+	}
+	if !debugNegotiated.Load() || !resolved.Load() {
+		t.Fatalf("attestor did not negotiate/resolve: debug=%t resolve=%t",
+			debugNegotiated.Load(), resolved.Load())
+	}
+	if transcript.ExecutionError != "" || transcript.Execution == nil {
+		t.Fatalf("execution evidence was not propagated: %+v", transcript)
+	}
+	requirement, err := bench.RequireGraph(graph, configuration, resolution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome := bench.TaskOutcome{ID: "driver-task", Completed: true}
+	outcome.AttachExecution(transcript)
+	if err := requirement.Match(outcome.Execution); err != nil {
+		t.Fatalf("shared-driver task evidence does not match its cell: %v", err)
+	}
+	transcript.Execution.Graph.Nodes[0].Runtime.ID = "mutated-after-score"
+	if outcome.Execution.Graph.Nodes[0].Runtime.ID == "mutated-after-score" {
+		t.Fatal("task outcome aliases the shared driver's transcript evidence")
+	}
+}

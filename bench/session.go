@@ -76,6 +76,13 @@ type Transcript struct {
 	// session.update. It is present only when CaptureRuntimeEvidence was set;
 	// ordinary benchmark clients retain their existing wire behavior.
 	Runtime *binding.Status `json:"runtime,omitempty"`
+	// Execution is the versioned graph-native or explicitly legacy proof
+	// produced by RuntimeAttestor from the live post-handshake status.
+	Execution *ExecutionEvidence `json:"execution_evidence,omitempty"`
+	// ExecutionError retains attestor/refusal details without turning a model
+	// behavior row into an infrastructure score. Result.Reportable is the
+	// publication gate.
+	ExecutionError string `json:"execution_evidence_error,omitempty"`
 	// Outstanding lifecycle counts are normally zero. They are retained so a
 	// timeout distinguishes an agent still synthesising/responding from a
 	// harness that merely waited too little after playback.
@@ -252,6 +259,15 @@ type SessionConfig struct {
 	// the live binding status. Architecture experiments set it for every task;
 	// it is opt-in because the developer trace is not application behavior.
 	CaptureRuntimeEvidence bool
+	// RuntimeAttestor resolves exact element/capability identities after the
+	// live status arrives. Setting it automatically enables runtime evidence
+	// negotiation. Graph-native cells should use GraphAttestor; legacy cells
+	// can opt into LegacyStatusAttestor explicitly.
+	RuntimeAttestor RuntimeAttestor
+	// AttestationScope identifies this task/session to a live inspector. Suites
+	// set it to their task ID so selected paths cannot be attributed to a
+	// different concurrent session.
+	AttestationScope string
 	// Scheduled are protocol events to send at points in the playback.
 	//
 	// A conversation is not only speech. A screen changes, a camera sees
@@ -332,6 +348,9 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 	}
 	if config.Timeout <= 0 {
 		config.Timeout = 3 * time.Minute
+	}
+	if config.RuntimeAttestor != nil {
+		config.CaptureRuntimeEvidence = true
 	}
 	if config.TrailingSilence <= 0 {
 		config.TrailingSilence = 1200 * time.Millisecond
@@ -536,21 +555,51 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 	select {
 	case transcript := <-collected:
 		stopVideo()
+		transcript = attestTranscript(ctx, config, transcript)
 		if strings.TrimSpace(transcript.Failure) != "" {
 			return transcript, fmt.Errorf("%w: %s", ErrSessionFailure, transcript.Failure)
 		}
 		return transcript, nil
 	case err := <-videoErrors:
 		stopVideo()
-		return recorder.snapshot(), err
+		return attestTranscript(ctx, config, recorder.snapshot()), err
 	case <-timed.Done():
 		stopVideo()
-		transcript := recorder.snapshot()
+		transcript := attestTranscript(ctx, config, recorder.snapshot())
 		if strings.TrimSpace(transcript.Failure) != "" {
 			return transcript, fmt.Errorf("%w: %s", ErrSessionFailure, transcript.Failure)
 		}
 		return transcript, ErrConversationTimeout
 	}
+}
+
+func attestTranscript(ctx context.Context, config SessionConfig, transcript Transcript) Transcript {
+	if config.RuntimeAttestor == nil {
+		return transcript
+	}
+	if transcript.Runtime == nil {
+		transcript.ExecutionError = "runtime attestation requested but the endpoint emitted no live session status"
+		return transcript
+	}
+	// Evidence collection is bounded independently from task execution. A
+	// session can reach its own horizon while the caller remains live; this
+	// still lets an inspector read final route state without allowing a failed
+	// inspector to hang the benchmark driver.
+	attestationContext, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	evidence, err := config.RuntimeAttestor.Attest(attestationContext, AttestationRequest{
+		Scope: config.AttestationScope, Status: *transcript.Runtime,
+	})
+	if err == nil {
+		err = evidence.Validate()
+	}
+	if err != nil {
+		transcript.ExecutionError = err.Error()
+		return transcript
+	}
+	copy := evidence.Clone()
+	transcript.Execution = &copy
+	return transcript
 }
 
 const webRTCAudioWarmup = 200 * time.Millisecond
@@ -697,6 +746,7 @@ func (recorder *recorder) snapshot() Transcript {
 	var runtime *binding.Status
 	if recorder.runtime != nil {
 		copied := *recorder.runtime
+		copied.Observers = append([]string(nil), recorder.runtime.Observers...)
 		runtime = &copied
 	}
 	return Transcript{
@@ -910,6 +960,7 @@ func (recorder *recorder) handle(
 			decoded.Name == "session.updated" && decoded.Attributes.Runtime != nil {
 			recorder.mu.Lock()
 			copied := *decoded.Attributes.Runtime
+			copied.Observers = append([]string(nil), decoded.Attributes.Runtime.Observers...)
 			recorder.runtime = &copied
 			recorder.mu.Unlock()
 		}

@@ -175,6 +175,8 @@ type Options struct {
 	Limit    int
 	Timeout  time.Duration
 	Progress func(string)
+	// RuntimeAttestor captures exact graph execution evidence per task.
+	RuntimeAttestor bench.RuntimeAttestor
 }
 
 // Run executes the suite.
@@ -224,8 +226,8 @@ func runTask(ctx context.Context, options Options, task Task, catalog []json.Raw
 		Endpoint: options.Endpoint, Token: options.Token, Model: options.Model,
 		Instructions: "You are a customer support voice agent. Use the available tools to do what the " +
 			"customer asks. Preserve identifiers exactly as the customer gave them.",
-		Tools:    catalog,
-		Realtime: true, Timeout: options.Timeout,
+		Tools: catalog, Realtime: true, Timeout: options.Timeout,
+		RuntimeAttestor: options.RuntimeAttestor, AttestationScope: task.ID,
 		Respond: func(name string, arguments json.RawMessage) (json.RawMessage, error) {
 			observed = append(observed, observedCall{Name: name, Arguments: arguments})
 			// A plausible success, so the conversation continues. What the
@@ -233,6 +235,7 @@ func runTask(ctx context.Context, options Options, task Task, catalog []json.Raw
 			return json.RawMessage(`{"status":"ok"}`), nil
 		},
 	}, task.AudioPath)
+	outcome.AttachExecution(transcript)
 	if err != nil {
 		outcome.Error = err.Error()
 		return outcome

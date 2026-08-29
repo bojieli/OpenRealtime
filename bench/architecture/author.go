@@ -172,6 +172,9 @@ func ReadCell(path string) (Cell, error) {
 	if err := cell.Architecture.Validate(); err != nil {
 		return Cell{}, err
 	}
+	if err := cell.Execution.Validate(); err != nil {
+		return Cell{}, fmt.Errorf("architecture cell execution: %w", err)
+	}
 	return cell, nil
 }
 
@@ -179,6 +182,12 @@ func ReadCell(path string) (Cell, error) {
 func WriteCell(path string, cell Cell) error {
 	if strings.TrimSpace(path) == "" {
 		return errors.New("an architecture cell needs an output path")
+	}
+	if err := cell.Architecture.Validate(); err != nil {
+		return err
+	}
+	if err := cell.Execution.Validate(); err != nil {
+		return fmt.Errorf("architecture cell execution: %w", err)
 	}
 	payload, err := json.MarshalIndent(cell, "", "  ")
 	if err != nil {

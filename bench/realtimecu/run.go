@@ -47,12 +47,13 @@ type Options struct {
 	// Groundings and Categories restrict a diagnostic run. The Result still
 	// declares the complete authored suite, so no restricted smoke run can
 	// become publishable by accident.
-	Groundings []Grounding
-	Categories []string
-	Limit      int
-	FrameRate  int
-	Timeout    time.Duration
-	Progress   func(string)
+	Groundings      []Grounding
+	Categories      []string
+	Limit           int
+	FrameRate       int
+	Timeout         time.Duration
+	Progress        func(string)
+	RuntimeAttestor bench.RuntimeAttestor
 }
 
 // ActionRecord is one model call and what the environment did with it.
@@ -216,7 +217,9 @@ func runCase(ctx context.Context, environment *Environment, options Options, ite
 		Instructions: taskInstruction(item, target), Tools: tools, HandleTool: handle,
 		Realtime: true, Timeout: options.Timeout, WorkingTimeout: options.Timeout - 5*time.Second,
 		TrailingSilence: 1200 * time.Millisecond, Video: video, Ready: episode.Ready,
+		RuntimeAttestor: options.RuntimeAttestor, AttestationScope: item.ID(),
 	}, samples)
+	outcome.AttachExecution(transcript)
 	timedOut := errors.Is(playErr, bench.ErrConversationTimeout)
 	if playErr != nil && !timedOut {
 		outcome.Error = playErr.Error()
@@ -231,6 +234,7 @@ func runCase(ctx context.Context, environment *Environment, options Options, ite
 	actionTrace := slices.Clone(actions)
 	actionMu.Unlock()
 	outcome = score(outcome, item, episode.Started(), page, actionTrace, transcript)
+	outcome.AttachExecution(transcript)
 	outcome.Metrics["session_timeout_count"] = truth(timedOut)
 	if timedOut {
 		outcome.Notes["session_timeout"] = "the connected agent continued beyond the evaluation horizon"

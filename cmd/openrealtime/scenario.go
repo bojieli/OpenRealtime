@@ -178,6 +178,7 @@ func runScenario(arguments []string, output io.Writer) error {
 // result without throwing away its richer raw record.
 func scenarioTask(id string, result scenario.Result, runErr error) bench.TaskOutcome {
 	outcome := bench.TaskOutcome{ID: id, Completed: runErr == nil, Passed: result.Passed}
+	outcome.AttachExecution(result.Transcript)
 	if runErr != nil {
 		outcome.Error = runErr.Error()
 	}

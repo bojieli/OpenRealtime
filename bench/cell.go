@@ -110,6 +110,10 @@ type Cell struct {
 	// Varies names the factors that differ from the reference. It is derived
 	// rather than declared, so it cannot disagree with the levels.
 	Varies []Factor `json:"varies,omitempty"`
+	// Execution is the independently attested runtime contract. Historical
+	// cells leave it empty and remain inspectable, but only an explicit
+	// graph-native requirement can support a graph-native benchmark claim.
+	Execution ExecutionRequirement `json:"execution,omitzero"`
 }
 
 // Vary produces a paired cell that changes exactly one factor.
@@ -128,8 +132,9 @@ func VaryFrom(reference Cell, factor Factor, level string) (Cell, error) {
 		return Cell{}, errors.New("a level is required")
 	}
 	cell := Cell{
-		Name:   fmt.Sprintf("%s=%s", factor, level),
-		Levels: make(map[Factor]string, len(reference.Levels)),
+		Name:      fmt.Sprintf("%s=%s", factor, level),
+		Levels:    make(map[Factor]string, len(reference.Levels)),
+		Execution: reference.Execution.canonicalized(),
 	}
 	for name, value := range reference.Levels {
 		cell.Levels[name] = value
@@ -175,7 +180,16 @@ func Paired(left, right Cell) (Factor, bool) {
 }
 
 // ID is a stable identity for the cell's configuration.
-func (cell Cell) ID() string { return Fingerprint(cell.Levels) }
+func (cell Cell) ID() string {
+	if !cell.Execution.Required() {
+		// Preserve identities of historical benchmark artifacts.
+		return Fingerprint(cell.Levels)
+	}
+	return Fingerprint(struct {
+		Levels    map[Factor]string    `json:"levels"`
+		Execution ExecutionRequirement `json:"execution"`
+	}{Levels: cell.Levels, Execution: cell.Execution.canonicalized()})
+}
 
 // Describe renders the cell for a person.
 func (cell Cell) Describe() string {
@@ -187,6 +201,9 @@ func (cell Cell) Describe() string {
 	parts := make([]string, 0, len(factors))
 	for _, factor := range factors {
 		parts = append(parts, fmt.Sprintf("%s=%s", factor, cell.Levels[factor]))
+	}
+	if cell.Execution.Required() {
+		parts = append(parts, "execution="+string(cell.Execution.Kind))
 	}
 	return strings.Join(parts, " ")
 }

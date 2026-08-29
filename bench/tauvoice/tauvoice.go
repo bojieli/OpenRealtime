@@ -147,6 +147,17 @@ type Config struct {
 	Timeout time.Duration
 	// Cell is the measured configuration this run belongs to.
 	Cell bench.Cell
+	// ExecutionEvidence is captured independently from tau2's subprocess (for
+	// example by a preflight session using bench.GraphAttestor) and is copied
+	// into every task row. Tau2 owns the audio-native client and cannot expose
+	// OpenRealtime's developer status itself, so intended launch flags are not
+	// accepted as a substitute.
+	ExecutionEvidence *bench.ExecutionEvidence
+	// TaskAttestor optionally retrieves evidence from an external inspector or
+	// trace store after tau2 reports each task. It is the only honest way for
+	// tau-Voice to retain task-selected graph paths; the subprocess owns its
+	// protocol sessions, so the ordinary shared driver cannot observe them.
+	TaskAttestor func(context.Context, string) (bench.ExecutionEvidence, error)
 	// Python is the interpreter that has tau2 installed.
 	Python string
 	// TokenEnv names the environment variable holding the bearer token the
@@ -289,6 +300,25 @@ func (config *Config) agentToken() (string, error) {
 // wastes an hour before saying so.
 func (config *Config) Verify(ctx context.Context) error {
 	config.applyDefaults()
+	if err := config.Cell.Execution.Validate(); err != nil {
+		return fmt.Errorf("invalid cell execution requirement: %w", err)
+	}
+	if config.ExecutionEvidence != nil && config.TaskAttestor != nil {
+		return errors.New("tau-Voice accepts either cell-wide evidence or a task attestor, not both")
+	}
+	if config.ExecutionEvidence != nil {
+		if config.ExecutionEvidence.Scope != "" {
+			return errors.New("tau-Voice cell-wide execution evidence cannot carry a task scope")
+		}
+		if config.ExecutionEvidence.Graph != nil && len(config.ExecutionEvidence.Graph.Paths) > 0 {
+			return errors.New("tau-Voice cell-wide execution evidence cannot attribute selected paths to individual tasks")
+		}
+		if err := config.Cell.Execution.Match(config.ExecutionEvidence); err != nil {
+			return fmt.Errorf("tau-Voice execution evidence: %w", err)
+		}
+	} else if config.Cell.Execution.Required() && config.TaskAttestor == nil {
+		return errors.New("tau-Voice attested cell requires independently captured execution evidence")
+	}
 	if strings.TrimSpace(config.Tau2Dir) == "" {
 		return errors.New("a prepared tau2-bench checkout is required; run scripts/prepare-tau-voice.sh")
 	}
@@ -343,6 +373,10 @@ func (config *Config) Verify(ctx context.Context) error {
 // came from.
 func Run(ctx context.Context, config Config) (bench.Result, error) {
 	config.applyDefaults()
+	if config.ExecutionEvidence != nil {
+		copy := config.ExecutionEvidence.Clone()
+		config.ExecutionEvidence = &copy
+	}
 	if err := config.Verify(ctx); err != nil {
 		return bench.Result{}, err
 	}
@@ -388,6 +422,7 @@ func Run(ctx context.Context, config Config) (bench.Result, error) {
 				outcomes[index].Notes = map[string]string{}
 			}
 			outcomes[index].Notes["artifacts"] = config.simulationDir(runName)
+			config.attachExecution(ctx, &outcomes[index])
 		}
 		result.Tasks = append(result.Tasks, outcomes...)
 	}
@@ -395,6 +430,33 @@ func Run(ctx context.Context, config Config) (bench.Result, error) {
 	result.Provenance = result.Provenance.Complete()
 	result.Finish()
 	return result, nil
+}
+
+func (config *Config) attachExecution(ctx context.Context, outcome *bench.TaskOutcome) {
+	if outcome == nil {
+		return
+	}
+	if config.TaskAttestor == nil {
+		outcome.AttachExecution(bench.Transcript{Execution: config.ExecutionEvidence})
+		return
+	}
+	attestationContext, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	evidence, err := config.TaskAttestor(attestationContext, outcome.ID)
+	if err == nil {
+		err = evidence.Validate()
+	}
+	if err == nil {
+		err = config.Cell.Execution.Match(&evidence)
+	}
+	if err == nil && evidence.Graph != nil && len(evidence.Graph.Paths) > 0 && evidence.Scope != outcome.ID {
+		err = fmt.Errorf("selected paths are scoped to %q, want task %q", evidence.Scope, outcome.ID)
+	}
+	if err != nil {
+		outcome.ExecutionError = err.Error()
+		return
+	}
+	outcome.AttachExecution(bench.Transcript{Execution: &evidence})
 }
 
 // runDomain invokes tau2 for one domain and reads what it wrote.

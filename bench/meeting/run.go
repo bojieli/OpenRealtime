@@ -50,18 +50,19 @@ func OmniCell() bench.Cell {
 }
 
 type Options struct {
-	Endpoint      string
-	Transport     string
-	Token         string
-	Model         string
-	Cell          bench.Cell
-	Browser       string
-	Categories    []string
-	Limit         int
-	FrameRate     int
-	Timeout       time.Duration
-	AnalysisDelay time.Duration
-	Progress      func(string)
+	Endpoint        string
+	Transport       string
+	Token           string
+	Model           string
+	Cell            bench.Cell
+	Browser         string
+	Categories      []string
+	Limit           int
+	FrameRate       int
+	Timeout         time.Duration
+	AnalysisDelay   time.Duration
+	Progress        func(string)
+	RuntimeAttestor bench.RuntimeAttestor
 }
 
 func Run(ctx context.Context, options Options) (bench.Result, error) {
@@ -244,12 +245,15 @@ func runTask(ctx context.Context, environment *Environment, options Options, tas
 		WorkingTimeout: options.Timeout - 3*time.Second, PostPlaybackQuiet: 8 * time.Second,
 		TrailingSilence:        1200 * time.Millisecond,
 		CaptureRuntimeEvidence: true,
+		RuntimeAttestor:        options.RuntimeAttestor,
+		AttestationScope:       task.ID,
 		Video: []bench.VideoStream{{
 			Source: "screen", Width: width, Height: height,
 			Interval: time.Second / time.Duration(options.FrameRate), Capture: episode.CaptureScreen,
 		}},
 		Ready: episode.Ready,
 	}, samples)
+	incomplete.AttachExecution(transcript)
 	timedOut := errors.Is(playErr, bench.ErrConversationTimeout)
 	if playErr != nil && !timedOut {
 		incomplete.Error = playErr.Error()
@@ -271,6 +275,7 @@ func runTask(ctx context.Context, environment *Environment, options Options, tas
 		return toolTrace[left].ReceivedAtMS < toolTrace[right].ReceivedAtMS
 	})
 	outcome := score(task, page, actionTrace, toolTrace, transcript)
+	outcome.AttachExecution(transcript)
 	outcome.Metrics["session_timeout_count"] = truth(timedOut)
 	if timedOut {
 		outcome.Notes["session_timeout"] = "the connected agent continued beyond the meeting horizon"

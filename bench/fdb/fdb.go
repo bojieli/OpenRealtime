@@ -158,6 +158,8 @@ type Options struct {
 	HoldWindow time.Duration
 	Timeout    time.Duration
 	Progress   func(string)
+	// RuntimeAttestor captures exact graph execution evidence for each sample.
+	RuntimeAttestor bench.RuntimeAttestor
 }
 
 // Run executes the suite.
@@ -213,8 +215,10 @@ func runSample(ctx context.Context, options Options, sample Sample) bench.TaskOu
 	transcript, err := bench.Play(ctx, bench.SessionConfig{
 		Endpoint: options.Endpoint, Token: options.Token, Model: options.Model,
 		Instructions: "You are a helpful voice assistant. Answer the user's question.",
-		Realtime:     true, Timeout: options.Timeout,
+		Realtime:     true, Timeout: options.Timeout, RuntimeAttestor: options.RuntimeAttestor,
+		AttestationScope: sample.ID,
 	}, sample.AudioPath)
+	outcome.AttachExecution(transcript)
 	if err != nil {
 		outcome.Error = err.Error()
 		return outcome

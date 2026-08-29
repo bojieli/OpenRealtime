@@ -160,6 +160,10 @@ type Cell struct {
 	Availability      Availability `json:"availability"`
 	UnavailableReason string       `json:"unavailable_reason,omitempty"`
 	Architecture      Architecture `json:"architecture"`
+	// Execution is independent of the P/T/C/N architecture description. It
+	// proves which executable graph realised that description for benchmark
+	// tasks, rather than treating a binding label as execution evidence.
+	Execution bench.ExecutionRequirement `json:"execution,omitzero"`
 }
 
 // Manifest is a versioned experiment definition shared by every cell in a
@@ -233,6 +237,9 @@ func (manifest Manifest) Validate() error {
 		if err := cell.Architecture.Validate(); err != nil {
 			return fmt.Errorf("architecture cell %q: %w", cell.Name, err)
 		}
+		if err := cell.Execution.Validate(); err != nil {
+			return fmt.Errorf("architecture cell %q execution: %w", cell.Name, err)
+		}
 	}
 	return nil
 }
@@ -255,7 +262,7 @@ func (manifest Manifest) ID() string { return bench.Fingerprint(manifest) }
 func (cell Cell) MeasurementCell() bench.Cell {
 	return bench.Cell{Name: cell.Name, Levels: map[bench.Factor]string{
 		bench.FactorInteractionArchitecture: string(cell.Architecture.Level),
-	}}
+	}, Execution: cell.Execution}
 }
 
 // Validate checks one resolved architecture from first principles.
@@ -550,6 +557,9 @@ func (cell Cell) ValidateObserved(status binding.Status) error {
 	var differences []string
 	if status.Architecture != expected.Definition.Identity() {
 		differences = append(differences, "architecture definition identity differs")
+	}
+	if err := cell.Execution.MatchStatus(status); err != nil {
+		differences = append(differences, "execution: "+err.Error())
 	}
 	if status.Binding != expected.RuntimeBinding {
 		differences = append(differences, fmt.Sprintf("binding=%q want %q", status.Binding, expected.RuntimeBinding))

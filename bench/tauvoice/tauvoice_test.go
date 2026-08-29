@@ -11,6 +11,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/bench/tauvoice"
+	"github.com/bojieli/OpenRealtime/binding"
 )
 
 func TestConditionsCoverTheAblationsTau2Accepts(t *testing.T) {
@@ -31,6 +32,32 @@ func TestConditionsCoverTheAblationsTau2Accepts(t *testing.T) {
 	// number about the wrong thing.
 	if _, err := tauvoice.ParseCondition("realistic"); err == nil {
 		t.Fatal("an unknown condition must be rejected rather than defaulted")
+	}
+}
+
+func TestAttestedTauVoiceCellRequiresIndependentEvidenceBeforeRunning(t *testing.T) {
+	requirement, err := bench.RequireLegacy("cascade", binding.ArchitectureIdentity{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cell := bench.Reference()
+	cell.Execution = requirement
+	config := tauvoice.Config{Cell: cell}
+	if err := config.Verify(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "independently captured execution evidence") {
+		t.Fatalf("tau-Voice reached its expensive environment checks without evidence: %v", err)
+	}
+
+	evidence, err := (bench.LegacyStatusAttestor{}).Attest(context.Background(), bench.AttestationRequest{
+		Status: binding.Status{Binding: "cascade"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.ExecutionEvidence = &evidence
+	if err := config.Verify(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "prepared tau2-bench checkout") {
+		t.Fatalf("matching evidence was not accepted before ordinary environment validation: %v", err)
 	}
 }
 

@@ -120,6 +120,29 @@ type TaskOutcome struct {
 	Metrics map[string]float64 `json:"metrics,omitempty"`
 	// Notes carry anything a person would want when reading a surprising row.
 	Notes map[string]string `json:"notes,omitempty"`
+	// Execution is the live, immutable runtime proof captured for this task.
+	// It belongs to the row rather than only the cell because a long benchmark
+	// can cross a restart or a failed rollout between tasks.
+	Execution *ExecutionEvidence `json:"execution_evidence,omitempty"`
+	// ExecutionError retains why an explicitly requested attestation could not
+	// be produced. Dropping it would make missing evidence look accidental.
+	ExecutionError string `json:"execution_evidence_error,omitempty"`
+}
+
+// AttachExecution copies the shared session driver's evidence into a task.
+// The copy prevents a scorer or later session from mutating the transcript's
+// immutable proof through an aliased slice.
+func (outcome *TaskOutcome) AttachExecution(transcript Transcript) {
+	if outcome == nil {
+		return
+	}
+	outcome.ExecutionError = transcript.ExecutionError
+	if transcript.Execution == nil {
+		outcome.Execution = nil
+		return
+	}
+	copy := transcript.Execution.Clone()
+	outcome.Execution = &copy
 }
 
 // Result is one completed cell of one suite.
@@ -218,10 +241,44 @@ func (result Result) Reportable() error {
 	if err := result.Provenance.Reproducible(); err != nil {
 		failures = append(failures, err.Error())
 	}
+	failures = append(failures, result.executionFailures()...)
 	if len(failures) == 0 {
 		return nil
 	}
 	return fmt.Errorf("cell %q is not reportable: %s", result.Cell.Name, strings.Join(failures, "; "))
+}
+
+func (result Result) executionFailures() []string {
+	if err := result.Cell.Execution.Validate(); err != nil {
+		return []string{"invalid cell execution requirement: " + err.Error()}
+	}
+	var failures []string
+	for index, task := range result.Tasks {
+		identity := strings.TrimSpace(task.ID)
+		if identity == "" {
+			identity = fmt.Sprintf("row %d", index)
+		}
+		if strings.TrimSpace(task.ExecutionError) != "" {
+			failures = append(failures, fmt.Sprintf(
+				"task %q execution attestation failed: %s", identity, task.ExecutionError))
+			continue
+		}
+		// A setup failure is already an incomplete-cell refusal. Evidence is
+		// required for every completed task, which closes the loophole where a
+		// complete score could be published from an unattested session.
+		if !task.Completed && task.Execution == nil {
+			continue
+		}
+		if task.Execution != nil && task.Execution.Scope != "" && task.Execution.Scope != identity {
+			failures = append(failures, fmt.Sprintf(
+				"task %q carries execution evidence for scope %q", identity, task.Execution.Scope))
+			continue
+		}
+		if err := result.Cell.Execution.Match(task.Execution); err != nil {
+			failures = append(failures, fmt.Sprintf("task %q: %v", identity, err))
+		}
+	}
+	return failures
 }
 
 // Write saves a result as JSON.

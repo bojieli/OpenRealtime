@@ -467,3 +467,25 @@ func TestCellAuthoringKeepsDefinitionsStatusAndPinsIndependent(t *testing.T) {
 		t.Fatalf("a status from another definition was accepted: %v", err)
 	}
 }
+
+func TestCellArtifactsRejectInvalidExecutionRequirements(t *testing.T) {
+	cell := architectureCell("invalid-execution", architecture.LevelTextPolicy)
+	cell.Execution = bench.ExecutionRequirement{
+		FormatVersion: bench.AttestationFormatVersion,
+		Kind:          bench.ExecutionKind("invented"),
+	}
+	path := filepath.Join(t.TempDir(), "cell.json")
+	if err := architecture.WriteCell(path, cell); err == nil || !strings.Contains(err.Error(), "execution") {
+		t.Fatalf("cell writer accepted an invalid execution requirement: %v", err)
+	}
+	payload, err := json.Marshal(cell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := architecture.ReadCell(path); err == nil || !strings.Contains(err.Error(), "execution") {
+		t.Fatalf("cell reader accepted an invalid execution requirement: %v", err)
+	}
+}

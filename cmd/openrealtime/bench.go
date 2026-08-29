@@ -33,10 +33,12 @@ import (
 // users get is not a measurement of anything.
 func runBench(arguments []string, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: openrealtime bench <architecture|meeting|realtime-cu|fdb|fdbv3|fdbench|tau-voice|dynacu> [flags]")
+		return errors.New("usage: openrealtime bench <execution|architecture|meeting|realtime-cu|fdb|fdbv3|fdbench|tau-voice|dynacu> [flags]")
 	}
 	suite := strings.ToLower(strings.TrimSpace(arguments[0]))
 	switch suite {
+	case "execution", "attestation":
+		return runExecutionRequirement(arguments[1:], output)
 	case "architecture", "architecture-pair", "f52":
 		return runArchitecturePair(arguments[1:], output)
 	case "fdb", "fdb-v1.5":
@@ -78,6 +80,7 @@ func runMeeting(arguments []string, output io.Writer) error {
 		varyFactor      string
 		varyLevel       string
 		foreground      string
+		executionPath   string
 		list            bool
 	)
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "WebSocket or WebRTC SDP endpoint")
@@ -96,6 +99,7 @@ func runMeeting(arguments []string, output io.Writer) error {
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F9")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
 	flags.StringVar(&foreground, "foreground", "cascade", "fast foreground: cascade or omni")
+	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
 	flags.BoolVar(&list, "list", false, "list repository-owned meeting tasks and stop")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
@@ -123,6 +127,13 @@ func runMeeting(arguments []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if err := attachBenchmarkExecution(&cell, executionPath); err != nil {
+		return err
+	}
+	attestor, err := sharedDriverAttestor(cell.Execution, nil)
+	if err != nil {
+		return err
+	}
 	var selectedCategories []string
 	for _, value := range strings.Split(categories, ",") {
 		if trimmed := strings.TrimSpace(value); trimmed != "" {
@@ -135,7 +146,8 @@ func runMeeting(arguments []string, output io.Writer) error {
 		Endpoint: endpoint, Transport: transport, Token: os.Getenv(tokenEnv), Model: model,
 		Cell: cell, Browser: browser, Categories: selectedCategories, Limit: limit,
 		FrameRate: fps, Timeout: timeout, AnalysisDelay: analysisDelay,
-		Progress: func(line string) { fmt.Fprintln(output, line) },
+		RuntimeAttestor: attestor,
+		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	})
 	if err != nil {
 		return err
@@ -309,6 +321,7 @@ func runArchitectureCell(arguments []string, output io.Writer) error {
 	catalogPath := flags.String("catalog", "", "external architecture catalog; empty uses the repository-owned catalog")
 	statusPath := flags.String("status", "", "post-handshake status from architecture inspect")
 	pinsPath := flags.String("pins", "", "immutable deployment pins JSON")
+	executionPath := flags.String("execution", "", "reviewed execution-requirement JSON; empty authors an unattested compatibility cell")
 	out := flags.String("out", "", "write the authored cell JSON")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
@@ -339,10 +352,32 @@ func runArchitectureCell(arguments []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if err := attachArchitectureExecution(&cell, *executionPath); err != nil {
+		return err
+	}
 	if err := archbench.WriteCell(*out, cell); err != nil {
 		return err
 	}
 	fmt.Fprintf(output, "wrote %s  F52=%s  definition=%s\n", *out, cell.Architecture.Level, definition.Ref())
+	return nil
+}
+
+// attachArchitectureExecution keeps the executable graph contract separate
+// from architecture structure, deployment pins, and observed task evidence.
+// An omitted path preserves historical authoring behavior; an explicit path
+// must contain a non-zero, strictly validated requirement artifact.
+func attachArchitectureExecution(cell *archbench.Cell, path string) error {
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	if cell == nil {
+		return errors.New("attach architecture execution: nil cell")
+	}
+	requirement, err := bench.ReadExecutionRequirement(path)
+	if err != nil {
+		return err
+	}
+	cell.Execution = requirement
 	return nil
 }
 
@@ -414,6 +449,7 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 		referenceLevels string
 		varyFactor      string
 		varyLevel       string
+		executionPath   string
 		list            bool
 	)
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
@@ -430,6 +466,7 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 	flags.StringVar(&referenceLevels, "reference-levels", "", "comma-separated factor=level overrides held fixed across a pair")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F2")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
+	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
 	flags.BoolVar(&list, "list", false, "list repository-owned tasks and stop")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
@@ -442,6 +479,13 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 		return nil
 	}
 	cell, err := resolveRealtimeCUCell(cellName, referenceLevels, varyFactor, varyLevel)
+	if err != nil {
+		return err
+	}
+	if err := attachBenchmarkExecution(&cell, executionPath); err != nil {
+		return err
+	}
+	attestor, err := sharedDriverAttestor(cell.Execution, nil)
 	if err != nil {
 		return err
 	}
@@ -468,7 +512,8 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 		Endpoint: endpoint, Token: os.Getenv(tokenEnv), Model: model,
 		Cell: cell, Browser: browser, Groundings: selectedGroundings,
 		Categories: selectedCategories, Limit: limit, FrameRate: fps, Timeout: timeout,
-		Progress: func(line string) { fmt.Fprintln(output, line) },
+		RuntimeAttestor: attestor,
+		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	})
 	if err != nil {
 		return err
@@ -567,17 +612,18 @@ func axes(values []realtimecu.Axis) string {
 func runFDB(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench fdb", flag.ContinueOnError)
 	var (
-		root       string
-		endpoint   string
-		tokenEnv   string
-		model      string
-		out        string
-		categories string
-		limit      int
-		cellName   string
-		varyFactor string
-		varyLevel  string
-		timeout    time.Duration
+		root          string
+		endpoint      string
+		tokenEnv      string
+		model         string
+		out           string
+		categories    string
+		limit         int
+		cellName      string
+		varyFactor    string
+		varyLevel     string
+		executionPath string
+		timeout       time.Duration
 	)
 	flags.StringVar(&root, "dataset", ".runtime/full-duplex-bench-v1.5/dataset", "FDB v1.5 dataset root")
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
@@ -589,6 +635,7 @@ func runFDB(arguments []string, output io.Writer) error {
 	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies from the reference, such as F2")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
+	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
 	flags.DurationVar(&timeout, "task-timeout", 3*time.Minute, "how long one recording may take")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
@@ -596,6 +643,13 @@ func runFDB(arguments []string, output io.Writer) error {
 	}
 
 	cell, err := resolveCell(cellName, varyFactor, varyLevel)
+	if err != nil {
+		return err
+	}
+	if err := attachBenchmarkExecution(&cell, executionPath); err != nil {
+		return err
+	}
+	attestor, err := sharedDriverAttestor(cell.Execution, nil)
 	if err != nil {
 		return err
 	}
@@ -612,7 +666,8 @@ func runFDB(arguments []string, output io.Writer) error {
 	result, err := fdb.Run(ctx, fdb.Options{
 		Root: root, Endpoint: endpoint, Token: os.Getenv(tokenEnv), Model: model,
 		Cell: cell, Categories: wanted, Limit: limit, Timeout: timeout,
-		Progress: func(line string) { fmt.Fprintln(output, line) },
+		RuntimeAttestor: attestor,
+		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	})
 	if err != nil {
 		return err
@@ -714,19 +769,20 @@ func readResult(path string) (bench.Result, error) {
 func runFDBench(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench fdbench", flag.ContinueOnError)
 	var (
-		root       string
-		endpoint   string
-		tokenEnv   string
-		model      string
-		out        string
-		conditions string
-		list       bool
-		limit      int
-		cellName   string
-		varyFactor string
-		varyLevel  string
-		budget     time.Duration
-		timeout    time.Duration
+		root          string
+		endpoint      string
+		tokenEnv      string
+		model         string
+		out           string
+		conditions    string
+		list          bool
+		limit         int
+		cellName      string
+		varyFactor    string
+		varyLevel     string
+		executionPath string
+		budget        time.Duration
+		timeout       time.Duration
 	)
 	flags.StringVar(&root, "dataset", ".runtime/fd-bench/dataset", "FD-Bench dataset root")
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
@@ -739,6 +795,7 @@ func runFDBench(arguments []string, output io.Writer) error {
 	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F4")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
+	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
 	flags.DurationVar(&budget, "latency-budget", 2*time.Second, "how long a reply may take before it counts as late")
 	flags.DurationVar(&timeout, "task-timeout", 5*time.Minute, "how long one conversation may take")
 	flags.SetOutput(output)
@@ -769,13 +826,21 @@ func runFDBench(arguments []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if err := attachBenchmarkExecution(&cell, executionPath); err != nil {
+		return err
+	}
+	attestor, err := sharedDriverAttestor(cell.Execution, nil)
+	if err != nil {
+		return err
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result, err := fdbench.Run(ctx, fdbench.Options{
 		Root: root, Conditions: selected, Endpoint: endpoint, Token: os.Getenv(tokenEnv),
 		Model: model, Cell: cell, Limit: limit, LatencyBudget: budget, Timeout: timeout,
-		Progress: func(line string) { fmt.Fprintln(output, line) },
+		RuntimeAttestor: attestor,
+		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	})
 	if err != nil {
 		return err
@@ -818,16 +883,17 @@ func runFDBench(arguments []string, output io.Writer) error {
 func runFDBv3(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench fdbv3", flag.ContinueOnError)
 	var (
-		root       string
-		endpoint   string
-		tokenEnv   string
-		model      string
-		out        string
-		limit      int
-		cellName   string
-		varyFactor string
-		varyLevel  string
-		timeout    time.Duration
+		root          string
+		endpoint      string
+		tokenEnv      string
+		model         string
+		out           string
+		limit         int
+		cellName      string
+		varyFactor    string
+		varyLevel     string
+		executionPath string
+		timeout       time.Duration
 	)
 	flags.StringVar(&root, "dataset", ".runtime/full-duplex-bench-v3/dataset/fdb_v3_data_released", "FDB v3 dataset root")
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
@@ -838,6 +904,7 @@ func runFDBv3(arguments []string, output io.Writer) error {
 	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F2")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
+	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
 	flags.DurationVar(&timeout, "task-timeout", 3*time.Minute, "how long one recording may take")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
@@ -847,13 +914,21 @@ func runFDBv3(arguments []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if err := attachBenchmarkExecution(&cell, executionPath); err != nil {
+		return err
+	}
+	attestor, err := sharedDriverAttestor(cell.Execution, nil)
+	if err != nil {
+		return err
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result, err := fdbv3.Run(ctx, fdbv3.Options{
 		Root: root, Endpoint: endpoint, Token: os.Getenv(tokenEnv), Model: model,
 		Cell: cell, Limit: limit, Timeout: timeout,
-		Progress: func(line string) { fmt.Fprintln(output, line) },
+		RuntimeAttestor: attestor,
+		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	})
 	if err != nil {
 		return err
@@ -1039,6 +1114,7 @@ func runTauVoice(arguments []string, output io.Writer) error {
 		referenceLevels string
 		varyFactor      string
 		varyLevel       string
+		executionPath   string
 		timeout         time.Duration
 		verifyOnly      bool
 		metrics         bool
@@ -1078,6 +1154,7 @@ func runTauVoice(arguments []string, output io.Writer) error {
 		"comma-separated factor=level overrides held fixed across a pair")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F2")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
+	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
 	flags.DurationVar(&timeout, "task-timeout", 10*time.Minute, "how long one simulation may take")
 	flags.BoolVar(&verifyOnly, "verify", false, "check the environment and exit without running")
 	flags.BoolVar(&metrics, "interaction-metrics", true, "also compute tau2's turn-taking metrics")
@@ -1087,6 +1164,12 @@ func runTauVoice(arguments []string, output io.Writer) error {
 	}
 	cell, err := resolveCellFrom(bench.Reference(), cellName, referenceLevels, varyFactor, varyLevel)
 	if err != nil {
+		return err
+	}
+	if err := attachBenchmarkExecution(&cell, executionPath); err != nil {
+		return err
+	}
+	if err := requireExternalExecutionSource(cell.Execution, false); err != nil {
 		return err
 	}
 	speech, err := tauvoice.ParseCondition(condition)
