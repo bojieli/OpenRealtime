@@ -1743,7 +1743,7 @@ already available. A phase is not complete until its exit gate is checked.
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction parity, and removal of binding switches |
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Streaming camera/screen cadence, complete silent computer-use and independent voice/CU reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, exact live resolution evidence, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Deployment/secrets/evidence catalogs, legacy translation, normal graph-native launch, and executed parity artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, and exact replay | Trigger/cancel/authority views, editor UI/LSP/schema work, and output-to-cause operator workflow |
+| 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, and a compiler-backed canonical `.ortg` language-service core | Trigger/cancel/authority views, recovery/schema/LSP/UI integration, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
 | 8 — legacy removal | Not started | Compatibility behavior is isolated behind a coarse element | Migrate every production/evaluation launch path, then remove obsolete flags, switches, and binding constraints |
 
@@ -1755,10 +1755,11 @@ Current checkpoint notes:
 - The committed graph-native slice now extends from acoustic and multimodal
   ingress through state, independently triggered cognition, explicit
   interaction/speech routing, tool authority, and external-model topologies.
-- Deterministic graph diff, session-keyed bounded runtime recording, and
-  replayable payload-free trace artifacts are committed. Editor services,
-  adaptive video, and sidecar media-format hardening remain unchecked until
-  their independent worktree slices are reviewed and committed.
+- Deterministic graph diff, session-keyed bounded runtime recording, replayable
+  payload-free trace artifacts, and the canonical `.ortg` language-service
+  core are committed. Editor recovery/schema/UI transport, adaptive video, and
+  sidecar media-format hardening remain unchecked until their independent
+  worktree slices are reviewed and committed.
 - No item in the twelve-point definition of done is yet proven end to end.
   Several have foundation-level support, but benchmark migration, production
   inspection, reconciliation, and legacy removal are still outstanding.
@@ -1788,9 +1789,12 @@ Integrated checkpoint ledger:
 - [x] Opt-in per-mount trace recording with exact graph/config/runtime evidence,
   session-keyed correlation pseudonyms, bounded compaction, queue residence
   timing, deterministic export, and key erasure.
+- [x] Compiler-backed canonical `.ortg` diagnostics, descriptor-derived editor
+  metadata, bounded completion/hover/definition queries, stable revision
+  cursors, graph-aware rename, and strict in-memory edit application.
 - [ ] Full componentized conversational reference graphs and safe-point parity.
-- [ ] Complete authoring UI/LSP, reconciliation, benchmark execution parity,
-  and legacy launch-path removal.
+- [ ] Complete recovery/schema/LSP/UI authoring, reconciliation, benchmark
+  execution parity, and legacy launch-path removal.
 
 Reference-agent tracker:
 
@@ -1969,10 +1973,17 @@ artifacts rather than legacy architecture/config switches):
   erasure on shutdown.
 - [ ] Add a visual editor that reads and writes canonical `.ortg` or normalized
   YAML/JSON using the same descriptors and validator.
-- [ ] Generate syntax completion, JSON Schema, and editor metadata from element
-  descriptors.
-- [ ] Add graph-aware rename, port completion, formatting, and go-to-definition
-  for the default `.ortg` authoring path.
+- [x] Add an immutable, pure language-service snapshot with compiler-backed,
+  source-mapped diagnostics, stable source-digest cursors, bounded results, and
+  recursively independent metadata for concurrent readers.
+- [x] Generate descriptor-derived element metadata plus element, compatible
+  node, and directional port completion for canonical `.ortg` source.
+- [ ] Resolve separate values-schema references and generate JSON Schema and
+  configuration-value editor metadata without mixing values into topology.
+- [x] Add bounded graph-aware node rename, hover, port completion, and
+  go-to-definition for fully parsed canonical `.ortg`.
+- [ ] Add recovery parsing for incomplete authoring, formatter edits, LSP/UI
+  transport, multi-file/subgraph navigation, and strict file-write mediation.
 
 - [ ] **Exit gate:** an operator can understand a running graph and trace an
   output to its causes without reading binding source.
