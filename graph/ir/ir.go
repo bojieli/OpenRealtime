@@ -21,6 +21,11 @@ import (
 
 const FormatVersion = 1
 
+// BoundaryQueuePrefix reserves the runtime/inspection queue namespace used
+// for exported graph boundaries. Internal edge IDs may never use it; without
+// this reservation an edge could alias a boundary queue in live evidence.
+const BoundaryQueuePrefix = "boundary:"
+
 // Delivery is the bounded-channel behavior when a queue is full.
 type Delivery string
 
@@ -477,6 +482,10 @@ func (graph Graph) validateStructure() error {
 	for _, edge := range graph.Edges {
 		if edge.ID == "" {
 			return fmt.Errorf("graph %s has an edge with an empty ID", graph.ID)
+		}
+		if strings.HasPrefix(edge.ID, BoundaryQueuePrefix) {
+			return fmt.Errorf("graph %s edge %q uses reserved boundary queue prefix %q",
+				graph.ID, edge.ID, BoundaryQueuePrefix)
 		}
 		if _, duplicate := edgeIDs[edge.ID]; duplicate {
 			return fmt.Errorf("graph %s repeats edge %q", graph.ID, edge.ID)

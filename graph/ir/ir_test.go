@@ -62,6 +62,14 @@ func TestIRRejectsUnboundedAndLossWithoutPermission(t *testing.T) {
 	}
 }
 
+func TestIRRejectsInternalEdgeInReservedBoundaryQueueNamespace(t *testing.T) {
+	graph := fixture()
+	graph.Edges[0].ID = ir.BoundaryQueuePrefix + "input"
+	if _, err := ir.Freeze(graph); err == nil {
+		t.Fatal("expected reserved boundary queue edge ID to fail")
+	}
+}
+
 func fixture() ir.Graph {
 	typeOfEdge := element.Event(element.Named("test.Value"))
 	sourceIdentity, _ := descriptor("test.Source", element.Output, "out", typeOfEdge).Identity()
