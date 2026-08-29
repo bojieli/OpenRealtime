@@ -83,6 +83,10 @@ type session struct {
 	settingsMu sync.RWMutex
 	settings   settings
 
+	inspectionMu     sync.Mutex
+	inspectionLease  inspectionLease
+	inspectionClosed bool
+
 	sourcesMu sync.Mutex
 	sources   map[string]*videoSource
 
@@ -212,6 +216,7 @@ func (session *session) bindingSettings() binding.Settings {
 
 // Run drives the connection until it closes.
 func (session *session) Run() error {
+	defer session.closeInspection()
 	session.wait.Add(2)
 	go session.writerLoop()
 	go session.handlerLoop()
@@ -225,6 +230,7 @@ func (session *session) Run() error {
 		websocket.CloseStatus(err) == websocket.StatusGoingAway || errors.Is(err, io.EOF) {
 		err = nil
 	}
+	session.closeInspection()
 	_ = session.runtime.Close(context.Background(), err)
 	session.cancel(err)
 	session.wait.Wait()
@@ -460,6 +466,7 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 	// returned because they are not failures of the event: everything else in
 	// it applies, and the client hears about each one by name afterwards.
 	var refused []clientError
+	var negotiatedExtension *openrealtime.Response
 
 	if update.Instructions != nil {
 		current.instruction = *update.Instructions
@@ -593,7 +600,26 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 		if err != nil {
 			return err
 		}
-		current.extension = response
+		if inspectionDebugEnabled(response.Debug) {
+			access, err := session.inspectionAccess()
+			if err != nil {
+				return err
+			}
+			response.Debug.Inspection = access
+		} else {
+			session.disableInspection()
+		}
+		// The inspection bearer is a one-time negotiation result, not durable
+		// session configuration. Persist the negotiated debug policy without the
+		// secret so later session events and in-memory settings cannot replay it.
+		persistent := response
+		if response.Debug != nil {
+			debug := *response.Debug
+			debug.Inspection = nil
+			persistent.Debug = &debug
+		}
+		current.extension = persistent
+		negotiatedExtension = &response
 		current.observers = slices.Clone(response.Observers)
 		if response.Video != nil {
 			current.limits = *response.Video
@@ -611,7 +637,15 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 	// update failing, which is the misunderstanding this ordering exists to
 	// prevent: session.updated says what the session now is, and the errors
 	// that follow say which parts of the request did not contribute to it.
-	if err := session.send(session.sessionEvent("session.updated")); err != nil {
+	updated := session.sessionEvent("session.updated")
+	if negotiatedExtension != nil {
+		object, ok := updated["session"].(map[string]any)
+		if !ok {
+			return errors.New("build session.updated: missing session object")
+		}
+		object["openrealtime"] = *negotiatedExtension
+	}
+	if err := session.send(updated); err != nil {
 		return err
 	}
 	_ = session.Debug(session.ctx, binding.DebugEvent{

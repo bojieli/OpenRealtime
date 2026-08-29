@@ -93,11 +93,19 @@ type Config struct {
 	// conversation content: a log that leaked what was said would be a worse
 	// problem than having no log.
 	Logger *slog.Logger
+	// InspectionTokenTTL bounds the read-only management capability issued to
+	// a session that explicitly negotiates session debugging. Zero selects one
+	// hour. The capability is revoked earlier when debugging is disabled or the
+	// owning session ends.
+	InspectionTokenTTL time.Duration
+
+	inspections *inspectionRegistry
 }
 
 // Server serves /v1/realtime and /healthz.
 type Server struct {
-	config Config
+	config      Config
+	inspections *inspectionRegistry
 }
 
 // New validates the configuration and creates a server.
@@ -134,8 +142,12 @@ func New(config Config) (*Server, error) {
 	if config.Logger == nil {
 		config.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	if config.InspectionTokenTTL < 0 {
+		return nil, errors.New("inspection token TTL cannot be negative")
+	}
+	config.inspections = newInspectionRegistry(config.InspectionTokenTTL)
 	config.Token = strings.TrimSpace(config.Token)
-	return &Server{config: config}, nil
+	return &Server{config: config, inspections: config.inspections}, nil
 }
 
 // Handler returns the HTTP surface.
@@ -144,6 +156,7 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", server.health)
 	mux.HandleFunc("GET /metrics", server.metrics)
 	mux.Handle("GET /v1/realtime", server)
+	mux.HandleFunc("GET /v1/realtime/sessions/{session}/live", server.inspectLive)
 	// The demo is opt-in. A production server has no business serving a page,
 	// and one that appeared on every deployment would be surface nobody asked
 	// for; but with it enabled, trying the system out is one command.

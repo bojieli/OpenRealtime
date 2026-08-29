@@ -55,6 +55,10 @@ func TestCompatibilityBindingRunsCurrentSessionThroughGraph(t *testing.T) {
 	if inspected.Fingerprint != wrapped.Graph().Fingerprint || inspected.Edges["boundary:text"].Enqueued != 1 {
 		t.Fatalf("live graph = %+v", inspected)
 	}
+	if inspected.Configuration == nil || inspected.Configuration.ID != "values://"+wrapped.Graph().ID ||
+		inspected.Configuration.Revision == "" || inspected.Configuration.Digest == "" {
+		t.Fatalf("live graph lost the exact values artifact identity: %+v", inspected.Configuration)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := live.Close(ctx, nil); err != nil {

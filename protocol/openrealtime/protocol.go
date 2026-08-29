@@ -94,6 +94,21 @@ type DebugResponse struct {
 	Categories          []DebugCategory `json:"categories,omitempty"`
 	IncludePayloads     bool            `json:"include_payloads,omitempty"`
 	TimestampResolution string          `json:"timestamp_resolution"`
+	// Inspection is an ephemeral, session-bound capability for the read-only
+	// management snapshot. It is returned only when session debugging was
+	// explicitly negotiated and the mounted runtime actually exports live
+	// graph evidence. The token belongs in a header, never a URL.
+	Inspection *InspectionAccess `json:"inspection,omitempty"`
+}
+
+// InspectionAccess grants one client read-only access to the exact graph
+// mount backing its current session. SessionID remains human-operable and may
+// be guessable; Token is the unguessable authority bound to it.
+type InspectionAccess struct {
+	SessionID   string `json:"session_id"`
+	Path        string `json:"path"`
+	Token       string `json:"token"`
+	ExpiresAtMS int64  `json:"expires_at_ms"`
 }
 
 // Features is every capability this implementation can offer.

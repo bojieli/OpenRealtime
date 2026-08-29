@@ -35,6 +35,7 @@ const nodeID = "runtime"
 type Binding struct {
 	underlying     legacy.Binding
 	graph          ir.Graph
+	configuration  inspect.ArtifactIdentity
 	implementation string
 	descriptor     element.Descriptor
 	portTypes      map[string]element.Type
@@ -78,8 +79,13 @@ func New(underlying legacy.Binding) (*Binding, error) {
 		portTypes[port.Name] = port.Type.Clone()
 	}
 	return &Binding{
-		underlying: underlying, graph: bound.Graph, implementation: implementation,
-		descriptor: descriptor, portTypes: portTypes,
+		underlying: underlying, graph: bound.Graph,
+		configuration: inspect.ArtifactIdentity{
+			ID: "values://" + bound.Graph.ID, Revision: graphvalues.APIVersion,
+			Digest: bound.Fingerprint,
+		},
+		implementation: implementation,
+		descriptor:     descriptor, portTypes: portTypes,
 	}, nil
 }
 
@@ -120,7 +126,8 @@ func (binding *Binding) Start(ctx context.Context, options legacy.Options) (lega
 	}
 	mounted, err := graphruntime.Mount(ctx, graphruntime.Config{
 		Graph: binding.graph, Registry: registry, Services: services,
-		Values: map[string]json.RawMessage{nodeID: configValue},
+		Values:        map[string]json.RawMessage{nodeID: configValue},
+		Configuration: &binding.configuration,
 	})
 	if err != nil {
 		return nil, err
