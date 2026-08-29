@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 )
@@ -75,6 +76,91 @@ func TestMountedGraphRunsThroughTypedBoundariesAndReportsLiveQueues(t *testing.T
 	}
 	if !disposed.Load() {
 		t.Fatal("lifecycle disposer did not run")
+	}
+}
+
+func TestMountedGraphReportsExactLiveResolutionAndCorrelatedInternalFlow(t *testing.T) {
+	descriptor := passDescriptor(nil)
+	registry := graphruntime.NewRegistry()
+	registered := inspect.ArtifactIdentity{ID: "image://pass", Revision: "sha256:build-7"}
+	configuration := inspect.ArtifactIdentity{
+		ID: "values://pass-chain", Revision: "openrealtime.ai/config/v1alpha1",
+		Digest: "sha256:" + strings.Repeat("a", 64),
+	}
+	if err := registry.RegisterArtifact("", registered, resolvingPassFactory{
+		passFactory: passFactory{descriptor: descriptor},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	graph := passChainGraph(t, descriptor)
+	mounted, err := graphruntime.Mount(context.Background(), graphruntime.Config{
+		Graph: graph, Registry: registry, Configuration: &configuration,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := mounted.Live()
+	if before.FormatVersion != inspect.LiveFormatVersion || before.GraphID != graph.ID ||
+		before.GraphRevision != graph.Revision || before.Fingerprint != graph.Fingerprint ||
+		before.State != "mounted" || before.Configuration == nil || *before.Configuration != configuration {
+		t.Fatalf("mounted snapshot identity = %+v", before)
+	}
+	if got := before.Nodes["first"].Resolution; got == nil ||
+		got.Runtime != registered || got.RuntimeEvidence != inspect.EvidenceRegistered ||
+		got.CapabilitiesEvidence != "" {
+		t.Fatalf("registered resolution = %+v", got)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- mounted.Run(ctx) }()
+	ingress, _ := mounted.Ingress("input")
+	egress, _ := mounted.Egress("output")
+	message := element.Envelope{
+		Type: element.Event(element.Named("test.Value")), ItemID: "item-live",
+		TraceID: "task-7", RunID: "run-7", Sequence: 1, Payload: "hello",
+	}
+	if _, err := ingress.Broadcast(context.Background(), message); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := egress.Receive(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	live := mounted.Live()
+	if live.State != "running" {
+		t.Fatalf("running snapshot state = %q", live.State)
+	}
+	for _, node := range []string{"first", "second"} {
+		resolution := live.Nodes[node].Resolution
+		if resolution == nil || resolution.RuntimeEvidence != inspect.EvidenceLive ||
+			resolution.Runtime.ID != "worker://pass" || resolution.Runtime.Revision != "build:7" ||
+			resolution.CapabilitiesEvidence != inspect.EvidenceLive || len(resolution.Capabilities) != 1 ||
+			resolution.Capabilities[0].Provider.ID != "provider://echo" ||
+			resolution.Capabilities[0].Adapter == nil ||
+			resolution.Capabilities[0].Adapter.ID != "adapter://echo" {
+			t.Fatalf("node %s live resolution = %+v", node, resolution)
+		}
+	}
+	flow, found := live.Flows["trace:task-7"]
+	if !found || len(flow.Edges) != 1 || flow.Edges[0] != "first-to-second" ||
+		flow.Correlation != "trace:task-7" || flow.Truncated {
+		t.Fatalf("correlated flow = %+v, found=%t", flow, found)
+	}
+	// Live snapshots are recursively independent management-plane values.
+	live.Nodes["first"].Resolution.Capabilities[0].Provider.ID = "mutated"
+	live.Configuration.ID = "mutated"
+	live.Flows["trace:task-7"] = inspect.FlowLive{Edges: []string{"mutated"}}
+	again := mounted.Live()
+	if again.Nodes["first"].Resolution.Capabilities[0].Provider.ID != "provider://echo" ||
+		again.Flows["trace:task-7"].Edges[0] != "first-to-second" ||
+		again.Configuration.ID != "values://pass-chain" {
+		t.Fatal("live inspection snapshot retained caller aliases")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("graph did not stop")
 	}
 }
 
@@ -180,7 +266,34 @@ type passFactory struct {
 
 type permissivePassFactory struct{ passFactory }
 
+type resolvingPassFactory struct{ passFactory }
+
 func (permissivePassFactory) ValidateConfig(json.RawMessage) error { return nil }
+
+func (factory resolvingPassFactory) Mount(
+	ctx context.Context, mount element.MountContext,
+) (element.Runnable, error) {
+	if mount.Resolution == nil {
+		return nil, errors.New("mount has no live resolution reporter")
+	}
+	runnable, err := factory.passFactory.Mount(ctx, mount)
+	if err != nil {
+		return nil, err
+	}
+	return element.RunnableFunc(func(ctx context.Context) error {
+		if err := mount.Resolution.Runtime("worker://pass", "build:7", ""); err != nil {
+			return err
+		}
+		if err := mount.Resolution.Capabilities([]element.CapabilityResolution{{
+			Name: "generation", Contract: "test.echo/v1",
+			ProviderID: "provider://echo", ProviderRevision: "weights:7",
+			AdapterID: "adapter://echo", AdapterRevision: "git:7",
+		}}); err != nil {
+			return err
+		}
+		return runnable.Run(ctx)
+	}), nil
+}
 
 func (factory passFactory) Descriptor() element.Descriptor { return factory.descriptor.Clone() }
 
@@ -268,6 +381,42 @@ func passGraph(t *testing.T, descriptor element.Descriptor) ir.Graph {
 		Boundaries: []ir.Boundary{
 			{Name: "input", Direction: ir.InputBoundary, Endpoint: ir.Endpoint{Node: "pass", Port: "in"}, Type: valueType},
 			{Name: "output", Direction: ir.OutputBoundary, Endpoint: ir.Endpoint{Node: "pass", Port: "out"}, Type: valueType},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return graph
+}
+
+func passChainGraph(t *testing.T, descriptor element.Descriptor) ir.Graph {
+	t.Helper()
+	identity, err := descriptor.Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	valueType := element.Event(element.Named("test.Value"))
+	node := func(id string) ir.Node {
+		return ir.Node{
+			ID: id, Element: identity,
+			Ports: []ir.Port{
+				{Name: "in", Direction: element.Input, Type: valueType, Cardinality: element.One, Required: true, DefaultDepth: 2},
+				{Name: "out", Direction: element.Output, Type: valueType, Cardinality: element.One, Required: true, DefaultDepth: 2},
+			},
+			Reaction: descriptor.Reaction,
+		}
+	}
+	graph, err := ir.Freeze(ir.Graph{
+		FormatVersion: ir.FormatVersion, ID: "pass-chain", Revision: 1,
+		Nodes: []ir.Node{node("first"), node("second")},
+		Edges: []ir.Edge{{
+			ID: "first-to-second", From: ir.Endpoint{Node: "first", Port: "out"},
+			To: ir.Endpoint{Node: "second", Port: "in"}, Type: valueType,
+			Delivery: ir.Lossless, Ordering: "fifo", Depth: 2,
+		}},
+		Boundaries: []ir.Boundary{
+			{Name: "input", Direction: ir.InputBoundary, Endpoint: ir.Endpoint{Node: "first", Port: "in"}, Type: valueType},
+			{Name: "output", Direction: ir.OutputBoundary, Endpoint: ir.Endpoint{Node: "second", Port: "out"}, Type: valueType},
 		},
 	})
 	if err != nil {

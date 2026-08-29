@@ -3,11 +3,20 @@
 package inspect
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"slices"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 )
+
+const LiveFormatVersion uint64 = 1
 
 // Model is the frontend-neutral static graph view consumed by a canvas,
 // console, or documentation renderer.
@@ -74,22 +83,209 @@ type ScopeBoundary struct {
 // Live overlays runtime evidence without mutating the static graph model.
 // Sequence makes snapshots monotonically comparable within one mount.
 type Live struct {
-	Fingerprint string              `json:"fingerprint"`
-	Sequence    uint64              `json:"sequence"`
-	ObservedAt  time.Time           `json:"observed_at"`
-	Nodes       map[string]NodeLive `json:"nodes,omitempty"`
-	Edges       map[string]EdgeLive `json:"edges,omitempty"`
+	FormatVersion uint64              `json:"format_version"`
+	GraphID       string              `json:"graph_id"`
+	GraphRevision uint64              `json:"graph_revision"`
+	Fingerprint   string              `json:"fingerprint"`
+	Configuration *ArtifactIdentity   `json:"configuration,omitempty"`
+	Sequence      uint64              `json:"sequence"`
+	ObservedAt    time.Time           `json:"observed_at"`
+	State         string              `json:"state"`
+	Error         string              `json:"error,omitempty"`
+	Nodes         map[string]NodeLive `json:"nodes,omitempty"`
+	Edges         map[string]EdgeLive `json:"edges,omitempty"`
+	Flows         map[string]FlowLive `json:"flows,omitempty"`
+	TraceDropped  uint64              `json:"trace_dropped,omitempty"`
+}
+
+// Clone returns a recursively independent management-plane snapshot.
+func (live Live) Clone() Live {
+	result := live
+	if live.Configuration != nil {
+		copy := *live.Configuration
+		result.Configuration = &copy
+	}
+	result.Nodes = make(map[string]NodeLive, len(live.Nodes))
+	for id, node := range live.Nodes {
+		result.Nodes[id] = node.Clone()
+	}
+	result.Edges = make(map[string]EdgeLive, len(live.Edges))
+	for id, edge := range live.Edges {
+		result.Edges[id] = edge
+	}
+	result.Flows = make(map[string]FlowLive, len(live.Flows))
+	for id, flow := range live.Flows {
+		result.Flows[id] = flow.Clone()
+	}
+	return result
 }
 
 type NodeLive struct {
-	State          string `json:"state"`
-	ActiveRuns     int    `json:"active_runs"`
-	LastTriggerID  string `json:"last_trigger_id,omitempty"`
-	LastOutcome    string `json:"last_outcome,omitempty"`
-	FirstOutputNS  uint64 `json:"first_output_ns,omitempty"`
-	CompletionNS   uint64 `json:"completion_ns,omitempty"`
-	CancellationNS uint64 `json:"cancellation_ns,omitempty"`
-	Error          string `json:"error,omitempty"`
+	State          string          `json:"state"`
+	ActiveRuns     int             `json:"active_runs"`
+	LastTriggerID  string          `json:"last_trigger_id,omitempty"`
+	LastOutcome    string          `json:"last_outcome,omitempty"`
+	FirstOutputNS  uint64          `json:"first_output_ns,omitempty"`
+	CompletionNS   uint64          `json:"completion_ns,omitempty"`
+	CancellationNS uint64          `json:"cancellation_ns,omitempty"`
+	Error          string          `json:"error,omitempty"`
+	Resolution     *NodeResolution `json:"resolution,omitempty"`
+}
+
+// ResolutionEvidence states how an immutable runtime identity was learned.
+// Declared identities are useful for diagnosis but are not benchmark
+// attestation. Registered identities were bound to a factory at deployment;
+// live identities were reported after a provider or sidecar handshake.
+type ResolutionEvidence string
+
+const (
+	EvidenceDeclared   ResolutionEvidence = "declared"
+	EvidenceRegistered ResolutionEvidence = "registered"
+	EvidenceLive       ResolutionEvidence = "live"
+)
+
+// ArtifactIdentity names immutable code, model, device, or adapter material.
+// At least one revision or SHA-256 digest is required.
+type ArtifactIdentity struct {
+	ID       string `json:"id"`
+	Revision string `json:"revision,omitempty"`
+	Digest   string `json:"digest,omitempty"`
+}
+
+func (artifact ArtifactIdentity) Validate() error {
+	if artifact.ID == "" || artifact.ID != strings.TrimSpace(artifact.ID) {
+		return errors.New("artifact identity requires a canonical ID")
+	}
+	if artifact.Revision != strings.TrimSpace(artifact.Revision) ||
+		artifact.Digest != strings.TrimSpace(artifact.Digest) {
+		return errors.New("artifact identity is not canonical")
+	}
+	if artifact.Revision == "" && artifact.Digest == "" {
+		return errors.New("artifact identity requires a revision or digest")
+	}
+	if placeholderIdentity(artifact.ID) || placeholderIdentity(artifact.Revision) {
+		return errors.New("artifact identity contains a mutable or placeholder selector")
+	}
+	if artifact.Digest != "" {
+		const prefix = "sha256:"
+		if !strings.HasPrefix(artifact.Digest, prefix) ||
+			len(artifact.Digest) != len(prefix)+sha256.Size*2 {
+			return errors.New("artifact identity has an invalid SHA-256 digest")
+		}
+		if _, err := hex.DecodeString(strings.TrimPrefix(artifact.Digest, prefix)); err != nil {
+			return fmt.Errorf("artifact identity has an invalid SHA-256 digest: %w", err)
+		}
+	}
+	return nil
+}
+
+func placeholderIdentity(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return false
+	}
+	for _, marker := range []string{"${", "{{", "<revision>", "<digest>", "<version>"} {
+		if strings.Contains(value, marker) {
+			return true
+		}
+	}
+	for _, placeholder := range []string{"latest", "current", "unknown", "unresolved"} {
+		if value == placeholder || strings.HasSuffix(value, ":"+placeholder) ||
+			strings.HasSuffix(value, "@"+placeholder) || strings.HasSuffix(value, "/"+placeholder) {
+			return true
+		}
+	}
+	return false
+}
+
+// CapabilityIdentity is one provider capability selected by a live node.
+// Provider and adapter are separate because changing an adapter behind an
+// unchanged model is still a changed executable treatment.
+type CapabilityIdentity struct {
+	Name     string            `json:"name"`
+	Contract string            `json:"contract,omitempty"`
+	Provider ArtifactIdentity  `json:"provider"`
+	Adapter  *ArtifactIdentity `json:"adapter,omitempty"`
+}
+
+// CanonicalCapabilities validates, clones, and deterministically orders a
+// complete live capability set.
+func CanonicalCapabilities(source []CapabilityIdentity) ([]CapabilityIdentity, error) {
+	result := cloneCapabilities(source)
+	seen := make(map[string]struct{}, len(result))
+	for index, capability := range result {
+		if capability.Name == "" || capability.Name != strings.TrimSpace(capability.Name) ||
+			capability.Contract != strings.TrimSpace(capability.Contract) {
+			return nil, fmt.Errorf("capability %d has a non-canonical name or contract", index)
+		}
+		if err := capability.Provider.Validate(); err != nil {
+			return nil, fmt.Errorf("capability %s provider: %w", capability.Name, err)
+		}
+		if capability.Adapter != nil {
+			if err := capability.Adapter.Validate(); err != nil {
+				return nil, fmt.Errorf("capability %s adapter: %w", capability.Name, err)
+			}
+		}
+		key := capability.Name + "\x00" + capability.Contract + "\x00" + capability.Provider.ID
+		if _, duplicate := seen[key]; duplicate {
+			return nil, fmt.Errorf("capability %q is repeated", capability.Name)
+		}
+		seen[key] = struct{}{}
+	}
+	sort.Slice(result, func(left, right int) bool {
+		a, b := result[left], result[right]
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		if a.Contract != b.Contract {
+			return a.Contract < b.Contract
+		}
+		return a.Provider.ID < b.Provider.ID
+	})
+	return result, nil
+}
+
+// NodeResolution is the exact live implementation and provider selection for
+// one mounted graph node. CapabilitiesEvidence is empty until a live reporter
+// replaces the initial declaration-only set.
+type NodeResolution struct {
+	Element              element.Identity     `json:"element"`
+	Implementation       string               `json:"implementation"`
+	Runtime              ArtifactIdentity     `json:"runtime"`
+	RuntimeEvidence      ResolutionEvidence   `json:"runtime_evidence"`
+	Capabilities         []CapabilityIdentity `json:"capabilities,omitempty"`
+	CapabilitiesEvidence ResolutionEvidence   `json:"capabilities_evidence,omitempty"`
+}
+
+func (resolution NodeResolution) Clone() NodeResolution {
+	result := resolution
+	result.Capabilities = cloneCapabilities(resolution.Capabilities)
+	return result
+}
+
+func (live NodeLive) Clone() NodeLive {
+	result := live
+	if live.Resolution != nil {
+		copy := live.Resolution.Clone()
+		result.Resolution = &copy
+	}
+	return result
+}
+
+// FlowLive is a bounded, payload-free view of internal graph edges traversed
+// by one envelope correlation. Repeated edges remain repeated so feedback
+// loops and retries are not flattened into a misleading set.
+type FlowLive struct {
+	Correlation string   `json:"correlation"`
+	Edges       []string `json:"edges"`
+	FirstNS     uint64   `json:"first_ns,omitempty"`
+	LastNS      uint64   `json:"last_ns,omitempty"`
+	Truncated   bool     `json:"truncated,omitempty"`
+}
+
+func (flow FlowLive) Clone() FlowLive {
+	flow.Edges = slices.Clone(flow.Edges)
+	return flow
 }
 
 type EdgeLive struct {
@@ -101,6 +297,17 @@ type EdgeLive struct {
 	Backpressure uint64 `json:"backpressure"`
 	LastItemID   string `json:"last_item_id,omitempty"`
 	QueueWaitNS  uint64 `json:"queue_wait_ns,omitempty"`
+}
+
+func cloneCapabilities(source []CapabilityIdentity) []CapabilityIdentity {
+	result := slices.Clone(source)
+	for index := range result {
+		if source[index].Adapter != nil {
+			copy := *source[index].Adapter
+			result[index].Adapter = &copy
+		}
+	}
+	return result
 }
 
 // Build validates and projects one exact graph.

@@ -116,6 +116,30 @@ type Lifecycle interface {
 	Defer(name string, dispose func(context.Context) error) error
 }
 
+// ResolutionReporter publishes immutable live runtime/provider selection to
+// the management plane. Elements call it only after a real startup handshake
+// or provider construction; deployment declarations are not live evidence.
+// An empty capability list is a complete, attested statement that the node
+// selected no provider capabilities.
+type ResolutionReporter interface {
+	Runtime(artifactID, revision, digest string) error
+	Capabilities([]CapabilityResolution) error
+}
+
+// CapabilityResolution is intentionally independent of provider packages.
+// Provider and adapter identities remain separate so operational evidence can
+// distinguish a model change from a transport/adapter change.
+type CapabilityResolution struct {
+	Name             string
+	Contract         string
+	ProviderID       string
+	ProviderRevision string
+	ProviderDigest   string
+	AdapterID        string
+	AdapterRevision  string
+	AdapterDigest    string
+}
+
 // MountContext is the complete, scoped environment of one element instance.
 type MountContext struct {
 	InstanceID string
@@ -124,6 +148,7 @@ type MountContext struct {
 	Ports      Ports
 	Services   Services
 	Lifecycle  Lifecycle
+	Resolution ResolutionReporter
 }
 
 // Runnable owns the long-lived reaction loop of one mounted element. It must

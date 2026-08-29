@@ -2,7 +2,11 @@ package runtime
 
 import (
 	"slices"
+	"strings"
 	"sync"
+
+	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 )
 
 type TraceKind string
@@ -66,4 +70,96 @@ func (tracer *BufferTracer) Events() []TraceEvent {
 	tracer.mu.Lock()
 	defer tracer.mu.Unlock()
 	return slices.Clone(tracer.events)
+}
+
+type trackedFlow struct {
+	flow inspect.FlowLive
+}
+
+// flowTracker retains bounded payload-free routes by envelope correlation.
+// It records internal Graph IR edges only; boundary queues are useful for
+// queue telemetry but are not selected graph paths.
+type flowTracker struct {
+	mu       sync.Mutex
+	maxFlows int
+	maxEdges int
+	order    []string
+	flows    map[string]*trackedFlow
+	dropped  uint64
+}
+
+func newFlowTracker(maxFlows, maxEdges int) *flowTracker {
+	if maxFlows < 1 {
+		maxFlows = 1
+	}
+	if maxEdges < 1 {
+		maxEdges = 1
+	}
+	return &flowTracker{
+		maxFlows: maxFlows, maxEdges: maxEdges,
+		flows: make(map[string]*trackedFlow),
+	}
+}
+
+func (tracker *flowTracker) record(
+	channel string, kind TraceKind, envelope element.Envelope, atNS uint64,
+) {
+	if tracker == nil || kind != TraceEnqueue || strings.HasPrefix(channel, "boundary:") {
+		return
+	}
+	key := flowKey(envelope)
+	if key == "" {
+		return
+	}
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	tracked := tracker.flows[key]
+	if tracked == nil {
+		if len(tracker.order) == tracker.maxFlows {
+			oldest := tracker.order[0]
+			tracker.order = tracker.order[1:]
+			delete(tracker.flows, oldest)
+			tracker.dropped++
+		}
+		tracked = &trackedFlow{
+			flow: inspect.FlowLive{Correlation: key, FirstNS: atNS},
+		}
+		tracker.flows[key] = tracked
+		tracker.order = append(tracker.order, key)
+	}
+	tracked.flow.LastNS = atNS
+	// Enqueue is emitted exactly once per actual traversal. Do not de-duplicate
+	// by item or sequence: a feedback loop may deliberately send the same
+	// envelope through the same edge again, and that repetition is evidence.
+	if len(tracked.flow.Edges) == tracker.maxEdges {
+		tracked.flow.Truncated = true
+		tracker.dropped++
+		return
+	}
+	tracked.flow.Edges = append(tracked.flow.Edges, channel)
+}
+
+func (tracker *flowTracker) snapshot() (map[string]inspect.FlowLive, uint64) {
+	if tracker == nil {
+		return nil, 0
+	}
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	result := make(map[string]inspect.FlowLive, len(tracker.flows))
+	for key, tracked := range tracker.flows {
+		result[key] = tracked.flow.Clone()
+	}
+	return result, tracker.dropped
+}
+
+func flowKey(envelope element.Envelope) string {
+	for _, value := range []struct{ prefix, value string }{
+		{"trace:", envelope.TraceID}, {"run:", envelope.RunID},
+		{"opportunity:", envelope.OpportunityID}, {"item:", envelope.ItemID},
+	} {
+		if value.value != "" {
+			return value.prefix + value.value
+		}
+	}
+	return ""
 }

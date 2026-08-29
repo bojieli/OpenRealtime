@@ -19,13 +19,24 @@ import (
 )
 
 type Config struct {
-	Graph           ir.Graph
-	Registry        *Registry
-	Values          map[string]json.RawMessage
-	Services        *ServiceSet
+	Graph    ir.Graph
+	Registry *Registry
+	Values   map[string]json.RawMessage
+	Services *ServiceSet
+	// Configuration is the exact separate values artifact identity. It is
+	// optional for historical/local mounts, but remote attestation must refuse
+	// a snapshot without it rather than reconstructing it from node values.
+	Configuration   *inspect.ArtifactIdentity
 	Tracer          Tracer
 	Now             func() uint64
 	ShutdownTimeout time.Duration
+	Inspection      InspectionConfig
+}
+
+// InspectionConfig bounds payload-free per-correlation route retention.
+type InspectionConfig struct {
+	MaxFlows        int
+	MaxEdgesPerFlow int
 }
 
 type mountedNode struct {
@@ -60,9 +71,11 @@ type Mounted struct {
 	shutdownErr error
 	shutdown    sync.Once
 
-	liveMu   sync.Mutex
-	nodeLive map[string]inspect.NodeLive
-	sequence atomic.Uint64
+	liveMu        sync.Mutex
+	nodeLive      map[string]inspect.NodeLive
+	sequence      atomic.Uint64
+	flows         *flowTracker
+	configuration *inspect.ArtifactIdentity
 }
 
 // Mount validates the exact factory contracts, constructs every bounded
@@ -84,6 +97,11 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 	if config.Services == nil {
 		config.Services = NewServiceSet()
 	}
+	if config.Configuration != nil {
+		if err := config.Configuration.Validate(); err != nil {
+			return nil, fmt.Errorf("mount graph configuration identity: %w", err)
+		}
+	}
 	if config.Now == nil {
 		origin := time.Now()
 		config.Now = func() uint64 { return uint64(time.Since(origin)) }
@@ -92,6 +110,18 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 	if config.ShutdownTimeout <= 0 {
 		config.ShutdownTimeout = 5 * time.Second
 	}
+	if config.Inspection.MaxFlows < 0 || config.Inspection.MaxEdgesPerFlow < 0 {
+		return nil, errors.New("mount graph inspection bounds cannot be negative")
+	}
+	if config.Inspection.MaxFlows == 0 {
+		config.Inspection.MaxFlows = 1024
+	}
+	if config.Inspection.MaxEdgesPerFlow == 0 {
+		config.Inspection.MaxEdgesPerFlow = 256
+	}
+	if config.Inspection.MaxFlows > 1_000_000 || config.Inspection.MaxEdgesPerFlow > 65_536 {
+		return nil, errors.New("mount graph inspection bounds exceed safety limits")
+	}
 	if err := validateValues(config.Graph, config.Values); err != nil {
 		return nil, err
 	}
@@ -99,10 +129,12 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 	type factoryResolution struct {
 		factory    element.Factory
 		descriptor element.Descriptor
+		artifact   inspect.ArtifactIdentity
+		evidence   inspect.ResolutionEvidence
 	}
 	factories := make(map[string]factoryResolution, len(config.Graph.Nodes))
 	for _, node := range config.Graph.Nodes {
-		factory, descriptor, err := config.Registry.resolve(node.Implementation, node.Element)
+		factory, descriptor, artifact, evidence, err := config.Registry.resolve(node.Implementation, node.Element)
 		if err != nil {
 			return nil, fmt.Errorf("mount graph node %s: %w", node.ID, err)
 		}
@@ -114,7 +146,9 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 				return nil, fmt.Errorf("mount graph node %s requires unavailable service %q", node.ID, dependency.Name)
 			}
 		}
-		factories[node.ID] = factoryResolution{factory: factory, descriptor: descriptor}
+		factories[node.ID] = factoryResolution{
+			factory: factory, descriptor: descriptor, artifact: artifact, evidence: evidence,
+		}
 	}
 	// Validate every node's values before mounting the first element. Mount may
 	// acquire resources and register effects; a later config typo must never
@@ -144,13 +178,21 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 		}
 	}
 
+	var configuration *inspect.ArtifactIdentity
+	if config.Configuration != nil {
+		copy := *config.Configuration
+		configuration = &copy
+	}
 	mounted := &Mounted{
 		graph: config.Graph, queues: make(map[string]*queue),
 		ingress: make(map[string]*outputPort), egress: make(map[string]*inputPort),
 		changed: newCondition(), timeout: config.ShutdownTimeout,
 		done: make(chan struct{}), nodeLive: make(map[string]inspect.NodeLive),
+		flows:         newFlowTracker(config.Inspection.MaxFlows, config.Inspection.MaxEdgesPerFlow),
+		configuration: configuration,
 	}
 	trace := func(queue *queue, kind TraceKind, envelope element.Envelope, occupancy int) {
+		mounted.flows.record(queue.id, kind, envelope, config.Now())
 		if config.Tracer == nil {
 			return
 		}
@@ -223,9 +265,17 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 			value = json.RawMessage("{}")
 		}
 		resolution := factories[node.ID]
+		mounted.nodeLive[node.ID] = inspect.NodeLive{
+			State: "mounted",
+			Resolution: &inspect.NodeResolution{
+				Element: node.Element, Implementation: node.Implementation,
+				Runtime: resolution.artifact, RuntimeEvidence: resolution.evidence,
+			},
+		}
 		runnable, err := resolution.factory.Mount(ctx, element.MountContext{
 			InstanceID: node.ID, Identity: node.Element, Config: value,
 			Ports: ports, Services: services, Lifecycle: scope,
+			Resolution: nodeResolutionReporter{mounted: mounted, node: node.ID},
 		})
 		if err != nil {
 			_ = scope.close(context.Background())
@@ -240,7 +290,6 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 			return nil, fmt.Errorf("mount graph node %s returned a nil runnable", node.ID)
 		}
 		mounted.nodes = append(mounted.nodes, mountedNode{id: node.ID, runnable: runnable, scope: scope})
-		mounted.nodeLive[node.ID] = inspect.NodeLive{State: "mounted"}
 	}
 	return mounted, nil
 }
@@ -269,17 +318,42 @@ func (mounted *Mounted) Live() inspect.Live {
 	mounted.liveMu.Lock()
 	nodes := make(map[string]inspect.NodeLive, len(mounted.nodeLive))
 	for id, state := range mounted.nodeLive {
-		nodes[id] = state
+		nodes[id] = state.Clone()
 	}
 	mounted.liveMu.Unlock()
 	edges := make(map[string]inspect.EdgeLive, len(mounted.queues))
 	for id, queue := range mounted.queues {
 		edges[id] = queue.snapshot()
 	}
+	flows, dropped := mounted.flows.snapshot()
+	state, failure := mounted.lifecycleSnapshot()
+	var configuration *inspect.ArtifactIdentity
+	if mounted.configuration != nil {
+		copy := *mounted.configuration
+		configuration = &copy
+	}
 	return inspect.Live{
-		Fingerprint: mounted.graph.Fingerprint,
-		Sequence:    mounted.sequence.Add(1), ObservedAt: time.Now().UTC(),
-		Nodes: nodes, Edges: edges,
+		FormatVersion: inspect.LiveFormatVersion,
+		GraphID:       mounted.graph.ID, GraphRevision: mounted.graph.Revision,
+		Fingerprint: mounted.graph.Fingerprint, Configuration: configuration,
+		Sequence: mounted.sequence.Add(1), ObservedAt: time.Now().UTC(),
+		State: state, Error: failure,
+		Nodes: nodes, Edges: edges, Flows: flows, TraceDropped: dropped,
+	}
+}
+
+func (mounted *Mounted) lifecycleSnapshot() (string, string) {
+	mounted.mu.Lock()
+	defer mounted.mu.Unlock()
+	switch {
+	case mounted.closed && mounted.runErr != nil:
+		return "closed", mounted.runErr.Error()
+	case mounted.closed:
+		return "closed", ""
+	case mounted.started:
+		return "running", ""
+	default:
+		return "mounted", ""
 	}
 }
 
