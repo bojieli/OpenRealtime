@@ -170,10 +170,14 @@ func TestTextModelSamplesContextAndEmitsPreparedTypedOutputs(t *testing.T) {
 	if text != "hello world" {
 		t.Fatalf("streamed text = %q", text)
 	}
-	proposal := receive(t, mustEgress(t, mounted, "tools")).Payload.(cognitionelements.ToolProposal)
+	proposalEnvelope := receive(t, mustEgress(t, mounted, "tools"))
+	proposal := proposalEnvelope.Payload.(cognitionelements.ToolProposal)
 	if proposal.Call.Name != "lookup" || !proposal.Declared ||
 		proposal.ProviderAuthority != continuation.ToolAuthorityPropose {
 		t.Fatalf("tool proposal = %+v", proposal)
+	}
+	if !contains(proposalEnvelope.CausalParents, "observation-1") {
+		t.Fatalf("tool proposal is not bound to context tail: %v", proposalEnvelope.CausalParents)
 	}
 	resultEnvelope := receive(t, mustEgress(t, mounted, "result"))
 	result := resultEnvelope.Payload.(cognitionelements.Result)

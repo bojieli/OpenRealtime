@@ -735,6 +735,13 @@ func (execution *generationExecution) baseEnvelope(
 	envelope.ItemID = execution.trigger.ItemID + ":" + label + ":" + strconv.FormatUint(index, 10)
 	envelope.CausalParents = appendUnique(envelope.CausalParents, execution.trigger.ItemID)
 	envelope.CausalParents = appendUnique(envelope.CausalParents, execution.sampled.envelope.ItemID)
+	if items := execution.sampled.snapshot.Items; len(items) != 0 {
+		// Bind every streaming model artifact to the exact canonical prefix it
+		// sampled. Authority adapters can then verify that a proposed external
+		// effect descends from the named context tail rather than joining an
+		// unrelated user item by call ID alone.
+		envelope.CausalParents = appendUnique(envelope.CausalParents, items[len(items)-1].ID)
+	}
 	return envelope
 }
 
