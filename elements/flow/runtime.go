@@ -24,10 +24,10 @@ func (teeFactory) Mount(_ context.Context, mount element.MountContext) (element.
 	return relay(input, output, false, mount.Resolution, TeeDescriptor()), nil
 }
 
-type eventMuxFactory struct{}
+type muxFactory struct{ descriptor element.Descriptor }
 
-func (eventMuxFactory) Descriptor() element.Descriptor { return EventMuxDescriptor() }
-func (eventMuxFactory) Mount(_ context.Context, mount element.MountContext) (element.Runnable, error) {
+func (factory muxFactory) Descriptor() element.Descriptor { return factory.descriptor.Clone() }
+func (factory muxFactory) Mount(_ context.Context, mount element.MountContext) (element.Runnable, error) {
 	input, err := mount.Ports.Input("in")
 	if err != nil {
 		return nil, err
@@ -37,7 +37,7 @@ func (eventMuxFactory) Mount(_ context.Context, mount element.MountContext) (ele
 		return nil, err
 	}
 	return element.RunnableFunc(func(ctx context.Context) error {
-		if err := reportFlowResolution(mount.Resolution, EventMuxDescriptor()); err != nil {
+		if err := reportFlowResolution(mount.Resolution, factory.descriptor); err != nil {
 			return err
 		}
 		for {

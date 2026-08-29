@@ -51,6 +51,28 @@ func EventMuxDescriptor() element.Descriptor {
 	}
 }
 
+// MuxDescriptor is the protocol-generic explicit multiple-writer connector.
+// Unlike EventMux it can arbitrate Requests, Replies, Streams, Segments,
+// States, or Triggers without erasing their protocol type. ReceiveAny gives
+// every materialized lane fair serialized admission; it never interleaves or
+// rewrites an envelope. Stream-aware selection remains a policy element, not
+// a property of this mechanical connector.
+func MuxDescriptor() element.Descriptor {
+	return element.Descriptor{
+		FormatVersion: element.DescriptorFormatVersion,
+		Name:          "flow.Mux",
+		Revision:      1,
+		Generics:      []string{"P"},
+		Ports: []element.Port{
+			{Name: "in", Direction: element.Input, Type: element.Var("P"), Cardinality: element.Variadic,
+				Required: true, MinConnections: 1, LossAllowed: true},
+			{Name: "out", Direction: element.Output, Type: element.Var("P"), Cardinality: element.One,
+				Required: true, LossAllowed: true},
+		},
+		Reaction: element.Reaction{Triggers: []string{"in"}, Outcomes: []string{"out"}, MaxConcurrency: 1},
+	}
+}
+
 func DropDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
@@ -97,7 +119,7 @@ func LatestDescriptor() element.Descriptor {
 
 func Descriptors() []element.Descriptor {
 	return []element.Descriptor{
-		TeeDescriptor(), EventMuxDescriptor(), DropDescriptor(), IgnoreInterruptDescriptor(), LatestDescriptor(),
+		TeeDescriptor(), MuxDescriptor(), EventMuxDescriptor(), DropDescriptor(), IgnoreInterruptDescriptor(), LatestDescriptor(),
 	}
 }
 
@@ -118,7 +140,7 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 		return errors.New("register flow factories: nil registry")
 	}
 	for _, factory := range []element.Factory{
-		teeFactory{}, eventMuxFactory{}, dropFactory{descriptor: DropDescriptor()},
+		teeFactory{}, muxFactory{descriptor: MuxDescriptor()}, muxFactory{descriptor: EventMuxDescriptor()}, dropFactory{descriptor: DropDescriptor()},
 		dropFactory{descriptor: IgnoreInterruptDescriptor()}, latestFactory{},
 	} {
 		if err := registry.RegisterArtifact("", inspect.ArtifactIdentity{

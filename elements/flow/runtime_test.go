@@ -2,6 +2,7 @@ package flow_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -70,6 +71,73 @@ func TestTeeInfersRuntimeLanesAndCopiesToEveryBoundary(t *testing.T) {
 	case <-runDone:
 	case <-time.After(time.Second):
 		t.Fatal("tee did not stop")
+	}
+}
+
+func TestProtocolGenericMuxSerializesMultipleRequestWriters(t *testing.T) {
+	descriptor := flowelements.MuxDescriptor()
+	identity, err := descriptor.Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestType := element.Request(element.Named("test.Append"), element.Named("test.RequestID"))
+	graph, err := ir.Freeze(ir.Graph{
+		FormatVersion: ir.FormatVersion, ID: "request-mux", Revision: 1,
+		Nodes: []ir.Node{{
+			ID: "mux", Element: identity,
+			Ports: []ir.Port{
+				{Name: "in", Direction: element.Input, Type: requestType, Cardinality: element.Variadic,
+					Required: true, MinConnections: 1, LossAllowed: true,
+					Lanes: []string{"boundary:left", "boundary:right"}},
+				{Name: "out", Direction: element.Output, Type: requestType, Cardinality: element.One,
+					Required: true, LossAllowed: true},
+			},
+			Reaction: descriptor.Reaction,
+		}},
+		Boundaries: []ir.Boundary{
+			{Name: "left", Direction: ir.InputBoundary, Endpoint: ir.Endpoint{Node: "mux", Port: "in", Lane: "boundary:left"}, Type: requestType},
+			{Name: "right", Direction: ir.InputBoundary, Endpoint: ir.Endpoint{Node: "mux", Port: "in", Lane: "boundary:right"}, Type: requestType},
+			{Name: "out", Direction: ir.OutputBoundary, Endpoint: ir.Endpoint{Node: "mux", Port: "out"}, Type: requestType},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := graphruntime.NewRegistry()
+	if err := flowelements.RegisterFactories(registry); err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := graphruntime.Mount(context.Background(), graphruntime.Config{Graph: graph, Registry: registry})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- mounted.Run(ctx) }()
+	left, _ := mounted.Ingress("left")
+	right, _ := mounted.Ingress("right")
+	output, _ := mounted.Egress("out")
+	for _, input := range []struct {
+		port element.OutputPort
+		id   string
+	}{{left, "left-request"}, {right, "right-request"}} {
+		envelope := element.Envelope{Type: requestType, ItemID: input.id, Payload: input.id}
+		if _, err := input.port.Broadcast(context.Background(), envelope); err != nil {
+			t.Fatal(err)
+		}
+		got, err := output.Receive(context.Background())
+		if err != nil || got.ItemID != input.id || got.Payload != input.id || !got.Type.Equal(requestType) {
+			t.Fatalf("mux output = %+v, %v", got, err)
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("mux did not stop")
 	}
 }
 
@@ -180,6 +248,8 @@ func concreteFlowType(elementName, portName string) element.Type {
 			return element.Stream(element.Named("test.Value"))
 		}
 		return element.State(element.Named("test.Value"))
+	case "flow.Mux":
+		return element.Request(element.Named("test.Request"), element.Named("test.RequestID"))
 	default:
 		return element.Event(element.Named("test.Value"))
 	}
