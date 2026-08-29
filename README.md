@@ -156,6 +156,7 @@ as its release gate. See [the benchmark harness](docs/benchmarks.md).
 | [The test surface](surface/README.md) | every channel, both directions, on one page |
 | [The native macOS developer app](macos/README.md) | microphone, camera, screen, browser-use, desktop control, local tools, files, and millisecond traces |
 | [Architecture](docs/architecture.md) | the four subsystems and why they are separate |
+| [Composable agent graph proposal](docs/composable-agent-graph.md) | the typed element graph and refactoring plan for general multimodal realtime agents |
 | [Evolving architectures](docs/architecture-experiments.md) | catalog revisions, live attestation, and controlled P/T/C/N experiments |
 | [Bindings](docs/bindings/README.md) | which voice stack, and what each one owns |
 | [The OpenRealtime Protocol](docs/protocol/openrealtime-1.md) | normative spec for video, observations, and computer use |

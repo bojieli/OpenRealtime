@@ -1,5 +1,12 @@
 # Architecture
 
+This document describes the currently shipped architecture. The
+[composable agent graph proposal](composable-agent-graph.md) defines the
+proposed target architecture and refactoring plan for general multimodal
+real-time agents. It deliberately revisits some binding, ownership, mandatory
+audio, and slow-cognition constraints described below; until that migration is
+implemented, this document remains the authority for current behavior.
+
 Four subsystems over one session core. Three of them move and transform data;
 the fourth decides *when* the other three act.
 
