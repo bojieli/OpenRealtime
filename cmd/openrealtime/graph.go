@@ -17,6 +17,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	"github.com/bojieli/OpenRealtime/graph/syntax"
 	graphvalidate "github.com/bojieli/OpenRealtime/graph/validate"
+	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
 )
 
 const graphUsage = `usage: openrealtime graph <command> [flags] <graph>
@@ -152,6 +153,7 @@ func runGraphCompile(
 	profileName := flags.String("profile", "realtime-agent", "validation profile: core, realtime-agent, conversational-voice, computer-use")
 	warningsAsErrors := flags.Bool("warnings-as-errors", false, "fail when the selected lint profile reports a warning")
 	renderFormat := flags.String("format", "mermaid", "render output: mermaid or dot")
+	valuesPath := flags.String("values", "", "separate strict YAML/JSON element-values artifact")
 	var descriptorPaths stringFlags
 	flags.Var(&descriptorPaths, "descriptor", "element descriptor bundle (.json/.yaml); repeatable")
 	if err := flags.Parse(arguments); err != nil {
@@ -197,6 +199,17 @@ func runGraphCompile(
 	})
 	if err != nil {
 		return err
+	}
+	if *valuesPath != "" {
+		document, loadErr := loadGraphValues(*valuesPath)
+		if loadErr != nil {
+			return loadErr
+		}
+		bound, bindErr := graphvalues.Bind(compiled.Graph, document)
+		if bindErr != nil {
+			return bindErr
+		}
+		compiled.Graph = bound.Graph
 	}
 	if update {
 		payload, err := compiled.Lock.Marshal()
@@ -257,6 +270,21 @@ func runGraphCompile(
 		fmt.Fprintf(stdout, "%s\n", compiled.Graph.Fingerprint)
 	}
 	return nil
+}
+
+func loadGraphValues(path string) (graphvalues.Document, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return graphvalues.Document{}, fmt.Errorf("read graph values %s: %w", path, err)
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml":
+		return graphvalues.ParseYAML(path, body)
+	case ".json":
+		return graphvalues.ParseJSON(path, body)
+	default:
+		return graphvalues.Document{}, fmt.Errorf("graph values %s must use .yaml, .yml, or .json", path)
+	}
 }
 
 func loadGraphTopology(path string) (syntax.File, error) {

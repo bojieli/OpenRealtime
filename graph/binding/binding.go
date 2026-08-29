@@ -5,8 +5,6 @@ package binding
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +23,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/graph/syntax"
+	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -58,22 +57,19 @@ func New(underlying legacy.Binding) (*Binding, error) {
 		return nil, err
 	}
 	implementation := "compat.binding/" + underlying.Name()
-	identityPayload, err := json.Marshal(struct {
-		Name         string              `json:"name"`
-		Ownership    legacy.Ownership    `json:"ownership"`
-		Capabilities legacy.Capabilities `json:"capabilities"`
-	}{
-		Name: underlying.Name(), Ownership: underlying.Ownership(),
-		Capabilities: underlying.Capabilities(),
-	})
+	identityPayload, err := compatibilityIdentity(underlying)
 	if err != nil {
-		return nil, fmt.Errorf("encode compatibility binding identity: %w", err)
+		return nil, err
 	}
-	digest := sha256.Sum256(identityPayload)
 	compiled.Graph.Nodes[0].Implementation = implementation
-	compiled.Graph.Nodes[0].ConfigReference = "compat://binding/" + underlying.Name()
-	compiled.Graph.Nodes[0].ConfigDigest = "sha256:" + hex.EncodeToString(digest[:])
 	frozen, err := ir.Freeze(compiled.Graph)
+	if err != nil {
+		return nil, err
+	}
+	bound, err := graphvalues.Bind(frozen, graphvalues.Document{
+		APIVersion: graphvalues.APIVersion, Graph: frozen.ID,
+		Nodes: map[string]json.RawMessage{nodeID: identityPayload},
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +78,7 @@ func New(underlying legacy.Binding) (*Binding, error) {
 		portTypes[port.Name] = port.Type.Clone()
 	}
 	return &Binding{
-		underlying: underlying, graph: frozen, implementation: implementation,
+		underlying: underlying, graph: bound.Graph, implementation: implementation,
 		descriptor: descriptor, portTypes: portTypes,
 	}, nil
 }
@@ -118,9 +114,13 @@ func (binding *Binding) Start(ctx context.Context, options legacy.Options) (lega
 	if err := registry.Register(binding.implementation, compat.Factory{}); err != nil {
 		return nil, err
 	}
+	configValue, err := compatibilityIdentity(binding.underlying)
+	if err != nil {
+		return nil, err
+	}
 	mounted, err := graphruntime.Mount(ctx, graphruntime.Config{
 		Graph: binding.graph, Registry: registry, Services: services,
-		Values: map[string]json.RawMessage{nodeID: json.RawMessage(`{}`)},
+		Values: map[string]json.RawMessage{nodeID: configValue},
 	})
 	if err != nil {
 		return nil, err
@@ -166,6 +166,21 @@ func (binding *Binding) Start(ctx context.Context, options legacy.Options) (lega
 		return nil, errors.Join(fmt.Errorf("start graph-backed binding: %w", err), mountErr)
 	}
 	return runtime, nil
+}
+
+func compatibilityIdentity(binding legacy.Binding) (json.RawMessage, error) {
+	payload, err := json.Marshal(struct {
+		Name         string              `json:"name"`
+		Ownership    legacy.Ownership    `json:"ownership"`
+		Capabilities legacy.Capabilities `json:"capabilities"`
+	}{
+		Name: binding.Name(), Ownership: binding.Ownership(),
+		Capabilities: binding.Capabilities(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode compatibility binding identity: %w", err)
+	}
+	return payload, nil
 }
 
 func compatibilityTopology(name string) syntax.File {

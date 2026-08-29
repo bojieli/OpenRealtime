@@ -18,6 +18,7 @@ func TestGraphCommandUpdateCheckCompileAndRender(t *testing.T) {
 	descriptorPath := filepath.Join(directory, "elements.json")
 	lockPath := filepath.Join(directory, "openrealtime.lock")
 	irPath := filepath.Join(directory, "agent.ir.json")
+	valuesPath := filepath.Join(directory, "agent.values.yaml")
 	if err := os.WriteFile(graphPath, []byte(`graph agent {
     test.Source :: source;
     test.Sink :: sink;
@@ -33,6 +34,14 @@ func TestGraphCommandUpdateCheckCompileAndRender(t *testing.T) {
 	if err := os.WriteFile(descriptorPath, bundle, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(valuesPath, []byte(`apiVersion: openrealtime.ai/config/v1alpha1
+graph: agent
+nodes:
+  source:
+    mode: eager
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	var stdout, stderr bytes.Buffer
 	if err := runGraph([]string{"update", "-descriptor", descriptorPath, "-lock", lockPath, graphPath}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
@@ -41,14 +50,14 @@ func TestGraphCommandUpdateCheckCompileAndRender(t *testing.T) {
 		t.Fatalf("update output = %q", stdout.String())
 	}
 	stdout.Reset()
-	if err := runGraph([]string{"check", "-descriptor", descriptorPath, "-lock", lockPath, "-profile", "core", graphPath}, &stdout, &stderr); err != nil {
+	if err := runGraph([]string{"check", "-descriptor", descriptorPath, "-lock", lockPath, "-values", valuesPath, "-profile", "core", graphPath}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stdout.String(), "sha256:") {
 		t.Fatalf("check output = %q", stdout.String())
 	}
 	stdout.Reset()
-	if err := runGraph([]string{"compile", "-descriptor", descriptorPath, "-lock", lockPath, "-profile", "core", "-out", irPath, graphPath}, &stdout, &stderr); err != nil {
+	if err := runGraph([]string{"compile", "-descriptor", descriptorPath, "-lock", lockPath, "-values", valuesPath, "-profile", "core", "-out", irPath, graphPath}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
 	irSource, err := os.ReadFile(irPath)
@@ -59,8 +68,11 @@ func TestGraphCommandUpdateCheckCompileAndRender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if compiled.Nodes[0].ConfigDigest == "" || compiled.Nodes[0].ConfigReference == "" {
+		t.Fatalf("compiled values identity is missing: %+v", compiled.Nodes[0])
+	}
 	stdout.Reset()
-	if err := runGraph([]string{"render", "-descriptor", descriptorPath, "-lock", lockPath, "-profile", "core", graphPath}, &stdout, &stderr); err != nil {
+	if err := runGraph([]string{"render", "-descriptor", descriptorPath, "-lock", lockPath, "-values", valuesPath, "-profile", "core", graphPath}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stdout.String(), compiled.Fingerprint) || !strings.Contains(stdout.String(), "flowchart LR") {

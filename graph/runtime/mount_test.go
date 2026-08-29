@@ -113,8 +113,10 @@ func TestMountRejectsUnknownOrNonObjectValues(t *testing.T) {
 	}
 	graph := passGraph(t, descriptor)
 	for name, values := range map[string]map[string]json.RawMessage{
-		"unknown": {"missing": json.RawMessage(`{}`)},
-		"scalar":  {"pass": json.RawMessage(`true`)},
+		"unknown":       {"missing": json.RawMessage(`{}`)},
+		"scalar":        {"pass": json.RawMessage(`true`)},
+		"duplicate_key": {"pass": json.RawMessage(`{"mode":"one","mode":"two"}`)},
+		"undeclared":    {"pass": json.RawMessage(`{"mode":"one"}`)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := graphruntime.Mount(context.Background(), graphruntime.Config{
@@ -123,6 +125,23 @@ func TestMountRejectsUnknownOrNonObjectValues(t *testing.T) {
 				t.Fatal("expected invalid values to fail")
 			}
 		})
+	}
+	if _, err := graphruntime.Mount(context.Background(), graphruntime.Config{
+		Graph: graph, Registry: registry,
+		Values: map[string]json.RawMessage{"pass": json.RawMessage(`{ }`)},
+	}); err != nil {
+		t.Fatalf("semantically empty object was rejected: %v", err)
+	}
+
+	permissiveRegistry := graphruntime.NewRegistry()
+	if err := permissiveRegistry.Register("", permissivePassFactory{passFactory{descriptor: descriptor}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graphruntime.Mount(context.Background(), graphruntime.Config{
+		Graph: graph, Registry: permissiveRegistry,
+		Values: map[string]json.RawMessage{"pass": json.RawMessage(`{"mode":"one"}`)},
+	}); err == nil || !strings.Contains(err.Error(), "declares no config schema") {
+		t.Fatalf("validator bypassed an absent config schema: %v", err)
 	}
 }
 
@@ -158,6 +177,10 @@ type passFactory struct {
 	descriptor element.Descriptor
 	disposed   *atomic.Bool
 }
+
+type permissivePassFactory struct{ passFactory }
+
+func (permissivePassFactory) ValidateConfig(json.RawMessage) error { return nil }
 
 func (factory passFactory) Descriptor() element.Descriptor { return factory.descriptor.Clone() }
 

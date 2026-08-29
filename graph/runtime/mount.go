@@ -15,6 +15,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	graphvalidate "github.com/bojieli/OpenRealtime/graph/validate"
+	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
 )
 
 type Config struct {
@@ -87,6 +88,7 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 		origin := time.Now()
 		config.Now = func() uint64 { return uint64(time.Since(origin)) }
 	}
+	services := newMountServices(config.Services, config.Now)
 	if config.ShutdownTimeout <= 0 {
 		config.ShutdownTimeout = 5 * time.Second
 	}
@@ -108,11 +110,38 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 			return nil, fmt.Errorf("mount graph node %s contract verification: %w", node.ID, err)
 		}
 		for _, dependency := range descriptor.Dependencies {
-			if _, _, found := config.Services.Lookup(dependency.Name); !found && !dependency.Optional {
+			if _, _, found := services.Lookup(dependency.Name); !found && !dependency.Optional {
 				return nil, fmt.Errorf("mount graph node %s requires unavailable service %q", node.ID, dependency.Name)
 			}
 		}
 		factories[node.ID] = factoryResolution{factory: factory, descriptor: descriptor}
+	}
+	// Validate every node's values before mounting the first element. Mount may
+	// acquire resources and register effects; a later config typo must never
+	// require rolling those back just to report an authoring error.
+	for _, node := range config.Graph.Nodes {
+		value := cloneRaw(config.Values[node.ID])
+		if len(value) == 0 {
+			value = json.RawMessage("{}")
+		}
+		canonical, _, err := graphvalues.Digest(value)
+		if err != nil {
+			return nil, fmt.Errorf("mount graph node %s config: %w", node.ID, err)
+		}
+		factory := factories[node.ID].factory
+		validator, validates := factory.(element.ConfigValidator)
+		switch {
+		case node.ConfigSchema == "" && !bytes.Equal(canonical, []byte("{}")):
+			return nil, fmt.Errorf("mount graph node %s has values but element %s declares no config schema",
+				node.ID, node.Element.Name)
+		case node.ConfigSchema != "" && !validates:
+			return nil, fmt.Errorf("mount graph node %s declares config schema %q but implementation %q has no config validator",
+				node.ID, node.ConfigSchema, node.Implementation)
+		case validates:
+			if err := validator.ValidateConfig(value); err != nil {
+				return nil, fmt.Errorf("mount graph node %s config: %w", node.ID, err)
+			}
+		}
 	}
 
 	mounted := &Mounted{
@@ -196,7 +225,7 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 		resolution := factories[node.ID]
 		runnable, err := resolution.factory.Mount(ctx, element.MountContext{
 			InstanceID: node.ID, Identity: node.Element, Config: value,
-			Ports: ports, Services: config.Services, Lifecycle: scope,
+			Ports: ports, Services: services, Lifecycle: scope,
 		})
 		if err != nil {
 			_ = scope.close(context.Background())
@@ -309,9 +338,9 @@ func boundaryDepth(port ir.Port, valueType element.Type) int {
 }
 
 func validateValues(graph ir.Graph, values map[string]json.RawMessage) error {
-	known := make(map[string]struct{}, len(graph.Nodes))
+	known := make(map[string]ir.Node, len(graph.Nodes))
 	for _, node := range graph.Nodes {
-		known[node.ID] = struct{}{}
+		known[node.ID] = node
 	}
 	keys := make([]string, 0, len(values))
 	for node := range values {
@@ -319,12 +348,29 @@ func validateValues(graph ir.Graph, values map[string]json.RawMessage) error {
 	}
 	sort.Strings(keys)
 	for _, node := range keys {
-		if _, found := known[node]; !found {
+		graphNode, found := known[node]
+		if !found {
 			return fmt.Errorf("mount graph values refer to unknown node %q", node)
 		}
-		value := bytes.TrimSpace(values[node])
-		if len(value) == 0 || !json.Valid(value) || value[0] != '{' {
-			return fmt.Errorf("mount graph node %s config must be one valid JSON object", node)
+		value := values[node]
+		_, digest, err := graphvalues.Digest(value)
+		if err != nil {
+			return fmt.Errorf("mount graph node %s config must be one strict JSON object: %w", node, err)
+		}
+		if graphNode.ConfigDigest != "" {
+			if digest != graphNode.ConfigDigest {
+				return fmt.Errorf("mount graph node %s config digest is %s, Graph IR requires %s",
+					node, digest, graphNode.ConfigDigest)
+			}
+		}
+	}
+	for _, node := range graph.Nodes {
+		if node.ConfigDigest == "" {
+			continue
+		}
+		if _, found := values[node.ID]; !found {
+			return fmt.Errorf("mount graph node %s requires config %s with digest %s",
+				node.ID, node.ConfigReference, node.ConfigDigest)
 		}
 	}
 	return nil

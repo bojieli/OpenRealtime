@@ -2,6 +2,7 @@ package compatbinding
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"slices"
@@ -11,12 +12,18 @@ import (
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/internal/elementconfig"
 	"github.com/bojieli/OpenRealtime/perception"
 )
 
 type Factory struct{}
 
 func (Factory) Descriptor() element.Descriptor { return Descriptor() }
+
+func (Factory) ValidateConfig(source json.RawMessage) error {
+	_, err := decodeConfig(source)
+	return err
+}
 
 func (Factory) Mount(ctx context.Context, mount element.MountContext) (element.Runnable, error) {
 	serviceValue, _, found := mount.Services.Lookup(SessionServiceName)
@@ -26,6 +33,17 @@ func (Factory) Mount(ctx context.Context, mount element.MountContext) (element.R
 	service, ok := serviceValue.(*SessionService)
 	if !ok || service == nil || service.Binding == nil || service.Holder == nil {
 		return nil, fmt.Errorf("compatibility binding session service has type %T or incomplete fields", serviceValue)
+	}
+	config, err := decodeConfig(mount.Config)
+	if err != nil {
+		return nil, err
+	}
+	want := Config{
+		Name: service.Binding.Name(), Ownership: service.Binding.Ownership(),
+		Capabilities: service.Binding.Capabilities(),
+	}
+	if !reflect.DeepEqual(config, want) {
+		return nil, fmt.Errorf("compatibility binding identity config %+v does not match live binding %+v", config, want)
 	}
 	output, err := mount.Ports.Output("events")
 	if err != nil {
@@ -56,6 +74,20 @@ func (Factory) Mount(ctx context.Context, mount element.MountContext) (element.R
 		inputs[kind] = input
 	}
 	return &runner{service: service, emitter: emitter, inputs: inputs}, nil
+}
+
+func decodeConfig(source json.RawMessage) (Config, error) {
+	var config Config
+	if err := elementconfig.Decode(source, &config); err != nil {
+		return Config{}, err
+	}
+	if config.Name == "" {
+		return Config{}, fmt.Errorf("compatibility binding identity requires a name")
+	}
+	if err := config.Ownership.Validate(); err != nil {
+		return Config{}, err
+	}
+	return config, nil
 }
 
 type runner struct {

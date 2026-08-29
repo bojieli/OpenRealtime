@@ -356,6 +356,24 @@ func (graph Graph) validateStructure() error {
 		if err := element.ValidateIdentity(node.Element); err != nil {
 			return fmt.Errorf("graph %s node %s: %w", graph.ID, node.ID, err)
 		}
+		if (node.ConfigReference == "") != (node.ConfigDigest == "") {
+			return fmt.Errorf("graph %s node %s config reference and digest must be present together",
+				graph.ID, node.ID)
+		}
+		if node.ConfigDigest != "" {
+			if strings.TrimSpace(node.ConfigReference) != node.ConfigReference {
+				return fmt.Errorf("graph %s node %s config reference has surrounding whitespace",
+					graph.ID, node.ID)
+			}
+			if !strings.HasPrefix(node.ConfigDigest, "sha256:") ||
+				len(node.ConfigDigest) != len("sha256:")+sha256.Size*2 {
+				return fmt.Errorf("graph %s node %s has invalid config digest %q",
+					graph.ID, node.ID, node.ConfigDigest)
+			}
+			if _, err := hex.DecodeString(strings.TrimPrefix(node.ConfigDigest, "sha256:")); err != nil {
+				return fmt.Errorf("graph %s node %s has invalid config digest: %w", graph.ID, node.ID, err)
+			}
+		}
 		nodes[node.ID] = node
 		if len(node.Ports) == 0 {
 			return fmt.Errorf("graph %s node %s has no ports", graph.ID, node.ID)

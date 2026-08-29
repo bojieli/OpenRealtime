@@ -143,3 +143,11 @@ type Factory interface {
 	Descriptor() Descriptor
 	Mount(context.Context, MountContext) (Runnable, error)
 }
+
+// ConfigValidator proves one resolved node value before any factory in the
+// graph is mounted. A factory whose descriptor declares ConfigSchema must
+// implement this interface; an implementation without a config schema may
+// accept only the empty object.
+type ConfigValidator interface {
+	ValidateConfig(json.RawMessage) error
+}

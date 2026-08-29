@@ -56,7 +56,14 @@ func Descriptor() element.Descriptor {
 			Interrupts: []string{"cancel"}, Outcomes: []string{"events"},
 		},
 		Dependencies: []element.Dependency{{Name: SessionServiceName}},
+		ConfigSchema: "schema://openrealtime/compat/binding-identity/v1",
 	}
+}
+
+type Config struct {
+	Name         string               `json:"name"`
+	Ownership    binding.Ownership    `json:"ownership"`
+	Capabilities binding.Capabilities `json:"capabilities"`
 }
 
 type CallKind string
