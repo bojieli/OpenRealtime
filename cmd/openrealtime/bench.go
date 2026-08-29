@@ -21,6 +21,7 @@ import (
 	"github.com/bojieli/OpenRealtime/bench/fdb"
 	"github.com/bojieli/OpenRealtime/bench/fdbench"
 	"github.com/bojieli/OpenRealtime/bench/fdbv3"
+	"github.com/bojieli/OpenRealtime/bench/meeting"
 	"github.com/bojieli/OpenRealtime/bench/realtimecu"
 	"github.com/bojieli/OpenRealtime/bench/tauvoice"
 )
@@ -32,7 +33,7 @@ import (
 // users get is not a measurement of anything.
 func runBench(arguments []string, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: openrealtime bench <architecture|realtime-cu|fdb|fdbv3|fdbench|tau-voice|dynacu> [flags]")
+		return errors.New("usage: openrealtime bench <architecture|meeting|realtime-cu|fdb|fdbv3|fdbench|tau-voice|dynacu> [flags]")
 	}
 	suite := strings.ToLower(strings.TrimSpace(arguments[0]))
 	switch suite {
@@ -48,11 +49,130 @@ func runBench(arguments []string, output io.Writer) error {
 		return runTauVoice(arguments[1:], output)
 	case "realtime-cu", "realtime-computer-use", "computer-use":
 		return runRealtimeCU(arguments[1:], output)
+	case "meeting", "meeting-assistant", "live-meeting":
+		return runMeeting(arguments[1:], output)
 	case "dynacu":
 		return runDynaCU(arguments[1:], output)
 	default:
 		return fmt.Errorf("unknown suite %q", suite)
 	}
+}
+
+// runMeeting executes the repository-owned concurrent meeting-assistant suite.
+func runMeeting(arguments []string, output io.Writer) error {
+	flags := flag.NewFlagSet("openrealtime bench meeting", flag.ContinueOnError)
+	var (
+		endpoint        string
+		transport       string
+		tokenEnv        string
+		model           string
+		out             string
+		browser         string
+		categories      string
+		limit           int
+		fps             int
+		timeout         time.Duration
+		analysisDelay   time.Duration
+		cellName        string
+		referenceLevels string
+		varyFactor      string
+		varyLevel       string
+		foreground      string
+		list            bool
+	)
+	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "WebSocket or WebRTC SDP endpoint")
+	flags.StringVar(&transport, "transport", bench.TransportWebSocket, "sensor/executor transport: websocket or webrtc")
+	flags.StringVar(&tokenEnv, "token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token")
+	flags.StringVar(&model, "model", "openrealtime", "model to request")
+	flags.StringVar(&out, "out", "", "write the result to this path as JSON")
+	flags.StringVar(&browser, "browser", "", "Chromium executable; empty discovers it")
+	flags.StringVar(&categories, "categories", "", "comma-separated task categories; empty runs all")
+	flags.IntVar(&limit, "limit", 0, "stop after this many cases; a limited run is incomplete")
+	flags.IntVar(&fps, "fps", 5, "shared-screen capture rate")
+	flags.DurationVar(&timeout, "task-timeout", 40*time.Second, "bound one meeting episode")
+	flags.DurationVar(&analysisDelay, "analysis-delay", 8*time.Second, "duration of the deliberately outstanding analysis tool")
+	flags.StringVar(&cellName, "cell", "meeting-assistant-reference", "name for this cell")
+	flags.StringVar(&referenceLevels, "reference-levels", "", "comma-separated factor=level overrides held fixed across a pair")
+	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F9")
+	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
+	flags.StringVar(&foreground, "foreground", "cascade", "fast foreground: cascade or omni")
+	flags.BoolVar(&list, "list", false, "list repository-owned meeting tasks and stop")
+	flags.SetOutput(output)
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("meeting accepts flags only")
+	}
+	if list {
+		for _, task := range meeting.Suite() {
+			fmt.Fprintf(output, "%-34s %-20s %s\n", task.ID, task.Category, task.Difficulty)
+		}
+		return nil
+	}
+	var reference bench.Cell
+	switch strings.ToLower(strings.TrimSpace(foreground)) {
+	case "", "cascade", "asr-vlm":
+		reference = meeting.ReferenceCell()
+	case "omni", "native-audio":
+		reference = meeting.OmniCell()
+	default:
+		return fmt.Errorf("meeting foreground must be cascade or omni, got %q", foreground)
+	}
+	cell, err := resolveCellFrom(reference, cellName, referenceLevels, varyFactor, varyLevel)
+	if err != nil {
+		return err
+	}
+	var selectedCategories []string
+	for _, value := range strings.Split(categories, ",") {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			selectedCategories = append(selectedCategories, trimmed)
+		}
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	result, err := meeting.Run(ctx, meeting.Options{
+		Endpoint: endpoint, Transport: transport, Token: os.Getenv(tokenEnv), Model: model,
+		Cell: cell, Browser: browser, Categories: selectedCategories, Limit: limit,
+		FrameRate: fps, Timeout: timeout, AnalysisDelay: analysisDelay,
+		Progress: func(line string) { fmt.Fprintln(output, line) },
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(output)
+	fmt.Fprintf(output, "suite      : %s\n", result.Suite)
+	fmt.Fprintf(output, "cell       : %s\n", result.Cell.Describe())
+	fmt.Fprintf(output, "tasks      : %d completed, %d infrastructure failures, of %d expected\n",
+		result.Summary.Completed, result.Summary.Failed, result.Expected)
+	fmt.Fprintf(output, "passed     : %d/%d (%.1f%%)\n",
+		result.Summary.Passed, result.Summary.Completed, result.Summary.PassRate*100)
+	for _, metric := range []string{
+		"followup_action_latency_ms", "visual_cue_to_action_ms", "correction_to_action_ms",
+		"cue_to_document_open_ms", "cue_to_screen_share_ms", "action_count",
+		"invalid_action_count", "deadline_miss_count", "session_timeout_count",
+	} {
+		distribution, present := result.Summary.Distributions[metric]
+		if !present {
+			continue
+		}
+		fmt.Fprintf(output, "  %-32s n=%-3d p50 %-9s p95 %-9s max %s\n", metric,
+			distribution.Count, distribution.Format(distribution.P50),
+			distribution.Format(distribution.P95), distribution.Format(distribution.Max))
+	}
+	if reportErr := result.Reportable(); reportErr != nil {
+		fmt.Fprintf(output, "\nNOT REPORTABLE: %v\n", reportErr)
+	} else {
+		fmt.Fprintln(output, "\nreportable")
+	}
+	if strings.TrimSpace(out) != "" {
+		if err := result.Write(out); err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "written to %s\n", out)
+	}
+	return nil
 }
 
 // runArchitecturePair classifies two measured F52 cells. A comparison can be

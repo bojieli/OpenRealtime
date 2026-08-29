@@ -23,6 +23,11 @@ const (
 	FactorFastAction Factor = "F10"
 	FactorVideoRate  Factor = "F11"
 	FactorRecognizer Factor = "F12"
+	// FactorTransport records whether the evaluated sensor/executor reached the
+	// same protocol over WebSocket or WebRTC. Meeting cells use it because RTP
+	// pacing, data-channel ordering, and media codecs are part of the deployed
+	// system rather than invisible harness plumbing.
+	FactorTransport Factor = "F13"
 	// FactorInteractionArchitecture selects who makes interaction decisions and
 	// from what evidence: shipped predicates (P), an external text-policy model
 	// (T), or a model-native interaction head (N). The level is only the compact
@@ -59,6 +64,8 @@ func (factor Factor) Description() string {
 		return "video frame rate"
 	case FactorRecognizer:
 		return "recogniser"
+	case FactorTransport:
+		return "client transport"
 	case FactorInteractionArchitecture:
 		return "interaction architecture"
 	default:

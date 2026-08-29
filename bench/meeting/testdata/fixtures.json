@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "suite": "openrealtime-meeting-assistant-v1",
+  "canonical_input": "The checked-in WAV bytes and SHA-256 values define the benchmark input. Synthesis provenance is informational and is not used to regenerate fixtures during a run.",
+  "generator": {
+    "family": "Fish Audio S2-Pro",
+    "model": "fishaudio/s2-pro",
+    "model_revision": "not recorded when the fixtures were authored",
+    "endpoint": "local Fish-compatible speech service",
+    "composition": "Utterances were synthesized separately. Exact digital silence was inserted between multi-utterance cues and the result was converted with FFmpeg to mono PCM signed 16-bit little-endian at 22050 Hz."
+  },
+  "audio_format": {
+    "codec": "pcm_s16le",
+    "sample_rate_hz": 22050,
+    "channels": 1,
+    "bits_per_sample": 16
+  },
+  "fixtures": [
+    {
+      "file": "open-present.wav",
+      "sha256": "beb644aa38a057e3bb412d2bedd6c25cef3b317390db13edbd895c7112e7692c",
+      "duration_ms": 5154.830,
+      "segments": [
+        {
+          "start_ms": 0,
+          "end_ms": 5154.830,
+          "text": "Open the launch review, share your screen and tell everyone the latest conversion rate."
+        }
+      ]
+    },
+    {
+      "file": "follow-up.wav",
+      "sha256": "fb63c96dcbf6fdf7003133f00fdb7ec2ce19b2537cbbf77e323813a806140057",
+      "duration_ms": 10919.546,
+      "segments": [
+        {
+          "start_ms": 0,
+          "end_ms": 4736.871,
+          "text": "Analyze the launch review in the background. Keep listening while you work."
+        },
+        {
+          "start_ms": 4736.871,
+          "end_ms": 8736.871,
+          "kind": "silence"
+        },
+        {
+          "start_ms": 8736.871,
+          "end_ms": 10919.546,
+          "text": "Switch to the risks slide now."
+        }
+      ]
+    },
+    {
+      "file": "visual-alert.wav",
+      "sha256": "4399f538b055a05f8d3ffcb38f3976e09e885bdb13d9578564f71fe45c86525e",
+      "duration_ms": 8034.104,
+      "segments": [
+        {
+          "start_ms": 0,
+          "end_ms": 8034.104,
+          "text": "Present the launch overview. If a deployment alert appears, acknowledge it immediately without stopping your presentation."
+        }
+      ]
+    },
+    {
+      "file": "correction.wav",
+      "sha256": "b69b7161f461848730e58aa9ae1ea2ae6708c802b3cfcf73572ffd675e3183e9",
+      "duration_ms": 8990.748,
+      "segments": [
+        {
+          "start_ms": 0,
+          "end_ms": 3436.553,
+          "text": "Go to the summary slide and begin presenting."
+        },
+        {
+          "start_ms": 3436.553,
+          "end_ms": 6436.553,
+          "kind": "silence"
+        },
+        {
+          "start_ms": 6436.553,
+          "end_ms": 8990.748,
+          "text": "Wait, go back to the overview."
+        }
+      ]
+    }
+  ]
+}

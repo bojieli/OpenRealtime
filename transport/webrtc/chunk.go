@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 )
 
 // A data channel carries protocol events as text messages, one event per
@@ -129,6 +130,54 @@ type partialMessage struct {
 type reassembler struct {
 	mu      sync.Mutex
 	partial map[uint32]*partialMessage
+}
+
+// EncodedEvent is one data-channel message. Binary messages use the transport
+// chunk framing above; text messages are complete protocol events.
+//
+// This type is exported because browser-equivalent clients and benchmark
+// sensors must use exactly the adapter's framing. Reimplementing the magic
+// bytes and size policy in every client would make large video work in one
+// transport test and fail in the evaluation that matters.
+type EncodedEvent struct {
+	Data   []byte
+	Binary bool
+}
+
+// EventCodec encodes and reassembles protocol events carried by the WebRTC
+// data channel. One instance belongs to one ordered data channel.
+type EventCodec struct {
+	inbound  *reassembler
+	outbound atomic.Uint32
+}
+
+// NewEventCodec creates an empty per-channel codec.
+func NewEventCodec() *EventCodec {
+	return &EventCodec{inbound: newReassembler()}
+}
+
+// Encode returns one text message when the event fits, or binary chunk frames
+// sized against the peer's negotiated SCTP limit when it does not.
+func (codec *EventCodec) Encode(raw []byte, negotiated uint32) []EncodedEvent {
+	if wholeMessageFits(len(raw), negotiated) {
+		return []EncodedEvent{{Data: append([]byte(nil), raw...)}}
+	}
+	identifier := codec.outbound.Add(1)
+	chunks := splitChunks(identifier, raw, chunkPayloadFor(negotiated))
+	encoded := make([]EncodedEvent, 0, len(chunks))
+	for _, chunk := range chunks {
+		encoded = append(encoded, EncodedEvent{Data: chunk, Binary: true})
+	}
+	return encoded
+}
+
+// Decode returns a complete protocol event, nil while a binary event is still
+// being assembled, or an error for malformed chunk framing.
+func (codec *EventCodec) Decode(data []byte, binary bool) ([]byte, error) {
+	if !binary {
+		return append([]byte(nil), data...), nil
+	}
+	return codec.inbound.accept(data)
 }
 
 func newReassembler() *reassembler {

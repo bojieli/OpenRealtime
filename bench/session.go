@@ -76,6 +76,11 @@ type Transcript struct {
 	// session.update. It is present only when CaptureRuntimeEvidence was set;
 	// ordinary benchmark clients retain their existing wire behavior.
 	Runtime *binding.Status `json:"runtime,omitempty"`
+	// Outstanding lifecycle counts are normally zero. They are retained so a
+	// timeout distinguishes an agent still synthesising/responding from a
+	// harness that merely waited too little after playback.
+	OutstandingResponses int `json:"outstanding_responses,omitempty"`
+	OutstandingTools     int `json:"outstanding_tools,omitempty"`
 }
 
 // UserTurns returns what the user was heard to say, in order.
@@ -197,10 +202,12 @@ func (transcript Transcript) FirstToolCallAfter(name string, fromMS float64) (fl
 
 // SessionConfig configures one conversation.
 type SessionConfig struct {
-	// Endpoint is the protocol endpoint.
+	// Endpoint is the WebSocket protocol endpoint or WebRTC SDP endpoint.
 	Endpoint string
-	Token    string
-	Model    string
+	// Transport selects websocket or webrtc. Empty preserves websocket.
+	Transport string
+	Token     string
+	Model     string
 	// Instructions is the agent instruction for this task.
 	Instructions string
 	// Tools are declared to the session. Their results come from Respond.
@@ -212,6 +219,14 @@ type SessionConfig struct {
 	// It takes precedence over Respond and receives the call identity so an
 	// evaluator can retain an exact action trace and propagate idempotency.
 	HandleTool func(context.Context, ToolRequest) (json.RawMessage, error)
+	// ConcurrentTools runs HandleTool outside the protocol event collector.
+	//
+	// Meeting and agent evaluations use this when a knowledge tool deliberately
+	// remains outstanding while more audio and video arrive. The collector
+	// continues recording those events and does not declare the conversation
+	// quiet until every tool result has returned. Ordinary suites retain the
+	// historical synchronous behavior by leaving this false.
+	ConcurrentTools bool
 	// Realtime plays audio at its own rate. Turning it off makes a suite
 	// faster and its timing numbers meaningless, so it stays on for anything
 	// that reports latency.
@@ -223,6 +238,12 @@ type SessionConfig struct {
 	// distinct from the short quiet that means it has finished. Zero selects
 	// thirty seconds.
 	WorkingTimeout time.Duration
+	// PostPlaybackQuiet is how long a session with no protocol work visibly
+	// outstanding must remain quiet after playback before collection ends.
+	// Zero selects three seconds. Suites with an asynchronous slow lane may
+	// raise this without weakening their action deadlines; Timeout remains the
+	// hard conversation horizon.
+	PostPlaybackQuiet time.Duration
 	// Timeout bounds one conversation.
 	Timeout time.Duration
 	// Quiet suppresses per-task progress.
@@ -302,6 +323,13 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 	if strings.TrimSpace(config.Endpoint) == "" {
 		return Transcript{}, errors.New("a session needs an endpoint")
 	}
+	transport := strings.ToLower(strings.TrimSpace(config.Transport))
+	if transport == "" {
+		transport = TransportWebSocket
+	}
+	if transport != TransportWebSocket && transport != TransportWebRTC {
+		return Transcript{}, fmt.Errorf("session transport must be websocket or webrtc, got %q", config.Transport)
+	}
 	if config.Timeout <= 0 {
 		config.Timeout = 3 * time.Minute
 	}
@@ -324,15 +352,36 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 
 	timed, cancel := context.WithTimeout(ctx, config.Timeout)
 	defer cancel()
-	client, err := realtimeclient.Dial(timed, realtimeclient.Config{
-		URL: config.Endpoint, Token: config.Token, Model: config.Model,
-	})
+	var err error
+	endpoint := config.Endpoint
+	if transport == TransportWebRTC &&
+		(strings.HasPrefix(strings.ToLower(endpoint), "ws://") ||
+			strings.HasPrefix(strings.ToLower(endpoint), "wss://")) {
+		// A benchmark may point at an ordinary production protocol endpoint.
+		// Terminate WebRTC in-process with the same adapter `serve` uses so the
+		// sensor/executor still crosses RTP and SCTP without requiring the target
+		// process to have opened an additional port.
+		var closeAdapter func()
+		endpoint, closeAdapter, err = startLoopbackWebRTC(endpoint, config.Token, config.Model)
+		if err != nil {
+			return Transcript{}, fmt.Errorf("start benchmark WebRTC adapter: %w", err)
+		}
+		defer closeAdapter()
+	}
+	var client realtimeSession
+	if transport == TransportWebRTC {
+		client, err = dialWebRTC(timed, endpoint, config.Token, config.Model)
+	} else {
+		client, err = realtimeclient.Dial(timed, realtimeclient.Config{
+			URL: config.Endpoint, Token: config.Token, Model: config.Model,
+		})
+	}
 	if err != nil {
 		return Transcript{}, err
 	}
 	defer client.Close()
 
-	recorder := &recorder{started: time.Now()}
+	recorder := &recorder{started: time.Now(), configured: make(chan struct{})}
 	collected := make(chan Transcript, 1)
 	go func() { collected <- recorder.collect(timed, client, config) }()
 
@@ -379,11 +428,38 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 			return Transcript{}, err
 		}
 	}
+	if transport == TransportWebRTC {
+		// RTP and SCTP are independently ordered. A browser can start its media
+		// track while session.update is still crossing the data channel, which
+		// makes the server correctly refuse the late configuration as an active-
+		// speech mutation. Wait for the protocol acknowledgement before letting
+		// recorded media start; WebSocket gets this ordering from one stream.
+		select {
+		case <-recorder.configured:
+		case <-timed.Done():
+			return recorder.snapshot(), fmt.Errorf("wait for WebRTC session configuration: %w", timed.Err())
+		}
+		// Establish the RTP receiver before the first recorded syllable. Browsers
+		// keep a live microphone track open before a person begins speaking; an
+		// evaluator that sends speech in its very first RTP packet instead makes
+		// track startup part of ASR accuracy. Pace silence here so OnTrack, the
+		// adapter's media pump, and the acoustic gate are all live. This setup is
+		// deliberately outside the episode clock below.
+		if mediaTransport, ok := client.(pcmInput); ok {
+			if err := warmWebRTCAudio(timed, mediaTransport); err != nil {
+				return recorder.snapshot(), fmt.Errorf("warm WebRTC audio track: %w", err)
+			}
+		}
+	}
 	if config.Ready != nil {
 		if err := config.Ready(timed); err != nil {
 			return Transcript{}, fmt.Errorf("prepare session environment: %w", err)
 		}
 	}
+	// Ready is the shared zero point for authored audio cues, page events,
+	// screen actions, and the transcript. Connection/configuration/media warmup
+	// must not inflate reaction latency or move a later cue's scoring window.
+	recorder.beginEpisode()
 	recorder.add(Moment{Kind: MomentReady})
 
 	// A conversation and its video workers have different shutdown edges. A
@@ -412,7 +488,12 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 	}
 	defer stopVideo()
 
-	const frameSamples = 2400 // 100 ms
+	frameSamples := 2400 // 100 ms for protocol audio frames.
+	if _, mediaTransport := client.(pcmInput); mediaTransport {
+		// RTP is packetised at 20 ms. Sending five packets in a 100 ms burst
+		// would make the benchmark's sensor unlike the browser it is measuring.
+		frameSamples = 480
+	}
 	started := time.Now()
 	scheduled := append([]ScheduledEvent(nil), config.Scheduled...)
 	sort.SliceStable(scheduled, func(i, j int) bool { return scheduled[i].AtMS < scheduled[j].AtMS })
@@ -429,7 +510,11 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 			recorder.add(Moment{AtMS: float64(scheduled[sent].AtMS), Kind: MomentScheduled})
 			sent++
 		}
-		if err := client.Send(timed, map[string]any{
+		if mediaTransport, ok := client.(pcmInput); ok {
+			if err := mediaTransport.SendPCM24k(timed, samples[offset:end]); err != nil {
+				return Transcript{}, err
+			}
+		} else if err := client.Send(timed, map[string]any{
 			"type":  "input_audio_buffer.append",
 			"audio": base64.StdEncoding.EncodeToString(encodePCM(samples[offset:end])),
 		}); err != nil {
@@ -468,8 +553,37 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 	}
 }
 
+const webRTCAudioWarmup = 200 * time.Millisecond
+
+func warmWebRTCAudio(ctx context.Context, client pcmInput) error {
+	const packetDuration = 20 * time.Millisecond
+	packet := make([]int16, 24_000*int(packetDuration)/int(time.Second))
+	started := time.Now()
+	for sent := time.Duration(0); sent < webRTCAudioWarmup; sent += packetDuration {
+		if err := client.SendPCM24k(ctx, packet); err != nil {
+			return err
+		}
+		deadline := started.Add(sent + packetDuration)
+		if wait := time.Until(deadline); wait > 0 {
+			timer := time.NewTimer(wait)
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				return context.Cause(ctx)
+			}
+		}
+	}
+	return nil
+}
+
 func streamVideo(
-	ctx context.Context, stop <-chan struct{}, client *realtimeclient.Client, recorder *recorder,
+	ctx context.Context, stop <-chan struct{}, client realtimeSession, recorder *recorder,
 	stream VideoStream, failures chan<- error,
 ) {
 	send := func() error {
@@ -528,9 +642,13 @@ type recorder struct {
 	// While it is above zero the agent still owes this turn something, so
 	// silence is work rather than completion.
 	openResponses      int
+	openTools          int
 	playbackFinishedAt time.Time
+	lastActivity       time.Time
 	failure            string
 	runtime            *binding.Status
+	configured         chan struct{}
+	configuredOnce     sync.Once
 }
 
 func (recorder *recorder) at() float64 {
@@ -542,6 +660,24 @@ func (recorder *recorder) add(moment Moment) {
 	defer recorder.mu.Unlock()
 	moment.AtMS = recorder.at()
 	recorder.moments = append(recorder.moments, moment)
+	// Do not update lastActivity here. Moments also include locally sampled
+	// video frames, which can continue forever and must not prevent quiet
+	// detection. Protocol events and completed tool work touch activity at
+	// their actual boundaries below.
+}
+
+func (recorder *recorder) beginEpisode() {
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	recorder.started = time.Now()
+	recorder.moments = nil
+	recorder.lastActivity = time.Time{}
+}
+
+func (recorder *recorder) touch() {
+	recorder.mu.Lock()
+	recorder.lastActivity = time.Now()
+	recorder.mu.Unlock()
 }
 
 func (recorder *recorder) playbackDone(milliseconds float64) {
@@ -565,6 +701,7 @@ func (recorder *recorder) snapshot() Transcript {
 	}
 	return Transcript{
 		Moments: moments, PlaybackMS: recorder.playbackMS, Failure: recorder.failure, Runtime: runtime,
+		OutstandingResponses: recorder.openResponses, OutstandingTools: recorder.openTools,
 	}
 }
 
@@ -589,17 +726,18 @@ func (recorder *recorder) snapshot() Transcript {
 // open; workingFor bounds that separately, because a server that opens a
 // response and never finishes it must still fail rather than hang.
 func (recorder *recorder) collect(
-	ctx context.Context, client *realtimeclient.Client, config SessionConfig,
+	ctx context.Context, client realtimeSession, config SessionConfig,
 ) Transcript {
-	const quietFor = 3 * time.Second
+	quietFor := config.PostPlaybackQuiet
+	if quietFor <= 0 {
+		quietFor = 3 * time.Second
+	}
 	workingFor := config.WorkingTimeout
 	if workingFor <= 0 {
 		workingFor = 30 * time.Second
 	}
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
-	lastEvent := time.Now()
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -607,17 +745,16 @@ func (recorder *recorder) collect(
 		case <-ticker.C:
 			recorder.mu.Lock()
 			finishedAt := recorder.playbackFinishedAt
+			lastActivity := recorder.lastActivity
+			working := recorder.openResponses > 0 || recorder.openTools > 0
 			recorder.mu.Unlock()
 			if finishedAt.IsZero() {
 				continue
 			}
 			since := finishedAt
-			if lastEvent.After(since) {
-				since = lastEvent
+			if lastActivity.After(since) {
+				since = lastActivity
 			}
-			recorder.mu.Lock()
-			working := recorder.openResponses > 0
-			recorder.mu.Unlock()
 			limit := quietFor
 			if working {
 				limit = workingFor
@@ -645,7 +782,7 @@ func (recorder *recorder) collect(
 				recorder.mu.Unlock()
 				return recorder.snapshot()
 			}
-			lastEvent = time.Now()
+			recorder.touch()
 			recorder.handle(ctx, client, config, event)
 			recorder.mu.Lock()
 			failed := recorder.failure != ""
@@ -658,10 +795,14 @@ func (recorder *recorder) collect(
 }
 
 func (recorder *recorder) handle(
-	ctx context.Context, client *realtimeclient.Client,
+	ctx context.Context, client realtimeSession,
 	config SessionConfig, event realtimeclient.Event,
 ) {
 	switch event.Type {
+	case "session.updated":
+		if recorder.configured != nil {
+			recorder.configuredOnce.Do(func() { close(recorder.configured) })
+		}
 	case "response.created":
 		recorder.mu.Lock()
 		recorder.openResponses++
@@ -720,7 +861,28 @@ func (recorder *recorder) handle(
 		if !json.Valid(arguments) {
 			arguments = json.RawMessage(`{}`)
 		}
-		recorder.answer(ctx, client, config, decoded.CallID, decoded.Name, arguments)
+		if config.ConcurrentTools && config.HandleTool != nil {
+			recorder.mu.Lock()
+			recorder.openTools++
+			recorder.mu.Unlock()
+			go func(callID, name string, arguments json.RawMessage) {
+				err := recorder.answer(ctx, client, config, callID, name, arguments)
+				recorder.mu.Lock()
+				if recorder.openTools > 0 {
+					recorder.openTools--
+				}
+				if err != nil && recorder.failure == "" && ctx.Err() == nil {
+					recorder.failure = err.Error()
+				}
+				recorder.mu.Unlock()
+			}(decoded.CallID, decoded.Name, append(json.RawMessage(nil), arguments...))
+		} else if err := recorder.answer(ctx, client, config, decoded.CallID, decoded.Name, arguments); err != nil {
+			recorder.mu.Lock()
+			if recorder.failure == "" && ctx.Err() == nil {
+				recorder.failure = err.Error()
+			}
+			recorder.mu.Unlock()
+		}
 	case openrealtime.EventObservationAdded:
 		var decoded struct {
 			Observer string `json:"observer"`
@@ -771,9 +933,9 @@ func (recorder *recorder) handle(
 // unanswered would hang the turn and make every task in the cell time out,
 // which would look like the system failing rather than the harness.
 func (recorder *recorder) answer(
-	ctx context.Context, client *realtimeclient.Client,
+	ctx context.Context, client realtimeSession,
 	config SessionConfig, callID, name string, arguments json.RawMessage,
-) {
+) error {
 	output := json.RawMessage(`{"error":"no tools are available in this task"}`)
 	if config.HandleTool != nil {
 		produced, err := config.HandleTool(ctx, ToolRequest{
@@ -792,16 +954,22 @@ func (recorder *recorder) answer(
 			output = produced
 		}
 	}
-	_ = client.Send(ctx, map[string]any{
+	if err := client.Send(ctx, map[string]any{
 		"type": "conversation.item.create",
 		"item": map[string]any{
 			"type": "function_call_output", "call_id": callID, "output": string(output),
 		},
-	})
+	}); err != nil {
+		return fmt.Errorf("send result for %s: %w", name, err)
+	}
 	recorder.add(Moment{
 		Kind: MomentToolResult, CallID: callID, Name: name, Text: string(output),
 	})
-	_ = client.Send(ctx, map[string]any{"type": "response.create"})
+	recorder.touch()
+	if err := client.Send(ctx, map[string]any{"type": "response.create"}); err != nil {
+		return fmt.Errorf("resume after %s: %w", name, err)
+	}
+	return nil
 }
 
 func encodePCM(samples []int16) []byte {

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>OpenRealtime meeting assistant evaluation</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; height: 100vh; overflow: hidden; background: #eef2f8; color: #182337; }
+    header { height: 76px; padding: 0 34px; display: flex; align-items: center; justify-content: space-between; background: #14213a; color: white; }
+    header strong { font-size: 22px; } #meeting-state { color: #b7c9ed; font-weight: 700; }
+    main { height: calc(100vh - 76px); display: grid; grid-template-columns: 330px 1fr; gap: 22px; padding: 22px; }
+    aside, section { background: white; border: 1px solid #d7dfec; border-radius: 16px; box-shadow: 0 8px 24px rgba(20,33,58,.07); }
+    aside { padding: 22px; } section { position: relative; padding: 28px; overflow: hidden; }
+    h1 { margin: 0 0 10px; font-size: 32px; } h2 { margin: 0 0 14px; font-size: 22px; }
+    p { font-size: 18px; line-height: 1.5; } .participant { display: flex; align-items: center; gap: 12px; margin: 16px 0; font-weight: 700; }
+    .avatar { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: #dbe8ff; color: #2455a4; }
+    .controls { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 24px; }
+    button { min-height: 54px; border: 0; border-radius: 11px; padding: 13px 20px; font: 700 17px/1.2 inherit; cursor: pointer; background: #e5ebf5; color: #1a2943; }
+    button.primary { background: #1769e0; color: white; } button.danger { background: #b42318; color: white; }
+    button.share { width: 100%; background: #087f5b; color: white; margin-top: 18px; }
+    /* Chromium's 1280x720 outer window yields a 1280x577 page viewport in
+       headless mode. Keep the slide and navigation inside the section's
+       resulting 401px content box; otherwise overflow:hidden clips every
+       navigation control out of both the pixels and the action surface. */
+    .slide { height: 300px; padding: 30px; border-radius: 14px; background: linear-gradient(140deg,#172a4c,#315b9f); color: white; }
+    .slide h1 { font-size: 38px; }.metric { font-size: 68px; font-weight: 800; letter-spacing: -.05em; margin-top: 28px; }
+    .risk { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 45px; }.risk div { padding: 24px; border-radius: 12px; background: rgba(255,255,255,.13); font-size: 21px; }
+    #alert { position: absolute; z-index: 4; right: 28px; top: 28px; width: 470px; padding: 22px; border: 4px solid #d9480f; border-radius: 15px; background: #fff4e6; box-shadow: 0 18px 50px rgba(0,0,0,.28); }
+    #alert h2 { color: #b53b00; font-size: 27px; }.badge { display: inline-block; padding: 7px 12px; border-radius: 99px; background: #dce6f7; font-weight: 800; }
+  </style>
+</head>
+<body>
+  <header><strong>Launch review · Live meeting</strong><span id="meeting-state">3 participants · recording</span></header>
+  <main>
+    <aside>
+      <h2>Participants</h2>
+      <div class="participant"><span class="avatar">AM</span>Amina</div>
+      <div class="participant"><span class="avatar">JL</span>Jules</div>
+      <div class="participant"><span class="avatar">AI</span>OpenRealtime</div>
+      <button id="share-screen" class="share">Share screen</button>
+      <h2 style="margin-top:30px">Meeting files</h2>
+      <button id="open-launch-review">Open launch review</button>
+      <div id="shared" style="margin-top:18px"></div>
+    </aside>
+    <section id="stage"></section>
+  </main>
+  <script>
+    const mode = new URL(location.href).searchParams.get('task') || 'open-present';
+    const stage = document.getElementById('stage');
+    let timers = [];
+    let started = performance.now();
+    let events = [];
+    let state = 'overview';
+    const elapsed = () => performance.now() - started;
+    const record = (name) => events.push({name, at_ms: elapsed()});
+    const later = (fn, ms) => { const id = setTimeout(fn, ms); timers.push(() => clearTimeout(id)); };
+    function renderSlide(name) {
+      state = name;
+      if (name === 'overview') {
+        stage.innerHTML = `<div class="slide"><span class="badge">LAUNCH OVERVIEW</span><h1>Activation is accelerating</h1><div class="metric">18.4%</div><p>Conversion rate · up 3.1 points</p></div><div class="controls" id="nav"></div>`;
+      } else if (name === 'risks') {
+        stage.innerHTML = `<div class="slide"><span class="badge">RISKS</span><h1>Two items need attention</h1><div class="risk"><div>EU onboarding latency</div><div>Mobile crash rate</div></div></div><div class="controls" id="nav"></div>`;
+      } else {
+        stage.innerHTML = `<div class="slide"><span class="badge">SUMMARY</span><h1>Launch recommendation</h1><div class="metric">GO</div><p>Proceed with monitored rollout</p></div><div class="controls" id="nav"></div>`;
+      }
+      const nav = document.getElementById('nav');
+      for (const [id, label, target] of [['overview-slide','Overview','overview'],['risks-slide','Risks','risks'],['summary-slide','Summary','summary']]) {
+        const button = document.createElement('button');
+        button.id = id; button.textContent = label;
+        button.addEventListener('click', () => { renderSlide(target); record(id); });
+        nav.append(button);
+      }
+    }
+    function reset() {
+      timers.forEach(stop => stop()); timers = [];
+      started = performance.now(); events = []; state = 'overview';
+      document.getElementById('meeting-state').textContent = '3 participants · recording';
+      document.getElementById('shared').textContent = '';
+      renderSlide('overview');
+      if (mode === 'visual-alert') {
+        later(() => {
+          const alert = document.createElement('div'); alert.id = 'alert';
+          alert.innerHTML = `<h2>Deployment alert</h2><p>Canary verification completed. Acknowledge within the response window.</p><button id="acknowledge-alert" class="danger">Acknowledge alert</button>`;
+          stage.append(alert);
+          document.getElementById('acknowledge-alert').addEventListener('click', () => { record('alert-acknowledged'); alert.remove(); });
+        }, 10500);
+      }
+      return true;
+    }
+    document.getElementById('share-screen').addEventListener('click', () => {
+      record('screen-shared'); document.getElementById('shared').textContent = '● Launch review is being shared';
+    });
+    document.getElementById('open-launch-review').addEventListener('click', () => {
+      record('document-opened'); renderSlide('overview');
+    });
+    window.openRealtimeMeeting = {
+      reset,
+      result: () => ({events: events.map(event => ({...event})), state}),
+      elapsed,
+    };
+    reset();
+  </script>
+</body>
+</html>

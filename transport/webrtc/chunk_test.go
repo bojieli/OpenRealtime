@@ -198,3 +198,38 @@ func TestSizingFollowsWhatThePeerNegotiated(t *testing.T) {
 		}
 	}
 }
+
+func TestExportedEventCodecRoundTripsTextAndLargeEvents(t *testing.T) {
+	t.Parallel()
+	encoder := NewEventCodec()
+	decoder := NewEventCodec()
+
+	text := []byte(`{"type":"session.update"}`)
+	frames := encoder.Encode(text, conservativeMessageBytes)
+	if len(frames) != 1 || frames[0].Binary {
+		t.Fatalf("small event framing = %+v", frames)
+	}
+	decoded, err := decoder.Decode(frames[0].Data, frames[0].Binary)
+	if err != nil || !bytes.Equal(decoded, text) {
+		t.Fatalf("small event decode = %q, %v", decoded, err)
+	}
+
+	large := bytes.Repeat([]byte("screen-pixels"), 20_000)
+	frames = encoder.Encode(large, 32<<10)
+	if len(frames) < 2 {
+		t.Fatal("a large event must be chunked")
+	}
+	decoded = nil
+	for index, frame := range frames {
+		if !frame.Binary {
+			t.Fatalf("large frame %d was sent as text", index)
+		}
+		decoded, err = decoder.Decode(frame.Data, frame.Binary)
+		if err != nil {
+			t.Fatalf("decode frame %d: %v", index, err)
+		}
+	}
+	if !bytes.Equal(decoded, large) {
+		t.Fatalf("large event decoded %d bytes, want %d", len(decoded), len(large))
+	}
+}

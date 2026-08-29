@@ -1,10 +1,16 @@
 package bench_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,9 +20,86 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	"github.com/bojieli/OpenRealtime/internal/testserver"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/coder/websocket"
 )
+
+func TestSessionDrivesAudioVideoAndToolsOverWebRTC(t *testing.T) {
+	stack := testserver.Start(t, testserver.Config{
+		Transcript: "open the launch review and present it",
+		ToolName:   "meeting.read_launch_review", ToolArguments: `{}`,
+		Narration: "The shared screen shows the launch review.",
+	})
+	canvas := image.NewRGBA(image.Rect(0, 0, 320, 180))
+	canvas.Set(20, 20, color.RGBA{R: 255, G: 80, B: 20, A: 255})
+	var encoded bytes.Buffer
+	if err := jpeg.Encode(&encoded, canvas, &jpeg.Options{Quality: 75}); err != nil {
+		t.Fatal(err)
+	}
+	frame := encoded.Bytes()
+	var handled atomic.Bool
+	var unexpectedTool atomic.Bool
+	var captures atomic.Int32
+	samples := make([]int16, 24_000)
+	for index := range samples {
+		samples[index] = int16(8_000 * math.Sin(2*math.Pi*220*float64(index)/24_000))
+	}
+
+	transcript, err := bench.PlaySamples(context.Background(), bench.SessionConfig{
+		// A ws:// endpoint asks the driver to terminate WebRTC with the same
+		// adapter used by serve; this covers production servers that expose only
+		// their canonical protocol port.
+		Endpoint: stack.ProtocolURL, Transport: bench.TransportWebRTC,
+		Timeout: 15 * time.Second, TrailingSilence: 700 * time.Millisecond,
+		Tools: []json.RawMessage{json.RawMessage(
+			`{"type":"function","name":"meeting.read_launch_review","description":"Read the launch review","parameters":{"type":"object","properties":{}}}`,
+		)},
+		HandleTool: func(_ context.Context, request bench.ToolRequest) (json.RawMessage, error) {
+			if request.Name != "meeting.read_launch_review" {
+				unexpectedTool.Store(true)
+				return nil, fmt.Errorf("unexpected tool %q", request.Name)
+			}
+			handled.Store(true)
+			return json.RawMessage(`{"conversion_rate":"18.4%"}`), nil
+		},
+		Video: []bench.VideoStream{{
+			Source: "screen", Width: 320, Height: 180, Interval: 100 * time.Millisecond,
+			Capture: func(context.Context) ([]byte, error) {
+				captures.Add(1)
+				return frame, nil
+			},
+		}},
+	}, samples)
+	if err != nil {
+		t.Fatalf("WebRTC meeting session: %v\n%+v", err, transcript.Moments)
+	}
+	if !handled.Load() {
+		t.Fatal("the tool call did not cross the WebRTC data channel")
+	}
+	if unexpectedTool.Load() {
+		t.Fatal("an unexpected tool crossed the WebRTC data channel")
+	}
+	if captures.Load() == 0 {
+		t.Fatal("the screen sensor did not capture a frame")
+	}
+	var heard, sawFrame, heardAgent bool
+	for _, moment := range transcript.Moments {
+		heard = heard || moment.Kind == bench.MomentTranscript &&
+			strings.Contains(moment.Text, "launch review")
+		sawFrame = sawFrame || moment.Kind == bench.MomentVideoFrame
+		heardAgent = heardAgent || moment.Kind == bench.MomentAgentAudio && moment.AudioMS > 0
+	}
+	if !heard || !sawFrame || !heardAgent {
+		t.Fatalf("incomplete WebRTC evidence: transcript=%t video=%t output_audio=%t\n%+v",
+			heard, sawFrame, heardAgent, transcript.Moments)
+	}
+	for _, moment := range transcript.Moments {
+		if moment.Kind == bench.MomentReady && moment.AtMS > 100 {
+			t.Fatalf("WebRTC setup leaked into the episode clock: ready at %.1f ms", moment.AtMS)
+		}
+	}
+}
 
 type realtimeStub struct {
 	mu       sync.Mutex
@@ -198,6 +281,66 @@ func TestSessionNegotiatesAndStreamsLiveVideo(t *testing.T) {
 	}
 	if observation.Observer != "video" || observation.Source != "screen" || observation.Text != "violet control visible" {
 		t.Fatalf("observation provenance was lost: %+v", observation)
+	}
+}
+
+func TestConcurrentToolDoesNotStopCollectingMeetingEvidence(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(writer, request, &websocket.AcceptOptions{})
+		if err != nil {
+			return
+		}
+		defer connection.Close(websocket.StatusNormalClosure, "test complete")
+		for {
+			_, raw, err := connection.Read(request.Context())
+			if err != nil {
+				return
+			}
+			var message map[string]any
+			if json.Unmarshal(raw, &message) != nil || message["type"] != "session.update" {
+				continue
+			}
+			tool, _ := json.Marshal(map[string]any{
+				"type": "response.function_call_arguments.done", "call_id": "analysis_1",
+				"name": "meeting.analyze", "arguments": `{}`,
+			})
+			_ = connection.Write(request.Context(), websocket.MessageText, tool)
+			time.Sleep(30 * time.Millisecond)
+			observation, _ := json.Marshal(map[string]any{
+				"type": openrealtime.EventObservationAdded, "observer": "video",
+				"source": "shared-screen", "text": "the risks slide is visible",
+			})
+			_ = connection.Write(request.Context(), websocket.MessageText, observation)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	transcript, err := bench.PlaySamples(context.Background(), bench.SessionConfig{
+		Endpoint:        "ws" + strings.TrimPrefix(server.URL, "http"),
+		Timeout:         5 * time.Second,
+		WorkingTimeout:  2 * time.Second,
+		TrailingSilence: time.Millisecond,
+		ConcurrentTools: true,
+		HandleTool: func(context.Context, bench.ToolRequest) (json.RawMessage, error) {
+			time.Sleep(250 * time.Millisecond)
+			return json.RawMessage(`{"analysis":"complete"}`), nil
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("play: %v", err)
+	}
+	observationAt, resultAt := -1.0, -1.0
+	for _, moment := range transcript.Moments {
+		switch moment.Kind {
+		case bench.MomentObservation:
+			observationAt = moment.AtMS
+		case bench.MomentToolResult:
+			resultAt = moment.AtMS
+		}
+	}
+	if observationAt < 0 || resultAt < 0 || observationAt >= resultAt {
+		t.Fatalf("events were serialized behind the tool: observation=%.0f result=%.0f moments=%+v",
+			observationAt, resultAt, transcript.Moments)
 	}
 }
 
