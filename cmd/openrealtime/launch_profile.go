@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	legacyaction "github.com/bojieli/OpenRealtime/action"
+	"github.com/bojieli/OpenRealtime/bench/scenario"
 	"github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	scenarioconversation "github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation"
@@ -207,14 +208,14 @@ func freezeProductionScenarioProfile(
 	if err != nil {
 		return launchprofile.Document{}, err
 	}
+	tools, err := productionScenarioToolDeclarations()
+	if err != nil {
+		return launchprofile.Document{}, err
+	}
 	application := scenarioconversation.ApplicationConfig{
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
 		ASR:           asr, Model: model, TTS: tts,
-		Tools: []scenarioconversation.ToolDeclaration{{
-			Name: "press_key", Description: "Send one reviewed keypad digit to the open call.",
-			Parameters: json.RawMessage(`{"type":"object","properties":{"digit":{"type":"string"}},"required":["digit"]}`),
-			Confirm:    legacyaction.ConfirmNever,
-		}},
+		Tools: tools,
 		Target: computeruse.Target{
 			Name: "scenario-client", Sources: []string{scenarioconversation.SourceMessage},
 			Width: 64, Height: 48,
@@ -252,6 +253,55 @@ func freezeProductionScenarioProfile(
 			VideoLimits:          openrealtime.DefaultLimits(),
 		},
 	})
+}
+
+// productionScenarioToolDeclarations derives the profile-owned client action
+// surface from the benchmark suite that will submit it. The graph adapter
+// exact-matches names, descriptions, schemas, and confirmation policy during
+// session.update, so a hand-copied declaration would make the recorded-menu
+// case fail before any behavior could be measured.
+func productionScenarioToolDeclarations() ([]scenarioconversation.ToolDeclaration, error) {
+	byName := make(map[string]scenarioconversation.ToolDeclaration)
+	var order []string
+	for _, item := range scenario.Suite() {
+		for _, tool := range item.Tools {
+			properties := make(map[string]map[string]string, len(tool.Parameters))
+			for _, parameter := range tool.Parameters {
+				if strings.TrimSpace(parameter) == "" || parameter != strings.TrimSpace(parameter) {
+					return nil, fmt.Errorf("scenario tool %q has non-canonical parameter %q", tool.Name, parameter)
+				}
+				if _, duplicate := properties[parameter]; duplicate {
+					return nil, fmt.Errorf("scenario tool %q repeats parameter %q", tool.Name, parameter)
+				}
+				properties[parameter] = map[string]string{"type": "string"}
+			}
+			parameters, err := json.Marshal(map[string]any{
+				"type": "object", "properties": properties,
+				"required": tool.Parameters,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("encode scenario tool %q schema: %w", tool.Name, err)
+			}
+			declaration := scenarioconversation.ToolDeclaration{
+				Name: tool.Name, Description: tool.Description,
+				Parameters: parameters, Confirm: legacyaction.ConfirmNever,
+			}
+			if existing, found := byName[tool.Name]; found {
+				if existing.Description != declaration.Description ||
+					!bytes.Equal(existing.Parameters, declaration.Parameters) {
+					return nil, fmt.Errorf("scenario tool %q has conflicting declarations", tool.Name)
+				}
+				continue
+			}
+			byName[tool.Name] = declaration
+			order = append(order, tool.Name)
+		}
+	}
+	result := make([]scenarioconversation.ToolDeclaration, 0, len(order))
+	for _, name := range order {
+		result = append(result, byName[name])
+	}
+	return result, nil
 }
 
 func scenarioProfileASRSelection(

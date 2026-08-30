@@ -44,6 +44,7 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 		`"reference":"provider.openrealtime.tts.fish-audio.v1"`,
 		`"model":"fishaudio/fish-speech-1.5"`,
 		`"base_url":"http://127.0.0.1:8123/v1/tts"`,
+		`"description":"Send a keypad tone on the open call."`,
 		`"digit":{"type":"string"}`,
 	} {
 		if !bytes.Contains(profile.Application.Configuration, []byte(exact)) {
