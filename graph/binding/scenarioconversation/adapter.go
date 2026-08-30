@@ -365,6 +365,19 @@ func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
 	if err := json.Unmarshal(values["endpoint_policy"], &endpoint); err != nil || endpoint.Mode != "automatic" {
 		return errors.New("scenario conversation endpoint policy must be exact automatic mode")
 	}
+	var semanticAdmission struct {
+		DirectVisualInput bool `json:"direct_visual_input"`
+	}
+	if err := json.Unmarshal(values["semantic_admission"], &semanticAdmission); err != nil {
+		return fmt.Errorf("decode scenario conversation semantic admission values: %w", err)
+	}
+	directVisual := false
+	if evidence := config.Architecture.Interaction.EvidenceCapabilities; evidence != nil {
+		directVisual = evidence.DirectVisualInput
+	}
+	if semanticAdmission.DirectVisualInput != directVisual {
+		return errors.New("scenario conversation semantic direct-visual selection drifted from architecture")
+	}
 	var postCommitSilence struct {
 		DelayMS int `json:"delay_ms"`
 	}

@@ -214,6 +214,10 @@ func validatePluginConfig(config PluginConfig) error {
 	if err := validatePolicyPlugin(config.Policy); err != nil {
 		return err
 	}
+	if evidence := config.Architecture.Interaction.EvidenceCapabilities; evidence != nil &&
+		evidence.DirectVisualInput && !config.Policy.Descriptor.Vision {
+		return errors.New("scenario conversation direct-visual architecture requires a vision-capable semantic policy")
+	}
 	if err := validateModelPlugin(config.Model, ModelReference, continuation.SpeechAuthorityVoice); err != nil {
 		return err
 	}

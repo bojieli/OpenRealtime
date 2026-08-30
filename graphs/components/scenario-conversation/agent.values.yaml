@@ -53,6 +53,7 @@ nodes:
   trajectory: {}
   semantic_admission:
     decider: deployment.scenario-conversation.semantic-policy
+    direct_visual_input: false
     recent_lines: 12
     max_pending: 64
     terminal_memory: 512

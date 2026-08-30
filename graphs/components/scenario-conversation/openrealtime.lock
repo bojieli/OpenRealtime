@@ -205,8 +205,8 @@
       "reference": "policy.SemanticAdmission",
       "identity": {
         "name": "policy.SemanticAdmission",
-        "revision": 1,
-        "digest": "sha256:a068aab11d2ff65b28811b80a745dab294cc9e28fb7ef9d55f51e6b165e9efd1"
+        "revision": 2,
+        "digest": "sha256:496fad4f7d031cb34e5ff32fe6232dd010c57aacdd606937d846c1945c9621a9"
       }
     },
     {

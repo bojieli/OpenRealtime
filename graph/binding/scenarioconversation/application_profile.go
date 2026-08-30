@@ -24,7 +24,7 @@ import (
 
 const (
 	ApplicationReference          = "application.openrealtime.scenario-conversation.v1"
-	ApplicationFormatVersion      = uint64(3)
+	ApplicationFormatVersion      = uint64(4)
 	maximumApplicationConfigBytes = 4 << 20
 	maximumApplicationProviders   = 65_536
 )
@@ -500,7 +500,10 @@ func resolveScenarioArchitecture(
 			"scenario conversation application architecture: %w", err,
 		)
 	}
-	if definition.Ref() != (projectarch.Ref{ID: "cascade.composed-policy", Revision: 1}) ||
+	ref := definition.Ref()
+	baseline := ref == (projectarch.Ref{ID: "cascade.composed-policy", Revision: 1})
+	directVisual := ref == (projectarch.Ref{ID: "cascade.composed-policy-direct-visual", Revision: 1})
+	if (!baseline && !directVisual) ||
 		definition.Interaction.Mode != projectarch.InteractionComposed ||
 		definition.Interaction.EvidenceCapabilities == nil ||
 		definition.Interaction.Control == nil {

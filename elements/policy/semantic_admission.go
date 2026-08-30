@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/bojieli/OpenRealtime/element"
+	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
@@ -28,7 +29,7 @@ const (
 	SemanticDeciderRegistryService = "policy.semantic.deciders"
 
 	semanticAdmissionRuntimeID       = "builtin://openrealtime/elements/policy.SemanticAdmission"
-	semanticAdmissionRuntimeRevision = "implementation:1"
+	semanticAdmissionRuntimeRevision = "implementation:2"
 	defaultSemanticRecentLines       = 12
 	defaultSemanticPending           = 64
 	defaultSemanticTerminalMemory    = 512
@@ -167,7 +168,7 @@ func (registry *SemanticDeciderRegistry) resolve(reference string) (semanticDeci
 func SemanticAdmissionDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
-		Name:          "policy.SemanticAdmission", Revision: 1,
+		Name:          "policy.SemanticAdmission", Revision: 2,
 		Ports: []element.Port{
 			{Name: "context", Direction: element.Input, Type: semanticContextType,
 				Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},
@@ -205,22 +206,24 @@ func SemanticAdmissionDescriptor() element.Descriptor {
 			MaxConcurrency: 1, BreaksCycles: true,
 		},
 		StateSchema:  "schema://openrealtime/policy/semantic-admission-state/v1",
-		ConfigSchema: "schema://openrealtime/policy/semantic-admission-config/v1",
+		ConfigSchema: "schema://openrealtime/policy/semantic-admission-config/v2",
 		Dependencies: []element.Dependency{
 			{Name: SemanticDeciderRegistryService},
 			{Name: graphruntime.ClockServiceName},
 			{Name: graphruntime.SequenceServiceName},
+			{Name: cognitionelements.MediaResolverService, Optional: true},
 		},
 		Effects: []element.Effect{{Name: "policy.semantic-decision", Reversible: true}},
 	}
 }
 
 type SemanticAdmissionConfig struct {
-	Decider        string `json:"decider"`
-	RecentLines    int    `json:"recent_lines,omitempty"`
-	MaxPending     int    `json:"max_pending,omitempty"`
-	TerminalMemory int    `json:"terminal_memory,omitempty"`
-	CancelMemory   int    `json:"cancel_memory,omitempty"`
+	Decider           string `json:"decider"`
+	DirectVisualInput bool   `json:"direct_visual_input,omitempty"`
+	RecentLines       int    `json:"recent_lines,omitempty"`
+	MaxPending        int    `json:"max_pending,omitempty"`
+	TerminalMemory    int    `json:"terminal_memory,omitempty"`
+	CancelMemory      int    `json:"cancel_memory,omitempty"`
 }
 
 type SemanticDecision struct {

@@ -8,14 +8,76 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
+	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 type semanticVariadicTestInput struct {
 	envelope     element.Envelope
 	delivered    atomic.Bool
 	receiveCalls atomic.Int32
+}
+
+func BenchmarkSemanticAdmissionSituation(b *testing.B) {
+	update := SessionInvocationUpdate{Invocation: continuation.Invocation{
+		Instruction: "Answer only when the current evidence requires it.",
+	}}
+	audio := trajectory.Snapshot{Version: 1, Items: []trajectory.Item{{
+		ID: "audio", Kind: trajectory.KindObservation,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "a short audio turn",
+	}}}
+	b.Run("audio", func(b *testing.B) {
+		runner := semanticAdmissionRunner{config: SemanticAdmissionConfig{RecentLines: 12}}
+		b.ReportAllocs()
+		for range b.N {
+			state, err := runner.situation(context.Background(), semanticRequest{}, update, audio)
+			if err != nil || len(state.Seeing) != 0 {
+				b.Fatalf("audio situation=%+v error=%v", state, err)
+			}
+		}
+	})
+
+	image := make([]byte, 25<<10)
+	visual := trajectory.Snapshot{Version: 3, Items: []trajectory.Item{
+		{
+			ID: "old-frame", Kind: trajectory.KindObservation,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "old frame",
+			Observation: &trajectory.ObservationMeta{
+				Observer: "client", Source: "screen", Authority: trajectory.AuthorityUser,
+				Media: []trajectory.MediaRef{{Handle: "old", MIMEType: "image/png", Source: "screen"}},
+			},
+		},
+		{
+			ID: "current-frame", Kind: trajectory.KindObservation,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "current frame",
+			Observation: &trajectory.ObservationMeta{
+				Observer: "client", Source: "screen", Authority: trajectory.AuthorityUser,
+				Media: []trajectory.MediaRef{{Handle: "current", MIMEType: "image/png", Source: "screen"}},
+			},
+		},
+		{ID: "tool-result", Kind: trajectory.KindToolResult, Producer: trajectory.Producer{Phase: trajectory.PhaseTool}},
+	}}
+	b.Run("direct_visual_25KiB", func(b *testing.B) {
+		runner := semanticAdmissionRunner{
+			config: SemanticAdmissionConfig{RecentLines: 12, DirectVisualInput: true},
+			media: continuation.MediaResolver(func(handle string) (continuation.Media, error) {
+				if handle != "current" {
+					return continuation.Media{}, errors.New("resolved stale visual evidence")
+				}
+				return continuation.Media{MIMEType: "image/png", Bytes: image}, nil
+			}),
+		}
+		b.SetBytes(int64(len(image)))
+		b.ReportAllocs()
+		for range b.N {
+			state, err := runner.situation(context.Background(), semanticRequest{}, update, visual)
+			if err != nil || len(state.Seeing) != 1 || len(state.Seeing[0].Bytes) != len(image) {
+				b.Fatalf("visual situation=%+v error=%v", state, err)
+			}
+		}
+	})
 }
 
 func (*semanticVariadicTestInput) Name() string { return "committed" }

@@ -12,7 +12,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
+	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -48,6 +50,28 @@ func (semanticAdmissionFactory) Mount(
 	if err != nil {
 		return nil, err
 	}
+	var media continuation.MediaResolver
+	if service, _, available := mount.Services.Lookup(cognitionelements.MediaResolverService); available {
+		switch typed := service.(type) {
+		case continuation.MediaResolver:
+			media = typed
+		case func(string) (continuation.Media, error):
+			media = continuation.MediaResolver(typed)
+		default:
+			return nil, fmt.Errorf("semantic admission media resolver service has type %T", service)
+		}
+		if media == nil {
+			return nil, errors.New("semantic admission media resolver service is nil")
+		}
+	}
+	if config.DirectVisualInput {
+		if !entry.descriptor.Vision {
+			return nil, errors.New("semantic admission direct visual input requires a vision-capable decider")
+		}
+		if media == nil {
+			return nil, errors.New("semantic admission direct visual input requires a media resolver")
+		}
+	}
 	clockValue, _, found := mount.Services.Lookup(graphruntime.ClockServiceName)
 	if !found {
 		return nil, errors.New("semantic admission has no runtime clock service")
@@ -75,7 +99,7 @@ func (semanticAdmissionFactory) Mount(
 	return &semanticAdmissionRunner{
 		instance: mount.InstanceID, config: config, reference: config.Decider,
 		entry: entry, registryRevision: registryRevision, handle: handle,
-		clock: clock, sequences: sequences, resolution: mount.Resolution, ports: ports,
+		clock: clock, sequences: sequences, resolution: mount.Resolution, ports: ports, media: media,
 		contexts: make(map[semanticContextAddress]semanticContextSample),
 		terminal: make(map[string]struct{}), canceledStreams: make(map[cancellationAddress]string),
 	}, nil
@@ -150,18 +174,19 @@ func (request semanticRequest) key() string {
 }
 
 type semanticDecisionResult struct {
-	request  semanticRequest
-	update   SessionInvocationUpdate
-	digest   string
-	sample   semanticContextSample
-	prefix   trajectory.Snapshot
-	act      coreinteraction.Act
-	outcome  coreinteraction.Outcome
-	started  uint64
-	ended    uint64
-	err      error
-	canceled bool
-	timedOut bool
+	request     semanticRequest
+	update      SessionInvocationUpdate
+	digest      string
+	sample      semanticContextSample
+	prefix      trajectory.Snapshot
+	act         coreinteraction.Act
+	outcome     coreinteraction.Outcome
+	started     uint64
+	ended       uint64
+	err         error
+	failureCode string
+	canceled    bool
+	timedOut    bool
 }
 
 type activeSemanticDecision struct {
@@ -198,6 +223,7 @@ type semanticAdmissionRunner struct {
 	handle           *semanticDeciderHandle
 	decider          SemanticDecider
 	model            *coreinteraction.InteractionModel
+	media            continuation.MediaResolver
 	clock            graphruntime.Clock
 	sequences        *graphruntime.SequenceAllocator
 	resolution       element.ResolutionReporter
@@ -785,10 +811,19 @@ func (runner *semanticAdmissionRunner) decide(
 	timeout := time.Duration(runner.entry.descriptor.DecisionTimeoutMS) * time.Millisecond
 	decisionCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	situation := runner.situation(request, update, prefix)
+	situation, err := runner.situation(decisionCtx, request, update, prefix)
+	failure := ""
+	if err != nil {
+		failure = "visual_evidence_failed"
+	}
 	var act coreinteraction.Act
 	var outcome coreinteraction.Outcome
-	err := validateSemanticSituation(situation)
+	if err == nil {
+		err = validateSemanticSituation(situation)
+		if err != nil {
+			failure = "invalid_evidence"
+		}
+	}
 	if err == nil {
 		act, outcome, err = runner.decideAct(decisionCtx, request.operation, situation)
 	}
@@ -804,7 +839,7 @@ func (runner *semanticAdmissionRunner) decide(
 	result := semanticDecisionResult{
 		request: request, update: update, digest: digest, sample: sample, prefix: prefix,
 		act: act, outcome: outcome, started: started, ended: runner.clock.NowNS(), err: err,
-		canceled: canceled, timedOut: timedOut,
+		failureCode: failure, canceled: canceled, timedOut: timedOut,
 	}
 	select {
 	case results <- result:
@@ -868,8 +903,8 @@ func (runner *semanticAdmissionRunner) decideAct(
 }
 
 func (runner *semanticAdmissionRunner) situation(
-	request semanticRequest, update SessionInvocationUpdate, prefix trajectory.Snapshot,
-) coreinteraction.Situation {
+	ctx context.Context, request semanticRequest, update SessionInvocationUpdate, prefix trajectory.Snapshot,
+) (coreinteraction.Situation, error) {
 	state := coreinteraction.Situation{
 		Contract: update.Invocation.Instruction,
 		Recent:   coreinteraction.RecentLines(prefix.Items, runner.config.RecentLines),
@@ -890,10 +925,45 @@ func (runner *semanticAdmissionRunner) situation(
 	if request.operation == "quiet" {
 		state.Quiet = true
 		state.Silence = "15s"
-		return state
+		return state, nil
 	}
 	if len(prefix.Items) == 0 {
-		return state
+		return state, nil
+	}
+	if runner.config.DirectVisualInput {
+		selected := continuation.LatestMediaHandles(prefix.Items)
+		resolved := make(map[string]struct{}, len(selected))
+		for _, item := range prefix.Items {
+			if item.Kind != trajectory.KindObservation || item.Observation == nil {
+				continue
+			}
+			for _, reference := range item.Observation.Media {
+				if _, latest := selected[reference.Handle]; !latest {
+					continue
+				}
+				if _, duplicate := resolved[reference.Handle]; duplicate {
+					continue
+				}
+				if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(reference.MIMEType)), "image/") {
+					continue
+				}
+				media, err := resolveSemanticMedia(ctx, runner.media, reference.Handle)
+				if err != nil {
+					return coreinteraction.Situation{}, fmt.Errorf(
+						"resolve semantic visual evidence %q: %w", reference.Handle, err,
+					)
+				}
+				if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(media.MIMEType)), "image/") {
+					return coreinteraction.Situation{}, fmt.Errorf(
+						"resolved semantic visual evidence %q has MIME type %q", reference.Handle, media.MIMEType,
+					)
+				}
+				state.Seeing = append(state.Seeing, coreinteraction.Image{
+					MIMEType: media.MIMEType, Bytes: media.Bytes,
+				})
+				resolved[reference.Handle] = struct{}{}
+			}
+		}
 	}
 	current := prefix.Items[len(prefix.Items)-1]
 	if request.commit.TrajectoryItemID != "" {
@@ -914,7 +984,37 @@ func (runner *semanticAdmissionRunner) situation(
 			state.TranscriptEvent = coreinteraction.TranscriptFinal
 		}
 	}
-	return state
+	return state, nil
+}
+
+type semanticMediaResult struct {
+	media continuation.Media
+	err   error
+}
+
+// MediaResolver predates context-aware provider calls. Isolate it behind the
+// exact semantic-decision deadline so a stalled retained-media plug-in cannot
+// delay the policy outcome. The resolver itself remains owned by the bounded
+// session media bridge and may finish after that outcome; the buffered result
+// lets it return its lease without blocking on an abandoned decision.
+func resolveSemanticMedia(
+	ctx context.Context, resolver continuation.MediaResolver, handle string,
+) (continuation.Media, error) {
+	if resolver == nil {
+		return continuation.Media{}, errors.New("semantic visual media resolver is unavailable")
+	}
+	result := make(chan semanticMediaResult, 1)
+	go func() {
+		media, err := resolver(handle)
+		result <- semanticMediaResult{media: media, err: err}
+	}()
+	select {
+	case resolved := <-result:
+		resolved.media.Bytes = slices.Clone(resolved.media.Bytes)
+		return resolved.media, resolved.err
+	case <-ctx.Done():
+		return continuation.Media{}, context.Cause(ctx)
+	}
 }
 
 func (runner *semanticAdmissionRunner) finishDecision(
@@ -950,6 +1050,9 @@ func (runner *semanticAdmissionRunner) finishDecision(
 	runner.rememberTerminal(request.key())
 	if result.err != nil {
 		kind, code := SemanticAdmissionFailed, "decider_failed"
+		if result.failureCode != "" {
+			code = result.failureCode
+		}
 		message := result.err.Error()
 		if result.timedOut || errors.Is(result.err, context.DeadlineExceeded) {
 			kind, code = SemanticAdmissionFailed, "decision_timeout"

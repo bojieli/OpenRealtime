@@ -92,6 +92,15 @@ func ScenarioConversationArtifacts(
 	}); err != nil {
 		return graphconfig.Artifacts{}, err
 	}
+	directVisual := false
+	if evidence := config.Architecture.Interaction.EvidenceCapabilities; evidence != nil {
+		directVisual = evidence.DirectVisualInput
+	}
+	if err := updateScenarioNode(document.Nodes, "semantic_admission", map[string]any{
+		"direct_visual_input": directVisual,
+	}); err != nil {
+		return graphconfig.Artifacts{}, err
+	}
 	values, err := json.Marshal(document)
 	if err != nil {
 		return graphconfig.Artifacts{}, fmt.Errorf("encode scenario conversation values artifact: %w", err)

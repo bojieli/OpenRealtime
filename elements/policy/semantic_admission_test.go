@@ -13,6 +13,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
+	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -50,8 +51,8 @@ func TestSemanticAdmissionContractRejectsUnpinnedProvidersAndUnboundedValues(t *
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "policy.SemanticAdmission" || descriptor.Revision != 1 ||
-		descriptor.ConfigSchema != "schema://openrealtime/policy/semantic-admission-config/v1" {
+	if descriptor.Name != "policy.SemanticAdmission" || descriptor.Revision != 2 ||
+		descriptor.ConfigSchema != "schema://openrealtime/policy/semantic-admission-config/v2" {
 		t.Fatalf("semantic admission descriptor = %+v", descriptor)
 	}
 	for _, testCase := range []struct {
@@ -95,6 +96,404 @@ func TestSemanticAdmissionContractRejectsUnpinnedProvidersAndUnboundedValues(t *
 		return
 	}
 	t.Fatal("semantic admission factory is absent from the production registry")
+}
+
+func TestSemanticAdmissionDirectVisualInputIsExplicitAndResolvedAtTheSealedPrefix(t *testing.T) {
+	visualDescriptor := semanticTestDescriptor
+	visualDescriptor.Vision = true
+	imageBytes := []byte("exact retained image bytes")
+	decider := &semanticTestDecider{
+		descriptor: visualDescriptor, acts: []coreinteraction.Act{coreinteraction.ActAnswer},
+	}
+	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", DirectVisualInput: true, RecentLines: 12,
+		MaxPending: 8, TerminalMemory: 8, CancelMemory: 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := continuation.MediaResolver(func(handle string) (continuation.Media, error) {
+		if handle != "retained-image-1" {
+			return continuation.Media{}, errors.New("unexpected media handle")
+		}
+		return continuation.Media{MIMEType: "image/png", Bytes: imageBytes}, nil
+	})
+	mounted, err := mountSemanticAdmissionRegisteredWithMedia(
+		t, visualDescriptor, decider, config, resolver,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- mounted.Run(ctx) }()
+	harness := policyHarness{mounted: mounted, done: done, cancel: cancel}
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, false)
+	item := trajectory.Item{
+		ID: "visual-observation", Kind: trajectory.KindObservation, SourceRevision: 1,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "submitted still image",
+		Observation: &trajectory.ObservationMeta{
+			Observer: "client", Source: "message", Authority: trajectory.AuthorityUser,
+			Media: []trajectory.MediaRef{{
+				Handle: "retained-image-1", MIMEType: "image/png", Source: "message",
+				Width: 64, Height: 48, Bytes: len(imageBytes),
+			}},
+		},
+	}
+	snapshot := trajectory.Snapshot{Version: 2, Items: []trajectory.Item{item, {
+		ID: "tool-result-after-visual", Kind: trajectory.KindToolResult, MonotonicNS: 2,
+		InvocationID: "generation-visual", Producer: trajectory.Producer{Phase: trajectory.PhaseTool},
+		ToolResult: &trajectory.ToolResult{
+			CallID: "visual-tool-1", Name: "inspect", Output: json.RawMessage(`{"ok":true}`),
+		},
+	}}}
+	identity, err := trajectory.IdentifyPrefix(snapshot, snapshot.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendSemanticContext(t, harness, "state-2", snapshot)
+	version := snapshot.Version
+	sendPolicy(t, harness.ingress(t, "create"), element.Envelope{
+		Type: policyelements.ResponseCreateType(), ItemID: "visual-create",
+		SessionID: "semantic-session", Payload: policyelements.ResponseCreate{
+			ResponseID: "visual-response", ExpectedContextVersion: &version,
+			ExpectedContextItemID: "state-2", CommittedContext: &stateelements.CommittedContext{
+				Prefix: identity, StateItemID: "state-2",
+			},
+		},
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	_ = receivePolicy(t, harness.egress(t, "decision"))
+	_ = receivePolicy(t, harness.egress(t, "voice_create"))
+	_ = receivePolicy(t, harness.egress(t, "outcome"))
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	captured := decider.captured()
+	if len(captured) != 1 || len(captured[0].Images) != 1 ||
+		captured[0].Images[0].MIMEType != "image/png" ||
+		!reflect.DeepEqual(captured[0].Images[0].Bytes, imageBytes) {
+		t.Fatalf("direct visual semantic decision = %+v", captured)
+	}
+	imageBytes[0] ^= 0xff
+	if captured[0].Images[0].Bytes[0] == imageBytes[0] {
+		t.Fatal("semantic decision retained mutable media resolver bytes")
+	}
+}
+
+func TestSemanticAdmissionDirectVisualInputNeverReadsImagesPastTheBoundPrefix(t *testing.T) {
+	visualDescriptor := semanticTestDescriptor
+	visualDescriptor.Vision = true
+	decider := &semanticTestDecider{
+		descriptor: visualDescriptor, acts: []coreinteraction.Act{coreinteraction.ActAnswer},
+	}
+	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", DirectVisualInput: true, RecentLines: 12,
+		MaxPending: 8, TerminalMemory: 8, CancelMemory: 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resolverMu sync.Mutex
+	var resolved []string
+	resolver := continuation.MediaResolver(func(handle string) (continuation.Media, error) {
+		resolverMu.Lock()
+		resolved = append(resolved, handle)
+		resolverMu.Unlock()
+		switch handle {
+		case "sealed-image":
+			return continuation.Media{MIMEType: "image/png", Bytes: []byte("sealed")}, nil
+		case "future-image":
+			return continuation.Media{MIMEType: "image/png", Bytes: []byte("future")}, nil
+		default:
+			return continuation.Media{}, errors.New("unexpected media handle")
+		}
+	})
+	mounted, err := mountSemanticAdmissionRegisteredWithMedia(
+		t, visualDescriptor, decider, config, resolver,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- mounted.Run(ctx) }()
+	harness := policyHarness{mounted: mounted, done: done, cancel: cancel}
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, false)
+	sealed, commit := semanticVisualObservation(t, "inspect the sealed frame", "screen", 1, "sealed-image")
+	futureItem := trajectory.Item{
+		ID: "future-visual-observation", Kind: trajectory.KindObservation, SourceRevision: 2,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "future frame",
+		Observation: &trajectory.ObservationMeta{
+			Observer: "client", Source: "screen", Authority: trajectory.AuthorityUser,
+			Media: []trajectory.MediaRef{{
+				Handle: "future-image", MIMEType: "image/png", Source: "screen", Width: 64, Height: 48, Bytes: 6,
+			}},
+		},
+	}
+	later := trajectory.Snapshot{
+		Version: 2, Items: append(append([]trajectory.Item(nil), sealed.Items...), futureItem),
+	}
+	sendSemanticContext(t, harness, "state-2", later)
+	version := uint64(1)
+	sendPolicy(t, harness.ingress(t, "create"), element.Envelope{
+		Type: policyelements.ResponseCreateType(), ItemID: "create-bound-before-future-image",
+		SessionID: "semantic-session", Payload: policyelements.ResponseCreate{
+			ResponseID: "response-bound-before-future-image", ExpectedContextVersion: &version,
+			ExpectedContextItemID: "state-1", CommittedContext: &commit.Context,
+		},
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	_ = receivePolicy(t, harness.egress(t, "decision"))
+	_ = receivePolicy(t, harness.egress(t, "voice_create"))
+	_ = receivePolicy(t, harness.egress(t, "outcome"))
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	captured := decider.captured()
+	resolverMu.Lock()
+	resolvedCopy := append([]string(nil), resolved...)
+	resolverMu.Unlock()
+	if len(captured) != 1 || len(captured[0].Images) != 1 ||
+		string(captured[0].Images[0].Bytes) != "sealed" ||
+		!reflect.DeepEqual(resolvedCopy, []string{"sealed-image"}) {
+		t.Fatalf("bound visual decision=%+v resolved=%v", captured, resolvedCopy)
+	}
+}
+
+func TestSemanticAdmissionDirectVisualInputDoesNotTouchMediaOnAnAudioTurn(t *testing.T) {
+	visualDescriptor := semanticTestDescriptor
+	visualDescriptor.Vision = true
+	decider := &semanticTestDecider{
+		descriptor: visualDescriptor, acts: []coreinteraction.Act{coreinteraction.ActAnswer},
+	}
+	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", DirectVisualInput: true, RecentLines: 12,
+		MaxPending: 8, TerminalMemory: 8, CancelMemory: 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	resolver := continuation.MediaResolver(func(string) (continuation.Media, error) {
+		calls.Add(1)
+		return continuation.Media{}, errors.New("audio turn reached media resolver")
+	})
+	mounted, err := mountSemanticAdmissionRegisteredWithMedia(
+		t, visualDescriptor, decider, config, resolver,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- mounted.Run(ctx) }()
+	harness := policyHarness{mounted: mounted, done: done, cancel: cancel}
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, false)
+	snapshot, commit := semanticObservation(t, "answer this audio turn", "speech", 1)
+	sendSemanticContext(t, harness, "state-1", snapshot)
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-audio-under-visual-policy",
+		SessionID: "semantic-session", Payload: commit,
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	_ = receivePolicy(t, harness.egress(t, "decision"))
+	_ = receivePolicy(t, harness.egress(t, "voice_committed"))
+	_ = receivePolicy(t, harness.egress(t, "outcome"))
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if calls.Load() != 0 {
+		t.Fatalf("audio turn resolved %d media attachment(s)", calls.Load())
+	}
+	if captured := decider.captured(); len(captured) != 1 || len(captured[0].Images) != 0 {
+		t.Fatalf("audio turn semantic decision = %+v", captured)
+	}
+}
+
+func TestSemanticAdmissionDirectVisualInputRequiresBothDeclaredCapabilityAndResolver(t *testing.T) {
+	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", DirectVisualInput: true, RecentLines: 12,
+		MaxPending: 8, TerminalMemory: 8, CancelMemory: 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonvisual := &semanticTestDecider{descriptor: semanticTestDescriptor}
+	if _, err := mountSemanticAdmissionRegisteredWithMedia(
+		t, semanticTestDescriptor, nonvisual, config,
+		continuation.MediaResolver(func(string) (continuation.Media, error) { return continuation.Media{}, nil }),
+	); err == nil || !strings.Contains(err.Error(), "vision-capable") {
+		t.Fatalf("non-visual semantic decider mount error = %v", err)
+	}
+	visualDescriptor := semanticTestDescriptor
+	visualDescriptor.Vision = true
+	visual := &semanticTestDecider{descriptor: visualDescriptor}
+	if _, err := mountSemanticAdmissionRegisteredWithMedia(
+		t, visualDescriptor, visual, config, nil,
+	); err == nil || !strings.Contains(err.Error(), "media resolver") {
+		t.Fatalf("missing semantic media resolver mount error = %v", err)
+	}
+}
+
+func TestSemanticAdmissionDirectVisualResolutionObeysDeadlineAndCancellation(t *testing.T) {
+	directConfig, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", DirectVisualInput: true, RecentLines: 12,
+		MaxPending: 8, TerminalMemory: 8, CancelMemory: 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("decision deadline", func(t *testing.T) {
+		descriptor := semanticTestDescriptor
+		descriptor.Vision = true
+		descriptor.DecisionTimeoutMS = 10
+		decider := &semanticTestDecider{descriptor: descriptor}
+		started := make(chan struct{}, 1)
+		release := make(chan struct{})
+		var releaseOnce sync.Once
+		unblock := func() { releaseOnce.Do(func() { close(release) }) }
+		t.Cleanup(unblock)
+		resolver := continuation.MediaResolver(func(string) (continuation.Media, error) {
+			started <- struct{}{}
+			<-release
+			return continuation.Media{MIMEType: "image/png", Bytes: []byte("late")}, nil
+		})
+		mounted, err := mountSemanticAdmissionRegisteredWithMedia(
+			t, descriptor, decider, directConfig, resolver,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- mounted.Run(ctx) }()
+		harness := policyHarness{mounted: mounted, done: done, cancel: cancel}
+		defer harness.stop(t)
+		consumeSemanticStartup(t, harness)
+		installSemanticInvocation(t, harness, 1, false)
+		snapshot, commit := semanticVisualObservation(t, "inspect it", "screen", 1, "blocked-image")
+		sendSemanticContext(t, harness, "state-1", snapshot)
+		sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+			Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-media-timeout",
+			SessionID: "semantic-session", Payload: commit,
+		})
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("semantic media resolver was not called")
+		}
+		outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+		state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SemanticAdmissionState)
+		if outcome.Kind != policyelements.SemanticAdmissionFailed || outcome.Code != "decision_timeout" ||
+			state.Failed != 1 || state.Active {
+			t.Fatalf("media timeout outcome=%+v state=%+v", outcome, state)
+		}
+		if captured := decider.captured(); len(captured) != 0 {
+			t.Fatalf("timed-out media resolution reached decider: %+v", captured)
+		}
+		unblock()
+	})
+
+	t.Run("stream cancellation", func(t *testing.T) {
+		descriptor := semanticTestDescriptor
+		descriptor.Vision = true
+		decider := &semanticTestDecider{descriptor: descriptor}
+		started := make(chan struct{}, 1)
+		release := make(chan struct{})
+		var releaseOnce sync.Once
+		unblock := func() { releaseOnce.Do(func() { close(release) }) }
+		t.Cleanup(unblock)
+		resolver := continuation.MediaResolver(func(string) (continuation.Media, error) {
+			started <- struct{}{}
+			<-release
+			return continuation.Media{MIMEType: "image/png", Bytes: []byte("canceled")}, nil
+		})
+		mounted, err := mountSemanticAdmissionRegisteredWithMedia(
+			t, descriptor, decider, directConfig, resolver,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- mounted.Run(ctx) }()
+		harness := policyHarness{mounted: mounted, done: done, cancel: cancel}
+		defer harness.stop(t)
+		consumeSemanticStartup(t, harness)
+		installSemanticInvocation(t, harness, 1, false)
+		snapshot, commit := semanticVisualObservation(t, "inspect it", "screen", 1, "canceled-image")
+		sendSemanticContext(t, harness, "state-1", snapshot)
+		sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+			Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-media-cancel",
+			SessionID: "semantic-session", Payload: commit,
+		})
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("semantic media resolver was not called")
+		}
+		sendPolicy(t, harness.ingress(t, "cancel"), element.Envelope{
+			Type: policyelements.GenerationCancelType(), ItemID: "cancel-media",
+			SessionID: "semantic-session", Payload: policyelements.GenerationCancel{
+				StreamID: "screen", Reason: "newer visual evidence arrived",
+			},
+		})
+		recorded := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		canceled := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+		state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SemanticAdmissionState)
+		if recorded.Operation != "cancel" || recorded.Code != "cancel_recorded" ||
+			canceled.Kind != policyelements.SemanticAdmissionCanceled || canceled.Code != "decision_canceled" ||
+			state.Canceled != 1 || state.Active {
+			t.Fatalf("media cancel receipt=%+v outcome=%+v state=%+v", recorded, canceled, state)
+		}
+		if captured := decider.captured(); len(captured) != 0 {
+			t.Fatalf("canceled media resolution reached decider: %+v", captured)
+		}
+		unblock()
+	})
+
+	t.Run("resolved media type drift", func(t *testing.T) {
+		descriptor := semanticTestDescriptor
+		descriptor.Vision = true
+		decider := &semanticTestDecider{descriptor: descriptor}
+		resolver := continuation.MediaResolver(func(string) (continuation.Media, error) {
+			return continuation.Media{MIMEType: "text/plain", Bytes: []byte("not an image")}, nil
+		})
+		mounted, err := mountSemanticAdmissionRegisteredWithMedia(
+			t, descriptor, decider, directConfig, resolver,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- mounted.Run(ctx) }()
+		harness := policyHarness{mounted: mounted, done: done, cancel: cancel}
+		defer harness.stop(t)
+		consumeSemanticStartup(t, harness)
+		installSemanticInvocation(t, harness, 1, false)
+		snapshot, commit := semanticVisualObservation(t, "inspect it", "screen", 1, "drifted-image")
+		sendSemanticContext(t, harness, "state-1", snapshot)
+		sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+			Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-media-drift",
+			SessionID: "semantic-session", Payload: commit,
+		})
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+		state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SemanticAdmissionState)
+		if outcome.Kind != policyelements.SemanticAdmissionFailed || outcome.Code != "visual_evidence_failed" ||
+			!strings.Contains(outcome.Message, "text/plain") || state.Failed != 1 || state.Active {
+			t.Fatalf("media type drift outcome=%+v state=%+v", outcome, state)
+		}
+		if captured := decider.captured(); len(captured) != 0 {
+			t.Fatalf("drifted visual evidence reached decider: %+v", captured)
+		}
+	})
 }
 
 type semanticTestDecider struct {
@@ -771,6 +1170,13 @@ func mountSemanticAdmissionRegistered(
 	t *testing.T, descriptor policyelements.SemanticDeciderDescriptor,
 	decider *semanticTestDecider, config json.RawMessage,
 ) (*graphruntime.Mounted, error) {
+	return mountSemanticAdmissionRegisteredWithMedia(t, descriptor, decider, config, nil)
+}
+
+func mountSemanticAdmissionRegisteredWithMedia(
+	t *testing.T, descriptor policyelements.SemanticDeciderDescriptor,
+	decider *semanticTestDecider, config json.RawMessage, media continuation.MediaResolver,
+) (*graphruntime.Mounted, error) {
 	t.Helper()
 	providers := policyelements.NewSemanticDeciderRegistry()
 	if err := providers.Register("semantic-primary", descriptor,
@@ -780,6 +1186,11 @@ func mountSemanticAdmissionRegistered(
 	services := graphruntime.NewServiceSet()
 	if _, err := services.Set(policyelements.SemanticDeciderRegistryService, providers); err != nil {
 		return nil, err
+	}
+	if media != nil {
+		if _, err := services.Set(cognitionelements.MediaResolverService, media); err != nil {
+			return nil, err
+		}
 	}
 	registry := graphruntime.NewRegistry()
 	if err := policyelements.RegisterFactories(registry); err != nil {
@@ -894,6 +1305,25 @@ func semanticObservation(
 		SourceRevision: sourceRevision, StoreVersion: snapshot.Version,
 		Context: stateelements.CommittedContext{Prefix: identity, StateItemID: "state-1"},
 	}
+}
+
+func semanticVisualObservation(
+	t *testing.T, content, stream string, sourceRevision uint64, handle string,
+) (trajectory.Snapshot, stateelements.ObservationCommitOutcome) {
+	t.Helper()
+	snapshot, commit := semanticObservation(t, content, stream, sourceRevision)
+	snapshot.Items[0].Observation = &trajectory.ObservationMeta{
+		Observer: "client", Source: stream, Authority: trajectory.AuthorityUser,
+		Media: []trajectory.MediaRef{{
+			Handle: handle, MIMEType: "image/png", Source: stream, Width: 64, Height: 48, Bytes: 4,
+		}},
+	}
+	identity, err := trajectory.IdentifyPrefix(snapshot, snapshot.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit.Context.Prefix = identity
+	return snapshot, commit
 }
 
 var _ policyelements.SemanticDecider = (*semanticTestDecider)(nil)
