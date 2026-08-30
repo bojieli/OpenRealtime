@@ -93,18 +93,27 @@ type foregroundUtterance struct {
 }
 
 type foregroundSession struct {
-	ctx       context.Context
-	cancel    context.CancelCauseFunc
-	plugin    ForegroundPlugin
-	options   legacy.Options
-	ready     sidecar.Message
-	contract  *sidecar.ElementSessionContract
-	codec     modelelements.PayloadCodec
-	frames    chan sidecar.Message
-	runtime   legacy.Runtime
-	sequence  atomic.Uint64
-	closeOnce sync.Once
-	closeErr  error
+	ctx      context.Context
+	cancel   context.CancelCauseFunc
+	plugin   ForegroundPlugin
+	options  legacy.Options
+	ready    sidecar.Message
+	contract *sidecar.ElementSessionContract
+	codec    modelelements.PayloadCodec
+	frames   chan sidecar.Message
+	runtime  legacy.Runtime
+	sequence atomic.Uint64
+	// responseMu serializes every response-bearing callback through the exact
+	// order in which it is published to model.External. responseSequence is a
+	// session-scoped, gap-free stream carried by Envelope.Sequence across the
+	// otherwise independently queued typed output ports. The Realtime adapter
+	// uses it to reconstruct Begin -> content -> End -> terminal without a
+	// scheduler-dependent cross-port race.
+	responseMu         sync.Mutex
+	responseSequence   uint64
+	responseCallbackMu sync.Mutex
+	closeOnce          sync.Once
+	closeErr           error
 	// Cascade may finish cognition for one turn while its action plane is still
 	// synthesizing that turn's reserved utterance. A later visual or transcript
 	// trigger must be allowed to start then: blocking it behind playback defeats
@@ -707,13 +716,19 @@ func (session *foregroundSession) TurnEnd(
 	if err := session.outputUsable(ctx, "end meeting foreground turn"); err != nil {
 		return err
 	}
+	// Establish the cognition-end marker behind any response callback that has
+	// already entered. Release it while waiting for the final transcript so
+	// paced SpeechEnd can continue draining this run.
+	session.responseCallbackMu.Lock()
 	session.mu.Lock()
 	if session.active == nil {
 		session.mu.Unlock()
+		session.responseCallbackMu.Unlock()
 		return errors.New("end meeting foreground turn: no active run")
 	}
 	if session.active.turnEnded {
 		session.mu.Unlock()
+		session.responseCallbackMu.Unlock()
 		return errors.New("end meeting foreground turn: run already ended")
 	}
 	run := session.active
@@ -721,6 +736,7 @@ func (session *foregroundSession) TurnEnd(
 	run.turnOutcome = outcome
 	atCognitionEnd := cloneForegroundSnapshot(session.contextSnapshot)
 	session.mu.Unlock()
+	session.responseCallbackMu.Unlock()
 
 	// The graph may admit another run while this run's speech drains. Freeze
 	// the authoritative context before releasing that admission boundary so a
@@ -732,6 +748,11 @@ func (session *foregroundSession) TurnEnd(
 		ctx, run.requiredTranscript, run.requiredEventID, atCognitionEnd,
 	)
 
+	// Serialize the terminal transition behind any response-bearing callback
+	// that already owns a run. In particular, a multi-call ToolCalls callback
+	// must publish all of its proposals before this run's outcome fence.
+	session.responseCallbackMu.Lock()
+	defer session.responseCallbackMu.Unlock()
 	session.mu.Lock()
 	run.context = frozen
 	run.contextErr = contextErr
@@ -853,6 +874,8 @@ func (session *foregroundSession) SpeechReserved(
 func (session *foregroundSession) SpeechReservationCancelled(
 	_ context.Context, utterance action.Utterance,
 ) {
+	session.responseCallbackMu.Lock()
+	defer session.responseCallbackMu.Unlock()
 	session.mu.Lock()
 	run := session.utteranceRuns[utterance.ID]
 	if run == nil {
@@ -875,6 +898,8 @@ func (session *foregroundSession) SpeechReservationCancelled(
 func (session *foregroundSession) SpeechBegin(
 	ctx context.Context, utterance action.Utterance,
 ) error {
+	session.responseCallbackMu.Lock()
+	defer session.responseCallbackMu.Unlock()
 	if err := session.outputUsable(ctx, "begin meeting foreground speech"); err != nil {
 		return err
 	}
@@ -890,7 +915,6 @@ func (session *foregroundSession) SpeechBegin(
 		}
 		run = session.active
 	}
-	runID := run.id
 	parents := slices.Clone(run.parentIDs)
 	pending := run.utterances[utterance.ID]
 	if pending == nil {
@@ -924,16 +948,18 @@ func (session *foregroundSession) SpeechBegin(
 		Utterance:       cloneForegroundUtterance(utterance),
 		SpeechAuthority: string(session.plugin.Descriptor.EffectiveSpeechAuthority()),
 	}
-	if err := session.emit(ctx, "audio_out", modelelements.PreparedAudioType(), runID, parents, begin); err != nil {
+	if err := session.emitResponse(ctx, run, "audio_out", modelelements.PreparedAudioType(), parents, begin); err != nil {
 		return err
 	}
-	return session.emit(ctx, "text_out", modelelements.PreparedTextType(), runID, parents,
+	return session.emitResponse(ctx, run, "text_out", modelelements.PreparedTextType(), parents,
 		cognitionelements.PreparedTextDelta{Boundary: cognitionelements.TextBegin, Index: 0})
 }
 
 func (session *foregroundSession) SpeechText(
 	ctx context.Context, utterance action.Utterance, text string,
 ) error {
+	session.responseCallbackMu.Lock()
+	defer session.responseCallbackMu.Unlock()
 	if err := session.outputUsable(ctx, "publish meeting foreground speech text"); err != nil {
 		return err
 	}
@@ -953,20 +979,21 @@ func (session *foregroundSession) SpeechText(
 	}
 	pending.textIndex++
 	index := pending.textIndex
-	runID := run.id
 	parents := slices.Clone(run.parentIDs)
 	run.assistant.WriteString(text)
 	run.outputs = append(run.outputs, cognitionelements.PreparedOutput{
 		Kind: cognitionelements.PreparedAssistant, Text: text,
 	})
 	session.mu.Unlock()
-	return session.emit(ctx, "text_out", modelelements.PreparedTextType(), runID, parents,
+	return session.emitResponse(ctx, run, "text_out", modelelements.PreparedTextType(), parents,
 		cognitionelements.PreparedTextDelta{Boundary: cognitionelements.TextChunk, Index: index, Text: text})
 }
 
 func (session *foregroundSession) SpeechAudio(
 	ctx context.Context, utterance action.Utterance, frame action.Frame,
 ) error {
+	session.responseCallbackMu.Lock()
+	defer session.responseCallbackMu.Unlock()
 	if err := session.outputUsable(ctx, "publish meeting foreground speech audio"); err != nil {
 		return err
 	}
@@ -991,7 +1018,6 @@ func (session *foregroundSession) SpeechAudio(
 	}
 	offset := pending.sampleOffset
 	pending.sampleOffset += samples
-	runID := run.id
 	parents := slices.Clone(run.parentIDs)
 	session.mu.Unlock()
 	chunk := speechelements.AudioFrame{
@@ -1003,12 +1029,14 @@ func (session *foregroundSession) SpeechAudio(
 			PCM16LE: slices.Clone(frame.PCM16LE), Final: frame.Final,
 		},
 	}
-	return session.emit(ctx, "audio_out", modelelements.PreparedAudioType(), runID, parents, chunk)
+	return session.emitResponse(ctx, run, "audio_out", modelelements.PreparedAudioType(), parents, chunk)
 }
 
 func (session *foregroundSession) SpeechEnd(
 	ctx context.Context, utterance action.Utterance, outcome action.Outcome,
 ) error {
+	session.responseCallbackMu.Lock()
+	defer session.responseCallbackMu.Unlock()
 	if err := session.outputUsable(ctx, "end meeting foreground speech"); err != nil {
 		return err
 	}
@@ -1023,13 +1051,12 @@ func (session *foregroundSession) SpeechEnd(
 		session.mu.Unlock()
 		return errors.New("end meeting foreground speech: unknown or closed utterance")
 	}
-	runID := owner.id
 	parents := slices.Clone(owner.parentIDs)
 	textIndex := pending.textIndex + 1
 	pending.done = true
 	run := session.takeFinalRunLocked(owner)
 	session.mu.Unlock()
-	if err := session.emit(ctx, "text_out", modelelements.PreparedTextType(), runID, parents,
+	if err := session.emitResponse(ctx, owner, "text_out", modelelements.PreparedTextType(), parents,
 		cognitionelements.PreparedTextDelta{
 			Boundary: cognitionelements.TextEnd, Index: textIndex, Interrupted: !outcome.Completed,
 		}); err != nil {
@@ -1039,7 +1066,7 @@ func (session *foregroundSession) SpeechEnd(
 	if !outcome.Completed {
 		kind = speechelements.OutcomeCancelled
 	}
-	if err := session.emit(ctx, "audio_out", modelelements.PreparedAudioType(), runID, parents,
+	if err := session.emitResponse(ctx, owner, "audio_out", modelelements.PreparedAudioType(), parents,
 		speechelements.AudioFrame{
 			Kind: speechelements.AudioEnd, UtteranceID: utterance.ID,
 			SpeechAuthority: string(session.plugin.Descriptor.EffectiveSpeechAuthority()),
@@ -1058,6 +1085,8 @@ func (session *foregroundSession) SpeechEnd(
 func (session *foregroundSession) ToolCalls(
 	ctx context.Context, event legacy.ToolCallEvent,
 ) error {
+	session.responseCallbackMu.Lock()
+	defer session.responseCallbackMu.Unlock()
 	if err := session.outputUsable(ctx, "publish meeting foreground tool calls"); err != nil {
 		return err
 	}
@@ -1065,11 +1094,10 @@ func (session *foregroundSession) ToolCalls(
 		return errors.New("publish meeting foreground tool calls: at least one call is required")
 	}
 	session.mu.Lock()
-	if session.active == nil {
+	if session.active == nil || session.active.turnEnded {
 		session.mu.Unlock()
 		return errors.New("publish meeting foreground tool calls outside an active turn")
 	}
-	runID := session.active.id
 	parents := slices.Clone(session.active.parentIDs)
 	settings := legacy.CloneSettings(session.settings)
 	proposals := make([]cognitionelements.ToolProposal, len(event.Calls))
@@ -1092,9 +1120,10 @@ func (session *foregroundSession) ToolCalls(
 	if event.Usage != nil {
 		session.active.completion.Usage = *event.Usage
 	}
+	run := session.active
 	session.mu.Unlock()
 	for _, proposal := range proposals {
-		if err := session.emit(ctx, "tool_proposal", modelelements.ToolProposalType(), runID, parents, proposal); err != nil {
+		if err := session.emitResponse(ctx, run, "tool_proposal", modelelements.ToolProposalType(), parents, proposal); err != nil {
 			return err
 		}
 	}
@@ -1160,7 +1189,7 @@ func (session *foregroundSession) finalizeForegroundRun(
 			StartedNS: run.startedNS, FinishedNS: foregroundNowNS(),
 		}
 		outcome.DurationNS = foregroundDuration(run.startedNS, outcome.FinishedNS)
-		return session.emit(ctx, "outcome", modelelements.OutcomeType(), run.id, run.parentIDs, outcome)
+		return session.emitResponse(ctx, run, "outcome", modelelements.OutcomeType(), run.parentIDs, outcome)
 	}
 	completion := run.completion
 	if completion.StopReason == "" {
@@ -1200,7 +1229,7 @@ func (session *foregroundSession) finalizeForegroundRun(
 		Code: code, Message: message, StartedNS: run.startedNS, FinishedNS: finished,
 		DurationNS: foregroundDuration(run.startedNS, finished),
 	}
-	return session.emit(ctx, "outcome", modelelements.OutcomeType(), run.id, run.parentIDs, outcome)
+	return session.emitResponse(ctx, run, "outcome", modelelements.OutcomeType(), run.parentIDs, outcome)
 }
 
 func (session *foregroundSession) contextAtCognitionEnd(
@@ -1265,9 +1294,41 @@ func (session *foregroundSession) emit(
 	return session.emitWithIdentity(ctx, port, valueType, runID, parents, "", "", "", payload)
 }
 
+// emitResponse assigns one gap-free sequence to the complete Realtime-facing
+// response stream before publishing it onto model.External's typed ports. The
+// lock is intentionally held through the sidecar enqueue: allocating sequence
+// N and then allowing N+1 to enter the shared frame channel first would merely
+// move the scheduler race to the provider boundary.
+func (session *foregroundSession) emitResponse(
+	ctx context.Context, run *foregroundRun, port string, valueType element.Type,
+	parents []string, payload any,
+) error {
+	if run == nil || !canonicalText(run.id) {
+		return errors.New("emit meeting foreground response: canonical run is required")
+	}
+	session.responseMu.Lock()
+	defer session.responseMu.Unlock()
+	if session.responseSequence >= maximumMeetingResponseEvents {
+		return fmt.Errorf("emit meeting foreground response: exceeds %d events", maximumMeetingResponseEvents)
+	}
+	session.responseSequence++
+	return session.emitWithSequence(
+		ctx, port, valueType, run.id, parents, "", "", "", session.responseSequence, payload,
+	)
+}
+
 func (session *foregroundSession) emitWithIdentity(
 	ctx context.Context, port string, valueType element.Type, runID string,
 	parents []string, itemID, sourceID, opportunityID string, payload any,
+) error {
+	return session.emitWithSequence(
+		ctx, port, valueType, runID, parents, itemID, sourceID, opportunityID, 0, payload,
+	)
+}
+
+func (session *foregroundSession) emitWithSequence(
+	ctx context.Context, port string, valueType element.Type, runID string,
+	parents []string, itemID, sourceID, opportunityID string, responseSequence uint64, payload any,
 ) error {
 	if err := session.outputUsable(ctx, "emit meeting foreground frame"); err != nil {
 		return err
@@ -1276,9 +1337,9 @@ func (session *foregroundSession) emitWithIdentity(
 	if err != nil {
 		return fmt.Errorf("encode meeting foreground %s: %w", port, err)
 	}
-	sequence := session.sequence.Add(1)
+	identitySequence := session.sequence.Add(1)
 	if itemID == "" {
-		itemID = fmt.Sprintf("meeting-foreground-%s-%d", strings.ReplaceAll(port, "_", "-"), sequence)
+		itemID = fmt.Sprintf("meeting-foreground-%s-%d", strings.ReplaceAll(port, "_", "-"), identitySequence)
 	}
 	if sourceID == "" {
 		sourceID = ForegroundDeploymentReference
@@ -1286,10 +1347,14 @@ func (session *foregroundSession) emitWithIdentity(
 	if opportunityID == "" {
 		opportunityID = itemID
 	}
+	envelopeSequence := identitySequence
+	if responseSequence != 0 {
+		envelopeSequence = responseSequence
+	}
 	envelope := element.Envelope{
 		Type: valueType.Clone(), ItemID: itemID, SessionID: session.options.SessionID,
 		SourceID: sourceID, OpportunityID: opportunityID,
-		RunID: runID, Sequence: sequence, TraceID: itemID,
+		RunID: runID, Sequence: envelopeSequence, TraceID: itemID,
 		CancellationScope: session.options.SessionID,
 		CausalParents:     canonicalForegroundParents(parents), Payload: payload,
 	}

@@ -512,6 +512,7 @@ func TestForegroundSessionGeneratedRunIdentityBindsOrderedSpeechResultAndOutcome
 
 	wantPorts := []string{"audio_out", "text_out", "text_out", "audio_out", "text_out", "audio_out", "result", "outcome"}
 	var runID string
+	responseSequence := uint64(0)
 	for index, wantPort := range wantPorts {
 		frame := foregroundTestReadFrame(t, session)
 		if frame.Port != wantPort {
@@ -524,6 +525,13 @@ func TestForegroundSessionGeneratedRunIdentityBindsOrderedSpeechResultAndOutcome
 			runID = frame.Envelope.RunID
 		} else if frame.Envelope.RunID != runID {
 			t.Fatalf("frame %d run = %q, want %q", index, frame.Envelope.RunID, runID)
+		}
+		if wantPort != "result" {
+			responseSequence++
+			if frame.Envelope.Sequence != responseSequence {
+				t.Fatalf("response frame %d sequence = %d, want gap-free %d",
+					index, frame.Envelope.Sequence, responseSequence)
+			}
 		}
 		if frame.Port == "result" {
 			decoded := foregroundTestDecode(t, frame)
@@ -613,6 +621,14 @@ func TestForegroundSessionStartsNextRunWhilePriorSpeechDrains(t *testing.T) {
 		t.Fatalf("runtime state: calls=%d sink=%T", calls, sink)
 	}
 	reservation := sink.(legacy.SpeechReservationSink)
+	nextResponseSequence := uint64(0)
+	assertResponseSequence := func(frame sidecar.Message) {
+		t.Helper()
+		nextResponseSequence++
+		if frame.Envelope == nil || frame.Envelope.Sequence != nextResponseSequence {
+			t.Fatalf("cross-run response sequence = %+v, want %d", frame.Envelope, nextResponseSequence)
+		}
+	}
 	utterance := action.Utterance{ID: "draining-utterance", Text: "Still speaking."}
 	if err := sink.TurnBegin(context.Background()); err != nil {
 		t.Fatal(err)
@@ -664,6 +680,7 @@ func TestForegroundSessionStartsNextRunWhilePriorSpeechDrains(t *testing.T) {
 		if frame.Port != port || frame.Envelope.RunID != "foreground-run-1" {
 			t.Fatalf("overlapping speech frame %d = port %q run %q", index, frame.Port, frame.Envelope.RunID)
 		}
+		assertResponseSequence(frame)
 	}
 	if err := sink.ToolCalls(context.Background(), legacy.ToolCallEvent{
 		InvocationID: "visual-reflex-invocation",
@@ -684,6 +701,9 @@ func TestForegroundSessionStartsNextRunWhilePriorSpeechDrains(t *testing.T) {
 		frame := foregroundTestReadFrame(t, session)
 		if frame.Port != port || frame.Envelope.RunID != "foreground-run-2" {
 			t.Fatalf("second run frame %d = port %q run %q", index, frame.Port, frame.Envelope.RunID)
+		}
+		if port != "result" {
+			assertResponseSequence(frame)
 		}
 		switch port {
 		case "result":
@@ -709,6 +729,9 @@ func TestForegroundSessionStartsNextRunWhilePriorSpeechDrains(t *testing.T) {
 		frame := foregroundTestReadFrame(t, session)
 		if frame.Port != port || frame.Envelope.RunID != "foreground-run-1" {
 			t.Fatalf("draining run frame %d = port %q run %q", index, frame.Port, frame.Envelope.RunID)
+		}
+		if port != "result" {
+			assertResponseSequence(frame)
 		}
 		switch port {
 		case "result":

@@ -22,6 +22,7 @@ import (
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/sidecar"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -29,6 +30,10 @@ const (
 	defaultMeetingVideoRateMilliHz = 5_000
 	maximumMeetingAdapterTextBytes = 1 << 20
 	maximumMeetingAdapterReason    = 1 << 10
+	maximumMeetingAdapterRuns      = 64
+	maximumMeetingAdapterRunIDs    = 65_536
+	maximumMeetingResponseEvents   = 1 << 20
+	maximumMeetingResponsePending  = 512
 )
 
 // SessionAdapterConfig is the resource-free executable contribution for the
@@ -102,6 +107,16 @@ type meetingAdapterTurn struct {
 	order     []string
 }
 
+type meetingAdapterResponseEvent struct {
+	name     string
+	envelope element.Envelope
+}
+
+type meetingAdapterResponseOrder struct {
+	next    uint64
+	pending map[uint64]meetingAdapterResponseEvent
+}
+
 type meetingSessionAdapter struct {
 	ctx       context.Context
 	sessionID string
@@ -118,6 +133,7 @@ type meetingSessionAdapter struct {
 	turnMu        sync.Mutex
 	turn          *meetingAdapterTurn
 	activeSpeech  map[string]*meetingAdapterSpeech
+	completedRuns map[string]struct{}
 	closed        atomic.Bool
 }
 
@@ -154,6 +170,7 @@ func newMeetingSessionAdapter(
 		ctx: ctx, sessionID: sessionID, sink: options.Sink, profile: profile.Clone(), ports: ports,
 		status: status, frameRate: config.FrameRateMilliHz, store: store,
 		videoCaptured: make(map[string]uint64), activeSpeech: make(map[string]*meetingAdapterSpeech),
+		completedRuns: make(map[string]struct{}),
 	}, nil
 }
 
@@ -361,19 +378,29 @@ func (session *meetingSessionAdapter) Run(ctx context.Context) error {
 	}
 	runCtx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	failures := make(chan error, len(session.ports.outputs))
+	failures := make(chan error, len(session.ports.outputs)+1)
+	responseEvents := make(chan meetingAdapterResponseEvent, maximumMeetingResponsePending)
 	var wait sync.WaitGroup
+	reportFailure := func(err error) {
+		if err == nil || context.Cause(runCtx) != nil {
+			return
+		}
+		select {
+		case failures <- err:
+		case <-runCtx.Done():
+		}
+	}
+	wait.Add(1)
+	go func() {
+		defer wait.Done()
+		reportFailure(session.publishOrderedResponses(runCtx, responseEvents))
+	}()
 	for name, input := range session.ports.outputs {
 		name, input := name, input
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			if err := session.drain(runCtx, name, input); err != nil && context.Cause(runCtx) == nil {
-				select {
-				case failures <- err:
-				case <-runCtx.Done():
-				}
-			}
+			reportFailure(session.drain(runCtx, name, input, responseEvents))
 		}()
 	}
 	var runErr error
@@ -388,6 +415,7 @@ func (session *meetingSessionAdapter) Run(ctx context.Context) error {
 
 func (session *meetingSessionAdapter) drain(
 	ctx context.Context, name string, input element.InputPort,
+	responseEvents chan<- meetingAdapterResponseEvent,
 ) error {
 	for {
 		envelope, err := input.Receive(ctx)
@@ -400,9 +428,91 @@ func (session *meetingSessionAdapter) drain(
 		if envelope.SessionID != "" && envelope.SessionID != session.sessionID {
 			return fmt.Errorf("meeting graph output %s crossed session boundary", name)
 		}
+		if meetingResponseBoundary(name) {
+			select {
+			case responseEvents <- meetingAdapterResponseEvent{name: name, envelope: envelope.Clone()}:
+			case <-ctx.Done():
+				return nil
+			}
+			continue
+		}
 		if err := session.publish(ctx, name, envelope); err != nil {
 			return err
 		}
+	}
+}
+
+func meetingResponseBoundary(name string) bool {
+	switch name {
+	case "prepared_text", "prepared_audio", "tool_proposals", "foreground_outcome":
+		return true
+	default:
+		return false
+	}
+}
+
+func (session *meetingSessionAdapter) publishOrderedResponses(
+	ctx context.Context, events <-chan meetingAdapterResponseEvent,
+) error {
+	order := meetingAdapterResponseOrder{
+		next: 1, pending: make(map[uint64]meetingAdapterResponseEvent),
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case event := <-events:
+			if err := session.acceptOrderedResponse(ctx, &order, event); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (session *meetingSessionAdapter) acceptOrderedResponse(
+	ctx context.Context, order *meetingAdapterResponseOrder, event meetingAdapterResponseEvent,
+) error {
+	if order == nil || order.next == 0 || order.pending == nil {
+		return errors.New("meeting response order is not initialized")
+	}
+	if !meetingResponseBoundary(event.name) {
+		return fmt.Errorf("meeting response order received non-response boundary %q", event.name)
+	}
+	envelope := event.envelope
+	if envelope.SourceID != ForegroundDeploymentReference {
+		return fmt.Errorf("meeting response boundary %s has source %q, want %q",
+			event.name, envelope.SourceID, ForegroundDeploymentReference)
+	}
+	if strings.TrimSpace(envelope.RunID) == "" || len(envelope.RunID) > sidecar.MaxElementIdentifierBytes ||
+		strings.ContainsAny(envelope.RunID, "\x00\r\n") {
+		return fmt.Errorf("meeting response boundary %s has a non-canonical run ID", event.name)
+	}
+	sequence := envelope.Sequence
+	if sequence == 0 || sequence > maximumMeetingResponseEvents {
+		return fmt.Errorf("meeting response boundary %s has sequence %d outside [1,%d]",
+			event.name, sequence, maximumMeetingResponseEvents)
+	}
+	if sequence < order.next {
+		return fmt.Errorf("meeting response sequence %d was replayed after %d", sequence, order.next-1)
+	}
+	if sequence-order.next >= maximumMeetingResponsePending ||
+		len(order.pending) >= maximumMeetingResponsePending {
+		return fmt.Errorf("meeting response sequence %d exceeds the pending reorder bound", sequence)
+	}
+	if _, duplicate := order.pending[sequence]; duplicate {
+		return fmt.Errorf("meeting response sequence %d was delivered twice", sequence)
+	}
+	order.pending[sequence] = meetingAdapterResponseEvent{name: event.name, envelope: envelope.Clone()}
+	for {
+		ready, found := order.pending[order.next]
+		if !found {
+			return nil
+		}
+		delete(order.pending, order.next)
+		if err := session.publish(ctx, ready.name, ready.envelope); err != nil {
+			return err
+		}
+		order.next++
 	}
 }
 
@@ -550,6 +660,9 @@ func (session *meetingSessionAdapter) publishForegroundOutcome(
 	runID := envelope.RunID
 	if runID == "" {
 		runID = outcome.RunID
+	} else if outcome.RunID != "" && outcome.RunID != runID {
+		return fmt.Errorf("meeting foreground outcome run ID %q does not match envelope %q",
+			outcome.RunID, runID)
 	}
 	if err := session.ensureTurn(ctx, runID); err != nil {
 		return err
@@ -568,14 +681,27 @@ func (session *meetingSessionAdapter) publishForegroundOutcome(
 	switch outcome.Kind {
 	case cognitionelements.OutcomeSucceeded, cognitionelements.OutcomeIgnored:
 	case cognitionelements.OutcomeCanceled:
-		terminal.Incomplete, terminal.Detail = true, outcome.Message
+		terminal.Incomplete, terminal.Reason, terminal.Detail =
+			true, meetingIncompleteReason(outcome.Code), outcome.Message
 	case cognitionelements.OutcomeRefused, cognitionelements.OutcomeFailed:
-		terminal.Incomplete, terminal.Detail = true, outcome.Message
+		terminal.Incomplete, terminal.Reason, terminal.Detail =
+			true, meetingIncompleteReason(outcome.Code), outcome.Message
 		session.sink.Failed(ctx, legacy.ErrorEvent{Code: outcome.Code, Message: outcome.Message})
 	default:
 		return fmt.Errorf("meeting foreground outcome has unknown kind %q", outcome.Kind)
 	}
 	return session.finishTurn(ctx, runID, terminal)
+}
+
+func meetingIncompleteReason(code string) string {
+	switch strings.TrimSpace(code) {
+	case legacy.TurnIncompleteTokens:
+		return legacy.TurnIncompleteTokens
+	case "content_filter":
+		return "content_filter"
+	default:
+		return ""
+	}
 }
 
 func (session *meetingSessionAdapter) publishBackgroundOutcome(
@@ -597,13 +723,25 @@ func (session *meetingSessionAdapter) publishBackgroundOutcome(
 }
 
 func (session *meetingSessionAdapter) ensureTurn(ctx context.Context, runID string) error {
-	if strings.TrimSpace(runID) == "" {
+	if strings.TrimSpace(runID) == "" || len(runID) > sidecar.MaxElementIdentifierBytes ||
+		strings.ContainsAny(runID, "\x00\r\n") {
 		return errors.New("meeting graph output requires a run ID")
 	}
 	for {
 		session.turnMu.Lock()
+		if session.completedRuns == nil {
+			session.completedRuns = make(map[string]struct{})
+		}
+		if _, completed := session.completedRuns[runID]; completed {
+			session.turnMu.Unlock()
+			return fmt.Errorf("meeting graph reused completed run %q", runID)
+		}
 		turn := session.turn
 		if turn == nil {
+			if len(session.completedRuns) >= maximumMeetingAdapterRunIDs {
+				session.turnMu.Unlock()
+				return errors.New("meeting adapter completed-run identity limit reached")
+			}
 			turn = &meetingAdapterTurn{
 				ready: make(chan struct{}), done: make(chan struct{}),
 				runs:      map[string]struct{}{runID: {}},
@@ -670,6 +808,14 @@ func (session *meetingSessionAdapter) ensureTurn(ctx context.Context, runID stri
 			return fmt.Errorf("meeting graph emitted output after run %q ended", runID)
 		}
 		if _, active := turn.runs[runID]; !active {
+			if len(turn.order) >= maximumMeetingAdapterRuns {
+				session.turnMu.Unlock()
+				return errors.New("meeting adapter response run limit reached")
+			}
+			if len(session.completedRuns)+len(turn.order) >= maximumMeetingAdapterRunIDs {
+				session.turnMu.Unlock()
+				return errors.New("meeting adapter run identity limit reached")
+			}
 			turn.runs[runID] = struct{}{}
 			turn.order = append(turn.order, runID)
 		}
@@ -705,6 +851,12 @@ func (session *meetingSessionAdapter) finishTurn(
 			terminal = candidate
 			break
 		}
+	}
+	if session.completedRuns == nil {
+		session.completedRuns = make(map[string]struct{}, len(turn.completed))
+	}
+	for completedRunID := range turn.completed {
+		session.completedRuns[completedRunID] = struct{}{}
 	}
 	session.turnMu.Unlock()
 
