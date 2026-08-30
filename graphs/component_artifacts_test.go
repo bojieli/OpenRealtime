@@ -76,6 +76,7 @@ func TestEveryShippedComponentHasSeparateTruthfulDeploymentSecretAndEvidenceArti
 		"multimodal-content",
 		"omni-external-interaction",
 		"realtime-computer-use",
+		"scenario-conversation",
 		"silent-computer-use",
 		"upstream-native-interaction",
 	}
