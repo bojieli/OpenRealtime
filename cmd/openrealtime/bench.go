@@ -24,8 +24,56 @@ import (
 	"github.com/bojieli/OpenRealtime/bench/meeting"
 	"github.com/bojieli/OpenRealtime/bench/migration"
 	"github.com/bojieli/OpenRealtime/bench/realtimecu"
+	review "github.com/bojieli/OpenRealtime/bench/review"
+	"github.com/bojieli/OpenRealtime/bench/review/gemini"
+	reviewmedia "github.com/bojieli/OpenRealtime/bench/review/media"
+	reviewffmpeg "github.com/bojieli/OpenRealtime/bench/review/media/ffmpeg"
 	"github.com/bojieli/OpenRealtime/bench/tauvoice"
 )
+
+type meetingFFmpegReviewFactory struct {
+	options reviewffmpeg.Options
+}
+
+func (factory meetingFFmpegReviewFactory) NewReviewVideo(
+	ctx context.Context, _ meeting.EvidenceAttempt,
+) (reviewmedia.Encoder, reviewmedia.Attestor, error) {
+	encoder, err := reviewffmpeg.NewEncoder(ctx, factory.options)
+	if err != nil {
+		return nil, nil, err
+	}
+	attestor, err := reviewffmpeg.NewAttestor(ctx, factory.options)
+	if err != nil {
+		_ = encoder.Close()
+		return nil, nil, err
+	}
+	return encoder, attestor, nil
+}
+
+type meetingReviewCLIConfig struct {
+	Directory                     string
+	Resume                        bool
+	Provider                      string
+	APIKeyEnvironment             string
+	SourceReceiptPath             string
+	EvaluationReceiptDirectory    string
+	EvaluationQuarantineDirectory string
+	FFmpegPath                    string
+	FFprobePath                   string
+	BubblewrapPath                string
+}
+
+type meetingReviewCLIResources struct {
+	bundle                        *meeting.ReviewBundle
+	resumedResult                 *bench.Result
+	lease                         *review.ProviderLease
+	reviewer                      review.ProviderDescriptor
+	encoder                       reviewmedia.EncoderDescriptor
+	attestor                      reviewmedia.AttestorDescriptor
+	sourceReceiptPath             string
+	evaluationReceiptDirectory    string
+	evaluationQuarantineDirectory string
+}
 
 // runBench executes one suite against a running server.
 //
@@ -63,8 +111,26 @@ func runBench(arguments []string, output io.Writer) error {
 	}
 }
 
+type meetingCommandDependencies struct {
+	run        func(context.Context, meeting.Options) (bench.Result, error)
+	openReview func(
+		context.Context, meetingReviewCLIConfig, string, func(string) (string, bool),
+	) (*meetingReviewCLIResources, error)
+}
+
 // runMeeting executes the repository-owned concurrent meeting-assistant suite.
 func runMeeting(arguments []string, output io.Writer) error {
+	return runMeetingWithDependencies(arguments, output, meetingCommandDependencies{
+		run: meeting.Run, openReview: openMeetingReviewCLI,
+	})
+}
+
+func runMeetingWithDependencies(
+	arguments []string, output io.Writer, dependencies meetingCommandDependencies,
+) error {
+	if dependencies.run == nil || dependencies.openReview == nil {
+		return errors.New("meeting command dependencies are incomplete")
+	}
 	flags := flag.NewFlagSet("openrealtime bench meeting", flag.ContinueOnError)
 	var (
 		endpoint        string
@@ -86,6 +152,7 @@ func runMeeting(arguments []string, output io.Writer) error {
 		executionPath   string
 		inspectionGraph string
 		list            bool
+		reviewConfig    meetingReviewCLIConfig
 		migrationMode   migrationLaunchFlags
 	)
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "WebSocket or WebRTC SDP endpoint")
@@ -106,6 +173,22 @@ func runMeeting(arguments []string, output io.Writer) error {
 	flags.StringVar(&foreground, "foreground", "cascade", "fast foreground: cascade or omni")
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
 	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
+	flags.StringVar(&reviewConfig.Directory, "review-dir", "", "retain sealed Meeting source media and advisory review evidence")
+	flags.BoolVar(&reviewConfig.Resume, "review-resume", false,
+		"resume a receipt-anchored Meeting review campaign without rerunning deterministic tasks")
+	flags.StringVar(&reviewConfig.Provider, "review-provider", gemini.RegistrationName,
+		"offline reviewer plug-in (exactly google.gemini-3.7-flash)")
+	flags.StringVar(&reviewConfig.APIKeyEnvironment, "review-key-env", "GEMINI_API_KEY",
+		"environment variable holding the Gemini review key")
+	flags.StringVar(&reviewConfig.SourceReceiptPath, "review-source-receipt", "",
+		"external create-only deterministic source receipt path")
+	flags.StringVar(&reviewConfig.EvaluationReceiptDirectory, "review-evaluation-receipts", "",
+		"external directory for create-only per-case evaluation receipts")
+	flags.StringVar(&reviewConfig.EvaluationQuarantineDirectory, "review-evaluation-quarantine", "",
+		"external directory preserving interrupted pre-receipt evaluation stages")
+	flags.StringVar(&reviewConfig.FFmpegPath, "review-ffmpeg", "", "explicit FFmpeg binary for review video")
+	flags.StringVar(&reviewConfig.FFprobePath, "review-ffprobe", "", "explicit FFprobe binary for full-decode attestation")
+	flags.StringVar(&reviewConfig.BubblewrapPath, "review-bwrap", "", "explicit bubblewrap binary for media sandboxing")
 	flags.BoolVar(&list, "list", false, "list repository-owned meeting tasks and stop")
 	migrationMode.bind(flags)
 	flags.SetOutput(output)
@@ -169,13 +252,37 @@ func runMeeting(arguments []string, output io.Writer) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	result, err := meeting.Run(ctx, meeting.Options{
-		Endpoint: endpoint, Transport: transport, Token: deploymentToken, Model: model,
-		Cell: cell, Browser: browser, Categories: selectedCategories, Limit: limit,
-		FrameRate: fps, Timeout: timeout, AnalysisDelay: analysisDelay,
-		RuntimeAttestor: attestor,
-		Progress:        func(line string) { fmt.Fprintln(output, line) },
-	})
+	reviewResources, err := dependencies.openReview(ctx, reviewConfig, deploymentToken, os.LookupEnv)
+	if err != nil {
+		return err
+	}
+	var evidence meeting.EvidencePlugin
+	if reviewResources != nil {
+		evidence = reviewResources.bundle
+	}
+	var result bench.Result
+	if reviewResources != nil && reviewResources.resumedResult != nil {
+		result = *reviewResources.resumedResult
+		resumeContext, cancelResume := context.WithTimeout(context.WithoutCancel(ctx), 12*time.Minute)
+		err = reviewResources.bundle.FinishSuite(resumeContext, result)
+		cancelResume()
+	} else {
+		result, err = dependencies.run(ctx, meeting.Options{
+			Endpoint: endpoint, Transport: transport, Token: deploymentToken, Model: model,
+			Cell: cell, Browser: browser, Categories: selectedCategories, Limit: limit,
+			FrameRate: fps, Timeout: timeout, AnalysisDelay: analysisDelay,
+			RuntimeAttestor: attestor,
+			Evidence:        evidence,
+			Progress:        func(line string) { fmt.Fprintln(output, line) },
+		})
+	}
+	if reviewResources != nil {
+		retentionContext, cancelRetention := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+		retentionErr := reviewResources.retain(retentionContext, output)
+		cancelRetention()
+		err = errors.Join(err, retentionErr)
+		err = errors.Join(err, reviewResources.close())
+	}
 	if retainErr := migrationMode.retain(result, output); retainErr != nil {
 		return errors.Join(err, retainErr)
 	}
@@ -215,6 +322,266 @@ func runMeeting(arguments []string, output io.Writer) error {
 		fmt.Fprintf(output, "written to %s\n", out)
 	}
 	return nil
+}
+
+func openMeetingReviewCLI(
+	ctx context.Context, config meetingReviewCLIConfig, deploymentToken string,
+	lookupEnv func(string) (string, bool),
+) (*meetingReviewCLIResources, error) {
+	if strings.TrimSpace(config.Directory) == "" {
+		if config.Resume || config.SourceReceiptPath != "" || config.EvaluationReceiptDirectory != "" ||
+			config.EvaluationQuarantineDirectory != "" ||
+			config.FFmpegPath != "" || config.FFprobePath != "" || config.BubblewrapPath != "" ||
+			(config.Provider != "" && config.Provider != gemini.RegistrationName) {
+			return nil, errors.New("meeting review options require -review-dir")
+		}
+		return nil, nil
+	}
+	if ctx == nil {
+		return nil, errors.New("open meeting review CLI: nil context")
+	}
+	if config.Provider != gemini.RegistrationName || gemini.ModelID != "gemini-3.7-flash" ||
+		gemini.Descriptor().Model != gemini.ModelID {
+		return nil, errors.New("meeting review provider must be the exact google.gemini-3.7-flash registration")
+	}
+	if strings.TrimSpace(config.APIKeyEnvironment) == "" || lookupEnv == nil {
+		return nil, errors.New("meeting review key environment is invalid")
+	}
+	directory, err := filepath.Abs(config.Directory)
+	if err != nil {
+		return nil, errors.New("resolve meeting review directory")
+	}
+	if config.SourceReceiptPath == "" {
+		config.SourceReceiptPath = directory + ".source-receipt.json"
+	}
+	if config.EvaluationReceiptDirectory == "" {
+		config.EvaluationReceiptDirectory = directory + ".evaluation-receipts"
+	}
+	if config.EvaluationQuarantineDirectory == "" {
+		config.EvaluationQuarantineDirectory = directory + ".evaluation-quarantine"
+	}
+	sourceReceiptPath, err := filepath.Abs(config.SourceReceiptPath)
+	if err != nil {
+		return nil, errors.New("resolve meeting review source receipt path")
+	}
+	evaluationReceiptDirectory, err := filepath.Abs(config.EvaluationReceiptDirectory)
+	if err != nil {
+		return nil, errors.New("resolve meeting evaluation receipt directory")
+	}
+	evaluationQuarantineDirectory, err := filepath.Abs(config.EvaluationQuarantineDirectory)
+	if err != nil {
+		return nil, errors.New("resolve meeting evaluation quarantine directory")
+	}
+	for _, path := range []string{
+		directory, sourceReceiptPath, evaluationReceiptDirectory, evaluationQuarantineDirectory,
+	} {
+		if filepath.Clean(path) != path || path == filepath.Dir(path) {
+			return nil, errors.New("meeting review artifact paths must be clean, absolute, and non-root")
+		}
+	}
+	if sourceReceiptPath == directory || strings.HasPrefix(sourceReceiptPath, directory+string(filepath.Separator)) ||
+		evaluationReceiptDirectory == directory ||
+		strings.HasPrefix(evaluationReceiptDirectory, directory+string(filepath.Separator)) ||
+		evaluationQuarantineDirectory == directory ||
+		strings.HasPrefix(evaluationQuarantineDirectory, directory+string(filepath.Separator)) {
+		return nil, errors.New("meeting review external receipts must be outside the review bundle")
+	}
+	separator := string(filepath.Separator)
+	pathsOverlap := func(left, right string) bool {
+		return left == right || strings.HasPrefix(left, right+separator) ||
+			strings.HasPrefix(right, left+separator)
+	}
+	if pathsOverlap(sourceReceiptPath, evaluationReceiptDirectory) ||
+		pathsOverlap(sourceReceiptPath, evaluationQuarantineDirectory) ||
+		pathsOverlap(evaluationReceiptDirectory, evaluationQuarantineDirectory) {
+		return nil, errors.New("meeting review external receipt and quarantine paths overlap")
+	}
+	if err := validateMeetingReviewCLIParent(filepath.Dir(directory)); err != nil {
+		return nil, err
+	}
+	if err := validateMeetingReviewCLIParent(filepath.Dir(sourceReceiptPath)); err != nil {
+		return nil, err
+	}
+	if err := validateMeetingReviewCLIParent(filepath.Dir(evaluationReceiptDirectory)); err != nil {
+		return nil, err
+	}
+	if err := validateMeetingReviewCLIParent(filepath.Dir(evaluationQuarantineDirectory)); err != nil {
+		return nil, err
+	}
+	if config.Resume {
+		for path, wantDirectory := range map[string]bool{
+			directory: true, sourceReceiptPath: false,
+			evaluationReceiptDirectory: true, evaluationQuarantineDirectory: true,
+		} {
+			info, statErr := os.Lstat(path)
+			if statErr != nil || info.Mode()&os.ModeSymlink != 0 || info.IsDir() != wantDirectory {
+				return nil, fmt.Errorf("meeting review resume path is missing or invalid: %s", path)
+			}
+		}
+	} else {
+		for _, path := range []string{
+			directory, sourceReceiptPath, evaluationReceiptDirectory, evaluationQuarantineDirectory,
+		} {
+			if _, err := os.Lstat(path); err == nil {
+				return nil, fmt.Errorf("meeting review create-only path already exists: %s", path)
+			} else if !os.IsNotExist(err) {
+				return nil, errors.New("inspect meeting review create-only path")
+			}
+		}
+	}
+	apiKey, present := lookupEnv(config.APIKeyEnvironment)
+	if !present || strings.TrimSpace(apiKey) == "" {
+		return nil, errors.New("meeting Gemini review key environment is unset")
+	}
+	registration := gemini.Registration(func(context.Context) (string, error) { return apiKey, nil })
+	registry, err := review.NewRegistry([]review.Registration{registration})
+	if err != nil {
+		return nil, errors.New("construct meeting review provider registry")
+	}
+	lease, err := registry.Open(ctx, gemini.RegistrationName)
+	if err != nil {
+		return nil, errors.New("open exact Gemini 3.7 Flash meeting reviewer")
+	}
+	cleanupLease := true
+	defer func() {
+		if cleanupLease {
+			_ = lease.Close()
+		}
+	}()
+	sensitive := []string{apiKey}
+	if deploymentToken != "" && (len(deploymentToken) < 8 || strings.TrimSpace(deploymentToken) != deploymentToken) {
+		return nil, errors.New("meeting review deployment credential is too short or invalid for leakage protection")
+	}
+	if deploymentToken != "" {
+		sensitive = append(sensitive, deploymentToken)
+	}
+	ffmpegOptions := reviewffmpeg.Options{
+		FFmpegPath: config.FFmpegPath, FFprobePath: config.FFprobePath,
+		BubblewrapPath: config.BubblewrapPath, SensitiveValues: sensitive,
+	}
+	var encoderDescriptor reviewmedia.EncoderDescriptor
+	var attestorDescriptor reviewmedia.AttestorDescriptor
+	if !config.Resume {
+		// Resolve and fingerprint the selected encoder/attestor toolchain before a
+		// live benchmark starts; attempt-scoped instances are still supplied by the
+		// composable factory below.
+		encoder, encoderErr := reviewffmpeg.NewEncoder(ctx, ffmpegOptions)
+		if encoderErr != nil {
+			return nil, errors.New("preflight meeting review FFmpeg encoder")
+		}
+		attestor, attestorErr := reviewffmpeg.NewAttestor(ctx, ffmpegOptions)
+		if attestorErr != nil {
+			_ = encoder.Close()
+			return nil, errors.New("preflight meeting review FFmpeg full-decode attestor")
+		}
+		if encoder.Descriptor().Name == "" ||
+			attestor.Descriptor().Capability != reviewmedia.FullDecodeAttestationCapability {
+			_ = encoder.Close()
+			_ = attestor.Close()
+			return nil, errors.New("meeting review FFmpeg toolchain lacks full-decode identity")
+		}
+		encoderDescriptor = encoder.Descriptor()
+		attestorDescriptor = attestor.Descriptor()
+		if err := errors.Join(encoder.Close(), attestor.Close()); err != nil {
+			return nil, errors.New("close meeting review FFmpeg preflight plug-ins")
+		}
+	}
+	bundleOptions := meeting.ReviewBundleOptions{
+		Directory: directory, Reviewer: lease,
+		SourceReceiptPath: sourceReceiptPath, EvaluationReceiptDirectory: evaluationReceiptDirectory,
+		EvaluationQuarantineDirectory: evaluationQuarantineDirectory,
+		SensitiveValues:               sensitive,
+	}
+	var bundle *meeting.ReviewBundle
+	var resumedResult *bench.Result
+	if config.Resume {
+		resumed, recovered, resumeErr := meeting.ResumeReviewBundle(ctx, bundleOptions)
+		if resumeErr != nil {
+			return nil, errors.New("resume meeting review evidence plug-in")
+		}
+		bundle = resumed
+		resumedResult = &recovered
+	} else {
+		bundleOptions.VideoFactory = meetingFFmpegReviewFactory{options: ffmpegOptions}
+		bundle, err = meeting.NewReviewBundle(bundleOptions)
+	}
+	if err != nil {
+		return nil, errors.New("create meeting review evidence plug-in")
+	}
+	cleanupLease = false
+	return &meetingReviewCLIResources{
+		bundle: bundle, resumedResult: resumedResult, lease: lease, reviewer: lease.Descriptor(),
+		encoder: encoderDescriptor, attestor: attestorDescriptor,
+		sourceReceiptPath:             sourceReceiptPath,
+		evaluationReceiptDirectory:    evaluationReceiptDirectory,
+		evaluationQuarantineDirectory: evaluationQuarantineDirectory,
+	}, nil
+}
+
+func validateMeetingReviewCLIParent(path string) error {
+	for current := path; ; current = filepath.Dir(current) {
+		info, err := os.Lstat(current)
+		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return errors.New("meeting review artifact parent is missing, symlinked, or not a directory")
+		}
+		if current == filepath.Dir(current) {
+			return nil
+		}
+	}
+}
+
+func (resources *meetingReviewCLIResources) retain(ctx context.Context, output io.Writer) error {
+	if resources == nil || resources.bundle == nil {
+		return nil
+	}
+	var resultErr error
+	sourceReceipt, err := resources.bundle.SourceReceipt()
+	if err == nil {
+		external, readErr := meeting.ReadReviewSourceReceipt(ctx, resources.sourceReceiptPath)
+		if readErr != nil || external.ManifestSHA256 != sourceReceipt.ManifestSHA256 ||
+			external.FileSetSHA256 != sourceReceipt.FileSetSHA256 ||
+			external.ResultSHA256 != sourceReceipt.ResultSHA256 ||
+			external.ReceiptSHA256 != sourceReceipt.ReceiptSHA256 {
+			resultErr = errors.Join(resultErr, errors.New("verify durable external meeting source receipt"))
+		} else {
+			fmt.Fprintf(output, "meeting source receipt retained at %s\n", resources.sourceReceiptPath)
+		}
+	} else {
+		resultErr = errors.Join(resultErr, err)
+	}
+	for _, receipt := range resources.bundle.EvaluationReceipts() {
+		name := filepath.Base(receipt.Directory) + ".receipt.json"
+		path := filepath.Join(resources.evaluationReceiptDirectory, name)
+		external, err := review.ReadEvaluationBundleReceipt(ctx, path)
+		if err != nil || external != receipt {
+			resultErr = errors.Join(resultErr, errors.New("verify durable external meeting evaluation receipt"))
+			continue
+		}
+		fmt.Fprintf(output, "meeting evaluation receipt retained at %s\n", path)
+	}
+	if receipt, err := resources.bundle.Receipt(); err == nil {
+		fmt.Fprintf(output, "meeting review bundle sealed at %s (%s)\n",
+			receipt.Directory, receipt.ManifestSHA256)
+	} else {
+		fmt.Fprintln(output, "meeting review bundle is diagnostic/incomplete; sealed source receipt remains authoritative")
+	}
+	return resultErr
+}
+
+func (resources *meetingReviewCLIResources) close() error {
+	if resources == nil {
+		return nil
+	}
+	var err error
+	if resources.bundle != nil {
+		err = errors.Join(err, resources.bundle.Close())
+		resources.bundle = nil
+	}
+	if resources.lease != nil {
+		err = errors.Join(err, resources.lease.Close())
+		resources.lease = nil
+	}
+	return err
 }
 
 func meetingMigrationCell(cell bench.Cell, transport string) (bench.Cell, error) {
