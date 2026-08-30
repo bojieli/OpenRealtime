@@ -1922,6 +1922,16 @@ it has been reviewed, tested, and committed with its evidence):
     identities, and fail-closed population sealing. FDB, FDB v3, FD-Bench, and
     tau-Voice now call this candidate-only boundary; no historical run or
     migration path is represented by the API.
+  - [x] Add the provider-neutral candidate review campaign and aggregate
+    publication boundary. It streams only a sealed new-run source receipt,
+    publishes one crash-recoverable create-only evaluation and external
+    receipt per attempt, and then publishes a case-by-case media-linked
+    `REVIEW.md`, campaign manifest, and external aggregate receipt only after
+    reopening the complete transitive population. Normal, ten shuffled runs,
+    race, vet, interruption recovery, quarantine, tamper/link adversaries, and
+    exact-sixteen publication/reopen benchmarks are green; no historical
+    loader, baseline registry, migration path, server dependency, or UI is in
+    this API.
   - [ ] Finish the four-case Meeting Assistant bundle with synchronized WAV and
     MP4 per case, deterministic pass/fail plus advisory model review, durable
     source-before-model and per-evaluation receipts, case-by-case `REVIEW.md`,
@@ -2090,16 +2100,20 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
 - [ ] Re-run and compare all eleven interaction scenarios with at least fifteen
   repetitions per scenario (at least 165 newly retained candidate attempts):
   The exact population, sealed review path, offline verifier, and exact-model
-  advisory transport are implemented. The latest retained 11×1 diagnostic
-  passed 4/11: `ordering-from-a-waiter`, `translating-as-they-speak`,
-  `waiting-out-requested-silence`, and `ordinary-question`. It is explicitly
-  nonreportable and does not replace the accepted 140/165 historical target.
-  That run exposed and led to fixes for live declaration drift, evidence
-  lifetime, and empty receipt canonicalization. A distinct infrastructure-clean
-  11×1 rerun is in progress and must drive iteration before the 165-attempt run
-  begins. This box and every case below remain open until the full candidate
-  meets or improves on 140/165 without a significant case, safety, or latency
-  regression.
+  advisory transport are implemented. The latest sealed 11×1 deterministic
+  diagnostic passed 3/11: `ordering-from-a-waiter`,
+  `translating-as-they-speak`, and `ordinary-question`; six cases failed
+  behaviorally and two were infrastructure failures, leaving 9/11 reportable.
+  Its complete exact `google/gemini-3.7-flash` advisory attempt retained and
+  reopened 11/11 evaluations and all media, agreed with the deterministic
+  outcome on 10/11, and disagreed on `ordering-from-a-waiter`. A later distinct
+  advisory attempt correctly remained nonreportable when the new validator
+  rejected a finding timestamp beyond the sealed WAV duration; no aggregate
+  receipt was published. The provider-neutral per-request media-time bound and
+  provider schema specialization must pass their adversarial gates before the
+  next immutable diagnostic. The 165-attempt run has not started. This box and
+  every case below remain open until the full candidate meets or improves on
+  140/165 without a significant case, safety, or latency regression.
   - [ ] `count-as-they-go`
   - [ ] `asked not to be interrupted`
   - [ ] `a recorded menu`
@@ -2120,12 +2134,22 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   readiness/observer propagation, and production-profile composition are now
   committed on the active review branch with focused normal, shuffle, race,
   and vet gates green. The distinct authenticated same-server exact-four
-  candidate and its retained reviews remain open.
+  candidate and its retained reviews remain open. A production readiness run
+  now accepts the bound model and SenseVoice listeners and stops at Fish Speech
+  because the current listener exposes only a bare health response and omits
+  an exact checkpoint/device binding. The next candidate requires the
+  repo-owned Fish service to expose and attest its immutable checkpoint,
+  runtime, and voice identities before any exact-four attempt is accepted.
 - [ ] Run all sixteen OpenRealtime Realtime-CU v1 cases (eight task families
   under pixel and set-of-mark observation variants). Exact-sixteen real
   Chromium/FFmpeg capture and independent full decode are green as hermetic
-  transport evidence only. The direct production profile, CLI review
-  composition, deterministic behavior, and per-case Gemini reviews remain open.
+  transport evidence only. Immutable Qwen and resolved SenseVoice module
+  snapshots, handle/TOCTOU protection, complete secret-safe behavior-environment
+  identity, mandatory authentication, observer proof, bounded session
+  revalidation, and the actual production profile-file/host/authenticated
+  WebSocket/live-inspection path now pass against the strict listeners. A
+  second frozen independent audit remains required before the new exact-sixteen
+  deterministic run and its per-case Gemini reviews begin.
 - [ ] Run all 498 FDB v1.5 tasks through the new graph-native endpoint and
   retain per-attempt review media.
 - [ ] Run all 100 released FDB v3 examples through the new graph-native
