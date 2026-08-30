@@ -87,6 +87,9 @@ type Provider interface {
 	// remains with the factory and Registry will not call Close.
 	Claim() error
 	Review(context.Context, PreparedRequest) (ProviderResponse, error)
+	// VerifyResponse must prove Request is the exact transmitted wire and apply
+	// the contextual declared-sensitive guard to every provider-specific text or
+	// JSON input before core retains that wire as literal bytes.
 	VerifyResponse(context.Context, PreparedRequest, ProviderResponse) error
 	Close() error
 }
@@ -395,11 +398,24 @@ func Evaluate(
 	); err != nil {
 		return Evaluation{}, err
 	}
+	requestSensitive, scanErr := prepared.ContainsDeclaredSensitiveLiteralContext(
+		ctx, response.Request,
+	)
+	if scanErr != nil {
+		return Evaluation{}, scanErr
+	}
+	if requestSensitive {
+		return Evaluation{}, errors.New("review provider exchange contains a declared sensitive value")
+	}
 	for _, payload := range [][]byte{
-		response.Request, response.Raw, response.Output, []byte(response.RequestID),
+		response.Raw, response.Output, []byte(response.RequestID),
 		[]byte(response.RequestIDState), []byte(response.ReportedModel),
 	} {
-		if prepared.ContainsDeclaredSensitiveValue(payload) {
+		contains, scanErr := prepared.ContainsDeclaredSensitiveValueContext(ctx, payload)
+		if scanErr != nil {
+			return Evaluation{}, scanErr
+		}
+		if contains {
 			return Evaluation{}, errors.New("review provider exchange contains a declared sensitive value")
 		}
 	}
@@ -494,10 +510,28 @@ func Evaluate(
 	}
 	for _, artifact := range [][]byte{
 		recordJSON, evaluation.ProviderImplementation, evaluation.ProviderConfiguration,
-		evaluation.ProviderRequest, evaluation.Prompt, evaluation.Schema, evaluation.Context,
-		evaluation.RawResponse, evaluation.NormalizedOutput,
+		evaluation.Schema, evaluation.Context, evaluation.RawResponse, evaluation.NormalizedOutput,
 	} {
-		if prepared.ContainsDeclaredSensitiveValue(artifact) {
+		contains, scanErr := prepared.ContainsDeclaredSensitiveValueContext(ctx, artifact)
+		if scanErr != nil {
+			return Evaluation{}, scanErr
+		}
+		if contains {
+			return Evaluation{}, errors.New("retained review evaluation contains a declared sensitive value")
+		}
+	}
+	// Prompt is a deterministic wrapper around Context and ProviderRequest is
+	// the provider-verified exact encoded wire. Their structured inputs were
+	// already scanned above or by VerifyResponse; recursively decoding them here
+	// would replay large embedded context and inline media. Retention still scans
+	// their exact bytes literally so a raw secret synthesized at either encoding
+	// boundary cannot be committed.
+	for _, artifact := range [][]byte{evaluation.ProviderRequest, evaluation.Prompt} {
+		contains, scanErr := prepared.ContainsDeclaredSensitiveLiteralContext(ctx, artifact)
+		if scanErr != nil {
+			return Evaluation{}, scanErr
+		}
+		if contains {
 			return Evaluation{}, errors.New("retained review evaluation contains a declared sensitive value")
 		}
 	}
@@ -970,6 +1004,23 @@ func (prepared PreparedRequest) ContainsDeclaredSensitiveValueContext(
 	ctx context.Context, payload []byte,
 ) (bool, error) {
 	return prepared.sensitiveGuard.hasContext(ctx, payload)
+}
+
+// ContainsDeclaredSensitiveLiteralContext checks exact encoded bytes without
+// interpreting JSON escapes or replaying embedded JSON. Provider plug-ins use
+// this only after their structured inputs have passed the contextual guard,
+// at binary/base64 wire and retention boundaries where the precise transmitted
+// byte sequence is the security contract.
+func (prepared PreparedRequest) ContainsDeclaredSensitiveLiteralContext(
+	ctx context.Context, payload []byte,
+) (bool, error) {
+	if ctx == nil {
+		return false, errors.New("prepared review literal sensitive scan requires a context")
+	}
+	if prepared.sensitiveGuard == nil || prepared.sensitiveGuard.matcher == nil {
+		return false, ctx.Err()
+	}
+	return prepared.sensitiveGuard.matcher.containsContext(ctx, payload)
 }
 
 func (prepared PreparedRequest) fingerprint() (string, error) {
