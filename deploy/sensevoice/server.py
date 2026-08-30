@@ -15,7 +15,7 @@ answering a chunk again, so two things here are deliberate:
     bounded by a deadline. A recogniser that queues without limit turns one
     slow call into a stall that outlives it.
 """
-import asyncio, io, logging, os, threading, time
+import asyncio, hashlib, io, logging, os, pathlib, threading, time
 
 import numpy as np
 import soundfile as sf
@@ -23,6 +23,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 MODEL_ID = os.environ.get("SENSEVOICE_MODEL", "iic/SenseVoiceSmall")
+MODEL_PATH = os.environ.get("SENSEVOICE_MODEL_PATH", "").strip()
 DEVICE = os.environ.get("SENSEVOICE_DEVICE", "cuda:0")
 TARGET_RATE = 16_000
 # One utterance may not exceed this. SenseVoice runs at roughly a hundredth of
@@ -37,15 +38,90 @@ app = FastAPI()
 _model = None
 _lock = threading.Lock()
 _stats = {"requests": 0, "failures": 0, "elapsed": 0.0, "max_elapsed": 0.0, "audio_seconds": 0.0}
+_deployment = {"revision": "", "digest": "", "service_path": "", "service_digest": ""}
+
+
+def _digest_field(hasher, name: str, value: str):
+    name_bytes = name.encode("utf-8")
+    value_bytes = value.encode("utf-8")
+    hasher.update(str(len(name_bytes)).encode("ascii"))
+    hasher.update(b":")
+    hasher.update(name_bytes)
+    hasher.update(str(len(value_bytes)).encode("ascii"))
+    hasher.update(b":")
+    hasher.update(value_bytes)
+
+
+def loaded_model_digest(path: str) -> str:
+    """Return the exact cross-language digest the host independently verifies."""
+    root = pathlib.Path(path).resolve(strict=True)
+    if not root.is_dir():
+        raise RuntimeError("SENSEVOICE_MODEL_PATH is not a directory")
+    files = []
+    for candidate in root.rglob("*"):
+        if candidate.is_dir():
+            if candidate.name == "__pycache__":
+                continue
+            continue
+        if candidate.name.endswith(".pyc"):
+            continue
+        if candidate.is_symlink() or not candidate.is_file():
+            raise RuntimeError(f"model material is not a regular file: {candidate}")
+        files.append(candidate)
+    if not files:
+        raise RuntimeError("SENSEVOICE_MODEL_PATH is empty")
+    files.sort(key=lambda item: item.relative_to(root).as_posix())
+    manifest = hashlib.sha256()
+    _digest_field(manifest, "format", "openrealtime.loaded-model.v1")
+    for candidate in files:
+        relative = candidate.relative_to(root).as_posix()
+        size = candidate.stat().st_size
+        content = hashlib.sha256()
+        with candidate.open("rb") as source:
+            while True:
+                chunk = source.read(1024 * 1024)
+                if not chunk:
+                    break
+                content.update(chunk)
+        if candidate.stat().st_size != size:
+            raise RuntimeError(f"model material changed while hashing: {candidate}")
+        _digest_field(manifest, "file", relative)
+        _digest_field(manifest, "size", str(size))
+        _digest_field(manifest, "sha256", "sha256:" + content.hexdigest())
+    return "sha256:" + manifest.hexdigest()
+
+
+def service_module_identity():
+    """Bind health to the exact source module imported by this process."""
+    path = pathlib.Path(__file__).resolve(strict=True)
+    if not path.is_file():
+        raise RuntimeError("loaded SenseVoice service module is not a regular file")
+    content = hashlib.sha256()
+    with path.open("rb") as source:
+        while True:
+            chunk = source.read(1024 * 1024)
+            if not chunk:
+                break
+            content.update(chunk)
+    return str(path), "sha256:" + content.hexdigest()
 
 
 def load():
     global _model
     from funasr import AutoModel
+    if not MODEL_PATH:
+        raise RuntimeError("SENSEVOICE_MODEL_PATH is required for deployment attestation")
+    service_path, service_digest = service_module_identity()
+    _deployment["service_path"] = service_path
+    _deployment["service_digest"] = service_digest
+    digest = loaded_model_digest(MODEL_PATH)
+    _deployment["digest"] = digest
+    _deployment["revision"] = "content-" + digest.removeprefix("sha256:")[:20]
     started = time.time()
-    _model = AutoModel(model=MODEL_ID, trust_remote_code=False, vad_model=None,
+    _model = AutoModel(model=MODEL_PATH, trust_remote_code=False, vad_model=None,
                        device=DEVICE, disable_update=True)
-    log.info("loaded %s on %s in %.1fs", MODEL_ID, DEVICE, time.time() - started)
+    log.info("loaded %s (%s) on %s in %.1fs", MODEL_ID, _deployment["revision"],
+             DEVICE, time.time() - started)
 
 
 def decode(raw: bytes):
@@ -149,6 +225,9 @@ async def health():
     served = _stats["requests"]
     return JSONResponse({
         "status": "ok", "model": MODEL_ID, "device": DEVICE,
+        "revision": _deployment["revision"], "digest": _deployment["digest"],
+        "service_path": _deployment["service_path"],
+        "service_digest": _deployment["service_digest"],
         "probe_seconds": round(time.time() - started, 3),
         "requests": served, "failures": _stats["failures"],
         "mean_seconds": round(_stats["elapsed"] / served, 3) if served else 0.0,

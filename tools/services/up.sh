@@ -32,9 +32,16 @@ running() { ss -ltn 2>/dev/null | grep -q "127.0.0.1:$1"; }
 # The decider and the voice. Vision matters: -fast-sees hands it frames, and a
 # text-only checkpoint here makes the visual scenarios unwinnable.
 if ! running 8000; then
+  qwen_repository="${HOME}/.cache/huggingface/hub/models--Qwen--Qwen3-VL-30B-A3B-Instruct-FP8"
+  qwen_revision="$(tr -d '[:space:]' < "${qwen_repository}/refs/main")"
+  qwen_snapshot="${qwen_repository}/snapshots/${qwen_revision}"
+  if [[ ! "${qwen_revision}" =~ ^[0-9a-f]{40}$ ]] || [[ ! -d "${qwen_snapshot}" ]]; then
+    echo "Qwen immutable snapshot revision is unavailable" >&2
+    exit 1
+  fi
   ( setsid nohup env VLLM_WORKER_MULTIPROC_METHOD=spawn \
       "${shared}/.runtime/qwen-asr/bin/python" -m vllm.entrypoints.openai.api_server \
-        --model Qwen/Qwen3-VL-30B-A3B-Instruct-FP8 \
+        --model "${qwen_snapshot}" \
         --served-model-name qwen-fast \
         --host 127.0.0.1 --port 8000 \
         --gpu-memory-utilization 0.50 \
@@ -46,7 +53,13 @@ fi
 
 # The recogniser.
 if ! running 8002; then
-  ( cd "${shared}/.runtime/sensevoice-server" && setsid nohup \
+  sensevoice_model_path="${SENSEVOICE_MODEL_PATH:-${HOME}/.cache/modelscope/models/iic--SenseVoiceSmall/snapshots/master}"
+  if [[ ! -d "${sensevoice_model_path}" ]]; then
+    echo "SenseVoice exact local model path is unavailable" >&2
+    exit 1
+  fi
+  ( cd "${shared}/deploy/sensevoice" && setsid nohup \
+      env SENSEVOICE_MODEL="iic/SenseVoiceSmall" SENSEVOICE_MODEL_PATH="${sensevoice_model_path}" \
       "${shared}/.runtime/sensevoice/bin/python" -m uvicorn server:app \
         --host 127.0.0.1 --port 8002 --workers 1 --log-level info \
       > "${logs}/sensevoice.log" 2>&1 & )
@@ -80,5 +93,6 @@ fi
 wait_for speaker-id http://127.0.0.1:8124/health 120
 wait_for synthesiser http://127.0.0.1:8123/health 300
 wait_for recogniser http://127.0.0.1:8003/health 300
+wait_for sensevoice http://127.0.0.1:8002/health 300
 wait_for decider http://127.0.0.1:8000/health 900
 echo "all four answering"
