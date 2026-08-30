@@ -50,8 +50,9 @@ func TestStrictMatrixValidation(t *testing.T) {
 func TestLoadRejectsUnknownFieldsAndTrailingJSON(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "matrix.json")
 	for name, payload := range map[string]string{
-		"unknown":  `{"version":1,"gates":[],"typo":true}`,
-		"trailing": `{"version":1,"gates":[]} {}`,
+		"unknown":   `{"version":1,"gates":[],"typo":true}`,
+		"trailing":  `{"version":1,"gates":[]} {}`,
+		"duplicate": `{"version":1,"version":1,"gates":[]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := os.WriteFile(path, []byte(payload), 0o644); err != nil {

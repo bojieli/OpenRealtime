@@ -17,6 +17,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/bojieli/OpenRealtime/internal/strictjson"
 )
 
 const MatrixVersion = 1
@@ -92,6 +94,9 @@ func Load(path string) (Matrix, error) {
 	payload, err := os.ReadFile(path)
 	if err != nil {
 		return Matrix{}, fmt.Errorf("read release matrix: %w", err)
+	}
+	if err := strictjson.Validate(payload); err != nil {
+		return Matrix{}, fmt.Errorf("decode release matrix: %w", err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
