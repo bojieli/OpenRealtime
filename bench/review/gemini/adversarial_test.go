@@ -1127,6 +1127,56 @@ func TestPluginRejectsDeclaredSecretSynthesizedOnlyByBase64Encoding(t *testing.T
 	}
 }
 
+func TestPluginScansLargeNestedInlineRequestWithoutRecursiveReplay(t *testing.T) {
+	request, _, _ := preparedMultimodalRequest(t)
+	values := make([]string, 4000)
+	for index := range values {
+		values[index] = fmt.Sprintf(
+			`{"frame":%d,"text":"ordinary retained trace %d"}`, index, index,
+		)
+	}
+	contextPayload, err := json.Marshal(map[string]any{"trace": values})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Context = contextPayload
+	request.SensitiveValues = []string{strings.Repeat("Z", 64)}
+	largeWAV := make([]byte, 8<<20)
+	copy(largeWAV, geminiTestWAV())
+	binary.LittleEndian.PutUint32(largeWAV[4:8], uint32(len(largeWAV)-8))
+	binary.LittleEndian.PutUint32(largeWAV[40:44], uint32(len(largeWAV)-44))
+	if err := os.WriteFile(
+		filepath.Join(request.RootDirectory, request.Media[0].Path), largeWAV, 0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	request.Media[0].SHA256 = digest(largeWAV)
+	prepared, err := review.PrepareContext(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	plugin, err := newWithHTTPClient(testAPIKey, &http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			calls.Add(1)
+			return jsonResponse(http.StatusOK, successfulInteraction(t, testAssessment)), nil
+		})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plugin.Close()
+	response, err := plugin.Review(t.Context(), prepared)
+	if err != nil {
+		t.Fatalf("large inline Review() produced a bounded-scan false positive: %v", err)
+	}
+	if len(response.Request) <= len(largeWAV) || calls.Load() != 1 {
+		t.Fatalf("large inline request bytes=%d calls=%d", len(response.Request), calls.Load())
+	}
+	if err := plugin.VerifyResponse(t.Context(), prepared, response); err != nil {
+		t.Fatalf("large inline VerifyResponse() produced a bounded-scan false positive: %v", err)
+	}
+}
+
 func TestPinnedInteractionCapabilityTableClaimsOnlyEvidencedInlineFormats(t *testing.T) {
 	want := []string{
 		"audio/wav", "image/png", "video/mp4",
