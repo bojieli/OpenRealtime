@@ -884,6 +884,40 @@ Reference architectures, interaction policies, computer-use lanes, and
 provider stacks should be reusable subgraphs. Algorithmic generation remains
 available through an SDK that emits a concrete graph for review.
 
+### 10.9 Immutable authoring snapshots and recovery boundary
+
+Interactive authoring uses the UI-independent management Authoring API rather
+than granting a renderer filesystem or compiler authority. Each analysis
+response is bound to the exact input bytes by a SHA-256 source digest and owns
+independent copies of its diagnostics, catalog metadata, resolved values
+properties, and text edits. Results are deterministically ordered and bounded;
+the server and client validate the complete response envelope before admitting
+it as an authoring snapshot.
+
+The strict parser remains the only path to compilation. When an in-memory
+`.ortg` buffer is incomplete, a separately bounded recovery parser synchronizes
+only at statement terminators and the graph boundary and retains only complete
+declarations. It may support explicit descriptor-derived completions, but it
+cannot produce Graph IR, a resolution lock, a formatter rewrite, reconciliation
+input, or any runtime effect. A formatter edit exists only for a buffer accepted
+by the strict parser; it is an atomic edit set bound to the original path,
+source digest, exact source range, and old text, so applying it to a stale buffer
+fails closed.
+
+Element configuration remains a separate values artifact. When a deployment
+provides a bounded schema resolver, analysis validates the complete
+self-contained Draft 2020-12 object schema before exposing directly declared
+root-property metadata, canonical property subschemas, defaults, enums,
+requiredness, schema identity, and content digest. External references and
+invalid schemas admit no property metadata and produce diagnostics. Composition
+is never flattened speculatively: the projection is marked incomplete and the
+exact property subschemas remain authoritative. An absent resolver is reported
+truthfully as unresolved rather than inventing fields.
+
+The remaining presentation work is to render these contracts in LSP, browser,
+and native clients, add multi-file/subgraph navigation, and mediate actual file
+writes. None of that may weaken the strict compile/reconcile boundary above.
+
 ## 11. Graph IR
 
 Graph IR is the canonical executable and inspectable representation. It is
@@ -1667,7 +1701,7 @@ existing test suite.
 | `providers` and `adapters` | Register implementation factories and descriptors; do not own topology. |
 | `session` | Supply scoped duplex/media/session services where selected by a graph; text-only graphs need not instantiate audio state. |
 | `cmd/openrealtime` | Select graph, typed configs, deployment, and overrides; retain legacy flags as a compatibility frontend during migration. |
-| `surface`, `console`, and macOS tools | Become the first static/live graph inspector and visual editor clients. |
+| `surface`, `console`, browser demo, and macOS tools | Become profiles over the shared plugin/client contracts in [Composable Presentation and Observability](composable-presentation.md); the gateway owns no UI. |
 | `bench` and measurement | Record Graph IR fingerprint, element/config revisions, live resolution, traces, and exact selected paths. |
 
 ### 24.1 Invariants to demote from the kernel
@@ -1744,28 +1778,40 @@ reference graphs, or conformance evidence.
 | --- | --- | --- | --- |
 | 0 — contracts | Complete | Accepted design, terminology, authoring decisions, and migration oracle | Keep decisions and superseded ADRs synchronized as implementation lands |
 | 1 — graph foundation | Exit evidence pending | Typed descriptors/runtime, `.ortg`, strict YAML/JSON interchange, Go SDK, lockfiles, Graph IR, validation, connectors, rendering, and coarse legacy mounting | Full reference-architecture regression and benchmark equivalence evidence |
-| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, observation commit, trajectory, activation policy, cognition, interaction/result commit, speech, tools, explicit `Tee`/`Mux`, and full locked fast-only/slow-only/both-speaking reference graphs | Gateway integration, executed-turn regression, and safe-point trace parity |
+| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, cognition, interaction/result commit, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison | Gateway launch integration and measured behavioral/benchmark equivalence; the retained comparison intentionally records current divergence rather than claiming parity |
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction parity, and removal of binding switches |
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Complete silent computer-use and independent voice/CU reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment bindings and secret-reference catalogs, exact live resolution evidence, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Mount-time deployment/secret assembly and evidence, evidence profiles, legacy translation, normal graph-native launch, and executed parity artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, and a compiler-backed canonical `.ortg` language-service core | Trigger/cancel/authority views, recovery/schema/LSP/UI integration, and output-to-cause operator workflow |
+| 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, and a compiler-backed language-service core exposed through the UI-independent management API | Trigger/cancel/authority views, LSP/UI rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
 | 8 — legacy removal | Not started | Compatibility behavior is isolated behind a coarse element | Migrate every production/evaluation launch path, then remove obsolete flags, switches, and binding constraints |
 
 Current checkpoint notes:
 
-- `origin/main` remains at the design checkpoint `1bf1de5`; local `main`
-  contains the verified implementation checkpoints recorded in the ledger
-  below. `git log origin/main..main` is the authoritative commit list.
+- Accepted implementation checkpoints are the commits already in the current
+  branch history and the ledger below. Worktree-only slices remain unchecked
+  until their review and required evidence are complete; no hard-coded branch
+  or remote position is a completion oracle.
 - The committed graph-native slice now extends from acoustic and multimodal
   ingress through state, independently triggered cognition, explicit
   interaction/speech routing, tool authority, and external-model topologies.
+- Observation commits now carry a store-attested compact trajectory-prefix
+  identity and exact State item ID. Activation policies consume that
+  self-contained basis, and cognition verifies and reconstructs the immutable
+  prefix from a later append-only State snapshot if delivery order overtakes
+  the trigger. This removes the former cross-port context/commit join race
+  without copying a growing trajectory into each activation.
+- State inputs that can release a pending irreversible action transition are
+  lossless contracts. In particular, canonical call promotion and tool-result
+  commit cannot use replaceable/lossy State delivery: dropping the last
+  required snapshot would otherwise strand completed external work forever.
 - Deterministic graph diff, session-keyed bounded runtime recording, replayable
   payload-free trace artifacts, and the canonical `.ortg` language-service
   core, adaptive video ingress/cadence, and the full conversational reference
-  family are committed. Editor recovery/schema/UI transport and sidecar
-  media-format hardening remain unchecked until their independent worktree
-  slices are reviewed and committed.
+  family are committed. Bounded recovery, formatter edits, and resolved schema
+  metadata now have a UI-independent Authoring API worktree checkpoint; LSP/UI
+  rendering, multi-file navigation, mediated writes, and sidecar media-format
+  hardening remain unchecked until their independent slices are complete.
 - No item in the project-level definition of done is yet proven end to end.
   Several have foundation-level support, but benchmark migration, production
   inspection, reconciliation, and legacy removal are still outstanding.
@@ -1778,8 +1824,10 @@ Integrated checkpoint ledger:
   provider-neutral cognition, TTS, playback, and exact live resolution.
 - [x] Explicit acoustic admission/endpoint policies with visible tick, commit,
   verdict, cancellation, flush, state, and terminal paths.
-- [x] Independent fast/deliberative activation policies joined to the exact
-  committed trajectory State envelope, with bounded cancellation memory.
+- [x] Independent fast/deliberative activation policies consume the exact
+  store-attested committed-prefix identity, with bounded cancellation memory;
+  cognition verifies the digest, session, State identity, causal parent, and a
+  scalar replay floor before reconstructing that prefix from append-only State.
 - [x] Explicit fast-only, slow-only, and both-speaking interaction components;
   no kernel-owned slow-to-fast handoff or model-to-model edge.
 - [x] Typed tool proposal admission, confirmation, target fencing, idempotent
@@ -1804,6 +1852,14 @@ Integrated checkpoint ledger:
   placement, resource selection, or credential material.
 - [x] Bounded graph-aware rename and strict in-memory edit application reject
   stale cursors, overlapping edits, and ambiguous node references.
+- [x] Bounded `.ortg` recovery retains only complete synchronized statements,
+  supports explicit descriptor-backed partial completion, and remains outside
+  strict compilation, locking, reconciliation, formatting, and runtime paths.
+- [x] Strictly parsed snapshots expose atomic source-digest-bound canonical
+  formatter edits through the UI-independent management Authoring API.
+- [x] Bounded self-contained values-schema resolution exposes deterministic,
+  recursively independent property metadata and diagnostics through the same
+  API without flattening composition or inventing unresolved fields.
 - [x] Standard-catalog camera, screen, and video ingress exposes typed raw-frame
   and capability-free reference outputs with generation/session fencing.
 - [x] Fixed, adaptive, and manual visual-observation cadence has explicit
@@ -1818,11 +1874,17 @@ Integrated checkpoint ledger:
   streams through an explicit interaction speech arbiter.
 - [x] All three conversational references share an asserted identical
   non-routing backbone and compile, bind values, resolve providers, and mount.
-- [ ] Execute complete conversational turns through all three locked reference
+- [x] Execute complete conversational turns through all three locked reference
   graphs and retain the regression artifacts.
 - [ ] Compare graph-native and legacy traces at every declared safe point.
-- [ ] Complete recovery/schema/LSP/UI authoring, reconciliation, benchmark
-  execution parity, and legacy launch-path removal.
+  The retained payload-free ordinary-turn comparison is fingerprint-bound and
+  exact, but it proves divergence rather than parity: graph-native references
+  activate both cognition lanes from version 1 and reject one stale terminal,
+  while cascade rollout profiles sequence fast/deliberative/fast work and
+  voice deliberative results through the fast lane.
+- [ ] Complete LSP/UI rendering, multi-file/subgraph navigation, mediated
+  authoring writes, reconciliation, benchmark execution parity, and legacy
+  launch-path removal.
 
 Active acceptance queue (work in the shared worktree remains unchecked until
 it has been reviewed, tested, and committed with its evidence):
@@ -1877,8 +1939,11 @@ it has been reviewed, tested, and committed with its evidence):
   - [x] Pass focused adversarial, mutation-isolation, determinism,
     concurrent-reader race, cancellation, and bounds tests plus graph-wide race
     and vet gates.
-  - [ ] Integrate generated contracts into configuration-value editor metadata
-    and recovery/LSP/UI transport before completing authoring support.
+  - [x] Integrate resolved property metadata, schema identities, completeness,
+    and diagnostics into immutable recovery/analysis snapshots and the
+    UI-independent management Authoring API.
+  - [ ] Render the Authoring API metadata in the configuration-value editor and
+    LSP/browser/native clients before completing authoring support.
 - [ ] Complete the sound computer-use authority and trajectory feedback chain.
   - [ ] Join tool proposals to exact cognition-result provenance by run and
     call identity without trusting externally asserted causal metadata.
@@ -1894,8 +1959,9 @@ Reference-agent tracker:
 - [x] Componentized conversational voice-agent family with separate acoustic
   policy, ASR, observation commit, trajectory, independent fast/deliberative
   activation and cognition, result commit, interaction routing, segmentation,
-  TTS, playback, cancellation/timing boundaries, and state. Executed-turn and
-  legacy safe-point parity remain tracked separately.
+  TTS, playback, cancellation/timing boundaries, and state. The fingerprinted
+  complete-turn artifact is retained; legacy safe-point parity remains tracked
+  separately because the exact comparison exposes rollout divergence.
 - [x] Focused fast-only, slow-only, and both-speaking interaction graphs prove
   that either cognition stream can speak through explicit segmentation and
   arbitration topology.
@@ -1990,6 +2056,10 @@ diagnosis only.
 - [ ] Migrate and run all 6,147 FD-Bench conversations across all 21 released
   conditions with comparable endpointing, overlap, answer, and latency
   distributions; an aggregate over a subset of conditions is not a full run.
+- [x] Add a canonical pinned tau2 inventory boundary that calls the upstream
+  `base` split, refuses dirty task/loader inputs and data-path overrides, and
+  validates the exact 50 airline / 114 retail / 114 telecom partition before
+  migration preregistration.
 - [ ] Migrate and run the complete 278-task tau2-bench/τ-Voice task set in
   both control and regular conditions with task and interaction metrics.
 - [ ] Preserve the DynaCU-Bench runner as independent optional validation.
@@ -2036,7 +2106,7 @@ diagnosis only.
 ### Phase 2: decompose the component/cascade path
 
 - [x] Extract acoustic admission/endpointing, ASR, observation commit,
-  trajectory context, explicit generation activation, fast/deliberative text
+  commit-bound trajectory-prefix context, explicit generation activation, fast/deliberative text
   cognition, model-result commit, interaction/segmentation, TTS, playback,
   tool authority, and typed outcomes into independently registered elements.
 - [ ] Extract the remaining gateway/session adapters and any pacing/timing
@@ -2051,7 +2121,8 @@ diagnosis only.
 - [ ] Reproduce current behavior as a reference graph and compare traces at
   every safe point. Checked-in acoustic, ASR/trajectory, activation, and
   interaction components plus the complete conversational family cover the
-  topology, but executed-turn and legacy-parity artifacts are not committed.
+  topology. The retained ordinary-turn artifact now compares the actual paths,
+  but records rollout/speaking divergence rather than legacy parity.
 - [x] Add alternative tests where deliberative output speaks directly or fast
   and deliberative streams meet at an explicit stream-aware arbiter.
 
@@ -2142,12 +2213,47 @@ diagnosis only.
     strict graph/node envelopes and deterministic content digests.
   - [x] Support explicit schema resolution and truthful unresolved-contract
     reports without inferring fields from opaque descriptor references.
-  - [ ] Expose resolved property metadata and diagnostics through the
-    configuration editor and its LSP/UI transport.
+  - [x] Expose bounded resolved property metadata, completeness, identities,
+    and diagnostics through immutable management Authoring API snapshots.
+  - [ ] Render that metadata in the configuration editor and its LSP/UI
+    clients.
 - [x] Add bounded graph-aware node rename, hover, port completion, and
   go-to-definition for fully parsed canonical `.ortg`.
-- [ ] Add recovery parsing for incomplete authoring, formatter edits, LSP/UI
-  transport, multi-file/subgraph navigation, and strict file-write mediation.
+- [x] Add independently bounded recovery parsing for incomplete `.ortg` and
+  source-digest-bound formatter edits through the UI-independent management
+  Authoring API, while keeping recovery outside compile/reconcile paths.
+- [ ] Add LSP/UI rendering, multi-file/subgraph navigation, and strict
+  file-write mediation.
+- [ ] Implement the composable presentation and observability design before
+  treating any current UI as the production inspector.
+  - [x] Inventory the current browser demo, console, surface, macOS client,
+    gateway UI coupling, duplicated client protocol/media logic, and existing
+    browser/native test evidence.
+  - [x] Specify the shared server/host/client plugin contract, clean realtime
+    and management APIs, client profiles, trust boundaries, migration stages,
+    cross-client E2E matrix, and presentation performance gates.
+  - [ ] Implement descriptor-locked server, presentation-host, and client
+    plugin realms with dependencies, permission ceilings, scoped effects, and
+    independently inspectable runtime identities. The common descriptor/lock,
+    host mount, permission, scoped-service, and browser lifecycle foundations
+    exist; complete server-realm assembly, replacement/rollback, and leak
+    evidence remain open.
+  - [ ] Complete migration of the browser presentation server and browser
+    client to manifest-composed plugins over the public server APIs. Locked
+    minimal, observer, developer-WebSocket, and developer-WebRTC profiles now
+    exercise text, media, effects, artifacts, inspection, trace, and authoring
+    against a standalone host in real Chromium, and gateway-owned UI is
+    retired. The console, surface, and one-file demo remain migration oracles
+    rather than profiles, and complete lifecycle/performance evidence is open.
+  - [ ] Migrate the macOS application to the same logical client services and
+    public server APIs with native implementations. Native manifests,
+    provider registry/factory seams, reducer, transport, media, effects,
+    artifact, inspection, and view boundaries exist; a signed Darwin run and
+    unchanged-server browser-to-macOS comparison are still required.
+  - [ ] Pass the shared browser/macOS/headless protocol, media, tools,
+    inspection, reconnect, reconciliation, leak, and performance gates. Local
+    browser/headless conformance is present; native, cross-client,
+    reconciliation/leak, and performance-evidence gates remain open.
 
 - [ ] **Exit gate:** an operator can understand a running graph and trace an
   output to its causes without reading binding source.
@@ -2211,9 +2317,32 @@ diagnosis only.
   irreversibility tests.
 - Prove that no proposal reaches an effect sink without the typed authority
   path.
+- Stress independent fast/deliberative activations without provider-ordering
+  gates, and reconstruct an exact committed prefix after a later State value
+  overtakes its trigger; a sibling branch must then fail only at the explicit
+  compare-and-append safe point, never by sampling unrelated context.
 - Test cancellation before and after the irreversible boundary.
 - Verify secrets and private payloads are absent from Graph IR, diagrams, and
   default telemetry.
+- Verify a presentation or renderer plugin cannot acquire effect authority,
+  widen a tool declaration, bypass confirmation, or access a session/inspection
+  capability outside its declared scope.
+
+### 26.3.1 Presentation and client gates
+
+- Compile browser, macOS, and headless client profiles from the same immutable
+  descriptor/lock semantics and attest exact runtime implementations.
+- Run a language-neutral client reducer/conformance corpus in JavaScript,
+  Swift, and Go.
+- Run real Chromium end-to-end tests for WebSocket, WebRTC, audio, video,
+  tools, interruption, artifacts, inspection, and reconnect.
+- Run actual Swift tests and a native app smoke/end-to-end test on macOS; source
+  inspection alone is never release evidence.
+- Drive browser and macOS clients sequentially against one unchanged server and
+  verify the same server Graph IR plus each exact client graph identity.
+- Mount, unmount, replace, and fail client/host plugins under race/leak tests;
+  assert no worker, media track, socket, listener, timer, authority grant, or
+  temporary resource survives its scope.
 
 ### 26.4 Performance gates
 
@@ -2222,6 +2351,9 @@ diagnosis only.
 - Compare end-to-first-action and deadline success against current baselines.
 - Measure cancellation propagation and graph shutdown.
 - Verify inspection can be sampled or disabled without changing semantics.
+- Measure endpoint-to-first-played-audio, playout gaps, capture/frame drops,
+  client transport queues, reconnect recovery, reducer-to-view latency, memory
+  growth, and inspection/render overhead in both browser and macOS clients.
 - Run complete system benchmarks using immutable graph/config/profile
   identities rather than model-family labels.
 
@@ -2405,6 +2537,12 @@ checked from foundation work alone; each requires end-to-end release evidence.
 - [ ] Operators can trace an externally visible action back through its policy,
     trigger, observation, state revision, model run, queues, and authority
     decision.
+- [ ] The browser presentation host/client and macOS app are composable plugin
+    profiles over the same clean realtime and observability APIs; the gateway
+    contains no privileged UI, and real cross-client end-to-end tests pass.
+- [ ] Every server, host, and client presentation capability can be replaced or
+    removed through a descriptor-locked plugin composition with scoped cleanup,
+    explicit permissions, and no implicit effect authority.
 
 ## References
 
@@ -2412,7 +2550,7 @@ checked from foundation work alone; each requires end-to-end release evidence.
 - Bojie Li et al., [ClickNP: Highly Flexible and High Performance Network Processing with Reconfigurable Hardware](https://www.microsoft.com/en-us/research/publication/clicknp-highly-flexible-high-performance-network-processing-reconfigurable-hardware/), ACM SIGCOMM 2016.
 - [OpenClickNP language reference](https://github.com/bojieli/OpenClickNP/blob/main/docs/language.md).
 - [n8n workflow connections](https://docs.n8n.io/workflows/components/connections/), [splitting](https://docs.n8n.io/flow-logic/splitting/), [merging](https://docs.n8n.io/flow-logic/merging/), and [sub-workflows](https://docs.n8n.io/flow-logic/subworkflows/).
-- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
+- [DeepSeek Harness architecture](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.md) and [web client architecture](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.md).
 - Yifan Shi, Wei Zhang, and Tianyi Cui, [A Programming Paradigm for Spatiotemporal Composability](https://arxiv.org/abs/2608.25512).
 - [YAML 1.2.2 specification](https://yaml.org/spec/1.2.2/).
 - [JSON Schema 2020-12 specification](https://json-schema.org/draft/2020-12).

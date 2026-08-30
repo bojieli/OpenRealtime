@@ -233,14 +233,40 @@ the endpoint the first frame arrived.
 ## Talk to it
 
 ```sh
-./openrealtime serve -demo -webrtc-listen 127.0.0.1:8766
+./openrealtime present
 ```
 
-Open `http://127.0.0.1:8765/demo`. The page is embedded in the binary, so
-there is nothing else to install, and `-demo` is off by default because a
-realtime server's job is one protocol on one port. See
-[../examples/browser/README.md](../examples/browser/README.md). Give it a recording with `-audio file.wav`
-to say something real.
+Open `http://127.0.0.1:8767`. This starts a separate, loopback-only
+presentation host pointed at the public realtime endpoint. Its browser client
+is assembled from a locked manifest of content-addressed plugins; the realtime
+gateway serves no HTML or client assets. The initial minimal profile supports
+typed text over WebSocket. Select `-client-profile browser-developer` together
+with an explicit management API base such as
+`-management-endpoint http://127.0.0.1:8765/openrealtime/v1` for the
+independently authorized inspection and graph-authoring plugins. The
+`browser-developer-webrtc` composition additionally requires an explicit
+`-webrtc-endpoint`. Realtime, WebRTC, and management endpoints are independent
+entries in the profile's fingerprinted endpoint directory; none is inferred by
+rewriting another endpoint's origin or path. Static catalog and authoring calls are available only
+when the upstream server composition selects the UI-independent management
+`StaticCatalog` and `Authoring` services and the operator supplies their narrow
+capability; an absent service stays visibly unavailable rather than falling
+back to a browser implementation.
+
+Server profiles opt into that independent plane through the public
+`management/server.MountOperatorAPI` composition API. They provide an existing
+base handler, their own `management.Authorizer`, and only the UI-independent
+`StaticCatalog`, `Authoring`, or `Reconciliation` services they intend to
+expose. The overlay owns no credential issuer and has no session service:
+operator route families use the supplied operator authority, while session and
+unrelated routes fall through to the unchanged base handler. Closing the
+overlay withdraws only those selected operator routes.
+
+The shipped `present` presets are observer-only: they do not advertise a local
+effects socket, artifact authority, or confirmation UI. An effects-enabled
+host is a separate plugin composition built with the presentation packages and
+an explicit receipt issuer/verifier. Selecting a richer view never creates
+effect authority.
 
 Health and metrics are HTTP:
 
