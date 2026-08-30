@@ -1757,8 +1757,10 @@ graphs/        shipped reference `.ortg` files and optional generators
 catalog/       graph, element, config, deployment, and profile catalogs
 ```
 
-Existing packages can migrate into this structure gradually; a mass rename is
-not required before the contracts exist.
+New production and benchmark paths are implemented directly in this structure.
+The old implementation is reference material only: it may be deleted, and it
+does not justify a migration layer, compatibility runner, historical-attempt
+reconstruction, or alternate benchmark path.
 
 ## 25. Implementation plan
 
@@ -1787,7 +1789,7 @@ reference graphs, or conformance evidence.
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment bindings and secret-reference catalogs, exact live resolution evidence, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Mount-time deployment/secret assembly and evidence, evidence profiles, normal graph-native launch, and executed candidate artifacts |
 | 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, and a compiler-backed language-service core exposed through the UI-independent management API | Trigger/cancel/authority views, LSP/UI rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
-| 8 — obsolete-path deletion | In progress | Benchmark migration/parity code and flags are removed; old implementation remains reference-only | Move every remaining production/evaluation launch path to explicit profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
+| 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
 
 Current checkpoint notes:
 
@@ -1913,6 +1915,13 @@ it has been reviewed, tested, and committed with its evidence):
     portable receipt before exposing the final sibling name, and prove restart
     recovery, pre-receipt quarantine, root/symlink swap refusal, and no
     duplicate provider call after the durable boundary.
+  - [x] Add the provider/storage/UI-neutral candidate evidence plug-in and
+    lifecycle, including explicit production-versus-hermetic origin, exact
+    shared-session audio/video callbacks, exact external-harness media and
+    structured artifacts, immutable attempt/result snapshots, create-once
+    identities, and fail-closed population sealing. FDB, FDB v3, FD-Bench, and
+    tau-Voice now call this candidate-only boundary; no historical run or
+    migration path is represented by the API.
   - [ ] Finish the four-case Meeting Assistant bundle with synchronized WAV and
     MP4 per case, deterministic pass/fail plus advisory model review, durable
     source-before-model and per-evaluation receipts, case-by-case `REVIEW.md`,
@@ -1927,7 +1936,9 @@ it has been reviewed, tested, and committed with its evidence):
     FDB/FDB3/FD-Bench/tau2 benchmark recording and advisory-review bundle into
     the release matrix with retained source/evaluation receipts, audio/video
     decode assertions, exact population counts, redacted summaries, and
-    credential-free offline verification.
+    credential-free offline verification. Candidate lifecycle hooks are now
+    committed for FDB, FDB v3, FD-Bench, and tau-Voice; the shared durable
+    review-bundle composition and complete live populations remain open.
   - [ ] Run the provisioned live 165-attempt scenario candidate comparison
     against the accepted historical trail, live four-case
     Meeting Assistant review, live exact-sixteen Realtime-CU review, and signed
@@ -2079,15 +2090,16 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
 - [ ] Re-run and compare all eleven interaction scenarios with at least fifteen
   repetitions per scenario (at least 165 newly retained candidate attempts):
   The exact population, sealed review path, offline verifier, and exact-model
-  advisory transport are implemented. A retained 11×1 diagnostic passed 2/11
-  (`cutting-in` and `ordinary-question`) and exposed real behavioral failures in
-  counting, translation, requested silence, third-party conversation, and
-  visual completion, plus four infrastructure timeouts/drifts. The obsolete
-  inspection-capability validator and missing explicit interaction-profile
-  status found by that run are fixed. A distinct clean 11×1 run must pass
-  infrastructure and drive iteration before the 165-attempt run begins. This
-  box and every case below remain open until the full candidate meets or
-  improves on 140/165 without a significant case, safety, or latency regression.
+  advisory transport are implemented. The latest retained 11×1 diagnostic
+  passed 4/11: `ordering-from-a-waiter`, `translating-as-they-speak`,
+  `waiting-out-requested-silence`, and `ordinary-question`. It is explicitly
+  nonreportable and does not replace the accepted 140/165 historical target.
+  That run exposed and led to fixes for live declaration drift, evidence
+  lifetime, and empty receipt canonicalization. A distinct infrastructure-clean
+  11×1 rerun is in progress and must drive iteration before the 165-attempt run
+  begins. This box and every case below remain open until the full candidate
+  meets or improves on 140/165 without a significant case, safety, or latency
+  regression.
   - [ ] `count-as-they-go`
   - [ ] `asked not to be interrupted`
   - [ ] `a recorded menu`
@@ -2103,9 +2115,12 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   production profile. Hermetic candidate-02 is deterministic 4/4 at the
   declared 5 fps; all four A/V reviews are usable and exact Gemini 3.7 Flash
   reported no significant, minor, or limitation findings. It remains honestly
-  nonreportable because it did not use the shared production server. The
-  missing Meeting application/session adapter and host registration are the
-  next implementation gate before a distinct production candidate.
+  nonreportable because it did not use the shared production server. A direct
+  graph-native Meeting application/session plug-in, host registration, lazy
+  readiness/observer propagation, and production-profile composition are now
+  committed on the active review branch with focused normal, shuffle, race,
+  and vet gates green. The distinct authenticated same-server exact-four
+  candidate and its retained reviews remain open.
 - [ ] Run all sixteen OpenRealtime Realtime-CU v1 cases (eight task families
   under pixel and set-of-mark observation variants). Exact-sixteen real
   Chromium/FFmpeg capture and independent full decode are green as hermetic
@@ -2489,10 +2504,12 @@ integration test for this matrix.
 - Architecture references continue to be exact and immutable, but their
   fingerprint is derived from Graph IR plus non-secret config/deployment
   evidence selected by the catalog.
-- Legacy flags and named bindings map to pinned compatibility graphs during a
-  deprecation period.
-- Benchmarks retain old graph artifacts so historical comparisons never
-  reinterpret a topology through newer defaults.
+- No legacy flag, named binding, migration shim, or historical-result loader is
+  part of the new runtime or benchmark design. Obsolete switches are deleted as
+  direct profiles take over.
+- Trusted historical numbers remain write-up-only quality targets. Only new
+  candidate attempts require and produce retained per-attempt artifacts; old
+  graph artifacts are never runtime inputs and are not reconstructed.
 
 ## 28. Risks and mitigations
 
