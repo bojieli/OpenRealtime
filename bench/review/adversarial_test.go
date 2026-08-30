@@ -146,6 +146,37 @@ func TestPrepareRejectsDeclaredSecretSplitAcrossDecodedJSONTokens(t *testing.T) 
 	})
 }
 
+func TestPrepareScansLargeNestedPromptEnvelopeExactlyOnce(t *testing.T) {
+	request, _ := testRequest(t)
+	values := make([]string, 2000)
+	for index := range values {
+		values[index] = fmt.Sprintf(
+			`{"frame":%d,"text":"ordinary retained trace %d"}`, index, index,
+		)
+	}
+	payload, err := json.Marshal(map[string]any{"trace": values})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Context = payload
+	request.SensitiveValues = []string{strings.Repeat("Z", 64)}
+	prepared, err := PrepareContext(t.Context(), request)
+	if err != nil {
+		t.Fatalf("benign nested prompt envelope produced a bounded-scan false positive: %v", err)
+	}
+	if !bytes.Contains([]byte(prepared.Prompt), payload) ||
+		!prepared.ContainsDeclaredSensitiveValue([]byte(`{"value":"`+strings.Repeat("Z", 64)+`"}`)) {
+		t.Fatal("prepared prompt or declared-sensitive guard lost its exact evidence contract")
+	}
+
+	literalRequest, _ := testRequest(t)
+	literalRequest.SensitiveValues = []string{"offline quality reviewer"}
+	if _, err := PrepareContext(t.Context(), literalRequest); err == nil ||
+		!strings.Contains(err.Error(), "prompt envelope contains a declared sensitive value") {
+		t.Fatalf("literal prompt secret error = %v", err)
+	}
+}
+
 func TestSecretScannerDoesNotReplayOneNestedRepeatedHalf(t *testing.T) {
 	const secret = "abcdefghabcdefgh"
 	matcher, err := newSensitiveMatcher([][]byte{[]byte(secret)})

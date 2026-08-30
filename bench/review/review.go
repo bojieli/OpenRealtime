@@ -779,7 +779,13 @@ func PrepareContext(
 	if len(prompt) == 0 || len(prompt) > maximumPromptBytes {
 		return PreparedRequest{}, fmt.Errorf("review prompt exceeds %d bytes", maximumPromptBytes)
 	}
-	promptSensitive, scanErr := guard.hasContext(ctx, []byte(prompt))
+	// The prompt is the fixed, trusted instruction prefix followed by the exact
+	// contextEnvelope scanned below. Scan the assembled wire text literally so
+	// a raw secret or future formatter drift is still rejected, but do not
+	// recursively decode the same large, nested JSON a second time. Replaying a
+	// valid envelope through the embedded-JSON scanner can exhaust its bounded
+	// work budget and falsely classify ordinary retained evidence as sensitive.
+	promptSensitive, scanErr := guard.matcher.containsContext(ctx, []byte(prompt))
 	if scanErr != nil {
 		return PreparedRequest{}, scanErr
 	}
