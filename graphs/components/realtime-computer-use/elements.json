@@ -1,0 +1,263 @@
+{
+  "apiVersion": "openrealtime.ai/elements/v1alpha1",
+  "elements": [
+    {
+      "format_version": 1,
+      "name": "policy.RealtimeComputerUseActivation",
+      "revision": 1,
+      "ports": [
+        {
+          "name": "authority",
+          "direction": "output",
+          "type": {
+            "name": "Stream",
+            "arguments": [
+              {
+                "name": "authority.Candidate"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 16
+        },
+        {
+          "name": "cancel",
+          "direction": "input",
+          "type": {
+            "name": "Interrupt",
+            "arguments": [
+              {
+                "name": "policy.GenerationAddress"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 16
+        },
+        {
+          "name": "committed",
+          "direction": "input",
+          "type": {
+            "name": "Event",
+            "arguments": [
+              {
+                "name": "trajectory.ObservationCommitOutcome"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 32
+        },
+        {
+          "name": "outcome",
+          "direction": "output",
+          "type": {
+            "name": "Event",
+            "arguments": [
+              {
+                "name": "policy.GenerationOutcome"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 32
+        },
+        {
+          "name": "state",
+          "direction": "output",
+          "type": {
+            "name": "State",
+            "arguments": [
+              {
+                "name": "policy.GenerationState"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "loss_allowed": true,
+          "default_depth": 1
+        },
+        {
+          "name": "trigger",
+          "direction": "output",
+          "type": {
+            "name": "Trigger",
+            "arguments": [
+              {
+                "name": "cognition.Generate"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 16
+        }
+      ],
+      "reaction": {
+        "triggers": [
+          "committed"
+        ],
+        "interrupts": [
+          "cancel"
+        ],
+        "outcomes": [
+          "authority",
+          "outcome",
+          "state",
+          "trigger"
+        ],
+        "max_concurrency": 1,
+        "breaks_cycles": true
+      },
+      "state_schema": "schema://openrealtime/realtime-cu/durable-activation-state/v1",
+      "config_schema": "schema://openrealtime/policy/generate-on-observation-config/v1",
+      "dependencies": [
+        {
+          "name": "runtime.clock"
+        },
+        {
+          "name": "runtime.sequence"
+        },
+        {
+          "name": "state.trajectory.store"
+        }
+      ],
+      "effects": [
+        {
+          "name": "realtime-cu.durable-user-intent.memory",
+          "reversible": true
+        }
+      ]
+    },
+    {
+      "format_version": 1,
+      "name": "state.RealtimeComputerUseObservationCommit",
+      "revision": 1,
+      "ports": [
+        {
+          "name": "append",
+          "direction": "output",
+          "type": {
+            "name": "Request",
+            "arguments": [
+              {
+                "name": "trajectory.Append"
+              },
+              {
+                "name": "flow.RequestID"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 32
+        },
+        {
+          "name": "committed",
+          "direction": "input",
+          "type": {
+            "name": "Reply",
+            "arguments": [
+              {
+                "name": "trajectory.Commit"
+              },
+              {
+                "name": "flow.RequestID"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 16
+        },
+        {
+          "name": "observations",
+          "direction": "input",
+          "type": {
+            "name": "Revisions",
+            "arguments": [
+              {
+                "name": "perception.Observation"
+              },
+              {
+                "name": "perception.RevisionID"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 32
+        },
+        {
+          "name": "outcome",
+          "direction": "output",
+          "type": {
+            "name": "Event",
+            "arguments": [
+              {
+                "name": "trajectory.ObservationCommitOutcome"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 32
+        },
+        {
+          "name": "rejected",
+          "direction": "input",
+          "type": {
+            "name": "Reply",
+            "arguments": [
+              {
+                "name": "trajectory.Rejection"
+              },
+              {
+                "name": "flow.RequestID"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 16
+        }
+      ],
+      "reaction": {
+        "triggers": [
+          "committed",
+          "observations",
+          "rejected"
+        ],
+        "outcomes": [
+          "append",
+          "outcome"
+        ],
+        "max_concurrency": 1
+      },
+      "state_schema": "schema://openrealtime/realtime-cu/observation-commit-state/v1",
+      "config_schema": "schema://openrealtime/trajectory/observation-commit-config/v1",
+      "dependencies": [
+        {
+          "name": "runtime.clock"
+        },
+        {
+          "name": "runtime.sequence"
+        },
+        {
+          "name": "state.trajectory.store"
+        }
+      ],
+      "effects": [
+        {
+          "name": "realtime-cu.observation-causality.memory",
+          "reversible": true
+        }
+      ]
+    }
+  ]
+}

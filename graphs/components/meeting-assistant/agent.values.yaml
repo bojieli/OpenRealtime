@@ -1,0 +1,86 @@
+apiVersion: openrealtime.ai/config/v1alpha1
+graph: meeting_assistant
+nodes:
+  screen_fork:
+    source: screen
+    kind: screen
+    max_frame_bytes: 8388608
+  foreground:
+    deployment: meeting.foreground
+    settings: {}
+    port_formats:
+      audio:
+        - payload_mode: json_binary
+          max_json_bytes: 65536
+          max_binary_bytes: 4800
+          media:
+            kind: audio
+            encoding: audio/pcm
+            sample_format: s16le
+            sample_rate_hz: 24000
+            channels: 1
+            max_frame_duration_ms: 100
+      video:
+        - payload_mode: json_binary
+          max_json_bytes: 65536
+          max_binary_bytes: 8388608
+          media:
+            kind: video
+            encoding: image/jpeg
+            max_width: 1920
+            max_height: 1080
+            max_frame_rate_millihz: 30000
+      audio_out:
+        - payload_mode: json_binary
+          max_json_bytes: 65536
+          max_binary_bytes: 4800
+          media:
+            kind: audio
+            encoding: audio/pcm
+            sample_format: s16le
+            sample_rate_hz: 24000
+            channels: 1
+            max_frame_duration_ms: 100
+    required_capabilities:
+      - name: model.concurrent-io
+      - name: model.causal-input-order
+        contract: text.ContextInjection->cognition.Generate
+  screen_policy:
+    source: screen
+    mode: adaptive
+    min_interval_ms: 200
+    max_interval_ms: 2000
+    change_threshold: 0.08
+    max_frame_bytes: 8388608
+    max_change_samples: 512
+    max_metadata_bytes: 65536
+    terminal_memory: 256
+  screen_observer:
+    provider: meeting.visual
+    source: screen
+    name: screen
+    change_threshold: 0.02
+    max_frames_per_batch: 1
+    max_frame_bytes: 8388608
+  observation_commit: {}
+  trajectory: {}
+  background_activation:
+    role: meeting-background
+    invocation:
+      instruction: Analyze the newest committed meeting observation in the context of the shared trajectory. Return only grounded information that should be injected into the live foreground.
+      max_output_tokens: 1024
+    max_pending: 64
+    terminal_memory: 512
+    cancel_memory: 256
+  background_model:
+    provider: meeting.background
+    retain_reasoning: true
+  background_injection:
+    role: background
+    instruction: Integrate the just-injected grounded background result into the current meeting turn. Stay concise, honor any later correction, and do not repeat stale work.
+    max_output_tokens: 512
+    max_runs: 64
+    max_text_bytes: 65536
+    terminal_memory: 512
+  background_result_commit: {}
+  foreground_result_commit: {}

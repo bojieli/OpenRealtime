@@ -3,6 +3,7 @@ package graphs_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	graphdeployment "github.com/bojieli/OpenRealtime/graph/deployment"
@@ -16,12 +17,12 @@ func TestEveryShippedComponentHasSeparateTruthfulDeploymentSecretAndEvidenceArti
 	if err != nil {
 		t.Fatal(err)
 	}
-	components := 0
+	components := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-		components++
+		components = append(components, entry.Name())
 		t.Run(entry.Name(), func(t *testing.T) {
 			directory := filepath.Join("components", entry.Name())
 			topologyBody := mustReadComponentArtifact(t, filepath.Join(directory, "agent.ortg"))
@@ -59,8 +60,27 @@ func TestEveryShippedComponentHasSeparateTruthfulDeploymentSecretAndEvidenceArti
 			}
 		})
 	}
-	if components != 15 {
-		t.Fatalf("validated %d shipped component directories, want 15", components)
+	want := []string{
+		"acoustic-endpoint",
+		"adaptive-video",
+		"asr-trajectory",
+		"conversational-both",
+		"conversational-fast-only",
+		"conversational-slow-only",
+		"duplex-native-interaction",
+		"generation-policy",
+		"interaction-both",
+		"interaction-fast-only",
+		"interaction-slow-only",
+		"meeting-assistant",
+		"multimodal-content",
+		"omni-external-interaction",
+		"realtime-computer-use",
+		"silent-computer-use",
+		"upstream-native-interaction",
+	}
+	if !slices.Equal(components, want) {
+		t.Fatalf("validated shipped component directories %v, want %v", components, want)
 	}
 }
 

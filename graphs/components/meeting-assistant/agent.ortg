@@ -1,0 +1,148 @@
+// Provider-neutral graph-native Meeting Assistant shell. The foreground is an
+// exact external-model deployment selected by a server profile, not a runtime
+// cascade/omni switch. Screen frames are explicitly forked to direct model
+// vision and adaptive persistent observation. Background reasoning can return
+// only through the bounded context-injection seam.
+graph meeting_assistant {
+    meeting.ScreenFork :: screen_fork;
+    model.External :: foreground;
+    video.FrameIngress :: screen_ingress;
+    video.AdaptiveObservation :: screen_policy;
+    perception.VisualObserver :: screen_observer;
+    flow.Tee :: transcript_copy;
+    flow.Tee :: visual_observation_copy;
+    flow.Mux :: observation_mux;
+    state.ObservationCommit :: observation_commit;
+    state.TrajectoryStore :: trajectory;
+    flow.Mux :: trajectory_append_mux;
+    flow.Tee :: trajectory_committed_copy;
+    flow.Tee :: trajectory_rejected_copy;
+    flow.Tee :: trajectory_snapshot_copy;
+    flow.Tee :: observation_outcome_copy;
+    policy.GenerateOnObservation :: background_activation;
+    cognition.TextModel :: background_model;
+    interaction.ModelResultCommit :: background_result_commit;
+    interaction.ModelResultCommit :: foreground_result_commit;
+    meeting.BackgroundInjection :: background_injection;
+    flow.Tee :: foreground_result_copy;
+    flow.Tee :: background_result_copy;
+    flow.Tee :: background_outcome_copy;
+    flow.Drop :: background_authority_drop;
+    flow.Drop :: foreground_commit_audit;
+    flow.Drop :: background_tool_audit;
+    flow.Drop :: background_model_outcome_audit;
+    flow.Drop :: background_model_resolution_audit;
+    flow.Drop :: background_activation_state_audit;
+    flow.Drop :: background_activation_outcome_audit;
+    flow.Drop :: background_commit_audit;
+    flow.Drop :: foreground_interaction_audit;
+    flow.Drop :: foreground_state_audit;
+    flow.Drop :: screen_reference_audit;
+    flow.Drop :: screen_policy_state_audit;
+    flow.Drop :: screen_decision_audit;
+    flow.Drop :: screen_policy_outcome_audit;
+    flow.Drop :: screen_visual_outcome_audit;
+    flow.Drop :: screen_visual_resolution_audit;
+    flow.Drop :: screen_visual_metrics_audit;
+    flow.Mux :: text_injection_mux;
+    flow.Mux :: foreground_trigger_mux;
+    flow.Tee :: tool_proposal_copy;
+    flow.Tee :: foreground_outcome_copy;
+    // One Realtime video operation reaches both explicit consumers. The two
+    // lossy data edges make backpressure policy visible in graph evidence.
+    screen_fork.foreground => foreground.video;
+    screen_fork.source -> screen_policy.source;
+    screen_fork.frame => screen_ingress.frame_in;
+    screen_fork.tick -> screen_policy.tick;
+    screen_fork.end -> screen_policy.end;
+    screen_ingress.frames => screen_policy.frames;
+    screen_ingress.references => screen_policy.references;
+    screen_policy.observe -> screen_observer.observe;
+    screen_policy.observer_refresh -> screen_observer.refresh;
+    screen_policy.observer_close -> screen_observer.close;
+    screen_policy.observer_cancel -> screen_observer.cancel;
+    // Speech and visual revisions share one canonical trajectory. Each source
+    // remains separately observable at the adapter boundary before the mux.
+    foreground.transcript -> transcript_copy.in;
+    transcript_copy.out -> observation_mux.in;
+    screen_observer.observations -> visual_observation_copy.in;
+    visual_observation_copy.out -> observation_mux.in;
+    observation_mux.out -> observation_commit.observations;
+    observation_commit.append -> trajectory_append_mux.in;
+    foreground_result_commit.append -> trajectory_append_mux.in;
+    background_result_commit.append -> trajectory_append_mux.in;
+    trajectory_append_mux.out -> trajectory.append;
+    trajectory.committed -> trajectory_committed_copy.in;
+    trajectory_committed_copy.out -> observation_commit.committed;
+    trajectory_committed_copy.out -> foreground_result_commit.committed;
+    trajectory_committed_copy.out -> background_result_commit.committed;
+    trajectory.rejected -> trajectory_rejected_copy.in;
+    trajectory_rejected_copy.out -> observation_commit.rejected;
+    trajectory_rejected_copy.out -> foreground_result_commit.rejected;
+    trajectory_rejected_copy.out -> background_result_commit.rejected;
+    trajectory.snapshot -> trajectory_snapshot_copy.in;
+    trajectory_snapshot_copy.out -> foreground.context;
+    trajectory_snapshot_copy.out -> background_model.context;
+    // Every committed correction or screen observation can start independent
+    // slow work. Its prepared stream cannot bypass the bounded injection
+    // element, and injection causally precedes the foreground response trigger.
+    observation_commit.outcome -> observation_outcome_copy.in;
+    observation_outcome_copy.out -> background_activation.committed;
+    background_activation.trigger -> background_model.trigger;
+    background_activation.authority -> background_authority_drop.in;
+    background_model.text -> background_injection.text;
+    background_injection.injection -> text_injection_mux.in;
+    background_injection.trigger -> foreground_trigger_mux.in;
+    background_injection.outcome -> background_outcome_copy.in;
+    text_injection_mux.out -> foreground.text;
+    foreground_trigger_mux.out -> foreground.trigger;
+    foreground.result -> foreground_result_copy.in;
+    foreground_result_copy.out -> foreground_result_commit.result;
+    background_model.result -> background_result_copy.in;
+    background_result_copy.out -> background_result_commit.result;
+    foreground.tool_proposal -> tool_proposal_copy.in;
+    foreground.outcome -> foreground_outcome_copy.in;
+    // Payload-free inspection already records every internal edge. Outputs
+    // that are not part of the Realtime adapter contract terminate in named
+    // drains so an absent debug consumer can never backpressure live work.
+    foreground_result_commit.outcome -> foreground_commit_audit.in;
+    background_model.tools -> background_tool_audit.in;
+    background_model.outcome -> background_model_outcome_audit.in;
+    background_model.resolved -> background_model_resolution_audit.in;
+    background_activation.state -> background_activation_state_audit.in;
+    background_activation.outcome -> background_activation_outcome_audit.in;
+    background_result_commit.outcome -> background_commit_audit.in;
+    foreground.interaction_act -> foreground_interaction_audit.in;
+    foreground.state -> foreground_state_audit.in;
+    screen_policy.observe_reference -> screen_reference_audit.in;
+    screen_policy.state -> screen_policy_state_audit.in;
+    screen_policy.decision -> screen_decision_audit.in;
+    screen_policy.outcome -> screen_policy_outcome_audit.in;
+    screen_observer.outcome -> screen_visual_outcome_audit.in;
+    screen_observer.resolved -> screen_visual_resolution_audit.in;
+    screen_observer.metrics -> screen_visual_metrics_audit.in;
+    input audio = foreground.audio;
+    input video = screen_fork.video;
+    input text = text_injection_mux.in;
+    input tools = foreground.tools;
+    input tool_result = foreground.tool_result;
+    input commit_audio = foreground.commit;
+    input create_response = foreground_trigger_mux.in;
+    input cancel = foreground.cancel;
+    input truncate = foreground.truncate;
+    input background_activation_cancel = background_activation.cancel;
+    input background_model_cancel = background_model.cancel;
+    // Rare video controls stay explicit without becoming hidden adapter
+    // policy. The Meeting Realtime adapter owns only the primary video input.
+    input screen_reference = screen_ingress.reference_in;
+    input screen_refresh = screen_policy.refresh;
+    input screen_cancel = screen_policy.cancel;
+    output transcript = transcript_copy.out;
+    output observations = visual_observation_copy.out;
+    output activity = foreground.activity;
+    output prepared_text = foreground.text_out;
+    output prepared_audio = foreground.audio_out;
+    output tool_proposals = tool_proposal_copy.out;
+    output foreground_outcome = foreground_outcome_copy.out;
+    output background_outcome = background_outcome_copy.out;
+}

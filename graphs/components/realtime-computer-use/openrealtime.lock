@@ -1,0 +1,133 @@
+{
+  "format_version": 1,
+  "elements": [
+    {
+      "reference": "action.AuthorizedCallCommit",
+      "identity": {
+        "name": "action.AuthorizedCallCommit",
+        "revision": 2,
+        "digest": "sha256:97fe7318f637896959d0561081d1d9a50d9c0b26c0c0fb5c22825117a57a060c"
+      }
+    },
+    {
+      "reference": "action.Dispatch",
+      "identity": {
+        "name": "action.Dispatch",
+        "revision": 2,
+        "digest": "sha256:a01a4c56c22b690a9c6a97cba6e3a891e5569445c92029c1359d26acd31ca1c8"
+      }
+    },
+    {
+      "reference": "action.LedgerCommit",
+      "identity": {
+        "name": "action.LedgerCommit",
+        "revision": 2,
+        "digest": "sha256:d0936589c792953801bface1a615434486d6523bb2d05ae967e04f7d453f0f96"
+      }
+    },
+    {
+      "reference": "action.ToolLookup",
+      "identity": {
+        "name": "action.ToolLookup",
+        "revision": 2,
+        "digest": "sha256:944908a3b1db1151ad6d3d85f575b7b1b7402f7d91c1c6fed05349c1da1d59ab"
+      }
+    },
+    {
+      "reference": "action.ToolResultCommit",
+      "identity": {
+        "name": "action.ToolResultCommit",
+        "revision": 2,
+        "digest": "sha256:e94ae97efa3578c018012d07bb77bdb6bae788805ae738b895e3690598a7f3eb"
+      }
+    },
+    {
+      "reference": "authority.Confirmation",
+      "identity": {
+        "name": "authority.Confirmation",
+        "revision": 2,
+        "digest": "sha256:403b62b3c3a44fb93a4d77cc4cd2c0e6ab18a3595a1cbb189def1d479e9eb184"
+      }
+    },
+    {
+      "reference": "authority.ProposalAdmission",
+      "identity": {
+        "name": "authority.ProposalAdmission",
+        "revision": 2,
+        "digest": "sha256:640c40a2310ab22e7f5bbb5982e226aeb76b65897250be65f161c0412048d6c7"
+      }
+    },
+    {
+      "reference": "authority.ProvenanceJoin",
+      "identity": {
+        "name": "authority.ProvenanceJoin",
+        "revision": 1,
+        "digest": "sha256:4c6eb489dbeac31b3fbfc93ebd3e44cf4c3f992878b6cbf09acbe0686a672cac"
+      }
+    },
+    {
+      "reference": "authority.TargetFence",
+      "identity": {
+        "name": "authority.TargetFence",
+        "revision": 2,
+        "digest": "sha256:d146c02a24175e70b861ef4f3ae5e0134e603e5e65e021a859b23995e61bba2d"
+      }
+    },
+    {
+      "reference": "cognition.TextModel",
+      "identity": {
+        "name": "cognition.TextModel",
+        "revision": 2,
+        "digest": "sha256:2d2e3e9848fd63da995721c81c5eec6a8fcb969fe69585ad4e96630f31b37f31"
+      }
+    },
+    {
+      "reference": "flow.Mux",
+      "identity": {
+        "name": "flow.Mux",
+        "revision": 1,
+        "digest": "sha256:91976286e56562ebb11b6598d20c70394dae476d324ac209f3e775ec4b89b6fc"
+      }
+    },
+    {
+      "reference": "flow.Tee",
+      "identity": {
+        "name": "flow.Tee",
+        "revision": 1,
+        "digest": "sha256:54c309b4fa80950ca8815b63de7bb84947c9aa890fc3f638cd6a5afc574e40d6"
+      }
+    },
+    {
+      "reference": "interaction.ModelResultCommit",
+      "identity": {
+        "name": "interaction.ModelResultCommit",
+        "revision": 1,
+        "digest": "sha256:96459cc6718ecc2e23cba18861c79e9ade44157e788dbe8fd010cf9ef67c5010"
+      }
+    },
+    {
+      "reference": "policy.RealtimeComputerUseActivation",
+      "identity": {
+        "name": "policy.RealtimeComputerUseActivation",
+        "revision": 1,
+        "digest": "sha256:40478a099ac75c1adcdcb39f09adcf47f8ffb58929e42abd7c78e2d5641779fa"
+      }
+    },
+    {
+      "reference": "state.RealtimeComputerUseObservationCommit",
+      "identity": {
+        "name": "state.RealtimeComputerUseObservationCommit",
+        "revision": 1,
+        "digest": "sha256:3f6a2ed8c53bf3e8ef8e4e645b25691332f3b6c6f93283a839b4bb03088cbd28"
+      }
+    },
+    {
+      "reference": "state.TrajectoryStore",
+      "identity": {
+        "name": "state.TrajectoryStore",
+        "revision": 2,
+        "digest": "sha256:b3d813911f931b5e61b6a2edb782ad25a3d4ffe6e256b8a713a1e61c1b2dead7"
+      }
+    }
+  ]
+}
