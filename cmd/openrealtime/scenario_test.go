@@ -435,7 +435,7 @@ func scenarioInspectionAccess(sessionID string, fill byte) openrealtime.Inspecti
 	return openrealtime.InspectionAccess{
 		SessionID: sessionID,
 		Path:      "/v1/realtime/sessions/" + sessionID + "/live",
-		Token: "ins_" + base64.RawURLEncoding.EncodeToString(
+		Token: "mgmt_" + base64.RawURLEncoding.EncodeToString(
 			bytes.Repeat([]byte{fill}, 32),
 		),
 		ExpiresAtMS: time.Now().Add(time.Minute).UnixMilli(),

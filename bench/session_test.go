@@ -701,7 +701,7 @@ func TestSessionAttestorPropagatesIndependentGraphEvidence(t *testing.T) {
 	var debugNegotiated atomic.Bool
 	inspection := openrealtime.InspectionAccess{
 		SessionID: "sess_driver", Path: "/v1/realtime/sessions/sess_driver/live",
-		Token:       "ins_" + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32)),
+		Token:       "mgmt_" + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32)),
 		ExpiresAtMS: time.Now().Add(time.Minute).UnixMilli(),
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

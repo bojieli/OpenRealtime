@@ -166,11 +166,11 @@ func validateInspectionAccess(access openrealtime.InspectionAccess, now time.Tim
 	if access.Path != expectedPath {
 		return errors.New("inspection access path is not bound to its session ID")
 	}
-	if !strings.HasPrefix(access.Token, "ins_") || len(access.Token) > 512 ||
+	if !strings.HasPrefix(access.Token, "mgmt_") || len(access.Token) > 512 ||
 		strings.ContainsAny(access.Token, "\x00\r\n") {
 		return errors.New("inspection access has an invalid capability")
 	}
-	encoded := strings.TrimPrefix(access.Token, "ins_")
+	encoded := strings.TrimPrefix(access.Token, "mgmt_")
 	raw, err := base64.RawURLEncoding.DecodeString(encoded)
 	if err != nil || len(raw) != 32 || base64.RawURLEncoding.EncodeToString(raw) != encoded {
 		return errors.New("inspection access has an invalid capability")

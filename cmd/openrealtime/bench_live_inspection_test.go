@@ -307,7 +307,7 @@ func benchmarkInspectionAccess(sessionID string) openrealtime.InspectionAccess {
 	return openrealtime.InspectionAccess{
 		SessionID: sessionID,
 		Path:      "/v1/realtime/sessions/" + sessionID + "/live",
-		Token: "ins_" + base64.RawURLEncoding.EncodeToString(
+		Token: "mgmt_" + base64.RawURLEncoding.EncodeToString(
 			bytes.Repeat([]byte{0x61}, 32),
 		),
 		ExpiresAtMS: time.Now().Add(time.Minute).UnixMilli(),

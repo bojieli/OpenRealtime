@@ -117,6 +117,40 @@ func TestLiveInspectionClientRefusesRedirectExpiryAndInsecureRemoteOrigin(t *tes
 	}
 }
 
+func TestLiveInspectionClientRejectsNonManagementCapabilitiesBeforeNetwork(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests.Add(1)
+	}))
+	t.Cleanup(server.Close)
+	client := bench.LiveInspectionClient{Endpoint: "ws" + strings.TrimPrefix(server.URL, "http")}
+	valid := testInspectionAccess("sess_capability")
+	tests := []struct {
+		name  string
+		token string
+	}{
+		{name: "obsolete inspection prefix", token: "ins_" + strings.TrimPrefix(valid.Token, "mgmt_")},
+		{name: "missing prefix", token: strings.TrimPrefix(valid.Token, "mgmt_")},
+		{name: "short random value", token: "mgmt_" + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{1}, 31))},
+		{name: "long random value", token: "mgmt_" + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{1}, 33))},
+		{name: "padded base64", token: valid.Token + "="},
+		{name: "header injection", token: valid.Token + "\r\nX-Forged: true"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			access := valid
+			access.Token = test.token
+			if _, err := client.Snapshot(context.Background(), access); err == nil ||
+				!strings.Contains(err.Error(), "invalid capability") {
+				t.Fatalf("invalid inspection capability error = %v", err)
+			}
+		})
+	}
+	if requests.Load() != 0 {
+		t.Fatalf("invalid inspection capabilities reached the network %d times", requests.Load())
+	}
+}
+
 func TestLiveInspectionClientRequiresStrictBoundedJSONAndExactNoStoreDirective(t *testing.T) {
 	access := testInspectionAccess("sess_response")
 	tests := []struct {
@@ -166,7 +200,7 @@ func testInspectionAccess(sessionID string) openrealtime.InspectionAccess {
 	return openrealtime.InspectionAccess{
 		SessionID: sessionID,
 		Path:      "/v1/realtime/sessions/" + sessionID + "/live",
-		Token: "ins_" + base64.RawURLEncoding.EncodeToString(
+		Token: "mgmt_" + base64.RawURLEncoding.EncodeToString(
 			bytes.Repeat([]byte{0x51}, 32),
 		),
 		ExpiresAtMS: time.Now().Add(time.Minute).UnixMilli(),
