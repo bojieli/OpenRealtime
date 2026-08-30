@@ -74,6 +74,60 @@ postcondition requiring `reportable=true accepted=true artifact=pass
 allocations=pass` and a non-empty candidate artifact. Timing and B/op remain
 descriptive; the release wrapper does not turn them into unreviewed thresholds.
 
+## Preregistered migration protocol
+
+The eight parity suites do not pass release validation merely by writing their
+ordinary result JSON. The FDB v1.5, FDB v3, FD-Bench, Meeting Assistant
+cascade, Realtime-CU, 11-scenario, tau control, and tau regular gates also
+preflight and retain an immutable launch intent and launch outcome in one
+preregistered migration store. A selected subset, a changed repetition, an
+unknown case, or an outcome without its intent is refused before it can become
+comparison evidence.
+
+Create a fresh census and registration before either arm starts, then provide:
+
+- `OPENREALTIME_MIGRATION_STORE`, an existing absolute create-only evidence
+  directory;
+- `OPENREALTIME_MIGRATION_REGISTRATION` and
+  `OPENREALTIME_MIGRATION_REGISTRATION_SHA256`, the logical registration
+  location and exact digest printed by `bench migration register`.
+
+The matrix has eight `external.benchmark.baseline.*` gates followed by their
+eight graph-native candidate gates. The arm values are checked literals, not
+operator-selected variables: a candidate endpoint cannot accidentally be
+retained as a baseline by changing an environment value. Baseline gates use
+`OPENREALTIME_MIGRATION_BASELINE_ENDPOINT`, the reviewed legacy requirement at
+`OPENREALTIME_MIGRATION_BASELINE_EXECUTION`, and the dedicated Meeting or
+scenario variables where applicable. Candidate gates use the ordinary
+`OPENREALTIME_BENCH_*`, Meeting, and scenario graph-native inputs. Run the
+baseline gates before changing the implementation; a complete all-scope job
+also preserves that order.
+
+The scenario commands each own their 15 `trial-N` repetitions and each tau
+command owns its declared trials. The five one-shot suites bind their complete
+result to `trial-1`. Meeting cascade is the canonical paired Meeting Assistant
+cell. Meeting omni remains a separate, required WebRTC/native-audio composition
+gate; recording it as a second result under the single registered meeting-suite
+identity would be ambiguous and is therefore forbidden.
+
+After both arms are retained, set
+`OPENREALTIME_MIGRATION_REPORT_LOCATION` to a new logical location inside the
+store and run:
+
+```sh
+./scripts/release-validate.sh \
+  -gate external.migration.full-comparison \
+  -artifacts .runtime/release-validation/migration-comparison-001 \
+  -report .runtime/release-validation/migration-comparison-001/report.json
+```
+
+The comparison discovers every registered launch intent and outcome directly
+from the store; command-line omission cannot hide an attempted case. Missing
+arms, orphaned intents, unreportable source results, pairing violations, and
+metric regressions all make the command fail. The retained comparison is also
+exported create-only as `migration-comparison.json` in the release artifact
+directory, and the gate requires both `reportable=true` and `accepted=true`.
+
 ## Provisioned gates
 
 Use the all-scope plan as the authoritative prerequisite list. The principal
@@ -90,6 +144,15 @@ variables are:
 - `OPENREALTIME_TAU_USER_MODEL_ENDPOINT` and
   `OPENREALTIME_TAU_SYNTHESIS_ENDPOINT` for both complete 278-task tau2 speech
   conditions;
+- `OPENREALTIME_MIGRATION_STORE`, `OPENREALTIME_MIGRATION_REGISTRATION`, and
+  `OPENREALTIME_MIGRATION_REGISTRATION_SHA256` for both retained arms;
+- `OPENREALTIME_MIGRATION_BASELINE_ENDPOINT`,
+  `OPENREALTIME_MIGRATION_BASELINE_EXECUTION`, and
+  `OPENREALTIME_MIGRATION_BASELINE_MEETING_ENDPOINT` for the legacy baselines,
+  plus `OPENREALTIME_MIGRATION_BASELINE_SCENARIO_ARCHITECTURE_MANIFEST` and
+  `OPENREALTIME_MIGRATION_BASELINE_SCENARIO_ARCHITECTURE_CELL` for the scenario
+  baseline;
+- `OPENREALTIME_MIGRATION_REPORT_LOCATION` for the final comparison;
 - `OPENREALTIME_LIVE_ENDPOINT` for the real-model browser composition test;
 - `OPENREALTIME_SIGNED_APP` and `OPENREALTIME_MACOS_E2E_RUNNER` on Darwin for
   the authority-signed native application gate.

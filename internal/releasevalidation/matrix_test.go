@@ -249,25 +249,40 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 			t.Errorf("provisioned gate %s has no explicit prerequisites", gate.ID)
 		}
 	}
-	for _, id := range []string{
-		"external.benchmark.dataset.fdb15",
-		"external.benchmark.dataset.fdb3",
-		"external.benchmark.dataset.fdbench",
-		"external.benchmark.dynacu",
+	baselineIDs := []string{
+		"external.benchmark.baseline.fdb15",
+		"external.benchmark.baseline.fdb3",
+		"external.benchmark.baseline.fdbench",
+		"external.benchmark.baseline.meeting",
+		"external.benchmark.baseline.realtime-cu",
+		"external.benchmark.baseline.scenario",
+		"external.benchmark.baseline.tau.control",
+		"external.benchmark.baseline.tau.regular",
+	}
+	candidateIDs := []string{
+		"external.benchmark.candidate.fdb15",
+		"external.benchmark.candidate.fdb3",
+		"external.benchmark.candidate.fdbench",
 		"external.benchmark.meeting.cascade",
-		"external.benchmark.meeting.omni",
 		"external.benchmark.realtime-cu",
 		"external.benchmark.scenario",
 		"external.benchmark.tau.control",
 		"external.benchmark.tau.regular",
+	}
+	specialIDs := append(append([]string{}, baselineIDs...), candidateIDs...)
+	specialIDs = append(specialIDs,
+		"external.benchmark.dynacu",
+		"external.benchmark.meeting.omni",
 		"external.macos.signed-e2e",
+		"external.migration.full-comparison",
 		"external.model.live-surface",
 		"external.tau.upstream",
 		"local.client.swift-linux",
 		"local.presentation.chromium",
 		"local.sdk.official",
 		"performance.compare-fdbench6147",
-	} {
+	)
+	for _, id := range specialIDs {
 		gate, exists := byID[id]
 		if !exists || !gate.Required {
 			t.Errorf("required special gate is missing: %s", id)
@@ -284,10 +299,85 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 			t.Errorf("performance acceptance omits %s", exact)
 		}
 	}
-	fdbench := byID["external.benchmark.dataset.fdbench"]
-	conditions := argumentAfter(fdbench.Command, "-conditions")
-	if got := len(strings.Split(conditions, ",")); got != 21 {
-		t.Fatalf("FD-Bench condition count = %d, want 21", got)
+	for _, id := range []string{
+		"external.benchmark.baseline.fdbench",
+		"external.benchmark.candidate.fdbench",
+	} {
+		conditions := argumentAfter(byID[id].Command, "-conditions")
+		if got := len(strings.Split(conditions, ",")); got != 21 {
+			t.Fatalf("FD-Bench condition count for %s = %d, want 21", id, got)
+		}
+	}
+
+	pairs := [][2]string{
+		{baselineIDs[0], candidateIDs[0]},
+		{baselineIDs[1], candidateIDs[1]},
+		{baselineIDs[2], candidateIDs[2]},
+		{baselineIDs[3], candidateIDs[3]},
+		{baselineIDs[4], candidateIDs[4]},
+		{baselineIDs[5], candidateIDs[5]},
+		{baselineIDs[6], candidateIDs[6]},
+		{baselineIDs[7], candidateIDs[7]},
+	}
+	gateOrder := make(map[string]int, len(matrix.Gates))
+	for index, gate := range matrix.Gates {
+		gateOrder[gate.ID] = index
+	}
+	for _, pair := range pairs {
+		if gateOrder[pair[0]] >= gateOrder[pair[1]] {
+			t.Errorf("baseline gate %s is not ordered before candidate %s", pair[0], pair[1])
+		}
+		for _, id := range pair {
+			gate := byID[id]
+			for flag, want := range map[string]string{
+				"-migration-store":               "{env:OPENREALTIME_MIGRATION_STORE}",
+				"-migration-registration":        "{env:OPENREALTIME_MIGRATION_REGISTRATION}",
+				"-migration-registration-sha256": "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}",
+			} {
+				if got := argumentAfter(gate.Command, flag); got != want {
+					t.Errorf("paired gate %s has %s=%q, want %q", id, flag, got, want)
+				}
+			}
+		}
+		if got := argumentAfter(byID[pair[0]].Command, "-migration-arm"); got != "baseline" {
+			t.Errorf("baseline gate %s has arm %q", pair[0], got)
+		}
+		if got := argumentAfter(byID[pair[1]].Command, "-migration-arm"); got != "candidate" {
+			t.Errorf("candidate gate %s has arm %q", pair[1], got)
+		}
+		if slices.Contains(byID[pair[0]].Command, "-inspection-graph") {
+			t.Errorf("legacy baseline gate %s must not claim graph inspection", pair[0])
+		}
+		if !slices.Contains(byID[pair[1]].Command, "-inspection-graph") {
+			t.Errorf("graph-native candidate gate %s has no authenticated inspection input", pair[1])
+		}
+	}
+	for _, pair := range pairs[:5] {
+		for _, id := range pair {
+			if got := argumentAfter(byID[id].Command, "-migration-repetition"); got != "trial-1" {
+				t.Errorf("one-shot paired gate %s has repetition %q, want trial-1", id, got)
+			}
+		}
+	}
+	for _, pair := range pairs[5:] {
+		for _, id := range pair {
+			if got := argumentAfter(byID[id].Command, "-migration-repetition"); got != "" {
+				t.Errorf("suite-managed paired gate %s overrides repetition with %q", id, got)
+			}
+		}
+	}
+	if slices.Contains(byID["external.benchmark.meeting.omni"].Command, "-migration-store") {
+		t.Error("the independent omni gate must not duplicate the canonical meeting migration outcome")
+	}
+
+	migrationComparison := byID["external.migration.full-comparison"]
+	if migrationComparison.Selection != SelectionOptIn ||
+		argumentAfter(migrationComparison.Command, "-out") != "{artifacts}/migration-comparison.json" ||
+		!slices.Contains(migrationComparison.Command, "compare") {
+		t.Fatalf("full migration comparison gate was weakened: %+v", migrationComparison)
+	}
+	if got := migrationComparison.Assertions[1].Value; !strings.Contains(got, "reportable=true accepted=true") {
+		t.Fatalf("full migration comparison does not require acceptance: %q", got)
 	}
 }
 
