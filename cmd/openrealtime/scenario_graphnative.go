@@ -550,7 +550,7 @@ func (bundle *scenarioGraphReviewBundle) Verify(
 	if err := validateScenarioGraphStereoWAV(audioPayload); err != nil {
 		return graphnative.VerifiedMedia{}, err
 	}
-	receipts := make([]graphnative.SubmittedInputReceipt, 0, len(manifest.Submitted))
+	var receipts []graphnative.SubmittedInputReceipt
 	for _, input := range manifest.Submitted {
 		if input.Media.SHA256 != input.Receipt.SHA256 ||
 			input.Media.SizeBytes != input.Receipt.SizeBytes ||
@@ -884,6 +884,9 @@ func (bundle *scenarioGraphReviewBundle) verifyArtifact(
 func scenarioGraphSubmittedReceipts(
 	source []scenarioGraphSubmittedArtifact,
 ) []graphnative.SubmittedInputReceipt {
+	if len(source) == 0 {
+		return nil
+	}
 	result := make([]graphnative.SubmittedInputReceipt, len(source))
 	for index := range source {
 		result[index] = source[index].Receipt

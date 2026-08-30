@@ -43,6 +43,11 @@ func (record Record) Validate() error {
 	if record.Trial <= 0 {
 		return errors.New("review record trial must be positive")
 	}
+	if err := validateAssessmentTimestampMaximum(
+		record.Assessment, record.FindingTimestampMaximumMS,
+	); err != nil {
+		return fmt.Errorf("review record assessment: %w", err)
+	}
 	if err := record.Provider.Validate(); err != nil {
 		return fmt.Errorf("review record provider: %w", err)
 	}
@@ -298,12 +303,16 @@ func VerifyArtifactsContext(
 		return errors.New("review context is not canonical JSON")
 	}
 	promptContext, err := marshalCanonicalCompact(struct {
-		Suite   string          `json:"suite"`
-		Case    string          `json:"case"`
-		Trial   int             `json:"trial"`
-		Context json.RawMessage `json:"deterministic_context"`
-		Media   []Media         `json:"media"`
-	}{record.Suite, record.Case, record.Trial, contextJSON, record.Media}, maximumPromptBytes)
+		Suite                     string          `json:"suite"`
+		Case                      string          `json:"case"`
+		Trial                     int             `json:"trial"`
+		FindingTimestampMaximumMS int64           `json:"finding_timestamp_maximum_ms"`
+		Context                   json.RawMessage `json:"deterministic_context"`
+		Media                     []Media         `json:"media"`
+	}{
+		record.Suite, record.Case, record.Trial, record.FindingTimestampMaximumMS,
+		contextJSON, record.Media,
+	}, maximumPromptBytes)
 	if err != nil || !bytes.Equal(prompt, []byte(caseReviewPrompt(string(promptContext)))) {
 		return errors.New("review prompt bytes differ from the declared prompt version and context")
 	}
@@ -311,19 +320,20 @@ func VerifyArtifactsContext(
 		return err
 	}
 	fingerprintSource, err := marshalCanonicalCompact(struct {
-		AttemptID           string  `json:"attempt_id"`
-		PromptVersion       string  `json:"prompt_version"`
-		PromptSHA256        string  `json:"prompt_sha256"`
-		SchemaVersion       string  `json:"schema_version"`
-		SchemaSHA256        string  `json:"schema_sha256"`
-		ContextSHA256       string  `json:"context_sha256"`
-		Media               []Media `json:"media"`
-		Sanitization        string  `json:"sanitization"`
-		SensitiveValueCount int     `json:"sensitive_value_count"`
+		AttemptID                 string  `json:"attempt_id"`
+		PromptVersion             string  `json:"prompt_version"`
+		PromptSHA256              string  `json:"prompt_sha256"`
+		SchemaVersion             string  `json:"schema_version"`
+		SchemaSHA256              string  `json:"schema_sha256"`
+		ContextSHA256             string  `json:"context_sha256"`
+		Media                     []Media `json:"media"`
+		FindingTimestampMaximumMS int64   `json:"finding_timestamp_maximum_ms"`
+		Sanitization              string  `json:"sanitization"`
+		SensitiveValueCount       int     `json:"sensitive_value_count"`
 	}{
 		record.AttemptID, record.Prompt.Version, record.Prompt.SHA256,
 		record.Schema.Version, record.Schema.SHA256, record.ContextSHA256, record.Media,
-		record.Sanitization, record.SensitiveValueCount,
+		record.FindingTimestampMaximumMS, record.Sanitization, record.SensitiveValueCount,
 	}, maximumPreparedPublicBytes)
 	if err != nil {
 		return errors.New("review request fingerprint cannot be reconstructed")

@@ -39,6 +39,9 @@ func TestPreparedRequestValidateRejectsEveryBoundInputMutation(t *testing.T) {
 		{"suite", func(value *PreparedRequest) { value.Suite += "-other" }},
 		{"case", func(value *PreparedRequest) { value.Case += "-other" }},
 		{"trial", func(value *PreparedRequest) { value.Trial++ }},
+		{"finding timestamp maximum", func(value *PreparedRequest) {
+			value.FindingTimestampMaximumMS--
+		}},
 		{"prompt version", func(value *PreparedRequest) { value.PromptVersion += "-other" }},
 		{"prompt", func(value *PreparedRequest) { value.Prompt += "\nforged" }},
 		{"schema version", func(value *PreparedRequest) { value.SchemaVersion += "-other" }},
@@ -1318,11 +1321,13 @@ func TestMediaIdentityRejectsInvalidUTF8AndControlPaths(t *testing.T) {
 }
 
 func TestReviewContractVersionsReflectIncompatibleFormatChanges(t *testing.T) {
-	if FormatVersion != 4 || CasePromptVersion != "openrealtime.case-media-review.prompt.v3" ||
+	if FormatVersion != 5 || CasePromptVersion != "openrealtime.case-media-review.prompt.v6" ||
+		CaseSchemaVersion != "openrealtime.case-media-review.schema.v2" ||
 		SanitizationVersion != "openrealtime.review-sanitization.v4" ||
 		MediaValidationVersion != "openrealtime.media-container-validation.v4" {
-		t.Fatalf("contract versions = format:%d prompt:%q sanitization:%q media:%q",
-			FormatVersion, CasePromptVersion, SanitizationVersion, MediaValidationVersion)
+		t.Fatalf("contract versions = format:%d prompt:%q schema:%q sanitization:%q media:%q",
+			FormatVersion, CasePromptVersion, CaseSchemaVersion,
+			SanitizationVersion, MediaValidationVersion)
 	}
 }
 

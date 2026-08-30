@@ -3,11 +3,14 @@ package graphnative
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"slices"
+	"strings"
 
 	"github.com/bojieli/OpenRealtime/bench"
 	archbench "github.com/bojieli/OpenRealtime/bench/architecture"
@@ -18,7 +21,7 @@ import (
 
 const (
 	SourceReviewContextFormat        = "openrealtime.scenario-source-review-context"
-	SourceReviewContextFormatVersion = 1
+	SourceReviewContextFormatVersion = 3
 	maximumSourceReviewContext       = 4 << 20
 )
 
@@ -48,6 +51,7 @@ type SourceReviewContext struct {
 	SourceManifestSHA256   string                   `json:"source_manifest_sha256"`
 	SourceFileSetSHA256    string                   `json:"source_file_set_sha256"`
 	ChecklistFingerprint   string                   `json:"checklist_fingerprint"`
+	MediaDurationMS        int64                    `json:"media_duration_ms"`
 	Attempt                AttemptRecord            `json:"attempt"`
 	Result                 scenario.Result          `json:"deterministic_result"`
 	Architecture           SourceReviewArchitecture `json:"architecture"`
@@ -134,6 +138,16 @@ func BuildSourceReviewPopulation(
 			digest != attempt.Record.Execution.ResultSHA256 {
 			return SourceReviewPopulation{}, errors.New("scenario source review result differs from the checklist")
 		}
+		audioPayload, err := readSourceFile(ctx, root, attempt.Audio)
+		if err != nil {
+			return SourceReviewPopulation{}, err
+		}
+		mediaDurationMS, err := sourceReviewStereoWAVDurationMS(audioPayload)
+		if err != nil {
+			return SourceReviewPopulation{}, fmt.Errorf(
+				"scenario source review %s: %w", attempt.Record.Key.TaskID, err,
+			)
+		}
 		architecture := SourceReviewArchitecture{
 			ResultVersion:   bundle.ArchitectureResult.Version,
 			Experiment:      bundle.ArchitectureResult.Experiment,
@@ -147,7 +161,7 @@ func BuildSourceReviewPopulation(
 			copy := observation
 			architecture.Observation = &copy
 		}
-		contextPayload, err := marshalSourceIndented(SourceReviewContext{
+		contextPayload, err := marshalSourceReviewContext(SourceReviewContext{
 			Format:                 SourceReviewContextFormat,
 			FormatVersion:          SourceReviewContextFormatVersion,
 			DeterministicAuthority: "the retained graph-native checklist and deterministic scorer result are authoritative",
@@ -155,8 +169,9 @@ func BuildSourceReviewPopulation(
 			SourceManifestSHA256:   expected.ManifestSHA256,
 			SourceFileSetSHA256:    expected.FileSetSHA256,
 			ChecklistFingerprint:   bundle.Checklist.Fingerprint,
+			MediaDurationMS:        mediaDurationMS,
 			Attempt:                attempt.Record.Clone(), Result: deterministic, Architecture: architecture,
-		}, maximumSourceReviewContext)
+		})
 		if err != nil {
 			return SourceReviewPopulation{}, err
 		}
@@ -181,7 +196,8 @@ func BuildSourceReviewPopulation(
 		requests = append(requests, review.Request{
 			AttemptID: attempt.Record.Fingerprint,
 			Suite:     SuiteName, Case: attempt.Record.Key.CaseName, Trial: attempt.Record.Key.Trial,
-			RootDirectory: options.Directory, Context: contextPayload, Media: media,
+			FindingTimestampMaximumMS: mediaDurationMS,
+			RootDirectory:             options.Directory, Context: contextPayload, Media: media,
 			SensitiveValues: slices.Clone(options.SensitiveValues),
 		})
 	}
@@ -194,6 +210,103 @@ func BuildSourceReviewPopulation(
 		return SourceReviewPopulation{}, errors.New("scenario source bundle changed while building review requests")
 	}
 	return SourceReviewPopulation{Bundle: reopened, Requests: requests}, nil
+}
+
+// marshalSourceReviewContext makes the secondary model context's unit
+// contract structural rather than relying on a model to correctly interpret
+// fractional millisecond values. The receipt-verified source artifacts remain
+// untouched; only this derived context rounds numeric fields whose JSON name
+// ends in _ms to the nearest integer millisecond.
+func marshalSourceReviewContext(value SourceReviewContext) ([]byte, error) {
+	if err := normalizeSourceReviewMilliseconds(&value); err != nil {
+		return nil, err
+	}
+	return marshalSourceIndented(value, maximumSourceReviewContext)
+}
+
+func normalizeSourceReviewMilliseconds(value *SourceReviewContext) error {
+	if value == nil {
+		return errors.New("scenario source review context normalization needs a destination")
+	}
+	playback, err := roundSourceReviewFloatMilliseconds(value.Result.Transcript.PlaybackMS)
+	if err != nil {
+		return err
+	}
+	value.Result.Transcript.PlaybackMS = playback
+	value.Result.Transcript.Moments = slices.Clone(value.Result.Transcript.Moments)
+	for index := range value.Result.Transcript.Moments {
+		at, err := roundSourceReviewFloatMilliseconds(value.Result.Transcript.Moments[index].AtMS)
+		if err != nil {
+			return err
+		}
+		audio, err := roundSourceReviewFloatMilliseconds(value.Result.Transcript.Moments[index].AudioMS)
+		if err != nil {
+			return err
+		}
+		value.Result.Transcript.Moments[index].AtMS = at
+		value.Result.Transcript.Moments[index].AudioMS = audio
+	}
+	if metrics := value.Architecture.Task.Metrics; metrics != nil {
+		normalized := make(map[string]float64, len(metrics))
+		for name, metric := range metrics {
+			if strings.HasSuffix(name, "_ms") {
+				metric, err = roundSourceReviewFloatMilliseconds(metric)
+				if err != nil {
+					return err
+				}
+			}
+			normalized[name] = metric
+		}
+		value.Architecture.Task.Metrics = normalized
+	}
+	for name := range value.Architecture.Task.Notes {
+		if strings.HasSuffix(name, "_ms") {
+			return errors.New("scenario source review context has a nonnumeric millisecond field")
+		}
+	}
+	return nil
+}
+
+func roundSourceReviewFloatMilliseconds(value float64) (float64, error) {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value >= math.Exp2(63) {
+		return 0, errors.New("scenario source review context has an invalid millisecond value")
+	}
+	return math.Round(value), nil
+}
+
+// sourceReviewStereoWAVDurationMS validates the exact graph-native scenario
+// recording shape and returns its inclusive integer timestamp ceiling. A
+// fractional final millisecond rounds up so a finding at the last audio frame
+// remains representable without admitting timestamps from a later second.
+func sourceReviewStereoWAVDurationMS(payload []byte) (int64, error) {
+	const (
+		headerBytes = uint64(44)
+		sampleRate  = uint64(24_000)
+		blockAlign  = uint64(4)
+		byteRate    = uint64(96_000)
+	)
+	size := uint64(len(payload))
+	if size <= headerBytes ||
+		string(payload[:4]) != "RIFF" || string(payload[8:12]) != "WAVE" ||
+		string(payload[12:16]) != "fmt " || string(payload[36:40]) != "data" ||
+		binary.LittleEndian.Uint32(payload[16:20]) != 16 ||
+		binary.LittleEndian.Uint16(payload[20:22]) != 1 ||
+		binary.LittleEndian.Uint16(payload[22:24]) != 2 ||
+		uint64(binary.LittleEndian.Uint32(payload[24:28])) != sampleRate ||
+		uint64(binary.LittleEndian.Uint32(payload[28:32])) != byteRate ||
+		uint64(binary.LittleEndian.Uint16(payload[32:34])) != blockAlign ||
+		binary.LittleEndian.Uint16(payload[34:36]) != 16 ||
+		uint64(binary.LittleEndian.Uint32(payload[4:8])) != size-8 ||
+		uint64(binary.LittleEndian.Uint32(payload[40:44])) != size-headerBytes ||
+		(size-headerBytes)%blockAlign != 0 {
+		return 0, errors.New("scenario source review audio is not exact 24 kHz stereo PCM16 WAV")
+	}
+	frames := (size - headerBytes) / blockAlign
+	durationMS := (frames*1000 + sampleRate - 1) / sampleRate
+	if durationMS == 0 {
+		return 0, errors.New("scenario source review audio duration is invalid")
+	}
+	return int64(durationMS), nil
 }
 
 func decodeSourceScenarioResult(payload []byte) (scenario.Result, error) {

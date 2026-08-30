@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -240,6 +241,82 @@ func TestPluginSendsExactPinnedMultimodalInteractionAndProvenance(t *testing.T) 
 		evaluation.Record.ProviderRequestID != "interaction-request-1" ||
 		evaluation.Record.ProviderRequestIDState != review.ProviderRequestIDValue {
 		t.Fatalf("wire or evaluation output drift: record=%+v", evaluation.Record)
+	}
+}
+
+func TestGeminiWireSchemaUsesProviderNeutralTimestampMaximum(t *testing.T) {
+	request, _, _ := preparedMultimodalRequest(t)
+	for _, maximumMS := range []int64{1, 1000, maximumFindingTimestampMS} {
+		t.Run(fmt.Sprintf("maximum-%d", maximumMS), func(t *testing.T) {
+			request.FindingTimestampMaximumMS = maximumMS
+			prepared, err := review.Prepare(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wirePayload, err := marshalRequest(prepared)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var wire interactionRequest
+			if err := json.Unmarshal(wirePayload, &wire); err != nil {
+				t.Fatal(err)
+			}
+			var schema struct {
+				Properties struct {
+					Confidence struct {
+						Maximum int64 `json:"maximum"`
+					} `json:"confidence"`
+					Significant struct {
+						Items struct {
+							Properties map[string]struct {
+								Maximum int64 `json:"maximum"`
+							} `json:"properties"`
+						} `json:"items"`
+					} `json:"significant_problems"`
+					Minor struct {
+						Items struct {
+							Properties map[string]struct {
+								Maximum int64 `json:"maximum"`
+							} `json:"properties"`
+						} `json:"items"`
+					} `json:"minor_observations"`
+				} `json:"properties"`
+			}
+			if err := json.Unmarshal(wire.ResponseFormat.Schema, &schema); err != nil {
+				t.Fatal(err)
+			}
+			if schema.Properties.Confidence.Maximum != 1 ||
+				schema.Properties.Significant.Items.Properties["start_ms"].Maximum != maximumMS ||
+				schema.Properties.Significant.Items.Properties["end_ms"].Maximum != maximumMS ||
+				schema.Properties.Minor.Items.Properties["start_ms"].Maximum != maximumMS ||
+				schema.Properties.Minor.Items.Properties["end_ms"].Maximum != maximumMS ||
+				bytes.Count(prepared.Schema, []byte(`"maximum": 86400000`)) != 4 ||
+				prepared.FindingTimestampMaximumMS != maximumMS {
+				t.Fatalf("timestamp schema bound = %s; prepared=%d",
+					wire.ResponseFormat.Schema, prepared.FindingTimestampMaximumMS)
+			}
+		})
+	}
+}
+
+func TestGeminiTimestampSchemaSpecializationFailsClosed(t *testing.T) {
+	_, prepared, _ := preparedMultimodalRequest(t)
+	for _, mutate := range []func(*review.PreparedRequest){
+		func(candidate *review.PreparedRequest) { candidate.FindingTimestampMaximumMS = -1 },
+		func(candidate *review.PreparedRequest) {
+			candidate.FindingTimestampMaximumMS = maximumFindingTimestampMS + 1
+		},
+		func(candidate *review.PreparedRequest) {
+			candidate.Schema = bytes.Replace(
+				candidate.Schema, []byte(`"maximum": 86400000`), []byte(`"maximum": 7`), 1,
+			)
+		},
+	} {
+		candidate := prepared
+		mutate(&candidate)
+		if _, err := boundedFindingTimestampSchema(candidate); err == nil {
+			t.Fatal("invalid timestamp specialization input was accepted")
+		}
 	}
 }
 
@@ -552,6 +629,29 @@ func TestPluginRejectsInvalidPreparedMediaOversizeAndCancellation(t *testing.T) 
 	}
 	if calls.Load() != 0 {
 		t.Fatalf("invalid requests crossed transport boundary %d times", calls.Load())
+	}
+}
+
+func TestInlineBudgetAdmitsFullFidelityLongScenarioRecording(t *testing.T) {
+	const (
+		sampleRateHz = 24_000
+		channels     = 2
+		bytesPerPCM  = 2
+		durationSec  = 150
+		wavHeader    = 44
+		// The graph-native scenario request measured at less than 500 kB of
+		// non-media envelope. Keep the arithmetic explicit so a future limit
+		// reduction cannot silently make its longest fixture unreviewable.
+		envelopeReserve = 500_000
+	)
+	wavBytes := wavHeader + durationSec*sampleRateHz*channels*bytesPerPCM
+	if wavBytes > maximumInlineMediaBytes {
+		t.Fatalf("150-second lossless review WAV is %d bytes; media cap is %d",
+			wavBytes, maximumInlineMediaBytes)
+	}
+	if base64.StdEncoding.EncodedLen(wavBytes)+envelopeReserve > maximumInlineRequestBytes {
+		t.Fatalf("150-second lossless review WAV leaves less than %d envelope bytes",
+			envelopeReserve)
 	}
 }
 

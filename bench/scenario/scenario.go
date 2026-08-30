@@ -217,6 +217,50 @@ type Tool struct {
 	Parameters  []string
 }
 
+// FunctionToolDeclaration is the protocol declaration shared by profile
+// authoring and the live benchmark client.
+type FunctionToolDeclaration struct {
+	Type        string          `json:"type"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
+}
+
+// FunctionDeclaration returns the one canonical Realtime declaration for a
+// scenario tool. Production profile authoring and the live client both consume
+// this value: keeping the parameter schema in one place prevents a reviewed
+// application declaration from drifting from session.update at runtime.
+func (tool Tool) FunctionDeclaration() (FunctionToolDeclaration, error) {
+	if strings.TrimSpace(tool.Name) == "" || tool.Name != strings.TrimSpace(tool.Name) {
+		return FunctionToolDeclaration{}, fmt.Errorf("scenario tool name %q is not canonical", tool.Name)
+	}
+	properties := make(map[string]map[string]string, len(tool.Parameters))
+	required := make([]string, 0, len(tool.Parameters))
+	for _, parameter := range tool.Parameters {
+		if strings.TrimSpace(parameter) == "" || parameter != strings.TrimSpace(parameter) {
+			return FunctionToolDeclaration{}, fmt.Errorf(
+				"scenario tool %q has non-canonical parameter %q", tool.Name, parameter,
+			)
+		}
+		if _, duplicate := properties[parameter]; duplicate {
+			return FunctionToolDeclaration{}, fmt.Errorf(
+				"scenario tool %q repeats parameter %q", tool.Name, parameter,
+			)
+		}
+		properties[parameter] = map[string]string{"type": "string"}
+		required = append(required, parameter)
+	}
+	parameters, err := json.Marshal(map[string]any{
+		"type": "object", "properties": properties, "required": required,
+	})
+	if err != nil {
+		return FunctionToolDeclaration{}, fmt.Errorf("encode scenario tool %q declaration: %w", tool.Name, err)
+	}
+	return FunctionToolDeclaration{
+		Type: "function", Name: tool.Name, Description: tool.Description, Parameters: parameters,
+	}, nil
+}
+
 // Result is one scenario played.
 type Result struct {
 	Scenario   string           `json:"scenario"`
@@ -365,7 +409,10 @@ func Play(ctx context.Context, voice Voice, config bench.SessionConfig, item Sce
 		return Result{Scenario: item.Name}, err
 	}
 	config.Instructions = item.Instructions
-	config.Tools = declare(item.Tools)
+	config.Tools, err = declare(item.Tools)
+	if err != nil {
+		return Result{Scenario: item.Name}, err
+	}
 	// A scenario is about when the agent acts, not about what the world
 	// answers, so a call succeeds with nothing in it - unless the scenario
 	// brought a world that answers, which is what a phone menu is.
@@ -552,23 +599,20 @@ func apply(check Check, timeline Timeline, transcript bench.Transcript, menu *Me
 	return ""
 }
 
-func declare(tools []Tool) []json.RawMessage {
+func declare(tools []Tool) ([]json.RawMessage, error) {
 	declared := make([]json.RawMessage, 0, len(tools))
 	for _, tool := range tools {
-		properties := map[string]any{}
-		for _, parameter := range tool.Parameters {
-			properties[parameter] = map[string]string{"type": "string"}
-		}
-		encoded, err := json.Marshal(map[string]any{
-			"type": "function", "name": tool.Name, "description": tool.Description,
-			"parameters": map[string]any{"type": "object", "properties": properties},
-		})
+		declaration, err := tool.FunctionDeclaration()
 		if err != nil {
-			continue
+			return nil, err
+		}
+		encoded, err := json.Marshal(declaration)
+		if err != nil {
+			return nil, fmt.Errorf("encode scenario tool %q declaration: %w", tool.Name, err)
 		}
 		declared = append(declared, encoded)
 	}
-	return declared
+	return declared, nil
 }
 
 // sights turns the visual events into protocol sends.

@@ -274,6 +274,9 @@ func TestScenarioGraphReviewPublishesHermeticOneHundredSixtyFiveAttemptPopulatio
 		t.Fatal(err)
 	}
 	if reviewContext.SourceReceiptSHA256 != receipt.ReceiptSHA256 ||
+		reviewContext.FormatVersion != graphnative.SourceReviewContextFormatVersion ||
+		reviewContext.MediaDurationMS <= 0 ||
+		requests[0].FindingTimestampMaximumMS != reviewContext.MediaDurationMS ||
 		reviewContext.Attempt.Behavior != graphnative.BehaviorFailed ||
 		reviewContext.Result.Passed || reviewContext.Architecture.Task.Passed {
 		t.Fatalf("secondary review deterministic context = %+v", reviewContext)
@@ -543,6 +546,10 @@ func TestScenarioGraphMediaVerifierRejectsRetainedByteTampering(t *testing.T) {
 	)
 	if err != nil || !verified.Audio {
 		t.Fatalf("initial media verification = %+v, %v", verified, err)
+	}
+	if reference.Submitted != nil || verified.Submitted != nil {
+		t.Fatalf("nonvisual media receipts were not canonical nil: reference=%+v verified=%+v",
+			reference.Submitted, verified.Submitted)
 	}
 	payload, err := os.ReadFile(filepath.Join(directory, reference.Handle))
 	if err != nil {

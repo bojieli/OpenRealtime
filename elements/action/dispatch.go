@@ -198,8 +198,7 @@ func (runner *dispatchRunner) Run(parent context.Context) error {
 		[]element.CapabilityResolution{
 			actionCapability("dispatchers", "action.ToolRegistry/v1", "registry://"+runner.tools.reference,
 				runner.toolServiceRevision, runner.tools.digest),
-			actionCapability("ledger", "action.Ledger/v1", "ledger://"+runner.ledger.reference,
-				runner.ledgerServiceRevision, runner.ledger.identity),
+			ledgerArchitectureCapability(runner.ledger.reference, runner.ledgerServiceRevision),
 			actionCapability("targets", "computeruse.Target/v1", "registry://"+TargetRegistryService,
 				runner.targetServiceRevision, ""),
 			actionCapability("confirmations", "action.ConfirmationProvider/v1",
