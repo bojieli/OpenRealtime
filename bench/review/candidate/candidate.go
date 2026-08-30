@@ -23,8 +23,10 @@ import (
 )
 
 const (
-	OriginProduction = "production-shared-realtime"
-	OriginHermetic   = "hermetic-test"
+	OriginProduction     = "production-shared-realtime"
+	OriginHermetic       = "hermetic-test"
+	MediaSharedSession   = "shared-session-callbacks"
+	MediaExternalHarness = "external-harness-artifacts"
 
 	maximumContextBytes  = 4 << 20
 	maximumIdentityBytes = 1024
@@ -125,6 +127,7 @@ type Attempt struct {
 	Cell                 bench.Cell                 `json:"cell"`
 	Provenance           bench.Provenance           `json:"provenance"`
 	Origin               RunOrigin                  `json:"run_origin"`
+	MediaSource          string                     `json:"media_source"`
 	ExecutionRequirement bench.ExecutionRequirement `json:"execution_requirement,omitempty"`
 	Context              json.RawMessage            `json:"context"`
 }
@@ -136,13 +139,34 @@ func NewAttempt(
 	suite, caseID string, trial int, cell bench.Cell, provenance bench.Provenance,
 	origin RunOrigin, contextValue any,
 ) (Attempt, error) {
+	return newAttempt(
+		suite, caseID, trial, cell, provenance, origin, MediaSharedSession, contextValue,
+	)
+}
+
+// NewExternalAttempt snapshots an attempt whose client and media are owned by
+// a pinned external harness. It never implies that OpenRealtime observed the
+// session callbacks itself.
+func NewExternalAttempt(
+	suite, caseID string, trial int, cell bench.Cell, provenance bench.Provenance,
+	origin RunOrigin, contextValue any,
+) (Attempt, error) {
+	return newAttempt(
+		suite, caseID, trial, cell, provenance, origin, MediaExternalHarness, contextValue,
+	)
+}
+
+func newAttempt(
+	suite, caseID string, trial int, cell bench.Cell, provenance bench.Provenance,
+	origin RunOrigin, mediaSource string, contextValue any,
+) (Attempt, error) {
 	contextJSON, err := canonicalContext(contextValue)
 	if err != nil {
 		return Attempt{}, err
 	}
 	attempt := Attempt{
 		Suite: suite, Case: caseID, Trial: trial, Cell: cloneCell(cell),
-		Provenance: provenance, Origin: origin,
+		Provenance: provenance, Origin: origin, MediaSource: mediaSource,
 		ExecutionRequirement: cloneRequirement(cell.Execution),
 		Context:              contextJSON,
 	}
@@ -173,6 +197,9 @@ func (attempt Attempt) Validate() error {
 	}
 	if err := attempt.Origin.Validate(); err != nil {
 		return err
+	}
+	if attempt.MediaSource != MediaSharedSession && attempt.MediaSource != MediaExternalHarness {
+		return errors.New("candidate media source is invalid")
 	}
 	if err := attempt.ExecutionRequirement.Validate(); err != nil {
 		return fmt.Errorf("candidate execution requirement: %w", err)
@@ -389,8 +416,10 @@ func cloneRequirement(source bench.ExecutionRequirement) bench.ExecutionRequirem
 	return result
 }
 
-// AttemptEvidence receives owned media from exactly one shared Realtime
-// session, followed by one Complete or Abort call.
+// AttemptEvidence receives owned media for exactly one candidate attempt,
+// followed by one Complete or Abort call. Session-driven suites call the
+// audio/video methods; an external-harness attempt may additionally implement
+// CapturedMediaEvidence for artifacts produced by that harness.
 type AttemptEvidence interface {
 	CaptureAudio(bench.SessionAudioCapture) error
 	CaptureVideo(bench.SessionVideoCapture) error

@@ -121,13 +121,31 @@ func evidenceTimeout(label string, configured, fallback time.Duration) (time.Dur
 func (lifecycle *Lifecycle) Begin(
 	caseID string, trial int, contextValue any,
 ) (*ActiveAttempt, error) {
+	return lifecycle.begin(caseID, trial, contextValue, false)
+}
+
+// BeginExternal starts retention for an already-executed attempt whose
+// pinned external harness owns the Realtime client. Callers must immediately
+// import its exact artifacts with CaptureMedia and then call Complete.
+func (lifecycle *Lifecycle) BeginExternal(
+	caseID string, trial int, contextValue any,
+) (*ActiveAttempt, error) {
+	return lifecycle.begin(caseID, trial, contextValue, true)
+}
+
+func (lifecycle *Lifecycle) begin(
+	caseID string, trial int, contextValue any, external bool,
+) (*ActiveAttempt, error) {
 	if lifecycle == nil {
 		return nil, errors.New("candidate evidence lifecycle is nil")
 	}
-	specification, err := NewAttempt(
+	constructor := NewAttempt
+	if external {
+		constructor = NewExternalAttempt
+	}
+	specification, err := constructor(
 		lifecycle.suite, caseID, trial, lifecycle.cell, lifecycle.provenance,
-		lifecycle.origin, contextValue,
-	)
+		lifecycle.origin, contextValue)
 	if err != nil {
 		return nil, StageError(caseID, "validate attempt", err)
 	}
@@ -259,6 +277,25 @@ type ActiveAttempt struct {
 	sink          AttemptEvidence
 	failures      []error
 	terminal      bool
+}
+
+// RecordFailure binds an external artifact or runner failure to this attempt
+// so a later successful Complete call cannot accidentally commit it.
+func (attempt *ActiveAttempt) RecordFailure(stage string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if attempt == nil {
+		return errors.New("candidate active attempt is nil")
+	}
+	attempt.mu.Lock()
+	defer attempt.mu.Unlock()
+	if attempt.terminal {
+		return errors.New("candidate active attempt is terminal")
+	}
+	wrapped := StageError(attempt.caseID, stage, err)
+	attempt.failures = append(attempt.failures, wrapped)
+	return wrapped
 }
 
 // Specification returns a deep copy for diagnostics and tests.
