@@ -1685,7 +1685,10 @@ func TestProductionArtifactsContainInspectableSourceAndExactPolicyPreimages(t *t
 		t.Fatalf("configuration transport policy = %#v", decoded["transport"])
 	}
 	descriptor := Descriptor()
-	if descriptor.Implementation.Version != "openrealtime.gemini-review.impl.v8" ||
+	if decoded["response_schema_policy"] != "omit_redundant_finding_timestamps_v1" {
+		t.Fatalf("configuration response schema policy = %#v", decoded["response_schema_policy"])
+	}
+	if descriptor.Implementation.Version != "openrealtime.gemini-review.impl.v9" ||
 		descriptor.Implementation.SHA256 != digest(implementation) ||
 		descriptor.ConfigurationSHA256 != digest(configuration) {
 		t.Fatalf("production descriptor = %+v", descriptor)

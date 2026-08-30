@@ -161,7 +161,7 @@ func descriptorFor(implementation, configuration []byte) review.ProviderDescript
 		Provider: "google", Model: ModelID, API: interactionsAPI,
 		APIRevision: APIRevision,
 		Implementation: review.ContentIdentity{
-			Version: "openrealtime.gemini-review.impl.v8", SHA256: digest(implementation),
+			Version: "openrealtime.gemini-review.impl.v9", SHA256: digest(implementation),
 		},
 		ConfigurationSHA256: digest(configuration),
 		CapabilitiesSHA256:  capabilitiesSHA256,
@@ -286,7 +286,7 @@ func configurationArtifact(transport map[string]any) []byte {
 			"accept": "application/json", "content_type": "application/json",
 			"credential_header": "x-goog-api-key", "user_agent": "OpenRealtime-benchmark-review/1",
 		},
-		"implementation":           "openrealtime.gemini-review.v8",
+		"implementation":           "openrealtime.gemini-review.v9",
 		"inline_media_max_count":   maximumPreparedMedia,
 		"inline_media_max_bytes":   maximumInlineMediaBytes,
 		"inline_request_max_bytes": maximumInlineRequestBytes,
@@ -294,6 +294,7 @@ func configurationArtifact(transport map[string]any) []byte {
 		"media_order": "prompt_then_request_fingerprint_then_manifest_media", "seed": 1,
 		"request_binding":              "prepared_request_fingerprint_text_block_v1",
 		"request_fingerprint_label":    requestFingerprintLabel,
+		"response_schema_policy":       "omit_redundant_finding_timestamps_v1",
 		"supported_inline_media_types": interactionInlineMediaTypes(),
 		"store":                        false, "stream": false, "system_instruction": systemInstruction,
 		"thinking_level": "high", "transport": transport,
@@ -902,6 +903,10 @@ func marshalValidatedRequestContext(
 			MediaType: media.MediaType,
 		})
 	}
+	responseSchema, schemaErr := geminiResponseSchema(prepared.Schema)
+	if schemaErr != nil {
+		return nil, schemaErr
+	}
 	var output bytes.Buffer
 	encoder := json.NewEncoder(&output)
 	encoder.SetEscapeHTML(false)
@@ -909,7 +914,7 @@ func marshalValidatedRequestContext(
 		Model: ModelID, Input: input,
 		SystemInstruction: systemInstruction,
 		ResponseFormat: responseFormat{
-			Type: "text", MediaType: "application/json", Schema: slices.Clone(prepared.Schema),
+			Type: "text", MediaType: "application/json", Schema: responseSchema,
 		},
 		GenerationConfig: generationConfig{
 			ThinkingLevel: "high", MaxOutputTokens: maximumOutputTokens, Seed: 1,
@@ -929,6 +934,68 @@ func marshalValidatedRequestContext(
 			len(body), maximumInlineRequestBytes)
 	}
 	return slices.Clone(body), nil
+}
+
+// geminiResponseSchema removes only the two redundant optional numeric
+// timestamp fields from Gemini's provider-specific response contract. Gemini
+// repeatedly returned values scaled by ten while its human-readable evidence
+// carried the correct millisecond location. The provider-neutral Assessment
+// keeps those fields optional, and the authoritative verifier still checks any
+// provider that emits them; this adapter asks Gemini for one unambiguous time
+// representation in the required evidence string instead.
+func geminiResponseSchema(source json.RawMessage) (json.RawMessage, error) {
+	decoder := json.NewDecoder(bytes.NewReader(source))
+	decoder.UseNumber()
+	var root map[string]any
+	if err := decoder.Decode(&root); err != nil || root == nil {
+		return nil, errors.New("derive Gemini response schema: invalid root object")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err == nil {
+		return nil, errors.New("derive Gemini response schema: trailing JSON value")
+	} else if !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("derive Gemini response schema: trailing JSON: %w", err)
+	}
+	properties, ok := root["properties"].(map[string]any)
+	if !ok {
+		return nil, errors.New("derive Gemini response schema: root properties are missing")
+	}
+	for _, listName := range []string{"significant_problems", "minor_observations"} {
+		listSchema, ok := properties[listName].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("derive Gemini response schema: %s is not an object schema", listName)
+		}
+		items, ok := listSchema["items"].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("derive Gemini response schema: %s items are missing", listName)
+		}
+		findingProperties, ok := items["properties"].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("derive Gemini response schema: %s item properties are missing", listName)
+		}
+		for _, timestamp := range []string{"start_ms", "end_ms"} {
+			if _, found := findingProperties[timestamp]; !found {
+				return nil, fmt.Errorf(
+					"derive Gemini response schema: %s lacks optional %s", listName, timestamp,
+				)
+			}
+			delete(findingProperties, timestamp)
+		}
+		if required, found := items["required"].([]any); found {
+			for _, field := range required {
+				if field == "start_ms" || field == "end_ms" {
+					return nil, fmt.Errorf(
+						"derive Gemini response schema: %s requires an optional timestamp", listName,
+					)
+				}
+			}
+		}
+	}
+	encoded, err := json.Marshal(root)
+	if err != nil {
+		return nil, fmt.Errorf("derive Gemini response schema: encode: %w", err)
+	}
+	return encoded, nil
 }
 
 func preflightProviderResponse(response review.ProviderResponse) error {
