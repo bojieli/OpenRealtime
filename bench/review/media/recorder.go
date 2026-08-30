@@ -20,7 +20,7 @@ import (
 
 const (
 	ManifestFormat                    = "openrealtime.attempt-media"
-	ManifestFormatVersion             = 2
+	ManifestFormatVersion             = 3
 	FullDecodeAttestationCapability   = "openrealtime.full-decode-av.v1"
 	encoderImplementationPath         = "encoder.implementation"
 	encoderConfigurationPath          = "encoder.configuration.json"
@@ -42,6 +42,12 @@ const (
 	maximumSensitiveValueBytes        = 4 << 10
 	maximumSensitiveBytes             = 256 << 10
 )
+
+// YUV420PPadRightBottomBlackToEvenV1 is the exact source-to-encoded
+// geometry policy used by the retained-review encoder. Source pixels keep
+// their coordinates; at most one opaque-black column and/or row is added at
+// the right and bottom edges so yuv420p never crops an odd dimension.
+const YUV420PPadRightBottomBlackToEvenV1 = "yuv420p-pad-right-bottom-black-to-even.v1"
 
 // Config declares the exact evidence required for an attempt. Directory is a
 // final create-only directory. SensitiveValues remain in memory and guard all
@@ -207,6 +213,8 @@ type VideoSource struct {
 }
 
 // PlayableSpec binds the full decode to exact output bytes and canonical PTS.
+// Width and Height are the exact captured source geometry; EncodedWidth and
+// EncodedHeight are the independently decoded playable geometry.
 type PlayableSpec struct {
 	OutputSHA256          string `json:"output_sha256"`
 	Container             string `json:"container"`
@@ -214,6 +222,9 @@ type PlayableSpec struct {
 	PixelFormat           string `json:"pixel_format"`
 	Width                 int    `json:"width"`
 	Height                int    `json:"height"`
+	EncodedWidth          int    `json:"encoded_width"`
+	EncodedHeight         int    `json:"encoded_height"`
+	GeometryPolicy        string `json:"geometry_policy"`
 	AudioCodec            string `json:"audio_codec"`
 	AudioSampleRateHz     uint32 `json:"audio_sample_rate_hz"`
 	AudioChannels         uint16 `json:"audio_channels"`
@@ -227,9 +238,12 @@ type PlayableSpec struct {
 }
 
 func (spec PlayableSpec) validate(request AttestationRequest) error {
+	wantEncodedWidth, wantEncodedHeight := paddedYUV420PGeometry(request.Width, request.Height)
 	if spec.OutputSHA256 != request.ExpectedOutputSHA256 || spec.Container != "mp4" ||
 		spec.VideoCodec != "h264" || spec.PixelFormat != "yuv420p" ||
 		spec.Width != request.Width || spec.Height != request.Height ||
+		spec.EncodedWidth != wantEncodedWidth || spec.EncodedHeight != wantEncodedHeight ||
+		spec.GeometryPolicy != YUV420PPadRightBottomBlackToEvenV1 ||
 		spec.AudioCodec != "aac" || spec.AudioSampleRateHz != reviewSampleRateHz ||
 		spec.AudioChannels != reviewChannels || spec.DurationUS != request.AttemptEndUS ||
 		spec.AudioStartUS != 0 || spec.AudioEndUS != request.AttemptEndUS ||
@@ -239,6 +253,10 @@ func (spec PlayableSpec) validate(request AttestationRequest) error {
 		return errors.New("full-decode attestation does not match the exact synchronized output contract")
 	}
 	return nil
+}
+
+func paddedYUV420PGeometry(width, height int) (int, int) {
+	return width + width%2, height + height%2
 }
 
 type EncoderEvidence struct {
