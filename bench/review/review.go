@@ -870,7 +870,11 @@ func (prepared PreparedRequest) ValidateContext(ctx context.Context) (resultErr 
 	if err != nil {
 		return errors.New("prepared review cannot encode its public contract")
 	}
-	contains, err := prepared.ContainsDeclaredSensitiveValueContext(ctx, publicJSON)
+	// The public encoding repeats Context both directly and inside Prompt. Scan
+	// the exact wire representation literally here; a canonical validation
+	// envelope below performs the recursive structured scan with each untrusted
+	// field represented once.
+	contains, err := prepared.sensitiveGuard.matcher.containsContext(ctx, publicJSON)
 	if err != nil {
 		return err
 	}
@@ -910,6 +914,30 @@ func (prepared PreparedRequest) ValidateContext(ctx context.Context) (resultErr 
 	}, maximumPromptBytes)
 	if err != nil || prepared.Prompt != caseReviewPrompt(string(contextEnvelope)) {
 		return errors.New("prepared review prompt differs from its context or media manifest")
+	}
+	validationEnvelope, err := marshalCanonicalCompact(struct {
+		AttemptID           string          `json:"attempt_id"`
+		PromptVersion       string          `json:"prompt_version"`
+		SchemaVersion       string          `json:"schema_version"`
+		Schema              json.RawMessage `json:"schema"`
+		PromptContext       json.RawMessage `json:"prompt_context"`
+		RequestFingerprint  string          `json:"request_fingerprint"`
+		Sanitization        string          `json:"sanitization"`
+		SensitiveValueCount int             `json:"sensitive_value_count"`
+	}{
+		prepared.AttemptID, prepared.PromptVersion, prepared.SchemaVersion, prepared.Schema,
+		contextEnvelope, prepared.RequestFingerprint, prepared.Sanitization,
+		prepared.SensitiveValueCount,
+	}, maximumPreparedPublicBytes)
+	if err != nil {
+		return errors.New("prepared review cannot encode its validation envelope")
+	}
+	contains, err = prepared.ContainsDeclaredSensitiveValueContext(ctx, validationEnvelope)
+	if err != nil {
+		return err
+	}
+	if contains {
+		return errors.New("prepared review public contract contains a declared sensitive value")
 	}
 	want, err := prepared.fingerprintContext(ctx)
 	if err != nil {
