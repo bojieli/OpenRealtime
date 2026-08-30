@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -59,6 +60,36 @@ func TestTruncatedPayloadIsRejected(t *testing.T) {
 	if _, err := sidecar.NewReader(&buffer).Read(); err == nil {
 		t.Fatal("a truncated payload must be an error")
 	}
+}
+
+func TestNilStreamsFailWithoutPanicking(t *testing.T) {
+	if err := sidecar.NewWriter(nil).Write(sidecar.Message{Type: sidecar.TypeBye}); err == nil ||
+		!strings.Contains(err.Error(), "nil writer") {
+		t.Fatalf("nil writer error = %v", err)
+	}
+	if _, err := sidecar.NewReader(nil).Read(); err == nil ||
+		!strings.Contains(err.Error(), "nil reader") {
+		t.Fatalf("nil reader error = %v", err)
+	}
+}
+
+func TestFramingRejectsUnterminatedHeadersAndShortWrites(t *testing.T) {
+	if _, err := sidecar.NewReader(strings.NewReader(`{"type":"bye"}`)).Read(); err == nil ||
+		!strings.Contains(err.Error(), "newline-terminated") {
+		t.Fatalf("unterminated header error = %v", err)
+	}
+	if err := sidecar.NewWriter(shortWriter{}).Write(sidecar.Message{Type: sidecar.TypeBye}); !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("short header write error = %v", err)
+	}
+}
+
+type shortWriter struct{}
+
+func (shortWriter) Write(payload []byte) (int, error) {
+	if len(payload) == 0 {
+		return 0, nil
+	}
+	return len(payload) - 1, nil
 }
 
 func TestMalformedFramesAreRejectedWithAUsefulReason(t *testing.T) {

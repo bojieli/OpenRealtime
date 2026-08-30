@@ -1,11 +1,13 @@
 package sidecar
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -25,10 +27,12 @@ type ArtifactIdentity struct {
 
 // Validate rejects mutable selectors and identities that cannot be attested.
 func (artifact ArtifactIdentity) Validate() error {
-	if artifact.ID == "" || artifact.ID != strings.TrimSpace(artifact.ID) {
-		return errors.New("artifact identity requires a canonical ID")
+	if err := validateBoundedIdentifier("artifact identity ID", artifact.ID); err != nil {
+		return err
 	}
 	if artifact.Revision != strings.TrimSpace(artifact.Revision) ||
+		len(artifact.Revision) > MaxElementIdentifierBytes ||
+		strings.ContainsAny(artifact.Revision, "\x00\r\n") ||
 		artifact.Digest != strings.TrimSpace(artifact.Digest) {
 		return errors.New("artifact identity is not canonical")
 	}
@@ -43,6 +47,9 @@ func (artifact ArtifactIdentity) Validate() error {
 		if !strings.HasPrefix(artifact.Digest, prefix) ||
 			len(artifact.Digest) != len(prefix)+sha256.Size*2 {
 			return errors.New("artifact identity has an invalid SHA-256 digest")
+		}
+		if artifact.Digest != strings.ToLower(artifact.Digest) {
+			return errors.New("artifact identity has a non-canonical SHA-256 digest")
 		}
 		if _, err := hex.DecodeString(strings.TrimPrefix(artifact.Digest, prefix)); err != nil {
 			return fmt.Errorf("artifact identity has an invalid SHA-256 digest: %w", err)
@@ -87,12 +94,34 @@ type CapabilityRequirement struct {
 	Contract string `json:"contract,omitempty"`
 }
 
+// ElementConfigDigest binds readiness to the exact ElementConfig bytes sent
+// in Hello. Whitespace is intentionally significant: this attests the applied
+// deployment input, while the graph's separate bound-config fingerprint
+// attests its management-plane origin.
+func ElementConfigDigest(config json.RawMessage) string {
+	digest := sha256.Sum256(config)
+	return "sha256:" + hex.EncodeToString(digest[:])
+}
+
+func validateConfigDigest(digest string) error {
+	const prefix = "sha256:"
+	if !strings.HasPrefix(digest, prefix) || len(digest) != len(prefix)+sha256.Size*2 ||
+		digest != strings.ToLower(digest) || digest != strings.TrimSpace(digest) {
+		return errors.New("applied element config digest must be canonical SHA-256")
+	}
+	if _, err := hex.DecodeString(strings.TrimPrefix(digest, prefix)); err != nil {
+		return fmt.Errorf("applied element config digest must be canonical SHA-256: %w", err)
+	}
+	return nil
+}
+
 // PortSelection tells a generic sidecar which descriptor ports the mounted
 // graph actually connected. Direction is relative to the element.
 type PortSelection struct {
 	Name      string            `json:"name"`
 	Direction element.Direction `json:"direction"`
 	Type      element.Type      `json:"type"`
+	Formats   []WireFormat      `json:"formats"`
 }
 
 // PortCapabilityName is the stable live-capability identity for one selected
@@ -105,19 +134,20 @@ func PortCapabilityName(direction element.Direction, name string) string {
 // JSON and Payload are owned by Message: JSON is suitable for ordinary values
 // while Payload preserves a zero-copy-friendly binary lane for media codecs.
 type WireEnvelope struct {
-	Type              element.Type    `json:"type"`
-	ItemID            string          `json:"item_id"`
-	SessionID         string          `json:"session_id,omitempty"`
-	SourceID          string          `json:"source_id,omitempty"`
-	OpportunityID     string          `json:"opportunity_id,omitempty"`
-	RunID             string          `json:"run_id,omitempty"`
-	Sequence          uint64          `json:"sequence,omitempty"`
-	CaptureNS         uint64          `json:"capture_ns,omitempty"`
-	ReceiveNS         uint64          `json:"receive_ns,omitempty"`
-	TraceID           string          `json:"trace_id,omitempty"`
-	CancellationScope string          `json:"cancellation_scope,omitempty"`
-	CausalParents     []string        `json:"causal_parents,omitempty"`
-	JSON              json.RawMessage `json:"json,omitempty"`
+	Type              element.Type        `json:"type"`
+	ItemID            string              `json:"item_id"`
+	SessionID         string              `json:"session_id,omitempty"`
+	SourceID          string              `json:"source_id,omitempty"`
+	OpportunityID     string              `json:"opportunity_id,omitempty"`
+	RunID             string              `json:"run_id,omitempty"`
+	Sequence          uint64              `json:"sequence,omitempty"`
+	CaptureNS         uint64              `json:"capture_ns,omitempty"`
+	ReceiveNS         uint64              `json:"receive_ns,omitempty"`
+	TraceID           string              `json:"trace_id,omitempty"`
+	CancellationScope string              `json:"cancellation_scope,omitempty"`
+	CausalParents     []string            `json:"causal_parents,omitempty"`
+	Media             *MediaFrameMetadata `json:"media,omitempty"`
+	JSON              json.RawMessage     `json:"json,omitempty"`
 }
 
 // FromEnvelope converts metadata without interpreting payload semantics.
@@ -146,22 +176,82 @@ func (wire WireEnvelope) validate() error {
 	if err := (wire.Envelope(nil)).ValidateFor(wire.Type); err != nil {
 		return err
 	}
-	if len(wire.JSON) != 0 && !json.Valid(wire.JSON) {
-		return errors.New("element envelope payload is not valid JSON")
+	for label, value := range map[string]string{
+		"item_id": wire.ItemID, "session_id": wire.SessionID, "source_id": wire.SourceID,
+		"opportunity_id": wire.OpportunityID, "run_id": wire.RunID, "trace_id": wire.TraceID,
+		"cancellation_scope": wire.CancellationScope,
+	} {
+		if value != strings.TrimSpace(value) || len(value) > MaxElementIdentifierBytes ||
+			strings.ContainsAny(value, "\x00\r\n") {
+			return fmt.Errorf("element envelope %s is non-canonical or exceeds %d bytes",
+				label, MaxElementIdentifierBytes)
+		}
+	}
+	if len(wire.CausalParents) > MaxEnvelopeParents {
+		return fmt.Errorf("element envelope has more than %d causal parents", MaxEnvelopeParents)
+	}
+	parents := make(map[string]struct{}, len(wire.CausalParents))
+	for _, parent := range wire.CausalParents {
+		if err := validateBoundedIdentifier("causal parent", parent); err != nil {
+			return err
+		}
+		if _, duplicate := parents[parent]; duplicate {
+			return fmt.Errorf("element envelope repeats causal parent %q", parent)
+		}
+		parents[parent] = struct{}{}
+	}
+	if len(wire.JSON) > MaxElementJSONBytes {
+		return fmt.Errorf("element envelope JSON exceeds %d bytes", MaxElementJSONBytes)
+	}
+	if len(wire.JSON) != 0 {
+		if err := strictjson.Validate(wire.JSON); err != nil {
+			return fmt.Errorf("element envelope payload is not strict JSON: %w", err)
+		}
+	}
+	if wire.Media != nil {
+		if err := wire.Media.Validate(); err != nil {
+			return fmt.Errorf("element envelope media metadata: %w", err)
+		}
 	}
 	return nil
 }
 
 func validateElementHello(message Message) error {
+	if message.PayloadBytes != 0 || len(message.Payload) != 0 {
+		return errors.New("v4 hello cannot carry a binary payload")
+	}
 	if message.ElementDescriptor == nil {
 		return errors.New("v4 hello requires an element descriptor")
+	}
+	allowed := Message{
+		Type: message.Type, PayloadBytes: message.PayloadBytes, Payload: message.Payload,
+		Version: message.Version, ElementDescriptor: message.ElementDescriptor,
+		ElementConfig: message.ElementConfig, SelectedPorts: message.SelectedPorts,
+		RequiredCapabilities: message.RequiredCapabilities,
+	}
+	if !reflect.DeepEqual(message, allowed) {
+		return errors.New("v4 hello contains legacy, readiness, or frame fields")
 	}
 	if err := message.ElementDescriptor.Validate(); err != nil {
 		return fmt.Errorf("v4 hello element descriptor: %w", err)
 	}
 	if len(message.ElementConfig) != 0 {
+		if len(message.ElementConfig) > MaxElementJSONBytes {
+			return fmt.Errorf("v4 hello element config exceeds %d bytes", MaxElementJSONBytes)
+		}
 		if err := strictjson.Validate(message.ElementConfig); err != nil {
 			return fmt.Errorf("v4 hello element config: %w", err)
+		}
+		// ElementConfigDigest attests the exact bytes applied by the peer.
+		// encoding/json compacts RawMessage values while constructing the
+		// newline-delimited header, so accepting a differently spaced value
+		// here would bind readiness to bytes that never crossed the transport.
+		wire, err := json.Marshal(json.RawMessage(message.ElementConfig))
+		if err != nil {
+			return fmt.Errorf("v4 hello element config wire encoding: %w", err)
+		}
+		if !bytes.Equal(wire, message.ElementConfig) {
+			return errors.New("v4 hello element config must use its compact on-wire JSON encoding")
 		}
 	}
 	if err := validateSelections(*message.ElementDescriptor, message.SelectedPorts); err != nil {
@@ -174,8 +264,21 @@ func validateElementHello(message Message) error {
 }
 
 func validateElementReady(message Message) error {
+	if message.PayloadBytes != 0 || len(message.Payload) != 0 {
+		return errors.New("v4 ready cannot carry a binary payload")
+	}
 	if message.ElementDescriptor == nil {
 		return errors.New("v4 ready requires an element descriptor")
+	}
+	allowed := Message{
+		Type: message.Type, PayloadBytes: message.PayloadBytes, Payload: message.Payload,
+		Version: message.Version, ElementDescriptor: message.ElementDescriptor,
+		AppliedConfigDigest:  message.AppliedConfigDigest,
+		RuntimeArtifact:      message.RuntimeArtifact,
+		ResolvedCapabilities: message.ResolvedCapabilities, NegotiatedPorts: message.NegotiatedPorts,
+	}
+	if !reflect.DeepEqual(message, allowed) {
+		return errors.New("v4 ready contains legacy, hello, or frame fields")
 	}
 	if err := message.ElementDescriptor.Validate(); err != nil {
 		return fmt.Errorf("v4 ready element descriptor: %w", err)
@@ -183,21 +286,34 @@ func validateElementReady(message Message) error {
 	if err := message.RuntimeArtifact.Validate(); err != nil {
 		return fmt.Errorf("v4 ready runtime artifact: %w", err)
 	}
+	if err := validateConfigDigest(message.AppliedConfigDigest); err != nil {
+		return fmt.Errorf("v4 ready: %w", err)
+	}
 	if _, err := CanonicalCapabilities(message.ResolvedCapabilities); err != nil {
 		return fmt.Errorf("v4 ready capabilities: %w", err)
+	}
+	if _, err := canonicalNegotiations(message.NegotiatedPorts); err != nil {
+		return fmt.Errorf("v4 ready negotiated ports: %w", err)
 	}
 	return nil
 }
 
 func validateElementFrame(message Message) error {
-	if message.Port == "" || message.Port != strings.TrimSpace(message.Port) {
-		return errors.New("element frame requires a canonical port name")
+	if err := validateBoundedIdentifier("element frame port name", message.Port); err != nil {
+		return err
 	}
 	if message.Envelope == nil {
 		return errors.New("element frame requires an envelope")
 	}
 	if err := message.Envelope.validate(); err != nil {
 		return fmt.Errorf("element frame envelope: %w", err)
+	}
+	allowed := Message{
+		Type: message.Type, PayloadBytes: message.PayloadBytes, Port: message.Port,
+		Envelope: message.Envelope, Payload: message.Payload,
+	}
+	if !reflect.DeepEqual(message, allowed) {
+		return errors.New("element frame contains fields outside its port envelope")
 	}
 	return nil
 }
@@ -206,8 +322,14 @@ func validateSelections(descriptor element.Descriptor, selections []PortSelectio
 	if len(selections) == 0 {
 		return errors.New("at least one connected port is required")
 	}
+	if len(selections) > MaxElementPorts {
+		return fmt.Errorf("more than %d connected ports are selected", MaxElementPorts)
+	}
 	seen := make(map[string]struct{}, len(selections))
 	for _, selection := range selections {
+		if err := validateBoundedIdentifier("selected port name", selection.Name); err != nil {
+			return err
+		}
 		port, found := descriptor.Port(selection.Name)
 		if !found {
 			return fmt.Errorf("descriptor has no port %q", selection.Name)
@@ -216,6 +338,21 @@ func validateSelections(descriptor element.Descriptor, selections []PortSelectio
 			return fmt.Errorf("port %s selects %s %s, descriptor declares %s %s",
 				selection.Name, selection.Direction, selection.Type.String(),
 				port.Direction, port.Type.String())
+		}
+		if err := selection.Type.ValidateConcretePort(); err != nil {
+			return fmt.Errorf("port %s type: %w", selection.Name, err)
+		}
+		capabilityName := PortCapabilityName(selection.Direction, selection.Name)
+		capabilityContract := selection.Type.String()
+		if err := validateBoundedIdentifier("selected port capability name", capabilityName); err != nil {
+			return fmt.Errorf("port %s capability identity: %w", selection.Name, err)
+		}
+		if len(capabilityContract) > MaxElementIdentifierBytes {
+			return fmt.Errorf("port %s capability contract exceeds %d bytes",
+				selection.Name, MaxElementIdentifierBytes)
+		}
+		if err := validateExplicitPortFormats(selection); err != nil {
+			return fmt.Errorf("port %s formats: %w", selection.Name, err)
 		}
 		key := string(selection.Direction) + "\x00" + selection.Name
 		if _, duplicate := seen[key]; duplicate {
@@ -227,11 +364,19 @@ func validateSelections(descriptor element.Descriptor, selections []PortSelectio
 }
 
 func validateRequirements(requirements []CapabilityRequirement) error {
+	if len(requirements) > MaxElementRequirements {
+		return fmt.Errorf("more than %d capabilities are required", MaxElementRequirements)
+	}
 	seen := make(map[string]struct{}, len(requirements))
 	for index, requirement := range requirements {
-		if requirement.Name == "" || requirement.Name != strings.TrimSpace(requirement.Name) ||
-			requirement.Contract != strings.TrimSpace(requirement.Contract) {
+		if validateBoundedIdentifier("capability requirement name", requirement.Name) != nil ||
+			requirement.Contract != strings.TrimSpace(requirement.Contract) ||
+			len(requirement.Contract) > MaxElementIdentifierBytes ||
+			strings.ContainsAny(requirement.Contract, "\x00\r\n") {
 			return fmt.Errorf("capability requirement %d is not canonical", index)
+		}
+		if strings.HasPrefix(requirement.Name, "port.") {
+			return fmt.Errorf("capability requirement %d uses the reserved port capability namespace", index)
 		}
 		key := requirement.Name + "\x00" + requirement.Contract
 		if _, duplicate := seen[key]; duplicate {
@@ -245,12 +390,17 @@ func validateRequirements(requirements []CapabilityRequirement) error {
 // CanonicalCapabilities validates, clones, and deterministically orders a
 // complete live capability set.
 func CanonicalCapabilities(source []CapabilityIdentity) ([]CapabilityIdentity, error) {
+	if len(source) > MaxElementCapabilities {
+		return nil, fmt.Errorf("more than %d capabilities are resolved", MaxElementCapabilities)
+	}
 	result := slices.Clone(source)
 	seen := make(map[string]struct{}, len(result))
 	for index := range result {
 		capability := &result[index]
-		if capability.Name == "" || capability.Name != strings.TrimSpace(capability.Name) ||
-			capability.Contract != strings.TrimSpace(capability.Contract) {
+		if validateBoundedIdentifier("capability name", capability.Name) != nil ||
+			capability.Contract != strings.TrimSpace(capability.Contract) ||
+			len(capability.Contract) > MaxElementIdentifierBytes ||
+			strings.ContainsAny(capability.Contract, "\x00\r\n") {
 			return nil, fmt.Errorf("capability %d has a non-canonical name or contract", index)
 		}
 		if err := capability.Provider.Validate(); err != nil {
@@ -262,6 +412,10 @@ func CanonicalCapabilities(source []CapabilityIdentity) ([]CapabilityIdentity, e
 			if err := capability.Adapter.Validate(); err != nil {
 				return nil, fmt.Errorf("capability %s adapter: %w", capability.Name, err)
 			}
+		}
+		capability.Provider = ArtifactIdentity{
+			ID: capability.Provider.ID, Revision: capability.Provider.Revision,
+			Digest: capability.Provider.Digest,
 		}
 		key := capability.Name + "\x00" + capability.Contract + "\x00" + capability.Provider.ID
 		if _, duplicate := seen[key]; duplicate {
@@ -285,68 +439,6 @@ func CanonicalCapabilities(source []CapabilityIdentity) ([]CapabilityIdentity, e
 // ValidateElementReady binds a live v4 Ready frame to the exact Hello
 // descriptor, selected graph ports, and required capability contracts.
 func ValidateElementReady(hello, ready Message) error {
-	if hello.Type != TypeHello || hello.Version != VersionElementGraph {
-		return errors.New("element readiness requires a v4 hello")
-	}
-	if ready.Type != TypeReady || ready.Version != VersionElementGraph {
-		return errors.New("element readiness requires a v4 ready frame")
-	}
-	if err := validateElementHello(hello); err != nil {
-		return err
-	}
-	if err := validateElementReady(ready); err != nil {
-		return err
-	}
-	want, err := hello.ElementDescriptor.Identity()
-	if err != nil {
-		return err
-	}
-	got, err := ready.ElementDescriptor.Identity()
-	if err != nil {
-		return err
-	}
-	if got != want {
-		return fmt.Errorf("sidecar element descriptor drifted: expected %+v, live %+v", want, got)
-	}
-	capabilities, err := CanonicalCapabilities(ready.ResolvedCapabilities)
-	if err != nil {
-		return err
-	}
-	available := make(map[string][]CapabilityIdentity, len(capabilities))
-	for _, capability := range capabilities {
-		available[capability.Name] = append(available[capability.Name], capability)
-	}
-	for _, selection := range hello.SelectedPorts {
-		requirement := CapabilityRequirement{
-			Name:     PortCapabilityName(selection.Direction, selection.Name),
-			Contract: selection.Type.String(),
-		}
-		capability, found := matchingCapability(available, requirement)
-		if !found {
-			return fmt.Errorf("sidecar did not prove selected port capability %s (%s)",
-				requirement.Name, requirement.Contract)
-		}
-		if capability.Adapter == nil {
-			return fmt.Errorf("sidecar selected port capability %s has no exact adapter identity",
-				requirement.Name)
-		}
-	}
-	for _, requirement := range hello.RequiredCapabilities {
-		if _, found := matchingCapability(available, requirement); !found {
-			return fmt.Errorf("sidecar did not prove required capability %s (%s)",
-				requirement.Name, requirement.Contract)
-		}
-	}
-	return nil
-}
-
-func matchingCapability(
-	available map[string][]CapabilityIdentity, requirement CapabilityRequirement,
-) (CapabilityIdentity, bool) {
-	for _, capability := range available[requirement.Name] {
-		if requirement.Contract == "" || capability.Contract == requirement.Contract {
-			return capability, true
-		}
-	}
-	return CapabilityIdentity{}, false
+	_, err := NegotiateElementSession(hello, ready)
+	return err
 }

@@ -12,6 +12,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/bojieli/OpenRealtime/element"
 )
 
 // ConformanceReport records what a sidecar was verified to do.
@@ -22,14 +24,19 @@ import (
 // so a failure tells the author what to fix rather than that something is
 // wrong.
 type ConformanceReport struct {
-	Suite        string             `json:"suite"`
-	Passed       bool               `json:"passed"`
-	Version      int                `json:"version"`
-	Model        string             `json:"model"`
-	OutputRate   int                `json:"output_rate"`
-	Capabilities []string           `json:"capabilities"`
-	Checks       []ConformanceCheck `json:"checks"`
-	Failures     []string           `json:"failures,omitempty"`
+	Suite        string               `json:"suite"`
+	Passed       bool                 `json:"passed"`
+	Version      int                  `json:"version"`
+	Model        string               `json:"model"`
+	OutputRate   int                  `json:"output_rate"`
+	Capabilities []string             `json:"capabilities"`
+	Element      *element.Identity    `json:"element,omitempty"`
+	Runtime      *ArtifactIdentity    `json:"runtime,omitempty"`
+	ConfigDigest string               `json:"applied_config_digest,omitempty"`
+	Resolved     []CapabilityIdentity `json:"resolved_capabilities,omitempty"`
+	Ports        []PortNegotiation    `json:"negotiated_ports,omitempty"`
+	Checks       []ConformanceCheck   `json:"checks"`
+	Failures     []string             `json:"failures,omitempty"`
 }
 
 // ConformanceCheck is one verified property.
@@ -61,6 +68,9 @@ func RunConformance(ctx context.Context, options ConformanceOptions) Conformance
 	version := options.Config.ProtocolVersion
 	if version == 0 {
 		version = Version
+	}
+	if version == VersionElementGraph {
+		return runElementConformance(ctx, options)
 	}
 	report := ConformanceReport{Suite: fmt.Sprintf("sidecar-protocol-v%d", version)}
 	record := func(name string, required, passed bool, detail string) {

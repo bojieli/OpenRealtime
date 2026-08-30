@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -29,8 +30,8 @@ func graphDescriptor() element.Descriptor {
 func validElementHandshake() (sidecar.Message, sidecar.Message) {
 	descriptor := graphDescriptor()
 	selections := []sidecar.PortSelection{
-		{Name: "trigger", Direction: element.Input, Type: descriptor.Ports[0].Type},
-		{Name: "outcome", Direction: element.Output, Type: descriptor.Ports[1].Type},
+		sidecar.JSONPortSelection("trigger", element.Input, descriptor.Ports[0].Type),
+		sidecar.JSONPortSelection("outcome", element.Output, descriptor.Ports[1].Type),
 	}
 	provider := sidecar.ArtifactIdentity{ID: "provider/model", Revision: "2026-08-29"}
 	capabilities := make([]sidecar.CapabilityIdentity, 0, len(selections)+1)
@@ -55,8 +56,14 @@ func validElementHandshake() (sidecar.Message, sidecar.Message) {
 	ready := sidecar.Message{
 		Type: sidecar.TypeReady, Version: sidecar.VersionElementGraph,
 		ElementDescriptor:    &readyDescriptor,
+		AppliedConfigDigest:  sidecar.ElementConfigDigest(hello.ElementConfig),
 		RuntimeArtifact:      sidecar.ArtifactIdentity{ID: "runtime/python-wheel", Revision: "1.4.2"},
 		ResolvedCapabilities: capabilities,
+	}
+	for _, selection := range selections {
+		ready.NegotiatedPorts = append(ready.NegotiatedPorts, sidecar.PortNegotiation{
+			Name: selection.Name, Direction: selection.Direction, Format: selection.Formats[0],
+		})
 	}
 	return hello, ready
 }
@@ -223,6 +230,13 @@ func TestClientCompletesV4HandshakeAndCarriesGenericFrames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	declared := client.Ready()
+	declared.RuntimeArtifact.Revision = "mutated-by-caller"
+	declared.ElementDescriptor.Ports[0].Type.Arguments[0].Name = "test.Mutated"
+	if retained := client.Ready(); retained.RuntimeArtifact.Revision != ready.RuntimeArtifact.Revision ||
+		retained.ElementDescriptor.Ports[0].Type.Arguments[0].Name == "test.Mutated" {
+		t.Fatalf("client readiness aliases caller-visible state: %+v", retained)
+	}
 	triggerType := graphDescriptor().Ports[0].Type
 	wire := sidecar.WireEnvelope{
 		Type: triggerType, ItemID: "trigger-1", RunID: "run-1", JSON: json.RawMessage(`{"prompt":"hello"}`),
@@ -250,5 +264,270 @@ func TestClientCompletesV4HandshakeAndCarriesGenericFrames(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("v4 server did not observe clean lifecycle close")
+	}
+}
+
+func TestV4ClientRejectsFramesBeforeReadiness(t *testing.T) {
+	hello, _ := validElementHandshake()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	serverDone := make(chan error, 1)
+	go func() {
+		connection, err := listener.Accept()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		defer connection.Close()
+		reader, writer := sidecar.NewReader(connection), sidecar.NewWriter(connection)
+		if _, err := reader.Read(); err != nil {
+			serverDone <- err
+			return
+		}
+		triggerType := graphDescriptor().Ports[0].Type
+		wire := sidecar.WireEnvelope{
+			Type: triggerType, ItemID: "pre-ready", JSON: json.RawMessage(`{"prompt":"too early"}`),
+		}
+		serverDone <- writer.Write(sidecar.Message{
+			Type: sidecar.TypeElementFrame, Port: "trigger", Envelope: &wire,
+		})
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err = sidecar.Dial(ctx, sidecar.Config{
+		Address: "tcp:" + listener.Addr().String(), ProtocolVersion: sidecar.VersionElementGraph,
+	}, hello)
+	if err == nil || !strings.Contains(err.Error(), "before readiness") {
+		t.Fatalf("pre-readiness frame error = %v", err)
+	}
+	select {
+	case err := <-serverDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("pre-readiness server did not finish")
+	}
+}
+
+func TestV4ClientRejectsPostReadinessIdentityDrift(t *testing.T) {
+	hello, ready := validElementHandshake()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	serverDone := make(chan error, 1)
+	go func() {
+		connection, err := listener.Accept()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		defer connection.Close()
+		reader, writer := sidecar.NewReader(connection), sidecar.NewWriter(connection)
+		if _, err := reader.Read(); err != nil {
+			serverDone <- err
+			return
+		}
+		if err := writer.Write(ready); err != nil {
+			serverDone <- err
+			return
+		}
+		drifted := ready.Clone()
+		drifted.RuntimeArtifact.Revision = "1.4.3"
+		serverDone <- writer.Write(drifted)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	client, err := sidecar.Dial(ctx, sidecar.Config{
+		Address: "tcp:" + listener.Addr().String(), ProtocolVersion: sidecar.VersionElementGraph,
+	}, hello)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	select {
+	case _, open := <-client.Frames():
+		if open {
+			t.Fatal("drifted readiness escaped as an application frame")
+		}
+	case <-ctx.Done():
+		t.Fatal("post-readiness drift did not close the frame stream")
+	}
+	if err := client.Err(); err == nil || !strings.Contains(err.Error(), "changed after readiness") {
+		t.Fatalf("post-readiness drift error = %v", err)
+	}
+	select {
+	case err := <-serverDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("post-readiness server did not finish")
+	}
+}
+
+func TestV4TransportLossIsTerminalAndNeverSilentlyReconnects(t *testing.T) {
+	hello, _ := validElementHandshake()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	serverDone := make(chan error, 1)
+	go func() {
+		connection, err := listener.Accept()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		reader, writer := sidecar.NewReader(connection), sidecar.NewWriter(connection)
+		received, err := reader.Read()
+		if err != nil {
+			_ = connection.Close()
+			serverDone <- err
+			return
+		}
+		ready, err := (sidecar.ElementConformanceFixture{
+			Runtime:  sidecar.ArtifactIdentity{ID: "runtime/reconnect-test", Revision: "4"},
+			Provider: sidecar.ArtifactIdentity{ID: "provider/reconnect-test", Revision: "1"},
+			Adapter:  sidecar.ArtifactIdentity{ID: "adapter/reconnect-test", Revision: "4"},
+		}).Ready(received)
+		if err == nil {
+			err = writer.Write(ready)
+		}
+		_ = connection.Close()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+
+		// A v4 stream contains stateful, non-replayable media and action
+		// envelopes. Reconnecting it inside Client would silently replace the
+		// attested session and lose state; only an outer supervisor may start a
+		// fresh session. Prove that no second connection is attempted.
+		tcp := listener.(*net.TCPListener)
+		if err := tcp.SetDeadline(time.Now().Add(150 * time.Millisecond)); err != nil {
+			serverDone <- err
+			return
+		}
+		unexpected, err := tcp.Accept()
+		if err == nil {
+			_ = unexpected.Close()
+			serverDone <- errors.New("v4 client silently reconnected after transport loss")
+			return
+		}
+		if networkError, ok := err.(net.Error); !ok || !networkError.Timeout() {
+			serverDone <- fmt.Errorf("wait for forbidden reconnect: %w", err)
+			return
+		}
+		serverDone <- nil
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	client, err := sidecar.Dial(ctx, sidecar.Config{
+		Address: "tcp:" + listener.Addr().String(), ProtocolVersion: sidecar.VersionElementGraph,
+	}, hello)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	select {
+	case _, open := <-client.Frames():
+		if open {
+			t.Fatal("transport loss produced an application frame")
+		}
+	case <-ctx.Done():
+		t.Fatal("transport loss did not terminate the v4 session")
+	}
+	select {
+	case err := <-serverDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out checking the no-reconnect policy")
+	}
+}
+
+func TestV4DialContextCancellationClosesTheOwnedTransport(t *testing.T) {
+	hello, _ := validElementHandshake()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	serverDone := make(chan error, 1)
+	go func() {
+		connection, err := listener.Accept()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		defer connection.Close()
+		reader, writer := sidecar.NewReader(connection), sidecar.NewWriter(connection)
+		incoming, err := reader.Read()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		ready, err := (sidecar.ElementConformanceFixture{
+			Runtime:  sidecar.ArtifactIdentity{ID: "runtime/context-owned", Revision: "4"},
+			Provider: sidecar.ArtifactIdentity{ID: "provider/context-owned", Revision: "1"},
+			Adapter:  sidecar.ArtifactIdentity{ID: "adapter/context-owned", Revision: "4"},
+		}).Ready(incoming)
+		if err == nil {
+			err = writer.Write(ready)
+		}
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		last, err := reader.Read()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if last.Type != sidecar.TypeBye {
+			serverDone <- fmt.Errorf("context-canceled session ended with %s, want bye", last.Type)
+			return
+		}
+		serverDone <- nil
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	client, err := sidecar.Dial(ctx, sidecar.Config{
+		Address: "tcp:" + listener.Addr().String(), ProtocolVersion: sidecar.VersionElementGraph,
+	}, hello)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	cancel()
+	select {
+	case _, open := <-client.Frames():
+		if open {
+			t.Fatal("context cancellation exposed an application frame")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("context cancellation did not close the v4 frame stream")
+	}
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-serverDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("context cancellation did not close the owned peer transport")
 	}
 }

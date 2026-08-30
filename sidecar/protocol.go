@@ -16,10 +16,11 @@
 //
 //	{"type":"audio","payload_bytes":960}\n<960 bytes of PCM16>
 //
-// Audio is the only thing large enough to matter and it is raw rather than
-// base64, because a third more bytes and an encode/decode pass on every frame
-// is a real cost on the hot path. Everything else is ordinary JSON, so a
-// sidecar can be debugged by reading the stream.
+// Legacy audio/image frames and protocol-v4 typed element frames may use the
+// binary lane. In v4, the selected port's explicit WireFormat—not its name or
+// an audio-specific message kind—governs JSON/binary lanes and byte bounds.
+// Headers remain ordinary JSON so the boundary can still be inspected without
+// interpreting provider payloads.
 package sidecar
 
 import (
@@ -144,10 +145,12 @@ type Message struct {
 	// theoretically capable of supporting.
 	ElementDescriptor    *element.Descriptor     `json:"element_descriptor,omitempty"`
 	ElementConfig        json.RawMessage         `json:"element_config,omitempty"`
+	AppliedConfigDigest  string                  `json:"applied_config_digest,omitempty"`
 	SelectedPorts        []PortSelection         `json:"selected_ports,omitempty"`
 	RequiredCapabilities []CapabilityRequirement `json:"required_capabilities,omitempty"`
 	RuntimeArtifact      ArtifactIdentity        `json:"runtime_artifact,omitempty"`
 	ResolvedCapabilities []CapabilityIdentity    `json:"resolved_capabilities,omitempty"`
+	NegotiatedPorts      []PortNegotiation       `json:"negotiated_ports,omitempty"`
 	Port                 string                  `json:"port,omitempty"`
 	Envelope             *WireEnvelope           `json:"envelope,omitempty"`
 	// Selected ownership (protocol v2). Capabilities say what the stack can
@@ -242,14 +245,22 @@ const (
 // sidecar author debugging their implementation should get "audio needs a
 // payload" rather than a silent hang three seconds later.
 func (message Message) Validate() error {
-	if strings.TrimSpace(string(message.Type)) == "" {
+	if strings.TrimSpace(string(message.Type)) == "" || string(message.Type) != strings.TrimSpace(string(message.Type)) ||
+		len(message.Type) > 64 {
 		return errors.New("a sidecar message requires a type")
 	}
 	if message.PayloadBytes < 0 {
 		return errors.New("payload length cannot be negative")
 	}
-	if message.PayloadBytes != len(message.Payload) && len(message.Payload) > 0 {
+	if message.PayloadBytes != len(message.Payload) {
 		return fmt.Errorf("payload declares %d bytes and carries %d", message.PayloadBytes, len(message.Payload))
+	}
+	if len(message.Payload) > 0 {
+		switch message.Type {
+		case TypeAudio, TypeOutputAudio, TypeImage, TypeElementFrame:
+		default:
+			return fmt.Errorf("%s cannot carry a binary payload", message.Type)
+		}
 	}
 	switch message.Type {
 	case TypeHello:
@@ -285,6 +296,9 @@ func (message Message) Validate() error {
 		if len(message.Payload)%2 != 0 {
 			return fmt.Errorf("%s payload must contain whole PCM16 samples", message.Type)
 		}
+		if message.Text != "" || message.MIMEType != "" || message.Width != 0 || message.Height != 0 {
+			return fmt.Errorf("%s cannot mix PCM16 with text or image fields", message.Type)
+		}
 	case TypeImage:
 		if len(message.Payload) == 0 || strings.TrimSpace(message.Source) == "" ||
 			message.Width <= 0 || message.Height <= 0 {
@@ -292,6 +306,9 @@ func (message Message) Validate() error {
 		}
 		if message.MIMEType != "image/jpeg" && message.MIMEType != "image/png" {
 			return fmt.Errorf("image MIME type must be image/jpeg or image/png, got %q", message.MIMEType)
+		}
+		if message.Text != "" || message.SampleRate != 0 || message.OutputRate != 0 {
+			return errors.New("image cannot mix encoded pixels with text or audio-rate fields")
 		}
 	case TypeText:
 		if strings.TrimSpace(message.Text) == "" {

@@ -27,9 +27,10 @@ import (
 )
 
 type scriptedSlow struct {
-	mu    sync.Mutex
-	turns [][]continuation.Event
-	calls int
+	mu         sync.Mutex
+	turns      [][]continuation.Event
+	calls      int
+	beforeEmit <-chan struct{}
 }
 
 func (provider *scriptedSlow) Descriptor() continuation.Descriptor {
@@ -40,7 +41,7 @@ func (provider *scriptedSlow) Descriptor() continuation.Descriptor {
 }
 
 func (provider *scriptedSlow) Continue(
-	_ context.Context, _ continuation.Request, emit continuation.Emit,
+	ctx context.Context, _ continuation.Request, emit continuation.Emit,
 ) (continuation.Completion, error) {
 	provider.mu.Lock()
 	index := provider.calls
@@ -50,6 +51,13 @@ func (provider *scriptedSlow) Continue(
 		events = provider.turns[index]
 	}
 	provider.mu.Unlock()
+	if provider.beforeEmit != nil {
+		select {
+		case <-provider.beforeEmit:
+		case <-ctx.Done():
+			return continuation.Completion{}, context.Cause(ctx)
+		}
+	}
 	for _, event := range events {
 		if err := emit(event); err != nil {
 			return continuation.Completion{}, err
@@ -62,6 +70,8 @@ type collectingSink struct {
 	mu          sync.Mutex
 	transcripts []binding.TranscriptEvent
 	audioFrames int
+	audioSeen   chan struct{}
+	audioOnce   sync.Once
 	spoken      []string
 	toolCalls   []binding.ToolCallEvent
 	activity    []binding.ActivityEvent
@@ -155,6 +165,9 @@ func (sink *collectingSink) SpeechAudio(context.Context, action.Utterance, actio
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
 	sink.audioFrames++
+	if sink.audioSeen != nil {
+		sink.audioOnce.Do(func() { close(sink.audioSeen) })
+	}
 	return nil
 }
 func (sink *collectingSink) SpeechEnd(context.Context, action.Utterance, action.Outcome) error {
@@ -240,9 +253,10 @@ func sidecarReceived(t *testing.T, path string) []map[string]any {
 
 func TestOmniKeepsTheFloorInTheEngine(t *testing.T) {
 	binary, received := buildFakeSidecar(t)
+	modelAudio := make(chan struct{})
 	slow := &scriptedSlow{turns: [][]continuation.Event{{
 		{Kind: continuation.EventAssistantDelta, Text: "The balance is $40.00."},
-	}}}
+	}}, beforeEmit: modelAudio}
 	bind, err := omni.New(omni.Config{
 		Sidecar: sidecar.Config{
 			Command: []string{binary}, Environment: []string{"FAKE_SIDECAR_LOG=" + received},
@@ -260,7 +274,7 @@ func TestOmniKeepsTheFloorInTheEngine(t *testing.T) {
 		t.Fatalf("unexpected ownership %+v", ownership)
 	}
 
-	sink := &collectingSink{}
+	sink := &collectingSink{audioSeen: modelAudio}
 	runtime, err := bind.Start(context.Background(), binding.Options{Sink: sink, SessionID: "test"})
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -313,6 +327,12 @@ func TestOmniKeepsTheFloorInTheEngine(t *testing.T) {
 		}
 		return false
 	}, "the background reasoner's answer must be handed to the model")
+	slow.mu.Lock()
+	slowCalls := slow.calls
+	slow.mu.Unlock()
+	if slowCalls != 1 {
+		t.Fatalf("a coalesced observer event reopened background reasoning: got %d slow calls, want 1", slowCalls)
+	}
 }
 
 func TestDuplexGivesTheModelItsFloor(t *testing.T) {

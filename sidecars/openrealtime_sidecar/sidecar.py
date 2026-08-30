@@ -11,7 +11,6 @@ from typing import Any, BinaryIO
 
 from .protocol import (
     SUPPORTED_VERSIONS,
-    VERSION,
     Message,
     MessageType,
     log,
@@ -28,7 +27,6 @@ _INTERACTION_FLOORS = {
     "keep-speaking": "unchanged",
     "stop-speaking": "yield",
 }
-
 
 class Sidecar:
     """A model server that speaks the sidecar protocol.
@@ -176,6 +174,14 @@ class Sidecar:
                 f"this sidecar speaks protocol versions {SUPPORTED_VERSIONS}, "
                 f"the engine speaks {hello.get('version')}",
                 code="version_mismatch",
+                fatal=True,
+            )
+            return
+        if requested_version == 4:
+            self.error(
+                "protocol v4 requires the explicit ElementSidecar API; "
+                "legacy audio/turn callbacks are not a graph adapter",
+                code="unsupported_element",
                 fatal=True,
             )
             return

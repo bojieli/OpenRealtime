@@ -19,16 +19,26 @@ from .protocol import (
     read_message,
     write_message,
 )
+from .element import (
+    ConformanceElementSidecar,
+    ElementSidecar,
+    conformance_descriptor,
+    run_element,
+)
 from .sidecar import Sidecar, run
 
 __all__ = [
     "VERSION",
     "Capability",
+    "ConformanceElementSidecar",
+    "ElementSidecar",
     "Message",
     "MessageType",
     "Sidecar",
     "log",
     "read_message",
+    "conformance_descriptor",
     "run",
+    "run_element",
     "write_message",
 ]

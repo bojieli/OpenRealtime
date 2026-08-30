@@ -354,13 +354,18 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		BackgroundResult: batch.Signalled(interaction.SignalBackgroundResult),
 		Parallel:         batch.Triage == eventloop.TriageParallel,
 	}
+	// Mirrored model speech is observer evidence, not a new request. It can be
+	// committed in the same safe-point batch as a background result or tool
+	// result, though, and suppressing the whole batch would consume that other
+	// cause without acting on it. Remove only the observer-only cause so the
+	// signal that shared its commit still reaches the rollout policy.
+	if cause.Observation && !batchHasUserSpeech(batch) {
+		cause.Observation = false
+	}
 	if foregroundToolResult && !cause.Observation && !cause.ToolResult && !cause.BackgroundResult {
 		return nil
 	}
 	if !cause.Observation && !cause.ToolResult && !cause.BackgroundResult {
-		return nil
-	}
-	if cause.Observation && !batchHasUserSpeech(batch) && !cause.ToolResult {
 		return nil
 	}
 	revision := runtime.latestRevision(batch)
