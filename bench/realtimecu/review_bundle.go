@@ -2659,6 +2659,9 @@ func canonicalReportability(source []string) []string {
 		seen[value] = struct{}{}
 		result = append(result, value)
 	}
+	if len(result) == 0 {
+		return nil
+	}
 	sort.Strings(result)
 	return result
 }

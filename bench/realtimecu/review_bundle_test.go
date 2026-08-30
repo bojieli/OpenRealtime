@@ -140,6 +140,22 @@ func (lease *failAfterSourceReceiptPublishLease) Publish(
 var fixtureCUReviewerImplementation = []byte("openrealtime realtime-cu reviewer fixture v1")
 var fixtureCUReviewerConfiguration = []byte(`{"mode":"hermetic"}`)
 
+func TestCanonicalReportabilityPreservesOmittedEmptyWireForm(t *testing.T) {
+	t.Parallel()
+
+	for _, source := range [][]string{nil, {}, {"", "  "}} {
+		if got := canonicalReportability(source); got != nil {
+			t.Fatalf("canonical empty reportability = %#v, want nil", got)
+		}
+	}
+
+	got := canonicalReportability([]string{" beta ", "alpha", "beta", ""})
+	want := []string{"alpha", "beta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("canonical reportability = %#v, want %#v", got, want)
+	}
+}
+
 func fixtureCUReviewerCapabilities() revieweval.ProviderCapabilities {
 	return revieweval.ProviderCapabilities{
 		MediaTypes:        []string{"audio/wav", "video/mp4"},
