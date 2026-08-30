@@ -39,14 +39,14 @@ const (
 	realtimeCULocalModelProvider       = "vllm"
 	realtimeCULocalModelName           = "qwen-fast"
 	realtimeCULocalModelURL            = "http://127.0.0.1:8000/v1"
-	realtimeCULocalASRProvider         = "sensevoice"
-	realtimeCULocalASRModel            = "iic/SenseVoiceSmall"
-	realtimeCULocalASRURL              = "http://127.0.0.1:8002/v1"
+	realtimeCULocalASRProvider         = "whisper-server"
+	realtimeCULocalASRModel            = "whisper-turbo"
+	realtimeCULocalASRURL              = "http://127.0.0.1:8003/v1"
 	realtimeCULocalModelKeyEnvironment = "OPENREALTIME_LOCAL_API_KEY"
 	realtimeCULocalASRKeyEnvironment   = "OPENREALTIME_ASR_API_KEY"
 
 	realtimeCULocalModelReference    = "provider.openrealtime.realtime-cu.model.vllm.qwen-fast.local.v1"
-	realtimeCULocalObserverReference = "provider.openrealtime.realtime-cu.observer.sensevoice-keyframe.local.v2"
+	realtimeCULocalObserverReference = "provider.openrealtime.realtime-cu.observer.whisper-keyframe.local.v3"
 	realtimeCULocalObserverName      = "openrealtime.realtime-cu.local-audiovisual-observer"
 
 	realtimeCUApplicationArtifactID = "go://github.com/bojieli/OpenRealtime/graphs/realtime-computer-use/application/v1"

@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -411,6 +415,166 @@ func TestRealtimeCUSenseVoiceProcessRejectsAlternateModuleLoading(t *testing.T) 
 	}
 }
 
+func TestRealtimeCUWhisperProcessRequiresExactImmutableSnapshotAndCommand(t *testing.T) {
+	repository := filepath.Join(t.TempDir(), "models--mobiuslabsgmbh--faster-whisper-large-v3-turbo")
+	revision := strings.Repeat("a", 40)
+	model := filepath.Join(repository, "snapshots", revision)
+	if err := os.MkdirAll(model, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	serviceDirectory := filepath.Join(t.TempDir(), "whisper")
+	if err := os.MkdirAll(serviceDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	service := filepath.Join(serviceDirectory, "server.py")
+	if err := os.WriteFile(service, []byte("# fixture\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dependencyRoot := filepath.Join(t.TempDir(), "site-packages")
+	if err := os.MkdirAll(dependencyRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	valid := realtimeCUProcessSnapshot{Arguments: []string{
+		"/runtime/python", "-I", "-S", "-B", realtimeCUWhisperServiceArgument,
+		"--model", model, "--device", "cuda", "--compute-type", "float16",
+		"--language", "en", "--dependency-root", dependencyRoot, "--port", "8003",
+	}}
+	if err := validateRealtimeCUWhisperProcess(valid, service, []string{dependencyRoot}); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutation := range []func([]string) []string{
+		func(arguments []string) []string { return append(arguments, "--beam-size", "5") },
+		func(arguments []string) []string {
+			copy := slices.Clone(arguments)
+			copy[slices.Index(copy, "--language")+1] = "auto"
+			return copy
+		},
+		func(arguments []string) []string {
+			copy := slices.Clone(arguments)
+			copy[slices.Index(copy, "--model")+1] = filepath.Join(repository, "refs", "main")
+			return copy
+		},
+		func(arguments []string) []string {
+			copy := slices.Clone(arguments)
+			copy[4] = "tools/whisper/server.py"
+			return copy
+		},
+		func(arguments []string) []string {
+			copy := slices.Clone(arguments)
+			copy[slices.Index(copy, "--dependency-root")+1] = "/different/dependencies"
+			return copy
+		},
+	} {
+		changed := valid
+		changed.Arguments = mutation(slices.Clone(valid.Arguments))
+		if err := validateRealtimeCUWhisperProcess(changed, service, []string{dependencyRoot}); err == nil {
+			t.Fatalf("Whisper process accepted drifted command: %q", changed.Arguments)
+		}
+	}
+	alternateDirectory := filepath.Join(t.TempDir(), "whisper")
+	if err := os.MkdirAll(alternateDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alternate := filepath.Join(alternateDirectory, "server.py")
+	if err := os.WriteFile(alternate, []byte("# alternate fixture\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changed := valid
+	changed.Arguments = slices.Clone(valid.Arguments)
+	changed.Arguments[4] = alternate
+	if err := validateRealtimeCUWhisperProcess(changed, service, []string{dependencyRoot}); err == nil {
+		t.Fatal("Whisper process accepted an alternate same-named service module")
+	}
+	changed = valid
+	changed.Environment = map[string]string{"PYTHONPATH": "/tmp/shadow-modules"}
+	if err := validateRealtimeCUWhisperProcess(changed, service, []string{dependencyRoot}); err == nil {
+		t.Fatal("Whisper process accepted an alternate Python module root")
+	}
+}
+
+func TestConfiguredRealtimeCUWhisperServiceRequiresPinnedReviewedBytes(t *testing.T) {
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Clean(filepath.Join(workingDirectory, "..", ".."))
+	service := filepath.Join(repository, "tools", "whisper", "server.py")
+	t.Setenv(realtimeCUWhisperServicePathEnv, service)
+	got, err := configuredRealtimeCUWhisperService(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != service {
+		t.Fatalf("configured Whisper service = %q, want %q", got, service)
+	}
+	launcher, err := os.ReadFile(filepath.Join(repository, "tools", "services", "up.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(launcher), realtimeCUWhisperServiceDigestV2) != 1 {
+		t.Fatal("Whisper launcher does not exact-pin the reviewed service digest")
+	}
+	if strings.Count(string(launcher), `"${whisper_python}" -I -S -B -c`) != 2 ||
+		!strings.Contains(string(launcher), `os.execv(python, [python, "-I", "-S", "-B", "/proc/self/fd/3"`) {
+		t.Fatal("Whisper launcher does not isolate both its sealer and sealed service")
+	}
+	content, err := os.ReadFile(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alternateDirectory := filepath.Join(t.TempDir(), "whisper")
+	if err := os.MkdirAll(alternateDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alternate := filepath.Join(alternateDirectory, "server.py")
+	if err := os.WriteFile(alternate, append(content, []byte("\n# mutation\n")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(realtimeCUWhisperServicePathEnv, alternate)
+	if _, err := configuredRealtimeCUWhisperService(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "pinned reviewed implementation") {
+		t.Fatalf("alternate Whisper service error = %v", err)
+	}
+}
+
+func TestConfiguredRealtimeCUWhisperDependencyRootsRequireExactCanonicalDirectories(t *testing.T) {
+	first := filepath.Join(t.TempDir(), "first")
+	second := filepath.Join(t.TempDir(), "second")
+	for _, root := range []string{first, second} {
+		if err := os.MkdirAll(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv(realtimeCUWhisperDependencyRootsEnv, strings.Join([]string{first, second}, string(os.PathListSeparator)))
+	got, err := configuredRealtimeCUWhisperDependencyRoots()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, []string{first, second}) {
+		t.Fatalf("Whisper dependency roots = %q", got)
+	}
+	for name, value := range map[string]string{
+		"empty":     "",
+		"relative":  "relative",
+		"duplicate": strings.Join([]string{first, first}, string(os.PathListSeparator)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(realtimeCUWhisperDependencyRootsEnv, value)
+			if _, err := configuredRealtimeCUWhisperDependencyRoots(); err == nil {
+				t.Fatal("invalid Whisper dependency roots were accepted")
+			}
+		})
+	}
+	symlink := filepath.Join(t.TempDir(), "linked")
+	if err := os.Symlink(first, symlink); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(realtimeCUWhisperDependencyRootsEnv, symlink)
+	if _, err := configuredRealtimeCUWhisperDependencyRoots(); err == nil {
+		t.Fatal("symlinked Whisper dependency root was accepted")
+	}
+}
+
 func TestHashRealtimeCUFileRejectsPathSwapEvenWhenMetadataMatches(t *testing.T) {
 	directory := t.TempDir()
 	target := filepath.Join(directory, "target.bin")
@@ -493,6 +657,13 @@ func TestLocalRealtimeCUBackendAttestationRejectsInterpassMaterialDrift(t *testi
 
 func TestRealtimeCURuntimePackageRootsUseListenerExecutableAndWorkingDirectory(t *testing.T) {
 	working := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "sitecustomize-executed")
+	if err := os.WriteFile(
+		filepath.Join(working, "sitecustomize.py"),
+		[]byte(fmt.Sprintf("open(%q, 'w').write('executed')\n", marker)), 0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
 	module := filepath.Join(working, "attestedfixture")
 	if err := os.MkdirAll(module, 0o700); err != nil {
 		t.Fatal(err)
@@ -506,11 +677,18 @@ func TestRealtimeCURuntimePackageRootsUseListenerExecutableAndWorkingDirectory(t
 		t.Fatal(err)
 	}
 	if info, err := os.Stat(python); err != nil || !info.Mode().IsRegular() {
-		t.Skip("local Python runtime is unavailable")
+		python, err = exec.LookPath("python3")
+		if err != nil {
+			t.Skip("Python is unavailable")
+		}
+		python, err = filepath.Abs(python)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	process := realtimeCUProcessSnapshot{
 		Arguments: []string{python}, Executable: python, ExecutableHandle: python,
-		WorkingDir: working, Environment: map[string]string{"HOME": working, "PYTHONPATH": "."},
+		WorkingDir: working, Environment: map[string]string{"HOME": working, "PYTHONPATH": working},
 	}
 	roots, err := realtimeCURuntimePackageRoots(context.Background(), process, []string{"attestedfixture"})
 	if err != nil {
@@ -524,6 +702,9 @@ func TestRealtimeCURuntimePackageRootsUseListenerExecutableAndWorkingDirectory(t
 	}
 	if !found {
 		t.Fatalf("runtime package roots = %+v", roots)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("isolated package resolver executed sitecustomize: %v", err)
 	}
 	process.ExecutableHandle = "/bin/false"
 	if _, err := realtimeCURuntimePackageRoots(context.Background(), process, []string{"attestedfixture"}); err == nil {
@@ -625,7 +806,7 @@ func TestSenseVoiceServiceLoadedModelDigestMatchesIndependentGoVerifier(t *testi
 	if info, err := os.Stat(python); err != nil || !info.Mode().IsRegular() {
 		t.Skip("local SenseVoice Python runtime is unavailable")
 	}
-	command := exec.Command(python, "-c",
+	command := exec.Command(python, "-B", "-c",
 		"import server,sys; print(server.loaded_model_digest(sys.argv[1])); print('|'.join(server.service_module_identity()))", root)
 	command.Dir = filepath.Join(repository, "deploy", "sensevoice")
 	output, err := command.Output()
@@ -648,6 +829,514 @@ func TestSenseVoiceServiceLoadedModelDigestMatchesIndependentGoVerifier(t *testi
 	if lines[1] != servicePath+"|"+serviceDigest {
 		t.Fatalf("SenseVoice boot service identity = %q, want %q|%q",
 			lines[1], servicePath, serviceDigest)
+	}
+}
+
+func TestWhisperServiceLoadedModelDigestMatchesIndependentGoVerifier(t *testing.T) {
+	directory := t.TempDir()
+	root := filepath.Join(directory, "snapshot")
+	blobs := filepath.Join(directory, "blobs")
+	if err := os.MkdirAll(filepath.Join(root, "nested"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(blobs, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(blobs, "weights"), []byte("weights"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(blobs, "weights"), filepath.Join(root, "model.bin")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "nested", "config"), []byte("configuration"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	want, err := digestRealtimeCULoadedModel(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Clean(filepath.Join(workingDirectory, "..", ".."))
+	python := filepath.Join(repository, ".runtime", "sensevoice", "bin", "python")
+	if info, err := os.Stat(python); err != nil || !info.Mode().IsRegular() {
+		python, err = exec.LookPath("python3")
+		if err != nil {
+			t.Skip("Python is unavailable")
+		}
+	}
+	command := exec.Command(python, "-B", "-c",
+		"import server,sys; print(server.loaded_model_digest(sys.argv[1])); print('|'.join(server.service_module_identity()))", root)
+	command.Dir = filepath.Join(repository, "tools", "whisper")
+	output, err := command.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) != 2 || lines[0] != want {
+		t.Fatalf("Whisper service output = %q, independent model digest = %s", lines, want)
+	}
+	servicePath := filepath.Join(repository, "tools", "whisper", "server.py")
+	serviceSeal, err := snapshotRealtimeCUFile("service/server.py", servicePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceDigest, err := hashRealtimeCUFile(context.Background(), serviceSeal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines[1] != servicePath+"|"+serviceDigest {
+		t.Fatalf("Whisper boot service identity = %q, want %q|%q",
+			lines[1], servicePath, serviceDigest)
+	}
+}
+
+func TestWhisperServiceDependencyDigestMatchesIndependentGoVerifier(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("Python is unavailable")
+	}
+	root := t.TempDir()
+	module := filepath.Join(root, "fixture_dependency")
+	if err := os.MkdirAll(filepath.Join(module, "nested"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for path, payload := range map[string][]byte{
+		filepath.Join(module, "__init__.py"):        []byte("VALUE = 1\n"),
+		filepath.Join(module, "nested", "data.bin"): []byte("dependency data"),
+	} {
+		if err := os.WriteFile(path, payload, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	original := realtimeCUWhisperRuntimePackages
+	realtimeCUWhisperRuntimePackages = []string{"fixture_dependency"}
+	t.Cleanup(func() { realtimeCUWhisperRuntimePackages = original })
+	want, err := digestRealtimeCUWhisperDependencies(context.Background(), []realtimeCUMaterialRoot{
+		{Label: "runtime-fixture_dependency", Path: module},
+	}, []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Clean(filepath.Join(workingDirectory, "..", ".."))
+	service := filepath.Join(repository, "tools", "whisper", "server.py")
+	program := `
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location("server", sys.argv[1])
+server = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(server)
+if list(server.WHISPER_DEPENDENCY_MODULES) != json.loads(sys.argv[3]):
+    raise SystemExit("Go and Python dependency selections differ")
+server.WHISPER_DEPENDENCY_MODULES = ("fixture_dependency",)
+print(json.dumps(server.WHISPER_DEPENDENCY_MODULES))
+print(server.dependency_material_digest([sys.argv[2]]))
+`
+	selection, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(python, "-I", "-S", "-B", "-c", program, service, root, string(selection))
+	output, err := command.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) != 2 || lines[0] != `["fixture_dependency"]` {
+		t.Fatalf("Whisper dependency selection output = %q", lines)
+	}
+	if got := lines[1]; got != want {
+		t.Fatalf("Whisper dependency digest = %q, independent Go digest = %q", got, want)
+	}
+}
+
+func TestWhisperDependencyImportGuardNeverConsumesPreexistingBytecode(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("Python is unavailable")
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Clean(filepath.Join(workingDirectory, "..", ".."))
+	service := filepath.Join(repository, "tools", "whisper", "server.py")
+	program := `
+import importlib, importlib.util, os, pathlib, py_compile, sys
+root = pathlib.Path(sys.argv[2])
+source = root / "cached_dependency.py"
+source.write_text("VALUE = 'EVIL'\n")
+before = source.stat()
+py_compile.compile(str(source), doraise=True)
+source.write_text("VALUE = 'GOOD'\n")
+os.utime(source, ns=(before.st_atime_ns, before.st_mtime_ns))
+sys.path.insert(0, str(root))
+cached = importlib.import_module("cached_dependency")
+if cached.VALUE != "EVIL":
+    raise SystemExit("stale-bytecode fixture was not valid")
+del sys.modules["cached_dependency"]
+sys.path.remove(str(root))
+
+spec = importlib.util.spec_from_file_location("reviewed_whisper_server", sys.argv[1])
+server = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(server)
+server.install_dependency_import_guard([str(root)])
+sys.path.insert(0, str(root))
+guarded = importlib.import_module("cached_dependency")
+if guarded.VALUE != "GOOD":
+    raise SystemExit("Whisper dependency guard consumed stale bytecode")
+`
+	root := t.TempDir()
+	command := exec.Command(python, "-I", "-S", "-B", "-c", program, service, root)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("source-only dependency import guard failed: %v\n%s", err, output)
+	}
+}
+
+func TestWhisperDependencyDigestRejectsSymlinkAndExternalHardLinkAliases(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("Python is unavailable")
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Clean(filepath.Join(workingDirectory, "..", ".."))
+	service := filepath.Join(repository, "tools", "whisper", "server.py")
+	original := realtimeCUWhisperRuntimePackages
+	realtimeCUWhisperRuntimePackages = []string{"fixture_dependency"}
+	t.Cleanup(func() { realtimeCUWhisperRuntimePackages = original })
+
+	for _, kind := range []string{"symlink", "hardlink"} {
+		t.Run(kind, func(t *testing.T) {
+			root := t.TempDir()
+			module := filepath.Join(root, "fixture_dependency")
+			if err := os.Mkdir(module, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			externalDirectory := t.TempDir()
+			external := filepath.Join(externalDirectory, "external.py")
+			if err := os.WriteFile(external, []byte("VALUE = 1\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			alias := filepath.Join(module, "__init__.py")
+			var aliasErr error
+			if kind == "symlink" {
+				aliasErr = os.Symlink(external, alias)
+			} else {
+				aliasErr = os.Link(external, alias)
+			}
+			if aliasErr != nil {
+				t.Skipf("create %s fixture: %v", kind, aliasErr)
+			}
+			if _, err := digestRealtimeCUWhisperDependencies(
+				context.Background(),
+				[]realtimeCUMaterialRoot{{Label: "runtime-fixture_dependency", Path: module}},
+				[]string{root},
+			); err == nil {
+				t.Fatalf("Go dependency verifier accepted an external %s alias", kind)
+			}
+			program := `
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("reviewed_whisper_server", sys.argv[1])
+server = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(server)
+server.WHISPER_DEPENDENCY_MODULES = ("fixture_dependency",)
+try:
+    server.dependency_material_digest([sys.argv[2]])
+except RuntimeError:
+    pass
+else:
+    raise SystemExit("Python dependency verifier accepted an external alias")
+`
+			command := exec.Command(python, "-I", "-S", "-B", "-c", program, service, root)
+			if output, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("Python %s alias guard failed: %v\n%s", kind, err, output)
+			}
+		})
+	}
+}
+
+func TestWhisperServiceRejectsLoaderWindowModelSwap(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("Python is unavailable")
+	}
+	revision := strings.Repeat("b", 40)
+	model := filepath.Join(t.TempDir(), revision)
+	if err := os.MkdirAll(model, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(model, "model.bin"), []byte("GOOD"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fakePackage := t.TempDir()
+	siteMarker := filepath.Join(t.TempDir(), "sitecustomize-executed")
+	fakeModule := `
+import pathlib
+
+class _Info:
+    language = "en"
+
+class WhisperModel:
+    def __init__(self, path, **_kwargs):
+        target = pathlib.Path(path) / "model.bin"
+        good = target.read_bytes()
+        target.chmod(0o600)
+        target.write_bytes(b"EVIL")
+        self.loaded = target.read_bytes()
+        target.write_bytes(good)
+        target.chmod(0o400)
+
+    def transcribe(self, *_args, **_kwargs):
+        return iter(()), _Info()
+`
+	if err := os.WriteFile(filepath.Join(fakePackage, "faster_whisper.py"), []byte(fakeModule), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(fakePackage, "sitecustomize.py"),
+		[]byte(fmt.Sprintf("open(%q, 'w').write('executed')\n", siteMarker)), 0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Clean(filepath.Join(workingDirectory, "..", ".."))
+	program := `
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("server", sys.argv[1])
+server = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(server)
+server.WHISPER_DEPENDENCY_MODULES = ("faster_whisper",)
+try:
+    server.Recogniser(sys.argv[2], "cuda", "float16", "en", [sys.argv[3]])
+except RuntimeError as error:
+    if "changed after sealing" not in str(error):
+        raise
+else:
+    raise SystemExit("loader-window replacement was accepted")
+`
+	service := filepath.Join(repository, "tools", "whisper", "server.py")
+	command := exec.Command(python, "-I", "-S", "-B", "-c", program, service, model, fakePackage)
+	command.Dir = repository
+	command.Env = []string{"HOME=" + t.TempDir(), "PYTHONPATH=" + fakePackage}
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("loader-window guard failed: %v\n%s", err, output)
+	}
+	if _, err := os.Stat(siteMarker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("isolated Whisper load executed sitecustomize: %v", err)
+	}
+}
+
+func TestWhisperServiceRejectsLoaderWindowCampaignAncestorSwap(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("Python is unavailable")
+	}
+	revision := strings.Repeat("d", 40)
+	model := filepath.Join(t.TempDir(), revision)
+	if err := os.MkdirAll(model, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(model, "model.bin"), []byte("GOOD"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fakePackage := t.TempDir()
+	fakeModule := `
+import pathlib, shutil
+
+class _Info:
+    language = "en"
+
+class WhisperModel:
+    def __init__(self, path, **_kwargs):
+        model = pathlib.Path(path)
+        campaign = model.parent
+        moved = campaign.with_name(campaign.name + ".moved")
+        campaign.rename(moved)
+        replacement = campaign / "model"
+        replacement.mkdir(parents=True)
+        (replacement / "model.bin").write_bytes(b"EVIL")
+        self.loaded = (model / "model.bin").read_bytes()
+        shutil.rmtree(campaign)
+        moved.rename(campaign)
+
+    def transcribe(self, *_args, **_kwargs):
+        return iter(()), _Info()
+`
+	if err := os.WriteFile(filepath.Join(fakePackage, "faster_whisper.py"), []byte(fakeModule), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Clean(filepath.Join(workingDirectory, "..", ".."))
+	service := filepath.Join(repository, "tools", "whisper", "server.py")
+	program := `
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("server", sys.argv[1])
+server = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(server)
+server.WHISPER_DEPENDENCY_MODULES = ("faster_whisper",)
+try:
+    server.Recogniser(sys.argv[2], "cuda", "float16", "en", [sys.argv[3]])
+except RuntimeError as error:
+    if "changed after sealing" not in str(error):
+        raise
+else:
+    raise SystemExit("campaign ancestor replacement was accepted")
+`
+	command := exec.Command(python, "-I", "-S", "-B", "-c", program, service, model, fakePackage)
+	command.Dir = repository
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("campaign ancestor guard failed: %v\n%s", err, output)
+	}
+}
+
+func TestWhisperServiceRejectsDependencyModuleSwapAndRestoreDuringImport(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("Python is unavailable")
+	}
+	revision := strings.Repeat("e", 40)
+	model := filepath.Join(t.TempDir(), revision)
+	if err := os.MkdirAll(model, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(model, "model.bin"), []byte("GOOD"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fakePackage := t.TempDir()
+	fakeModule := `
+import pathlib
+_source = pathlib.Path(__file__)
+_source.write_text("# restored GOOD dependency bytes\n")
+
+class _Info:
+    language = "en"
+
+class WhisperModel:
+    behavior = "EVIL"
+
+    def __init__(self, *_args, **_kwargs):
+        pass
+
+    def transcribe(self, *_args, **_kwargs):
+        return iter(()), _Info()
+`
+	modulePath := filepath.Join(fakePackage, "faster_whisper.py")
+	if err := os.WriteFile(modulePath, []byte(fakeModule), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Clean(filepath.Join(workingDirectory, "..", ".."))
+	service := filepath.Join(repository, "tools", "whisper", "server.py")
+	program := `
+import importlib.util, pathlib, sys
+spec = importlib.util.spec_from_file_location("server", sys.argv[1])
+server = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(server)
+server.WHISPER_DEPENDENCY_MODULES = ("faster_whisper",)
+try:
+    server.Recogniser(sys.argv[2], "cuda", "float16", "en", [sys.argv[3]])
+except RuntimeError as error:
+    if "dependency material changed after sealing" not in str(error):
+        raise
+else:
+    raise SystemExit("dependency swap and restore was accepted")
+if pathlib.Path(sys.argv[3], "faster_whisper.py").read_text() != "# restored GOOD dependency bytes\n":
+    raise SystemExit("dependency fixture did not restore its benign bytes")
+`
+	command := exec.Command(python, "-I", "-S", "-B", "-c", program, service, model, fakePackage)
+	command.Dir = repository
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("dependency load-window guard failed: %v\n%s", err, output)
+	}
+}
+
+func TestWhisperExistingListenerVerifierRejectsStaleProcessAndHTTPFailure(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("Python is unavailable")
+	}
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{Handler: http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		http.Error(writer, "not ready", http.StatusServiceUnavailable)
+	})}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close() })
+	port := listener.Addr().(*net.TCPAddr).Port
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Clean(filepath.Join(workingDirectory, "..", ".."))
+	serviceDirectory := filepath.Join(repository, "tools", "whisper")
+	for name, program := range map[string]string{
+		"HTTP 503": `
+import server, sys
+try:
+    server.read_health(sys.argv[1])
+except Exception:
+    pass
+else:
+    raise SystemExit("HTTP 503 was accepted as healthy")
+`,
+		"stale listener process": `
+import server, types, sys
+server.WHISPER_DEPENDENCY_MODULES = ("faster_whisper",)
+arguments = types.SimpleNamespace(
+    port=int(sys.argv[1]), model=sys.argv[2], device="cuda", compute_type="float16",
+    language="en", dependency_root=[sys.argv[2]], working_directory=sys.argv[3],
+)
+try:
+    server.verify_existing_listener(arguments)
+except RuntimeError as error:
+    if "command differs" not in str(error):
+        raise
+else:
+    raise SystemExit("stale listener was adopted")
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			model := filepath.Join(t.TempDir(), strings.Repeat("c", 40))
+			if err := os.MkdirAll(model, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(model, "model.bin"), []byte("fixture"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(model, "faster_whisper.py"), []byte("# fixture\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			arguments := []string{"-B", "-c", program}
+			if name == "HTTP 503" {
+				arguments = append(arguments, fmt.Sprintf("http://127.0.0.1:%d/health", port))
+			} else {
+				arguments = append(arguments, strconv.Itoa(port), model, repository)
+			}
+			command := exec.Command(python, arguments...)
+			command.Dir = serviceDirectory
+			if output, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("existing-listener guard failed: %v\n%s", err, output)
+			}
+		})
 	}
 }
 

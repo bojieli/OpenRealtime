@@ -20,7 +20,7 @@ import (
 )
 
 // TestRealtimeCUProductionProfileUsesAuthenticatedLiveDeploymentsAndInspection
-// is opt-in because it binds the actual loopback Qwen and SenseVoice listeners
+// is opt-in because it binds the actual loopback Qwen and Whisper listeners
 // and independently hashes their selected model/runtime bytes. It exercises
 // the normal shared Realtime and live-inspection APIs; no Realtime-CU-specific
 // route or UI is installed.

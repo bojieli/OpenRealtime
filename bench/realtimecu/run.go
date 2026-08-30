@@ -32,7 +32,7 @@ func ReferenceCell() bench.Cell {
 	cell.Levels[bench.FactorFastModel] = "hosted-vision"
 	cell.Levels[bench.FactorFastAction] = "slow-only"
 	cell.Levels[bench.FactorVideoRate] = "3fps"
-	cell.Levels[bench.FactorRecognizer] = "sensevoice-small"
+	cell.Levels[bench.FactorRecognizer] = "whisper-large-v3-turbo"
 	cell.Name = "realtime-cu-reference"
 	return cell
 }

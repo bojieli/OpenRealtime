@@ -509,7 +509,7 @@ func realtimeCUProfileTestDeployments() realtimeCUDeploymentIdentities {
 			Digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		},
 		ASR: inspect.ArtifactIdentity{
-			ID: "modelscope://iic/SenseVoiceSmall", Revision: "fixture-asr-revision",
+			ID: "hf://mobiuslabsgmbh/faster-whisper-large-v3-turbo", Revision: "fixture-asr-revision",
 			Digest: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 		},
 		Vision: inspect.ArtifactIdentity{

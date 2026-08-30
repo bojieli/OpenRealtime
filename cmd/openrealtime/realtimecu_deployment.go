@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/graph/inspect"
+	"github.com/bojieli/OpenRealtime/internal/fileidentity"
 )
 
 const (
@@ -28,11 +29,29 @@ const (
 	realtimeCUDeploymentAttestationV1    = "openrealtime.local-procfs-filesystem-deployment.v1"
 	realtimeCUQwenArtifactID             = "hf://Qwen/Qwen3-VL-30B-A3B-Instruct-FP8"
 	realtimeCUSenseVoiceArtifactID       = "modelscope://iic/SenseVoiceSmall"
+	realtimeCUWhisperArtifactID          = "hf://mobiuslabsgmbh/faster-whisper-large-v3-turbo"
+	realtimeCUWhisperServicePathEnv      = "OPENREALTIME_CU_WHISPER_SERVICE_PATH"
+	realtimeCUWhisperDependencyRootsEnv  = "OPENREALTIME_CU_WHISPER_DEPENDENCY_ROOTS"
+	realtimeCUWhisperServiceArgument     = "/proc/self/fd/3"
+	realtimeCUWhisperServiceLogicalID    = "memfd://openrealtime-whisper-service-v2"
+	realtimeCUWhisperServiceDigestV2     = "sha256:5d4a115ce2fa456bd2f15b6168b252bddadfee099c15b63a97a62fb92d4524c2"
 	maximumRealtimeCUDeploymentFiles     = 200_000
 	maximumRealtimeCUDeploymentBytes     = int64(128 << 30)
 	maximumRealtimeCUBehaviorEnvironment = 128
 	maximumRealtimeCUBehaviorEnvBytes    = 64 << 10
 )
+
+var realtimeCUWhisperRuntimePackages = []string{
+	"81d243bd2c585b0f4821__mypyc", "PIL", "_brotli", "_cffi_backend",
+	"av", "brotli", "certifi", "cffi", "chardet", "charset_normalizer",
+	"coloredlogs", "ctranslate2", "defusedxml", "dill", "faster_whisper",
+	"filelock", "flatbuffers", "flint", "fsspec", "hf_xet",
+	"huggingface_hub", "humanfriendly", "idna", "jinja2", "markupsafe",
+	"mpmath", "numpy", "onnxruntime", "packaging", "pynvml", "regex",
+	"requests", "safetensors", "socks", "sympy", "tokenizers", "torch",
+	"torchgen", "tqdm", "transformers", "typing_extensions", "urllib3",
+	"yaml",
+}
 
 // realtimeCUDeploymentVerifier is the provider-neutral deployment-proof seam.
 // Resolve derives identities from the selected live backends; Verify rechecks
@@ -169,7 +188,7 @@ func (verifier *composedRealtimeCUDeploymentVerifier) VerifyObserver(
 	}
 	// The selected application always opens the model plug-in as well as this
 	// observer. Its factory boundary revalidates the shared Qwen model/vision
-	// listener; this boundary independently revalidates SenseVoice.
+	// listener; this boundary independently revalidates the selected ASR.
 	return verifier.asr.Revalidate(ctx, expectedASR, verifier.asrSeal)
 }
 
@@ -208,12 +227,13 @@ type realtimeCUProcessSource interface {
 }
 
 type realtimeCUBackendMaterial struct {
-	ArtifactID    string
-	Revision      string
-	LoadedDigest  string
-	ServicePath   string
-	ServiceDigest string
-	Roots         []realtimeCUMaterialRoot
+	ArtifactID       string
+	Revision         string
+	LoadedDigest     string
+	DependencyDigest string
+	ServicePath      string
+	ServiceDigest    string
+	Roots            []realtimeCUMaterialRoot
 }
 
 type realtimeCUMaterialRoot struct {
@@ -330,8 +350,8 @@ func (attestor *localRealtimeCUBackendAttestor) Attest(
 		Process: process,
 		Material: realtimeCUBackendMaterial{
 			ArtifactID: material.ArtifactID, Revision: material.Revision,
-			LoadedDigest: material.LoadedDigest,
-			ServicePath:  material.ServicePath, ServiceDigest: material.ServiceDigest,
+			LoadedDigest: material.LoadedDigest, DependencyDigest: material.DependencyDigest,
+			ServicePath: material.ServicePath, ServiceDigest: material.ServiceDigest,
 			Roots: append([]realtimeCUMaterialRoot(nil), material.Roots...),
 		},
 		Roots: append([]realtimeCUMaterialRoot(nil), material.Roots...),
@@ -413,6 +433,7 @@ func hashRealtimeCUDeploymentMaterial(
 	writeDeploymentDigestField(hasher, "artifact", material.ArtifactID)
 	writeDeploymentDigestField(hasher, "revision", material.Revision)
 	writeDeploymentDigestField(hasher, "loaded_digest", material.LoadedDigest)
+	writeDeploymentDigestField(hasher, "dependency_digest", material.DependencyDigest)
 	writeDeploymentDigestField(hasher, "service_path", material.ServicePath)
 	writeDeploymentDigestField(hasher, "service_digest", material.ServiceDigest)
 	writeDeploymentDigestField(hasher, "arguments", strings.Join(process.Arguments, "\x00"))
@@ -549,6 +570,33 @@ func snapshotRealtimeCUFile(key, path string) (realtimeCUFileSeal, error) {
 
 func hashRealtimeCUFile(ctx context.Context, expected realtimeCUFileSeal) (string, error) {
 	return hashRealtimeCUFileWithOpen(ctx, expected, os.Open)
+}
+
+func digestRealtimeCUOpenRegularFile(
+	ctx context.Context, path string, maximumBytes int64,
+) (string, error) {
+	if ctx == nil || !filepath.IsAbs(path) || filepath.Clean(path) != path || maximumBytes <= 0 {
+		return "", errors.New("digest Realtime-CU open file: invalid input")
+	}
+	before, err := os.Stat(path)
+	if err != nil || !before.Mode().IsRegular() || before.Size() < 0 || before.Size() > maximumBytes {
+		return "", errors.New("digest Realtime-CU open file: invalid file")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", errors.New("digest Realtime-CU open file: open")
+	}
+	hasher := sha256.New()
+	copied, copyErr := io.Copy(hasher, &contextReader{ctx: ctx, reader: io.LimitReader(file, maximumBytes+1)})
+	opened, statErr := file.Stat()
+	closeErr := file.Close()
+	after, afterErr := os.Stat(path)
+	if copyErr != nil || statErr != nil || closeErr != nil || afterErr != nil ||
+		copied != before.Size() || opened.Size() != before.Size() || after.Size() != before.Size() ||
+		!os.SameFile(before, opened) || !os.SameFile(before, after) {
+		return "", errors.New("digest Realtime-CU open file: changed while hashing")
+	}
+	return "sha256:" + hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
 func hashRealtimeCUFileWithOpen(
@@ -873,6 +921,14 @@ func retainRealtimeCUBehaviorEnvironment(name string) bool {
 func newLocalRealtimeCUDeploymentVerifier() (realtimeCUDeploymentVerifier, error) {
 	processes := procRealtimeCUProcessSource{}
 	client := &http.Client{Timeout: 15 * time.Second}
+	whisperService, err := configuredRealtimeCUWhisperService(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	whisperDependencyRoots, err := configuredRealtimeCUWhisperDependencyRoots()
+	if err != nil {
+		return nil, err
+	}
 	model, err := newLocalRealtimeCUBackendAttestor(realtimeCUBackendAttestorConfig{
 		Name: "qwen-fast-model-and-vision", Port: 8000, ProcessSource: processes,
 		ValidateProcess: validateRealtimeCUQwenProcess,
@@ -885,12 +941,16 @@ func newLocalRealtimeCUDeploymentVerifier() (realtimeCUDeploymentVerifier, error
 		return nil, err
 	}
 	asr, err := newLocalRealtimeCUBackendAttestor(realtimeCUBackendAttestorConfig{
-		Name: "sensevoice-asr", Port: 8002, ProcessSource: processes,
-		ValidateProcess: validateRealtimeCUSenseVoiceProcess,
-		Probe: func(ctx context.Context, _ realtimeCUProcessSnapshot, material realtimeCUBackendMaterial) error {
-			return probeRealtimeCUSenseVoice(ctx, client, material)
+		Name: "whisper-large-v3-turbo-asr", Port: 8003, ProcessSource: processes,
+		ValidateProcess: func(process realtimeCUProcessSnapshot) error {
+			return validateRealtimeCUWhisperProcess(process, whisperService, whisperDependencyRoots)
 		},
-		Material: realtimeCUSenseVoiceMaterial,
+		Probe: func(ctx context.Context, process realtimeCUProcessSnapshot, material realtimeCUBackendMaterial) error {
+			return probeRealtimeCUWhisper(ctx, client, process, material)
+		},
+		Material: func(ctx context.Context, process realtimeCUProcessSnapshot) (realtimeCUBackendMaterial, error) {
+			return realtimeCUWhisperMaterial(ctx, process, whisperService, whisperDependencyRoots)
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -937,6 +997,97 @@ func validateRealtimeCUSenseVoiceProcess(process realtimeCUProcessSnapshot) erro
 	return requireRealtimeCUProcessArguments(process.Arguments, map[string]string{
 		"--host": "127.0.0.1", "--port": "8002", "--workers": "1",
 	}, []string{"-m", "uvicorn", "server:app"})
+}
+
+func configuredRealtimeCUWhisperService(ctx context.Context) (string, error) {
+	path, err := canonicalRealtimeCUDeploymentPath(
+		strings.TrimSpace(os.Getenv(realtimeCUWhisperServicePathEnv)),
+	)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s: %w", realtimeCUWhisperServicePathEnv, err)
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil || resolved != path || filepath.Base(path) != "server.py" ||
+		filepath.Base(filepath.Dir(path)) != "whisper" {
+		return "", errors.New("Realtime-CU Whisper service path is not the exact reviewed module")
+	}
+	seal, err := snapshotRealtimeCUFile("service/server.py", path)
+	if err != nil {
+		return "", err
+	}
+	digest, err := hashRealtimeCUFile(ctx, seal)
+	if err != nil {
+		return "", err
+	}
+	if digest != realtimeCUWhisperServiceDigestV2 {
+		return "", errors.New("Realtime-CU Whisper service differs from the pinned reviewed implementation")
+	}
+	return path, nil
+}
+
+func configuredRealtimeCUWhisperDependencyRoots() ([]string, error) {
+	raw := strings.TrimSpace(os.Getenv(realtimeCUWhisperDependencyRootsEnv))
+	if raw == "" {
+		return nil, fmt.Errorf("%s is required", realtimeCUWhisperDependencyRootsEnv)
+	}
+	values := filepath.SplitList(raw)
+	if len(values) == 0 || len(values) > 16 {
+		return nil, errors.New("Realtime-CU Whisper dependency root selection is invalid")
+	}
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		canonical, err := canonicalRealtimeCUDeploymentPath(value)
+		if err != nil {
+			return nil, errors.New("Realtime-CU Whisper dependency root is not canonical and absolute")
+		}
+		resolved, err := filepath.EvalSymlinks(canonical)
+		info, statErr := os.Stat(canonical)
+		if err != nil || statErr != nil || resolved != canonical || !info.IsDir() {
+			return nil, errors.New("Realtime-CU Whisper dependency root is not an exact directory")
+		}
+		if _, duplicate := seen[canonical]; duplicate {
+			return nil, errors.New("Realtime-CU Whisper dependency root is repeated")
+		}
+		seen[canonical] = struct{}{}
+		result = append(result, canonical)
+	}
+	return result, nil
+}
+
+func validateRealtimeCUWhisperProcess(
+	process realtimeCUProcessSnapshot, expectedService string, expectedDependencyRoots []string,
+) error {
+	if len(process.Arguments) < 5 {
+		return errors.New("Whisper listener command is incomplete")
+	}
+	if !reflect.DeepEqual(process.Arguments[1:5], []string{"-I", "-S", "-B", realtimeCUWhisperServiceArgument}) ||
+		expectedService == "" || len(expectedDependencyRoots) == 0 {
+		return errors.New("Whisper listener requires the exact sealed service handle")
+	}
+	if process.Environment["PYTHONPATH"] != "" || process.Environment["PYTHONHOME"] != "" {
+		return errors.New("Whisper listener forbids alternate Python module roots")
+	}
+	modelPath, err := exactRealtimeCUProcessArgument(process.Arguments, "--model")
+	if err != nil {
+		return errors.New("Whisper listener requires one exact immutable local model path")
+	}
+	if _, err := realtimeCUWhisperSnapshotRevision(modelPath); err != nil {
+		return errors.New("Whisper listener requires one exact immutable local model snapshot")
+	}
+	want := []string{
+		process.Arguments[0], "-I", "-S", "-B", realtimeCUWhisperServiceArgument,
+		"--model", modelPath, "--device", "cuda", "--compute-type", "float16",
+		"--language", "en",
+	}
+	for _, root := range expectedDependencyRoots {
+		want = append(want, "--dependency-root", root)
+	}
+	want = append(want, "--port", "8003")
+	if !reflect.DeepEqual(process.Arguments, want) {
+		return errors.New("Whisper listener command differs from the strict local profile")
+	}
+	return nil
 }
 
 func requireRealtimeCUProcessArguments(
@@ -989,6 +1140,27 @@ func exactRealtimeCUProcessArgument(arguments []string, flag string) (string, er
 	return result, nil
 }
 
+func exactRealtimeCUProcessArguments(arguments []string, flag string) ([]string, error) {
+	if flag == "" {
+		return nil, errors.New("Realtime-CU listener argument flag is empty")
+	}
+	var result []string
+	for index, argument := range arguments {
+		if argument == flag {
+			if index+1 >= len(arguments) || arguments[index+1] == "" {
+				return nil, fmt.Errorf("Realtime-CU listener has an incomplete %s argument", flag)
+			}
+			result = append(result, arguments[index+1])
+		} else if strings.HasPrefix(argument, flag+"=") {
+			return nil, fmt.Errorf("Realtime-CU listener has a noncanonical %s argument", flag)
+		}
+	}
+	if len(result) == 0 {
+		return nil, fmt.Errorf("Realtime-CU listener lacks %s", flag)
+	}
+	return result, nil
+}
+
 func validRealtimeCURevision(revision string) bool {
 	return len(revision) == 40 && strings.Trim(revision, "0123456789abcdef") == ""
 }
@@ -1005,6 +1177,22 @@ func realtimeCUQwenSnapshotRevision(path string) (string, error) {
 		filepath.Base(repository) != "models--Qwen--Qwen3-VL-30B-A3B-Instruct-FP8" ||
 		!validRealtimeCURevision(revision) {
 		return "", errors.New("Qwen local model path is not the immutable selected snapshot")
+	}
+	return revision, nil
+}
+
+func realtimeCUWhisperSnapshotRevision(path string) (string, error) {
+	canonical, err := canonicalRealtimeCUDeploymentPath(path)
+	if err != nil {
+		return "", err
+	}
+	revision := filepath.Base(canonical)
+	snapshots := filepath.Dir(canonical)
+	repository := filepath.Dir(snapshots)
+	if filepath.Base(snapshots) != "snapshots" ||
+		filepath.Base(repository) != "models--mobiuslabsgmbh--faster-whisper-large-v3-turbo" ||
+		!validRealtimeCURevision(revision) {
+		return "", errors.New("Whisper local model path is not the immutable selected snapshot")
 	}
 	return revision, nil
 }
@@ -1084,6 +1272,169 @@ func realtimeCUSenseVoiceMaterial(
 		LoadedDigest: loadedDigest, ServicePath: servicePath, ServiceDigest: serviceDigest,
 		Roots: roots,
 	}, nil
+}
+
+func realtimeCUWhisperMaterial(
+	ctx context.Context, process realtimeCUProcessSnapshot, expectedService string,
+	expectedDependencyRoots []string,
+) (realtimeCUBackendMaterial, error) {
+	dependencyRoots, err := exactRealtimeCUProcessArguments(process.Arguments, "--dependency-root")
+	if err != nil || !reflect.DeepEqual(dependencyRoots, expectedDependencyRoots) {
+		return realtimeCUBackendMaterial{}, errors.New("resolve exact Whisper dependency roots")
+	}
+	modelPath, err := exactRealtimeCUProcessArgument(process.Arguments, "--model")
+	if err != nil {
+		return realtimeCUBackendMaterial{}, errors.New("resolve immutable Whisper listener model path")
+	}
+	revision, err := realtimeCUWhisperSnapshotRevision(modelPath)
+	if err != nil {
+		return realtimeCUBackendMaterial{}, err
+	}
+	sourceDigest, err := digestRealtimeCULoadedModel(ctx, modelPath)
+	if err != nil {
+		return realtimeCUBackendMaterial{}, err
+	}
+	materializedPath := filepath.Join(
+		"/tmp", fmt.Sprintf("openrealtime-whisper-sealed-%d", process.PID), "model",
+	)
+	loadedDigest, err := digestRealtimeCULoadedModel(ctx, materializedPath)
+	if err != nil {
+		return realtimeCUBackendMaterial{}, err
+	}
+	if sourceDigest != loadedDigest {
+		return realtimeCUBackendMaterial{}, errors.New(
+			"Whisper loaded model material differs from the selected immutable snapshot",
+		)
+	}
+	if len(process.Arguments) < 2 {
+		return realtimeCUBackendMaterial{}, errors.New("resolve Whisper listener service module")
+	}
+	serviceHandle := filepath.Join("/proc", strconv.Itoa(process.PID), "fd", "3")
+	if err := verifyRealtimeCUWhisperServiceHandle(serviceHandle); err != nil {
+		return realtimeCUBackendMaterial{}, err
+	}
+	serviceDigest, err := digestRealtimeCUOpenRegularFile(ctx, serviceHandle, 4<<20)
+	if err != nil {
+		return realtimeCUBackendMaterial{}, err
+	}
+	if serviceDigest != realtimeCUWhisperServiceDigestV2 {
+		return realtimeCUBackendMaterial{}, errors.New("Whisper listener service differs from the pinned reviewed implementation")
+	}
+	packages, err := realtimeCURuntimePackageRoots(
+		ctx, process, realtimeCUWhisperRuntimePackages,
+	)
+	if err != nil {
+		return realtimeCUBackendMaterial{}, err
+	}
+	dependencyDigest, err := digestRealtimeCUWhisperDependencies(ctx, packages, expectedDependencyRoots)
+	if err != nil {
+		return realtimeCUBackendMaterial{}, err
+	}
+	roots := []realtimeCUMaterialRoot{
+		{Label: "loaded-model", Path: materializedPath},
+		{Label: "model-source", Path: modelPath},
+		{Label: "service-source", Path: expectedService},
+	}
+	roots = append(roots, packages...)
+	return realtimeCUBackendMaterial{
+		ArtifactID: realtimeCUWhisperArtifactID, Revision: revision,
+		LoadedDigest: loadedDigest, DependencyDigest: dependencyDigest,
+		ServicePath: realtimeCUWhisperServiceLogicalID, ServiceDigest: serviceDigest,
+		Roots: roots,
+	}, nil
+}
+
+func digestRealtimeCUWhisperDependencies(
+	ctx context.Context, roots []realtimeCUMaterialRoot, dependencyRoots []string,
+) (string, error) {
+	if len(dependencyRoots) == 0 {
+		return "", errors.New("Whisper dependency roots are empty")
+	}
+	for _, root := range dependencyRoots {
+		if !filepath.IsAbs(root) || filepath.Clean(root) != root {
+			return "", errors.New("Whisper dependency root is not canonical and absolute")
+		}
+		resolved, err := filepath.EvalSymlinks(root)
+		info, statErr := os.Stat(root)
+		if err != nil || statErr != nil || resolved != root || !info.IsDir() {
+			return "", errors.New("Whisper dependency root is not an exact directory")
+		}
+	}
+	byLabel := make(map[string]realtimeCUMaterialRoot, len(roots))
+	for _, root := range roots {
+		if _, duplicate := byLabel[root.Label]; duplicate {
+			return "", errors.New("Whisper dependency material root is duplicated")
+		}
+		byLabel[root.Label] = root
+	}
+	hasher := sha256.New()
+	writeDeploymentDigestField(hasher, "format", "openrealtime.whisper-dependencies.v1")
+	for _, name := range realtimeCUWhisperRuntimePackages {
+		label := "runtime-" + name
+		root, found := byLabel[label]
+		if !found {
+			return "", fmt.Errorf("Whisper dependency material %s is unresolved", name)
+		}
+		if !pathWithinAnyRealtimeCURoot(root.Path, dependencyRoots) {
+			return "", errors.New("Whisper dependency module escaped its selected roots")
+		}
+		files, err := enumerateRealtimeCUMaterialRoot(ctx, root)
+		if err != nil {
+			return "", err
+		}
+		writeDeploymentDigestField(hasher, "module", name)
+		for _, file := range files {
+			if err := validateRealtimeCUWhisperDependencyFile(file, dependencyRoots); err != nil {
+				return "", err
+			}
+			relative, found := strings.CutPrefix(file.Key, label+"/")
+			if !found || relative == "" {
+				return "", errors.New("Whisper dependency material has an invalid relative path")
+			}
+			digest, err := hashRealtimeCUFile(ctx, file)
+			if err != nil {
+				return "", err
+			}
+			writeDeploymentDigestField(hasher, "file", relative)
+			writeDeploymentDigestField(hasher, "size", strconv.FormatInt(file.Size, 10))
+			writeDeploymentDigestField(hasher, "sha256", digest)
+		}
+	}
+	return "sha256:" + hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func validateRealtimeCUWhisperDependencyFile(
+	expected realtimeCUFileSeal, dependencyRoots []string,
+) error {
+	if expected.Path != expected.ResolvedPath ||
+		!pathWithinAnyRealtimeCURoot(expected.ResolvedPath, dependencyRoots) {
+		return errors.New("Whisper dependency file is an alias or escaped its selected roots")
+	}
+	file, err := os.Open(expected.Path)
+	if err != nil {
+		return errors.New("open Whisper dependency file")
+	}
+	linkErr := fileidentity.RequireSingleLink(file)
+	info, statErr := file.Stat()
+	opened, sealErr := realtimeCUFileSealFromInfo(expected, info)
+	closeErr := file.Close()
+	after, afterErr := snapshotRealtimeCUFile(expected.Key, expected.Path)
+	if linkErr != nil || statErr != nil || sealErr != nil || closeErr != nil || afterErr != nil ||
+		!sameRealtimeCUFileSeal(expected, opened) || !sameRealtimeCUFileSeal(expected, after) {
+		return errors.New("Whisper dependency file is aliased or changed during validation")
+	}
+	return nil
+}
+
+func pathWithinAnyRealtimeCURoot(path string, roots []string) bool {
+	for _, root := range roots {
+		relative, err := filepath.Rel(root, path)
+		if err == nil && relative != ".." &&
+			!strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 func digestRealtimeCULoadedModel(ctx context.Context, path string) (string, error) {
@@ -1178,12 +1529,27 @@ func realtimeCURuntimePackageRoots(
 	if err != nil {
 		return nil, err
 	}
+	searchRoots, err := realtimeCUPythonSearchRoots(process)
+	if err != nil {
+		return nil, err
+	}
+	searchRequest, err := json.Marshal(searchRoots)
+	if err != nil {
+		return nil, err
+	}
 	program := `
-import importlib.util, json, pathlib, sys, sysconfig
+import importlib.machinery, json, pathlib, sys, sysconfig
 names = json.loads(sys.argv[1])
+roots = json.loads(sys.argv[2])
+if not roots:
+    raise SystemExit("empty package search roots")
+for root in roots:
+    path = pathlib.Path(root)
+    if not path.is_absolute() or str(path) != str(path.resolve(strict=True)) or not path.is_dir():
+        raise SystemExit("invalid package search root")
 paths = {}
 for name in names:
-    spec = importlib.util.find_spec(name)
+    spec = importlib.machinery.PathFinder.find_spec(name, roots)
     if spec is None:
         raise SystemExit("missing package: " + name)
     if spec.submodule_search_locations:
@@ -1210,27 +1576,18 @@ print(json.dumps(paths, sort_keys=True, separators=(",", ":")))
 		!os.SameFile(listenerExecutable, launcherExecutable) {
 		return nil, errors.New("Realtime-CU backend launcher path differs from the listener executable")
 	}
-	command := exec.CommandContext(ctx, process.ExecutableHandle, "-c", program, string(request))
+	command := exec.CommandContext(
+		ctx, process.ExecutableHandle, "-I", "-S", "-B", "-c", program,
+		string(request), string(searchRequest),
+	)
 	// Python uses argv[0] to discover the exact virtual environment while Path
 	// remains the already-open procfs executable identity of the listener.
 	command.Args[0] = python
 	command.Dir = process.WorkingDir
+	// -I -S prevents PYTHONPATH, user-site, sitecustomize, .pth, and the
+	// listener's HOME from influencing this independent resolution. Only the
+	// explicit, canonical roots supplied above participate.
 	command.Env = []string{"LC_ALL=C.UTF-8"}
-	pythonEnvironment := make(map[string]string)
-	for name, value := range process.Environment {
-		switch name {
-		case "HOME", "PYTHONHOME", "PYTHONPATH", "PYTHONNOUSERSITE", "VIRTUAL_ENV":
-			pythonEnvironment[name] = value
-		}
-	}
-	environmentNames := make([]string, 0, len(pythonEnvironment))
-	for name := range pythonEnvironment {
-		environmentNames = append(environmentNames, name)
-	}
-	sort.Strings(environmentNames)
-	for _, name := range environmentNames {
-		command.Env = append(command.Env, name+"="+pythonEnvironment[name])
-	}
 	output, err := command.Output()
 	if err != nil || len(output) == 0 || len(output) > 1<<20 {
 		return nil, errors.New("resolve Realtime-CU backend Python package roots")
@@ -1268,6 +1625,82 @@ print(json.dumps(paths, sort_keys=True, separators=(",", ":")))
 			return nil, fmt.Errorf("resolve Realtime-CU runtime package %s", name)
 		}
 		result = append(result, realtimeCUMaterialRoot{Label: "runtime-" + name, Path: path})
+	}
+	return result, nil
+}
+
+func realtimeCUPythonSearchRoots(process realtimeCUProcessSnapshot) ([]string, error) {
+	if len(process.Arguments) == 0 || process.WorkingDir == "" {
+		return nil, errors.New("Realtime-CU backend Python search context is incomplete")
+	}
+	var candidates []string
+	if len(process.Arguments) >= 5 &&
+		reflect.DeepEqual(process.Arguments[1:4], []string{"-I", "-S", "-B"}) {
+		roots, err := exactRealtimeCUProcessArguments(process.Arguments, "--dependency-root")
+		if err != nil {
+			return nil, errors.New("Realtime-CU isolated Python listener lacks dependency roots")
+		}
+		candidates = append(candidates, roots...)
+	} else {
+		if process.Environment["PYTHONHOME"] != "" {
+			return nil, errors.New("Realtime-CU backend uses an unsupported Python home override")
+		}
+		if len(process.Arguments) > 1 && filepath.IsAbs(process.Arguments[1]) &&
+			strings.HasSuffix(process.Arguments[1], ".py") {
+			candidates = append(candidates, filepath.Dir(process.Arguments[1]))
+		}
+		candidates = append(candidates, process.WorkingDir)
+		if value := process.Environment["PYTHONPATH"]; value != "" {
+			for _, root := range filepath.SplitList(value) {
+				if !filepath.IsAbs(root) || filepath.Clean(root) != root {
+					return nil, errors.New("Realtime-CU backend Python path is not canonical and absolute")
+				}
+				candidates = append(candidates, root)
+			}
+		}
+		pythonRoot := filepath.Dir(filepath.Dir(process.Arguments[0]))
+		patterns := []string{filepath.Join(pythonRoot, "lib", "python*", "site-packages")}
+		if home := process.Environment["HOME"]; home != "" {
+			if !filepath.IsAbs(home) || filepath.Clean(home) != home {
+				return nil, errors.New("Realtime-CU backend home is not canonical and absolute")
+			}
+			patterns = append(patterns, filepath.Join(home, ".local", "lib", "python*", "site-packages"))
+		}
+		patterns = append(patterns,
+			"/usr/local/lib/python*/dist-packages", "/usr/local/lib/python*/site-packages",
+			"/usr/lib/python*/dist-packages", "/usr/lib/python*/site-packages",
+		)
+		for _, pattern := range patterns {
+			matches, globErr := filepath.Glob(pattern)
+			if globErr != nil {
+				return nil, errors.New("resolve Realtime-CU backend Python search roots")
+			}
+			sort.Strings(matches)
+			candidates = append(candidates, matches...)
+		}
+	}
+	if len(candidates) == 0 || len(candidates) > 64 {
+		return nil, errors.New("Realtime-CU backend Python search roots are incomplete")
+	}
+	result := make([]string, 0, len(candidates))
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		if !filepath.IsAbs(candidate) || filepath.Clean(candidate) != candidate {
+			return nil, errors.New("Realtime-CU backend Python search root is not canonical and absolute")
+		}
+		resolved, err := filepath.EvalSymlinks(candidate)
+		info, statErr := os.Stat(candidate)
+		if err != nil || statErr != nil || !info.IsDir() || !filepath.IsAbs(resolved) {
+			return nil, errors.New("Realtime-CU backend Python search root is unavailable")
+		}
+		if _, duplicate := seen[resolved]; duplicate {
+			continue
+		}
+		seen[resolved] = struct{}{}
+		result = append(result, resolved)
+	}
+	if len(result) == 0 {
+		return nil, errors.New("Realtime-CU backend Python search roots are empty")
 	}
 	return result, nil
 }
@@ -1351,6 +1784,75 @@ func probeRealtimeCUSenseVoice(
 		payload.Revision != material.Revision || payload.Digest != material.LoadedDigest ||
 		payload.ServicePath != material.ServicePath || payload.ServiceDigest != material.ServiceDigest {
 		return errors.New("SenseVoice deployment probe differs from the strict local profile")
+	}
+	return nil
+}
+
+func probeRealtimeCUWhisper(
+	ctx context.Context, client *http.Client, process realtimeCUProcessSnapshot,
+	material realtimeCUBackendMaterial,
+) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1:8003/health", nil)
+	if err != nil {
+		return err
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return errors.New("query Whisper deployment identity")
+	}
+	defer response.Body.Close()
+	var payload struct {
+		Status                string   `json:"status"`
+		Model                 string   `json:"model"`
+		ModelPath             string   `json:"model_path"`
+		MaterializedModelPath string   `json:"materialized_model_path"`
+		Device                string   `json:"device"`
+		ComputeType           string   `json:"compute_type"`
+		Language              string   `json:"language"`
+		Revision              string   `json:"revision"`
+		Digest                string   `json:"digest"`
+		ServicePath           string   `json:"service_path"`
+		ServiceDigest         string   `json:"service_digest"`
+		DependencyRoots       []string `json:"dependency_roots"`
+		DependencyDigest      string   `json:"dependency_digest"`
+		ProbeSeconds          float64  `json:"probe_seconds"`
+	}
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	decodeErr := decoder.Decode(&payload)
+	var trailing any
+	trailingErr := decoder.Decode(&trailing)
+	modelPath := ""
+	materializedPath := ""
+	dependencyRoots, dependencyErr := exactRealtimeCUProcessArguments(
+		process.Arguments, "--dependency-root",
+	)
+	for _, root := range material.Roots {
+		switch root.Label {
+		case "model-source":
+			if modelPath != "" {
+				return errors.New("Whisper deployment probe has an ambiguous source model path")
+			}
+			modelPath = root.Path
+		case "loaded-model":
+			if materializedPath != "" {
+				return errors.New("Whisper deployment probe has an ambiguous loaded model path")
+			}
+			materializedPath = root.Path
+		}
+	}
+	if response.StatusCode != http.StatusOK || decodeErr != nil || dependencyErr != nil ||
+		!errors.Is(trailingErr, io.EOF) ||
+		payload.Status != "ok" || payload.Model != realtimeCULocalASRModel ||
+		payload.ModelPath != modelPath || payload.MaterializedModelPath != materializedPath ||
+		payload.Device != "cuda" ||
+		payload.ComputeType != "float16" || payload.Language != "en" ||
+		!reflect.DeepEqual(payload.DependencyRoots, dependencyRoots) ||
+		payload.DependencyDigest != material.DependencyDigest ||
+		payload.Revision != material.Revision || payload.Digest != material.LoadedDigest ||
+		payload.ServicePath != material.ServicePath || payload.ServiceDigest != material.ServiceDigest ||
+		payload.ProbeSeconds < 0 {
+		return errors.New("Whisper deployment probe differs from the strict local profile")
 	}
 	return nil
 }
