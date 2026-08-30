@@ -16,6 +16,7 @@ import (
 	archbench "github.com/bojieli/OpenRealtime/bench/architecture"
 	"github.com/bojieli/OpenRealtime/bench/migration"
 	"github.com/bojieli/OpenRealtime/bench/scenario"
+	"github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
 )
 
 // runScenario drives the end-to-end interaction suite.
@@ -41,6 +42,7 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 		repeat           = flags.Int("repeat", 1, "runs per scenario; latency from one run is noise, so a latency claim needs several")
 		experiment       = flags.String("architecture-manifest", "", "versioned P/T/C/N architecture experiment manifest")
 		architectureCell = flags.String("architecture-cell", "", "cell name in -architecture-manifest")
+		launchProfile    = flags.String("launch-profile", "", "strict graph launch profile for a graph-native scenario checklist")
 		inspectionGraph  = flags.String("inspection-graph", "", benchmarkInspectionGraphFlagHelp)
 		migrationMode    migrationLaunchFlags
 	)
@@ -93,24 +95,6 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 	if architectureRun {
 		requirement = selectedCell.Execution
 	}
-	config := bench.SessionConfig{
-		Endpoint: *endpoint, Model: *model,
-		Timeout: *timeout, Quiet: true, CaptureRuntimeEvidence: architectureRun,
-	}
-	config, err := configureScenarioSession(
-		config, requirement, *inspectionGraph, *tokenEnv, os.Getenv,
-	)
-	if err != nil {
-		return err
-	}
-
-	speaker := scenario.SpeechVoice{
-		Endpoint: *speech, Model: *voice, Default: "default",
-		// The second party gets a different voice. A phone menu that sounds
-		// exactly like the caller removes the difficulty the case exists to
-		// pose.
-		Voices: map[string]string{"other": "alloy"},
-	}
 
 	var selected []scenario.Scenario
 	fullSuite := scenario.Suite()
@@ -126,6 +110,26 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 	var results []scenario.Result
 	passed := 0
 	runs := max(1, *repeat)
+	graphNative := requirement.Kind == bench.ExecutionGraphNative
+	if graphNative && strings.TrimSpace(*reviewDir) == "" {
+		return errors.New("graph-native scenario execution requires -review-dir")
+	}
+	if !graphNative && strings.TrimSpace(*launchProfile) != "" {
+		return errors.New("-launch-profile requires a graph-native architecture cell")
+	}
+	var graphSelection scenarioGraphSelection
+	if graphNative {
+		if strings.TrimSpace(*only) != "" {
+			return errors.New("graph-native scenario checklists require the complete scenario suite; remove -only")
+		}
+		var err error
+		graphSelection, err = prepareScenarioGraphSelection(
+			*launchProfile, selectedCell, requirement, runs,
+		)
+		if err != nil {
+			return err
+		}
+	}
 	if migrationMode.enabled() {
 		repetitions := make([]string, runs)
 		for index := range runs {
@@ -149,8 +153,28 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 		architectureResult = &started
 		fmt.Fprintf(output, "  architecture %s  F52=%s\n", selectedCell.Name, selectedCell.Architecture.Level)
 	}
+
+	config := bench.SessionConfig{
+		Endpoint: *endpoint, Model: *model,
+		Timeout: *timeout, Quiet: true, CaptureRuntimeEvidence: architectureRun,
+	}
+	config, err := configureScenarioSession(
+		config, requirement, *inspectionGraph, *tokenEnv, os.Getenv,
+	)
+	if err != nil {
+		return err
+	}
+
+	speaker := scenario.SpeechVoice{
+		Endpoint: *speech, Model: *voice, Default: "default",
+		// The second party gets a different voice. A phone menu that sounds
+		// exactly like the caller removes the difficulty the case exists to
+		// pose.
+		Voices: map[string]string{"other": "alloy"},
+	}
+
 	var review *scenario.ReviewRun
-	if strings.TrimSpace(*reviewDir) != "" {
+	if !graphNative && strings.TrimSpace(*reviewDir) != "" {
 		review, err = scenario.NewReviewRun(scenario.ReviewOptions{
 			Directory:            *reviewDir,
 			Scenarios:            selected,
@@ -168,59 +192,81 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 			}
 		}()
 	}
-	for _, item := range selected {
-		var attempts []scenario.Result
-		for run := 0; run < runs; run++ {
-			taskID := fmt.Sprintf("%s#%d", item.Name, run+1)
-			ctx, cancel := context.WithTimeout(context.Background(), *timeout)
-			taskConfig := scenarioSessionForTask(config, taskID)
-			var captured bench.SessionAudioCapture
-			if review != nil {
-				previousCapture := taskConfig.CaptureAudio
-				taskConfig.CaptureAudio = func(audio bench.SessionAudioCapture) error {
-					captured = audio
-					if previousCapture != nil {
-						return previousCapture(audio)
-					}
-					return nil
-				}
-			}
-			result, err := scenario.Play(ctx, speaker, taskConfig, item)
-			cancel()
-			if review != nil {
-				if captured.SampleRateHz == 0 {
-					captured.SampleRateHz = 24_000
-				}
-				if reviewErr := review.Record(item.Name, run+1, captured, result, err); reviewErr != nil {
-					return reviewErr
-				}
-			}
-			if err != nil {
-				fmt.Fprintf(output, "  ERR  %-28s %v\n", item.Name, err)
-			}
-			attempts = append(attempts, result)
-			results = append(results, result)
-			if result.Passed {
+	if graphNative {
+		fmt.Fprintf(output, "  review       %s\n", *reviewDir)
+		outcome, err := executeScenarioGraphChecklist(
+			context.Background(), graphSelection, requirement,
+			selectedCell.Architecture.Profile, runs, *timeout, *reviewDir,
+			speaker, config, graphnative.NewLiveExecutor,
+		)
+		if err != nil {
+			return err
+		}
+		if err := appendScenarioGraphArchitectureAttempts(architectureResult, outcome.Attempts); err != nil {
+			return err
+		}
+		for _, attempt := range outcome.Attempts {
+			results = append(results, attempt.Result)
+			if attempt.Result.Passed {
 				passed++
 			}
-			if architectureResult != nil {
-				architectureResult.Measurement.Tasks = append(
-					architectureResult.Measurement.Tasks, scenarioTask(taskID, result, err))
-				if result.Transcript.Runtime != nil {
-					architectureResult.Observed = append(architectureResult.Observed, archbench.Observation{
-						TaskID: taskID, Status: *result.Transcript.Runtime,
-					})
-				}
-				record, marshalErr := json.Marshal(result)
-				if marshalErr != nil {
-					return marshalErr
-				}
-				architectureResult.Records = append(architectureResult.Records, record)
-			}
 		}
-		reportScenario(output, item, attempts)
+		reportScenarioGraphOutcome(output, outcome, runs)
+	} else {
+		for _, item := range selected {
+			var attempts []scenario.Result
+			for run := 0; run < runs; run++ {
+				taskID := fmt.Sprintf("%s#%d", item.Name, run+1)
+				ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+				taskConfig := scenarioSessionForTask(config, taskID)
+				var captured bench.SessionAudioCapture
+				if review != nil {
+					previousCapture := taskConfig.CaptureAudio
+					taskConfig.CaptureAudio = func(audio bench.SessionAudioCapture) error {
+						captured = audio
+						if previousCapture != nil {
+							return previousCapture(audio)
+						}
+						return nil
+					}
+				}
+				result, err := scenario.Play(ctx, speaker, taskConfig, item)
+				cancel()
+				if review != nil {
+					if captured.SampleRateHz == 0 {
+						captured.SampleRateHz = 24_000
+					}
+					if reviewErr := review.Record(item.Name, run+1, captured, result, err); reviewErr != nil {
+						return reviewErr
+					}
+				}
+				if err != nil {
+					fmt.Fprintf(output, "  ERR  %-28s %v\n", item.Name, err)
+				}
+				attempts = append(attempts, result)
+				results = append(results, result)
+				if result.Passed {
+					passed++
+				}
+				if architectureResult != nil {
+					architectureResult.Measurement.Tasks = append(
+						architectureResult.Measurement.Tasks, scenarioTask(taskID, result, err))
+					if result.Transcript.Runtime != nil {
+						architectureResult.Observed = append(architectureResult.Observed, archbench.Observation{
+							TaskID: taskID, Status: *result.Transcript.Runtime,
+						})
+					}
+					record, marshalErr := json.Marshal(result)
+					if marshalErr != nil {
+						return marshalErr
+					}
+					architectureResult.Records = append(architectureResult.Records, record)
+				}
+			}
+			reportScenario(output, item, attempts)
+		}
+		fmt.Fprintf(output, "\n  scenarios %d/%d\n", passed, len(results))
 	}
-	fmt.Fprintf(output, "\n  scenarios %d/%d\n", passed, len(results))
 
 	if architectureResult != nil {
 		architectureResult.Finish()

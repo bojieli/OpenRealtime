@@ -94,13 +94,31 @@ go run ./cmd/openrealtime scenario \
   -repeat 15 \
   -architecture-manifest "$OPENREALTIME_SCENARIO_ARCHITECTURE_MANIFEST" \
   -architecture-cell "$OPENREALTIME_SCENARIO_ARCHITECTURE_CELL" \
+  -launch-profile "$OPENREALTIME_SCENARIO_LAUNCH_PROFILE" \
   -inspection-graph "$OPENREALTIME_BENCH_INSPECTION_GRAPH" \
+  -review-dir results/candidate-scenario-review \
   -migration-store "$OPENREALTIME_MIGRATION_STORE" \
   -migration-registration "$OPENREALTIME_MIGRATION_REGISTRATION" \
   -migration-registration-sha256 "$OPENREALTIME_MIGRATION_REGISTRATION_SHA256" \
   -migration-arm candidate \
   -record results/candidate-scenario.json
 ```
+
+For a graph-native architecture cell the command fails before credentials or
+protocol work unless the launch profile, cell graph requirement, adapter name,
+and the cell's exact runtime adapter-profile fingerprint form one valid frozen
+checklist selection. The graph-native path always runs the complete canonical
+suite through `NewLiveExecutor` and `RunChecklist`; `-only` remains a legacy
+diagnostic compatibility flag and cannot produce a graph-native checklist.
+
+The selected `-review-dir` plug-in writes create-only per-attempt stereo WAVs,
+the exact submitted visual bytes, independently verified media manifests,
+per-attempt checklist rows, `checklist.json`, and a case-by-case
+`CHECKLIST.md`. The existing sanitized `REVIEW.md` and review manifest remain
+alongside those graph-native artifacts. A checklist is reportable only when
+all 165 attempts have exact live graph evidence and verifier-backed media; a
+smaller diagnostic run is labeled non-reportable even when its individual
+behavior checks pass.
 
 Missing endpoints, provider credentials, reviewed manifests, inspection
 authority, or migration registration are an unavailable provisioned gate—not a
