@@ -84,9 +84,14 @@ type webRTCSession struct {
 	readErr  atomic.Pointer[error]
 }
 
-func dialWebRTC(ctx context.Context, endpoint, token, model string) (*webRTCSession, error) {
+func dialWebRTC(
+	ctx context.Context, lifetimeContext context.Context, endpoint, token, model string,
+) (*webRTCSession, error) {
 	if strings.TrimSpace(endpoint) == "" {
 		return nil, errors.New("a WebRTC session requires an SDP endpoint")
+	}
+	if lifetimeContext == nil {
+		return nil, errors.New("a WebRTC session requires a lifetime context")
 	}
 	parsed, err := url.Parse(endpoint)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
@@ -126,7 +131,7 @@ func dialWebRTC(ctx context.Context, endpoint, token, model string) (*webRTCSess
 		}
 	}()
 
-	sessionCtx, cancel := context.WithCancel(ctx)
+	sessionCtx, cancel := context.WithCancel(lifetimeContext)
 	client := &webRTCSession{
 		connection: connection, track: track, codec: rtcadapter.NewEventCodec(),
 		events: make(chan realtimeclient.Event, 512), ctx: sessionCtx, cancel: cancel,

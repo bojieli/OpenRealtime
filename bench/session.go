@@ -425,6 +425,13 @@ func PlaySamples(
 
 	timed, cancel := context.WithTimeout(ctx, config.Timeout)
 	defer cancel()
+	// The conversation horizon bounds task behavior, not the underlying
+	// connection's identity lifetime. Keep the transport alive until terminal
+	// runtime attestation has spent the session-scoped inspection capability;
+	// otherwise the read deadline closes the server session first and a timed-
+	// out-but-scoreable task loses its exact graph evidence to a 404 race.
+	connectionContext, closeConnectionContext := context.WithCancel(ctx)
+	defer closeConnectionContext()
 	endpoint := config.Endpoint
 	if transport == TransportWebRTC &&
 		(strings.HasPrefix(strings.ToLower(endpoint), "ws://") ||
@@ -442,10 +449,11 @@ func PlaySamples(
 	}
 	var client realtimeSession
 	if transport == TransportWebRTC {
-		client, err = dialWebRTC(timed, endpoint, config.Token, config.Model)
+		client, err = dialWebRTC(timed, connectionContext, endpoint, config.Token, config.Model)
 	} else {
 		client, err = realtimeclient.Dial(timed, realtimeclient.Config{
 			URL: config.Endpoint, Token: config.Token, Model: config.Model,
+			LifetimeContext: connectionContext,
 		})
 	}
 	if err != nil {

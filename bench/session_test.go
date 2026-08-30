@@ -603,6 +603,78 @@ func TestConnectedConversationTimeoutIsTypedAndRetainsEvidence(t *testing.T) {
 	}
 }
 
+func TestConnectedConversationTimeoutAttestsBeforeClosingSession(t *testing.T) {
+	graph, configuration, resolution := attestationFixture(t)
+	inspection := openrealtime.InspectionAccess{
+		SessionID: "sess_timeout", Path: "/v1/realtime/sessions/sess_timeout/live",
+		Token:       "mgmt_" + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x43}, 32)),
+		ExpiresAtMS: time.Now().Add(time.Minute).UnixMilli(),
+	}
+	var sessionActive atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(writer, request, &websocket.AcceptOptions{})
+		if err != nil {
+			return
+		}
+		sessionActive.Store(true)
+		defer sessionActive.Store(false)
+		defer connection.Close(websocket.StatusNormalClosure, "fixture complete")
+		for {
+			_, raw, err := connection.Read(request.Context())
+			if err != nil {
+				return
+			}
+			var message map[string]any
+			if json.Unmarshal(raw, &message) != nil || message["type"] != "session.update" {
+				continue
+			}
+			updated, _ := json.Marshal(map[string]any{
+				"type": "session.updated", "session": map[string]any{
+					"openrealtime": map[string]any{
+						"version": openrealtime.Version,
+						"debug": map[string]any{
+							"enabled": true, "timestamp_resolution": "milliseconds",
+							"inspection": inspection,
+						},
+					},
+				},
+			})
+			_ = connection.Write(request.Context(), websocket.MessageText, updated)
+			evidence, _ := json.Marshal(map[string]any{
+				"type": openrealtime.EventDebug, "category": "session", "name": "session.updated",
+				"attributes": map[string]any{"runtime": map[string]any{
+					"binding": "graph", "graph": map[string]any{
+						"id": graph.ID, "revision": graph.Revision, "fingerprint": graph.Fingerprint,
+					},
+				}},
+			})
+			_ = connection.Write(request.Context(), websocket.MessageText, evidence)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	attestor := bench.GraphAttestor{
+		Graph: graph, Configuration: configuration,
+		Resolve: func(context.Context, bench.AttestationRequest) (bench.LiveResolution, error) {
+			if !sessionActive.Load() {
+				return bench.LiveResolution{}, errors.New("session closed before runtime attestation")
+			}
+			return resolution, nil
+		},
+	}
+	transcript, err := bench.PlaySamples(context.Background(), bench.SessionConfig{
+		Endpoint: "ws" + strings.TrimPrefix(server.URL, "http"),
+		Timeout:  200 * time.Millisecond, TrailingSilence: time.Millisecond,
+		RuntimeAttestor: attestor, AttestationScope: "timeout-task",
+	}, nil)
+	if !errors.Is(err, bench.ErrConversationTimeout) {
+		t.Fatalf("timeout = %v, want ErrConversationTimeout", err)
+	}
+	if transcript.ExecutionError != "" || transcript.Execution == nil {
+		t.Fatalf("timed-out connected session lost runtime evidence: %+v", transcript)
+	}
+}
+
 func TestSessionJoinsAnInFlightVideoCaptureBeforeReturning(t *testing.T) {
 	captureStarted := make(chan struct{})
 	releaseCapture := make(chan struct{})
