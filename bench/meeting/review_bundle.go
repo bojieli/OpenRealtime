@@ -1014,8 +1014,12 @@ func (bundle *ReviewBundle) FinishSuite(ctx context.Context, result bench.Result
 		return retryFinish(errors.New("meeting review source result identity or summary is invalid"))
 	}
 	if sourceReceipt == nil || sourceManifest == nil {
-		var sourceErr error
-		attempts, sourceValue, receiptValue, sourceErr := bundle.publishDeterministicMeetingSource(
+		var (
+			sourceValue  ReviewSourceManifest
+			receiptValue ReviewSourceReceipt
+			sourceErr    error
+		)
+		attempts, sourceValue, receiptValue, sourceErr = bundle.publishDeterministicMeetingSource(
 			ctx, root, result, resultPayload, finishInputSHA256,
 			attempts, pending, failures, resultTasks,
 		)
@@ -1028,6 +1032,7 @@ func (bundle *ReviewBundle) FinishSuite(ctx context.Context, result bench.Result
 		bundle.sourceReceipt = &receiptValue
 		bundle.sourceManifest = &sourceValue
 		bundle.sourceInputSHA256 = finishInputSHA256
+		bundle.attempts = make(map[string]ReviewAttempt, len(attempts))
 		for name, attempt := range attempts {
 			bundle.attempts[name] = cloneReviewAttempt(attempt)
 		}
@@ -1040,7 +1045,12 @@ func (bundle *ReviewBundle) FinishSuite(ctx context.Context, result bench.Result
 			!reflect.DeepEqual(opened.Manifest, *sourceManifest) {
 			return retryFinish(errors.New("sealed meeting review source failed retry verification"))
 		}
+		// A retry or fresh-process continuation must never recover advisory
+		// inputs from mutable, pre-publication state. Reconstruct them only from
+		// the independently verified source manifest.
+		attempts = meetingReviewAttemptsFromSource(opened.Manifest)
 	}
+	mergeMeetingSourceMissing(failures, sourceManifest.Missing)
 	externalSourceReceipt, externalSourceErr := ReadReviewSourceReceipt(ctx, bundle.sourceReceiptPath)
 	if externalSourceErr != nil || externalSourceReceipt.Directory != sourceReceipt.Directory ||
 		!samePortableMeetingSourceReceipt(externalSourceReceipt, *sourceReceipt) {
@@ -1519,10 +1529,12 @@ func (bundle *ReviewBundle) publishDeterministicMeetingSource(
 	} else {
 		manifest.CoreReportable = true
 	}
+	// Advisory review input must be projected exclusively from the source
+	// population that this function actually seals. In particular, retaining a
+	// pre-publication attempt here would let a later PrepareContext refusal
+	// escape the source manifest and then reach the provider on an unsealed
+	// context path.
 	updated := make(map[string]ReviewAttempt, len(attempts))
-	for name, attempt := range attempts {
-		updated[name] = cloneReviewAttempt(attempt)
-	}
 	for _, task := range Suite() {
 		attempt, attemptOK := attempts[task.ID]
 		input, pendingOK := pending[task.ID]
@@ -1584,8 +1596,17 @@ func (bundle *ReviewBundle) publishDeterministicMeetingSource(
 			Media: input.MediaReceipt.Manifest.ReviewMedia(), SensitiveValues: slices.Clone(bundle.sensitive),
 		})
 		if err != nil || !meetingReviewContextsEqual(preparedRequest.Context, contextPayload) {
+			code := meetingReviewPreparationFailureCode(err)
+			if err == nil {
+				code = "noncanonical_context"
+			}
+			reason := fmt.Sprintf(
+				"provider-neutral review request preparation failed before source publication [stage=prepare_context code=%s]",
+				code,
+			)
+			failures[task.ID] = reason
 			manifest.Missing = append(manifest.Missing, ReviewMissing{
-				Case: task.ID, Reason: "provider-neutral review request preparation failed before source publication",
+				Case: task.ID, Reason: reason,
 			})
 			continue
 		}
@@ -1628,6 +1649,51 @@ func (bundle *ReviewBundle) publishDeterministicMeetingSource(
 		return nil, ReviewSourceManifest{}, ReviewSourceReceipt{}, err
 	}
 	return updated, opened.Manifest, opened.Receipt, nil
+}
+
+func meetingReviewPreparationFailureCode(err error) string {
+	if err == nil {
+		return "unknown"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "cancelled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "deadline_exceeded"
+	}
+	// The retained code is deliberately from a closed vocabulary. It provides
+	// enough stage-level diagnosis for a partial source population without
+	// copying a provider-neutral error that may contain a credential or raw
+	// request material into the review bundle.
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "sensitive"), strings.Contains(message, "secret"):
+		return "sensitive_evidence"
+	case strings.Contains(message, "media"):
+		return "media_refused"
+	case strings.Contains(message, "context"):
+		return "context_refused"
+	case strings.Contains(message, "prompt"):
+		return "prompt_refused"
+	default:
+		return "request_refused"
+	}
+}
+
+func meetingReviewAttemptsFromSource(manifest ReviewSourceManifest) map[string]ReviewAttempt {
+	attempts := make(map[string]ReviewAttempt, len(manifest.Attempts))
+	for _, sourceAttempt := range manifest.Attempts {
+		attempts[sourceAttempt.Case] = prefixMeetingSourceAttempt(sourceAttempt)
+	}
+	return attempts
+}
+
+func mergeMeetingSourceMissing(failures map[string]string, missing []ReviewMissing) {
+	for _, item := range missing {
+		if failures[item.Case] == "" {
+			failures[item.Case] = item.Reason
+		}
+	}
 }
 
 func (bundle *ReviewBundle) recoverMeetingReviewSource(
@@ -1673,11 +1739,7 @@ func (bundle *ReviewBundle) recoverMeetingReviewSource(
 		return nil, ReviewSourceBundle{}, true,
 			errors.New("recover staged meeting source for the exact result")
 	}
-	attempts := make(map[string]ReviewAttempt, len(opened.Manifest.Attempts))
-	for _, sourceAttempt := range opened.Manifest.Attempts {
-		attempts[sourceAttempt.Case] = prefixMeetingSourceAttempt(sourceAttempt)
-	}
-	return attempts, opened, true, nil
+	return meetingReviewAttemptsFromSource(opened.Manifest), opened, true, nil
 }
 
 func (bundle *ReviewBundle) prepareMeetingReviews(

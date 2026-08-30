@@ -934,6 +934,88 @@ func TestMeetingReviewBundleSealsSourceBeforeReviewerAndRetriesOnlyMissingSiblin
 	}
 }
 
+func TestMeetingReviewBundleReviewsOnlyAttemptsAdmittedToSealedSource(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "partial-source-population")
+	reviewer := &fixtureMeetingReviewer{}
+	lease := openFixtureMeetingReviewer(t, reviewer)
+	bundle, err := NewReviewBundle(ReviewBundleOptions{Directory: directory, Reviewer: lease})
+	if err != nil {
+		t.Fatal(err)
+	}
+	makeMeetingReviewTreeRemovable(t, directory)
+	result := completeFixtureMeetingReviewAttempts(t, bundle)
+
+	// Corrupt only the provider-neutral projection for the second case after
+	// earlier evidence has been retained. The media receipt and deterministic
+	// attempt stay intact, but PrepareContext must refuse the nonexistent file.
+	// This exercises the exact boundary that previously left the mutable attempt
+	// in the advisory input map after omitting it from the source manifest.
+	omitted := Suite()[1].ID
+	bundle.mu.Lock()
+	pending := bundle.pending[omitted]
+	if pending.MediaReceipt.Manifest.Audio == nil {
+		bundle.mu.Unlock()
+		t.Fatal("fixture media has no retained audio")
+	}
+	pending.MediaReceipt.Manifest.Audio.Path = "missing-provider-input.wav"
+	bundle.pending[omitted] = pending
+	bundle.mu.Unlock()
+
+	finishErr := bundle.FinishSuite(context.Background(), result)
+	if finishErr == nil || !strings.Contains(finishErr.Error(), "retained 3 of 4 attempts") {
+		t.Fatalf("diagnostic partial source finish = %v", finishErr)
+	}
+	sourceReceipt, err := bundle.SourceReceipt()
+	if err != nil {
+		t.Fatal(err)
+	}
+	openedSource, err := VerifyMeetingReviewSource(
+		context.Background(), sourceReceipt.Directory, sourceReceipt,
+	)
+	if err != nil {
+		t.Fatalf("verify diagnostic source: %v", err)
+	}
+	if openedSource.Manifest.Complete || openedSource.Manifest.Reportable ||
+		len(openedSource.Manifest.Attempts) != ExpectedTasks()-1 ||
+		len(openedSource.Manifest.Missing) != 1 ||
+		openedSource.Manifest.Missing[0].Case != omitted ||
+		!strings.Contains(openedSource.Manifest.Missing[0].Reason,
+			"stage=prepare_context code=media_refused") {
+		t.Fatalf("diagnostic source population = %+v", openedSource.Manifest)
+	}
+	for _, attempt := range openedSource.Manifest.Attempts {
+		if attempt.Case == omitted {
+			t.Fatal("PrepareContext-refused attempt escaped into the sealed source population")
+		}
+	}
+
+	reviewer.mu.Lock()
+	requests := slices.Clone(reviewer.requests)
+	reviewer.mu.Unlock()
+	if len(requests) != ExpectedTasks()-1 || slices.Contains(requests, omitted) {
+		t.Fatalf("reviewer requests = %v, omitted case %q must not be called", requests, omitted)
+	}
+	if _, err := bundle.Receipt(); err == nil {
+		t.Fatal("incomplete diagnostic review unexpectedly received a reportable commit receipt")
+	}
+	manifest := readMeetingReviewManifest(t, directory)
+	if manifest.Complete || manifest.Reportable ||
+		!reflect.DeepEqual(manifest.Missing, openedSource.Manifest.Missing) ||
+		len(manifest.Attempts) != ExpectedTasks()-1 {
+		t.Fatalf("diagnostic review population = %+v", manifest)
+	}
+	if retryErr := bundle.FinishSuite(context.Background(), result); retryErr == nil ||
+		retryErr.Error() != finishErr.Error() {
+		t.Fatalf("finished diagnostic retry = %v, want stable %v", retryErr, finishErr)
+	}
+	reviewer.mu.Lock()
+	retryRequests := slices.Clone(reviewer.requests)
+	reviewer.mu.Unlock()
+	if !reflect.DeepEqual(retryRequests, requests) {
+		t.Fatalf("finished diagnostic retried provider calls: before %v, after %v", requests, retryRequests)
+	}
+}
+
 func TestMeetingReviewBundleRecoversReceiptAnchoredStagedSourceBeforeReviewer(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "source-promotion-recovery")
 	reviewer := &fixtureMeetingReviewer{}
