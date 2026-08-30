@@ -530,11 +530,15 @@ tau2/τ-Voice matrix defined by the parent plan.
 - [ ] Browser hosting, relays, local effects, artifacts, and every client
   capability are replaceable descriptor-locked plugins with tested scoped
   disposal and permission ceilings. Locked minimal, observer, developer
-  WebSocket, and developer WebRTC browser profiles now boot in real Chromium;
+  WebSocket, and developer WebRTC browser profiles now boot in real Chromium,
+  and shuffled race gates cover the shared host, reducer, and realtime client;
   migration of the standalone console/surface/demo forks and full lifecycle
   leak evidence remain open.
 - [ ] The browser and macOS applications connect to the same unchanged server
-  APIs and pass the shared protocol/client conformance corpus.
+  APIs and pass the shared protocol/client conformance corpus. A real Chromium
+  client followed by the exact manifest-derived macOS protocol probe now uses
+  one unchanged clean server, and JavaScript plus portable Swift conformance is
+  green; this is not evidence that a signed Darwin application connected.
 - [ ] The browser application is assembled from a host-served locked client
   graph; console, surface, and the minimal demo are profiles, not forks.
 - [ ] The macOS application is assembled from the same logical service
@@ -551,4 +555,8 @@ tau2/τ-Voice matrix defined by the parent plan.
 - [ ] View plugins have no implicit effect authority; the authority host still
   proves admission, target, confirmation, ledger, dispatch, and audit.
 - [ ] Cross-client realtime/media/tool/inspection/reconnect/reconciliation E2E
-  tests and presentation performance gates pass without regression.
+  tests and presentation performance gates pass without regression. Focused
+  real-Chromium WebSocket/WebRTC media, tool, inspection, authoring, artifact,
+  reconnect/dispose, JavaScript, Swift-Linux, shuffled race, and host/client
+  benchmark gates are green. Signed native macOS, complete reconciliation/leak
+  evidence, and the project-wide release matrix remain open.

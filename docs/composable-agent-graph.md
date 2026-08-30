@@ -1889,6 +1889,47 @@ Integrated checkpoint ledger:
 Active acceptance queue (work in the shared worktree remains unchecked until
 it has been reviewed, tested, and committed with its evidence):
 
+- [ ] Complete the retained multimodal-review and recording checkpoint.
+  - [x] Seal the exact eleven-scenario source population and the exact
+    165-attempt review population behind portable source/evaluation receipts,
+    add credential-free bundle verification, and require the exact
+    `gemini-3.7-flash` advisory-review population in the release plan. The
+    deterministic scorer remains authoritative; the retained live Gemini run
+    currently proves transport and media decoding only, not a live 165-attempt
+    baseline/candidate comparison.
+  - [x] Add descriptor-attested FFmpeg encoder and full-decode attestor plugins
+    with create-only manifests, exact raw-frame retention, synchronized stereo
+    WAV plus MP4 output, odd-dimension padding provenance, sandbox boundaries,
+    and normal, shuffled, race, vet, and benchmark coverage.
+  - [x] Reject external hard links at every shared review-media, evaluation,
+    and external-receipt read/write boundary. The fail-closed Linux, Darwin, and
+    Windows implementations have adversarial source/bundle/receipt tests plus
+    normal, shuffled, race, vet, cross-build, and performance coverage.
+  - [ ] Make provider-evaluation publication crash-consistent across the
+    create-only evaluation directory and its caller-owned external receipt.
+    Stage and verify the complete provider response first, durably publish its
+    portable receipt before exposing the final sibling name, and prove restart
+    recovery, pre-receipt quarantine, root/symlink swap refusal, and no
+    duplicate provider call after the durable boundary.
+  - [ ] Finish the four-case Meeting Assistant bundle with synchronized WAV and
+    MP4 per case, deterministic pass/fail plus advisory model review, durable
+    source-before-model and per-evaluation receipts, case-by-case `REVIEW.md`,
+    credential-safe exact `gemini-3.7-flash` integration, real FFmpeg full
+    decoding, retry/recovery, and independent root audit.
+  - [ ] Finish the exact sixteen-case Realtime-CU bundle with real Chromium
+    capture rather than generated-frame substitution, synchronized WAV and MP4
+    per case, pixel and set-of-mark coverage, deterministic pass/fail plus
+    advisory model review, durable receipts, case-by-case review, real FFmpeg
+    full decoding, retry/recovery, and independent root audit.
+  - [ ] Wire scenario, Meeting Assistant, Realtime-CU, and every applicable
+    FDB/FDB3/FD-Bench/tau2 benchmark recording and advisory-review bundle into
+    the release matrix with retained source/evaluation receipts, audio/video
+    decode assertions, exact population counts, redacted summaries, and
+    credential-free offline verification.
+  - [ ] Run the provisioned live 165-pair scenario comparison, live four-case
+    Meeting Assistant review, live exact-sixteen Realtime-CU review, and signed
+    Darwin macOS client gate. Local synthetic, transport-only, Linux Swift, or
+    manifest-derived probes do not close these live/native requirements.
 - [ ] Complete the sidecar/model protocol-v4 hardening checkpoint.
   - [ ] Publish the deployment registry and codec with a genuinely atomic,
     create-only service batch operation.
@@ -2037,6 +2078,11 @@ diagnosis only.
   legacy/unattested compatibility behavior.
 - [ ] Re-run and compare all eleven interaction scenarios with at least fifteen
   matched repetitions per scenario (at least 165 baseline/candidate pairs):
+  The exact eleven-row and 165-attempt sealed populations, shuffled/race gates,
+  offline verifier, and exact-model advisory transport gate are implemented and
+  green. This box and every case below remain open until the provisioned live
+  baseline and graph-native candidate artifacts are both retained and pass the
+  predeclared paired comparison.
   - [ ] `count-as-they-go`
   - [ ] `asked not to be interrupted`
   - [ ] `a recorded menu`
@@ -2048,9 +2094,14 @@ diagnosis only.
   - [ ] `an acknowledgement is not an interruption`
   - [ ] `telling them what it saw`
   - [ ] `an ordinary question`
-- [ ] Migrate and run all four OpenRealtime Meeting Assistant v1 tasks.
+- [ ] Migrate and run all four OpenRealtime Meeting Assistant v1 tasks. The
+  graph-native synchronized-media/review implementation is under adversarial
+  hardening; it does not count as a completed run until exact-four real FFmpeg,
+  model-review, retained-receipt, race/shuffle, and live gates pass.
 - [ ] Migrate and run all sixteen OpenRealtime Realtime-CU v1 cases (eight
-  task families under pixel and set-of-mark observation variants).
+  task families under pixel and set-of-mark observation variants). Exact-sixteen
+  generated-frame FFmpeg evidence is not labeled as real-browser evidence; the
+  required exact-sixteen Chromium capture and independent audit remain open.
 - [ ] Migrate and run all 498 FDB v1.5 tasks.
 - [ ] Migrate and run all 100 released FDB v3 examples.
 - [ ] Migrate and run all 6,147 FD-Bench conversations across all 21 released
@@ -2251,9 +2302,13 @@ diagnosis only.
     artifact, inspection, and view boundaries exist; a signed Darwin run and
     unchanged-server browser-to-macOS comparison are still required.
   - [ ] Pass the shared browser/macOS/headless protocol, media, tools,
-    inspection, reconnect, reconciliation, leak, and performance gates. Local
-    browser/headless conformance is present; native, cross-client,
-    reconciliation/leak, and performance-evidence gates remain open.
+    inspection, reconnect, reconciliation, leak, and performance gates. Real
+    Chromium developer/observer WebSocket and WebRTC profiles, the unchanged
+    clean-server browser/macOS protocol probe, JavaScript conformance, portable
+    strict-concurrency Swift tests, shuffled race gates, and focused
+    presentation benchmarks are green. A signed native Darwin application run,
+    full lifecycle/leak evidence, and the complete release-matrix rerun remain
+    open.
 
 - [ ] **Exit gate:** an operator can understand a running graph and trace an
   output to its causes without reading binding source.
