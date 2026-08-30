@@ -148,7 +148,7 @@ func TestPrepareRejectsDeclaredSecretSplitAcrossDecodedJSONTokens(t *testing.T) 
 
 func TestPrepareScansLargeNestedPromptEnvelopeExactlyOnce(t *testing.T) {
 	request, _ := testRequest(t)
-	values := make([]string, 2000)
+	values := make([]string, 4000)
 	for index := range values {
 		values[index] = fmt.Sprintf(
 			`{"frame":%d,"text":"ordinary retained trace %d"}`, index, index,
@@ -174,6 +174,16 @@ func TestPrepareScansLargeNestedPromptEnvelopeExactlyOnce(t *testing.T) {
 	if _, err := PrepareContext(t.Context(), literalRequest); err == nil ||
 		!strings.Contains(err.Error(), "prompt envelope contains a declared sensitive value") {
 		t.Fatalf("literal prompt secret error = %v", err)
+	}
+
+	splitRequest, _ := testRequest(t)
+	splitRequest.AttemptID = "split-sensitive-prefix"
+	splitSecret := splitRequest.AttemptID + CasePromptVersion[:8]
+	splitRequest.SensitiveValues = []string{splitSecret}
+	if _, err := PrepareContext(t.Context(), splitRequest); err == nil ||
+		!strings.Contains(err.Error(), "public contract contains a declared sensitive value") ||
+		strings.Contains(err.Error(), splitSecret) {
+		t.Fatalf("split public-contract secret error = %v", err)
 	}
 }
 
