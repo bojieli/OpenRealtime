@@ -34,7 +34,7 @@ const (
 	realtimeCUWhisperDependencyRootsEnv  = "OPENREALTIME_CU_WHISPER_DEPENDENCY_ROOTS"
 	realtimeCUWhisperServiceArgument     = "/proc/self/fd/3"
 	realtimeCUWhisperServiceLogicalID    = "memfd://openrealtime-whisper-service-v2"
-	realtimeCUWhisperServiceDigestV2     = "sha256:5d4a115ce2fa456bd2f15b6168b252bddadfee099c15b63a97a62fb92d4524c2"
+	realtimeCUWhisperServiceDigestV2     = "sha256:9187b0f04d47ea36d94b1decf25c32f2df095ad098364c2026e3ce49d8637d4a"
 	maximumRealtimeCUDeploymentFiles     = 200_000
 	maximumRealtimeCUDeploymentBytes     = int64(128 << 30)
 	maximumRealtimeCUBehaviorEnvironment = 128

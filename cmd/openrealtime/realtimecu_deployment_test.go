@@ -967,7 +967,7 @@ func TestWhisperDependencyImportGuardNeverConsumesPreexistingBytecode(t *testing
 	repository := filepath.Clean(filepath.Join(workingDirectory, "..", ".."))
 	service := filepath.Join(repository, "tools", "whisper", "server.py")
 	program := `
-import importlib, importlib.util, os, pathlib, py_compile, sys
+import importlib, importlib.util, os, pathlib, py_compile, sys, types
 root = pathlib.Path(sys.argv[2])
 source = root / "cached_dependency.py"
 source.write_text("VALUE = 'EVIL'\n")
@@ -985,6 +985,24 @@ sys.path.remove(str(root))
 spec = importlib.util.spec_from_file_location("reviewed_whisper_server", sys.argv[1])
 server = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(server)
+server.WHISPER_DEPENDENCY_MODULES = ("cached_dependency",)
+outside = types.ModuleType("outside_deleted_service")
+outside.__file__ = "/memfd:outside-deleted-service (deleted)"
+sys.modules[outside.__name__] = outside
+server.verify_loaded_dependency_modules([str(root)])
+escape_path = root.parent / (root.name + "-escape.py")
+escape_path.write_text("VALUE = 'OUTSIDE'\n")
+escaped = types.ModuleType("cached_dependency.escaped")
+escaped.__file__ = str(root / ".." / escape_path.name)
+sys.modules[escaped.__name__] = escaped
+try:
+    server.verify_loaded_dependency_modules([str(root)])
+except RuntimeError as error:
+    if "escaped its selected roots" not in str(error):
+        raise
+else:
+    raise SystemExit("lexical dependency escape was accepted")
+del sys.modules[escaped.__name__]
 server.install_dependency_import_guard([str(root)])
 sys.path.insert(0, str(root))
 guarded = importlib.import_module("cached_dependency")

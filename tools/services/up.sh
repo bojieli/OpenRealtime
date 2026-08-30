@@ -117,7 +117,7 @@ finally:
 identity = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
 if identity(before) != identity(after) or len(payload) != before.st_size:
     raise RuntimeError("Whisper service source changed while sealing")
-if "sha256:" + hashlib.sha256(payload).hexdigest() != "sha256:5d4a115ce2fa456bd2f15b6168b252bddadfee099c15b63a97a62fb92d4524c2":
+if "sha256:" + hashlib.sha256(payload).hexdigest() != "sha256:9187b0f04d47ea36d94b1decf25c32f2df095ad098364c2026e3ce49d8637d4a":
     raise RuntimeError("Whisper service source differs from the pinned reviewed implementation")
 handle = os.memfd_create("openrealtime-whisper-service-v2", os.MFD_ALLOW_SEALING)
 offset = 0

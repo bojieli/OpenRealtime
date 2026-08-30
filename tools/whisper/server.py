@@ -246,11 +246,16 @@ def verify_loaded_dependency_modules(roots):
         origin = getattr(module, "__file__", None)
         if not origin or not os.path.isabs(origin):
             continue
+        lexical = pathlib.Path(origin)
+        if not any(_path_within(lexical, root) for root in canonical_roots):
+            continue
         try:
-            path = pathlib.Path(origin).resolve(strict=True)
+            path = lexical.resolve(strict=True)
         except OSError as error:
             raise RuntimeError(f"loaded Whisper dependency disappeared: {name}") from error
-        if any(_path_within(path, root) for root in canonical_roots) and name.split(".", 1)[0] not in allowed:
+        if not any(_path_within(path, root) for root in canonical_roots):
+            raise RuntimeError(f"loaded Whisper dependency escaped its selected roots: {name}")
+        if name.split(".", 1)[0] not in allowed:
             raise RuntimeError(f"loaded Whisper dependency was not reviewed: {name}")
 
 
