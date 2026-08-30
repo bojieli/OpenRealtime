@@ -5,6 +5,7 @@ package binding
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,13 +38,60 @@ type Binding struct {
 	graph          ir.Graph
 	configuration  inspect.ArtifactIdentity
 	implementation string
-	descriptor     element.Descriptor
 	portTypes      map[string]element.Type
+	inspection     graphruntime.InspectionConfig
+	traceRecording *TraceRecordingConfig
+	artifact       *inspect.ArtifactIdentity
 }
 
 func New(underlying legacy.Binding) (*Binding, error) {
+	return NewWithConfig(underlying, Config{})
+}
+
+// Config keeps live-inspection retention and trace recording explicit. A nil
+// TraceRecording disables the recorder and its capture/allocation overhead.
+type Config struct {
+	Inspection graphruntime.InspectionConfig
+	// ImplementationArtifact is the immutable deployment identity of the
+	// compatibility adapter/factory in this process. Trace recording requires
+	// this trusted registration evidence; a descriptor digest alone identifies
+	// an interface, not the executable material implementing it.
+	ImplementationArtifact *inspect.ArtifactIdentity
+	TraceRecording         *TraceRecordingConfig
+}
+
+// TraceRecordingConfig contains only reusable bounds. Start generates a fresh
+// per-session correlation key; callers cannot accidentally reuse one session's
+// pseudonymization authority in another.
+type TraceRecordingConfig struct {
+	Limits           inspect.TraceLimits
+	MaxRetainedBytes int
+	CaptureInterval  time.Duration
+}
+
+func NewWithConfig(underlying legacy.Binding, config Config) (*Binding, error) {
 	if underlying == nil {
 		return nil, errors.New("graph binding requires an underlying binding")
+	}
+	if config.Inspection.MaxFlows < 0 || config.Inspection.MaxEdgesPerFlow < 0 ||
+		config.Inspection.MaxCorrelationBytes < 0 {
+		return nil, errors.New("graph binding inspection bounds cannot be negative")
+	}
+	var recording *TraceRecordingConfig
+	if config.TraceRecording != nil {
+		copy := *config.TraceRecording
+		recording = &copy
+	}
+	var artifact *inspect.ArtifactIdentity
+	if config.ImplementationArtifact != nil {
+		copy := *config.ImplementationArtifact
+		if err := copy.Validate(); err != nil {
+			return nil, fmt.Errorf("graph binding implementation artifact: %w", err)
+		}
+		artifact = &copy
+	}
+	if recording != nil && artifact == nil {
+		return nil, errors.New("graph binding trace recording requires an exact implementation artifact")
 	}
 	descriptor := compat.Descriptor()
 	catalog := resolve.NewCatalog()
@@ -84,8 +132,8 @@ func New(underlying legacy.Binding) (*Binding, error) {
 			ID: "values://" + bound.Graph.ID, Revision: graphvalues.APIVersion,
 			Digest: bound.Fingerprint,
 		},
-		implementation: implementation,
-		descriptor:     descriptor, portTypes: portTypes,
+		implementation: implementation, portTypes: portTypes,
+		inspection: config.Inspection, traceRecording: recording, artifact: artifact,
 	}, nil
 }
 
@@ -117,17 +165,41 @@ func (binding *Binding) Start(ctx context.Context, options legacy.Options) (lega
 		return nil, err
 	}
 	registry := graphruntime.NewRegistry()
-	if err := registry.Register(binding.implementation, compat.Factory{}); err != nil {
-		return nil, err
+	var registrationErr error
+	if binding.artifact == nil {
+		registrationErr = registry.Register(binding.implementation, compat.Factory{})
+	} else {
+		registrationErr = registry.RegisterArtifact(binding.implementation, *binding.artifact, compat.Factory{})
+	}
+	if registrationErr != nil {
+		return nil, registrationErr
 	}
 	configValue, err := compatibilityIdentity(binding.underlying)
 	if err != nil {
 		return nil, err
 	}
+	var recording *graphruntime.TraceRecordingConfig
+	if binding.traceRecording != nil {
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			return nil, fmt.Errorf("start graph binding trace key: %w", err)
+		}
+		defer func() {
+			for index := range key {
+				key[index] = 0
+			}
+		}()
+		recording = &graphruntime.TraceRecordingConfig{
+			Limits: binding.traceRecording.Limits, SessionCorrelationKey: key,
+			MaxRetainedBytes: binding.traceRecording.MaxRetainedBytes,
+			CaptureInterval:  binding.traceRecording.CaptureInterval,
+		}
+	}
 	mounted, err := graphruntime.Mount(ctx, graphruntime.Config{
 		Graph: binding.graph, Registry: registry, Services: services,
 		Values:        map[string]json.RawMessage{nodeID: configValue},
 		Configuration: &binding.configuration,
+		Inspection:    binding.inspection, TraceRecording: recording,
 	})
 	if err != nil {
 		return nil, err
@@ -321,6 +393,12 @@ func (runtime *Runtime) Status() legacy.Status {
 
 func (runtime *Runtime) Graph() ir.Graph    { return runtime.binding.graph }
 func (runtime *Runtime) Live() inspect.Live { return runtime.mounted.Live() }
+
+// RecordedTrace exposes the graph runtime's bounded payload-free recorder. It
+// fails closed when the binding was created without explicit recording.
+func (runtime *Runtime) RecordedTrace() (inspect.LiveTrace, error) {
+	return runtime.mounted.RecordedTrace()
+}
 
 func (runtime *Runtime) Close(ctx context.Context, cause error) error {
 	if ctx == nil {

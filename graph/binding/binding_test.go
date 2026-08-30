@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
+	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -244,6 +246,116 @@ func TestCompatibilityGraphIdentityIncludesSelectedBinding(t *testing.T) {
 	}
 	if err := right.Graph().Validate(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCompatibilityBindingTraceRecordingIsExplicitAndPayloadFree(t *testing.T) {
+	underlying := &stubBinding{name: "recording"}
+	disabled, err := graphbinding.New(underlying)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabledRuntime, err := disabled.Start(context.Background(), legacy.Options{
+		Sink: &recordingSink{}, SessionID: "recording-disabled",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := disabledRuntime.(*graphbinding.Runtime).RecordedTrace(); !errors.Is(err, graphruntime.ErrTraceRecordingDisabled) {
+		t.Fatalf("disabled trace error = %v", err)
+	}
+	if err := disabledRuntime.Close(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := graphbinding.NewWithConfig(underlying, graphbinding.Config{
+		TraceRecording: &graphbinding.TraceRecordingConfig{MaxRetainedBytes: 64 << 10},
+	}); err == nil {
+		t.Fatal("trace recording accepted declaration-only implementation evidence")
+	}
+	artifact := inspect.ArtifactIdentity{
+		ID: "go://openrealtime/test/compat-binding", Revision: "test-build-1",
+		Digest: "sha256:" + strings.Repeat("f", 64),
+	}
+	enabled, err := graphbinding.NewWithConfig(underlying, graphbinding.Config{
+		ImplementationArtifact: &artifact,
+		TraceRecording: &graphbinding.TraceRecordingConfig{
+			MaxRetainedBytes: 64 << 10, CaptureInterval: time.Millisecond,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := enabled.Start(context.Background(), legacy.Options{
+		Sink: &recordingSink{}, SessionID: "recording-enabled",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := live.Text(context.Background(), legacy.TextInput{
+		ItemID: "private-user-item", Role: "user", Text: "private transcript",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	trace, err := live.(*graphbinding.Runtime).RecordedTrace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := trace.Validate(); err != nil {
+		t.Fatalf("recorded trace validation: %v", err)
+	}
+	payload, err := inspect.MarshalLiveTrace(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), "private-user-item") ||
+		strings.Contains(string(payload), "private transcript") {
+		t.Fatalf("recorded trace retained payload-derived data: %s", payload)
+	}
+	if len(trace.Snapshots) == 0 || trace.Configuration.Digest == "" {
+		t.Fatalf("recorded trace lacks exact baseline evidence: %+v", trace)
+	}
+	if err := live.Close(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func BenchmarkCompatibilityBindingRecordedTrace(b *testing.B) {
+	artifact := inspect.ArtifactIdentity{
+		ID: "go://openrealtime/bench/compat-binding", Revision: "bench-build-1",
+		Digest: "sha256:" + strings.Repeat("e", 64),
+	}
+	wrapped, err := graphbinding.NewWithConfig(&stubBinding{name: "recording-bench"}, graphbinding.Config{
+		ImplementationArtifact: &artifact,
+		TraceRecording: &graphbinding.TraceRecordingConfig{
+			MaxRetainedBytes: 64 << 10,
+		},
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	live, err := wrapped.Start(context.Background(), legacy.Options{
+		Sink: &recordingSink{}, SessionID: "recording-bench",
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() {
+		if err := live.Close(context.Background(), nil); err != nil {
+			b.Errorf("close recorded binding: %v", err)
+		}
+	})
+	recorded := live.(*graphbinding.Runtime)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		trace, err := recorded.RecordedTrace()
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(trace.Snapshots) == 0 {
+			b.Fatal("recorded trace lost its baseline")
+		}
 	}
 }
 
