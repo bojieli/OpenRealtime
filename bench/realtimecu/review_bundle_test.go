@@ -491,6 +491,12 @@ func TestReviewBundleRetainsDeterministicCaseAudioVideoAndRawEvidence(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := (*ReviewBundle)(nil).SourceResult(); err == nil {
+		t.Fatal("nil SourceResult succeeded")
+	}
+	if _, err := bundle.SourceResult(); err == nil {
+		t.Fatal("unsealed SourceResult succeeded")
+	}
 	item := Case{Task: Suite()[0], Grounding: GroundingPixel}
 	outcome := fixtureReviewAttempt(t, bundle, item, true)
 	result := bench.Result{
@@ -501,6 +507,15 @@ func TestReviewBundleRetainsDeterministicCaseAudioVideoAndRawEvidence(t *testing
 	if err := bundle.FinishSuite(t.Context(), result); err == nil ||
 		!strings.Contains(err.Error(), "retained 1 of 16") {
 		t.Fatalf("FinishSuite() error = %v", err)
+	}
+	sealedResult, err := bundle.SourceResult()
+	if err != nil || !reflect.DeepEqual(sealedResult, result) {
+		t.Fatalf("SourceResult() = %+v, %v", sealedResult, err)
+	}
+	sealedResult.Tasks[0].Passed = !sealedResult.Tasks[0].Passed
+	sealedAgain, err := bundle.SourceResult()
+	if err != nil || !reflect.DeepEqual(sealedAgain, result) {
+		t.Fatalf("SourceResult() did not return an isolated decode: %+v, %v", sealedAgain, err)
 	}
 	receipt, ok := bundle.Receipt()
 	if !ok {
@@ -536,6 +551,13 @@ func TestReviewBundleRetainsDeterministicCaseAudioVideoAndRawEvidence(t *testing
 	if err != nil || !bytes.Contains(review, []byte("static-control/pixel — PASS")) ||
 		!bytes.Contains(review, []byte("Raw frames, timelines")) {
 		t.Fatalf("REVIEW.md error=%v\n%s", err, review)
+	}
+	makeReviewTreeWritable(directory)
+	if err := os.WriteFile(filepath.Join(directory, "result.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bundle.SourceResult(); err == nil {
+		t.Fatal("SourceResult accepted a mutated sealed result")
 	}
 }
 

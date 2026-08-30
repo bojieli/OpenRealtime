@@ -243,6 +243,10 @@ type session struct {
 	bundle                                       *sessionBundle
 	observer                                     Observer
 
+	audioObservationMu  sync.Mutex
+	videoObservationMu  sync.Mutex
+	mediaLifecycleMu    sync.RWMutex
+	mediaClosed         bool
 	observationMu       sync.Mutex
 	revisions           map[string]uint64
 	captured            map[string]uint64
@@ -525,16 +529,26 @@ func (session *session) acceptCanonicalResult(ctx context.Context, envelope elem
 }
 
 func (session *session) queueVisualConsequence(ctx context.Context, feedback VisualConsequence) error {
+	session.videoObservationMu.Lock()
+	defer session.videoObservationMu.Unlock()
+	session.mediaLifecycleMu.RLock()
+	defer session.mediaLifecycleMu.RUnlock()
+	if session.mediaClosed {
+		return errors.New("realtime-CU session is closed")
+	}
 	session.observationMu.Lock()
-	defer session.observationMu.Unlock()
 	if len(session.pendingConsequences) >= maximumPendingVisualConsequences {
+		session.observationMu.Unlock()
 		return fmt.Errorf("realtime-CU visual consequence capacity is exhausted at %d pending effects",
 			maximumPendingVisualConsequences)
 	}
+	session.observationMu.Unlock()
 	if err := session.observer.Consequence(ctx, feedback); err != nil {
 		return fmt.Errorf("request realtime-CU visual consequence observation: %w", err)
 	}
+	session.observationMu.Lock()
 	session.pendingConsequences = append(session.pendingConsequences, feedback)
+	session.observationMu.Unlock()
 	return nil
 }
 
@@ -594,11 +608,23 @@ func (session *session) observe(
 	}
 	frame.PCM16LE = slices.Clone(frame.PCM16LE)
 	frame.Image = slices.Clone(frame.Image)
+	sensorMu := &session.videoObservationMu
+	if frame.Kind == perception.FrameAudio {
+		sensorMu = &session.audioObservationMu
+	}
+	sensorMu.Lock()
+	defer sensorMu.Unlock()
+	session.mediaLifecycleMu.RLock()
+	defer session.mediaLifecycleMu.RUnlock()
+	if session.mediaClosed {
+		return errors.New("realtime-CU session is closed")
+	}
 	session.observationMu.Lock()
-	defer session.observationMu.Unlock()
 	if previous := session.captured[frame.Source]; previous != 0 && frame.CapturedNS <= previous {
+		session.observationMu.Unlock()
 		return fmt.Errorf("realtime-CU %s capture timestamps must increase", frame.Source)
 	}
+	session.observationMu.Unlock()
 	var observations []perception.Observation
 	var err error
 	if frame.Kind == perception.FrameAudio {
@@ -609,6 +635,12 @@ func (session *session) observe(
 	if err != nil {
 		return fmt.Errorf("observe realtime-CU %s frame: %w", frame.Source, err)
 	}
+	// Provider work is sensor-local. Only validation and graph commit below take
+	// the shared state lock, so a slow vision model cannot starve microphone ASR.
+	// Cross-sensor commits deliberately follow provider completion order; each
+	// source's timestamps/revisions and every declared causal parent remain exact.
+	session.observationMu.Lock()
+	defer session.observationMu.Unlock()
 	validated := make([]perception.Observation, len(observations))
 	nextRevisions := make(map[string]uint64, len(session.revisions))
 	for key, revision := range session.revisions {
@@ -816,6 +848,9 @@ func (session *session) Status() legacy.Status {
 
 func (session *session) Close(_ context.Context, cause error) error {
 	session.closeOnce.Do(func() {
+		session.mediaLifecycleMu.Lock()
+		defer session.mediaLifecycleMu.Unlock()
+		session.mediaClosed = true
 		session.bundle.bridge.Close(cause)
 		session.cancelAckMu.Lock()
 		for id, ack := range session.cancelAcks {
@@ -823,9 +858,7 @@ func (session *session) Close(_ context.Context, cause error) error {
 			ack <- errors.New("Realtime-CU session closed before intent cancellation committed")
 		}
 		session.cancelAckMu.Unlock()
-		session.observationMu.Lock()
 		session.closeErr = session.observer.Close()
-		session.observationMu.Unlock()
 	})
 	return session.closeErr
 }

@@ -54,8 +54,7 @@ func endpointIdentity(endpoint string) string {
 }
 
 // EvidenceAttempt identifies one exact v1 task/grounding combination before
-// browser, media, or Realtime work begins. An outer migration harness may use
-// a fresh plug-in instance for each additional preregistered trial.
+// browser, media, or Realtime work begins.
 type EvidenceAttempt struct {
 	Suite                string                     `json:"suite"`
 	Case                 string                     `json:"case"`
@@ -63,6 +62,7 @@ type EvidenceAttempt struct {
 	Task                 Task                       `json:"task"`
 	Grounding            Grounding                  `json:"grounding"`
 	Origin               EvidenceRunOrigin          `json:"run_origin"`
+	Observers            []string                   `json:"observers,omitempty"`
 	ExecutionRequirement bench.ExecutionRequirement `json:"execution_requirement,omitempty"`
 }
 
@@ -81,7 +81,26 @@ func (attempt EvidenceAttempt) validate() error {
 	if err := attempt.Origin.validate(); err != nil {
 		return err
 	}
+	if err := validateEvidenceObservers(attempt.Observers); err != nil {
+		return err
+	}
+	if attempt.Origin.Live && len(attempt.Observers) == 0 {
+		return errors.New("live realtime computer-use evidence requires an exact observer selection")
+	}
 	return attempt.ExecutionRequirement.Validate()
+}
+
+func validateEvidenceObservers(observers []string) error {
+	for index, observer := range observers {
+		if strings.TrimSpace(observer) == "" || observer != strings.TrimSpace(observer) ||
+			strings.ContainsAny(observer, "\x00\r\n") {
+			return errors.New("realtime computer-use evidence observer identity is invalid")
+		}
+		if slices.Contains(observers[:index], observer) {
+			return errors.New("realtime computer-use evidence repeats an observer identity")
+		}
+	}
+	return nil
 }
 
 func canonicalCase(id string) (Case, bool) {

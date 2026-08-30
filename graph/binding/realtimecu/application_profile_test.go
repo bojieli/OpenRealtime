@@ -189,6 +189,101 @@ func TestApplicationRegistrationRechecksCancellationAtConstructorBoundary(t *tes
 	}
 }
 
+func TestApplicationRegistrationRetainsSelectedReadinessAtStartupAndSessionOpen(t *testing.T) {
+	plugin := validTestPluginConfig()
+	modelSelection := ApplicationModelSelection{
+		Reference: plugin.Model.Reference, Artifact: plugin.Model.Artifact,
+		Descriptor: plugin.Model.Descriptor,
+	}
+	observerSelection := ApplicationObserverSelection{
+		Reference: plugin.Observer.Reference, Name: plugin.Observer.Name,
+		Artifact: plugin.Observer.Artifact, Sources: slices.Clone(plugin.Observer.Sources),
+	}
+	readinessFailure := errors.New("deployment drifted")
+	var fail atomic.Bool
+	var modelReadiness, observerReadiness, modelFactory, observerFactory atomic.Int32
+	check := func(counter *atomic.Int32) func(context.Context) error {
+		return func(ctx context.Context) error {
+			counter.Add(1)
+			if fail.Load() {
+				return readinessFailure
+			}
+			return context.Cause(ctx)
+		}
+	}
+	var resolved PluginConfig
+	registration, err := NewApplicationRegistration(ApplicationRegistrationConfig{
+		ApplicationArtifact: testArtifact("application-profile-readiness", "d"),
+		ProviderArtifact:    testArtifact("provider-profile-readiness", "e"),
+		RuntimeArtifact:     plugin.RuntimeArtifact,
+		Models: []ModelFactoryRegistration{{
+			ApplicationModelSelection: modelSelection,
+			Readiness:                 check(&modelReadiness),
+			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
+				modelFactory.Add(1)
+				return nil, nil
+			},
+		}},
+		Observers: []ObserverFactoryRegistration{{
+			ApplicationObserverSelection: observerSelection,
+			Readiness:                    check(&observerReadiness),
+			Factory: func(context.Context, legacy.Options) (Observer, error) {
+				observerFactory.Add(1)
+				return nil, nil
+			},
+		}},
+	}, func(config PluginConfig) (graphlaunch.Config, error) {
+		resolved = config
+		return graphlaunch.Config{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := applicationProfilePayload(t, ApplicationConfig{
+		FormatVersion: ApplicationFormatVersion, Model: modelSelection,
+		Observer: observerSelection, Target: plugin.Target,
+	})
+	launchConfig, err := registration.Factory(context.Background(), payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(launchConfig.Readiness) != 2 {
+		t.Fatalf("selected readiness checks = %d, want 2", len(launchConfig.Readiness))
+	}
+	for _, readiness := range launchConfig.Readiness {
+		if err := readiness.Check(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := resolved.Model.Factory(context.Background(), legacy.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolved.Observer.Factory(context.Background(), legacy.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if modelReadiness.Load() != 2 || observerReadiness.Load() != 2 ||
+		modelFactory.Load() != 1 || observerFactory.Load() != 1 {
+		t.Fatalf("ready model=%d observer=%d factories model=%d observer=%d",
+			modelReadiness.Load(), observerReadiness.Load(), modelFactory.Load(), observerFactory.Load())
+	}
+
+	fail.Store(true)
+	for _, readiness := range launchConfig.Readiness {
+		if err := readiness.Check(context.Background()); !errors.Is(err, readinessFailure) {
+			t.Fatalf("drifted startup readiness error = %v", err)
+		}
+	}
+	if _, err := resolved.Model.Factory(context.Background(), legacy.Options{}); !errors.Is(err, readinessFailure) {
+		t.Fatalf("drifted model factory error = %v", err)
+	}
+	if _, err := resolved.Observer.Factory(context.Background(), legacy.Options{}); !errors.Is(err, readinessFailure) {
+		t.Fatalf("drifted observer factory error = %v", err)
+	}
+	if modelFactory.Load() != 1 || observerFactory.Load() != 1 {
+		t.Fatal("drifted deployment crossed a provider factory boundary")
+	}
+}
+
 func applicationProfilePayload(t *testing.T, config ApplicationConfig) json.RawMessage {
 	t.Helper()
 	payload, err := json.Marshal(config)

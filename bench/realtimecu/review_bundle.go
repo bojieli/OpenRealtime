@@ -30,9 +30,9 @@ import (
 
 const (
 	ReviewBundleFormat         = "openrealtime.realtime-cu-review"
-	ReviewBundleFormatVersion  = 2
+	ReviewBundleFormatVersion  = 3
 	ReviewContextFormat        = "openrealtime.realtime-cu-review-context"
-	ReviewContextVersion       = 1
+	ReviewContextVersion       = 2
 	ReviewSourceReceiptFormat  = "openrealtime.realtime-cu-review-source-receipt"
 	ReviewSourceReceiptVersion = 1
 	ReviewPhaseSource          = "deterministic-source"
@@ -141,6 +141,7 @@ type ReviewAttempt struct {
 	Case                         string                         `json:"case"`
 	Trial                        int                            `json:"trial"`
 	Grounding                    Grounding                      `json:"grounding"`
+	Observers                    []string                       `json:"observers,omitempty"`
 	Deterministic                bench.TaskOutcome              `json:"deterministic"`
 	Context                      ReviewArtifact                 `json:"context"`
 	MediaBundle                  NestedBundleReceipt            `json:"media_bundle"`
@@ -513,6 +514,7 @@ func ResumeReviewBundle(
 			Suite: SuiteName, Case: indexed.Case, Trial: indexed.Trial,
 			Task:      cloneCase(Case{Task: contextValue.Task}).Task,
 			Grounding: indexed.Grounding, Origin: contextValue.RunOrigin,
+			Observers:            slices.Clone(contextValue.Observers),
 			ExecutionRequirement: contextValue.ExecutionRequirement,
 		}
 		if err := specification.validate(); err != nil {
@@ -641,6 +643,40 @@ func (bundle *ReviewBundle) SourceReceipt() (ReviewSourceReceipt, bool) {
 		return ReviewSourceReceipt{}, false
 	}
 	return *bundle.sourceReceipt, true
+}
+
+// SourceResult returns an independent decode of the exact canonical result
+// sealed by the deterministic source phase. It is primarily a restart seam:
+// callers can resume advisory evaluation without rerunning browser actions or
+// trusting a separately supplied result file.
+func (bundle *ReviewBundle) SourceResult() (bench.Result, error) {
+	if bundle == nil {
+		return bench.Result{}, errors.New("read realtime computer-use source result: nil bundle")
+	}
+	bundle.mu.Lock()
+	payload := slices.Clone(bundle.finishSource)
+	var receipt ReviewSourceReceipt
+	sealed := bundle.sourceReceipt != nil
+	if sealed {
+		receipt = *bundle.sourceReceipt
+	}
+	directory := bundle.directory
+	bundle.mu.Unlock()
+	if len(payload) == 0 || !sealed {
+		return bench.Result{}, errors.New("realtime computer-use deterministic source is not sealed")
+	}
+	if _, err := VerifyReviewSourceReceipt(directory, receipt); err != nil {
+		return bench.Result{}, errors.New("verify realtime computer-use source before reading result")
+	}
+	result, err := decodeReviewResult(payload)
+	if err != nil {
+		return bench.Result{}, err
+	}
+	canonical, err := encodeReviewResult(result)
+	if err != nil || !bytes.Equal(canonical, payload) {
+		return bench.Result{}, errors.New("realtime computer-use deterministic source result is noncanonical")
+	}
+	return result, nil
 }
 
 // EvaluationReceipts returns portable receipts already durable in the
@@ -1154,6 +1190,7 @@ type realtimeCUReviewContext struct {
 	Grounding            Grounding                  `json:"grounding"`
 	RunOrigin            EvidenceRunOrigin          `json:"run_origin"`
 	ExecutionRequirement bench.ExecutionRequirement `json:"execution_requirement,omitempty"`
+	Observers            []string                   `json:"observers,omitempty"`
 	Outcome              bench.TaskOutcome          `json:"deterministic_outcome"`
 	Transcript           bench.Transcript           `json:"transcript"`
 	Page                 PageResult                 `json:"page_result"`
@@ -1201,6 +1238,7 @@ func retainedReviewContext(
 		Task:                 cloneCase(Case{Task: source.specification.Task}).Task,
 		Grounding:            source.specification.Grounding,
 		RunOrigin:            source.specification.Origin,
+		Observers:            slices.Clone(source.specification.Observers),
 		ExecutionRequirement: source.specification.ExecutionRequirement,
 		Outcome:              cloneTaskOutcome(source.completion.Outcome),
 		Transcript:           transcript,
@@ -1262,6 +1300,7 @@ func materializeReviewAttempts(
 		attempt := ReviewAttempt{
 			Ordinal: source.ordinal, Case: id, Trial: 1,
 			Grounding:     source.specification.Grounding,
+			Observers:     slices.Clone(source.specification.Observers),
 			Deterministic: cloneTaskOutcome(source.completion.Outcome), Context: contextArtifact,
 			MediaBundle: NestedBundleReceipt{
 				Path:           source.relativeDirectory,
@@ -2481,6 +2520,7 @@ func cloneCell(source bench.Cell) bench.Cell {
 func cloneReviewAttempt(source ReviewAttempt) ReviewAttempt {
 	result := source
 	result.Deterministic = cloneTaskOutcome(source.Deterministic)
+	result.Observers = slices.Clone(source.Observers)
 	result.Media = slices.Clone(source.Media)
 	if source.EvaluationBundle != nil {
 		copy := *source.EvaluationBundle
@@ -2508,6 +2548,7 @@ func cloneReviewAttemptMap(source map[string]ReviewAttempt) map[string]ReviewAtt
 func sameReviewAttemptSource(reviewed, source ReviewAttempt) bool {
 	return reviewed.Ordinal == source.Ordinal && reviewed.Case == source.Case &&
 		reviewed.Trial == source.Trial && reviewed.Grounding == source.Grounding &&
+		slices.Equal(reviewed.Observers, source.Observers) &&
 		reflect.DeepEqual(reviewed.Deterministic, source.Deterministic) &&
 		reflect.DeepEqual(reviewed.Context, source.Context) &&
 		reflect.DeepEqual(reviewed.MediaBundle, source.MediaBundle) &&
@@ -2990,6 +3031,8 @@ func verifyReviewSourceBundleAtMarkerWithOperations(
 			!equalCase(item, Case{Task: contextValue.Task, Grounding: contextValue.Grounding}) ||
 			!reflect.DeepEqual(contextValue.Outcome, attempt.Deterministic) ||
 			!reflect.DeepEqual(contextValue.RunOrigin, attempt.RunOrigin) ||
+			!slices.Equal(contextValue.Observers, attempt.Observers) ||
+			validateEvidenceObservers(contextValue.Observers) != nil ||
 			!reflect.DeepEqual(contextValue.ExecutionRequirement, result.Cell.Execution) {
 			return ReviewManifest{}, errors.New("deterministic source context differs from its attempt")
 		}
@@ -3310,6 +3353,8 @@ func verifyReviewBundleWithOperations(
 			!equalCase(item, Case{Task: contextValue.Task, Grounding: contextValue.Grounding}) ||
 			!reflect.DeepEqual(contextValue.Outcome, attempt.Deterministic) ||
 			!reflect.DeepEqual(contextValue.RunOrigin, attempt.RunOrigin) ||
+			!slices.Equal(contextValue.Observers, attempt.Observers) ||
+			validateEvidenceObservers(contextValue.Observers) != nil ||
 			!reflect.DeepEqual(contextValue.ExecutionRequirement, result.Cell.Execution) {
 			return ReviewManifest{}, errors.New("realtime computer-use review context differs from its attempt")
 		}

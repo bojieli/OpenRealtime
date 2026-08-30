@@ -296,6 +296,7 @@ func TestSessionNegotiatesAndStreamsLiveVideo(t *testing.T) {
 		Endpoint:        "ws" + strings.TrimPrefix(server.URL, "http"),
 		Timeout:         10 * time.Second,
 		TrailingSilence: time.Millisecond,
+		Observers:       []string{"openrealtime.fixture.graph-native-observer"},
 		Ready: func(context.Context) error {
 			ready.Store(true)
 			return nil
@@ -357,6 +358,10 @@ func TestSessionNegotiatesAndStreamsLiveVideo(t *testing.T) {
 			if len(supports) != 3 {
 				t.Fatalf("video feature negotiation is incomplete: %+v", extension)
 			}
+			observers, _ := extension["observers"].([]any)
+			if len(observers) != 1 || observers[0] != "openrealtime.fixture.graph-native-observer" {
+				t.Fatalf("exact observer selection was not preserved: %+v", extension)
+			}
 		case openrealtime.EventVideoSourceUpdate:
 			sourceIndex = index
 			if message["source"] != "screen" || message["width"] != float64(640) || message["height"] != float64(360) {
@@ -408,6 +413,87 @@ func TestSessionNegotiatesAndStreamsLiveVideo(t *testing.T) {
 	}
 	if observation.Observer != "video" || observation.Source != "screen" || observation.Text != "violet control visible" {
 		t.Fatalf("observation provenance was lost: %+v", observation)
+	}
+}
+
+func TestSessionObserverSelectionValidationPrecedesDial(t *testing.T) {
+	for _, observers := range [][]string{{" duplicate", "duplicate"}, {"duplicate", "duplicate"}} {
+		_, err := bench.PlaySamples(t.Context(), bench.SessionConfig{
+			Endpoint: "ws://127.0.0.1:1/v1/realtime", Timeout: time.Second,
+			Observers: observers,
+		}, nil)
+		if err == nil || !strings.Contains(err.Error(), "observer") {
+			t.Fatalf("observers %q error = %v", observers, err)
+		}
+	}
+}
+
+func TestSessionEmptyObserverSelectionDelegatesAndRetainsNegotiatedDefaults(t *testing.T) {
+	updates := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(writer, request, &websocket.AcceptOptions{})
+		if err != nil {
+			return
+		}
+		defer connection.Close(websocket.StatusNormalClosure, "fixture complete")
+		for {
+			_, raw, err := connection.Read(request.Context())
+			if err != nil {
+				return
+			}
+			var message map[string]any
+			if json.Unmarshal(raw, &message) != nil {
+				continue
+			}
+			switch message["type"] {
+			case "session.update":
+				updates <- message
+				for _, response := range []map[string]any{
+					{"type": "session.updated", "session": map[string]any{}},
+					{
+						"type": openrealtime.EventDebug, "category": "session", "name": "session.updated",
+						"attributes": map[string]any{"runtime": map[string]any{
+							"binding": "graph", "observers": []string{"deployment.default-audio", "deployment.default-video"},
+						}},
+					},
+				} {
+					encoded, _ := json.Marshal(response)
+					_ = connection.Write(request.Context(), websocket.MessageText, encoded)
+				}
+			case openrealtime.EventVideoFrameAppend:
+				for _, eventType := range []string{"response.created", "response.done"} {
+					encoded, _ := json.Marshal(map[string]any{"type": eventType})
+					_ = connection.Write(request.Context(), websocket.MessageText, encoded)
+				}
+			}
+		}
+	}))
+	t.Cleanup(server.Close)
+	transcript, err := bench.PlaySamples(t.Context(), bench.SessionConfig{
+		Endpoint: "ws" + strings.TrimPrefix(server.URL, "http"), Timeout: 3 * time.Second,
+		TrailingSilence: time.Millisecond, PostPlaybackQuiet: time.Millisecond,
+		CaptureRuntimeEvidence: true,
+		Video: []bench.VideoStream{{
+			Source: "screen", Width: 1, Height: 1, Interval: time.Hour,
+			Capture: func(context.Context) ([]byte, error) {
+				return []byte{0xff, 0xd8, 0xff, 0xd9}, nil
+			},
+		}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	update := <-updates
+	session, _ := update["session"].(map[string]any)
+	extension, _ := session["openrealtime"].(map[string]any)
+	if _, present := extension["observers"]; present {
+		t.Fatalf("empty observer selection was rewritten instead of delegated: %+v", extension)
+	}
+	if transcript.Runtime == nil || !slices.Equal(
+		transcript.Runtime.Observers,
+		[]string{"deployment.default-audio", "deployment.default-video"},
+	) {
+		t.Fatalf("negotiated default observers = %+v", transcript.Runtime)
 	}
 }
 

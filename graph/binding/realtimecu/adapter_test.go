@@ -5,7 +5,9 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/element"
 	actionelements "github.com/bojieli/OpenRealtime/elements/action"
@@ -178,6 +180,85 @@ func TestVisualAndAudioAuthorityDriftFailsBeforeGraphIngress(t *testing.T) {
 		PCM16LE: []byte{1, 0}, SampleRateHz: 24_000,
 	}); err == nil {
 		t.Fatal("camera source was accepted on the microphone audio operation")
+	}
+}
+
+type concurrentAdapterObserver struct {
+	name         string
+	videoStarted chan struct{}
+	videoRelease chan struct{}
+	start        sync.Once
+	audioRev     atomic.Uint64
+	videoRev     atomic.Uint64
+}
+
+func (observer *concurrentAdapterObserver) Audio(
+	_ context.Context, frame perception.Frame,
+) ([]perception.Observation, error) {
+	return []perception.Observation{{
+		Text: "heard", Observer: observer.name, Source: frame.Source,
+		Authority: trajectory.AuthorityUser, Revision: observer.audioRev.Add(1), Final: true,
+	}}, nil
+}
+func (observer *concurrentAdapterObserver) Video(
+	ctx context.Context, frame perception.Frame,
+) ([]perception.Observation, error) {
+	observer.start.Do(func() { close(observer.videoStarted) })
+	select {
+	case <-observer.videoRelease:
+	case <-ctx.Done():
+		return nil, context.Cause(ctx)
+	}
+	return []perception.Observation{{
+		Text: "saw", Observer: observer.name, Source: frame.Source,
+		Authority: trajectory.AuthorityObserver, Revision: observer.videoRev.Add(1), Final: true,
+	}}, nil
+}
+func (*concurrentAdapterObserver) Consequence(context.Context, VisualConsequence) error { return nil }
+func (*concurrentAdapterObserver) Close() error                                         { return nil }
+
+func TestSessionBlockedVisionDoesNotStarveAudioObservation(t *testing.T) {
+	observer := &concurrentAdapterObserver{
+		name: "test-observer", videoStarted: make(chan struct{}), videoRelease: make(chan struct{}),
+	}
+	session := &session{
+		sessionID: "concurrent-media-session", observer: observer,
+		config:    PluginConfig{Observer: ObserverPlugin{Name: observer.name}},
+		audio:     &recordingOutputPort{name: audioBoundary, typeName: stateelements.ObservationType()},
+		video:     &recordingOutputPort{name: videoBoundary, typeName: stateelements.ObservationType()},
+		revisions: make(map[string]uint64), captured: make(map[string]uint64),
+		seenText: make(map[string]struct{}), active: make(map[string]activeCall),
+	}
+	videoDone := make(chan error, 1)
+	go func() {
+		videoDone <- session.Video(t.Context(), perception.Frame{
+			Kind: perception.FrameImage, Source: SourceScreen, CapturedNS: 1,
+			Image: []byte{1}, MIMEType: "image/jpeg", Width: 1, Height: 1,
+		})
+	}()
+	select {
+	case <-observer.videoStarted:
+	case <-time.After(time.Second):
+		t.Fatal("vision fixture did not block")
+	}
+	audioDone := make(chan error, 1)
+	go func() {
+		audioDone <- session.Audio(t.Context(), perception.Frame{
+			Kind: perception.FrameAudio, Source: SourceMicrophone, CapturedNS: 2,
+			PCM16LE: []byte{1, 0}, SampleRateHz: 8_000,
+		})
+	}()
+	select {
+	case err := <-audioDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("blocked vision starved adapter audio commit")
+	}
+	close(observer.videoRelease)
+	if err := <-videoDone; err != nil {
+		t.Fatal(err)
 	}
 }
 

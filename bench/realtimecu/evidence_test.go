@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	binding "github.com/bojieli/OpenRealtime/binding"
 )
 
 type fixtureEvidencePlugin struct {
@@ -75,6 +76,7 @@ func TestEvidenceAttemptCoversExactlySixteenAuthoredCases(t *testing.T) {
 		attempt := EvidenceAttempt{
 			Suite: SuiteName, Case: item.ID(), Trial: 1, Task: cloneCase(item).Task,
 			Grounding: item.Grounding, Origin: origin,
+			Observers: []string{"fixture.graph-native-observer"},
 		}
 		if err := attempt.validate(); err != nil {
 			t.Fatalf("validate %s: %v", item.ID(), err)
@@ -88,10 +90,67 @@ func TestEvidenceAttemptCoversExactlySixteenAuthoredCases(t *testing.T) {
 	drifted := EvidenceAttempt{
 		Suite: SuiteName, Case: cases[0].ID(), Trial: 1, Task: cloneCase(cases[0]).Task,
 		Grounding: cases[0].Grounding, Origin: origin,
+		Observers: []string{"fixture.graph-native-observer"},
 	}
 	drifted.Task.Deadline++
 	if err := drifted.validate(); err == nil || !strings.Contains(err.Error(), "differs") {
 		t.Fatalf("drifted evidence attempt error = %v", err)
+	}
+}
+
+func TestLiveEvidenceRejectsUnspecifiedObserverSelection(t *testing.T) {
+	item := Case{Task: Suite()[0], Grounding: GroundingPixel}
+	attempt := EvidenceAttempt{
+		Suite: SuiteName, Case: item.ID(), Trial: 1, Task: cloneCase(item).Task,
+		Grounding: item.Grounding,
+		Origin: EvidenceRunOrigin{
+			Kind: EvidenceOriginProduction, Live: true, Transport: bench.TransportWebSocket,
+			EndpointSHA256: endpointIdentity("ws://fixture.invalid/v1/realtime"),
+		},
+	}
+	if err := attempt.validate(); err == nil || !strings.Contains(err.Error(), "observer") {
+		t.Fatalf("unspecified live observer selection error = %v", err)
+	}
+}
+
+func TestLiveEvidenceRequiresExactNegotiatedObserverSelection(t *testing.T) {
+	origin := EvidenceRunOrigin{
+		Kind: EvidenceOriginProduction, Live: true, Transport: bench.TransportWebSocket,
+		EndpointSHA256: endpointIdentity("ws://fixture.invalid/v1/realtime"),
+	}
+	requested := []string{"fixture.graph-native-observer"}
+	for _, transcript := range []bench.Transcript{
+		{},
+		{Runtime: &binding.Status{Observers: []string{"different"}}},
+	} {
+		if err := validateNegotiatedObservers(origin, requested, transcript); err == nil {
+			t.Fatalf("observer drift was accepted: %+v", transcript.Runtime)
+		}
+	}
+	if err := validateNegotiatedObservers(origin, requested, bench.Transcript{
+		Runtime: &binding.Status{Observers: slices.Clone(requested)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	observerErr := validateNegotiatedObservers(origin, requested, bench.Transcript{})
+	combined, tolerated := realtimeCUPlaybackFailure(bench.ErrConversationTimeout, observerErr)
+	if tolerated || !errors.Is(combined, bench.ErrConversationTimeout) ||
+		!strings.Contains(combined.Error(), "observer") {
+		t.Fatalf("timeout with missing observer proof combined=%v tolerated=%t", combined, tolerated)
+	}
+	combined, tolerated = realtimeCUPlaybackFailure(bench.ErrConversationTimeout, nil)
+	if !tolerated || !errors.Is(combined, bench.ErrConversationTimeout) {
+		t.Fatalf("attested conversation timeout combined=%v tolerated=%t", combined, tolerated)
+	}
+}
+
+func TestRunnerRejectsCaptureRateThatDriftsFromCellIdentity(t *testing.T) {
+	_, err := Run(t.Context(), Options{
+		Endpoint: "ws://fixture.invalid/v1/realtime", Cell: ReferenceCell(), FrameRate: 10,
+		Observers: []string{"fixture.graph-native-observer"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "capture is 10fps") {
+		t.Fatalf("capture-rate drift error = %v", err)
 	}
 }
 
@@ -227,7 +286,8 @@ func TestHermeticRunnerWiresExactMediaAndFreezesEvidence(t *testing.T) {
 		},
 		playSamples: func(ctx context.Context, config bench.SessionConfig, samples []int16) (bench.Transcript, error) {
 			if config.CaptureAudio == nil || config.CaptureVideo == nil || len(config.Video) != 1 ||
-				config.Video[0].Source != "screen" {
+				config.Video[0].Source != "screen" ||
+				!slices.Equal(config.Observers, []string{"fixture.graph-native-observer"}) {
 				t.Fatalf("session evidence callbacks = %+v", config)
 			}
 			if err := config.Ready(ctx); err != nil {
@@ -254,6 +314,7 @@ func TestHermeticRunnerWiresExactMediaAndFreezesEvidence(t *testing.T) {
 	}
 	result, err := Run(context.Background(), Options{
 		Endpoint: "ws://hermetic.invalid/v1/realtime", Cell: ReferenceCell(),
+		Observers:  []string{"fixture.graph-native-observer"},
 		Groundings: []Grounding{GroundingPixel}, Categories: []string{"control"}, Limit: 1,
 		FrameRate: 3, Timeout: 10 * time.Second, Evidence: plugin, dependencies: dependencies,
 	})
