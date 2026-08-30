@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -563,9 +564,15 @@ func TestEvaluationBundleScansReviewedMediaAsLiteralBytes(t *testing.T) {
 	if strings.Contains(escaped, secret) {
 		t.Fatal("escaped media fixture contains the literal secret")
 	}
-	makeEvaluation := func(t *testing.T, payload []byte, sensitive []string) Evaluation {
+	makeEvaluation := func(
+		t *testing.T, payload []byte, sensitive []string,
+		contextPayload json.RawMessage, providerRequest []byte,
+	) Evaluation {
 		t.Helper()
 		request, _ := testRequest(t)
+		if len(contextPayload) > 0 {
+			request.Context = slices.Clone(contextPayload)
+		}
 		payload = slices.Clone(payload)
 		if (len(payload)-44)%2 != 0 {
 			payload = append(payload, 0)
@@ -588,6 +595,9 @@ func TestEvaluationBundleScansReviewedMediaAsLiteralBytes(t *testing.T) {
 				Request: []byte(`{"input":"retained"}`),
 			},
 		}
+		if len(providerRequest) > 0 {
+			provider.response.Request = slices.Clone(providerRequest)
+		}
 		evaluation, err := Evaluate(t.Context(), openTestLease(t, provider), request)
 		if err != nil {
 			t.Fatal(err)
@@ -597,7 +607,7 @@ func TestEvaluationBundleScansReviewedMediaAsLiteralBytes(t *testing.T) {
 
 	t.Run("escaped binary is not contextual text", func(t *testing.T) {
 		evaluation := makeEvaluation(
-			t, append(testWAVPayload(), []byte(escaped)...), []string{secret},
+			t, append(testWAVPayload(), []byte(escaped)...), []string{secret}, nil, nil,
 		)
 		options := EvaluationBundleOptions{
 			Directory: filepath.Join(t.TempDir(), "evaluation"), SensitiveValues: []string{secret},
@@ -612,7 +622,7 @@ func TestEvaluationBundleScansReviewedMediaAsLiteralBytes(t *testing.T) {
 	})
 
 	t.Run("additional guard rejects a literal", func(t *testing.T) {
-		evaluation := makeEvaluation(t, append(testWAVPayload(), []byte(secret)...), nil)
+		evaluation := makeEvaluation(t, append(testWAVPayload(), []byte(secret)...), nil, nil, nil)
 		directory := filepath.Join(t.TempDir(), "evaluation")
 		if _, err := WriteEvaluationBundle(t.Context(), EvaluationBundleOptions{
 			Directory: directory, SensitiveValues: []string{secret},
@@ -621,6 +631,33 @@ func TestEvaluationBundleScansReviewedMediaAsLiteralBytes(t *testing.T) {
 		}
 		if _, err := os.Lstat(directory); !os.IsNotExist(err) {
 			t.Fatalf("literal reviewed-media secret created a bundle: %v", err)
+		}
+	})
+
+	t.Run("nested prompt and provider wire are scanned once", func(t *testing.T) {
+		control := strings.Repeat("Z", 64)
+		values := make([]string, 4000)
+		for index := range values {
+			values[index] = fmt.Sprintf(
+				`{"frame":%d,"text":"ordinary retained trace %d"}`, index, index,
+			)
+		}
+		nested, err := json.Marshal(map[string]any{"trace": values})
+		if err != nil {
+			t.Fatal(err)
+		}
+		evaluation := makeEvaluation(
+			t, testWAVPayload(), []string{control}, nested, nested,
+		)
+		options := EvaluationBundleOptions{
+			Directory: filepath.Join(t.TempDir(), "evaluation"), SensitiveValues: []string{control},
+		}
+		receipt, err := WriteEvaluationBundle(t.Context(), options, evaluation)
+		if err != nil {
+			t.Fatalf("nested provider wire produced a bundle false positive: %v", err)
+		}
+		if _, err := VerifyEvaluationBundle(t.Context(), options, receipt); err != nil {
+			t.Fatalf("verify nested provider-wire evaluation bundle: %v", err)
 		}
 	})
 }

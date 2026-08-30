@@ -185,6 +185,30 @@ func TestPrepareScansLargeNestedPromptEnvelopeExactlyOnce(t *testing.T) {
 		strings.Contains(err.Error(), splitSecret) {
 		t.Fatalf("split public-contract secret error = %v", err)
 	}
+
+	descriptor := testDescriptor("nested-wire-model")
+	provider := &testProvider{
+		descriptor: descriptor,
+		response: ProviderResponse{
+			Raw: []byte(`{"status":"complete"}`), Output: validAssessment,
+			ReportedModel: descriptor.Model, RequestIDState: ProviderRequestIDMissing,
+		},
+	}
+	provider.onReview = func(prepared PreparedRequest) {
+		provider.response.Request, _ = json.Marshal(struct {
+			Prompt  string          `json:"prompt"`
+			Context json.RawMessage `json:"context"`
+		}{prepared.Prompt, prepared.Context})
+	}
+	evaluation, err := Evaluate(t.Context(), openTestLease(t, provider), request)
+	if err != nil {
+		t.Fatalf("retaining provider-verified nested wire produced a false positive: %v", err)
+	}
+	if len(evaluation.ProviderRequest) == 0 || provider.reviewCalls.Load() != 1 ||
+		provider.verifyCalls.Load() != 1 {
+		t.Fatalf("nested-wire evaluation calls review=%d verify=%d bytes=%d",
+			provider.reviewCalls.Load(), provider.verifyCalls.Load(), len(evaluation.ProviderRequest))
+	}
 }
 
 func TestSecretScannerDoesNotReplayOneNestedRepeatedHalf(t *testing.T) {
