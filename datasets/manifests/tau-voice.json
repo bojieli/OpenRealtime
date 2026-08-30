@@ -48,7 +48,7 @@
   },
   "local_integration": {
     "patch": "datasets/patches/0001-local-openai-fish-audio.patch",
-    "patch_sha256": "546488a8481c87f9b0af529fc80b06c0d2ba6a3c5d2faf7426df075462ced4bc",
+    "patch_sha256": "f9cadded65c9f47cdf5237209a67ee60b2753694f91d322c0678bd1150960d39",
     "preparation_script": "scripts/prepare-tau-voice.sh",
     "wire_protocol_changed": false,
     "agent_transport": "standard upstream OpenAI Realtime adapter with explicit local WebSocket base_url and explicit fixed voice/transcription identities",

@@ -698,7 +698,7 @@ index 8d9dc9a..1175fce 100644
          return self._provider
 
 diff --git a/src/tau2/voice/audio_native/openai/provider.py b/src/tau2/voice/audio_native/openai/provider.py
-index 03eb2bb..6c444a3 100644
+index 03eb2bb..b744abe 100644
 --- a/src/tau2/voice/audio_native/openai/provider.py
 +++ b/src/tau2/voice/audio_native/openai/provider.py
 @@ -18,6 +18,7 @@ from tau2.config import (
@@ -750,7 +750,7 @@ index 03eb2bb..6c444a3 100644
              self.base_url = os.environ.get(PINE_REALTIME_BASE_URL_ENV)
              self.api_key = api_key or os.environ.get(PINE_API_KEY_ENV)
              if not self.base_url:
-@@ -154,7 +175,17 @@ class OpenAIRealtimeProvider:
+@@ -154,7 +175,15 @@ class OpenAIRealtimeProvider:
                      "OpenAI API key not provided. Set OPENAI_API_KEY env var."
                  )
 
@@ -758,9 +758,7 @@ index 03eb2bb..6c444a3 100644
 +            raise ValueError("OpenAI Realtime ping timeout must be non-negative")
          self.reasoning_effort = reasoning_effort
 +        self.ping_timeout_seconds = ping_timeout_seconds
-+        self.voice = (
-+            os.environ.get("OPENAI_REALTIME_VOICE") or DEFAULT_OPENAI_VOICE
-+        )
++        self.voice = os.environ.get("OPENAI_REALTIME_VOICE") or DEFAULT_OPENAI_VOICE
 +        self.transcription_model = (
 +            os.environ.get("OPENAI_REALTIME_TRANSCRIPTION_MODEL")
 +            or DEFAULT_OPENAI_TRANSCRIPTION_MODEL
@@ -768,7 +766,7 @@ index 03eb2bb..6c444a3 100644
          self.ws: Optional[websockets.WebSocketClientProtocol] = None
          self._current_vad_config: Optional[OpenAIVADConfig] = None
          self._audio_format: AudioFormat = TELEPHONY_AUDIO_FORMAT
-@@ -198,7 +229,14 @@ class OpenAIRealtimeProvider:
+@@ -198,12 +227,35 @@ class OpenAIRealtimeProvider:
          url = f"{self.base_url}?model={self.model}"
          headers = {"Authorization": f"Bearer {self.api_key}"}
 
@@ -782,9 +780,34 @@ index 03eb2bb..6c444a3 100644
 +            ping_timeout=ping_timeout,
 +        )
 
-         response = await self.ws.recv()
-         data = json.loads(response)
-@@ -351,7 +389,7 @@ class OpenAIRealtimeProvider:
+-        response = await self.ws.recv()
+-        data = json.loads(response)
+-        if data.get("type") != "session.created":
+-            raise RuntimeError(f"Expected session.created, got {data.get('type')}")
++        try:
++            response = await self.ws.recv()
++            data = json.loads(response)
++            if data.get("type") != "session.created":
++                raise RuntimeError(f"Expected session.created, got {data.get('type')}")
++        except BaseException:
++            # A successful WebSocket upgrade is not a successful Realtime
++            # session. Release the transport before propagating a malformed,
++            # rejected, or cancelled handshake so retries cannot leak keepalive
++            # tasks or leave is_connected reporting a half-open session.
++            connection = self.ws
++            self.ws = None
++            self.session_id = None
++            try:
++                await connection.close()
++            except BaseException:
++                # Preserve the handshake failure; cleanup is best-effort once
++                # the transport itself has entered an invalid state.
++                pass
++            raise
+ 
+         # Store and log session ID for debugging with OpenAI
+         session_data = data.get("session", {})
+@@ -351,7 +387,7 @@ class OpenAIRealtimeProvider:
                  "input": {
                      "format": audio_fmt,
                      "transcription": {
@@ -793,7 +816,7 @@ index 03eb2bb..6c444a3 100644
                          "language": "en",
                      },
                      "noise_reduction": {"type": DEFAULT_OPENAI_NOISE_REDUCTION},
-@@ -362,7 +400,7 @@ class OpenAIRealtimeProvider:
+@@ -362,7 +398,7 @@ class OpenAIRealtimeProvider:
          if modality == "audio":
              session.setdefault("audio", {})["output"] = {
                  "format": audio_fmt,
@@ -802,7 +825,7 @@ index 03eb2bb..6c444a3 100644
              }
 
          await self.ws.send(json.dumps({"type": "session.update", "session": session}))
-@@ -450,7 +488,7 @@ class OpenAIRealtimeProvider:
+@@ -450,7 +486,7 @@ class OpenAIRealtimeProvider:
          if not self.is_connected:
              raise RuntimeError("Not connected to API")
 
@@ -985,7 +1008,7 @@ index 2c4bdb3..de32703 100644
  ASSUMED_TURNS_PER_MINUTE = 10
  ELEVENLABS_ENABLE_AUDIO_TAGS = True
 diff --git a/tests/test_checkpoint.py b/tests/test_checkpoint.py
-index 1eeb840..109a03b 100644
+index 1eeb840..ade6ee6 100644
 --- a/tests/test_checkpoint.py
 +++ b/tests/test_checkpoint.py
 @@ -3,6 +3,8 @@
@@ -997,7 +1020,7 @@ index 1eeb840..109a03b 100644
  from tau2.data_model.simulation import (
      Info,
      Results,
-@@ -235,6 +237,58 @@ class TestTryResumeInfraErrorRemoval:
+@@ -235,6 +237,56 @@ class TestTryResumeInfraErrorRemoval:
 
          assert save_path.stat().st_mtime == original_mtime
 
@@ -1025,9 +1048,7 @@ index 1eeb840..109a03b 100644
 +                auto_resume=True,
 +            )
 +
-+    def test_auto_resume_accepts_equivalent_json_number_representations(
-+        self, tmp_path
-+    ):
++    def test_auto_resume_accepts_equivalent_json_number_representations(self, tmp_path):
 +        """A nested 100.0-to-100 round trip is not a different experiment."""
 +        tasks = [_make_task("t0")]
 +        previous_info = _make_info()
@@ -1097,7 +1118,7 @@ index 81c87c0..fe341c5 100644
 
 
 diff --git a/tests/test_voice/test_audio_native/test_openai_provider_config.py b/tests/test_voice/test_audio_native/test_openai_provider_config.py
-index 591da87..58fe0fa 100644
+index 591da87..b64dc47 100644
 --- a/tests/test_voice/test_audio_native/test_openai_provider_config.py
 +++ b/tests/test_voice/test_audio_native/test_openai_provider_config.py
 @@ -1,6 +1,12 @@
@@ -1113,7 +1134,7 @@ index 591da87..58fe0fa 100644
  from tau2.voice.audio_native.openai.provider import OpenAIRealtimeProvider
 
 
-@@ -13,6 +19,102 @@ def test_openai_model_uses_openai_environment(monkeypatch):
+@@ -13,6 +19,126 @@ def test_openai_model_uses_openai_environment(monkeypatch):
      assert provider.base_url == DEFAULT_OPENAI_REALTIME_BASE_URL
 
 
@@ -1211,6 +1232,30 @@ index 591da87..58fe0fa 100644
 +    asyncio.run(provider.connect())
 +
 +    assert connect.await_args.kwargs["ping_timeout"] is None
++
++
++def test_rejected_handshake_closes_transport_and_clears_state(monkeypatch):
++    monkeypatch.setenv("OPENAI_REALTIME_API_KEY", "local-development-token")
++    connection = SimpleNamespace(
++        recv=AsyncMock(return_value='{"type":"error","error":{"code":"denied"}}'),
++        close=AsyncMock(),
++    )
++    monkeypatch.setattr(
++        provider_module.websockets,
++        "connect",
++        AsyncMock(return_value=connection),
++    )
++    provider = OpenAIRealtimeProvider(
++        model="openrealtime-local",
++        base_url="ws://127.0.0.1:8765/v1/realtime",
++    )
++
++    with pytest.raises(RuntimeError, match="Expected session.created, got error"):
++        asyncio.run(provider.connect())
++
++    connection.close.assert_awaited_once()
++    assert provider.ws is None
++    assert provider.session_id is None
 +
 +
  def test_pine_model_uses_pine_environment(monkeypatch):
@@ -1318,3 +1363,31 @@ index 09f0b4a..7a133cd 100644
  source = { editable = "." }
  dependencies = [
      { name = "addict" },
+diff --git a/tests/test_streaming/test_discrete_time_audio_native_agent.py b/tests/test_streaming/test_discrete_time_audio_native_agent.py
+index 643d368..98e71ba 100644
+--- a/tests/test_streaming/test_discrete_time_audio_native_agent.py
++++ b/tests/test_streaming/test_discrete_time_audio_native_agent.py
+@@ -19,7 +19,6 @@ from typing import List, Optional
+ from unittest.mock import MagicMock, patch
+ 
+ import pytest
+-from tau2.voice.audio_native.openai.tick_runner import TickResult
+ 
+ from tau2.agent.discrete_time_audio_native_agent import (
+     DiscreteTimeAgentState,
+@@ -33,6 +32,7 @@ from tau2.data_model.message import (
+     UserMessage,
+ )
+ from tau2.environment.tool import Tool
++from tau2.voice.audio_native.tick_result import TickResult
+ 
+ # =============================================================================
+ # Mock TickResult Helper
+@@ -58,6 +58,7 @@ def make_mock_tick_result(
+     result.get_played_agent_audio.return_value = agent_audio or b"\x7f" * 8000
+     result.item_ids = item_ids or []
+     result.tool_calls = tool_calls or []
++    result.usage_records = []
+     result.model_dump.return_value = {
+         "tick_number": tick_number,
+         "agent_audio_bytes": len(agent_audio),
