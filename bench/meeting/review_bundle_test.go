@@ -636,9 +636,16 @@ func TestMeetingRunHermeticGraphNativeAllFourWithReviewBundle(t *testing.T) {
 		}
 	}
 	manifest := readMeetingReviewManifest(t, directory)
-	if !manifest.Complete || manifest.Reportable || manifest.CoreReportable ||
+	coreErr := result.Reportable()
+	if !manifest.Complete || manifest.Reportable ||
+		manifest.CoreReportable != (coreErr == nil) ||
 		len(manifest.Attempts) != ExpectedTasks() {
 		t.Fatalf("graph-native review manifest = %+v", manifest)
+	}
+	if coreErr == nil && manifest.CoreReportability != "" ||
+		coreErr != nil && manifest.CoreReportability != coreErr.Error() {
+		t.Fatalf("graph-native core reportability = %q, want %v",
+			manifest.CoreReportability, coreErr)
 	}
 	for _, attempt := range manifest.Attempts {
 		if attempt.ExecutionStatus != "graph-native-attested" || attempt.Reportable || attempt.RunOrigin.Live ||
