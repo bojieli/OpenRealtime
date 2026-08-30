@@ -162,8 +162,7 @@ func (runner *ledgerCommitRunner) Run(parent context.Context) error {
 	}
 	if err := reportActionResolution(runner.resolution, LedgerCommitDescriptor(),
 		[]element.CapabilityResolution{
-			actionCapability("ledger", "action.Ledger/v1", "ledger://"+runner.ledger.reference,
-				runner.ledgerServiceRevision, runner.ledger.identity),
+			ledgerArchitectureCapability(runner.ledger.reference, runner.ledgerServiceRevision),
 			actionCapability("trajectory", "trajectory.Store/v1",
 				"go://github.com/bojieli/OpenRealtime/trajectory/Store", runner.trajectoryServiceRevision, ""),
 			actionCapability("tool-declarations", "action.ToolRegistry/v1",
