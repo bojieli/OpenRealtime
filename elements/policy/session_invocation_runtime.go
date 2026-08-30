@@ -295,6 +295,11 @@ func (runner *sessionInvocationRunner) acceptCreate(ctx context.Context, envelop
 		return runner.refuse(ctx, envelope, "create", "", "invocation_unset",
 			"session invocation must be installed before response creation")
 	}
+	if *create.ExpectedContextVersion < runner.state.ContextVersion {
+		return runner.refuse(ctx, envelope, "create", "", "invalid_create",
+			fmt.Sprintf("response context version %d moved backwards from %d",
+				*create.ExpectedContextVersion, runner.state.ContextVersion))
+	}
 	generationID := sessionInvocationGenerationID(
 		runner.config.Role, envelope.SessionID, "create", responseID, runner.invocation.Revision,
 	)
@@ -313,12 +318,19 @@ func (runner *sessionInvocationRunner) acceptCreate(ctx context.Context, envelop
 		}
 		return runner.publishState(ctx, envelope)
 	}
-	payload := cognitionelements.Generate{Invocation: invocationForManualCreate(runner.invocation)}
+	version := *create.ExpectedContextVersion
+	payload := cognitionelements.Generate{
+		Invocation:             invocationForManualCreate(runner.invocation),
+		ExpectedContextVersion: &version, ExpectedContextItemID: create.ExpectedContextItemID,
+	}
 	trigger := runner.triggerEnvelope(envelope, generationID, payload)
+	trigger.CausalParents = appendUnique(trigger.CausalParents, create.ExpectedContextItemID)
 	if _, err := runner.ports.trigger.Broadcast(ctx, trigger); err != nil {
 		return err
 	}
-	return runner.finishEmission(ctx, envelope, "create", generationID, stateelements.ObservationCommitOutcome{})
+	runner.state.ContextVersion = version
+	return runner.finishEmission(ctx, envelope, "create", generationID,
+		stateelements.ObservationCommitOutcome{StoreVersion: version})
 }
 
 func (runner *sessionInvocationRunner) acceptCancel(ctx context.Context, envelope element.Envelope) error {

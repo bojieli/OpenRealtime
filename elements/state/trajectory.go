@@ -24,7 +24,7 @@ const TrajectoryStoreService = "state.trajectory.store"
 
 const (
 	trajectoryStoreImplementationRevision   = "implementation:2"
-	observationCommitImplementationRevision = "implementation:3"
+	observationCommitImplementationRevision = "implementation:4"
 )
 
 func stateRuntimeID(descriptor element.Descriptor) string {

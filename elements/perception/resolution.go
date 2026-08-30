@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	// ASR implementation:2 adds immutable operation identity to observation
-	// and outcome envelopes so a graph-owned final/flush gate can join exact
-	// evidence without relying on delivery order.
-	asrImplementationRevision    = "implementation:2"
+	// ASR implementation:3 retains implementation:2 immutable operation
+	// identity and additionally waits for an endpoint flush's exact final
+	// admitted-audio item across independently scheduled input lanes.
+	asrImplementationRevision    = "implementation:3"
 	visualImplementationRevision = "implementation:1"
 )
 

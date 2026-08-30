@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -132,8 +133,10 @@ func TestSilenceIsCandidateBeforeAutomaticClose(t *testing.T) {
 	if stopped.Kind != SpeechStopped || stopped.StreamID != "automatic" {
 		t.Fatalf("stopped activity = %+v", stopped)
 	}
-	flush := payload[perceptionelements.Flush](t, receive(t, harness.output("flush")))
-	if flush.StreamID != "automatic" {
+	flushEnvelope := receive(t, harness.output("flush"))
+	flush := payload[perceptionelements.Flush](t, flushEnvelope)
+	if flush.StreamID != "automatic" || flush.AfterItemID == "" ||
+		!slices.Contains(flushEnvelope.CausalParents, flush.AfterItemID) {
 		t.Fatalf("flush = %+v", flush)
 	}
 }
@@ -171,8 +174,10 @@ func TestManualModeAdmitsQuietAudioReopensSilenceAndCommitsExplicitly(t *testing
 	if force.Action != GateForceClose || force.StreamID != "manual" {
 		t.Fatalf("manual commit command = %+v", force)
 	}
-	flush := payload[perceptionelements.Flush](t, receive(t, harness.output("flush")))
-	if flush.StreamID != "manual" {
+	flushEnvelope := receive(t, harness.output("flush"))
+	flush := payload[perceptionelements.Flush](t, flushEnvelope)
+	if flush.StreamID != "manual" || flush.AfterItemID == "" ||
+		!slices.Contains(flushEnvelope.CausalParents, flush.AfterItemID) {
 		t.Fatalf("manual flush = %+v", flush)
 	}
 }
@@ -379,7 +384,11 @@ func TestLiveResolutionAttestsExactBuiltInsAndCompleteEmptyCapabilities(t *testi
 		if resolution == nil {
 			t.Fatalf("node %s has no resolution", node)
 		}
-		if resolution.Runtime.ID != runtimeID || resolution.Runtime.Revision != implementationRevision ||
+		expectedRevision := endpointImplementationRevision
+		if runtimeID == admissionRuntimeID {
+			expectedRevision = admissionImplementationRevision
+		}
+		if resolution.Runtime.ID != runtimeID || resolution.Runtime.Revision != expectedRevision ||
 			resolution.RuntimeEvidence != inspect.EvidenceLive {
 			t.Fatalf("node %s runtime resolution = %+v", node, resolution)
 		}

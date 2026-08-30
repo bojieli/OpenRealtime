@@ -34,10 +34,19 @@ func (session *session) publishActivity(ctx context.Context, envelope element.En
 	case acousticelements.SpeechStarted:
 		session.audioMu.Lock()
 		expectedStream := session.audioStreamID(session.audioStream)
+		_, closed := session.closedAudio[activity.StreamID]
 		session.audioMu.Unlock()
-		if activity.StreamID != expectedStream {
+		// Activity and close outcomes are separate graph output lanes. The
+		// close may advance the adapter's stream revision before any number of
+		// earlier, causally ordered activity events are scheduled. Admission
+		// records exactly those closed stream identities until their FIFO
+		// activity lane publishes the matching stop.
+		if activity.StreamID != expectedStream && !closed {
 			session.activityMu.Unlock()
-			return fmt.Errorf("scenario conversation acoustic stream %q, want %q", activity.StreamID, expectedStream)
+			return fmt.Errorf(
+				"scenario conversation acoustic stream %q is neither current %q nor an exact pending closed stream",
+				activity.StreamID, expectedStream,
+			)
 		}
 		if active {
 			session.activityMu.Unlock()
@@ -50,6 +59,9 @@ func (session *session) publishActivity(ctx context.Context, envelope element.En
 			return fmt.Errorf("scenario conversation acoustic stream %q stopped without starting", activity.StreamID)
 		}
 		delete(session.utterances, activity.StreamID)
+		session.audioMu.Lock()
+		delete(session.closedAudio, activity.StreamID)
+		session.audioMu.Unlock()
 	default:
 		session.activityMu.Unlock()
 		return fmt.Errorf("scenario conversation acoustic activity has unsupported kind %q", activity.Kind)
@@ -154,6 +166,15 @@ func (session *session) acceptAdmissionOutcome(envelope element.Envelope) error 
 			session.audioMu.Unlock()
 			return errors.New("scenario conversation admission closed a stale audio stream")
 		} else {
+			if session.closedAudio == nil {
+				session.closedAudio = make(map[string]struct{})
+			}
+			if _, found := session.closedAudio[pending.streamID]; !found &&
+				len(session.closedAudio) >= maximumAdapterMemory {
+				session.audioMu.Unlock()
+				return errors.New("scenario conversation pending closed audio-stream bound reached")
+			}
+			session.closedAudio[pending.streamID] = struct{}{}
 			session.audioStream++
 		}
 		pending.completed = true
@@ -358,15 +379,44 @@ func (session *session) acceptTrajectorySnapshot(envelope element.Envelope) erro
 	if envelope.SessionID != "" && envelope.SessionID != session.sessionID {
 		return errors.New("scenario conversation trajectory snapshot crossed a session boundary")
 	}
+	if !canonicalIdentity(envelope.ItemID) {
+		return errors.New("scenario conversation trajectory snapshot lacks a canonical state item ID")
+	}
 	if snapshot.Version != uint64(len(snapshot.Items)) {
 		return errors.New("scenario conversation trajectory snapshot version does not match its item count")
+	}
+	current := session.bundle.store.Snapshot()
+	if snapshot.Version > current.Version {
+		return errors.New("scenario conversation trajectory snapshot exceeds the durable store")
+	}
+	publishedPrefix, err := trajectory.IdentifyPrefix(snapshot, snapshot.Version)
+	if err != nil {
+		return fmt.Errorf("identify scenario conversation published trajectory prefix: %w", err)
+	}
+	durablePrefix, err := trajectory.IdentifyPrefix(current, snapshot.Version)
+	if err != nil {
+		return fmt.Errorf("identify scenario conversation durable trajectory prefix: %w", err)
+	}
+	if publishedPrefix != durablePrefix {
+		return errors.New("scenario conversation trajectory snapshot drifted from the durable store prefix")
 	}
 	session.contentMu.Lock()
 	if snapshot.Version < session.snapshotVersion {
 		session.contentMu.Unlock()
 		return errors.New("scenario conversation trajectory snapshot version moved backwards")
 	}
+	if snapshot.Version == session.snapshotVersion && session.snapshotItemID != "" &&
+		envelope.ItemID != session.snapshotItemID {
+		session.contentMu.Unlock()
+		return errors.New("scenario conversation trajectory snapshot identity changed at one version")
+	}
+	changed := session.snapshotItemID == "" || snapshot.Version > session.snapshotVersion
 	session.snapshotVersion = snapshot.Version
+	session.snapshotItemID = envelope.ItemID
+	if changed {
+		close(session.snapshotChanged)
+		session.snapshotChanged = make(chan struct{})
+	}
 	for _, pending := range session.contentAcks {
 		if pending.commitReady && !pending.snapshotReady && snapshot.Version >= pending.commitVersion {
 			if err := attestPendingSnapshot(pending, snapshot); err != nil {

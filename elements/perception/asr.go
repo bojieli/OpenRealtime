@@ -87,6 +87,11 @@ type AudioBatch struct {
 
 type Flush struct {
 	StreamID string `json:"stream_id,omitempty"`
+	// AfterItemID optionally binds this endpoint to the exact final admitted
+	// batch. It must also be a causal parent of the Flush envelope; ASR waits
+	// for that batch when independent input-lane scheduling delivers the
+	// endpoint first.
+	AfterItemID string `json:"after_item_id,omitempty"`
 }
 
 type Cancel struct {
@@ -387,6 +392,8 @@ type asrRunner struct {
 	resolvedOutput     element.OutputPort
 	resolution         element.ResolutionReporter
 	currentStream      string
+	lastObservedItemID string
+	deferredFlush      *asrCommand
 }
 
 func (runner *asrRunner) Run(parent context.Context) error {
@@ -432,8 +439,35 @@ func (runner *asrRunner) Run(parent context.Context) error {
 				}
 				continue
 			}
+			if prepared.kind == commandFlush && prepared.flush.AfterItemID != "" &&
+				prepared.flush.AfterItemID != runner.lastObservedItemID {
+				if runner.deferredFlush != nil {
+					if err := runner.publishOutcome(ctx, prepared.envelope, Outcome{
+						Kind: OutcomeRefused, Operation: string(commandFlush),
+						StreamID: commandStreamID(prepared), Code: "flush_barrier_pending",
+						Message: "another causally ordered flush is already pending",
+					}); err != nil {
+						return err
+					}
+					continue
+				}
+				copy := prepared
+				runner.deferredFlush = &copy
+				continue
+			}
 			if err := runner.runOperation(ctx, prepared, interrupts, receiveErrors); err != nil {
 				return err
+			}
+			if prepared.kind == commandObserve && runner.currentStream != "" {
+				runner.lastObservedItemID = prepared.envelope.ItemID
+				if runner.deferredFlush != nil &&
+					runner.deferredFlush.flush.AfterItemID == runner.lastObservedItemID {
+					deferred := *runner.deferredFlush
+					runner.deferredFlush = nil
+					if err := runner.runOperation(ctx, deferred, interrupts, receiveErrors); err != nil {
+						return err
+					}
+				}
 			}
 		}
 	}
@@ -455,6 +489,18 @@ func (runner *asrRunner) prepare(command asrCommand) (asrCommand, *Outcome) {
 			Message: "audio observation requires a stream ID",
 		}
 		return command, &outcome
+	}
+	if command.kind == commandFlush && command.flush.AfterItemID != "" {
+		after := command.flush.AfterItemID
+		if strings.TrimSpace(after) != after || len(after) > 1<<12 ||
+			!slices.Contains(command.envelope.CausalParents, after) {
+			outcome := Outcome{
+				Kind: OutcomeRefused, Operation: string(command.kind), StreamID: streamID,
+				Code:    "invalid_flush_barrier",
+				Message: "flush after_item_id must be canonical and present as a causal parent",
+			}
+			return command, &outcome
+		}
 	}
 	if command.kind == commandObserve {
 		if len(command.batch.Frames) == 0 {
@@ -601,6 +647,10 @@ func (runner *asrRunner) completeOperation(
 			outcome.Message = errors.Join(result.err, closeErr).Error()
 		}
 		runner.currentStream = ""
+		runner.lastObservedItemID = ""
+		if outcome.Kind == OutcomeCanceled || outcome.Kind == OutcomeFailed {
+			runner.deferredFlush = nil
+		}
 	}
 	return runner.publishOutcome(ctx, result.command.envelope, outcome)
 }
@@ -620,6 +670,10 @@ func (runner *asrRunner) cancelIdle(ctx context.Context, envelope element.Envelo
 	streamID := runner.currentStream
 	if streamID == "" {
 		streamID = requested
+	}
+	if runner.deferredFlush != nil &&
+		(requested == "" || requested == commandStreamID(*runner.deferredFlush)) {
+		runner.deferredFlush = nil
 	}
 	if err := runner.observer.Close(); err != nil {
 		runner.currentStream = ""

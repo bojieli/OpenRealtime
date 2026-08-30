@@ -43,7 +43,9 @@ func newEndpointRunner(
 func (runner *endpointRunner) Run(parent context.Context) error {
 	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
-	if err := reportBuiltIn(runner.resolution, endpointRuntimeID); err != nil {
+	if err := reportBuiltIn(
+		runner.resolution, endpointRuntimeID, endpointImplementationRevision,
+	); err != nil {
 		return fmt.Errorf("attest acoustic.EndpointPolicy runtime: %w", err)
 	}
 	events := make(chan receivedInput)

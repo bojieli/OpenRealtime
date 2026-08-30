@@ -26,6 +26,11 @@ var (
 	observationCommitOutcomeType = element.Event(element.Named("trajectory.ObservationCommitOutcome"))
 )
 
+const (
+	maximumObservationMonotonicRetries = 8
+	monotonicTimeConflictSuffix        = "trajectory monotonic time moved backwards"
+)
+
 func ObservationType() element.Type              { return observationRevisionType.Clone() }
 func ObservationCommitOutcomeType() element.Type { return observationCommitOutcomeType.Clone() }
 
@@ -191,6 +196,7 @@ type pendingObservationCommit struct {
 	trajectoryItemID    string
 	trajectoryItem      trajectory.Item
 	supersededCanonical uint64
+	monotonicRetries    int
 }
 
 type observationCommitRunner struct {
@@ -338,28 +344,47 @@ func (runner *observationCommitRunner) startAppend(
 	if superseded.itemID != "" {
 		item.CausalParentIDs = []string{superseded.itemID}
 	}
-	requestID := fmt.Sprintf("%s-append-%d", runner.instance, canonicalRevision)
 	pending := pendingObservationCommit{
 		trigger: trigger.Clone(), streamID: streamID, observation: observation,
 		canonicalRevision: canonicalRevision, trajectoryItemID: trajectoryItemID, trajectoryItem: item,
 		supersededCanonical: superseded.canonicalRevision,
 	}
+	requestID := runner.observationAppendRequestID(pending)
+	return runner.publishObservationAppend(ctx, requestID, pending, "")
+}
+
+func (runner *observationCommitRunner) observationAppendRequestID(
+	pending pendingObservationCommit,
+) string {
+	if pending.monotonicRetries == 0 {
+		return fmt.Sprintf("%s-append-%d", runner.instance, pending.canonicalRevision)
+	}
+	return fmt.Sprintf("%s-append-%d-retry-%d", runner.instance,
+		pending.canonicalRevision, pending.monotonicRetries)
+}
+
+func (runner *observationCommitRunner) publishObservationAppend(
+	ctx context.Context, requestID string, pending pendingObservationCommit, retryParent string,
+) error {
 	runner.pending[requestID] = pending
-	runner.pendingStream[streamID] = requestID
-	appendEnvelope := trigger.Clone()
+	runner.pendingStream[pending.streamID] = requestID
+	appendEnvelope := pending.trigger.Clone()
 	appendEnvelope.Type = appendType
 	appendEnvelope.ItemID = requestID
-	appendEnvelope.CausalParents = appendUnique(appendEnvelope.CausalParents, trigger.ItemID)
-	appendEnvelope.Payload = Append{Items: []trajectory.Item{item}}
+	appendEnvelope.CausalParents = appendUnique(
+		appendEnvelope.CausalParents, pending.trigger.ItemID,
+	)
+	appendEnvelope.CausalParents = appendUnique(appendEnvelope.CausalParents, retryParent)
+	appendEnvelope.Payload = Append{Items: []trajectory.Item{pending.trajectoryItem}}
 	result, err := runner.appendOutput.Broadcast(ctx, appendEnvelope)
 	if err != nil {
 		delete(runner.pending, requestID)
-		delete(runner.pendingStream, streamID)
+		delete(runner.pendingStream, pending.streamID)
 		return err
 	}
 	if result.Delivered != 1 {
 		delete(runner.pending, requestID)
-		delete(runner.pendingStream, streamID)
+		delete(runner.pendingStream, pending.streamID)
 		return fmt.Errorf("observation append %s delivered to %d lanes", requestID, result.Delivered)
 	}
 	return nil
@@ -431,7 +456,18 @@ func (runner *observationCommitRunner) acceptRejection(
 	if !ok {
 		return fmt.Errorf("trajectory rejection reply %s has payload %T", envelope.ItemID, envelope.Payload)
 	}
+	if isObservationMonotonicConflict(rejection) &&
+		pending.monotonicRetries < maximumObservationMonotonicRetries {
+		return runner.retryObservationMonotonicConflict(ctx, envelope, requestID, pending, rejection)
+	}
 	runner.resolvePending(requestID, pending)
+	if isObservationMonotonicConflict(rejection) {
+		rejection.Code = "monotonic_retry_exhausted"
+		rejection.Message = fmt.Sprintf(
+			"observation commit exhausted %d causal timestamp retries: %s",
+			maximumObservationMonotonicRetries, rejection.Message,
+		)
+	}
 	if err := runner.publishOutcome(ctx, pending.trigger, ObservationCommitOutcome{
 		Kind: ObservationRejected, TriggerItemID: pending.trigger.ItemID,
 		TrajectoryItemID: pending.trajectoryItemID, StreamID: pending.streamID,
@@ -442,6 +478,40 @@ func (runner *observationCommitRunner) acceptRejection(
 	}
 	return runner.rejectWaiting(ctx, pending.streamID, "predecessor_rejected",
 		"an earlier observation in this revision stream was rejected")
+}
+
+func (runner *observationCommitRunner) retryObservationMonotonicConflict(
+	ctx context.Context, rejectionEnvelope element.Envelope, requestID string,
+	pending pendingObservationCommit, rejection Rejection,
+) error {
+	if rejection.ItemIndex == nil || *rejection.ItemIndex != 0 ||
+		rejection.ItemID != pending.trajectoryItemID ||
+		rejectionEnvelope.SessionID != pending.trigger.SessionID {
+		return fmt.Errorf(
+			"observation monotonic rejection does not attest pending item %q",
+			pending.trajectoryItemID,
+		)
+	}
+	if runner.pendingStream[pending.streamID] != requestID {
+		return errors.New("observation monotonic retry lost its exact stream ownership")
+	}
+	delete(runner.pending, requestID)
+	pending.monotonicRetries++
+	now := runner.clock.NowNS()
+	if now < pending.trajectoryItem.MonotonicNS {
+		now = pending.trajectoryItem.MonotonicNS
+	}
+	pending.trajectoryItem.MonotonicNS = now
+	nextRequestID := runner.observationAppendRequestID(pending)
+	runner.pendingStream[pending.streamID] = nextRequestID
+	return runner.publishObservationAppend(
+		ctx, nextRequestID, pending, rejectionEnvelope.ItemID,
+	)
+}
+
+func isObservationMonotonicConflict(rejection Rejection) bool {
+	return rejection.Code == "invalid_batch" &&
+		strings.HasSuffix(rejection.Message, monotonicTimeConflictSuffix)
 }
 
 func (runner *observationCommitRunner) resolvePending(
@@ -503,21 +573,26 @@ func (runner *observationCommitRunner) replyTargetsInstance(envelope element.Env
 			continue
 		}
 		suffix := strings.TrimPrefix(candidate, prefix)
-		if suffix == "" || suffix[0] == '0' {
-			continue
-		}
-		canonical := true
-		for _, character := range suffix {
-			if character < '0' || character > '9' {
-				canonical = false
-				break
-			}
-		}
-		if canonical {
+		parts := strings.Split(suffix, "-retry-")
+		if (len(parts) == 1 && canonicalPositiveDecimal(parts[0])) ||
+			(len(parts) == 2 && canonicalPositiveDecimal(parts[0]) &&
+				canonicalPositiveDecimal(parts[1])) {
 			return true
 		}
 	}
 	return false
+}
+
+func canonicalPositiveDecimal(value string) bool {
+	if value == "" || value[0] == '0' {
+		return false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func observationReplyCandidates(envelope element.Envelope) []string {

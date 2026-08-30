@@ -19,7 +19,7 @@ import (
 
 const (
 	sessionInvocationRuntimeID          = "builtin://openrealtime/elements/policy.SessionInvocation"
-	sessionInvocationRuntimeRevision    = "implementation:1"
+	sessionInvocationRuntimeRevision    = "implementation:2"
 	defaultSessionInvocationTerminalMax = 512
 )
 
@@ -45,8 +45,9 @@ func SessionInvocationOutcomeType() element.Type {
 // only component allowed to place them in cognition.Generate.
 //
 // Observation commits carry an exact canonical prefix and therefore produce
-// authority-bearing activations. Explicit response creation is also visible,
-// but carries no observation authority and samples the latest model context.
+// authority-bearing activations. Explicit response creation is also visible
+// and carries no observation authority, but its transport-supplied context
+// binding prevents the model from sampling a stale trajectory snapshot.
 func SessionInvocationDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
@@ -98,6 +99,12 @@ type SessionInvocationUpdate struct {
 
 type ResponseCreate struct {
 	ResponseID string `json:"response_id"`
+	// ExpectedContextVersion and ExpectedContextItemID are one inseparable
+	// state binding supplied by the authenticated transport adapter. Explicit
+	// creation has no observation authority, but it may not sample an older
+	// context merely because graph input lanes were scheduled independently.
+	ExpectedContextVersion *uint64 `json:"expected_context_version"`
+	ExpectedContextItemID  string  `json:"expected_context_item_id"`
 }
 
 type SessionInvocationOutcomeKind string
@@ -208,13 +215,24 @@ func sessionInvocationUpdatePayload(payload any) (SessionInvocationUpdate, bool)
 func responseCreatePayload(payload any) (ResponseCreate, bool) {
 	switch value := payload.(type) {
 	case ResponseCreate:
+		value.ExpectedContextVersion = cloneResponseCreateVersion(value.ExpectedContextVersion)
 		return value, true
 	case *ResponseCreate:
 		if value != nil {
-			return *value, true
+			copy := *value
+			copy.ExpectedContextVersion = cloneResponseCreateVersion(value.ExpectedContextVersion)
+			return copy, true
 		}
 	}
 	return ResponseCreate{}, false
+}
+
+func cloneResponseCreateVersion(source *uint64) *uint64 {
+	if source == nil {
+		return nil
+	}
+	copy := *source
+	return &copy
 }
 
 func cloneSessionInvocationState(value SessionInvocationState) SessionInvocationState { return value }
@@ -244,6 +262,14 @@ func responseCreateIdentifier(value ResponseCreate) (string, error) {
 		return "", errors.New("response create requires a canonical response ID")
 	}
 	if err := validatePolicyIdentifier("response ID", identifier, true); err != nil {
+		return "", err
+	}
+	if value.ExpectedContextVersion == nil {
+		return "", errors.New("response create requires an expected context version")
+	}
+	if err := validatePolicyIdentifier(
+		"response create expected context item ID", value.ExpectedContextItemID, true,
+	); err != nil {
 		return "", err
 	}
 	return identifier, nil

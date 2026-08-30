@@ -17,23 +17,24 @@ type admissionRunner struct {
 	ports      admissionPorts
 	resolution element.ResolutionReporter
 
-	gate           *coreperception.EnergyGate
-	policyReady    bool
-	mode           EndpointMode
-	policySequence uint64
-	streamID       string
-	source         string
-	sampleRate     uint32
-	pending        *EndpointCandidate
-	speechActive   bool
-	hasAdmitted    bool
-	framesSeen     uint64
-	framesAdmitted uint64
-	gateGeneration uint64
-	stateSequence  uint64
-	candidateSeq   uint64
-	canceled       boundedSet
-	terminal       boundedSet
+	gate               *coreperception.EnergyGate
+	policyReady        bool
+	mode               EndpointMode
+	policySequence     uint64
+	streamID           string
+	source             string
+	sampleRate         uint32
+	pending            *EndpointCandidate
+	speechActive       bool
+	hasAdmitted        bool
+	framesSeen         uint64
+	framesAdmitted     uint64
+	lastAdmittedItemID string
+	gateGeneration     uint64
+	stateSequence      uint64
+	candidateSeq       uint64
+	canceled           boundedSet
+	terminal           boundedSet
 }
 
 func newAdmissionRunner(
@@ -49,7 +50,9 @@ func newAdmissionRunner(
 func (runner *admissionRunner) Run(parent context.Context) error {
 	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
-	if err := reportBuiltIn(runner.resolution, admissionRuntimeID); err != nil {
+	if err := reportBuiltIn(
+		runner.resolution, admissionRuntimeID, admissionImplementationRevision,
+	); err != nil {
 		return fmt.Errorf("attest acoustic.EnergyAdmission runtime: %w", err)
 	}
 
@@ -276,10 +279,11 @@ func (runner *admissionRunner) handleAudio(ctx context.Context, envelope element
 		batch := perceptionelements.AudioBatch{
 			StreamID: runner.streamID, Frames: []coreperception.Frame{frame},
 		}
-		if _, err := runner.ports.admitted.Broadcast(ctx,
-			derivedEnvelope(envelope, admittedAudioType, ":admitted", batch)); err != nil {
+		admittedEnvelope := derivedEnvelope(envelope, admittedAudioType, ":admitted", batch)
+		if _, err := runner.ports.admitted.Broadcast(ctx, admittedEnvelope); err != nil {
 			return err
 		}
+		runner.lastAdmittedItemID = admittedEnvelope.ItemID
 		runner.hasAdmitted = true
 		saturatingIncrement(&runner.framesAdmitted)
 	}
@@ -447,6 +451,9 @@ func (runner *admissionRunner) closeStream(
 	ctx context.Context, cause element.Envelope, endMS int, candidateID, code string,
 ) error {
 	streamID, source, rate := runner.streamID, runner.source, runner.sampleRate
+	if runner.lastAdmittedItemID == "" {
+		return errors.New("acoustic admission cannot close a stream without exact admitted-audio evidence")
+	}
 	if runner.speechActive {
 		if err := runner.publishActivity(ctx, cause, SpeechActivity{
 			Kind: SpeechStopped, StreamID: streamID, Source: source,
@@ -456,9 +463,14 @@ func (runner *admissionRunner) closeStream(
 			return err
 		}
 	}
-	if _, err := runner.ports.endpoint.Broadcast(ctx, derivedEnvelope(
-		cause, audioFlushType, ":flush", perceptionelements.Flush{StreamID: streamID},
-	)); err != nil {
+	flush := perceptionelements.Flush{
+		StreamID: streamID, AfterItemID: runner.lastAdmittedItemID,
+	}
+	flushEnvelope := derivedEnvelope(cause, audioFlushType, ":flush", flush)
+	flushEnvelope.CausalParents = appendUnique(
+		flushEnvelope.CausalParents, runner.lastAdmittedItemID,
+	)
+	if _, err := runner.ports.endpoint.Broadcast(ctx, flushEnvelope); err != nil {
 		return err
 	}
 	runner.terminal.Add(streamID)
@@ -510,6 +522,7 @@ func (runner *admissionRunner) clearStream() {
 	runner.hasAdmitted = false
 	runner.framesSeen = 0
 	runner.framesAdmitted = 0
+	runner.lastAdmittedItemID = ""
 	runner.gateGeneration = 0
 }
 

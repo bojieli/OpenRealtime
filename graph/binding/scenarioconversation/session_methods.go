@@ -356,6 +356,10 @@ func (session *session) CreateResponse(ctx context.Context) error {
 	if err := usableContext(ctx, "create scenario conversation response"); err != nil {
 		return err
 	}
+	contextVersion, contextItemID, err := session.responseCreateContext(ctx)
+	if err != nil {
+		return fmt.Errorf("bind scenario conversation response creation: %w", err)
+	}
 	itemID, sequence := session.nextEnvelopeIdentity("create")
 	pending := &pendingOperation{operation: "create", result: make(chan operationAck, 1)}
 	if err := session.registerOperation(itemID, pending); err != nil {
@@ -365,13 +369,40 @@ func (session *session) CreateResponse(ctx context.Context) error {
 		Type: session.ports.create.Type(), ItemID: itemID, SessionID: session.sessionID,
 		SourceID: "gateway", OpportunityID: itemID, Sequence: sequence,
 		TraceID: itemID, CancellationScope: session.sessionID,
-		Payload: policyelements.ResponseCreate{ResponseID: itemID},
+		Payload: policyelements.ResponseCreate{
+			ResponseID: itemID, ExpectedContextVersion: &contextVersion,
+			ExpectedContextItemID: contextItemID,
+		},
 	}, "send scenario conversation response creation"); err != nil {
 		session.removeOperation(itemID, pending)
 		return err
 	}
-	_, err := session.awaitOperation(ctx, itemID, pending)
+	_, err = session.awaitOperation(ctx, itemID, pending)
 	return err
+}
+
+// responseCreateContext establishes a causal barrier between the durable
+// trajectory store and the independently scheduled model-context lane. The
+// policy trigger then carries this exact state identity, so cognition waits
+// for the matching snapshot instead of sampling whichever snapshot it last
+// happened to process.
+func (session *session) responseCreateContext(ctx context.Context) (uint64, string, error) {
+	required := session.bundle.store.Snapshot().Version
+	for {
+		session.contentMu.Lock()
+		if session.snapshotItemID != "" && session.snapshotVersion >= required {
+			version, itemID := session.snapshotVersion, session.snapshotItemID
+			session.contentMu.Unlock()
+			return version, itemID, nil
+		}
+		changed := session.snapshotChanged
+		session.contentMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return 0, "", context.Cause(ctx)
+		case <-changed:
+		}
+	}
 }
 
 func (session *session) Cancel(ctx context.Context, reason string) error {

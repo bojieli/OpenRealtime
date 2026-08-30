@@ -139,9 +139,9 @@ func sendFailure(ctx context.Context, failures chan<- error, err error) {
 	}
 }
 
-func reportBuiltIn(reporter element.ResolutionReporter, runtimeID string) error {
+func reportBuiltIn(reporter element.ResolutionReporter, runtimeID, revision string) error {
 	return liveidentity.Report(reporter, liveidentity.Artifact{
-		ID: runtimeID, Revision: implementationRevision,
+		ID: runtimeID, Revision: revision,
 	}, nil)
 }
 

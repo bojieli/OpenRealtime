@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -419,6 +421,97 @@ func TestObservationCommitFanoutIgnoresOnlyForeignInstanceReceipts(t *testing.T)
 	assertNoStateEnvelope(t, audioOutcomes)
 }
 
+func TestObservationCommitRetriesExactMonotonicConflictWithNewRequestIdentity(t *testing.T) {
+	graph := compileStateGraph(t, observationCommitReplyGraph)
+	registry, err := elements.RuntimeRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var clock atomic.Uint64
+	mounted, err := graphruntime.Mount(context.Background(), graphruntime.Config{
+		Graph: graph, Registry: registry,
+		Values: map[string]json.RawMessage{"commit": json.RawMessage(`{}`)},
+		Now:    func() uint64 { return clock.Add(10) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runCtx, cancelRun := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() { runDone <- mounted.Run(runCtx) }()
+	defer func() {
+		cancelRun()
+		select {
+		case err := <-runDone:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				t.Errorf("observation retry graph: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Error("observation retry graph did not stop")
+		}
+	}()
+
+	observations, _ := mounted.Ingress("observations")
+	rejected, _ := mounted.Ingress("rejected")
+	appends, _ := mounted.Egress("append")
+	outcomes, _ := mounted.Egress("outcome")
+	sendStateEnvelope(t, observations, element.Envelope{
+		Type: stateelements.ObservationType(), ItemID: "retry-observation",
+		SessionID: "session-retry", SourceID: "stream-retry",
+		Payload: perception.Observation{
+			Text: "retry me", Observer: "client", Source: "message",
+			Authority: trajectory.AuthorityUser, Revision: 1, StableText: "retry me", Final: true,
+		},
+	})
+	firstEnvelope := receiveState(t, appends)
+	first := firstEnvelope.Payload.(stateelements.Append)
+	if len(first.Items) != 1 {
+		t.Fatalf("first observation append = %+v", first)
+	}
+	itemIndex := 0
+	monotonicRejection := element.Envelope{
+		Type: stateelements.RejectionType(), ItemID: firstEnvelope.ItemID + ":rejected",
+		SessionID: "session-retry", CausalParents: []string{firstEnvelope.ItemID},
+		Payload: stateelements.Rejection{
+			Code:           "invalid_batch",
+			Message:        "trajectory item 0 (observation retry): trajectory monotonic time moved backwards",
+			CurrentVersion: 1,
+			ItemIndex:      &itemIndex, ItemID: first.Items[0].ID,
+		},
+	}
+	sendStateEnvelope(t, rejected, monotonicRejection)
+	retryEnvelope := receiveState(t, appends)
+	retry := retryEnvelope.Payload.(stateelements.Append)
+	firstSemantic, retrySemantic := first.Items[0], retry.Items[0]
+	firstSemantic.MonotonicNS, retrySemantic.MonotonicNS = 0, 0
+	if retryEnvelope.ItemID == firstEnvelope.ItemID ||
+		retryEnvelope.ItemID != firstEnvelope.ItemID+"-retry-1" || len(retry.Items) != 1 ||
+		!reflect.DeepEqual(retrySemantic, firstSemantic) ||
+		retry.Items[0].MonotonicNS < first.Items[0].MonotonicNS ||
+		!slices.Contains(retryEnvelope.CausalParents, monotonicRejection.ItemID) {
+		t.Fatalf("causal observation retry = %+v / %+v", retry, retryEnvelope)
+	}
+	assertNoStateEnvelope(t, outcomes)
+	terminal := element.Envelope{
+		Type: stateelements.RejectionType(), ItemID: retryEnvelope.ItemID + ":rejected",
+		SessionID: "session-retry", CausalParents: []string{retryEnvelope.ItemID},
+		Payload: stateelements.Rejection{
+			Code: "invalid_batch", Message: "terminal test rejection", CurrentVersion: 1,
+			ItemIndex: &itemIndex, ItemID: retry.Items[0].ID,
+		},
+	}
+	sendStateEnvelope(t, rejected, terminal)
+	outcome := receiveState(t, outcomes).Payload.(stateelements.ObservationCommitOutcome)
+	if outcome.Kind != stateelements.ObservationRejected || outcome.Code != "invalid_batch" {
+		t.Fatalf("terminal retry outcome = %+v", outcome)
+	}
+	sendStateEnvelope(t, rejected, terminal)
+	replay := receiveState(t, outcomes).Payload.(stateelements.ObservationCommitOutcome)
+	if replay.Code != "unknown_rejection_reply" {
+		t.Fatalf("retry rejection replay = %+v", replay)
+	}
+}
+
 func TestObservationCommitMountedReplyOwnershipAndReplayAreExact(t *testing.T) {
 	graph := compileStateGraph(t, observationCommitReplyGraph)
 	registry, err := elements.RuntimeRegistry()
@@ -666,7 +759,7 @@ func assertPureStateResolution(
 		resolution := mounted.Live().Nodes[node].Resolution
 		wantRevision := "implementation:2"
 		if elementName == "state.ObservationCommit" {
-			wantRevision = "implementation:3"
+			wantRevision = "implementation:4"
 		}
 		if resolution != nil && resolution.RuntimeEvidence == inspect.EvidenceLive &&
 			resolution.Runtime.ID == "builtin://openrealtime/elements/"+elementName &&

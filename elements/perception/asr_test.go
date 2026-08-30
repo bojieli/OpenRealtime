@@ -131,6 +131,94 @@ func TestASRElementStreamsRevisionsFlushesAndRecreatesPerUtterance(t *testing.T)
 	}
 }
 
+func TestASRDefersCausallyOrderedFlushUntilExactAdmittedBatch(t *testing.T) {
+	var created atomic.Int32
+	providers := perceptionelements.NewASRProviderRegistry()
+	if err := providers.Register("primary", testASRDescriptor, func() (v1.PerceptionProvider, error) {
+		created.Add(1)
+		return &scriptedASR{}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mounted, runDone, cancelRun := mountASR(t, providers)
+	defer stopASR(t, mounted, runDone, cancelRun)
+	resolved, _ := mounted.Egress("resolved")
+	_ = receive(t, resolved)
+
+	observe, _ := mounted.Ingress("observe")
+	flush, _ := mounted.Ingress("flush")
+	observations, _ := mounted.Egress("observations")
+	outcomes, _ := mounted.Egress("outcome")
+	if _, err := flush.Broadcast(context.Background(), element.Envelope{
+		Type: element.Trigger(element.Named("audio.Flush")), ItemID: "flush-before-observe",
+		SourceID: "utterance-ordered", CausalParents: []string{"observe-ordered"},
+		Payload: perceptionelements.Flush{
+			StreamID: "utterance-ordered", AfterItemID: "observe-ordered",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	noOutcome, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if envelope, err := outcomes.Receive(noOutcome); err == nil {
+		t.Fatalf("flush crossed its admitted-audio barrier: %+v", envelope)
+	} else if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("wait for deferred flush outcome: %v", err)
+	}
+	frame := coreperception.Frame{
+		Kind: coreperception.FrameAudio, Source: "microphone", CapturedNS: 100,
+		PCM16LE: []byte{1, 0, 2, 0}, SampleRateHz: 16_000,
+	}
+	if _, err := observe.Broadcast(context.Background(), element.Envelope{
+		Type: element.Trigger(element.Named("audio.FrameBatch")), ItemID: "observe-ordered",
+		SourceID: "utterance-ordered", CancellationScope: "utterance-ordered",
+		Payload: perceptionelements.AudioBatch{
+			StreamID: "utterance-ordered", Frames: []coreperception.Frame{frame},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	partial := receive(t, observations).Payload.(coreperception.Observation)
+	final := receive(t, observations).Payload.(coreperception.Observation)
+	observeOutcome := receive(t, outcomes).Payload.(perceptionelements.Outcome)
+	flushOutcome := receive(t, outcomes).Payload.(perceptionelements.Outcome)
+	if partial.Final || !final.Final || observeOutcome.Operation != "observe" ||
+		flushOutcome.Operation != "flush" || flushOutcome.Kind != perceptionelements.OutcomeSucceeded {
+		t.Fatalf("ordered partial=%+v final=%+v outcomes=%+v/%+v",
+			partial, final, observeOutcome, flushOutcome)
+	}
+	if got := created.Load(); got != 1 {
+		t.Fatalf("causal flush created %d providers, want one", got)
+	}
+}
+
+func TestASRRejectsFlushBarrierWithoutExactCausalParent(t *testing.T) {
+	providers := perceptionelements.NewASRProviderRegistry()
+	if err := providers.Register("primary", testASRDescriptor, func() (v1.PerceptionProvider, error) {
+		return &scriptedASR{}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mounted, runDone, cancelRun := mountASR(t, providers)
+	defer stopASR(t, mounted, runDone, cancelRun)
+	resolved, _ := mounted.Egress("resolved")
+	_ = receive(t, resolved)
+	flush, _ := mounted.Ingress("flush")
+	outcomes, _ := mounted.Egress("outcome")
+	if _, err := flush.Broadcast(context.Background(), element.Envelope{
+		Type: element.Trigger(element.Named("audio.Flush")), ItemID: "flush-forged-barrier",
+		SourceID: "utterance-forged", Payload: perceptionelements.Flush{
+			StreamID: "utterance-forged", AfterItemID: "observe-not-a-parent",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	outcome := receive(t, outcomes).Payload.(perceptionelements.Outcome)
+	if outcome.Kind != perceptionelements.OutcomeRefused || outcome.Code != "invalid_flush_barrier" {
+		t.Fatalf("forged flush barrier outcome = %+v", outcome)
+	}
+}
+
 func TestASRInterruptCancelsActiveProviderAndReportsTerminalOutcome(t *testing.T) {
 	provider := &blockingASR{entered: make(chan struct{})}
 	providers := perceptionelements.NewASRProviderRegistry()
@@ -380,7 +468,7 @@ func assertASRLiveResolution(t *testing.T, mounted *graphruntime.Mounted) {
 	resolution := mounted.Live().Nodes["asr"].Resolution
 	if resolution == nil || resolution.RuntimeEvidence != inspect.EvidenceLive ||
 		resolution.Runtime.ID != "builtin://openrealtime/elements/perception.ASR" ||
-		resolution.Runtime.Revision != "implementation:2" ||
+		resolution.Runtime.Revision != "implementation:3" ||
 		resolution.CapabilitiesEvidence != inspect.EvidenceLive {
 		t.Fatalf("ASR live resolution = %+v", resolution)
 	}
@@ -389,7 +477,7 @@ func assertASRLiveResolution(t *testing.T, mounted *graphruntime.Mounted) {
 			capability.Provider.ID == "provider://openrealtime/api/v1/perception/test-asr" &&
 			capability.Provider.Revision == "1" && capability.Adapter != nil &&
 			capability.Adapter.ID == "builtin://openrealtime/adapters/perception.ASR-api-v1" &&
-			capability.Adapter.Revision == "implementation:2" {
+			capability.Adapter.Revision == "implementation:3" {
 			return
 		}
 	}

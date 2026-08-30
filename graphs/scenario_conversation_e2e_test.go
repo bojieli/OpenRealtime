@@ -191,7 +191,13 @@ func TestScenarioConversationGraphRoundTripsUnchangedRealtimeEndpoint(t *testing
 		return item["type"] == "function_call_output" && item["call_id"] == scenarioEndpointCallID
 	})
 	client.send(map[string]any{"type": "response.create", "event_id": "evt_tool_resume"})
-	resultEvidence := receiveScenarioEndpoint(t, fixture.model.toolResults, "canonical tool result")
+	var resultEvidence trajectory.ToolResult
+	select {
+	case resultEvidence = <-fixture.model.toolResults:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("timed out waiting for canonical tool result; model invocations=%d",
+			fixture.model.invocations.Load())
+	}
 	if resultEvidence.CallID != scenarioEndpointCallID || resultEvidence.Name != scenarioEndpointTool ||
 		string(resultEvidence.Output) != `{"ok":true,"temperature_c":21}` {
 		t.Fatalf("scenario endpoint model tool result = %+v", resultEvidence)

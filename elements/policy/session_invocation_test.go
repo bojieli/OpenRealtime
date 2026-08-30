@@ -128,24 +128,49 @@ func TestSessionInvocationManualCreateIsVisibleAndCarriesNoObservationAuthority(
 	defer harness.stop(t)
 	_ = receivePolicy(t, harness.egress(t, "state"))
 	installSessionInvocation(t, harness, 1, "Continue after the tool result.", nil)
+	version := uint64(7)
 	sendPolicy(t, harness.ingress(t, "create"), element.Envelope{
 		Type: policyelements.ResponseCreateType(), ItemID: "create-1", SessionID: "session-policy",
-		Payload: policyelements.ResponseCreate{ResponseID: "response-1"},
+		Payload: policyelements.ResponseCreate{
+			ResponseID: "response-1", ExpectedContextVersion: &version,
+			ExpectedContextItemID: "trajectory-state-7",
+		},
 	})
 	trigger := receivePolicy(t, harness.egress(t, "trigger"))
 	payload := trigger.Payload.(cognitionelements.Generate)
 	if payload.Invocation.Instruction != "Continue after the tool result." ||
-		payload.ExpectedContextVersion != nil || payload.ExpectedContextItemID != "" ||
+		payload.ExpectedContextVersion == nil || *payload.ExpectedContextVersion != version ||
+		payload.ExpectedContextItemID != "trajectory-state-7" ||
 		payload.CommittedContext != nil {
 		t.Fatalf("manual trigger = %+v", payload)
 	}
+	version = 99
+	if *payload.ExpectedContextVersion != 7 {
+		t.Fatalf("manual trigger retained a caller-owned context pointer: %+v", payload)
+	}
 	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SessionInvocationOutcome)
-	_ = receivePolicy(t, harness.egress(t, "state"))
+	state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SessionInvocationState)
 	if outcome.Kind != policyelements.SessionInvocationEmitted || outcome.Operation != "create" ||
-		outcome.GenerationID != trigger.RunID {
+		outcome.GenerationID != trigger.RunID || outcome.ContextVersion != 7 ||
+		state.ContextVersion != 7 || !slicesContain(trigger.CausalParents, "trajectory-state-7") {
 		t.Fatalf("manual create outcome = %+v", outcome)
 	}
 	assertNoPolicyEnvelope(t, harness.egress(t, "authority"))
+	staleVersion := uint64(6)
+	sendPolicy(t, harness.ingress(t, "create"), element.Envelope{
+		Type: policyelements.ResponseCreateType(), ItemID: "create-stale-context",
+		SessionID: "session-policy", Payload: policyelements.ResponseCreate{
+			ResponseID: "response-stale-context", ExpectedContextVersion: &staleVersion,
+			ExpectedContextItemID: "trajectory-state-6",
+		},
+	})
+	staleOutcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SessionInvocationOutcome)
+	staleState := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SessionInvocationState)
+	if staleOutcome.Kind != policyelements.SessionInvocationRefused ||
+		staleOutcome.Code != "invalid_create" || staleState.ContextVersion != 7 {
+		t.Fatalf("stale manual context outcome=%+v state=%+v", staleOutcome, staleState)
+	}
+	assertNoPolicyEnvelope(t, harness.egress(t, "trigger"))
 }
 
 func TestSessionInvocationFailsClosedOnMissingStaleOrMalformedSettings(t *testing.T) {
@@ -202,6 +227,25 @@ func TestSessionInvocationFailsClosedOnMissingStaleOrMalformedSettings(t *testin
 			!strings.Contains(outcome.Message, "repeats tool") {
 			t.Fatalf("duplicate tool outcome = %+v", outcome)
 		}
+	})
+
+	t.Run("manual create without context binding", func(t *testing.T) {
+		harness := mountSessionInvocation(t)
+		defer harness.stop(t)
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		installSessionInvocation(t, harness, 1, "answer", nil)
+		sendPolicy(t, harness.ingress(t, "create"), element.Envelope{
+			Type: policyelements.ResponseCreateType(), ItemID: "create-unbound",
+			SessionID: "session-policy",
+			Payload:   policyelements.ResponseCreate{ResponseID: "response-unbound"},
+		})
+		outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SessionInvocationOutcome)
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		if outcome.Kind != policyelements.SessionInvocationRefused || outcome.Code != "invalid_create" ||
+			!strings.Contains(outcome.Message, "expected context version") {
+			t.Fatalf("unbound manual create outcome = %+v", outcome)
+		}
+		assertNoPolicyEnvelope(t, harness.egress(t, "trigger"))
 	})
 }
 
@@ -273,7 +317,7 @@ func assertSessionInvocationLiveResolution(t *testing.T, mounted *graphruntime.M
 		resolution := mounted.Live().Nodes["policy"].Resolution
 		if resolution != nil && resolution.RuntimeEvidence == inspect.EvidenceLive &&
 			resolution.Runtime.ID == "builtin://openrealtime/elements/policy.SessionInvocation" &&
-			resolution.Runtime.Revision == "implementation:1" {
+			resolution.Runtime.Revision == "implementation:2" {
 			return
 		}
 		if time.Now().After(deadline) {

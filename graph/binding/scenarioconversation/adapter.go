@@ -492,6 +492,8 @@ type session struct {
 	terminalRequestIDs []string
 	contentAcks        map[string]*pendingContent
 	snapshotVersion    uint64
+	snapshotItemID     string
+	snapshotChanged    chan struct{}
 
 	audioSendMu    sync.Mutex
 	audioMu        sync.Mutex
@@ -500,6 +502,7 @@ type session struct {
 	audioReady     chan struct{}
 	audioReadyOnce sync.Once
 	audioOps       map[string]*pendingAudio
+	closedAudio    map[string]struct{}
 
 	activityMu      sync.Mutex
 	active          map[string]struct{}
@@ -569,9 +572,11 @@ func newSession(
 		settings: legacy.CloneSettings(options.Settings), pendingOps: make(map[string]*pendingOperation),
 		seenContent: make(map[string]struct{}), terminalContent: make(map[string]struct{}),
 		terminalRequests: make(map[string]struct{}),
-		contentAcks:      make(map[string]*pendingContent), audioStream: 1,
-		audioReady: make(chan struct{}), audioOps: make(map[string]*pendingAudio),
-		active: make(map[string]struct{}), calls: make(map[string]activeClientCall),
+		contentAcks:      make(map[string]*pendingContent), snapshotChanged: make(chan struct{}),
+		audioStream: 1,
+		audioReady:  make(chan struct{}), audioOps: make(map[string]*pendingAudio),
+		closedAudio: make(map[string]struct{}),
+		active:      make(map[string]struct{}), calls: make(map[string]activeClientCall),
 		terminalCalls: make(map[string]struct{}),
 		utterances:    make(map[string]struct{}), failures: make(map[string]struct{}),
 		terminalRuns: make(map[string]struct{}),

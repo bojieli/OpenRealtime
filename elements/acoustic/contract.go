@@ -16,9 +16,13 @@ import (
 )
 
 const (
-	implementationRevision = "implementation:1"
-	admissionRuntimeID     = "builtin://openrealtime/elements/acoustic.EnergyAdmission"
-	endpointRuntimeID      = "builtin://openrealtime/elements/acoustic.EndpointPolicy"
+	// Admission implementation:2 binds an endpoint flush to the exact final
+	// admitted-audio item so downstream ASR cannot reorder independent input
+	// lanes across the utterance boundary.
+	admissionImplementationRevision = "implementation:2"
+	endpointImplementationRevision  = "implementation:1"
+	admissionRuntimeID              = "builtin://openrealtime/elements/acoustic.EnergyAdmission"
+	endpointRuntimeID               = "builtin://openrealtime/elements/acoustic.EndpointPolicy"
 
 	defaultMemoryLimit      = 128
 	maximumMemoryLimit      = 4096
