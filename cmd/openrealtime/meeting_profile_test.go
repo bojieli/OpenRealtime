@@ -228,6 +228,7 @@ func TestFreezeMeetingProfileBindsExactGraphResolutionAndDeployments(t *testing.
 		frozen.Profile.Server.TranscriptionModel != meetingLocalASRModel ||
 		frozen.Profile.Server.TokenEnvironment != "OPENREALTIME_TOKEN" ||
 		frozen.Configuration.Foreground.TTSVoice != "default" ||
+		!frozen.Configuration.Foreground.AttachKeyframes ||
 		frozen.Configuration.Background.Model != "gemini-3.7-flash" ||
 		frozen.Configuration.Background.Deployment != options.deployments.Background {
 		t.Fatalf("frozen Meeting profile = %+v", frozen)

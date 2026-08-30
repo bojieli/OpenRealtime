@@ -206,7 +206,7 @@ func defaultMeetingLocalConfiguration(
 			VisionModel: meetingLocalModelName, VisionURL: meetingLocalModelURL,
 			MaxOutputTokens: 512, ASRCadenceMS: 200, FrameRateMilliHz: 5_000,
 			RequestTimeoutMS: 30_000, SentenceMinRunes: 12,
-			AttachKeyframes: false, ExternalVideoGate: true,
+			AttachKeyframes: true, ExternalVideoGate: true,
 			ModelDeployment: deployments.Model, ASRDeployment: deployments.ASR,
 			TTSDeployment: deployments.TTS, VisionDeployment: deployments.Vision,
 		},
