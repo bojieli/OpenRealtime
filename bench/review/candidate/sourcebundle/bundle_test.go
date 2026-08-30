@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	"github.com/bojieli/OpenRealtime/bench/review"
 	"github.com/bojieli/OpenRealtime/bench/review/candidate"
 	reviewmedia "github.com/bojieli/OpenRealtime/bench/review/media"
 )
@@ -415,6 +416,111 @@ func TestBundleCompletionFailureDoesNotPermitASecondTerminalWrite(t *testing.T) 
 	}
 	if err := attempt.Abort(); err != nil {
 		t.Fatalf("idempotent Abort() = %v", err)
+	}
+}
+
+func TestReviewSourceStreamsOwnedProviderRequestsAndReverifiesOnClose(t *testing.T) {
+	fixture := newSourceFixture(t)
+	var outcomes []bench.TaskOutcome
+	for trial, caseID := range []string{"case-a", "case-b", "case-c"} {
+		specification := fixture.attempt(t, caseID, trial+1, false)
+		attempt := beginAttempt(t, fixture, specification)
+		if err := attempt.CaptureAudio(fixtureCapture()); err != nil {
+			t.Fatal(err)
+		}
+		outcome := fixtureOutcome(caseID, trial%2 == 0)
+		completeAttempt(t, attempt, specification, outcome)
+		outcomes = append(outcomes, outcome)
+	}
+	if err := fixture.bundle.FinishSuite(t.Context(), fixtureResult(fixture, outcomes...)); err != nil {
+		t.Fatal(err)
+	}
+	source, err := OpenReviewSource(t.Context(), fixture.directory, fixture.receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := source.Manifest()
+	if err != nil || manifest.AttemptCount != 3 {
+		t.Fatalf("Manifest() = %+v, %v", manifest, err)
+	}
+	manifest.Attempts[0].Case = "caller mutation"
+	var cases []string
+	for {
+		request, found, err := source.Next(t.Context(), []string{"provider-secret-canary"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !found {
+			break
+		}
+		prepared, err := review.PrepareContext(t.Context(), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(prepared.Media) != 1 || prepared.Media[0].SizeBytes == 0 ||
+			request.Media[0].SizeBytes != 0 || request.Media[0].Validation != "" {
+			t.Fatalf("provider request/prepared media = %+v / %+v", request.Media, prepared.Media)
+		}
+		cases = append(cases, request.Case)
+		request.Context[0] = 'x'
+		request.SensitiveValues[0] = "mutated"
+	}
+	if strings.Join(cases, ",") != "case-a,case-b,case-c" {
+		t.Fatalf("streamed cases = %v", cases)
+	}
+	if _, found, err := source.Next(t.Context(), nil); err != nil || found {
+		t.Fatalf("exhausted Next() = found %t, err %v", found, err)
+	}
+	if err := source.Close(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := source.Next(t.Context(), nil); err == nil {
+		t.Fatal("closed source returned another request")
+	}
+}
+
+func TestReviewSourceSkipsUnreviewableEvidenceAndCloseDetectsMutation(t *testing.T) {
+	fixture := newSourceFixture(t)
+	completeSpec := fixture.attempt(t, "complete", 1, false)
+	complete := beginAttempt(t, fixture, completeSpec)
+	if err := complete.CaptureAudio(fixtureCapture()); err != nil {
+		t.Fatal(err)
+	}
+	completeOutcome := fixtureOutcome(completeSpec.Case, true)
+	completeAttempt(t, complete, completeSpec, completeOutcome)
+	incompleteSpec := fixture.attempt(t, "incomplete", 1, false)
+	incomplete := beginAttempt(t, fixture, incompleteSpec)
+	incompleteOutcome := bench.TaskOutcome{ID: incompleteSpec.Case, Error: "no audio"}
+	if err := incomplete.Complete(t.Context(), candidate.Completion{
+		Attempt: incompleteSpec, Outcome: incompleteOutcome, Transcript: fixtureTranscript(),
+	}); err == nil {
+		t.Fatal("incomplete attempt unexpectedly completed evidence")
+	}
+	if err := fixture.bundle.FinishSuite(
+		t.Context(), fixtureResult(fixture, completeOutcome, incompleteOutcome),
+	); err == nil {
+		t.Fatal("incomplete source unexpectedly sealed without an error")
+	}
+	source, err := OpenReviewSource(t.Context(), fixture.directory, fixture.receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, found, err := source.Next(t.Context(), nil)
+	if err != nil || !found || request.Case != "complete" {
+		t.Fatalf("first request = %+v, found=%t, err=%v", request, found, err)
+	}
+	if _, found, err := source.Next(t.Context(), nil); err != nil || found {
+		t.Fatalf("unreviewable attempt was emitted: found=%t err=%v", found, err)
+	}
+	path := filepath.Join(fixture.directory, reviewName)
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := source.Close(t.Context()); err == nil {
+		t.Fatal("source mutation during review was not detected")
 	}
 }
 
