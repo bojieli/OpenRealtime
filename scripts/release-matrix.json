@@ -2,222 +2,20 @@
   "version": 1,
   "gates": [
     {
-      "id": "external.benchmark.baseline.fdb15",
-      "description": "Retain the preregistered legacy baseline for all 498 Full-Duplex-Bench v1.5 recordings",
-      "availability": "provisioned",
-      "selection": "opt_in",
-      "required": true,
-      "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdb", "-dataset", "{root}/.runtime/full-duplex-bench-v1.5/dataset", "-endpoint", "{env:OPENREALTIME_MIGRATION_BASELINE_ENDPOINT}", "-execution", "{env:OPENREALTIME_MIGRATION_BASELINE_EXECUTION}", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "baseline", "-migration-repetition", "trial-1", "-out", "{artifacts}/baseline-fdb15.json"],
-      "timeout": "30h",
-      "skip_policy": "forbid",
-      "prerequisites": [
-        {"kind": "directory", "value": "{root}/.runtime/full-duplex-bench-v1.5/dataset", "description": "the digest-checked FDB v1.5 dataset is prepared"},
-        {"kind": "env_url", "value": "OPENREALTIME_MIGRATION_BASELINE_ENDPOINT", "description": "the credential-free legacy baseline endpoint is supplied"},
-        {"kind": "env_file", "value": "OPENREALTIME_MIGRATION_BASELINE_EXECUTION", "description": "the reviewed legacy execution requirement is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store is supplied"}
-      ],
-      "assertions": [
-        {"kind": "file_nonempty", "value": "{artifacts}/baseline-fdb15.json"},
-        {"kind": "stdout_regex", "value": "(?m)^reportable$"},
-        {"kind": "stdout_regex", "value": "(?m)^tasks      : 498 completed, 0 failed, of 498 expected$"}
-      ]
-    },
-    {
-      "id": "external.benchmark.baseline.fdb3",
-      "description": "Retain the preregistered legacy baseline for all 100 Full-Duplex-Bench v3 recordings",
-      "availability": "provisioned",
-      "selection": "opt_in",
-      "required": true,
-      "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdbv3", "-dataset", "{root}/.runtime/full-duplex-bench-v3/dataset/fdb_v3_data_released", "-endpoint", "{env:OPENREALTIME_MIGRATION_BASELINE_ENDPOINT}", "-execution", "{env:OPENREALTIME_MIGRATION_BASELINE_EXECUTION}", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "baseline", "-migration-repetition", "trial-1", "-out", "{artifacts}/baseline-fdb3.json"],
-      "timeout": "12h",
-      "skip_policy": "forbid",
-      "prerequisites": [
-        {"kind": "directory", "value": "{root}/.runtime/full-duplex-bench-v3/dataset/fdb_v3_data_released", "description": "the digest-checked FDB v3 dataset is prepared"},
-        {"kind": "env_url", "value": "OPENREALTIME_MIGRATION_BASELINE_ENDPOINT", "description": "the credential-free legacy baseline endpoint is supplied"},
-        {"kind": "env_file", "value": "OPENREALTIME_MIGRATION_BASELINE_EXECUTION", "description": "the reviewed legacy execution requirement is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store is supplied"}
-      ],
-      "assertions": [
-        {"kind": "file_nonempty", "value": "{artifacts}/baseline-fdb3.json"},
-        {"kind": "stdout_regex", "value": "(?m)^reportable$"},
-        {"kind": "stdout_regex", "value": "(?m)^tasks      : 100 completed, 0 failed, of 100 expected$"}
-      ]
-    },
-    {
-      "id": "external.benchmark.baseline.fdbench",
-      "description": "Retain the preregistered legacy baseline for all 6,147 FD-Bench conversations",
-      "availability": "provisioned",
-      "selection": "opt_in",
-      "required": true,
-      "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdbench", "-dataset", "{root}/.runtime/fd-bench/dataset", "-conditions", "chattts-single-round-combine-easy,chattts-single-round-combine-hard,chattts-single-round-combine-med,cosyvoice2-single-round-combine-easy,cosyvoice2-single-round-combine-easy-noisy-bg-0dB,cosyvoice2-single-round-combine-easy-noisy-bg-10dB,cosyvoice2-single-round-combine-easy-noisy-bg-20dB,cosyvoice2-single-round-combine-easy-noisy-gap-0dB,cosyvoice2-single-round-combine-easy-noisy-gap-10dB,cosyvoice2-single-round-combine-easy-noisy-gap-20dB,cosyvoice2-single-round-combine-hard,cosyvoice2-single-round-combine-med,f5tts-single-round-combine-easy,f5tts-single-round-combine-easy-noisy-bg-0dB,f5tts-single-round-combine-easy-noisy-bg-10dB,f5tts-single-round-combine-easy-noisy-bg-20dB,f5tts-single-round-combine-easy-noisy-gap-0dB,f5tts-single-round-combine-easy-noisy-gap-10dB,f5tts-single-round-combine-easy-noisy-gap-20dB,f5tts-single-round-combine-hard,f5tts-single-round-combine-med", "-endpoint", "{env:OPENREALTIME_MIGRATION_BASELINE_ENDPOINT}", "-execution", "{env:OPENREALTIME_MIGRATION_BASELINE_EXECUTION}", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "baseline", "-migration-repetition", "trial-1", "-out", "{artifacts}/baseline-fdbench6147.json"],
-      "timeout": "72h",
-      "skip_policy": "forbid",
-      "prerequisites": [
-        {"kind": "directory", "value": "{root}/.runtime/fd-bench/dataset", "description": "the digest-checked FD-Bench dataset is prepared"},
-        {"kind": "env_url", "value": "OPENREALTIME_MIGRATION_BASELINE_ENDPOINT", "description": "the credential-free legacy baseline endpoint is supplied"},
-        {"kind": "env_file", "value": "OPENREALTIME_MIGRATION_BASELINE_EXECUTION", "description": "the reviewed legacy execution requirement is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store is supplied"}
-      ],
-      "assertions": [
-        {"kind": "file_nonempty", "value": "{artifacts}/baseline-fdbench6147.json"},
-        {"kind": "stdout_regex", "value": "(?m)^reportable$"},
-        {"kind": "stdout_regex", "value": "(?m)^tasks      : 6147 completed, 0 failed, of 6147 expected$"}
-      ]
-    },
-    {
-      "id": "external.benchmark.baseline.meeting",
-      "description": "Retain the preregistered legacy baseline for all four Meeting Assistant cases",
-      "availability": "provisioned",
-      "selection": "opt_in",
-      "required": true,
-      "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "meeting", "-foreground", "cascade", "-transport", "websocket", "-endpoint", "{env:OPENREALTIME_MIGRATION_BASELINE_MEETING_ENDPOINT}", "-execution", "{env:OPENREALTIME_MIGRATION_BASELINE_EXECUTION}", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "baseline", "-migration-repetition", "trial-1", "-out", "{artifacts}/baseline-meeting.json"],
-      "timeout": "2h",
-      "skip_policy": "forbid",
-      "prerequisites": [
-        {"kind": "browser", "description": "a real Chromium executable is available"},
-        {"kind": "env_url", "value": "OPENREALTIME_MIGRATION_BASELINE_MEETING_ENDPOINT", "description": "the credential-free legacy Meeting Assistant endpoint is supplied"},
-        {"kind": "env_file", "value": "OPENREALTIME_MIGRATION_BASELINE_EXECUTION", "description": "the reviewed legacy execution requirement is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store is supplied"}
-      ],
-      "assertions": [
-        {"kind": "file_nonempty", "value": "{artifacts}/baseline-meeting.json"},
-        {"kind": "stdout_regex", "value": "(?m)^reportable$"},
-        {"kind": "stdout_regex", "value": "(?m)^tasks      : 4 completed, 0 infrastructure failures, of 4 expected$"}
-      ]
-    },
-    {
-      "id": "external.benchmark.baseline.realtime-cu",
-      "description": "Retain the preregistered legacy baseline for all sixteen Realtime-CU cases",
-      "availability": "provisioned",
-      "selection": "opt_in",
-      "required": true,
-      "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "realtime-cu", "-grounding", "pixel,set_of_mark", "-endpoint", "{env:OPENREALTIME_MIGRATION_BASELINE_ENDPOINT}", "-execution", "{env:OPENREALTIME_MIGRATION_BASELINE_EXECUTION}", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "baseline", "-migration-repetition", "trial-1", "-out", "{artifacts}/baseline-realtime-cu.json"],
-      "timeout": "4h",
-      "skip_policy": "forbid",
-      "prerequisites": [
-        {"kind": "browser", "description": "a real Chromium executable is available"},
-        {"kind": "env_url", "value": "OPENREALTIME_MIGRATION_BASELINE_ENDPOINT", "description": "the credential-free legacy baseline endpoint is supplied"},
-        {"kind": "env_file", "value": "OPENREALTIME_MIGRATION_BASELINE_EXECUTION", "description": "the reviewed legacy execution requirement is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store is supplied"}
-      ],
-      "assertions": [
-        {"kind": "file_nonempty", "value": "{artifacts}/baseline-realtime-cu.json"},
-        {"kind": "stdout_regex", "value": "(?m)^reportable$"},
-        {"kind": "stdout_regex", "value": "(?m)^tasks      : 16 completed, 0 infrastructure failures, of 16 expected$"}
-      ]
-    },
-    {
-      "id": "external.benchmark.baseline.scenario",
-      "description": "Retain the preregistered legacy baseline for all eleven interaction scenarios at fifteen repetitions",
-      "availability": "provisioned",
-      "selection": "opt_in",
-      "required": true,
-      "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "scenario", "-url", "{env:OPENREALTIME_MIGRATION_BASELINE_ENDPOINT}", "-speech-url", "{env:OPENREALTIME_SPEECH_ENDPOINT}", "-repeat", "15", "-architecture-manifest", "{env:OPENREALTIME_MIGRATION_BASELINE_SCENARIO_ARCHITECTURE_MANIFEST}", "-architecture-cell", "{env:OPENREALTIME_MIGRATION_BASELINE_SCENARIO_ARCHITECTURE_CELL}", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "baseline", "-record", "{artifacts}/baseline-scenario.json"],
-      "timeout": "24h",
-      "skip_policy": "forbid",
-      "prerequisites": [
-        {"kind": "env_url", "value": "OPENREALTIME_MIGRATION_BASELINE_ENDPOINT", "description": "the credential-free legacy baseline endpoint is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_BASELINE_SCENARIO_ARCHITECTURE_CELL", "description": "the exact legacy architecture cell is named"},
-        {"kind": "env_file", "value": "OPENREALTIME_MIGRATION_BASELINE_SCENARIO_ARCHITECTURE_MANIFEST", "description": "the reviewed legacy scenario architecture manifest is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store is supplied"},
-        {"kind": "env_url", "value": "OPENREALTIME_SPEECH_ENDPOINT", "description": "the shared speech synthesis endpoint is supplied"}
-      ],
-      "assertions": [
-        {"kind": "file_nonempty", "value": "{artifacts}/baseline-scenario.json"},
-        {"kind": "stdout_regex", "value": "(?m)^  reportable architecture cell$"},
-        {"kind": "stdout_regex", "value": "(?m)^  scenarios 165/165$"}
-      ]
-    },
-    {
-      "id": "external.benchmark.baseline.tau.control",
-      "description": "Retain the preregistered legacy baseline for all 278 tau2 control-speech tasks",
-      "availability": "provisioned",
-      "selection": "opt_in",
-      "required": true,
-      "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "tau-voice", "-tau2", "{root}/.runtime/tau2-bench", "-python", "{root}/.runtime/tau2-bench/.venv/bin/python", "-endpoint", "{env:OPENREALTIME_MIGRATION_BASELINE_ENDPOINT}", "-user-model-url", "{env:OPENREALTIME_TAU_USER_MODEL_ENDPOINT}", "-synthesis-url", "{env:OPENREALTIME_TAU_SYNTHESIS_ENDPOINT}", "-execution", "{env:OPENREALTIME_MIGRATION_BASELINE_EXECUTION}", "-condition", "control", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "baseline", "-out", "{artifacts}/baseline-tau-control.json"],
-      "timeout": "72h",
-      "skip_policy": "forbid",
-      "prerequisites": [
-        {"kind": "directory", "value": "{root}/.runtime/tau2-bench/.git", "description": "the pinned and patched tau2 checkout is prepared"},
-        {"kind": "executable", "value": "{root}/.runtime/tau2-bench/.venv/bin/python", "description": "the complete tau2 voice environment is prepared"},
-        {"kind": "env_url", "value": "OPENREALTIME_MIGRATION_BASELINE_ENDPOINT", "description": "the credential-free legacy baseline endpoint is supplied"},
-        {"kind": "env_file", "value": "OPENREALTIME_MIGRATION_BASELINE_EXECUTION", "description": "the reviewed legacy execution requirement is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store is supplied"},
-        {"kind": "env_url", "value": "OPENREALTIME_TAU_SYNTHESIS_ENDPOINT", "description": "the shared simulated caller speech endpoint is supplied"},
-        {"kind": "env_url", "value": "OPENREALTIME_TAU_USER_MODEL_ENDPOINT", "description": "the shared simulated caller model endpoint is supplied"}
-      ],
-      "assertions": [
-        {"kind": "file_nonempty", "value": "{artifacts}/baseline-tau-control.json"},
-        {"kind": "stdout_regex", "value": "(?m)^reportable$"},
-        {"kind": "stdout_regex", "value": "(?m)^tasks      : 278 completed, 0 failed, of 278 expected$"}
-      ]
-    },
-    {
-      "id": "external.benchmark.baseline.tau.regular",
-      "description": "Retain the preregistered legacy baseline for all 278 tau2 regular-speech tasks",
-      "availability": "provisioned",
-      "selection": "opt_in",
-      "required": true,
-      "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "tau-voice", "-tau2", "{root}/.runtime/tau2-bench", "-python", "{root}/.runtime/tau2-bench/.venv/bin/python", "-endpoint", "{env:OPENREALTIME_MIGRATION_BASELINE_ENDPOINT}", "-user-model-url", "{env:OPENREALTIME_TAU_USER_MODEL_ENDPOINT}", "-synthesis-url", "{env:OPENREALTIME_TAU_SYNTHESIS_ENDPOINT}", "-execution", "{env:OPENREALTIME_MIGRATION_BASELINE_EXECUTION}", "-condition", "regular", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "baseline", "-out", "{artifacts}/baseline-tau-regular.json"],
-      "timeout": "72h",
-      "skip_policy": "forbid",
-      "prerequisites": [
-        {"kind": "directory", "value": "{root}/.runtime/tau2-bench/.git", "description": "the pinned and patched tau2 checkout is prepared"},
-        {"kind": "executable", "value": "{root}/.runtime/tau2-bench/.venv/bin/python", "description": "the complete tau2 voice environment is prepared"},
-        {"kind": "env_url", "value": "OPENREALTIME_MIGRATION_BASELINE_ENDPOINT", "description": "the credential-free legacy baseline endpoint is supplied"},
-        {"kind": "env_file", "value": "OPENREALTIME_MIGRATION_BASELINE_EXECUTION", "description": "the reviewed legacy execution requirement is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store is supplied"},
-        {"kind": "env_url", "value": "OPENREALTIME_TAU_SYNTHESIS_ENDPOINT", "description": "the shared simulated caller speech endpoint is supplied"},
-        {"kind": "env_url", "value": "OPENREALTIME_TAU_USER_MODEL_ENDPOINT", "description": "the shared simulated caller model endpoint is supplied"}
-      ],
-      "assertions": [
-        {"kind": "file_nonempty", "value": "{artifacts}/baseline-tau-regular.json"},
-        {"kind": "stdout_regex", "value": "(?m)^reportable$"},
-        {"kind": "stdout_regex", "value": "(?m)^tasks      : 278 completed, 0 failed, of 278 expected$"}
-      ]
-    },
-    {
       "id": "external.benchmark.candidate.fdb15",
       "description": "Retain the graph-native candidate for all 498 Full-Duplex-Bench v1.5 recordings",
       "availability": "provisioned",
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdb", "-dataset", "{root}/.runtime/full-duplex-bench-v1.5/dataset", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "candidate", "-migration-repetition", "trial-1", "-out", "{artifacts}/candidate-fdb15.json"],
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdb", "-dataset", "{root}/.runtime/full-duplex-bench-v1.5/dataset", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-out", "{artifacts}/candidate-fdb15.json"],
       "timeout": "30h",
       "skip_policy": "forbid",
       "prerequisites": [
         {"kind": "directory", "value": "{root}/.runtime/full-duplex-bench-v1.5/dataset", "description": "the digest-checked FDB v1.5 dataset is prepared"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
         {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
-        {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store is supplied"}
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"}
       ],
       "assertions": [
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdb15.json"},
@@ -232,17 +30,14 @@
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdbv3", "-dataset", "{root}/.runtime/full-duplex-bench-v3/dataset/fdb_v3_data_released", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "candidate", "-migration-repetition", "trial-1", "-out", "{artifacts}/candidate-fdb3.json"],
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdbv3", "-dataset", "{root}/.runtime/full-duplex-bench-v3/dataset/fdb_v3_data_released", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-out", "{artifacts}/candidate-fdb3.json"],
       "timeout": "12h",
       "skip_policy": "forbid",
       "prerequisites": [
         {"kind": "directory", "value": "{root}/.runtime/full-duplex-bench-v3/dataset/fdb_v3_data_released", "description": "the digest-checked FDB v3 dataset is prepared"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
         {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
-        {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store is supplied"}
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"}
       ],
       "assertions": [
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdb3.json"},
@@ -257,17 +52,14 @@
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdbench", "-dataset", "{root}/.runtime/fd-bench/dataset", "-conditions", "chattts-single-round-combine-easy,chattts-single-round-combine-hard,chattts-single-round-combine-med,cosyvoice2-single-round-combine-easy,cosyvoice2-single-round-combine-easy-noisy-bg-0dB,cosyvoice2-single-round-combine-easy-noisy-bg-10dB,cosyvoice2-single-round-combine-easy-noisy-bg-20dB,cosyvoice2-single-round-combine-easy-noisy-gap-0dB,cosyvoice2-single-round-combine-easy-noisy-gap-10dB,cosyvoice2-single-round-combine-easy-noisy-gap-20dB,cosyvoice2-single-round-combine-hard,cosyvoice2-single-round-combine-med,f5tts-single-round-combine-easy,f5tts-single-round-combine-easy-noisy-bg-0dB,f5tts-single-round-combine-easy-noisy-bg-10dB,f5tts-single-round-combine-easy-noisy-bg-20dB,f5tts-single-round-combine-easy-noisy-gap-0dB,f5tts-single-round-combine-easy-noisy-gap-10dB,f5tts-single-round-combine-easy-noisy-gap-20dB,f5tts-single-round-combine-hard,f5tts-single-round-combine-med", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "candidate", "-migration-repetition", "trial-1", "-out", "{artifacts}/candidate-fdbench6147.json"],
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdbench", "-dataset", "{root}/.runtime/fd-bench/dataset", "-conditions", "chattts-single-round-combine-easy,chattts-single-round-combine-hard,chattts-single-round-combine-med,cosyvoice2-single-round-combine-easy,cosyvoice2-single-round-combine-easy-noisy-bg-0dB,cosyvoice2-single-round-combine-easy-noisy-bg-10dB,cosyvoice2-single-round-combine-easy-noisy-bg-20dB,cosyvoice2-single-round-combine-easy-noisy-gap-0dB,cosyvoice2-single-round-combine-easy-noisy-gap-10dB,cosyvoice2-single-round-combine-easy-noisy-gap-20dB,cosyvoice2-single-round-combine-hard,cosyvoice2-single-round-combine-med,f5tts-single-round-combine-easy,f5tts-single-round-combine-easy-noisy-bg-0dB,f5tts-single-round-combine-easy-noisy-bg-10dB,f5tts-single-round-combine-easy-noisy-bg-20dB,f5tts-single-round-combine-easy-noisy-gap-0dB,f5tts-single-round-combine-easy-noisy-gap-10dB,f5tts-single-round-combine-easy-noisy-gap-20dB,f5tts-single-round-combine-hard,f5tts-single-round-combine-med", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-out", "{artifacts}/candidate-fdbench6147.json"],
       "timeout": "72h",
       "skip_policy": "forbid",
       "prerequisites": [
         {"kind": "directory", "value": "{root}/.runtime/fd-bench/dataset", "description": "the digest-checked FD-Bench dataset is prepared"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
         {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
-        {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store is supplied"}
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"}
       ],
       "assertions": [
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdbench6147.json"},
@@ -302,17 +94,14 @@
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "meeting", "-foreground", "cascade", "-transport", "websocket", "-endpoint", "{env:OPENREALTIME_MEETING_CASCADE_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "candidate", "-migration-repetition", "trial-1", "-out", "{artifacts}/candidate-meeting-cascade.json"],
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "meeting", "-foreground", "cascade", "-transport", "websocket", "-endpoint", "{env:OPENREALTIME_MEETING_CASCADE_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-out", "{artifacts}/candidate-meeting-cascade.json"],
       "timeout": "2h",
       "skip_policy": "forbid",
       "prerequisites": [
         {"kind": "browser", "description": "a real Chromium executable is available"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"},
-        {"kind": "env_url", "value": "OPENREALTIME_MEETING_CASCADE_ENDPOINT", "description": "the cascade Realtime endpoint is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store is supplied"}
+        {"kind": "env_url", "value": "OPENREALTIME_MEETING_CASCADE_ENDPOINT", "description": "the cascade Realtime endpoint is supplied"}
       ],
       "assertions": [
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-meeting-cascade.json"},
@@ -349,17 +138,14 @@
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "realtime-cu", "-grounding", "pixel,set_of_mark", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "candidate", "-migration-repetition", "trial-1", "-out", "{artifacts}/candidate-realtime-cu.json"],
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "realtime-cu", "-grounding", "pixel,set_of_mark", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-out", "{artifacts}/candidate-realtime-cu.json"],
       "timeout": "4h",
       "skip_policy": "forbid",
       "prerequisites": [
         {"kind": "browser", "description": "a real Chromium executable is available"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
         {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
-        {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store is supplied"}
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"}
       ],
       "assertions": [
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-realtime-cu.json"},
@@ -374,7 +160,7 @@
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "scenario", "-url", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-speech-url", "{env:OPENREALTIME_SPEECH_ENDPOINT}", "-repeat", "15", "-architecture-manifest", "{env:OPENREALTIME_SCENARIO_ARCHITECTURE_MANIFEST}", "-architecture-cell", "{env:OPENREALTIME_SCENARIO_ARCHITECTURE_CELL}", "-launch-profile", "{env:OPENREALTIME_SCENARIO_LAUNCH_PROFILE}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-review-dir", "{artifacts}/candidate-scenario-review", "-review-receipt", "{artifacts}/candidate-scenario-review.receipt.json", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "candidate", "-record", "{artifacts}/candidate-scenario.json"],
+      "command": ["{go}", "run", "./cmd/openrealtime", "scenario", "-url", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-speech-url", "{env:OPENREALTIME_SPEECH_ENDPOINT}", "-repeat", "15", "-architecture-manifest", "{env:OPENREALTIME_SCENARIO_ARCHITECTURE_MANIFEST}", "-architecture-cell", "{env:OPENREALTIME_SCENARIO_ARCHITECTURE_CELL}", "-launch-profile", "{env:OPENREALTIME_SCENARIO_LAUNCH_PROFILE}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-review-dir", "{artifacts}/candidate-scenario-review", "-review-receipt", "{artifacts}/candidate-scenario-review.receipt.json", "-record", "{artifacts}/candidate-scenario.json"],
       "timeout": "24h",
       "skip_policy": "forbid",
       "prerequisites": [
@@ -383,10 +169,7 @@
         {"kind": "env_file", "value": "OPENREALTIME_SCENARIO_ARCHITECTURE_MANIFEST", "description": "the reviewed graph architecture manifest is supplied"},
         {"kind": "env", "value": "OPENREALTIME_SCENARIO_ARCHITECTURE_CELL", "description": "the exact runnable architecture cell is named"},
         {"kind": "env_file", "value": "OPENREALTIME_SCENARIO_LAUNCH_PROFILE", "description": "the immutable graph-native scenario launch profile is supplied"},
-        {"kind": "env_url", "value": "OPENREALTIME_SPEECH_ENDPOINT", "description": "the speech synthesis endpoint is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store is supplied"}
+        {"kind": "env_url", "value": "OPENREALTIME_SPEECH_ENDPOINT", "description": "the speech synthesis endpoint is supplied"}
       ],
       "assertions": [
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario.json"},
@@ -411,7 +194,7 @@
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "tau-voice", "-tau2", "{root}/.runtime/tau2-bench", "-python", "{root}/.runtime/tau2-bench/.venv/bin/python", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-user-model-url", "{env:OPENREALTIME_TAU_USER_MODEL_ENDPOINT}", "-synthesis-url", "{env:OPENREALTIME_TAU_SYNTHESIS_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-condition", "control", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "candidate", "-out", "{artifacts}/candidate-tau-control.json"],
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "tau-voice", "-tau2", "{root}/.runtime/tau2-bench", "-python", "{root}/.runtime/tau2-bench/.venv/bin/python", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-user-model-url", "{env:OPENREALTIME_TAU_USER_MODEL_ENDPOINT}", "-synthesis-url", "{env:OPENREALTIME_TAU_SYNTHESIS_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-condition", "control", "-out", "{artifacts}/candidate-tau-control.json"],
       "timeout": "72h",
       "skip_policy": "forbid",
       "prerequisites": [
@@ -421,10 +204,7 @@
         {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"},
         {"kind": "env_url", "value": "OPENREALTIME_TAU_SYNTHESIS_ENDPOINT", "description": "the simulated caller speech endpoint is supplied"},
-        {"kind": "env_url", "value": "OPENREALTIME_TAU_USER_MODEL_ENDPOINT", "description": "the simulated caller model endpoint is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store is supplied"}
+        {"kind": "env_url", "value": "OPENREALTIME_TAU_USER_MODEL_ENDPOINT", "description": "the simulated caller model endpoint is supplied"}
       ],
       "assertions": [
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-tau-control.json"},
@@ -439,7 +219,7 @@
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "tau-voice", "-tau2", "{root}/.runtime/tau2-bench", "-python", "{root}/.runtime/tau2-bench/.venv/bin/python", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-user-model-url", "{env:OPENREALTIME_TAU_USER_MODEL_ENDPOINT}", "-synthesis-url", "{env:OPENREALTIME_TAU_SYNTHESIS_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-condition", "regular", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "candidate", "-out", "{artifacts}/candidate-tau-regular.json"],
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "tau-voice", "-tau2", "{root}/.runtime/tau2-bench", "-python", "{root}/.runtime/tau2-bench/.venv/bin/python", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-user-model-url", "{env:OPENREALTIME_TAU_USER_MODEL_ENDPOINT}", "-synthesis-url", "{env:OPENREALTIME_TAU_SYNTHESIS_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-condition", "regular", "-out", "{artifacts}/candidate-tau-regular.json"],
       "timeout": "72h",
       "skip_policy": "forbid",
       "prerequisites": [
@@ -449,10 +229,7 @@
         {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"},
         {"kind": "env_url", "value": "OPENREALTIME_TAU_SYNTHESIS_ENDPOINT", "description": "the simulated caller speech endpoint is supplied"},
-        {"kind": "env_url", "value": "OPENREALTIME_TAU_USER_MODEL_ENDPOINT", "description": "the simulated caller model endpoint is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store is supplied"}
+        {"kind": "env_url", "value": "OPENREALTIME_TAU_USER_MODEL_ENDPOINT", "description": "the simulated caller model endpoint is supplied"}
       ],
       "assertions": [
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-tau-regular.json"},
@@ -476,27 +253,6 @@
         {"kind": "env_directory", "value": "OPENREALTIME_SIGNED_APP", "description": "an absolute signed OpenRealtime.app is supplied"},
         {"kind": "env_executable", "value": "OPENREALTIME_MACOS_E2E_RUNNER", "description": "the trusted native E2E driver is supplied"},
         {"kind": "os", "value": "darwin", "description": "the job runs on macOS"}
-      ]
-    },
-    {
-      "id": "external.migration.full-comparison",
-      "description": "Compare every preregistered baseline and candidate attempt across all eight migration suites",
-      "availability": "provisioned",
-      "selection": "opt_in",
-      "required": true,
-      "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "migration", "compare", "-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-report", "{env:OPENREALTIME_MIGRATION_REPORT_LOCATION}", "-out", "{artifacts}/migration-comparison.json"],
-      "timeout": "30m",
-      "skip_policy": "forbid",
-      "prerequisites": [
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION", "description": "the immutable migration registration location is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REGISTRATION_SHA256", "description": "the immutable migration registration digest is supplied"},
-        {"kind": "env", "value": "OPENREALTIME_MIGRATION_REPORT_LOCATION", "description": "a new create-only comparison location is supplied"},
-        {"kind": "env_directory", "value": "OPENREALTIME_MIGRATION_STORE", "description": "the absolute create-only migration evidence store containing both arms is supplied"}
-      ],
-      "assertions": [
-        {"kind": "file_nonempty", "value": "{artifacts}/migration-comparison.json"},
-        {"kind": "stdout_regex", "value": "(?m)^reportable=true accepted=true report_id=[a-f0-9]{64}$"}
       ]
     },
     {
@@ -1099,23 +855,18 @@
       "skip_policy": "forbid"
     },
     {
-      "id": "performance.compare-fdbench6147",
-      "description": "Run the checked CompareFDBench6147 artifact and allocation regression protocol",
+      "id": "performance.review-bundles",
+      "description": "Exercise the direct four-case Meeting and exact-16 Realtime-CU review bundles with allocation and benchmark evidence",
       "availability": "local",
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{root}/bench/migration/run_compare_fdbench6147_performance.sh", "{artifacts}/compare-fdbench6147.json"],
+      "command": ["{go}", "test", "-count=1", "-run", "^TestMeetingReviewBundleFourCaseAllocationThreshold$", "-bench", "^Benchmark(MeetingReviewBundleFourCases|ReviewBundleSixteenHermeticReviewedCases)$", "-benchtime", "1x", "-benchmem", "./bench/meeting", "./bench/realtimecu"],
       "timeout": "30m",
       "skip_policy": "forbid",
-      "prerequisites": [
-        {"kind": "command", "value": "git", "description": "git is available for exact source identity"},
-        {"kind": "command", "value": "sha256sum", "description": "sha256sum is available for exact source identity"},
-        {"kind": "command", "value": "taskset", "description": "taskset is available for the checked CPU-affinity protocol"}
-      ],
       "assertions": [
-        {"kind": "file_nonempty", "value": "{artifacts}/compare-fdbench6147.json"},
-        {"kind": "stdout_regex", "value": "reportable=true accepted=true artifact=pass allocations=pass"}
+        {"kind": "stdout_regex", "value": "BenchmarkMeetingReviewBundleFourCases"},
+        {"kind": "stdout_regex", "value": "BenchmarkReviewBundleSixteenHermeticReviewedCases"}
       ]
     }
   ]

@@ -83,9 +83,8 @@ requested check-in in the retained 15-repeat run.
 The provisioned candidate remains wired as
 `external.benchmark.scenario` in `scripts/release-matrix.json`. It runs the
 existing public scenario client against the graph-native endpoint with the
-reviewed architecture cell, authenticated inspection graph, migration
-registration, immutable evidence store, speech service, and fifteen
-repetitions per case:
+reviewed architecture cell, authenticated inspection graph, sealed review
+bundle, speech service, and fifteen repetitions per case:
 
 ```sh
 go run ./cmd/openrealtime scenario \
@@ -98,10 +97,6 @@ go run ./cmd/openrealtime scenario \
   -inspection-graph "$OPENREALTIME_BENCH_INSPECTION_GRAPH" \
   -review-dir results/candidate-scenario-review \
   -review-receipt results/candidate-scenario-review.receipt.json \
-  -migration-store "$OPENREALTIME_MIGRATION_STORE" \
-  -migration-registration "$OPENREALTIME_MIGRATION_REGISTRATION" \
-  -migration-registration-sha256 "$OPENREALTIME_MIGRATION_REGISTRATION_SHA256" \
-  -migration-arm candidate \
   -record results/candidate-scenario.json
 ```
 
@@ -172,7 +167,7 @@ Verification requires both external receipt levels and reopens all source and
 evaluation bytes; a local manifest by itself is not authority.
 
 Missing endpoints, provider credentials, reviewed manifests, inspection
-authority, or migration registration are an unavailable provisioned gate—not a
+authority, or sealed review publication are an unavailable provisioned gate—not a
 passing synthetic result. The credential-free WebSocket test above must never
-be substituted for the required 165 live candidate attempts or their matched
-legacy baseline.
+be substituted for the required 165 live candidate attempts or the documented
+comparison with the benchmark owner's trusted historical result.

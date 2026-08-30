@@ -22,7 +22,6 @@ import (
 	"github.com/bojieli/OpenRealtime/bench/fdbench"
 	"github.com/bojieli/OpenRealtime/bench/fdbv3"
 	"github.com/bojieli/OpenRealtime/bench/meeting"
-	"github.com/bojieli/OpenRealtime/bench/migration"
 	"github.com/bojieli/OpenRealtime/bench/realtimecu"
 	review "github.com/bojieli/OpenRealtime/bench/review"
 	"github.com/bojieli/OpenRealtime/bench/review/gemini"
@@ -82,7 +81,7 @@ type meetingReviewCLIResources struct {
 // users get is not a measurement of anything.
 func runBench(arguments []string, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: openrealtime bench <execution|architecture|migration|meeting|realtime-cu|fdb|fdbv3|fdbench|tau-voice|dynacu> [flags]")
+		return errors.New("usage: openrealtime bench <execution|architecture|meeting|realtime-cu|fdb|fdbv3|fdbench|tau-voice|dynacu> [flags]")
 	}
 	suite := strings.ToLower(strings.TrimSpace(arguments[0]))
 	switch suite {
@@ -90,8 +89,6 @@ func runBench(arguments []string, output io.Writer) error {
 		return runExecutionRequirement(arguments[1:], output)
 	case "architecture", "architecture-pair", "f52":
 		return runArchitecturePair(arguments[1:], output)
-	case "migration", "parity":
-		return runMigration(arguments[1:], output)
 	case "fdb", "fdb-v1.5":
 		return runFDB(arguments[1:], output)
 	case "fdbench", "fd-bench":
@@ -153,7 +150,6 @@ func runMeetingWithDependencies(
 		inspectionGraph string
 		list            bool
 		reviewConfig    meetingReviewCLIConfig
-		migrationMode   migrationLaunchFlags
 	)
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "WebSocket or WebRTC SDP endpoint")
 	flags.StringVar(&transport, "transport", bench.TransportWebSocket, "sensor/executor transport: websocket or webrtc")
@@ -190,7 +186,6 @@ func runMeetingWithDependencies(
 	flags.StringVar(&reviewConfig.FFprobePath, "review-ffprobe", "", "explicit FFprobe binary for full-decode attestation")
 	flags.StringVar(&reviewConfig.BubblewrapPath, "review-bwrap", "", "explicit bubblewrap binary for media sandboxing")
 	flags.BoolVar(&list, "list", false, "list repository-owned meeting tasks and stop")
-	migrationMode.bind(flags)
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -232,24 +227,6 @@ func runMeetingWithDependencies(
 			selectedCategories = append(selectedCategories, trimmed)
 		}
 	}
-	selectedTasks, err := meeting.Select(selectedCategories)
-	if err != nil {
-		return err
-	}
-	if limit > 0 && limit < len(selectedTasks) {
-		selectedTasks = selectedTasks[:limit]
-	}
-	launchCases := make([]migrationLaunchCase, 0, len(selectedTasks))
-	for _, task := range selectedTasks {
-		launchCases = append(launchCases, migrationLaunchCase{Condition: task.Category, ID: task.ID})
-	}
-	launchCell, err := meetingMigrationCell(cell, transport)
-	if err != nil {
-		return err
-	}
-	if err := migrationMode.preflight(migration.SuiteMeeting, launchCases, nil, launchCell); err != nil {
-		return err
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	reviewResources, err := dependencies.openReview(ctx, reviewConfig, deploymentToken, os.LookupEnv)
@@ -282,9 +259,6 @@ func runMeetingWithDependencies(
 		cancelRetention()
 		err = errors.Join(err, retentionErr)
 		err = errors.Join(err, reviewResources.close())
-	}
-	if retainErr := migrationMode.retain(result, output); retainErr != nil {
-		return errors.Join(err, retainErr)
 	}
 	if err != nil {
 		return err
@@ -584,28 +558,6 @@ func (resources *meetingReviewCLIResources) close() error {
 	return err
 }
 
-func meetingMigrationCell(cell bench.Cell, transport string) (bench.Cell, error) {
-	transport = strings.ToLower(strings.TrimSpace(transport))
-	if transport == "" {
-		transport = bench.TransportWebSocket
-	}
-	if transport != bench.TransportWebSocket && transport != bench.TransportWebRTC {
-		return bench.Cell{}, fmt.Errorf("meeting transport must be websocket or webrtc, got %q", transport)
-	}
-	levels := make(map[bench.Factor]string, len(cell.Levels)+1)
-	for factor, level := range cell.Levels {
-		levels[factor] = level
-	}
-	levels[bench.FactorTransport] = transport
-	cell.Levels = levels
-	if len(cell.Varies) > 0 {
-		reference := meeting.ReferenceCell()
-		reference.Levels[bench.FactorTransport] = transport
-		cell.Varies = bench.Compare(reference, cell)
-	}
-	return cell, nil
-}
-
 // runArchitecturePair classifies two measured F52 cells. A comparison can be
 // useful and reportable while still being a system comparison; only a paired
 // P/T or T/N run with identical non-treatment identities is architecture-only
@@ -871,7 +823,6 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 		executionPath   string
 		inspectionGraph string
 		list            bool
-		migrationMode   migrationLaunchFlags
 	)
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
 	flags.StringVar(&tokenEnv, "token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token")
@@ -890,7 +841,6 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
 	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
 	flags.BoolVar(&list, "list", false, "list repository-owned tasks and stop")
-	migrationMode.bind(flags)
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -931,22 +881,6 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 			selectedCategories = append(selectedCategories, strings.TrimSpace(value))
 		}
 	}
-	selectedCases, err := realtimecu.Select(selectedCategories, selectedGroundings)
-	if err != nil {
-		return err
-	}
-	if limit > 0 && limit < len(selectedCases) {
-		selectedCases = selectedCases[:limit]
-	}
-	launchCases := make([]migrationLaunchCase, 0, len(selectedCases))
-	for _, item := range selectedCases {
-		launchCases = append(launchCases, migrationLaunchCase{
-			Condition: string(item.Grounding), ID: item.ID(),
-		})
-	}
-	if err := migrationMode.preflight(migration.SuiteRealtimeCU, launchCases, nil, cell); err != nil {
-		return err
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result, err := realtimecu.Run(ctx, realtimecu.Options{
@@ -956,9 +890,6 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	})
-	if retainErr := migrationMode.retain(result, output); retainErr != nil {
-		return errors.Join(err, retainErr)
-	}
 	if err != nil {
 		return err
 	}
@@ -1069,7 +1000,6 @@ func runFDB(arguments []string, output io.Writer) error {
 		executionPath   string
 		inspectionGraph string
 		timeout         time.Duration
-		migrationMode   migrationLaunchFlags
 	)
 	flags.StringVar(&root, "dataset", ".runtime/full-duplex-bench-v1.5/dataset", "FDB v1.5 dataset root")
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
@@ -1084,7 +1014,6 @@ func runFDB(arguments []string, output io.Writer) error {
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
 	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
 	flags.DurationVar(&timeout, "task-timeout", 3*time.Minute, "how long one recording may take")
-	migrationMode.bind(flags)
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -1110,22 +1039,6 @@ func runFDB(arguments []string, output io.Writer) error {
 		}
 		wanted = append(wanted, fdb.Category(strings.TrimSpace(name)))
 	}
-	if migrationMode.enabled() {
-		selectedSamples, err := fdb.Load(root, wanted, limit)
-		if err != nil {
-			return err
-		}
-		launchCases := make([]migrationLaunchCase, 0, len(selectedSamples))
-		for _, sample := range selectedSamples {
-			launchCases = append(launchCases, migrationLaunchCase{
-				Condition: string(sample.Category), ID: sample.ID,
-			})
-		}
-		if err := migrationMode.preflight(migration.SuiteFDB15, launchCases, nil, cell); err != nil {
-			return err
-		}
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result, err := fdb.Run(ctx, fdb.Options{
@@ -1134,9 +1047,6 @@ func runFDB(arguments []string, output io.Writer) error {
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	})
-	if retainErr := migrationMode.retain(result, output); retainErr != nil {
-		return errors.Join(err, retainErr)
-	}
 	if err != nil {
 		return err
 	}
@@ -1252,7 +1162,6 @@ func runFDBench(arguments []string, output io.Writer) error {
 		inspectionGraph string
 		budget          time.Duration
 		timeout         time.Duration
-		migrationMode   migrationLaunchFlags
 	)
 	flags.StringVar(&root, "dataset", ".runtime/fd-bench/dataset", "FD-Bench dataset root")
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
@@ -1269,7 +1178,6 @@ func runFDBench(arguments []string, output io.Writer) error {
 	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
 	flags.DurationVar(&budget, "latency-budget", 2*time.Second, "how long a reply may take before it counts as late")
 	flags.DurationVar(&timeout, "task-timeout", 5*time.Minute, "how long one conversation may take")
-	migrationMode.bind(flags)
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -1307,22 +1215,6 @@ func runFDBench(arguments []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if migrationMode.enabled() {
-		conversations, err := fdbench.Load(root, selected, limit)
-		if err != nil {
-			return err
-		}
-		launchCases := make([]migrationLaunchCase, 0, len(conversations))
-		for _, conversation := range conversations {
-			launchCases = append(launchCases, migrationLaunchCase{
-				Condition: conversation.Condition, ID: conversation.ID,
-			})
-		}
-		if err := migrationMode.preflight(migration.SuiteFDBench, launchCases, nil, cell); err != nil {
-			return err
-		}
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result, err := fdbench.Run(ctx, fdbench.Options{
@@ -1331,9 +1223,6 @@ func runFDBench(arguments []string, output io.Writer) error {
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	})
-	if retainErr := migrationMode.retain(result, output); retainErr != nil {
-		return errors.Join(err, retainErr)
-	}
 	if err != nil {
 		return err
 	}
@@ -1387,7 +1276,6 @@ func runFDBv3(arguments []string, output io.Writer) error {
 		executionPath   string
 		inspectionGraph string
 		timeout         time.Duration
-		migrationMode   migrationLaunchFlags
 	)
 	flags.StringVar(&root, "dataset", ".runtime/full-duplex-bench-v3/dataset/fdb_v3_data_released", "FDB v3 dataset root")
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
@@ -1401,7 +1289,6 @@ func runFDBv3(arguments []string, output io.Writer) error {
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
 	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
 	flags.DurationVar(&timeout, "task-timeout", 3*time.Minute, "how long one recording may take")
-	migrationMode.bind(flags)
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -1419,22 +1306,6 @@ func runFDBv3(arguments []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if migrationMode.enabled() {
-		tasks, err := fdbv3.Load(root, limit)
-		if err != nil {
-			return err
-		}
-		launchCases := make([]migrationLaunchCase, 0, len(tasks))
-		for _, task := range tasks {
-			launchCases = append(launchCases, migrationLaunchCase{
-				Condition: task.Domain, ID: task.ID,
-			})
-		}
-		if err := migrationMode.preflight(migration.SuiteFDBV3, launchCases, nil, cell); err != nil {
-			return err
-		}
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result, err := fdbv3.Run(ctx, fdbv3.Options{
@@ -1443,9 +1314,6 @@ func runFDBv3(arguments []string, output io.Writer) error {
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	})
-	if retainErr := migrationMode.retain(result, output); retainErr != nil {
-		return errors.Join(err, retainErr)
-	}
 	if err != nil {
 		return err
 	}
@@ -1638,7 +1506,6 @@ func runTauVoice(arguments []string, output io.Writer) error {
 		timeout         time.Duration
 		verifyOnly      bool
 		metrics         bool
-		migrationMode   migrationLaunchFlags
 	)
 	flags.StringVar(&tau2Dir, "tau2", ".runtime/tau2-bench", "prepared tau2-bench checkout")
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
@@ -1680,7 +1547,6 @@ func runTauVoice(arguments []string, output io.Writer) error {
 	flags.DurationVar(&timeout, "task-timeout", 10*time.Minute, "how long one simulation may take")
 	flags.BoolVar(&verifyOnly, "verify", false, "check the environment and exit without running")
 	flags.BoolVar(&metrics, "interaction-metrics", true, "also compute tau2's turn-taking metrics")
-	migrationMode.bind(flags)
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -1699,31 +1565,6 @@ func runTauVoice(arguments []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if migrationMode.enabled() {
-		if verifyOnly {
-			return errors.New("migration launch flags cannot be combined with -verify")
-		}
-		suite := migration.SuiteTauControl
-		if speech == tauvoice.Regular {
-			suite = migration.SuiteTauRegular
-		} else if speech != tauvoice.Control {
-			return fmt.Errorf("migration matrix contains tau-Voice control and regular, not %q", speech)
-		}
-		if strings.TrimSpace(domain) != "" || limit > 0 {
-			return errors.New("migration tau-Voice launch must cover all registered domains and tasks")
-		}
-		if trials <= 0 {
-			return errors.New("migration tau-Voice launch requires a positive trial count")
-		}
-		repetitions := make([]string, trials)
-		for index := range trials {
-			repetitions[index] = fmt.Sprintf("trial-%d", index+1)
-		}
-		if err := migrationMode.preflight(suite, nil, repetitions, cell); err != nil {
-			return err
-		}
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	var executionEvidence *bench.ExecutionEvidence
@@ -1758,9 +1599,6 @@ func runTauVoice(arguments []string, output io.Writer) error {
 	}
 
 	result, err := tauvoice.Run(ctx, config)
-	if retainErr := migrationMode.retain(result, output); retainErr != nil {
-		return errors.Join(err, retainErr)
-	}
 	if err != nil {
 		return err
 	}
