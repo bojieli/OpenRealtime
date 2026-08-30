@@ -742,6 +742,7 @@ func TestForegroundSessionFreezesAtExactDelayedTranscriptRevision(t *testing.T) 
 	if transcript.Port != "transcript" {
 		t.Fatalf("transcript frame port = %q", transcript.Port)
 	}
+	transcriptEventID := transcript.Envelope.ItemID
 	if err := sink.TurnBegin(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -753,21 +754,60 @@ func TestForegroundSessionFreezesAtExactDelayedTranscriptRevision(t *testing.T) 
 	case <-time.After(20 * time.Millisecond):
 	}
 
-	// The transcript arrives in a later context snapshot. An unrelated item
-	// follows it in that mutable snapshot; only the exact prefix through source
-	// revision 1 belongs to the run that was already ending.
-	if err := session.updateContext(trajectory.Snapshot{Version: 2, Items: []trajectory.Item{
+	// The shared observation commit mux assigns canonical source revisions across
+	// both screen and transcript streams. A prior visual commit therefore makes
+	// the transcript's canonical revision differ from its ASR-local revision.
+	// Neither a same-text collision on that local revision nor a forged copy of
+	// the event identity from the wrong observer/source may release the run.
+	wrong := []trajectory.Item{
 		{
-			ID: "transcript-revision-1", Kind: trajectory.KindObservation,
+			ID: "wrong-local-revision", Kind: trajectory.KindObservation,
 			Content: "show the latest conversion rate", SourceRevision: 1,
 			Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+			Event: &trajectory.EventMetadata{
+				EventID: "unrelated-same-text-event", Type: "meeting.foreground.asr.endpoint",
+				Source: "meeting.foreground.asr", Channel: "microphone", OccurredNS: 1,
+			},
 		},
 		{
+			ID: "wrong-observer", Kind: trajectory.KindObservation,
+			Content: "show the latest conversion rate", SourceRevision: 2,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+			Event: &trajectory.EventMetadata{
+				EventID: transcriptEventID, Type: "meeting.visual.endpoint",
+				Source: "meeting.visual", Channel: "screen", OccurredNS: 2,
+			},
+		},
+	}
+	if err := session.updateContext(trajectory.Snapshot{Version: 2, Items: wrong}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-ended:
+		t.Fatalf("turn accepted a same-text or wrong-source transcript collision: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	// The exact transcript event follows the two interleaved canonical commits.
+	// A later visual item is already visible in the mutable snapshot, but only
+	// the prefix through the exact transcript event belongs to this ending run.
+	committed := append(slices.Clone(wrong),
+		trajectory.Item{
+			ID: "transcript-canonical-revision-3", Kind: trajectory.KindObservation,
+			Content: "show the latest conversion rate", SourceRevision: 3,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+			Event: &trajectory.EventMetadata{
+				EventID: transcriptEventID, Type: "meeting.foreground.asr.endpoint",
+				Source: "meeting.foreground.asr", Channel: "microphone", OccurredNS: 3,
+			},
+		},
+		trajectory.Item{
 			ID: "later-observation", Kind: trajectory.KindObservation,
-			Content: "later screen state", SourceRevision: 2,
+			Content: "later screen state", SourceRevision: 4,
 			Producer: trajectory.Producer{Phase: trajectory.PhaseObserver},
 		},
-	}}); err != nil {
+	)
+	if err := session.updateContext(trajectory.Snapshot{Version: 4, Items: committed}); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-ended; err != nil {
@@ -779,12 +819,12 @@ func TestForegroundSessionFreezesAtExactDelayedTranscriptRevision(t *testing.T) 
 		t.Fatalf("terminal ports = %q/%q", resultFrame.Port, outcomeFrame.Port)
 	}
 	result := foregroundTestCognitionResult(t, resultFrame)
-	if result.ContextVersion != 1 || result.ContextTailID != "transcript-revision-1" {
-		t.Fatalf("delayed transcript context = version %d tail %q, want exact prefix 1",
+	if result.ContextVersion != 3 || result.ContextTailID != "transcript-canonical-revision-3" {
+		t.Fatalf("delayed transcript context = version %d tail %q, want exact prefix 3",
 			result.ContextVersion, result.ContextTailID)
 	}
-	if outcome := foregroundTestCognitionOutcome(t, outcomeFrame); outcome.ContextVersion != 1 {
-		t.Fatalf("delayed transcript outcome context = %d, want 1", outcome.ContextVersion)
+	if outcome := foregroundTestCognitionOutcome(t, outcomeFrame); outcome.ContextVersion != 3 {
+		t.Fatalf("delayed transcript outcome context = %d, want 3", outcome.ContextVersion)
 	}
 }
 

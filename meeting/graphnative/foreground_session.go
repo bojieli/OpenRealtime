@@ -80,7 +80,7 @@ type foregroundRun struct {
 	contextReady       bool
 	contextErr         error
 	requiredTranscript string
-	requiredRevision   uint64
+	requiredEventID    string
 }
 
 type foregroundUtterance struct {
@@ -137,6 +137,7 @@ type foregroundSession struct {
 	transcriptByItem    map[string]uint64
 	lastFinalTranscript string
 	lastFinalRevision   uint64
+	lastFinalEventID    string
 	boundFinalRevision  uint64
 	err                 error
 }
@@ -682,10 +683,10 @@ func (session *foregroundSession) TurnBegin(ctx context.Context) error {
 	}
 	session.seenRunIDs[runID] = struct{}{}
 	requiredTranscript := ""
-	requiredRevision := uint64(0)
+	requiredEventID := ""
 	if session.lastFinalRevision > session.boundFinalRevision {
 		requiredTranscript = session.lastFinalTranscript
-		requiredRevision = session.lastFinalRevision
+		requiredEventID = session.lastFinalEventID
 		session.boundFinalRevision = session.lastFinalRevision
 	}
 	session.active = &foregroundRun{
@@ -694,7 +695,7 @@ func (session *foregroundSession) TurnBegin(ctx context.Context) error {
 		parentIDs: canonicalForegroundParents(parents), startedNS: foregroundNowNS(),
 		utterances:         make(map[string]*foregroundUtterance),
 		requiredTranscript: requiredTranscript,
-		requiredRevision:   requiredRevision,
+		requiredEventID:    requiredEventID,
 	}
 	session.mu.Unlock()
 	return nil
@@ -725,10 +726,10 @@ func (session *foregroundSession) TurnEnd(
 	// the authoritative context before releasing that admission boundary so a
 	// later turn can never be stamped into this run with hindsight. A final ASR
 	// transcript may still be crossing the trajectory boundary; when it is,
-	// wait only for the exact source revision and retain the prefix through that
-	// observation rather than the mutable snapshot visible at playback end.
+	// wait only for its exact output event identity and retain the prefix through
+	// that observation rather than the mutable snapshot visible at playback end.
 	frozen, contextErr := session.contextAtCognitionEnd(
-		ctx, run.requiredTranscript, run.requiredRevision, atCognitionEnd,
+		ctx, run.requiredTranscript, run.requiredEventID, atCognitionEnd,
 	)
 
 	session.mu.Lock()
@@ -775,6 +776,7 @@ func (session *foregroundSession) Transcript(
 	if !canonicalText(key) {
 		key = "microphone"
 	}
+	eventID := session.newIdentifier("transcript-event")
 	session.mu.Lock()
 	session.transcriptRevision++
 	revision := session.transcriptRevision
@@ -786,6 +788,7 @@ func (session *foregroundSession) Transcript(
 	if event.Final {
 		session.lastFinalTranscript = text
 		session.lastFinalRevision = revision
+		session.lastFinalEventID = eventID
 	}
 	session.mu.Unlock()
 	observation := perception.Observation{
@@ -797,7 +800,7 @@ func (session *foregroundSession) Transcript(
 		observation.StableText = text
 	}
 	return session.emitWithIdentity(ctx, "transcript", modelelements.TranscriptType(), "", nil,
-		"", "microphone", key, observation)
+		eventID, "microphone", key, observation)
 }
 
 func (session *foregroundSession) Observation(
@@ -1201,18 +1204,18 @@ func (session *foregroundSession) finalizeForegroundRun(
 }
 
 func (session *foregroundSession) contextAtCognitionEnd(
-	ctx context.Context, requiredTranscript string, requiredRevision uint64,
+	ctx context.Context, requiredTranscript, requiredEventID string,
 	atCognitionEnd trajectory.Snapshot,
 ) (trajectory.Snapshot, error) {
-	if requiredRevision == 0 {
+	if requiredEventID == "" {
 		return cloneForegroundSnapshot(atCognitionEnd), nil
 	}
-	if strings.TrimSpace(requiredTranscript) == "" {
+	if strings.TrimSpace(requiredTranscript) == "" || !canonicalText(requiredEventID) {
 		return cloneForegroundSnapshot(atCognitionEnd),
-			errors.New("final transcript revision has no canonical text")
+			errors.New("final transcript has no canonical text or event identity")
 	}
 	if _, found := foregroundRequiredTranscriptIndex(
-		atCognitionEnd, requiredTranscript, requiredRevision,
+		atCognitionEnd, requiredTranscript, requiredEventID,
 	); found {
 		return cloneForegroundSnapshot(atCognitionEnd), nil
 	}
@@ -1224,7 +1227,7 @@ func (session *foregroundSession) contextAtCognitionEnd(
 		changed := session.contextChanged
 		session.mu.Unlock()
 		if index, found := foregroundRequiredTranscriptIndex(
-			snapshot, requiredTranscript, requiredRevision,
+			snapshot, requiredTranscript, requiredEventID,
 		); found {
 			prefix := trajectory.Snapshot{
 				Version: uint64(index + 1), Items: snapshot.Items[:index+1],
@@ -1241,11 +1244,13 @@ func (session *foregroundSession) contextAtCognitionEnd(
 }
 
 func foregroundRequiredTranscriptIndex(
-	snapshot trajectory.Snapshot, requiredTranscript string, requiredRevision uint64,
+	snapshot trajectory.Snapshot, requiredTranscript, requiredEventID string,
 ) (int, bool) {
 	for index, item := range snapshot.Items {
 		if item.Kind == trajectory.KindObservation && item.Content == requiredTranscript &&
-			item.SourceRevision == requiredRevision &&
+			item.Event != nil && item.Event.EventID == requiredEventID &&
+			item.Event.Type == "meeting.foreground.asr.endpoint" &&
+			item.Event.Source == "meeting.foreground.asr" && item.Event.Channel == "microphone" &&
 			trajectory.AuthorityOf(item) == trajectory.AuthorityUser {
 			return index, true
 		}
