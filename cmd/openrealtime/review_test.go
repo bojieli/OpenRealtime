@@ -198,6 +198,19 @@ func TestScenarioEvaluationPublishesAndReopensAllElevenAttempts(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
+	var verifyOutput bytes.Buffer
+	if err := runScenarioEvaluationVerification([]string{
+		"-source-dir", sourceDirectory,
+		"-source-receipt", sourceDirectory + ".receipt.json",
+		"-evaluation-dir", outputDirectory,
+		"-evaluation-receipt", outputDirectory + ".receipt.json",
+	}, &verifyOutput); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(verifyOutput.String(), "evaluations  11/11 verified") ||
+		!strings.Contains(verifyOutput.String(), receipt.ReceiptSHA256) {
+		t.Fatalf("scenario verification output = %q", verifyOutput.String())
+	}
 	entries, err := os.ReadDir(outputDirectory)
 	if err != nil || len(entries) != 24 {
 		t.Fatalf("scenario evaluation root entries = %d, %v; want 24", len(entries), err)
@@ -211,6 +224,20 @@ func TestScenarioEvaluationPublishesAndReopensAllElevenAttempts(t *testing.T) {
 		t.Context(), graphnative.SourceBundleOptions{Directory: sourceDirectory}, sourceReceipt,
 	); err != nil {
 		t.Fatalf("source changed during secondary review: %v", err)
+	}
+	if err := os.Remove(outputDirectory + ".receipt.json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(sourceDirectory+".receipt.json", outputDirectory+".receipt.json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runScenarioEvaluationVerification([]string{
+		"-source-dir", sourceDirectory,
+		"-source-receipt", sourceDirectory + ".receipt.json",
+		"-evaluation-dir", outputDirectory,
+		"-evaluation-receipt", outputDirectory + ".receipt.json",
+	}, &bytes.Buffer{}); err == nil {
+		t.Fatal("symlinked scenario evaluation receipt unexpectedly verified")
 	}
 }
 

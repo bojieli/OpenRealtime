@@ -158,6 +158,19 @@ failed invocation. Evaluation provenance describes a provider-verified
 in-process exchange and local digest retention, not independent remote-service
 attestation.
 
+Reopen a copied bundle later without a provider credential or network access:
+
+```sh
+go run ./cmd/openrealtime review verify-scenario \
+  -source-dir results/candidate-scenario-review \
+  -source-receipt results/candidate-scenario-review.receipt.json \
+  -evaluation-dir results/candidate-scenario-evaluations \
+  -evaluation-receipt results/candidate-scenario-evaluations.receipt.json
+```
+
+Verification requires both external receipt levels and reopens all source and
+evaluation bytes; a local manifest by itself is not authority.
+
 Missing endpoints, provider credentials, reviewed manifests, inspection
 authority, or migration registration are an unavailable provisioned gate—not a
 passing synthetic result. The credential-free WebSocket test above must never

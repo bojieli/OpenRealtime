@@ -157,6 +157,8 @@ The required `external.model.scenario-review` gate consumes the candidate
 scenario source in the same fresh release artifact directory and asserts the
 first and last per-attempt WAVs and receipts as well as the aggregate review;
 the command's receipt verifier binds all 165 attempts between those endpoints.
+`openrealtime review verify-scenario` provides the credential-free reopening
+path for a copied source/evaluation pair and both external receipts.
 
 After both arms are retained, set
 `OPENREALTIME_MIGRATION_REPORT_LOCATION` to a new logical location inside the

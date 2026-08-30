@@ -38,11 +38,12 @@ const (
 	maximumScenarioEvaluationWorkers     = 16
 )
 
-const reviewUsage = `usage: openrealtime review scenario [flags]
+const reviewUsage = `usage: openrealtime review <scenario|verify-scenario> [flags]
 
 The scenario reviewer consumes an externally anchored graph-native source
 bundle. It never starts a Realtime session and never changes deterministic
-pass/fail results.`
+pass/fail results. verify-scenario reopens the source, every evaluation, and
+both levels of external receipt without credentials or provider work.`
 
 type scenarioEvaluationPortableReceipt struct {
 	ManifestSHA256 string `json:"manifest_sha256"`
@@ -120,6 +121,8 @@ func runReview(arguments []string, output io.Writer) error {
 		)
 		defer cancel()
 		return runScenarioEvaluationContext(ctx, arguments[1:], output, registry)
+	case "verify-scenario":
+		return runScenarioEvaluationVerification(arguments[1:], output)
 	case "help", "-h", "--help":
 		fmt.Fprintln(output, reviewUsage)
 		return nil
@@ -293,37 +296,117 @@ func runScenarioEvaluationContext(
 	return nil
 }
 
+func runScenarioEvaluationVerification(arguments []string, output io.Writer) error {
+	flags := flag.NewFlagSet("review verify-scenario", flag.ContinueOnError)
+	flags.SetOutput(output)
+	options := scenarioEvaluationRunOptions{}
+	flags.StringVar(&options.SourceDirectory, "source-dir", "", "sealed graph-native scenario source directory")
+	flags.StringVar(&options.SourceReceipt, "source-receipt", "", "external scenario source receipt")
+	flags.StringVar(&options.OutputDirectory, "evaluation-dir", "", "committed scenario evaluation directory")
+	flags.StringVar(&options.OutputReceipt, "evaluation-receipt", "", "external aggregate evaluation receipt")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("review verify-scenario accepts flags only")
+	}
+	var err error
+	if options.SourceDirectory, err = resolveScenarioEvaluationPath(
+		"source directory", options.SourceDirectory,
+	); err != nil {
+		return err
+	}
+	if options.SourceReceipt, err = resolveScenarioEvaluationPath(
+		"source receipt", options.SourceReceipt,
+	); err != nil {
+		return err
+	}
+	if options.OutputDirectory, err = resolveScenarioEvaluationPath(
+		"evaluation directory", options.OutputDirectory,
+	); err != nil {
+		return err
+	}
+	if options.OutputReceipt, err = resolveScenarioEvaluationPath(
+		"evaluation receipt", options.OutputReceipt,
+	); err != nil {
+		return err
+	}
+	if options.SourceDirectory == options.OutputDirectory ||
+		pathBelow(options.OutputDirectory, options.SourceDirectory) ||
+		pathBelow(options.OutputReceipt, options.SourceDirectory) ||
+		options.OutputReceipt == options.OutputDirectory ||
+		pathBelow(options.OutputReceipt, options.OutputDirectory) {
+		return errors.New("scenario evaluation verification paths overlap")
+	}
+	for _, path := range []string{
+		options.SourceDirectory, options.SourceReceipt,
+		options.OutputDirectory, options.OutputReceipt,
+	} {
+		if err := validateScenarioEvaluationAncestors(filepath.Dir(path)); err != nil {
+			return err
+		}
+	}
+	sourceReceipt, err := graphnative.ReadSourceReceipt(options.SourceReceipt)
+	if err != nil {
+		return fmt.Errorf("read scenario source receipt: %w", err)
+	}
+	evaluationReceipt, err := readScenarioEvaluationIndexReceipt(
+		context.Background(), options.OutputReceipt,
+	)
+	if err != nil {
+		return err
+	}
+	if err := verifyScenarioEvaluationCollection(
+		context.Background(), options, sourceReceipt, evaluationReceipt,
+	); err != nil {
+		return err
+	}
+	root, rootInfo, err := openScenarioEvaluationRoot(options.OutputDirectory)
+	if err != nil {
+		return err
+	}
+	manifestPayload, readErr := readScenarioEvaluationFile(
+		context.Background(), root, "manifest.json", maximumScenarioEvaluationIndex,
+	)
+	index, decodeErr := decodeScenarioEvaluationIndex(manifestPayload)
+	identityErr := verifyScenarioEvaluationRootIdentity(options.OutputDirectory, root, rootInfo)
+	closeErr := root.Close()
+	if readErr != nil || decodeErr != nil || identityErr != nil || closeErr != nil ||
+		scenarioEvaluationDigest(manifestPayload) != evaluationReceipt.ManifestSHA256 {
+		return errors.New("reopen verified scenario evaluation summary")
+	}
+	fmt.Fprintf(output, "  source       %s\n", sourceReceipt.ReceiptSHA256)
+	fmt.Fprintf(output, "  evaluations  %d/%d verified\n", len(index.Entries), index.Expected)
+	fmt.Fprintf(output, "  review       %s\n", options.OutputDirectory)
+	fmt.Fprintf(output, "  receipt      %s\n", evaluationReceipt.ReceiptSHA256)
+	return nil
+}
+
 func resolveScenarioEvaluationOptions(
 	source scenarioEvaluationRunOptions,
 ) (scenarioEvaluationRunOptions, error) {
-	resolve := func(label, path string) (string, error) {
-		if strings.TrimSpace(path) == "" || !utf8.ValidString(path) || strings.ContainsAny(path, "\x00\r\n") {
-			return "", fmt.Errorf("scenario evaluation %s is required", label)
-		}
-		absolute, err := filepath.Abs(path)
-		if err != nil {
-			return "", fmt.Errorf("resolve scenario evaluation %s", label)
-		}
-		absolute = filepath.Clean(absolute)
-		if absolute == filepath.Dir(absolute) {
-			return "", fmt.Errorf("scenario evaluation %s must not be a filesystem root", label)
-		}
-		return absolute, nil
-	}
 	var err error
-	if source.SourceDirectory, err = resolve("source directory", source.SourceDirectory); err != nil {
+	if source.SourceDirectory, err = resolveScenarioEvaluationPath(
+		"source directory", source.SourceDirectory,
+	); err != nil {
 		return scenarioEvaluationRunOptions{}, err
 	}
-	if source.SourceReceipt, err = resolve("source receipt", source.SourceReceipt); err != nil {
+	if source.SourceReceipt, err = resolveScenarioEvaluationPath(
+		"source receipt", source.SourceReceipt,
+	); err != nil {
 		return scenarioEvaluationRunOptions{}, err
 	}
-	if source.OutputDirectory, err = resolve("output directory", source.OutputDirectory); err != nil {
+	if source.OutputDirectory, err = resolveScenarioEvaluationPath(
+		"output directory", source.OutputDirectory,
+	); err != nil {
 		return scenarioEvaluationRunOptions{}, err
 	}
 	if strings.TrimSpace(source.OutputReceipt) == "" {
 		source.OutputReceipt = source.OutputDirectory + ".receipt.json"
 	}
-	if source.OutputReceipt, err = resolve("output receipt", source.OutputReceipt); err != nil {
+	if source.OutputReceipt, err = resolveScenarioEvaluationPath(
+		"output receipt", source.OutputReceipt,
+	); err != nil {
 		return scenarioEvaluationRunOptions{}, err
 	}
 	if source.Parallel <= 0 || source.Parallel > maximumScenarioEvaluationWorkers {
@@ -368,6 +451,21 @@ func resolveScenarioEvaluationOptions(
 		}
 	}
 	return source, nil
+}
+
+func resolveScenarioEvaluationPath(label, path string) (string, error) {
+	if strings.TrimSpace(path) == "" || !utf8.ValidString(path) || strings.ContainsAny(path, "\x00\r\n") {
+		return "", fmt.Errorf("scenario evaluation %s is required", label)
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve scenario evaluation %s", label)
+	}
+	absolute = filepath.Clean(absolute)
+	if absolute == filepath.Dir(absolute) {
+		return "", fmt.Errorf("scenario evaluation %s must not be a filesystem root", label)
+	}
+	return absolute, nil
 }
 
 func pathBelow(path, parent string) bool {
@@ -1097,6 +1195,44 @@ func decodeScenarioEvaluationIndexReceipt(
 		return scenarioEvaluationIndexReceipt{}, err
 	}
 	return receipt, nil
+}
+
+func readScenarioEvaluationIndexReceipt(
+	ctx context.Context, path string,
+) (scenarioEvaluationIndexReceipt, error) {
+	if ctx == nil {
+		return scenarioEvaluationIndexReceipt{}, errors.New(
+			"read scenario evaluation receipt: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return scenarioEvaluationIndexReceipt{}, err
+	}
+	resolved, err := resolveScenarioEvaluationPath("receipt", path)
+	if err != nil || resolved != path {
+		return scenarioEvaluationIndexReceipt{}, errors.New(
+			"scenario evaluation receipt path must be clean and absolute")
+	}
+	if err := validateScenarioEvaluationAncestors(filepath.Dir(path)); err != nil {
+		return scenarioEvaluationIndexReceipt{}, err
+	}
+	parentPath, name := filepath.Dir(path), filepath.Base(path)
+	root, rootInfo, err := openScenarioEvaluationRoot(parentPath)
+	if err != nil {
+		return scenarioEvaluationIndexReceipt{}, err
+	}
+	payload, readErr := readScenarioEvaluationFile(
+		ctx, root, name, maximumScenarioEvaluationIndex,
+	)
+	identityErr := verifyScenarioEvaluationRootIdentity(parentPath, root, rootInfo)
+	closeErr := root.Close()
+	if readErr != nil {
+		return scenarioEvaluationIndexReceipt{}, readErr
+	}
+	if identityErr != nil || closeErr != nil {
+		return scenarioEvaluationIndexReceipt{}, errors.New(
+			"scenario evaluation receipt parent changed while reading")
+	}
+	return decodeScenarioEvaluationIndexReceipt(payload)
 }
 
 func decodeScenarioEvaluationIndex(payload []byte) (scenarioEvaluationIndex, error) {
