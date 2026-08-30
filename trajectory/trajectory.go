@@ -8,6 +8,8 @@
 package trajectory
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -390,7 +392,7 @@ type Store struct {
 
 	items            []Item
 	byID             map[string]int
-	toolProposals    map[string]struct{}
+	toolProposals    map[string]toolProposalRecord
 	toolCalls        map[string]string
 	toolResults      map[string]struct{}
 	toolPlaceholders map[string]struct{}
@@ -398,13 +400,26 @@ type Store struct {
 	pendingRepairs   map[string]string
 	hasMonotonicTime bool
 	lastNS           uint64
+	prefixDigest     [sha256.Size]byte
+	prefixTracking   bool
+}
+
+// toolProposalRecord retains the exact canonical proposal that may later be
+// promoted into an executable call. A matching call ID alone is deliberately
+// insufficient: promotion must name this item as a causal parent and preserve
+// its invocation, source revision, name, and byte-exact arguments.
+type toolProposalRecord struct {
+	itemID         string
+	invocationID   string
+	sourceRevision uint64
+	call           ToolCall
 }
 
 // NewStore creates an empty trajectory.
 func NewStore() *Store {
 	return &Store{
 		byID:             make(map[string]int),
-		toolProposals:    make(map[string]struct{}),
+		toolProposals:    make(map[string]toolProposalRecord),
 		toolCalls:        make(map[string]string),
 		toolResults:      make(map[string]struct{}),
 		toolPlaceholders: make(map[string]struct{}),
@@ -497,6 +512,7 @@ func (store *Store) appendBatch(expectedVersion *uint64, items []Item) error {
 	store.pendingRepairs = clone.pendingRepairs
 	store.hasMonotonicTime = clone.hasMonotonicTime
 	store.lastNS = clone.lastNS
+	store.prefixDigest = clone.prefixDigest
 	return nil
 }
 
@@ -505,6 +521,33 @@ func (store *Store) Snapshot() Snapshot {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
 	return Snapshot{Version: uint64(len(store.items)), Items: cloneItems(store.items)}
+}
+
+// SnapshotWithPrefixIdentity returns one defensive snapshot together with an
+// identity accumulated by the Store. The first call enables prefix tracking;
+// if the Store is already populated, that call identifies the existing prefix
+// once. Later appends encode and link each new item exactly once, while callers
+// that never request identities pay no digest-maintenance cost.
+func (store *Store) SnapshotWithPrefixIdentity() (Snapshot, PrefixIdentity, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	version := uint64(len(store.items))
+	if !store.prefixTracking {
+		digest := prefixSeed()
+		for index, item := range store.items {
+			var err error
+			digest, err = prefixItem(digest, uint64(index+1), item)
+			if err != nil {
+				return Snapshot{}, PrefixIdentity{}, fmt.Errorf(
+					"encode trajectory item %d for prefix identity: %w", index, err,
+				)
+			}
+		}
+		store.prefixDigest = digest
+		store.prefixTracking = true
+	}
+	return Snapshot{Version: version, Items: cloneItems(store.items)},
+		prefixIdentity(version, store.prefixDigest), nil
 }
 
 // Prefix returns a deep copy ending before version. Version zero is the empty
@@ -550,11 +593,20 @@ func (store *Store) appendLocked(item Item) error {
 	if err := store.validateKindLocked(item); err != nil {
 		return err
 	}
+	nextDigest := store.prefixDigest
+	if store.prefixTracking {
+		var err error
+		nextDigest, err = prefixItem(store.prefixDigest, uint64(len(store.items)+1), item)
+		if err != nil {
+			return fmt.Errorf("encode trajectory item for prefix identity: %w", err)
+		}
+	}
 
 	store.byID[item.ID] = len(store.items)
 	store.items = append(store.items, item)
 	store.hasMonotonicTime = true
 	store.lastNS = item.MonotonicNS
+	store.prefixDigest = nextDigest
 	return nil
 }
 
@@ -665,7 +717,11 @@ func (store *Store) validateKindLocked(item Item) error {
 		if _, exists := store.toolCalls[item.ToolCall.CallID]; exists {
 			return fmt.Errorf("tool proposal ID %q conflicts with an executable call", item.ToolCall.CallID)
 		}
-		store.toolProposals[item.ToolCall.CallID] = struct{}{}
+		store.toolProposals[item.ToolCall.CallID] = toolProposalRecord{
+			itemID: item.ID, invocationID: item.InvocationID,
+			sourceRevision: item.SourceRevision,
+			call:           cloneToolCall(*item.ToolCall),
+		}
 	case KindToolCall:
 		if item.ToolCall == nil || payloadCount != 1 || item.Content != "" || item.Visibility != "" {
 			return errors.New("tool_call requires exactly one call payload")
@@ -676,8 +732,18 @@ func (store *Store) validateKindLocked(item Item) error {
 		if _, exists := store.toolCalls[item.ToolCall.CallID]; exists {
 			return fmt.Errorf("duplicate tool call ID %q", item.ToolCall.CallID)
 		}
-		if _, exists := store.toolProposals[item.ToolCall.CallID]; exists {
-			return fmt.Errorf("tool call ID %q conflicts with a non-executable proposal", item.ToolCall.CallID)
+		if proposal, exists := store.toolProposals[item.ToolCall.CallID]; exists {
+			if !slices.Contains(item.CausalParentIDs, proposal.itemID) {
+				return fmt.Errorf("tool call %q does not causally promote proposal item %q",
+					item.ToolCall.CallID, proposal.itemID)
+			}
+			if item.InvocationID != proposal.invocationID || item.SourceRevision != proposal.sourceRevision {
+				return fmt.Errorf("tool call %q changes proposal invocation or source revision", item.ToolCall.CallID)
+			}
+			if item.ToolCall.Name != proposal.call.Name ||
+				!bytes.Equal(item.ToolCall.Arguments, proposal.call.Arguments) {
+				return fmt.Errorf("tool call %q changes the canonical proposal", item.ToolCall.CallID)
+			}
 		}
 		store.toolCalls[item.ToolCall.CallID] = item.ToolCall.Name
 	case KindToolPlaceholder:
@@ -712,6 +778,11 @@ func validateToolCall(call ToolCall) error {
 		return errors.New("tool call arguments must be one JSON object")
 	}
 	return nil
+}
+
+func cloneToolCall(call ToolCall) ToolCall {
+	call.Arguments = slices.Clone(call.Arguments)
+	return call
 }
 
 func (store *Store) acceptToolResultLocked(result ToolResult) error {
@@ -960,7 +1031,7 @@ func (store *Store) cloneLocked() *Store {
 	clone := &Store{
 		items:            cloneItems(store.items),
 		byID:             make(map[string]int, len(store.byID)),
-		toolProposals:    make(map[string]struct{}, len(store.toolProposals)),
+		toolProposals:    make(map[string]toolProposalRecord, len(store.toolProposals)),
 		toolCalls:        make(map[string]string, len(store.toolCalls)),
 		toolResults:      make(map[string]struct{}, len(store.toolResults)),
 		toolPlaceholders: make(map[string]struct{}, len(store.toolPlaceholders)),
@@ -968,12 +1039,15 @@ func (store *Store) cloneLocked() *Store {
 		pendingRepairs:   make(map[string]string, len(store.pendingRepairs)),
 		hasMonotonicTime: store.hasMonotonicTime,
 		lastNS:           store.lastNS,
+		prefixDigest:     store.prefixDigest,
+		prefixTracking:   store.prefixTracking,
 	}
 	for key, value := range store.byID {
 		clone.byID[key] = value
 	}
-	for key := range store.toolProposals {
-		clone.toolProposals[key] = struct{}{}
+	for key, value := range store.toolProposals {
+		value.call = cloneToolCall(value.call)
+		clone.toolProposals[key] = value
 	}
 	for key, value := range store.toolCalls {
 		clone.toolCalls[key] = value

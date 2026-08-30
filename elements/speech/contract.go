@@ -13,6 +13,7 @@ import (
 	"github.com/bojieli/OpenRealtime/action"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/elements/internal/factoryprofile"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -278,18 +279,25 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if registry == nil {
 		return errors.New("register speech factories: nil registry")
 	}
-	for _, registration := range []struct {
-		factory   element.Factory
-		runtimeID string
-	}{
-		{factory: ttsFactory{}, runtimeID: ttsRuntimeID},
-		{factory: playbackFactory{}, runtimeID: playbackRuntimeID},
-	} {
-		if err := registry.RegisterArtifact("", inspect.ArtifactIdentity{
-			ID: registration.runtimeID, Revision: speechImplementationRevision,
-		}, registration.factory); err != nil {
+	registrations, err := FactoryRegistrations()
+	if err != nil {
+		return err
+	}
+	for _, registration := range registrations {
+		if err := registry.RegisterFactory(registration); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
+	return factoryprofile.Registrations(
+		factoryprofile.Entry{Factory: ttsFactory{}, Artifact: inspect.ArtifactIdentity{
+			ID: ttsRuntimeID, Revision: speechImplementationRevision,
+		}},
+		factoryprofile.Entry{Factory: playbackFactory{}, Artifact: inspect.ArtifactIdentity{
+			ID: playbackRuntimeID, Revision: speechImplementationRevision,
+		}},
+	)
 }

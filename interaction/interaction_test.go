@@ -178,10 +178,19 @@ func TestParallelBranchAnswersWithoutStartingSlowWork(t *testing.T) {
 
 func TestAutonomousObservationRunsWhileAgentAudioPlays(t *testing.T) {
 	policy := interaction.NewDuplexDeferral(interaction.DeferralOptions{})
-	admitted, reason := policy.Admit(interaction.Waiting{
-		Observation: true, AutonomousObservation: true,
-		Duplex: session.Snapshot{AgentSpeaking: true},
-	})
+	observerItem := trajectory.Item{
+		Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseObserver},
+		Observation: &trajectory.ObservationMeta{Observer: "screen", Authority: trajectory.AuthorityObserver},
+	}
+	pureObservation := eventloop.Batch{
+		Events: []eventloop.Event{{Kind: trajectory.KindObservation}},
+		Items:  []trajectory.Item{observerItem},
+	}
+	waiting := interaction.WaitingFrom(pureObservation, session.Snapshot{AgentSpeaking: true})
+	if !waiting.AutonomousObservation {
+		t.Fatal("pure observer evidence lost its autonomous-observation privilege")
+	}
+	admitted, reason := policy.Admit(waiting)
 	if !admitted {
 		t.Fatalf("environment monitoring waited behind agent playout: %s", reason)
 	}
@@ -190,6 +199,18 @@ func TestAutonomousObservationRunsWhileAgentAudioPlays(t *testing.T) {
 	})
 	if admitted {
 		t.Fatal("an ordinary user turn bypassed the configured playout deferral")
+	}
+
+	withSpokenResult := pureObservation
+	withSpokenResult.Events = append(withSpokenResult.Events, eventloop.Event{
+		Kind: eventloop.KindSignal, Type: interaction.SignalBackgroundResult,
+	})
+	waiting = interaction.WaitingFrom(withSpokenResult, session.Snapshot{AgentSpeaking: true})
+	if waiting.AutonomousObservation {
+		t.Fatal("a background-result signal inherited an observer-only playout privilege")
+	}
+	if admitted, _ := policy.Admit(waiting); admitted {
+		t.Fatal("a spoken background result bypassed the configured playout deferral")
 	}
 }
 

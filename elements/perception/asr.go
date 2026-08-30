@@ -16,6 +16,7 @@ import (
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/elements/internal/factoryprofile"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -851,16 +852,25 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if registry == nil {
 		return errors.New("register perception factories: nil registry")
 	}
-	for _, registration := range []struct {
-		factory  element.Factory
-		artifact inspect.ArtifactIdentity
-	}{
-		{asrFactory{}, inspect.ArtifactIdentity{ID: asrRuntimeID, Revision: perceptionImplementationRevision}},
-		{visualObserverFactory{}, inspect.ArtifactIdentity{ID: visualRuntimeID, Revision: perceptionImplementationRevision}},
-	} {
-		if err := registry.RegisterArtifact("", registration.artifact, registration.factory); err != nil {
+	registrations, err := FactoryRegistrations()
+	if err != nil {
+		return err
+	}
+	for _, registration := range registrations {
+		if err := registry.RegisterFactory(registration); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
+	return factoryprofile.Registrations(
+		factoryprofile.Entry{Factory: asrFactory{}, Artifact: inspect.ArtifactIdentity{
+			ID: asrRuntimeID, Revision: perceptionImplementationRevision,
+		}},
+		factoryprofile.Entry{Factory: visualObserverFactory{}, Artifact: inspect.ArtifactIdentity{
+			ID: visualRuntimeID, Revision: perceptionImplementationRevision,
+		}},
+	)
 }

@@ -63,13 +63,20 @@ func newFakeSession(hello sidecar.Message) *fakeSession {
 		})
 	}
 	descriptor := hello.ElementDescriptor.Clone()
+	ready := sidecar.Message{
+		Type: sidecar.TypeReady, Version: sidecar.VersionElementGraph,
+		ElementDescriptor:    &descriptor,
+		AppliedConfigDigest:  sidecar.ElementConfigDigest(hello.ElementConfig),
+		RuntimeArtifact:      sidecar.ArtifactIdentity{ID: "runtime/fake-sidecar", Revision: "4.1.0"},
+		ResolvedCapabilities: capabilities,
+	}
+	for _, selection := range hello.SelectedPorts {
+		ready.NegotiatedPorts = append(ready.NegotiatedPorts, sidecar.PortNegotiation{
+			Name: selection.Name, Direction: selection.Direction, Format: selection.Formats[0],
+		})
+	}
 	return &fakeSession{
-		ready: sidecar.Message{
-			Type: sidecar.TypeReady, Version: sidecar.VersionElementGraph,
-			ElementDescriptor:    &descriptor,
-			RuntimeArtifact:      sidecar.ArtifactIdentity{ID: "runtime/fake-sidecar", Revision: "4.1.0"},
-			ResolvedCapabilities: capabilities,
-		},
+		ready:  ready,
 		frames: make(chan sidecar.Message, 32), sent: make(chan sidecar.Message, 32),
 	}
 }

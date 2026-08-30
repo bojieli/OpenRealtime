@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/bojieli/OpenRealtime/element"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -34,7 +37,7 @@ func ObservationCommitDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "state.ObservationCommit",
-		Revision:      1,
+		Revision:      2,
 		Ports: []element.Port{
 			{Name: "observations", Direction: element.Input, Type: observationRevisionType,
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
@@ -78,6 +81,7 @@ type ObservationCommitOutcome struct {
 	ObservationRevision uint64                       `json:"observation_revision,omitempty"`
 	SourceRevision      uint64                       `json:"source_revision,omitempty"`
 	StoreVersion        uint64                       `json:"store_version,omitempty"`
+	Context             CommittedContext             `json:"context,omitzero"`
 	Code                string                       `json:"code,omitempty"`
 	Message             string                       `json:"message,omitempty"`
 }
@@ -185,6 +189,7 @@ type pendingObservationCommit struct {
 	observation         perception.Observation
 	canonicalRevision   uint64
 	trajectoryItemID    string
+	trajectoryItem      trajectory.Item
 	supersededCanonical uint64
 }
 
@@ -277,6 +282,20 @@ func (runner *observationCommitRunner) acceptObservation(
 			Code: "missing_revision", Message: "observation revision must be positive",
 		})
 	}
+	if envelope.SessionID == "" {
+		return runner.publishOutcome(ctx, envelope, ObservationCommitOutcome{
+			Kind: ObservationRejected, TriggerItemID: envelope.ItemID, StreamID: streamID,
+			ObservationRevision: observation.Revision,
+			Code:                "missing_session", Message: "observation commit requires a non-empty session ID",
+		})
+	}
+	if !canonicalObservationSession(envelope.SessionID) {
+		return runner.publishOutcome(ctx, envelope, ObservationCommitOutcome{
+			Kind: ObservationRejected, TriggerItemID: envelope.ItemID, StreamID: streamID,
+			ObservationRevision: observation.Revision,
+			Code:                "invalid_session", Message: "observation commit session ID is not canonical",
+		})
+	}
 	if requestID := runner.pendingStream[streamID]; requestID != "" {
 		runner.waiting[streamID] = append(runner.waiting[streamID], envelope.Clone())
 		return nil
@@ -322,7 +341,7 @@ func (runner *observationCommitRunner) startAppend(
 	requestID := fmt.Sprintf("%s-append-%d", runner.instance, canonicalRevision)
 	pending := pendingObservationCommit{
 		trigger: trigger.Clone(), streamID: streamID, observation: observation,
-		canonicalRevision: canonicalRevision, trajectoryItemID: trajectoryItemID,
+		canonicalRevision: canonicalRevision, trajectoryItemID: trajectoryItemID, trajectoryItem: item,
 		supersededCanonical: superseded.canonicalRevision,
 	}
 	runner.pending[requestID] = pending
@@ -357,8 +376,11 @@ func (runner *observationCommitRunner) acceptCommit(
 		})
 	}
 	commit, ok := commitPayload(envelope.Payload)
-	if !ok || !slices.Contains(commit.AppendedIDs, pending.trajectoryItemID) {
-		return fmt.Errorf("trajectory commit reply %s does not attest pending item %s", envelope.ItemID, pending.trajectoryItemID)
+	if !ok {
+		return fmt.Errorf("trajectory commit reply %s has payload %T", envelope.ItemID, envelope.Payload)
+	}
+	if err := validateObservationCommitReply(envelope, commit, pending); err != nil {
+		return fmt.Errorf("trajectory commit reply %s: %w", envelope.ItemID, err)
 	}
 	runner.resolvePending(requestID, pending)
 	byRevision := runner.committedRevisions[pending.streamID]
@@ -373,7 +395,7 @@ func (runner *observationCommitRunner) acceptCommit(
 		Kind: ObservationCommitted, TriggerItemID: pending.trigger.ItemID,
 		TrajectoryItemID: pending.trajectoryItemID, StreamID: pending.streamID,
 		ObservationRevision: pending.observation.Revision, SourceRevision: pending.canonicalRevision,
-		StoreVersion: commit.Version,
+		StoreVersion: commit.Version, Context: commit.Context,
 	}); err != nil {
 		return err
 	}
@@ -470,9 +492,77 @@ func (runner *observationCommitRunner) publishOutcome(
 	envelope.Type = observationCommitOutcomeType
 	envelope.ItemID = cause.ItemID + ":observation_commit"
 	envelope.CausalParents = appendUnique(envelope.CausalParents, cause.ItemID)
+	if outcome.Context.StateItemID != "" {
+		envelope.CausalParents = appendUnique(envelope.CausalParents, outcome.Context.StateItemID)
+	}
 	envelope.Payload = outcome
 	_, err := runner.outcomeOutput.Broadcast(ctx, envelope)
 	return err
+}
+
+func validateObservationCommitReply(
+	envelope element.Envelope, commit Commit, pending pendingObservationCommit,
+) error {
+	if !canonicalObservationSession(pending.trigger.SessionID) ||
+		envelope.SessionID != pending.trigger.SessionID {
+		return fmt.Errorf(
+			"session %q does not match pending observation session %q",
+			envelope.SessionID, pending.trigger.SessionID,
+		)
+	}
+	if len(commit.AppendedIDs) != 1 || commit.AppendedIDs[0] != pending.trajectoryItemID {
+		return fmt.Errorf(
+			"appended IDs %v do not exactly attest pending observation %q",
+			commit.AppendedIDs, pending.trajectoryItemID,
+		)
+	}
+	if commit.Version == 0 || commit.Snapshot.Version != commit.Version ||
+		commit.Context.Prefix.Version != commit.Version {
+		return fmt.Errorf(
+			"commit version %d, snapshot version %d, and context version %d do not match",
+			commit.Version, commit.Snapshot.Version, commit.Context.Prefix.Version,
+		)
+	}
+	if err := trajectory.VerifyPrefix(commit.Snapshot, commit.Context.Prefix); err != nil {
+		return fmt.Errorf("committed context prefix: %w", err)
+	}
+	if !canonicalObservationIdentifier(commit.Context.StateItemID) {
+		return errors.New("committed context has an invalid State item ID")
+	}
+	if !slices.Contains(envelope.CausalParents, commit.Context.StateItemID) {
+		return fmt.Errorf(
+			"commit envelope does not causally name State item %q",
+			commit.Context.StateItemID,
+		)
+	}
+	if len(commit.Snapshot.Items) == 0 {
+		return errors.New("observation commit snapshot has no appended tail")
+	}
+	tail := commit.Snapshot.Items[len(commit.Snapshot.Items)-1]
+	if !reflect.DeepEqual(tail, pending.trajectoryItem) {
+		return fmt.Errorf(
+			"commit snapshot tail does not match pending observation %q",
+			pending.trajectoryItemID,
+		)
+	}
+	return nil
+}
+
+func canonicalObservationSession(value string) bool {
+	return canonicalObservationIdentifier(value)
+
+}
+
+func canonicalObservationIdentifier(value string) bool {
+	if value == "" || value != strings.TrimSpace(value) || len(value) > 256 || !utf8.ValidString(value) {
+		return false
+	}
+	for _, character := range value {
+		if unicode.IsSpace(character) || unicode.IsControl(character) {
+			return false
+		}
+	}
+	return true
 }
 
 func receiveObservationCommitInput(

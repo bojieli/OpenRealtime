@@ -77,11 +77,13 @@ func (proposalAdmissionFactory) Mount(_ context.Context, mount element.MountCont
 		proposalInput: proposalInput, provenanceInput: provenanceInput, cancelInput: cancelInput,
 		timeoutInput: timeoutInput, admittedOutput: admittedOutput, outcomeOutput: outcomeOutput,
 		resolvedOutput: resolvedOutput, pending: make(map[string]*pendingAdmission),
-		terminal: newBoundedSet(config.MaxPending), resolution: mount.Resolution,
+		pendingSessionCalls: make(map[string]string),
+		terminal:            newBoundedSet(config.MaxPending), resolution: mount.Resolution,
 	}, nil
 }
 
 type pendingAdmission struct {
+	sessionCallKey  string
 	proposal        *element.Envelope
 	proposalValue   cognitionelements.ToolProposal
 	provenance      *element.Envelope
@@ -102,9 +104,10 @@ type proposalAdmissionRunner struct {
 	outcomeOutput   element.OutputPort
 	resolvedOutput  element.OutputPort
 
-	pending    map[string]*pendingAdmission
-	terminal   *boundedSet
-	resolution element.ResolutionReporter
+	pending             map[string]*pendingAdmission
+	pendingSessionCalls map[string]string
+	terminal            *boundedSet
+	resolution          element.ResolutionReporter
 }
 
 func (runner *proposalAdmissionRunner) Run(parent context.Context) error {
@@ -187,13 +190,28 @@ func (runner *proposalAdmissionRunner) acceptProposal(ctx context.Context, envel
 			Code: "missing_model_run", Message: "proposal envelope requires the cognition run ID",
 		})
 	}
-	if runner.terminal.contains(callID) {
+	if strings.TrimSpace(envelope.SessionID) == "" {
+		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
+			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: "proposal", CallID: callID,
+			Code: "missing_session", Message: "proposal envelope requires a non-empty session ID",
+		})
+	}
+	identity := actionScopeKey(envelope.SessionID, envelope.RunID, callID)
+	sessionCall := actionSessionCallKey(envelope.SessionID, callID)
+	if other, found := runner.pendingSessionCalls[sessionCall]; found && other != identity {
+		runner.terminateSessionCallCollision(sessionCall, other, identity)
+		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
+			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: "proposal", CallID: callID,
+			Code: "model_run_mismatch", Message: "proposal call ID is already pending in another cognition run",
+		})
+	}
+	if runner.terminal.contains(identity) {
 		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
 			Kind: OutcomeIgnored, Stage: "proposal_admission", Operation: "proposal", CallID: callID,
 			Code: "terminal_replay", Message: "proposal call ID is already terminal",
 		})
 	}
-	pending, err := runner.pendingFor(callID)
+	pending, err := runner.pendingFor(identity, sessionCall)
 	if err != nil {
 		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
 			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: "proposal", CallID: callID,
@@ -209,7 +227,7 @@ func (runner *proposalAdmissionRunner) acceptProposal(ctx context.Context, envel
 	copy := envelope.Clone()
 	pending.proposal = &copy
 	pending.proposalValue = cloneProposal(proposal)
-	return runner.tryAdmit(ctx, callID)
+	return runner.tryAdmit(ctx, identity)
 }
 
 func (runner *proposalAdmissionRunner) acceptProvenance(ctx context.Context, envelope element.Envelope) error {
@@ -222,25 +240,78 @@ func (runner *proposalAdmissionRunner) acceptProvenance(ctx context.Context, env
 	}
 	provenance.CallID = strings.TrimSpace(provenance.CallID)
 	provenance.ProposalItemID = strings.TrimSpace(provenance.ProposalItemID)
+	provenance.CandidateItemID = strings.TrimSpace(provenance.CandidateItemID)
+	provenance.ResultItemID = strings.TrimSpace(provenance.ResultItemID)
 	provenance.ModelRunID = strings.TrimSpace(provenance.ModelRunID)
 	provenance.SessionID = strings.TrimSpace(provenance.SessionID)
-	provenance.TrajectoryItem = strings.TrimSpace(provenance.TrajectoryItem)
+	provenance.ActivationItemID = strings.TrimSpace(provenance.ActivationItemID)
+	provenance.ActivationCauseItemID = strings.TrimSpace(provenance.ActivationCauseItemID)
+	provenance.ObservationItemID = strings.TrimSpace(provenance.ObservationItemID)
+	provenance.ObservationTriggerItemID = strings.TrimSpace(provenance.ObservationTriggerItemID)
+	provenance.ContextEnvelopeItemID = strings.TrimSpace(provenance.ContextEnvelopeItemID)
 	provenance.ContextTailItem = strings.TrimSpace(provenance.ContextTailItem)
-	if provenance.CallID == "" || provenance.ProposalItemID == "" ||
-		provenance.ModelRunID == "" || provenance.TrajectoryItem == "" ||
-		provenance.ContextVersion == 0 || provenance.ContextTailItem == "" {
+	provenance.ProviderReference = strings.TrimSpace(provenance.ProviderReference)
+	provenance.ModelResultDigest = strings.TrimSpace(provenance.ModelResultDigest)
+	provenance.ModelProducer.Provider = strings.TrimSpace(provenance.ModelProducer.Provider)
+	provenance.ModelProducer.Model = strings.TrimSpace(provenance.ModelProducer.Model)
+	provenance.ModelProducer.ReasoningEffort = strings.TrimSpace(provenance.ModelProducer.ReasoningEffort)
+	provenance.ModelProducer.SpeechAuthority = strings.TrimSpace(provenance.ModelProducer.SpeechAuthority)
+	if provenance.CallID == "" || provenance.ProposalItemID == "" || provenance.CandidateItemID == "" ||
+		provenance.ResultItemID == "" || provenance.ModelRunID == "" || provenance.SessionID == "" ||
+		provenance.ActivationItemID == "" || provenance.ActivationCauseItemID == "" ||
+		provenance.ObservationItemID == "" || provenance.ObservationTriggerItemID == "" ||
+		provenance.ContextEnvelopeItemID == "" || provenance.ContextVersion == 0 ||
+		provenance.ContextTailItem == "" || provenance.ProviderReference == "" ||
+		provenance.ModelResultDigest == "" || provenance.ModelProducer.Phase == "" ||
+		provenance.ModelProducer.Provider == "" || provenance.ModelProducer.Model == "" ||
+		provenance.ModelProducer.ReasoningEffort == "" || provenance.ModelProducer.SpeechAuthority == "" ||
+		provenance.SourceRevision == 0 {
 		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
 			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: "provenance", CallID: provenance.CallID,
-			Code: "invalid_provenance", Message: "provenance requires proposal, run, context, and trajectory identities",
+			Code: "invalid_provenance", Message: "provenance requires candidate, proposal, result, activation, session, and canonical context identities",
 		})
 	}
-	if runner.terminal.contains(provenance.CallID) {
+	if err := validateModelProducerEvidence(provenance.ModelProducer); err != nil ||
+		!strings.HasPrefix(provenance.ModelResultDigest, "sha256:") {
+		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
+			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: "provenance", CallID: provenance.CallID,
+			Code: "invalid_model_evidence", Message: "provenance has invalid exact model producer or result evidence",
+		})
+	}
+	if strings.TrimSpace(envelope.SessionID) == "" {
+		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
+			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: "provenance", CallID: provenance.CallID,
+			Code: "missing_session", Message: "provenance envelope requires a non-empty session ID",
+		})
+	}
+	if provenance.ModelRunID != envelope.RunID {
+		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
+			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: "provenance", CallID: provenance.CallID,
+			Code: "model_run_mismatch", Message: "provenance payload and envelope name different cognition runs",
+		})
+	}
+	if provenance.SessionID != envelope.SessionID {
+		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
+			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: "provenance", CallID: provenance.CallID,
+			Code: "session_mismatch", Message: "provenance payload and envelope name different sessions",
+		})
+	}
+	identity := actionScopeKey(envelope.SessionID, envelope.RunID, provenance.CallID)
+	sessionCall := actionSessionCallKey(envelope.SessionID, provenance.CallID)
+	if other, found := runner.pendingSessionCalls[sessionCall]; found && other != identity {
+		runner.terminateSessionCallCollision(sessionCall, other, identity)
+		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
+			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: "provenance", CallID: provenance.CallID,
+			Code: "model_run_mismatch", Message: "proposal call ID is already pending in another cognition run",
+		})
+	}
+	if runner.terminal.contains(identity) {
 		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
 			Kind: OutcomeIgnored, Stage: "proposal_admission", Operation: "provenance", CallID: provenance.CallID,
 			Code: "terminal_replay", Message: "proposal call ID is already terminal",
 		})
 	}
-	pending, err := runner.pendingFor(provenance.CallID)
+	pending, err := runner.pendingFor(identity, sessionCall)
 	if err != nil {
 		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
 			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: "provenance", CallID: provenance.CallID,
@@ -256,28 +327,41 @@ func (runner *proposalAdmissionRunner) acceptProvenance(ctx context.Context, env
 	copy := envelope.Clone()
 	pending.provenance = &copy
 	pending.provenanceValue = provenance
-	return runner.tryAdmit(ctx, provenance.CallID)
+	return runner.tryAdmit(ctx, identity)
 }
 
-func (runner *proposalAdmissionRunner) pendingFor(callID string) (*pendingAdmission, error) {
-	if pending := runner.pending[callID]; pending != nil {
+func (runner *proposalAdmissionRunner) pendingFor(identity, sessionCall string) (*pendingAdmission, error) {
+	if pending := runner.pending[identity]; pending != nil {
 		return pending, nil
 	}
 	if len(runner.pending) >= runner.config.MaxPending {
 		return nil, fmt.Errorf("proposal admission has %d pending joins", len(runner.pending))
 	}
-	pending := &pendingAdmission{}
-	runner.pending[callID] = pending
+	pending := &pendingAdmission{sessionCallKey: sessionCall}
+	runner.pending[identity] = pending
+	runner.pendingSessionCalls[sessionCall] = identity
 	return pending, nil
 }
 
-func (runner *proposalAdmissionRunner) tryAdmit(ctx context.Context, callID string) error {
-	pending := runner.pending[callID]
+func (runner *proposalAdmissionRunner) terminateSessionCallCollision(
+	sessionCall, leftIdentity, rightIdentity string,
+) {
+	delete(runner.pending, leftIdentity)
+	delete(runner.pending, rightIdentity)
+	delete(runner.pendingSessionCalls, sessionCall)
+	runner.terminal.add(leftIdentity)
+	runner.terminal.add(rightIdentity)
+}
+
+func (runner *proposalAdmissionRunner) tryAdmit(ctx context.Context, identity string) error {
+	pending := runner.pending[identity]
 	if pending == nil || pending.proposal == nil || pending.provenance == nil {
 		return nil
 	}
-	delete(runner.pending, callID)
-	runner.terminal.add(callID)
+	delete(runner.pending, identity)
+	delete(runner.pendingSessionCalls, pending.sessionCallKey)
+	runner.terminal.add(identity)
+	callID := pending.provenanceValue.CallID
 	proposal := cloneProposal(pending.proposalValue)
 	snapshot := runner.store.Snapshot()
 	if code, err := validateProvenanceBinding(*pending.proposal, *pending.provenance,
@@ -288,7 +372,7 @@ func (runner *proposalAdmissionRunner) tryAdmit(ctx context.Context, callID stri
 		})
 	}
 	canonical, found := canonicalItem(snapshot.Items[:pending.provenanceValue.ContextVersion],
-		pending.provenanceValue.TrajectoryItem)
+		pending.provenanceValue.ObservationItemID)
 	if !found {
 		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, *pending.provenance, Outcome{
 			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: "admit", CallID: callID,
@@ -318,13 +402,24 @@ func (runner *proposalAdmissionRunner) tryAdmit(ctx context.Context, callID stri
 	}
 	parent := pending.proposal.Clone()
 	parent.CausalParents = appendUnique(parent.CausalParents, pending.provenance.ItemID)
+	parent.CausalParents = appendUnique(parent.CausalParents, pending.provenanceValue.CandidateItemID)
+	parent.CausalParents = appendUnique(parent.CausalParents, pending.provenanceValue.ResultItemID)
 	parent.CausalParents = appendUnique(parent.CausalParents, canonical.ID)
 	admitted := AdmittedProposal{
 		Proposal: proposal, ProposalItemID: pending.proposal.ItemID,
-		ModelRunID: pending.proposal.RunID, SessionID: pending.proposal.SessionID,
-		Authority: authority, AuthorityItemID: canonical.ID, SourceRevision: canonical.SourceRevision,
-		ContextVersion:  pending.provenanceValue.ContextVersion,
-		ContextTailItem: pending.provenanceValue.ContextTailItem,
+		CandidateItemID: pending.provenanceValue.CandidateItemID,
+		ResultItemID:    pending.provenanceValue.ResultItemID,
+		ModelRunID:      pending.proposal.RunID, SessionID: pending.proposal.SessionID,
+		ActivationItemID:      pending.provenanceValue.ActivationItemID,
+		ActivationCauseItemID: pending.provenanceValue.ActivationCauseItemID,
+		Authority:             authority, AuthorityItemID: canonical.ID, SourceRevision: canonical.SourceRevision,
+		ObservationTriggerItemID: pending.provenanceValue.ObservationTriggerItemID,
+		ContextVersion:           pending.provenanceValue.ContextVersion,
+		ContextEnvelopeItemID:    pending.provenanceValue.ContextEnvelopeItemID,
+		ContextTailItem:          pending.provenanceValue.ContextTailItem,
+		ProviderReference:        pending.provenanceValue.ProviderReference,
+		ModelResultDigest:        pending.provenanceValue.ModelResultDigest,
+		ModelProducer:            pending.provenanceValue.ModelProducer,
 	}
 	if err := publishPayload(ctx, runner.emit, runner.admittedOutput, parent, admittedType, admitted, "admitted"); err != nil {
 		return err
@@ -358,9 +453,19 @@ func validateProvenanceBinding(
 		provenanceEnvelope.SessionID != proposalEnvelope.SessionID {
 		return "session_mismatch", fmt.Errorf("proposal provenance crossed a session boundary")
 	}
+	if provenance.SessionID == "" {
+		return "missing_session", fmt.Errorf("proposal provenance requires a non-empty session ID")
+	}
 	if !slices.Contains(provenanceEnvelope.CausalParents, proposalEnvelope.ItemID) {
 		return "missing_proposal_cause", fmt.Errorf("provenance is not causally linked to proposal %q",
 			proposalEnvelope.ItemID)
+	}
+	for name, identity := range map[string]string{
+		"candidate": provenance.CandidateItemID, "result": provenance.ResultItemID,
+	} {
+		if !slices.Contains(provenanceEnvelope.CausalParents, identity) {
+			return "missing_" + name + "_cause", fmt.Errorf("provenance is not causally linked to %s %q", name, identity)
+		}
 	}
 	if provenance.ContextVersion > snapshot.Version ||
 		provenance.ContextVersion > uint64(len(snapshot.Items)) {
@@ -368,17 +473,36 @@ func validateProvenanceBinding(
 			provenance.ContextVersion, snapshot.Version)
 	}
 	prefix := snapshot.Items[:provenance.ContextVersion]
+	if len(prefix) == 0 {
+		return "context_version_mismatch", fmt.Errorf("provenance context cannot be empty")
+	}
 	if prefix[len(prefix)-1].ID != provenance.ContextTailItem {
 		return "context_tail_mismatch", fmt.Errorf("canonical context tail is %q, provenance names %q",
 			prefix[len(prefix)-1].ID, provenance.ContextTailItem)
 	}
-	if !slices.Contains(proposalEnvelope.CausalParents, provenance.ContextTailItem) {
-		return "proposal_context_mismatch", fmt.Errorf("proposal is not bound to context tail %q",
-			provenance.ContextTailItem)
+	for _, identity := range []string{
+		provenance.ActivationItemID, provenance.ActivationCauseItemID, provenance.ObservationItemID,
+		provenance.ObservationTriggerItemID, provenance.ContextEnvelopeItemID, provenance.ContextTailItem,
+	} {
+		if !slices.Contains(proposalEnvelope.CausalParents, identity) {
+			return "proposal_context_mismatch", fmt.Errorf("proposal is not bound to activation evidence %q", identity)
+		}
 	}
-	if !causalAncestor(prefix, provenance.TrajectoryItem, provenance.ContextTailItem) {
+	if !causalAncestor(prefix, provenance.ObservationItemID, provenance.ContextTailItem) {
 		return "authority_not_causal", fmt.Errorf("authority item %q is not an ancestor of context tail %q",
-			provenance.TrajectoryItem, provenance.ContextTailItem)
+			provenance.ObservationItemID, provenance.ContextTailItem)
+	}
+	observation, found := canonicalItem(prefix, provenance.ObservationItemID)
+	if !found || observation.Kind != trajectory.KindObservation || observation.Event == nil {
+		return "invalid_observation_basis", fmt.Errorf("candidate basis %q is not a canonical event-backed observation", provenance.ObservationItemID)
+	}
+	if observation.SourceRevision != provenance.SourceRevision {
+		return "source_revision_mismatch", fmt.Errorf("candidate basis source revision is %d, provenance names %d",
+			observation.SourceRevision, provenance.SourceRevision)
+	}
+	if observation.Event.EventID != provenance.ObservationTriggerItemID {
+		return "observation_trigger_mismatch", fmt.Errorf("candidate basis event is %q, provenance names %q",
+			observation.Event.EventID, provenance.ObservationTriggerItemID)
 	}
 	return "", nil
 }
@@ -416,10 +540,20 @@ func (runner *proposalAdmissionRunner) interrupt(ctx context.Context, envelope e
 			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: operation, Code: code, Message: err.Error(),
 		})
 	}
-	_, pending := runner.pending[interrupt.CallID]
-	delete(runner.pending, interrupt.CallID)
-	wasTerminal := runner.terminal.contains(interrupt.CallID)
-	runner.terminal.add(interrupt.CallID)
+	identity, identityCode, err := interruptIdentity(envelope, interrupt)
+	if err != nil {
+		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
+			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: operation,
+			CallID: interrupt.CallID, Code: identityCode, Message: err.Error(),
+		})
+	}
+	pendingValue, pending := runner.pending[identity]
+	delete(runner.pending, identity)
+	if pendingValue != nil {
+		delete(runner.pendingSessionCalls, pendingValue.sessionCallKey)
+	}
+	wasTerminal := runner.terminal.contains(identity)
+	runner.terminal.add(identity)
 	kind := OutcomeCanceled
 	if operation == "timeout" {
 		kind = OutcomeTimedOut

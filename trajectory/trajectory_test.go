@@ -144,18 +144,56 @@ func TestAssistantVisibilityResolvesAppendOnlyPlaybackState(t *testing.T) {
 	}
 }
 
-func TestToolProposalCannotReceiveResultOrBecomeCallByIDReuse(t *testing.T) {
+func TestToolProposalRequiresExactCausalPromotionBeforeResult(t *testing.T) {
 	t.Parallel()
 	store := NewStore()
 	proposal := &ToolCall{CallID: "proposal-1", Name: "lookup", Arguments: json.RawMessage(`{"key":"x"}`)}
-	if err := store.Append(Item{ID: "proposal", Kind: KindToolProposal, Producer: Producer{Phase: PhaseFast}, ToolCall: proposal}); err != nil {
+	if err := store.Append(Item{
+		ID: "proposal", Kind: KindToolProposal, SourceRevision: 7, InvocationID: "run-1",
+		Producer: Producer{Phase: PhaseFast}, ToolCall: proposal,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Append(Item{ID: "result", Kind: KindToolResult, Producer: Producer{Phase: PhaseTool}, ToolResult: &ToolResult{CallID: "proposal-1", Name: "lookup", Output: json.RawMessage(`true`)}}); err == nil {
 		t.Fatal("proposal accepted a tool result")
 	}
-	if err := store.Append(Item{ID: "call", Kind: KindToolCall, Producer: Producer{Phase: PhaseSlow}, ToolCall: proposal}); err == nil {
-		t.Fatal("executable call reused a proposal ID")
+	for _, test := range []struct {
+		name string
+		item Item
+	}{
+		{name: "missing causal promotion", item: Item{
+			ID: "call-unlinked", Kind: KindToolCall, SourceRevision: 7, InvocationID: "run-1",
+			Producer: Producer{Phase: PhaseRuntime}, ToolCall: proposal,
+		}},
+		{name: "changed arguments", item: Item{
+			ID: "call-mutated", Kind: KindToolCall, SourceRevision: 7, InvocationID: "run-1",
+			CausalParentIDs: []string{"proposal"}, Producer: Producer{Phase: PhaseRuntime},
+			ToolCall: &ToolCall{CallID: "proposal-1", Name: "lookup", Arguments: json.RawMessage(`{"key":"y"}`)},
+		}},
+		{name: "changed invocation", item: Item{
+			ID: "call-cross-run", Kind: KindToolCall, SourceRevision: 7, InvocationID: "run-2",
+			CausalParentIDs: []string{"proposal"}, Producer: Producer{Phase: PhaseRuntime}, ToolCall: proposal,
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := store.Append(test.item); err == nil {
+				t.Fatal("invalid proposal promotion was accepted")
+			}
+		})
+	}
+	promoted := Item{
+		ID: "call", Kind: KindToolCall, SourceRevision: 7, InvocationID: "run-1",
+		CausalParentIDs: []string{"proposal"}, Producer: Producer{Phase: PhaseRuntime}, ToolCall: proposal,
+	}
+	if err := store.Append(promoted); err != nil {
+		t.Fatalf("exact causal promotion failed: %v", err)
+	}
+	if err := store.Append(Item{
+		ID: "result-after-promotion", Kind: KindToolResult, SourceRevision: 7,
+		CausalParentIDs: []string{"call"}, Producer: Producer{Phase: PhaseTool},
+		ToolResult: &ToolResult{CallID: "proposal-1", Name: "lookup", Output: json.RawMessage(`true`)},
+	}); err != nil {
+		t.Fatalf("promoted call rejected its result: %v", err)
 	}
 }
 

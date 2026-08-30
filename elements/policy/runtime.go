@@ -8,16 +8,17 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sort"
+	"strings"
 	"sync"
 
+	"github.com/bojieli/OpenRealtime/authority"
 	"github.com/bojieli/OpenRealtime/element"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	"github.com/bojieli/OpenRealtime/elements/internal/factoryprofile"
 	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
-	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 type generateOnObservationFactory struct{}
@@ -61,14 +62,13 @@ func (generateOnObservationFactory) Mount(
 	return &generateOnObservationRunner{
 		instance: mount.InstanceID, config: config, clock: clock, sequences: sequences,
 		resolution: mount.Resolution, ports: ports,
-		pending: make(map[string]pendingGeneration), terminal: make(map[string]struct{}),
-		preCanceled: make(map[cancellationAddress]string),
+		terminal: make(map[string]struct{}), preCanceled: make(map[cancellationAddress]string),
 	}, nil
 }
 
 type generationPorts struct {
-	context, committed, cancel element.InputPort
-	trigger, state, outcome    element.OutputPort
+	committed, cancel                  element.InputPort
+	trigger, authority, state, outcome element.OutputPort
 }
 
 func generationPortsFrom(ports element.Ports) (generationPorts, error) {
@@ -80,7 +80,7 @@ func generationPortsFrom(ports element.Ports) (generationPorts, error) {
 		name string
 		set  *element.InputPort
 	}{
-		{"context", &result.context}, {"committed", &result.committed}, {"cancel", &result.cancel},
+		{"committed", &result.committed}, {"cancel", &result.cancel},
 	} {
 		port, err := ports.Input(input.name)
 		if err != nil {
@@ -92,7 +92,8 @@ func generationPortsFrom(ports element.Ports) (generationPorts, error) {
 		name string
 		set  *element.OutputPort
 	}{
-		{"trigger", &result.trigger}, {"state", &result.state}, {"outcome", &result.outcome},
+		{"trigger", &result.trigger}, {"authority", &result.authority},
+		{"state", &result.state}, {"outcome", &result.outcome},
 	} {
 		port, err := ports.Output(output.name)
 		if err != nil {
@@ -103,15 +104,10 @@ func generationPortsFrom(ports element.Ports) (generationPorts, error) {
 	return result, nil
 }
 
-type pendingGeneration struct {
-	id     string
-	cause  element.Envelope
-	commit stateelements.ObservationCommitOutcome
-}
-
 type cancellationAddress struct {
 	generationID string
 	streamID     string
+	sessionID    string
 }
 
 type generateOnObservationRunner struct {
@@ -122,28 +118,11 @@ type generateOnObservationRunner struct {
 	resolution element.ResolutionReporter
 	ports      generationPorts
 
-	hasContext      bool
-	contextVersion  uint64
-	contextEnvelope element.Envelope
-	contextBinding  trajectoryContextBinding
-	pending         map[string]pendingGeneration
-	pendingOrder    []string
-	terminal        map[string]struct{}
-	terminalOrder   []string
-	preCanceled     map[cancellationAddress]string
-	preCancelOrder  []cancellationAddress
-	state           GenerationState
-}
-
-// trajectoryContextBinding is the minimum immutable evidence needed to join a
-// commit outcome to a State envelope. The policy deliberately does not retain
-// the trajectory payload or conversation content.
-type trajectoryContextBinding struct {
-	version        uint64
-	tailID         string
-	tailKind       trajectory.Kind
-	sourceRevision uint64
-	eventID        string
+	terminal       map[string]struct{}
+	terminalOrder  []string
+	preCanceled    map[cancellationAddress]string
+	preCancelOrder []cancellationAddress
+	state          GenerationState
 }
 
 type generationInput struct {
@@ -157,8 +136,7 @@ func (runner *generateOnObservationRunner) Run(parent context.Context) error {
 		return err
 	}
 	runner.state = GenerationState{
-		Role: runner.config.Role, MaxPending: runner.config.MaxPending,
-		TerminalMemory:     runner.config.TerminalMemory,
+		Role: runner.config.Role, TerminalMemory: runner.config.TerminalMemory,
 		CancellationMemory: runner.config.CancelMemory,
 	}
 	if err := runner.publishState(parent, element.Envelope{ItemID: runner.instance + ":startup"}); err != nil {
@@ -167,13 +145,13 @@ func (runner *generateOnObservationRunner) Run(parent context.Context) error {
 	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
 	inputs := make(chan generationInput)
-	failures := make(chan error, 3)
+	failures := make(chan error, 2)
 	var wait sync.WaitGroup
 	for _, source := range []struct {
 		kind string
 		port element.InputPort
 	}{
-		{"context", runner.ports.context}, {"committed", runner.ports.committed}, {"cancel", runner.ports.cancel},
+		{"committed", runner.ports.committed}, {"cancel", runner.ports.cancel},
 	} {
 		wait.Add(1)
 		go receiveGenerationInputs(ctx, source.kind, source.port, inputs, failures, &wait)
@@ -191,8 +169,6 @@ func (runner *generateOnObservationRunner) Run(parent context.Context) error {
 		case input := <-inputs:
 			var err error
 			switch input.kind {
-			case "context":
-				err = runner.acceptContext(ctx, input.envelope)
 			case "committed":
 				err = runner.acceptCommit(ctx, input.envelope)
 			case "cancel":
@@ -205,53 +181,6 @@ func (runner *generateOnObservationRunner) Run(parent context.Context) error {
 			}
 		}
 	}
-}
-
-func (runner *generateOnObservationRunner) acceptContext(
-	ctx context.Context, envelope element.Envelope,
-) error {
-	snapshot, ok := trajectorySnapshotPayload(envelope.Payload)
-	if !ok {
-		return runner.refuse(ctx, envelope, "", stateelements.ObservationCommitOutcome{},
-			"invalid_context", fmt.Sprintf("context payload has type %T", envelope.Payload))
-	}
-	if uint64(len(snapshot.Items)) != snapshot.Version {
-		return runner.refuse(ctx, envelope, "", stateelements.ObservationCommitOutcome{},
-			"invalid_context", "trajectory snapshot version does not equal its item count")
-	}
-	if err := validatePolicyIdentifier("context item ID", envelope.ItemID, true); err != nil {
-		return runner.refuse(ctx, envelope, "", stateelements.ObservationCommitOutcome{},
-			"invalid_context_identity", err.Error())
-	}
-	if runner.hasContext && snapshot.Version < runner.contextVersion {
-		return runner.refuse(ctx, envelope, "", stateelements.ObservationCommitOutcome{},
-			"context_regression", fmt.Sprintf("context version regressed from %d to %d", runner.contextVersion, snapshot.Version))
-	}
-	if runner.hasContext && snapshot.Version == runner.contextVersion &&
-		envelope.ItemID != runner.contextEnvelope.ItemID {
-		return runner.refuse(ctx, envelope, "", stateelements.ObservationCommitOutcome{},
-			"context_identity_drift", fmt.Sprintf("context version %d changed identity from %q to %q",
-				snapshot.Version, runner.contextEnvelope.ItemID, envelope.ItemID))
-	}
-	runner.hasContext = true
-	runner.contextVersion = snapshot.Version
-	runner.contextEnvelope = envelope.Clone()
-	runner.contextEnvelope.Payload = nil
-	runner.contextBinding = trajectoryContextBinding{version: snapshot.Version}
-	if snapshot.Version > 0 {
-		tail := snapshot.Items[snapshot.Version-1]
-		runner.contextBinding.tailID = tail.ID
-		runner.contextBinding.tailKind = tail.Kind
-		runner.contextBinding.sourceRevision = tail.SourceRevision
-		if tail.Event != nil {
-			runner.contextBinding.eventID = tail.Event.EventID
-		}
-	}
-	runner.state.ContextVersion = snapshot.Version
-	if err := runner.releaseReady(ctx); err != nil {
-		return err
-	}
-	return runner.publishState(ctx, envelope)
 }
 
 func (runner *generateOnObservationRunner) acceptCommit(
@@ -274,10 +203,21 @@ func (runner *generateOnObservationRunner) acceptCommit(
 		}
 		return runner.publishState(ctx, envelope)
 	}
+	if envelope.SessionID == "" {
+		return runner.refuse(ctx, envelope, "", commit, "missing_session",
+			"observation commit requires a non-empty session ID")
+	}
+	if err := validatePolicyIdentifier("commit session ID", envelope.SessionID, true); err != nil {
+		return runner.refuse(ctx, envelope, "", commit, "invalid_commit_envelope", err.Error())
+	}
+	if err := validatePolicyIdentifier("commit envelope item ID", envelope.ItemID, true); err != nil {
+		return runner.refuse(ctx, envelope, "", commit, "invalid_commit_envelope", err.Error())
+	}
 	if err := validateCommit(commit); err != nil {
 		return runner.refuse(ctx, envelope, "", commit, "invalid_commit", err.Error())
 	}
-	generationID := generationIdentifier(runner.config.Role, commit)
+	runner.state.ContextVersion = commit.StoreVersion
+	generationID := generationIdentifier(runner.config.Role, envelope.SessionID, commit)
 	if _, terminal := runner.terminal[generationID]; terminal {
 		runner.state.Ignored++
 		if err := runner.publishOutcome(ctx, envelope, GenerationOutcome{
@@ -290,19 +230,7 @@ func (runner *generateOnObservationRunner) acceptCommit(
 		}
 		return runner.publishState(ctx, envelope)
 	}
-	if _, pending := runner.pending[generationID]; pending {
-		runner.state.Ignored++
-		if err := runner.publishOutcome(ctx, envelope, GenerationOutcome{
-			Kind: GenerationIgnored, GenerationID: generationID, Role: runner.config.Role,
-			StreamID: commit.StreamID, SourceRevision: commit.SourceRevision,
-			ContextVersion: commit.StoreVersion, TriggerItemID: commit.TriggerItemID,
-			Code: "duplicate_pending", Message: "observation commit already has a pending activation",
-		}); err != nil {
-			return err
-		}
-		return runner.publishState(ctx, envelope)
-	}
-	if reason, canceled := runner.takePreCancel(generationID, commit.StreamID); canceled {
+	if reason, canceled := runner.takePreCancel(generationID, commit.StreamID, envelope.SessionID); canceled {
 		runner.rememberTerminal(generationID)
 		runner.state.Canceled++
 		if err := runner.publishOutcome(ctx, envelope, GenerationOutcome{
@@ -315,15 +243,7 @@ func (runner *generateOnObservationRunner) acceptCommit(
 		}
 		return runner.publishState(ctx, envelope)
 	}
-	if len(runner.pending) >= runner.config.MaxPending {
-		return runner.refuse(ctx, envelope, generationID, commit, "pending_limit",
-			"generation policy pending bound reached")
-	}
-	runner.pending[generationID] = pendingGeneration{
-		id: generationID, cause: envelope.Clone(), commit: commit,
-	}
-	runner.pendingOrder = append(runner.pendingOrder, generationID)
-	if err := runner.releaseReady(ctx); err != nil {
+	if err := runner.emit(ctx, envelope, generationID, commit); err != nil {
 		return err
 	}
 	return runner.publishState(ctx, envelope)
@@ -341,11 +261,21 @@ func (runner *generateOnObservationRunner) acceptCancel(
 		return runner.refuse(ctx, envelope, "", stateelements.ObservationCommitOutcome{},
 			"invalid_cancel", err.Error())
 	}
+	if envelope.SessionID == "" {
+		return runner.refuse(ctx, envelope, "", stateelements.ObservationCommitOutcome{},
+			"missing_session", "generation cancellation requires a non-empty session ID")
+	}
+	if err := validatePolicyIdentifier("cancel session ID", envelope.SessionID, true); err != nil {
+		return runner.refuse(ctx, envelope, "", stateelements.ObservationCommitOutcome{},
+			"invalid_cancel", err.Error())
+	}
 	if (cancel.GenerationID == "") == (cancel.StreamID == "") {
 		return runner.refuse(ctx, envelope, "", stateelements.ObservationCommitOutcome{},
 			"invalid_cancel", "cancel requires exactly one generation_id or stream_id")
 	}
-	address := cancellationAddress{generationID: cancel.GenerationID, streamID: cancel.StreamID}
+	address := cancellationAddress{
+		generationID: cancel.GenerationID, streamID: cancel.StreamID, sessionID: envelope.SessionID,
+	}
 	if cancel.GenerationID != "" {
 		if err := validatePolicyIdentifier("generation ID", cancel.GenerationID, true); err != nil {
 			return runner.refuse(ctx, envelope, "", stateelements.ObservationCommitOutcome{}, "invalid_cancel", err.Error())
@@ -354,126 +284,72 @@ func (runner *generateOnObservationRunner) acceptCancel(
 		return runner.refuse(ctx, envelope, "", stateelements.ObservationCommitOutcome{}, "invalid_cancel", err.Error())
 	}
 	cancel.Reason = boundedPolicyReason(cancel.Reason)
-	matched := make([]string, 0)
-	for _, generationID := range runner.pendingOrder {
-		pending, found := runner.pending[generationID]
-		if !found {
-			continue
-		}
-		if address.generationID == generationID ||
-			address.streamID != "" && address.streamID == pending.commit.StreamID {
-			matched = append(matched, generationID)
-		}
-	}
-	if len(matched) == 0 {
-		runner.recordPreCancel(address, cancel.Reason)
-		runner.state.Ignored++
-		if err := runner.publishOutcome(ctx, envelope, GenerationOutcome{
-			Kind: GenerationIgnored, GenerationID: cancel.GenerationID,
-			Role: runner.config.Role, StreamID: cancel.StreamID,
-			Code: "cancel_recorded", Message: cancel.Reason,
-		}); err != nil {
-			return err
-		}
-		return runner.publishState(ctx, envelope)
-	}
-	for _, generationID := range matched {
-		pending := runner.pending[generationID]
-		runner.removePending(generationID)
-		runner.rememberTerminal(generationID)
-		runner.state.Canceled++
-		if err := runner.publishOutcome(ctx, envelope, GenerationOutcome{
-			Kind: GenerationCanceled, GenerationID: generationID,
-			Role: runner.config.Role, StreamID: pending.commit.StreamID,
-			SourceRevision: pending.commit.SourceRevision,
-			ContextVersion: pending.commit.StoreVersion,
-			TriggerItemID:  pending.commit.TriggerItemID,
-			Code:           "canceled", Message: cancel.Reason,
-		}); err != nil {
-			return err
-		}
+	runner.recordPreCancel(address, cancel.Reason)
+	runner.state.Ignored++
+	if err := runner.publishOutcome(ctx, envelope, GenerationOutcome{
+		Kind: GenerationIgnored, GenerationID: cancel.GenerationID,
+		Role: runner.config.Role, StreamID: cancel.StreamID,
+		Code: "cancel_recorded", Message: cancel.Reason,
+	}); err != nil {
+		return err
 	}
 	return runner.publishState(ctx, envelope)
 }
 
-func (runner *generateOnObservationRunner) releaseReady(ctx context.Context) error {
-	if !runner.hasContext {
-		return nil
-	}
-	for _, generationID := range slices.Clone(runner.pendingOrder) {
-		pending, found := runner.pending[generationID]
-		if !found {
-			continue
-		}
-		switch {
-		case runner.contextVersion < pending.commit.StoreVersion:
-			continue
-		case runner.contextVersion > pending.commit.StoreVersion:
-			runner.removePending(generationID)
-			runner.rememberTerminal(generationID)
-			runner.state.Refused++
-			if err := runner.publishOutcome(ctx, pending.cause, GenerationOutcome{
-				Kind: GenerationRefused, GenerationID: generationID, Role: runner.config.Role,
-				StreamID: pending.commit.StreamID, SourceRevision: pending.commit.SourceRevision,
-				ContextVersion: runner.contextVersion, TriggerItemID: pending.commit.TriggerItemID,
-				Code: "context_version_passed",
-				Message: fmt.Sprintf("required context version %d was passed by version %d",
-					pending.commit.StoreVersion, runner.contextVersion),
-			}); err != nil {
-				return err
-			}
-		default:
-			if err := validateContextCommit(runner.contextBinding, pending.commit); err != nil {
-				runner.removePending(generationID)
-				runner.rememberTerminal(generationID)
-				runner.state.Refused++
-				if publishErr := runner.publishOutcome(ctx, pending.cause, GenerationOutcome{
-					Kind: GenerationRefused, GenerationID: generationID, Role: runner.config.Role,
-					StreamID: pending.commit.StreamID, SourceRevision: pending.commit.SourceRevision,
-					ContextVersion: pending.commit.StoreVersion,
-					TriggerItemID:  pending.commit.TriggerItemID,
-					Code:           "context_commit_mismatch", Message: err.Error(),
-				}); publishErr != nil {
-					return publishErr
-				}
-				continue
-			}
-			if err := runner.emit(ctx, pending); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 func (runner *generateOnObservationRunner) emit(
-	ctx context.Context, pending pendingGeneration,
+	ctx context.Context, cause element.Envelope, generationID string,
+	commit stateelements.ObservationCommitOutcome,
 ) error {
 	invocation := cloneInvocation(runner.config.Invocation)
-	invocation.SourceRevision = pending.commit.SourceRevision
-	version := pending.commit.StoreVersion
+	invocation.SourceRevision = commit.SourceRevision
+	version := commit.Context.Prefix.Version
+	committedContext := commit.Context
 	payload := cognitionelements.Generate{
 		Invocation: invocation, ExpectedContextVersion: &version,
-		ExpectedContextItemID: runner.contextEnvelope.ItemID,
+		ExpectedContextItemID: commit.Context.StateItemID,
+		CommittedContext:      &committedContext,
 	}
-	envelope := pending.cause.Clone()
-	envelope.Type = generationTriggerType
-	envelope.ItemID = pending.id + ":trigger"
-	envelope.RunID = pending.id
-	envelope.CancellationScope = pending.id
-	envelope.CausalParents = appendUnique(envelope.CausalParents, pending.cause.ItemID)
-	envelope.CausalParents = appendUnique(envelope.CausalParents, runner.contextEnvelope.ItemID)
-	envelope.Payload = payload
-	if _, err := runner.ports.trigger.Broadcast(ctx, envelope); err != nil {
+	triggerEnvelope := cause.Clone()
+	triggerEnvelope.Type = generationTriggerType
+	triggerEnvelope.ItemID = generationID + ":trigger"
+	triggerEnvelope.RunID = generationID
+	triggerEnvelope.CancellationScope = generationID
+	triggerEnvelope.CausalParents = appendUnique(triggerEnvelope.CausalParents, cause.ItemID)
+	triggerEnvelope.CausalParents = appendUnique(triggerEnvelope.CausalParents, commit.Context.StateItemID)
+	triggerEnvelope.CausalParents = appendUnique(triggerEnvelope.CausalParents, commit.TrajectoryItemID)
+	triggerEnvelope.CausalParents = appendUnique(triggerEnvelope.CausalParents, commit.TriggerItemID)
+	triggerEnvelope.Payload = payload
+	candidateEnvelope := cause.Clone()
+	candidateEnvelope.Type = authorityCandidateType
+	candidateEnvelope.ItemID = generationID + ":authority"
+	candidateEnvelope.RunID = generationID
+	candidateEnvelope.CancellationScope = generationID
+	candidateEnvelope.CausalParents = appendUnique(candidateEnvelope.CausalParents, cause.ItemID)
+	candidateEnvelope.CausalParents = appendUnique(candidateEnvelope.CausalParents, commit.Context.StateItemID)
+	candidateEnvelope.CausalParents = appendUnique(candidateEnvelope.CausalParents, commit.TrajectoryItemID)
+	candidateEnvelope.CausalParents = appendUnique(candidateEnvelope.CausalParents, commit.TriggerItemID)
+	candidateEnvelope.Payload = authority.Candidate{
+		RunID: generationID, SessionID: cause.SessionID,
+		ActivationItemID: triggerEnvelope.ItemID, ActivationCauseItemID: cause.ItemID,
+		ObservationItemID:        commit.TrajectoryItemID,
+		ObservationTriggerItemID: commit.TriggerItemID,
+		SourceRevision:           commit.SourceRevision, ContextVersion: commit.StoreVersion,
+		ContextEnvelopeItemID: commit.Context.StateItemID, ContextTailItem: commit.TrajectoryItemID,
+	}
+	if _, err := runner.ports.trigger.Broadcast(ctx, triggerEnvelope); err != nil {
 		return err
 	}
-	runner.removePending(pending.id)
-	runner.rememberTerminal(pending.id)
+	// Authority follows the trigger. A trigger without authority is fail-closed;
+	// authority naming a trigger that never crossed the boundary is unsafe.
+	if _, err := runner.ports.authority.Broadcast(ctx, candidateEnvelope); err != nil {
+		return err
+	}
+	runner.rememberTerminal(generationID)
 	runner.state.Emitted++
-	return runner.publishOutcome(ctx, pending.cause, GenerationOutcome{
-		Kind: GenerationEmitted, GenerationID: pending.id, Role: runner.config.Role,
-		StreamID: pending.commit.StreamID, SourceRevision: pending.commit.SourceRevision,
-		ContextVersion: pending.commit.StoreVersion, TriggerItemID: pending.commit.TriggerItemID,
+	return runner.publishOutcome(ctx, cause, GenerationOutcome{
+		Kind: GenerationEmitted, GenerationID: generationID, Role: runner.config.Role,
+		StreamID: commit.StreamID, SourceRevision: commit.SourceRevision,
+		ContextVersion: commit.StoreVersion, TriggerItemID: commit.TriggerItemID,
 	})
 }
 
@@ -520,16 +396,6 @@ func (runner *generateOnObservationRunner) publishState(
 	if err != nil {
 		return err
 	}
-	runner.state.Pending = make([]PendingGeneration, 0, len(runner.pending))
-	for _, pending := range runner.pending {
-		runner.state.Pending = append(runner.state.Pending, PendingGeneration{
-			GenerationID: pending.id, StreamID: pending.commit.StreamID,
-			ContextVersion: pending.commit.StoreVersion,
-		})
-	}
-	sort.Slice(runner.state.Pending, func(left, right int) bool {
-		return runner.state.Pending[left].GenerationID < runner.state.Pending[right].GenerationID
-	})
 	envelope := cause.Clone()
 	envelope.Type = generationStateType
 	envelope.ItemID = fmt.Sprintf("%s:state:%d", runner.instance, sequence)
@@ -539,13 +405,6 @@ func (runner *generateOnObservationRunner) publishState(
 	envelope.Payload = runner.state
 	_, err = runner.ports.state.Broadcast(ctx, envelope)
 	return err
-}
-
-func (runner *generateOnObservationRunner) removePending(generationID string) {
-	delete(runner.pending, generationID)
-	if index := slices.Index(runner.pendingOrder, generationID); index >= 0 {
-		runner.pendingOrder = slices.Delete(runner.pendingOrder, index, index+1)
-	}
 }
 
 func (runner *generateOnObservationRunner) rememberTerminal(generationID string) {
@@ -578,9 +437,12 @@ func (runner *generateOnObservationRunner) recordPreCancel(
 }
 
 func (runner *generateOnObservationRunner) takePreCancel(
-	generationID, streamID string,
+	generationID, streamID, sessionID string,
 ) (string, bool) {
-	for _, address := range []cancellationAddress{{generationID: generationID}, {streamID: streamID}} {
+	for _, address := range []cancellationAddress{
+		{generationID: generationID, sessionID: sessionID},
+		{streamID: streamID, sessionID: sessionID},
+	} {
 		reason, found := runner.preCanceled[address]
 		if !found {
 			continue
@@ -604,58 +466,41 @@ func validateCommit(commit stateelements.ObservationCommitOutcome) error {
 	if err := validatePolicyIdentifier("commit trajectory item ID", commit.TrajectoryItemID, true); err != nil {
 		return err
 	}
-	return validatePolicyIdentifier("commit stream ID", commit.StreamID, true)
+	if err := validatePolicyIdentifier("commit stream ID", commit.StreamID, true); err != nil {
+		return err
+	}
+	if commit.Context.Prefix.Version != commit.StoreVersion {
+		return fmt.Errorf("committed context prefix version %d does not match store version %d",
+			commit.Context.Prefix.Version, commit.StoreVersion)
+	}
+	if err := validateCanonicalPrefixDigest(commit.Context.Prefix.Digest); err != nil {
+		return err
+	}
+	return validatePolicyIdentifier("committed context State item ID", commit.Context.StateItemID, true)
 }
 
-// validateContextCommit binds typed commit evidence to the immutable item at
-// the exact released trajectory version. A matching version number alone is
-// insufficient: independently wired or compromised producers could otherwise
-// activate a model against a different prefix with the same length.
-func validateContextCommit(
-	binding trajectoryContextBinding, commit stateelements.ObservationCommitOutcome,
-) error {
-	if binding.version != commit.StoreVersion {
-		return fmt.Errorf("context version %d does not contain committed store version %d",
-			binding.version, commit.StoreVersion)
+func validateCanonicalPrefixDigest(digest string) error {
+	const prefix = "sha256:"
+	if !strings.HasPrefix(digest, prefix) ||
+		len(digest) != len(prefix)+sha256.Size*2 || digest != strings.ToLower(digest) {
+		return errors.New("committed context prefix digest is not canonical SHA-256")
 	}
-	if commit.StoreVersion == 0 {
-		return errors.New("committed observation cannot bind to an empty context")
-	}
-	if binding.tailID != commit.TrajectoryItemID {
-		return fmt.Errorf("context item %q does not match committed trajectory item %q",
-			binding.tailID, commit.TrajectoryItemID)
-	}
-	if binding.tailKind != trajectory.KindObservation {
-		return fmt.Errorf("committed trajectory item %q has kind %q, want observation",
-			binding.tailID, binding.tailKind)
-	}
-	if binding.sourceRevision != commit.SourceRevision {
-		return fmt.Errorf("context source revision %d does not match committed revision %d",
-			binding.sourceRevision, commit.SourceRevision)
-	}
-	if binding.eventID != commit.TriggerItemID {
-		return fmt.Errorf("context item %q does not attest commit trigger %q",
-			binding.tailID, commit.TriggerItemID)
+	if _, err := hex.DecodeString(digest[len(prefix):]); err != nil {
+		return errors.New("committed context prefix digest is not canonical SHA-256")
 	}
 	return nil
 }
 
-func generationIdentifier(role string, commit stateelements.ObservationCommitOutcome) string {
-	digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%d\x00%d",
-		role, commit.StreamID, commit.TriggerItemID, commit.SourceRevision, commit.StoreVersion)))
-	return "generation:sha256:" + hex.EncodeToString(digest[:])
-}
-
-func trajectorySnapshotPayload(payload any) (trajectory.Snapshot, bool) {
-	switch value := payload.(type) {
-	case trajectory.Snapshot:
-		return value, true
-	case *trajectory.Snapshot:
-		if value != nil {
-			return *value, true
-		}
+func generationIdentifier(
+	role, sessionID string, commit stateelements.ObservationCommitOutcome,
+) string {
+	hash := sha256.New()
+	for _, identity := range []string{role, sessionID, commit.StreamID, commit.TriggerItemID} {
+		_, _ = fmt.Fprintf(hash, "%d:", len(identity))
+		_, _ = hash.Write([]byte(identity))
 	}
-	return trajectory.Snapshot{}, false
+	_, _ = fmt.Fprintf(hash, "%d:%d", commit.SourceRevision, commit.StoreVersion)
+	return "generation:sha256:" + hex.EncodeToString(hash.Sum(nil))
 }
 
 func observationCommitPayload(payload any) (stateelements.ObservationCommitOutcome, bool) {
@@ -722,9 +567,19 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if registry == nil {
 		return errors.New("register policy factories: nil registry")
 	}
-	return registry.RegisterArtifact("", inspect.ArtifactIdentity{
-		ID: generationRuntimeID, Revision: policyImplementationRevision,
-	}, generateOnObservationFactory{})
+	registrations, err := FactoryRegistrations()
+	if err != nil {
+		return err
+	}
+	return registry.RegisterFactory(registrations[0])
+}
+
+func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
+	return factoryprofile.Registrations(factoryprofile.Entry{
+		Factory: generateOnObservationFactory{}, Artifact: inspect.ArtifactIdentity{
+			ID: generationRuntimeID, Revision: policyImplementationRevision,
+		},
+	})
 }
 
 var (

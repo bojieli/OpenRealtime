@@ -1,0 +1,147 @@
+{
+  "format_version": 1,
+  "fixture": "ordinary-conversational-turn/v1",
+  "cases": [
+    {
+      "profile": "conversational-fast-only",
+      "equivalent": false,
+      "differences": [
+        "only_graph_native:continuation_prefix/deliberative/1",
+        "only_graph_native:model_terminal/deliberative/1",
+        "different:model_terminal/fast/1"
+      ],
+      "legacy": {
+        "composition": "cascade/fast-only",
+        "graph_fingerprint": "sha256:3a22144e7e733b656c8022a31bdca0449521bbea27af1b74939909c870bde5ce",
+        "safe_points": [
+          {"kind": "observation_commit", "ordinal": 1, "decision": "committed", "version": 1, "source_revision": 1},
+          {"kind": "continuation_prefix", "role": "fast", "ordinal": 1, "version": 1, "source_revision": 1, "prefix": [
+            {"kind": "observation", "authority": "user", "source_revision": 1}
+          ]},
+          {"kind": "model_terminal", "role": "fast", "ordinal": 1, "decision": "adopted", "version": 3},
+          {"kind": "assistant_playback", "role": "fast", "ordinal": 1, "decision": "committed", "crossed_boundary": true, "playback_order": 1}
+        ]
+      },
+      "graph_native": {
+        "composition": "conversational-fast-only",
+        "graph_fingerprint": "sha256:4d8eaa8b5966d4b7db7051a8a7439360ca59f748565c0d818a72eb371605bf72",
+        "safe_points": [
+          {"kind": "observation_commit", "ordinal": 1, "decision": "committed", "version": 1, "source_revision": 1},
+          {"kind": "continuation_prefix", "role": "deliberative", "ordinal": 1, "version": 1, "source_revision": 1, "prefix": [
+            {"kind": "observation", "authority": "user", "source_revision": 1}
+          ]},
+          {"kind": "continuation_prefix", "role": "fast", "ordinal": 1, "version": 1, "source_revision": 1, "prefix": [
+            {"kind": "observation", "authority": "user", "source_revision": 1}
+          ]},
+          {"kind": "model_terminal", "role": "deliberative", "ordinal": 1, "decision": "adopted", "version": 3},
+          {"kind": "model_terminal", "role": "fast", "ordinal": 1, "decision": "rejected", "reason": "newer_canonical_prefix", "version": 3},
+          {"kind": "assistant_playback", "role": "fast", "ordinal": 1, "decision": "committed", "crossed_boundary": true, "playback_order": 1}
+        ]
+      }
+    },
+    {
+      "profile": "conversational-slow-only",
+      "equivalent": false,
+      "differences": [
+        "only_graph_native:assistant_playback/deliberative/1",
+        "only_legacy:assistant_playback/fast/1",
+        "different:continuation_prefix/fast/1",
+        "different:model_terminal/fast/1"
+      ],
+      "legacy": {
+        "composition": "cascade/endpointed-slow-only",
+        "graph_fingerprint": "sha256:3a22144e7e733b656c8022a31bdca0449521bbea27af1b74939909c870bde5ce",
+        "safe_points": [
+          {"kind": "observation_commit", "ordinal": 1, "decision": "committed", "version": 1, "source_revision": 1},
+          {"kind": "continuation_prefix", "role": "deliberative", "ordinal": 1, "version": 1, "source_revision": 1, "prefix": [
+            {"kind": "observation", "authority": "user", "source_revision": 1}
+          ]},
+          {"kind": "continuation_prefix", "role": "fast", "ordinal": 1, "version": 3, "source_revision": 1, "prefix": [
+            {"kind": "observation", "authority": "user", "source_revision": 1},
+            {"kind": "instruction", "authority": "system", "source_revision": 1},
+            {"kind": "assistant", "authority": "system", "source_revision": 1}
+          ]},
+          {"kind": "model_terminal", "role": "deliberative", "ordinal": 1, "decision": "adopted", "version": 3},
+          {"kind": "model_terminal", "role": "fast", "ordinal": 1, "decision": "adopted", "version": 5},
+          {"kind": "assistant_playback", "role": "fast", "ordinal": 1, "decision": "committed", "crossed_boundary": true, "playback_order": 1}
+        ]
+      },
+      "graph_native": {
+        "composition": "conversational-slow-only",
+        "graph_fingerprint": "sha256:89b078a7262ba4cb1a33a851a38395f4daf5c5a338f4c4736272069fb66f7c96",
+        "safe_points": [
+          {"kind": "observation_commit", "ordinal": 1, "decision": "committed", "version": 1, "source_revision": 1},
+          {"kind": "continuation_prefix", "role": "deliberative", "ordinal": 1, "version": 1, "source_revision": 1, "prefix": [
+            {"kind": "observation", "authority": "user", "source_revision": 1}
+          ]},
+          {"kind": "continuation_prefix", "role": "fast", "ordinal": 1, "version": 1, "source_revision": 1, "prefix": [
+            {"kind": "observation", "authority": "user", "source_revision": 1}
+          ]},
+          {"kind": "model_terminal", "role": "deliberative", "ordinal": 1, "decision": "adopted", "version": 3},
+          {"kind": "model_terminal", "role": "fast", "ordinal": 1, "decision": "rejected", "reason": "newer_canonical_prefix", "version": 3},
+          {"kind": "assistant_playback", "role": "deliberative", "ordinal": 1, "decision": "committed", "crossed_boundary": true, "playback_order": 1}
+        ]
+      }
+    },
+    {
+      "profile": "conversational-both",
+      "equivalent": false,
+      "differences": [
+        "only_graph_native:assistant_playback/deliberative/1",
+        "only_legacy:assistant_playback/fast/2",
+        "different:continuation_prefix/deliberative/1",
+        "only_legacy:continuation_prefix/fast/2",
+        "different:model_terminal/deliberative/1",
+        "different:model_terminal/fast/1",
+        "only_legacy:model_terminal/fast/2"
+      ],
+      "legacy": {
+        "composition": "cascade/fast-then-slow;deferral=comparison-safe-point",
+        "graph_fingerprint": "sha256:3a22144e7e733b656c8022a31bdca0449521bbea27af1b74939909c870bde5ce",
+        "safe_points": [
+          {"kind": "observation_commit", "ordinal": 1, "decision": "committed", "version": 1, "source_revision": 1},
+          {"kind": "continuation_prefix", "role": "deliberative", "ordinal": 1, "version": 3, "source_revision": 1, "prefix": [
+            {"kind": "observation", "authority": "user", "source_revision": 1},
+            {"kind": "instruction", "authority": "system", "source_revision": 1},
+            {"kind": "assistant", "authority": "system", "source_revision": 1}
+          ]},
+          {"kind": "continuation_prefix", "role": "fast", "ordinal": 1, "version": 1, "source_revision": 1, "prefix": [
+            {"kind": "observation", "authority": "user", "source_revision": 1}
+          ]},
+          {"kind": "continuation_prefix", "role": "fast", "ordinal": 2, "version": 7, "source_revision": 1, "prefix": [
+            {"kind": "observation", "authority": "user", "source_revision": 1},
+            {"kind": "instruction", "authority": "system", "source_revision": 1},
+            {"kind": "assistant", "authority": "system", "source_revision": 1},
+            {"kind": "instruction", "authority": "system", "source_revision": 1},
+            {"kind": "assistant", "authority": "system", "source_revision": 1},
+            {"kind": "assistant_state", "authority": "system"},
+            {"kind": "assistant_state", "authority": "system"}
+          ]},
+          {"kind": "model_terminal", "role": "deliberative", "ordinal": 1, "decision": "adopted", "version": 5},
+          {"kind": "model_terminal", "role": "fast", "ordinal": 1, "decision": "adopted", "version": 3},
+          {"kind": "model_terminal", "role": "fast", "ordinal": 2, "decision": "adopted", "version": 9},
+          {"kind": "assistant_playback", "role": "fast", "ordinal": 1, "decision": "committed", "crossed_boundary": true, "playback_order": 1},
+          {"kind": "assistant_playback", "role": "fast", "ordinal": 2, "decision": "committed", "crossed_boundary": true, "playback_order": 2}
+        ]
+      },
+      "graph_native": {
+        "composition": "conversational-both",
+        "graph_fingerprint": "sha256:98adf5022a6e4b98a39cb1bd2a63f07a1204e538de380b908ad9bf3ec406e6b0",
+        "safe_points": [
+          {"kind": "observation_commit", "ordinal": 1, "decision": "committed", "version": 1, "source_revision": 1},
+          {"kind": "continuation_prefix", "role": "deliberative", "ordinal": 1, "version": 1, "source_revision": 1, "prefix": [
+            {"kind": "observation", "authority": "user", "source_revision": 1}
+          ]},
+          {"kind": "continuation_prefix", "role": "fast", "ordinal": 1, "version": 1, "source_revision": 1, "prefix": [
+            {"kind": "observation", "authority": "user", "source_revision": 1}
+          ]},
+          {"kind": "model_terminal", "role": "deliberative", "ordinal": 1, "decision": "adopted", "version": 3},
+          {"kind": "model_terminal", "role": "fast", "ordinal": 1, "decision": "rejected", "reason": "newer_canonical_prefix", "version": 3},
+          {"kind": "assistant_playback", "role": "deliberative", "ordinal": 1, "decision": "committed", "crossed_boundary": true, "playback_order": 2},
+          {"kind": "assistant_playback", "role": "fast", "ordinal": 1, "decision": "committed", "crossed_boundary": true, "playback_order": 1}
+        ]
+      }
+    }
+  ],
+  "fingerprint": "sha256:16e1141cd74ab2e5b2fba70cd0648637a321c749c2995349fdb676aa6315653c"
+}

@@ -11,6 +11,7 @@ import (
 	"slices"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/elements/internal/factoryprofile"
 	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
@@ -21,7 +22,7 @@ import (
 
 const TrajectoryStoreService = "state.trajectory.store"
 
-const stateImplementationRevision = "implementation:1"
+const stateImplementationRevision = "implementation:2"
 
 func stateRuntimeID(descriptor element.Descriptor) string {
 	return "builtin://openrealtime/elements/" + descriptor.Name
@@ -55,7 +56,7 @@ func TrajectoryStoreDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "state.TrajectoryStore",
-		Revision:      1,
+		Revision:      2,
 		Ports: []element.Port{
 			{Name: "append", Direction: element.Input, Type: appendType,
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
@@ -86,13 +87,21 @@ type Append struct {
 	Items           []trajectory.Item `json:"items"`
 }
 
-// Commit is the accepted terminal reply. Snapshot is included as well as
-// being published on the State port so a trigger derived from this reply can
-// use the exact committed prefix without racing a separate state consumer.
+// CommittedContext compactly binds an accepted transition to the exact State
+// envelope published for its immutable trajectory prefix.
+type CommittedContext struct {
+	Prefix      trajectory.PrefixIdentity `json:"prefix"`
+	StateItemID string                    `json:"state_item_id"`
+}
+
+// Commit is the accepted terminal reply. Snapshot is included so the immediate
+// validator can prove Context; downstream elements propagate only the compact
+// identity after validating it.
 type Commit struct {
 	Version     uint64              `json:"version"`
 	AppendedIDs []string            `json:"appended_ids"`
 	Snapshot    trajectory.Snapshot `json:"snapshot"`
+	Context     CommittedContext    `json:"context"`
 }
 
 // Rejection is a typed, non-mutating terminal reply. A malformed or stale
@@ -171,8 +180,13 @@ func (runner *trajectoryStoreRunner) Run(ctx context.Context) error {
 	if err := reportStateResolution(runner.resolution, TrajectoryStoreDescriptor()); err != nil {
 		return err
 	}
-	initial := runner.store.Snapshot()
-	if err := runner.publishSnapshot(ctx, element.Envelope{}, initial); err != nil {
+	initial, initialIdentity, err := runner.store.SnapshotWithPrefixIdentity()
+	if err != nil {
+		return fmt.Errorf("identify initial trajectory state prefix: %w", err)
+	}
+	if _, err := runner.publishSnapshot(
+		ctx, element.Envelope{}, initial, initialIdentity,
+	); err != nil {
 		return err
 	}
 	for {
@@ -199,16 +213,26 @@ func (runner *trajectoryStoreRunner) Run(ctx context.Context) error {
 			}
 			continue
 		}
-		snapshot := runner.store.Snapshot()
-		if err := runner.publishSnapshot(ctx, envelope, snapshot); err != nil {
+		snapshot, identity, err := runner.store.SnapshotWithPrefixIdentity()
+		if err != nil {
+			return fmt.Errorf("identify committed trajectory state prefix: %w", err)
+		}
+		committedContext, err := runner.publishSnapshot(ctx, envelope, snapshot, identity)
+		if err != nil {
 			return err
 		}
 		ids := make([]string, len(request.Items))
 		for index := range request.Items {
 			ids[index] = request.Items[index].ID
 		}
-		commit := Commit{Version: snapshot.Version, AppendedIDs: ids, Snapshot: snapshot}
-		if err := broadcastReply(ctx, runner.commitOutput, envelope, commitType, "committed", commit); err != nil {
+		commit := Commit{
+			Version: snapshot.Version, AppendedIDs: ids, Snapshot: snapshot,
+			Context: committedContext,
+		}
+		if err := broadcastReply(
+			ctx, runner.commitOutput, envelope, commitType, "committed", commit,
+			committedContext.StateItemID,
+		); err != nil {
 			return err
 		}
 	}
@@ -226,7 +250,14 @@ func (runner *trajectoryStoreRunner) append(request Append) error {
 
 func (runner *trajectoryStoreRunner) publishSnapshot(
 	ctx context.Context, cause element.Envelope, snapshot trajectory.Snapshot,
-) error {
+	identity trajectory.PrefixIdentity,
+) (CommittedContext, error) {
+	if identity.Version != snapshot.Version {
+		return CommittedContext{}, fmt.Errorf(
+			"trajectory state prefix version %d does not match snapshot version %d",
+			identity.Version, snapshot.Version,
+		)
+	}
 	envelope := cause.Clone()
 	envelope.Type = snapshotType
 	envelope.ItemID = fmt.Sprintf("%s-snapshot-%d", runner.instance, snapshot.Version)
@@ -234,8 +265,10 @@ func (runner *trajectoryStoreRunner) publishSnapshot(
 		envelope.CausalParents = appendUnique(envelope.CausalParents, cause.ItemID)
 	}
 	envelope.Payload = snapshot
-	_, err := runner.snapshotOutput.Broadcast(ctx, envelope)
-	return err
+	if _, err := runner.snapshotOutput.Broadcast(ctx, envelope); err != nil {
+		return CommittedContext{}, err
+	}
+	return CommittedContext{Prefix: identity, StateItemID: envelope.ItemID}, nil
 }
 
 func (runner *trajectoryStoreRunner) reject(
@@ -246,12 +279,15 @@ func (runner *trajectoryStoreRunner) reject(
 
 func broadcastReply(
 	ctx context.Context, output element.OutputPort, cause element.Envelope,
-	typeOf element.Type, suffix string, payload any,
+	typeOf element.Type, suffix string, payload any, causalParents ...string,
 ) error {
 	envelope := cause.Clone()
 	envelope.Type = typeOf
 	envelope.ItemID = cause.ItemID + ":" + suffix
 	envelope.CausalParents = appendUnique(envelope.CausalParents, cause.ItemID)
+	for _, parent := range causalParents {
+		envelope.CausalParents = appendUnique(envelope.CausalParents, parent)
+	}
 	envelope.Payload = payload
 	result, err := output.Broadcast(ctx, envelope)
 	if err != nil {
@@ -341,12 +377,24 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if registry == nil {
 		return errors.New("register state factories: nil registry")
 	}
-	for _, factory := range []element.Factory{trajectoryStoreFactory{}, observationCommitFactory{}} {
-		if err := registry.RegisterArtifact("", inspect.ArtifactIdentity{
-			ID: stateRuntimeID(factory.Descriptor()), Revision: stateImplementationRevision,
-		}, factory); err != nil {
+	registrations, err := FactoryRegistrations()
+	if err != nil {
+		return err
+	}
+	for _, registration := range registrations {
+		if err := registry.RegisterFactory(registration); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
+	entries := make([]factoryprofile.Entry, 0, len(Descriptors()))
+	for _, factory := range []element.Factory{trajectoryStoreFactory{}, observationCommitFactory{}} {
+		entries = append(entries, factoryprofile.Entry{Factory: factory, Artifact: inspect.ArtifactIdentity{
+			ID: stateRuntimeID(factory.Descriptor()), Revision: stateImplementationRevision,
+		}})
+	}
+	return factoryprofile.Registrations(entries...)
 }

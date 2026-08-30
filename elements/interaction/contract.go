@@ -12,6 +12,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/element"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	"github.com/bojieli/OpenRealtime/elements/internal/factoryprofile"
 	"github.com/bojieli/OpenRealtime/elements/speech"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -366,12 +367,24 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if registry == nil {
 		return errors.New("register interaction factories: nil registry")
 	}
-	for _, factory := range []element.Factory{
-		segmentPreparedTextFactory{}, speechArbiterFactory{}, modelResultCommitFactory{},
-	} {
-		if err := registry.Register("", factory); err != nil {
+	registrations, err := FactoryRegistrations()
+	if err != nil {
+		return err
+	}
+	for _, registration := range registrations {
+		if err := registry.RegisterFactory(registration); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
+	entries := make([]factoryprofile.Entry, 0, len(Descriptors()))
+	for _, factory := range []element.Factory{
+		segmentPreparedTextFactory{}, speechArbiterFactory{}, modelResultCommitFactory{},
+	} {
+		entries = append(entries, factoryprofile.Entry{Factory: factory})
+	}
+	return factoryprofile.Registrations(entries...)
 }

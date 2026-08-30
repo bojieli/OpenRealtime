@@ -115,8 +115,13 @@ func TestTrajectoryStorePublishesSeedCommitsAndTypedRejections(t *testing.T) {
 	commit, ok := commitEnvelope.Payload.(stateelements.Commit)
 	if !ok || commit.Version != 1 || commit.Snapshot.Version != 1 ||
 		len(commit.AppendedIDs) != 1 || commit.AppendedIDs[0] != "user-1" ||
-		commitEnvelope.RunID != "turn-1" {
+		commitEnvelope.RunID != "turn-1" ||
+		commit.Context.StateItemID != stateEnvelope.ItemID ||
+		!slices.Contains(commitEnvelope.CausalParents, stateEnvelope.ItemID) {
 		t.Fatalf("commit = %#v, envelope = %+v", commitEnvelope.Payload, commitEnvelope)
+	}
+	if err := trajectory.VerifyPrefix(commit.Snapshot, commit.Context.Prefix); err != nil {
+		t.Fatalf("commit context does not identify its exact snapshot: %v", err)
 	}
 
 	stale := stateelements.Append{Compare: true, ExpectedVersion: 0, Items: []trajectory.Item{{
@@ -169,8 +174,16 @@ func TestTrajectoryStoreDescriptorIsInProductionCatalog(t *testing.T) {
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	if descriptor.Revision != 2 {
+		t.Fatalf("trajectory store descriptor revision = %d, want 2", descriptor.Revision)
+	}
 	if !descriptor.Reaction.BreaksCycles {
 		t.Fatal("seeded trajectory state does not declare its causal break")
+	}
+	observationDescriptor, found := catalog.Latest("state.ObservationCommit")
+	if !found || observationDescriptor.Revision != 2 {
+		t.Fatalf("observation commit descriptor = %+v, found=%t; want revision 2",
+			observationDescriptor, found)
 	}
 }
 
@@ -222,24 +235,56 @@ func TestObservationCommitSerializesRevisionsThroughAuthoritativeStoreReplies(t 
 		Authority: trajectory.AuthorityUser, Revision: 2, Supersedes: 1,
 		StableText: "hello world", Final: true,
 	}
+	if _, err := input.Broadcast(context.Background(), element.Envelope{
+		Type: typeOf, ItemID: "asr-missing-session", SourceID: "missing-session",
+		Payload: partial,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	missingSession := receiveState(t, outcomes).Payload.(stateelements.ObservationCommitOutcome)
+	if missingSession.Kind != stateelements.ObservationRejected || missingSession.Code != "missing_session" {
+		t.Fatalf("missing-session outcome = %+v", missingSession)
+	}
 	for index, observation := range []perception.Observation{partial, final} {
 		if _, err := input.Broadcast(context.Background(), element.Envelope{
 			Type: typeOf, ItemID: fmt.Sprintf("asr-%d", index+1), SourceID: "utterance-1",
-			Payload: observation,
+			SessionID: "session-state", Payload: observation,
 		}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	firstSnapshot := receiveState(t, snapshots).Payload.(trajectory.Snapshot)
-	firstOutcome := receiveState(t, outcomes).Payload.(stateelements.ObservationCommitOutcome)
-	secondSnapshot := receiveState(t, snapshots).Payload.(trajectory.Snapshot)
-	secondOutcome := receiveState(t, outcomes).Payload.(stateelements.ObservationCommitOutcome)
+	firstStateEnvelope := receiveState(t, snapshots)
+	firstSnapshot := firstStateEnvelope.Payload.(trajectory.Snapshot)
+	firstOutcomeEnvelope := receiveState(t, outcomes)
+	firstOutcome := firstOutcomeEnvelope.Payload.(stateelements.ObservationCommitOutcome)
+	secondStateEnvelope := receiveState(t, snapshots)
+	secondSnapshot := secondStateEnvelope.Payload.(trajectory.Snapshot)
+	secondOutcomeEnvelope := receiveState(t, outcomes)
+	secondOutcome := secondOutcomeEnvelope.Payload.(stateelements.ObservationCommitOutcome)
 	if firstOutcome.Kind != stateelements.ObservationCommitted || firstOutcome.SourceRevision != 1 ||
 		secondOutcome.Kind != stateelements.ObservationCommitted || secondOutcome.SourceRevision != 2 {
 		t.Fatalf("outcomes = %+v, %+v", firstOutcome, secondOutcome)
 	}
 	if firstSnapshot.Version != 1 || secondSnapshot.Version != 2 {
 		t.Fatalf("snapshot versions = %d, %d", firstSnapshot.Version, secondSnapshot.Version)
+	}
+	for _, committed := range []struct {
+		snapshot trajectory.Snapshot
+		state    element.Envelope
+		outcome  element.Envelope
+		context  stateelements.CommittedContext
+	}{
+		{firstSnapshot, firstStateEnvelope, firstOutcomeEnvelope, firstOutcome.Context},
+		{secondSnapshot, secondStateEnvelope, secondOutcomeEnvelope, secondOutcome.Context},
+	} {
+		if committed.context.StateItemID != committed.state.ItemID ||
+			!slices.Contains(committed.outcome.CausalParents, committed.state.ItemID) {
+			t.Fatalf("observation context is not causally bound: context=%+v state=%+v outcome=%+v",
+				committed.context, committed.state, committed.outcome)
+		}
+		if err := trajectory.VerifyPrefix(committed.snapshot, committed.context.Prefix); err != nil {
+			t.Fatalf("observation outcome prefix is invalid: %v", err)
+		}
 	}
 	second := secondSnapshot.Items[1]
 	if second.Event == nil || second.Event.SupersedesRevision != 1 ||
@@ -250,7 +295,8 @@ func TestObservationCommitSerializesRevisionsThroughAuthoritativeStoreReplies(t 
 	unknown := final
 	unknown.Revision, unknown.Supersedes = 100, 99
 	if _, err := input.Broadcast(context.Background(), element.Envelope{
-		Type: typeOf, ItemID: "asr-unknown", SourceID: "utterance-2", Payload: unknown,
+		Type: typeOf, ItemID: "asr-unknown", SourceID: "utterance-2",
+		SessionID: "session-state", Payload: unknown,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +349,7 @@ func assertPureStateResolution(
 		resolution := mounted.Live().Nodes[node].Resolution
 		if resolution != nil && resolution.RuntimeEvidence == inspect.EvidenceLive &&
 			resolution.Runtime.ID == "builtin://openrealtime/elements/"+elementName &&
-			resolution.Runtime.Revision == "implementation:1" &&
+			resolution.Runtime.Revision == "implementation:2" &&
 			resolution.CapabilitiesEvidence == inspect.EvidenceLive &&
 			len(resolution.Capabilities) == 0 {
 			return

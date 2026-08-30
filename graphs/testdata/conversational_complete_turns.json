@@ -1,0 +1,41 @@
+{
+  "format_version": 1,
+  "cases": [
+    {
+      "profile": "conversational-fast-only",
+      "graph_fingerprint": "sha256:4d8eaa8b5966d4b7db7051a8a7439360ca59f748565c0d818a72eb371605bf72",
+      "played_speech": ["fast response."],
+      "committed_results": 1,
+      "rejected_results": 1,
+      "rejection_code": "version_conflict",
+      "final_store_version": 3,
+      "observation_items": 1,
+      "instruction_items": 1,
+      "assistant_items": 1
+    },
+    {
+      "profile": "conversational-slow-only",
+      "graph_fingerprint": "sha256:89b078a7262ba4cb1a33a851a38395f4daf5c5a338f4c4736272069fb66f7c96",
+      "played_speech": ["slow response."],
+      "committed_results": 1,
+      "rejected_results": 1,
+      "rejection_code": "version_conflict",
+      "final_store_version": 3,
+      "observation_items": 1,
+      "instruction_items": 1,
+      "assistant_items": 1
+    },
+    {
+      "profile": "conversational-both",
+      "graph_fingerprint": "sha256:98adf5022a6e4b98a39cb1bd2a63f07a1204e538de380b908ad9bf3ec406e6b0",
+      "played_speech": ["fast response.", "slow response."],
+      "committed_results": 1,
+      "rejected_results": 1,
+      "rejection_code": "version_conflict",
+      "final_store_version": 3,
+      "observation_items": 1,
+      "instruction_items": 1,
+      "assistant_items": 1
+    }
+  ]
+}

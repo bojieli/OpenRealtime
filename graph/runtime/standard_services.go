@@ -6,12 +6,49 @@ import (
 	"sync"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 )
 
 const (
 	ClockServiceName    = "runtime.clock"
 	SequenceServiceName = "runtime.sequence"
+
+	standardRuntimeServiceRevision = "implementation:1"
 )
+
+var standardRuntimeServiceArtifacts = map[string]inspect.ArtifactIdentity{
+	ClockServiceName: {
+		ID:       "go://github.com/bojieli/OpenRealtime/graph/runtime/Clock",
+		Revision: standardRuntimeServiceRevision,
+	},
+	SequenceServiceName: {
+		ID:       "go://github.com/bojieli/OpenRealtime/graph/runtime/SequenceAllocator",
+		Revision: standardRuntimeServiceRevision,
+	},
+	SecretServiceName: {
+		ID:       "go://github.com/bojieli/OpenRealtime/graph/runtime/SecretAccess",
+		Revision: standardRuntimeServiceRevision,
+	},
+}
+
+// StandardDependencyArtifact returns the exact built-in artifact supplying a
+// mount-owned runtime coeffect. It does not construct a service: Mount creates
+// the clock, sequence allocator, and node-scoped secret access only after the
+// sealed preparation has passed.
+func StandardDependencyArtifact(name string) (inspect.ArtifactIdentity, bool) {
+	artifact, found := standardRuntimeServiceArtifacts[name]
+	return artifact, found
+}
+
+// StandardDependencyArtifacts returns an independent deterministic identity
+// map suitable for config discovery and production assembly catalogs.
+func StandardDependencyArtifacts() map[string]inspect.ArtifactIdentity {
+	result := make(map[string]inspect.ArtifactIdentity, len(standardRuntimeServiceArtifacts))
+	for name, artifact := range standardRuntimeServiceArtifacts {
+		result[name] = artifact
+	}
+	return result
+}
 
 // Clock is the monotonic time coeffect available to every mounted graph.
 // Elements declare it when timestamps or deadlines affect semantics.
@@ -80,6 +117,10 @@ func (services *mountServices) Lookup(name string) (any, uint64, bool) {
 		return services.clock, 1, true
 	case SequenceServiceName:
 		return services.sequences, 1, true
+	case SecretServiceName:
+		// Secret access is always a node-scoped overlay installed by the
+		// sealed prepared-plan path. A deployment service must not spoof it.
+		return nil, 0, false
 	default:
 		if services.deployment == nil {
 			return nil, 0, false

@@ -35,10 +35,12 @@ type Waiting struct {
 	Observation bool `json:"observation"`
 	ToolResult  bool `json:"tool_result"`
 	Repair      bool `json:"repair"`
-	// AutonomousObservation says every observation in the batch came from an
-	// observer rather than the user. Such evidence may be examined while agent
-	// audio is playing: action can stay silent, and any speech it motivates is
-	// queued behind the current utterance by the speech plane.
+	// AutonomousObservation says the batch contains only observations and all
+	// of them came from observers rather than the user. Such evidence may be
+	// examined while agent audio is playing: action can stay silent, and any
+	// speech it motivates is queued behind the current utterance by the speech
+	// plane. A spoken safe-point signal coalesced beside an observation must not
+	// inherit this privilege.
 	AutonomousObservation bool `json:"autonomous_observation,omitempty"`
 	// Parallel marks a batch the loop may run alongside work in flight.
 	Parallel bool `json:"parallel"`
@@ -72,6 +74,14 @@ func WaitingFrom(batch eventloop.Batch, state session.Snapshot) Waiting {
 				trajectory.AuthorityOf(item) != trajectory.AuthorityObserver {
 				autonomous = false
 				break
+			}
+		}
+		if autonomous {
+			for _, event := range batch.Events {
+				if event.Kind != trajectory.KindObservation {
+					autonomous = false
+					break
+				}
 			}
 		}
 	}

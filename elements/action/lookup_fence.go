@@ -112,6 +112,24 @@ func (runner *toolLookupRunner) Run(ctx context.Context) error {
 			continue
 		}
 		call := callOfAdmitted(admitted)
+		if err := validateAdmittedProposal(admitted); err != nil {
+			if publishErr := publishOutcome(ctx, runner.emit, runner.outcome, envelope, Outcome{
+				Kind: OutcomeRejected, Stage: "tool_lookup", Operation: "lookup", CallID: call.CallID,
+				Code: "invalid_admission", Message: err.Error(),
+			}); publishErr != nil {
+				return publishErr
+			}
+			continue
+		}
+		if code, err := validateActionEnvelopeIdentity(envelope, admitted); err != nil {
+			if publishErr := publishOutcome(ctx, runner.emit, runner.outcome, envelope, Outcome{
+				Kind: OutcomeRejected, Stage: "tool_lookup", Operation: "lookup", CallID: call.CallID,
+				Code: code, Message: err.Error(),
+			}); publishErr != nil {
+				return publishErr
+			}
+			continue
+		}
 		tool, found, lookupErr := runner.set.lookup(call.Name)
 		if lookupErr != nil || !found {
 			code, message := "unknown_tool", fmt.Sprintf("tool %q is not declared", call.Name)
@@ -245,7 +263,25 @@ func (runner *targetFenceRunner) Run(ctx context.Context) error {
 			continue
 		}
 		call := callOfConfirmed(confirmed)
-		if err := runner.validate(confirmed); err != nil {
+		if err := validateConfirmedAction(confirmed); err != nil {
+			if publishErr := publishOutcome(ctx, runner.emit, runner.outcome, envelope, Outcome{
+				Kind: OutcomeRejected, Stage: "target_fence", Operation: "fence", CallID: call.CallID,
+				Code: "invalid_confirmation", Message: err.Error(),
+			}); publishErr != nil {
+				return publishErr
+			}
+			continue
+		}
+		if code, err := validateActionEnvelopeIdentity(envelope, confirmed.Declared.Admitted); err != nil {
+			if publishErr := publishOutcome(ctx, runner.emit, runner.outcome, envelope, Outcome{
+				Kind: OutcomeRejected, Stage: "target_fence", Operation: "fence", CallID: call.CallID,
+				Code: code, Message: err.Error(),
+			}); publishErr != nil {
+				return publishErr
+			}
+			continue
+		}
+		if err := validateTargetAuthorization(runner.target, confirmed); err != nil {
 			if publishErr := publishOutcome(ctx, runner.emit, runner.outcome, envelope, Outcome{
 				Kind: OutcomeRejected, Stage: "target_fence", Operation: "fence", CallID: call.CallID,
 				Code: "target_rejected", Message: err.Error(),
@@ -266,20 +302,20 @@ func (runner *targetFenceRunner) Run(ctx context.Context) error {
 	}
 }
 
-func (runner *targetFenceRunner) validate(confirmed ConfirmedAction) error {
+func validateTargetAuthorization(target targetEntry, confirmed ConfirmedAction) error {
 	declared := confirmed.Declared
 	call := callOfDeclared(declared)
 	if !computeruse.IsAction(call.Name) {
-		if declared.Target != "" && declared.Target != runner.target.target.Name {
-			return fmt.Errorf("declared target %q does not match resolved target %q", declared.Target, runner.target.target.Name)
+		if declared.Target != "" && declared.Target != target.target.Name {
+			return fmt.Errorf("declared target %q does not match resolved target %q", declared.Target, target.target.Name)
 		}
 		return nil
 	}
 	if _, standard := computeruse.Lookup(call.Name); !standard {
 		return fmt.Errorf("%q is not a declared computer-use action", call.Name)
 	}
-	if declared.Target != runner.target.target.Name {
-		return fmt.Errorf("declared target %q does not match resolved target %q", declared.Target, runner.target.target.Name)
+	if declared.Target != target.target.Name {
+		return fmt.Errorf("declared target %q does not match resolved target %q", declared.Target, target.target.Name)
 	}
 	var arguments struct {
 		Source string `json:"source"`
@@ -294,8 +330,8 @@ func (runner *targetFenceRunner) validate(confirmed ConfirmedAction) error {
 		}
 		return fmt.Errorf("computer action %q does not name a video source", call.Name)
 	}
-	if !runner.target.target.Owns(arguments.Source) {
-		return fmt.Errorf("target %q does not own source %q", runner.target.target.Name, arguments.Source)
+	if !target.target.Owns(arguments.Source) {
+		return fmt.Errorf("target %q does not own source %q", target.target.Name, arguments.Source)
 	}
 	return nil
 }

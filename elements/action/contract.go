@@ -16,8 +16,11 @@ import (
 	"strings"
 
 	legacyaction "github.com/bojieli/OpenRealtime/action"
+	authoritycontract "github.com/bojieli/OpenRealtime/authority"
 	"github.com/bojieli/OpenRealtime/element"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	"github.com/bojieli/OpenRealtime/elements/internal/factoryprofile"
+	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/internal/elementconfig"
@@ -33,70 +36,100 @@ const (
 )
 
 var (
-	proposalType   = element.Stream(element.Named("tool.Proposal"))
-	provenanceType = element.Stream(element.Named("authority.Provenance"))
-	admittedType   = element.Stream(element.Named("tool.AdmittedProposal"))
-	declaredType   = element.Stream(element.Named("tool.DeclaredAction"))
-	confirmedType  = element.Stream(element.Named("tool.ConfirmedAction"))
-	authorizedType = element.Stream(element.Named("tool.AuthorizedAction"))
-	executableType = element.Stream(element.Named("tool.ExecutableAction"))
-	committedType  = element.Stream(element.Named("tool.CommittedAction"))
-	resultType     = element.Stream(element.Named("tool.ExecutionResult"))
-	interruptType  = element.Interrupt(element.Named("tool.CallID"))
-	outcomeType    = element.Stream(element.Named("action.Outcome"))
-	transitionType = element.Stream(element.Named("action.LedgerTransition"))
-	auditType      = element.Stream(element.Named("action.AuditRecord"))
-	resolutionType = element.State(element.Named("action.Resolution"))
+	proposalType        = element.Stream(element.Named("tool.Proposal"))
+	candidateType       = authoritycontract.CandidateType()
+	provenanceType      = element.Stream(element.Named("authority.Provenance"))
+	admittedType        = element.Stream(element.Named("tool.AdmittedProposal"))
+	declaredType        = element.Stream(element.Named("tool.DeclaredAction"))
+	confirmedType       = element.Stream(element.Named("tool.ConfirmedAction"))
+	authorizedType      = element.Stream(element.Named("tool.AuthorizedAction"))
+	executableType      = element.Stream(element.Named("tool.ExecutableAction"))
+	committedType       = element.Stream(element.Named("tool.CommittedAction"))
+	resultType          = element.Stream(element.Named("tool.ExecutionResult"))
+	interruptType       = element.Interrupt(element.Named("tool.CallID"))
+	outcomeType         = element.Stream(element.Named("action.Outcome"))
+	transitionType      = element.Stream(element.Named("action.LedgerTransition"))
+	auditType           = element.Stream(element.Named("action.AuditRecord"))
+	resolutionType      = element.State(element.Named("action.Resolution"))
+	canonicalActionType = element.Stream(element.Named("tool.CanonicalAction"))
+	canonicalResultType = element.Stream(element.Named("tool.CanonicalResult"))
+	appendType          = stateelements.AppendType()
+	commitType          = stateelements.CommitType()
+	rejectionType       = stateelements.RejectionType()
+	snapshotType        = stateelements.SnapshotType()
 )
 
-func ProposalType() element.Type   { return proposalType.Clone() }
-func ProvenanceType() element.Type { return provenanceType.Clone() }
-func AdmittedType() element.Type   { return admittedType.Clone() }
-func DeclaredType() element.Type   { return declaredType.Clone() }
-func ConfirmedType() element.Type  { return confirmedType.Clone() }
-func AuthorizedType() element.Type { return authorizedType.Clone() }
-func ExecutableType() element.Type { return executableType.Clone() }
-func CommittedType() element.Type  { return committedType.Clone() }
-func ResultType() element.Type     { return resultType.Clone() }
-func InterruptType() element.Type  { return interruptType.Clone() }
-func OutcomeType() element.Type    { return outcomeType.Clone() }
-func TransitionType() element.Type { return transitionType.Clone() }
-func AuditType() element.Type      { return auditType.Clone() }
-func ResolutionType() element.Type { return resolutionType.Clone() }
+func ProposalType() element.Type        { return proposalType.Clone() }
+func CandidateType() element.Type       { return candidateType.Clone() }
+func ProvenanceType() element.Type      { return provenanceType.Clone() }
+func AdmittedType() element.Type        { return admittedType.Clone() }
+func DeclaredType() element.Type        { return declaredType.Clone() }
+func ConfirmedType() element.Type       { return confirmedType.Clone() }
+func AuthorizedType() element.Type      { return authorizedType.Clone() }
+func ExecutableType() element.Type      { return executableType.Clone() }
+func CommittedType() element.Type       { return committedType.Clone() }
+func ResultType() element.Type          { return resultType.Clone() }
+func InterruptType() element.Type       { return interruptType.Clone() }
+func OutcomeType() element.Type         { return outcomeType.Clone() }
+func TransitionType() element.Type      { return transitionType.Clone() }
+func AuditType() element.Type           { return auditType.Clone() }
+func ResolutionType() element.Type      { return resolutionType.Clone() }
+func CanonicalActionType() element.Type { return canonicalActionType.Clone() }
+func CanonicalResultType() element.Type { return canonicalResultType.Clone() }
 
 // Provenance identifies canonical trajectory evidence for one proposal. The
 // authority is deliberately not supplied here: ProposalAdmission derives it
 // from the deployment-owned trajectory, so observed screen text cannot label
 // itself as user-authoritative.
 type Provenance struct {
-	CallID          string `json:"call_id"`
-	ProposalItemID  string `json:"proposal_item_id"`
-	ModelRunID      string `json:"model_run_id"`
-	SessionID       string `json:"session_id,omitempty"`
-	TrajectoryItem  string `json:"trajectory_item"`
-	SourceRevision  uint64 `json:"source_revision"`
-	ContextVersion  uint64 `json:"context_version"`
-	ContextTailItem string `json:"context_tail_item"`
+	CallID                   string              `json:"call_id"`
+	ProposalItemID           string              `json:"proposal_item_id"`
+	CandidateItemID          string              `json:"candidate_item_id"`
+	ResultItemID             string              `json:"result_item_id"`
+	ModelRunID               string              `json:"model_run_id"`
+	SessionID                string              `json:"session_id"`
+	ActivationItemID         string              `json:"activation_item_id"`
+	ActivationCauseItemID    string              `json:"activation_cause_item_id"`
+	ObservationItemID        string              `json:"observation_item_id"`
+	ObservationTriggerItemID string              `json:"observation_trigger_item_id"`
+	SourceRevision           uint64              `json:"source_revision"`
+	ContextVersion           uint64              `json:"context_version"`
+	ContextEnvelopeItemID    string              `json:"context_envelope_item_id"`
+	ContextTailItem          string              `json:"context_tail_item"`
+	ProviderReference        string              `json:"provider_reference"`
+	ModelResultDigest        string              `json:"model_result_digest"`
+	ModelProducer            trajectory.Producer `json:"model_producer"`
 }
 
-// Interrupt is addressed by call ID. Cancel and timeout use distinct graph
-// ports even though they share this payload, keeping their policy paths
-// independently inspectable.
+// Interrupt is addressed by an explicit call ID and the containing envelope's
+// non-empty session and cognition-run identities. Cancel and timeout use
+// distinct graph ports even though they share this payload, keeping their
+// policy paths independently inspectable and preventing a provider-local call
+// ID from canceling another session or invocation.
 type Interrupt struct {
 	CallID string `json:"call_id,omitempty"`
 	Reason string `json:"reason,omitempty"`
 }
 
 type AdmittedProposal struct {
-	Proposal        cognitionelements.ToolProposal `json:"proposal"`
-	ProposalItemID  string                         `json:"proposal_item_id"`
-	ModelRunID      string                         `json:"model_run_id"`
-	SessionID       string                         `json:"session_id,omitempty"`
-	Authority       trajectory.Authority           `json:"authority"`
-	AuthorityItemID string                         `json:"authority_item_id"`
-	SourceRevision  uint64                         `json:"source_revision,omitempty"`
-	ContextVersion  uint64                         `json:"context_version"`
-	ContextTailItem string                         `json:"context_tail_item"`
+	Proposal                 cognitionelements.ToolProposal `json:"proposal"`
+	ProposalItemID           string                         `json:"proposal_item_id"`
+	CandidateItemID          string                         `json:"candidate_item_id"`
+	ResultItemID             string                         `json:"result_item_id"`
+	ModelRunID               string                         `json:"model_run_id"`
+	SessionID                string                         `json:"session_id"`
+	ActivationItemID         string                         `json:"activation_item_id"`
+	ActivationCauseItemID    string                         `json:"activation_cause_item_id"`
+	Authority                trajectory.Authority           `json:"authority"`
+	AuthorityItemID          string                         `json:"authority_item_id"`
+	ObservationTriggerItemID string                         `json:"observation_trigger_item_id"`
+	SourceRevision           uint64                         `json:"source_revision"`
+	ContextVersion           uint64                         `json:"context_version"`
+	ContextEnvelopeItemID    string                         `json:"context_envelope_item_id"`
+	ContextTailItem          string                         `json:"context_tail_item"`
+	ProviderReference        string                         `json:"provider_reference"`
+	ModelResultDigest        string                         `json:"model_result_digest"`
+	ModelProducer            trajectory.Producer            `json:"model_producer"`
 }
 
 type DeclaredAction struct {
@@ -111,10 +144,11 @@ type DeclaredAction struct {
 }
 
 type ConfirmedAction struct {
-	Declared           DeclaredAction `json:"declared"`
-	ConfirmationNeeded bool           `json:"confirmation_needed"`
-	ProviderReference  string         `json:"provider_reference,omitempty"`
-	ProviderIdentity   string         `json:"provider_identity,omitempty"`
+	Declared               DeclaredAction `json:"declared"`
+	ConfirmationNeeded     bool           `json:"confirmation_needed"`
+	ProviderReference      string         `json:"provider_reference,omitempty"`
+	ProviderIdentity       string         `json:"provider_identity,omitempty"`
+	ConfirmationCapability string         `json:"confirmation_capability,omitempty"`
 }
 
 type AuthorizedAction struct {
@@ -123,15 +157,25 @@ type AuthorizedAction struct {
 	TargetDigest    string          `json:"target_digest"`
 }
 
+// CanonicalAction proves that an authorized action was promoted from the
+// exact canonical model proposal into a trajectory tool_call safe point. The
+// distinct port type prevents TargetFence output from bypassing this commit.
+type CanonicalAction struct {
+	Authorized       AuthorizedAction `json:"authorized"`
+	ProposalItemID   string           `json:"proposal_item_id"`
+	TrajectoryItemID string           `json:"trajectory_item_id"`
+	StoreVersion     uint64           `json:"store_version"`
+}
+
 // ExecutableAction is the typed authority accepted by Dispatch. Capability is
 // an HMAC minted by LedgerCommit from deployment-owned state; runtime payload
 // forgery therefore cannot bypass the graph's nominal type boundary.
 type ExecutableAction struct {
-	Authorized      AuthorizedAction `json:"authorized"`
-	LedgerReference string           `json:"ledger_reference"`
-	LedgerIdentity  string           `json:"ledger_identity"`
-	CommitmentID    string           `json:"commitment_id"`
-	Capability      string           `json:"capability"`
+	Canonical       CanonicalAction `json:"canonical"`
+	LedgerReference string          `json:"ledger_reference"`
+	LedgerIdentity  string          `json:"ledger_identity"`
+	CommitmentID    string          `json:"commitment_id"`
+	Capability      string          `json:"capability"`
 }
 
 type CommittedAction struct {
@@ -140,12 +184,23 @@ type CommittedAction struct {
 }
 
 type ExecutionResult struct {
-	CallID       string                `json:"call_id"`
-	Name         string                `json:"name"`
-	CommitmentID string                `json:"commitment_id"`
-	Result       trajectory.ToolResult `json:"result"`
-	CrossedNS    uint64                `json:"crossed_ns"`
-	FinishedNS   uint64                `json:"finished_ns"`
+	Executable       ExecutableAction      `json:"executable"`
+	ResultCapability string                `json:"result_capability"`
+	CallID           string                `json:"call_id"`
+	Name             string                `json:"name"`
+	CommitmentID     string                `json:"commitment_id"`
+	Result           trajectory.ToolResult `json:"result"`
+	CrossedNS        uint64                `json:"crossed_ns"`
+	FinishedNS       uint64                `json:"finished_ns"`
+}
+
+// CanonicalResult attests the trajectory safe point containing a dispatch
+// result. Consumers can sample the matching snapshot without racing a merely
+// completed external call that has not entered canonical state yet.
+type CanonicalResult struct {
+	Execution        ExecutionResult `json:"execution"`
+	TrajectoryItemID string          `json:"trajectory_item_id"`
+	StoreVersion     uint64          `json:"store_version"`
 }
 
 type OutcomeKind string
@@ -195,6 +250,9 @@ type AuditRecord struct {
 	RegistryReference  string               `json:"registry_reference"`
 	DeclarationDigest  string               `json:"declaration_digest"`
 	DispatcherIdentity string               `json:"dispatcher_identity"`
+	ProviderReference  string               `json:"provider_reference"`
+	ModelResultDigest  string               `json:"model_result_digest"`
+	ModelProducer      trajectory.Producer  `json:"model_producer"`
 	Crossed            bool                 `json:"crossed"`
 	Executed           bool                 `json:"executed"`
 	ResultError        string               `json:"result_error,omitempty"`
@@ -240,6 +298,16 @@ type DispatchConfig struct {
 	Ledger       string `json:"ledger"`
 	MaxPending   int    `json:"max_pending,omitempty"`
 	MaxCompleted int    `json:"max_completed,omitempty"`
+}
+
+type ProvenanceJoinConfig struct {
+	MaxPending     int `json:"max_pending,omitempty"`
+	TerminalMemory int `json:"terminal_memory,omitempty"`
+}
+
+type TrajectoryCommitConfig struct {
+	MaxPending     int `json:"max_pending,omitempty"`
+	TerminalMemory int `json:"terminal_memory,omitempty"`
 }
 
 func decodeBoundedConfig[T any](source json.RawMessage, destination *T, bounds ...*int) error {
@@ -324,6 +392,22 @@ func decodeDispatchConfig(source json.RawMessage) (DispatchConfig, error) {
 	return config, nil
 }
 
+func decodeProvenanceJoinConfig(source json.RawMessage) (ProvenanceJoinConfig, error) {
+	var config ProvenanceJoinConfig
+	if err := decodeBoundedConfig(source, &config, &config.MaxPending, &config.TerminalMemory); err != nil {
+		return ProvenanceJoinConfig{}, err
+	}
+	return config, nil
+}
+
+func decodeTrajectoryCommitConfig(source json.RawMessage) (TrajectoryCommitConfig, error) {
+	var config TrajectoryCommitConfig
+	if err := decodeBoundedConfig(source, &config, &config.MaxPending, &config.TerminalMemory); err != nil {
+		return TrajectoryCommitConfig{}, err
+	}
+	return config, nil
+}
+
 func port(name string, direction element.Direction, value element.Type, depth int) element.Port {
 	return element.Port{Name: name, Direction: direction, Type: value,
 		Cardinality: element.One, Required: true, DefaultDepth: depth}
@@ -339,7 +423,7 @@ func statePort(name string, direction element.Direction, value element.Type) ele
 
 func ProposalAdmissionDescriptor() element.Descriptor {
 	return element.Descriptor{
-		FormatVersion: element.DescriptorFormatVersion, Name: "authority.ProposalAdmission", Revision: 1,
+		FormatVersion: element.DescriptorFormatVersion, Name: "authority.ProposalAdmission", Revision: 2,
 		Ports: []element.Port{
 			port("proposal", element.Input, proposalType, 32), port("provenance", element.Input, provenanceType, 32),
 			port("cancel", element.Input, interruptType, 16), port("timeout", element.Input, interruptType, 16),
@@ -348,16 +432,38 @@ func ProposalAdmissionDescriptor() element.Descriptor {
 		},
 		Reaction: element.Reaction{Triggers: []string{"proposal", "provenance"}, Interrupts: []string{"cancel", "timeout"},
 			Outcomes: []string{"admitted", "outcome", "resolved"}, MaxConcurrency: 1},
-		StateSchema:  "schema://openrealtime/authority/proposal-admission-state/v1",
+		StateSchema:  "schema://openrealtime/authority/proposal-admission-state/v2",
 		ConfigSchema: "schema://openrealtime/authority/proposal-admission-config/v1",
 		Dependencies: []element.Dependency{{Name: TrajectoryStoreService}, {Name: graphruntime.ClockServiceName},
 			{Name: graphruntime.SequenceServiceName}},
 	}
 }
 
+// ProvenanceJoinDescriptor derives authority provenance from an exact model
+// proposal/result join. It never accepts a caller-authored authority claim.
+func ProvenanceJoinDescriptor() element.Descriptor {
+	return element.Descriptor{
+		FormatVersion: element.DescriptorFormatVersion, Name: "authority.ProvenanceJoin", Revision: 1,
+		Ports: []element.Port{
+			port("candidate", element.Input, candidateType, 16),
+			port("proposal", element.Input, proposalType, 32),
+			port("result", element.Input, cognitionelements.ResultType(), 16),
+			port("cancel", element.Input, interruptType, 16), port("timeout", element.Input, interruptType, 16),
+			port("provenance", element.Output, provenanceType, 32), port("outcome", element.Output, outcomeType, 32),
+			statePort("resolved", element.Output, resolutionType),
+		},
+		Reaction: element.Reaction{Triggers: []string{"candidate", "proposal", "result"}, Interrupts: []string{"cancel", "timeout"},
+			Outcomes: []string{"provenance", "outcome", "resolved"}, MaxConcurrency: 1},
+		StateSchema:  "schema://openrealtime/authority/provenance-join-state/v1",
+		ConfigSchema: "schema://openrealtime/authority/provenance-join-config/v1",
+		Dependencies: []element.Dependency{{Name: graphruntime.ClockServiceName}, {Name: graphruntime.SequenceServiceName}},
+		Effects:      []element.Effect{{Name: "authority.provenance.pending", Reversible: true}},
+	}
+}
+
 func ToolLookupDescriptor() element.Descriptor {
 	return element.Descriptor{
-		FormatVersion: element.DescriptorFormatVersion, Name: "action.ToolLookup", Revision: 1,
+		FormatVersion: element.DescriptorFormatVersion, Name: "action.ToolLookup", Revision: 2,
 		Ports: []element.Port{port("proposal", element.Input, admittedType, 32), port("declared", element.Output, declaredType, 32),
 			port("outcome", element.Output, outcomeType, 32), statePort("resolved", element.Output, resolutionType)},
 		Reaction:     element.Reaction{Triggers: []string{"proposal"}, Outcomes: []string{"declared", "outcome", "resolved"}, MaxConcurrency: 1},
@@ -369,13 +475,13 @@ func ToolLookupDescriptor() element.Descriptor {
 
 func ConfirmationDescriptor() element.Descriptor {
 	return element.Descriptor{
-		FormatVersion: element.DescriptorFormatVersion, Name: "authority.Confirmation", Revision: 1,
+		FormatVersion: element.DescriptorFormatVersion, Name: "authority.Confirmation", Revision: 2,
 		Ports: []element.Port{port("action", element.Input, declaredType, 32), port("cancel", element.Input, interruptType, 16),
 			port("timeout", element.Input, interruptType, 16), port("confirmed", element.Output, confirmedType, 32),
 			port("outcome", element.Output, outcomeType, 32), statePort("resolved", element.Output, resolutionType)},
 		Reaction: element.Reaction{Triggers: []string{"action"}, Interrupts: []string{"cancel", "timeout"},
 			Outcomes: []string{"confirmed", "outcome", "resolved"}, MaxConcurrency: 1},
-		StateSchema:  "schema://openrealtime/authority/confirmation-state/v1",
+		StateSchema:  "schema://openrealtime/authority/confirmation-state/v2",
 		ConfigSchema: "schema://openrealtime/authority/confirmation-config/v1",
 		Dependencies: []element.Dependency{{Name: ConfirmationRegistryService}, {Name: graphruntime.ClockServiceName},
 			{Name: graphruntime.SequenceServiceName}},
@@ -385,7 +491,7 @@ func ConfirmationDescriptor() element.Descriptor {
 
 func TargetFenceDescriptor() element.Descriptor {
 	return element.Descriptor{
-		FormatVersion: element.DescriptorFormatVersion, Name: "authority.TargetFence", Revision: 1,
+		FormatVersion: element.DescriptorFormatVersion, Name: "authority.TargetFence", Revision: 2,
 		Ports: []element.Port{port("action", element.Input, confirmedType, 32), port("authorized", element.Output, authorizedType, 32),
 			port("outcome", element.Output, outcomeType, 32), statePort("resolved", element.Output, resolutionType)},
 		Reaction:     element.Reaction{Triggers: []string{"action"}, Outcomes: []string{"authorized", "outcome", "resolved"}, MaxConcurrency: 1},
@@ -397,23 +503,73 @@ func TargetFenceDescriptor() element.Descriptor {
 
 func LedgerCommitDescriptor() element.Descriptor {
 	return element.Descriptor{
-		FormatVersion: element.DescriptorFormatVersion, Name: "action.LedgerCommit", Revision: 1,
-		Ports: []element.Port{port("action", element.Input, authorizedType, 32), port("cancel", element.Input, interruptType, 16),
+		FormatVersion: element.DescriptorFormatVersion, Name: "action.LedgerCommit", Revision: 2,
+		Ports: []element.Port{port("action", element.Input, canonicalActionType, 32), port("cancel", element.Input, interruptType, 16),
 			port("timeout", element.Input, interruptType, 16), port("executable", element.Output, executableType, 32),
 			port("transition", element.Output, transitionType, 32), port("outcome", element.Output, outcomeType, 32),
 			statePort("resolved", element.Output, resolutionType)},
 		Reaction: element.Reaction{Triggers: []string{"action"}, Interrupts: []string{"cancel", "timeout"},
 			Outcomes: []string{"executable", "transition", "outcome", "resolved"}, MaxConcurrency: 1},
-		StateSchema:  "schema://openrealtime/action/ledger-commit-state/v1",
+		StateSchema:  "schema://openrealtime/action/ledger-commit-state/v2",
 		ConfigSchema: "schema://openrealtime/action/ledger-commit-config/v1",
-		Dependencies: []element.Dependency{{Name: LedgerRegistryService}, {Name: graphruntime.ClockServiceName},
-			{Name: graphruntime.SequenceServiceName}},
+		Dependencies: []element.Dependency{{Name: LedgerRegistryService}, {Name: TrajectoryStoreService},
+			{Name: ToolRegistryService}, {Name: TargetRegistryService}, {Name: ConfirmationRegistryService},
+			{Name: graphruntime.ClockServiceName}, {Name: graphruntime.SequenceServiceName}},
+	}
+}
+
+// AuthorizedCallCommitDescriptor is the mandatory canonical promotion between
+// target authorization and irreversibility-ledger admission.
+func AuthorizedCallCommitDescriptor() element.Descriptor {
+	return element.Descriptor{
+		FormatVersion: element.DescriptorFormatVersion, Name: "action.AuthorizedCallCommit", Revision: 2,
+		Ports: []element.Port{
+			port("action", element.Input, authorizedType, 32), port("context", element.Input, snapshotType, 1),
+			port("committed", element.Input, commitType, 16), port("rejected", element.Input, rejectionType, 16),
+			port("cancel", element.Input, interruptType, 16), port("timeout", element.Input, interruptType, 16),
+			port("append", element.Output, appendType, 32), port("canonical", element.Output, canonicalActionType, 32),
+			port("outcome", element.Output, outcomeType, 32), statePort("resolved", element.Output, resolutionType),
+		},
+		Reaction: element.Reaction{
+			Triggers:   []string{"action", "context", "committed", "rejected"},
+			Interrupts: []string{"cancel", "timeout"}, Outcomes: []string{"append", "canonical", "outcome", "resolved"},
+			MaxConcurrency: 1,
+		},
+		StateSchema:  "schema://openrealtime/action/authorized-call-commit-state/v1",
+		ConfigSchema: "schema://openrealtime/action/authorized-call-commit-config/v1",
+		Dependencies: []element.Dependency{{Name: graphruntime.ClockServiceName}, {Name: graphruntime.SequenceServiceName}},
+		Effects:      []element.Effect{{Name: "action.authorized-call.pending", Reversible: true}},
+	}
+}
+
+// ToolResultCommitDescriptor closes the canonical call/result lifecycle after
+// dispatch. External completion is not model context until this commit lands.
+func ToolResultCommitDescriptor() element.Descriptor {
+	return element.Descriptor{
+		FormatVersion: element.DescriptorFormatVersion, Name: "action.ToolResultCommit", Revision: 2,
+		Ports: []element.Port{
+			port("result", element.Input, resultType, 32), port("context", element.Input, snapshotType, 1),
+			port("committed", element.Input, commitType, 16), port("rejected", element.Input, rejectionType, 16),
+			port("cancel", element.Input, interruptType, 16), port("timeout", element.Input, interruptType, 16),
+			port("append", element.Output, appendType, 32), port("canonical", element.Output, canonicalResultType, 32),
+			port("outcome", element.Output, outcomeType, 32), statePort("resolved", element.Output, resolutionType),
+		},
+		Reaction: element.Reaction{
+			Triggers:   []string{"result", "context", "committed", "rejected"},
+			Interrupts: []string{"cancel", "timeout"}, Outcomes: []string{"append", "canonical", "outcome", "resolved"},
+			MaxConcurrency: 1,
+		},
+		StateSchema:  "schema://openrealtime/action/tool-result-commit-state/v1",
+		ConfigSchema: "schema://openrealtime/action/tool-result-commit-config/v1",
+		Dependencies: []element.Dependency{{Name: LedgerRegistryService}, {Name: TrajectoryStoreService},
+			{Name: graphruntime.ClockServiceName}, {Name: graphruntime.SequenceServiceName}},
+		Effects: []element.Effect{{Name: "action.tool-result.pending", Reversible: true}},
 	}
 }
 
 func DispatchDescriptor() element.Descriptor {
 	return element.Descriptor{
-		FormatVersion: element.DescriptorFormatVersion, Name: "action.Dispatch", Revision: 1,
+		FormatVersion: element.DescriptorFormatVersion, Name: "action.Dispatch", Revision: 2,
 		Ports: []element.Port{port("execute", element.Input, executableType, 32), port("cancel", element.Input, interruptType, 16),
 			port("timeout", element.Input, interruptType, 16), port("committed", element.Output, committedType, 32),
 			port("result", element.Output, resultType, 32), port("transition", element.Output, transitionType, 32),
@@ -421,17 +577,21 @@ func DispatchDescriptor() element.Descriptor {
 			statePort("resolved", element.Output, resolutionType)},
 		Reaction: element.Reaction{Triggers: []string{"execute"}, Interrupts: []string{"cancel", "timeout"},
 			Outcomes: []string{"committed", "result", "transition", "audit", "outcome", "resolved"}, MaxConcurrency: 1},
-		StateSchema:  "schema://openrealtime/action/dispatch-state/v1",
+		StateSchema:  "schema://openrealtime/action/dispatch-state/v2",
 		ConfigSchema: "schema://openrealtime/action/dispatch-config/v1",
 		Dependencies: []element.Dependency{{Name: ToolRegistryService}, {Name: LedgerRegistryService},
+			{Name: TargetRegistryService}, {Name: ConfirmationRegistryService},
 			{Name: graphruntime.ClockServiceName}, {Name: graphruntime.SequenceServiceName}},
 		Effects: []element.Effect{{Name: "action.external.dispatch", External: true, Authority: "tool.ExecutableAction"}},
 	}
 }
 
 func Descriptors() []element.Descriptor {
-	return []element.Descriptor{ProposalAdmissionDescriptor(), ToolLookupDescriptor(), ConfirmationDescriptor(),
-		TargetFenceDescriptor(), LedgerCommitDescriptor(), DispatchDescriptor()}
+	return []element.Descriptor{
+		ProvenanceJoinDescriptor(), ProposalAdmissionDescriptor(), ToolLookupDescriptor(), ConfirmationDescriptor(),
+		TargetFenceDescriptor(), AuthorizedCallCommitDescriptor(), LedgerCommitDescriptor(), DispatchDescriptor(),
+		ToolResultCommitDescriptor(),
+	}
 }
 
 func RegisterDescriptors(catalog *resolve.Catalog) error {
@@ -450,11 +610,26 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if registry == nil {
 		return errors.New("register action factories: nil registry")
 	}
-	for _, factory := range []element.Factory{proposalAdmissionFactory{}, toolLookupFactory{}, confirmationFactory{},
-		targetFenceFactory{}, ledgerCommitFactory{}, dispatchFactory{}} {
-		if err := registry.Register("", factory); err != nil {
+	registrations, err := FactoryRegistrations()
+	if err != nil {
+		return err
+	}
+	for _, registration := range registrations {
+		if err := registry.RegisterFactory(registration); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
+	entries := make([]factoryprofile.Entry, 0, len(Descriptors()))
+	for _, factory := range []element.Factory{
+		provenanceJoinFactory{}, proposalAdmissionFactory{}, toolLookupFactory{}, confirmationFactory{},
+		targetFenceFactory{}, authorizedCallCommitFactory{}, ledgerCommitFactory{}, dispatchFactory{},
+		toolResultCommitFactory{},
+	} {
+		entries = append(entries, factoryprofile.Entry{Factory: factory})
+	}
+	return factoryprofile.Registrations(entries...)
 }

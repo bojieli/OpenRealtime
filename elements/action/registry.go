@@ -17,6 +17,7 @@ import (
 
 	legacyaction "github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/computeruse"
+	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 type declaredTool struct {
@@ -173,6 +174,7 @@ type ConfirmationProviderFactory func() (ConfirmationProvider, error)
 type confirmationRegistration struct {
 	identity string
 	factory  ConfirmationProviderFactory
+	secret   [sha256.Size]byte
 }
 
 type ConfirmationProviders struct {
@@ -194,6 +196,10 @@ func (providers *ConfirmationProviders) Register(
 	if reference == "" || identity == "" || factory == nil {
 		return errors.New("confirmation provider requires reference, identity, and factory")
 	}
+	var secret [sha256.Size]byte
+	if _, err := rand.Read(secret[:]); err != nil {
+		return fmt.Errorf("create confirmation capability key: %w", err)
+	}
 	providers.mu.Lock()
 	defer providers.mu.Unlock()
 	if providers.entries == nil {
@@ -202,8 +208,28 @@ func (providers *ConfirmationProviders) Register(
 	if _, duplicate := providers.entries[reference]; duplicate {
 		return fmt.Errorf("confirmation provider %q is already registered", reference)
 	}
-	providers.entries[reference] = confirmationRegistration{identity: identity, factory: factory}
+	providers.entries[reference] = confirmationRegistration{identity: identity, factory: factory, secret: secret}
 	return nil
+}
+
+func (entry confirmationRegistration) sign(reference string, declared DeclaredAction) (string, error) {
+	encoded, err := json.Marshal(struct {
+		Declared  DeclaredAction `json:"declared"`
+		Reference string         `json:"reference"`
+		Identity  string         `json:"identity"`
+	}{Declared: declared, Reference: reference, Identity: entry.identity})
+	if err != nil {
+		return "", err
+	}
+	mac := hmac.New(sha256.New, entry.secret[:])
+	_, _ = mac.Write(encoded)
+	return "hmac-sha256:" + hex.EncodeToString(mac.Sum(nil)), nil
+}
+
+func (entry confirmationRegistration) verify(confirmed ConfirmedAction) bool {
+	want, err := entry.sign(confirmed.ProviderReference, confirmed.Declared)
+	return err == nil && confirmed.ProviderIdentity == entry.identity &&
+		hmac.Equal([]byte(want), []byte(confirmed.ConfirmationCapability))
 }
 
 func (providers *ConfirmationProviders) resolve(reference string) (confirmationRegistration, error) {
@@ -352,7 +378,7 @@ func (registries *LedgerRegistries) resolve(reference string) (ledgerEntry, erro
 	return entry, nil
 }
 
-func (entry ledgerEntry) sign(action AuthorizedAction, commitmentID string) (string, error) {
+func (entry ledgerEntry) sign(action CanonicalAction, commitmentID string) (string, error) {
 	encoded, err := capabilityPayload(action, commitmentID, entry.reference, entry.identity)
 	if err != nil {
 		return "", err
@@ -363,19 +389,51 @@ func (entry ledgerEntry) sign(action AuthorizedAction, commitmentID string) (str
 }
 
 func (entry ledgerEntry) verify(executable ExecutableAction) bool {
-	want, err := entry.sign(executable.Authorized, executable.CommitmentID)
+	want, err := entry.sign(executable.Canonical, executable.CommitmentID)
 	return err == nil && hmac.Equal([]byte(want), []byte(executable.Capability)) &&
 		executable.LedgerReference == entry.reference && executable.LedgerIdentity == entry.identity
 }
 
-func capabilityPayload(action AuthorizedAction, commitmentID, ledgerReference, ledgerIdentity string) ([]byte, error) {
+func (entry ledgerEntry) signResult(result ExecutionResult) (string, error) {
+	encoded, err := resultCapabilityPayload(result)
+	if err != nil {
+		return "", err
+	}
+	mac := hmac.New(sha256.New, entry.secret[:])
+	_, _ = mac.Write(encoded)
+	return "hmac-sha256:" + hex.EncodeToString(mac.Sum(nil)), nil
+}
+
+func (entry ledgerEntry) verifyResult(result ExecutionResult) bool {
+	want, err := entry.signResult(result)
+	return err == nil && hmac.Equal([]byte(want), []byte(result.ResultCapability)) &&
+		entry.verify(result.Executable)
+}
+
+func resultCapabilityPayload(result ExecutionResult) ([]byte, error) {
 	return json.Marshal(struct {
-		Authorized AuthorizedAction `json:"authorized"`
-		Commitment string           `json:"commitment"`
-		Ledger     string           `json:"ledger"`
-		Identity   string           `json:"identity"`
+		Executable   ExecutableAction      `json:"executable"`
+		CallID       string                `json:"call_id"`
+		Name         string                `json:"name"`
+		CommitmentID string                `json:"commitment_id"`
+		Result       trajectory.ToolResult `json:"result"`
+		CrossedNS    uint64                `json:"crossed_ns"`
+		FinishedNS   uint64                `json:"finished_ns"`
 	}{
-		Authorized: action, Commitment: commitmentID, Ledger: ledgerReference, Identity: ledgerIdentity,
+		Executable: result.Executable, CallID: result.CallID, Name: result.Name,
+		CommitmentID: result.CommitmentID, Result: result.Result,
+		CrossedNS: result.CrossedNS, FinishedNS: result.FinishedNS,
+	})
+}
+
+func capabilityPayload(action CanonicalAction, commitmentID, ledgerReference, ledgerIdentity string) ([]byte, error) {
+	return json.Marshal(struct {
+		Canonical  CanonicalAction `json:"canonical"`
+		Commitment string          `json:"commitment"`
+		Ledger     string          `json:"ledger"`
+		Identity   string          `json:"identity"`
+	}{
+		Canonical: action, Commitment: commitmentID, Ledger: ledgerReference, Identity: ledgerIdentity,
 	})
 }
 

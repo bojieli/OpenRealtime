@@ -79,6 +79,10 @@ func (reporter nodeResolutionReporter) Capabilities(source []element.CapabilityR
 		return fmt.Errorf("report live capabilities: unknown mounted node %q", reporter.node)
 	}
 	resolution := live.Resolution.Clone()
+	if resolution.CapabilitiesEvidence == inspect.EvidenceRegistered &&
+		!reflect.DeepEqual(resolution.Capabilities, canonical) {
+		return fmt.Errorf("node %s live capability identities differ from the registered plan", reporter.node)
+	}
 	if resolution.CapabilitiesEvidence == inspect.EvidenceLive &&
 		!reflect.DeepEqual(resolution.Capabilities, canonical) {
 		return fmt.Errorf("node %s live capability identities changed after readiness", reporter.node)

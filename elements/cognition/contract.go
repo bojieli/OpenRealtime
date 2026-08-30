@@ -21,6 +21,8 @@ import (
 
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/elements/internal/factoryprofile"
+	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -75,7 +77,7 @@ func TextModelDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "cognition.TextModel",
-		Revision:      1,
+		Revision:      2,
 		Ports: []element.Port{
 			{Name: "context", Direction: element.Input, Type: contextType,
 				Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},
@@ -135,6 +137,12 @@ type Generate struct {
 	// wired state sources from satisfying the same numeric version with different
 	// prefixes. A generation policy should set both fields from one sampled edge.
 	ExpectedContextItemID string `json:"expected_context_item_id,omitempty"`
+	// CommittedContext is the compact, commit-bound identity of an immutable
+	// trajectory prefix. When present, both legacy expected-context fields are
+	// required to agree exactly with it. This lets a model reconstruct that
+	// prefix from a later append-only State value without accepting an unrelated
+	// or replayed activation.
+	CommittedContext *stateelements.CommittedContext `json:"committed_context,omitempty"`
 }
 
 // Cancel is an addressed control request. RunID may be omitted when the
@@ -434,7 +442,17 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if registry == nil {
 		return errors.New("register cognition factories: nil registry")
 	}
-	return registry.RegisterArtifact("", inspect.ArtifactIdentity{
-		ID: textModelRuntimeID, Revision: cognitionImplementationRevision,
-	}, textModelFactory{})
+	registrations, err := FactoryRegistrations()
+	if err != nil {
+		return err
+	}
+	return registry.RegisterFactory(registrations[0])
+}
+
+func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
+	return factoryprofile.Registrations(factoryprofile.Entry{
+		Factory: textModelFactory{}, Artifact: inspect.ArtifactIdentity{
+			ID: textModelRuntimeID, Revision: cognitionImplementationRevision,
+		},
+	})
 }

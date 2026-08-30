@@ -15,6 +15,7 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
+	graphsecret "github.com/bojieli/OpenRealtime/graph/secret"
 	graphvalidate "github.com/bojieli/OpenRealtime/graph/validate"
 	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
 )
@@ -27,12 +28,42 @@ type Config struct {
 	// Configuration is the exact separate values artifact identity. It is
 	// optional for historical/local mounts, but remote attestation must refuse
 	// a snapshot without it rather than reconstructing it from node values.
-	Configuration   *inspect.ArtifactIdentity
-	Tracer          Tracer
-	Now             func() uint64
-	ShutdownTimeout time.Duration
-	Inspection      InspectionConfig
-	TraceRecording  *TraceRecordingConfig
+	Configuration *inspect.ArtifactIdentity
+	// Deployment is the public, redacted deployment identity. Private
+	// deployment and secret-catalog identities are installed only by the
+	// sealed plan-preparation path through privatePlanIdentity below.
+	Deployment             *inspect.ArtifactIdentity
+	privatePlanIdentity    *PrivatePlanIdentity
+	registeredCapabilities map[string][]inspect.CapabilityIdentity
+	secretStore            *graphsecret.Store
+	secretBindings         map[string]map[string]string
+	Tracer                 Tracer
+	Now                    func() uint64
+	ShutdownTimeout        time.Duration
+	Inspection             InspectionConfig
+	TraceRecording         *TraceRecordingConfig
+}
+
+func validateFactoryConfig(node ir.Node, factory element.Factory, value json.RawMessage) error {
+	if len(value) == 0 {
+		value = json.RawMessage("{}")
+	}
+	canonical, _, err := graphvalues.Digest(value)
+	if err != nil {
+		return err
+	}
+	validator, validates := factory.(element.ConfigValidator)
+	switch {
+	case node.ConfigSchema == "" && !bytes.Equal(canonical, []byte("{}")):
+		return fmt.Errorf("has values but element %s declares no config schema", node.Element.Name)
+	case node.ConfigSchema != "" && !validates:
+		return fmt.Errorf("declares config schema %q but implementation %q has no config validator",
+			node.ConfigSchema, node.Implementation)
+	case validates:
+		return validator.ValidateConfig(value)
+	default:
+		return nil
+	}
 }
 
 // InspectionConfig bounds payload-free per-correlation route retention.
@@ -74,13 +105,16 @@ type Mounted struct {
 	shutdownErr error
 	shutdown    sync.Once
 
-	liveMu        sync.Mutex
-	nodeLive      map[string]inspect.NodeLive
-	sequence      atomic.Uint64
-	flows         *flowTracker
-	configuration *inspect.ArtifactIdentity
-	recorder      *traceRecorder
-	clock         func() uint64
+	liveMu              sync.Mutex
+	nodeLive            map[string]inspect.NodeLive
+	sequence            atomic.Uint64
+	flows               *flowTracker
+	configuration       *inspect.ArtifactIdentity
+	deployment          *inspect.ArtifactIdentity
+	deploymentEvidence  *inspect.DeploymentEvidence
+	privatePlanIdentity PrivatePlanIdentity
+	recorder            *traceRecorder
+	clock               func() uint64
 }
 
 // Mount validates the exact factory contracts, constructs every bounded
@@ -106,6 +140,21 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 		if err := config.Configuration.Validate(); err != nil {
 			return nil, fmt.Errorf("mount graph configuration identity: %w", err)
 		}
+	}
+	if config.Deployment != nil {
+		if err := config.Deployment.Validate(); err != nil {
+			return nil, fmt.Errorf("mount graph deployment identity: %w", err)
+		}
+	}
+	if config.privatePlanIdentity != nil && config.Deployment == nil {
+		return nil, errors.New("mount graph private deployment identity requires a public deployment identity")
+	}
+	if config.secretStore != nil && (config.privatePlanIdentity == nil ||
+		config.privatePlanIdentity.secretCatalogFingerprint == "") {
+		return nil, errors.New("mount graph secret store requires an exact private secret-catalog identity")
+	}
+	if config.secretStore == nil && len(config.secretBindings) != 0 {
+		return nil, errors.New("mount graph secret bindings require a sealed secret store")
 	}
 	if config.Now == nil {
 		origin := time.Now()
@@ -137,6 +186,26 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 			return nil, fmt.Errorf("mount graph edge %q uses reserved boundary queue namespace", edge.ID)
 		}
 	}
+	graphNodes := make(map[string]struct{}, len(config.Graph.Nodes))
+	for _, node := range config.Graph.Nodes {
+		graphNodes[node.ID] = struct{}{}
+	}
+	for nodeID, bindings := range config.secretBindings {
+		if _, found := graphNodes[nodeID]; !found {
+			return nil, fmt.Errorf("mount graph secret bindings name unknown node %q", nodeID)
+		}
+		if len(bindings) == 0 {
+			return nil, fmt.Errorf("mount graph secret bindings for node %q are empty", nodeID)
+		}
+		for slot, reference := range bindings {
+			if err := canonicalRuntimeText("secret slot", slot); err != nil {
+				return nil, fmt.Errorf("mount graph node %s: %w", nodeID, err)
+			}
+			if err := graphsecret.ValidateReference(reference); err != nil {
+				return nil, fmt.Errorf("mount graph node %s secret slot %s: invalid private reference", nodeID, slot)
+			}
+		}
+	}
 	if err := validateValues(config.Graph, config.Values); err != nil {
 		return nil, err
 	}
@@ -156,8 +225,17 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 		if err := verifyNodeContract(node, descriptor); err != nil {
 			return nil, fmt.Errorf("mount graph node %s contract verification: %w", node.ID, err)
 		}
+		nodeSecretBindings := config.secretBindings[node.ID]
+		if len(nodeSecretBindings) != 0 && !descriptorRequiresDependency(descriptor, SecretServiceName) {
+			return nil, fmt.Errorf("mount graph node %s binds secrets without requiring service %q",
+				node.ID, SecretServiceName)
+		}
 		for _, dependency := range descriptor.Dependencies {
-			if _, _, found := services.Lookup(dependency.Name); !found && !dependency.Optional {
+			_, _, found := services.Lookup(dependency.Name)
+			if dependency.Name == SecretServiceName {
+				found = config.secretStore != nil && len(nodeSecretBindings) != 0
+			}
+			if !found && !dependency.Optional {
 				return nil, fmt.Errorf("mount graph node %s requires unavailable service %q", node.ID, dependency.Name)
 			}
 		}
@@ -170,39 +248,49 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 	// require rolling those back just to report an authoring error.
 	for _, node := range config.Graph.Nodes {
 		value := cloneRaw(config.Values[node.ID])
-		if len(value) == 0 {
-			value = json.RawMessage("{}")
-		}
-		canonical, _, err := graphvalues.Digest(value)
-		if err != nil {
-			return nil, fmt.Errorf("mount graph node %s config: %w", node.ID, err)
-		}
 		factory := factories[node.ID].factory
-		validator, validates := factory.(element.ConfigValidator)
-		switch {
-		case node.ConfigSchema == "" && !bytes.Equal(canonical, []byte("{}")):
-			return nil, fmt.Errorf("mount graph node %s has values but element %s declares no config schema",
-				node.ID, node.Element.Name)
-		case node.ConfigSchema != "" && !validates:
-			return nil, fmt.Errorf("mount graph node %s declares config schema %q but implementation %q has no config validator",
-				node.ID, node.ConfigSchema, node.Implementation)
-		case validates:
-			if err := validator.ValidateConfig(value); err != nil {
-				return nil, fmt.Errorf("mount graph node %s config: %w", node.ID, err)
-			}
+		if err := validateFactoryConfig(node, factory, value); err != nil {
+			return nil, fmt.Errorf("mount graph node %s config: %w", node.ID, err)
 		}
 	}
 
+	var configuration *inspect.ArtifactIdentity
+	if config.Configuration != nil {
+		copy := *config.Configuration
+		configuration = &copy
+	}
+	var deploymentIdentity *inspect.ArtifactIdentity
+	if config.Deployment != nil {
+		copy := *config.Deployment
+		deploymentIdentity = &copy
+	}
+	var privatePlanIdentity PrivatePlanIdentity
+	if config.privatePlanIdentity != nil {
+		privatePlanIdentity = *config.privatePlanIdentity
+	}
+	var deploymentEvidence *inspect.DeploymentEvidence
+	if deploymentIdentity != nil {
+		candidate := inspect.DeploymentEvidence{Public: *deploymentIdentity}
+		if config.privatePlanIdentity != nil {
+			candidate.PrivateDeploymentFingerprint = privatePlanIdentity.deploymentFingerprint
+			candidate.SecretCatalogFingerprint = privatePlanIdentity.secretCatalogFingerprint
+		}
+		canonical, evidenceErr := inspect.CanonicalDeploymentEvidence(candidate)
+		if evidenceErr != nil {
+			return nil, fmt.Errorf("mount graph deployment evidence: %w", evidenceErr)
+		}
+		if config.privatePlanIdentity != nil {
+			if evidenceErr := canonical.ValidateExact(); evidenceErr != nil {
+				return nil, fmt.Errorf("mount graph deployment evidence: %w", evidenceErr)
+			}
+		}
+		deploymentEvidence = &canonical
+	}
 	recorder, err := newTraceRecorder(
 		config.Graph, config.Configuration, config.Inspection, config.TraceRecording,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("mount graph: %w", err)
-	}
-	var configuration *inspect.ArtifactIdentity
-	if config.Configuration != nil {
-		copy := *config.Configuration
-		configuration = &copy
 	}
 	mounted := &Mounted{
 		graph: config.Graph, queues: make(map[string]*queue),
@@ -213,8 +301,10 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 			config.Inspection.MaxFlows, config.Inspection.MaxEdgesPerFlow,
 			config.Inspection.MaxCorrelationBytes,
 		),
-		configuration: configuration,
-		recorder:      recorder, clock: config.Now,
+		configuration: configuration, deployment: deploymentIdentity,
+		deploymentEvidence:  deploymentEvidence,
+		privatePlanIdentity: privatePlanIdentity,
+		recorder:            recorder, clock: config.Now,
 	}
 	trace := func(queue *queue, kind TraceKind, envelope element.Envelope, occupancy int) {
 		atNS := config.Now()
@@ -292,21 +382,35 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 			return nil, fmt.Errorf("mount graph node %s ports: %w", node.ID, err)
 		}
 		scope := &lifecycleScope{instance: node.ID}
+		nodeServices := element.Services(services)
+		if bindings := config.secretBindings[node.ID]; len(bindings) != 0 {
+			nodeServices = nodeMountServices{
+				base: services,
+				secrets: &nodeSecretAccess{
+					node: node.ID, bindings: cloneRuntimeStringMap(bindings),
+					store: config.secretStore, lifecycle: scope, mounted: mounted,
+				},
+			}
+		}
 		value := cloneRaw(config.Values[node.ID])
 		if len(value) == 0 {
 			value = json.RawMessage("{}")
 		}
 		resolution := factories[node.ID]
+		liveResolution := &inspect.NodeResolution{
+			Element: node.Element, Implementation: node.Implementation,
+			Runtime: resolution.artifact, RuntimeEvidence: resolution.evidence,
+		}
+		if capabilities, found := config.registeredCapabilities[node.ID]; found {
+			liveResolution.Capabilities = cloneRuntimeCapabilities(capabilities)
+			liveResolution.CapabilitiesEvidence = inspect.EvidenceRegistered
+		}
 		mounted.nodeLive[node.ID] = inspect.NodeLive{
-			State: "mounted",
-			Resolution: &inspect.NodeResolution{
-				Element: node.Element, Implementation: node.Implementation,
-				Runtime: resolution.artifact, RuntimeEvidence: resolution.evidence,
-			},
+			State: "mounted", Resolution: liveResolution,
 		}
 		runnable, err := resolution.factory.Mount(ctx, element.MountContext{
 			InstanceID: node.ID, Identity: node.Element, Config: value,
-			Ports: ports, Services: services, Lifecycle: scope,
+			Ports: ports, Services: nodeServices, Lifecycle: scope,
 			Resolution: nodeResolutionReporter{mounted: mounted, node: node.ID},
 		})
 		if err != nil {
@@ -358,6 +462,11 @@ func (mounted *Mounted) Live() inspect.Live {
 	for id, state := range mounted.nodeLive {
 		nodes[id] = state.Clone()
 	}
+	var deploymentEvidence *inspect.DeploymentEvidence
+	if mounted.deploymentEvidence != nil {
+		copy := mounted.deploymentEvidence.Clone()
+		deploymentEvidence = &copy
+	}
 	mounted.liveMu.Unlock()
 	edges := make(map[string]inspect.EdgeLive, len(mounted.queues))
 	for id, queue := range mounted.queues {
@@ -374,7 +483,8 @@ func (mounted *Mounted) Live() inspect.Live {
 		FormatVersion: inspect.LiveFormatVersion,
 		GraphID:       mounted.graph.ID, GraphRevision: mounted.graph.Revision,
 		Fingerprint: mounted.graph.Fingerprint, Configuration: configuration,
-		Sequence: mounted.sequence.Add(1), ObservedAt: time.Now().UTC(),
+		Deployment: deploymentEvidence,
+		Sequence:   mounted.sequence.Add(1), ObservedAt: time.Now().UTC(),
 		State: state, Error: failure,
 		Nodes: nodes, Edges: edges, Flows: flows, TraceDropped: dropped,
 	}

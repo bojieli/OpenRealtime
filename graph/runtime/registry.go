@@ -14,6 +14,7 @@ type registeredFactory struct {
 	identity element.Identity
 	artifact inspect.ArtifactIdentity
 	evidence inspect.ResolutionEvidence
+	profile  *FactoryProfile
 }
 
 // Registry maps deployment implementation references to factories. A factory
@@ -26,22 +27,22 @@ type Registry struct {
 func NewRegistry() *Registry { return &Registry{factories: make(map[string]registeredFactory)} }
 
 func (registry *Registry) Register(implementation string, factory element.Factory) error {
-	return registry.register(implementation, inspect.ArtifactIdentity{}, inspect.EvidenceDeclared, factory)
+	return registry.register(implementation, inspect.ArtifactIdentity{}, inspect.EvidenceDeclared, factory, nil)
 }
 
 // RegisterArtifact binds an element factory to an exact deployment artifact.
-// Register remains source-compatible and records only a declaration-level
-// identity; production plugins should use this method so live inspection can
-// prove which binary/image/module supplied the implementation.
+// It remains the compatible API for direct Config mounts. Graph-plan launchers
+// use RegisterFactory instead, because a Plan also freezes transport,
+// placement, resource/secret-slot, and capability evidence.
 func (registry *Registry) RegisterArtifact(
 	implementation string, artifact inspect.ArtifactIdentity, factory element.Factory,
 ) error {
-	return registry.register(implementation, artifact, inspect.EvidenceRegistered, factory)
+	return registry.register(implementation, artifact, inspect.EvidenceRegistered, factory, nil)
 }
 
 func (registry *Registry) register(
 	implementation string, artifact inspect.ArtifactIdentity,
-	evidence inspect.ResolutionEvidence, factory element.Factory,
+	evidence inspect.ResolutionEvidence, factory element.Factory, profile *FactoryProfile,
 ) error {
 	if factory == nil {
 		return fmt.Errorf("register element implementation %q: nil factory", implementation)
@@ -72,6 +73,7 @@ func (registry *Registry) register(
 	}
 	registry.factories[implementation] = registeredFactory{
 		factory: factory, identity: identity, artifact: artifact, evidence: evidence,
+		profile: cloneFactoryProfile(profile),
 	}
 	return nil
 }

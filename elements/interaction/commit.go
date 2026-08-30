@@ -314,7 +314,11 @@ func validateCognitionResult(result cognitionelements.Result) error {
 	if assistant.String() != result.AssistantText || reasoning.String() != result.ReasoningText {
 		return errors.New("ordered outputs disagree with aggregate assistant or reasoning text")
 	}
-	if !reflect.DeepEqual(proposals, result.ToolProposals) {
+	// Zero tool proposals have one semantic representation even though the
+	// producer's defensive clone materializes an empty slice. Nil-versus-empty
+	// is not an ordered-output disagreement.
+	if len(proposals) != len(result.ToolProposals) ||
+		len(proposals) != 0 && !reflect.DeepEqual(proposals, result.ToolProposals) {
 		return errors.New("ordered outputs disagree with aggregate tool proposals")
 	}
 	return nil

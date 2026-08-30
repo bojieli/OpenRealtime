@@ -43,3 +43,25 @@ func TestMountServicesAreScopedAndDoNotMutateDeploymentServices(t *testing.T) {
 type anyServices interface {
 	Lookup(string) (any, uint64, bool)
 }
+
+func TestStandardRuntimeDependencyArtifactsAreExactAndIndependent(t *testing.T) {
+	for _, name := range []string{ClockServiceName, SequenceServiceName, SecretServiceName} {
+		artifact, found := StandardDependencyArtifact(name)
+		if !found {
+			t.Fatalf("standard artifact %s is missing", name)
+		}
+		if err := artifact.Validate(); err != nil {
+			t.Fatalf("standard artifact %s: %v", name, err)
+		}
+	}
+	if _, found := StandardDependencyArtifact("runtime.unknown"); found {
+		t.Fatal("unknown runtime service resolved to a standard artifact")
+	}
+	first := StandardDependencyArtifacts()
+	first[ClockServiceName] = first[SequenceServiceName]
+	second := StandardDependencyArtifacts()
+	want, _ := StandardDependencyArtifact(ClockServiceName)
+	if second[ClockServiceName] != want {
+		t.Fatal("standard runtime artifact map aliases caller mutation")
+	}
+}

@@ -220,10 +220,16 @@ func TestFrameDecodingEnforcesTheDeclaredLimit(t *testing.T) {
 // The extension is additive: a server that has never heard of it still reads
 // every object it appears in.
 func TestTheToolExtensionIsIgnorableByABaseServer(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
 	encoded, err := json.Marshal(map[string]any{
 		"type": "function", "name": "computer.click",
-		"parameters":   map[string]any{"type": "object"},
-		"openrealtime": openrealtime.ToolExtension{Confirm: "always", Target: "browser-1", Background: true},
+		"parameters": map[string]any{"type": "object"},
+		"openrealtime": openrealtime.ToolExtension{
+			Confirm: "always", Target: "browser-1", Background: true,
+			ClientEffect: &openrealtime.ClientEffectDeclaration{
+				Version: openrealtime.Version, DeclarationDigest: digest,
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -237,6 +243,59 @@ func TestTheToolExtensionIsIgnorableByABaseServer(t *testing.T) {
 	}
 	if ignoring.Type != "function" || ignoring.Name != "computer.click" {
 		t.Fatalf("the base fields must be untouched: %+v", ignoring)
+	}
+}
+
+func TestClientEffectObjectExtensionsHaveExactAdditiveWireShapes(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("b", 64)
+	declaration := openrealtime.ClientEffectDeclaration{
+		Version: openrealtime.Version, DeclarationDigest: digest,
+	}
+	if err := declaration.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	definition, err := json.Marshal(openrealtime.ToolExtension{ClientEffect: &declaration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(definition) != `{"client_effect":{"version":1,"declaration_digest":"`+digest+`"}}` {
+		t.Fatalf("tool declaration extension = %s", definition)
+	}
+	call := openrealtime.ClientEffectCall{
+		Version: openrealtime.Version, DeclarationDigest: digest, Authority: "ore1.opaque",
+	}
+	if err := call.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	emitted, err := json.Marshal(map[string]any{"openrealtime": map[string]any{"client_effect": call}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(emitted) != `{"openrealtime":{"client_effect":{"version":1,"declaration_digest":"`+
+		digest+`","authority":"ore1.opaque"}}}` {
+		t.Fatalf("emitted call extension = %s", emitted)
+	}
+}
+
+func TestClientEffectObjectExtensionsRejectDriftAndUnboundedEvidence(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("c", 64)
+	for _, invalid := range []openrealtime.ClientEffectDeclaration{
+		{},
+		{Version: 2, DeclarationDigest: digest},
+		{Version: 1, DeclarationDigest: "sha256:" + strings.Repeat("C", 64)},
+		{Version: 1, DeclarationDigest: "sha256:short"},
+	} {
+		if err := invalid.Validate(); err == nil {
+			t.Fatalf("invalid client-effect declaration accepted: %+v", invalid)
+		}
+	}
+	for _, authority := range []string{"", " receipt", "two receipts", strings.Repeat("x", 4097)} {
+		call := openrealtime.ClientEffectCall{
+			Version: 1, DeclarationDigest: digest, Authority: authority,
+		}
+		if err := call.Validate(); err == nil {
+			t.Fatalf("invalid client-effect authority accepted: %q", authority)
+		}
 	}
 }
 
@@ -267,6 +326,31 @@ func TestParseFeatureAcceptsOnlyWhatThisVersionDefines(t *testing.T) {
 	}
 	if _, err := openrealtime.ParseFeature("video"); err == nil {
 		t.Fatal("a near-miss must be refused rather than corrected")
+	}
+}
+
+func TestClientEffectsIsNegotiatedButNeverImplied(t *testing.T) {
+	requested := openrealtime.Request{
+		Version:  openrealtime.Version,
+		Supports: []openrealtime.Feature{openrealtime.FeatureClientEffects},
+	}
+	declined, err := openrealtime.Negotiate(requested, []openrealtime.Feature{
+		openrealtime.FeatureVideoInput,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(declined.Enabled) != 0 {
+		t.Fatalf("client effects appeared without an authority issuer: %+v", declined.Enabled)
+	}
+	enabled, err := openrealtime.Negotiate(requested, []openrealtime.Feature{
+		openrealtime.FeatureClientEffects,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(enabled.Enabled) != 1 || enabled.Enabled[0] != openrealtime.FeatureClientEffects {
+		t.Fatalf("client effects negotiation = %+v", enabled.Enabled)
 	}
 }
 

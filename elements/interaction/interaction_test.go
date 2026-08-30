@@ -805,6 +805,18 @@ func modelResult(
 	return result
 }
 
+func TestModelResultValidationTreatsZeroProposalRepresentationsEqually(t *testing.T) {
+	result := modelResult("no-tools", 0, "", false, false)
+	result.ToolProposals = make([]cognitionelements.ToolProposal, 0)
+	if err := validateCognitionResult(result); err != nil {
+		t.Fatalf("empty aggregate proposal slice: %v", err)
+	}
+	result.ToolProposals = nil
+	if err := validateCognitionResult(result); err != nil {
+		t.Fatalf("nil aggregate proposal slice: %v", err)
+	}
+}
+
 func resultEnvelopeForTest(itemID string, result cognitionelements.Result) element.Envelope {
 	return element.Envelope{
 		Type: cognitionelements.ResultType(), ItemID: itemID, RunID: result.RunID, Payload: result,

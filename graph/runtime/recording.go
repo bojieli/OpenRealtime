@@ -259,9 +259,17 @@ func (recorder *traceRecorder) capture(mounted *Mounted) error {
 	live.Sequence = 1 // Trace record sequencing is private to this recorder.
 	live.Flows = recorder.pseudonymizeFlowsLocked(live.Flows)
 	live.TraceDropped = saturatingAdd(live.TraceDropped, recorder.dropped)
-	snapshot, err := inspect.TraceSnapshotFromLive(
-		recorder.graph, recorder.configuration, live, atNS,
-	)
+	var snapshot inspect.TraceSnapshot
+	var err error
+	if live.Deployment == nil {
+		snapshot, err = inspect.TraceSnapshotFromLive(
+			recorder.graph, recorder.configuration, live, atNS,
+		)
+	} else {
+		snapshot, err = inspect.TraceSnapshotFromLiveWithDeployment(
+			recorder.graph, recorder.configuration, live.Deployment, live, atNS,
+		)
+	}
 	if err != nil {
 		recorder.dropped = saturatingAdd(recorder.dropped, 1)
 		recorder.lastCaptureErr = err
@@ -520,6 +528,7 @@ func (recorder *traceRecorder) export(mounted *Mounted) (inspect.LiveTrace, erro
 			return inspect.LiveTrace{}, fmt.Errorf("checkpoint graph trace: %w", err)
 		}
 	}
+	live := mounted.Live()
 	recorder.mu.Lock()
 	if !recorder.initialized {
 		err := recorder.lastCaptureErr
@@ -543,6 +552,10 @@ func (recorder *traceRecorder) export(mounted *Mounted) (inspect.LiveTrace, erro
 		Configuration: recorder.configuration, Limits: recorder.limits,
 		Snapshots: make([]inspect.TraceSnapshot, len(recorder.snapshots)),
 		Events:    make([]inspect.TraceEvent, len(recorder.events)),
+	}
+	if live.Deployment != nil {
+		copy := live.Deployment.Clone()
+		candidate.Deployment = &copy
 	}
 	for index, snapshot := range recorder.snapshots {
 		candidate.Snapshots[index] = snapshot.Clone()

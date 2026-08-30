@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 )
 
 // Version is the protocol version this implementation speaks. It lives inside
@@ -53,6 +54,11 @@ const (
 	// events at all; it is negotiated so a client can discover whether the
 	// server will honour the namespace before declaring the tools.
 	FeatureComputerUse Feature = "computer_use"
+	// FeatureClientEffects enables server-authorized client/host-owned tool
+	// execution. Negotiation alone grants nothing: every emitted call also
+	// carries a short-lived receipt bound to its exact session, call,
+	// declaration, arguments, and target.
+	FeatureClientEffects Feature = "client.effects"
 )
 
 // DebugCategory names one subsystem in the optional developer trace stream.
@@ -117,7 +123,9 @@ type InspectionAccess struct {
 
 // Features is every capability this implementation can offer.
 func Features() []Feature {
-	return []Feature{FeatureVideoInput, FeatureObservations, FeatureComputerUse}
+	return []Feature{
+		FeatureVideoInput, FeatureObservations, FeatureComputerUse, FeatureClientEffects,
+	}
 }
 
 // ParseFeature validates a declared capability name.
@@ -465,4 +473,68 @@ type ToolExtension struct {
 	// than the model prefix has arrived. The action plane still applies normal
 	// authority and confirmation checks.
 	Background bool `json:"background,omitempty"`
+	// ClientEffect commits a host-owned declaration to this ordinary function
+	// tool. It is inert unless client.effects was explicitly negotiated, and it
+	// never carries authority: only the server's emitted call extension does.
+	ClientEffect *ClientEffectDeclaration `json:"client_effect,omitempty"`
+}
+
+// ClientEffectDeclaration is the additive extension on a function tool. Its
+// digest is computed by the independently mounted effect host and commits the
+// schema, consequence policy, target, channel, and permission resource.
+type ClientEffectDeclaration struct {
+	Version           int    `json:"version"`
+	DeclarationDigest string `json:"declaration_digest"`
+}
+
+// Validate rejects a declaration the server could not bind exactly.
+func (declaration ClientEffectDeclaration) Validate() error {
+	if declaration.Version != Version {
+		return fmt.Errorf("client-effect declaration version must be %d", Version)
+	}
+	if !validSHA256Digest(declaration.DeclarationDigest) {
+		return errors.New("client-effect declaration requires a canonical sha256 digest")
+	}
+	return nil
+}
+
+// ClientEffectCall is the server-only extension on
+// response.function_call_arguments.done. Authority is an opaque, bounded,
+// short-lived receipt; clients forward it to the effect host unchanged.
+type ClientEffectCall struct {
+	Version           int    `json:"version"`
+	DeclarationDigest string `json:"declaration_digest"`
+	Authority         string `json:"authority"`
+}
+
+// Validate rejects a call extension that could not be forwarded as one
+// canonical receipt. Cryptographic validation belongs to the host provider.
+func (call ClientEffectCall) Validate() error {
+	if err := (ClientEffectDeclaration{
+		Version: call.Version, DeclarationDigest: call.DeclarationDigest,
+	}).Validate(); err != nil {
+		return err
+	}
+	if call.Authority == "" || call.Authority != strings.TrimSpace(call.Authority) ||
+		len(call.Authority) > 4096 || !utf8.ValidString(call.Authority) {
+		return errors.New("client-effect call requires one canonical bounded authority receipt")
+	}
+	for _, character := range call.Authority {
+		if character < 0x21 || character == 0x7f {
+			return errors.New("client-effect authority contains whitespace or control characters")
+		}
+	}
+	return nil
+}
+
+func validSHA256Digest(value string) bool {
+	if len(value) != len("sha256:")+64 || !strings.HasPrefix(value, "sha256:") {
+		return false
+	}
+	for _, character := range value[len("sha256:"):] {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
 }

@@ -13,6 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/bojieli/OpenRealtime/authority"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
@@ -24,7 +25,7 @@ import (
 
 const (
 	generationRuntimeID             = "builtin://openrealtime/elements/policy.GenerateOnObservation"
-	policyImplementationRevision    = "implementation:1"
+	policyImplementationRevision    = "implementation:3"
 	maximumPolicyIdentifierBytes    = 256
 	maximumPolicyReasonBytes        = 1024
 	maximumPolicyInstructionBytes   = 1 << 20
@@ -38,52 +39,56 @@ const (
 )
 
 var (
-	trajectoryContextType = stateelements.SnapshotType()
-	observationCommitType = stateelements.ObservationCommitOutcomeType()
-	generationCancelType  = element.Interrupt(element.Named("policy.GenerationAddress"))
-	generationTriggerType = cognitionelements.GenerateType()
-	generationStateType   = element.State(element.Named("policy.GenerationState"))
-	generationOutcomeType = element.Event(element.Named("policy.GenerationOutcome"))
+	observationCommitType  = stateelements.ObservationCommitOutcomeType()
+	generationCancelType   = element.Interrupt(element.Named("policy.GenerationAddress"))
+	generationTriggerType  = cognitionelements.GenerateType()
+	authorityCandidateType = authority.CandidateType()
+	generationStateType    = element.State(element.Named("policy.GenerationState"))
+	generationOutcomeType  = element.Event(element.Named("policy.GenerationOutcome"))
 )
 
-func GenerationCancelType() element.Type  { return generationCancelType.Clone() }
-func GenerationStateType() element.Type   { return generationStateType.Clone() }
-func GenerationOutcomeType() element.Type { return generationOutcomeType.Clone() }
+func GenerationCancelType() element.Type   { return generationCancelType.Clone() }
+func AuthorityCandidateType() element.Type { return authorityCandidateType.Clone() }
+func GenerationStateType() element.Type    { return generationStateType.Clone() }
+func GenerationOutcomeType() element.Type  { return generationOutcomeType.Clone() }
 
-// GenerateOnObservationDescriptor gates generation on two independently
-// arriving facts: a committed observation and the exact trajectory snapshot
-// containing that commit. Context is an active trigger here, rather than
-// merely sampled state, because it can release a pending activation.
+// GenerateOnObservationDescriptor turns one successful observation commit
+// into one model activation. The commit outcome carries the store-attested
+// identity of the exact trajectory prefix containing the observation, so the
+// policy never joins against or retains a second trajectory State payload.
 func GenerateOnObservationDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "policy.GenerateOnObservation",
-		Revision:      1,
+		Revision:      3,
 		Ports: []element.Port{
-			{Name: "context", Direction: element.Input, Type: trajectoryContextType,
-				Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},
 			{Name: "committed", Direction: element.Input, Type: observationCommitType,
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
 			{Name: "cancel", Direction: element.Input, Type: generationCancelType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "trigger", Direction: element.Output, Type: generationTriggerType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
+			// Candidate is optional because policies may activate models whose
+			// output is never connected to an external-effect path. When wired,
+			// it makes the selected authority basis explicit and typed.
+			{Name: "authority", Direction: element.Output, Type: authorityCandidateType,
+				Cardinality: element.One, Required: false, DefaultDepth: 16},
 			{Name: "state", Direction: element.Output, Type: generationStateType,
 				Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},
 			{Name: "outcome", Direction: element.Output, Type: generationOutcomeType,
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
 		},
 		Reaction: element.Reaction{
-			Triggers: []string{"context", "committed"}, Interrupts: []string{"cancel"},
-			Outcomes: []string{"trigger", "state", "outcome"}, MaxConcurrency: 1,
+			Triggers: []string{"committed"}, Interrupts: []string{"cancel"},
+			Outcomes: []string{"trigger", "authority", "state", "outcome"}, MaxConcurrency: 1,
 			BreaksCycles: true,
 		},
-		StateSchema:  "schema://openrealtime/policy/generate-on-observation-state/v1",
+		StateSchema:  "schema://openrealtime/policy/generate-on-observation-state/v2",
 		ConfigSchema: "schema://openrealtime/policy/generate-on-observation-config/v1",
 		Dependencies: []element.Dependency{
 			{Name: graphruntime.ClockServiceName}, {Name: graphruntime.SequenceServiceName},
 		},
-		Effects: []element.Effect{{Name: "policy.pending.memory", Reversible: true}},
+		Effects: []element.Effect{{Name: "policy.activation.memory", Reversible: true}},
 	}
 }
 
@@ -92,11 +97,14 @@ func GenerateOnObservationDescriptor() element.Descriptor {
 // nodes. SourceRevision and ExpectedContextVersion are derived from live
 // commit evidence and therefore cannot be authored here.
 type GenerateOnObservationConfig struct {
-	Role           string                  `json:"role"`
-	Invocation     continuation.Invocation `json:"invocation"`
-	MaxPending     int                     `json:"max_pending,omitempty"`
-	TerminalMemory int                     `json:"terminal_memory,omitempty"`
-	CancelMemory   int                     `json:"cancel_memory,omitempty"`
+	Role       string                  `json:"role"`
+	Invocation continuation.Invocation `json:"invocation"`
+	// MaxPending is deprecated and ignored by descriptor revision 3. It remains
+	// accepted, with its historical validation bound, so existing values files
+	// do not fail merely because activation no longer has a pending context join.
+	MaxPending     int `json:"max_pending,omitempty"`
+	TerminalMemory int `json:"terminal_memory,omitempty"`
+	CancelMemory   int `json:"cancel_memory,omitempty"`
 }
 
 type GenerationCancel struct {
@@ -127,23 +135,15 @@ type GenerationOutcome struct {
 	FinishedNS     uint64                `json:"finished_ns,omitempty"`
 }
 
-type PendingGeneration struct {
-	GenerationID   string `json:"generation_id"`
-	StreamID       string `json:"stream_id"`
-	ContextVersion uint64 `json:"context_version"`
-}
-
 type GenerationState struct {
-	Role               string              `json:"role"`
-	ContextVersion     uint64              `json:"context_version"`
-	Pending            []PendingGeneration `json:"pending,omitempty"`
-	Emitted            uint64              `json:"emitted"`
-	Canceled           uint64              `json:"canceled"`
-	Refused            uint64              `json:"refused"`
-	Ignored            uint64              `json:"ignored"`
-	MaxPending         int                 `json:"max_pending"`
-	TerminalMemory     int                 `json:"terminal_memory"`
-	CancellationMemory int                 `json:"cancellation_memory"`
+	Role               string `json:"role"`
+	ContextVersion     uint64 `json:"context_version"`
+	Emitted            uint64 `json:"emitted"`
+	Canceled           uint64 `json:"canceled"`
+	Refused            uint64 `json:"refused"`
+	Ignored            uint64 `json:"ignored"`
+	TerminalMemory     int    `json:"terminal_memory"`
+	CancellationMemory int    `json:"cancellation_memory"`
 }
 
 func decodeGenerateOnObservationConfig(source json.RawMessage) (GenerateOnObservationConfig, error) {

@@ -54,6 +54,22 @@ func (dispatchFactory) Mount(_ context.Context, mount element.MountContext) (ele
 	if err != nil {
 		return nil, err
 	}
+	targetService, targetRevision, found := mount.Services.Lookup(TargetRegistryService)
+	if !found {
+		return nil, fmt.Errorf("action.Dispatch %s has no target registries service", mount.InstanceID)
+	}
+	targets, ok := targetService.(*TargetRegistries)
+	if !ok || targets == nil {
+		return nil, fmt.Errorf("target registries service has type %T", targetService)
+	}
+	confirmationService, confirmationRevision, found := mount.Services.Lookup(ConfirmationRegistryService)
+	if !found {
+		return nil, fmt.Errorf("action.Dispatch %s has no confirmation registries service", mount.InstanceID)
+	}
+	confirmations, ok := confirmationService.(*ConfirmationProviders)
+	if !ok || confirmations == nil {
+		return nil, fmt.Errorf("confirmation registries service has type %T", confirmationService)
+	}
 	dependencies, err := resolveRuntimeDependencies(mount.Services)
 	if err != nil {
 		return nil, err
@@ -95,8 +111,10 @@ func (dispatchFactory) Mount(_ context.Context, mount element.MountContext) (ele
 		return nil, err
 	}
 	return &dispatchRunner{
-		config: config, tools: tools, ledger: ledger,
+		config: config, toolRegistries: toolRegistries, tools: tools, ledger: ledger,
+		targets: targets, confirmations: confirmations,
 		toolServiceRevision: toolRevision, ledgerServiceRevision: ledgerRevision,
+		targetServiceRevision: targetRevision, confirmationServiceRevision: confirmationRevision,
 		emit:         emitter{instance: mount.InstanceID, clock: dependencies.clock, sequences: dependencies.sequences},
 		executeInput: executeInput, cancelInput: cancelInput, timeoutInput: timeoutInput,
 		committedOutput: committedOutput, resultOutput: resultOutput, transitionOutput: transitionOutput,
@@ -127,12 +145,17 @@ type dispatchCompletion struct {
 }
 
 type dispatchRunner struct {
-	config                DispatchConfig
-	tools                 toolSet
-	ledger                ledgerEntry
-	toolServiceRevision   uint64
-	ledgerServiceRevision uint64
-	emit                  emitter
+	config                      DispatchConfig
+	toolRegistries              *ToolRegistries
+	tools                       toolSet
+	ledger                      ledgerEntry
+	targets                     *TargetRegistries
+	confirmations               *ConfirmationProviders
+	toolServiceRevision         uint64
+	ledgerServiceRevision       uint64
+	targetServiceRevision       uint64
+	confirmationServiceRevision uint64
+	emit                        emitter
 
 	executeInput     element.InputPort
 	cancelInput      element.InputPort
@@ -166,7 +189,8 @@ func (runner *dispatchRunner) Run(parent context.Context) error {
 	if err := publishResolution(ctx, runner.emit, runner.resolvedOutput, Resolution{
 		Stage: "dispatch", Reference: runner.tools.reference + "+" + runner.ledger.reference,
 		Identity: "action.Dispatch:" + runner.ledger.identity, Digest: resolutionDigest,
-		ServiceRevision: max(runner.toolServiceRevision, runner.ledgerServiceRevision),
+		ServiceRevision: max(runner.toolServiceRevision, runner.ledgerServiceRevision,
+			runner.targetServiceRevision, runner.confirmationServiceRevision),
 	}); err != nil {
 		return err
 	}
@@ -176,6 +200,10 @@ func (runner *dispatchRunner) Run(parent context.Context) error {
 				runner.toolServiceRevision, runner.tools.digest),
 			actionCapability("ledger", "action.Ledger/v1", "ledger://"+runner.ledger.reference,
 				runner.ledgerServiceRevision, runner.ledger.identity),
+			actionCapability("targets", "computeruse.Target/v1", "registry://"+TargetRegistryService,
+				runner.targetServiceRevision, ""),
+			actionCapability("confirmations", "action.ConfirmationProvider/v1",
+				"registry://"+ConfirmationRegistryService, runner.confirmationServiceRevision, ""),
 		}); err != nil {
 		return err
 	}
@@ -237,20 +265,28 @@ func (runner *dispatchRunner) accept(
 		})
 	}
 	call := callOfExecutable(executable)
-	if runner.terminal.contains(call.CallID) {
+	admitted := executable.Canonical.Authorized.Confirmed.Declared.Admitted
+	identity := actionIdentity(admitted)
+	if code, err := validateActionEnvelopeIdentity(envelope, admitted); err != nil {
+		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
+			Kind: OutcomeRejected, Stage: "dispatch", Operation: "execute", CallID: call.CallID,
+			Code: code, Message: err.Error(),
+		})
+	}
+	if runner.terminal.contains(identity) {
 		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
 			Kind: OutcomeIgnored, Stage: "dispatch", Operation: "execute", CallID: call.CallID,
 			Code: "terminal_replay", Message: "call ID is already terminal; effect will not repeat",
 		})
 	}
-	if runner.active != nil && callOfExecutable(runner.active.executable).CallID == call.CallID {
+	if runner.active != nil && actionIdentity(runner.active.executable.Canonical.Authorized.Confirmed.Declared.Admitted) == identity {
 		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
 			Kind: OutcomeIgnored, Stage: "dispatch", Operation: "execute", CallID: call.CallID,
 			Code: "duplicate_inflight", Message: "call is already dispatching",
 		})
 	}
 	for _, queued := range runner.queue {
-		if callOfExecutable(queued.executable).CallID == call.CallID {
+		if actionIdentity(queued.executable.Canonical.Authorized.Confirmed.Declared.Admitted) == identity {
 			return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
 				Kind: OutcomeIgnored, Stage: "dispatch", Operation: "execute", CallID: call.CallID,
 				Code: "duplicate_queued", Message: "call is already queued",
@@ -263,8 +299,8 @@ func (runner *dispatchRunner) accept(
 			Code: "invalid_capability", Message: err.Error(),
 		})
 	}
-	if runner.preempted.contains(call.CallID) {
-		runner.terminal.add(call.CallID)
+	if runner.preempted.contains(identity) {
+		runner.terminal.add(identity)
 		reason := "canceled before the commit boundary"
 		_, _ = runner.ledger.ledger.Cancel(executable.CommitmentID, reason)
 		if err := runner.publishTransition(ctx, envelope, executable.CommitmentID, call.CallID,
@@ -291,17 +327,23 @@ func (runner *dispatchRunner) accept(
 }
 
 func (runner *dispatchRunner) validateExecutable(executable ExecutableAction) error {
-	if err := validateAuthorizedAction(executable.Authorized); err != nil {
+	if err := validateCanonicalAction(executable.Canonical); err != nil {
 		return err
 	}
 	call := callOfExecutable(executable)
-	if executable.CommitmentID != "action_"+call.CallID {
+	admitted := executable.Canonical.Authorized.Confirmed.Declared.Admitted
+	identity := actionIdentity(admitted)
+	if executable.CommitmentID != actionCommitmentID(admitted) {
 		return errors.New("commitment identity does not match call identity")
 	}
 	if !runner.ledger.verify(executable) {
 		return errors.New("executable action capability did not verify")
 	}
-	declared := executable.Authorized.Confirmed.Declared
+	if err := attestDeploymentAuthority(runner.toolRegistries, runner.targets, runner.confirmations,
+		executable.Canonical.Authorized); err != nil {
+		return fmt.Errorf("deployment authority: %w", err)
+	}
+	declared := executable.Canonical.Authorized.Confirmed.Declared
 	if declared.RegistryReference != runner.tools.reference || declared.RegistryDigest != runner.tools.digest {
 		return errors.New("executable action names a different tool registry")
 	}
@@ -319,7 +361,7 @@ func (runner *dispatchRunner) validateExecutable(executable ExecutableAction) er
 		return fmt.Errorf("tool %q has no in-process dispatcher", call.Name)
 	}
 	commitment, found := runner.ledger.ledger.Lookup(executable.CommitmentID)
-	if !found || commitment.CallID != call.CallID || commitment.State != legacyaction.StateQueued {
+	if !found || commitment.CallID != identity || commitment.State != legacyaction.StateQueued {
 		return fmt.Errorf("ledger commitment is absent or not queued")
 	}
 	return nil
@@ -329,6 +371,20 @@ func (runner *dispatchRunner) start(
 	ctx context.Context, job *dispatchJob, completions chan<- dispatchCompletion, workers *sync.WaitGroup,
 ) error {
 	call := cloneToolCall(callOfExecutable(job.executable))
+	// Queue residence must not turn an earlier deployment resolution into
+	// durable authority. Re-resolve the declaration, confirmation decision,
+	// and target ownership at the last reversible point before ledger crossing.
+	if err := attestDeploymentAuthority(runner.toolRegistries, runner.targets, runner.confirmations,
+		job.executable.Canonical.Authorized); err != nil {
+		identity := actionIdentity(job.executable.Canonical.Authorized.Confirmed.Declared.Admitted)
+		runner.terminal.add(identity)
+		reason := "deployment authority changed before dispatch: " + err.Error()
+		_, _ = runner.ledger.ledger.Cancel(job.executable.CommitmentID, reason)
+		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, job.envelope, Outcome{
+			Kind: OutcomeRejected, Stage: "dispatch", Operation: "execute", CallID: call.CallID,
+			Code: "deployment_authority_mismatch", Message: reason,
+		})
+	}
 	tool, _, err := runner.tools.lookup(call.Name)
 	if err != nil {
 		return err
@@ -344,7 +400,7 @@ func (runner *dispatchRunner) start(
 	// and then returns an error.
 	if err := runner.ledger.ledger.Emit(job.executable.CommitmentID); err != nil {
 		runner.active = nil
-		runner.terminal.add(call.CallID)
+		runner.terminal.add(actionIdentity(job.executable.Canonical.Authorized.Confirmed.Declared.Admitted))
 		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, job.envelope, Outcome{
 			Kind: OutcomeFailed, Stage: "dispatch", Operation: "commit", CallID: call.CallID,
 			Code: "ledger_emit_failed", Message: err.Error(),
@@ -384,7 +440,7 @@ func (runner *dispatchRunner) complete(
 	}
 	runner.active = nil
 	call := callOfExecutable(job.executable)
-	runner.terminal.add(call.CallID)
+	runner.terminal.add(actionIdentity(job.executable.Canonical.Authorized.Confirmed.Declared.Admitted))
 	result := cloneToolResult(completion.result)
 	if completion.err != nil {
 		result = trajectory.ToolResult{CallID: call.CallID, Name: call.Name, Error: completion.err.Error()}
@@ -420,9 +476,15 @@ func (runner *dispatchRunner) complete(
 		return err
 	}
 	executionResult := ExecutionResult{
-		CallID: call.CallID, Name: call.Name, CommitmentID: job.executable.CommitmentID,
+		Executable: cloneExecutable(job.executable),
+		CallID:     call.CallID, Name: call.Name, CommitmentID: job.executable.CommitmentID,
 		Result: result, CrossedNS: job.crossed, FinishedNS: completion.finished,
 	}
+	resultCapability, err := runner.ledger.signResult(executionResult)
+	if err != nil {
+		return fmt.Errorf("authenticate dispatch result for %s: %w", call.CallID, err)
+	}
+	executionResult.ResultCapability = resultCapability
 	if err := publishPayload(ctx, runner.emit, runner.resultOutput, job.envelope, resultType, executionResult, "result"); err != nil {
 		return err
 	}
@@ -450,7 +512,7 @@ func (runner *dispatchRunner) complete(
 }
 
 func (runner *dispatchRunner) audit(job *dispatchJob, result trajectory.ToolResult, finished uint64) AuditRecord {
-	declared := job.executable.Authorized.Confirmed.Declared
+	declared := job.executable.Canonical.Authorized.Confirmed.Declared
 	return AuditRecord{
 		CallID: result.CallID, Name: result.Name, CommitmentID: job.executable.CommitmentID,
 		ProposalItemID: declared.Admitted.ProposalItemID, ModelRunID: declared.Admitted.ModelRunID,
@@ -458,6 +520,8 @@ func (runner *dispatchRunner) audit(job *dispatchJob, result trajectory.ToolResu
 		Authority: declared.Admitted.Authority, AuthorityItemID: declared.Admitted.AuthorityItemID,
 		Confirmation: declared.Confirmation, Target: declared.Target, RegistryReference: declared.RegistryReference,
 		DeclarationDigest: declared.DeclarationDigest, DispatcherIdentity: declared.DispatcherIdentity,
+		ProviderReference: declared.Admitted.ProviderReference,
+		ModelResultDigest: declared.Admitted.ModelResultDigest, ModelProducer: declared.Admitted.ModelProducer,
 		Crossed: true, Executed: true, ResultError: result.Error, StartedNS: job.started, FinishedNS: finished,
 	}
 }
@@ -472,6 +536,13 @@ func (runner *dispatchRunner) interrupt(
 			Kind: OutcomeRejected, Stage: "dispatch", Operation: operation, Code: code, Message: err.Error(),
 		})
 	}
+	identity, identityCode, err := interruptIdentity(envelope, interrupt)
+	if err != nil {
+		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
+			Kind: OutcomeRejected, Stage: "dispatch", Operation: operation,
+			CallID: interrupt.CallID, Code: identityCode, Message: err.Error(),
+		})
+	}
 	cause := error(errDispatchCanceled)
 	kind := OutcomeCanceled
 	if operation == "timeout" {
@@ -480,7 +551,8 @@ func (runner *dispatchRunner) interrupt(
 	if interrupt.Reason != "" {
 		cause = fmt.Errorf("%w: %s", cause, interrupt.Reason)
 	}
-	if runner.active != nil && callOfExecutable(runner.active.executable).CallID == interrupt.CallID {
+	if runner.active != nil &&
+		actionIdentity(runner.active.executable.Canonical.Authorized.Confirmed.Declared.Admitted) == identity {
 		runner.active.cancel(cause)
 		// The external boundary was already crossed; completion reports the
 		// terminal result and whether the dispatcher honored cancellation.
@@ -490,11 +562,11 @@ func (runner *dispatchRunner) interrupt(
 		})
 	}
 	for index, queued := range runner.queue {
-		if callOfExecutable(queued.executable).CallID != interrupt.CallID {
+		if actionIdentity(queued.executable.Canonical.Authorized.Confirmed.Declared.Admitted) != identity {
 			continue
 		}
 		runner.queue = append(runner.queue[:index], runner.queue[index+1:]...)
-		runner.terminal.add(interrupt.CallID)
+		runner.terminal.add(identity)
 		_, _ = runner.ledger.ledger.Cancel(queued.executable.CommitmentID, interrupt.Reason)
 		if err := runner.publishTransition(ctx, envelope, queued.executable.CommitmentID, interrupt.CallID,
 			legacyaction.StateCancelled, interrupt.Reason); err != nil {
@@ -505,8 +577,8 @@ func (runner *dispatchRunner) interrupt(
 			Message: interrupt.Reason,
 		})
 	}
-	already := runner.terminal.contains(interrupt.CallID) || runner.preempted.contains(interrupt.CallID)
-	runner.preempted.add(interrupt.CallID)
+	already := runner.terminal.contains(identity) || runner.preempted.contains(identity)
+	runner.preempted.add(identity)
 	if already {
 		kind, code = OutcomeIgnored, "already_terminal"
 	}
@@ -536,10 +608,12 @@ func (runner *dispatchRunner) startNext(
 	for runner.active == nil && len(runner.queue) != 0 {
 		next := runner.queue[0]
 		runner.queue = runner.queue[1:]
-		if runner.preempted.contains(callOfExecutable(next.executable).CallID) {
+		if runner.preempted.contains(actionIdentity(next.executable.Canonical.Authorized.Confirmed.Declared.Admitted)) {
 			continue
 		}
-		return runner.start(ctx, next, completions, workers)
+		if err := runner.start(ctx, next, completions, workers); err != nil {
+			return err
+		}
 	}
 	return nil
 }

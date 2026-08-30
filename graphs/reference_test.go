@@ -119,13 +119,15 @@ func TestASRTrajectoryReferenceArtifactRunsLockedAcrossUtterances(t *testing.T) 
 
 	for utterance := 1; utterance <= 2; utterance++ {
 		streamID := "utterance-" + strconv.Itoa(utterance)
+		const sessionID = "session-asr-reference"
 		frame := coreperception.Frame{
 			Kind: coreperception.FrameAudio, Source: "microphone", CapturedNS: uint64(utterance * 100),
 			PCM16LE: []byte{1, 0, 2, 0}, SampleRateHz: 16_000,
 		}
 		if _, err := observe.Broadcast(context.Background(), element.Envelope{
 			Type:   element.Trigger(element.Named("audio.FrameBatch")),
-			ItemID: "observe-" + streamID, SourceID: streamID, CancellationScope: streamID,
+			ItemID: "observe-" + streamID, SessionID: sessionID,
+			SourceID: streamID, CancellationScope: streamID,
 			Payload: perceptionelements.AudioBatch{StreamID: streamID, Frames: []coreperception.Frame{frame}},
 		}); err != nil {
 			t.Fatal(err)
@@ -139,7 +141,7 @@ func TestASRTrajectoryReferenceArtifactRunsLockedAcrossUtterances(t *testing.T) 
 		}
 		if _, err := flush.Broadcast(context.Background(), element.Envelope{
 			Type: element.Trigger(element.Named("audio.Flush")), ItemID: "flush-" + streamID,
-			SourceID: streamID, CancellationScope: streamID,
+			SessionID: sessionID, SourceID: streamID, CancellationScope: streamID,
 			Payload: perceptionelements.Flush{StreamID: streamID},
 		}); err != nil {
 			t.Fatal(err)

@@ -2,6 +2,7 @@ package action
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"sync"
 
+	legacyaction "github.com/bojieli/OpenRealtime/action"
+	"github.com/bojieli/OpenRealtime/authority"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
@@ -174,6 +177,18 @@ func proposalPayload(payload any) (cognitionelements.ToolProposal, bool) {
 	return cognitionelements.ToolProposal{}, false
 }
 
+func authorityCandidatePayload(payload any) (authority.Candidate, bool) {
+	switch value := payload.(type) {
+	case authority.Candidate:
+		return value, true
+	case *authority.Candidate:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return authority.Candidate{}, false
+}
+
 func provenancePayload(payload any) (Provenance, bool) {
 	switch value := payload.(type) {
 	case Provenance:
@@ -234,6 +249,18 @@ func authorizedPayload(payload any) (AuthorizedAction, bool) {
 	return AuthorizedAction{}, false
 }
 
+func canonicalActionPayload(payload any) (CanonicalAction, bool) {
+	switch value := payload.(type) {
+	case CanonicalAction:
+		return cloneCanonicalAction(value), true
+	case *CanonicalAction:
+		if value != nil {
+			return cloneCanonicalAction(*value), true
+		}
+	}
+	return CanonicalAction{}, false
+}
+
 func executablePayload(payload any) (ExecutableAction, bool) {
 	switch value := payload.(type) {
 	case ExecutableAction:
@@ -244,6 +271,30 @@ func executablePayload(payload any) (ExecutableAction, bool) {
 		}
 	}
 	return ExecutableAction{}, false
+}
+
+func executionResultPayload(payload any) (ExecutionResult, bool) {
+	switch value := payload.(type) {
+	case ExecutionResult:
+		return cloneExecutionResult(value), true
+	case *ExecutionResult:
+		if value != nil {
+			return cloneExecutionResult(*value), true
+		}
+	}
+	return ExecutionResult{}, false
+}
+
+func canonicalResultPayload(payload any) (CanonicalResult, bool) {
+	switch value := payload.(type) {
+	case CanonicalResult:
+		return cloneCanonicalResult(value), true
+	case *CanonicalResult:
+		if value != nil {
+			return cloneCanonicalResult(*value), true
+		}
+	}
+	return CanonicalResult{}, false
 }
 
 func interruptAddress(envelope element.Envelope) (Interrupt, string, error) {
@@ -260,18 +311,56 @@ func interruptAddress(envelope element.Envelope) (Interrupt, string, error) {
 		return Interrupt{}, "invalid_payload", fmt.Errorf("interrupt payload has type %T", envelope.Payload)
 	}
 	interrupt.CallID = strings.TrimSpace(interrupt.CallID)
-	envelopeAddress := strings.TrimSpace(envelope.RunID)
 	if interrupt.CallID == "" {
-		interrupt.CallID = envelopeAddress
-	} else if envelopeAddress != "" && envelopeAddress != interrupt.CallID {
-		return Interrupt{}, "conflicting_call_id", fmt.Errorf("interrupt call ID %q conflicts with envelope address %q",
-			interrupt.CallID, envelopeAddress)
-	}
-	if interrupt.CallID == "" {
-		return Interrupt{}, "missing_call_id", errors.New("interrupt requires a call ID")
+		return Interrupt{}, "missing_call_id", errors.New("interrupt payload requires an explicit call ID")
 	}
 	interrupt.Reason = strings.TrimSpace(interrupt.Reason)
 	return interrupt, "", nil
+}
+
+// actionScopeKey is the internal identity of one proposed external effect.
+// Provider call IDs are only idempotency keys within a cognition invocation;
+// they are not deployment-global names. Length-prefixed hashing prevents an
+// adversarial delimiter from aliasing a different session/run/call tuple.
+func actionScopeKey(sessionID, runID, callID string) string {
+	hash := sha256.New()
+	for _, identity := range []string{sessionID, runID, callID} {
+		_, _ = fmt.Fprintf(hash, "%d:", len(identity))
+		_, _ = hash.Write([]byte(identity))
+	}
+	return fmt.Sprintf("sha256:%x", hash.Sum(nil))
+}
+
+func actionRunKey(sessionID, runID string) string {
+	return actionScopeKey(sessionID, runID, "")
+}
+
+func actionSessionCallKey(sessionID, callID string) string {
+	return actionScopeKey(sessionID, "", callID)
+}
+
+func actionIdentity(admitted AdmittedProposal) string {
+	return actionScopeKey(admitted.SessionID, admitted.ModelRunID, admitted.Proposal.Call.CallID)
+}
+
+func actionCommitmentID(admitted AdmittedProposal) string {
+	return "action:" + actionIdentity(admitted)
+}
+
+func interruptIdentity(envelope element.Envelope, interrupt Interrupt) (string, string, error) {
+	sessionID := strings.TrimSpace(envelope.SessionID)
+	runID := strings.TrimSpace(envelope.RunID)
+	if sessionID == "" {
+		return "", "missing_session", errors.New("action interrupt requires a non-empty session ID")
+	}
+	if runID == "" {
+		return "", "missing_model_run", errors.New("action interrupt requires a non-empty cognition run ID")
+	}
+	if scope := strings.TrimSpace(envelope.CancellationScope); scope != "" && scope != runID {
+		return "", "cancellation_scope_mismatch", fmt.Errorf(
+			"action interrupt cancellation scope %q differs from cognition run %q", scope, runID)
+	}
+	return actionScopeKey(sessionID, runID, interrupt.CallID), "", nil
 }
 
 func validateToolCall(call trajectory.ToolCall) error {
@@ -301,6 +390,172 @@ func validateProposal(proposal cognitionelements.ToolProposal) error {
 	default:
 		return fmt.Errorf("provider authority %q cannot emit a tool proposal", proposal.ProviderAuthority)
 	}
+}
+
+func validateAdmittedProposal(value AdmittedProposal) error {
+	if err := validateProposal(value.Proposal); err != nil {
+		return err
+	}
+	for name, identity := range map[string]string{
+		"proposal item":            value.ProposalItemID,
+		"candidate item":           value.CandidateItemID,
+		"result item":              value.ResultItemID,
+		"model run":                value.ModelRunID,
+		"session":                  value.SessionID,
+		"activation item":          value.ActivationItemID,
+		"activation cause":         value.ActivationCauseItemID,
+		"authority item":           value.AuthorityItemID,
+		"observation trigger item": value.ObservationTriggerItemID,
+		"context envelope item":    value.ContextEnvelopeItemID,
+		"context tail item":        value.ContextTailItem,
+		"provider reference":       value.ProviderReference,
+		"model result digest":      value.ModelResultDigest,
+		"model provider":           value.ModelProducer.Provider,
+		"model name":               value.ModelProducer.Model,
+		"model reasoning effort":   value.ModelProducer.ReasoningEffort,
+		"model speech authority":   value.ModelProducer.SpeechAuthority,
+	} {
+		if strings.TrimSpace(identity) == "" {
+			return fmt.Errorf("admitted proposal requires a non-empty %s identity", name)
+		}
+	}
+	if value.SourceRevision == 0 || value.ContextVersion == 0 {
+		return errors.New("admitted proposal requires positive source and context revisions")
+	}
+	if err := validateModelProducerEvidence(value.ModelProducer); err != nil ||
+		!strings.HasPrefix(value.ModelResultDigest, "sha256:") {
+		return errors.New("admitted proposal requires exact model producer and result evidence")
+	}
+	if value.Authority != trajectory.AuthorityUser && value.Authority != trajectory.AuthoritySystem {
+		return fmt.Errorf("authority %q cannot authorize an external effect", value.Authority)
+	}
+	return nil
+}
+
+func validateModelProducerEvidence(producer trajectory.Producer) error {
+	if producer.Phase != trajectory.PhaseFast && producer.Phase != trajectory.PhaseSlow {
+		return errors.New("model producer phase must be fast or slow")
+	}
+	if strings.TrimSpace(producer.Provider) == "" || strings.TrimSpace(producer.Model) == "" {
+		return errors.New("model producer requires provider and model identities")
+	}
+	if _, err := continuation.ParseEffort(producer.ReasoningEffort); err != nil {
+		return err
+	}
+	switch continuation.SpeechAuthority(producer.SpeechAuthority) {
+	case continuation.SpeechAuthorityVoice, continuation.SpeechAuthoritySilent:
+		return nil
+	default:
+		return errors.New("model producer requires explicit effective speech authority")
+	}
+}
+
+func validateDeclaredAction(value DeclaredAction) error {
+	if err := validateAdmittedProposal(value.Admitted); err != nil {
+		return err
+	}
+	if strings.TrimSpace(value.RegistryReference) == "" || strings.TrimSpace(value.RegistryDigest) == "" ||
+		strings.TrimSpace(value.DeclarationDigest) == "" {
+		return errors.New("declared action has incomplete immutable registry resolution")
+	}
+	_, err := legacyaction.ParseConfirm(string(value.Confirmation))
+	return err
+}
+
+func validateConfirmedAction(value ConfirmedAction) error {
+	if err := validateDeclaredAction(value.Declared); err != nil {
+		return err
+	}
+	confirm, err := legacyaction.ParseConfirm(string(value.Declared.Confirmation))
+	if err != nil {
+		return err
+	}
+	providerReference := strings.TrimSpace(value.ProviderReference)
+	providerIdentity := strings.TrimSpace(value.ProviderIdentity)
+	capability := strings.TrimSpace(value.ConfirmationCapability)
+	if confirm == legacyaction.ConfirmNever {
+		if value.ConfirmationNeeded || providerReference != "" || providerIdentity != "" || capability != "" {
+			return errors.New("confirmation-free action carries unexpected provider evidence")
+		}
+		return nil
+	}
+	if !value.ConfirmationNeeded || providerReference == "" || providerIdentity == "" || capability == "" {
+		return errors.New("required confirmation has no exact provider decision")
+	}
+	return nil
+}
+
+func validateActionEnvelopeIdentity(
+	envelope element.Envelope, admitted AdmittedProposal,
+) (string, error) {
+	if strings.TrimSpace(admitted.SessionID) == "" || strings.TrimSpace(envelope.SessionID) == "" ||
+		envelope.SessionID != admitted.SessionID {
+		return "session_mismatch", errors.New("action envelope and admitted evidence must name one non-empty session")
+	}
+	if strings.TrimSpace(admitted.ModelRunID) == "" || strings.TrimSpace(envelope.RunID) == "" ||
+		envelope.RunID != admitted.ModelRunID {
+		return "model_run_mismatch", errors.New("action envelope and admitted evidence must name one cognition run")
+	}
+	return "", nil
+}
+
+// attestDeploymentAuthority re-resolves every deployment-owned decision just
+// before ledger admission/effect dispatch. Typed ports prevent ordinary graph
+// bypasses; this attestation additionally fails closed if a custom element or
+// replayed payload forges declaration, confirmation, or target evidence.
+func attestDeploymentAuthority(
+	tools *ToolRegistries, targets *TargetRegistries, confirmations *ConfirmationProviders,
+	authorized AuthorizedAction,
+) error {
+	if err := validateAuthorizedAction(authorized); err != nil {
+		return err
+	}
+	declared := authorized.Confirmed.Declared
+	call := callOfDeclared(declared)
+	set, err := tools.resolve(declared.RegistryReference)
+	if err != nil {
+		return err
+	}
+	if set.digest != declared.RegistryDigest {
+		return errors.New("declared tool registry digest does not match deployment resolution")
+	}
+	tool, found, err := set.lookup(call.Name)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("tool %q is not declared by the resolved registry", call.Name)
+	}
+	if tool.digest != declared.DeclarationDigest || tool.dispatcherIdentity != declared.DispatcherIdentity ||
+		tool.spec.Confirm != declared.Confirmation || tool.spec.Target != declared.Target ||
+		tool.spec.Background != declared.Background {
+		return errors.New("declared action differs from the immutable deployment tool declaration")
+	}
+	target, err := targets.resolve(authorized.TargetReference)
+	if err != nil {
+		return err
+	}
+	if target.digest != authorized.TargetDigest {
+		return errors.New("authorized target digest does not match deployment resolution")
+	}
+	if err := validateTargetAuthorization(target, authorized.Confirmed); err != nil {
+		return err
+	}
+	confirm, err := legacyaction.ParseConfirm(string(declared.Confirmation))
+	if err != nil {
+		return err
+	}
+	if confirm == legacyaction.ConfirmNever {
+		return nil
+	}
+	registration, err := confirmations.resolve(authorized.Confirmed.ProviderReference)
+	if err != nil {
+		return err
+	}
+	if !registration.verify(authorized.Confirmed) {
+		return errors.New("confirmation decision capability does not verify")
+	}
+	return nil
 }
 
 func cloneProposal(proposal cognitionelements.ToolProposal) cognitionelements.ToolProposal {
@@ -338,8 +593,24 @@ func cloneAuthorized(value AuthorizedAction) AuthorizedAction {
 	return value
 }
 
-func cloneExecutable(value ExecutableAction) ExecutableAction {
+func cloneCanonicalAction(value CanonicalAction) CanonicalAction {
 	value.Authorized = cloneAuthorized(value.Authorized)
+	return value
+}
+
+func cloneExecutable(value ExecutableAction) ExecutableAction {
+	value.Canonical = cloneCanonicalAction(value.Canonical)
+	return value
+}
+
+func cloneExecutionResult(value ExecutionResult) ExecutionResult {
+	value.Executable = cloneExecutable(value.Executable)
+	value.Result = cloneToolResult(value.Result)
+	return value
+}
+
+func cloneCanonicalResult(value CanonicalResult) CanonicalResult {
+	value.Execution = cloneExecutionResult(value.Execution)
 	return value
 }
 
@@ -351,8 +622,11 @@ func callOfConfirmed(value ConfirmedAction) trajectory.ToolCall {
 func callOfAuthorized(value AuthorizedAction) trajectory.ToolCall {
 	return callOfConfirmed(value.Confirmed)
 }
-func callOfExecutable(value ExecutableAction) trajectory.ToolCall {
+func callOfCanonical(value CanonicalAction) trajectory.ToolCall {
 	return callOfAuthorized(value.Authorized)
+}
+func callOfExecutable(value ExecutableAction) trajectory.ToolCall {
+	return callOfCanonical(value.Canonical)
 }
 
 func appendUnique(values []string, value string) []string {

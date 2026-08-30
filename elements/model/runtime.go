@@ -52,15 +52,33 @@ func (factory Factory) Descriptor() element.Descriptor {
 	return factory.descriptor.Clone()
 }
 
-func (Factory) ValidateConfig(source json.RawMessage) error {
-	_, err := decodeConfig(source)
+func (factory Factory) ValidateConfig(source json.RawMessage) error {
+	_, err := factory.validatedConfig(source)
 	return err
+}
+
+func (factory Factory) validatedConfig(source json.RawMessage) (Config, error) {
+	config, err := decodeConfig(source)
+	if err != nil {
+		return Config{}, err
+	}
+	descriptor := factory.Descriptor()
+	for name, formats := range config.PortFormats {
+		port, found := descriptor.Port(name)
+		if !found {
+			return Config{}, fmt.Errorf("external model configures wire formats for unknown port %q", name)
+		}
+		if err := sidecar.ValidatePortWireFormats(port.Type, formats); err != nil {
+			return Config{}, fmt.Errorf("external model port %s wire formats: %w", name, err)
+		}
+	}
+	return config, nil
 }
 
 func (factory Factory) Mount(
 	_ context.Context, mount element.MountContext,
 ) (element.Runnable, error) {
-	config, err := decodeConfig(mount.Config)
+	config, err := factory.validatedConfig(mount.Config)
 	if err != nil {
 		return nil, fmt.Errorf("external model %s config: %w", mount.InstanceID, err)
 	}
@@ -86,9 +104,15 @@ func (factory Factory) Mount(
 	}
 
 	descriptor := factory.Descriptor()
-	ports, selections, err := resolvePorts(mount.Ports, descriptor)
+	ports, selections, err := resolvePorts(mount.Ports, descriptor, config.PortFormats)
 	if err != nil {
 		return nil, err
+	}
+	for name, output := range ports.outputs {
+		if standardConcretePayload(output.Type()) && !codec.Supports(output.Type()) {
+			return nil, fmt.Errorf("external model output %s (%s) has no concrete payload decoder",
+				name, output.Type().String())
+		}
 	}
 	if err := validateSelectionCompleteness(descriptor, selections); err != nil {
 		return nil, fmt.Errorf("external model %s selected ports: %w", mount.InstanceID, err)
@@ -113,11 +137,13 @@ type boundPorts struct {
 
 func resolvePorts(
 	ports element.Ports, descriptor element.Descriptor,
+	configured map[string][]sidecar.WireFormat,
 ) (boundPorts, []sidecar.PortSelection, error) {
 	result := boundPorts{
 		inputs: make(map[string]element.InputPort), outputs: make(map[string]element.OutputPort),
 	}
 	selections := make([]sidecar.PortSelection, 0, len(descriptor.Ports))
+	usedFormats := make(map[string]struct{}, len(configured))
 	for _, port := range descriptor.Ports {
 		selection := sidecar.PortSelection{Name: port.Name, Direction: port.Direction, Type: port.Type.Clone()}
 		if port.Direction == element.Input {
@@ -126,6 +152,14 @@ func resolvePorts(
 				return boundPorts{}, nil, err
 			}
 			if len(input.Lanes()) != 0 {
+				formats, err := selectedWireFormats(port, configured)
+				if err != nil {
+					return boundPorts{}, nil, err
+				}
+				selection.Formats = formats
+				if _, found := configured[port.Name]; found {
+					usedFormats[port.Name] = struct{}{}
+				}
 				result.inputs[port.Name] = input
 				selections = append(selections, selection)
 			}
@@ -136,11 +170,46 @@ func resolvePorts(
 			return boundPorts{}, nil, err
 		}
 		if len(output.Lanes()) != 0 {
+			formats, err := selectedWireFormats(port, configured)
+			if err != nil {
+				return boundPorts{}, nil, err
+			}
+			selection.Formats = formats
+			if _, found := configured[port.Name]; found {
+				usedFormats[port.Name] = struct{}{}
+			}
 			result.outputs[port.Name] = output
 			selections = append(selections, selection)
 		}
 	}
+	for name := range configured {
+		if _, used := usedFormats[name]; !used {
+			return boundPorts{}, nil, fmt.Errorf("wire formats configure unselected port %q", name)
+		}
+	}
 	return result, selections, nil
+}
+
+func selectedWireFormats(
+	port element.Port, configured map[string][]sidecar.WireFormat,
+) ([]sidecar.WireFormat, error) {
+	formats, found := configured[port.Name]
+	_, media, err := sidecar.MediaKindForType(port.Type)
+	if err != nil {
+		return nil, fmt.Errorf("external model port %s: %w", port.Name, err)
+	}
+	if !found {
+		if media {
+			return nil, fmt.Errorf("external model selected media port %s (%s) without explicit wire formats",
+				port.Name, port.Type.String())
+		}
+		formats = []sidecar.WireFormat{sidecar.JSONWireFormat()}
+	}
+	formats = sidecar.CloneWireFormats(formats)
+	if err := sidecar.ValidatePortWireFormats(port.Type, formats); err != nil {
+		return nil, fmt.Errorf("external model port %s wire formats: %w", port.Name, err)
+	}
+	return formats, nil
 }
 
 func validateSelectionCompleteness(
@@ -183,9 +252,12 @@ type runner struct {
 	holder     *sessionHolder
 }
 
-func (runner *runner) Run(parent context.Context) error {
+func (runner *runner) Run(parent context.Context) (runErr error) {
+	if parent == nil {
+		return errors.New("run external model: nil context")
+	}
 	ctx, stop := context.WithCancelCause(parent)
-	defer stop(nil)
+	defer func() { stop(runErr) }()
 	descriptor := runner.descriptor.Clone()
 	hello := sidecar.Message{
 		Type: sidecar.TypeHello, Version: sidecar.VersionElementGraph,
@@ -193,7 +265,11 @@ func (runner *runner) Run(parent context.Context) error {
 		SelectedPorts:        slices.Clone(runner.selections),
 		RequiredCapabilities: slices.Clone(runner.config.RequiredCapabilities),
 	}
-	session, err := runner.dial(ctx, hello)
+	hello = hello.Clone()
+	if err := hello.Validate(); err != nil {
+		return fmt.Errorf("external model deployment %q hello: %w", runner.config.Deployment, err)
+	}
+	session, err := runner.dial(ctx, hello.Clone())
 	if err != nil {
 		return fmt.Errorf("dial external model deployment %q: %w", runner.config.Deployment, err)
 	}
@@ -203,8 +279,18 @@ func (runner *runner) Run(parent context.Context) error {
 	if err := runner.holder.set(session); err != nil {
 		return errors.Join(err, session.Close())
 	}
-	ready := session.Ready()
-	if err := sidecar.ValidateElementReady(hello, ready); err != nil {
+	var receivers sync.WaitGroup
+	defer func() {
+		// Session.Send has no context parameter and may be blocked in transport
+		// I/O. Close the reversible session before joining input forwarders so
+		// cancellation can actually make those goroutines quiescent.
+		stop(runErr)
+		_ = runner.holder.close()
+		receivers.Wait()
+	}()
+	ready := session.Ready().Clone()
+	contract, err := sidecar.NegotiateElementSession(hello, ready)
+	if err != nil {
 		return fmt.Errorf("external model deployment %q readiness: %w", runner.config.Deployment, err)
 	}
 	baselineEvidence, err := readyEvidenceOf(ready)
@@ -217,17 +303,11 @@ func (runner *runner) Run(parent context.Context) error {
 	}
 
 	failures := make(chan error, len(runner.ports.inputs))
-	var receivers sync.WaitGroup
 	sendMu := &sync.Mutex{}
 	for name, input := range runner.ports.inputs {
 		receivers.Add(1)
-		go runner.forwardInput(ctx, name, input, session, sendMu, failures, &receivers)
+		go runner.forwardInput(ctx, name, input, session, contract, sendMu, failures, &receivers)
 	}
-	defer func() {
-		stop(nil)
-		receivers.Wait()
-	}()
-
 	frames := session.Frames()
 	if frames == nil {
 		return errors.New("external model session returned a nil frame channel")
@@ -248,7 +328,7 @@ func (runner *runner) Run(parent context.Context) error {
 				}
 				return errors.New("external model session closed before graph shutdown")
 			}
-			if err := frame.Validate(); err != nil {
+			if err := contract.ValidateSidecarFrame(frame); err != nil {
 				return fmt.Errorf("external model sent an invalid frame: %w", err)
 			}
 			switch frame.Type {
@@ -257,7 +337,7 @@ func (runner *runner) Run(parent context.Context) error {
 					return err
 				}
 			case sidecar.TypeReady:
-				if err := sidecar.ValidateElementReady(hello, frame); err != nil {
+				if err := contract.ValidateReady(frame); err != nil {
 					return fmt.Errorf("external model readiness changed after startup: %w", err)
 				}
 				next, err := readyEvidenceOf(frame)
@@ -282,27 +362,40 @@ func (runner *runner) Run(parent context.Context) error {
 
 func (runner *runner) forwardInput(
 	ctx context.Context, name string, input element.InputPort, session Session,
-	sendMu *sync.Mutex, failures chan<- error, wait *sync.WaitGroup,
+	contract *sidecar.ElementSessionContract, sendMu *sync.Mutex,
+	failures chan<- error, wait *sync.WaitGroup,
 ) {
 	defer wait.Done()
 	for {
-		envelope, err := input.Receive(ctx)
+		// ReceiveAny is also valid for a singular port and preserves the generic
+		// factory's promise that a concrete external descriptor may expose a
+		// variadic input. The lane identity remains available in envelope source
+		// metadata; protocol v4 addresses the descriptor port, not an invented
+		// transport-specific sub-port.
+		envelope, _, err := input.ReceiveAny(ctx)
 		if err != nil {
 			if ctx.Err() == nil {
 				sendFailure(ctx, failures, fmt.Errorf("external model input %s: %w", name, err))
 			}
 			return
 		}
-		data, binary, err := runner.codec.Encode(input.Type(), envelope.Payload)
+		encoded, err := runner.codec.Encode(input.Type(), envelope.Payload)
 		if err != nil {
 			sendFailure(ctx, failures, fmt.Errorf("external model input %s encode: %w", name, err))
 			return
 		}
-		wire := sidecar.FromEnvelope(envelope, data)
+		wire := sidecar.FromEnvelope(envelope, encoded.JSON)
+		wire.Media = encoded.Media
+		message := sidecar.Message{
+			Type: sidecar.TypeElementFrame, Port: name, Envelope: &wire, Payload: encoded.Binary,
+			PayloadBytes: len(encoded.Binary),
+		}
+		if err := contract.ValidateEngineFrame(message); err != nil {
+			sendFailure(ctx, failures, fmt.Errorf("external model input %s conformance: %w", name, err))
+			return
+		}
 		sendMu.Lock()
-		err = session.Send(sidecar.Message{
-			Type: sidecar.TypeElementFrame, Port: name, Envelope: &wire, Payload: binary,
-		})
+		err = session.Send(message)
 		sendMu.Unlock()
 		if err != nil {
 			sendFailure(ctx, failures, fmt.Errorf("external model input %s send: %w", name, err))
@@ -323,7 +416,9 @@ func (runner *runner) forwardOutput(ctx context.Context, frame sidecar.Message) 
 		return fmt.Errorf("external model output %s has type %s, graph selected %s",
 			frame.Port, frame.Envelope.Type.String(), output.Type().String())
 	}
-	payload, err := runner.codec.Decode(output.Type(), frame.Envelope.JSON, frame.Payload)
+	payload, err := runner.codec.Decode(output.Type(), EncodedPayload{
+		JSON: frame.Envelope.JSON, Binary: frame.Payload, Media: frame.Envelope.Media,
+	})
 	if err != nil {
 		return fmt.Errorf("external model output %s decode: %w", frame.Port, err)
 	}
@@ -369,6 +464,7 @@ func (runner *runner) reportResolution(ready sidecar.Message) error {
 
 type readyEvidence struct {
 	Element      element.Identity
+	ConfigDigest string
 	Runtime      sidecar.ArtifactIdentity
 	Capabilities []sidecar.CapabilityIdentity
 }
@@ -386,7 +482,8 @@ func readyEvidenceOf(ready sidecar.Message) (readyEvidence, error) {
 		return readyEvidence{}, err
 	}
 	return readyEvidence{
-		Element: identity, Runtime: ready.RuntimeArtifact, Capabilities: capabilities,
+		Element: identity, ConfigDigest: ready.AppliedConfigDigest,
+		Runtime: ready.RuntimeArtifact, Capabilities: capabilities,
 	}, nil
 }
 
@@ -398,9 +495,10 @@ func sendFailure(ctx context.Context, failures chan<- error, err error) {
 }
 
 type sessionHolder struct {
-	mu      sync.Mutex
-	session Session
-	closed  bool
+	mu       sync.Mutex
+	session  Session
+	closed   bool
+	closeErr error
 }
 
 func (holder *sessionHolder) set(session Session) error {
@@ -418,17 +516,16 @@ func (holder *sessionHolder) set(session Session) error {
 
 func (holder *sessionHolder) close() error {
 	holder.mu.Lock()
+	defer holder.mu.Unlock()
 	if holder.closed {
-		holder.mu.Unlock()
-		return nil
+		return holder.closeErr
 	}
 	holder.closed = true
-	session := holder.session
-	holder.mu.Unlock()
-	if session == nil {
+	if holder.session == nil {
 		return nil
 	}
-	return session.Close()
+	holder.closeErr = holder.session.Close()
+	return holder.closeErr
 }
 
 func reflectedNil(value any) bool {

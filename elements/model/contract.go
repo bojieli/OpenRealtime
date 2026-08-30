@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/elements/internal/factoryprofile"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/internal/elementconfig"
@@ -31,6 +32,7 @@ const (
 	maxDeploymentReference    = 1024
 	maxElementSettingsBytes   = 512 << 10
 	maxRequiredCapabilities   = 256
+	maxConfiguredPortFormats  = 256
 )
 
 var (
@@ -74,7 +76,7 @@ func StandardDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "model.External",
-		Revision:      1,
+		Revision:      2,
 		Ports: []element.Port{
 			{Name: "audio", Direction: element.Input, Type: audioInputType, Cardinality: element.One, LossAllowed: true, DefaultDepth: 32},
 			{Name: "video", Direction: element.Input, Type: videoInputType, Cardinality: element.One, LossAllowed: true, DefaultDepth: 2},
@@ -99,7 +101,9 @@ func StandardDescriptor() element.Descriptor {
 			{Name: "outcome", Direction: element.Output, Type: outcomeType, Cardinality: element.One, DefaultDepth: 32},
 		},
 		Reaction: element.Reaction{
-			Triggers:     []string{"trigger", "commit", "interaction", "tick", "truncate"},
+			Triggers: []string{
+				"audio", "video", "tool_result", "trigger", "commit", "interaction", "tick", "truncate",
+			},
 			SampledState: []string{"context", "tools"}, Interrupts: []string{"cancel"},
 			Outcomes: []string{
 				"transcript", "text_out", "audio_out", "result", "tool_proposal",
@@ -143,6 +147,7 @@ type Config struct {
 	Deployment           string                          `json:"deployment"`
 	Settings             json.RawMessage                 `json:"settings,omitempty"`
 	RequiredCapabilities []sidecar.CapabilityRequirement `json:"required_capabilities,omitempty"`
+	PortFormats          map[string][]sidecar.WireFormat `json:"port_formats,omitempty"`
 }
 
 func decodeConfig(source json.RawMessage) (Config, error) {
@@ -168,10 +173,32 @@ func decodeConfig(source json.RawMessage) (Config, error) {
 	if len(config.Settings) > maxElementSettingsBytes {
 		return Config{}, fmt.Errorf("external model settings exceed %d bytes", maxElementSettingsBytes)
 	}
+	wireSettings, err := json.Marshal(json.RawMessage(config.Settings))
+	if err != nil {
+		return Config{}, fmt.Errorf("external model settings wire encoding: %w", err)
+	}
+	config.Settings = wireSettings
 	if len(config.RequiredCapabilities) > maxRequiredCapabilities {
 		return Config{}, fmt.Errorf("external model requires more than %d capabilities",
 			maxRequiredCapabilities)
 	}
+	if len(config.PortFormats) > maxConfiguredPortFormats {
+		return Config{}, fmt.Errorf("external model configures more than %d port formats", maxConfiguredPortFormats)
+	}
+	portFormats := make(map[string][]sidecar.WireFormat, len(config.PortFormats))
+	for name, formats := range config.PortFormats {
+		canonical := strings.TrimSpace(name)
+		if canonical == "" || canonical != name || len(name) > sidecar.MaxElementIdentifierBytes ||
+			strings.ContainsAny(name, "\x00\r\n") {
+			return Config{}, fmt.Errorf("external model port format name %q is not canonical", name)
+		}
+		if len(formats) == 0 || len(formats) > sidecar.MaxPortWireFormats {
+			return Config{}, fmt.Errorf("external model port %s must offer between 1 and %d formats",
+				name, sidecar.MaxPortWireFormats)
+		}
+		portFormats[name] = sidecar.CloneWireFormats(formats)
+	}
+	config.PortFormats = portFormats
 	config.Settings = slices.Clone(config.Settings)
 	probe := sidecar.Message{
 		Type: sidecar.TypeHello, Version: sidecar.VersionElementGraph,
@@ -179,8 +206,10 @@ func decodeConfig(source json.RawMessage) (Config, error) {
 			FormatVersion: element.DescriptorFormatVersion, Name: "probe.Element", Revision: 1,
 			Ports: []element.Port{{Name: "in", Direction: element.Input, Type: element.Event(element.Named("probe.Value")), Cardinality: element.One}},
 		},
-		ElementConfig:        config.Settings,
-		SelectedPorts:        []sidecar.PortSelection{{Name: "in", Direction: element.Input, Type: element.Event(element.Named("probe.Value"))}},
+		ElementConfig: config.Settings,
+		SelectedPorts: []sidecar.PortSelection{sidecar.JSONPortSelection(
+			"in", element.Input, element.Event(element.Named("probe.Value")),
+		)},
 		RequiredCapabilities: config.RequiredCapabilities,
 	}
 	if err := probe.Validate(); err != nil {
@@ -206,9 +235,12 @@ type Dialer func(context.Context, sidecar.Message) (Session, error)
 // Realtime adapters implement Dialer directly and therefore use the same
 // graph contract and attestation path without pretending to be a binding.
 func ClientDialer(config sidecar.Config) Dialer {
+	config.Command = slices.Clone(config.Command)
+	config.Environment = slices.Clone(config.Environment)
 	return func(ctx context.Context, hello sidecar.Message) (Session, error) {
-		config.ProtocolVersion = sidecar.VersionElementGraph
-		return sidecar.Dial(ctx, config, hello)
+		sessionConfig := config
+		sessionConfig.ProtocolVersion = sidecar.VersionElementGraph
+		return sidecar.Dial(ctx, sessionConfig, hello)
 	}
 }
 
@@ -274,5 +306,13 @@ func RegisterFactory(registry *graphruntime.Registry) error {
 	if registry == nil {
 		return errors.New("register external model factory: nil registry")
 	}
-	return registry.Register("", Factory{})
+	registrations, err := FactoryRegistrations()
+	if err != nil {
+		return err
+	}
+	return registry.RegisterFactory(registrations[0])
+}
+
+func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
+	return factoryprofile.Registrations(factoryprofile.Entry{Factory: Factory{}})
 }

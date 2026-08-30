@@ -235,10 +235,17 @@ func (runner *confirmationRunner) accept(
 		})
 	}
 	call := callOfDeclared(declared)
-	if err := validateToolCall(call); err != nil {
+	identity := actionIdentity(declared.Admitted)
+	if err := validateDeclaredAction(declared); err != nil {
 		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
 			Kind: OutcomeRejected, Stage: "confirmation", Operation: "confirm", CallID: call.CallID,
 			Code: "invalid_action", Message: err.Error(),
+		})
+	}
+	if code, err := validateActionEnvelopeIdentity(envelope, declared.Admitted); err != nil {
+		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
+			Kind: OutcomeRejected, Stage: "confirmation", Operation: "confirm", CallID: call.CallID,
+			Code: code, Message: err.Error(),
 		})
 	}
 	confirm, err := legacyaction.ParseConfirm(string(declared.Confirmation))
@@ -249,14 +256,14 @@ func (runner *confirmationRunner) accept(
 		})
 	}
 	declared.Confirmation = confirm
-	if runner.terminal.contains(call.CallID) {
+	if runner.terminal.contains(identity) {
 		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
 			Kind: OutcomeIgnored, Stage: "confirmation", Operation: "confirm", CallID: call.CallID,
 			Code: "terminal_replay", Message: "confirmation call ID is already terminal",
 		})
 	}
 	if confirm == legacyaction.ConfirmNever {
-		runner.terminal.add(call.CallID)
+		runner.terminal.add(identity)
 		confirmed := ConfirmedAction{Declared: declared}
 		if err := publishPayload(ctx, runner.emit, runner.confirmedOutput, envelope, confirmedType, confirmed, "confirmed"); err != nil {
 			return err
@@ -265,14 +272,14 @@ func (runner *confirmationRunner) accept(
 			Kind: OutcomeSucceeded, Stage: "confirmation", Operation: "confirm", CallID: call.CallID,
 		})
 	}
-	if runner.active != nil && callOfDeclared(runner.active.action).CallID == call.CallID {
+	if runner.active != nil && actionIdentity(runner.active.action.Admitted) == identity {
 		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
 			Kind: OutcomeIgnored, Stage: "confirmation", Operation: "confirm", CallID: call.CallID,
 			Code: "duplicate_inflight", Message: "confirmation is already in flight",
 		})
 	}
 	for _, queued := range runner.queue {
-		if callOfDeclared(queued.action).CallID == call.CallID {
+		if actionIdentity(queued.action.Admitted) == identity {
 			return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
 				Kind: OutcomeIgnored, Stage: "confirmation", Operation: "confirm", CallID: call.CallID,
 				Code: "duplicate_queued", Message: "confirmation is already queued",
@@ -330,7 +337,7 @@ func (runner *confirmationRunner) complete(
 	}
 	runner.active = nil
 	call := callOfDeclared(job.action)
-	runner.terminal.add(call.CallID)
+	runner.terminal.add(actionIdentity(job.action.Admitted))
 	var err error
 	switch {
 	case errors.Is(completion.err, errConfirmationTimedOut):
@@ -357,6 +364,10 @@ func (runner *confirmationRunner) complete(
 		confirmed := ConfirmedAction{
 			Declared: job.action, ConfirmationNeeded: true,
 			ProviderReference: runner.config.Provider, ProviderIdentity: runner.registration.identity,
+		}
+		confirmed.ConfirmationCapability, err = runner.registration.sign(runner.config.Provider, job.action)
+		if err != nil {
+			return fmt.Errorf("sign confirmation decision for %s: %w", call.CallID, err)
 		}
 		if err = publishPayload(ctx, runner.emit, runner.confirmedOutput, job.envelope, confirmedType, confirmed, "confirmed"); err == nil {
 			err = publishOutcome(ctx, runner.emit, runner.outcomeOutput, job.envelope, Outcome{
@@ -386,6 +397,13 @@ func (runner *confirmationRunner) interrupt(
 			Kind: OutcomeRejected, Stage: "confirmation", Operation: operation, Code: code, Message: err.Error(),
 		})
 	}
+	identity, identityCode, err := interruptIdentity(envelope, interrupt)
+	if err != nil {
+		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
+			Kind: OutcomeRejected, Stage: "confirmation", Operation: operation,
+			CallID: interrupt.CallID, Code: identityCode, Message: err.Error(),
+		})
+	}
 	cause := error(errConfirmationCanceled)
 	kind := OutcomeCanceled
 	if operation == "timeout" {
@@ -395,12 +413,12 @@ func (runner *confirmationRunner) interrupt(
 		cause = fmt.Errorf("%w: %s", cause, interrupt.Reason)
 	}
 	found := false
-	if runner.active != nil && callOfDeclared(runner.active.action).CallID == interrupt.CallID {
+	if runner.active != nil && actionIdentity(runner.active.action.Admitted) == identity {
 		found = true
 		runner.active.cancel(cause)
 	}
 	for index := 0; index < len(runner.queue); index++ {
-		if callOfDeclared(runner.queue[index].action).CallID != interrupt.CallID {
+		if actionIdentity(runner.queue[index].action.Admitted) != identity {
 			continue
 		}
 		found = true
@@ -408,8 +426,8 @@ func (runner *confirmationRunner) interrupt(
 		break
 	}
 	if !found {
-		alreadyTerminal := runner.terminal.contains(interrupt.CallID)
-		runner.terminal.add(interrupt.CallID)
+		alreadyTerminal := runner.terminal.contains(identity)
+		runner.terminal.add(identity)
 		if alreadyTerminal {
 			kind, code = OutcomeIgnored, "already_terminal"
 		}
@@ -423,10 +441,10 @@ func (runner *confirmationRunner) interrupt(
 	}
 	// Active completion publishes the terminal event after the provider has
 	// acknowledged cancellation. A queued job has no worker, so close it here.
-	if runner.active != nil && callOfDeclared(runner.active.action).CallID == interrupt.CallID {
+	if runner.active != nil && actionIdentity(runner.active.action.Admitted) == identity {
 		return nil
 	}
-	runner.terminal.add(interrupt.CallID)
+	runner.terminal.add(identity)
 	if interrupt.Reason == "" {
 		interrupt.Reason = operation
 	}

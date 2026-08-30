@@ -2,6 +2,8 @@ package cognition
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,11 +12,19 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
+	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/trajectory"
+)
+
+const (
+	committedCancelMemory           = 512
+	maximumCommittedIdentifierBytes = 256
 )
 
 type textModelFactory struct{}
@@ -117,7 +127,7 @@ func (textModelFactory) Mount(_ context.Context, mount element.MountContext) (el
 		contextInput:     contextInput, triggerInput: triggerInput, cancelInput: cancelInput,
 		textOutput: textOutput, resultOutput: resultOutput, toolOutput: toolOutput,
 		outcomeOutput: outcomeOutput, resolvedOutput: resolvedOutput,
-		resolution: mount.Resolution,
+		resolution: mount.Resolution, committedCanceledRuns: make(map[[sha256.Size]byte]struct{}),
 	}, nil
 }
 
@@ -150,7 +160,12 @@ type textModelRunner struct {
 	resolvedOutput element.OutputPort
 	resolution     element.ResolutionReporter
 
-	latest *sampledContext
+	latest                    *sampledContext
+	committedSessionID        string
+	committedVersionFloor     uint64
+	committedVersionAdmitted  bool
+	committedCanceledRuns     map[[sha256.Size]byte]struct{}
+	committedCanceledRunOrder [][sha256.Size]byte
 }
 
 func (runner *textModelRunner) Run(parent context.Context) error {
@@ -216,8 +231,7 @@ func (runner *textModelRunner) Run(parent context.Context) error {
 				return err
 			}
 			sampled, canceled, err := runner.sampleForTrigger(
-				ctx, envelope, runID, generate.ExpectedContextVersion,
-				generate.ExpectedContextItemID,
+				ctx, envelope, runID, generate,
 				contexts, interrupts, receiveErrors,
 			)
 			if err != nil {
@@ -353,6 +367,52 @@ func (runner *textModelRunner) prepareTrigger(
 			Message: "expected context item ID is not canonical",
 		}
 	}
+	if committed := generate.CommittedContext; committed != nil {
+		if err := validateCommittedIdentifier("session ID", envelope.SessionID); err != nil {
+			return Generate{}, runID, &Outcome{
+				Kind: OutcomeRefused, Operation: "generate", RunID: runID,
+				ProviderReference: runner.reference, Code: "invalid_context_session",
+				Message: err.Error(),
+			}
+		}
+		if committed.Prefix.Version == 0 {
+			return Generate{}, runID, &Outcome{
+				Kind: OutcomeRefused, Operation: "generate", RunID: runID,
+				ProviderReference: runner.reference, Code: "invalid_committed_context",
+				Message: "committed context prefix version must be positive",
+			}
+		}
+		if err := validateCommittedIdentifier("State item ID", committed.StateItemID); err != nil {
+			return Generate{}, runID, &Outcome{
+				Kind: OutcomeRefused, Operation: "generate", RunID: runID,
+				ProviderReference: runner.reference, Code: "invalid_context_identity",
+				Message: err.Error(),
+			}
+		}
+		if generate.ExpectedContextVersion == nil || generate.ExpectedContextItemID == "" {
+			return Generate{}, runID, &Outcome{
+				Kind: OutcomeRefused, Operation: "generate", RunID: runID,
+				ProviderReference: runner.reference, Code: "incomplete_committed_context",
+				Message: "committed context requires both expected context fields",
+			}
+		}
+		if *generate.ExpectedContextVersion != committed.Prefix.Version ||
+			generate.ExpectedContextItemID != committed.StateItemID {
+			return Generate{}, runID, &Outcome{
+				Kind: OutcomeRefused, Operation: "generate", RunID: runID,
+				ProviderReference: runner.reference, Code: "committed_context_mismatch",
+				Message: "committed context does not agree with expected context fields",
+			}
+		}
+		if !slices.Contains(envelope.CausalParents, committed.StateItemID) {
+			return Generate{}, runID, &Outcome{
+				Kind: OutcomeRefused, Operation: "generate", RunID: runID,
+				ProviderReference: runner.reference, Code: "missing_context_cause",
+				Message: fmt.Sprintf("generation trigger does not causally name committed context item %q",
+					committed.StateItemID),
+			}
+		}
+	}
 	if generate.ExpectedContextItemID != "" && generate.ExpectedContextVersion == nil {
 		return Generate{}, runID, &Outcome{
 			Kind: OutcomeRefused, Operation: "generate", RunID: runID,
@@ -363,17 +423,93 @@ func (runner *textModelRunner) prepareTrigger(
 	return generate, runID, nil
 }
 
-// sampleForTrigger waits for the required seeded State value. An exact version
-// lets causally linked policies avoid accidentally sampling a later prefix.
+// sampleForTrigger waits for the required seeded State value. Legacy exact
+// triggers retain their strict latest-version behavior. A commit-bound trigger
+// may instead reconstruct and verify its immutable prefix from a later
+// append-only snapshot.
 func (runner *textModelRunner) sampleForTrigger(
-	ctx context.Context, trigger element.Envelope, runID string, expected *uint64,
-	expectedItemID string,
+	ctx context.Context, trigger element.Envelope, runID string, generate Generate,
 	contexts <-chan element.Envelope, interrupts <-chan element.Envelope,
 	receiveErrors <-chan error,
 ) (*sampledContext, bool, error) {
+	expected := generate.ExpectedContextVersion
+	expectedItemID := generate.ExpectedContextItemID
+	committed := generate.CommittedContext
+	if committed != nil {
+		if runner.committedSessionID != "" && runner.committedSessionID != trigger.SessionID {
+			outcome := Outcome{
+				Kind: OutcomeRefused, Operation: "generate", RunID: runID,
+				ProviderReference: runner.reference, ContextVersion: committed.Prefix.Version,
+				Code: "committed_session_mismatch",
+				Message: fmt.Sprintf("committed context session %q does not match mounted session %q",
+					trigger.SessionID, runner.committedSessionID),
+			}
+			return nil, false, runner.publishOutcome(ctx, trigger, outcome)
+		}
+		if runner.wasCommittedRunCanceled(trigger.SessionID, runID) {
+			outcome := Outcome{
+				Kind: OutcomeRefused, Operation: "generate", RunID: runID,
+				ProviderReference: runner.reference, ContextVersion: committed.Prefix.Version,
+				Code:    "committed_run_replay",
+				Message: "committed generation run is already terminal after cancellation",
+			}
+			return nil, false, runner.publishOutcome(ctx, trigger, outcome)
+		}
+		if runner.committedVersionAdmitted && committed.Prefix.Version <= runner.committedVersionFloor {
+			outcome := Outcome{
+				Kind: OutcomeRefused, Operation: "generate", RunID: runID,
+				ProviderReference: runner.reference, ContextVersion: committed.Prefix.Version,
+				Code: "committed_context_replay",
+				Message: fmt.Sprintf("committed context version %d is not newer than admitted version %d",
+					committed.Prefix.Version, runner.committedVersionFloor),
+			}
+			return nil, false, runner.publishOutcome(ctx, trigger, outcome)
+		}
+	}
 	for {
 		if runner.latest != nil {
 			version := runner.latest.snapshot.Version
+			if committed != nil && version >= committed.Prefix.Version {
+				cause := trigger.Clone()
+				cause.CausalParents = appendUnique(cause.CausalParents, runner.latest.envelope.ItemID)
+				switch {
+				case runner.latest.envelope.SessionID != trigger.SessionID:
+					outcome := Outcome{
+						Kind: OutcomeRefused, Operation: "generate", RunID: runID,
+						ProviderReference: runner.reference, ContextVersion: committed.Prefix.Version,
+						Code: "context_session_mismatch",
+						Message: fmt.Sprintf("generation session %q does not match context session %q",
+							trigger.SessionID, runner.latest.envelope.SessionID),
+					}
+					return nil, false, runner.publishOutcome(ctx, cause, outcome)
+				case version == committed.Prefix.Version &&
+					runner.latest.envelope.ItemID != committed.StateItemID:
+					outcome := Outcome{
+						Kind: OutcomeRefused, Operation: "generate", RunID: runID,
+						ProviderReference: runner.reference, ContextVersion: committed.Prefix.Version,
+						Code: "context_identity_mismatch",
+						Message: fmt.Sprintf("generation requires context item %q, latest is %q",
+							committed.StateItemID, runner.latest.envelope.ItemID),
+					}
+					return nil, false, runner.publishOutcome(ctx, cause, outcome)
+				}
+				prefix, err := trajectory.Prefix(runner.latest.snapshot, committed.Prefix)
+				if err != nil {
+					outcome := Outcome{
+						Kind: OutcomeRefused, Operation: "generate", RunID: runID,
+						ProviderReference: runner.reference, ContextVersion: committed.Prefix.Version,
+						Code: "context_prefix_mismatch", Message: err.Error(),
+					}
+					return nil, false, runner.publishOutcome(ctx, cause, outcome)
+				}
+				basis := runner.latest.envelope.Clone()
+				basis.ItemID = committed.StateItemID
+				basis.Payload = prefix
+				runner.committedSessionID = trigger.SessionID
+				runner.committedVersionFloor = committed.Prefix.Version
+				runner.committedVersionAdmitted = true
+				return &sampledContext{envelope: basis, snapshot: prefix}, false, nil
+			}
 			switch {
 			case expected == nil || version == *expected &&
 				(expectedItemID == "" || runner.latest.envelope.ItemID == expectedItemID):
@@ -444,9 +580,75 @@ func (runner *textModelRunner) sampleForTrigger(
 				ProviderReference: runner.reference, Code: "canceled_before_start",
 				Message: strings.TrimSpace(cancel.Reason), FinishedNS: runner.clock.NowNS(),
 			}
+			if committed != nil {
+				runner.rememberCommittedCanceledRun(trigger.SessionID, runID)
+			}
 			return nil, true, runner.publishOutcomeWithParents(ctx, trigger, &envelope, outcome)
 		}
 	}
+}
+
+// A commit-bound trigger canceled before its prefix arrives never reaches the
+// monotonic version floor. Retain a bounded terminal tombstone so replaying
+// that same addressed run cannot turn the canceled request into model work.
+// Keys are fixed-size commitments to keep hostile envelope identifiers from
+// defeating the memory bound. Eviction matches the repository's other
+// terminal-memory horizons; admitted versions remain refused permanently by
+// the scalar floor.
+func (runner *textModelRunner) rememberCommittedCanceledRun(sessionID, runID string) {
+	key := committedRunKey(sessionID, runID)
+	if _, found := runner.committedCanceledRuns[key]; found {
+		return
+	}
+	runner.committedCanceledRuns[key] = struct{}{}
+	runner.committedCanceledRunOrder = append(runner.committedCanceledRunOrder, key)
+	if len(runner.committedCanceledRunOrder) <= committedCancelMemory {
+		return
+	}
+	oldest := runner.committedCanceledRunOrder[0]
+	runner.committedCanceledRunOrder = runner.committedCanceledRunOrder[1:]
+	delete(runner.committedCanceledRuns, oldest)
+}
+
+func (runner *textModelRunner) wasCommittedRunCanceled(sessionID, runID string) bool {
+	_, found := runner.committedCanceledRuns[committedRunKey(sessionID, runID)]
+	return found
+}
+
+func committedRunKey(sessionID, runID string) [sha256.Size]byte {
+	hash := sha256.New()
+	_, _ = hash.Write([]byte("openrealtime.cognition/committed-run/v1"))
+	var size [8]byte
+	binary.BigEndian.PutUint64(size[:], uint64(len(sessionID)))
+	_, _ = hash.Write(size[:])
+	_, _ = hash.Write([]byte(sessionID))
+	binary.BigEndian.PutUint64(size[:], uint64(len(runID)))
+	_, _ = hash.Write(size[:])
+	_, _ = hash.Write([]byte(runID))
+	var key [sha256.Size]byte
+	copy(key[:], hash.Sum(nil))
+	return key
+}
+
+func validateCommittedIdentifier(label, value string) error {
+	if value == "" {
+		return fmt.Errorf("committed context %s is required", label)
+	}
+	if strings.TrimSpace(value) != value {
+		return fmt.Errorf("committed context %s has surrounding whitespace", label)
+	}
+	if len(value) > maximumCommittedIdentifierBytes {
+		return fmt.Errorf("committed context %s exceeds %d bytes", label, maximumCommittedIdentifierBytes)
+	}
+	if !utf8.ValidString(value) {
+		return fmt.Errorf("committed context %s is not valid UTF-8", label)
+	}
+	for _, character := range value {
+		if unicode.IsSpace(character) || unicode.IsControl(character) {
+			return fmt.Errorf("committed context %s contains whitespace or control characters", label)
+		}
+	}
+	return nil
 }
 
 var errGenerationCanceled = errors.New("cognition generation canceled")
@@ -925,6 +1127,7 @@ func generatePayload(payload any) (Generate, bool) {
 	case Generate:
 		typed.Invocation = cloneInvocation(typed.Invocation)
 		typed.ExpectedContextVersion = cloneUint64Pointer(typed.ExpectedContextVersion)
+		typed.CommittedContext = cloneCommittedContext(typed.CommittedContext)
 		return typed, true
 	case *Generate:
 		if typed == nil {
@@ -933,6 +1136,7 @@ func generatePayload(payload any) (Generate, bool) {
 		copy := *typed
 		copy.Invocation = cloneInvocation(typed.Invocation)
 		copy.ExpectedContextVersion = cloneUint64Pointer(typed.ExpectedContextVersion)
+		copy.CommittedContext = cloneCommittedContext(typed.CommittedContext)
 		return copy, true
 	default:
 		return Generate{}, false
@@ -996,6 +1200,14 @@ func cancelAddressOutcome(reference string, envelope element.Envelope, err error
 }
 
 func cloneUint64Pointer(value *uint64) *uint64 {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func cloneCommittedContext(value *stateelements.CommittedContext) *stateelements.CommittedContext {
 	if value == nil {
 		return nil
 	}

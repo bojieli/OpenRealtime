@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/authority"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
@@ -28,25 +29,31 @@ import (
 
 const generationPolicyGraph = `graph generation_policy_test {
     policy.GenerateOnObservation :: activation;
-    input context = activation.context;
     input committed = activation.committed;
     input cancel = activation.cancel;
     output trigger = activation.trigger;
+    output authority = activation.authority;
     output state = activation.state;
     output outcome = activation.outcome;
 }
 `
 
-func TestGenerateOnObservationDescriptorMakesActivationJoinExplicit(t *testing.T) {
+func TestGenerateOnObservationDescriptorUsesSelfContainedCommitBasis(t *testing.T) {
 	descriptor := policyelements.GenerateOnObservationDescriptor()
+	if descriptor.Revision != 3 {
+		t.Fatalf("descriptor revision = %d, want immutable successor 3", descriptor.Revision)
+	}
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	if _, found := descriptor.Port("context"); found {
+		t.Fatal("revision 3 retained the racy trajectory context input")
+	}
 	wantPorts := map[string]string{
-		"context":   "State<trajectory.Snapshot>",
 		"committed": "Event<trajectory.ObservationCommitOutcome>",
 		"cancel":    "Interrupt<policy.GenerationAddress>",
 		"trigger":   "Trigger<cognition.Generate>",
+		"authority": "Stream<authority.Candidate>",
 		"state":     "State<policy.GenerationState>",
 		"outcome":   "Event<policy.GenerationOutcome>",
 	}
@@ -55,164 +62,431 @@ func TestGenerateOnObservationDescriptorMakesActivationJoinExplicit(t *testing.T
 		if !found || port.Type.String() != want {
 			t.Fatalf("port %s = %+v, want %s", name, port, want)
 		}
+		if name == "committed" && port.LossAllowed {
+			t.Fatal("committed activation evidence allows loss")
+		}
 	}
-	if !reflect.DeepEqual(descriptor.Reaction.Triggers, []string{"context", "committed"}) ||
+	if !reflect.DeepEqual(descriptor.Reaction.Triggers, []string{"committed"}) ||
 		!reflect.DeepEqual(descriptor.Reaction.Interrupts, []string{"cancel"}) ||
 		!descriptor.Reaction.BreaksCycles || descriptor.Reaction.MaxConcurrency != 1 {
 		t.Fatalf("reaction = %+v", descriptor.Reaction)
 	}
+	if len(descriptor.Effects) != 1 || descriptor.Effects[0].Name != "policy.activation.memory" ||
+		strings.Contains(descriptor.Effects[0].Name, "pending") {
+		t.Fatalf("descriptor effects still claim a pending join: %+v", descriptor.Effects)
+	}
 }
 
-func TestGenerateOnObservationWaitsForExactCommittedContext(t *testing.T) {
+func TestGenerateOnObservationImmediatelyActivatesIndependentRoles(t *testing.T) {
+	commit := committedObservation(t, "microphone", "observation-trigger",
+		"trajectory-observation-7", "trajectory-state-1", 1, 7)
+	type activation struct {
+		role      string
+		harness   policyHarness
+		trigger   element.Envelope
+		candidate element.Envelope
+		payload   cognitionelements.Generate
+	}
+	activations := []activation{
+		{role: "fast", harness: mountPolicy(t, validPolicyConfig("fast"))},
+		{role: "deliberative", harness: mountPolicy(t, validPolicyConfig("deliberative"))},
+	}
+	for index := range activations {
+		current := &activations[index]
+		defer current.harness.stop(t)
+		startup := receivePolicy(t, current.harness.egress(t, "state")).Payload.(policyelements.GenerationState)
+		if startup.Role != current.role || startup.ContextVersion != 0 ||
+			startup.TerminalMemory != 8 || startup.CancellationMemory != 8 {
+			t.Fatalf("%s startup state = %+v", current.role, startup)
+		}
+		source := commit
+		sendPolicy(t, current.harness.ingress(t, "committed"), commitEnvelope(
+			"commit-envelope", "policy-test-session", &source,
+		))
+		current.trigger = receivePolicy(t, current.harness.egress(t, "trigger"))
+		current.candidate = receivePolicy(t, current.harness.egress(t, "authority"))
+		payload, ok := current.trigger.Payload.(cognitionelements.Generate)
+		if !ok {
+			t.Fatalf("%s trigger payload type = %T", current.role, current.trigger.Payload)
+		}
+		current.payload = payload
+		assertActivation(t, current.role, current.trigger, current.candidate, payload, commit)
+		outcome := receivePolicy(t, current.harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
+		if outcome.Kind != policyelements.GenerationEmitted ||
+			outcome.GenerationID != current.trigger.RunID || outcome.Role != current.role ||
+			outcome.ContextVersion != 1 || outcome.SourceRevision != 7 ||
+			outcome.TriggerItemID != "observation-trigger" {
+			t.Fatalf("%s outcome = %+v", current.role, outcome)
+		}
+		settled := receivePolicy(t, current.harness.egress(t, "state")).Payload.(policyelements.GenerationState)
+		if settled.Emitted != 1 || settled.ContextVersion != 1 {
+			t.Fatalf("%s settled state = %+v", current.role, settled)
+		}
+		assertStateHasNoPendingSurface(t, settled)
+		assertPolicyLiveResolution(t, current.harness.mounted)
+	}
+	if activations[0].trigger.RunID == activations[1].trigger.RunID {
+		t.Fatalf("independent roles shared generation identity %q", activations[0].trigger.RunID)
+	}
+	if !reflect.DeepEqual(*activations[0].payload.CommittedContext,
+		*activations[1].payload.CommittedContext) {
+		t.Fatalf("roles selected different committed bases: fast=%+v slow=%+v",
+			activations[0].payload.CommittedContext, activations[1].payload.CommittedContext)
+	}
+}
+
+func TestGenerateOnObservationRefusesTamperedOrMissingCompactBasis(t *testing.T) {
+	valid := committedObservation(t, "camera", "frame-trigger",
+		"trajectory-frame", "trajectory-state-3", 3, 11)
+	tests := []struct {
+		name   string
+		mutate func(*stateelements.ObservationCommitOutcome)
+		want   string
+	}{
+		{name: "zero store revision", mutate: func(value *stateelements.ObservationCommitOutcome) {
+			value.StoreVersion = 0
+		}, want: "positive store"},
+		{name: "zero source revision", mutate: func(value *stateelements.ObservationCommitOutcome) {
+			value.SourceRevision = 0
+		}, want: "positive store"},
+		{name: "zero observation revision", mutate: func(value *stateelements.ObservationCommitOutcome) {
+			value.ObservationRevision = 0
+		}, want: "positive store"},
+		{name: "prefix version drift", mutate: func(value *stateelements.ObservationCommitOutcome) {
+			value.Context.Prefix.Version--
+		}, want: "does not match store version"},
+		{name: "missing digest", mutate: func(value *stateelements.ObservationCommitOutcome) {
+			value.Context.Prefix.Digest = ""
+		}, want: "canonical SHA-256"},
+		{name: "uppercase digest", mutate: func(value *stateelements.ObservationCommitOutcome) {
+			value.Context.Prefix.Digest = strings.ToUpper(value.Context.Prefix.Digest)
+		}, want: "canonical SHA-256"},
+		{name: "nonhex digest", mutate: func(value *stateelements.ObservationCommitOutcome) {
+			value.Context.Prefix.Digest = "sha256:" + strings.Repeat("z", 64)
+		}, want: "canonical SHA-256"},
+		{name: "missing State item ID", mutate: func(value *stateelements.ObservationCommitOutcome) {
+			value.Context.StateItemID = ""
+		}, want: "State item ID is required"},
+		{name: "noncanonical State item ID", mutate: func(value *stateelements.ObservationCommitOutcome) {
+			value.Context.StateItemID = " state-item"
+		}, want: "surrounding whitespace"},
+		{name: "missing trajectory tail ID", mutate: func(value *stateelements.ObservationCommitOutcome) {
+			value.TrajectoryItemID = ""
+		}, want: "trajectory item ID is required"},
+		{name: "noncanonical trajectory tail ID", mutate: func(value *stateelements.ObservationCommitOutcome) {
+			value.TrajectoryItemID = "tail id"
+		}, want: "whitespace"},
+		{name: "missing trigger ID", mutate: func(value *stateelements.ObservationCommitOutcome) {
+			value.TriggerItemID = ""
+		}, want: "trigger item ID is required"},
+		{name: "missing stream ID", mutate: func(value *stateelements.ObservationCommitOutcome) {
+			value.StreamID = ""
+		}, want: "stream ID is required"},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			harness := mountPolicy(t, validPolicyConfig("fast"))
+			defer harness.stop(t)
+			_ = receivePolicy(t, harness.egress(t, "state"))
+			commit := valid
+			testCase.mutate(&commit)
+			sendPolicy(t, harness.ingress(t, "committed"), commitEnvelope(
+				"commit-tampered", "policy-test-session", commit,
+			))
+			outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
+			if outcome.Kind != policyelements.GenerationRefused || outcome.Code != "invalid_commit" ||
+				!strings.Contains(outcome.Message, testCase.want) {
+				t.Fatalf("tampered outcome = %+v, want message containing %q", outcome, testCase.want)
+			}
+			state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.GenerationState)
+			if state.Refused != 1 || state.Emitted != 0 {
+				t.Fatalf("tampered state = %+v", state)
+			}
+			assertNoPolicyEnvelope(t, harness.egress(t, "trigger"))
+			assertNoPolicyEnvelope(t, harness.egress(t, "authority"))
+		})
+	}
+}
+
+func TestGenerateOnObservationCopiesCompactBasisWithoutTrajectoryPayload(t *testing.T) {
 	harness := mountPolicy(t, validPolicyConfig("fast"))
 	defer harness.stop(t)
-	startup := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.GenerationState)
-	if startup.Role != "fast" || startup.ContextVersion != 0 || len(startup.Pending) != 0 {
-		t.Fatalf("startup state = %+v", startup)
-	}
-
-	commit := committedObservation("microphone", "observation-trigger", "trajectory-observation-7", 1, 7)
-	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
-		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-envelope", Payload: commit,
-	})
-	pending := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.GenerationState)
-	if len(pending.Pending) != 1 || pending.Pending[0].StreamID != "microphone" ||
-		pending.Pending[0].ContextVersion != 1 {
-		t.Fatalf("pending state = %+v", pending)
-	}
-	assertNoPolicyEnvelope(t, harness.egress(t, "trigger"))
-
-	sendPolicy(t, harness.ingress(t, "context"), contextEnvelope("context-version-1", commit, true))
-	triggerEnvelope := receivePolicy(t, harness.egress(t, "trigger"))
-	payload, ok := triggerEnvelope.Payload.(cognitionelements.Generate)
-	if !ok {
-		t.Fatalf("trigger payload type = %T", triggerEnvelope.Payload)
-	}
-	version := payload.ExpectedContextVersion
-	if version == nil || *version != 1 || payload.ExpectedContextItemID != "context-version-1" ||
-		payload.Invocation.SourceRevision != 7 || payload.Invocation.Instruction != "answer" ||
-		triggerEnvelope.RunID == "" || triggerEnvelope.CancellationScope != triggerEnvelope.RunID ||
-		!strings.HasSuffix(triggerEnvelope.ItemID, ":trigger") ||
-		!containsPolicy(triggerEnvelope.CausalParents, "commit-envelope") ||
-		!containsPolicy(triggerEnvelope.CausalParents, "context-version-1") {
-		t.Fatalf("generation trigger = %+v payload %+v", triggerEnvelope, payload)
-	}
-	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
-	if outcome.Kind != policyelements.GenerationEmitted || outcome.GenerationID != triggerEnvelope.RunID ||
-		outcome.Role != "fast" || outcome.ContextVersion != 1 || outcome.SourceRevision != 7 ||
-		outcome.TriggerItemID != "observation-trigger" {
-		t.Fatalf("generation outcome = %+v", outcome)
-	}
-	settled := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.GenerationState)
-	if settled.Emitted != 1 || len(settled.Pending) != 0 || settled.ContextVersion != 1 {
-		t.Fatalf("settled state = %+v", settled)
-	}
-	assertPolicyLiveResolution(t, harness.mounted)
-}
-
-func TestGenerateOnObservationRejectsForgedSameLengthContext(t *testing.T) {
-	harness := mountPolicy(t, validPolicyConfig("deliberative"))
-	defer harness.stop(t)
 	_ = receivePolicy(t, harness.egress(t, "state"))
-	commit := committedObservation("camera", "frame-trigger", "real-trajectory-item", 1, 11)
-	sendPolicy(t, harness.ingress(t, "context"), contextEnvelope("context-one", commit, false))
-	_ = receivePolicy(t, harness.egress(t, "state"))
-	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
-		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-forged-context", Payload: commit,
-	})
-	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
-	if outcome.Kind != policyelements.GenerationRefused || outcome.Code != "context_commit_mismatch" ||
-		!strings.Contains(outcome.Message, "does not match committed trajectory item") {
-		t.Fatalf("forged context outcome = %+v", outcome)
-	}
-	state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.GenerationState)
-	if state.Refused != 1 || len(state.Pending) != 0 {
-		t.Fatalf("forged context state = %+v", state)
-	}
-	assertNoPolicyEnvelope(t, harness.egress(t, "trigger"))
-}
-
-func TestGenerateOnObservationRetainsOnlyImmutableContextAttestation(t *testing.T) {
-	harness := mountPolicy(t, validPolicyConfig("fast"))
-	defer harness.stop(t)
-	_ = receivePolicy(t, harness.egress(t, "state"))
-	commit := committedObservation("microphone", "observation-trigger", "trajectory-item", 1, 13)
-	snapshot := trajectory.Snapshot{Version: 1, Items: []trajectory.Item{{
-		ID: commit.TrajectoryItemID, Kind: trajectory.KindObservation,
-		SourceRevision: commit.SourceRevision,
-		Event:          &trajectory.EventMetadata{EventID: commit.TriggerItemID},
-	}}}
-	sendPolicy(t, harness.ingress(t, "context"), element.Envelope{
-		Type: stateelements.SnapshotType(), ItemID: "context-stable", Payload: snapshot,
-	})
-	_ = receivePolicy(t, harness.egress(t, "state"))
-	// Acceptance is complete. Mutating a hostile producer's retained slice must
-	// neither race with nor change the policy's already sampled attestation.
-	snapshot.Items[0].ID = "mutated"
-	snapshot.Items[0].SourceRevision = 999
-	snapshot.Items[0].Event.EventID = "mutated"
-	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
-		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-stable", Payload: commit,
-	})
+	source := committedObservation(t, "microphone", "observation-trigger",
+		"trajectory-item", "trajectory-state", 2, 13)
+	wantContext := source.Context
+	sendPolicy(t, harness.ingress(t, "committed"), commitEnvelope(
+		"commit-stable", "policy-test-session", &source,
+	))
 	trigger := receivePolicy(t, harness.egress(t, "trigger"))
-	if trigger.RunID == "" {
-		t.Fatalf("stable context trigger = %+v", trigger)
+	payload := trigger.Payload.(cognitionelements.Generate)
+	if payload.CommittedContext == nil || payload.CommittedContext == &source.Context ||
+		!reflect.DeepEqual(*payload.CommittedContext, wantContext) {
+		t.Fatalf("trigger did not defensively copy compact context: payload=%+v source=%+v",
+			payload.CommittedContext, source.Context)
 	}
-	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
-	if outcome.Kind != policyelements.GenerationEmitted {
-		t.Fatalf("stable context outcome = %+v", outcome)
+	source.Context.StateItemID = "mutated-source"
+	source.Context.Prefix.Digest = "mutated-source"
+	if !reflect.DeepEqual(*payload.CommittedContext, wantContext) {
+		t.Fatalf("retained producer mutation changed trigger context: %+v", payload.CommittedContext)
 	}
+	payload.CommittedContext.StateItemID = "mutated-trigger"
+	if source.Context.StateItemID != "mutated-source" {
+		t.Fatalf("trigger context aliases producer context: %+v", source.Context)
+	}
+	wire, err := json.Marshal(trigger.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(wire), `"items"`) ||
+		strings.Contains(string(wire), "private trajectory content") {
+		t.Fatalf("activation retained a trajectory payload: %s", wire)
+	}
+	_ = receivePolicy(t, harness.egress(t, "authority"))
+	_ = receivePolicy(t, harness.egress(t, "outcome"))
 	_ = receivePolicy(t, harness.egress(t, "state"))
 }
 
-func TestGenerateOnObservationHonorsPreCancellationAndIdentityDrift(t *testing.T) {
-	t.Run("pre-cancellation", func(t *testing.T) {
+func TestGenerateOnObservationDuplicateAndTerminalMemoryAreDeterministic(t *testing.T) {
+	t.Run("duplicate is ignored", func(t *testing.T) {
 		harness := mountPolicy(t, validPolicyConfig("fast"))
 		defer harness.stop(t)
 		_ = receivePolicy(t, harness.egress(t, "state"))
-		sendPolicy(t, harness.ingress(t, "cancel"), element.Envelope{
-			Type: policyelements.GenerationCancelType(), ItemID: "cancel-before-commit",
-			Payload: policyelements.GenerationCancel{StreamID: "microphone", Reason: "barge-in"},
-		})
-		recorded := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
-		if recorded.Kind != policyelements.GenerationIgnored || recorded.Code != "cancel_recorded" {
-			t.Fatalf("recorded cancel = %+v", recorded)
+		commit := committedObservation(t, "microphone", "trigger-one",
+			"trajectory-one", "state-one", 1, 1)
+		envelope := commitEnvelope("commit-one", "session-one", commit)
+		sendPolicy(t, harness.ingress(t, "committed"), envelope)
+		first := receiveActivation(t, harness)
+		sendPolicy(t, harness.ingress(t, "committed"), envelope)
+		duplicate := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
+		if duplicate.Kind != policyelements.GenerationIgnored || duplicate.Code != "duplicate_commit" ||
+			duplicate.GenerationID != first.trigger.RunID {
+			t.Fatalf("duplicate outcome = %+v", duplicate)
 		}
+		state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.GenerationState)
+		if state.Emitted != 1 || state.Ignored != 1 {
+			t.Fatalf("duplicate state = %+v", state)
+		}
+		assertNoPolicyEnvelope(t, harness.egress(t, "trigger"))
+		assertNoPolicyEnvelope(t, harness.egress(t, "authority"))
+	})
+
+	t.Run("oldest terminal identity is evicted first", func(t *testing.T) {
+		harness := mountPolicy(t, policyConfig("fast", 1, 1, 8))
+		defer harness.stop(t)
 		_ = receivePolicy(t, harness.egress(t, "state"))
-		commit := committedObservation("microphone", "observation-trigger", "trajectory-item", 1, 3)
-		sendPolicy(t, harness.ingress(t, "context"), contextEnvelope("context-one", commit, true))
+		first := committedObservation(t, "stream-one", "trigger-one",
+			"trajectory-one", "state-one", 1, 1)
+		second := committedObservation(t, "stream-two", "trigger-two",
+			"trajectory-two", "state-two", 2, 2)
+		for _, input := range []struct {
+			id     string
+			commit stateelements.ObservationCommitOutcome
+		}{
+			{id: "commit-one", commit: first},
+			{id: "commit-two", commit: second},
+			{id: "commit-one-replayed-after-bounded-eviction", commit: first},
+		} {
+			sendPolicy(t, harness.ingress(t, "committed"), commitEnvelope(
+				input.id, "bounded-session", input.commit,
+			))
+			_ = receiveActivation(t, harness)
+		}
+	})
+
+	t.Run("session is part of duplicate identity", func(t *testing.T) {
+		harness := mountPolicy(t, validPolicyConfig("fast"))
+		defer harness.stop(t)
 		_ = receivePolicy(t, harness.egress(t, "state"))
-		sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
-			Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-after-cancel", Payload: commit,
-		})
+		commit := committedObservation(t, "microphone", "same-trigger",
+			"same-tail", "same-state", 1, 1)
+		var runIDs []string
+		for _, sessionID := range []string{"session-a", "session-b"} {
+			sendPolicy(t, harness.ingress(t, "committed"), commitEnvelope(
+				"commit-"+sessionID, sessionID, commit,
+			))
+			runIDs = append(runIDs, receiveActivation(t, harness).trigger.RunID)
+		}
+		if runIDs[0] == runIDs[1] {
+			t.Fatalf("cross-session activations shared ID %q", runIDs[0])
+		}
+	})
+}
+
+func TestGenerateOnObservationPreCancellationIsBoundedAndSessionScoped(t *testing.T) {
+	t.Run("matching stream is canceled before activation", func(t *testing.T) {
+		harness := mountPolicy(t, validPolicyConfig("fast"))
+		defer harness.stop(t)
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		sendCancellation(t, harness, "cancel-before-commit", "session-a",
+			policyelements.GenerationCancel{StreamID: "microphone", Reason: "barge-in"})
+		commit := committedObservation(t, "microphone", "observation-trigger",
+			"trajectory-item", "state-item", 1, 3)
+		sendPolicy(t, harness.ingress(t, "committed"), commitEnvelope(
+			"commit-after-cancel", "session-a", commit,
+		))
 		canceled := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
 		if canceled.Kind != policyelements.GenerationCanceled || canceled.Message != "barge-in" {
 			t.Fatalf("pre-canceled outcome = %+v", canceled)
 		}
 		state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.GenerationState)
-		if state.Canceled != 1 || len(state.Pending) != 0 {
+		if state.Canceled != 1 {
 			t.Fatalf("pre-canceled state = %+v", state)
 		}
 		assertNoPolicyEnvelope(t, harness.egress(t, "trigger"))
+		assertNoPolicyEnvelope(t, harness.egress(t, "authority"))
 	})
 
-	t.Run("same-version identity drift", func(t *testing.T) {
+	t.Run("pre-cancel cannot cross session", func(t *testing.T) {
 		harness := mountPolicy(t, validPolicyConfig("fast"))
 		defer harness.stop(t)
 		_ = receivePolicy(t, harness.egress(t, "state"))
-		empty := element.Envelope{
-			Type: stateelements.SnapshotType(), ItemID: "empty-context-a", Payload: trajectory.Snapshot{},
+		sendCancellation(t, harness, "cancel-session-a", "session-a",
+			policyelements.GenerationCancel{StreamID: "microphone", Reason: "session-a correction"})
+		commit := committedObservation(t, "microphone", "observation-trigger",
+			"trajectory-item", "state-item", 1, 3)
+		sendPolicy(t, harness.ingress(t, "committed"), commitEnvelope(
+			"commit-session-b", "session-b", commit,
+		))
+		if activation := receiveActivation(t, harness); activation.trigger.SessionID != "session-b" {
+			t.Fatalf("session-b activation = %+v", activation.trigger)
 		}
-		sendPolicy(t, harness.ingress(t, "context"), empty)
-		_ = receivePolicy(t, harness.egress(t, "state"))
-		empty.ItemID = "empty-context-b"
-		sendPolicy(t, harness.ingress(t, "context"), empty)
-		outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
-		if outcome.Kind != policyelements.GenerationRefused || outcome.Code != "context_identity_drift" {
-			t.Fatalf("identity drift outcome = %+v", outcome)
+		sendPolicy(t, harness.ingress(t, "committed"), commitEnvelope(
+			"commit-session-a", "session-a", commit,
+		))
+		canceled := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
+		if canceled.Kind != policyelements.GenerationCanceled {
+			t.Fatalf("session-a pre-cancel = %+v", canceled)
 		}
 		_ = receivePolicy(t, harness.egress(t, "state"))
 	})
+
+	t.Run("oldest cancellation is evicted first", func(t *testing.T) {
+		harness := mountPolicy(t, policyConfig("fast", 1, 8, 1))
+		defer harness.stop(t)
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		sendCancellation(t, harness, "cancel-a", "session",
+			policyelements.GenerationCancel{StreamID: "stream-a", Reason: "first"})
+		sendCancellation(t, harness, "cancel-b", "session",
+			policyelements.GenerationCancel{StreamID: "stream-b", Reason: "second"})
+		first := committedObservation(t, "stream-a", "trigger-a",
+			"tail-a", "state-a", 1, 1)
+		sendPolicy(t, harness.ingress(t, "committed"), commitEnvelope("commit-a", "session", first))
+		_ = receiveActivation(t, harness)
+		second := committedObservation(t, "stream-b", "trigger-b",
+			"tail-b", "state-b", 2, 2)
+		sendPolicy(t, harness.ingress(t, "committed"), commitEnvelope("commit-b", "session", second))
+		canceled := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
+		if canceled.Kind != policyelements.GenerationCanceled || canceled.Message != "second" {
+			t.Fatalf("bounded pre-cancel outcome = %+v", canceled)
+		}
+		_ = receivePolicy(t, harness.egress(t, "state"))
+	})
+}
+
+func TestGenerateOnObservationValidatesSessionEnvelopeAndIgnoresRejection(t *testing.T) {
+	t.Run("missing session", func(t *testing.T) {
+		harness := mountPolicy(t, validPolicyConfig("fast"))
+		defer harness.stop(t)
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		commit := committedObservation(t, "stream", "trigger", "tail", "state", 1, 1)
+		sendPolicy(t, harness.ingress(t, "committed"), commitEnvelope("commit", "", commit))
+		outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
+		if outcome.Kind != policyelements.GenerationRefused || outcome.Code != "missing_session" {
+			t.Fatalf("missing-session outcome = %+v", outcome)
+		}
+		_ = receivePolicy(t, harness.egress(t, "state"))
+	})
+	for name, sessionID := range map[string]string{
+		"surrounding whitespace": " session",
+		"embedded control":       "session\n",
+		"overlong":               strings.Repeat("s", 257),
+		"invalid UTF-8":          string([]byte{0xff}),
+	} {
+		t.Run("invalid session/"+name, func(t *testing.T) {
+			harness := mountPolicy(t, validPolicyConfig("fast"))
+			defer harness.stop(t)
+			_ = receivePolicy(t, harness.egress(t, "state"))
+			commit := committedObservation(t, "stream", "trigger", "tail", "state", 1, 1)
+			sendPolicy(t, harness.ingress(t, "committed"), commitEnvelope("commit", sessionID, commit))
+			outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
+			if outcome.Kind != policyelements.GenerationRefused || outcome.Code != "invalid_commit_envelope" {
+				t.Fatalf("invalid-session outcome = %+v", outcome)
+			}
+			_ = receivePolicy(t, harness.egress(t, "state"))
+			assertNoPolicyEnvelope(t, harness.egress(t, "trigger"))
+			assertNoPolicyEnvelope(t, harness.egress(t, "authority"))
+		})
+	}
+	t.Run("invalid cancel session is not retained", func(t *testing.T) {
+		harness := mountPolicy(t, validPolicyConfig("fast"))
+		defer harness.stop(t)
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		sendPolicy(t, harness.ingress(t, "cancel"), element.Envelope{
+			Type: policyelements.GenerationCancelType(), ItemID: "hostile-cancel",
+			SessionID: strings.Repeat("s", 257),
+			Payload:   policyelements.GenerationCancel{StreamID: "stream", Reason: "hostile"},
+		})
+		outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
+		if outcome.Kind != policyelements.GenerationRefused || outcome.Code != "invalid_cancel" {
+			t.Fatalf("invalid cancellation session = %+v", outcome)
+		}
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		commit := committedObservation(t, "stream", "trigger", "tail", "state", 1, 1)
+		sendPolicy(t, harness.ingress(t, "committed"), commitEnvelope("commit", "session", commit))
+		_ = receiveActivation(t, harness)
+	})
+	t.Run("invalid envelope item", func(t *testing.T) {
+		harness := mountPolicy(t, validPolicyConfig("fast"))
+		defer harness.stop(t)
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		commit := committedObservation(t, "stream", "trigger", "tail", "state", 1, 1)
+		sendPolicy(t, harness.ingress(t, "committed"), commitEnvelope("commit item", "session", commit))
+		outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
+		if outcome.Kind != policyelements.GenerationRefused || outcome.Code != "invalid_commit_envelope" {
+			t.Fatalf("invalid-envelope outcome = %+v", outcome)
+		}
+		_ = receivePolicy(t, harness.egress(t, "state"))
+	})
+	t.Run("rejected store outcome needs no committed context", func(t *testing.T) {
+		harness := mountPolicy(t, validPolicyConfig("fast"))
+		defer harness.stop(t)
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		rejected := stateelements.ObservationCommitOutcome{
+			Kind: stateelements.ObservationRejected, TriggerItemID: "trigger",
+			Code: "version_conflict", Message: "stale",
+		}
+		sendPolicy(t, harness.ingress(t, "committed"), commitEnvelope("rejection", "", rejected))
+		outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
+		if outcome.Kind != policyelements.GenerationIgnored || outcome.Code != "observation_not_committed" {
+			t.Fatalf("rejected commit outcome = %+v", outcome)
+		}
+		_ = receivePolicy(t, harness.egress(t, "state"))
+	})
+}
+
+func TestGenerateOnObservationDeprecatedMaxPendingDoesNotCreateBuffer(t *testing.T) {
+	harness := mountPolicy(t, policyConfig("fast", 1, 8, 8))
+	defer harness.stop(t)
+	startup := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.GenerationState)
+	assertStateHasNoPendingSurface(t, startup)
+	for index := uint64(1); index <= 3; index++ {
+		commit := committedObservation(t,
+			"stream-"+string(rune('a'+index-1)),
+			"trigger-"+string(rune('a'+index-1)),
+			"tail-"+string(rune('a'+index-1)),
+			"state-"+string(rune('a'+index-1)),
+			index, index,
+		)
+		sendPolicy(t, harness.ingress(t, "committed"), commitEnvelope(
+			"commit-"+string(rune('a'+index-1)), "session", commit,
+		))
+		activation := receiveActivation(t, harness)
+		if activation.state.Emitted != index {
+			t.Fatalf("activation %d state = %+v", index, activation.state)
+		}
+		assertStateHasNoPendingSurface(t, activation.state)
+	}
 }
 
 func TestGenerateOnObservationConfigIsStrictAndBounded(t *testing.T) {
@@ -223,6 +497,8 @@ func TestGenerateOnObservationConfigIsStrictAndBounded(t *testing.T) {
 		"derived revision":  json.RawMessage(`{"role":"fast","invocation":{"instruction":"answer","source_revision":9}}`),
 		"empty instruction": json.RawMessage(`{"role":"fast","invocation":{"instruction":""}}`),
 		"unbounded pending": json.RawMessage(`{"role":"fast","invocation":{"instruction":"answer"},"max_pending":1000001}`),
+		"terminal zero":     json.RawMessage(`{"role":"fast","invocation":{"instruction":"answer"},"terminal_memory":0}`),
+		"cancel unbounded":  json.RawMessage(`{"role":"fast","invocation":{"instruction":"answer"},"cancel_memory":1000001}`),
 	} {
 		t.Run(name, func(t *testing.T) {
 			registry := graphruntime.NewRegistry()
@@ -293,8 +569,9 @@ func TestGenerationPolicyReferenceCompilesFromExactLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, boundary := range bound.Graph.Boundaries {
-		if strings.Contains(boundary.Type.String(), "audio.") {
-			t.Fatalf("generation policy unexpectedly requires audio: %+v", boundary)
+		if strings.Contains(boundary.Type.String(), "audio.") ||
+			boundary.Name == "context" {
+			t.Fatalf("generation policy retained an unrelated presentation/context boundary: %+v", boundary)
 		}
 	}
 }
@@ -303,6 +580,13 @@ type policyHarness struct {
 	mounted *graphruntime.Mounted
 	done    <-chan error
 	cancel  context.CancelFunc
+}
+
+type receivedActivation struct {
+	trigger   element.Envelope
+	authority element.Envelope
+	outcome   policyelements.GenerationOutcome
+	state     policyelements.GenerationState
 }
 
 func mountPolicy(t *testing.T, config json.RawMessage) policyHarness {
@@ -375,11 +659,15 @@ func compilePolicySource(t *testing.T, name string, source []byte) ir.Graph {
 }
 
 func validPolicyConfig(role string) json.RawMessage {
+	return policyConfig(role, 4, 8, 8)
+}
+
+func policyConfig(role string, maxPending, terminalMemory, cancelMemory int) json.RawMessage {
 	payload, err := json.Marshal(policyelements.GenerateOnObservationConfig{
 		Role: role, Invocation: continuation.Invocation{
 			Instruction: "answer", MaxOutputTokens: 128,
 		},
-		MaxPending: 4, TerminalMemory: 8, CancelMemory: 8,
+		MaxPending: maxPending, TerminalMemory: terminalMemory, CancelMemory: cancelMemory,
 	})
 	if err != nil {
 		panic(err)
@@ -388,31 +676,119 @@ func validPolicyConfig(role string) json.RawMessage {
 }
 
 func committedObservation(
-	stream, trigger, item string, version, sourceRevision uint64,
+	t *testing.T, stream, trigger, item, stateItem string, version, sourceRevision uint64,
 ) stateelements.ObservationCommitOutcome {
+	t.Helper()
+	items := make([]trajectory.Item, version)
+	for index := uint64(0); index < version; index++ {
+		items[index] = trajectory.Item{
+			ID: "prefix-item-" + string(rune('a'+index)), Kind: trajectory.KindInstruction,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, Content: "private trajectory content",
+		}
+	}
+	items[version-1] = trajectory.Item{
+		ID: item, Kind: trajectory.KindObservation, SourceRevision: sourceRevision,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+		Event:    &trajectory.EventMetadata{EventID: trigger},
+		Content:  "private trajectory content",
+	}
+	identity, err := trajectory.IdentifyPrefix(trajectory.Snapshot{Version: version, Items: items}, version)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return stateelements.ObservationCommitOutcome{
 		Kind: stateelements.ObservationCommitted, TriggerItemID: trigger,
 		TrajectoryItemID: item, StreamID: stream, ObservationRevision: 1,
 		SourceRevision: sourceRevision, StoreVersion: version,
+		Context: stateelements.CommittedContext{Prefix: identity, StateItemID: stateItem},
 	}
 }
 
-func contextEnvelope(
-	itemID string, commit stateelements.ObservationCommitOutcome, authentic bool,
-) element.Envelope {
-	trajectoryItemID := commit.TrajectoryItemID
-	if !authentic {
-		trajectoryItemID = "forged-trajectory-item"
-	}
-	items := make([]trajectory.Item, commit.StoreVersion)
-	items[commit.StoreVersion-1] = trajectory.Item{
-		ID: trajectoryItemID, Kind: trajectory.KindObservation,
-		SourceRevision: commit.SourceRevision,
-		Event:          &trajectory.EventMetadata{EventID: commit.TriggerItemID},
-	}
+func commitEnvelope(itemID, sessionID string, commit any) element.Envelope {
 	return element.Envelope{
-		Type: stateelements.SnapshotType(), ItemID: itemID,
-		Payload: trajectory.Snapshot{Version: commit.StoreVersion, Items: items},
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: itemID,
+		SessionID: sessionID, Payload: commit,
+	}
+}
+
+func sendCancellation(
+	t *testing.T, harness policyHarness, itemID, sessionID string,
+	cancel policyelements.GenerationCancel,
+) {
+	t.Helper()
+	sendPolicy(t, harness.ingress(t, "cancel"), element.Envelope{
+		Type: policyelements.GenerationCancelType(), ItemID: itemID,
+		SessionID: sessionID, Payload: cancel,
+	})
+	recorded := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
+	if recorded.Kind != policyelements.GenerationIgnored || recorded.Code != "cancel_recorded" {
+		t.Fatalf("recorded cancellation = %+v", recorded)
+	}
+	_ = receivePolicy(t, harness.egress(t, "state"))
+}
+
+func receiveActivation(t *testing.T, harness policyHarness) receivedActivation {
+	t.Helper()
+	result := receivedActivation{
+		trigger:   receivePolicy(t, harness.egress(t, "trigger")),
+		authority: receivePolicy(t, harness.egress(t, "authority")),
+	}
+	result.outcome = receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.GenerationOutcome)
+	result.state = receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.GenerationState)
+	if result.outcome.Kind != policyelements.GenerationEmitted ||
+		result.outcome.GenerationID != result.trigger.RunID {
+		t.Fatalf("activation outcome = %+v trigger = %+v", result.outcome, result.trigger)
+	}
+	return result
+}
+
+func assertActivation(
+	t *testing.T, role string, triggerEnvelope, candidateEnvelope element.Envelope,
+	payload cognitionelements.Generate, commit stateelements.ObservationCommitOutcome,
+) {
+	t.Helper()
+	version := payload.ExpectedContextVersion
+	if version == nil || *version != commit.StoreVersion ||
+		payload.ExpectedContextItemID != commit.Context.StateItemID ||
+		payload.CommittedContext == nil || !reflect.DeepEqual(*payload.CommittedContext, commit.Context) ||
+		payload.Invocation.SourceRevision != commit.SourceRevision ||
+		payload.Invocation.Instruction != "answer" ||
+		triggerEnvelope.RunID == "" ||
+		triggerEnvelope.CancellationScope != triggerEnvelope.RunID ||
+		!strings.HasSuffix(triggerEnvelope.ItemID, ":trigger") ||
+		!containsPolicy(triggerEnvelope.CausalParents, "commit-envelope") ||
+		!containsPolicy(triggerEnvelope.CausalParents, commit.Context.StateItemID) ||
+		!containsPolicy(triggerEnvelope.CausalParents, commit.TrajectoryItemID) {
+		t.Fatalf("%s generation trigger = %+v payload %+v", role, triggerEnvelope, payload)
+	}
+	candidate, ok := candidateEnvelope.Payload.(authority.Candidate)
+	if !ok {
+		t.Fatalf("%s authority candidate payload type = %T", role, candidateEnvelope.Payload)
+	}
+	if candidate.RunID != triggerEnvelope.RunID ||
+		candidate.SessionID != "policy-test-session" ||
+		candidate.ActivationItemID != triggerEnvelope.ItemID ||
+		candidate.ActivationCauseItemID != "commit-envelope" ||
+		candidate.ObservationItemID != commit.TrajectoryItemID ||
+		candidate.ObservationTriggerItemID != commit.TriggerItemID ||
+		candidate.SourceRevision != commit.SourceRevision ||
+		candidate.ContextVersion != commit.StoreVersion ||
+		candidate.ContextEnvelopeItemID != commit.Context.StateItemID ||
+		candidate.ContextTailItem != commit.TrajectoryItemID ||
+		candidateEnvelope.RunID != triggerEnvelope.RunID ||
+		candidateEnvelope.SessionID != triggerEnvelope.SessionID {
+		t.Fatalf("%s authority candidate = %+v envelope %+v", role, candidate, candidateEnvelope)
+	}
+}
+
+func assertStateHasNoPendingSurface(t *testing.T, state policyelements.GenerationState) {
+	t.Helper()
+	wire, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(wire), "pending") || strings.Contains(string(wire), "max_pending") {
+		t.Fatalf("revision 3 state claims a live pending buffer: %s", wire)
 	}
 }
 
@@ -454,7 +830,7 @@ func assertPolicyLiveResolution(t *testing.T, mounted *graphruntime.Mounted) {
 		resolution := mounted.Live().Nodes["activation"].Resolution
 		if resolution != nil && resolution.RuntimeEvidence == inspect.EvidenceLive &&
 			resolution.Runtime.ID == "builtin://openrealtime/elements/policy.GenerateOnObservation" &&
-			resolution.Runtime.Revision == "implementation:1" &&
+			resolution.Runtime.Revision == "implementation:3" &&
 			resolution.CapabilitiesEvidence == inspect.EvidenceLive && len(resolution.Capabilities) == 0 {
 			return
 		}
