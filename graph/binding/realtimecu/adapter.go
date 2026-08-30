@@ -125,7 +125,15 @@ func bind(plan *graphconfig.Plan, plugin *Plugin) (boundAdapter, error) {
 			if takeErr != nil {
 				return nil, takeErr
 			}
-			observer, observerErr := plugin.config.Observer.Factory(ctx, options)
+			var observer Observer
+			var observerErr error
+			if plugin.config.Observer.ResourceFactory != nil {
+				observer, observerErr = plugin.config.Observer.ResourceFactory(
+					ctx, options, ObserverResources{Retainer: bundle.media},
+				)
+			} else {
+				observer, observerErr = plugin.config.Observer.Factory(ctx, options)
+			}
 			if observerErr != nil {
 				bundle.bridge.Close(observerErr)
 				return nil, fmt.Errorf("create realtime-CU observer: %w", observerErr)
@@ -270,7 +278,7 @@ func newSession(
 	if options.Sink == nil || !canonical(options.SessionID) {
 		return nil, errors.New("realtime-CU session requires a sink and canonical session ID")
 	}
-	if bundle == nil || bundle.bridge == nil || bundle.store == nil {
+	if bundle == nil || bundle.bridge == nil || bundle.store == nil || bundle.media == nil {
 		return nil, errors.New("realtime-CU session requires its prepared dependency bundle")
 	}
 	ingress := func(name string) (element.OutputPort, error) { return mounted.Ingress(name) }

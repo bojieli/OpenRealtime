@@ -155,8 +155,9 @@ type ModelFactoryRegistration struct {
 // ObserverFactoryRegistration is one host-installed audiovisual observer.
 type ObserverFactoryRegistration struct {
 	ApplicationObserverSelection
-	Factory   func(context.Context, legacy.Options) (Observer, error)
-	Readiness func(context.Context) error
+	Factory         func(context.Context, legacy.Options) (Observer, error)
+	ResourceFactory func(context.Context, legacy.Options, ObserverResources) (Observer, error)
+	Readiness       func(context.Context) error
 }
 
 // ApplicationRegistrationConfig installs the Realtime-CU application plugin
@@ -209,8 +210,10 @@ func NewApplicationRegistration(
 		if err := validateApplicationObserver(registration.ApplicationObserverSelection); err != nil {
 			return launchprofile.Registration{}, fmt.Errorf("Realtime-CU observer registration %d: %w", index, err)
 		}
-		if registration.Factory == nil {
-			return launchprofile.Registration{}, fmt.Errorf("Realtime-CU observer registration %d has a nil factory", index)
+		if (registration.Factory == nil) == (registration.ResourceFactory == nil) {
+			return launchprofile.Registration{}, fmt.Errorf(
+				"Realtime-CU observer registration %d requires exactly one plain or resource-aware factory", index,
+			)
 		}
 		if _, duplicate := observers[registration.Reference]; duplicate {
 			return launchprofile.Registration{}, fmt.Errorf("Realtime-CU observer reference %q is registered more than once", registration.Reference)
@@ -264,13 +267,27 @@ func NewApplicationRegistration(
 				}
 			}
 			observerFactory := observer.Factory
+			observerResourceFactory := observer.ResourceFactory
 			if observer.Readiness != nil {
-				selectedFactory, readiness := observerFactory, observer.Readiness
-				observerFactory = func(ctx context.Context, options legacy.Options) (Observer, error) {
-					if err := readiness(ctx); err != nil {
-						return nil, fmt.Errorf("Realtime-CU observer %q is not ready: %w", observer.Reference, err)
+				readiness := observer.Readiness
+				if observerFactory != nil {
+					selectedFactory := observerFactory
+					observerFactory = func(ctx context.Context, options legacy.Options) (Observer, error) {
+						if err := readiness(ctx); err != nil {
+							return nil, fmt.Errorf("Realtime-CU observer %q is not ready: %w", observer.Reference, err)
+						}
+						return selectedFactory(ctx, options)
 					}
-					return selectedFactory(ctx, options)
+				} else {
+					selectedFactory := observerResourceFactory
+					observerResourceFactory = func(
+						ctx context.Context, options legacy.Options, resources ObserverResources,
+					) (Observer, error) {
+						if err := readiness(ctx); err != nil {
+							return nil, fmt.Errorf("Realtime-CU observer %q is not ready: %w", observer.Reference, err)
+						}
+						return selectedFactory(ctx, options, resources)
+					}
 				}
 			}
 			resolved, constructorErr := constructor(PluginConfig{
@@ -282,7 +299,7 @@ func NewApplicationRegistration(
 				Observer: ObserverPlugin{
 					Reference: observer.Reference, Name: observer.Name,
 					Artifact: observer.Artifact, Sources: slices.Clone(observer.Sources),
-					Factory: observerFactory,
+					Factory: observerFactory, ResourceFactory: observerResourceFactory,
 				},
 				Target: config.Target,
 			})

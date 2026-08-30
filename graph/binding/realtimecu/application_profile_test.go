@@ -13,6 +13,7 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
+	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 func TestApplicationRegistrationSnapshotsFactoriesAndRejectsDriftBeforeConstructor(t *testing.T) {
@@ -281,6 +282,134 @@ func TestApplicationRegistrationRetainsSelectedReadinessAtStartupAndSessionOpen(
 	}
 	if modelFactory.Load() != 1 || observerFactory.Load() != 1 {
 		t.Fatal("drifted deployment crossed a provider factory boundary")
+	}
+}
+
+type applicationProfileTestRetainer struct{}
+
+func (*applicationProfileTestRetainer) Retain(
+	reference trajectory.MediaRef, _ []byte,
+) (trajectory.MediaRef, error) {
+	return reference, nil
+}
+
+func TestApplicationRegistrationDefersResourceAwareObserverUntilSessionOpen(t *testing.T) {
+	plugin := validTestPluginConfig()
+	modelSelection := ApplicationModelSelection{
+		Reference: plugin.Model.Reference, Artifact: plugin.Model.Artifact,
+		Descriptor: plugin.Model.Descriptor,
+	}
+	observerSelection := ApplicationObserverSelection{
+		Reference: plugin.Observer.Reference, Name: plugin.Observer.Name,
+		Artifact: plugin.Observer.Artifact, Sources: slices.Clone(plugin.Observer.Sources),
+	}
+	var readiness, acquisitions atomic.Int32
+	var gotRetainer any
+	var resolved PluginConfig
+	registration, err := NewApplicationRegistration(ApplicationRegistrationConfig{
+		ApplicationArtifact: testArtifact("application-profile-resource-observer", "d"),
+		ProviderArtifact:    testArtifact("provider-profile-resource-observer", "e"),
+		RuntimeArtifact:     plugin.RuntimeArtifact,
+		Models: []ModelFactoryRegistration{{
+			ApplicationModelSelection: modelSelection,
+			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
+				return nil, nil
+			},
+		}},
+		Observers: []ObserverFactoryRegistration{{
+			ApplicationObserverSelection: observerSelection,
+			Readiness: func(ctx context.Context) error {
+				readiness.Add(1)
+				return context.Cause(ctx)
+			},
+			ResourceFactory: func(
+				_ context.Context, _ legacy.Options, resources ObserverResources,
+			) (Observer, error) {
+				acquisitions.Add(1)
+				gotRetainer = resources.Retainer
+				return nil, nil
+			},
+		}},
+	}, func(config PluginConfig) (graphlaunch.Config, error) {
+		resolved = config
+		return graphlaunch.Config{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := applicationProfilePayload(t, ApplicationConfig{
+		FormatVersion: ApplicationFormatVersion, Model: modelSelection,
+		Observer: observerSelection, Target: plugin.Target,
+	})
+	launchConfig, err := registration.Factory(context.Background(), payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acquisitions.Load() != 0 || readiness.Load() != 0 {
+		t.Fatalf("profile resolution acquired resource observer: readiness=%d factories=%d",
+			readiness.Load(), acquisitions.Load())
+	}
+	if resolved.Observer.Factory != nil || resolved.Observer.ResourceFactory == nil {
+		t.Fatalf("resolved observer factory modes plain=%v resource=%v",
+			resolved.Observer.Factory != nil, resolved.Observer.ResourceFactory != nil)
+	}
+	if len(launchConfig.Readiness) != 1 {
+		t.Fatalf("selected readiness checks = %d, want 1", len(launchConfig.Readiness))
+	}
+	if err := launchConfig.Readiness[0].Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	retainer := &applicationProfileTestRetainer{}
+	if _, err := resolved.Observer.ResourceFactory(context.Background(), legacy.Options{}, ObserverResources{
+		Retainer: retainer,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if readiness.Load() != 2 || acquisitions.Load() != 1 || gotRetainer != retainer {
+		t.Fatalf("resource observer readiness=%d factories=%d retainer=%T",
+			readiness.Load(), acquisitions.Load(), gotRetainer)
+	}
+}
+
+func TestApplicationRegistrationRejectsAmbiguousObserverFactories(t *testing.T) {
+	plugin := validTestPluginConfig()
+	observer := ObserverFactoryRegistration{
+		ApplicationObserverSelection: ApplicationObserverSelection{
+			Reference: plugin.Observer.Reference, Name: plugin.Observer.Name,
+			Artifact: plugin.Observer.Artifact, Sources: slices.Clone(plugin.Observer.Sources),
+		},
+	}
+	model := ModelFactoryRegistration{
+		ApplicationModelSelection: ApplicationModelSelection{
+			Reference: plugin.Model.Reference, Artifact: plugin.Model.Artifact,
+			Descriptor: plugin.Model.Descriptor,
+		},
+		Factory: func(context.Context, legacy.Options) (continuation.Provider, error) { return nil, nil },
+	}
+	plain := func(context.Context, legacy.Options) (Observer, error) { return nil, nil }
+	resource := func(context.Context, legacy.Options, ObserverResources) (Observer, error) { return nil, nil }
+	for _, testCase := range []struct {
+		name     string
+		plain    func(context.Context, legacy.Options) (Observer, error)
+		resource func(context.Context, legacy.Options, ObserverResources) (Observer, error)
+	}{
+		{name: "neither"},
+		{name: "both", plain: plain, resource: resource},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			configured := observer
+			configured.Factory = testCase.plain
+			configured.ResourceFactory = testCase.resource
+			_, err := NewApplicationRegistration(ApplicationRegistrationConfig{
+				ApplicationArtifact: testArtifact("application-profile-factory-mode-"+testCase.name, "d"),
+				ProviderArtifact:    testArtifact("provider-profile-factory-mode-"+testCase.name, "e"),
+				RuntimeArtifact:     plugin.RuntimeArtifact, Models: []ModelFactoryRegistration{model},
+				Observers: []ObserverFactoryRegistration{configured},
+			}, func(PluginConfig) (graphlaunch.Config, error) { return graphlaunch.Config{}, nil })
+			if err == nil || !strings.Contains(err.Error(), "exactly one") {
+				t.Fatalf("factory-mode error = %v, want exactly one", err)
+			}
+		})
 	}
 }
 

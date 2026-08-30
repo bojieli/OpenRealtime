@@ -22,6 +22,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
+	sessionmedia "github.com/bojieli/OpenRealtime/session"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -31,6 +32,7 @@ var dependencyNames = []string{
 	actionelements.TargetRegistryService,
 	actionelements.ToolRegistryService,
 	actionelements.TrajectoryStoreService,
+	cognitionelements.MediaResolverService,
 	cognitionelements.ProviderRegistryService,
 	stateelements.TrajectoryStoreService,
 }
@@ -173,6 +175,7 @@ func dependencyArtifact(config PluginConfig) (inspect.ArtifactIdentity, error) {
 type sessionBundle struct {
 	bridge   *clientBridge
 	store    *trajectory.Store
+	media    *sessionmedia.MediaStore
 	services map[string]any
 }
 
@@ -187,6 +190,10 @@ func newSessionBundle(
 		return nil, err
 	}
 	store := trajectory.NewStore()
+	media, err := sessionmedia.NewMediaStore(sessionmedia.MediaConfig{})
+	if err != nil {
+		return nil, fmt.Errorf("create realtime-CU session media store: %w", err)
+	}
 	ledger := legacyaction.NewLedger()
 	providers := cognitionelements.NewProviderRegistry()
 	var modelMu sync.Mutex
@@ -237,10 +244,17 @@ func newSessionBundle(
 		actionelements.TargetRegistryService:       targets,
 		actionelements.ToolRegistryService:         tools,
 		actionelements.TrajectoryStoreService:      store,
-		cognitionelements.ProviderRegistryService:  providers,
-		stateelements.TrajectoryStoreService:       &stateelements.TrajectoryStoreServiceValue{Store: store},
+		cognitionelements.MediaResolverService: continuation.MediaResolver(func(handle string) (continuation.Media, error) {
+			resolved, resolveErr := media.Resolve(handle)
+			if resolveErr != nil {
+				return continuation.Media{}, resolveErr
+			}
+			return continuation.Media{MIMEType: resolved.Ref.MIMEType, Bytes: resolved.Bytes}, nil
+		}),
+		cognitionelements.ProviderRegistryService: providers,
+		stateelements.TrajectoryStoreService:      &stateelements.TrajectoryStoreServiceValue{Store: store},
 	}
-	return &sessionBundle{bridge: bridge, store: store, services: services}, nil
+	return &sessionBundle{bridge: bridge, store: store, media: media, services: services}, nil
 }
 
 type denyConfirmation struct{}

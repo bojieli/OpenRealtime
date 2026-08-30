@@ -66,6 +66,44 @@ func TestPluginValidationRejectsAuthorityAndTargetWideningWithoutOpeningFactorie
 	}
 }
 
+func TestPluginValidationRequiresExactlyOneObserverFactoryMode(t *testing.T) {
+	base := validTestPluginConfig()
+	for _, testCase := range []struct {
+		name   string
+		mutate func(*PluginConfig)
+	}{
+		{name: "no factory", mutate: func(config *PluginConfig) {
+			config.Observer.Factory = nil
+		}},
+		{name: "both factories", mutate: func(config *PluginConfig) {
+			config.Observer.ResourceFactory = func(
+				context.Context, legacy.Options, ObserverResources,
+			) (Observer, error) {
+				return nil, nil
+			}
+		}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			config := base
+			testCase.mutate(&config)
+			if _, err := NewPlugin(config); err == nil || !strings.Contains(err.Error(), "exactly one") {
+				t.Fatalf("NewPlugin error = %v, want exactly-one factory failure", err)
+			}
+		})
+	}
+
+	resourceAware := base
+	resourceAware.Observer.Factory = nil
+	resourceAware.Observer.ResourceFactory = func(
+		context.Context, legacy.Options, ObserverResources,
+	) (Observer, error) {
+		return nil, nil
+	}
+	if _, err := NewPlugin(resourceAware); err != nil {
+		t.Fatalf("resource-aware observer plugin failed validation: %v", err)
+	}
+}
+
 func validTestPluginConfig() PluginConfig {
 	return PluginConfig{
 		RuntimeArtifact: testArtifact("runtime", "a"),

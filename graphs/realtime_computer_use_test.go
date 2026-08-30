@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -68,7 +70,7 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 	if identity.SourceDigest != "sha256:8d9e1cb92213dd4cd3ed59d6f7b10f6566c45bd7649468e434e5ac5514afa303" ||
 		identity.LockDigest != "sha256:abb61a946cda1470827778d6193f2ba4ac1e54141f20f8f74026dd216b09f7fd" ||
 		identity.GraphFingerprint != "sha256:418950e1e32240812f30714677c43c2eabb72e159f2c5d39a7da435d84cb2757" ||
-		identity.PlanFingerprint != "sha256:7780d7e4315c6837dd84944a40e09b275c8cec6a7e6d79fec7c503719dbfef4c" {
+		identity.PlanFingerprint != "sha256:89db749e776d8475ab2aef6ea2a7ec1a8d469b89ffb82a53f9460f91d3f06968" {
 		t.Fatalf("Realtime-CU graph artifacts drifted: %+v", identity)
 	}
 	if modelFactories.Load() != 0 || observerFactories.Load() != 0 {
@@ -180,6 +182,101 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 	t.Fatalf("canonical trajectory did not retain action/result/visual feedback: %+v", runtime.Trajectory())
 }
 
+func TestRealtimeComputerUseResourceAwareObserverSharesExactSessionMediaWithModel(t *testing.T) {
+	target := computeruse.Target{
+		Name: "benchmark-browser", Sources: []string{realtimecu.SourceScreen}, Width: 64, Height: 48,
+	}
+	descriptor := testRealtimeCUDescriptor()
+	observerName := "resource-aware-audiovisual-observer"
+	seenMedia := make(chan []byte, 1)
+	var observerFactories atomic.Int32
+	config, err := graphs.RealtimeComputerUseLaunchConfig(realtimecu.PluginConfig{
+		RuntimeArtifact: testRealtimeCUArtifact("resource-runtime", "1"),
+		Model: realtimecu.ModelPlugin{
+			Reference: "go://test/realtime-cu/resource-model/v1",
+			Artifact:  testRealtimeCUArtifact("resource-model", "2"), Descriptor: descriptor,
+			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
+				return &mediaInspectingRealtimeCUModel{descriptor: descriptor, seen: seenMedia}, nil
+			},
+		},
+		Observer: realtimecu.ObserverPlugin{
+			Reference: "go://test/realtime-cu/resource-observer/v1", Name: observerName,
+			Artifact: testRealtimeCUArtifact("resource-observer", "3"),
+			Sources:  []string{realtimecu.SourceScreen, realtimecu.SourceCamera, realtimecu.SourceMicrophone},
+			ResourceFactory: func(
+				_ context.Context, _ legacy.Options, resources realtimecu.ObserverResources,
+			) (realtimecu.Observer, error) {
+				observerFactories.Add(1)
+				if resources.Retainer == nil {
+					return nil, errors.New("resource-aware observer received no session media retainer")
+				}
+				observer := newTestRealtimeCUObserver(observerName)
+				observer.retainer = resources.Retainer
+				return observer, nil
+			},
+		},
+		Target: target,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	launched, err := graphlaunch.New(context.Background(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observerFactories.Load() != 0 {
+		t.Fatal("resource-aware observer factory ran before session start")
+	}
+	sink := newTestRealtimeCUSink()
+	runtime, err := launched.Binding.Start(context.Background(), legacy.Options{
+		Sink: sink, SessionID: "realtime-cu-resource-media",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if closeErr := runtime.Close(ctx, errors.New("test complete")); closeErr != nil {
+			t.Errorf("close resource-aware realtime-CU runtime: %v", closeErr)
+		}
+	})
+	if observerFactories.Load() != 1 {
+		t.Fatalf("resource-aware observer factories after start = %d, want one", observerFactories.Load())
+	}
+	if err := runtime.Update(context.Background(), legacy.Settings{
+		Instruction: "inspect the current screen", Tools: testRealtimeCUToolSpecs(t, target),
+		Observers: []string{observerName},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	exactFrame := []byte("exact-session-keyframe-bytes")
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 100,
+		Image: exactFrame, MIMEType: "image/jpeg", Width: 64, Height: 48,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for observed := receiveRealtimeCU(t, sink.observations, "retained screen observation"); ; observed = receiveRealtimeCU(t, sink.observations, "retained screen observation") {
+		if observed.Source == realtimecu.SourceScreen {
+			if len(observed.Media) != 1 || observed.Media[0].Handle == "" {
+				t.Fatalf("retained screen observation media = %+v", observed.Media)
+			}
+			break
+		}
+	}
+	if err := runtime.Audio(context.Background(), perception.Frame{
+		Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: 101,
+		PCM16LE: []byte{1, 0}, SampleRateHz: 24_000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	resolved := receiveRealtimeCU(t, seenMedia, "model-resolved session keyframe")
+	if !slices.Equal(resolved, exactFrame) {
+		t.Fatalf("model resolved media %q, want %q", resolved, exactFrame)
+	}
+}
+
 func TestRealtimeComputerUseHarnessHasSixteenCasesBehindOneStableEndpointContract(t *testing.T) {
 	cases, err := benchrealtimecu.Select(nil, nil)
 	if err != nil {
@@ -240,8 +337,40 @@ func (*testRealtimeCUModel) Continue(
 	return continuation.Completion{StopReason: "tool_call"}, nil
 }
 
+type mediaInspectingRealtimeCUModel struct {
+	descriptor continuation.Descriptor
+	seen       chan []byte
+}
+
+func (model *mediaInspectingRealtimeCUModel) Descriptor() continuation.Descriptor {
+	return model.descriptor
+}
+
+func (model *mediaInspectingRealtimeCUModel) Continue(
+	_ context.Context, request continuation.Request, _ continuation.Emit,
+) (continuation.Completion, error) {
+	for index := len(request.Trajectory.Items) - 1; index >= 0; index-- {
+		item := request.Trajectory.Items[index]
+		if item.Observation == nil || item.Observation.Source != realtimecu.SourceScreen ||
+			len(item.Observation.Media) == 0 {
+			continue
+		}
+		if request.Media == nil {
+			return continuation.Completion{}, errors.New("model request has no session media resolver")
+		}
+		resolved, err := request.Media(item.Observation.Media[0].Handle)
+		if err != nil {
+			return continuation.Completion{}, fmt.Errorf("resolve retained screen: %w", err)
+		}
+		model.seen <- slices.Clone(resolved.Bytes)
+		return continuation.Completion{StopReason: "stop"}, nil
+	}
+	return continuation.Completion{}, errors.New("model request has no retained screen observation")
+}
+
 type testRealtimeCUObserver struct {
 	name         string
+	retainer     perception.Retainer
 	mu           sync.Mutex
 	revisions    map[string]uint64
 	consequences chan realtimecu.VisualConsequence
@@ -285,7 +414,19 @@ func (observer *testRealtimeCUObserver) Audio(
 func (observer *testRealtimeCUObserver) Video(
 	_ context.Context, frame perception.Frame,
 ) ([]perception.Observation, error) {
-	return observer.observation(frame, trajectory.AuthorityObserver), nil
+	observations := observer.observation(frame, trajectory.AuthorityObserver)
+	if observer.retainer == nil {
+		return observations, nil
+	}
+	reference, err := observer.retainer.Retain(trajectory.MediaRef{
+		MIMEType: frame.MIMEType, Source: frame.Source, Width: frame.Width,
+		Height: frame.Height, CapturedNS: frame.CapturedNS,
+	}, frame.Image)
+	if err != nil {
+		return nil, err
+	}
+	observations[0].Media = []trajectory.MediaRef{reference}
+	return observations, nil
 }
 
 func (observer *testRealtimeCUObserver) Consequence(
