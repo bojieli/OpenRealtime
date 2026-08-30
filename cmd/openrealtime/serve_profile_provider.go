@@ -202,7 +202,7 @@ func decodeServePolicyConfiguration(
 	digest := sha256.Sum256(payload)
 	descriptor := policyelements.SemanticDeciderDescriptor{
 		Provider: provider, Model: config.Model, Protocol: "openai-chat-completions",
-		Revision: "policymodel-client-v1", ConfigurationDigest: fmt.Sprintf("sha256:%x", digest[:]),
+		Revision: "policymodel-client-v2", ConfigurationDigest: fmt.Sprintf("sha256:%x", digest[:]),
 		DecisionTimeoutMS: config.RequestTimeoutMS,
 	}
 	if err := descriptor.Validate(); err != nil {

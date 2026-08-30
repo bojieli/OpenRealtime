@@ -545,6 +545,9 @@ func TestSemanticPolicyConfigurationPinsDescriptorAndProviderOwnedCredential(t *
 	if err != nil {
 		t.Fatal(err)
 	}
+	if descriptor.Protocol != "openai-chat-completions" || descriptor.Revision != "policymodel-client-v2" {
+		t.Fatalf("semantic-policy wire contract is not pinned to structured choice: %+v", descriptor)
+	}
 	if _, err := registration.FactoryConfiguration(
 		context.Background(), legacy.Options{}, raw,
 	); err == nil || !strings.Contains(err.Error(), credentialEnvironment) {
