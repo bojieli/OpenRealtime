@@ -17,7 +17,10 @@ import (
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
-const serveProviderConfigurationVersion = uint64(1)
+const (
+	serveProviderConfigurationVersion = uint64(1)
+	servePolicyConfigurationVersion   = uint64(2)
+)
 
 type serveASRConfiguration struct {
 	FormatVersion     uint64 `json:"format_version"`
@@ -48,6 +51,7 @@ type servePolicyConfiguration struct {
 	Model            string `json:"model"`
 	BaseURL          string `json:"base_url"`
 	RequestTimeoutMS int64  `json:"request_timeout_ms"`
+	Vision           *bool  `json:"vision"`
 	GuidedChoice     *bool  `json:"guided_choice"`
 	Reasoning        string `json:"reasoning"`
 	TokenEnvironment string `json:"token_environment,omitempty"`
@@ -161,9 +165,9 @@ func decodeServePolicyConfiguration(
 	if err := elementconfig.Decode(source, &config); err != nil {
 		return config, policyelements.SemanticDeciderDescriptor{}, fmt.Errorf("decode semantic policy configuration: %w", err)
 	}
-	if config.FormatVersion != serveProviderConfigurationVersion {
+	if config.FormatVersion != servePolicyConfigurationVersion {
 		return config, policyelements.SemanticDeciderDescriptor{}, fmt.Errorf(
-			"semantic policy configuration format is %d, want %d", config.FormatVersion, serveProviderConfigurationVersion,
+			"semantic policy configuration format is %d, want %d", config.FormatVersion, servePolicyConfigurationVersion,
 		)
 	}
 	if err := exactNonempty("semantic policy provider", provider); err != nil {
@@ -180,6 +184,9 @@ func decodeServePolicyConfiguration(
 	}
 	if config.GuidedChoice == nil {
 		return config, policyelements.SemanticDeciderDescriptor{}, errors.New("semantic policy guided_choice must be an explicit boolean")
+	}
+	if config.Vision == nil {
+		return config, policyelements.SemanticDeciderDescriptor{}, errors.New("semantic policy vision must be an explicit boolean")
 	}
 	reasoning := openaicompat.ReasoningControl(config.Reasoning)
 	switch reasoning {
@@ -203,7 +210,7 @@ func decodeServePolicyConfiguration(
 	descriptor := policyelements.SemanticDeciderDescriptor{
 		Provider: provider, Model: config.Model, Protocol: "openai-chat-completions",
 		Revision: "policymodel-client-v2", ConfigurationDigest: fmt.Sprintf("sha256:%x", digest[:]),
-		DecisionTimeoutMS: config.RequestTimeoutMS,
+		DecisionTimeoutMS: config.RequestTimeoutMS, Vision: *config.Vision,
 	}
 	if err := descriptor.Validate(); err != nil {
 		return config, policyelements.SemanticDeciderDescriptor{}, err

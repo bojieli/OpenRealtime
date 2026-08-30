@@ -142,8 +142,8 @@ func TestProductionServeProfileDescriptorsMatchLazyLiveFactories(t *testing.T) {
 	policyRegistration := inventory.Policies[0]
 	guided := true
 	policyRaw := mustJSON(t, servePolicyConfiguration{
-		FormatVersion: 1, Model: "qwen-fast", BaseURL: "http://127.0.0.1:8000/v1",
-		RequestTimeoutMS: 2_000, GuidedChoice: &guided, Reasoning: "chat_template_kwargs",
+		FormatVersion: servePolicyConfigurationVersion, Model: "qwen-fast", BaseURL: "http://127.0.0.1:8000/v1",
+		RequestTimeoutMS: 2_000, Vision: &vision, GuidedChoice: &guided, Reasoning: "chat_template_kwargs",
 	})
 	policyDescriptor, err := policyRegistration.DescribeConfiguration(policyRaw)
 	if err != nil {
@@ -533,11 +533,11 @@ func TestSemanticPolicyConfigurationPinsDescriptorAndProviderOwnedCredential(t *
 		t.Fatal(err)
 	}
 	registration := inventory.Policies[0]
-	guided := true
+	guided, vision := true, true
 	const credentialEnvironment = "OPENREALTIME_TEST_POLICY_TOKEN"
 	raw := mustJSON(t, servePolicyConfiguration{
-		FormatVersion: 1, Model: "qwen-fast", BaseURL: "http://127.0.0.1:8000/v1",
-		RequestTimeoutMS: 2_000, GuidedChoice: &guided, Reasoning: "chat_template_kwargs",
+		FormatVersion: servePolicyConfigurationVersion, Model: "qwen-fast", BaseURL: "http://127.0.0.1:8000/v1",
+		RequestTimeoutMS: 2_000, Vision: &vision, GuidedChoice: &guided, Reasoning: "chat_template_kwargs",
 		TokenEnvironment: credentialEnvironment,
 	})
 	t.Setenv(credentialEnvironment, "")
@@ -545,7 +545,8 @@ func TestSemanticPolicyConfigurationPinsDescriptorAndProviderOwnedCredential(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Protocol != "openai-chat-completions" || descriptor.Revision != "policymodel-client-v2" {
+	if descriptor.Protocol != "openai-chat-completions" ||
+		descriptor.Revision != "policymodel-client-v2" || !descriptor.Vision {
 		t.Fatalf("semantic-policy wire contract is not pinned to structured choice: %+v", descriptor)
 	}
 	if _, err := registration.FactoryConfiguration(
@@ -573,8 +574,8 @@ func TestSemanticPolicyConfigurationPinsDescriptorAndProviderOwnedCredential(t *
 		t.Fatal("provider credential value leaked into the frozen semantic-policy descriptor")
 	}
 	driftedRaw := mustJSON(t, servePolicyConfiguration{
-		FormatVersion: 1, Model: "qwen-fast-revision-2", BaseURL: "http://127.0.0.1:8000/v1",
-		RequestTimeoutMS: 2_000, GuidedChoice: &guided, Reasoning: "chat_template_kwargs",
+		FormatVersion: servePolicyConfigurationVersion, Model: "qwen-fast-revision-2", BaseURL: "http://127.0.0.1:8000/v1",
+		RequestTimeoutMS: 2_000, Vision: &vision, GuidedChoice: &guided, Reasoning: "chat_template_kwargs",
 		TokenEnvironment: credentialEnvironment,
 	})
 	drifted, err := registration.DescribeConfiguration(driftedRaw)
@@ -585,13 +586,27 @@ func TestSemanticPolicyConfigurationPinsDescriptorAndProviderOwnedCredential(t *
 		t.Fatalf("semantic-policy configuration drift was not sealed: old=%+v new=%+v",
 			descriptor, drifted)
 	}
+	blind := false
+	blindRaw := mustJSON(t, servePolicyConfiguration{
+		FormatVersion: servePolicyConfigurationVersion, Model: "qwen-fast", BaseURL: "http://127.0.0.1:8000/v1",
+		RequestTimeoutMS: 2_000, Vision: &blind, GuidedChoice: &guided, Reasoning: "chat_template_kwargs",
+		TokenEnvironment: credentialEnvironment,
+	})
+	blindDescriptor, err := registration.DescribeConfiguration(blindRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blindDescriptor.Vision || blindDescriptor.ConfigurationDigest == descriptor.ConfigurationDigest {
+		t.Fatalf("semantic-policy visual capability drift was not sealed: visual=%+v blind=%+v",
+			descriptor, blindDescriptor)
+	}
 }
 
 func TestSemanticPolicyConfigurationRejectsUnpinnedAndAmbiguousValues(t *testing.T) {
-	guided := true
+	guided, vision := true, true
 	valid := servePolicyConfiguration{
-		FormatVersion: 1, Model: "qwen-fast", BaseURL: "http://127.0.0.1:8000/v1",
-		RequestTimeoutMS: 2_000, GuidedChoice: &guided, Reasoning: "chat_template_kwargs",
+		FormatVersion: servePolicyConfigurationVersion, Model: "qwen-fast", BaseURL: "http://127.0.0.1:8000/v1",
+		RequestTimeoutMS: 2_000, Vision: &vision, GuidedChoice: &guided, Reasoning: "chat_template_kwargs",
 	}
 	tests := []struct {
 		name   string
@@ -601,6 +616,9 @@ func TestSemanticPolicyConfigurationRejectsUnpinnedAndAmbiguousValues(t *testing
 		{name: "guided choice omitted", mutate: func(config *servePolicyConfiguration) {
 			config.GuidedChoice = nil
 		}, want: "explicit boolean"},
+		{name: "vision omitted", mutate: func(config *servePolicyConfiguration) {
+			config.Vision = nil
+		}, want: "vision must be an explicit boolean"},
 		{name: "reasoning control unknown", mutate: func(config *servePolicyConfiguration) {
 			config.Reasoning = "automatic"
 		}, want: "not canonical"},
@@ -1171,10 +1189,10 @@ func serveProfileTestPolicySelection(
 		return inventory.Policies[0].ApplicationPolicySelection
 	}
 	registration := inventory.Policies[0]
-	guided := true
+	guided, vision := true, true
 	raw := mustJSON(t, servePolicyConfiguration{
-		FormatVersion: 1, Model: "qwen-fast", BaseURL: "http://127.0.0.1:8000/v1",
-		RequestTimeoutMS: 2_000, GuidedChoice: &guided, Reasoning: "chat_template_kwargs",
+		FormatVersion: servePolicyConfigurationVersion, Model: "qwen-fast", BaseURL: "http://127.0.0.1:8000/v1",
+		RequestTimeoutMS: 2_000, Vision: &vision, GuidedChoice: &guided, Reasoning: "chat_template_kwargs",
 	})
 	descriptor, err := registration.DescribeConfiguration(raw)
 	if err != nil {

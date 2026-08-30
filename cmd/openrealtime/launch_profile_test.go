@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,11 +44,12 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 	}
 	for _, exact := range []string{
 		`"architecture":{"fingerprint":"sha256:`,
-		`"id":"cascade.composed-policy","revision":1`,
+		`"id":"cascade.composed-policy-direct-visual","revision":1`,
 		`"reference":"provider.openrealtime.asr.sensevoice.v1"`,
 		`"model":"iic/SenseVoiceSmall"`,
 		`"base_url":"http://127.0.0.1:8002/v1"`,
 		`"reference":"provider.openrealtime.policy.vllm.v1"`,
+		`"vision":true`,
 		`"guided_choice":true`,
 		`"reasoning":"chat_template_kwargs"`,
 		`"reference":"provider.openrealtime.model.vllm.v1"`,
@@ -88,6 +90,15 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 	values, err := graphvalues.ParseJSON(valuesPath, valuesPayload)
 	if err != nil {
 		t.Fatal(err)
+	}
+	var semanticAdmission struct {
+		DirectVisualInput bool `json:"direct_visual_input"`
+	}
+	if err := json.Unmarshal(values.Nodes["semantic_admission"], &semanticAdmission); err != nil {
+		t.Fatal(err)
+	}
+	if !semanticAdmission.DirectVisualInput {
+		t.Fatal("frozen production scenario graph omitted direct visual semantic-policy input")
 	}
 	rebound, err := graphvalues.Bind(boundGraph, values)
 	if err != nil {
@@ -169,5 +180,18 @@ func TestScenarioProfileFreezeRejectsUnsupportedArchitectureBeforeOutput(t *test
 	}
 	if _, err := os.Lstat(path); !os.IsNotExist(err) {
 		t.Fatalf("invalid architecture created output: %v", err)
+	}
+}
+
+func TestScenarioProfileFreezeRejectsDirectVisualPolicyCapabilityDriftBeforeOutput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "scenario-profile.yaml")
+	err := runLaunchProfile([]string{
+		"scenario", "-out", path, "-policy-vision=false",
+	}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "vision-capable semantic policy") {
+		t.Fatalf("direct-visual policy drift error = %v", err)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("drifted direct-visual profile created output: %v", err)
 	}
 }

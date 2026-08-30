@@ -60,6 +60,7 @@ type scenarioProfileOptions struct {
 	policyModel        string
 	policyURL          string
 	policyTimeoutMS    int64
+	policyVision       bool
 	policyGuided       bool
 	policyReasoning    string
 	policyTokenEnv     string
@@ -85,7 +86,7 @@ type scenarioProfileOptions struct {
 func defaultScenarioProfileOptions() scenarioProfileOptions {
 	return scenarioProfileOptions{
 		name: "openrealtime.launch.scenario-local", revision: 1,
-		architecture: "cascade.composed-policy@1",
+		architecture: "cascade.composed-policy-direct-visual@1",
 		asrProvider:  "sensevoice", asrModel: "iic/SenseVoiceSmall",
 		asrURL: "http://127.0.0.1:8002/v1", asrPartialMS: 200,
 		asrTimeoutMS: 30_000, asrCadenceMS: 200,
@@ -95,7 +96,7 @@ func defaultScenarioProfileOptions() scenarioProfileOptions {
 		modelTimeoutMS: 30_000,
 		policyProvider: "vllm", policyModel: "qwen-fast",
 		policyURL: "http://127.0.0.1:8000/v1", policyTimeoutMS: 2_000,
-		policyGuided: true, policyReasoning: "chat_template_kwargs",
+		policyVision: true, policyGuided: true, policyReasoning: "chat_template_kwargs",
 		ttsProvider: "fish-audio", ttsModel: "fishaudio/fish-speech-1.5",
 		ttsURL: "http://127.0.0.1:8123/v1/tts", ttsVoice: "default",
 		ttsTimeoutMS: 30_000, ttsSentenceWrap: true, ttsSentenceMinimum: 12,
@@ -154,6 +155,7 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.policyModel, "policy-model", options.policyModel, "exact semantic-policy model")
 	flags.StringVar(&options.policyURL, "policy-url", options.policyURL, "exact semantic-policy base URL")
 	flags.Int64Var(&options.policyTimeoutMS, "policy-timeout-ms", options.policyTimeoutMS, "semantic-policy decision timeout")
+	flags.BoolVar(&options.policyVision, "policy-vision", options.policyVision, "declare exact semantic-policy image-input support")
 	flags.BoolVar(&options.policyGuided, "policy-guided-choice", options.policyGuided, "request provider-side enumerated-choice decoding")
 	flags.StringVar(&options.policyReasoning, "policy-reasoning", options.policyReasoning, "semantic-policy reasoning control")
 	flags.StringVar(&options.policyTokenEnv, "policy-token-env", options.policyTokenEnv, "optional provider-owned semantic-policy credential environment name")
@@ -452,10 +454,10 @@ func scenarioProfilePolicySelection(
 		if registration.Reference != reference {
 			continue
 		}
-		guided := options.policyGuided
+		guided, vision := options.policyGuided, options.policyVision
 		raw, err := json.Marshal(servePolicyConfiguration{
-			FormatVersion: 1, Model: options.policyModel, BaseURL: options.policyURL,
-			RequestTimeoutMS: options.policyTimeoutMS, GuidedChoice: &guided,
+			FormatVersion: servePolicyConfigurationVersion, Model: options.policyModel, BaseURL: options.policyURL,
+			RequestTimeoutMS: options.policyTimeoutMS, Vision: &vision, GuidedChoice: &guided,
 			Reasoning: options.policyReasoning, TokenEnvironment: options.policyTokenEnv,
 		})
 		if err != nil {
