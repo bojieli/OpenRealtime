@@ -2102,7 +2102,7 @@ func (bundle *ReviewBundle) FinishSuite(ctx context.Context, source bench.Result
 		SourceManifestSHA256: sourceReceipt.ManifestSHA256,
 		SourceReceiptSHA256:  sourceReceipt.ReceiptSHA256,
 	}
-	if _, err := VerifyReviewBundleReceipt(bundle.directory, expectedReceipt); err != nil {
+	if _, verifyErr := VerifyReviewBundleReceipt(bundle.directory, expectedReceipt); verifyErr != nil {
 		if invalidateErr := invalidateReviewManifestExpected(
 			bundle.directory, sealedRootIdentity,
 		); invalidateErr != nil {
@@ -2120,11 +2120,14 @@ func (bundle *ReviewBundle) FinishSuite(ctx context.Context, source bench.Result
 				MarkerMayRemain: true,
 				cause: errors.Join(
 					errors.New("verify sealed realtime computer-use review bundle"),
+					verifyErr,
 					errors.New("invalidate rejected realtime computer-use review manifest"),
 				),
 			}, true)
 		}
-		return finishAttempt(errors.New("verify sealed realtime computer-use review bundle"), true)
+		return finishAttempt(errors.Join(
+			errors.New("verify sealed realtime computer-use review bundle"), verifyErr,
+		), true)
 	}
 	currentRoot, currentErr := os.Lstat(bundle.directory)
 	if currentErr != nil || currentRoot.Mode()&os.ModeSymlink != 0 ||
