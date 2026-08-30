@@ -3,6 +3,7 @@ package providers_test
 import (
 	"errors"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -152,18 +153,35 @@ func TestEveryEntryBuildsAnAdapter(t *testing.T) {
 				descriptor.EffectiveToolAuthority() == continuation.ToolAuthorityExecute {
 				t.Errorf("llm %q gave the voice executable tools", entry.Name)
 			}
+			described, err := providers.DescribeLLM(request)
+			if err != nil {
+				t.Errorf("describe llm %q %s: %v", entry.Name, phase, err)
+			} else if described != descriptor {
+				t.Errorf("llm %q descriptor-only resolution drifted: described %+v, live %+v",
+					entry.Name, described, descriptor)
+			}
 		}
 	}
 	for _, entry := range providers.ASRs() {
-		factory, err := providers.NewASRFactory(providers.ASRRequest{
+		request := providers.ASRRequest{
 			Provider: entry.Name, APIKey: "test-key", Model: "test-model",
-		})
+		}
+		factory, err := providers.NewASRFactory(request)
 		if err != nil {
 			t.Errorf("asr %q: %v", entry.Name, err)
 			continue
 		}
-		if _, err := factory(); err != nil {
+		provider, err := factory()
+		if err != nil {
 			t.Errorf("asr %q factory: %v", entry.Name, err)
+			continue
+		}
+		described, err := providers.DescribeASR(request)
+		if err != nil {
+			t.Errorf("describe asr %q: %v", entry.Name, err)
+		} else if !reflect.DeepEqual(described, provider.Descriptor()) {
+			t.Errorf("asr %q descriptor-only resolution drifted: described %+v, live %+v",
+				entry.Name, described, provider.Descriptor())
 		}
 	}
 	for _, entry := range providers.TTSs() {
@@ -174,8 +192,17 @@ func TestEveryEntryBuildsAnAdapter(t *testing.T) {
 		if entry.VoiceRequired {
 			request.Voice = "test-voice"
 		}
-		if _, err := providers.NewTTS(request); err != nil {
+		provider, err := providers.NewTTS(request)
+		if err != nil {
 			t.Errorf("tts %q: %v", entry.Name, err)
+			continue
+		}
+		described, err := providers.DescribeTTS(request)
+		if err != nil {
+			t.Errorf("describe tts %q: %v", entry.Name, err)
+		} else if !reflect.DeepEqual(described, provider.Descriptor()) {
+			t.Errorf("tts %q descriptor-only resolution drifted: described %+v, live %+v",
+				entry.Name, described, provider.Descriptor())
 		}
 	}
 }
@@ -219,6 +246,87 @@ func TestAMissingCredentialNamesTheVariable(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
 		t.Fatalf("a missing credential must name the variable, got %v", err)
+	}
+}
+
+func TestDescriptorResolutionDoesNotRequireCredentials(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	llm := providers.LLMRequest{
+		Provider: "openai", Model: "test-model", Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortLow, ToolAuthority: continuation.ToolAuthorityPropose,
+		SpeechAuthority: continuation.SpeechAuthorityVoice,
+	}
+	if _, err := providers.DescribeLLM(llm); err != nil {
+		t.Fatalf("credential-free LLM descriptor: %v", err)
+	}
+	if _, err := providers.NewLLM(llm); err == nil {
+		t.Fatal("live hosted LLM construction unexpectedly ignored its missing credential")
+	}
+	asr := providers.ASRRequest{Provider: "openai", Model: "test-asr"}
+	if _, err := providers.DescribeASR(asr); err != nil {
+		t.Fatalf("credential-free ASR descriptor: %v", err)
+	}
+	if _, err := providers.NewASRFactory(asr); err == nil {
+		t.Fatal("live hosted ASR construction unexpectedly ignored its missing credential")
+	}
+	tts := providers.TTSRequest{Provider: "openai", Model: "test-tts", Voice: "alloy"}
+	if _, err := providers.DescribeTTS(tts); err != nil {
+		t.Fatalf("credential-free TTS descriptor: %v", err)
+	}
+	if _, err := providers.NewTTS(tts); err == nil {
+		t.Fatal("live hosted TTS construction unexpectedly ignored its missing credential")
+	}
+}
+
+func TestDescriptorAndLiveConstructionShareStaticValidation(t *testing.T) {
+	onePointFive := 1.5
+	llm := providers.LLMRequest{
+		Provider: "anthropic", Model: "test-model", BaseURL: "https://api.anthropic.com",
+		APIKey: "test-key", Phase: trajectory.PhaseFast, Effort: continuation.EffortLow,
+		ToolAuthority:   continuation.ToolAuthorityPropose,
+		SpeechAuthority: continuation.SpeechAuthorityVoice,
+		Temperature:     &onePointFive,
+	}
+	assertMatchingProviderErrors(t,
+		func() error { _, err := providers.DescribeLLM(llm); return err },
+		func() error { _, err := providers.NewLLM(llm); return err },
+		"temperature must be between 0 and 1",
+	)
+	asr := providers.ASRRequest{
+		Provider: "qwen-asr", Model: "test-model", BaseURL: "://bad", APIKey: "test-key",
+	}
+	assertMatchingProviderErrors(t,
+		func() error { _, err := providers.DescribeASR(asr); return err },
+		func() error {
+			factory, err := providers.NewASRFactory(asr)
+			if err != nil {
+				return err
+			}
+			_, err = factory()
+			return err
+		},
+		"base URL must be absolute",
+	)
+	tts := providers.TTSRequest{
+		Provider: "openai", Model: "test-model", Voice: "alloy",
+		BaseURL: "ftp://example.test/speech", APIKey: "test-key",
+	}
+	assertMatchingProviderErrors(t,
+		func() error { _, err := providers.DescribeTTS(tts); return err },
+		func() error { _, err := providers.NewTTS(tts); return err },
+		"HTTP or HTTPS",
+	)
+}
+
+func assertMatchingProviderErrors(
+	t testing.TB, describe func() error, live func() error, wanted string,
+) {
+	t.Helper()
+	describeErr, liveErr := describe(), live()
+	if describeErr == nil || liveErr == nil ||
+		!strings.Contains(describeErr.Error(), wanted) ||
+		!strings.Contains(liveErr.Error(), wanted) {
+		t.Fatalf("descriptor error = %v, live error = %v, want %q", describeErr, liveErr, wanted)
 	}
 }
 

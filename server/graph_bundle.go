@@ -29,6 +29,7 @@ type GraphBundleConfig struct {
 type GraphBundle struct {
 	GraphPlan    *graphconfig.Plan
 	ServerBundle *Bundle
+	Readiness    []graphlaunch.ReadinessCheck
 }
 
 // NewGraphBundle prepares the exact graph-native provider and compiles the
@@ -55,5 +56,8 @@ func NewGraphBundle(ctx context.Context, config GraphBundleConfig) (*GraphBundle
 	if err != nil {
 		return nil, fmt.Errorf("compose graph server bundle: %w", err)
 	}
-	return &GraphBundle{GraphPlan: launched.Plan, ServerBundle: serverBundle}, nil
+	return &GraphBundle{
+		GraphPlan: launched.Plan, ServerBundle: serverBundle,
+		Readiness: launched.Readiness,
+	}, nil
 }

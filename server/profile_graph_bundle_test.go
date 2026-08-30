@@ -48,11 +48,16 @@ func TestProfileGraphBundleExactMatchesPluginsBeforeTokenOrResources(t *testing.
 		"go://openrealtime/graph-adapters/profile-adaptive-video", "build-profile-1", "3",
 	)
 	launchConfig := adaptiveVideoLaunchConfig(t, dependency, adapterArtifact)
+	var readinessCalls atomic.Int64
+	launchConfig.Readiness = []graphlaunch.ReadinessCheck{{
+		Name:  "visual.youtube.narrator.v1",
+		Check: func(context.Context) error { readinessCalls.Add(1); return nil },
+	}}
 	preview, err := graphlaunch.New(context.Background(), launchConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if acquisitions.Load() != 0 {
+	if acquisitions.Load() != 0 || readinessCalls.Load() != 0 || len(preview.Readiness) != 1 {
 		t.Fatal("profile preview acquired a provider resource")
 	}
 
@@ -264,8 +269,12 @@ func TestProfileGraphBundleExactMatchesPluginsBeforeTokenOrResources(t *testing.
 			applicationCalls.Load(), tokenCalls.Load(), acquisitions.Load())
 	}
 	if composition.GraphPlan.Identity() != profile.Plan ||
-		composition.ServerBundle.Profile.Name != profile.Server.ProfileName {
+		composition.ServerBundle.Profile.Name != profile.Server.ProfileName ||
+		len(composition.Readiness) != 1 || readinessCalls.Load() != 0 {
 		t.Fatal("profiled composition lost an exact public identity")
+	}
+	if err := composition.Readiness[0].Check(context.Background()); err != nil || readinessCalls.Load() != 1 {
+		t.Fatalf("selected readiness callback = error %v calls %d", err, readinessCalls.Load())
 	}
 
 	realm, err := composition.ServerBundle.Mount(context.Background())

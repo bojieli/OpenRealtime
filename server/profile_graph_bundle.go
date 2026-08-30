@@ -94,7 +94,10 @@ func NewProfileGraphBundle(
 	if err != nil {
 		return nil, fmt.Errorf("compose profiled graph server bundle: %w", err)
 	}
-	return &GraphBundle{GraphPlan: launched.Plan, ServerBundle: bundle}, nil
+	return &GraphBundle{
+		GraphPlan: launched.Plan, ServerBundle: bundle,
+		Readiness: launched.Readiness,
+	}, nil
 }
 
 func validateProfileGatewayHooks(config gateway.Config) error {

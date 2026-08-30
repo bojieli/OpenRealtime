@@ -147,6 +147,23 @@ type TTSRequest struct {
 	Header             http.Header
 }
 
+// DescribeTTS validates through the exact resource-free live constructor with
+// a non-secret sentinel credential. This makes endpoint, model, voice, sample
+// rate, and timeout acceptance identical in preflight and live sessions.
+func DescribeTTS(request TTSRequest) (v1.Descriptor, error) {
+	request.APIKey = "launch-profile-preflight-sentinel"
+	request.KeyEnv = ""
+	provider, err := NewTTS(request)
+	if err != nil {
+		return v1.Descriptor{}, err
+	}
+	descriptor := provider.Descriptor()
+	if err := descriptor.Validate(); err != nil {
+		return v1.Descriptor{}, err
+	}
+	return descriptor, nil
+}
+
 // NewTTS builds the configured speech provider.
 func NewTTS(request TTSRequest) (v1.StreamingSpeechProvider, error) {
 	entry, err := LookupTTS(request.Provider)

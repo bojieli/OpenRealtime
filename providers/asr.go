@@ -175,6 +175,32 @@ type ASRRequest struct {
 	Header         http.Header
 }
 
+// DescribeASR validates and normalizes through the same constructor path as a
+// live provider, but supplies a non-secret sentinel credential. Provider
+// constructors in this package are resource-free; sockets are opened only by
+// utterance methods. This prevents metadata preflight and live construction
+// from accepting different endpoint, timeout, model, or dialect settings.
+func DescribeASR(request ASRRequest) (v1.Descriptor, error) {
+	request.APIKey = "launch-profile-preflight-sentinel"
+	request.KeyEnv = ""
+	factory, err := NewASRFactory(request)
+	if err != nil {
+		return v1.Descriptor{}, err
+	}
+	provider, err := factory()
+	if err != nil {
+		return v1.Descriptor{}, err
+	}
+	if closer, ok := provider.(interface{ Close() error }); ok {
+		defer closer.Close()
+	}
+	descriptor := provider.Descriptor()
+	if err := descriptor.Validate(); err != nil {
+		return v1.Descriptor{}, err
+	}
+	return descriptor, nil
+}
+
 // NewASRFactory returns a factory producing one recogniser per utterance.
 //
 // It is a factory rather than a provider because every recogniser here owns

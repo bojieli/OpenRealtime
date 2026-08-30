@@ -30,25 +30,28 @@ const (
 // reference is a host inventory key; the application maps the matched factory
 // to the graph's fixed ASRReference only after identity verification.
 type ApplicationASRSelection struct {
-	Reference  string                   `json:"reference"`
-	Artifact   inspect.ArtifactIdentity `json:"artifact"`
-	Descriptor v1.Descriptor            `json:"descriptor"`
+	Reference     string                   `json:"reference"`
+	Artifact      inspect.ArtifactIdentity `json:"artifact"`
+	Descriptor    v1.Descriptor            `json:"descriptor"`
+	Configuration json.RawMessage          `json:"configuration,omitempty"`
 }
 
 // ApplicationModelSelection pins one continuation provider without retaining
 // a credential, client, or factory in profile data.
 type ApplicationModelSelection struct {
-	Reference  string                   `json:"reference"`
-	Artifact   inspect.ArtifactIdentity `json:"artifact"`
-	Descriptor continuation.Descriptor  `json:"descriptor"`
+	Reference     string                   `json:"reference"`
+	Artifact      inspect.ArtifactIdentity `json:"artifact"`
+	Descriptor    continuation.Descriptor  `json:"descriptor"`
+	Configuration json.RawMessage          `json:"configuration,omitempty"`
 }
 
 // ApplicationTTSSelection pins one speech provider and its fixed voice.
 type ApplicationTTSSelection struct {
-	Reference  string                   `json:"reference"`
-	Artifact   inspect.ArtifactIdentity `json:"artifact"`
-	Descriptor v1.Descriptor            `json:"descriptor"`
-	Voice      string                   `json:"voice"`
+	Reference     string                   `json:"reference"`
+	Artifact      inspect.ArtifactIdentity `json:"artifact"`
+	Descriptor    v1.Descriptor            `json:"descriptor"`
+	Voice         string                   `json:"voice"`
+	Configuration json.RawMessage          `json:"configuration,omitempty"`
 }
 
 // ApplicationGateSelection is the JSON-stable acoustic admission policy.
@@ -190,17 +193,26 @@ func validateApplicationTTS(selection ApplicationTTSSelection) error {
 // retained but remains unopened until the selected session starts.
 type ASRFactoryRegistration struct {
 	ApplicationASRSelection
-	Factory func(context.Context, legacy.Options) (v1.PerceptionProvider, error)
+	Factory                func(context.Context, legacy.Options) (v1.PerceptionProvider, error)
+	DescribeConfiguration  func(json.RawMessage) (v1.Descriptor, error)
+	FactoryConfiguration   func(context.Context, legacy.Options, json.RawMessage) (v1.PerceptionProvider, error)
+	ReadinessConfiguration func(context.Context, json.RawMessage) error
 }
 
 type ModelFactoryRegistration struct {
 	ApplicationModelSelection
-	Factory func(context.Context, legacy.Options) (continuation.Provider, error)
+	Factory                func(context.Context, legacy.Options) (continuation.Provider, error)
+	DescribeConfiguration  func(json.RawMessage) (continuation.Descriptor, error)
+	FactoryConfiguration   func(context.Context, legacy.Options, json.RawMessage) (continuation.Provider, error)
+	ReadinessConfiguration func(context.Context, json.RawMessage) error
 }
 
 type TTSFactoryRegistration struct {
 	ApplicationTTSSelection
-	Factory func(context.Context, legacy.Options) (v1.SpeechProvider, error)
+	Factory                func(context.Context, legacy.Options) (v1.SpeechProvider, error)
+	DescribeConfiguration  func(json.RawMessage) (v1.Descriptor, string, error)
+	FactoryConfiguration   func(context.Context, legacy.Options, json.RawMessage) (v1.SpeechProvider, error)
+	ReadinessConfiguration func(context.Context, json.RawMessage) error
 }
 
 // ApplicationRegistrationConfig is process-private executable inventory. The
@@ -284,11 +296,14 @@ func NewApplicationRegistration(
 					"scenario conversation ASR registry is missing %q", config.ASR.Reference,
 				)
 			}
-			if asrRegistration.Artifact != config.ASR.Artifact ||
-				!sameV1Descriptor(asrRegistration.Descriptor, config.ASR.Descriptor) {
+			if asrRegistration.Artifact != config.ASR.Artifact {
 				return graphlaunch.Config{}, fmt.Errorf(
 					"scenario conversation ASR %q artifact or descriptor drifted", config.ASR.Reference,
 				)
+			}
+			asrDescriptor, asrFactory, asrReady, err := resolveASRRegistration(asrRegistration, config.ASR)
+			if err != nil {
+				return graphlaunch.Config{}, err
 			}
 			modelRegistration, found := models[config.Model.Reference]
 			if !found {
@@ -296,11 +311,14 @@ func NewApplicationRegistration(
 					"scenario conversation model registry is missing %q", config.Model.Reference,
 				)
 			}
-			if modelRegistration.Artifact != config.Model.Artifact ||
-				modelRegistration.Descriptor != config.Model.Descriptor {
+			if modelRegistration.Artifact != config.Model.Artifact {
 				return graphlaunch.Config{}, fmt.Errorf(
 					"scenario conversation model %q artifact or descriptor drifted", config.Model.Reference,
 				)
+			}
+			modelDescriptor, modelFactory, modelReady, err := resolveModelRegistration(modelRegistration, config.Model)
+			if err != nil {
+				return graphlaunch.Config{}, err
 			}
 			ttsRegistration, found := tts[config.TTS.Reference]
 			if !found {
@@ -308,12 +326,16 @@ func NewApplicationRegistration(
 					"scenario conversation TTS registry is missing %q", config.TTS.Reference,
 				)
 			}
-			if ttsRegistration.Artifact != config.TTS.Artifact ||
-				!sameV1Descriptor(ttsRegistration.Descriptor, config.TTS.Descriptor) ||
-				ttsRegistration.Voice != config.TTS.Voice {
+			if ttsRegistration.Artifact != config.TTS.Artifact {
 				return graphlaunch.Config{}, fmt.Errorf(
 					"scenario conversation TTS %q artifact, descriptor, or voice drifted", config.TTS.Reference,
 				)
+			}
+			ttsDescriptor, ttsVoice, ttsFactory, ttsReady, err := resolveTTSRegistration(
+				ttsRegistration, config.TTS,
+			)
+			if err != nil {
+				return graphlaunch.Config{}, err
 			}
 			if err := context.Cause(ctx); err != nil {
 				return graphlaunch.Config{}, err
@@ -321,18 +343,32 @@ func NewApplicationRegistration(
 			resolved, constructorErr := constructor(PluginConfig{
 				RuntimeArtifact: runtimeArtifact, DependencyArtifact: dependencyArtifact,
 				ASR: ASRPlugin{Reference: ASRReference, Artifact: asrRegistration.Artifact,
-					Descriptor: cloneV1Descriptor(asrRegistration.Descriptor), Factory: asrRegistration.Factory},
+					Descriptor: cloneV1Descriptor(asrDescriptor), Factory: asrFactory},
 				Model: ModelPlugin{Reference: ModelReference, Artifact: modelRegistration.Artifact,
-					Descriptor: modelRegistration.Descriptor, Factory: modelRegistration.Factory},
+					Descriptor: modelDescriptor, Factory: modelFactory},
 				TTS: TTSPlugin{Reference: TTSReference, Artifact: ttsRegistration.Artifact,
-					Descriptor: cloneV1Descriptor(ttsRegistration.Descriptor), Voice: ttsRegistration.Voice,
-					Factory: ttsRegistration.Factory},
+					Descriptor: cloneV1Descriptor(ttsDescriptor), Voice: ttsVoice,
+					Factory: ttsFactory},
 				Tools: cloneToolDeclarations(config.Tools), Target: cloneTarget(config.Target),
 				Gate: config.Gate.gateConfig(), Media: config.Media,
 				MaxOutputTokens: config.MaxOutputTokens,
 			})
 			if cause := context.Cause(ctx); cause != nil {
 				return graphlaunch.Config{}, errors.Join(cause, constructorErr)
+			}
+			if constructorErr == nil {
+				if asrReady != nil {
+					resolved.Readiness = append(resolved.Readiness,
+						graphlaunch.ReadinessCheck{Name: "asr:" + config.ASR.Reference, Check: asrReady})
+				}
+				if modelReady != nil {
+					resolved.Readiness = append(resolved.Readiness,
+						graphlaunch.ReadinessCheck{Name: "model:" + config.Model.Reference, Check: modelReady})
+				}
+				if ttsReady != nil {
+					resolved.Readiness = append(resolved.Readiness,
+						graphlaunch.ReadinessCheck{Name: "tts:" + config.TTS.Reference, Check: ttsReady})
+				}
 			}
 			return resolved, constructorErr
 		},
@@ -345,14 +381,123 @@ func NewApplicationRegistration(
 	return registration, nil
 }
 
+func resolveASRRegistration(
+	registration ASRFactoryRegistration, selection ApplicationASRSelection,
+) (v1.Descriptor, func(context.Context, legacy.Options) (v1.PerceptionProvider, error), func(context.Context) error, error) {
+	if registration.DescribeConfiguration == nil {
+		if len(selection.Configuration) != 0 ||
+			!sameV1Descriptor(registration.Descriptor, selection.Descriptor) {
+			return v1.Descriptor{}, nil, nil, fmt.Errorf(
+				"scenario conversation ASR %q artifact or descriptor drifted", selection.Reference,
+			)
+		}
+		return cloneV1Descriptor(registration.Descriptor), registration.Factory, nil, nil
+	}
+	configuration := slices.Clone(selection.Configuration)
+	descriptor, err := registration.DescribeConfiguration(configuration)
+	if err != nil {
+		return v1.Descriptor{}, nil, nil, fmt.Errorf(
+			"scenario conversation ASR %q configuration: %w", selection.Reference, err,
+		)
+	}
+	if !sameV1Descriptor(descriptor, selection.Descriptor) {
+		return v1.Descriptor{}, nil, nil, fmt.Errorf(
+			"scenario conversation ASR %q descriptor drifted from its configuration", selection.Reference,
+		)
+	}
+	return cloneV1Descriptor(descriptor),
+		func(ctx context.Context, options legacy.Options) (v1.PerceptionProvider, error) {
+			return registration.FactoryConfiguration(ctx, options, slices.Clone(configuration))
+		},
+		func(ctx context.Context) error {
+			return registration.ReadinessConfiguration(ctx, slices.Clone(configuration))
+		}, nil
+}
+
+func resolveModelRegistration(
+	registration ModelFactoryRegistration, selection ApplicationModelSelection,
+) (continuation.Descriptor, func(context.Context, legacy.Options) (continuation.Provider, error), func(context.Context) error, error) {
+	if registration.DescribeConfiguration == nil {
+		if len(selection.Configuration) != 0 || registration.Descriptor != selection.Descriptor {
+			return continuation.Descriptor{}, nil, nil, fmt.Errorf(
+				"scenario conversation model %q artifact or descriptor drifted", selection.Reference,
+			)
+		}
+		return registration.Descriptor, registration.Factory, nil, nil
+	}
+	configuration := slices.Clone(selection.Configuration)
+	descriptor, err := registration.DescribeConfiguration(configuration)
+	if err != nil {
+		return continuation.Descriptor{}, nil, nil, fmt.Errorf(
+			"scenario conversation model %q configuration: %w", selection.Reference, err,
+		)
+	}
+	if descriptor != selection.Descriptor {
+		return continuation.Descriptor{}, nil, nil, fmt.Errorf(
+			"scenario conversation model %q descriptor drifted from its configuration", selection.Reference,
+		)
+	}
+	return descriptor,
+		func(ctx context.Context, options legacy.Options) (continuation.Provider, error) {
+			return registration.FactoryConfiguration(ctx, options, slices.Clone(configuration))
+		},
+		func(ctx context.Context) error {
+			return registration.ReadinessConfiguration(ctx, slices.Clone(configuration))
+		}, nil
+}
+
+func resolveTTSRegistration(
+	registration TTSFactoryRegistration, selection ApplicationTTSSelection,
+) (v1.Descriptor, string, func(context.Context, legacy.Options) (v1.SpeechProvider, error), func(context.Context) error, error) {
+	if registration.DescribeConfiguration == nil {
+		if len(selection.Configuration) != 0 ||
+			!sameV1Descriptor(registration.Descriptor, selection.Descriptor) ||
+			registration.Voice != selection.Voice {
+			return v1.Descriptor{}, "", nil, nil, fmt.Errorf(
+				"scenario conversation TTS %q artifact, descriptor, or voice drifted", selection.Reference,
+			)
+		}
+		return cloneV1Descriptor(registration.Descriptor), registration.Voice, registration.Factory, nil, nil
+	}
+	configuration := slices.Clone(selection.Configuration)
+	descriptor, voice, err := registration.DescribeConfiguration(configuration)
+	if err != nil {
+		return v1.Descriptor{}, "", nil, nil, fmt.Errorf(
+			"scenario conversation TTS %q configuration: %w", selection.Reference, err,
+		)
+	}
+	if !sameV1Descriptor(descriptor, selection.Descriptor) || voice != selection.Voice {
+		return v1.Descriptor{}, "", nil, nil, fmt.Errorf(
+			"scenario conversation TTS %q descriptor or voice drifted from its configuration", selection.Reference,
+		)
+	}
+	return cloneV1Descriptor(descriptor), voice,
+		func(ctx context.Context, options legacy.Options) (v1.SpeechProvider, error) {
+			return registration.FactoryConfiguration(ctx, options, slices.Clone(configuration))
+		},
+		func(ctx context.Context) error {
+			return registration.ReadinessConfiguration(ctx, slices.Clone(configuration))
+		}, nil
+}
+
 func snapshotASRRegistrations(source []ASRFactoryRegistration) (map[string]ASRFactoryRegistration, error) {
 	result := make(map[string]ASRFactoryRegistration, len(source))
 	for index, registration := range source {
-		if err := validateApplicationASR(registration.ApplicationASRSelection); err != nil {
+		if err := validateApplicationProviderIdentity(registration.Reference, registration.Artifact, "ASR"); err != nil {
 			return nil, fmt.Errorf("scenario conversation ASR registration %d: %w", index, err)
 		}
-		if registration.Factory == nil {
+		parameterized := registration.DescribeConfiguration != nil ||
+			registration.FactoryConfiguration != nil || registration.ReadinessConfiguration != nil
+		if parameterized {
+			if registration.DescribeConfiguration == nil || registration.FactoryConfiguration == nil ||
+				registration.ReadinessConfiguration == nil || registration.Factory != nil ||
+				len(registration.Configuration) != 0 || !zeroV1Descriptor(registration.Descriptor) {
+				return nil, fmt.Errorf("scenario conversation ASR registration %d has a partial or mixed parameterized factory", index)
+			}
+		} else if registration.Factory == nil {
 			return nil, fmt.Errorf("scenario conversation ASR registration %d has a nil factory", index)
+		} else if err := validateApplicationASR(registration.ApplicationASRSelection); err != nil {
+			return nil, fmt.Errorf("scenario conversation ASR registration %d: %w", index, err)
 		}
 		if _, duplicate := result[registration.Reference]; duplicate {
 			return nil, fmt.Errorf("scenario conversation ASR reference %q is registered more than once", registration.Reference)
@@ -366,11 +511,21 @@ func snapshotASRRegistrations(source []ASRFactoryRegistration) (map[string]ASRFa
 func snapshotModelRegistrations(source []ModelFactoryRegistration) (map[string]ModelFactoryRegistration, error) {
 	result := make(map[string]ModelFactoryRegistration, len(source))
 	for index, registration := range source {
-		if err := validateApplicationModel(registration.ApplicationModelSelection); err != nil {
+		if err := validateApplicationProviderIdentity(registration.Reference, registration.Artifact, "model"); err != nil {
 			return nil, fmt.Errorf("scenario conversation model registration %d: %w", index, err)
 		}
-		if registration.Factory == nil {
+		parameterized := registration.DescribeConfiguration != nil ||
+			registration.FactoryConfiguration != nil || registration.ReadinessConfiguration != nil
+		if parameterized {
+			if registration.DescribeConfiguration == nil || registration.FactoryConfiguration == nil ||
+				registration.ReadinessConfiguration == nil || registration.Factory != nil ||
+				len(registration.Configuration) != 0 || registration.Descriptor != (continuation.Descriptor{}) {
+				return nil, fmt.Errorf("scenario conversation model registration %d has a partial or mixed parameterized factory", index)
+			}
+		} else if registration.Factory == nil {
 			return nil, fmt.Errorf("scenario conversation model registration %d has a nil factory", index)
+		} else if err := validateApplicationModel(registration.ApplicationModelSelection); err != nil {
+			return nil, fmt.Errorf("scenario conversation model registration %d: %w", index, err)
 		}
 		if _, duplicate := result[registration.Reference]; duplicate {
 			return nil, fmt.Errorf("scenario conversation model reference %q is registered more than once", registration.Reference)
@@ -383,11 +538,22 @@ func snapshotModelRegistrations(source []ModelFactoryRegistration) (map[string]M
 func snapshotTTSRegistrations(source []TTSFactoryRegistration) (map[string]TTSFactoryRegistration, error) {
 	result := make(map[string]TTSFactoryRegistration, len(source))
 	for index, registration := range source {
-		if err := validateApplicationTTS(registration.ApplicationTTSSelection); err != nil {
+		if err := validateApplicationProviderIdentity(registration.Reference, registration.Artifact, "TTS"); err != nil {
 			return nil, fmt.Errorf("scenario conversation TTS registration %d: %w", index, err)
 		}
-		if registration.Factory == nil {
+		parameterized := registration.DescribeConfiguration != nil ||
+			registration.FactoryConfiguration != nil || registration.ReadinessConfiguration != nil
+		if parameterized {
+			if registration.DescribeConfiguration == nil || registration.FactoryConfiguration == nil ||
+				registration.ReadinessConfiguration == nil || registration.Factory != nil ||
+				len(registration.Configuration) != 0 || !zeroV1Descriptor(registration.Descriptor) ||
+				registration.Voice != "" {
+				return nil, fmt.Errorf("scenario conversation TTS registration %d has a partial or mixed parameterized factory", index)
+			}
+		} else if registration.Factory == nil {
 			return nil, fmt.Errorf("scenario conversation TTS registration %d has a nil factory", index)
+		} else if err := validateApplicationTTS(registration.ApplicationTTSSelection); err != nil {
+			return nil, fmt.Errorf("scenario conversation TTS registration %d: %w", index, err)
 		}
 		if _, duplicate := result[registration.Reference]; duplicate {
 			return nil, fmt.Errorf("scenario conversation TTS reference %q is registered more than once", registration.Reference)
@@ -398,6 +564,22 @@ func snapshotTTSRegistrations(source []TTSFactoryRegistration) (map[string]TTSFa
 	return result, nil
 }
 
+func validateApplicationProviderIdentity(
+	reference string, artifact inspect.ArtifactIdentity, role string,
+) error {
+	if !canonicalIdentity(reference) {
+		return fmt.Errorf("scenario conversation application %s reference is not canonical", role)
+	}
+	if err := artifact.Validate(); err != nil {
+		return fmt.Errorf("scenario conversation application %s artifact: %w", role, err)
+	}
+	return nil
+}
+
+func zeroV1Descriptor(descriptor v1.Descriptor) bool {
+	return descriptor.Name == "" && descriptor.Version == "" && len(descriptor.Capabilities) == 0
+}
+
 func sameV1Descriptor(left, right v1.Descriptor) bool {
 	return left.Name == right.Name && left.Version == right.Version &&
 		maps.Equal(left.Capabilities, right.Capabilities)
@@ -406,7 +588,10 @@ func sameV1Descriptor(left, right v1.Descriptor) bool {
 func cloneApplicationConfig(source ApplicationConfig) ApplicationConfig {
 	result := source
 	result.ASR.Descriptor = cloneV1Descriptor(source.ASR.Descriptor)
+	result.ASR.Configuration = slices.Clone(source.ASR.Configuration)
+	result.Model.Configuration = slices.Clone(source.Model.Configuration)
 	result.TTS.Descriptor = cloneV1Descriptor(source.TTS.Descriptor)
+	result.TTS.Configuration = slices.Clone(source.TTS.Configuration)
 	result.Tools = cloneToolDeclarations(source.Tools)
 	result.Target = cloneTarget(source.Target)
 	return result

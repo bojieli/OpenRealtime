@@ -15,6 +15,7 @@ func snapshotConfig(source Config) Config {
 	result.PlanOptions.OptionalDependencies = slices.Clone(source.PlanOptions.OptionalDependencies)
 	result.Catalog = cloneCatalog(source.Catalog)
 	result.SecretCatalog = cloneSecretCatalog(source.SecretCatalog)
+	result.Readiness = slices.Clone(source.Readiness)
 	if source.TraceRecording != nil {
 		recording := *source.TraceRecording
 		result.TraceRecording = &recording

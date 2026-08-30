@@ -424,6 +424,24 @@ type LLMRequest struct {
 	RequestTimeout time.Duration
 }
 
+// DescribeLLM validates through the exact live constructor with a non-secret
+// sentinel credential. Adapter constructors allocate no network resource, so
+// preflight stays resource-free while sharing all normalization and validation
+// (including dialect-specific effort and sampling rules) with live sessions.
+func DescribeLLM(request LLMRequest) (continuation.Descriptor, error) {
+	request.APIKey = "launch-profile-preflight-sentinel"
+	request.KeyEnv = ""
+	provider, err := NewLLM(request)
+	if err != nil {
+		return continuation.Descriptor{}, err
+	}
+	descriptor := provider.Descriptor()
+	if err := continuation.ValidateDescriptor(descriptor); err != nil {
+		return continuation.Descriptor{}, err
+	}
+	return descriptor, nil
+}
+
 // NewLLM builds the configured provider.
 //
 // Everything a phase decides - authority over tools, authority over speech,

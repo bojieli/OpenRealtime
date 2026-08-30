@@ -110,13 +110,25 @@ type Config struct {
 	Inspection      graphruntime.InspectionConfig
 	ShutdownTimeout time.Duration
 	TraceRecording  *graphbinding.TraceRecordingConfig
+	// Readiness contains credential/static-configuration checks for only the
+	// plugins selected by this exact launch. Checks are retained as lazy
+	// callbacks: New validates their identities but never invokes them during
+	// resource-free profile preflight.
+	Readiness []ReadinessCheck
+}
+
+// ReadinessCheck is one selected plugin's lazy readiness contract.
+type ReadinessCheck struct {
+	Name  string
+	Check func(context.Context) error
 }
 
 // Result retains the immutable plan for management/catalog uses and the
 // prepared NativeBinding used directly as a server.SessionProvider.
 type Result struct {
-	Plan    *graphconfig.Plan
-	Binding *graphbinding.NativeBinding
+	Plan      *graphconfig.Plan
+	Binding   *graphbinding.NativeBinding
+	Readiness []ReadinessCheck
 }
 
 // New validates and seals a graph-native session provider without acquiring a
@@ -142,6 +154,9 @@ func New(ctx context.Context, source Config) (Result, error) {
 	}
 
 	config := snapshotConfig(source)
+	if err := validateReadiness(config.Readiness); err != nil {
+		return Result{}, fmt.Errorf("launch graph-native provider readiness: %w", err)
+	}
 	discovery, err := config.Catalog.Assembly.Discovery()
 	if err != nil {
 		return Result{}, fmt.Errorf("launch graph-native provider catalog: %w", err)
@@ -200,7 +215,28 @@ func New(ctx context.Context, source Config) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("launch graph-native provider binding: %w", err)
 	}
-	return Result{Plan: plan, Binding: native}, nil
+	return Result{Plan: plan, Binding: native, Readiness: slices.Clone(config.Readiness)}, nil
+}
+
+func validateReadiness(checks []ReadinessCheck) error {
+	if len(checks) > maximumAdapterPlugins {
+		return fmt.Errorf("catalog has %d checks; maximum is %d", len(checks), maximumAdapterPlugins)
+	}
+	seen := make(map[string]struct{}, len(checks))
+	for index, check := range checks {
+		if check.Name == "" || strings.TrimSpace(check.Name) != check.Name ||
+			len(check.Name) > maximumPluginReferenceBytes {
+			return fmt.Errorf("check %d has a non-canonical name", index)
+		}
+		if check.Check == nil {
+			return fmt.Errorf("check %q has a nil callback", check.Name)
+		}
+		if _, duplicate := seen[check.Name]; duplicate {
+			return fmt.Errorf("check %q is registered more than once", check.Name)
+		}
+		seen[check.Name] = struct{}{}
+	}
+	return nil
 }
 
 func indexAdapters(source []AdapterPlugin) (map[string]AdapterPlugin, error) {
