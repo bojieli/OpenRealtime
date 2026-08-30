@@ -2052,6 +2052,9 @@ func TestReviewBundleResumeRecoversRejectedOuterReviewWithoutManifest(t *testing
 	if _, err := os.Lstat(filepath.Join(directory, "REVIEW.md")); !os.IsNotExist(err) {
 		t.Fatalf("rejected outer review survived recovery: %v", err)
 	}
+	if info, err := os.Lstat(directory); err != nil || info.Mode().Perm() != 0o700 {
+		t.Fatalf("resumable review root is not writable: info=%v error=%v", info, err)
+	}
 	if err := resumed.Close(); err != nil {
 		t.Fatal(err)
 	}

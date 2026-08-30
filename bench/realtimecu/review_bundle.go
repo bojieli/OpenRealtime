@@ -586,7 +586,29 @@ func ResumeReviewBundle(
 	if err != nil || !bytes.Equal(canonical, resultPayload) {
 		return fail(errors.New("resumable realtime computer-use result is noncanonical"))
 	}
+	if err := makeReviewRootWritableForResume(directory, root); err != nil {
+		return fail(err)
+	}
 	return bundle, nil
+}
+
+func makeReviewRootWritableForResume(directory string, root *os.Root) error {
+	identity, err := verifyReviewRootIdentity(directory, root, nil)
+	if err != nil {
+		return err
+	}
+	if err := chmodReviewEntryHandle(root, ".", identity, 0o700); err != nil {
+		return errors.New("make resumable realtime computer-use review root writable")
+	}
+	anchored, rootErr := root.Stat(".")
+	current, pathErr := os.Lstat(directory)
+	if rootErr != nil || pathErr != nil || !anchored.IsDir() || !current.IsDir() ||
+		current.Mode()&os.ModeSymlink != 0 || !os.SameFile(identity, anchored) ||
+		!os.SameFile(anchored, current) || anchored.Mode().Perm() != 0o700 {
+		_ = chmodReviewEntryHandle(root, ".", identity, 0o500)
+		return errors.New("resumable realtime computer-use review root changed while opening")
+	}
+	return nil
 }
 
 func resumedReviewActions(source []realtimeCUReviewAction) ([]ActionRecord, error) {
