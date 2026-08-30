@@ -56,6 +56,13 @@ type scenarioProfileOptions struct {
 	modelRetainReason  bool
 	modelTemperature   float64
 	modelTimeoutMS     int64
+	policyProvider     string
+	policyModel        string
+	policyURL          string
+	policyTimeoutMS    int64
+	policyGuided       bool
+	policyReasoning    string
+	policyTokenEnv     string
 	ttsProvider        string
 	ttsModel           string
 	ttsURL             string
@@ -78,7 +85,7 @@ type scenarioProfileOptions struct {
 func defaultScenarioProfileOptions() scenarioProfileOptions {
 	return scenarioProfileOptions{
 		name: "openrealtime.launch.scenario-local", revision: 1,
-		architecture: "cascade.controlled@3",
+		architecture: "cascade.composed-policy@1",
 		asrProvider:  "sensevoice", asrModel: "iic/SenseVoiceSmall",
 		asrURL: "http://127.0.0.1:8002/v1", asrPartialMS: 200,
 		asrTimeoutMS: 30_000, asrCadenceMS: 200,
@@ -86,7 +93,10 @@ func defaultScenarioProfileOptions() scenarioProfileOptions {
 		modelURL: "http://127.0.0.1:8000/v1", modelEffort: "minimal",
 		modelVision: true, modelReason: "off", modelTemperature: 0,
 		modelTimeoutMS: 30_000,
-		ttsProvider:    "fish-audio", ttsModel: "fishaudio/fish-speech-1.5",
+		policyProvider: "vllm", policyModel: "qwen-fast",
+		policyURL: "http://127.0.0.1:8000/v1", policyTimeoutMS: 2_000,
+		policyGuided: true, policyReasoning: "chat_template_kwargs",
+		ttsProvider: "fish-audio", ttsModel: "fishaudio/fish-speech-1.5",
 		ttsURL: "http://127.0.0.1:8123/v1/tts", ttsVoice: "default",
 		ttsTimeoutMS: 30_000, ttsSentenceWrap: true, ttsSentenceMinimum: 12,
 		gateThreshold: 0.5, gatePrefixMS: 300, gateSilenceMS: 500,
@@ -140,6 +150,13 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 	flags.BoolVar(&options.modelRetainReason, "model-retain-reasoning", options.modelRetainReason, "retain reasoning in the trajectory")
 	flags.Float64Var(&options.modelTemperature, "model-temperature", options.modelTemperature, "sampling temperature")
 	flags.Int64Var(&options.modelTimeoutMS, "model-timeout-ms", options.modelTimeoutMS, "text-model request timeout")
+	flags.StringVar(&options.policyProvider, "policy-provider", options.policyProvider, "installed enumerated semantic-policy provider plugin")
+	flags.StringVar(&options.policyModel, "policy-model", options.policyModel, "exact semantic-policy model")
+	flags.StringVar(&options.policyURL, "policy-url", options.policyURL, "exact semantic-policy base URL")
+	flags.Int64Var(&options.policyTimeoutMS, "policy-timeout-ms", options.policyTimeoutMS, "semantic-policy decision timeout")
+	flags.BoolVar(&options.policyGuided, "policy-guided-choice", options.policyGuided, "request provider-side enumerated-choice decoding")
+	flags.StringVar(&options.policyReasoning, "policy-reasoning", options.policyReasoning, "semantic-policy reasoning control")
+	flags.StringVar(&options.policyTokenEnv, "policy-token-env", options.policyTokenEnv, "optional provider-owned semantic-policy credential environment name")
 	flags.StringVar(&options.ttsProvider, "tts-provider", options.ttsProvider, "installed TTS provider plugin")
 	flags.StringVar(&options.ttsModel, "tts-model", options.ttsModel, "exact TTS model")
 	flags.StringVar(&options.ttsURL, "tts-url", options.ttsURL, "exact TTS endpoint")
@@ -210,8 +227,9 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 	fmt.Fprintf(output, "fingerprint %s\n", profile.Fingerprint)
 	fmt.Fprintf(output, "plan        %s\n", profile.Plan.PlanFingerprint)
 	fmt.Fprintf(output, "executable  %s\n", profile.Server.GatewayArtifact.Digest)
-	fmt.Fprintf(output, "providers   asr=%s/%s model=%s/%s tts=%s/%s\n",
-		options.asrProvider, options.asrModel, options.modelProvider, options.modelName,
+	fmt.Fprintf(output, "providers   asr=%s/%s policy=%s/%s model=%s/%s tts=%s/%s\n",
+		options.asrProvider, options.asrModel, options.policyProvider, options.policyModel,
+		options.modelProvider, options.modelName,
 		options.ttsProvider, options.ttsModel)
 	return nil
 }
@@ -241,7 +259,15 @@ func freezeProductionScenarioProfile(
 	if err != nil {
 		return launchprofile.Document{}, nil, err
 	}
-	model, err := scenarioProfileModelSelection(inventory, options)
+	policy, err := scenarioProfilePolicySelection(inventory, options)
+	if err != nil {
+		return launchprofile.Document{}, nil, err
+	}
+	model, err := scenarioProfileModelSelection(inventory, options, "voice")
+	if err != nil {
+		return launchprofile.Document{}, nil, err
+	}
+	silentModel, err := scenarioProfileModelSelection(inventory, options, "silent")
 	if err != nil {
 		return launchprofile.Document{}, nil, err
 	}
@@ -264,7 +290,7 @@ func freezeProductionScenarioProfile(
 	application := scenarioconversation.ApplicationConfig{
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
 		Architecture:  architecture.Identity(),
-		ASR:           asr, Model: model, TTS: tts,
+		ASR:           asr, Policy: policy, Model: model, SilentModel: silentModel, TTS: tts,
 		Tools: tools,
 		Target: computeruse.Target{
 			Name: "scenario-client", Sources: []string{scenarioconversation.SourceMessage},
@@ -389,7 +415,7 @@ func scenarioProfileASRSelection(
 }
 
 func scenarioProfileModelSelection(
-	inventory serveScenarioProviders, options scenarioProfileOptions,
+	inventory serveScenarioProviders, options scenarioProfileOptions, speechAuthority string,
 ) (scenarioconversation.ApplicationModelSelection, error) {
 	reference := serveProviderReference("model", options.modelProvider)
 	for _, registration := range inventory.Models {
@@ -401,7 +427,7 @@ func scenarioProfileModelSelection(
 			FormatVersion: 1, Model: options.modelName, BaseURL: options.modelURL,
 			Effort: options.modelEffort, Vision: &vision, Reason: options.modelReason,
 			RetainReasoning: &retain, Temperature: &temperature,
-			RequestTimeoutMS: options.modelTimeoutMS,
+			RequestTimeoutMS: options.modelTimeoutMS, SpeechAuthority: speechAuthority,
 		})
 		if err != nil {
 			return scenarioconversation.ApplicationModelSelection{}, err
@@ -416,6 +442,35 @@ func scenarioProfileModelSelection(
 		}, nil
 	}
 	return scenarioconversation.ApplicationModelSelection{}, fmt.Errorf("scenario model inventory is missing %q", reference)
+}
+
+func scenarioProfilePolicySelection(
+	inventory serveScenarioProviders, options scenarioProfileOptions,
+) (scenarioconversation.ApplicationPolicySelection, error) {
+	reference := serveProviderReference("policy", options.policyProvider)
+	for _, registration := range inventory.Policies {
+		if registration.Reference != reference {
+			continue
+		}
+		guided := options.policyGuided
+		raw, err := json.Marshal(servePolicyConfiguration{
+			FormatVersion: 1, Model: options.policyModel, BaseURL: options.policyURL,
+			RequestTimeoutMS: options.policyTimeoutMS, GuidedChoice: &guided,
+			Reasoning: options.policyReasoning, TokenEnvironment: options.policyTokenEnv,
+		})
+		if err != nil {
+			return scenarioconversation.ApplicationPolicySelection{}, err
+		}
+		descriptor, err := registration.DescribeConfiguration(raw)
+		if err != nil {
+			return scenarioconversation.ApplicationPolicySelection{}, fmt.Errorf("describe scenario semantic policy: %w", err)
+		}
+		return scenarioconversation.ApplicationPolicySelection{
+			Reference: reference, Artifact: registration.Artifact,
+			Descriptor: descriptor, Configuration: raw,
+		}, nil
+	}
+	return scenarioconversation.ApplicationPolicySelection{}, fmt.Errorf("scenario semantic policy inventory is missing %q", reference)
 }
 
 func scenarioProfileTTSSelection(

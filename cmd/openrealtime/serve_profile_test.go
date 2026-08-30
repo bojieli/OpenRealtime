@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/binary"
@@ -26,9 +27,11 @@ import (
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	scenarioconversation "github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
+	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	openrealtime "github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/bojieli/OpenRealtime/providers"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -65,8 +68,8 @@ func TestProductionServeLaunchProfileResolvesExactInstalledApplications(t *testi
 		composition.Graph.ServerBundle == nil {
 		t.Fatal("production launch-profile composition omitted the generic graph/server bundle")
 	}
-	if len(composition.Graph.Readiness) != 3 || composition.Readiness.Ready() {
-		t.Fatalf("production selected readiness checks = %d ready=%t, want 3 false",
+	if len(composition.Graph.Readiness) != 5 || composition.Readiness.Ready() {
+		t.Fatalf("production selected readiness checks = %d ready=%t, want 5 false",
 			len(composition.Graph.Readiness), composition.Readiness.Ready())
 	}
 	if composition.Graph.GraphPlan.Identity() != profile.Plan ||
@@ -122,7 +125,7 @@ func TestProductionServeProfileDescriptorsMatchLazyLiveFactories(t *testing.T) {
 	modelRaw := mustJSON(t, serveModelConfiguration{
 		FormatVersion: 1, Model: "qwen-fast", BaseURL: "http://127.0.0.1:8000/v1",
 		Effort: "minimal", Vision: &vision, Reason: "off", RetainReasoning: &retain,
-		Temperature: &zero, RequestTimeoutMS: 30_000,
+		Temperature: &zero, RequestTimeoutMS: 30_000, SpeechAuthority: "voice",
 	})
 	modelDescriptor, err := modelRegistration.DescribeConfiguration(modelRaw)
 	if err != nil {
@@ -135,6 +138,26 @@ func TestProductionServeProfileDescriptorsMatchLazyLiveFactories(t *testing.T) {
 	if model.Descriptor() != modelDescriptor {
 		t.Fatalf("live model descriptor = %+v, registered %+v",
 			model.Descriptor(), modelDescriptor)
+	}
+	policyRegistration := inventory.Policies[0]
+	guided := true
+	policyRaw := mustJSON(t, servePolicyConfiguration{
+		FormatVersion: 1, Model: "qwen-fast", BaseURL: "http://127.0.0.1:8000/v1",
+		RequestTimeoutMS: 2_000, GuidedChoice: &guided, Reasoning: "chat_template_kwargs",
+	})
+	policyDescriptor, err := policyRegistration.DescribeConfiguration(policyRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := policyRegistration.FactoryConfiguration(
+		context.Background(), legacy.Options{}, policyRaw,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if policy.Descriptor() != policyDescriptor {
+		t.Fatalf("live semantic-policy descriptor = %+v, registered %+v",
+			policy.Descriptor(), policyDescriptor)
 	}
 	ttsRegistration := findServeTTSRegistration(t, inventory, "openai-compatible")
 	wrap := true
@@ -487,7 +510,7 @@ func TestProfileProviderPreflightRejectsStaticConfigurationBeforeCredentials(t *
 	malformed := mustJSON(t, serveModelConfiguration{
 		FormatVersion: 1, Model: "gpt-test", BaseURL: "ftp://example.test/v1",
 		Effort: "minimal", Vision: &vision, Reason: "off", RetainReasoning: &retain,
-		RequestTimeoutMS: 30_000,
+		RequestTimeoutMS: 30_000, SpeechAuthority: "voice",
 	})
 	if _, err := registration.DescribeConfiguration(malformed); err == nil ||
 		!strings.Contains(err.Error(), "unsupported scheme") {
@@ -497,6 +520,115 @@ func TestProfileProviderPreflightRejectsStaticConfigurationBeforeCredentials(t *
 		context.Background(), legacy.Options{}, malformed,
 	); err == nil || !strings.Contains(err.Error(), "unsupported scheme") {
 		t.Fatalf("live static configuration error = %v", err)
+	}
+}
+
+func TestSemanticPolicyConfigurationPinsDescriptorAndProviderOwnedCredential(t *testing.T) {
+	artifacts, err := executableServeProfileArtifacts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inventory, err := newServeScenarioProviders(artifacts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registration := inventory.Policies[0]
+	guided := true
+	const credentialEnvironment = "OPENREALTIME_TEST_POLICY_TOKEN"
+	raw := mustJSON(t, servePolicyConfiguration{
+		FormatVersion: 1, Model: "qwen-fast", BaseURL: "http://127.0.0.1:8000/v1",
+		RequestTimeoutMS: 2_000, GuidedChoice: &guided, Reasoning: "chat_template_kwargs",
+		TokenEnvironment: credentialEnvironment,
+	})
+	t.Setenv(credentialEnvironment, "")
+	descriptor, err := registration.DescribeConfiguration(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registration.FactoryConfiguration(
+		context.Background(), legacy.Options{}, raw,
+	); err == nil || !strings.Contains(err.Error(), credentialEnvironment) {
+		t.Fatalf("missing provider-owned policy credential error = %v", err)
+	}
+	t.Setenv(credentialEnvironment, "policy-secret-value")
+	provider, err := registration.FactoryConfiguration(
+		context.Background(), legacy.Options{}, raw,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.Descriptor() != descriptor {
+		t.Fatalf("credentialed semantic-policy descriptor = %+v, want %+v",
+			provider.Descriptor(), descriptor)
+	}
+	t.Setenv(credentialEnvironment, "rotated-policy-secret")
+	rotated, err := registration.DescribeConfiguration(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rotated != descriptor {
+		t.Fatal("provider credential value leaked into the frozen semantic-policy descriptor")
+	}
+	driftedRaw := mustJSON(t, servePolicyConfiguration{
+		FormatVersion: 1, Model: "qwen-fast-revision-2", BaseURL: "http://127.0.0.1:8000/v1",
+		RequestTimeoutMS: 2_000, GuidedChoice: &guided, Reasoning: "chat_template_kwargs",
+		TokenEnvironment: credentialEnvironment,
+	})
+	drifted, err := registration.DescribeConfiguration(driftedRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if drifted.ConfigurationDigest == descriptor.ConfigurationDigest || drifted.Model == descriptor.Model {
+		t.Fatalf("semantic-policy configuration drift was not sealed: old=%+v new=%+v",
+			descriptor, drifted)
+	}
+}
+
+func TestSemanticPolicyConfigurationRejectsUnpinnedAndAmbiguousValues(t *testing.T) {
+	guided := true
+	valid := servePolicyConfiguration{
+		FormatVersion: 1, Model: "qwen-fast", BaseURL: "http://127.0.0.1:8000/v1",
+		RequestTimeoutMS: 2_000, GuidedChoice: &guided, Reasoning: "chat_template_kwargs",
+	}
+	tests := []struct {
+		name   string
+		mutate func(*servePolicyConfiguration)
+		want   string
+	}{
+		{name: "guided choice omitted", mutate: func(config *servePolicyConfiguration) {
+			config.GuidedChoice = nil
+		}, want: "explicit boolean"},
+		{name: "reasoning control unknown", mutate: func(config *servePolicyConfiguration) {
+			config.Reasoning = "automatic"
+		}, want: "not canonical"},
+		{name: "credential environment lowercase", mutate: func(config *servePolicyConfiguration) {
+			config.TokenEnvironment = "policy_token"
+		}, want: "token_environment"},
+		{name: "credential environment starts with digit", mutate: func(config *servePolicyConfiguration) {
+			config.TokenEnvironment = "7_POLICY_TOKEN"
+		}, want: "token_environment"},
+		{name: "mutable endpoint omitted", mutate: func(config *servePolicyConfiguration) {
+			config.BaseURL = ""
+		}, want: "base_url"},
+		{name: "timeout unbounded", mutate: func(config *servePolicyConfiguration) {
+			config.RequestTimeoutMS = 0
+		}, want: "request_timeout_ms"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config := valid
+			test.mutate(&config)
+			if _, _, err := decodeServePolicyConfiguration("vllm", mustJSON(t, config)); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("invalid semantic-policy configuration error = %v, want %q", err, test.want)
+			}
+		})
+	}
+	unknown := append([]byte(nil), mustJSON(t, valid)...)
+	unknown = bytes.TrimSuffix(unknown, []byte("}"))
+	unknown = append(unknown, []byte(`,"unknown":true}`)...)
+	if _, _, err := decodeServePolicyConfiguration("vllm", unknown); err == nil ||
+		!strings.Contains(err.Error(), "unknown") {
+		t.Fatalf("unknown semantic-policy field error = %v", err)
 	}
 }
 
@@ -776,10 +908,46 @@ func TestSecureServeLaunchProfileReadHonorsInFlightCancellation(t *testing.T) {
 
 type serveProfileFactoryCounters struct {
 	asr           atomic.Int32
+	policy        atomic.Int32
 	model         atomic.Int32
 	tts           atomic.Int32
 	modelProvider *serveProfileModel
 	ttsProvider   *serveProfileTTS
+}
+
+type serveProfilePolicy struct {
+	descriptor policyelements.SemanticDeciderDescriptor
+}
+
+func (provider serveProfilePolicy) Name() string { return "serve-profile-policy" }
+func (provider serveProfilePolicy) Descriptor() policyelements.SemanticDeciderDescriptor {
+	return provider.descriptor
+}
+func (serveProfilePolicy) Decide(
+	_ context.Context, decision coreinteraction.Decision,
+) (coreinteraction.Outcome, error) {
+	for index, option := range decision.Options {
+		if option == string(coreinteraction.ActAnswer) {
+			return coreinteraction.Outcome{Index: index, Option: option}, nil
+		}
+	}
+	return coreinteraction.Outcome{}, errors.New("answer act is unavailable")
+}
+
+func serveProfilePolicyDescriptor() policyelements.SemanticDeciderDescriptor {
+	return policyelements.SemanticDeciderDescriptor{
+		Provider: "test", Model: "serve-profile-policy", Protocol: "test-enumerated", Revision: "1",
+		ConfigurationDigest: "sha256:" + strings.Repeat("0", 64), DecisionTimeoutMS: 1000,
+	}
+}
+
+type serveProfileSpeechAuthorityProvider struct {
+	continuation.Provider
+	descriptor continuation.Descriptor
+}
+
+func (provider serveProfileSpeechAuthorityProvider) Descriptor() continuation.Descriptor {
+	return provider.descriptor
 }
 
 func serveProfileTestProviders(
@@ -802,6 +970,10 @@ func serveProfileTestProviders(
 	if err != nil {
 		panic(err)
 	}
+	policyArtifact, err := serveProviderArtifact(artifacts.Gateway, "policy", "test")
+	if err != nil {
+		panic(err)
+	}
 	ttsArtifact, err := serveProviderArtifact(artifacts.Gateway, "tts", "test")
 	if err != nil {
 		panic(err)
@@ -815,6 +987,9 @@ func serveProfileTestProviders(
 		},
 	}
 	modelDescriptor := modelDescriptorForServeProfileTest()
+	silentModelDescriptor := modelDescriptor
+	silentModelDescriptor.SpeechAuthority = continuation.SpeechAuthoritySilent
+	policyDescriptor := serveProfilePolicyDescriptor()
 	ttsDescriptor := serveProfileTTSDescriptor()
 	return serveScenarioProviders{
 		ASR: []scenarioconversation.ASRFactoryRegistration{{
@@ -827,6 +1002,16 @@ func serveProfileTestProviders(
 				return serveProfileASR{descriptor: asrDescriptor}, nil
 			},
 		}},
+		Policies: []scenarioconversation.PolicyFactoryRegistration{{
+			ApplicationPolicySelection: scenarioconversation.ApplicationPolicySelection{
+				Reference: "provider.openrealtime.policy.test.v1", Artifact: policyArtifact,
+				Descriptor: policyDescriptor,
+			},
+			Factory: func(context.Context, legacy.Options) (policyelements.SemanticDecider, error) {
+				counters.policy.Add(1)
+				return serveProfilePolicy{descriptor: policyDescriptor}, nil
+			},
+		}},
 		Models: []scenarioconversation.ModelFactoryRegistration{{
 			ApplicationModelSelection: scenarioconversation.ApplicationModelSelection{
 				Reference: "provider.openrealtime.model.test.v1", Artifact: modelArtifact,
@@ -835,6 +1020,17 @@ func serveProfileTestProviders(
 			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
 				counters.model.Add(1)
 				return counters.modelProvider, nil
+			},
+		}, {
+			ApplicationModelSelection: scenarioconversation.ApplicationModelSelection{
+				Reference: "provider.openrealtime.model-silent.test.v1", Artifact: modelArtifact,
+				Descriptor: silentModelDescriptor,
+			},
+			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
+				counters.model.Add(1)
+				return serveProfileSpeechAuthorityProvider{
+					Provider: counters.modelProvider, descriptor: silentModelDescriptor,
+				}, nil
 			},
 		}},
 		TTS: []scenarioconversation.TTSFactoryRegistration{{
@@ -854,10 +1050,15 @@ func assertServeProfileFactories(
 	t testing.TB, counters *serveProfileFactoryCounters, want int32,
 ) {
 	t.Helper()
-	if counters.asr.Load() != want || counters.model.Load() != want ||
+	modelWant, policyWant := want, want
+	if want > 0 {
+		modelWant = 2 * want
+	}
+	if counters.asr.Load() != want || counters.policy.Load() != policyWant || counters.model.Load() != modelWant ||
 		counters.tts.Load() != want {
-		t.Fatalf("profile provider factories ASR=%d model=%d TTS=%d, want %d each",
-			counters.asr.Load(), counters.model.Load(), counters.tts.Load(), want)
+		t.Fatalf("profile provider factories ASR=%d policy=%d model=%d TTS=%d, want %d/%d/%d/%d",
+			counters.asr.Load(), counters.policy.Load(), counters.model.Load(), counters.tts.Load(),
+			want, policyWant, modelWant, want)
 	}
 }
 
@@ -866,21 +1067,24 @@ func assertServeProviderRegistrationIdentities(
 ) {
 	t.Helper()
 	references := map[string]struct{}{}
-	artifacts := map[string]struct{}{}
+	artifacts := map[string]inspect.ArtifactIdentity{}
 	check := func(reference string, artifact inspect.ArtifactIdentity) {
 		if _, duplicate := references[reference]; duplicate {
 			t.Fatalf("duplicate production provider reference %q", reference)
 		}
-		if _, duplicate := artifacts[artifact.ID]; duplicate {
-			t.Fatalf("duplicate production provider artifact ID %q", artifact.ID)
+		if existing, duplicate := artifacts[artifact.ID]; duplicate && existing != artifact {
+			t.Fatalf("production provider artifact ID %q has multiple identities", artifact.ID)
 		}
 		if err := artifact.Validate(); err != nil {
 			t.Fatal(err)
 		}
 		references[reference] = struct{}{}
-		artifacts[artifact.ID] = struct{}{}
+		artifacts[artifact.ID] = artifact
 	}
 	for _, registration := range inventory.ASR {
+		check(registration.Reference, registration.Artifact)
+	}
+	for _, registration := range inventory.Policies {
 		check(registration.Reference, registration.Artifact)
 	}
 	for _, registration := range inventory.Models {
@@ -919,25 +1123,61 @@ func serveProfileTestASRSelection(
 func serveProfileTestModelSelection(
 	t testing.TB, inventory serveScenarioProviders,
 ) scenarioconversation.ApplicationModelSelection {
+	return serveProfileTestModelSelectionWithAuthority(t, inventory, continuation.SpeechAuthorityVoice)
+}
+
+func serveProfileTestModelSelectionWithAuthority(
+	t testing.TB, inventory serveScenarioProviders, authority continuation.SpeechAuthority,
+) scenarioconversation.ApplicationModelSelection {
 	t.Helper()
 	if len(inventory.Models) == 0 {
 		t.Fatal("empty test model inventory")
 	}
 	if inventory.Models[0].DescribeConfiguration == nil {
-		return inventory.Models[0].ApplicationModelSelection
+		index := 0
+		if authority == continuation.SpeechAuthoritySilent {
+			index = 1
+		}
+		return inventory.Models[index].ApplicationModelSelection
 	}
 	registration := findServeModelRegistration(t, inventory, "vllm")
 	vision, retain, zero := true, false, 0.0
 	raw := mustJSON(t, serveModelConfiguration{
 		FormatVersion: 1, Model: "qwen-fast", BaseURL: "http://127.0.0.1:8000/v1",
 		Effort: "minimal", Vision: &vision, Reason: "off", RetainReasoning: &retain,
-		Temperature: &zero, RequestTimeoutMS: 30_000,
+		Temperature: &zero, RequestTimeoutMS: 30_000, SpeechAuthority: string(authority),
 	})
 	descriptor, err := registration.DescribeConfiguration(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return scenarioconversation.ApplicationModelSelection{
+		Reference: registration.Reference, Artifact: registration.Artifact,
+		Descriptor: descriptor, Configuration: raw,
+	}
+}
+
+func serveProfileTestPolicySelection(
+	t testing.TB, inventory serveScenarioProviders,
+) scenarioconversation.ApplicationPolicySelection {
+	t.Helper()
+	if len(inventory.Policies) == 0 {
+		t.Fatal("empty test semantic-policy inventory")
+	}
+	if inventory.Policies[0].DescribeConfiguration == nil {
+		return inventory.Policies[0].ApplicationPolicySelection
+	}
+	registration := inventory.Policies[0]
+	guided := true
+	raw := mustJSON(t, servePolicyConfiguration{
+		FormatVersion: 1, Model: "qwen-fast", BaseURL: "http://127.0.0.1:8000/v1",
+		RequestTimeoutMS: 2_000, GuidedChoice: &guided, Reasoning: "chat_template_kwargs",
+	})
+	descriptor, err := registration.DescribeConfiguration(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return scenarioconversation.ApplicationPolicySelection{
 		Reference: registration.Reference, Artifact: registration.Artifact,
 		Descriptor: descriptor, Configuration: raw,
 	}
@@ -1058,14 +1298,17 @@ func freezeServeProfileTestDocumentWithToken(
 	if err != nil {
 		t.Fatal(err)
 	}
-	architecture, err := projectarch.Default().Resolve("cascade.controlled@3")
+	architecture, err := projectarch.Default().Resolve("cascade.composed-policy@1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	application := scenarioconversation.ApplicationConfig{
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
 		Architecture:  architecture.Identity(),
-		ASR:           asr, Model: model, TTS: tts,
+		ASR:           asr, Policy: serveProfileTestPolicySelection(t, host.Providers), Model: model,
+		SilentModel: serveProfileTestModelSelectionWithAuthority(
+			t, host.Providers, continuation.SpeechAuthoritySilent,
+		), TTS: tts,
 		Tools: []scenarioconversation.ToolDeclaration{{
 			Name: "press_key", Description: "Press a reviewed menu key.",
 			Parameters: json.RawMessage(

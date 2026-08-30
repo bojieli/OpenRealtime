@@ -14,11 +14,13 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/adapters/bysentence"
+	"github.com/bojieli/OpenRealtime/adapters/openaicompat"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/asrbuffer"
 	graphnative "github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/continuation"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	"github.com/bojieli/OpenRealtime/gateway"
 	scenarioconversation "github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
@@ -26,6 +28,7 @@ import (
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	"github.com/bojieli/OpenRealtime/graphs"
 	"github.com/bojieli/OpenRealtime/internal/runtimeartifact"
+	"github.com/bojieli/OpenRealtime/policymodel"
 	"github.com/bojieli/OpenRealtime/providers"
 	serverprofile "github.com/bojieli/OpenRealtime/server"
 )
@@ -87,6 +90,7 @@ func executableServeProfileArtifacts() (serveProfileArtifacts, error) {
 
 type serveScenarioProviders struct {
 	ASR        []scenarioconversation.ASRFactoryRegistration
+	Policies   []scenarioconversation.PolicyFactoryRegistration
 	Models     []scenarioconversation.ModelFactoryRegistration
 	TTS        []scenarioconversation.TTSFactoryRegistration
 	Recogniser *asrbuffer.Accumulator
@@ -99,6 +103,54 @@ type serveScenarioProviders struct {
 func newServeScenarioProviders(artifacts serveProfileArtifacts) (serveScenarioProviders, error) {
 	recogniserMetrics := asrbuffer.NewAccumulator()
 	result := serveScenarioProviders{Recogniser: recogniserMetrics}
+	const policyProvider = "vllm"
+	policyArtifact, err := serveProviderArtifact(artifacts.Gateway, "policy", policyProvider)
+	if err != nil {
+		return serveScenarioProviders{}, err
+	}
+	result.Policies = append(result.Policies, scenarioconversation.PolicyFactoryRegistration{
+		ApplicationPolicySelection: scenarioconversation.ApplicationPolicySelection{
+			Reference: serveProviderReference("policy", policyProvider), Artifact: policyArtifact,
+		},
+		DescribeConfiguration: func(raw json.RawMessage) (policyelements.SemanticDeciderDescriptor, error) {
+			_, descriptor, err := decodeServePolicyConfiguration(policyProvider, raw)
+			return descriptor, err
+		},
+		FactoryConfiguration: func(ctx context.Context, _ legacy.Options, raw json.RawMessage) (policyelements.SemanticDecider, error) {
+			if err := profileProviderContext(ctx); err != nil {
+				return nil, err
+			}
+			config, descriptor, err := decodeServePolicyConfiguration(policyProvider, raw)
+			if err != nil {
+				return nil, err
+			}
+			credential, err := profileProviderCredential(config.TokenEnvironment)
+			if err != nil {
+				return nil, err
+			}
+			client, err := policymodel.New(policymodel.Config{
+				BaseURL: config.BaseURL, Model: config.Model, APIKey: credential,
+				Timeout:      time.Duration(config.RequestTimeoutMS) * time.Millisecond,
+				GuidedChoice: *config.GuidedChoice,
+				Reasoning:    openaicompat.ReasoningControl(config.Reasoning),
+			})
+			if err != nil {
+				return nil, err
+			}
+			return &serveSemanticDecider{Client: client, descriptor: descriptor}, nil
+		},
+		ReadinessConfiguration: func(ctx context.Context, raw json.RawMessage) error {
+			if err := profileProviderContext(ctx); err != nil {
+				return err
+			}
+			config, _, err := decodeServePolicyConfiguration(policyProvider, raw)
+			if err != nil {
+				return err
+			}
+			_, err = profileProviderCredential(config.TokenEnvironment)
+			return err
+		},
+	})
 	for _, entry := range providers.ASRs() {
 		name := entry.Name
 		artifact, err := serveProviderArtifact(artifacts.Gateway, "asr", name)
@@ -277,6 +329,29 @@ func profileProviderContext(ctx context.Context) error {
 	return context.Cause(ctx)
 }
 
+type serveSemanticDecider struct {
+	*policymodel.Client
+	descriptor policyelements.SemanticDeciderDescriptor
+}
+
+func (decider *serveSemanticDecider) Descriptor() policyelements.SemanticDeciderDescriptor {
+	if decider == nil {
+		return policyelements.SemanticDeciderDescriptor{}
+	}
+	return decider.descriptor
+}
+
+func profileProviderCredential(environment string) (string, error) {
+	if environment == "" {
+		return "", nil
+	}
+	credential := strings.TrimSpace(os.Getenv(environment))
+	if credential == "" {
+		return "", fmt.Errorf("semantic policy credential environment %s is not set", environment)
+	}
+	return credential, nil
+}
+
 func closeReadinessResource(resource any) error {
 	if closer, ok := resource.(io.Closer); ok {
 		return closer.Close()
@@ -312,8 +387,9 @@ func newServeProfileHost(
 			ProviderArtifact:    artifacts.ScenarioProvider,
 			RuntimeArtifact:     artifacts.ScenarioRuntime,
 			DependencyArtifact:  artifacts.ScenarioDependencies,
-			ASR:                 providerInventory.ASR, Models: providerInventory.Models,
-			TTS: providerInventory.TTS,
+			ASR:                 providerInventory.ASR, Policies: providerInventory.Policies,
+			Models: providerInventory.Models,
+			TTS:    providerInventory.TTS,
 		},
 	)
 	if err != nil {

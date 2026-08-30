@@ -43,13 +43,18 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 	}
 	for _, exact := range []string{
 		`"architecture":{"fingerprint":"sha256:`,
-		`"id":"cascade.controlled","revision":3`,
+		`"id":"cascade.composed-policy","revision":1`,
 		`"reference":"provider.openrealtime.asr.sensevoice.v1"`,
 		`"model":"iic/SenseVoiceSmall"`,
 		`"base_url":"http://127.0.0.1:8002/v1"`,
+		`"reference":"provider.openrealtime.policy.vllm.v1"`,
+		`"guided_choice":true`,
+		`"reasoning":"chat_template_kwargs"`,
 		`"reference":"provider.openrealtime.model.vllm.v1"`,
 		`"model":"qwen-fast"`,
 		`"base_url":"http://127.0.0.1:8000/v1"`,
+		`"speech_authority":"voice"`,
+		`"speech_authority":"silent"`,
 		`"reference":"provider.openrealtime.tts.fish-audio.v1"`,
 		`"model":"fishaudio/fish-speech-1.5"`,
 		`"base_url":"http://127.0.0.1:8123/v1/tts"`,
@@ -159,7 +164,7 @@ func TestScenarioProfileFreezeRejectsUnsupportedArchitectureBeforeOutput(t *test
 	err := runLaunchProfile([]string{
 		"scenario", "-out", path, "-architecture", "cascade.text-policy@3",
 	}, &bytes.Buffer{})
-	if err == nil || !strings.Contains(err.Error(), "not an exactly attested predicate controller") {
+	if err == nil || !strings.Contains(err.Error(), "not the exact composed semantic-policy controller") {
 		t.Fatalf("unsupported-architecture error = %v", err)
 	}
 	if _, err := os.Lstat(path); !os.IsNotExist(err) {

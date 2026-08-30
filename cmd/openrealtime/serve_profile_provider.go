@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/adapters/openaicompat"
 	"github.com/bojieli/OpenRealtime/continuation"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	"github.com/bojieli/OpenRealtime/internal/elementconfig"
 	"github.com/bojieli/OpenRealtime/providers"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -37,6 +40,17 @@ type serveModelConfiguration struct {
 	RetainReasoning  *bool    `json:"retain_reasoning"`
 	Temperature      *float64 `json:"temperature"`
 	RequestTimeoutMS int64    `json:"request_timeout_ms"`
+	SpeechAuthority  string   `json:"speech_authority"`
+}
+
+type servePolicyConfiguration struct {
+	FormatVersion    uint64 `json:"format_version"`
+	Model            string `json:"model"`
+	BaseURL          string `json:"base_url"`
+	RequestTimeoutMS int64  `json:"request_timeout_ms"`
+	GuidedChoice     *bool  `json:"guided_choice"`
+	Reasoning        string `json:"reasoning"`
+	TokenEnvironment string `json:"token_environment,omitempty"`
 }
 
 type serveTTSConfiguration struct {
@@ -124,16 +138,77 @@ func decodeServeModelConfiguration(
 	if err := boundedMilliseconds("model request_timeout_ms", config.RequestTimeoutMS, false); err != nil {
 		return config, providers.LLMRequest{}, err
 	}
+	speechAuthority := continuation.SpeechAuthority(config.SpeechAuthority)
+	if speechAuthority != continuation.SpeechAuthorityVoice && speechAuthority != continuation.SpeechAuthoritySilent {
+		return config, providers.LLMRequest{}, errors.New("model speech_authority must be voice or silent")
+	}
 	vision, retain := *config.Vision, *config.RetainReasoning
 	return config, providers.LLMRequest{
 		Provider: provider, Model: config.Model, BaseURL: config.BaseURL,
 		Phase: trajectory.PhaseFast, Effort: effort,
 		ToolAuthority:   continuation.ToolAuthorityPropose,
-		SpeechAuthority: continuation.SpeechAuthorityVoice,
+		SpeechAuthority: speechAuthority,
 		Reason:          reason, Vision: &vision, RetainReasoning: retain,
 		Temperature:    cloneFloat(config.Temperature),
 		RequestTimeout: time.Duration(config.RequestTimeoutMS) * time.Millisecond,
 	}, nil
+}
+
+func decodeServePolicyConfiguration(
+	provider string, source json.RawMessage,
+) (servePolicyConfiguration, policyelements.SemanticDeciderDescriptor, error) {
+	var config servePolicyConfiguration
+	if err := elementconfig.Decode(source, &config); err != nil {
+		return config, policyelements.SemanticDeciderDescriptor{}, fmt.Errorf("decode semantic policy configuration: %w", err)
+	}
+	if config.FormatVersion != serveProviderConfigurationVersion {
+		return config, policyelements.SemanticDeciderDescriptor{}, fmt.Errorf(
+			"semantic policy configuration format is %d, want %d", config.FormatVersion, serveProviderConfigurationVersion,
+		)
+	}
+	if err := exactNonempty("semantic policy provider", provider); err != nil {
+		return config, policyelements.SemanticDeciderDescriptor{}, err
+	}
+	if err := exactNonempty("semantic policy model", config.Model); err != nil {
+		return config, policyelements.SemanticDeciderDescriptor{}, err
+	}
+	if err := exactEndpoint("semantic policy base_url", config.BaseURL, false); err != nil {
+		return config, policyelements.SemanticDeciderDescriptor{}, err
+	}
+	if err := boundedMilliseconds("semantic policy request_timeout_ms", config.RequestTimeoutMS, false); err != nil {
+		return config, policyelements.SemanticDeciderDescriptor{}, err
+	}
+	if config.GuidedChoice == nil {
+		return config, policyelements.SemanticDeciderDescriptor{}, errors.New("semantic policy guided_choice must be an explicit boolean")
+	}
+	reasoning := openaicompat.ReasoningControl(config.Reasoning)
+	switch reasoning {
+	case openaicompat.ReasoningControlNone, openaicompat.ReasoningControlEffort,
+		openaicompat.ReasoningControlThinkingObject, openaicompat.ReasoningControlEnableThinking,
+		openaicompat.ReasoningControlTemplateKwargs:
+	default:
+		return config, policyelements.SemanticDeciderDescriptor{}, errors.New("semantic policy reasoning control is not canonical")
+	}
+	if !optionalEnvironmentName(config.TokenEnvironment) {
+		return config, policyelements.SemanticDeciderDescriptor{}, errors.New("semantic policy token_environment is not canonical")
+	}
+	payload, err := json.Marshal(struct {
+		Provider string                   `json:"provider"`
+		Config   servePolicyConfiguration `json:"configuration"`
+	}{Provider: provider, Config: config})
+	if err != nil {
+		return config, policyelements.SemanticDeciderDescriptor{}, err
+	}
+	digest := sha256.Sum256(payload)
+	descriptor := policyelements.SemanticDeciderDescriptor{
+		Provider: provider, Model: config.Model, Protocol: "openai-chat-completions",
+		Revision: "policymodel-client-v1", ConfigurationDigest: fmt.Sprintf("sha256:%x", digest[:]),
+		DecisionTimeoutMS: config.RequestTimeoutMS,
+	}
+	if err := descriptor.Validate(); err != nil {
+		return config, policyelements.SemanticDeciderDescriptor{}, err
+	}
+	return config, descriptor, nil
 }
 
 func decodeServeTTSConfiguration(
@@ -183,6 +258,23 @@ func exactNonempty(label, value string) error {
 		return fmt.Errorf("%s is empty or non-canonical", label)
 	}
 	return nil
+}
+
+func optionalEnvironmentName(value string) bool {
+	if value == "" {
+		return true
+	}
+	if value != strings.TrimSpace(value) || len(value) > 256 {
+		return false
+	}
+	for index, character := range value {
+		if character == '_' || character >= 'A' && character <= 'Z' ||
+			index > 0 && character >= '0' && character <= '9' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func exactEndpoint(label, value string, websocket bool) error {
