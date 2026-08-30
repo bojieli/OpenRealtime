@@ -570,9 +570,15 @@ func probeRealtimeCUExpectedResolution(
 	defer func() {
 		closeContext, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer closeCancel()
-		resultErr = errors.Join(resultErr, runtime.Close(
+		if closeErr := runtime.Close(
 			closeContext, errors.New("profile resolution probe complete"),
-		))
+		); closeErr != nil {
+			// A resolution is not publishable unless the resource-free probe also
+			// reached its bounded terminal lifecycle. Do not hand a caller a
+			// tempting non-zero value alongside that failure.
+			resolution = bench.LiveResolution{}
+			resultErr = errors.Join(resultErr, closeErr)
+		}
 	}()
 
 	configuration := bench.ArtifactIdentity{

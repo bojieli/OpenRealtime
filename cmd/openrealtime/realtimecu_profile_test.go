@@ -14,9 +14,12 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	legacy "github.com/bojieli/OpenRealtime/binding"
 	realtimecubinding "github.com/bojieli/OpenRealtime/graph/binding/realtimecu"
+	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
+	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
 )
@@ -158,6 +161,186 @@ func realtimeCUResolutionElement(
 	}
 	t.Fatalf("Realtime-CU resolution omitted node %q", node)
 	return bench.ElementResolution{}
+}
+
+func TestProbeRealtimeCUExpectedResolutionClosesEveryFailurePath(t *testing.T) {
+	binding, plan := realtimeCUProfileProbeFixture(t)
+	closeFailure := errors.New("injected profile probe close failure")
+	tests := []struct {
+		name              string
+		withoutInspection bool
+		forceNotReady     bool
+		closeErr          error
+		context           func() (context.Context, context.CancelFunc)
+		want              error
+	}{
+		{
+			name: "runtime without inspection", withoutInspection: true,
+			context: func() (context.Context, context.CancelFunc) {
+				return context.WithCancel(context.Background())
+			},
+		},
+		{
+			name: "readiness deadline", forceNotReady: true,
+			context: func() (context.Context, context.CancelFunc) {
+				return context.WithTimeout(context.Background(), 20*time.Millisecond)
+			},
+			want: context.DeadlineExceeded,
+		},
+		{
+			name: "terminal close failure", closeErr: closeFailure,
+			context: func() (context.Context, context.CancelFunc) {
+				return context.WithTimeout(context.Background(), 5*time.Second)
+			},
+			want: closeFailure,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := &realtimeCUProfileProbeBindingFixture{
+				Binding: binding, withoutInspection: test.withoutInspection,
+				forceNotReady: test.forceNotReady, closeErr: test.closeErr,
+				started: make(chan realtimeCUProfileProbeClosedRuntime, 1),
+			}
+			ctx, cancel := test.context()
+			defer cancel()
+			resolution, err := probeRealtimeCUExpectedResolution(ctx, fixture, plan)
+			if err == nil {
+				t.Fatal("failed profile probe returned no error")
+			}
+			if test.want != nil && !errors.Is(err, test.want) {
+				t.Fatalf("profile probe error = %v, want %v", err, test.want)
+			}
+			if len(resolution.Elements) != 0 || resolution.Deployment != nil {
+				t.Fatalf("failed profile probe returned a usable resolution: %+v", resolution)
+			}
+			runtime := <-fixture.started
+			if !runtime.probeClosed() {
+				t.Fatal("failed profile probe did not close its started runtime")
+			}
+		})
+	}
+}
+
+func realtimeCUProfileProbeFixture(t *testing.T) (legacy.Binding, *graphconfig.Plan) {
+	t.Helper()
+	deployments := realtimeCUProfileTestDeployments()
+	verifier := &fixtureRealtimeCUDeploymentVerifier{identity: deployments}
+	artifacts, err := executableServeProfileArtifacts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := defaultRealtimeCUProfileOptions()
+	options.deployments = deployments
+	options.deploymentVerifier = verifier
+	t.Setenv(options.tokenEnv, "realtime-cu-profile-probe-test-token")
+	frozen, err := freezeProductionRealtimeCUProfile(
+		context.Background(), options, artifacts.Gateway,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registration, err := newServeRealtimeCURegistration(
+		context.Background(), artifacts.Gateway, deployments, verifier,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := registration.Application.Factory(
+		context.Background(), frozen.Profile.Application.Configuration,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := graphlaunch.New(context.Background(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return prepared.Binding, prepared.Plan
+}
+
+type realtimeCUProfileProbeClosedRuntime interface {
+	legacy.Runtime
+	probeClosed() bool
+}
+
+type realtimeCUProfileProbeBindingFixture struct {
+	legacy.Binding
+	withoutInspection bool
+	forceNotReady     bool
+	closeErr          error
+	started           chan realtimeCUProfileProbeClosedRuntime
+}
+
+func (fixture *realtimeCUProfileProbeBindingFixture) Start(
+	_ context.Context, options legacy.Options,
+) (legacy.Runtime, error) {
+	runtime, err := fixture.Binding.Start(context.Background(), options)
+	if err != nil {
+		return nil, err
+	}
+	if fixture.withoutInspection {
+		tracked := &realtimeCUProfileProbeUninspectedRuntime{Runtime: runtime}
+		fixture.started <- tracked
+		return tracked, nil
+	}
+	inspected, ok := runtime.(realtimeCUProfileProbeRuntime)
+	if !ok {
+		_ = runtime.Close(context.Background(), errors.New("test fixture lacks inspection"))
+		return nil, errors.New("test fixture runtime lacks inspection")
+	}
+	tracked := &realtimeCUProfileProbeInspectedRuntime{
+		Runtime: runtime, inspected: inspected,
+		forceNotReady: fixture.forceNotReady, closeErr: fixture.closeErr,
+	}
+	fixture.started <- tracked
+	return tracked, nil
+}
+
+type realtimeCUProfileProbeUninspectedRuntime struct {
+	legacy.Runtime
+	closed atomic.Bool
+}
+
+func (runtime *realtimeCUProfileProbeUninspectedRuntime) Close(
+	ctx context.Context, cause error,
+) error {
+	runtime.closed.Store(true)
+	return runtime.Runtime.Close(ctx, cause)
+}
+
+func (runtime *realtimeCUProfileProbeUninspectedRuntime) probeClosed() bool {
+	return runtime.closed.Load()
+}
+
+type realtimeCUProfileProbeInspectedRuntime struct {
+	legacy.Runtime
+	inspected     realtimeCUProfileProbeRuntime
+	forceNotReady bool
+	closeErr      error
+	closed        atomic.Bool
+}
+
+func (runtime *realtimeCUProfileProbeInspectedRuntime) Live() inspect.Live {
+	if runtime.forceNotReady {
+		return inspect.Live{}
+	}
+	return runtime.inspected.Live()
+}
+
+func (runtime *realtimeCUProfileProbeInspectedRuntime) Done() <-chan struct{} {
+	return runtime.inspected.Done()
+}
+
+func (runtime *realtimeCUProfileProbeInspectedRuntime) Close(
+	ctx context.Context, cause error,
+) error {
+	runtime.closed.Store(true)
+	return errors.Join(runtime.Runtime.Close(ctx, cause), runtime.closeErr)
+}
+
+func (runtime *realtimeCUProfileProbeInspectedRuntime) probeClosed() bool {
+	return runtime.closed.Load()
 }
 
 func TestValidateRealtimeCUProfileOptionsRequiresDistinctCompleteOutputs(t *testing.T) {
