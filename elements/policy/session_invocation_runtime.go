@@ -322,6 +322,7 @@ func (runner *sessionInvocationRunner) acceptCreate(ctx context.Context, envelop
 	payload := cognitionelements.Generate{
 		Invocation:             invocationForManualCreate(runner.invocation),
 		ExpectedContextVersion: &version, ExpectedContextItemID: create.ExpectedContextItemID,
+		CommittedContext: cloneResponseCreateContext(create.CommittedContext),
 	}
 	trigger := runner.triggerEnvelope(envelope, generationID, payload)
 	trigger.CausalParents = appendUnique(trigger.CausalParents, create.ExpectedContextItemID)

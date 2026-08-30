@@ -325,6 +325,93 @@ func TestSemanticAdmissionWaitsForExactInputsAndSealsTheCommittedPrefix(t *testi
 	}
 }
 
+func TestSemanticAdmissionReconstructsBoundCreateFromLaterAppendOnlyState(t *testing.T) {
+	decider := &semanticTestDecider{
+		descriptor: semanticTestDescriptor, acts: []coreinteraction.Act{coreinteraction.ActAnswer},
+	}
+	harness := mountSemanticAdmission(t, decider, semanticConfig(8, 8, 8))
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, false)
+	first, _ := semanticObservation(t, "answer the exact first request", "speech", 1)
+	identity, err := trajectory.IdentifyPrefix(first, first.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	later := trajectory.Snapshot{Version: 2, Items: append(
+		append([]trajectory.Item(nil), first.Items...),
+		trajectory.Item{ID: "future-observation", Kind: trajectory.KindObservation,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "future secret"},
+	)}
+	sendSemanticContext(t, harness, "state-2", later)
+	version := uint64(1)
+	create := policyelements.ResponseCreate{
+		ResponseID: "response-bound-to-state-1", ExpectedContextVersion: &version,
+		ExpectedContextItemID: "state-1",
+		CommittedContext: &stateelements.CommittedContext{
+			Prefix: identity, StateItemID: "state-1",
+		},
+	}
+	sendPolicy(t, harness.ingress(t, "create"), element.Envelope{
+		Type: policyelements.ResponseCreateType(), ItemID: "request-bound-to-state-1",
+		SessionID: "semantic-session", Payload: create,
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	decision := receivePolicy(t, harness.egress(t, "decision"))
+	payload := decision.Payload.(policyelements.SemanticDecision)
+	branch := receivePolicy(t, harness.egress(t, "voice_create"))
+	_ = receivePolicy(t, harness.egress(t, "outcome"))
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if payload.ContextVersion != 1 || !reflect.DeepEqual(branch.Payload, create) ||
+		!containsPolicy(decision.CausalParents, "state-2") {
+		t.Fatalf("later-State bound decision=%+v branch=%+v", decision, branch)
+	}
+	captured := decider.captured()
+	if len(captured) != 1 || !strings.Contains(captured[0].Evidence, "answer the exact first request") ||
+		strings.Contains(captured[0].Evidence, "future secret") {
+		t.Fatalf("later State did not reconstruct the exact sealed prefix: %+v", captured)
+	}
+}
+
+func TestSemanticAdmissionRejectsTamperedBoundCreatePrefix(t *testing.T) {
+	decider := &semanticTestDecider{
+		descriptor: semanticTestDescriptor, acts: []coreinteraction.Act{coreinteraction.ActAnswer},
+	}
+	harness := mountSemanticAdmission(t, decider, semanticConfig(8, 8, 8))
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, false)
+	snapshot, _ := semanticObservation(t, "authenticated prefix", "speech", 1)
+	sendSemanticContext(t, harness, "state-1", snapshot)
+	version := uint64(1)
+	create := policyelements.ResponseCreate{
+		ResponseID: "response-tampered-prefix", ExpectedContextVersion: &version,
+		ExpectedContextItemID: "state-1",
+		CommittedContext: &stateelements.CommittedContext{
+			Prefix: trajectory.PrefixIdentity{
+				Version: 1, Digest: "sha256:" + strings.Repeat("0", 64),
+			},
+			StateItemID: "state-1",
+		},
+	}
+	sendPolicy(t, harness.ingress(t, "create"), element.Envelope{
+		Type: policyelements.ResponseCreateType(), ItemID: "request-tampered-prefix",
+		SessionID: "semantic-session", Payload: create,
+	})
+	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if outcome.Kind != policyelements.SemanticAdmissionRefused || outcome.Code != "invalid_context" ||
+		!strings.Contains(outcome.Message, "digest mismatch") {
+		t.Fatalf("tampered bound-create outcome = %+v", outcome)
+	}
+	assertNoPolicyEnvelope(t, harness.egress(t, "decision"))
+	assertNoPolicyEnvelope(t, harness.egress(t, "voice_create"))
+	assertNoPolicyEnvelope(t, harness.egress(t, "silent_create"))
+	if captured := decider.captured(); len(captured) != 0 {
+		t.Fatalf("tampered bound create reached decider: %+v", captured)
+	}
+}
+
 func TestSemanticAdmissionRoutesManualAndQuietCreatesThroughTheSamePolicy(t *testing.T) {
 	for _, operation := range []string{"create", "quiet"} {
 		t.Run(operation, func(t *testing.T) {
@@ -375,6 +462,57 @@ func TestSemanticAdmissionRoutesManualAndQuietCreatesThroughTheSamePolicy(t *tes
 				t.Fatalf("quiet policy omitted its exact timer evidence: %s", captured[0].Evidence)
 			}
 		})
+	}
+}
+
+func TestSemanticAdmissionExplicitCreateConsultsPolicyAfterToolResult(t *testing.T) {
+	entered := make(chan int, 1)
+	decider := &semanticTestDecider{
+		descriptor: semanticTestDescriptor, acts: []coreinteraction.Act{coreinteraction.ActAnswer},
+		entered: entered,
+	}
+	harness := mountSemanticAdmission(t, decider, semanticConfig(8, 8, 8))
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, true)
+	first, _ := semanticObservation(t, "look up the weather", "speech", 1)
+	snapshot := trajectory.Snapshot{
+		Version: 2,
+		Items: append(append([]trajectory.Item(nil), first.Items...), trajectory.Item{
+			ID: "tool-result-1", Kind: trajectory.KindToolResult, MonotonicNS: 2,
+			InvocationID: "generation-1", Producer: trajectory.Producer{Phase: trajectory.PhaseTool},
+			ToolResult: &trajectory.ToolResult{
+				CallID: "weather-1", Name: "lookup.weather", Output: json.RawMessage(`{"temperature_c":21}`),
+			},
+		}),
+	}
+	sendSemanticContext(t, harness, "state-2", snapshot)
+	version := uint64(2)
+	create := policyelements.ResponseCreate{
+		ResponseID: "response-after-tool", ExpectedContextVersion: &version,
+		ExpectedContextItemID: "state-2",
+	}
+	sendPolicy(t, harness.ingress(t, "create"), element.Envelope{
+		Type: policyelements.ResponseCreateType(), ItemID: "request-after-tool",
+		SessionID: "semantic-session", Payload: create,
+	})
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("explicit create after a tool result did not reach the semantic decider")
+	}
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	decision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+	branch := receivePolicy(t, harness.egress(t, "voice_create"))
+	_ = receivePolicy(t, harness.egress(t, "outcome"))
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if decision.Operation != "create" || decision.Act != coreinteraction.ActAnswer ||
+		!reflect.DeepEqual(branch.Payload, create) {
+		t.Fatalf("tool-result continuation decision=%+v branch=%+v", decision, branch)
+	}
+	if captured := decider.captured(); len(captured) != 1 ||
+		!strings.Contains(captured[0].Evidence, "look up the weather") {
+		t.Fatalf("tool-result continuation policy request = %+v", captured)
 	}
 }
 

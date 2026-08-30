@@ -16,6 +16,7 @@ import (
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
+	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 const sessionInvocationGraph = `graph session_invocation_test {
@@ -252,6 +253,61 @@ func TestSessionInvocationFailsClosedOnMissingStaleOrMalformedSettings(t *testin
 		}
 		assertNoPolicyEnvelope(t, harness.egress(t, "trigger"))
 	})
+
+	for _, testCase := range []struct {
+		name    string
+		context stateelements.CommittedContext
+		want    string
+	}{
+		{
+			name: "committed version disagrees", want: "disagrees",
+			context: stateelements.CommittedContext{
+				Prefix: trajectory.PrefixIdentity{
+					Version: 6, Digest: "sha256:" + strings.Repeat("0", 64),
+				},
+				StateItemID: "trajectory-state-7",
+			},
+		},
+		{
+			name: "committed State identity disagrees", want: "disagrees",
+			context: stateelements.CommittedContext{
+				Prefix: trajectory.PrefixIdentity{
+					Version: 7, Digest: "sha256:" + strings.Repeat("0", 64),
+				},
+				StateItemID: "trajectory-state-other",
+			},
+		},
+		{
+			name: "committed digest malformed", want: "canonical SHA-256",
+			context: stateelements.CommittedContext{
+				Prefix:      trajectory.PrefixIdentity{Version: 7, Digest: "sha256:not-a-digest"},
+				StateItemID: "trajectory-state-7",
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			harness := mountSessionInvocation(t)
+			defer harness.stop(t)
+			_ = receivePolicy(t, harness.egress(t, "state"))
+			installSessionInvocation(t, harness, 1, "answer", nil)
+			version := uint64(7)
+			sendPolicy(t, harness.ingress(t, "create"), element.Envelope{
+				Type: policyelements.ResponseCreateType(), ItemID: "create-bound-drift",
+				SessionID: "session-policy", Payload: policyelements.ResponseCreate{
+					ResponseID: "response-bound-drift", ExpectedContextVersion: &version,
+					ExpectedContextItemID: "trajectory-state-7",
+					CommittedContext:      &testCase.context,
+				},
+			})
+			outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SessionInvocationOutcome)
+			_ = receivePolicy(t, harness.egress(t, "state"))
+			if outcome.Kind != policyelements.SessionInvocationRefused || outcome.Code != "invalid_create" ||
+				!strings.Contains(outcome.Message, testCase.want) {
+				t.Fatalf("bound-create drift outcome = %+v", outcome)
+			}
+			assertNoPolicyEnvelope(t, harness.egress(t, "trigger"))
+		})
+	}
 }
 
 func TestSessionInvocationFactoryRejectsUnknownConfig(t *testing.T) {

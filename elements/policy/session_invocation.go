@@ -105,6 +105,10 @@ type ResponseCreate struct {
 	// context merely because graph input lanes were scheduled independently.
 	ExpectedContextVersion *uint64 `json:"expected_context_version"`
 	ExpectedContextItemID  string  `json:"expected_context_item_id"`
+	// CommittedContext lets append-only consumers reconstruct the exact
+	// authenticated prefix from a later State when independent lossless lanes
+	// deliver a newer snapshot first. It must agree with both legacy fields.
+	CommittedContext *stateelements.CommittedContext `json:"committed_context,omitempty"`
 }
 
 type SessionInvocationOutcomeKind string
@@ -216,15 +220,25 @@ func responseCreatePayload(payload any) (ResponseCreate, bool) {
 	switch value := payload.(type) {
 	case ResponseCreate:
 		value.ExpectedContextVersion = cloneResponseCreateVersion(value.ExpectedContextVersion)
+		value.CommittedContext = cloneResponseCreateContext(value.CommittedContext)
 		return value, true
 	case *ResponseCreate:
 		if value != nil {
 			copy := *value
 			copy.ExpectedContextVersion = cloneResponseCreateVersion(value.ExpectedContextVersion)
+			copy.CommittedContext = cloneResponseCreateContext(value.CommittedContext)
 			return copy, true
 		}
 	}
 	return ResponseCreate{}, false
+}
+
+func cloneResponseCreateContext(source *stateelements.CommittedContext) *stateelements.CommittedContext {
+	if source == nil {
+		return nil
+	}
+	copy := *source
+	return &copy
 }
 
 func cloneResponseCreateVersion(source *uint64) *uint64 {
@@ -272,7 +286,30 @@ func responseCreateIdentifier(value ResponseCreate) (string, error) {
 	); err != nil {
 		return "", err
 	}
+	if value.CommittedContext != nil {
+		if value.CommittedContext.StateItemID != value.ExpectedContextItemID ||
+			value.CommittedContext.Prefix.Version != *value.ExpectedContextVersion {
+			return "", errors.New("response create committed context disagrees with expected context fields")
+		}
+		if err := validatePolicyIdentifier(
+			"response create committed State item ID", value.CommittedContext.StateItemID, true,
+		); err != nil {
+			return "", err
+		}
+		if !canonicalPolicyDigest(value.CommittedContext.Prefix.Digest) {
+			return "", errors.New("response create committed context digest is not canonical SHA-256")
+		}
+	}
 	return identifier, nil
+}
+
+func canonicalPolicyDigest(value string) bool {
+	if !strings.HasPrefix(value, "sha256:") || len(value) != len("sha256:")+sha256.Size*2 ||
+		value != strings.ToLower(value) {
+		return false
+	}
+	_, err := hex.DecodeString(strings.TrimPrefix(value, "sha256:"))
+	return err == nil
 }
 
 func invocationForCommit(update SessionInvocationUpdate, commit stateelements.ObservationCommitOutcome) continuation.Invocation {

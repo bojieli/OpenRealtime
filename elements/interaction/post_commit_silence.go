@@ -236,6 +236,7 @@ type postCommitSilenceRunner struct {
 	contextSessionID     string
 	latestContextVersion uint64
 	latestContextItemID  string
+	latestContext        trajectory.Snapshot
 }
 
 func (runner *postCommitSilenceRunner) Run(parent context.Context) error {
@@ -401,6 +402,7 @@ func (runner *postCommitSilenceRunner) acceptContext(
 	}
 	runner.latestContextVersion = snapshot.Version
 	runner.latestContextItemID = envelope.ItemID
+	runner.latestContext = snapshot
 	runner.state.LatestContextVersion = snapshot.Version
 	runner.state.LatestContextItemID = envelope.ItemID
 	return runner.publishState(ctx, envelope)
@@ -425,6 +427,11 @@ func (runner *postCommitSilenceRunner) fire(ctx context.Context, generation uint
 	responseID := fmt.Sprintf("%s:post_commit_silence:%d", runner.instance, sequence)
 	version := runner.latestContextVersion
 	contextItemID := runner.latestContextItemID
+	prefix, err := trajectory.IdentifyPrefix(runner.latestContext, version)
+	if err != nil {
+		return fmt.Errorf("identify post-commit silence context: %w", err)
+	}
+	committedContext := stateelements.CommittedContext{Prefix: prefix, StateItemID: contextItemID}
 	envelope := runner.cause.Clone()
 	envelope.Type = policyelements.ResponseCreateType()
 	envelope.ItemID = responseID
@@ -433,7 +440,7 @@ func (runner *postCommitSilenceRunner) fire(ctx context.Context, generation uint
 	envelope.CausalParents = appendPostCommitParent(envelope.CausalParents, contextItemID)
 	envelope.Payload = policyelements.ResponseCreate{
 		ResponseID: responseID, ExpectedContextVersion: &version,
-		ExpectedContextItemID: contextItemID,
+		ExpectedContextItemID: contextItemID, CommittedContext: &committedContext,
 	}
 	delivery, err := runner.create.Broadcast(ctx, envelope)
 	if err != nil {

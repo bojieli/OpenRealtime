@@ -142,6 +142,7 @@ type semanticRequest struct {
 	stateItem string
 	streamID  string
 	sourceRev uint64
+	context   *stateelements.CommittedContext
 }
 
 func (request semanticRequest) key() string {
@@ -259,15 +260,17 @@ func (runner *semanticAdmissionRunner) Run(parent context.Context) error {
 	results := make(chan semanticDecisionResult, 1)
 	var receivers sync.WaitGroup
 	for _, source := range []struct {
-		kind string
-		port element.InputPort
+		kind     string
+		port     element.InputPort
+		variadic bool
 	}{
-		{"context", runner.ports.context}, {"update", runner.ports.update},
-		{"committed", runner.ports.committed}, {"create", runner.ports.create},
-		{"quiet", runner.ports.quiet}, {"cancel", runner.ports.cancel},
+		{kind: "context", port: runner.ports.context}, {kind: "update", port: runner.ports.update},
+		{kind: "committed", port: runner.ports.committed, variadic: true},
+		{kind: "create", port: runner.ports.create}, {kind: "quiet", port: runner.ports.quiet},
+		{kind: "cancel", port: runner.ports.cancel},
 	} {
 		receivers.Add(1)
-		go receiveSemanticAdmission(ctx, source.kind, source.port, inputs, failures, &receivers)
+		go receiveSemanticAdmission(ctx, source.kind, source.port, source.variadic, inputs, failures, &receivers)
 	}
 	defer func() {
 		if runner.active != nil {
@@ -307,12 +310,18 @@ func (runner *semanticAdmissionRunner) Run(parent context.Context) error {
 }
 
 func receiveSemanticAdmission(
-	ctx context.Context, kind string, port element.InputPort,
+	ctx context.Context, kind string, port element.InputPort, variadic bool,
 	inputs chan<- semanticAdmissionInput, failures chan<- error, wait *sync.WaitGroup,
 ) {
 	defer wait.Done()
 	for {
-		envelope, err := port.Receive(ctx)
+		var envelope element.Envelope
+		var err error
+		if variadic {
+			envelope, _, err = port.ReceiveAny(ctx)
+		} else {
+			envelope, err = port.Receive(ctx)
+		}
 		if err != nil {
 			if ctx.Err() == nil && !errors.Is(err, graphruntime.ErrChannelClosed) {
 				select {
@@ -495,6 +504,7 @@ func (runner *semanticAdmissionRunner) enqueueCreate(
 	request := semanticRequest{
 		operation: operation, envelope: envelope.Clone(), create: create,
 		version: *create.ExpectedContextVersion, stateItem: create.ExpectedContextItemID,
+		context: cloneResponseCreateContext(create.CommittedContext),
 	}
 	return runner.enqueue(ctx, request)
 }
@@ -739,14 +749,32 @@ func (runner *semanticAdmissionRunner) inputsFor(
 		return cloneSemanticUpdate(runner.invocation), runner.invocationDigest, candidate, prefix, true, nil
 	}
 	if !exact {
-		return SessionInvocationUpdate{}, "", semanticContextSample{}, trajectory.Snapshot{}, false, nil
+		if request.context == nil || runner.latest.envelope.SessionID != request.envelope.SessionID ||
+			runner.latest.snapshot.Version < request.context.Prefix.Version {
+			return SessionInvocationUpdate{}, "", semanticContextSample{}, trajectory.Snapshot{}, false, nil
+		}
+		prefix, err := trajectory.Prefix(runner.latest.snapshot, request.context.Prefix)
+		if err != nil {
+			return SessionInvocationUpdate{}, "", semanticContextSample{}, trajectory.Snapshot{}, false,
+				fmt.Errorf("response committed context: %w", err)
+		}
+		return cloneSemanticUpdate(runner.invocation), runner.invocationDigest, runner.latest,
+			prefix, true, nil
 	}
 	if sample.snapshot.Version != request.version {
 		return SessionInvocationUpdate{}, "", semanticContextSample{}, trajectory.Snapshot{}, false,
 			fmt.Errorf("response context version %d disagrees with exact State version %d", request.version, sample.snapshot.Version)
 	}
-	return cloneSemanticUpdate(runner.invocation), runner.invocationDigest, sample,
-		cloneSemanticSnapshot(sample.snapshot), true, nil
+	prefix := cloneSemanticSnapshot(sample.snapshot)
+	if request.context != nil {
+		var err error
+		prefix, err = trajectory.Prefix(sample.snapshot, request.context.Prefix)
+		if err != nil {
+			return SessionInvocationUpdate{}, "", semanticContextSample{}, trajectory.Snapshot{}, false,
+				fmt.Errorf("response committed context: %w", err)
+		}
+	}
+	return cloneSemanticUpdate(runner.invocation), runner.invocationDigest, sample, prefix, true, nil
 }
 
 func (runner *semanticAdmissionRunner) decide(
@@ -805,17 +833,19 @@ func validateSemanticSituation(situation coreinteraction.Situation) error {
 func (runner *semanticAdmissionRunner) decideAct(
 	ctx context.Context, operation string, situation coreinteraction.Situation,
 ) (coreinteraction.Act, coreinteraction.Outcome, error) {
-	if operation != "quiet" || situation.Decidable() {
+	if situation.Decidable() || operation == "committed" {
 		return runner.model.Decide(ctx, situation)
 	}
-	// A PostCommitSilence trigger is itself explicit graph-owned temporal
-	// evidence. It is intentionally produced even when no standing-policy
-	// extractor is installed: the enumerated decider must read the bounded
-	// recent conversation and choose listen unless somebody actually asked for
-	// a quiet-time action. Calling the narrow Decider directly here bypasses
-	// only InteractionModel's cheap "no evidence" short-circuit; it preserves
-	// the same rendered situation, prompt, and executable act set, and still
-	// cannot generate text or tools.
+	// Explicit response.create and PostCommitSilence triggers are themselves
+	// new control evidence even when the latest durable item is plumbing, such
+	// as a tool result, rather than an observation that Situation.Decidable
+	// recognizes. The enumerated decider must inspect the bounded recent
+	// conversation and choose the branch; treating these triggers as inertia
+	// silently drops tool-result continuations and explicit client requests.
+	// Calling the narrow Decider directly bypasses only InteractionModel's
+	// cheap "no evidence" short-circuit. It preserves the same rendered
+	// situation, prompt, and executable act set, and still cannot generate text
+	// or tools.
 	acts := situation.AvailableActs()
 	options := make([]string, len(acts))
 	for index, act := range acts {
