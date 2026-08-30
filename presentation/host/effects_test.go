@@ -964,7 +964,11 @@ func TestEffectClientSessionsKeepConfirmationAndCleanupScopesIndependent(t *test
 		t.Fatalf("surviving session result = %#v executions=%d", result, executions.Load())
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for host.effects.Stats().ActiveSessions > 1 && time.Now().Before(deadline) {
+	for time.Now().Before(deadline) {
+		stats := host.effects.Stats()
+		if stats.ActiveSessions <= 1 && stats.InFlight == 0 {
+			break
+		}
 		time.Sleep(time.Millisecond)
 	}
 	if stats := host.effects.Stats(); stats.ActiveSessions < 1 || stats.InFlight != 0 {
