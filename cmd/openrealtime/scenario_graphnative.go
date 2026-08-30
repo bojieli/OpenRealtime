@@ -67,6 +67,7 @@ type scenarioGraphMediaManifest struct {
 	Format        string                           `json:"format"`
 	FormatVersion int                              `json:"format_version"`
 	Key           graphnative.AttemptKey           `json:"key"`
+	Result        scenarioGraphMediaArtifact       `json:"result"`
 	Audio         scenarioGraphMediaArtifact       `json:"audio"`
 	Submitted     []scenarioGraphSubmittedArtifact `json:"submitted_inputs,omitempty"`
 }
@@ -80,6 +81,8 @@ type scenarioGraphReviewBundle struct {
 	root     *os.Root
 	closed   bool
 	closeErr error
+	media    map[string]graphnative.MediaReference
+	secrets  []string
 }
 
 func prepareScenarioGraphSelection(
@@ -159,7 +162,10 @@ func newScenarioGraphReviewBundle(
 			review.Close(),
 		)
 	}
-	return &scenarioGraphReviewBundle{review: review, root: root}, nil
+	return &scenarioGraphReviewBundle{
+		review: review, root: root, media: make(map[string]graphnative.MediaReference),
+		secrets: slices.Clone(secrets),
+	}, nil
 }
 
 func (bundle *scenarioGraphReviewBundle) Directory() string {
@@ -209,10 +215,23 @@ func (bundle *scenarioGraphReviewBundle) Retain(
 	if !capture.RunSucceeded {
 		runErr = errors.New("scenario attempt ended with an infrastructure error; inspect the checklist")
 	}
+	resultPayload, err := json.Marshal(capture.Result)
+	if err != nil {
+		return graphnative.MediaReference{}, fmt.Errorf("encode scenario scorer result: %w", err)
+	}
+	if scenarioGraphJSONContainsSecret(resultPayload, bundle.secrets) {
+		return graphnative.MediaReference{}, errors.New(
+			"scenario scorer result contains a declared sensitive value",
+		)
+	}
 	if err := bundle.review.Record(
 		capture.Key.CaseName, capture.Key.Trial, capture.Audio, capture.Result, runErr,
 	); err != nil {
 		return graphnative.MediaReference{}, err
+	}
+	resultName := scenarioGraphAttemptFilename(capture.Key, "result.json")
+	if err := writeScenarioGraphFile(bundle.root, resultName, resultPayload); err != nil {
+		return graphnative.MediaReference{}, fmt.Errorf("retain scenario scorer result: %w", err)
 	}
 	audio, err := bundle.findAttemptAudio(capture.Key)
 	if err != nil {
@@ -220,7 +239,13 @@ func (bundle *scenarioGraphReviewBundle) Retain(
 	}
 	manifest := scenarioGraphMediaManifest{
 		Format: scenarioGraphMediaFormat, FormatVersion: scenarioGraphMediaFormatVersion,
-		Key: capture.Key, Audio: audio,
+		Key: capture.Key,
+		Result: scenarioGraphMediaArtifact{
+			Path: resultName, SHA256: scenarioGraphDigest(resultPayload),
+			SizeBytes: int64(len(resultPayload)), MediaType: "application/json",
+			Role: "deterministic_scorer_result",
+		},
+		Audio: audio,
 	}
 	for index, input := range capture.Submitted {
 		if cause := context.Cause(ctx); cause != nil {
@@ -259,10 +284,12 @@ func (bundle *scenarioGraphReviewBundle) Retain(
 	if err := writeScenarioGraphFile(bundle.root, handle, payload); err != nil {
 		return graphnative.MediaReference{}, fmt.Errorf("retain scenario media manifest: %w", err)
 	}
-	return graphnative.MediaReference{
+	reference := graphnative.MediaReference{
 		Handle: handle, ManifestSHA256: scenarioGraphDigest(payload),
 		Submitted: scenarioGraphSubmittedReceipts(manifest.Submitted),
-	}, nil
+	}
+	bundle.media[capture.Key.TaskID] = reference
+	return reference, nil
 }
 
 func (bundle *scenarioGraphReviewBundle) Verify(
@@ -306,6 +333,30 @@ func (bundle *scenarioGraphReviewBundle) Verify(
 	if manifest.Format != scenarioGraphMediaFormat ||
 		manifest.FormatVersion != scenarioGraphMediaFormatVersion || manifest.Key != key {
 		return graphnative.VerifiedMedia{}, errors.New("scenario media manifest identity is invalid")
+	}
+	if err := bundle.verifyArtifact(
+		manifest.Result, "application/json", "deterministic_scorer_result",
+	); err != nil {
+		return graphnative.VerifiedMedia{}, err
+	}
+	resultPayload, err := bundle.root.ReadFile(manifest.Result.Path)
+	if err != nil {
+		return graphnative.VerifiedMedia{}, fmt.Errorf("read scenario scorer result: %w", err)
+	}
+	var result scenario.Result
+	resultDecoder := json.NewDecoder(bytes.NewReader(resultPayload))
+	resultDecoder.DisallowUnknownFields()
+	if err := resultDecoder.Decode(&result); err != nil {
+		return graphnative.VerifiedMedia{}, fmt.Errorf("decode scenario scorer result: %w", err)
+	}
+	if err := requireScenarioGraphJSONEOF(resultDecoder); err != nil {
+		return graphnative.VerifiedMedia{}, err
+	}
+	resultDigest, err := graphnative.FingerprintResult(result)
+	if err != nil || resultDigest != manifest.Result.SHA256 || result.Scenario != key.CaseName {
+		return graphnative.VerifiedMedia{}, errors.New(
+			"scenario scorer result identity differs from the media manifest",
+		)
 	}
 	if err := bundle.verifyArtifact(manifest.Audio, "audio/wav", "stereo_room_and_agent"); err != nil {
 		return graphnative.VerifiedMedia{}, err
@@ -485,7 +536,7 @@ func executeScenarioGraphChecklist(
 	adapterProfileFingerprint string,
 	repetitions int,
 	timeout time.Duration,
-	directory string,
+	bundle *scenarioGraphReviewBundle,
 	voice scenario.Voice,
 	session bench.SessionConfig,
 	newExecutor func(graphnative.LiveExecutorConfig) (graphnative.AttemptExecutor, error),
@@ -496,13 +547,9 @@ func executeScenarioGraphChecklist(
 	if newExecutor == nil {
 		return outcome, errors.New("run graph-native scenarios: nil executor factory")
 	}
-	bundle, err := newScenarioGraphReviewBundle(
-		directory, repetitions, requirement, []string{session.Token},
-	)
-	if err != nil {
-		return outcome, err
+	if bundle == nil {
+		return outcome, errors.New("run graph-native scenarios: nil review bundle")
 	}
-	defer func() { returnErr = errors.Join(returnErr, bundle.Close()) }()
 	executor, err := newExecutor(graphnative.LiveExecutorConfig{
 		Voice: voice, Session: session, Retain: bundle.Retain,
 		EvidenceContext: ctx, EvidenceTimeout: scenarioGraphEvidenceTimeout,
@@ -718,6 +765,47 @@ func requireScenarioGraphJSONEOF(decoder *json.Decoder) error {
 		return fmt.Errorf("decode scenario media manifest trailing data: %w", err)
 	}
 	return nil
+}
+
+func scenarioGraphJSONContainsSecret(payload []byte, secrets []string) bool {
+	if len(secrets) == 0 {
+		return false
+	}
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return true
+	}
+	contains := func(text string) bool {
+		for _, secret := range secrets {
+			if strings.TrimSpace(secret) != "" && strings.Contains(text, secret) {
+				return true
+			}
+		}
+		return false
+	}
+	var inspect func(any) bool
+	inspect = func(candidate any) bool {
+		switch typed := candidate.(type) {
+		case string:
+			return contains(typed)
+		case []any:
+			for _, item := range typed {
+				if inspect(item) {
+					return true
+				}
+			}
+		case map[string]any:
+			for key, item := range typed {
+				if contains(key) || inspect(item) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return inspect(value)
 }
 
 func writeScenarioGraphFile(root *os.Root, name string, payload []byte) error {

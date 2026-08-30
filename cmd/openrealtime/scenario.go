@@ -174,6 +174,7 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 	}
 
 	var review *scenario.ReviewRun
+	var graphReview *scenarioGraphReviewBundle
 	if !graphNative && strings.TrimSpace(*reviewDir) != "" {
 		review, err = scenario.NewReviewRun(scenario.ReviewOptions{
 			Directory:            *reviewDir,
@@ -193,10 +194,21 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 		}()
 	}
 	if graphNative {
-		fmt.Fprintf(output, "  review       %s\n", *reviewDir)
+		graphReview, err = newScenarioGraphReviewBundle(
+			*reviewDir, runs, requirement, []string{config.Token},
+		)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "  review       %s\n", graphReview.Directory())
+		defer func() {
+			if err := graphReview.Close(); err != nil {
+				returnErr = errors.Join(returnErr, err)
+			}
+		}()
 		outcome, err := executeScenarioGraphChecklist(
 			context.Background(), graphSelection, requirement,
-			selectedCell.Architecture.Profile, runs, *timeout, *reviewDir,
+			selectedCell.Architecture.Profile, runs, *timeout, graphReview,
 			speaker, config, graphnative.NewLiveExecutor,
 		)
 		if err != nil {

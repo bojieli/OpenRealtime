@@ -64,9 +64,13 @@ func TestScenarioGraphChecklistRetainsVerifiesAndIndexesAllElevenAttempts(t *tes
 			return graphnative.AttemptObservation{Result: result, Media: &reference}, nil
 		}, nil
 	}
+	bundle, err := newScenarioGraphReviewBundle(directory, 1, requirement, []string{secret})
+	if err != nil {
+		t.Fatal(err)
+	}
 	outcome, err := executeScenarioGraphChecklist(
 		context.Background(), selection, requirement, adapterFingerprint, 1, time.Second,
-		directory, scenario.SpeechVoice{Endpoint: "http://speech.invalid"},
+		bundle, scenario.SpeechVoice{Endpoint: "http://speech.invalid"},
 		bench.SessionConfig{Endpoint: "ws://realtime.invalid", Token: secret, Timeout: time.Second},
 		newExecutor,
 	)
@@ -81,6 +85,12 @@ func TestScenarioGraphChecklistRetainsVerifiesAndIndexesAllElevenAttempts(t *tes
 			outcome.Checklist, executorBuilds.Load(), executorCalls.Load())
 	}
 	if err := outcome.Checklist.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(directory, "manifest.json")); !os.IsNotExist(err) {
+		t.Fatalf("review bundle published before caller finalization: %v", err)
+	}
+	if err := bundle.Close(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -142,6 +152,8 @@ func TestScenarioGraphChecklistRetainsVerifiesAndIndexesAllElevenAttempts(t *tes
 			counts["audio"]++
 		case strings.HasSuffix(path, ".media.json"):
 			counts["media"]++
+		case strings.HasSuffix(path, ".result.json"):
+			counts["result"]++
 		case strings.HasSuffix(path, ".checklist.json") && filepath.Base(path) != "checklist.json":
 			counts["attempt"]++
 		case strings.Contains(filepath.Base(path), "submitted"):
@@ -152,19 +164,58 @@ func TestScenarioGraphChecklistRetainsVerifiesAndIndexesAllElevenAttempts(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counts["audio"] != 11 || counts["media"] != 11 || counts["attempt"] != 11 ||
+	if counts["audio"] != 11 || counts["media"] != 11 || counts["result"] != 11 ||
+		counts["attempt"] != 11 ||
 		counts["submitted"] != 2 {
 		t.Fatalf("review evidence counts = %+v", counts)
 	}
 
-	_, err = executeScenarioGraphChecklist(
-		context.Background(), selection, requirement, adapterFingerprint, 1, time.Second,
-		directory, scenario.SpeechVoice{Endpoint: "http://speech.invalid"},
-		bench.SessionConfig{Endpoint: "ws://realtime.invalid", Timeout: time.Second},
-		newExecutor,
-	)
+	_, err = newScenarioGraphReviewBundle(directory, 1, requirement, nil)
 	if err == nil || !strings.Contains(err.Error(), "exclusively") || executorBuilds.Load() != 1 {
 		t.Fatalf("create-only rerun error = %v, executor builds=%d", err, executorBuilds.Load())
+	}
+}
+
+func TestScenarioGraphReviewRejectsSensitiveScorerResultBeforeAttemptWrites(t *testing.T) {
+	t.Chdir("../..")
+	_, requirement, _ := scenarioGraphCommandFixture(t)
+	directory := filepath.Join(t.TempDir(), "review")
+	const secret = "scenario-sensitive-result-value-123456789"
+	bundle, err := newScenarioGraphReviewBundle(directory, 1, requirement, []string{secret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := scenario.Suite()[0]
+	key := graphnative.AttemptKey{
+		CaseOrdinal: 1, CaseName: item.Name, Trial: 1, TaskID: item.Name + "#1",
+	}
+	_, err = bundle.Retain(context.Background(), graphnative.AttemptCapture{
+		Key: key, RunSucceeded: true,
+		Result: scenario.Result{
+			Scenario: item.Name, Passed: false, Failures: []string{"provider said " + secret},
+		},
+		Audio: bench.SessionAudioCapture{SampleRateHz: 24_000, RoomPCM16: []int16{1, 2}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "sensitive value") {
+		t.Fatalf("sensitive result retention error = %v", err)
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		payload, readErr := os.ReadFile(filepath.Join(directory, entry.Name()))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if bytes.Contains(payload, []byte(secret)) ||
+			strings.HasSuffix(entry.Name(), ".result.json") ||
+			strings.HasSuffix(entry.Name(), ".stereo.wav") {
+			t.Fatalf("sensitive attempt wrote %q", entry.Name())
+		}
+	}
+	if err := bundle.Close(); err == nil || !strings.Contains(err.Error(), "retained 0 of 11") {
+		t.Fatalf("incomplete sensitive bundle close error = %v", err)
 	}
 }
 
