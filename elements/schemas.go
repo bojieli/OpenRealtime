@@ -314,6 +314,10 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 			"schema://openrealtime/interaction/model-result-commit-config/v1",
 			schemaObject{"max_pending": integerSchema(1, 4096)},
 		),
+		"schema://openrealtime/interaction/post-commit-silence-config/v1": standardObject(
+			"schema://openrealtime/interaction/post-commit-silence-config/v1",
+			schemaObject{"delay_ms": integerSchema(1, 600_000)}, "delay_ms",
+		),
 		"schema://openrealtime/media/attachment-resolver-config/v1": standardObject(
 			"schema://openrealtime/media/attachment-resolver-config/v1",
 			schemaObject{

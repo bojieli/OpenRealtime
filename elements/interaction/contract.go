@@ -348,6 +348,7 @@ func reportInteractionResolution(
 func Descriptors() []element.Descriptor {
 	return []element.Descriptor{
 		SegmentPreparedTextDescriptor(), SpeechArbiterDescriptor(), ModelResultCommitDescriptor(),
+		PostCommitSilenceDescriptor(),
 	}
 }
 
@@ -383,6 +384,7 @@ func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
 	entries := make([]factoryprofile.Entry, 0, len(Descriptors()))
 	for _, factory := range []element.Factory{
 		segmentPreparedTextFactory{}, speechArbiterFactory{}, modelResultCommitFactory{},
+		postCommitSilenceFactory{},
 	} {
 		entries = append(entries, factoryprofile.Entry{Factory: factory})
 	}

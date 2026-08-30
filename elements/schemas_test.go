@@ -42,8 +42,8 @@ func TestStandardConfigSchemaCatalogCoversEveryFactoryContract(t *testing.T) {
 	if !reflect.DeepEqual(catalog.References(), references) {
 		t.Fatalf("schema references = %v, want %v", catalog.References(), references)
 	}
-	if len(references) != 28 {
-		t.Fatalf("standard config schema count = %d, want 28", len(references))
+	if len(references) != 29 {
+		t.Fatalf("standard config schema count = %d, want 29", len(references))
 	}
 
 	registrations, err := elements.FactoryRegistrations()
@@ -293,6 +293,7 @@ func standardValidConfigSamples() map[string]string {
 		"schema://openrealtime/cognition/text-model-config/v1":              `{"provider":"fast"}`,
 		"schema://openrealtime/ingress/user-content-config/v1":              `{}`,
 		"schema://openrealtime/interaction/model-result-commit-config/v1":   `{}`,
+		"schema://openrealtime/interaction/post-commit-silence-config/v1":   `{"delay_ms":15000}`,
 		"schema://openrealtime/interaction/segment-prepared-text-config/v1": `{}`,
 		"schema://openrealtime/interaction/speech-arbiter-config/v1":        `{}`,
 		"schema://openrealtime/media/attachment-resolver-config/v1":         `{}`,
@@ -326,6 +327,7 @@ func standardStructurallyInvalidConfigSamples() map[string]string {
 		"schema://openrealtime/cognition/text-model-config/v1":              `{}`,
 		"schema://openrealtime/ingress/user-content-config/v1":              `{"max_pending":0}`,
 		"schema://openrealtime/interaction/model-result-commit-config/v1":   `{"max_pending":0}`,
+		"schema://openrealtime/interaction/post-commit-silence-config/v1":   `{}`,
 		"schema://openrealtime/interaction/segment-prepared-text-config/v1": `{"minimum_runes":0}`,
 		"schema://openrealtime/interaction/speech-arbiter-config/v1":        `{"max_pending_runs":0}`,
 		"schema://openrealtime/media/attachment-resolver-config/v1":         `{"max_pending":0}`,
