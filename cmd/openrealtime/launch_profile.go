@@ -293,6 +293,10 @@ func freezeProductionScenarioProfile(
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
 		Architecture:  architecture.Identity(),
 		ASR:           asr, Policy: policy, Model: model, SilentModel: silentModel, TTS: tts,
+		SemanticAdmission: scenarioconversation.SemanticAdmissionSelection{
+			StandingExtraction: true, VerifyVoiceActivation: true,
+			MinimumActivationConfidence: 0.7, StandingMemory: 64,
+		},
 		Tools: tools,
 		Target: computeruse.Target{
 			Name: "scenario-client", Sources: []string{scenarioconversation.SourceMessage},

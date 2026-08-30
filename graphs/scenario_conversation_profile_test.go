@@ -158,6 +158,19 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 		retention.MaxActiveLeases != fixture.application.Media.MaxActiveLeases {
 		t.Fatalf("selected media bounds did not enter plan: %+v", retention)
 	}
+	var semanticAdmission struct {
+		StandingExtraction          bool    `json:"standing_extraction"`
+		VerifyVoiceActivation       bool    `json:"verify_voice_activation"`
+		MinimumActivationConfidence float64 `json:"minimum_activation_confidence"`
+		StandingMemory              int     `json:"standing_memory"`
+	}
+	if err := json.Unmarshal(values["semantic_admission"], &semanticAdmission); err != nil {
+		t.Fatal(err)
+	}
+	if !semanticAdmission.StandingExtraction || !semanticAdmission.VerifyVoiceActivation ||
+		semanticAdmission.MinimumActivationConfidence != 0.7 || semanticAdmission.StandingMemory != 17 {
+		t.Fatalf("selected semantic admission controls did not enter plan: %+v", semanticAdmission)
+	}
 
 	var decoded map[string]any
 	if err := json.Unmarshal(payload, &decoded); err != nil {
@@ -199,6 +212,15 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 		{name: "semantic policy descriptor drift", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
 			config.Policy.Descriptor.Model = "drifted-policy"
 		}), want: "artifact or descriptor drifted"},
+		{name: "undeclared standing extraction", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
+			config.Policy.Descriptor.StandingExtraction = false
+		}), want: "does not declare it"},
+		{name: "semantic activation confidence invalid", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
+			config.SemanticAdmission.MinimumActivationConfidence = 1.1
+		}), want: "minimum_activation_confidence"},
+		{name: "semantic standing memory invalid", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
+			config.SemanticAdmission.StandingMemory = 4097
+		}), want: "standing_memory"},
 		{name: "model descriptor drift", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
 			config.Model.Descriptor.Model = "drifted"
 		}), want: "artifact or descriptor drifted"},
@@ -616,6 +638,10 @@ func newScenarioProfileFixture(t testing.TB) scenarioProfileFixture {
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
 		Architecture:  architecture.Identity(),
 		ASR:           asrSelection, Policy: policySelection, Model: modelSelection,
+		SemanticAdmission: scenarioconversation.SemanticAdmissionSelection{
+			StandingExtraction: true, VerifyVoiceActivation: true,
+			MinimumActivationConfidence: 0.7, StandingMemory: 17,
+		},
 		SilentModel: silentModelSelection, TTS: ttsSelection,
 		Tools: []scenarioconversation.ToolDeclaration{{
 			Name: "lookup.weather", Description: "Look up weather.",
@@ -690,6 +716,7 @@ func (fixture scenarioProfileFixture) pluginConfig() scenarioconversation.Plugin
 			Reference: scenarioconversation.PolicyReference, Artifact: fixture.application.Policy.Artifact,
 			Descriptor: fixture.application.Policy.Descriptor, Factory: fixture.registration.Policies[0].Factory,
 		},
+		SemanticAdmission: fixture.application.SemanticAdmission,
 		Model: scenarioconversation.ModelPlugin{
 			Reference: scenarioconversation.ModelReference, Artifact: fixture.application.Model.Artifact,
 			Descriptor: fixture.application.Model.Descriptor, Factory: fixture.registration.Models[0].Factory,
@@ -731,11 +758,17 @@ func (testScenarioSemanticDecider) Decide(
 	return coreinteraction.Outcome{}, errors.New("answer act is unavailable")
 }
 
+func (testScenarioSemanticDecider) Generate(
+	context.Context, string, string, int,
+) (string, error) {
+	return "none", nil
+}
+
 func testScenarioSemanticDescriptor() policyelements.SemanticDeciderDescriptor {
 	return policyelements.SemanticDeciderDescriptor{
 		Provider: "test", Model: "scenario-policy", Protocol: "test-enumerated",
 		Revision: "1", ConfigurationDigest: "sha256:" + strings.Repeat("0", 64),
-		DecisionTimeoutMS: 1000,
+		DecisionTimeoutMS: 1000, StandingExtraction: true,
 	}
 }
 

@@ -52,6 +52,11 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 		`"vision":true`,
 		`"guided_choice":true`,
 		`"reasoning":"chat_template_kwargs"`,
+		`"semantic_admission":{`,
+		`"standing_extraction":true`,
+		`"verify_voice_activation":true`,
+		`"minimum_activation_confidence":0.7`,
+		`"standing_memory":64`,
 		`"reference":"provider.openrealtime.model.vllm.v1"`,
 		`"model":"qwen-fast"`,
 		`"base_url":"http://127.0.0.1:8000/v1"`,
@@ -62,6 +67,7 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 		`"base_url":"http://127.0.0.1:8123/v1/tts"`,
 		`"description":"Send a keypad tone on the open call."`,
 		`"digit":{"type":"string"}`,
+		`"max_output_tokens":4096`,
 	} {
 		if !bytes.Contains(profile.Application.Configuration, []byte(exact)) {
 			t.Fatalf("profile application configuration omitted %s", exact)
@@ -92,13 +98,19 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	var semanticAdmission struct {
-		DirectVisualInput bool `json:"direct_visual_input"`
+		DirectVisualInput           bool    `json:"direct_visual_input"`
+		StandingExtraction          bool    `json:"standing_extraction"`
+		VerifyVoiceActivation       bool    `json:"verify_voice_activation"`
+		MinimumActivationConfidence float64 `json:"minimum_activation_confidence"`
+		StandingMemory              int     `json:"standing_memory"`
 	}
 	if err := json.Unmarshal(values.Nodes["semantic_admission"], &semanticAdmission); err != nil {
 		t.Fatal(err)
 	}
-	if !semanticAdmission.DirectVisualInput {
-		t.Fatal("frozen production scenario graph omitted direct visual semantic-policy input")
+	if !semanticAdmission.DirectVisualInput || !semanticAdmission.StandingExtraction ||
+		!semanticAdmission.VerifyVoiceActivation ||
+		semanticAdmission.MinimumActivationConfidence != 0.7 || semanticAdmission.StandingMemory != 64 {
+		t.Fatalf("frozen production scenario graph omitted semantic admission selection: %+v", semanticAdmission)
 	}
 	rebound, err := graphvalues.Bind(boundGraph, values)
 	if err != nil {

@@ -97,7 +97,11 @@ func ScenarioConversationArtifacts(
 		directVisual = evidence.DirectVisualInput
 	}
 	if err := updateScenarioNode(document.Nodes, "semantic_admission", map[string]any{
-		"direct_visual_input": directVisual,
+		"direct_visual_input":           directVisual,
+		"standing_extraction":           config.SemanticAdmission.StandingExtraction,
+		"verify_voice_activation":       config.SemanticAdmission.VerifyVoiceActivation,
+		"minimum_activation_confidence": config.SemanticAdmission.MinimumActivationConfidence,
+		"standing_memory":               config.SemanticAdmission.StandingMemory,
 	}); err != nil {
 		return graphconfig.Artifacts{}, err
 	}

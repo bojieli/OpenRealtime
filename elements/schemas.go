@@ -383,13 +383,16 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 				"cancel_memory": largeBoundedState,
 			}, "role",
 		),
-		"schema://openrealtime/policy/semantic-admission-config/v2": standardObject(
-			"schema://openrealtime/policy/semantic-admission-config/v2",
+		"schema://openrealtime/policy/semantic-admission-config/v3": standardObject(
+			"schema://openrealtime/policy/semantic-admission-config/v3",
 			schemaObject{
 				"decider": identifier(1024), "direct_visual_input": schemaObject{"type": "boolean"},
+				"standing_extraction": schemaObject{"type": "boolean"},
+				"verify_voice_activation": schemaObject{"type": "boolean"},
+				"minimum_activation_confidence": numberSchema(0, 1),
 				"recent_lines": integerSchema(1, 4096),
 				"max_pending":  largeBoundedState, "terminal_memory": largeBoundedState,
-				"cancel_memory": largeBoundedState,
+				"cancel_memory": largeBoundedState, "standing_memory": integerSchema(1, 4096),
 			}, "decider",
 		),
 		"schema://openrealtime/speech/tts-config/v1": standardObject(

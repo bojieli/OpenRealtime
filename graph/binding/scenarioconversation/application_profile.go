@@ -24,7 +24,7 @@ import (
 
 const (
 	ApplicationReference          = "application.openrealtime.scenario-conversation.v1"
-	ApplicationFormatVersion      = uint64(4)
+	ApplicationFormatVersion      = uint64(5)
 	maximumApplicationConfigBytes = 4 << 20
 	maximumApplicationProviders   = 65_536
 )
@@ -85,18 +85,19 @@ func (selection ApplicationGateSelection) gateConfig() perception.GateConfig {
 // ApplicationConfig is the complete plugin-owned, resource-free selection
 // carried by a generic graph launch profile.
 type ApplicationConfig struct {
-	FormatVersion   uint64                      `json:"format_version"`
-	Architecture    legacy.ArchitectureIdentity `json:"architecture"`
-	ASR             ApplicationASRSelection     `json:"asr"`
-	Policy          ApplicationPolicySelection  `json:"policy"`
-	Model           ApplicationModelSelection   `json:"model"`
-	SilentModel     ApplicationModelSelection   `json:"silent_model"`
-	TTS             ApplicationTTSSelection     `json:"tts"`
-	Tools           []ToolDeclaration           `json:"tools"`
-	Target          computeruse.Target          `json:"target"`
-	Gate            ApplicationGateSelection    `json:"gate"`
-	Media           MediaLimits                 `json:"media"`
-	MaxOutputTokens int                         `json:"max_output_tokens"`
+	FormatVersion     uint64                      `json:"format_version"`
+	Architecture      legacy.ArchitectureIdentity `json:"architecture"`
+	ASR               ApplicationASRSelection     `json:"asr"`
+	Policy            ApplicationPolicySelection  `json:"policy"`
+	SemanticAdmission SemanticAdmissionSelection  `json:"semantic_admission"`
+	Model             ApplicationModelSelection   `json:"model"`
+	SilentModel       ApplicationModelSelection   `json:"silent_model"`
+	TTS               ApplicationTTSSelection     `json:"tts"`
+	Tools             []ToolDeclaration           `json:"tools"`
+	Target            computeruse.Target          `json:"target"`
+	Gate              ApplicationGateSelection    `json:"gate"`
+	Media             MediaLimits                 `json:"media"`
+	MaxOutputTokens   int                         `json:"max_output_tokens"`
 }
 
 // DecodeApplicationConfig strictly decodes and validates an exact selection.
@@ -133,6 +134,13 @@ func normalizeApplicationConfig(source ApplicationConfig) (ApplicationConfig, er
 	if err := validateApplicationPolicy(config.Policy); err != nil {
 		return ApplicationConfig{}, err
 	}
+	semanticAdmission, err := normalizeSemanticAdmissionSelection(
+		config.SemanticAdmission, config.Policy.Descriptor,
+	)
+	if err != nil {
+		return ApplicationConfig{}, err
+	}
+	config.SemanticAdmission = semanticAdmission
 	if err := validateApplicationModel(config.Model, continuation.SpeechAuthorityVoice); err != nil {
 		return ApplicationConfig{}, err
 	}
@@ -142,7 +150,6 @@ func normalizeApplicationConfig(source ApplicationConfig) (ApplicationConfig, er
 	if err := validateApplicationTTS(config.TTS); err != nil {
 		return ApplicationConfig{}, err
 	}
-	var err error
 	config.Tools, err = normalizeToolDeclarations(config.Tools)
 	if err != nil {
 		return ApplicationConfig{}, err
@@ -438,6 +445,7 @@ func NewApplicationRegistration(
 					Descriptor: cloneV1Descriptor(asrDescriptor), Factory: asrFactory},
 				Policy: PolicyPlugin{Reference: PolicyReference, Artifact: policyRegistration.Artifact,
 					Descriptor: policyDescriptor, Factory: policyFactory},
+				SemanticAdmission: config.SemanticAdmission,
 				Model: ModelPlugin{Reference: ModelReference, Artifact: modelRegistration.Artifact,
 					Descriptor: modelDescriptor, Factory: modelFactory},
 				SilentModel: ModelPlugin{Reference: SilentModelReference, Artifact: silentModelRegistration.Artifact,

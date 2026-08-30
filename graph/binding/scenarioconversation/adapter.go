@@ -366,7 +366,11 @@ func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
 		return errors.New("scenario conversation endpoint policy must be exact automatic mode")
 	}
 	var semanticAdmission struct {
-		DirectVisualInput bool `json:"direct_visual_input"`
+		DirectVisualInput           bool    `json:"direct_visual_input"`
+		StandingExtraction          bool    `json:"standing_extraction"`
+		VerifyVoiceActivation       bool    `json:"verify_voice_activation"`
+		MinimumActivationConfidence float64 `json:"minimum_activation_confidence"`
+		StandingMemory              int     `json:"standing_memory"`
 	}
 	if err := json.Unmarshal(values["semantic_admission"], &semanticAdmission); err != nil {
 		return fmt.Errorf("decode scenario conversation semantic admission values: %w", err)
@@ -377,6 +381,12 @@ func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
 	}
 	if semanticAdmission.DirectVisualInput != directVisual {
 		return errors.New("scenario conversation semantic direct-visual selection drifted from architecture")
+	}
+	if semanticAdmission.StandingExtraction != config.SemanticAdmission.StandingExtraction ||
+		semanticAdmission.VerifyVoiceActivation != config.SemanticAdmission.VerifyVoiceActivation ||
+		semanticAdmission.MinimumActivationConfidence != config.SemanticAdmission.MinimumActivationConfidence ||
+		semanticAdmission.StandingMemory != config.SemanticAdmission.StandingMemory {
+		return errors.New("scenario conversation semantic admission values drifted from the application selection")
 	}
 	var postCommitSilence struct {
 		DelayMS int `json:"delay_ms"`

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"reflect"
 	"slices"
 	"strings"
@@ -49,6 +50,9 @@ func (semanticAdmissionFactory) Mount(
 	entry, err := registry.resolve(config.Decider)
 	if err != nil {
 		return nil, err
+	}
+	if config.StandingExtraction && !entry.descriptor.StandingExtraction {
+		return nil, errors.New("semantic admission standing extraction requires a provider-declared extraction capability")
 	}
 	var media continuation.MediaResolver
 	if service, _, available := mount.Services.Lookup(cognitionelements.MediaResolverService); available {
@@ -102,6 +106,7 @@ func (semanticAdmissionFactory) Mount(
 		clock: clock, sequences: sequences, resolution: mount.Resolution, ports: ports, media: media,
 		contexts: make(map[semanticContextAddress]semanticContextSample),
 		terminal: make(map[string]struct{}), canceledStreams: make(map[cancellationAddress]string),
+		pinboard: &coreinteraction.Pinboard{},
 	}, nil
 }
 
@@ -174,19 +179,28 @@ func (request semanticRequest) key() string {
 }
 
 type semanticDecisionResult struct {
-	request     semanticRequest
-	update      SessionInvocationUpdate
-	digest      string
-	sample      semanticContextSample
-	prefix      trajectory.Snapshot
-	act         coreinteraction.Act
-	outcome     coreinteraction.Outcome
-	started     uint64
-	ended       uint64
-	err         error
-	failureCode string
-	canceled    bool
-	timedOut    bool
+	request           semanticRequest
+	update            SessionInvocationUpdate
+	digest            string
+	sample            semanticContextSample
+	prefix            trajectory.Snapshot
+	act               coreinteraction.Act
+	outcome           coreinteraction.Outcome
+	stage             string
+	activation        string
+	activationOutcome coreinteraction.Outcome
+	standingCoverage  string
+	coverageOutcome   coreinteraction.Outcome
+	standingBefore    []coreinteraction.StandingInstruction
+	standingAfter     []coreinteraction.StandingInstruction
+	standingPinned    int
+	standingRevoked   int
+	started           uint64
+	ended             uint64
+	err               error
+	failureCode       string
+	canceled          bool
+	timedOut          bool
 }
 
 type activeSemanticDecision struct {
@@ -223,6 +237,7 @@ type semanticAdmissionRunner struct {
 	handle           *semanticDeciderHandle
 	decider          SemanticDecider
 	model            *coreinteraction.InteractionModel
+	extractor        coreinteraction.Extractor
 	media            continuation.MediaResolver
 	clock            graphruntime.Clock
 	sequences        *graphruntime.SequenceAllocator
@@ -242,6 +257,7 @@ type semanticAdmissionRunner struct {
 	terminalOrder    []string
 	canceledStreams  map[cancellationAddress]string
 	canceledOrder    []cancellationAddress
+	pinboard         *coreinteraction.Pinboard
 	state            SemanticAdmissionState
 }
 
@@ -266,6 +282,16 @@ func (runner *semanticAdmissionRunner) Run(parent context.Context) error {
 	if err != nil {
 		return err
 	}
+	if runner.config.StandingExtraction {
+		generator, ok := decider.(coreinteraction.Generator)
+		if !ok || semanticReflectedNil(generator) {
+			return errors.New("semantic decider declared standing extraction but does not implement interaction.Generator")
+		}
+		runner.extractor, err = coreinteraction.NewExtractor(generator)
+		if err != nil {
+			return fmt.Errorf("create semantic standing-policy extractor: %w", err)
+		}
+	}
 	runner.decider, runner.model = decider, model
 	if err := runner.reportResolution(); err != nil {
 		return err
@@ -275,6 +301,7 @@ func (runner *semanticAdmissionRunner) Run(parent context.Context) error {
 	}
 	runner.state.TerminalMemory = runner.config.TerminalMemory
 	runner.state.CancellationMemory = runner.config.CancelMemory
+	runner.state.StandingMemory = runner.config.StandingMemory
 	if err := runner.publishState(parent, element.Envelope{ItemID: runner.instance + ":startup"}); err != nil {
 		return err
 	}
@@ -663,7 +690,8 @@ func (runner *semanticAdmissionRunner) startReadyDecision(
 		decisionCtx, cancel := context.WithCancelCause(parent)
 		runner.active = &activeSemanticDecision{request: request, cancel: cancel}
 		runner.state.Active = true
-		go runner.decide(decisionCtx, request, update, digest, sample, prefix, results)
+		standing := runner.pinboard.InForce()
+		go runner.decide(decisionCtx, request, update, digest, sample, prefix, standing, results)
 		return nil
 	}
 	return nil
@@ -805,27 +833,100 @@ func (runner *semanticAdmissionRunner) inputsFor(
 
 func (runner *semanticAdmissionRunner) decide(
 	ctx context.Context, request semanticRequest, update SessionInvocationUpdate, digest string,
-	sample semanticContextSample, prefix trajectory.Snapshot, results chan<- semanticDecisionResult,
+	sample semanticContextSample, prefix trajectory.Snapshot,
+	standing []coreinteraction.StandingInstruction, results chan<- semanticDecisionResult,
 ) {
 	started := runner.clock.NowNS()
 	timeout := time.Duration(runner.entry.descriptor.DecisionTimeoutMS) * time.Millisecond
 	decisionCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	situation, err := runner.situation(decisionCtx, request, update, prefix)
+	situation, err := runner.situationWithStanding(decisionCtx, request, update, prefix, standing)
 	failure := ""
 	if err != nil {
 		failure = "visual_evidence_failed"
 	}
 	var act coreinteraction.Act
 	var outcome coreinteraction.Outcome
+	stage := "primary"
+	activation := ""
+	var activationOutcome coreinteraction.Outcome
+	standingCoverage := ""
+	var coverageOutcome coreinteraction.Outcome
+	standingAfter := slices.Clone(standing)
+	standingPinned, standingRevoked := 0, 0
+	if err == nil && runner.extractor != nil && request.operation == "committed" {
+		current := currentSemanticItem(request, prefix)
+		if semanticExtractableObservation(current) {
+			var extraction coreinteraction.Extraction
+			extraction, err = runner.extractor.Extract(
+				decisionCtx, slices.Clone(standing),
+				semanticRecentBefore(prefix.Items, current.ID, runner.config.RecentLines),
+				strings.TrimSpace(current.Content),
+			)
+			if err != nil {
+				failure = "standing_extraction_failed"
+			} else {
+				standingAfter, standingPinned, standingRevoked, err = applySemanticExtraction(
+					standing, extraction, request.sourceRev, runner.clock.NowNS(), runner.config.StandingMemory,
+				)
+				if err != nil {
+					failure = "standing_memory_exhausted"
+				} else if len(extraction.Pins) > 0 {
+					coverageOutcome, err = runner.verifyStandingCoverage(decisionCtx, current.Content, extraction.Pins)
+					if err != nil {
+						failure = "standing_coverage_failed"
+					} else {
+						standingCoverage = strings.TrimSpace(coverageOutcome.Option)
+						if standingCoverage == semanticStandingCovered ||
+							standingCoverage == semanticStandingAdditional && coverageOutcome.Measured &&
+								coverageOutcome.Confidence < runner.config.MinimumActivationConfidence {
+							act = coreinteraction.ActStaySilent
+							stage = "standing_coverage"
+						}
+					}
+				}
+			}
+		}
+	}
 	if err == nil {
 		err = validateSemanticSituation(situation)
 		if err != nil {
 			failure = "invalid_evidence"
 		}
 	}
-	if err == nil {
+	if err == nil && stage == "primary" {
 		act, outcome, err = runner.decideAct(decisionCtx, request.operation, situation)
+		if err == nil {
+			options := semanticActOptions(situation)
+			err = validateSemanticOutcome(outcome, options)
+			if err != nil {
+				failure = "invalid_decider_outcome"
+			}
+		}
+	}
+	if err == nil && stage == "primary" && runner.config.VerifyVoiceActivation &&
+		act == coreinteraction.ActAnswer && len(standing) == 0 {
+		current := currentSemanticItem(request, prefix)
+		if semanticExtractableObservation(current) {
+			activationOutcome, err = runner.verifyVoiceActivation(
+				decisionCtx, update.Invocation.Instruction, current.Content,
+			)
+			if err != nil {
+				failure = "voice_activation_failed"
+			} else {
+				activation = strings.TrimSpace(activationOutcome.Option)
+				if activation == semanticVoiceWait {
+					act = coreinteraction.ActStaySilent
+					stage = "voice_activation"
+				}
+			}
+		}
+	}
+	if err == nil && stage == "primary" && act != coreinteraction.ActStaySilent &&
+		runner.config.MinimumActivationConfidence > 0 && outcome.Measured &&
+		outcome.Confidence < runner.config.MinimumActivationConfidence {
+		act = coreinteraction.ActStaySilent
+		stage = "confidence_guard"
 	}
 	canceled := errors.Is(decisionCtx.Err(), context.Canceled)
 	timedOut := errors.Is(decisionCtx.Err(), context.DeadlineExceeded)
@@ -838,7 +939,11 @@ func (runner *semanticAdmissionRunner) decide(
 	}
 	result := semanticDecisionResult{
 		request: request, update: update, digest: digest, sample: sample, prefix: prefix,
-		act: act, outcome: outcome, started: started, ended: runner.clock.NowNS(), err: err,
+		act: act, outcome: outcome, stage: stage, activation: activation,
+		activationOutcome: activationOutcome, standingCoverage: standingCoverage,
+		coverageOutcome: coverageOutcome, standingBefore: standing, standingAfter: standingAfter,
+		standingPinned: standingPinned, standingRevoked: standingRevoked,
+		started: started, ended: runner.clock.NowNS(), err: err,
 		failureCode: failure, canceled: canceled, timedOut: timedOut,
 	}
 	select {
@@ -902,15 +1007,152 @@ func (runner *semanticAdmissionRunner) decideAct(
 		fmt.Errorf("interaction model chose %q, which is not available here", outcome.Option)
 }
 
+func semanticActOptions(situation coreinteraction.Situation) []string {
+	acts := situation.AvailableActs()
+	options := make([]string, len(acts))
+	for index, act := range acts {
+		options[index] = string(act)
+	}
+	return options
+}
+
+func validateSemanticOutcome(outcome coreinteraction.Outcome, options []string) error {
+	chosen := strings.TrimSpace(outcome.Option)
+	index := slices.Index(options, chosen)
+	if index < 0 {
+		return fmt.Errorf("semantic policy chose %q, which is not one of the exact options", outcome.Option)
+	}
+	if outcome.Index != index {
+		return fmt.Errorf(
+			"semantic policy option %q reports index %d, want %d", chosen, outcome.Index, index,
+		)
+	}
+	if math.IsNaN(outcome.Confidence) || math.IsInf(outcome.Confidence, 0) ||
+		outcome.Confidence < 0 || outcome.Confidence > 1 {
+		return errors.New("semantic policy confidence must be finite and between 0 and 1")
+	}
+	return nil
+}
+
+const (
+	semanticStandingCovered    = "covered"
+	semanticStandingAdditional = "additional-work"
+	semanticVoiceConditionMet  = "condition-met"
+	semanticVoiceDirectRequest = "direct-request"
+	semanticVoiceWait          = "wait"
+)
+
+const semanticStandingCoverageInstruction = "The policy extractor listed the standing policies established by one utterance. " +
+	"Decide whether the utterance contains any separate request due now OUTSIDE those listed policies. " +
+	"covered means every request in the utterance is one of the listed standing policies or merely setup, preference, or context for them; " +
+	"describing the trigger inside a listed policy does not make that trigger happen. " +
+	"additional-work means there is also a separate complete question, immediate command, or report of an already established trigger that is not part of a listed policy. " +
+	"Reply with one label only. Examples: 'I want fish tonight; order when the waiter names something that fits' is covered by the listed ordering policy. " +
+	"'From now on answer briefly; what is the capital of France?' has additional-work outside the brevity policy."
+
+const semanticVoiceActivationInstruction = "You are an activation guard, not a conversational agent. " +
+	"Classify whether the CURRENT UTTERANCE creates a reason for a voice assistant to answer now under the AGENT CONTRACT. " +
+	"condition-met means the contract says to answer when some fact occurs, and the current utterance provides that fact now. " +
+	"direct-request means the current utterance directly asks a complete question or requests work that should start now, not later. " +
+	"wait means neither: a future condition is merely being described or requested, an applicable condition has not occurred, or the utterance is narration. " +
+	"Reply with one label only. Examples: contract 'correct a date that contradicts the third'; current 'we do design review next week' is wait; " +
+	"the same contract with current 'ship by the thirteenth' is condition-met. Contract 'answer briefly'; current 'what is the capital of France' is direct-request."
+
+func (runner *semanticAdmissionRunner) verifyStandingCoverage(
+	ctx context.Context, utterance string, policies []coreinteraction.StandingInstruction,
+) (coreinteraction.Outcome, error) {
+	var evidence strings.Builder
+	evidence.WriteString("UTTERANCE:\n")
+	evidence.WriteString(strings.TrimSpace(utterance))
+	evidence.WriteString("\n\nEXTRACTED STANDING POLICIES:\n")
+	for _, policy := range policies {
+		if text := strings.TrimSpace(policy.Text); text != "" {
+			evidence.WriteString("- ")
+			evidence.WriteString(text)
+			evidence.WriteByte('\n')
+		}
+	}
+	options := []string{semanticStandingCovered, semanticStandingAdditional}
+	outcome, err := runner.decider.Decide(ctx, coreinteraction.Decision{
+		Prompt:   semanticStandingCoverageInstruction,
+		Options:  options,
+		Evidence: evidence.String(),
+	})
+	if err == nil {
+		err = validateSemanticOutcome(outcome, options)
+	}
+	return outcome, err
+}
+
+func (runner *semanticAdmissionRunner) verifyVoiceActivation(
+	ctx context.Context, contract, utterance string,
+) (coreinteraction.Outcome, error) {
+	options := []string{semanticVoiceConditionMet, semanticVoiceDirectRequest, semanticVoiceWait}
+	outcome, err := runner.decider.Decide(ctx, coreinteraction.Decision{
+		Prompt:  semanticVoiceActivationInstruction,
+		Options: options,
+		Evidence: "AGENT CONTRACT:\n" + strings.TrimSpace(contract) +
+			"\n\nCURRENT UTTERANCE:\n" + strings.TrimSpace(utterance),
+	})
+	if err == nil {
+		err = validateSemanticOutcome(outcome, options)
+	}
+	return outcome, err
+}
+
+func applySemanticExtraction(
+	existing []coreinteraction.StandingInstruction, extraction coreinteraction.Extraction,
+	turn, now uint64, maximum int,
+) ([]coreinteraction.StandingInstruction, int, int, error) {
+	if turn == 0 {
+		return nil, 0, 0, errors.New("semantic standing extraction requires a positive source revision")
+	}
+	board := semanticPinboard(existing)
+	// Existing turn-scoped policies govern this decision and then expire.
+	// Policies extracted from the current completed utterance are installed
+	// afterwards, so a turn-scoped instruction can govern the next turn once
+	// without disappearing at the instant it was noticed.
+	board.EndTurn()
+	beforeRevocation := len(board.InForce())
+	for _, revoked := range extraction.Revokes {
+		board.Revoke(revoked)
+	}
+	revoked := beforeRevocation - len(board.InForce())
+	pins := slices.Clone(extraction.Pins)
+	for index := range pins {
+		pins[index].SetNS = now
+	}
+	pinned := board.SetForTurn(turn, pins)
+	result := board.InForce()
+	if len(result) > maximum {
+		return nil, 0, 0, fmt.Errorf(
+			"semantic standing-policy memory requires %d entries, maximum is %d", len(result), maximum,
+		)
+	}
+	return result, pinned, revoked, nil
+}
+
 func (runner *semanticAdmissionRunner) situation(
 	ctx context.Context, request semanticRequest, update SessionInvocationUpdate, prefix trajectory.Snapshot,
 ) (coreinteraction.Situation, error) {
+	return runner.situationWithStanding(ctx, request, update, prefix, nil)
+}
+
+func (runner *semanticAdmissionRunner) situationWithStanding(
+	ctx context.Context, request semanticRequest, update SessionInvocationUpdate, prefix trajectory.Snapshot,
+	standing []coreinteraction.StandingInstruction,
+) (coreinteraction.Situation, error) {
+	board := semanticPinboard(standing)
 	state := coreinteraction.Situation{
 		Contract: update.Invocation.Instruction,
 		Recent:   coreinteraction.RecentLines(prefix.Items, runner.config.RecentLines),
+		Pins:     board.Lines(semanticNowNS(runner.clock)),
 		AllowedActs: []coreinteraction.Act{
 			coreinteraction.ActStaySilent, coreinteraction.ActAnswer,
 		},
+	}
+	for _, policy := range standing {
+		state.Restricted = state.Restricted || policy.Restricting
 	}
 	for _, tool := range update.Invocation.Tools {
 		line := tool.Name
@@ -965,15 +1207,7 @@ func (runner *semanticAdmissionRunner) situation(
 			}
 		}
 	}
-	current := prefix.Items[len(prefix.Items)-1]
-	if request.commit.TrajectoryItemID != "" {
-		for index := len(prefix.Items) - 1; index >= 0; index-- {
-			if prefix.Items[index].ID == request.commit.TrajectoryItemID {
-				current = prefix.Items[index]
-				break
-			}
-		}
-	}
+	current := currentSemanticItem(request, prefix)
 	if current.Kind == trajectory.KindObservation {
 		if trajectory.AuthorityOf(current) == trajectory.AuthorityObserver {
 			state.Seen = strings.TrimSpace(current.Content)
@@ -981,10 +1215,67 @@ func (runner *semanticAdmissionRunner) situation(
 			state.Speaker = coreinteraction.SpeakerOf(current)
 			state.Heard = strings.TrimSpace(current.Content)
 			state.HeardSince = state.Heard
-			state.TranscriptEvent = coreinteraction.TranscriptFinal
+			if current.Event != nil && strings.HasSuffix(current.Event.Type, ".revision") {
+				state.TranscriptEvent = coreinteraction.TranscriptPartial
+				state.Speaking = true
+			} else {
+				state.TranscriptEvent = coreinteraction.TranscriptFinal
+			}
 		}
 	}
 	return state, nil
+}
+
+func currentSemanticItem(request semanticRequest, prefix trajectory.Snapshot) trajectory.Item {
+	if len(prefix.Items) == 0 {
+		return trajectory.Item{}
+	}
+	current := prefix.Items[len(prefix.Items)-1]
+	if request.commit.TrajectoryItemID == "" {
+		return current
+	}
+	for index := len(prefix.Items) - 1; index >= 0; index-- {
+		if prefix.Items[index].ID == request.commit.TrajectoryItemID {
+			return prefix.Items[index]
+		}
+	}
+	return current
+}
+
+func semanticExtractableObservation(item trajectory.Item) bool {
+	return item.Kind == trajectory.KindObservation &&
+		trajectory.AuthorityOf(item) == trajectory.AuthorityUser &&
+		item.Event != nil && strings.HasSuffix(item.Event.Type, ".endpoint") &&
+		strings.TrimSpace(item.Content) != ""
+}
+
+func semanticRecentBefore(items []trajectory.Item, currentID string, maximum int) []string {
+	if currentID == "" {
+		return coreinteraction.RecentLines(items, maximum)
+	}
+	before := make([]trajectory.Item, 0, len(items))
+	for _, item := range items {
+		if item.ID == currentID {
+			break
+		}
+		before = append(before, item)
+	}
+	return coreinteraction.RecentLines(before, maximum)
+}
+
+func semanticPinboard(instructions []coreinteraction.StandingInstruction) *coreinteraction.Pinboard {
+	board := &coreinteraction.Pinboard{}
+	for _, instruction := range instructions {
+		board.Pin(instruction)
+	}
+	return board
+}
+
+func semanticNowNS(clock graphruntime.Clock) uint64 {
+	if clock == nil || semanticReflectedNil(clock) {
+		return 0
+	}
+	return clock.NowNS()
 }
 
 type semanticMediaResult struct {
@@ -1069,18 +1360,33 @@ func (runner *semanticAdmissionRunner) finishDecision(
 			Code: code, Message: boundedPolicyReason(message),
 		})
 	}
+	runner.pinboard = semanticPinboard(result.standingAfter)
+	runner.state.StandingPolicies = len(result.standingAfter)
 	sequence, err := runner.sequences.Next(runner.instance + ".semantic_decision")
 	if err != nil {
 		return err
 	}
 	decisionItemID := fmt.Sprintf("%s:decision:%d", runner.instance, sequence)
+	confidence := result.outcome
+	if result.stage == "standing_coverage" {
+		confidence = result.coverageOutcome
+	} else if result.stage == "voice_activation" {
+		confidence = result.activationOutcome
+	}
 	decision := SemanticDecision{
 		Operation: request.operation, Act: result.act, Policy: runner.model.Name(),
 		EvidenceItemID: request.envelope.ItemID, StreamID: request.streamID,
 		SourceRevision: request.sourceRev, ContextVersion: request.version,
 		InvocationDigest: result.digest, Provider: runner.entry.descriptor.Provider,
-		Model: runner.entry.descriptor.Model, Confidence: result.outcome.Confidence,
-		Measured: result.outcome.Measured, StartedNS: result.started, FinishedNS: result.ended,
+		Model: runner.entry.descriptor.Model, Confidence: confidence.Confidence,
+		Measured: confidence.Measured, DecisionStage: result.stage,
+		Activation: result.activation, ActivationConfidence: result.activationOutcome.Confidence,
+		ActivationMeasured: result.activationOutcome.Measured,
+		StandingCoverage:   result.standingCoverage, CoverageConfidence: result.coverageOutcome.Confidence,
+		CoverageMeasured: result.coverageOutcome.Measured,
+		StandingBefore:   len(result.standingBefore), StandingAfter: len(result.standingAfter),
+		StandingPinned: result.standingPinned, StandingRevoked: result.standingRevoked,
+		StartedNS: result.started, FinishedNS: result.ended,
 	}
 	decisionEnvelope := request.envelope.Clone()
 	decisionEnvelope.Type = runner.ports.decision.Type()
@@ -1151,11 +1457,22 @@ func (runner *semanticAdmissionRunner) reportResolution() error {
 		ID:       "builtin://openrealtime/adapters/policy.SemanticAdmission-interaction.Decider",
 		Revision: semanticAdmissionRuntimeRevision,
 	}
+	capabilities := []element.CapabilityResolution{
+		liveidentity.Capability("interaction.semantic-acts", "openrealtime.interaction/Decider-v1", provider, adapter),
+	}
+	if runner.config.StandingExtraction {
+		capabilities = append(capabilities, liveidentity.Capability(
+			"interaction.standing-extraction", "openrealtime.interaction/Extractor-v1", provider, adapter,
+		))
+	}
+	if runner.config.VerifyVoiceActivation {
+		capabilities = append(capabilities, liveidentity.Capability(
+			"interaction.voice-activation", "openrealtime.interaction/Decider-v1", provider, adapter,
+		))
+	}
 	return liveidentity.Report(runner.resolution, liveidentity.Artifact{
 		ID: semanticAdmissionRuntimeID, Revision: semanticAdmissionRuntimeRevision,
-	}, []element.CapabilityResolution{
-		liveidentity.Capability("interaction.semantic-acts", "openrealtime.interaction/Decider-v1", provider, adapter),
-	})
+	}, capabilities)
 }
 
 func (runner *semanticAdmissionRunner) publishResolved(ctx context.Context) error {

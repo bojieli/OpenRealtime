@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"mime"
 	"reflect"
 	"slices"
@@ -115,10 +116,11 @@ type ModelPlugin struct {
 	Factory    func(context.Context, legacy.Options) (continuation.Provider, error)
 }
 
-// PolicyPlugin is the exact enumerated semantic-admission provider selected
-// by one launch profile. It is deliberately not a continuation provider: the
-// factory can return only a policy decider and therefore cannot generate
-// prose, propose tools, or acquire speech authority.
+// PolicyPlugin is the exact semantic-admission provider selected by one
+// launch profile. It is deliberately not a continuation provider: its
+// enumerated decision and optional declared standing-policy extraction
+// capabilities remain control-plane inputs and cannot propose tools or
+// acquire speech authority.
 type PolicyPlugin struct {
 	Reference  string
 	Artifact   inspect.ArtifactIdentity
@@ -146,6 +148,41 @@ type ToolDeclaration struct {
 	Target      string               `json:"target,omitempty"`
 }
 
+// SemanticAdmissionSelection pins the provider-neutral control-plane policy
+// stages enabled for one graph application. Provider capability and policy
+// use are separate: a plug-in may expose standing extraction while a profile
+// deliberately leaves it disabled.
+type SemanticAdmissionSelection struct {
+	StandingExtraction          bool    `json:"standing_extraction,omitempty"`
+	VerifyVoiceActivation       bool    `json:"verify_voice_activation,omitempty"`
+	MinimumActivationConfidence float64 `json:"minimum_activation_confidence,omitempty"`
+	StandingMemory              int     `json:"standing_memory,omitempty"`
+}
+
+func normalizeSemanticAdmissionSelection(
+	selection SemanticAdmissionSelection, descriptor policyelements.SemanticDeciderDescriptor,
+) (SemanticAdmissionSelection, error) {
+	if selection.StandingMemory == 0 {
+		selection.StandingMemory = 64
+	}
+	if selection.StandingMemory < 1 || selection.StandingMemory > 4096 {
+		return SemanticAdmissionSelection{}, errors.New("scenario conversation standing_memory must be between 1 and 4096")
+	}
+	if math.IsNaN(selection.MinimumActivationConfidence) ||
+		math.IsInf(selection.MinimumActivationConfidence, 0) ||
+		selection.MinimumActivationConfidence < 0 || selection.MinimumActivationConfidence > 1 {
+		return SemanticAdmissionSelection{}, errors.New(
+			"scenario conversation minimum_activation_confidence must be between 0 and 1",
+		)
+	}
+	if selection.StandingExtraction && !descriptor.StandingExtraction {
+		return SemanticAdmissionSelection{}, errors.New(
+			"scenario conversation standing extraction was selected from a policy provider that does not declare it",
+		)
+	}
+	return selection, nil
+}
+
 // PluginConfig is the immutable resource-free contribution retained by a
 // launch configuration. Every factory remains unopened until session Start.
 type PluginConfig struct {
@@ -154,6 +191,7 @@ type PluginConfig struct {
 	Architecture       projectarch.Definition
 	ASR                ASRPlugin
 	Policy             PolicyPlugin
+	SemanticAdmission  SemanticAdmissionSelection
 	Model              ModelPlugin
 	SilentModel        ModelPlugin
 	TTS                TTSPlugin
@@ -175,6 +213,12 @@ func NormalizePluginConfig(source PluginConfig) (PluginConfig, error) {
 		return PluginConfig{}, err
 	}
 	config.Architecture = architecture
+	config.SemanticAdmission, err = normalizeSemanticAdmissionSelection(
+		config.SemanticAdmission, config.Policy.Descriptor,
+	)
+	if err != nil {
+		return PluginConfig{}, err
+	}
 	if err := validatePluginConfig(config); err != nil {
 		return PluginConfig{}, err
 	}
@@ -212,6 +256,9 @@ func validatePluginConfig(config PluginConfig) error {
 		return err
 	}
 	if err := validatePolicyPlugin(config.Policy); err != nil {
+		return err
+	}
+	if _, err := normalizeSemanticAdmissionSelection(config.SemanticAdmission, config.Policy.Descriptor); err != nil {
 		return err
 	}
 	if evidence := config.Architecture.Interaction.EvidenceCapabilities; evidence != nil &&

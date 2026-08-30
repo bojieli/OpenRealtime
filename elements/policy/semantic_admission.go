@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"sync"
@@ -29,11 +30,12 @@ const (
 	SemanticDeciderRegistryService = "policy.semantic.deciders"
 
 	semanticAdmissionRuntimeID       = "builtin://openrealtime/elements/policy.SemanticAdmission"
-	semanticAdmissionRuntimeRevision = "implementation:2"
+	semanticAdmissionRuntimeRevision = "implementation:3"
 	defaultSemanticRecentLines       = 12
 	defaultSemanticPending           = 64
 	defaultSemanticTerminalMemory    = 512
 	defaultSemanticCancelMemory      = 256
+	defaultSemanticStandingMemory    = 64
 	maximumSemanticTextBytes         = 1 << 20
 )
 
@@ -65,7 +67,13 @@ type SemanticDeciderDescriptor struct {
 	Revision            string `json:"revision"`
 	ConfigurationDigest string `json:"configuration_digest"`
 	Vision              bool   `json:"vision,omitempty"`
-	DecisionTimeoutMS   int64  `json:"decision_timeout_ms"`
+	// StandingExtraction declares that the same provider plug-in also
+	// implements interaction.Generator. SemanticAdmission may use that
+	// separately bounded control-plane capability to extract structured
+	// standing policies; extracted text never receives cognition, tool, or
+	// speech authority.
+	StandingExtraction bool  `json:"standing_extraction,omitempty"`
+	DecisionTimeoutMS  int64 `json:"decision_timeout_ms"`
 }
 
 func (descriptor SemanticDeciderDescriptor) Validate() error {
@@ -94,8 +102,10 @@ func (descriptor SemanticDeciderDescriptor) Validate() error {
 }
 
 // SemanticDecider extends the deliberately narrow enumerated Decider contract
-// with exact live deployment identity. Implementations still cannot generate
-// prose or emit tools because Decide can return only a supplied option.
+// with exact live deployment identity. Decide can return only a supplied
+// option. A descriptor may separately declare the optional
+// interaction.Generator control-plane capability used for standing-policy
+// extraction; neither capability can emit tools or acquire speech authority.
 type SemanticDecider interface {
 	coreinteraction.Decider
 	Descriptor() SemanticDeciderDescriptor
@@ -168,7 +178,7 @@ func (registry *SemanticDeciderRegistry) resolve(reference string) (semanticDeci
 func SemanticAdmissionDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
-		Name:          "policy.SemanticAdmission", Revision: 2,
+		Name:          "policy.SemanticAdmission", Revision: 3,
 		Ports: []element.Port{
 			{Name: "context", Direction: element.Input, Type: semanticContextType,
 				Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},
@@ -205,8 +215,8 @@ func SemanticAdmissionDescriptor() element.Descriptor {
 			Outcomes:       []string{"voice_committed", "silent_committed", "voice_create", "silent_create", "decision", "state", "outcome", "resolved"},
 			MaxConcurrency: 1, BreaksCycles: true,
 		},
-		StateSchema:  "schema://openrealtime/policy/semantic-admission-state/v1",
-		ConfigSchema: "schema://openrealtime/policy/semantic-admission-config/v2",
+		StateSchema:  "schema://openrealtime/policy/semantic-admission-state/v2",
+		ConfigSchema: "schema://openrealtime/policy/semantic-admission-config/v3",
 		Dependencies: []element.Dependency{
 			{Name: SemanticDeciderRegistryService},
 			{Name: graphruntime.ClockServiceName},
@@ -218,29 +228,44 @@ func SemanticAdmissionDescriptor() element.Descriptor {
 }
 
 type SemanticAdmissionConfig struct {
-	Decider           string `json:"decider"`
-	DirectVisualInput bool   `json:"direct_visual_input,omitempty"`
-	RecentLines       int    `json:"recent_lines,omitempty"`
-	MaxPending        int    `json:"max_pending,omitempty"`
-	TerminalMemory    int    `json:"terminal_memory,omitempty"`
-	CancelMemory      int    `json:"cancel_memory,omitempty"`
+	Decider                     string  `json:"decider"`
+	DirectVisualInput           bool    `json:"direct_visual_input,omitempty"`
+	StandingExtraction          bool    `json:"standing_extraction,omitempty"`
+	VerifyVoiceActivation       bool    `json:"verify_voice_activation,omitempty"`
+	MinimumActivationConfidence float64 `json:"minimum_activation_confidence,omitempty"`
+	RecentLines                 int     `json:"recent_lines,omitempty"`
+	MaxPending                  int     `json:"max_pending,omitempty"`
+	TerminalMemory              int     `json:"terminal_memory,omitempty"`
+	CancelMemory                int     `json:"cancel_memory,omitempty"`
+	StandingMemory              int     `json:"standing_memory,omitempty"`
 }
 
 type SemanticDecision struct {
-	Operation        string              `json:"operation"`
-	Act              coreinteraction.Act `json:"act"`
-	Policy           string              `json:"policy"`
-	EvidenceItemID   string              `json:"evidence_item_id"`
-	StreamID         string              `json:"stream_id,omitempty"`
-	SourceRevision   uint64              `json:"source_revision,omitempty"`
-	ContextVersion   uint64              `json:"context_version"`
-	InvocationDigest string              `json:"invocation_digest"`
-	Provider         string              `json:"provider"`
-	Model            string              `json:"model"`
-	Confidence       float64             `json:"confidence,omitempty"`
-	Measured         bool                `json:"measured,omitempty"`
-	StartedNS        uint64              `json:"started_ns"`
-	FinishedNS       uint64              `json:"finished_ns"`
+	Operation            string              `json:"operation"`
+	Act                  coreinteraction.Act `json:"act"`
+	Policy               string              `json:"policy"`
+	EvidenceItemID       string              `json:"evidence_item_id"`
+	StreamID             string              `json:"stream_id,omitempty"`
+	SourceRevision       uint64              `json:"source_revision,omitempty"`
+	ContextVersion       uint64              `json:"context_version"`
+	InvocationDigest     string              `json:"invocation_digest"`
+	Provider             string              `json:"provider"`
+	Model                string              `json:"model"`
+	Confidence           float64             `json:"confidence,omitempty"`
+	Measured             bool                `json:"measured,omitempty"`
+	DecisionStage        string              `json:"decision_stage,omitempty"`
+	Activation           string              `json:"activation,omitempty"`
+	ActivationConfidence float64             `json:"activation_confidence,omitempty"`
+	ActivationMeasured   bool                `json:"activation_measured,omitempty"`
+	StandingCoverage     string              `json:"standing_coverage,omitempty"`
+	CoverageConfidence   float64             `json:"coverage_confidence,omitempty"`
+	CoverageMeasured     bool                `json:"coverage_measured,omitempty"`
+	StandingBefore       int                 `json:"standing_before,omitempty"`
+	StandingAfter        int                 `json:"standing_after,omitempty"`
+	StandingPinned       int                 `json:"standing_pinned,omitempty"`
+	StandingRevoked      int                 `json:"standing_revoked,omitempty"`
+	StartedNS            uint64              `json:"started_ns"`
+	FinishedNS           uint64              `json:"finished_ns"`
 }
 
 type SemanticAdmissionOutcomeKind string
@@ -282,6 +307,8 @@ type SemanticAdmissionState struct {
 	Ignored            uint64 `json:"ignored"`
 	TerminalMemory     int    `json:"terminal_memory"`
 	CancellationMemory int    `json:"cancellation_memory"`
+	StandingPolicies   int    `json:"standing_policies"`
+	StandingMemory     int    `json:"standing_memory"`
 }
 
 type SemanticDeciderResolution struct {
@@ -295,6 +322,7 @@ func decodeSemanticAdmissionConfig(source json.RawMessage) (SemanticAdmissionCon
 	config := SemanticAdmissionConfig{
 		RecentLines: defaultSemanticRecentLines, MaxPending: defaultSemanticPending,
 		TerminalMemory: defaultSemanticTerminalMemory, CancelMemory: defaultSemanticCancelMemory,
+		StandingMemory: defaultSemanticStandingMemory,
 	}
 	if err := elementconfig.Decode(source, &config); err != nil {
 		return SemanticAdmissionConfig{}, err
@@ -313,6 +341,13 @@ func decodeSemanticAdmissionConfig(source json.RawMessage) (SemanticAdmissionCon
 	}
 	if config.CancelMemory < 1 || config.CancelMemory > 1_000_000 {
 		return SemanticAdmissionConfig{}, errors.New("semantic admission cancel_memory must be between 1 and 1000000")
+	}
+	if config.StandingMemory < 1 || config.StandingMemory > 4096 {
+		return SemanticAdmissionConfig{}, errors.New("semantic admission standing_memory must be between 1 and 4096")
+	}
+	if math.IsNaN(config.MinimumActivationConfidence) || math.IsInf(config.MinimumActivationConfidence, 0) ||
+		config.MinimumActivationConfidence < 0 || config.MinimumActivationConfidence > 1 {
+		return SemanticAdmissionConfig{}, errors.New("semantic admission minimum_activation_confidence must be between 0 and 1")
 	}
 	return config, nil
 }

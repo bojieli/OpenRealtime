@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -51,8 +52,8 @@ func TestSemanticAdmissionContractRejectsUnpinnedProvidersAndUnboundedValues(t *
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "policy.SemanticAdmission" || descriptor.Revision != 2 ||
-		descriptor.ConfigSchema != "schema://openrealtime/policy/semantic-admission-config/v2" {
+	if descriptor.Name != "policy.SemanticAdmission" || descriptor.Revision != 3 ||
+		descriptor.ConfigSchema != "schema://openrealtime/policy/semantic-admission-config/v3" {
 		t.Fatalf("semantic admission descriptor = %+v", descriptor)
 	}
 	for _, testCase := range []struct {
@@ -87,6 +88,8 @@ func TestSemanticAdmissionContractRejectsUnpinnedProvidersAndUnboundedValues(t *
 			`{"decider":"semantic-primary","max_pending":0}`,
 			`{"decider":"semantic-primary","terminal_memory":1000001}`,
 			`{"decider":"semantic-primary","cancel_memory":0}`,
+			`{"decider":"semantic-primary","standing_memory":4097}`,
+			`{"decider":"semantic-primary","minimum_activation_confidence":1.1}`,
 			`{"decider":"semantic-primary","unknown":true}`,
 		} {
 			if err := validator.ValidateConfig(json.RawMessage(source)); err == nil {
@@ -178,6 +181,261 @@ func TestSemanticAdmissionDirectVisualInputIsExplicitAndResolvedAtTheSealedPrefi
 	imageBytes[0] ^= 0xff
 	if captured[0].Images[0].Bytes[0] == imageBytes[0] {
 		t.Fatal("semantic decision retained mutable media resolver bytes")
+	}
+}
+
+func TestSemanticAdmissionPinsStandingPolicyBeforeTheNextDecisionAndSuppressesItsSetup(t *testing.T) {
+	descriptor := semanticTestDescriptor
+	descriptor.StandingExtraction = true
+	decider := &semanticTestDecider{
+		descriptor: descriptor,
+		answers:    []string{"covered", string(coreinteraction.ActAnswer)},
+		generationAnswers: []string{
+			"pin conversation count the animals out loud as they mention them and say nothing else",
+			"yes", "yes", "standing", "none",
+		},
+	}
+	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", StandingExtraction: true, VerifyVoiceActivation: true,
+		MinimumActivationConfidence: 0.7, RecentLines: 12, MaxPending: 8,
+		TerminalMemory: 8, CancelMemory: 8, StandingMemory: 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := mountSemanticAdmissionRegistered(t, descriptor, decider, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- mounted.Run(ctx) }()
+	harness := policyHarness{mounted: mounted, done: done, cancel: cancel}
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, false)
+
+	setup := trajectory.Item{
+		ID: "observation-setup", Kind: trajectory.KindObservation, MonotonicNS: 1,
+		SourceRevision: 1, Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+		Content: "I will tell you about my afternoon. Count the animals out loud as I mention them, and say nothing else.",
+		Observation: &trajectory.ObservationMeta{
+			Observer: "asr", Source: "microphone", Authority: trajectory.AuthorityUser,
+		},
+		Event: &trajectory.EventMetadata{EventID: "event-setup", Type: "asr.endpoint", Source: "asr", Channel: "microphone"},
+	}
+	first := trajectory.Snapshot{Version: 1, Items: []trajectory.Item{setup}}
+	firstPrefix, err := trajectory.IdentifyPrefix(first, first.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendSemanticContext(t, harness, "state-1", first)
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-setup", SessionID: "semantic-session",
+		Payload: stateelements.ObservationCommitOutcome{
+			Kind: stateelements.ObservationCommitted, TriggerItemID: setup.Event.EventID,
+			TrajectoryItemID: setup.ID, StreamID: "speech-setup", ObservationRevision: 1,
+			SourceRevision: 1, StoreVersion: 1,
+			Context: stateelements.CommittedContext{Prefix: firstPrefix, StateItemID: "state-1"},
+		},
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	decision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+	state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SemanticAdmissionState)
+	if decision.Act != coreinteraction.ActStaySilent || decision.DecisionStage != "standing_coverage" ||
+		decision.StandingCoverage != "covered" || decision.CoverageConfidence != 0.9 ||
+		!decision.CoverageMeasured || decision.Activation != "" || decision.StandingBefore != 0 ||
+		decision.StandingAfter != 1 || decision.StandingPinned != 1 ||
+		outcome.Kind != policyelements.SemanticAdmissionSuppressed || state.StandingPolicies != 1 {
+		t.Fatalf("setup decision=%+v outcome=%+v state=%+v", decision, outcome, state)
+	}
+	assertNoSemanticGeneration(t, harness)
+
+	animal := trajectory.Item{
+		ID: "observation-animal", Kind: trajectory.KindObservation, MonotonicNS: 2,
+		SourceRevision: 2, Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+		Content: "A capybara wandered over and sat down next to me.",
+		Observation: &trajectory.ObservationMeta{
+			Observer: "asr", Source: "microphone", Authority: trajectory.AuthorityUser,
+		},
+		Event: &trajectory.EventMetadata{EventID: "event-animal", Type: "asr.endpoint", Source: "asr", Channel: "microphone"},
+	}
+	second := trajectory.Snapshot{Version: 2, Items: []trajectory.Item{setup, animal}}
+	secondPrefix, err := trajectory.IdentifyPrefix(second, second.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendSemanticContext(t, harness, "state-2", second)
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-animal", SessionID: "semantic-session",
+		Payload: stateelements.ObservationCommitOutcome{
+			Kind: stateelements.ObservationCommitted, TriggerItemID: animal.Event.EventID,
+			TrajectoryItemID: animal.ID, StreamID: "speech-animal", ObservationRevision: 1,
+			SourceRevision: 2, StoreVersion: 2,
+			Context: stateelements.CommittedContext{Prefix: secondPrefix, StateItemID: "state-2"},
+		},
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	decision = receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+	_ = receivePolicy(t, harness.egress(t, "voice_committed"))
+	outcome = receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+	state = receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SemanticAdmissionState)
+	if decision.Act != coreinteraction.ActAnswer || decision.DecisionStage != "primary" ||
+		decision.StandingBefore != 1 || decision.StandingAfter != 1 ||
+		outcome.Kind != policyelements.SemanticAdmissionAdmitted || state.StandingPolicies != 1 {
+		t.Fatalf("animal decision=%+v outcome=%+v state=%+v", decision, outcome, state)
+	}
+	captured := decider.captured()
+	if len(captured) != 2 || !strings.Contains(captured[1].Evidence, "Standing instructions:") ||
+		!strings.Contains(captured[1].Evidence, "count the animals") {
+		t.Fatalf("semantic decision inputs = %+v", captured)
+	}
+}
+
+func TestSemanticAdmissionVoiceActivationVerifierSuppressesOnlyUnmetConditions(t *testing.T) {
+	decider := &semanticTestDecider{
+		descriptor: semanticTestDescriptor,
+		answers: []string{
+			string(coreinteraction.ActAnswer), "wait",
+			string(coreinteraction.ActAnswer), "condition-met",
+		},
+	}
+	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", VerifyVoiceActivation: true,
+		MinimumActivationConfidence: 0.7, RecentLines: 12, MaxPending: 8,
+		TerminalMemory: 8, CancelMemory: 8, StandingMemory: 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness := mountSemanticAdmission(t, decider, config)
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, false)
+
+	firstItem := semanticEndpointObservation(
+		"before-error", 1, 1, "We will do the design review next week.",
+	)
+	first := trajectory.Snapshot{Version: 1, Items: []trajectory.Item{firstItem}}
+	firstPrefix, err := trajectory.IdentifyPrefix(first, first.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendSemanticContext(t, harness, "state-1", first)
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-before-error", SessionID: "semantic-session",
+		Payload: semanticCommittedOutcome(firstItem, "before-error", firstPrefix, "state-1", 1),
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	decision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+	_ = receivePolicy(t, harness.egress(t, "outcome"))
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if decision.Act != coreinteraction.ActStaySilent || decision.DecisionStage != "voice_activation" ||
+		decision.Activation != "wait" {
+		t.Fatalf("unmet condition decision = %+v", decision)
+	}
+	assertNoSemanticGeneration(t, harness)
+
+	secondItem := semanticEndpointObservation(
+		"with-error", 2, 2, "Then ship it by the thirteenth.",
+	)
+	second := trajectory.Snapshot{Version: 2, Items: []trajectory.Item{firstItem, secondItem}}
+	secondPrefix, err := trajectory.IdentifyPrefix(second, second.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendSemanticContext(t, harness, "state-2", second)
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-with-error", SessionID: "semantic-session",
+		Payload: semanticCommittedOutcome(secondItem, "with-error", secondPrefix, "state-2", 2),
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	decision = receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+	_ = receivePolicy(t, harness.egress(t, "voice_committed"))
+	_ = receivePolicy(t, harness.egress(t, "outcome"))
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if decision.Act != coreinteraction.ActAnswer || decision.DecisionStage != "primary" ||
+		decision.Activation != "condition-met" {
+		t.Fatalf("met condition decision = %+v", decision)
+	}
+}
+
+func TestSupersededStandingExtractionCannotLeakIntoNewerDecision(t *testing.T) {
+	descriptor := semanticTestDescriptor
+	descriptor.StandingExtraction = true
+	entered := make(chan int, 2)
+	release := make(chan struct{})
+	decider := &semanticTestDecider{
+		descriptor: descriptor, entered: entered, release: release,
+		answers: []string{"covered", string(coreinteraction.ActAnswer)},
+		generationAnswers: []string{
+			"pin conversation count the animals as they arrive", "yes", "no", "standing", "none",
+		},
+	}
+	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", StandingExtraction: true,
+		MinimumActivationConfidence: 0.7, RecentLines: 12, MaxPending: 8,
+		TerminalMemory: 8, CancelMemory: 8, StandingMemory: 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := mountSemanticAdmissionRegistered(t, descriptor, decider, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- mounted.Run(ctx) }()
+	harness := policyHarness{mounted: mounted, done: done, cancel: cancel}
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, false)
+
+	setup := semanticEndpointObservation("shared-setup", 1, 1, "Count the animals as they arrive.")
+	first := trajectory.Snapshot{Version: 1, Items: []trajectory.Item{setup}}
+	firstPrefix, err := trajectory.IdentifyPrefix(first, first.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendSemanticContext(t, harness, "state-1", first)
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-shared-1", SessionID: "semantic-session",
+		Payload: semanticCommittedOutcome(setup, "shared", firstPrefix, "state-1", 1),
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if call := awaitSemanticCall(t, entered); call != 0 {
+		t.Fatalf("coverage call = %d, want 0", call)
+	}
+
+	newerItem := semanticEndpointObservation("shared-newer", 2, 2, "What time is it?")
+	second := trajectory.Snapshot{Version: 2, Items: []trajectory.Item{setup, newerItem}}
+	secondPrefix, err := trajectory.IdentifyPrefix(second, second.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendSemanticContext(t, harness, "state-2", second)
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-shared-2", SessionID: "semantic-session",
+		Payload: semanticCommittedOutcome(newerItem, "shared", secondPrefix, "state-2", 2),
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	canceled := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+	if canceled.Kind != policyelements.SemanticAdmissionCanceled || canceled.Code != "decision_superseded" {
+		t.Fatalf("superseded setup outcome = %+v", canceled)
+	}
+	if call := awaitSemanticCall(t, entered); call != 1 {
+		t.Fatalf("newer primary call = %d, want 1", call)
+	}
+	close(release)
+	decision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+	_ = receivePolicy(t, harness.egress(t, "voice_committed"))
+	_ = receivePolicy(t, harness.egress(t, "outcome"))
+	state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SemanticAdmissionState)
+	if decision.StandingBefore != 0 || decision.StandingAfter != 0 || state.StandingPolicies != 0 {
+		t.Fatalf("superseded extraction leaked: decision=%+v state=%+v", decision, state)
 	}
 }
 
@@ -333,6 +591,33 @@ func TestSemanticAdmissionDirectVisualInputRequiresBothDeclaredCapabilityAndReso
 		t, visualDescriptor, visual, config, nil,
 	); err == nil || !strings.Contains(err.Error(), "media resolver") {
 		t.Fatalf("missing semantic media resolver mount error = %v", err)
+	}
+}
+
+func TestSemanticAdmissionStandingExtractionRequiresDeclaredProviderCapability(t *testing.T) {
+	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", StandingExtraction: true, RecentLines: 12,
+		MaxPending: 8, TerminalMemory: 8, CancelMemory: 8, StandingMemory: 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decider := &semanticTestDecider{descriptor: semanticTestDescriptor}
+	if _, err := mountSemanticAdmissionRegistered(t, semanticTestDescriptor, decider, config); err == nil ||
+		!strings.Contains(err.Error(), "provider-declared extraction capability") {
+		t.Fatalf("undeclared standing extraction mount error = %v", err)
+	}
+
+	descriptor := semanticTestDescriptor
+	descriptor.StandingExtraction = true
+	dishonest := semanticDecisionOnlyDecider{descriptor: descriptor}
+	mounted, err := mountSemanticAdmissionRegistered(t, descriptor, dishonest, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mounted.Run(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "does not implement interaction.Generator") {
+		t.Fatalf("dishonest standing extraction provider run error = %v", err)
 	}
 }
 
@@ -501,13 +786,30 @@ type semanticTestDecider struct {
 
 	mu                 sync.Mutex
 	acts               []coreinteraction.Act
+	answers            []string
+	generationAnswers  []string
 	failure            error
 	decisions          []coreinteraction.Decision
+	generations        []string
 	entered            chan int
 	exited             chan int
 	release            chan struct{}
 	ignoreCancellation bool
 	closed             atomic.Int32
+}
+
+type semanticDecisionOnlyDecider struct {
+	descriptor policyelements.SemanticDeciderDescriptor
+}
+
+func (decider semanticDecisionOnlyDecider) Name() string { return "semantic-decision-only-test" }
+func (decider semanticDecisionOnlyDecider) Descriptor() policyelements.SemanticDeciderDescriptor {
+	return decider.descriptor
+}
+func (semanticDecisionOnlyDecider) Decide(
+	context.Context, coreinteraction.Decision,
+) (coreinteraction.Outcome, error) {
+	return coreinteraction.Outcome{}, errors.New("unexpected decision")
 }
 
 func (decider *semanticTestDecider) Name() string { return "semantic-test" }
@@ -525,6 +827,10 @@ func (decider *semanticTestDecider) Decide(
 	act := coreinteraction.ActAnswer
 	if len(decider.acts) != 0 {
 		act = decider.acts[min(call, len(decider.acts)-1)]
+	}
+	answer := string(act)
+	if len(decider.answers) != 0 {
+		answer = decider.answers[min(call, len(decider.answers)-1)]
 	}
 	failure := decider.failure
 	entered, exited, release := decider.entered, decider.exited, decider.release
@@ -554,7 +860,29 @@ func (decider *semanticTestDecider) Decide(
 	if failure != nil {
 		return coreinteraction.Outcome{}, failure
 	}
-	return coreinteraction.Outcome{Option: string(act), Index: semanticOptionIndex(decision.Options, act)}, nil
+	index := slices.Index(decision.Options, answer)
+	return coreinteraction.Outcome{Option: answer, Index: index, Confidence: 0.9, Measured: true}, nil
+}
+
+func (decider *semanticTestDecider) Generate(
+	ctx context.Context, prompt, evidence string, _ int,
+) (string, error) {
+	decider.mu.Lock()
+	call := len(decider.generations)
+	decider.generations = append(decider.generations, prompt+"\n"+evidence)
+	answer := "none"
+	if len(decider.generationAnswers) != 0 {
+		answer = decider.generationAnswers[min(call, len(decider.generationAnswers)-1)]
+	}
+	failure := decider.failure
+	decider.mu.Unlock()
+	if err := context.Cause(ctx); err != nil {
+		return "", err
+	}
+	if failure != nil {
+		return "", failure
+	}
+	return answer, nil
 }
 
 func (decider *semanticTestDecider) Close() error {
@@ -1168,14 +1496,14 @@ func mountSemanticAdmissionResult(
 
 func mountSemanticAdmissionRegistered(
 	t *testing.T, descriptor policyelements.SemanticDeciderDescriptor,
-	decider *semanticTestDecider, config json.RawMessage,
+	decider policyelements.SemanticDecider, config json.RawMessage,
 ) (*graphruntime.Mounted, error) {
 	return mountSemanticAdmissionRegisteredWithMedia(t, descriptor, decider, config, nil)
 }
 
 func mountSemanticAdmissionRegisteredWithMedia(
 	t *testing.T, descriptor policyelements.SemanticDeciderDescriptor,
-	decider *semanticTestDecider, config json.RawMessage, media continuation.MediaResolver,
+	decider policyelements.SemanticDecider, config json.RawMessage, media continuation.MediaResolver,
 ) (*graphruntime.Mounted, error) {
 	t.Helper()
 	providers := policyelements.NewSemanticDeciderRegistry()
@@ -1304,6 +1632,34 @@ func semanticObservation(
 		TrajectoryItemID: item.ID, StreamID: stream, ObservationRevision: 1,
 		SourceRevision: sourceRevision, StoreVersion: snapshot.Version,
 		Context: stateelements.CommittedContext{Prefix: identity, StateItemID: "state-1"},
+	}
+}
+
+func semanticEndpointObservation(
+	stream string, revision, sourceRevision uint64, content string,
+) trajectory.Item {
+	return trajectory.Item{
+		ID: "observation-" + stream, Kind: trajectory.KindObservation,
+		MonotonicNS: revision, SourceRevision: sourceRevision,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: content,
+		Observation: &trajectory.ObservationMeta{
+			Observer: "asr", Source: "microphone", Authority: trajectory.AuthorityUser,
+		},
+		Event: &trajectory.EventMetadata{
+			EventID: "event-" + stream, Type: "asr.endpoint", Source: "asr", Channel: "microphone",
+		},
+	}
+}
+
+func semanticCommittedOutcome(
+	item trajectory.Item, stream string, prefix trajectory.PrefixIdentity,
+	stateItem string, version uint64,
+) stateelements.ObservationCommitOutcome {
+	return stateelements.ObservationCommitOutcome{
+		Kind: stateelements.ObservationCommitted, TriggerItemID: item.Event.EventID,
+		TrajectoryItemID: item.ID, StreamID: stream, ObservationRevision: 1,
+		SourceRevision: item.SourceRevision, StoreVersion: version,
+		Context: stateelements.CommittedContext{Prefix: prefix, StateItemID: stateItem},
 	}
 }
 

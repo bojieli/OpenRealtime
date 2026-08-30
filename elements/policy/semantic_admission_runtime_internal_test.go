@@ -3,6 +3,7 @@ package policy
 import (
 	"context"
 	"errors"
+	"math"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -11,8 +12,50 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
+	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
+
+func TestValidateSemanticOutcomeRequiresExactConsistentBoundedChoice(t *testing.T) {
+	options := []string{"listen", "answer"}
+	for _, test := range []struct {
+		name    string
+		outcome interaction.Outcome
+	}{
+		{name: "unknown option", outcome: interaction.Outcome{Option: "speak", Index: 0}},
+		{name: "wrong index", outcome: interaction.Outcome{Option: "answer", Index: 0}},
+		{name: "NaN confidence", outcome: interaction.Outcome{Option: "listen", Index: 0, Confidence: math.NaN(), Measured: true}},
+		{name: "infinite confidence", outcome: interaction.Outcome{Option: "listen", Index: 0, Confidence: math.Inf(1), Measured: true}},
+		{name: "negative confidence", outcome: interaction.Outcome{Option: "listen", Index: 0, Confidence: -0.1, Measured: true}},
+		{name: "oversized confidence", outcome: interaction.Outcome{Option: "listen", Index: 0, Confidence: 1.1, Measured: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateSemanticOutcome(test.outcome, options); err == nil {
+				t.Fatalf("malformed outcome was accepted: %+v", test.outcome)
+			}
+		})
+	}
+	if err := validateSemanticOutcome(interaction.Outcome{
+		Option: "answer", Index: 1, Confidence: 0.7, Measured: true,
+	}, options); err != nil {
+		t.Fatalf("valid exact outcome: %v", err)
+	}
+}
+
+func TestSemanticRecentBeforeDoesNotEchoCurrentUtterance(t *testing.T) {
+	items := []trajectory.Item{
+		{ID: "previous", Kind: trajectory.KindObservation, Content: "the earlier clause",
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser}},
+		{ID: "current", Kind: trajectory.KindObservation, Content: "the current request",
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser}},
+		{ID: "beyond-prefix", Kind: trajectory.KindObservation, Content: "future evidence",
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser}},
+	}
+	lines := semanticRecentBefore(items, "current", 12)
+	if len(lines) != 1 || lines[0] != "user: the earlier clause" {
+		t.Fatalf("recent extraction context = %v", lines)
+	}
+}
 
 type semanticVariadicTestInput struct {
 	envelope     element.Envelope
@@ -78,6 +121,77 @@ func BenchmarkSemanticAdmissionSituation(b *testing.B) {
 			}
 		}
 	})
+}
+
+func TestApplySemanticExtractionIsAtomicAndBounded(t *testing.T) {
+	existing := []interaction.StandingInstruction{{
+		Text: "tell me when the build finishes", Scope: interaction.ScopeConversation,
+		Turn: 1, SetNS: 10,
+	}}
+	overflow := interaction.Extraction{Pins: []interaction.StandingInstruction{
+		{Text: "count the animals", Scope: interaction.ScopeConversation},
+		{Text: "translate as they speak", Scope: interaction.ScopeConversation},
+	}}
+	if after, _, _, err := applySemanticExtraction(existing, overflow, 2, 20, 1); err == nil || after != nil {
+		t.Fatalf("overflow extraction = %+v, %v", after, err)
+	}
+	if existing[0].Text != "tell me when the build finishes" || existing[0].SetNS != 10 {
+		t.Fatalf("failed extraction mutated caller state: %+v", existing)
+	}
+
+	replacement := interaction.Extraction{
+		Revokes: []string{"build finishes"},
+		Pins: []interaction.StandingInstruction{{
+			Text: "count the animals", Scope: interaction.ScopeConversation,
+		}},
+	}
+	after, pinned, revoked, err := applySemanticExtraction(existing, replacement, 2, 20, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != 1 || after[0].Text != "count the animals" || after[0].Turn != 2 ||
+		after[0].SetNS != 20 || pinned != 1 || revoked != 1 {
+		t.Fatalf("bounded extraction = %+v pinned=%d revoked=%d", after, pinned, revoked)
+	}
+
+	updated, pinned, revoked, err := applySemanticExtraction(after, interaction.Extraction{
+		Pins: []interaction.StandingInstruction{{
+			Text: "count the animals and say nothing else", Scope: interaction.ScopeConversation,
+			Restricting: true,
+		}},
+	}, 2, 30, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated) != 1 || updated[0].Text != "count the animals and say nothing else" ||
+		updated[0].SetNS != 20 || !updated[0].Restricting || pinned != 0 || revoked != 0 {
+		t.Fatalf("same-turn replacement = %+v pinned=%d revoked=%d", updated, pinned, revoked)
+	}
+}
+
+func TestApplySemanticExtractionExpiresOnlyPreviouslyActiveTurnPolicies(t *testing.T) {
+	existing := []interaction.StandingInstruction{{
+		Text: "wait until I finish", Scope: interaction.ScopeTurn, Turn: 1, SetNS: 10,
+	}}
+	after, pinned, revoked, err := applySemanticExtraction(
+		existing, interaction.Extraction{Pins: []interaction.StandingInstruction{{
+			Text: "wait for my next sentence", Scope: interaction.ScopeTurn,
+		}}}, 2, 20, 4,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != 1 || after[0].Text != "wait for my next sentence" || after[0].Turn != 2 ||
+		pinned != 1 || revoked != 0 {
+		t.Fatalf("turn policy transition = %+v pinned=%d revoked=%d", after, pinned, revoked)
+	}
+	after, _, _, err = applySemanticExtraction(after, interaction.Extraction{}, 3, 30, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != 0 {
+		t.Fatalf("turn-scoped policy survived its one governed turn: %+v", after)
+	}
 }
 
 func (*semanticVariadicTestInput) Name() string { return "committed" }
