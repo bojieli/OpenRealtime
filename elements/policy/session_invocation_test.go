@@ -127,7 +127,10 @@ func TestSessionInvocationManualCreateIsVisibleAndCarriesNoObservationAuthority(
 	harness := mountSessionInvocation(t)
 	defer harness.stop(t)
 	_ = receivePolicy(t, harness.egress(t, "state"))
-	installSessionInvocation(t, harness, 1, "Continue after the tool result.", nil)
+	installSessionInvocation(t, harness, 1, "Continue after the tool result.", []continuation.ToolDefinition{{
+		Name: "press_key", Description: "Send a keypad tone.",
+		Parameters: json.RawMessage(`{"type":"object","properties":{"digit":{"type":"string"}}}`),
+	}})
 	version := uint64(7)
 	sendPolicy(t, harness.ingress(t, "create"), element.Envelope{
 		Type: policyelements.ResponseCreateType(), ItemID: "create-1", SessionID: "session-policy",
@@ -139,6 +142,8 @@ func TestSessionInvocationManualCreateIsVisibleAndCarriesNoObservationAuthority(
 	trigger := receivePolicy(t, harness.egress(t, "trigger"))
 	payload := trigger.Payload.(cognitionelements.Generate)
 	if payload.Invocation.Instruction != "Continue after the tool result." ||
+		payload.Invocation.SourceRevision != 0 || len(payload.Invocation.Capabilities) != 0 ||
+		len(payload.Invocation.Tools) != 0 ||
 		payload.ExpectedContextVersion == nil || *payload.ExpectedContextVersion != version ||
 		payload.ExpectedContextItemID != "trajectory-state-7" ||
 		payload.CommittedContext != nil {
@@ -297,10 +302,19 @@ func installSessionInvocation(
 	tools []continuation.ToolDefinition,
 ) {
 	t.Helper()
+	capabilities := make([]continuation.Capability, len(tools))
+	for index := range tools {
+		capabilities[index] = continuation.Capability{
+			Name: tools[index].Name, Description: tools[index].Description, Available: true,
+			ExecutionPhase: "fast",
+		}
+	}
 	sendPolicy(t, harness.ingress(t, "update"), element.Envelope{
 		Type: policyelements.SessionInvocationUpdateType(), ItemID: "settings-install",
 		SessionID: "session-policy", Payload: policyelements.SessionInvocationUpdate{
-			Revision: revision, Invocation: continuation.Invocation{Instruction: instruction, Tools: tools},
+			Revision: revision, Invocation: continuation.Invocation{
+				Instruction: instruction, Capabilities: capabilities, Tools: tools,
+			},
 		},
 	})
 	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SessionInvocationOutcome)

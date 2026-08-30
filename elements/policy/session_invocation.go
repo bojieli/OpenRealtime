@@ -283,6 +283,15 @@ func invocationForCommit(update SessionInvocationUpdate, commit stateelements.Ob
 
 func invocationForManualCreate(update SessionInvocationUpdate) continuation.Invocation {
 	invocation := cloneInvocation(update.Invocation)
+	// A manual response.create is bound to an exact trajectory snapshot but
+	// carries no committed observation authority. Do not advertise external
+	// actions that this run can never authorize: exposing them lets a provider
+	// produce an otherwise well-formed proposal that must fail later at the
+	// provenance join. The speech continuation and its output bound remain
+	// available, while the next committed observation restores the configured
+	// capabilities and tools through invocationForCommit.
+	invocation.Capabilities = nil
+	invocation.Tools = nil
 	invocation.SourceRevision = 0
 	return invocation
 }
