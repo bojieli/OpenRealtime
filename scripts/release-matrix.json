@@ -543,6 +543,32 @@
       ]
     },
     {
+      "id": "external.model.scenario-review",
+      "description": "Review all 165 sealed graph-native scenario attempts with the exact Gemini 3.7 Flash plug-in",
+      "availability": "provisioned",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "run", "./cmd/openrealtime", "review", "scenario", "-source-dir", "{artifacts}/candidate-scenario-review", "-source-receipt", "{artifacts}/candidate-scenario-review.receipt.json", "-out", "{artifacts}/candidate-scenario-evaluations", "-out-receipt", "{artifacts}/candidate-scenario-evaluations.receipt.json", "-provider", "google.gemini-3.7-flash", "-parallel", "4", "-timeout", "12m"],
+      "timeout": "24h",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "env", "value": "GEMINI_API_KEY", "description": "the Gemini 3.7 Flash review credential is supplied"}
+      ],
+      "assertions": [
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-evaluations/manifest.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-evaluations/REVIEW.md"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-evaluations/0001-case-01-trial-001.evaluation/media-001.wav"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-evaluations/0001-case-01-trial-001.receipt.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-evaluations/0165-case-11-trial-015.evaluation/media-001.wav"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-evaluations/0165-case-11-trial-015.receipt.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-evaluations.receipt.json"},
+        {"kind": "stdout_regex", "value": "(?m)^  provider     google\\.gemini-3\\.7-flash$"},
+        {"kind": "stdout_regex", "value": "(?m)^  evaluations  165/165$"}
+      ],
+      "covers": ["scenario-review:gemini-3.7-flash:165"]
+    },
+    {
       "id": "external.tau.upstream",
       "description": "Run tau2 check-data, lint, formatting, full tests, and the audio-native provider suite",
       "availability": "provisioned",

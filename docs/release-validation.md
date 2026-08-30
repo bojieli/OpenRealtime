@@ -153,6 +153,10 @@ These artifacts are secondary review evidence: they expose disagreement and
 media-quality findings but never rewrite the checklist outcome. They must not
 be represented as a passing live release gate unless the complete provisioned
 population and all retained receipts were actually produced and verified.
+The required `external.model.scenario-review` gate consumes the candidate
+scenario source in the same fresh release artifact directory and asserts the
+first and last per-attempt WAVs and receipts as well as the aggregate review;
+the command's receipt verifier binds all 165 attempts between those endpoints.
 
 After both arms are retained, set
 `OPENREALTIME_MIGRATION_REPORT_LOCATION` to a new logical location inside the

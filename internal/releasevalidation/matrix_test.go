@@ -276,6 +276,7 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		"external.macos.signed-e2e",
 		"external.migration.full-comparison",
 		"external.model.live-surface",
+		"external.model.scenario-review",
 		"external.tau.upstream",
 		"local.client.swift-linux",
 		"local.presentation.chromium",
@@ -380,6 +381,31 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 	}
 	if slices.Contains(byID["external.benchmark.meeting.omni"].Command, "-migration-store") {
 		t.Error("the independent omni gate must not duplicate the canonical meeting migration outcome")
+	}
+
+	scenarioReview := byID["external.model.scenario-review"]
+	if scenarioReview.Availability != AvailabilityProvisioned ||
+		scenarioReview.Selection != SelectionOptIn || scenarioReview.SkipPolicy != SkipForbid ||
+		argumentAfter(scenarioReview.Command, "-source-dir") !=
+			"{artifacts}/candidate-scenario-review" ||
+		argumentAfter(scenarioReview.Command, "-source-receipt") !=
+			"{artifacts}/candidate-scenario-review.receipt.json" ||
+		argumentAfter(scenarioReview.Command, "-provider") != "google.gemini-3.7-flash" ||
+		argumentAfter(scenarioReview.Command, "-parallel") != "4" {
+		t.Fatalf("sealed scenario model-review gate was weakened: %+v", scenarioReview)
+	}
+	for _, artifact := range []string{
+		"{artifacts}/candidate-scenario-evaluations/manifest.json",
+		"{artifacts}/candidate-scenario-evaluations/REVIEW.md",
+		"{artifacts}/candidate-scenario-evaluations/0001-case-01-trial-001.evaluation/media-001.wav",
+		"{artifacts}/candidate-scenario-evaluations/0001-case-01-trial-001.receipt.json",
+		"{artifacts}/candidate-scenario-evaluations/0165-case-11-trial-015.evaluation/media-001.wav",
+		"{artifacts}/candidate-scenario-evaluations/0165-case-11-trial-015.receipt.json",
+		"{artifacts}/candidate-scenario-evaluations.receipt.json",
+	} {
+		if !gateHasAssertion(scenarioReview, "file_nonempty", artifact) {
+			t.Errorf("scenario review gate omits retained artifact %q", artifact)
+		}
 	}
 
 	migrationComparison := byID["external.migration.full-comparison"]
@@ -546,4 +572,10 @@ func argumentAfter(arguments []string, flag string) string {
 		}
 	}
 	return ""
+}
+
+func gateHasAssertion(gate Gate, kind, value string) bool {
+	return slices.ContainsFunc(gate.Assertions, func(assertion Assertion) bool {
+		return assertion.Kind == kind && assertion.Value == value
+	})
 }
