@@ -571,15 +571,27 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if err != nil {
 		return err
 	}
-	return registry.RegisterFactory(registrations[0])
+	for _, registration := range registrations {
+		if err := registry.RegisterFactory(registration); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
-	return factoryprofile.Registrations(factoryprofile.Entry{
-		Factory: generateOnObservationFactory{}, Artifact: inspect.ArtifactIdentity{
-			ID: generationRuntimeID, Revision: policyImplementationRevision,
+	return factoryprofile.Registrations(
+		factoryprofile.Entry{
+			Factory: generateOnObservationFactory{}, Artifact: inspect.ArtifactIdentity{
+				ID: generationRuntimeID, Revision: policyImplementationRevision,
+			},
 		},
-	})
+		factoryprofile.Entry{
+			Factory: sessionInvocationFactory{}, Artifact: inspect.ArtifactIdentity{
+				ID: sessionInvocationRuntimeID, Revision: sessionInvocationRuntimeRevision,
+			},
+		},
+	)
 }
 
 var (

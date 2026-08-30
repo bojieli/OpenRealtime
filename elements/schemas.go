@@ -372,6 +372,13 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 				"cancel_memory": largeBoundedState,
 			}, "role", "invocation",
 		),
+		"schema://openrealtime/policy/session-invocation-config/v1": standardObject(
+			"schema://openrealtime/policy/session-invocation-config/v1",
+			schemaObject{
+				"role": identifier(256), "terminal_memory": largeBoundedState,
+				"cancel_memory": largeBoundedState,
+			}, "role",
+		),
 		"schema://openrealtime/speech/tts-config/v1": standardObject(
 			"schema://openrealtime/speech/tts-config/v1",
 			schemaObject{

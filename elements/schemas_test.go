@@ -42,8 +42,8 @@ func TestStandardConfigSchemaCatalogCoversEveryFactoryContract(t *testing.T) {
 	if !reflect.DeepEqual(catalog.References(), references) {
 		t.Fatalf("schema references = %v, want %v", catalog.References(), references)
 	}
-	if len(references) != 27 {
-		t.Fatalf("standard config schema count = %d, want 27", len(references))
+	if len(references) != 28 {
+		t.Fatalf("standard config schema count = %d, want 28", len(references))
 	}
 
 	registrations, err := elements.FactoryRegistrations()
@@ -301,6 +301,7 @@ func standardValidConfigSamples() map[string]string {
 		"schema://openrealtime/perception/asr-config/v1":                    `{"provider":"asr"}`,
 		"schema://openrealtime/perception/visual-observer-config/v1":        `{"provider":"vision","source":"screen"}`,
 		"schema://openrealtime/policy/generate-on-observation-config/v1":    `{"role":"fast","invocation":{"instruction":"Answer briefly."}}`,
+		"schema://openrealtime/policy/session-invocation-config/v1":         `{"role":"fast"}`,
 		"schema://openrealtime/speech/playback-config/v1":                   `{"sink":"speaker"}`,
 		"schema://openrealtime/speech/tts-config/v1":                        `{"provider":"tts"}`,
 		"schema://openrealtime/trajectory/observation-commit-config/v1":     `{}`,
@@ -333,6 +334,7 @@ func standardStructurallyInvalidConfigSamples() map[string]string {
 		"schema://openrealtime/perception/asr-config/v1":                    `{}`,
 		"schema://openrealtime/perception/visual-observer-config/v1":        `{}`,
 		"schema://openrealtime/policy/generate-on-observation-config/v1":    `{}`,
+		"schema://openrealtime/policy/session-invocation-config/v1":         `{}`,
 		"schema://openrealtime/speech/playback-config/v1":                   `{}`,
 		"schema://openrealtime/speech/tts-config/v1":                        `{}`,
 		"schema://openrealtime/trajectory/observation-commit-config/v1":     `{"revision_namespace":""}`,

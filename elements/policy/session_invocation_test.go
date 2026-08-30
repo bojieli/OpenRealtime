@@ -1,0 +1,307 @@
+package policy_test
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/element"
+	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
+	stateelements "github.com/bojieli/OpenRealtime/elements/state"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
+	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
+)
+
+const sessionInvocationGraph = `graph session_invocation_test {
+    policy.SessionInvocation :: policy;
+    input update = policy.update;
+    input committed = policy.committed;
+    input create = policy.create;
+    input cancel = policy.cancel;
+    output trigger = policy.trigger;
+    output authority = policy.authority;
+    output state = policy.state;
+    output outcome = policy.outcome;
+}
+`
+
+func TestSessionInvocationDescriptorOwnsDynamicSettingsAndActivation(t *testing.T) {
+	descriptor := policyelements.SessionInvocationDescriptor()
+	if err := descriptor.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if descriptor.Revision != 1 || descriptor.Name != "policy.SessionInvocation" {
+		t.Fatalf("descriptor identity = %s@%d", descriptor.Name, descriptor.Revision)
+	}
+	want := map[string]string{
+		"update":    "Event<policy.SessionInvocationUpdate>",
+		"committed": "Event<trajectory.ObservationCommitOutcome>",
+		"create":    "Trigger<policy.ResponseCreate>",
+		"cancel":    "Interrupt<policy.GenerationAddress>",
+		"trigger":   "Trigger<cognition.Generate>",
+		"authority": "Stream<authority.Candidate>",
+		"state":     "State<policy.SessionInvocationState>",
+		"outcome":   "Event<policy.SessionInvocationOutcome>",
+	}
+	for name, typeName := range want {
+		port, found := descriptor.Port(name)
+		if !found || port.Type.String() != typeName {
+			t.Fatalf("descriptor port %s = %+v, want %s", name, port, typeName)
+		}
+	}
+}
+
+func TestSessionInvocationSnapshotsExactInstructionsToolsAndCommittedBasis(t *testing.T) {
+	harness := mountSessionInvocation(t)
+	defer harness.stop(t)
+	startup := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SessionInvocationState)
+	if startup.InvocationRevision != 0 || startup.Role != "foreground" {
+		t.Fatalf("startup state = %+v", startup)
+	}
+	parameters := json.RawMessage(`{"type":"object","properties":{"digit":{"type":"string"}},"required":["digit"]}`)
+	update := policyelements.SessionInvocationUpdate{
+		Revision: 7,
+		Invocation: continuation.Invocation{
+			Instruction: "Press the matching key and say nothing.",
+			Tools: []continuation.ToolDefinition{{
+				Name: "press_key", Description: "Send a keypad tone.", Parameters: parameters,
+			}},
+			MaxOutputTokens: 96,
+		},
+	}
+	sendPolicy(t, harness.ingress(t, "update"), element.Envelope{
+		Type: policyelements.SessionInvocationUpdateType(), ItemID: "settings-7",
+		SessionID: "session-policy", Payload: update,
+	})
+	updated := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SessionInvocationOutcome)
+	state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SessionInvocationState)
+	if updated.Kind != policyelements.SessionInvocationUpdated || updated.InvocationRevision != 7 ||
+		!strings.HasPrefix(updated.InvocationDigest, "sha256:") ||
+		state.InvocationDigest != updated.InvocationDigest || state.Updated != 1 {
+		t.Fatalf("update outcome=%+v state=%+v", updated, state)
+	}
+	update.Invocation.Instruction = "mutated"
+	parameters[0] = '['
+
+	commit := committedObservation(t, "microphone", "speech-final", "trajectory-user", "trajectory-state", 1, 9)
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-user",
+		SessionID: "session-policy", Payload: commit,
+	})
+	trigger := receivePolicy(t, harness.egress(t, "trigger"))
+	authority := receivePolicy(t, harness.egress(t, "authority"))
+	payload, ok := trigger.Payload.(cognitionelements.Generate)
+	if !ok {
+		t.Fatalf("trigger payload type = %T", trigger.Payload)
+	}
+	if payload.Invocation.Instruction != "Press the matching key and say nothing." ||
+		payload.Invocation.SourceRevision != 9 || payload.Invocation.MaxOutputTokens != 96 ||
+		len(payload.Invocation.Tools) != 1 || payload.Invocation.Tools[0].Name != "press_key" ||
+		!json.Valid(payload.Invocation.Tools[0].Parameters) ||
+		payload.ExpectedContextVersion == nil || *payload.ExpectedContextVersion != 1 ||
+		payload.ExpectedContextItemID != "trajectory-state" || payload.CommittedContext == nil ||
+		!reflect.DeepEqual(*payload.CommittedContext, commit.Context) {
+		t.Fatalf("exact session invocation trigger = %+v", payload)
+	}
+	if trigger.RunID == "" || authority.RunID != trigger.RunID ||
+		!slicesContain(trigger.CausalParents, "trajectory-user") {
+		t.Fatalf("trigger=%+v authority=%+v", trigger, authority)
+	}
+	emitted := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SessionInvocationOutcome)
+	settled := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SessionInvocationState)
+	if emitted.Kind != policyelements.SessionInvocationEmitted || emitted.Operation != "committed" ||
+		emitted.InvocationRevision != 7 || emitted.InvocationDigest != updated.InvocationDigest ||
+		settled.Emitted != 1 || settled.ContextVersion != 1 {
+		t.Fatalf("emitted=%+v settled=%+v", emitted, settled)
+	}
+	assertSessionInvocationLiveResolution(t, harness.mounted)
+}
+
+func TestSessionInvocationManualCreateIsVisibleAndCarriesNoObservationAuthority(t *testing.T) {
+	harness := mountSessionInvocation(t)
+	defer harness.stop(t)
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	installSessionInvocation(t, harness, 1, "Continue after the tool result.", nil)
+	sendPolicy(t, harness.ingress(t, "create"), element.Envelope{
+		Type: policyelements.ResponseCreateType(), ItemID: "create-1", SessionID: "session-policy",
+		Payload: policyelements.ResponseCreate{ResponseID: "response-1"},
+	})
+	trigger := receivePolicy(t, harness.egress(t, "trigger"))
+	payload := trigger.Payload.(cognitionelements.Generate)
+	if payload.Invocation.Instruction != "Continue after the tool result." ||
+		payload.ExpectedContextVersion != nil || payload.ExpectedContextItemID != "" ||
+		payload.CommittedContext != nil {
+		t.Fatalf("manual trigger = %+v", payload)
+	}
+	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SessionInvocationOutcome)
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if outcome.Kind != policyelements.SessionInvocationEmitted || outcome.Operation != "create" ||
+		outcome.GenerationID != trigger.RunID {
+		t.Fatalf("manual create outcome = %+v", outcome)
+	}
+	assertNoPolicyEnvelope(t, harness.egress(t, "authority"))
+}
+
+func TestSessionInvocationFailsClosedOnMissingStaleOrMalformedSettings(t *testing.T) {
+	t.Run("commit before settings", func(t *testing.T) {
+		harness := mountSessionInvocation(t)
+		defer harness.stop(t)
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		commit := committedObservation(t, "microphone", "speech", "trajectory-user", "state", 1, 1)
+		sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+			Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit",
+			SessionID: "session-policy", Payload: commit,
+		})
+		outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SessionInvocationOutcome)
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		if outcome.Kind != policyelements.SessionInvocationRefused || outcome.Code != "invocation_unset" {
+			t.Fatalf("unset outcome = %+v", outcome)
+		}
+		assertNoPolicyEnvelope(t, harness.egress(t, "trigger"))
+	})
+
+	t.Run("stale revision", func(t *testing.T) {
+		harness := mountSessionInvocation(t)
+		defer harness.stop(t)
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		installSessionInvocation(t, harness, 2, "first", nil)
+		sendPolicy(t, harness.ingress(t, "update"), element.Envelope{
+			Type: policyelements.SessionInvocationUpdateType(), ItemID: "settings-stale",
+			SessionID: "session-policy", Payload: policyelements.SessionInvocationUpdate{
+				Revision: 2, Invocation: continuation.Invocation{Instruction: "replacement"},
+			},
+		})
+		outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SessionInvocationOutcome)
+		state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SessionInvocationState)
+		if outcome.Kind != policyelements.SessionInvocationIgnored || outcome.Code != "stale_update" ||
+			state.InvocationRevision != 2 || state.Updated != 1 {
+			t.Fatalf("stale outcome=%+v state=%+v", outcome, state)
+		}
+	})
+
+	t.Run("duplicate tool", func(t *testing.T) {
+		harness := mountSessionInvocation(t)
+		defer harness.stop(t)
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		tool := continuation.ToolDefinition{Name: "press", Description: "press", Parameters: json.RawMessage(`{"type":"object"}`)}
+		sendPolicy(t, harness.ingress(t, "update"), element.Envelope{
+			Type: policyelements.SessionInvocationUpdateType(), ItemID: "settings-duplicate",
+			SessionID: "session-policy", Payload: policyelements.SessionInvocationUpdate{
+				Revision: 1, Invocation: continuation.Invocation{Instruction: "answer", Tools: []continuation.ToolDefinition{tool, tool}},
+			},
+		})
+		outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SessionInvocationOutcome)
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		if outcome.Kind != policyelements.SessionInvocationRefused || outcome.Code != "invalid_update" ||
+			!strings.Contains(outcome.Message, "repeats tool") {
+			t.Fatalf("duplicate tool outcome = %+v", outcome)
+		}
+	})
+}
+
+func TestSessionInvocationFactoryRejectsUnknownConfig(t *testing.T) {
+	registrations, err := policyelements.FactoryRegistrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, registration := range registrations {
+		if registration.Profile.Reference != "policy.SessionInvocation" {
+			continue
+		}
+		validator := registration.Factory.(element.ConfigValidator)
+		if err := validator.ValidateConfig(json.RawMessage(`{"role":"foreground","unknown":true}`)); err == nil {
+			t.Fatal("session invocation config accepted an unknown field")
+		}
+		return
+	}
+	t.Fatal("session invocation factory is absent from the production registry")
+}
+
+func mountSessionInvocation(t *testing.T) policyHarness {
+	t.Helper()
+	registry := graphruntime.NewRegistry()
+	if err := policyelements.RegisterFactories(registry); err != nil {
+		t.Fatal(err)
+	}
+	configuration, err := json.Marshal(policyelements.SessionInvocationConfig{
+		Role: "foreground", TerminalMemory: 8, CancelMemory: 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := graphruntime.Mount(context.Background(), graphruntime.Config{
+		Graph:    compilePolicySource(t, "session-invocation-test.ortg", []byte(sessionInvocationGraph)),
+		Registry: registry, Values: map[string]json.RawMessage{"policy": configuration},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- mounted.Run(ctx) }()
+	return policyHarness{mounted: mounted, done: done, cancel: cancel}
+}
+
+func installSessionInvocation(
+	t *testing.T, harness policyHarness, revision uint64, instruction string,
+	tools []continuation.ToolDefinition,
+) {
+	t.Helper()
+	sendPolicy(t, harness.ingress(t, "update"), element.Envelope{
+		Type: policyelements.SessionInvocationUpdateType(), ItemID: "settings-install",
+		SessionID: "session-policy", Payload: policyelements.SessionInvocationUpdate{
+			Revision: revision, Invocation: continuation.Invocation{Instruction: instruction, Tools: tools},
+		},
+	})
+	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SessionInvocationOutcome)
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if outcome.Kind != policyelements.SessionInvocationUpdated {
+		t.Fatalf("install outcome = %+v", outcome)
+	}
+}
+
+func assertSessionInvocationLiveResolution(t *testing.T, mounted *graphruntime.Mounted) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		resolution := mounted.Live().Nodes["policy"].Resolution
+		if resolution != nil && resolution.RuntimeEvidence == inspect.EvidenceLive &&
+			resolution.Runtime.ID == "builtin://openrealtime/elements/policy.SessionInvocation" &&
+			resolution.Runtime.Revision == "implementation:1" {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("session invocation live resolution = %+v", resolution)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func slicesContain(values []string, value string) bool {
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
+}
+
+func TestSessionInvocationRunnerStopsCleanly(t *testing.T) {
+	harness := mountSessionInvocation(t)
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	harness.cancel()
+	select {
+	case err := <-harness.done:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("session invocation runner did not stop")
+	}
+}

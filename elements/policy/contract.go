@@ -273,7 +273,7 @@ func boundedPolicyReason(value string) string {
 }
 
 func Descriptors() []element.Descriptor {
-	return []element.Descriptor{GenerateOnObservationDescriptor()}
+	return []element.Descriptor{GenerateOnObservationDescriptor(), SessionInvocationDescriptor()}
 }
 
 func RegisterDescriptors(catalog *resolve.Catalog) error {
