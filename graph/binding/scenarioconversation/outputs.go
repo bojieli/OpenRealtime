@@ -628,6 +628,14 @@ func (session *session) acceptSemanticAdmissionOutcome(
 		return nil
 	}
 	result := operationAck{err: semanticAdmissionOutcomeError(outcome)}
+	if outcome.Kind == policyelements.SemanticAdmissionSuppressed {
+		// A semantic listen decision is the successful result of evaluating
+		// this response.create. It intentionally owns no generation and emits
+		// no response lifecycle. Treating it as a gateway error tears down
+		// otherwise healthy sessions which use explicit creates to re-evaluate
+		// incomplete visual evidence.
+		result.err = nil
+	}
 	pending.completed = true
 	delete(session.pendingOps, parent)
 	abandoned := pending.abandoned

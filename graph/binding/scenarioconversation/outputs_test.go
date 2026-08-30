@@ -303,10 +303,29 @@ func TestSemanticAdmissionOutcomeTerminatesSuppressedGatewayCreate(t *testing.T)
 		t.Fatal(err)
 	}
 	ack := <-pending.result
-	if ack.err == nil || !strings.Contains(ack.err.Error(), "suppressed/listen") ||
+	if ack.err != nil || ack.generationID != "" ||
 		!pending.completed || len(suppressed.pendingOps) != 0 {
 		t.Fatalf("suppressed semantic acknowledgement=%+v pending=%+v map=%v",
 			ack, pending, suppressed.pendingOps)
+	}
+	if len(suppressed.active) != 0 {
+		t.Fatalf("suppressed semantic acknowledgement acquired a generation: %v", suppressed.active)
+	}
+
+	refused, pending := newSession()
+	envelope = base.Clone()
+	envelope.Payload = policyelements.SemanticAdmissionOutcome{
+		Kind: policyelements.SemanticAdmissionRefused, Operation: "create",
+		Act: coreinteraction.ActAnswer, Code: "policy_refused", Message: "policy refused generation",
+	}
+	if err := refused.acceptSemanticAdmissionOutcome(context.Background(), envelope); err != nil {
+		t.Fatal(err)
+	}
+	ack = <-pending.result
+	if ack.err == nil || !strings.Contains(ack.err.Error(), "refused/policy_refused") ||
+		!pending.completed || len(refused.pendingOps) != 0 {
+		t.Fatalf("refused semantic acknowledgement=%+v pending=%+v map=%v",
+			ack, pending, refused.pendingOps)
 	}
 
 	invalid, pending := newSession()
