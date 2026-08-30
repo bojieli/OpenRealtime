@@ -1,0 +1,119 @@
+{
+  "format_version": 1,
+  "platform": "macos",
+  "profile_fingerprint": "sha256:6dc8ab4f689f61abe904c51603916e73a768a5905cce6d2da56cb59fbb4c5a0d",
+  "lock_fingerprint": "sha256:e16b57f9423fccb7595510c56d15fbb7785544482eb1717203fb584f324e51fe",
+  "plan_fingerprint": "sha256:75d8d08f0a6cc431978b21a5ccb2ee3a720c095ca29fbb9a3f96a648c663c35d",
+  "manifest_fingerprint": "sha256:f00a7badef1e3a77679431a49affe6727923b1e423433184560f34aefd7f81e6",
+  "endpoints": [],
+  "providers": [
+    {
+      "id": "slots",
+      "service": "presentation.client.slots",
+      "implementation": "macos.swiftui-slots.v1",
+      "requires": [],
+      "permissions": []
+    },
+    {
+      "id": "strict-json",
+      "service": "presentation.client.strict_json",
+      "implementation": "portable.swift-strict-json.v1",
+      "requires": [],
+      "permissions": []
+    },
+    {
+      "id": "transport",
+      "service": "presentation.client.connection",
+      "implementation": "macos.urlsession-websocket.v1",
+      "requires": ["presentation.client.strict_json"],
+      "permissions": [
+        {"kind": "network.connect", "resource": "realtime-endpoint", "operations": ["websocket"]}
+      ]
+    },
+    {
+      "id": "transport-diagnostics",
+      "service": "presentation.client.transport_diagnostics",
+      "implementation": "macos.websocket-diagnostics.v1",
+      "requires": ["presentation.client.connection"],
+      "permissions": []
+    },
+    {
+      "id": "reducer",
+      "service": "presentation.client.session_state",
+      "implementation": "portable.swift-reducer.v1",
+      "requires": ["presentation.client.connection", "presentation.client.strict_json"],
+      "permissions": []
+    },
+    {
+      "id": "protocol-events",
+      "service": "presentation.client.protocol_events",
+      "implementation": "portable.swift-protocol-events.v1",
+      "requires": ["presentation.client.session_state"],
+      "permissions": []
+    },
+    {
+      "id": "inspection-access",
+      "service": "presentation.client.inspection_access",
+      "implementation": "portable.swift-inspection-access.v1",
+      "requires": ["presentation.client.session_state"],
+      "permissions": []
+    },
+    {
+      "id": "session-configuration",
+      "service": "presentation.client.session_configuration",
+      "implementation": "portable.swift-session-configuration.v1",
+      "requires": ["presentation.client.session_state"],
+      "permissions": []
+    },
+    {
+      "id": "media",
+      "service": "presentation.client.media",
+      "implementation": "macos.av-media.v2",
+      "requires": [
+        "presentation.client.connection",
+        "presentation.client.protocol_events",
+        "presentation.client.session_state"
+      ],
+      "permissions": [
+        {"kind": "device.media", "resource": "native-audio", "operations": ["microphone", "playout"]}
+      ]
+    },
+    {
+      "id": "video",
+      "service": "presentation.client.video",
+      "implementation": "macos.video-protocol.v2",
+      "requires": [
+        "presentation.client.connection",
+        "presentation.client.session_configuration",
+        "presentation.client.session_state"
+      ],
+      "permissions": [
+        {"kind": "device.media", "resource": "native-video", "operations": ["camera", "screen"]},
+        {"kind": "device.media", "resource": "native-browser", "operations": ["capture"]}
+      ]
+    },
+    {
+      "id": "inspection",
+      "service": "presentation.client.inspection",
+      "implementation": "macos.inspection.v1",
+      "requires": ["presentation.client.inspection_access"],
+      "permissions": [
+        {"kind": "network.connect", "resource": "management-endpoint", "operations": ["http"]}
+      ]
+    },
+    {
+      "id": "view",
+      "service": "presentation.client.view",
+      "implementation": "macos.swiftui-observer-view.v1",
+      "requires": [
+        "presentation.client.inspection",
+        "presentation.client.media",
+        "presentation.client.session_state",
+        "presentation.client.slots",
+        "presentation.client.transport_diagnostics",
+        "presentation.client.video"
+      ],
+      "permissions": []
+    }
+  ]
+}

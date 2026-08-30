@@ -7,10 +7,17 @@ let package = Package(
     products: [
         .executable(name: "OpenRealtimeMac", targets: ["OpenRealtimeMac"]),
     ],
+    dependencies: [
+        .package(name: "OpenRealtimeClientCore", path: "../client/reducer/swift"),
+    ],
     targets: [
         .executableTarget(
             name: "OpenRealtimeMac",
+            dependencies: [
+                .product(name: "OpenRealtimeClientCore", package: "OpenRealtimeClientCore"),
+            ],
             path: "Sources/OpenRealtimeMac",
+            exclude: ["DesktopComputer.swift", "ToolHost.swift"],
             resources: [.copy("Resources")]
         ),
     ]

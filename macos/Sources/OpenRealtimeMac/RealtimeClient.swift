@@ -1,4 +1,8 @@
 import Foundation
+#if canImport(FoundationNetworking)
+@preconcurrency import FoundationNetworking
+#endif
+import OpenRealtimeClientCore
 
 @MainActor
 final class RealtimeClient {
@@ -11,24 +15,56 @@ final class RealtimeClient {
     private var receiveTask: Task<Void, Never>?
     private var writerTask: Task<Void, Never>?
     private var sendContinuation: AsyncStream<String>.Continuation?
+    private let strictJSON: StrictJSONService
+    private let endpoint: URL
+    private var diagnostics: TransportDiagnosticsPublisher?
+    private var queuedMessages = 0
+
+    init(strictJSON: StrictJSONService, endpoint: String) throws {
+        guard let url = URL(string: endpoint),
+              ["ws", "wss"].contains(url.scheme ?? ""),
+              url.host?.isEmpty == false,
+              url.user == nil, url.password == nil,
+              url.query == nil, url.fragment == nil,
+              url.absoluteString == endpoint else {
+            throw ClientError("the declared realtime endpoint must be an exact credential-free WebSocket URL")
+        }
+        self.strictJSON = strictJSON
+        self.endpoint = url
+    }
+
+    func bindDiagnostics(_ publisher: TransportDiagnosticsPublisher) throws {
+        guard diagnostics == nil else {
+            throw ClientError("transport diagnostics provider is already bound")
+        }
+        diagnostics = publisher
+    }
+
+    func unbindDiagnostics(_ publisher: TransportDiagnosticsPublisher) {
+        guard diagnostics === publisher else { return }
+        diagnostics = nil
+    }
 
     var connected: Bool { socket != nil }
 
-    func connect(endpoint: String, token: String, sessionConfiguration: [String: Any]) async throws {
-        disconnect()
-        guard let url = URL(string: endpoint), ["ws", "wss"].contains(url.scheme?.lowercased() ?? "") else {
-            throw ClientError("the endpoint must be a ws:// or wss:// URL")
-        }
+    func connect(token: String) async throws {
+        tearDown(notify: false, reason: "superseded")
 
+        diagnostics?.updateState("connecting")
         onState?(.connecting, "connecting")
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: endpoint)
         request.timeoutInterval = 20
         if !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             request.setValue("Bearer \(token.trimmingCharacters(in: .whitespacesAndNewlines))",
                              forHTTPHeaderField: "Authorization")
         }
 
-        let urlSession = URLSession(configuration: .default)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        let urlSession = URLSession(configuration: configuration)
         let webSocket = urlSession.webSocketTask(with: request)
         session = urlSession
         socket = webSocket
@@ -41,6 +77,7 @@ final class RealtimeClient {
                 for await payload in stream {
                     guard let webSocket else { return }
                     try await webSocket.send(.string(payload))
+                    self?.sentQueuedMessage()
                 }
             } catch {
                 self?.fail("send failed: \(error.localizedDescription)")
@@ -48,12 +85,24 @@ final class RealtimeClient {
         }
 
         webSocket.resume()
+        do {
+            try await waitForOpen(webSocket)
+        } catch {
+            tearDown(notify: false, reason: "connection failed")
+            diagnostics?.updateState("failed")
+            onState?(.failed, "connection failed: \(error.localizedDescription)")
+            throw error
+        }
         receiveTask = Task { [weak self] in await self?.receiveLoop(webSocket) }
+        diagnostics?.updateState("connected")
         onState?(.connected, "connected")
-        send(["type": "session.update", "session": sessionConfiguration])
     }
 
     func disconnect(reason: String = "disconnected") {
+        tearDown(notify: true, reason: reason)
+    }
+
+    private func tearDown(notify: Bool, reason: String) {
         receiveTask?.cancel()
         receiveTask = nil
         sendContinuation?.finish()
@@ -64,7 +113,10 @@ final class RealtimeClient {
         socket = nil
         session?.invalidateAndCancel()
         session = nil
-        onState?(.disconnected, reason)
+        queuedMessages = 0
+        diagnostics?.updateQueue(0)
+        diagnostics?.updateState("disconnected")
+        if notify { onState?(.disconnected, reason) }
     }
 
     func send(_ event: [String: Any]) {
@@ -76,6 +128,8 @@ final class RealtimeClient {
             return
         }
         onProtocol?("OUT", event)
+        queuedMessages += 1
+        diagnostics?.recordOutbound(event, queuedMessages: queuedMessages)
         sendContinuation?.yield(text)
     }
 
@@ -102,26 +156,6 @@ final class RealtimeClient {
         ])
     }
 
-    func sendUserText(_ text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        send([
-            "type": "conversation.item.create",
-            "item": [
-                "type": "message", "role": "user",
-                "content": [["type": "input_text", "text": trimmed]],
-            ],
-        ])
-        send(["type": "response.create"])
-    }
-
-    func answerTool(callID: String, output: String) {
-        send([
-            "type": "conversation.item.create",
-            "item": ["type": "function_call_output", "call_id": callID, "output": output],
-        ])
-    }
-
     private func receiveLoop(_ webSocket: URLSessionWebSocketTask) async {
         do {
             while !Task.isCancelled {
@@ -132,10 +166,8 @@ final class RealtimeClient {
                 case .data(let binary): data = binary
                 @unknown default: continue
                 }
-                guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                    fail("server sent a non-object JSON message")
-                    continue
-                }
+                let object = try strictJSON.parse(data)
+                diagnostics?.recordInbound(object)
                 onProtocol?("IN", object)
                 onEvent?(object)
             }
@@ -147,7 +179,20 @@ final class RealtimeClient {
         }
     }
 
+    private nonisolated func waitForOpen(_ webSocket: URLSessionWebSocketTask) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { try await webSocket.sendPing() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: 20_000_000_000)
+                throw ClientError("WebSocket opening handshake timed out")
+            }
+            defer { group.cancelAll() }
+            _ = try await group.next()
+        }
+    }
+
     private func fail(_ message: String) {
+        diagnostics?.updateState("failed")
         onState?(.failed, message)
         receiveTask?.cancel()
         receiveTask = nil
@@ -159,6 +204,13 @@ final class RealtimeClient {
         socket = nil
         session?.invalidateAndCancel()
         session = nil
+        queuedMessages = 0
+        diagnostics?.updateQueue(0)
+    }
+
+    private func sentQueuedMessage() {
+        queuedMessages = max(0, queuedMessages - 1)
+        diagnostics?.updateQueue(queuedMessages)
     }
 }
 

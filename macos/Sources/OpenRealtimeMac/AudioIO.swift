@@ -19,6 +19,8 @@ final class AudioIO {
     private var playbackItem: String?
     private var playbackSamples = 0
     private var playbackStartedAt: TimeInterval?
+    private var playbackBuffers = 0
+    private var playbackInputDone = false
 
     init() {
         engine.attach(player)
@@ -123,24 +125,36 @@ final class AudioIO {
         }
         buffer.frameLength = AVAudioFrameCount(count)
         if playbackItem != itemID {
+            if playbackItem != nil {
+                player.stop()
+                player.reset()
+            }
             playbackItem = itemID
             playbackSamples = 0
             playbackStartedAt = ProcessInfo.processInfo.systemUptime
+            playbackBuffers = 0
+            playbackInputDone = false
         }
         playbackSamples += count
-        player.scheduleBuffer(buffer)
+        playbackBuffers += 1
+        player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+            Task { @MainActor in self?.playedBuffer(itemID: itemID) }
+        }
         do {
             try ensureEngineRunning()
             if !player.isPlaying { player.play() }
             onStatus?("playing PCM16 24 kHz")
         } catch {
+            stopPlayback()
             onStatus?("audio output failed: \(error.localizedDescription)")
         }
     }
 
     func finish(itemID: String) {
         guard playbackItem == itemID else { return }
-        onStatus?(player.isPlaying ? "draining output" : "idle")
+        playbackInputDone = true
+        if playbackBuffers == 0 { completePlayback(itemID: itemID) }
+        else { onStatus?("draining output") }
     }
 
     func interrupt() -> (itemID: String, playedMS: Int)? {
@@ -151,6 +165,9 @@ final class AudioIO {
             playbackItem = nil
             playbackSamples = 0
             playbackStartedAt = nil
+            playbackBuffers = 0
+            playbackInputDone = false
+            onStatus?("idle")
             return nil
         }
         player.stop()
@@ -158,6 +175,8 @@ final class AudioIO {
         playbackItem = nil
         playbackSamples = 0
         playbackStartedAt = nil
+        playbackBuffers = 0
+        playbackInputDone = false
         onStatus?("interrupted")
         return (itemID, Int(min(elapsed, queued).rounded()))
     }
@@ -168,6 +187,24 @@ final class AudioIO {
         playbackItem = nil
         playbackSamples = 0
         playbackStartedAt = nil
+        playbackBuffers = 0
+        playbackInputDone = false
+        onStatus?("idle")
+    }
+
+    private func playedBuffer(itemID: String) {
+        guard playbackItem == itemID else { return }
+        playbackBuffers = max(0, playbackBuffers - 1)
+        if playbackInputDone, playbackBuffers == 0 { completePlayback(itemID: itemID) }
+    }
+
+    private func completePlayback(itemID: String) {
+        guard playbackItem == itemID else { return }
+        playbackItem = nil
+        playbackSamples = 0
+        playbackStartedAt = nil
+        playbackBuffers = 0
+        playbackInputDone = false
         onStatus?("idle")
     }
 

@@ -1,21 +1,6 @@
 import Foundation
 import CoreGraphics
-
-enum ConnectionState: String {
-    case disconnected
-    case connecting
-    case connected
-    case failed
-}
-
-enum ComputerMode: String, CaseIterable, Identifiable {
-    case browser = "Browser · set of mark"
-    case desktop = "Desktop · selected display"
-
-    var id: String { rawValue }
-    var source: String { self == .browser ? "browser" : "screen" }
-    var target: String { self == .browser ? "browser-use-cdp" : "selected-display" }
-}
+import OpenRealtimeClientCore
 
 struct DisplayTarget: Identifiable, Hashable {
     let id: CGDirectDisplayID
@@ -84,30 +69,8 @@ struct DebugRecord: Identifiable {
     var date: Date { Date(timeIntervalSince1970: Double(timestampMS) / 1000) }
 }
 
-struct ArtifactRecord: Identifiable, Sendable {
-    let id: String
-    let title: String
-    let html: String
-    let version: Int
-}
-
-struct DownloadRecord: Identifiable, Sendable {
-    let id: String
-    let filename: String
-    let mediaType: String
-    let bytes: Int
-    let version: Int
-    let url: URL
-}
-
-struct ToolExecutionResult: Sendable {
-    let output: String
-    var artifact: ArtifactRecord?
-    var download: DownloadRecord?
-}
-
 struct ConfirmationRequest: Identifiable {
-    let id = UUID()
+    let id: String
     let name: String
     let consequence: String
     let arguments: String
@@ -141,11 +104,9 @@ func prettyJSONString(_ value: Any) -> String {
 }
 
 func safeProtocolPayload(_ event: [String: Any]) -> String {
-    var copy = event
-    for key in ["audio", "delta", "frame"] {
-        if let value = copy[key] as? String, value.count > 96 {
-            copy[key] = "‹\(value.count) base64 characters›"
-        }
-    }
-    return compactJSONString(copy)
+    compactJSONString(ProtocolEventPresentation.redacted(event))
+}
+
+func redactedProtocolValue(_ value: Any) -> Any {
+    ProtocolEventPresentation.redactedValue(value)
 }

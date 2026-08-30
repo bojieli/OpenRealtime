@@ -16,8 +16,11 @@ struct ContentView: View {
                 TabView {
                     liveSession.tabItem { Label("Session", systemImage: "waveform") }
                     channelInspector.tabItem { Label("Channels", systemImage: "rectangle.3.group") }
-                    artifactInspector.tabItem { Label("Artifacts", systemImage: "doc.richtext") }
+                    if model.artifactsAvailable {
+                        artifactInspector.tabItem { Label("Artifacts", systemImage: "doc.richtext") }
+                    }
                     timelineInspector.tabItem { Label("Timeline", systemImage: "clock.arrow.2.circlepath") }
+                    managementInspector.tabItem { Label("Graph", systemImage: "point.3.connected.trianglepath.dotted") }
                     protocolInspector.tabItem { Label("Protocol", systemImage: "chevron.left.forwardslash.chevron.right") }
                 }
                 .padding(10)
@@ -28,20 +31,21 @@ struct ContentView: View {
                 model.decideConfirmation(approved)
             }
         }
+        .onDisappear { model.shutdown() }
     }
 
     private var configuration: some View {
         Form {
             Section("Connection") {
-                TextField("WebSocket endpoint", text: $model.endpoint)
-                    .textFieldStyle(.roundedBorder)
+                LabeledContent("WebSocket endpoint") {
+                    Text(model.endpoint).font(.caption.monospaced()).textSelection(.enabled)
+                }
                 SecureField("Bearer token (optional)", text: $model.token)
                     .textFieldStyle(.roundedBorder)
-                HStack {
-                    TextField("Workspace root", text: $model.workspaceRoot)
-                        .textFieldStyle(.roundedBorder)
-                    Button("Choose…") { model.chooseWorkspace() }
-                }
+                Text("client \(model.clientIdentity)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
             }
 
             Section("Initial system prompt") {
@@ -55,34 +59,22 @@ struct ContentView: View {
                     .disabled(model.connectionState != .connected)
             }
 
-            Section("Bounded computer target") {
-                Picker("Mode", selection: $model.computerMode) {
-                    ForEach(ComputerMode.allCases) { mode in Text(mode.rawValue).tag(mode) }
-                }
-                .pickerStyle(.segmented)
-                .disabled(model.connectionState != .disconnected)
-
-                if model.computerMode == .browser {
-                    TextField("Chrome CDP URL", text: $model.cdpURL)
-                        .textFieldStyle(.roundedBorder)
-                    Text("Frames carry browser-use set-of-mark labels. Actions cannot reach the desktop.")
-                        .font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Picker("Display", selection: $model.selectedDisplayID) {
-                        ForEach(model.displays) { display in
-                            Text(display.label).tag(display.id)
-                        }
+            Section("Video sources") {
+                TextField("Chrome CDP URL", text: $model.cdpURL)
+                    .textFieldStyle(.roundedBorder)
+                Picker("Screen display", selection: $model.selectedDisplayID) {
+                    ForEach(model.displays) { display in
+                        Text(display.label).tag(display.id)
                     }
-                    Text("Pixel actions are transformed only into this display and require Accessibility.")
-                        .font(.caption).foregroundStyle(.secondary)
                 }
+                Text("Camera, selected-screen, and marked-browser capture are independent video-provider sources. Host effects never receive local UI authority.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section("Privacy") {
                 permissionRow("Microphone", model.microphonePermission)
                 permissionRow("Camera", model.cameraPermission)
                 permissionRow("Screen Recording", model.screenPermission)
-                permissionRow("Accessibility", model.accessibilityPermission)
             }
         }
         .formStyle(.grouped)
@@ -111,7 +103,8 @@ struct ContentView: View {
             Spacer()
             Button("Connect") { model.connect() }
                 .buttonStyle(.borderedProminent)
-                .disabled(model.connectionState != .disconnected && model.connectionState != .failed)
+                .disabled(model.preparingConnection ||
+                          (model.connectionState != .disconnected && model.connectionState != .failed))
             Button("Disconnect") { model.disconnect() }
                 .disabled(model.connectionState == .disconnected)
         }
@@ -164,13 +157,15 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         statusRow("Audio input", model.microphoneActive ? "live · PCM16 24 kHz" : "off")
                         statusRow("Audio output", model.audioOutputStatus)
+                        statusRow("Transport", model.transportDiagnosticsText)
+                        statusRow("Host effects", model.effectsStatusText)
                         statusRow("Screen", model.screenActive ? "live · \(model.frameStatus["screen"] ?? "waiting")" : "off")
                         statusRow("Camera", model.cameraActive ? "live · \(model.frameStatus["camera"] ?? "waiting")" : "off")
                         statusRow("Browser", model.browserActive ? "live · \(model.browserCaption)" : "off")
-                        statusRow("Computer", model.computerMode.rawValue)
-                        statusRow("Workspace", model.workspaceRoot)
                         Divider()
-                        Text("All filesystem paths are resolved after symlinks inside the workspace. Writes, shell commands, and consequential computer actions wait for local confirmation.")
+                        Text(model.effectsAvailable
+                             ? "Negotiated client effects execute only through the pinned host-effects protocol. This view can approve a host request but cannot execute tools itself."
+                             : "This observer profile has no effects endpoint, effect provider, artifact provider, or client-side authority.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     .padding(6)
@@ -231,9 +226,26 @@ struct ContentView: View {
         HSplitView {
             VStack(alignment: .leading) {
                 Text("HTML artifacts").font(.headline)
+                if !model.artifactDiagnostic.isEmpty {
+                    Text(model.artifactDiagnostic).font(.caption).foregroundStyle(.red)
+                }
                 if let artifact = model.selectedArtifact {
-                    ArtifactWebView(html: artifact.html) { text in model.submitArtifactText(text) }
+                    if model.artifacts.count > 1 {
+                        Menu("Select artifact") {
+                            ForEach(model.artifacts) { candidate in
+                                Button(candidate.title) { model.selectArtifact(candidate) }
+                            }
+                        }
+                    }
+                    if model.artifactLoading {
+                        ProgressView("Fetching and verifying immutable artifact…")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        ArtifactWebView(html: model.selectedArtifactHTML) { text in
+                            model.submitArtifactText(text)
+                        }
                         .id("\(artifact.id)-\(artifact.version)")
+                    }
                     Text("\(artifact.title) · revision \(artifact.version)")
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
@@ -255,8 +267,8 @@ struct ContentView: View {
                             Text("\(download.mediaType) · \(download.bytes) bytes · revision \(download.version)")
                                 .font(.caption).foregroundStyle(.secondary)
                             HStack {
-                                Button("Open") { NSWorkspace.shared.open(download.url) }
-                                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([download.url]) }
+                                Button("Open") { model.openDownload(download) }
+                                Button("Show in Finder") { model.revealDownload(download) }
                                 Button("Save As…") { model.saveDownload(download) }
                             }
                         }
@@ -296,6 +308,47 @@ struct ContentView: View {
         }
     }
 
+    private var managementInspector: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Canonical session inspection").font(.headline)
+                    Text(model.inspectionAccessText)
+                        .font(.caption.monospaced()).foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                Spacer()
+                Text(model.inspectionStatus).font(.caption).foregroundStyle(.secondary)
+                if model.inspectionRefreshing { ProgressView().controlSize(.small) }
+                Button("Refresh") { model.refreshInspection() }
+                    .disabled(model.inspectionRefreshing || model.connectionState != .connected)
+            }
+            HSplitView {
+                inspectionDocument("Live graph", model.inspectionLive)
+                inspectionDocument("Bounded deltas", model.inspectionDeltas)
+                inspectionDocument("Causal trace", model.inspectionTrace)
+            }
+        }
+    }
+
+    private func inspectionDocument(_ title: String, _ content: String) -> some View {
+        GroupBox(title) {
+            if content.isEmpty {
+                ContentUnavailableView(
+                    "No \(title.lowercased())",
+                    systemImage: "eye.slash",
+                    description: Text("The scoped management provider has not returned this resource.")
+                )
+            } else {
+                ScrollView([.horizontal, .vertical]) {
+                    Text(content).font(.caption.monospaced())
+                        .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+            }
+        }
+        .frame(minWidth: 280)
+    }
+
     private var protocolInspector: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -327,7 +380,7 @@ private struct ConfirmationView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label("Local confirmation required", systemImage: "exclamationmark.shield")
+            Label("Host effect confirmation required", systemImage: "exclamationmark.shield")
                 .font(.title2.bold())
             Text(request.name).font(.headline.monospaced())
             Text(request.consequence).foregroundStyle(.secondary)
@@ -370,7 +423,26 @@ private struct ArtifactWebView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
-        webView.loadHTMLString(html, baseURL: nil)
+        webView.loadHTMLString(Self.isolated(html), baseURL: nil)
+    }
+
+    private static func isolated(_ html: String) -> String {
+        let policy = #"<meta http-equiv="Content-Security-Policy" content="sandbox allow-scripts; default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; media-src 'none'; frame-src 'none'; child-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">"#
+        if let head = html.range(
+            of: #"<head(?:\s[^>]*)?>"#, options: [.regularExpression, .caseInsensitive]
+        ) {
+            var document = html
+            document.insert(contentsOf: policy, at: head.upperBound)
+            return document
+        }
+        if let root = html.range(
+            of: #"<html(?:\s[^>]*)?>"#, options: [.regularExpression, .caseInsensitive]
+        ) {
+            var document = html
+            document.insert(contentsOf: "<head>\(policy)</head>", at: root.upperBound)
+            return document
+        }
+        return "<!doctype html><html><head><meta charset=\"utf-8\">\(policy)</head><body>\(html)</body></html>"
     }
 
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
@@ -378,7 +450,10 @@ private struct ArtifactWebView: NSViewRepresentable {
         init(interaction: @escaping (String) -> Void) { self.interaction = interaction }
         func userContentController(_ userContentController: WKUserContentController,
                                    didReceive message: WKScriptMessage) {
-            if let text = message.body as? String { interaction(text) }
+            if message.frameInfo.isMainFrame, let text = message.body as? String,
+               !text.isEmpty, text.utf8.count <= (16 << 10) {
+                interaction(text)
+            }
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,

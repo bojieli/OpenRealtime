@@ -1,0 +1,31 @@
+{
+  "format_version": 1,
+  "fingerprint": "sha256:d19b581f1a0be1ef2128307987c5fa70828bddc1c1bb474b608fcae5db07d0b2",
+  "endpoints": [
+    {
+      "name": "effects.local",
+      "protocol": "openrealtime.client-effects.v1",
+      "url": "ws://127.0.0.1:8765/client/v1/effects"
+    },
+    {
+      "name": "management.canonical",
+      "protocol": "openrealtime.management.v1",
+      "url": "http://127.0.0.1:8765/client/v1/management"
+    },
+    {
+      "name": "realtime.websocket",
+      "protocol": "openai.realtime.websocket.v1",
+      "url": "ws://127.0.0.1:8765/client/v1/realtime"
+    },
+    {
+      "name": "resources.artifacts",
+      "protocol": "openrealtime.host-artifacts.v1",
+      "url": "http://127.0.0.1:8765/client/v1/artifacts"
+    },
+    {
+      "name": "resources.downloads",
+      "protocol": "openrealtime.host-downloads.v1",
+      "url": "http://127.0.0.1:8765/client/v1/downloads"
+    }
+  ]
+}

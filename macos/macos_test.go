@@ -2,7 +2,9 @@ package macos
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -13,32 +15,82 @@ import (
 // contributor.
 func TestNativeDeveloperClientDeclaresEveryCapabilityBoundary(t *testing.T) {
 	required := map[string][]string{
+		"Package.swift": {
+			"exclude: [\"DesktopComputer.swift\", \"ToolHost.swift\"]",
+		},
 		"Sources/OpenRealtimeMac/RealtimeClient.swift": {
 			"URLSessionWebSocketTask", "input_audio_buffer.append",
-			"openrealtime.input_video_frame.append", "conversation.item.create",
+			"openrealtime.input_video_frame.append", "strictJSON.parse",
+			"TransportDiagnosticsPublisher",
+		},
+		"Sources/OpenRealtimeMac/NativeReducerController.swift": {
+			"RealtimeReducerService", "\"kind\": \"inbound\"", "\"kind\": \"tool_result\"",
+			"next_retry_ms", "maxVirtualTimeMS", "inspectionAccess?.validate", "inspectionAccess?.capture",
+			"inspectionAccess?.clear",
+			"protocolEvents?.publish", "sessionConfiguration?.observe",
+		},
+		"Sources/OpenRealtimeMac/NativeClientAssembly.swift": {
+			"NativeClientManifest.decodeStrict", "NativeClientComposition",
+			"NativeEndpointDirectory.decodeStrict", "validate(selectedBy:",
+			"NativeClientProviderRegistry", "NativeClientProviderFactoryRegistration",
+			"NativeProviderFactoryContext", "SessionInspectionClient",
+			"SessionConfigurationService", "NativeViewBoundary", "NativeViewServices",
+			"macos.swiftui-observer-view.v1", "inspection.dispose", "client.deactivate", "onDispose",
+		},
+		"../client/reducer/swift/NativeClientCore.swift": {
+			"SessionInspectionAccessService", "SessionInspectionAccessProjection",
+			"OpenRealtime-Management-Token", "configure(managementEndpoint:",
+			"maximumResponseBytes = 32 << 20", "willPerformHTTPRedirection",
+			"ValidatedProtocolEventService", "SessionConfigurationService",
+			"TransportDiagnosticsService", "ClientArtifactsService",
+			"ClientEffectInvocationEncoder", "maximumAuthorityBytes",
+			"ProtocolEventPresentation", "redacted secret",
+			"openrealtime.client-effects.v1", "/client/v1/effects",
+			"NativeEffectEndpointResolver", "NativeEndpointDirectory", "declaration.catalogDigest",
+			"providerLost", "remount",
+		},
+		"Sources/OpenRealtimeMac/NativePresentationProviders.swift": {
+			"NativeMediaBoundary", "NativeVideoBoundary", "startBrowser",
+			"BrowserUseController", "configuration.contribute",
+		},
+		"Sources/OpenRealtimeMac/HostEffects.swift": {
+			"NativeEffectsBoundary", "response.function_call_arguments.done",
+			"client.effects", "catalog_digest",
+			"declaration_digest", "NativeEffectEndpointResolver.websocketURL",
+			"ClientEffectInvocationEncoder.encode", "maximumWireBytes", "decideConfirmation",
+			"willPerformHTTPRedirection",
+		},
+		"Sources/OpenRealtimeMac/HostedArtifacts.swift": {
+			"NativeArtifactsBoundary", "ClientArtifactsPublisher",
+			"/HostResources", "SHA256.hash", "expectedContentLength",
+			"willPerformHTTPRedirection", "artifactHTML", "cachedDownload", "artifactEndpoint",
 		},
 		"Sources/OpenRealtimeMac/AudioIO.swift": {
-			"AVAudioEngine", "pcmFormatInt16", "24_000", "interrupt()",
+			"AVAudioEngine", "pcmFormatInt16", "24_000", "interrupt()", ".dataPlayedBack",
 		},
 		"Sources/OpenRealtimeMac/MediaCapture.swift": {
 			"ScreenCaptureKit", "AVCaptureSession", "maxFrameBytes", "timestamp",
 		},
-		"Sources/OpenRealtimeMac/DesktopComputer.swift": {
-			"AXIsProcessTrustedWithOptions", "selected display", "cghidEventTap",
-		},
 		"Sources/OpenRealtimeMac/BrowserUseBridge.swift": {
 			"BrowserUseBridge", "click_element", "capture", "uv",
 		},
-		"Sources/OpenRealtimeMac/ToolHost.swift": {
-			"resolvingSymlinksInPath", "write_file", "run_command",
-			"display_artifact", "publish_download", "maxDownloadBytes",
-		},
 		"Sources/OpenRealtimeMac/DeveloperModel.swift": {
-			"include_payloads", "response.function_call_arguments.done",
-			"requestConfirmation", "openrealtime.debug.event",
+			"effects?.configure()", "media.subscribe", "video.subscribe", "artifactService.subscribe",
+			"artifactService?.configure()", "artifactService.artifactHTML",
+			"let endpoint: String", "assembly.endpointDirectory.endpoint",
+			"assembly.view.services.transportDiagnostics.subscribe", "inspection.subscribe",
+			"inspection.deltas(after: 0, limit: 256)",
+		},
+		"Sources/OpenRealtimeMac/Models.swift": {
+			"ProtocolEventPresentation.redacted", "safeProtocolPayload",
+		},
+		"Sources/OpenRealtimeMac/OpenRealtimeMacApp.swift": {
+			"OPENREALTIME_NATIVE_ENDPOINT_DIRECTORY", "nativeEndpointDirectoryData",
+			"isRegularFileKey", "1 << 20",
 		},
 		"Sources/OpenRealtimeMac/ContentView.swift": {
 			"Server debug timeline", "Raw protocol log", "Generated files",
+			"Canonical session inspection", "Bounded deltas", "Causal trace",
 		},
 		"Info.plist": {
 			"NSCameraUsageDescription", "NSMicrophoneUsageDescription",
@@ -54,6 +106,121 @@ func TestNativeDeveloperClientDeclaresEveryCapabilityBoundary(t *testing.T) {
 				t.Errorf("%s no longer contains %q", name, fragment)
 			}
 		}
+	}
+}
+
+func TestNativeNormalPathNeverInfersEndpointsOrPlacesCredentialsInURLs(t *testing.T) {
+	files := []string{
+		"Sources/OpenRealtimeMac/DeveloperModel.swift",
+		"Sources/OpenRealtimeMac/NativeReducerController.swift",
+		"Sources/OpenRealtimeMac/HostEffects.swift",
+		"Sources/OpenRealtimeMac/HostedArtifacts.swift",
+		"Sources/OpenRealtimeMac/NativeClientAssembly.swift",
+	}
+	for _, name := range files {
+		content, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{
+			"configure(realtimeEndpoint:", "managementOrigin", "resourceOrigin",
+			"legacySameOrigin", "legacyManagementBase", "client.unbind()",
+		} {
+			if strings.Contains(string(content), forbidden) {
+				t.Errorf("normal native source %s retains endpoint inference %q", name, forbidden)
+			}
+		}
+	}
+	model, err := os.ReadFile("Sources/OpenRealtimeMac/DeveloperModel.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(model), "token=") || strings.Contains(string(model), "?token") {
+		t.Fatal("native model places a credential in an endpoint URL")
+	}
+	view, err := os.ReadFile("Sources/OpenRealtimeMac/ContentView.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(view), "$model.endpoint") {
+		t.Fatal("native view can mutate immutable endpoint-directory wiring")
+	}
+}
+
+func TestNativeModelDoesNotReimplementProtocolReducer(t *testing.T) {
+	model, err := os.ReadFile("Sources/OpenRealtimeMac/DeveloperModel.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, err := os.ReadFile("Sources/OpenRealtimeMac/RealtimeClient.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{
+		"speechBuffer", "textBuffer", "responseOpen", "sendUserText", "answerTool",
+		"output_audio_buffer.clear", "client.send([\"type\": \"response.create\"])",
+		"LocalToolHost", "requestConfirmation", "response.function_call_arguments.done",
+		"openrealtime.debug.event", "DesktopComputerController",
+		"workspaceRoot", "computerMode", "accessibilityPermission",
+	} {
+		if strings.Contains(string(model), fragment) || strings.Contains(string(transport), fragment) {
+			t.Errorf("native adapter reintroduced protocol state/command %q", fragment)
+		}
+	}
+}
+
+func TestNativeHostEffectsNeverFabricateOrPersistAuthority(t *testing.T) {
+	effects, err := os.ReadFile("Sources/OpenRealtimeMac/HostEffects.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifacts, err := os.ReadFile("Sources/OpenRealtimeMac/HostedArtifacts.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	core, err := os.ReadFile("../client/reducer/swift/NativeClientCore.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{
+		"private var authority", "let authority = UUID", "authority = UUID",
+		"@Published var authority", "Authorization", "Bearer ",
+		"LocalToolHost", "DesktopComputerController",
+	} {
+		if strings.Contains(string(effects), fragment) || strings.Contains(string(artifacts), fragment) ||
+			strings.Contains(string(core), fragment) {
+			t.Errorf("native host boundary contains forbidden authority path %q", fragment)
+		}
+	}
+	for source, fragments := range map[string][]string{
+		string(core): {
+			"authorityValue[\"authority\"]", "\"authority\": authority",
+			"private let wire: Data", "private let canonicalArguments: Data",
+		},
+		string(effects): {
+			"ClientEffectInvocationEncoder.encode", "declaredEndpoint.catalogDigest",
+			"message[\"catalog_digest\"]",
+		},
+	} {
+		for _, fragment := range fragments {
+			if !strings.Contains(source, fragment) {
+				t.Errorf("native host effects lost exact validation %q", fragment)
+			}
+		}
+	}
+}
+
+func TestSignedNativeGateFailsClosedOffMacOS(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("the explicit signed_macos_e2e build-tag gate owns the macOS runner")
+	}
+	if _, err := os.Stat("verify-signed-e2e.sh"); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("bash", "./verify-signed-e2e.sh").CombinedOutput(); err == nil {
+		t.Fatalf("signed native gate unexpectedly passed without runner credentials: %s", output)
+	} else if !strings.Contains(string(output), "requires a macOS runner") {
+		t.Fatalf("signed native gate did not fail on the platform boundary: %v\n%s", err, output)
 	}
 }
 

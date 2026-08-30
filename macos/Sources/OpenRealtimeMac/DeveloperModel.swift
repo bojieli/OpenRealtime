@@ -1,23 +1,27 @@
 import Foundation
 import SwiftUI
 import AppKit
+import OpenRealtimeClientCore
 
 @MainActor
 final class DeveloperModel: ObservableObject {
-    @Published var endpoint = "ws://127.0.0.1:8765/v1/realtime"
+    let endpoint: String
     @Published var token = ""
-    @Published var workspaceRoot = FileManager.default.currentDirectoryPath
     @Published var systemPrompt = """
-    You are a realtime development assistant. You can hear the microphone, receive typed text, see explicitly shared screen, camera, and browser frames, use local tools within the selected workspace, display HTML artifacts, publish downloadable files, and act only on the bounded computer target declared by this client. Answer briefly. Use display_artifact for information that is better looked at than read aloud, and describe computer actions in a few words.
+    You are a realtime development assistant. You can hear the microphone, receive typed text, and see explicitly shared screen, camera, and browser frames. When negotiated, use only the scoped client effects declared by the host. Answer briefly and use artifacts when information is better viewed than spoken.
     """
     @Published var cdpURL = "http://127.0.0.1:9222"
-    @Published var computerMode: ComputerMode = .browser
     @Published var displays: [DisplayTarget] = []
     @Published var selectedDisplayID: CGDirectDisplayID = 0
 
     @Published var connectionState: ConnectionState = .disconnected
     @Published var statusText = "not connected"
     @Published var negotiationText = ""
+    @Published var transportDiagnosticsText = "transport idle"
+    @Published var effectsStatusText = "host effects idle"
+    @Published var artifactDiagnostic = ""
+    @Published var clientIdentity = ""
+    @Published var preparingConnection = false
     @Published var composer = ""
     @Published var microphoneActive = false
     @Published var microphoneMuted = false
@@ -32,30 +36,37 @@ final class DeveloperModel: ObservableObject {
     @Published var protocolRecords: [ProtocolRecord] = []
     @Published var debugRecords: [DebugRecord] = []
     @Published var timelineFilter = ""
-    @Published var artifacts: [ArtifactRecord] = []
-    @Published var selectedArtifact: ArtifactRecord?
-    @Published var downloads: [DownloadRecord] = []
+    @Published var inspectionAccessText = "session inspection unavailable"
+    @Published var inspectionStatus = "waiting for a scoped capability"
+    @Published var inspectionLive = ""
+    @Published var inspectionDeltas = ""
+    @Published var inspectionTrace = ""
+    @Published var inspectionRefreshing = false
+    @Published var artifacts: [ClientArtifactReference] = []
+    @Published var selectedArtifact: ClientArtifactReference?
+    @Published var selectedArtifactHTML = ""
+    @Published var artifactLoading = false
+    @Published var downloads: [ClientDownloadReference] = []
     @Published var pendingConfirmation: ConfirmationRequest?
 
-    private let client = RealtimeClient()
-    private let audio = AudioIO()
-    private let media = MediaCaptureController()
-    private let browser = BrowserUseController()
-    private var desktop: DesktopComputerController?
-    private var toolHost: LocalToolHost?
-    private var videoLimits = VideoLimits()
-    private var videoNegotiated = false
-    private var confirmationContinuation: CheckedContinuation<Bool, Never>?
-    private var speechBuffer = ""
-    private var textBuffer = ""
-    private var speechRecordStarted = false
-    private var textRecordStarted = false
-    private var responseOpen = false
+    private let assembly: NativeClientAssembly
+    private let reducer: NativeReducerController
+    private let media: NativeMediaBoundary
+    private let video: NativeVideoBoundary
+    private let effects: NativeEffectsBoundary?
+    private let artifactService: NativeArtifactsBoundary?
+    private let inspection: NativeInspectionBoundary
+    private var auxiliaryRecords: [ChannelRecord] = []
+    private var effectRecords: [ChannelRecord] = []
+    private var subscriptions: [() -> Void] = []
+    private var inspectionEpoch = 0
+    private var artifactEpoch = 0
 
-    var microphonePermission: String { audio.permission }
-    var cameraPermission: String { MediaCaptureController.cameraPermission }
-    var screenPermission: String { MediaCaptureController.screenPermission }
-    var accessibilityPermission: String { DesktopComputerController.permission }
+    var microphonePermission: String { media.microphonePermission }
+    var cameraPermission: String { video.cameraPermission }
+    var screenPermission: String { video.screenPermission }
+    var effectsAvailable: Bool { effects != nil }
+    var artifactsAvailable: Bool { artifactService != nil }
 
     var filteredDebugRecords: [DebugRecord] {
         let query = timelineFilter.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -72,109 +83,97 @@ final class DeveloperModel: ObservableObject {
         func percentile(_ p: Double) -> Double {
             values[min(values.count - 1, Int((Double(values.count - 1) * p).rounded()))]
         }
-        return String(format: "%d timed · p50 %.1f ms · p95 %.1f ms", values.count,
-                      percentile(0.5), percentile(0.95))
+        return String(
+            format: "%d timed · p50 %.1f ms · p95 %.1f ms",
+            values.count, percentile(0.5), percentile(0.95)
+        )
     }
 
-    init() {
+    init(
+        distribution: NativeClientDistribution,
+        endpointDirectoryData: Data? = nil
+    ) throws {
+        let assembly = try NativeClientAssembly(
+            distribution: distribution, endpointDirectoryData: endpointDirectoryData
+        )
+        self.assembly = assembly
+        endpoint = try assembly.endpointDirectory.endpoint(
+            named: .realtimeWebSocket,
+            protocol: NativeEndpoint.realtimeWebSocketProtocol
+        ).url
+        let services = assembly.view.services
+        reducer = services.reducer
+        media = services.media
+        video = services.video
+        effects = services.effects
+        artifactService = services.artifacts
+        inspection = services.inspection
+        clientIdentity = "\(assembly.manifest.manifestFingerprint) · endpoints \(assembly.endpointDirectory.fingerprint)"
+        if effects == nil {
+            effectsStatusText = "host effects not installed in this profile"
+            systemPrompt = """
+            You are a realtime development assistant. You can hear the microphone, receive typed text, and see explicitly shared screen, camera, and browser frames. Answer briefly. This observer profile has no client-effect or artifact provider.
+            """
+        }
+        if artifactService == nil {
+            artifactDiagnostic = "artifact provider not installed in this profile"
+        }
         displays = activeDisplays()
         selectedDisplayID = displays.first?.id ?? 0
 
-        client.onState = { [weak self] state, message in
-            guard let self else { return }
-            self.connectionState = state
-            self.statusText = message
-            if state == .failed { self.record("obs.tools", "connection", message, failed: true) }
+        reducer.observeProtocol { [weak self] direction, event in
+            self?.recordProtocol(direction, event)
         }
-        client.onProtocol = { [weak self] direction, event in self?.recordProtocol(direction, event) }
-        client.onEvent = { [weak self] event in self?.handle(event) }
-
-        audio.onFrame = { [weak self] data in self?.client.sendAudio(data) }
-        audio.onStatus = { [weak self] status in
-            guard let self else { return }
-            if status.contains("output") || status == "idle" || status == "interrupted" || status == "draining output" {
-                self.audioOutputStatus = status
-            }
-        }
-
-        media.onSource = { [weak self] source, state, width, height in
-            guard let self else { return }
-            self.client.updateVideoSource(source, state: state, width: width, height: height)
-        }
-        media.onFrame = { [weak self] source, data, width, height, timestamp in
-            guard let self else { return }
-            self.client.sendVideo(source: source, data: data, timestampMS: timestamp)
-            self.frameStatus[source] = "\(width)×\(height) · \(data.count / 1024) KiB · \(Self.clock(timestamp))"
-        }
-        media.onFailure = { [weak self] source, message in
-            self?.record("obs.\(source)", "capture failed", message, failed: true)
-        }
-
-        browser.onSource = { [weak self] source, state, width, height in
-            guard let self else { return }
-            self.client.updateVideoSource(source, state: state, width: width, height: height)
-            if state == "active", self.computerMode == .browser { self.refreshToolGeometry(width: width, height: height) }
-        }
-        browser.onFrame = { [weak self] frame in
-            guard let self else { return }
-            let now = Int64((Date().timeIntervalSince1970 * 1000).rounded())
-            self.client.sendVideo(source: "browser", data: frame.data, timestampMS: now)
-            self.frameStatus["browser"] = "\(frame.width)×\(frame.height) · \(frame.data.count / 1024) KiB · \(frame.elementCount) marks"
-        }
-        browser.onCaption = { [weak self] caption in self?.browserCaption = caption }
-        browser.onFailure = { [weak self] message in
-            self?.record("obs.browser", "browser-use", message, failed: true)
-        }
+        assembly.view.attach(
+            onMount: { [weak self] in self?.bindProjections() },
+            onUnmount: { [weak self] in self?.unbindProjections() }
+        )
+        reducer.publishCurrent()
     }
 
     func connect() {
-        guard connectionState == .disconnected || connectionState == .failed else { return }
-        connectionState = .connecting
-        statusText = "preparing local tool host"
+        guard !preparingConnection,
+              connectionState == .disconnected || connectionState == .failed else { return }
+        preparingConnection = true
+        statusText = "binding pinned host providers"
         Task {
+            defer {
+                preparingConnection = false
+                reducer.publishCurrent()
+            }
             do {
-                let geometry = initialComputerGeometry()
-                if computerMode == .desktop {
-                    guard let display = selectedDisplay else { throw ModelError("select an active display") }
-                    desktop = DesktopComputerController(display: display, maxDimension: videoLimits.maxDimension)
-                }
-                let host = try makeToolHost(width: geometry.width, height: geometry.height)
-                toolHost = host
-                let tools = await host.declarations
-                try await client.connect(
-                    endpoint: endpoint, token: token,
-                    sessionConfiguration: initialSession(tools: tools)
+                try effects?.configure()
+                try artifactService?.configure()
+                try await reducer.connect(
+                    token: token, session: initialSession()
                 )
             } catch {
-                connectionState = .failed
-                statusText = error.localizedDescription
+                effects?.deactivate()
+                artifactService?.deactivate()
                 record("obs.tools", "connection setup", error.localizedDescription, failed: true)
             }
         }
     }
 
     func disconnect() {
-        decideConfirmation(false)
-        client.disconnect()
-        audio.shutdown()
-        microphoneActive = false
-        microphoneMuted = false
-        screenActive = false
-        cameraActive = false
-        browserActive = false
-        videoNegotiated = false
-        responseOpen = false
-        toolHost = nil
-        desktop = nil
-        Task {
-            await media.stopAll()
-            await browser.stop()
-        }
+        effects?.deactivate()
+        artifactService?.deactivate()
+        reducer.disconnect()
+        media.stopMicrophone()
+        inspectionChanged(nil)
+        Task { await video.stopAll() }
+    }
+
+    func shutdown() {
+        disconnect()
+        assembly.view.detach()
+        do { try assembly.composition.stop() }
+        catch { record("obs.tools", "client disposal", error.localizedDescription, failed: true) }
     }
 
     func applySystemPrompt() {
         guard connectionState == .connected else { return }
-        client.send(["type": "session.update", "session": ["type": "realtime", "instructions": systemPrompt]])
+        reducer.sessionUpdate(["type": "realtime", "instructions": systemPrompt])
         record("act.tools", "system prompt", "updated for the active session")
     }
 
@@ -182,51 +181,35 @@ final class DeveloperModel: ObservableObject {
         let text = composer.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, connectionState == .connected else { return }
         composer = ""
-        client.sendUserText(text)
-        let entry = ChannelRecord(channel: "obs.text", title: "you · typed", body: text, failed: false)
-        conversation.append(entry)
-        channelRecords.append(entry)
+        reducer.sendText(text)
     }
 
     func submitArtifactText(_ text: String) {
         guard connectionState == .connected else { return }
-        client.sendUserText(text)
-        record("obs.text", "artifact interaction", text)
+        reducer.sendText(text)
     }
 
     func endTurn() {
         guard connectionState == .connected else { return }
-        client.send(["type": "input_audio_buffer.commit"])
-        client.send(["type": "response.create"])
+        reducer.endTurn()
     }
 
     func toggleMicrophone() {
         guard connectionState == .connected else { return }
-        if microphoneActive {
-            audio.toggleMute()
-            microphoneMuted = audio.muted
-            return
-        }
         Task {
-            do {
-                try await audio.startMicrophone()
-                microphoneActive = true
-                microphoneMuted = false
-                record("obs.audio", "microphone", "PCM16 24 kHz stream started")
-            } catch { record("obs.audio", "microphone failed", error.localizedDescription, failed: true) }
+            do { try await media.toggleMicrophone() }
+            catch { record("obs.audio", "microphone failed", error.localizedDescription, failed: true) }
         }
     }
 
     func toggleScreen() {
-        guard requireVideo() else { return }
+        guard connectionState == .connected else { return }
         Task {
             if screenActive {
-                await media.stopScreen()
-                screenActive = false
+                await video.stop("screen")
             } else {
                 do {
-                    try await media.startScreen(displayID: selectedDisplayID, limits: videoLimits)
-                    screenActive = true
+                    try await video.startScreen(displayID: selectedDisplayID)
                     record("obs.screen", "screen", "selected display capture started")
                 } catch { record("obs.screen", "screen failed", error.localizedDescription, failed: true) }
             }
@@ -234,15 +217,13 @@ final class DeveloperModel: ObservableObject {
     }
 
     func toggleCamera() {
-        guard requireVideo() else { return }
+        guard connectionState == .connected else { return }
         Task {
             if cameraActive {
-                media.stopCamera()
-                cameraActive = false
+                await video.stop("camera")
             } else {
                 do {
-                    try await media.startCamera(limits: videoLimits)
-                    cameraActive = true
+                    try await video.startCamera()
                     record("obs.camera", "camera", "physical camera capture started")
                 } catch { record("obs.camera", "camera failed", error.localizedDescription, failed: true) }
             }
@@ -250,36 +231,43 @@ final class DeveloperModel: ObservableObject {
     }
 
     func toggleBrowser() {
-        guard requireVideo() else { return }
+        guard connectionState == .connected else { return }
         Task {
             if browserActive {
-                await browser.stop()
-                browserActive = false
+                await video.stop("browser")
             } else {
                 do {
-                    try await browser.start(cdpURL: cdpURL, limits: videoLimits)
-                    browserActive = true
+                    try await video.startBrowser(cdpURL: cdpURL)
                     record("obs.browser", "browser-use", "marked browser capture started")
                 } catch { record("obs.browser", "browser-use failed", error.localizedDescription, failed: true) }
             }
         }
     }
 
-    func chooseWorkspace() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url { workspaceRoot = url.path }
-    }
-
-    func saveDownload(_ download: DownloadRecord) {
+    func saveDownload(_ download: ClientDownloadReference) {
+        guard let artifactService else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = download.filename
-        if panel.runModal() == .OK, let destination = panel.url {
-            do {
-                try Data(contentsOf: download.url).write(to: destination, options: .atomic)
-            } catch { record("act.download", "save failed", error.localizedDescription, failed: true) }
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        Task {
+            do { try await artifactService.export(download, to: destination) }
+            catch { record("act.download", "save failed", error.localizedDescription, failed: true) }
+        }
+    }
+
+    func openDownload(_ download: ClientDownloadReference) {
+        guard let artifactService else { return }
+        Task {
+            do { try await artifactService.open(download) }
+            catch { record("act.download", "open failed", error.localizedDescription, failed: true) }
+        }
+    }
+
+    func revealDownload(_ download: ClientDownloadReference) {
+        guard let artifactService else { return }
+        Task {
+            do { try await artifactService.reveal(download) }
+            catch { record("act.download", "reveal failed", error.localizedDescription, failed: true) }
         }
     }
 
@@ -288,78 +276,166 @@ final class DeveloperModel: ObservableObject {
         panel.nameFieldStringValue = "openrealtime-macos-\(Int(Date().timeIntervalSince1970)).json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let records: [[String: Any]] = protocolRecords.map {
-            ["timestamp_ms": Int64($0.timestamp.timeIntervalSince1970 * 1000),
-             "direction": $0.direction, "type": $0.type, "payload": $0.payload]
+            [
+                "timestamp_ms": Int64($0.timestamp.timeIntervalSince1970 * 1_000),
+                "direction": $0.direction, "type": $0.type, "payload": $0.payload,
+            ]
         }
         do {
-            let data = try JSONSerialization.data(withJSONObject: ["events": records], options: [.prettyPrinted, .sortedKeys])
+            let data = try JSONSerialization.data(
+                withJSONObject: ["events": records], options: [.prettyPrinted, .sortedKeys]
+            )
             try data.write(to: url, options: .atomic)
         } catch { record("act.download", "export failed", error.localizedDescription, failed: true) }
     }
 
-    func decideConfirmation(_ approved: Bool) {
-        guard let continuation = confirmationContinuation else {
-            pendingConfirmation = nil
+    func refreshInspection() {
+        guard inspection.available else {
+            inspectionChanged(nil)
             return
         }
-        confirmationContinuation = nil
-        pendingConfirmation = nil
-        continuation.resume(returning: approved)
-    }
-
-    private func requestConfirmation(name: String, consequence: String,
-                                     arguments: [String: Any]) async -> Bool {
-        if confirmationContinuation != nil { return false }
-        return await withCheckedContinuation { continuation in
-            confirmationContinuation = continuation
-            pendingConfirmation = ConfirmationRequest(
-                name: name, consequence: consequence, arguments: prettyJSONString(arguments)
-            )
+        inspectionEpoch += 1
+        let epoch = inspectionEpoch
+        inspectionRefreshing = true
+        inspectionStatus = "reading canonical live, delta, and trace resources"
+        Task { [weak self] in
+            guard let self else { return }
+            var liveText = ""
+            var deltaText = ""
+            var traceText = ""
+            var failures: [String] = []
+            do { liveText = prettyJSONString(try await self.inspection.live().snapshot()) }
+            catch { failures.append("live: \(error.localizedDescription)") }
+            do {
+                deltaText = prettyJSONString(
+                    try await self.inspection.deltas(after: 0, limit: 256).snapshot()
+                )
+            } catch { failures.append("deltas: \(error.localizedDescription)") }
+            do { traceText = prettyJSONString(try await self.inspection.trace().snapshot()) }
+            catch { failures.append("trace: \(error.localizedDescription)") }
+            guard self.inspectionEpoch == epoch, self.inspection.available else { return }
+            self.inspectionLive = liveText
+            self.inspectionDeltas = deltaText
+            self.inspectionTrace = traceText
+            self.inspectionRefreshing = false
+            self.inspectionStatus = failures.isEmpty
+                ? "canonical management snapshot loaded"
+                : failures.joined(separator: " · ")
         }
     }
 
-    private func makeToolHost(width: Int, height: Int) throws -> LocalToolHost {
-        try LocalToolHost(
-            rootPath: workspaceRoot, mode: computerMode, width: width, height: height,
-            confirm: { [weak self] name, consequence, arguments in
-                guard let self else { return false }
-                return await self.requestConfirmation(name: name, consequence: consequence, arguments: arguments)
-            },
-            computerAction: { [weak self] name, arguments in
-                guard let self else { throw ModelError("the native client disconnected") }
-                return try await self.performComputer(name: name, arguments: arguments)
+    func decideConfirmation(_ approved: Bool) {
+        guard let request = pendingConfirmation, let effects else { return }
+        do { try effects.decideConfirmation(id: request.id, approved: approved) }
+        catch { record("obs.tools", "confirmation failed", error.localizedDescription, failed: true) }
+    }
+
+    func selectArtifact(_ reference: ClientArtifactReference) {
+        selectedArtifact = reference
+        loadSelectedArtifact()
+    }
+
+    private func bindProjections() {
+        unbindProjections()
+        do {
+            subscriptions.append(try reducer.subscribe { [weak self] snapshot in self?.project(snapshot) })
+            subscriptions.append(try media.subscribe { [weak self] snapshot in self?.mediaChanged(snapshot) })
+            subscriptions.append(try video.subscribe { [weak self] snapshot in self?.videoChanged(snapshot) })
+            if let effects {
+                subscriptions.append(try effects.subscribe { [weak self] snapshot, _ in
+                    self?.effectsChanged(snapshot)
+                })
             }
-        )
+            if let artifactService {
+                subscriptions.append(try artifactService.subscribe { [weak self] snapshot in
+                    self?.artifactsChanged(snapshot)
+                })
+            }
+            subscriptions.append(try assembly.view.services.transportDiagnostics.subscribe { [weak self] snapshot in
+                self?.transportChanged(snapshot)
+            })
+            subscriptions.append(inspection.subscribe { [weak self] access in
+                Task { @MainActor in self?.inspectionChanged(access) }
+            })
+            reducer.onDiagnostic = { [weak self] message in
+                self?.record("obs.tools", "protocol adapter", message, failed: true)
+            }
+        } catch {
+            unbindProjections()
+            record("obs.tools", "view projection", error.localizedDescription, failed: true)
+        }
     }
 
-    private func performComputer(name: String, arguments: [String: Any]) async throws -> String {
-        let started = Date()
-        let output: String
-        if computerMode == .browser {
-            output = try await browser.perform(name: name, arguments: arguments)
+    private func unbindProjections() {
+        for unsubscribe in subscriptions.reversed() { unsubscribe() }
+        subscriptions.removeAll()
+        reducer.onDiagnostic = nil
+    }
+
+    private func mediaChanged(_ snapshot: NativeMediaSnapshot) {
+        microphoneActive = snapshot.microphoneActive
+        microphoneMuted = snapshot.microphoneMuted
+        audioOutputStatus = snapshot.outputStatus
+    }
+
+    private func videoChanged(_ snapshot: NativeVideoSnapshot) {
+        screenActive = snapshot.active.contains("screen")
+        cameraActive = snapshot.active.contains("camera")
+        browserActive = snapshot.active.contains("browser")
+        browserCaption = snapshot.browserCaption
+        frameStatus = snapshot.frameStatus
+    }
+
+    private func effectsChanged(_ snapshot: NativeEffectsSnapshot) {
+        pendingConfirmation = snapshot.confirmations.first
+        effectRecords = snapshot.records
+        debugRecords = snapshot.debug
+        let catalog = snapshot.declarationNames.isEmpty
+            ? "no declarations" : "\(snapshot.declarationNames.count) declarations"
+        effectsStatusText = "\(snapshot.phase) · \(catalog) · pending \(snapshot.pendingCount) · calls \(snapshot.calls)/results \(snapshot.results)/refused \(snapshot.refused)/reconnects \(snapshot.reconnects)"
+        if !snapshot.diagnostic.isEmpty {
+            effectsStatusText += " · \(snapshot.diagnostic)"
+        }
+        rebuildChannels()
+    }
+
+    private func artifactsChanged(_ snapshot: ClientArtifactsSnapshot) {
+        artifacts = snapshot.artifacts
+        downloads = snapshot.downloads
+        artifactDiagnostic = snapshot.diagnostic
+        if let selectedArtifact,
+           let replacement = artifacts.first(where: { $0.id == selectedArtifact.id }) {
+            if replacement != selectedArtifact {
+                self.selectedArtifact = replacement
+                loadSelectedArtifact()
+            }
         } else {
-            guard screenActive else { throw ModelError("Desktop mode requires the selected screen source to be live") }
-            guard let desktop else { throw ModelError("the selected-display controller is unavailable") }
-            output = try await desktop.perform(name: name, arguments: arguments)
+            selectedArtifact = artifacts.last
+            loadSelectedArtifact()
         }
-        let elapsed = Int(Date().timeIntervalSince(started) * 1000)
-        record("act.computer", name, "\(output) · \(elapsed) ms")
-        return output
     }
 
-    private func initialComputerGeometry() -> (width: Int, height: Int) {
-        if computerMode == .desktop, let display = selectedDisplay {
-            let size = display.videoSize(maxDimension: videoLimits.maxDimension)
-            return (Int(size.width), Int(size.height))
+    private func transportChanged(_ snapshot: TransportDiagnosticsSnapshot) {
+        transportDiagnosticsText = "\(snapshot.state) · in \(snapshot.inboundEvents) · out \(snapshot.outboundEvents) · audio \(snapshot.inputAudioBytes)/\(snapshot.outputAudioBytes) B · video \(snapshot.inputVideoBytes) B · queue \(snapshot.queuedMessages)"
+    }
+
+    private func inspectionChanged(_ access: SessionInspectionAccessProjection?) {
+        inspectionEpoch += 1
+        guard let access else {
+            inspectionAccessText = "session inspection unavailable"
+            inspectionStatus = "waiting for a scoped capability"
+            inspectionLive = ""
+            inspectionDeltas = ""
+            inspectionTrace = ""
+            inspectionRefreshing = false
+            return
         }
-        return (1280, 720)
+        let expiration = Date(timeIntervalSince1970: Double(access.expiresAtMS) / 1_000)
+        inspectionAccessText = "session \(access.sessionID) · expires \(expiration.formatted())"
+        refreshInspection()
     }
 
-    private var selectedDisplay: DisplayTarget? {
-        displays.first(where: { $0.id == selectedDisplayID })
-    }
-
-    private func initialSession(tools: [[String: Any]]) -> [String: Any] {
+    private func initialSession() -> [String: Any] {
         [
             "type": "realtime",
             "instructions": systemPrompt,
@@ -367,221 +443,129 @@ final class DeveloperModel: ObservableObject {
                 "input": ["format": ["type": "audio/pcm", "rate": 24_000]],
                 "output": ["format": ["type": "audio/pcm", "rate": 24_000]],
             ],
-            "tools": tools,
-            "openrealtime": [
-                "version": 1,
-                "supports": ["video.input", "observations", "computer_use"],
-                "observers": ["audio", "video"],
-                "debug": ["enabled": true, "include_payloads": false],
-            ],
         ]
     }
 
-    private func requireVideo() -> Bool {
-        guard connectionState == .connected else { return false }
-        guard videoNegotiated else {
-            record("obs.video", "video unavailable", "the server did not negotiate video.input", failed: true)
-            return false
+    private func loadSelectedArtifact() {
+        artifactEpoch += 1
+        let epoch = artifactEpoch
+        guard let reference = selectedArtifact, let artifactService else {
+            selectedArtifactHTML = ""
+            artifactLoading = false
+            return
         }
-        return true
+        selectedArtifactHTML = ""
+        artifactLoading = true
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let html = try await artifactService.artifactHTML(reference)
+                guard self.artifactEpoch == epoch, self.selectedArtifact == reference else { return }
+                self.selectedArtifactHTML = html
+                self.artifactLoading = false
+            } catch {
+                guard self.artifactEpoch == epoch, self.selectedArtifact == reference else { return }
+                self.selectedArtifactHTML = ""
+                self.artifactLoading = false
+                self.record("act.artifact", "view failed", error.localizedDescription, failed: true)
+            }
+        }
     }
 
-    private func refreshToolGeometry(width: Int, height: Int) {
-        guard let toolHost, connectionState == .connected else { return }
-        Task {
-            let declarations = await toolHost.declarationsFor(width: width, height: height)
-            client.send(["type": "session.update", "session": ["type": "realtime", "tools": declarations]])
-        }
-    }
-
-    private func handle(_ event: [String: Any]) {
-        let type = (event["type"] as? String) ?? ""
-        switch type {
-        case "session.created":
-            if let session = event["session"] as? [String: Any], let id = session["id"] as? String {
+    private func project(_ snapshot: [String: Any]) {
+        let connection = snapshot["connection"] as? [String: Any] ?? [:]
+        let phase = connection["phase"] as? String ?? "disconnected"
+        let reason = connection["reason"] as? String ?? ""
+        let attempt = (connection["attempt"] as? NSNumber)?.intValue ?? 0
+        let session = snapshot["session"] as? [String: Any] ?? [:]
+        let response = snapshot["response"] as? [String: Any] ?? [:]
+        switch phase {
+        case "connecting":
+            connectionState = .connecting
+            statusText = "connecting"
+        case "reconnecting":
+            connectionState = .reconnecting
+            statusText = "reconnecting · attempt \(attempt)"
+        case "connected":
+            connectionState = .connected
+            if response["open"] as? Bool == true {
+                statusText = "responding · \((response["status"] as? String) ?? "in progress")"
+            } else if let id = session["id"] as? String, !id.isEmpty {
                 statusText = "connected · \(id)"
+            } else {
+                statusText = "connected"
             }
-        case "session.updated":
-            handleSessionUpdated(event)
-        case "input_audio_buffer.speech_started":
-            statusText = "listening"
-            if let interruption = audio.interrupt() {
-                client.send(["type": "output_audio_buffer.clear"])
-                client.send([
-                    "type": "conversation.item.truncate", "item_id": interruption.itemID,
-                    "content_index": 0, "audio_end_ms": interruption.playedMS,
-                ])
-            }
-        case "input_audio_buffer.speech_stopped": statusText = "thinking"
-        case "conversation.item.input_audio_transcription.completed":
-            let text = (event["transcript"] as? String) ?? ""
-            let entry = ChannelRecord(channel: "obs.audio", title: "you · speech", body: text, failed: false)
-            conversation.append(entry); channelRecords.append(entry)
-        case "response.created":
-            responseOpen = true; speechBuffer = ""; textBuffer = ""
-            speechRecordStarted = false; textRecordStarted = false; statusText = "responding"
-        case "response.output_audio_transcript.delta":
-            speechBuffer += (event["delta"] as? String) ?? ""
-            replaceAssistant(channel: "act.speech", title: "assistant · speech", body: speechBuffer,
-                             started: speechRecordStarted)
-            speechRecordStarted = true
-        case "response.output_text.delta":
-            textBuffer += (event["delta"] as? String) ?? ""
-            replaceAssistant(channel: "act.text", title: "assistant · text", body: textBuffer,
-                             started: textRecordStarted)
-            textRecordStarted = true
-        case "response.output_audio.delta":
-            if let item = event["item_id"] as? String, let delta = event["delta"] as? String {
-                audio.enqueue(itemID: item, base64: delta)
-            }
-        case "response.output_audio.done":
-            if let item = event["item_id"] as? String { audio.finish(itemID: item) }
-        case "openrealtime.observation.added":
-            let observer = (event["observer"] as? String) ?? "observer"
-            let source = (event["source"] as? String) ?? ""
-            let channel = source.isEmpty ? "obs.\(observer)" : "obs.\(source)"
-            record(channel, "observed · \(observer)\(source.isEmpty ? "" : " · \(source)")",
-                   (event["text"] as? String) ?? "")
-        case "openrealtime.debug.event": handleDebug(event)
-        case "response.function_call_arguments.done": executeTool(event)
-        case "response.done":
-            responseOpen = false; statusText = "connected"
-            if let response = event["response"] as? [String: Any],
-               let status = response["status"] as? String, ["failed", "incomplete"].contains(status) {
-                record("act.tools", "response \(status)", prettyJSONString(response), failed: true)
-            }
-        case "error":
-            let error = event["error"] as? [String: Any]
-            record("obs.tools", "server error", (error?["message"] as? String) ?? prettyJSONString(event), failed: true)
-            statusText = "server error"
-        default: break
+        case "failed":
+            connectionState = .failed
+            statusText = reason.isEmpty ? ((snapshot["last_error"] as? String) ?? "connection failed") : reason
+        default:
+            connectionState = .disconnected
+            statusText = reason.isEmpty ? "not connected" : reason
         }
-    }
 
-    private func handleSessionUpdated(_ event: [String: Any]) {
-        guard let session = event["session"] as? [String: Any],
-              let extensionObject = session["openrealtime"] as? [String: Any] else {
+        if let extensionObject = session["openrealtime"] as? [String: Any],
+           extensionObject["present"] as? Bool == true {
+            let enabled = (extensionObject["enabled"] as? [String]) ?? []
+            let observers = (extensionObject["observers"] as? [String]) ?? []
+            negotiationText = "\(enabled.joined(separator: ", ")) · observers \(observers.joined(separator: ", ")) · debug \(extensionObject["debug_enabled"] as? Bool == true ? "on" : "off")"
+        } else {
             negotiationText = "base Realtime only · no OpenRealtime extensions"
-            videoNegotiated = false
-            return
         }
-        let enabled = (extensionObject["enabled"] as? [String]) ?? []
-        videoNegotiated = enabled.contains("video.input")
-        if let video = extensionObject["video"] as? [String: Any] {
-            let negotiated = VideoLimits(dictionary: video)
-            if negotiated != videoLimits {
-                videoLimits = negotiated
-                if computerMode == .desktop, let display = selectedDisplay {
-                    desktop = DesktopComputerController(display: display, maxDimension: negotiated.maxDimension)
-                    let size = display.videoSize(maxDimension: negotiated.maxDimension)
-                    refreshToolGeometry(width: Int(size.width), height: Int(size.height))
-                }
+        projectConversation(snapshot)
+    }
+
+    private func projectConversation(_ snapshot: [String: Any]) {
+        let items = snapshot["conversation"] as? [[String: Any]] ?? []
+        conversation = items.compactMap { item in
+            guard let role = item["role"] as? String,
+                  let channel = item["channel"] as? String,
+                  let text = item["text"] as? String else { return nil }
+            let presentationChannel: String
+            let title: String
+            switch (role, channel) {
+            case ("user", "input_text"):
+                presentationChannel = "obs.text"; title = "you · typed"
+            case ("user", "input_audio_transcript"):
+                presentationChannel = "obs.audio"; title = "you · speech"
+            case ("assistant", "output_audio_transcript"):
+                presentationChannel = "act.speech"; title = "assistant · speech"
+            case ("assistant", "output_text"):
+                presentationChannel = "act.text"; title = "assistant · text"
+            default:
+                presentationChannel = channel.hasPrefix("observation.")
+                    ? "obs." + String(channel.dropFirst("observation.".count)) : channel
+                title = role == "observation"
+                    ? "observed · \(presentationChannel)" : "\(role) · \(channel)"
             }
+            return ChannelRecord(
+                channel: presentationChannel, title: title, body: text, failed: false
+            )
         }
-        let observers = (extensionObject["observers"] as? [String]) ?? []
-        let debug = extensionObject["debug"] as? [String: Any]
-        negotiationText = "\(enabled.joined(separator: ", ")) · observers \(observers.joined(separator: ", ")) · debug \((debug?["enabled"] as? Bool) == true ? "on" : "off")"
-    }
-
-    private func handleDebug(_ event: [String: Any]) {
-        let timestamp = (event["timestamp_ms"] as? NSNumber)?.int64Value
-            ?? Int64((Date().timeIntervalSince1970 * 1000).rounded())
-        let duration = (event["duration_ms"] as? NSNumber)?.doubleValue
-        var detail: [String: Any] = [:]
-        if let attributes = event["attributes"] as? [String: Any] { detail["attributes"] = attributes }
-        if let message = event["message"] as? String, !message.isEmpty { detail["message"] = message }
-        if let payload = event["payload"], !(payload is NSNull) { detail["payload"] = payload }
-        debugRecords.append(DebugRecord(
-            timestampMS: timestamp, category: (event["category"] as? String) ?? "",
-            name: (event["name"] as? String) ?? "", phase: (event["phase"] as? String) ?? "",
-            durationMS: duration, correlationID: (event["correlation_id"] as? String) ?? "",
-            detail: detail.isEmpty ? "" : compactJSONString(detail)
-        ))
-        if debugRecords.count > 4_000 { debugRecords.removeFirst(debugRecords.count - 4_000) }
-    }
-
-    private func executeTool(_ event: [String: Any]) {
-        let callID = (event["call_id"] as? String) ?? ""
-        let name = (event["name"] as? String) ?? ""
-        let encoded = (event["arguments"] as? String) ?? "{}"
-        let arguments: [String: Any]
-        if let data = encoded.data(using: .utf8),
-           let object = try? JSONSerialization.jsonObject(with: data),
-           let parsed = object as? [String: Any] {
-            arguments = parsed
-        } else {
-            client.answerTool(callID: callID, output: compactJSONString(["error": "tool arguments were not a JSON object"]))
-            return
-        }
-        record(name.hasPrefix("computer.") ? "act.computer" : "act.tools", name, compactJSONString(arguments))
-        guard let toolHost else {
-            client.answerTool(callID: callID, output: compactJSONString(["error": "local tool host is unavailable"]))
-            return
-        }
-        Task {
-            let result = await toolHost.execute(name: name, arguments: arguments)
-            switch result {
-            case .success(let execution):
-                if let artifact = execution.artifact {
-                    artifacts.removeAll { $0.id == artifact.id }
-                    artifacts.append(artifact)
-                    selectedArtifact = artifact
-                    record("act.artifact", name, "\(artifact.title) · revision \(artifact.version)")
-                }
-                if let download = execution.download {
-                    downloads.removeAll { $0.id == download.id }
-                    downloads.append(download)
-                    record("act.download", name, "\(download.filename) · \(download.bytes) bytes")
-                }
-                client.answerTool(callID: callID, output: execution.output)
-                record("obs.tools", "\(name) returned", String(execution.output.prefix(600)))
-            case .failure(let error):
-                let output = compactJSONString(["error": error.localizedDescription])
-                client.answerTool(callID: callID, output: output)
-                record("obs.tools", "\(name) refused", error.localizedDescription, failed: true)
-            }
-        }
-    }
-
-    private func replaceAssistant(channel: String, title: String, body: String, started: Bool) {
-        if started, let index = conversation.lastIndex(where: { $0.channel == channel && $0.title == title }) {
-            conversation[index] = ChannelRecord(channel: channel, title: title, body: body, failed: false)
-        } else {
-            conversation.append(ChannelRecord(channel: channel, title: title, body: body, failed: false))
-        }
-        if started, let index = channelRecords.lastIndex(where: { $0.channel == channel && $0.title == title }) {
-            channelRecords[index] = ChannelRecord(channel: channel, title: title, body: body, failed: false)
-        } else {
-            channelRecords.append(ChannelRecord(channel: channel, title: title, body: body, failed: false))
-        }
+        rebuildChannels()
     }
 
     private func record(_ channel: String, _ title: String, _ body: String, failed: Bool = false) {
-        let entry = ChannelRecord(channel: channel, title: title, body: body, failed: failed)
-        channelRecords.append(entry)
-        if channel == "obs.audio" || channel == "obs.text" || channel == "act.speech" || channel == "act.text" {
-            conversation.append(entry)
+        auxiliaryRecords.append(ChannelRecord(
+            channel: channel, title: title,
+            body: String(body.prefix(64 << 10)), failed: failed
+        ))
+        if auxiliaryRecords.count > 2_000 {
+            auxiliaryRecords.removeFirst(auxiliaryRecords.count - 2_000)
         }
-        if channelRecords.count > 2_000 { channelRecords.removeFirst(channelRecords.count - 2_000) }
+        rebuildChannels()
+    }
+
+    private func rebuildChannels() {
+        channelRecords = conversation + auxiliaryRecords + effectRecords
     }
 
     private func recordProtocol(_ direction: String, _ event: [String: Any]) {
         protocolRecords.append(ProtocolRecord(
-            direction: direction, type: (event["type"] as? String) ?? "", payload: safeProtocolPayload(event)
+            direction: direction, type: (event["type"] as? String) ?? "",
+            payload: inspection.protocolPayload(event)
         ))
-        if protocolRecords.count > 2_000 { protocolRecords.removeFirst(protocolRecords.count - 2_000) }
+        if protocolRecords.count > 2_000 {
+            protocolRecords.removeFirst(protocolRecords.count - 2_000)
+        }
     }
-
-    private static func clock(_ milliseconds: Int64) -> String {
-        let date = Date(timeIntervalSince1970: Double(milliseconds) / 1000)
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss.SSS"
-        return formatter.string(from: date)
-    }
-}
-
-private struct ModelError: LocalizedError {
-    let message: String
-    init(_ message: String) { self.message = message }
-    var errorDescription: String? { message }
 }
