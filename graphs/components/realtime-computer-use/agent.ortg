@@ -59,6 +59,7 @@ graph realtime_computer_use {
     activation.trigger -> model.trigger;
     activation.authority -> provenance_join.candidate;
     model.result -> model_result_copy.in;
+    model_result_copy.out -> activation.result;
     model_result_copy.out -> model_result_commit.result;
     model_result_copy.out -> provenance_join.result;
     model.tools -> model_proposal_copy.in;

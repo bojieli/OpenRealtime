@@ -4,7 +4,7 @@
     {
       "format_version": 1,
       "name": "policy.RealtimeComputerUseActivation",
-      "revision": 2,
+      "revision": 3,
       "ports": [
         {
           "name": "authority",
@@ -67,6 +67,21 @@
           "default_depth": 32
         },
         {
+          "name": "result",
+          "direction": "input",
+          "type": {
+            "name": "Event",
+            "arguments": [
+              {
+                "name": "cognition.Result"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 16
+        },
+        {
           "name": "state",
           "direction": "output",
           "type": {
@@ -100,7 +115,8 @@
       ],
       "reaction": {
         "triggers": [
-          "committed"
+          "committed",
+          "result"
         ],
         "interrupts": [
           "cancel"

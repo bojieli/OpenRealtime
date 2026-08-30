@@ -59,18 +59,19 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(config.Artifacts.Values.Data), `"enum":["screen"]`) ||
-		!strings.Contains(string(config.Artifacts.Values.Data), `"maximum":1279`) {
-		t.Fatal("target-bound values artifact did not retain the exact screen source and viewport")
+		!strings.Contains(string(config.Artifacts.Values.Data), `"maximum":1279`) ||
+		!strings.Contains(string(config.Artifacts.Values.Data), `"max_tool_proposals":1`) {
+		t.Fatal("values artifact did not retain the exact screen target and one-proposal cognition bound")
 	}
 	launched, err := graphlaunch.New(context.Background(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	identity := launched.Plan.Identity()
-	if identity.SourceDigest != "sha256:8d9e1cb92213dd4cd3ed59d6f7b10f6566c45bd7649468e434e5ac5514afa303" ||
-		identity.LockDigest != "sha256:abb61a946cda1470827778d6193f2ba4ac1e54141f20f8f74026dd216b09f7fd" ||
-		identity.GraphFingerprint != "sha256:418950e1e32240812f30714677c43c2eabb72e159f2c5d39a7da435d84cb2757" ||
-		identity.PlanFingerprint != "sha256:89db749e776d8475ab2aef6ea2a7ec1a8d469b89ffb82a53f9460f91d3f06968" {
+	if identity.SourceDigest != "sha256:6cd6055326de6d9c3723eef2cafa272e8afdf588152e7875cd7ff0333913d20f" ||
+		identity.LockDigest != "sha256:cc99b91ea22a2a56f89573b9890693173eadd8be45b52d9a0bca4b2dd2de659e" ||
+		identity.GraphFingerprint != "sha256:78c91c1067bc6f91cb5563890004d817dc5871af9999982ae8d39b5cfbb9c7b6" ||
+		identity.PlanFingerprint != "sha256:310650ad7018c976a03323be5d043064d4fb676814837b40b3013cd2ef88b0f5" {
 		t.Fatalf("Realtime-CU graph artifacts drifted: %+v", identity)
 	}
 	if modelFactories.Load() != 0 || observerFactories.Load() != 0 {
@@ -180,6 +181,127 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("canonical trajectory did not retain action/result/visual feedback: %+v", runtime.Trajectory())
+}
+
+func TestRealtimeComputerUseChangedCameraReactivatesDurableIntentOneEffectAtATime(t *testing.T) {
+	target := computeruse.Target{
+		Name: "benchmark-browser", Sources: []string{realtimecu.SourceScreen}, Width: 320, Height: 240,
+	}
+	descriptor := testRealtimeCUDescriptor()
+	model := &visualReactivationRealtimeCUModel{
+		descriptor: descriptor, invocations: make(chan visualReactivationInvocation, 4),
+	}
+	observer := newTestRealtimeCUObserver("visual-reactivation-observer")
+	config, err := graphs.RealtimeComputerUseLaunchConfig(realtimecu.PluginConfig{
+		RuntimeArtifact: testRealtimeCUArtifact("visual-reactivation-runtime", "1"),
+		Model: realtimecu.ModelPlugin{
+			Reference: "go://test/realtime-cu/visual-reactivation-model/v1",
+			Artifact:  testRealtimeCUArtifact("visual-reactivation-model", "2"), Descriptor: descriptor,
+			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
+				return model, nil
+			},
+		},
+		Observer: realtimecu.ObserverPlugin{
+			Reference: "go://test/realtime-cu/visual-reactivation-observer/v1", Name: observer.name,
+			Artifact: testRealtimeCUArtifact("visual-reactivation-observer", "3"),
+			Sources:  []string{realtimecu.SourceScreen, realtimecu.SourceCamera, realtimecu.SourceMicrophone},
+			Factory: func(context.Context, legacy.Options) (realtimecu.Observer, error) {
+				return observer, nil
+			},
+		},
+		Target: target,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	launched, err := graphlaunch.New(context.Background(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := newTestRealtimeCUSink()
+	runtime, err := launched.Binding.Start(context.Background(), legacy.Options{
+		Sink: sink, SessionID: "realtime-cu-visual-reactivation",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if closeErr := runtime.Close(ctx, errors.New("test complete")); closeErr != nil {
+			t.Errorf("close visual-reactivation runtime: %v", closeErr)
+		}
+	})
+	if err := runtime.Update(context.Background(), legacy.Settings{
+		Instruction: "when smoke appears in the camera, click the alarm on screen",
+		Tools:       testRealtimeCUToolSpecs(t, target), Observers: []string{observer.name},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Audio(context.Background(), perception.Frame{
+		Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: 100,
+		PCM16LE: []byte{1, 0}, SampleRateHz: 24_000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	initial := receiveRealtimeCU(t, model.invocations, "initial user cognition")
+	if initial.Number != 1 || initial.LastSource != realtimecu.SourceMicrophone || initial.ToolResults != 0 {
+		t.Fatalf("initial cognition = %+v", initial)
+	}
+	select {
+	case call := <-sink.calls:
+		t.Fatalf("condition-absent user turn emitted an effect: %+v", call)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceCamera, CapturedNS: 200,
+		Image: []byte{1}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	triggered := receiveRealtimeCU(t, model.invocations, "camera-reactivated cognition")
+	if triggered.Number != 2 || triggered.LastSource != realtimecu.SourceCamera || triggered.ToolResults != 0 {
+		t.Fatalf("camera-reactivated cognition = %+v", triggered)
+	}
+	callEvent := receiveRealtimeCU(t, sink.calls, "camera-triggered client effect")
+	if len(callEvent.Calls) != 1 || callEvent.Calls[0].Name != computeruse.Click {
+		t.Fatalf("camera-triggered call = %+v", callEvent)
+	}
+	call := callEvent.Calls[0]
+
+	// The durable intent remains active, but ordinary screen cadence cannot
+	// open a second generation while this exact effect is waiting for a result.
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 300,
+		Image: []byte{2}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case invocation := <-model.invocations:
+		t.Fatalf("pending effect admitted overlapping cognition: %+v", invocation)
+	case <-time.After(150 * time.Millisecond):
+	}
+	if err := runtime.ToolResult(context.Background(), trajectory.ToolResult{
+		CallID: call.CallID, Name: call.Name, Output: json.RawMessage(`{"clicked":true}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	consequence := receiveRealtimeCU(t, observer.consequences, "camera action visual consequence")
+	if consequence.CallID != call.CallID || consequence.CanonicalResultItemID == "" {
+		t.Fatalf("camera action consequence = %+v", consequence)
+	}
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 301,
+		Image: []byte{3}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	settled := receiveRealtimeCU(t, model.invocations, "post-effect visual cognition")
+	if settled.Number != 3 || settled.LastSource != realtimecu.SourceScreen || settled.ToolResults != 1 {
+		t.Fatalf("post-effect cognition = %+v", settled)
+	}
 }
 
 func TestRealtimeComputerUseResourceAwareObserverSharesExactSessionMediaWithModel(t *testing.T) {
@@ -340,6 +462,57 @@ func (*testRealtimeCUModel) Continue(
 type mediaInspectingRealtimeCUModel struct {
 	descriptor continuation.Descriptor
 	seen       chan []byte
+}
+
+type visualReactivationInvocation struct {
+	Number      int32
+	LastSource  string
+	ToolResults int
+}
+
+type visualReactivationRealtimeCUModel struct {
+	descriptor  continuation.Descriptor
+	count       atomic.Int32
+	invocations chan visualReactivationInvocation
+}
+
+func (model *visualReactivationRealtimeCUModel) Descriptor() continuation.Descriptor {
+	return model.descriptor
+}
+
+func (model *visualReactivationRealtimeCUModel) Continue(
+	_ context.Context, request continuation.Request, emit continuation.Emit,
+) (continuation.Completion, error) {
+	number := model.count.Add(1)
+	lastSource := ""
+	toolResults := 0
+	if items := request.Trajectory.Items; len(items) != 0 {
+		last := items[len(items)-1]
+		if last.Observation != nil {
+			lastSource = last.Observation.Source
+		} else if last.Event != nil {
+			lastSource = last.Event.Channel
+		}
+		for _, item := range items {
+			if item.Kind == trajectory.KindToolResult {
+				toolResults++
+			}
+		}
+	}
+	model.invocations <- visualReactivationInvocation{
+		Number: number, LastSource: lastSource, ToolResults: toolResults,
+	}
+	if number != 2 {
+		return continuation.Completion{StopReason: "stop"}, nil
+	}
+	call := trajectory.ToolCall{
+		CallID: request.InvocationID + ":camera-alarm", Name: computeruse.Click,
+		Arguments: json.RawMessage(`{"source":"screen","x":10,"y":20}`),
+	}
+	if err := emit(continuation.Event{Kind: continuation.EventToolCall, ToolCall: &call}); err != nil {
+		return continuation.Completion{}, err
+	}
+	return continuation.Completion{StopReason: "tool_call"}, nil
 }
 
 func (model *mediaInspectingRealtimeCUModel) Descriptor() continuation.Descriptor {
