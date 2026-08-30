@@ -264,6 +264,11 @@ type SessionConfig struct {
 	// to Transcript or its JSON representation. A capture error is joined to
 	// the attempt error so a requested review artifact cannot fail silently.
 	CaptureAudio func(SessionAudioCapture) error
+	// CaptureVideo receives each non-empty video frame after it has been
+	// successfully sent. Calls are synchronous and serialized across every
+	// configured stream; a sink error terminates the attempt. Frame bytes are
+	// owned by the recipient and are not added to Transcript or its JSON.
+	CaptureVideo func(SessionVideoCapture) error
 	// CaptureRuntimeEvidence negotiates the session debug category and retains
 	// the live binding status. Architecture experiments set it for every task;
 	// it is opt-in because the developer trace is not application behavior.
@@ -517,13 +522,14 @@ func PlaySamples(
 	// the session or environment can be reused.
 	videoStop := make(chan struct{})
 	videoErrors := make(chan error, max(1, len(config.Video)))
+	videoCapture := newSessionVideoCaptureSink(config.CaptureVideo)
 	var videoWorkers sync.WaitGroup
 	for _, stream := range config.Video {
 		stream := stream
 		videoWorkers.Add(1)
 		go func() {
 			defer videoWorkers.Done()
-			streamVideo(ctx, videoStop, client, recorder, stream, videoErrors)
+			streamVideo(ctx, videoStop, client, recorder, stream, videoCapture, videoErrors)
 		}()
 	}
 	var stopVideoOnce sync.Once
@@ -531,7 +537,30 @@ func PlaySamples(
 		stopVideoOnce.Do(func() { close(videoStop) })
 		videoWorkers.Wait()
 	}
-	defer stopVideo()
+	drainVideoErrors := func(initial error) error {
+		errorsSeen := make([]error, 0, len(config.Video))
+		if initial != nil {
+			errorsSeen = append(errorsSeen, initial)
+		}
+		for {
+			select {
+			case err := <-videoErrors:
+				if err != nil {
+					errorsSeen = append(errorsSeen, err)
+				}
+			default:
+				return errors.Join(errorsSeen...)
+			}
+		}
+	}
+	// This named-return cleanup covers every exit after workers start, including
+	// scheduled-event and audio-send failures before the terminal select. A
+	// requested capture sink must never disappear merely because another
+	// protocol failure won the race to return.
+	defer func() {
+		stopVideo()
+		runErr = errors.Join(runErr, drainVideoErrors(nil))
+	}()
 
 	frameSamples := 2400 // 100 ms for protocol audio frames.
 	if _, mediaTransport := client.(pcmInput); mediaTransport {
@@ -581,8 +610,13 @@ func PlaySamples(
 	recorder.playbackDone(float64(len(samples)) / 24.0)
 
 	select {
-	case transcript := <-collected:
+	case <-collected:
 		stopVideo()
+		// A synchronous capture sink may still be finalizing a frame after the
+		// protocol collector reaches quiet. Snapshot again after joining every
+		// worker so the transcript and retained media describe the same sent
+		// frame set.
+		transcript := recorder.snapshot()
 		transcript = attestTranscript(ctx, config, transcript)
 		if strings.TrimSpace(transcript.Failure) != "" {
 			return transcript, fmt.Errorf("%w: %s", ErrSessionFailure, transcript.Failure)
@@ -663,7 +697,7 @@ func warmWebRTCAudio(ctx context.Context, client pcmInput) error {
 
 func streamVideo(
 	ctx context.Context, stop <-chan struct{}, client realtimeSession, recorder *recorder,
-	stream VideoStream, failures chan<- error,
+	stream VideoStream, capture *sessionVideoCaptureSink, failures chan<- error,
 ) {
 	send := func() error {
 		frame, err := stream.Capture(ctx)
@@ -673,22 +707,32 @@ func streamVideo(
 		if len(frame) == 0 {
 			return nil
 		}
+		mediaType, err := sessionVideoMediaType(frame)
+		if err != nil {
+			return fmt.Errorf("capture video source %q: %w", stream.Source, err)
+		}
+		wireTimestamp := time.Now().UnixMilli()
 		if err := client.Send(ctx, map[string]any{
 			"type": openrealtime.EventVideoFrameAppend, "source": stream.Source,
 			"frame":        base64.StdEncoding.EncodeToString(frame),
-			"timestamp_ms": time.Now().UnixMilli(),
+			"timestamp_ms": wireTimestamp,
 		}); err != nil {
 			return fmt.Errorf("send video source %q: %w", stream.Source, err)
 		}
+		episodeAtMS := recorder.at()
+		captureErr := capture.emit(SessionVideoCapture{
+			Source: stream.Source, Width: stream.Width, Height: stream.Height,
+			MediaType: mediaType, WireTimestamp: wireTimestamp,
+			EpisodeAtMS: episodeAtMS, Data: frame,
+		})
 		recorder.add(Moment{Kind: MomentVideoFrame, Source: stream.Source})
+		if captureErr != nil {
+			return fmt.Errorf("capture sent video source %q: %w", stream.Source, captureErr)
+		}
 		return nil
 	}
 	if err := send(); err != nil {
-		select {
-		case failures <- err:
-		case <-stop:
-		case <-ctx.Done():
-		}
+		failures <- err
 		return
 	}
 	ticker := time.NewTicker(stream.Interval)
@@ -701,11 +745,7 @@ func streamVideo(
 			return
 		case <-ticker.C:
 			if err := send(); err != nil {
-				select {
-				case failures <- err:
-				case <-stop:
-				case <-ctx.Done():
-				}
+				failures <- err
 				return
 			}
 		}
