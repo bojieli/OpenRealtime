@@ -183,6 +183,7 @@ func TestMeetingSessionAdapterOrdersCrossPortSpeechLifecycle(t *testing.T) {
 		outcomeDone <- adapter.publishForegroundOutcome(context.Background(), element.Envelope{
 			RunID: runID, Payload: cognitionelements.Outcome{
 				Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: runID,
+				ProviderReference: ForegroundDeploymentReference,
 			},
 		})
 	}()
@@ -238,6 +239,7 @@ func TestMeetingSessionAdapterGroupsVisualRunWhileSpeechDrains(t *testing.T) {
 	if err := adapter.publishForegroundOutcome(context.Background(), element.Envelope{
 		RunID: visualRun, Payload: cognitionelements.Outcome{
 			Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: visualRun,
+			ProviderReference: ForegroundDeploymentReference,
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -260,6 +262,7 @@ func TestMeetingSessionAdapterGroupsVisualRunWhileSpeechDrains(t *testing.T) {
 		voiceOutcome <- adapter.publishForegroundOutcome(context.Background(), element.Envelope{
 			RunID: voiceRun, Payload: cognitionelements.Outcome{
 				Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: voiceRun,
+				ProviderReference: ForegroundDeploymentReference,
 			},
 		})
 	}()
@@ -326,6 +329,7 @@ func TestMeetingSessionAdapterOrdersConcurrentOutputAfterTurnBegin(t *testing.T)
 		if err := adapter.publishForegroundOutcome(context.Background(), element.Envelope{
 			RunID: runID, Payload: cognitionelements.Outcome{
 				Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: runID,
+				ProviderReference: ForegroundDeploymentReference,
 			},
 		}); err != nil {
 			t.Fatal(err)
@@ -514,7 +518,10 @@ func TestMeetingSessionAdapterDrainsPrequeuedCrossPortResponseInSourceOrder(t *t
 	tools.send(t, responseEnvelope(modelelements.ToolProposalType(), 5,
 		cognitionelements.ToolProposal{Call: trajectory.ToolCall{CallID: "ordered-call", Name: "computer.click_normalized"}}))
 	outcomes.send(t, responseEnvelope(modelelements.OutcomeType(), 6,
-		cognitionelements.Outcome{Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: runID}))
+		cognitionelements.Outcome{
+			Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: runID,
+			ProviderReference: ForegroundDeploymentReference,
+		}))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -623,6 +630,7 @@ func TestMountedMeetingSessionAdapterOrdersTypedGraphBoundariesBeforeTerminal(t 
 	})
 	send("foreground_outcome", 4, cognitionelements.Outcome{
 		Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: runID,
+		ProviderReference: ForegroundDeploymentReference,
 	})
 
 	audio, err := mounted.Egress("prepared_audio")
@@ -694,6 +702,7 @@ func TestMeetingSessionAdapterRejectsCompletedRunReplayWithoutOpeningAnotherResp
 	}
 	terminal := element.Envelope{RunID: runID, Payload: cognitionelements.Outcome{
 		Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: runID,
+		ProviderReference: ForegroundDeploymentReference,
 	}}
 	if err := adapter.publishForegroundOutcome(context.Background(), terminal); err != nil {
 		t.Fatal(err)
@@ -710,22 +719,51 @@ func TestMeetingSessionAdapterRejectsCompletedRunReplayWithoutOpeningAnotherResp
 	}
 }
 
-func TestMeetingSessionAdapterRejectsOutcomeRunIdentityMismatch(t *testing.T) {
-	sink := &orderedMeetingSink{}
-	adapter := &meetingSessionAdapter{
-		ctx: context.Background(), sessionID: "meeting-outcome-identity", sink: sink,
-		activeSpeech: make(map[string]*meetingAdapterSpeech), completedRuns: make(map[string]struct{}),
+func TestMeetingSessionAdapterRequiresExactForegroundOutcomeIdentity(t *testing.T) {
+	valid := cognitionelements.Outcome{
+		Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: "envelope-run",
+		ProviderReference: ForegroundDeploymentReference,
 	}
-	err := adapter.publishForegroundOutcome(context.Background(), element.Envelope{
-		RunID: "envelope-run", Payload: cognitionelements.Outcome{
-			Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: "payload-run",
-		},
-	})
-	if err == nil {
-		t.Fatal("mismatched outcome run identity was accepted")
-	}
-	if events, _, _ := sink.snapshot(); len(events) != 0 {
-		t.Fatalf("mismatched outcome crossed response boundary: %v", events)
+	for _, test := range []struct {
+		name     string
+		envelope string
+		change   func(*cognitionelements.Outcome)
+	}{
+		{name: "mismatched run", envelope: "envelope-run", change: func(value *cognitionelements.Outcome) {
+			value.RunID = "payload-run"
+		}},
+		{name: "empty payload run", envelope: "envelope-run", change: func(value *cognitionelements.Outcome) {
+			value.RunID = ""
+		}},
+		{name: "empty envelope run", envelope: "", change: func(*cognitionelements.Outcome) {}},
+		{name: "noncanonical envelope run", envelope: " envelope-run", change: func(value *cognitionelements.Outcome) {
+			value.RunID = " envelope-run"
+		}},
+		{name: "wrong operation", envelope: "envelope-run", change: func(value *cognitionelements.Outcome) {
+			value.Operation = "summarize"
+		}},
+		{name: "wrong provider", envelope: "envelope-run", change: func(value *cognitionelements.Outcome) {
+			value.ProviderReference = "meeting.foreground.unreviewed"
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			sink := &orderedMeetingSink{}
+			adapter := &meetingSessionAdapter{
+				ctx: context.Background(), sessionID: "meeting-outcome-identity", sink: sink,
+				activeSpeech: make(map[string]*meetingAdapterSpeech), completedRuns: make(map[string]struct{}),
+			}
+			outcome := valid
+			test.change(&outcome)
+			err := adapter.publishForegroundOutcome(context.Background(), element.Envelope{
+				RunID: test.envelope, Payload: outcome,
+			})
+			if err == nil {
+				t.Fatal("non-exact foreground outcome identity was accepted")
+			}
+			if events, _, _ := sink.snapshot(); len(events) != 0 {
+				t.Fatalf("non-exact outcome crossed response boundary: %v", events)
+			}
+		})
 	}
 }
 
@@ -741,9 +779,13 @@ func TestMeetingSessionAdapterGroupedOutcomeUsesAdmissionOrderAndPreservesReason
 			name: "completion inversion preserves first admitted incomplete",
 			first: cognitionelements.Outcome{
 				Kind: cognitionelements.OutcomeCanceled, Operation: "generate",
-				Code: legacy.TurnIncompleteTokens, Message: "token ceiling reached",
+				ProviderReference: ForegroundDeploymentReference,
+				Code:              legacy.TurnIncompleteTokens, Message: "token ceiling reached",
 			},
-			second: cognitionelements.Outcome{Kind: cognitionelements.OutcomeSucceeded, Operation: "generate"},
+			second: cognitionelements.Outcome{
+				Kind: cognitionelements.OutcomeSucceeded, Operation: "generate",
+				ProviderReference: ForegroundDeploymentReference,
+			},
 			want: legacy.TurnOutcome{
 				Incomplete: true, Reason: legacy.TurnIncompleteTokens, Detail: "token ceiling reached",
 			},
@@ -752,11 +794,13 @@ func TestMeetingSessionAdapterGroupedOutcomeUsesAdmissionOrderAndPreservesReason
 			name: "two incomplete outcomes retain admission precedence",
 			first: cognitionelements.Outcome{
 				Kind: cognitionelements.OutcomeCanceled, Operation: "generate",
-				Code: legacy.TurnIncompleteTokens, Message: "first incomplete",
+				ProviderReference: ForegroundDeploymentReference,
+				Code:              legacy.TurnIncompleteTokens, Message: "first incomplete",
 			},
 			second: cognitionelements.Outcome{
 				Kind: cognitionelements.OutcomeRefused, Operation: "generate",
-				Code: "content_filter", Message: "second incomplete",
+				ProviderReference: ForegroundDeploymentReference,
+				Code:              "content_filter", Message: "second incomplete",
 			},
 			want: legacy.TurnOutcome{
 				Incomplete: true, Reason: legacy.TurnIncompleteTokens, Detail: "first incomplete",
@@ -767,9 +811,13 @@ func TestMeetingSessionAdapterGroupedOutcomeUsesAdmissionOrderAndPreservesReason
 			name: "failed then successful remains incomplete",
 			first: cognitionelements.Outcome{
 				Kind: cognitionelements.OutcomeFailed, Operation: "generate",
-				Code: "provider_failed", Message: "provider failed",
+				ProviderReference: ForegroundDeploymentReference,
+				Code:              "provider_failed", Message: "provider failed",
 			},
-			second:    cognitionelements.Outcome{Kind: cognitionelements.OutcomeSucceeded, Operation: "generate"},
+			second: cognitionelements.Outcome{
+				Kind: cognitionelements.OutcomeSucceeded, Operation: "generate",
+				ProviderReference: ForegroundDeploymentReference,
+			},
 			want:      legacy.TurnOutcome{Incomplete: true, Detail: "provider failed"},
 			wantFails: 1,
 		},
@@ -894,6 +942,7 @@ func TestMeetingSessionAdapterResponseGapIsBoundedAndCancellationUnblocks(t *tes
 		SourceID: ForegroundDeploymentReference, RunID: "gap-run", Sequence: 2,
 		Payload: cognitionelements.Outcome{
 			Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: "gap-run",
+			ProviderReference: ForegroundDeploymentReference,
 		},
 	}}
 	cancel()
@@ -915,6 +964,7 @@ func TestMeetingSessionAdapterResponseGapIsBoundedAndCancellationUnblocks(t *tes
 		SourceID: "untrusted.foreground", RunID: "foreign-run", Sequence: 1,
 		Payload: cognitionelements.Outcome{
 			Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: "foreign-run",
+			ProviderReference: ForegroundDeploymentReference,
 		},
 	}}
 	if err := adapter.acceptOrderedResponse(context.Background(), order, bad); err == nil {

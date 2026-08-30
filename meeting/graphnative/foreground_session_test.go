@@ -557,6 +557,125 @@ func TestForegroundSessionGeneratedRunIdentityBindsOrderedSpeechResultAndOutcome
 	}
 }
 
+func TestForegroundSessionResponseSequenceCommitsOnlyAfterSuccessfulPublication(t *testing.T) {
+	session, _, _ := foregroundTestSession(t)
+	run := &foregroundRun{id: "transactional-response-run"}
+	outcome := cognitionelements.Outcome{
+		Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: run.id,
+		ProviderReference: ForegroundDeploymentReference,
+		StartedNS:         1, FinishedNS: 2, DurationNS: 1,
+	}
+	if err := session.emitResponse(context.Background(), run, "not-an-output-port",
+		modelelements.OutcomeType(), nil, outcome); err == nil {
+		t.Fatal("invalid response publication succeeded")
+	}
+	if session.responseSequence != 0 {
+		t.Fatalf("failed validation consumed response sequence %d", session.responseSequence)
+	}
+
+	// Reach the actual send boundary with a live context, then cancel while the
+	// unbuffered output has no receiver. A subsequent healthy publication must
+	// reuse sequence one rather than leaving the adapter waiting on a burned gap.
+	session.frames = make(chan sidecar.Message)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err := session.emitResponse(ctx, run, "outcome", modelelements.OutcomeType(), nil, outcome)
+	cancel()
+	if err == nil {
+		t.Fatal("canceled response send succeeded")
+	}
+	if session.responseSequence != 0 || context.Cause(session.ctx) != nil {
+		t.Fatalf("canceled send sequence=%d session_cause=%v", session.responseSequence, context.Cause(session.ctx))
+	}
+
+	session.frames = make(chan sidecar.Message, 1)
+	if err := session.emitResponse(context.Background(), run, "outcome",
+		modelelements.OutcomeType(), nil, outcome); err != nil {
+		t.Fatal(err)
+	}
+	frame := <-session.frames
+	if frame.Envelope == nil || frame.Envelope.Sequence != 1 || session.responseSequence != 1 {
+		t.Fatalf("healthy response envelope=%+v committed=%d, want sequence 1",
+			frame.Envelope, session.responseSequence)
+	}
+}
+
+func TestForegroundSessionPoisonsPartialSpeechTerminalPublication(t *testing.T) {
+	session, runtime, _ := foregroundTestSession(t)
+	sink, _, _ := runtime.snapshot()
+	reservation := sink.(legacy.SpeechReservationSink)
+	utterance := action.Utterance{ID: "partial-terminal-speech", Text: "Transactional close."}
+	if err := sink.TurnBegin(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := reservation.SpeechReserved(context.Background(), utterance); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.SpeechBegin(context.Background(), utterance); err != nil {
+		t.Fatal(err)
+	}
+	_ = foregroundTestReadFrame(t, session)
+	_ = foregroundTestReadFrame(t, session)
+
+	session.mu.Lock()
+	run := session.utteranceRuns[utterance.ID]
+	session.mu.Unlock()
+	session.frames = make(chan sidecar.Message, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err := sink.SpeechEnd(ctx, utterance, action.Outcome{Completed: true})
+	cancel()
+	if err == nil || context.Cause(session.ctx) == nil {
+		t.Fatalf("partial speech terminal error=%v session_cause=%v", err, context.Cause(session.ctx))
+	}
+	frame := <-session.frames
+	if frame.Port != "text_out" || frame.Envelope == nil || frame.Envelope.Sequence != 3 ||
+		session.responseSequence != 3 {
+		t.Fatalf("partial speech terminal frame=%+v committed=%d", frame, session.responseSequence)
+	}
+	session.mu.Lock()
+	done := run.utterances[utterance.ID].done
+	session.mu.Unlock()
+	if done {
+		t.Fatal("failed partial speech terminal was committed as closed")
+	}
+	if err := session.emitResponse(context.Background(), run, "outcome", modelelements.OutcomeType(), nil,
+		cognitionelements.Outcome{
+			Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: run.id,
+			ProviderReference: ForegroundDeploymentReference,
+		}); err == nil {
+		t.Fatal("poisoned partial speech session emitted a later response")
+	}
+}
+
+func TestForegroundSessionPoisonsPartialToolProposalBatch(t *testing.T) {
+	session, runtime, _ := foregroundTestSession(t)
+	sink, _, _ := runtime.snapshot()
+	if err := sink.TurnBegin(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	session.frames = make(chan sidecar.Message, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err := sink.ToolCalls(ctx, legacy.ToolCallEvent{Calls: []trajectory.ToolCall{
+		{CallID: "partial-tool-1", Name: "computer.click_normalized", Arguments: json.RawMessage(`{"x":1,"y":1}`)},
+		{CallID: "partial-tool-2", Name: "computer.click_normalized", Arguments: json.RawMessage(`{"x":2,"y":2}`)},
+	}})
+	cancel()
+	if err == nil || context.Cause(session.ctx) == nil {
+		t.Fatalf("partial tool batch error=%v session_cause=%v", err, context.Cause(session.ctx))
+	}
+	frame := <-session.frames
+	if frame.Port != "tool_proposal" || frame.Envelope == nil || frame.Envelope.Sequence != 1 ||
+		session.responseSequence != 1 {
+		t.Fatalf("partial tool batch frame=%+v committed=%d", frame, session.responseSequence)
+	}
+	session.mu.Lock()
+	run := session.active
+	outputs, proposals := len(run.outputs), len(run.proposals)
+	session.mu.Unlock()
+	if outputs != 0 || proposals != 0 {
+		t.Fatalf("partial tool batch committed outputs=%d proposals=%d", outputs, proposals)
+	}
+}
+
 func TestForegroundSessionSerializesOverlappingProviderTurns(t *testing.T) {
 	_, runtime, _ := foregroundTestSession(t)
 	sink, _, _ := runtime.snapshot()

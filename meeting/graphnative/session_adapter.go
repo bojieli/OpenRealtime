@@ -483,8 +483,7 @@ func (session *meetingSessionAdapter) acceptOrderedResponse(
 		return fmt.Errorf("meeting response boundary %s has source %q, want %q",
 			event.name, envelope.SourceID, ForegroundDeploymentReference)
 	}
-	if strings.TrimSpace(envelope.RunID) == "" || len(envelope.RunID) > sidecar.MaxElementIdentifierBytes ||
-		strings.ContainsAny(envelope.RunID, "\x00\r\n") {
+	if !canonicalText(envelope.RunID) || len(envelope.RunID) > sidecar.MaxElementIdentifierBytes {
 		return fmt.Errorf("meeting response boundary %s has a non-canonical run ID", event.name)
 	}
 	sequence := envelope.Sequence
@@ -658,11 +657,16 @@ func (session *meetingSessionAdapter) publishForegroundOutcome(
 		return fmt.Errorf("meeting foreground outcome has payload %T", envelope.Payload)
 	}
 	runID := envelope.RunID
-	if runID == "" {
-		runID = outcome.RunID
-	} else if outcome.RunID != "" && outcome.RunID != runID {
+	if !canonicalText(runID) || outcome.RunID != runID {
 		return fmt.Errorf("meeting foreground outcome run ID %q does not match envelope %q",
 			outcome.RunID, runID)
+	}
+	if outcome.Operation != "generate" {
+		return fmt.Errorf("meeting foreground outcome operation %q is not generate", outcome.Operation)
+	}
+	if outcome.ProviderReference != ForegroundDeploymentReference {
+		return fmt.Errorf("meeting foreground outcome provider %q does not match %q",
+			outcome.ProviderReference, ForegroundDeploymentReference)
 	}
 	if err := session.ensureTurn(ctx, runID); err != nil {
 		return err
@@ -723,8 +727,7 @@ func (session *meetingSessionAdapter) publishBackgroundOutcome(
 }
 
 func (session *meetingSessionAdapter) ensureTurn(ctx context.Context, runID string) error {
-	if strings.TrimSpace(runID) == "" || len(runID) > sidecar.MaxElementIdentifierBytes ||
-		strings.ContainsAny(runID, "\x00\r\n") {
+	if !canonicalText(runID) || len(runID) > sidecar.MaxElementIdentifierBytes {
 		return errors.New("meeting graph output requires a run ID")
 	}
 	for {
