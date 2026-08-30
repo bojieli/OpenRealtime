@@ -15,6 +15,7 @@ import (
 	modelelements "github.com/bojieli/OpenRealtime/elements/model"
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 func TestMeetingSessionAdapterPreservesExternalMediaClock(t *testing.T) {
@@ -65,18 +66,37 @@ func assertMeetingExternalClock(t testing.TB, envelope element.Envelope, want ui
 }
 
 type blockedMeetingSpeechSink struct {
-	beginEntered chan struct{}
-	releaseBegin chan struct{}
-	began        atomic.Bool
-	ended        atomic.Bool
-	turnEnded    atomic.Bool
+	beginEntered     chan struct{}
+	releaseBegin     chan struct{}
+	turnBeginEntered chan struct{}
+	releaseTurnBegin chan struct{}
+	requireSpeechEnd bool
+	began            atomic.Bool
+	ended            atomic.Bool
+	turnEnded        atomic.Bool
+	turnBegins       atomic.Int32
+	turnEnds         atomic.Int32
+	toolCalls        atomic.Int32
 }
 
-func (*blockedMeetingSpeechSink) TurnBegin(context.Context) error { return nil }
+func (sink *blockedMeetingSpeechSink) TurnBegin(context.Context) error {
+	sink.turnBegins.Add(1)
+	if sink.turnBeginEntered != nil {
+		select {
+		case sink.turnBeginEntered <- struct{}{}:
+		default:
+		}
+	}
+	if sink.releaseTurnBegin != nil {
+		<-sink.releaseTurnBegin
+	}
+	return nil
+}
 func (sink *blockedMeetingSpeechSink) TurnEnd(context.Context, legacy.TurnOutcome) error {
-	if !sink.ended.Load() {
+	if sink.requireSpeechEnd && !sink.ended.Load() {
 		return errors.New("turn ended before speech")
 	}
+	sink.turnEnds.Add(1)
 	sink.turnEnded.Store(true)
 	return nil
 }
@@ -106,12 +126,15 @@ func (sink *blockedMeetingSpeechSink) SpeechEnd(context.Context, action.Utteranc
 	sink.ended.Store(true)
 	return nil
 }
-func (*blockedMeetingSpeechSink) ToolCalls(context.Context, legacy.ToolCallEvent) error { return nil }
-func (*blockedMeetingSpeechSink) Failed(context.Context, legacy.ErrorEvent)             {}
+func (sink *blockedMeetingSpeechSink) ToolCalls(context.Context, legacy.ToolCallEvent) error {
+	sink.toolCalls.Add(1)
+	return nil
+}
+func (*blockedMeetingSpeechSink) Failed(context.Context, legacy.ErrorEvent) {}
 
 func TestMeetingSessionAdapterOrdersCrossPortSpeechLifecycle(t *testing.T) {
 	sink := &blockedMeetingSpeechSink{
-		beginEntered: make(chan struct{}), releaseBegin: make(chan struct{}),
+		beginEntered: make(chan struct{}), releaseBegin: make(chan struct{}), requireSpeechEnd: true,
 	}
 	adapter := &meetingSessionAdapter{
 		ctx: context.Background(), sessionID: "meeting-speech-order", sink: sink,
@@ -177,6 +200,139 @@ func TestMeetingSessionAdapterOrdersCrossPortSpeechLifecycle(t *testing.T) {
 	}
 	if !sink.turnEnded.Load() {
 		t.Fatal("foreground outcome did not close the turn after speech")
+	}
+}
+
+func TestMeetingSessionAdapterGroupsVisualRunWhileSpeechDrains(t *testing.T) {
+	releaseSpeech := make(chan struct{})
+	close(releaseSpeech)
+	sink := &blockedMeetingSpeechSink{
+		beginEntered: make(chan struct{}, 1), releaseBegin: releaseSpeech, requireSpeechEnd: true,
+	}
+	adapter := &meetingSessionAdapter{
+		ctx: context.Background(), sessionID: "meeting-overlap", sink: sink,
+		activeSpeech: make(map[string]*meetingAdapterSpeech),
+	}
+	voiceRun, visualRun := "foreground-run-voice", "foreground-run-visual"
+	utterance := action.Utterance{ID: "speech-overlap", Text: "The conversion rate is 18.4 percent."}
+	if err := adapter.publishAudio(context.Background(), element.Envelope{
+		RunID: voiceRun, Payload: speechelements.AudioFrame{
+			Kind: speechelements.AudioBegin, UtteranceID: utterance.ID, Utterance: utterance,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.publishTool(context.Background(), element.Envelope{
+		RunID: visualRun, Payload: cognitionelements.ToolProposal{Call: trajectory.ToolCall{
+			CallID: "visual-call-1", Name: "computer.click_normalized",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.publishForegroundOutcome(context.Background(), element.Envelope{
+		RunID: visualRun, Payload: cognitionelements.Outcome{
+			Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: visualRun,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := sink.turnBegins.Load(); got != 1 {
+		t.Fatalf("overlapping graph runs opened %d Realtime responses, want 1", got)
+	}
+	if got := sink.toolCalls.Load(); got != 1 {
+		t.Fatalf("visual calls = %d, want 1", got)
+	}
+	if got := sink.turnEnds.Load(); got != 0 {
+		t.Fatalf("visual run closed response while voice run was active: %d", got)
+	}
+	if err := adapter.ensureTurn(context.Background(), visualRun); err == nil {
+		t.Fatal("completed visual run was admitted into the same response again")
+	}
+
+	voiceOutcome := make(chan error, 1)
+	go func() {
+		voiceOutcome <- adapter.publishForegroundOutcome(context.Background(), element.Envelope{
+			RunID: voiceRun, Payload: cognitionelements.Outcome{
+				Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: voiceRun,
+			},
+		})
+	}()
+	select {
+	case err := <-voiceOutcome:
+		t.Fatalf("voice outcome did not wait for its speech: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	if err := adapter.publishAudio(context.Background(), element.Envelope{
+		RunID: voiceRun, Payload: speechelements.AudioFrame{
+			Kind: speechelements.AudioEnd, UtteranceID: utterance.ID,
+			Terminal: speechelements.SynthesisOutcome{
+				UtteranceID: utterance.ID, Kind: speechelements.OutcomeSucceeded,
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-voiceOutcome; err != nil {
+		t.Fatal(err)
+	}
+	if got := sink.turnEnds.Load(); got != 1 {
+		t.Fatalf("terminal response boundaries = %d, want 1", got)
+	}
+}
+
+func TestMeetingSessionAdapterOrdersConcurrentOutputAfterTurnBegin(t *testing.T) {
+	turnBeginEntered := make(chan struct{}, 1)
+	releaseTurnBegin := make(chan struct{})
+	sink := &blockedMeetingSpeechSink{
+		turnBeginEntered: turnBeginEntered, releaseTurnBegin: releaseTurnBegin,
+	}
+	adapter := &meetingSessionAdapter{
+		ctx: context.Background(), sessionID: "meeting-turn-order", sink: sink,
+		activeSpeech: make(map[string]*meetingAdapterSpeech),
+	}
+	publish := func(runID, callID string) error {
+		return adapter.publishTool(context.Background(), element.Envelope{
+			RunID: runID, Payload: cognitionelements.ToolProposal{Call: trajectory.ToolCall{
+				CallID: callID, Name: "computer.click_normalized",
+			}},
+		})
+	}
+	first, second := make(chan error, 1), make(chan error, 1)
+	go func() { first <- publish("run-first", "call-first") }()
+	<-turnBeginEntered
+	go func() { second <- publish("run-second", "call-second") }()
+	select {
+	case err := <-second:
+		t.Fatalf("second output overtook TurnBegin: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	if got := sink.toolCalls.Load(); got != 0 {
+		t.Fatalf("tool outputs before TurnBegin completed = %d", got)
+	}
+	close(releaseTurnBegin)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-second; err != nil {
+		t.Fatal(err)
+	}
+	for _, runID := range []string{"run-first", "run-second"} {
+		if err := adapter.publishForegroundOutcome(context.Background(), element.Envelope{
+			RunID: runID, Payload: cognitionelements.Outcome{
+				Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: runID,
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := sink.turnBegins.Load(); got != 1 {
+		t.Fatalf("TurnBegin count = %d, want 1", got)
+	}
+	if got := sink.toolCalls.Load(); got != 2 {
+		t.Fatalf("tool output count = %d, want 2", got)
+	}
+	if got := sink.turnEnds.Load(); got != 1 {
+		t.Fatalf("TurnEnd count = %d, want 1", got)
 	}
 }
 

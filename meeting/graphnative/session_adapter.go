@@ -87,6 +87,21 @@ type meetingAdapterSpeech struct {
 	done      chan struct{}
 }
 
+// meetingAdapterTurn is one open Realtime response group. A graph may finish
+// cognition for one run and admit a silent visual-action run while the first
+// run's speech is still draining. The graph run IDs remain independently
+// addressable, but every overlapping run contributes output items to the same
+// wire response and the response closes only after all of them are terminal.
+type meetingAdapterTurn struct {
+	ready     chan struct{}
+	done      chan struct{}
+	beginErr  error
+	closing   bool
+	runs      map[string]struct{}
+	completed map[string]legacy.TurnOutcome
+	order     []string
+}
+
 type meetingSessionAdapter struct {
 	ctx       context.Context
 	sessionID string
@@ -101,7 +116,7 @@ type meetingSessionAdapter struct {
 	videoMu       sync.Mutex
 	videoCaptured map[string]uint64
 	turnMu        sync.Mutex
-	activeTurn    string
+	turn          *meetingAdapterTurn
 	activeSpeech  map[string]*meetingAdapterSpeech
 	closed        atomic.Bool
 }
@@ -302,7 +317,7 @@ func (session *meetingSessionAdapter) Cancel(ctx context.Context, reason string)
 	}
 	reason = boundedMeetingReason(reason)
 	session.turnMu.Lock()
-	runID := session.activeTurn
+	runID := session.activeTurnLocked()
 	session.turnMu.Unlock()
 	return session.send(ctx, session.ports.cancel, "cancel", runID, cognitionelements.Cancel{
 		RunID: runID, Reason: reason,
@@ -560,15 +575,7 @@ func (session *meetingSessionAdapter) publishForegroundOutcome(
 	default:
 		return fmt.Errorf("meeting foreground outcome has unknown kind %q", outcome.Kind)
 	}
-	if err := session.sink.TurnEnd(ctx, terminal); err != nil {
-		return err
-	}
-	session.turnMu.Lock()
-	if session.activeTurn == runID {
-		session.activeTurn = ""
-	}
-	session.turnMu.Unlock()
-	return nil
+	return session.finishTurn(ctx, runID, terminal)
 }
 
 func (session *meetingSessionAdapter) publishBackgroundOutcome(
@@ -593,27 +600,134 @@ func (session *meetingSessionAdapter) ensureTurn(ctx context.Context, runID stri
 	if strings.TrimSpace(runID) == "" {
 		return errors.New("meeting graph output requires a run ID")
 	}
-	session.turnMu.Lock()
-	if session.activeTurn == runID {
+	for {
+		session.turnMu.Lock()
+		turn := session.turn
+		if turn == nil {
+			turn = &meetingAdapterTurn{
+				ready: make(chan struct{}), done: make(chan struct{}),
+				runs:      map[string]struct{}{runID: {}},
+				completed: make(map[string]legacy.TurnOutcome), order: []string{runID},
+			}
+			session.turn = turn
+			session.turnMu.Unlock()
+
+			err := session.sink.TurnBegin(ctx)
+			session.turnMu.Lock()
+			turn.beginErr = err
+			close(turn.ready)
+			if err != nil {
+				if session.turn == turn {
+					session.turn = nil
+				}
+				close(turn.done)
+			}
+			session.turnMu.Unlock()
+			return err
+		}
+		if _, completed := turn.completed[runID]; completed {
+			session.turnMu.Unlock()
+			return fmt.Errorf("meeting graph emitted output after run %q ended", runID)
+		}
+		if turn.closing {
+			done := turn.done
+			session.turnMu.Unlock()
+			select {
+			case <-done:
+				continue
+			case <-ctx.Done():
+				return context.Cause(ctx)
+			}
+		}
+		if _, active := turn.runs[runID]; active {
+			ready := turn.ready
+			session.turnMu.Unlock()
+			select {
+			case <-ready:
+				return turn.beginErr
+			case <-ctx.Done():
+				return context.Cause(ctx)
+			}
+		}
+		ready := turn.ready
+		session.turnMu.Unlock()
+		select {
+		case <-ready:
+			if turn.beginErr != nil {
+				return turn.beginErr
+			}
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+
+		session.turnMu.Lock()
+		if session.turn != turn || turn.closing {
+			session.turnMu.Unlock()
+			continue
+		}
+		if _, completed := turn.completed[runID]; completed {
+			session.turnMu.Unlock()
+			return fmt.Errorf("meeting graph emitted output after run %q ended", runID)
+		}
+		if _, active := turn.runs[runID]; !active {
+			turn.runs[runID] = struct{}{}
+			turn.order = append(turn.order, runID)
+		}
 		session.turnMu.Unlock()
 		return nil
 	}
-	if session.activeTurn != "" {
-		active := session.activeTurn
+}
+
+func (session *meetingSessionAdapter) finishTurn(
+	ctx context.Context, runID string, outcome legacy.TurnOutcome,
+) error {
+	session.turnMu.Lock()
+	turn := session.turn
+	if turn == nil {
 		session.turnMu.Unlock()
-		return fmt.Errorf("meeting graph opened run %q while %q is active", runID, active)
+		return fmt.Errorf("meeting graph ended inactive run %q", runID)
 	}
-	session.activeTurn = runID
-	session.turnMu.Unlock()
-	if err := session.sink.TurnBegin(ctx); err != nil {
-		session.turnMu.Lock()
-		if session.activeTurn == runID {
-			session.activeTurn = ""
+	if _, active := turn.runs[runID]; !active {
+		session.turnMu.Unlock()
+		return fmt.Errorf("meeting graph ended inactive run %q", runID)
+	}
+	delete(turn.runs, runID)
+	turn.completed[runID] = outcome
+	if len(turn.runs) != 0 {
+		session.turnMu.Unlock()
+		return nil
+	}
+	turn.closing = true
+	terminal := legacy.TurnOutcome{}
+	for _, completedRunID := range turn.order {
+		candidate := turn.completed[completedRunID]
+		if candidate.Incomplete {
+			terminal = candidate
+			break
 		}
-		session.turnMu.Unlock()
-		return err
 	}
-	return nil
+	session.turnMu.Unlock()
+
+	err := session.sink.TurnEnd(ctx, terminal)
+	session.turnMu.Lock()
+	if session.turn == turn {
+		session.turn = nil
+	}
+	close(turn.done)
+	session.turnMu.Unlock()
+	return err
+}
+
+func (session *meetingSessionAdapter) activeTurnLocked() string {
+	if session.turn == nil || session.turn.closing {
+		return ""
+	}
+	for _, runID := range session.turn.order {
+		if _, active := session.turn.runs[runID]; active {
+			return runID
+		}
+	}
+	return ""
 }
 
 func (session *meetingSessionAdapter) speech(
