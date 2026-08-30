@@ -218,7 +218,7 @@ func TestPluginSendsExactPinnedMultimodalInteractionAndProvenance(t *testing.T) 
 	if wire.Model != ModelID || wire.Store || wire.Stream || wire.Background ||
 		wire.SystemInstruction != systemInstruction ||
 		wire.GenerationConfig.ThinkingLevel != "high" ||
-		wire.GenerationConfig.MaxOutputTokens != 16_384 || wire.GenerationConfig.Seed != 1 ||
+		wire.GenerationConfig.MaxOutputTokens != maximumOutputTokens || wire.GenerationConfig.Seed != 1 ||
 		wire.ResponseFormat.Type != "text" || wire.ResponseFormat.MediaType != "application/json" ||
 		len(wire.Input) != len(payloads)+2 || wire.Input[0].Type != "text" ||
 		wire.Input[1].Type != "text" ||
