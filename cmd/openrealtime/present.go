@@ -32,7 +32,7 @@ func runPresent(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime present", flag.ContinueOnError)
 	var listen, endpoint, webrtcEndpoint, managementEndpoint, tokenEnv, model, logLevel, clientProfile string
 	var shutdownTimeout time.Duration
-	flags.StringVar(&listen, "listen", "127.0.0.1:8767", "presentation host listen address; loopback only")
+	flags.StringVar(&listen, "listen", presentation.DefaultLoopbackHostAddress, "presentation host listen address; loopback only")
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "public OpenRealtime WebSocket endpoint")
 	flags.StringVar(&webrtcEndpoint, "webrtc-endpoint", "", "public WebRTC adapter SDP endpoint used by a WebRTC client profile")
 	flags.StringVar(&managementEndpoint, "management-endpoint", "",

@@ -201,6 +201,11 @@ func TestNativeEndpointDirectoriesAreExactAndResourceBacked(t *testing.T) {
 				if strings.Contains(endpoint.URL, "@") || strings.Contains(endpoint.URL, "?") {
 					t.Fatalf("native endpoint contains URL authority material: %#v", endpoint)
 				}
+				if !strings.Contains(
+					endpoint.URL, "://"+presentation.DefaultLoopbackHostAddress+"/",
+				) {
+					t.Fatalf("native endpoint bypasses the default presentation host: %#v", endpoint)
+				}
 			}
 			if !reflect.DeepEqual(names, test.wantNames) {
 				t.Fatalf("native endpoint names = %v, want %v", names, test.wantNames)

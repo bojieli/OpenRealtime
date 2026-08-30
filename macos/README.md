@@ -62,9 +62,27 @@ cd macos
 open ".build/OpenRealtime Developer.app"
 ```
 
+For the bundled observer endpoint directory, launch the clean server and the
+separate presentation host from the repository root before opening the app:
+
+```sh
+./openrealtime serve
+./openrealtime present \
+  -client-profile browser-developer \
+  -management-endpoint http://127.0.0.1:8765/openrealtime/v1
+```
+
+The second process serves the composable browser client and the public native
+relay routes on `127.0.0.1:8767`; it does not add assets or UI routes to the
+Realtime server. Effects-enabled native deployments additionally mount their
+own explicit effect/resource providers and authority rather than relying on a
+hidden CLI default.
+
 The bundled endpoint directories select the loopback presentation host at
-`127.0.0.1:8765`, so this client and the browser client use the same unchanged
-`/client/v1/*` server API. To select another deployment, set
+`127.0.0.1:8767`, while the clean Realtime server remains independently
+reachable at `127.0.0.1:8765`. This client and the browser client therefore use
+the same unchanged presentation-host `/client/v1/*` API without adding UI
+routes to the server. To select another deployment, set
 `OPENREALTIME_NATIVE_ENDPOINT_DIRECTORY` to a regular JSON file of at most
 1 MiB containing the complete exact directory. This replaces deployment
 wiring as one immutable value; it is not a place for tokens or session data.

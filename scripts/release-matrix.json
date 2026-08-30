@@ -947,7 +947,7 @@
     },
     {
       "id": "local.presentation.shared-server",
-      "description": "Drive real Chromium and the exact macOS client profile through one unchanged clean Realtime server",
+      "description": "Drive real Chromium and a native-manifest-derived wire probe from the exact macOS client profile through one unchanged clean Realtime server; signed app evidence is a separate Darwin gate",
       "availability": "local",
       "selection": "default",
       "required": true,

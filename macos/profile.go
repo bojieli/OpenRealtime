@@ -356,28 +356,28 @@ func DefaultNativeEndpointDirectory(distribution NativeDistribution) (presentati
 	endpoints := []presentation.Endpoint{
 		{
 			Name: presentation.EndpointRealtimeWebSocket, Protocol: presentation.ProtocolRealtimeWebSocket,
-			URL: "ws://127.0.0.1:8765/client/v1/realtime",
+			URL: "ws://" + presentation.DefaultLoopbackHostAddress + "/client/v1/realtime",
 		},
 		{
 			Name: presentation.EndpointManagement, Protocol: presentation.ProtocolManagement,
-			URL: "http://127.0.0.1:8765/client/v1/management",
+			URL: "http://" + presentation.DefaultLoopbackHostAddress + "/client/v1/management",
 		},
 	}
 	if nativeDefinitionsProvide(definitions, presentation.ClientEffectsContract) {
 		endpoints = append(endpoints, presentation.Endpoint{
 			Name: presentation.EndpointEffects, Protocol: presentation.ProtocolClientEffects,
-			URL: "ws://127.0.0.1:8765/client/v1/effects",
+			URL: "ws://" + presentation.DefaultLoopbackHostAddress + "/client/v1/effects",
 		})
 	}
 	if nativeDefinitionsProvide(definitions, presentation.ClientArtifactsContract) {
 		endpoints = append(endpoints,
 			presentation.Endpoint{
 				Name: presentation.EndpointArtifacts, Protocol: presentation.ProtocolHostArtifacts,
-				URL: "http://127.0.0.1:8765/client/v1/artifacts",
+				URL: "http://" + presentation.DefaultLoopbackHostAddress + "/client/v1/artifacts",
 			},
 			presentation.Endpoint{
 				Name: presentation.EndpointDownloads, Protocol: presentation.ProtocolHostDownloads,
-				URL: "http://127.0.0.1:8765/client/v1/downloads",
+				URL: "http://" + presentation.DefaultLoopbackHostAddress + "/client/v1/downloads",
 			},
 		)
 	}

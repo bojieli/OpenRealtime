@@ -1,16 +1,16 @@
 {
   "format_version": 1,
-  "fingerprint": "sha256:fdedb71a808407f1fd9926fe52ff91ecd623d8f345858159c925148a3c98f93f",
+  "fingerprint": "sha256:e50e5738028d241fbef611b29f4355c15142bea848085e617bafd78da98b5398",
   "endpoints": [
     {
       "name": "management.canonical",
       "protocol": "openrealtime.management.v1",
-      "url": "http://127.0.0.1:8765/client/v1/management"
+      "url": "http://127.0.0.1:8767/client/v1/management"
     },
     {
       "name": "realtime.websocket",
       "protocol": "openai.realtime.websocket.v1",
-      "url": "ws://127.0.0.1:8765/client/v1/realtime"
+      "url": "ws://127.0.0.1:8767/client/v1/realtime"
     }
   ]
 }
