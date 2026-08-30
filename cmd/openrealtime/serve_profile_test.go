@@ -21,6 +21,7 @@ import (
 
 	legacyaction "github.com/bojieli/OpenRealtime/action"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	projectarch "github.com/bojieli/OpenRealtime/architecture"
 	graphnative "github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
@@ -1057,8 +1058,13 @@ func freezeServeProfileTestDocumentWithToken(
 	if err != nil {
 		t.Fatal(err)
 	}
+	architecture, err := projectarch.Default().Resolve("cascade.controlled@3")
+	if err != nil {
+		t.Fatal(err)
+	}
 	application := scenarioconversation.ApplicationConfig{
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
+		Architecture:  architecture.Identity(),
 		ASR:           asr, Model: model, TTS: tts,
 		Tools: []scenarioconversation.ToolDeclaration{{
 			Name: "press_key", Description: "Press a reviewed menu key.",

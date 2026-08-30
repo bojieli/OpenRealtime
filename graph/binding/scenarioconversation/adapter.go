@@ -170,6 +170,11 @@ func bind(plan *graphconfig.Plan, plugin *Plugin) (boundAdapter, error) {
 	if err != nil {
 		return boundAdapter{}, fmt.Errorf("create scenario conversation adapter profile: %w", err)
 	}
+	if err := plugin.config.Architecture.ValidateRuntime(
+		profile.Ownership, profile.Capabilities.Stack,
+	); err != nil {
+		return boundAdapter{}, fmt.Errorf("create scenario conversation adapter architecture: %w", err)
+	}
 	frozenProfile := profile.Clone()
 	registration := graphbinding.AdapterRegistration{
 		Reference: AdapterReference, Artifact: plugin.config.RuntimeArtifact,

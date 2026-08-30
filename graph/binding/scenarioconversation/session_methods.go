@@ -19,6 +19,7 @@ import (
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	ingresselements "github.com/bojieli/OpenRealtime/elements/ingress"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
+	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -479,11 +480,31 @@ func (*session) Truncate(context.Context, legacy.Truncation) error { return lega
 func (session *session) Trajectory() trajectory.Snapshot { return session.bundle.store.Snapshot() }
 
 func (session *session) Status() legacy.Status {
+	definition := session.config.Architecture
+	selected := definition.Interaction
+	evidence := legacy.InteractionEvidenceCapabilities{}
+	if selected.EvidenceCapabilities != nil {
+		evidence = *selected.EvidenceCapabilities
+	}
+	control := legacy.InteractionControl{}
+	if selected.Control != nil {
+		control = *selected.Control
+	}
+	model := session.config.Model.Descriptor.Provider + ":" + session.config.Model.Descriptor.Model
 	return legacy.Status{
-		Fast:               session.config.Model.Descriptor.Provider + ":" + session.config.Model.Descriptor.Model,
+		Architecture:       definition.Identity(),
+		Fast:               model,
+		Slow:               model,
 		Perception:         session.config.ASR.Reference,
-		PerceptionRevision: session.config.ASR.Artifact.Revision,
-		Speech:             session.config.TTS.Reference, SpeechRevision: session.config.TTS.Artifact.Revision,
+		PerceptionRevision: session.config.ASR.Descriptor.Version,
+		Speech:             session.config.TTS.Reference, SpeechRevision: session.config.TTS.Descriptor.Version,
+		Policies: interaction.Policies{}.Report(),
+		Interaction: legacy.InteractionStatus{
+			Evidence: string(selected.Evidence), EvidenceCapabilities: evidence,
+			Transport: selected.Transport, ProtocolVersion: selected.ProtocolVersion,
+			ActHandoff: string(selected.Handoff), NativeSuppression: selected.NativeSuppression,
+			Control: control,
+		},
 		Tools: legacy.ToolStatus{
 			Fast: "propose", Slow: "propose", Authorization: "graph-native",
 			Execution: session.bundle.bridge.Name(),

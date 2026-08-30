@@ -21,6 +21,7 @@ import (
 
 	legacyaction "github.com/bojieli/OpenRealtime/action"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	projectarch "github.com/bojieli/OpenRealtime/architecture"
 	"github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
@@ -319,8 +320,13 @@ func newScenarioEndpointFixture(t testing.TB) *scenarioEndpointFixture {
 		Descriptor: scenarioEndpointTTSDescriptor(), Voice: scenarioEndpointVoice,
 	}
 	gate := perception.DefaultGateConfig()
+	architecture, err := projectarch.Default().Resolve("cascade.controlled@3")
+	if err != nil {
+		t.Fatal(err)
+	}
 	fixture.application = scenarioconversation.ApplicationConfig{
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
+		Architecture:  architecture.Identity(),
 		ASR:           asrSelection, Model: modelSelection, TTS: ttsSelection,
 		Tools: []scenarioconversation.ToolDeclaration{{
 			Name: scenarioEndpointTool, Description: "Look up exact weather data.",

@@ -42,6 +42,7 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 			artifacts.Gateway, artifacts.ScenarioProvider)
 	}
 	for _, exact := range []string{
+		`"architecture":{"id":"cascade.controlled","revision":3,"fingerprint":"sha256:`,
 		`"reference":"provider.openrealtime.asr.sensevoice.v1"`,
 		`"model":"iic/SenseVoiceSmall"`,
 		`"base_url":"http://127.0.0.1:8002/v1"`,
@@ -149,5 +150,18 @@ func TestScenarioProfileFreezeRejectsInvalidProviderBeforeOutput(t *testing.T) {
 	}
 	if _, err := os.Lstat(path); !os.IsNotExist(err) {
 		t.Fatalf("invalid selection created output: %v", err)
+	}
+}
+
+func TestScenarioProfileFreezeRejectsUnsupportedArchitectureBeforeOutput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "scenario-profile.yaml")
+	err := runLaunchProfile([]string{
+		"scenario", "-out", path, "-architecture", "cascade.text-policy@3",
+	}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "not an exactly attested predicate controller") {
+		t.Fatalf("unsupported-architecture error = %v", err)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("invalid architecture created output: %v", err)
 	}
 }

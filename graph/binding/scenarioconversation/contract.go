@@ -18,6 +18,7 @@ import (
 
 	legacyaction "github.com/bojieli/OpenRealtime/action"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	projectarch "github.com/bojieli/OpenRealtime/architecture"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
@@ -136,6 +137,7 @@ type ToolDeclaration struct {
 type PluginConfig struct {
 	RuntimeArtifact    inspect.ArtifactIdentity
 	DependencyArtifact inspect.ArtifactIdentity
+	Architecture       projectarch.Definition
 	ASR                ASRPlugin
 	Model              ModelPlugin
 	TTS                TTSPlugin
@@ -152,10 +154,14 @@ type PluginConfig struct {
 // before a session is allowed to start.
 func NormalizePluginConfig(source PluginConfig) (PluginConfig, error) {
 	config := clonePluginConfig(source)
+	architecture, err := resolveScenarioArchitecture(config.Architecture.Identity())
+	if err != nil {
+		return PluginConfig{}, err
+	}
+	config.Architecture = architecture
 	if err := validatePluginConfig(config); err != nil {
 		return PluginConfig{}, err
 	}
-	var err error
 	config.Tools, err = normalizeToolDeclarations(config.Tools)
 	if err != nil {
 		return PluginConfig{}, err
@@ -177,6 +183,9 @@ func clonePluginConfig(source PluginConfig) PluginConfig {
 }
 
 func validatePluginConfig(config PluginConfig) error {
+	if _, err := resolveScenarioArchitecture(config.Architecture.Identity()); err != nil {
+		return err
+	}
 	if err := config.RuntimeArtifact.Validate(); err != nil {
 		return fmt.Errorf("scenario conversation runtime artifact: %w", err)
 	}

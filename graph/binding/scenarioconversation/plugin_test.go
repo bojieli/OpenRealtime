@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	projectarch "github.com/bojieli/OpenRealtime/architecture"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
@@ -18,12 +19,17 @@ import (
 )
 
 func TestPluginInventoryIsResourceFreeAndPinsProviderDependencies(t *testing.T) {
+	architecture, err := projectarch.Default().Resolve("cascade.controlled@3")
+	if err != nil {
+		t.Fatal(err)
+	}
 	var asrOpened, modelOpened, ttsOpened atomic.Int32
 	artifact := func(name string) inspect.ArtifactIdentity {
 		return inspect.ArtifactIdentity{ID: "plugin://test/" + name, Revision: "build:1"}
 	}
 	config := PluginConfig{
 		RuntimeArtifact: artifact("adapter"), DependencyArtifact: artifact("session-services"),
+		Architecture: architecture,
 		ASR: ASRPlugin{
 			Reference: ASRReference, Artifact: artifact("asr"),
 			Descriptor: v1.Descriptor{Name: "test-asr", Version: "1", Capabilities: v1.Capabilities{}},

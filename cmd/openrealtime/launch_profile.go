@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	legacyaction "github.com/bojieli/OpenRealtime/action"
+	projectarch "github.com/bojieli/OpenRealtime/architecture"
 	"github.com/bojieli/OpenRealtime/bench/scenario"
 	"github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
 	"github.com/bojieli/OpenRealtime/computeruse"
@@ -31,11 +32,12 @@ executable and explicit provider configurations. The output is create-only and
 contains no credential. Use this same executable to serve the resulting file.`
 
 type scenarioProfileOptions struct {
-	out       string
-	graphOut  string
-	valuesOut string
-	name      string
-	revision  uint64
+	out          string
+	graphOut     string
+	valuesOut    string
+	name         string
+	revision     uint64
+	architecture string
 
 	asrProvider        string
 	asrModel           string
@@ -76,7 +78,8 @@ type scenarioProfileOptions struct {
 func defaultScenarioProfileOptions() scenarioProfileOptions {
 	return scenarioProfileOptions{
 		name: "openrealtime.launch.scenario-local", revision: 1,
-		asrProvider: "sensevoice", asrModel: "iic/SenseVoiceSmall",
+		architecture: "cascade.controlled@3",
+		asrProvider:  "sensevoice", asrModel: "iic/SenseVoiceSmall",
 		asrURL: "http://127.0.0.1:8002/v1", asrPartialMS: 200,
 		asrTimeoutMS: 30_000, asrCadenceMS: 200,
 		modelProvider: "vllm", modelName: "qwen-fast",
@@ -116,6 +119,7 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.valuesOut, "values-out", "", "new absolute exact element-values JSON path")
 	flags.StringVar(&options.name, "name", options.name, "immutable profile name")
 	flags.Uint64Var(&options.revision, "revision", options.revision, "positive profile revision")
+	flags.StringVar(&options.architecture, "architecture", options.architecture, "exact interaction architecture id@revision")
 	flags.StringVar(&options.asrProvider, "asr-provider", options.asrProvider, "installed ASR provider plugin")
 	flags.StringVar(&options.asrModel, "asr-model", options.asrModel, "exact ASR model")
 	flags.StringVar(&options.asrURL, "asr-url", options.asrURL, "exact ASR base URL")
@@ -250,8 +254,13 @@ func freezeProductionScenarioProfile(
 	if err != nil {
 		return launchprofile.Document{}, nil, err
 	}
+	architecture, err := projectarch.Default().Resolve(options.architecture)
+	if err != nil {
+		return launchprofile.Document{}, nil, fmt.Errorf("resolve scenario architecture: %w", err)
+	}
 	application := scenarioconversation.ApplicationConfig{
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
+		Architecture:  architecture.Identity(),
 		ASR:           asr, Model: model, TTS: tts,
 		Tools: tools,
 		Target: computeruse.Target{

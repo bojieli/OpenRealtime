@@ -9,6 +9,7 @@ import (
 
 	legacyaction "github.com/bojieli/OpenRealtime/action"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	projectarch "github.com/bojieli/OpenRealtime/architecture"
 	"github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
@@ -30,7 +31,7 @@ import (
 )
 
 func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResources(t *testing.T) {
-	fixture := newScenarioProfileFixture()
+	fixture := newScenarioProfileFixture(t)
 	registration, err := graphs.ScenarioConversationApplicationRegistration(fixture.registration)
 	if err != nil {
 		t.Fatal(err)
@@ -45,6 +46,35 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 	previewConfig, err := graphs.ScenarioConversationLaunchConfig(fixture.pluginConfig())
 	if err != nil {
 		t.Fatal(err)
+	}
+	unsupported, err := projectarch.Default().Resolve("cascade.text-policy@3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pluginArchitectureTests := []struct {
+		name   string
+		mutate func(*scenarioconversation.PluginConfig)
+		want   string
+	}{
+		{name: "missing", mutate: func(config *scenarioconversation.PluginConfig) {
+			config.Architecture = projectarch.Definition{}
+		}, want: "requires an exact architecture identity"},
+		{name: "forged", mutate: func(config *scenarioconversation.PluginConfig) {
+			config.Architecture.Summary += " forged"
+		}, want: "fingerprint differs"},
+		{name: "unsupported mode", mutate: func(config *scenarioconversation.PluginConfig) {
+			config.Architecture = unsupported
+		}, want: "not an exactly attested predicate controller"},
+	}
+	for _, test := range pluginArchitectureTests {
+		t.Run("plugin architecture "+test.name, func(t *testing.T) {
+			config := fixture.pluginConfig()
+			test.mutate(&config)
+			if _, err := graphs.ScenarioConversationLaunchConfig(config); err == nil ||
+				!strings.Contains(err.Error(), test.want) {
+				t.Fatalf("scenario plugin architecture error = %v, want %q", err, test.want)
+			}
+		})
 	}
 	preview, err := graphlaunch.New(context.Background(), previewConfig)
 	if err != nil {
@@ -141,6 +171,19 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 		want    string
 	}{
 		{name: "unknown field", payload: unknown, want: "unknown field"},
+		{name: "architecture missing", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
+			config.Architecture = legacy.ArchitectureIdentity{}
+		}), want: "requires an exact architecture identity"},
+		{name: "architecture fingerprint drift", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
+			config.Architecture.Fingerprint = "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+		}), want: "fingerprint differs"},
+		{name: "unsupported architecture mode", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
+			definition, resolveErr := projectarch.Default().Resolve("cascade.text-policy@3")
+			if resolveErr != nil {
+				t.Fatal(resolveErr)
+			}
+			config.Architecture = definition.Identity()
+		}), want: "not an exactly attested predicate controller"},
 		{name: "ASR missing", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
 			config.ASR.Reference = "asr://test/uninstalled"
 		}), want: "ASR registry is missing"},
@@ -188,7 +231,7 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 }
 
 func TestScenarioConversationAdapterCarriesFullScenarioContractWithDistinctPlaybackReceipts(t *testing.T) {
-	fixture := newScenarioProfileFixture()
+	fixture := newScenarioProfileFixture(t)
 	contract, err := graphnative.BuildContract()
 	if err != nil {
 		t.Fatal(err)
@@ -298,7 +341,7 @@ func TestScenarioConversationAdapterCarriesFullScenarioContractWithDistinctPlayb
 }
 
 func TestScenarioConversationGraphOwnsPostCommitFifteenSecondSilenceWakeup(t *testing.T) {
-	fixture := newScenarioProfileFixture()
+	fixture := newScenarioProfileFixture(t)
 	config, err := graphs.ScenarioConversationLaunchConfig(fixture.pluginConfig())
 	if err != nil {
 		t.Fatal(err)
@@ -411,7 +454,7 @@ func TestScenarioConversationLaunchRequiresExactSharedTrajectoryStoreSelection(t
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fixture := newScenarioProfileFixture()
+			fixture := newScenarioProfileFixture(t)
 			config, err := graphs.ScenarioConversationLaunchConfig(fixture.pluginConfig())
 			if err != nil {
 				t.Fatal(err)
@@ -458,6 +501,7 @@ func decorateScenarioAdapter(
 
 type scenarioProfileFixture struct {
 	application     scenarioconversation.ApplicationConfig
+	architecture    projectarch.Definition
 	registration    scenarioconversation.ApplicationRegistrationConfig
 	gatewayArtifact inspect.ArtifactIdentity
 	asrOpened       *atomic.Int32
@@ -465,7 +509,12 @@ type scenarioProfileFixture struct {
 	ttsOpened       *atomic.Int32
 }
 
-func newScenarioProfileFixture() scenarioProfileFixture {
+func newScenarioProfileFixture(t testing.TB) scenarioProfileFixture {
+	t.Helper()
+	architecture, err := projectarch.Default().Resolve("cascade.controlled@3")
+	if err != nil {
+		t.Fatal(err)
+	}
 	artifact := func(name string) inspect.ArtifactIdentity {
 		return inspect.ArtifactIdentity{ID: "plugin://test/scenario/" + name, Revision: "build:1"}
 	}
@@ -492,6 +541,7 @@ func newScenarioProfileFixture() scenarioProfileFixture {
 	}
 	application := scenarioconversation.ApplicationConfig{
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
+		Architecture:  architecture.Identity(),
 		ASR:           asrSelection, Model: modelSelection, TTS: ttsSelection,
 		Tools: []scenarioconversation.ToolDeclaration{{
 			Name: "lookup.weather", Description: "Look up weather.",
@@ -535,7 +585,8 @@ func newScenarioProfileFixture() scenarioProfileFixture {
 		}},
 	}
 	return scenarioProfileFixture{
-		application: application, registration: registration, gatewayArtifact: artifact("gateway"),
+		application: application, architecture: architecture,
+		registration: registration, gatewayArtifact: artifact("gateway"),
 		asrOpened: asrOpened, modelOpened: modelOpened, ttsOpened: ttsOpened,
 	}
 }
@@ -544,6 +595,7 @@ func (fixture scenarioProfileFixture) pluginConfig() scenarioconversation.Plugin
 	return scenarioconversation.PluginConfig{
 		RuntimeArtifact:    fixture.registration.RuntimeArtifact,
 		DependencyArtifact: fixture.registration.DependencyArtifact,
+		Architecture:       fixture.architecture,
 		ASR: scenarioconversation.ASRPlugin{
 			Reference: scenarioconversation.ASRReference, Artifact: fixture.application.ASR.Artifact,
 			Descriptor: fixture.application.ASR.Descriptor, Factory: fixture.registration.ASR[0].Factory,

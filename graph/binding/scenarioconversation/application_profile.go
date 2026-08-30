@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	projectarch "github.com/bojieli/OpenRealtime/architecture"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
@@ -21,7 +23,7 @@ import (
 
 const (
 	ApplicationReference          = "application.openrealtime.scenario-conversation.v1"
-	ApplicationFormatVersion      = uint64(1)
+	ApplicationFormatVersion      = uint64(2)
 	maximumApplicationConfigBytes = 4 << 20
 	maximumApplicationProviders   = 65_536
 )
@@ -72,15 +74,16 @@ func (selection ApplicationGateSelection) gateConfig() perception.GateConfig {
 // ApplicationConfig is the complete plugin-owned, resource-free selection
 // carried by a generic graph launch profile.
 type ApplicationConfig struct {
-	FormatVersion   uint64                    `json:"format_version"`
-	ASR             ApplicationASRSelection   `json:"asr"`
-	Model           ApplicationModelSelection `json:"model"`
-	TTS             ApplicationTTSSelection   `json:"tts"`
-	Tools           []ToolDeclaration         `json:"tools"`
-	Target          computeruse.Target        `json:"target"`
-	Gate            ApplicationGateSelection  `json:"gate"`
-	Media           MediaLimits               `json:"media"`
-	MaxOutputTokens int                       `json:"max_output_tokens"`
+	FormatVersion   uint64                      `json:"format_version"`
+	Architecture    legacy.ArchitectureIdentity `json:"architecture"`
+	ASR             ApplicationASRSelection     `json:"asr"`
+	Model           ApplicationModelSelection   `json:"model"`
+	TTS             ApplicationTTSSelection     `json:"tts"`
+	Tools           []ToolDeclaration           `json:"tools"`
+	Target          computeruse.Target          `json:"target"`
+	Gate            ApplicationGateSelection    `json:"gate"`
+	Media           MediaLimits                 `json:"media"`
+	MaxOutputTokens int                         `json:"max_output_tokens"`
 }
 
 // DecodeApplicationConfig strictly decodes and validates an exact selection.
@@ -107,6 +110,9 @@ func normalizeApplicationConfig(source ApplicationConfig) (ApplicationConfig, er
 			"scenario conversation application configuration uses format %d, want %d",
 			config.FormatVersion, ApplicationFormatVersion,
 		)
+	}
+	if _, err := resolveScenarioArchitecture(config.Architecture); err != nil {
+		return ApplicationConfig{}, err
 	}
 	if err := validateApplicationASR(config.ASR); err != nil {
 		return ApplicationConfig{}, err
@@ -340,8 +346,13 @@ func NewApplicationRegistration(
 			if err := context.Cause(ctx); err != nil {
 				return graphlaunch.Config{}, err
 			}
+			architecture, err := resolveScenarioArchitecture(config.Architecture)
+			if err != nil {
+				return graphlaunch.Config{}, err
+			}
 			resolved, constructorErr := constructor(PluginConfig{
 				RuntimeArtifact: runtimeArtifact, DependencyArtifact: dependencyArtifact,
+				Architecture: architecture,
 				ASR: ASRPlugin{Reference: ASRReference, Artifact: asrRegistration.Artifact,
 					Descriptor: cloneV1Descriptor(asrDescriptor), Factory: asrFactory},
 				Model: ModelPlugin{Reference: ModelReference, Artifact: modelRegistration.Artifact,
@@ -379,6 +390,32 @@ func NewApplicationRegistration(
 		)
 	}
 	return registration, nil
+}
+
+func resolveScenarioArchitecture(
+	identity legacy.ArchitectureIdentity,
+) (projectarch.Definition, error) {
+	if strings.TrimSpace(identity.ID) == "" || identity.Revision <= 0 ||
+		strings.TrimSpace(identity.Fingerprint) == "" {
+		return projectarch.Definition{}, errors.New(
+			"scenario conversation application requires an exact architecture identity",
+		)
+	}
+	definition, err := projectarch.Default().LookupIdentity(identity)
+	if err != nil {
+		return projectarch.Definition{}, fmt.Errorf(
+			"scenario conversation application architecture: %w", err,
+		)
+	}
+	if definition.Interaction.Mode != projectarch.InteractionPredicates ||
+		definition.Interaction.EvidenceCapabilities == nil ||
+		definition.Interaction.Control == nil {
+		return projectarch.Definition{}, fmt.Errorf(
+			"scenario conversation application architecture %s is not an exactly attested predicate controller",
+			definition.Ref(),
+		)
+	}
+	return definition, nil
 }
 
 func resolveASRRegistration(
