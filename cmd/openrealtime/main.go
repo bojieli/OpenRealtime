@@ -48,6 +48,8 @@ func run(arguments []string, stdout, stderr io.Writer) error {
 		return runEval(arguments[1:], stdout)
 	case "scenario":
 		return runScenario(arguments[1:], stdout)
+	case "review":
+		return runReview(arguments[1:], stdout)
 	case "compare":
 		return runCompare(arguments[1:], stdout)
 	case "simulate":
@@ -83,6 +85,7 @@ commands:
   conformance   verify protocol and component conformance
   efficiency    measure the costs the design claims are small
   bench         run a measurement suite against a running server
+  review        run secondary offline reviews from sealed benchmark evidence
   simulate      hold a conversation between two agents and check what happened
   compare       read two saved cells and report the pairing
   datasets      inventory a prepared benchmark dataset
