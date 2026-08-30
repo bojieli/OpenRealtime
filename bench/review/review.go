@@ -38,8 +38,8 @@ import (
 const (
 	RecordFormat              = "openrealtime.multimodal-review"
 	FormatVersion             = 5
-	CasePromptVersion         = "openrealtime.case-media-review.prompt.v6"
-	CaseSchemaVersion         = "openrealtime.case-media-review.schema.v2"
+	CasePromptVersion         = "openrealtime.case-media-review.prompt.v7"
+	CaseSchemaVersion         = "openrealtime.case-media-review.schema.v3"
 	SanitizationVersion       = "openrealtime.review-sanitization.v4"
 	MediaValidationVersion    = "openrealtime.media-container-validation.v4"
 	maximumContextBytes       = 4 << 20
@@ -505,8 +505,20 @@ func Evaluate(
 		metadata, err := marshalCanonicalCompact(
 			evaluation.Media[index].Media, maximumPreparedPublicBytes,
 		)
-		if err != nil || prepared.ContainsDeclaredSensitiveValue(metadata) ||
-			prepared.ContainsDeclaredSensitiveValue(evaluation.Media[index].Bytes) {
+		if err != nil {
+			return Evaluation{}, errors.New("retained review media metadata is invalid")
+		}
+		metadataSensitive, scanErr := prepared.ContainsDeclaredSensitiveValueContext(ctx, metadata)
+		if scanErr != nil {
+			return Evaluation{}, scanErr
+		}
+		mediaSensitive, scanErr := prepared.sensitiveGuard.matcher.containsContext(
+			ctx, evaluation.Media[index].Bytes,
+		)
+		if scanErr != nil {
+			return Evaluation{}, scanErr
+		}
+		if metadataSensitive || mediaSensitive {
 			return Evaluation{}, errors.New("retained review media contains a declared sensitive value")
 		}
 	}
@@ -1213,10 +1225,107 @@ func validateAssessmentTimestampMaximum(
 				if timestamp != nil && (*timestamp < 0 || *timestamp > maximumMS) {
 					return errors.New("review assessment finding timestamp exceeds the sealed media timeline")
 				}
+				if timestamp != nil && !evidenceContainsExactTimestampMS(finding.Evidence, *timestamp) {
+					return errors.New(
+						"review assessment finding timestamp is not repeated exactly with ms in its evidence",
+					)
+				}
 			}
 		}
 	}
 	return nil
+}
+
+func evidenceContainsExactTimestampMS(evidence string, wanted int64) bool {
+	if wanted < 0 {
+		return false
+	}
+	for index := 0; index < len(evidence); {
+		if evidence[index] < '0' || evidence[index] > '9' {
+			index++
+			continue
+		}
+		if index >= 2 && (evidence[index-1] == '.' || evidence[index-1] == ',') &&
+			evidence[index-2] >= '0' && evidence[index-2] <= '9' {
+			for index < len(evidence) && evidence[index] >= '0' && evidence[index] <= '9' {
+				index++
+			}
+			continue
+		}
+		first, next, ok := reviewTimestampDecimal(evidence, index)
+		if !ok {
+			index = next
+			continue
+		}
+		if reviewTimestampHasMSUnit(evidence, next) && first == wanted {
+			return true
+		}
+		rangeIndex := reviewTimestampSpaces(evidence, next)
+		switch {
+		case rangeIndex < len(evidence) && evidence[rangeIndex] == '-':
+			rangeIndex++
+		case rangeIndex+3 <= len(evidence) &&
+			(evidence[rangeIndex:rangeIndex+3] == "–" || evidence[rangeIndex:rangeIndex+3] == "—"):
+			rangeIndex += 3
+		default:
+			index = next
+			continue
+		}
+		rangeIndex = reviewTimestampSpaces(evidence, rangeIndex)
+		second, rangeEnd, rangeOK := reviewTimestampDecimal(evidence, rangeIndex)
+		if rangeOK && reviewTimestampHasMSUnit(evidence, rangeEnd) &&
+			(first == wanted || second == wanted) {
+			return true
+		}
+		index = next
+	}
+	return false
+}
+
+func reviewTimestampDecimal(source string, offset int) (int64, int, bool) {
+	value := int64(0)
+	index := offset
+	valid := false
+	for index < len(source) && source[index] >= '0' && source[index] <= '9' {
+		digit := int64(source[index] - '0')
+		if value > (math.MaxInt64-digit)/10 {
+			for index < len(source) && source[index] >= '0' && source[index] <= '9' {
+				index++
+			}
+			return 0, index, false
+		}
+		value = value*10 + digit
+		valid = true
+		index++
+	}
+	return value, index, valid
+}
+
+func reviewTimestampHasMSUnit(source string, offset int) bool {
+	index := reviewTimestampSpaces(source, offset)
+	if index+2 > len(source) || (source[index] != 'm' && source[index] != 'M') ||
+		(source[index+1] != 's' && source[index+1] != 'S') {
+		return false
+	}
+	index += 2
+	return index == len(source) || !reviewTimestampWordByte(source[index])
+}
+
+func reviewTimestampSpaces(source string, offset int) int {
+	for offset < len(source) {
+		switch source[offset] {
+		case ' ', '\t', '\r', '\n':
+			offset++
+		default:
+			return offset
+		}
+	}
+	return offset
+}
+
+func reviewTimestampWordByte(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' ||
+		value >= '0' && value <= '9' || value == '_'
 }
 
 func lowerSnakeCase(value string) bool {
