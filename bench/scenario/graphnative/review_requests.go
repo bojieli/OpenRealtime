@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"slices"
+	"strings"
 
 	"github.com/bojieli/OpenRealtime/bench"
 	archbench "github.com/bojieli/OpenRealtime/bench/architecture"
@@ -19,7 +21,7 @@ import (
 
 const (
 	SourceReviewContextFormat        = "openrealtime.scenario-source-review-context"
-	SourceReviewContextFormatVersion = 2
+	SourceReviewContextFormatVersion = 3
 	maximumSourceReviewContext       = 4 << 20
 )
 
@@ -159,7 +161,7 @@ func BuildSourceReviewPopulation(
 			copy := observation
 			architecture.Observation = &copy
 		}
-		contextPayload, err := marshalSourceIndented(SourceReviewContext{
+		contextPayload, err := marshalSourceReviewContext(SourceReviewContext{
 			Format:                 SourceReviewContextFormat,
 			FormatVersion:          SourceReviewContextFormatVersion,
 			DeterministicAuthority: "the retained graph-native checklist and deterministic scorer result are authoritative",
@@ -169,7 +171,7 @@ func BuildSourceReviewPopulation(
 			ChecklistFingerprint:   bundle.Checklist.Fingerprint,
 			MediaDurationMS:        mediaDurationMS,
 			Attempt:                attempt.Record.Clone(), Result: deterministic, Architecture: architecture,
-		}, maximumSourceReviewContext)
+		})
 		if err != nil {
 			return SourceReviewPopulation{}, err
 		}
@@ -208,6 +210,68 @@ func BuildSourceReviewPopulation(
 		return SourceReviewPopulation{}, errors.New("scenario source bundle changed while building review requests")
 	}
 	return SourceReviewPopulation{Bundle: reopened, Requests: requests}, nil
+}
+
+// marshalSourceReviewContext makes the secondary model context's unit
+// contract structural rather than relying on a model to correctly interpret
+// fractional millisecond values. The receipt-verified source artifacts remain
+// untouched; only this derived context rounds numeric fields whose JSON name
+// ends in _ms to the nearest integer millisecond.
+func marshalSourceReviewContext(value SourceReviewContext) ([]byte, error) {
+	if err := normalizeSourceReviewMilliseconds(&value); err != nil {
+		return nil, err
+	}
+	return marshalSourceIndented(value, maximumSourceReviewContext)
+}
+
+func normalizeSourceReviewMilliseconds(value *SourceReviewContext) error {
+	if value == nil {
+		return errors.New("scenario source review context normalization needs a destination")
+	}
+	playback, err := roundSourceReviewFloatMilliseconds(value.Result.Transcript.PlaybackMS)
+	if err != nil {
+		return err
+	}
+	value.Result.Transcript.PlaybackMS = playback
+	value.Result.Transcript.Moments = slices.Clone(value.Result.Transcript.Moments)
+	for index := range value.Result.Transcript.Moments {
+		at, err := roundSourceReviewFloatMilliseconds(value.Result.Transcript.Moments[index].AtMS)
+		if err != nil {
+			return err
+		}
+		audio, err := roundSourceReviewFloatMilliseconds(value.Result.Transcript.Moments[index].AudioMS)
+		if err != nil {
+			return err
+		}
+		value.Result.Transcript.Moments[index].AtMS = at
+		value.Result.Transcript.Moments[index].AudioMS = audio
+	}
+	if metrics := value.Architecture.Task.Metrics; metrics != nil {
+		normalized := make(map[string]float64, len(metrics))
+		for name, metric := range metrics {
+			if strings.HasSuffix(name, "_ms") {
+				metric, err = roundSourceReviewFloatMilliseconds(metric)
+				if err != nil {
+					return err
+				}
+			}
+			normalized[name] = metric
+		}
+		value.Architecture.Task.Metrics = normalized
+	}
+	for name := range value.Architecture.Task.Notes {
+		if strings.HasSuffix(name, "_ms") {
+			return errors.New("scenario source review context has a nonnumeric millisecond field")
+		}
+	}
+	return nil
+}
+
+func roundSourceReviewFloatMilliseconds(value float64) (float64, error) {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value >= math.Exp2(63) {
+		return 0, errors.New("scenario source review context has an invalid millisecond value")
+	}
+	return math.Round(value), nil
 }
 
 // sourceReviewStereoWAVDurationMS validates the exact graph-native scenario

@@ -1321,7 +1321,7 @@ func TestMediaIdentityRejectsInvalidUTF8AndControlPaths(t *testing.T) {
 }
 
 func TestReviewContractVersionsReflectIncompatibleFormatChanges(t *testing.T) {
-	if FormatVersion != 5 || CasePromptVersion != "openrealtime.case-media-review.prompt.v5" ||
+	if FormatVersion != 5 || CasePromptVersion != "openrealtime.case-media-review.prompt.v6" ||
 		CaseSchemaVersion != "openrealtime.case-media-review.schema.v2" ||
 		SanitizationVersion != "openrealtime.review-sanitization.v4" ||
 		MediaValidationVersion != "openrealtime.media-container-validation.v4" {
