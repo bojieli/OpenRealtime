@@ -555,6 +555,29 @@ func TestPluginRejectsInvalidPreparedMediaOversizeAndCancellation(t *testing.T) 
 	}
 }
 
+func TestInlineBudgetAdmitsFullFidelityLongScenarioRecording(t *testing.T) {
+	const (
+		sampleRateHz = 24_000
+		channels     = 2
+		bytesPerPCM  = 2
+		durationSec  = 150
+		wavHeader    = 44
+		// The graph-native scenario request measured at less than 500 kB of
+		// non-media envelope. Keep the arithmetic explicit so a future limit
+		// reduction cannot silently make its longest fixture unreviewable.
+		envelopeReserve = 500_000
+	)
+	wavBytes := wavHeader + durationSec*sampleRateHz*channels*bytesPerPCM
+	if wavBytes > maximumInlineMediaBytes {
+		t.Fatalf("150-second lossless review WAV is %d bytes; media cap is %d",
+			wavBytes, maximumInlineMediaBytes)
+	}
+	if base64.StdEncoding.EncodedLen(wavBytes)+envelopeReserve > maximumInlineRequestBytes {
+		t.Fatalf("150-second lossless review WAV leaves less than %d envelope bytes",
+			envelopeReserve)
+	}
+}
+
 func TestPluginTransportErrorsCannotEchoCredential(t *testing.T) {
 	_, prepared, _ := preparedMultimodalRequest(t)
 	plugin, err := newWithHTTPClient(testAPIKey, &http.Client{Transport: roundTripFunc(

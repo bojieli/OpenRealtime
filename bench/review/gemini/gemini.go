@@ -40,8 +40,14 @@ const (
 	interactionsURL  = "https://generativelanguage.googleapis.com/v1beta/interactions"
 
 	maximumInlineRequestBytes = 20_000_000
-	maximumInlineMediaBytes   = 8 << 20
-	maximumResponseBytes      = 8 << 20
+	// A 150-second, 24 kHz, stereo PCM16 review recording is 14,400,044
+	// bytes. Keep that lossless evidence admissible while leaving roughly
+	// 666 kB for the prompt, schema, system instruction, and JSON envelope
+	// after base64 expansion. marshalRequest remains the final authority and
+	// rejects any combination whose encoded body exceeds the documented
+	// 20 MB Interactions inline-request limit before transport.
+	maximumInlineMediaBytes = 14_500_000
+	maximumResponseBytes    = 8 << 20
 	// Three is the deliberately narrow plugin policy exercised by the exact
 	// WAV + PNG + MP4 contract fixture. A live run is reportable only when its
 	// separate create-only conformance receipt has been retained.

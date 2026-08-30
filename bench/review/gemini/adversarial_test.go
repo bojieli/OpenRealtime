@@ -8,6 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
 	"os"
@@ -1180,7 +1183,7 @@ func TestPinnedInteractionCapabilityTableClaimsOnlyEvidencedInlineFormats(t *tes
 	}
 }
 
-func TestInlineMediaCountAndTotalByteBoundaries(t *testing.T) {
+func TestInlineMediaAggregateBoundariesWithScenarioVisualShape(t *testing.T) {
 	makeWAV := func(size int) []byte {
 		if size < 44 || (size-44)%2 != 0 {
 			t.Fatalf("invalid WAV fixture size %d", size)
@@ -1201,13 +1204,38 @@ func TestInlineMediaCountAndTotalByteBoundaries(t *testing.T) {
 		binary.LittleEndian.PutUint32(payload[40:44], uint32(size-44))
 		return payload
 	}
-	for _, over := range []bool{false, true} {
-		t.Run(fmt.Sprintf("over=%t", over), func(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		delta   int
+		allowed bool
+	}{
+		{name: "just_under", delta: -2, allowed: true},
+		{name: "at", delta: 0, allowed: true},
+		{name: "over", delta: 2, allowed: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			request, _, payloads := preparedMultimodalRequest(t)
-			target := maximumInlineMediaBytes - len(payloads[1]) - len(payloads[2])
-			if over {
-				target += 2
+			// Match scenario case 10 exactly: one stereo WAV followed by two
+			// submitted PNG frames. Provider admission is an aggregate budget,
+			// not a per-file budget that can be reset for each visual input.
+			var secondPNGBuffer bytes.Buffer
+			secondImage := image.NewRGBA(image.Rect(0, 0, 2, 2))
+			secondImage.Set(1, 1, color.RGBA{R: 0x10, G: 0x90, B: 0xe0, A: 0xff})
+			if err := png.Encode(&secondPNGBuffer, secondImage); err != nil {
+				t.Fatal(err)
 			}
+			secondPNG := secondPNGBuffer.Bytes()
+			secondPNGPath := "screen-second.png"
+			if err := os.WriteFile(
+				filepath.Join(request.RootDirectory, secondPNGPath), secondPNG, 0o600,
+			); err != nil {
+				t.Fatal(err)
+			}
+			request.Media[2] = review.Media{
+				Path: secondPNGPath, Kind: "image", Role: "submitted_visual_input_02",
+				MediaType: "image/png", SHA256: digest(secondPNG),
+			}
+			target := maximumInlineMediaBytes - len(payloads[1]) - len(secondPNG) + test.delta
 			wav := makeWAV(target)
 			if err := os.WriteFile(
 				filepath.Join(request.RootDirectory, request.Media[0].Path), wav, 0o600,
@@ -1230,7 +1258,7 @@ func TestInlineMediaCountAndTotalByteBoundaries(t *testing.T) {
 			}
 			defer plugin.Close()
 			_, err = plugin.Review(t.Context(), prepared)
-			if over {
+			if !test.allowed {
 				if err == nil || calls.Load() != 0 {
 					t.Fatalf("over-limit Review() = %v; calls=%d", err, calls.Load())
 				}
@@ -1267,6 +1295,51 @@ func TestInlineMediaCountAndTotalByteBoundaries(t *testing.T) {
 	defer plugin.Close()
 	if _, err := plugin.Review(t.Context(), prepared); err == nil || calls.Load() != 0 {
 		t.Fatalf("four-part Review() = %v; calls=%d", err, calls.Load())
+	}
+}
+
+func TestEncodedInlineEnvelopeJustUnderAtAndOver(t *testing.T) {
+	_, prepared, _ := preparedMultimodalRequest(t)
+	prepared = clonePrepared(prepared)
+	otherMedia := len(prepared.Media[1].Bytes) + len(prepared.Media[2].Bytes)
+	prepared.Media[0].Bytes = make([]byte, maximumInlineMediaBytes-otherMedia)
+
+	// This test isolates the final encoder after validated admission. A
+	// one-byte ASCII prompt makes the JSON field overhead measurable; from
+	// there each additional byte grows the encoded request by exactly one.
+	prepared.Prompt = "x"
+	oneByteBody, err := marshalValidatedRequest(prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixedBytes := len(oneByteBody) - 1
+	atPromptBytes := maximumInlineRequestBytes - fixedBytes
+	if atPromptBytes <= 1 || atPromptBytes > maximumPromptBytes {
+		t.Fatalf("encoded envelope leaves invalid prompt budget %d", atPromptBytes)
+	}
+	for _, test := range []struct {
+		name  string
+		delta int
+	}{
+		{name: "just_under", delta: -1},
+		{name: "at", delta: 0},
+		{name: "over", delta: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := clonePrepared(prepared)
+			candidate.Prompt = strings.Repeat("x", atPromptBytes+test.delta)
+			body, err := marshalValidatedRequest(candidate)
+			if test.delta > 0 {
+				if err == nil || body != nil || !strings.Contains(err.Error(), "maximum is 20000000") {
+					t.Fatalf("over-limit encoded request = %d bytes, %v", len(body), err)
+				}
+				return
+			}
+			if err != nil || len(body) != maximumInlineRequestBytes+test.delta {
+				t.Fatalf("encoded request = %d bytes, %v; want %d",
+					len(body), err, maximumInlineRequestBytes+test.delta)
+			}
+		})
 	}
 }
 
