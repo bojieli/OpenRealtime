@@ -132,7 +132,7 @@ func runChromiumMeetingReview(t *testing.T, bundle *ReviewBundle) bench.Result {
 	cell.Execution = requirement
 	result, err := Run(t.Context(), Options{
 		Endpoint: "ws://hermetic.invalid/v1/realtime", Cell: cell,
-		FrameRate: 2, AnalysisDelay: 10 * time.Second, Timeout: 30 * time.Second,
+		FrameRate: 5, AnalysisDelay: 10 * time.Second, Timeout: 30 * time.Second,
 		Evidence: bundle, dependencies: dependencies,
 	})
 	if err != nil {
@@ -451,7 +451,11 @@ func (harness *chromiumMeetingReviewHarness) play(
 		}
 	}
 	timelineEndMS += 350
-	for atMS := float64(50); atMS < timelineEndMS; atMS += 500 {
+	frameIntervalMS := float64(config.Video[0].Interval) / float64(time.Millisecond)
+	if frameIntervalMS <= 0 {
+		return transcript, errors.New("Meeting review screen interval is invalid")
+	}
+	for atMS := float64(50); atMS < timelineEndMS; atMS += frameIntervalMS {
 		events = append(events, scriptedMeetingEvent{atMS: atMS, order: 10, run: captureFrame})
 	}
 	events = append(events, scriptedMeetingEvent{
