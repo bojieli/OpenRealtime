@@ -213,6 +213,15 @@ type frozenChecklistConfig struct {
 	fullSuite                 bool
 }
 
+// ValidateChecklistConfig verifies and freezes the complete checklist
+// selection without invoking the executor, media verifier, or retention sink.
+// Hosts can therefore reject a drifted contract/profile/evidence composition
+// before they open credentials, storage, speech, or Realtime resources.
+func ValidateChecklistConfig(config ChecklistConfig) error {
+	_, err := freezeChecklistConfig(config)
+	return err
+}
+
 // RunChecklist executes the canonical case/trial order. Behavioral and
 // infrastructure failures are records, not early returns, so a bad first case
 // cannot erase the other ten. Context cancellation and retention-plugin

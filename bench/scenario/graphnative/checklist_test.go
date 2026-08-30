@@ -275,6 +275,52 @@ func TestChecklistRejectsConfigurationDriftBeforeAnyPluginRuns(t *testing.T) {
 	}
 }
 
+func TestValidateChecklistConfigIsResourceFree(t *testing.T) {
+	fixture := newChecklistFixture(t, 15)
+	var executorCalls, verifierCalls, attemptSinkCalls, finalSinkCalls int
+	fixture.config.Executor = func(
+		context.Context, graphnative.AttemptKey, scenario.Scenario,
+	) (graphnative.AttemptObservation, error) {
+		executorCalls++
+		return graphnative.AttemptObservation{}, errors.New("must not execute")
+	}
+	fixture.config.VerifyMedia = func(
+		context.Context, graphnative.AttemptKey, graphnative.CaseRequirement,
+		graphnative.MediaReference,
+	) (graphnative.VerifiedMedia, error) {
+		verifierCalls++
+		return graphnative.VerifiedMedia{}, errors.New("must not verify")
+	}
+	fixture.config.Sink = graphnative.ChecklistSink{
+		Attempt: func(context.Context, graphnative.AttemptRecord) error {
+			attemptSinkCalls++
+			return errors.New("must not retain")
+		},
+		Finalize: func(context.Context, graphnative.Checklist) error {
+			finalSinkCalls++
+			return errors.New("must not finalize")
+		},
+	}
+	if err := graphnative.ValidateChecklistConfig(fixture.config); err != nil {
+		t.Fatal(err)
+	}
+	if executorCalls != 0 || verifierCalls != 0 || attemptSinkCalls != 0 || finalSinkCalls != 0 {
+		t.Fatalf("validation opened plug-ins: executor=%d verifier=%d attempt=%d final=%d",
+			executorCalls, verifierCalls, attemptSinkCalls, finalSinkCalls)
+	}
+
+	graph := *fixture.config.ExecutionRequirement.Graph
+	graph.Graph.Fingerprint = checklistDigest("drifted-graph")
+	fixture.config.ExecutionRequirement.Graph = &graph
+	if err := graphnative.ValidateChecklistConfig(fixture.config); err == nil ||
+		!strings.Contains(err.Error(), "frozen plan graph") {
+		t.Fatalf("drifted selection validation error = %v", err)
+	}
+	if executorCalls != 0 || verifierCalls != 0 || attemptSinkCalls != 0 || finalSinkCalls != 0 {
+		t.Fatal("drifted validation opened a plug-in")
+	}
+}
+
 func TestChecklistCancellationAndSinkFailureReturnFingerprintValidPartialRecords(t *testing.T) {
 	t.Run("cancellation", func(t *testing.T) {
 		fixture := newChecklistFixture(t, 1)
