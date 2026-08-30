@@ -3,6 +3,8 @@ package realtimecu
 import (
 	"context"
 	"errors"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +15,7 @@ import (
 type fixtureEvidencePlugin struct {
 	begin  func(context.Context, EvidenceAttempt) (AttemptEvidence, error)
 	finish func(context.Context, bench.Result) error
+	close  func() error
 }
 
 func (plugin fixtureEvidencePlugin) BeginAttempt(
@@ -23,6 +26,13 @@ func (plugin fixtureEvidencePlugin) BeginAttempt(
 
 func (plugin fixtureEvidencePlugin) FinishSuite(ctx context.Context, result bench.Result) error {
 	return plugin.finish(ctx, result)
+}
+
+func (plugin fixtureEvidencePlugin) Close() error {
+	if plugin.close == nil {
+		return nil
+	}
+	return plugin.close()
 }
 
 type fixtureAttemptEvidence struct {
@@ -103,7 +113,7 @@ func TestEvidenceAttemptPrecedesEpisodeAndRefusalStopsExecution(t *testing.T) {
 		return realtimeCURunEpisode{}, nil
 	}}
 	item := Case{Task: Suite()[0], Grounding: GroundingPixel}
-	outcome := runCase(context.Background(), environment, Options{
+	outcome, _ := runCase(context.Background(), environment, Options{
 		Endpoint: "ws://hermetic.invalid/v1/realtime", Cell: ReferenceCell(),
 		FrameRate: 3, Timeout: time.Second, Evidence: plugin,
 		dependencies: &runDependencies{playSamples: bench.PlaySamples, now: time.Now},
@@ -119,7 +129,7 @@ func TestEvidenceAttemptPrecedesEpisodeAndRefusalStopsExecution(t *testing.T) {
 
 func TestRunFinishesEvidenceOnEnvironmentFailure(t *testing.T) {
 	want := errors.New("environment unavailable")
-	finishCalls := 0
+	finishCalls, closeCalls := 0, 0
 	plugin := fixtureEvidencePlugin{
 		begin: func(context.Context, EvidenceAttempt) (AttemptEvidence, error) {
 			t.Fatal("attempt began after environment creation failed")
@@ -133,6 +143,7 @@ func TestRunFinishesEvidenceOnEnvironmentFailure(t *testing.T) {
 			}
 			return nil
 		},
+		close: func() error { closeCalls++; return nil },
 	}
 	result, err := Run(context.Background(), Options{
 		Endpoint: "ws://hermetic.invalid/v1/realtime", Evidence: plugin,
@@ -143,8 +154,9 @@ func TestRunFinishesEvidenceOnEnvironmentFailure(t *testing.T) {
 			playSamples: bench.PlaySamples, now: time.Now,
 		},
 	})
-	if !errors.Is(err, want) || finishCalls != 1 || result.Summary.Complete {
-		t.Fatalf("Run result=%+v error=%v finish calls=%d", result, err, finishCalls)
+	if !errors.Is(err, want) || finishCalls != 1 || closeCalls != 1 || result.Summary.Complete {
+		t.Fatalf("Run result=%+v error=%v finish calls=%d close calls=%d",
+			result, err, finishCalls, closeCalls)
 	}
 }
 
@@ -285,7 +297,7 @@ func TestEvidenceCompleteFailureFailsClosedAndAborts(t *testing.T) {
 			result:        func(context.Context) (PageResult, error) { return PageResult{}, errors.New("fixture setup failure") },
 		}, nil
 	}}
-	outcome := runCase(context.Background(), environment, Options{
+	outcome, evidenceErr := runCase(context.Background(), environment, Options{
 		Endpoint: "ws://hermetic.invalid/v1/realtime", Cell: ReferenceCell(),
 		FrameRate: 3, Timeout: time.Second, Evidence: plugin,
 		dependencies: &runDependencies{
@@ -301,8 +313,108 @@ func TestEvidenceCompleteFailureFailsClosedAndAborts(t *testing.T) {
 	}, item)
 	if outcome.Completed || outcome.Passed || aborts != 1 ||
 		!strings.Contains(outcome.Error, "fixture transport failure") ||
-		!strings.Contains(outcome.Error, want.Error()) {
-		t.Fatalf("outcome=%+v aborts=%d", outcome, aborts)
+		strings.Contains(outcome.Error, want.Error()) || !errors.Is(evidenceErr, want) {
+		t.Fatalf("outcome=%+v evidence error=%v aborts=%d", outcome, evidenceErr, aborts)
+	}
+}
+
+func TestEvidenceCaptureFailureDoesNotRewriteDeterministicOutcome(t *testing.T) {
+	want := errors.New("fixture evidence capture failed")
+	aborts, completes := 0, 0
+	plugin := fixtureEvidencePlugin{
+		begin: func(context.Context, EvidenceAttempt) (AttemptEvidence, error) {
+			return fixtureAttemptEvidence{
+				captureAudio: func(bench.SessionAudioCapture) error { return nil },
+				captureVideo: func(bench.SessionVideoCapture) error { return want },
+				complete: func(context.Context, EvidenceCompletion) error {
+					completes++
+					return nil
+				},
+				abort: func() error { aborts++; return nil },
+			}, nil
+		},
+		finish: func(_ context.Context, result bench.Result) error {
+			if len(result.Tasks) != 1 || !result.Tasks[0].Passed || result.Tasks[0].Error != "" {
+				t.Fatalf("capture failure rewrote frozen deterministic result: %+v", result.Tasks)
+			}
+			return nil
+		},
+	}
+	started := time.Unix(200, 0)
+	dependencies := &runDependencies{
+		newEnvironment: func(context.Context, EnvironmentConfig) (realtimeCURunEnvironment, error) {
+			return realtimeCURunEnvironment{
+				episode: func(context.Context, Case) (realtimeCURunEpisode, error) {
+					return realtimeCURunEpisode{
+						ready:   func(context.Context) error { return nil },
+						started: func() time.Time { return started }, surface: &fixtureRunSurface{},
+						captureScreen: func(context.Context) ([]byte, error) { return fixturePNG, nil },
+						captureCamera: func(context.Context) ([]byte, error) { return fixturePNG, nil },
+						result: func(context.Context) (PageResult, error) {
+							return PageResult{
+								Complete: true, Success: true, Reason: "fixture success", CompletedAtMS: 4_000,
+							}, nil
+						},
+					}, nil
+				},
+				close: func() error { return nil },
+			}, nil
+		},
+		playSamples: func(ctx context.Context, config bench.SessionConfig, _ []int16) (bench.Transcript, error) {
+			if err := config.Ready(ctx); err != nil {
+				return bench.Transcript{}, err
+			}
+			if err := config.CaptureVideo(bench.SessionVideoCapture{
+				Source: "screen", Width: 1280, Height: 720, MediaType: "image/png",
+				WireTimestamp: 1, EpisodeAtMS: 10, Data: slices.Clone(fixturePNG),
+			}); err != nil {
+				t.Fatalf("evidence wrapper leaked capture failure into scoring transport: %v", err)
+			}
+			if err := config.CaptureAudio(bench.SessionAudioCapture{
+				SampleRateHz: 24_000, RoomPCM16: make([]int16, 2_400),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			return bench.Transcript{PlaybackMS: 5_000, Moments: []bench.Moment{
+				{Kind: bench.MomentReady, AtMS: 0},
+				{Kind: bench.MomentVideoFrame, Source: "screen", AtMS: 10},
+				{Kind: bench.MomentToolCall, Name: "computer.click", AtMS: 4_000},
+			}}, nil
+		},
+		now: func() time.Time { return started.Add(4 * time.Second) },
+	}
+	result, err := Run(context.Background(), Options{
+		Endpoint: "ws://hermetic.invalid/v1/realtime", Cell: ReferenceCell(),
+		Groundings: []Grounding{GroundingPixel}, Categories: []string{"control"}, Limit: 1,
+		FrameRate: 3, Timeout: 10 * time.Second, Evidence: plugin, dependencies: dependencies,
+	})
+	if !errors.Is(err, want) || len(result.Tasks) != 1 || !result.Tasks[0].Passed ||
+		result.Tasks[0].Error != "" || aborts != 1 || completes != 0 {
+		t.Fatalf("result=%+v error=%v aborts=%d completes=%d", result, err, aborts, completes)
+	}
+}
+
+func TestCloneResultPreservesEmptyCollectionIdentityAndOwnership(t *testing.T) {
+	source := bench.Result{
+		Suite:    SuiteName,
+		Cell:     bench.Cell{Name: "empty-collections", Levels: map[bench.Factor]string{}},
+		Expected: 1,
+		Tasks: []bench.TaskOutcome{{
+			ID: "task", Metrics: map[string]float64{}, Notes: map[string]string{},
+		}},
+		Summary: bench.Summary{Distributions: map[string]bench.Distribution{}},
+	}
+	cloned, err := cloneResult(source)
+	if err != nil || !reflect.DeepEqual(cloned, source) {
+		t.Fatalf("cloneResult()=%+v error=%v, want %+v", cloned, err, source)
+	}
+	cloned.Cell.Levels[bench.FactorBinding] = "changed"
+	cloned.Tasks[0].Metrics["changed"] = 1
+	cloned.Tasks[0].Notes["changed"] = "yes"
+	cloned.Summary.Distributions["changed"] = bench.Distribution{Count: 1}
+	if len(source.Cell.Levels) != 0 || len(source.Tasks[0].Metrics) != 0 ||
+		len(source.Tasks[0].Notes) != 0 || len(source.Summary.Distributions) != 0 {
+		t.Fatalf("cloneResult() retained aliases: %+v", source)
 	}
 }
 

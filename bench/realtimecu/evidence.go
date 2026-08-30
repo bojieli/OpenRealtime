@@ -162,13 +162,17 @@ func cloneActionRecords(source []ActionRecord) []ActionRecord {
 
 func cloneTaskOutcome(source bench.TaskOutcome) bench.TaskOutcome {
 	result := source
-	result.Metrics = make(map[string]float64, len(source.Metrics))
-	for name, value := range source.Metrics {
-		result.Metrics[name] = value
+	if source.Metrics != nil {
+		result.Metrics = make(map[string]float64, len(source.Metrics))
+		for name, value := range source.Metrics {
+			result.Metrics[name] = value
+		}
 	}
-	result.Notes = make(map[string]string, len(source.Notes))
-	for name, value := range source.Notes {
-		result.Notes[name] = value
+	if source.Notes != nil {
+		result.Notes = make(map[string]string, len(source.Notes))
+		for name, value := range source.Notes {
+			result.Notes[name] = value
+		}
 	}
 	if source.Execution != nil {
 		copy := source.Execution.Clone()
@@ -207,23 +211,19 @@ func cloneEvidenceCompletion(source EvidenceCompletion) (EvidenceCompletion, err
 }
 
 func cloneResult(source bench.Result) (bench.Result, error) {
-	payload, err := json.Marshal(source)
-	if err != nil {
-		return bench.Result{}, fmt.Errorf("snapshot realtime computer-use result: %w", err)
+	result := source
+	result.Cell = cloneCell(source.Cell)
+	result.Tasks = make([]bench.TaskOutcome, len(source.Tasks))
+	for index, outcome := range source.Tasks {
+		result.Tasks[index] = cloneTaskOutcome(outcome)
 	}
-	var result bench.Result
-	if err := json.Unmarshal(payload, &result); err != nil {
-		return bench.Result{}, fmt.Errorf("snapshot realtime computer-use result: %w", err)
+	if source.Summary.Distributions != nil {
+		result.Summary.Distributions = make(
+			map[string]bench.Distribution, len(source.Summary.Distributions),
+		)
+		for name, distribution := range source.Summary.Distributions {
+			result.Summary.Distributions[name] = distribution
+		}
 	}
 	return result, nil
-}
-
-func appendOutcomeError(existing string, err error) string {
-	if err == nil {
-		return existing
-	}
-	if strings.TrimSpace(existing) == "" {
-		return err.Error()
-	}
-	return existing + "; " + err.Error()
 }

@@ -192,6 +192,11 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 			} else if evidenceErr := options.Evidence.FinishSuite(ctx, frozen); evidenceErr != nil {
 				runErr = errors.Join(runErr, evidenceErr)
 			}
+			if closer, ok := options.Evidence.(interface{ Close() error }); ok {
+				if closeErr := closer.Close(); closeErr != nil {
+					runErr = errors.Join(runErr, closeErr)
+				}
+			}
 		}
 		return result, runErr
 	}
@@ -208,19 +213,21 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	}
 	defer environment.close()
 
+	var runErr error
 	for index, item := range toRun {
 		if options.Progress != nil {
 			options.Progress(fmt.Sprintf("realtime-cu: %d/%d %s", index+1, len(toRun), item.ID()))
 		}
-		outcome := runCase(ctx, environment, options, item)
+		outcome, evidenceErr := runCase(ctx, environment, options, item)
 		result.Tasks = append(result.Tasks, outcome)
+		runErr = errors.Join(runErr, evidenceErr)
 	}
-	return finish(nil)
+	return finish(runErr)
 }
 
 func runCase(
 	ctx context.Context, environment realtimeCURunEnvironment, options Options, item Case,
-) (outcome bench.TaskOutcome) {
+) (outcome bench.TaskOutcome, evidenceErr error) {
 	incomplete := bench.TaskOutcome{
 		ID: item.ID(), Completed: false,
 		Metrics: map[string]float64{},
@@ -233,6 +240,20 @@ func runCase(
 	var page PageResult
 	var actionTrace []ActionRecord
 	var attempt AttemptEvidence
+	var evidenceMu sync.Mutex
+	joinEvidenceError := func(err error) {
+		if err == nil {
+			return
+		}
+		evidenceMu.Lock()
+		evidenceErr = errors.Join(evidenceErr, err)
+		evidenceMu.Unlock()
+	}
+	hasEvidenceError := func() bool {
+		evidenceMu.Lock()
+		defer evidenceMu.Unlock()
+		return evidenceErr != nil
+	}
 	if options.Evidence != nil {
 		specification, err := cloneEvidenceAttempt(EvidenceAttempt{
 			Suite: SuiteName, Case: item.ID(), Trial: 1, Task: cloneCase(item).Task,
@@ -241,52 +262,47 @@ func runCase(
 		})
 		if err != nil {
 			incomplete.Error = err.Error()
-			return incomplete
+			return incomplete, evidenceErr
 		}
 		if err := specification.validate(); err != nil {
 			incomplete.Error = err.Error()
-			return incomplete
+			return incomplete, evidenceErr
 		}
 		providerSpecification, err := cloneEvidenceAttempt(specification)
 		if err != nil {
 			incomplete.Error = err.Error()
-			return incomplete
+			return incomplete, evidenceErr
 		}
 		attempt, err = options.Evidence.BeginAttempt(ctx, providerSpecification)
 		if err != nil {
 			incomplete.Error = err.Error()
-			return incomplete
+			return incomplete, evidenceErr
 		}
 		if attempt == nil {
 			incomplete.Error = "realtime computer-use evidence plug-in returned a nil attempt"
-			return incomplete
+			return incomplete, evidenceErr
 		}
 		terminal := false
 		defer func() {
 			if terminal {
 				return
 			}
-			if err := attempt.Abort(); err != nil {
-				outcome.Completed = false
-				outcome.Passed = false
-				outcome.Error = appendOutcomeError(outcome.Error, err)
-			}
+			joinEvidenceError(attempt.Abort())
 		}()
 		defer func() {
+			if hasEvidenceError() {
+				return
+			}
 			completion, err := cloneEvidenceCompletion(EvidenceCompletion{
 				Attempt: specification, Outcome: outcome, Transcript: transcript,
 				Page: page, Actions: actionTrace,
 			})
 			if err != nil {
-				outcome.Completed = false
-				outcome.Passed = false
-				outcome.Error = appendOutcomeError(outcome.Error, err)
+				joinEvidenceError(err)
 				return
 			}
 			if err := attempt.Complete(ctx, completion); err != nil {
-				outcome.Completed = false
-				outcome.Passed = false
-				outcome.Error = appendOutcomeError(outcome.Error, err)
+				joinEvidenceError(err)
 				return
 			}
 			terminal = true
@@ -295,17 +311,17 @@ func runCase(
 	episode, err := environment.episode(ctx, cloneCase(item))
 	if err != nil {
 		incomplete.Error = err.Error()
-		return incomplete
+		return incomplete, evidenceErr
 	}
 	if episode.surface == nil || episode.ready == nil || episode.started == nil ||
 		episode.captureScreen == nil || episode.captureCamera == nil || episode.result == nil {
 		incomplete.Error = "realtime computer-use episode plug-in is incomplete"
-		return incomplete
+		return incomplete, evidenceErr
 	}
 	width, height, err := episode.surface.Viewport(ctx)
 	if err != nil {
 		incomplete.Error = err.Error()
-		return incomplete
+		return incomplete, evidenceErr
 	}
 	target := computeruse.Target{
 		Name: "benchmark-browser", Sources: []string{"screen"}, Width: width, Height: height,
@@ -315,22 +331,22 @@ func runCase(
 	})
 	if err != nil {
 		incomplete.Error = err.Error()
-		return incomplete
+		return incomplete, evidenceErr
 	}
 	tools, err := declarations(target, item.Grounding)
 	if err != nil {
 		incomplete.Error = err.Error()
-		return incomplete
+		return incomplete, evidenceErr
 	}
 	audio, err := audioAssets.ReadFile("testdata/audio/" + item.Task.AudioAsset)
 	if err != nil {
 		incomplete.Error = err.Error()
-		return incomplete
+		return incomplete, evidenceErr
 	}
 	samples, err := bench.DecodePCM24k(audio)
 	if err != nil {
 		incomplete.Error = err.Error()
-		return incomplete
+		return incomplete, evidenceErr
 	}
 
 	var actionMu sync.Mutex
@@ -390,8 +406,14 @@ func runCase(
 		RuntimeAttestor: options.RuntimeAttestor, AttestationScope: item.ID(),
 	}
 	if attempt != nil {
-		sessionConfig.CaptureAudio = attempt.CaptureAudio
-		sessionConfig.CaptureVideo = attempt.CaptureVideo
+		sessionConfig.CaptureAudio = func(capture bench.SessionAudioCapture) error {
+			joinEvidenceError(attempt.CaptureAudio(capture))
+			return nil
+		}
+		sessionConfig.CaptureVideo = func(capture bench.SessionVideoCapture) error {
+			joinEvidenceError(attempt.CaptureVideo(capture))
+			return nil
+		}
 	}
 	var playErr error
 	transcript, playErr = options.dependencies.playSamples(ctx, sessionConfig, samples)
@@ -400,13 +422,13 @@ func runCase(
 	if playErr != nil && !timedOut {
 		incomplete.Error = playErr.Error()
 		outcome = incomplete
-		return outcome
+		return outcome, evidenceErr
 	}
 	page, err = episode.result(ctx)
 	if err != nil {
 		incomplete.Error = err.Error()
 		outcome = incomplete
-		return outcome
+		return outcome, evidenceErr
 	}
 	actionMu.Lock()
 	actionTrace = cloneActionRecords(actions)
@@ -417,7 +439,7 @@ func runCase(
 	if timedOut {
 		outcome.Notes["session_timeout"] = "the connected agent continued beyond the evaluation horizon"
 	}
-	return outcome
+	return outcome, evidenceErr
 }
 
 func declarations(target computeruse.Target, grounding Grounding) ([]json.RawMessage, error) {
