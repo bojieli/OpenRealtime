@@ -2042,6 +2042,11 @@ a phase exit gate, this tracker, or the definition of done:
     authoritative historical baselines for every required suite. Historical
     per-attempt reconstruction is explicitly not required; immutable
     per-attempt evidence is required for every new-architecture run.
+  - [ ] Replace the eight legacy-execution baseline gates in
+    `scripts/release-matrix.json` with a checked owner-accepted baseline-number
+    registry and candidate-only evidence gates. The matrix must still compare
+    every aggregate, condition, case, safety count, deadline distribution, and
+    latency distribution that exists in the recorded historical trail.
   - [ ] Pin the fixture revision, task set, model/provider revisions, voices,
     tools, timing policy, machine class, concurrency, trial count/seeds where
     applicable, and every non-treatment configuration field.
