@@ -24,7 +24,7 @@ import (
 
 const (
 	ActivationReference       = "policy.RealtimeComputerUseActivation"
-	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v1"
+	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v2"
 	defaultTerminalMemory     = 512
 	defaultCancellationMemory = 256
 	maximumActivationMemory   = 1_000_000
@@ -40,7 +40,7 @@ func ActivationDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          ActivationReference,
-		Revision:      1,
+		Revision:      2,
 		Ports: []element.Port{
 			{Name: "committed", Direction: element.Input,
 				Type: stateelements.ObservationCommitOutcomeType(), Cardinality: element.One,
@@ -244,7 +244,7 @@ type activationInput struct {
 
 func (runner *activationRunner) Run(parent context.Context) error {
 	if err := reportElementRuntime(runner.resolution, activationRuntimeID,
-		"implementation:1", ActivationDescriptor()); err != nil {
+		"implementation:2", ActivationDescriptor()); err != nil {
 		return err
 	}
 	if err := runner.publishState(parent, element.Envelope{ItemID: runner.instance + ":startup"}); err != nil {
@@ -340,6 +340,15 @@ func (runner *activationRunner) acceptCommit(
 	}
 	authorityValue := trajectory.AuthorityOf(current)
 	if authorityValue == trajectory.AuthorityUser {
+		// ASR revisions are useful canonical evidence, but a revisable prefix is
+		// not yet the participant's instruction. Clear an older durable intent
+		// while a new utterance is provisional so visual cadence cannot reactivate
+		// that older instruction as the participant is still speaking.
+		if current.Event.Type != current.Event.Source+".endpoint" {
+			runner.intent = nil
+			return runner.ignore(ctx, envelope, commit, "user_observation_not_final",
+				"a provisional user observation cannot activate computer effects")
+		}
 		runner.intent = &userIntentBasis{
 			itemID: current.ID, triggerItemID: current.Event.EventID,
 			sourceRevision: current.SourceRevision,

@@ -30,6 +30,7 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 	}
 	descriptor := testRealtimeCUDescriptor()
 	observer := newTestRealtimeCUObserver("test-audiovisual-observer")
+	observer.audioFinal.Store(false)
 	var modelFactories, observerFactories atomic.Int32
 	config, err := graphs.RealtimeComputerUseLaunchConfig(realtimecu.PluginConfig{
 		RuntimeArtifact: testRealtimeCUArtifact("runtime", "1"),
@@ -65,9 +66,9 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 	}
 	identity := launched.Plan.Identity()
 	if identity.SourceDigest != "sha256:8d9e1cb92213dd4cd3ed59d6f7b10f6566c45bd7649468e434e5ac5514afa303" ||
-		identity.LockDigest != "sha256:83496ca62321d49477cd160c94d8765732334f3d2d18823425c057b59a69920e" ||
-		identity.GraphFingerprint != "sha256:e03f0ba9938a840cd905c4ba454c52e2453c30e4dd656132f30d442565dec6d1" ||
-		identity.PlanFingerprint != "sha256:9503e22218ecba74dd634b98087cfb7249a1a8f2ccc3ca98614a4f7582dfec44" {
+		identity.LockDigest != "sha256:abb61a946cda1470827778d6193f2ba4ac1e54141f20f8f74026dd216b09f7fd" ||
+		identity.GraphFingerprint != "sha256:418950e1e32240812f30714677c43c2eabb72e159f2c5d39a7da435d84cb2757" ||
+		identity.PlanFingerprint != "sha256:7780d7e4315c6837dd84944a40e09b275c8cec6a7e6d79fec7c503719dbfef4c" {
 		t.Fatalf("Realtime-CU graph artifacts drifted: %+v", identity)
 	}
 	if modelFactories.Load() != 0 || observerFactories.Load() != 0 {
@@ -107,6 +108,22 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 	if err := runtime.Audio(context.Background(), perception.Frame{
 		Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: 100,
 		PCM16LE: []byte{1, 0, 2, 0}, SampleRateHz: 24_000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	partial := receiveRealtimeCU(t, sink.observations, "provisional user observation")
+	if partial.Final || !partial.Provisional {
+		t.Fatalf("first audio observation was not provisional: %+v", partial)
+	}
+	select {
+	case call := <-sink.calls:
+		t.Fatalf("provisional user observation activated a client effect: %+v", call)
+	case <-time.After(100 * time.Millisecond):
+	}
+	observer.audioFinal.Store(true)
+	if err := runtime.Audio(context.Background(), perception.Frame{
+		Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: 101,
+		PCM16LE: []byte{3, 0, 4, 0}, SampleRateHz: 24_000,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -229,13 +246,16 @@ type testRealtimeCUObserver struct {
 	revisions    map[string]uint64
 	consequences chan realtimecu.VisualConsequence
 	closed       atomic.Bool
+	audioFinal   atomic.Bool
 }
 
 func newTestRealtimeCUObserver(name string) *testRealtimeCUObserver {
-	return &testRealtimeCUObserver{
+	observer := &testRealtimeCUObserver{
 		name: name, revisions: make(map[string]uint64),
 		consequences: make(chan realtimecu.VisualConsequence, 4),
 	}
+	observer.audioFinal.Store(true)
+	return observer
 }
 
 func (observer *testRealtimeCUObserver) observation(
@@ -248,9 +268,11 @@ func (observer *testRealtimeCUObserver) observation(
 	if frame.Source != realtimecu.SourceMicrophone {
 		text = "screen after client action"
 	}
+	final := frame.Source != realtimecu.SourceMicrophone || observer.audioFinal.Load()
 	return []perception.Observation{{
 		Text: text, Observer: observer.name, Source: frame.Source, Authority: authority,
-		Revision: observer.revisions[frame.Source], StableText: text, Final: true,
+		Revision: observer.revisions[frame.Source], StableText: text,
+		Provisional: !final, Final: final,
 	}}
 }
 
