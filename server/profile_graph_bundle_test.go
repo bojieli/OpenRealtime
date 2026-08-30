@@ -59,6 +59,12 @@ func TestProfileGraphBundleExactMatchesPluginsBeforeTokenOrResources(t *testing.
 	applicationArtifact := serverArtifact(
 		"go://openrealtime/graph-applications/adaptive-video", "build-profile-1", "4",
 	)
+	providerArtifact := serverArtifact(
+		"go://openrealtime/server-providers/profiled-graph", "build-profile-1", "5",
+	)
+	gatewayArtifact := serverArtifact(
+		"go://openrealtime/server-gateways/profiled-realtime", "build-profile-1", "6",
+	)
 	profile, err := launchprofile.Freeze(launchprofile.Document{
 		FormatVersion: launchprofile.FormatVersion,
 		Name:          "openrealtime.launch.adaptive-video-test",
@@ -79,13 +85,9 @@ func TestProfileGraphBundleExactMatchesPluginsBeforeTokenOrResources(t *testing.
 		},
 		Server: launchprofile.Server{
 			ProfileName: "openrealtime.server.profiled-graph-test", ProfileRevision: 1,
-			ProviderArtifact: serverArtifact(
-				"go://openrealtime/server-providers/profiled-graph", "build-profile-1", "5",
-			),
-			GatewayArtifact: serverArtifact(
-				"go://openrealtime/server-gateways/profiled-realtime", "build-profile-1", "6",
-			),
-			Model: "profiled-graph-e2e", TranscriptionModel: "profiled-perception-e2e",
+			ProviderArtifact: providerArtifact,
+			GatewayArtifact:  gatewayArtifact,
+			Model:            "profiled-graph-e2e", TranscriptionModel: "profiled-perception-e2e",
 			TokenEnvironment: "OPENREALTIME_PROFILE_TEST_TOKEN", ValidateWire: true,
 			InspectionTokenTTLMS: 60_000, MaxAudioFrameBytes: 1 << 20,
 			VideoLimits: openrealtime.DefaultLimits(),
@@ -124,6 +126,7 @@ func TestProfileGraphBundleExactMatchesPluginsBeforeTokenOrResources(t *testing.
 	var applicationCalls atomic.Int64
 	registry, err := launchprofile.NewRegistry([]launchprofile.Registration{{
 		Reference: profile.Application.Reference, Artifact: applicationArtifact,
+		ProviderArtifact: providerArtifact,
 		Factory: func(_ context.Context, source json.RawMessage) (graphlaunch.Config, error) {
 			applicationCalls.Add(1)
 			decoder := json.NewDecoder(bytes.NewReader(source))
@@ -156,6 +159,33 @@ func TestProfileGraphBundleExactMatchesPluginsBeforeTokenOrResources(t *testing.
 		return "profile-test-token", nil
 	}
 
+	if _, err := serverplugin.NewProfileGraphBundle(context.Background(),
+		serverplugin.ProfileGraphBundleConfig{
+			Profile: profile, Applications: registry,
+			GatewayArtifact: serverArtifact(
+				"go://openrealtime/server-gateways/profiled-realtime", "build-profile-drift", "6",
+			),
+			ResolveToken: resolveToken,
+		}); err == nil || !strings.Contains(err.Error(), "installed gateway artifact drifted") {
+		t.Fatalf("drifted gateway artifact error = %v", err)
+	}
+	providerDrift := profile.Clone()
+	providerDrift.Server.ProviderArtifact.Revision = "build-profile-drift"
+	providerDrift, err = launchprofile.Freeze(providerDrift)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := serverplugin.NewProfileGraphBundle(context.Background(),
+		serverplugin.ProfileGraphBundleConfig{
+			Profile: providerDrift, Applications: registry, GatewayArtifact: gatewayArtifact,
+			ResolveToken: resolveToken,
+		}); err == nil || !strings.Contains(err.Error(), "session-provider artifact drifted") {
+		t.Fatalf("drifted provider artifact error = %v", err)
+	}
+	if applicationCalls.Load() != 0 || tokenCalls.Load() != 0 || acquisitions.Load() != 0 {
+		t.Fatal("drifted installed artifact reached a factory, token, or provider")
+	}
+
 	drifted := profile.Clone()
 	drifted.Application.Artifact.Revision = "build-profile-drift"
 	drifted, err = launchprofile.Freeze(drifted)
@@ -164,7 +194,8 @@ func TestProfileGraphBundleExactMatchesPluginsBeforeTokenOrResources(t *testing.
 	}
 	if _, err := serverplugin.NewProfileGraphBundle(context.Background(),
 		serverplugin.ProfileGraphBundleConfig{
-			Profile: drifted, Applications: registry, ResolveToken: resolveToken,
+			Profile: drifted, Applications: registry, GatewayArtifact: gatewayArtifact,
+			ResolveToken: resolveToken,
 		}); err == nil || !strings.Contains(err.Error(), "runtime artifact drifted") {
 		t.Fatalf("drifted application error = %v", err)
 	}
@@ -182,7 +213,8 @@ func TestProfileGraphBundleExactMatchesPluginsBeforeTokenOrResources(t *testing.
 	}
 	if _, err := serverplugin.NewProfileGraphBundle(context.Background(),
 		serverplugin.ProfileGraphBundleConfig{
-			Profile: unknownConfiguration, Applications: registry, ResolveToken: resolveToken,
+			Profile: unknownConfiguration, Applications: registry, GatewayArtifact: gatewayArtifact,
+			ResolveToken: resolveToken,
 		}); err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("plugin-owned unknown configuration error = %v", err)
 	}
@@ -192,8 +224,9 @@ func TestProfileGraphBundleExactMatchesPluginsBeforeTokenOrResources(t *testing.
 
 	if _, err := serverplugin.NewProfileGraphBundle(context.Background(),
 		serverplugin.ProfileGraphBundleConfig{
-			Profile: profile, Applications: registry, ResolveToken: resolveToken,
-			Gateway: gateway.Config{Model: "competing-model"},
+			Profile: profile, Applications: registry, GatewayArtifact: gatewayArtifact,
+			ResolveToken: resolveToken,
+			Gateway:      gateway.Config{Model: "competing-model"},
 		}); err == nil || !strings.Contains(err.Error(), "settings belong to the launch profile") {
 		t.Fatalf("competing gateway setting error = %v", err)
 	}
@@ -203,7 +236,8 @@ func TestProfileGraphBundleExactMatchesPluginsBeforeTokenOrResources(t *testing.
 
 	composition, err := serverplugin.NewProfileGraphBundle(context.Background(),
 		serverplugin.ProfileGraphBundleConfig{
-			Profile: profile, Applications: registry, ResolveToken: resolveToken,
+			Profile: profile, Applications: registry, GatewayArtifact: gatewayArtifact,
+			ResolveToken: resolveToken,
 		})
 	if err != nil {
 		t.Fatal(err)

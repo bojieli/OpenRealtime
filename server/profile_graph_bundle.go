@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/gateway"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 )
 
@@ -23,8 +24,11 @@ type TokenResolver func(context.Context, string) (string, error)
 type ProfileGraphBundleConfig struct {
 	Profile      launchprofile.Document
 	Applications *launchprofile.Registry
-	Gateway      gateway.Config
-	ResolveToken TokenResolver
+	// GatewayArtifact is the host-installed executable identity. The profile
+	// selects it, but cannot attest its own installed bytes.
+	GatewayArtifact inspect.ArtifactIdentity
+	Gateway         gateway.Config
+	ResolveToken    TokenResolver
 }
 
 // NewProfileGraphBundle resolves a checked application plugin, seals its
@@ -42,6 +46,12 @@ func NewProfileGraphBundle(
 	}
 	if err := validateProfileGatewayHooks(config.Gateway); err != nil {
 		return nil, err
+	}
+	if err := config.GatewayArtifact.Validate(); err != nil {
+		return nil, fmt.Errorf("compose profiled graph server bundle: host gateway artifact: %w", err)
+	}
+	if config.GatewayArtifact != config.Profile.Server.GatewayArtifact {
+		return nil, errors.New("compose profiled graph server bundle: installed gateway artifact drifted from the launch profile")
 	}
 	launched, err := config.Applications.Resolve(ctx, config.Profile)
 	if err != nil {
@@ -74,7 +84,7 @@ func NewProfileGraphBundle(
 	bundle, err := NewBundle(BundleConfig{
 		ProfileName: profile.ProfileName, ProfileRevision: profile.ProfileRevision,
 		Provider: launched.Binding, Gateway: gatewayConfig,
-		ProviderArtifact: profile.ProviderArtifact, GatewayArtifact: profile.GatewayArtifact,
+		ProviderArtifact: profile.ProviderArtifact, GatewayArtifact: config.GatewayArtifact,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("compose profiled graph server bundle: %w", err)

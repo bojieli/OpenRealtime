@@ -306,9 +306,10 @@ type ApplicationFactory func(context.Context, json.RawMessage) (graphlaunch.Conf
 
 // Registration is one host-installed graph application plugin.
 type Registration struct {
-	Reference string
-	Artifact  inspect.ArtifactIdentity
-	Factory   ApplicationFactory
+	Reference        string
+	Artifact         inspect.ArtifactIdentity
+	ProviderArtifact inspect.ArtifactIdentity
+	Factory          ApplicationFactory
 }
 
 // Registry is an immutable, duplicate-free application-plugin inventory.
@@ -329,6 +330,9 @@ func NewRegistry(source []Registration) (*Registry, error) {
 		}
 		if registration.Factory == nil {
 			return nil, fmt.Errorf("graph application registration %d has a nil factory", index)
+		}
+		if err := registration.ProviderArtifact.Validate(); err != nil {
+			return nil, fmt.Errorf("graph application registration %d provider artifact: %w", index, err)
 		}
 		if _, duplicate := applications[registration.Reference]; duplicate {
 			return nil, fmt.Errorf("graph application reference %q is registered more than once", registration.Reference)
@@ -360,6 +364,9 @@ func (registry *Registry) Resolve(ctx context.Context, profile Document) (graphl
 	}
 	if registration.Artifact != profile.Application.Artifact {
 		return graphlaunch.Result{}, fmt.Errorf("resolve graph launch profile: application %q runtime artifact drifted", profile.Application.Reference)
+	}
+	if registration.ProviderArtifact != profile.Server.ProviderArtifact {
+		return graphlaunch.Result{}, fmt.Errorf("resolve graph launch profile: application %q session-provider artifact drifted", profile.Application.Reference)
 	}
 	config, err := registration.Factory(ctx, bytes.Clone(profile.Application.Configuration))
 	if err != nil {
