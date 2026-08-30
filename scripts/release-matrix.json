@@ -916,6 +916,22 @@
       ]
     },
     {
+      "id": "local.presentation.shared-server",
+      "description": "Drive real Chromium and the exact macOS client profile through one unchanged clean Realtime server",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-count=1", "-v", "./presentation", "-run", "^TestBrowserAndMacOSProfilesUseOneUnchangedCleanServerAPI$"],
+      "environment": {"OPENREALTIME_RELEASE_GATE": "1"},
+      "timeout": "15m",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "browser", "description": "a real Chromium executable is available"},
+        {"kind": "command", "value": "node", "description": "Node.js is available"}
+      ]
+    },
+    {
       "id": "local.prompt-injection",
       "description": "Run the complete prompt-injection authority package under the race detector",
       "availability": "local",

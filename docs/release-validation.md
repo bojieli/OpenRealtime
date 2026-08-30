@@ -45,6 +45,14 @@ prerequisite outcomes, observed Go test skips, and postcondition result.
 Reports are create-only so a later run cannot silently overwrite the evidence
 for an earlier one.
 
+The local presentation gates are deliberately split. One runs every locked
+browser profile in real Chromium; the other drives the browser and the exact
+macOS distribution profile sequentially through one unchanged server and
+asserts that the clean gateway acquired no UI route. Both refuse browser or
+Node skips in release mode. The second gate is not a substitute for the
+provisioned signed-macOS gate: its native half is a manifest-derived protocol
+probe, while an actual signed `.app` launch remains Darwin-only evidence.
+
 `selected_outcome: passed` means only that every gate selected by that
 invocation passed. `release_complete` is stricter: it is true only when every
 required ID in the entire matrix passed in that invocation. A local-only run

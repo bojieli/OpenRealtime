@@ -279,6 +279,7 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		"external.tau.upstream",
 		"local.client.swift-linux",
 		"local.presentation.chromium",
+		"local.presentation.shared-server",
 		"local.sdk.official",
 		"performance.compare-fdbench6147",
 	)
