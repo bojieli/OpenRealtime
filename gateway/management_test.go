@@ -19,6 +19,7 @@ import (
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
+	"github.com/bojieli/OpenRealtime/management"
 	protocol "github.com/bojieli/OpenRealtime/protocol/openai"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/coder/websocket"
@@ -36,9 +37,10 @@ func TestLiveInspectionIsAuthenticatedUnguessableAndBoundToOneSession(t *testing
 	if firstAccess.SessionID == secondAccess.SessionID || firstAccess.Token == secondAccess.Token {
 		t.Fatalf("sessions shared inspection authority: %+v %+v", firstAccess, secondAccess)
 	}
-	encoded := strings.TrimPrefix(firstAccess.Token, "ins_")
+	encoded := strings.TrimPrefix(firstAccess.Token, "mgmt_")
 	raw, err := base64.RawURLEncoding.DecodeString(encoded)
-	if err != nil || len(raw) != 32 || strings.Contains(firstAccess.Path, firstAccess.Token) {
+	if encoded == firstAccess.Token || err != nil || len(raw) != 32 ||
+		strings.Contains(firstAccess.Path, firstAccess.Token) {
 		t.Fatalf("inspection capability is not a header-only 256-bit token: %+v (%v)", firstAccess, err)
 	}
 
@@ -58,6 +60,20 @@ func TestLiveInspectionIsAuthenticatedUnguessableAndBoundToOneSession(t *testing
 	status, _, _ = getInspection(t, server, secondAccess.Path, firstAccess.Token, deploymentToken)
 	if status != http.StatusNotFound {
 		t.Fatalf("one session capability inspected another session: status %d", status)
+	}
+	firstCanonical := management.APIPrefix + "/sessions/" + firstAccess.SessionID + "/live"
+	secondCanonical := management.APIPrefix + "/sessions/" + secondAccess.SessionID + "/live"
+	status, _, _ = getManagement(t, server, firstCanonical, firstAccess.Token)
+	if status != http.StatusOK {
+		t.Fatalf("negotiated capability is unavailable on canonical API: status %d", status)
+	}
+	status, _, _ = getManagement(t, server, secondCanonical, firstAccess.Token)
+	if status != http.StatusNotFound {
+		t.Fatalf("canonical API allowed cross-session capability use: status %d", status)
+	}
+	status, _, _ = getInspection(t, server, firstCanonical, firstAccess.Token, deploymentToken)
+	if status != http.StatusNotFound {
+		t.Fatalf("canonical API accepted the compatibility header: status %d", status)
 	}
 
 	status, payload, headers := getInspection(
@@ -86,9 +102,17 @@ func TestLiveInspectionIsAuthenticatedUnguessableAndBoundToOneSession(t *testing
 	if status != http.StatusNotFound {
 		t.Fatalf("rotated inspection capability remained active: status %d", status)
 	}
+	status, _, _ = getManagement(t, server, firstCanonical, firstAccess.Token)
+	if status != http.StatusNotFound {
+		t.Fatalf("canonical API retained the rotated capability: status %d", status)
+	}
 	status, _, _ = getInspection(t, server, rotated.Path, rotated.Token, deploymentToken)
 	if status != http.StatusOK {
 		t.Fatalf("rotated inspection capability is unavailable: status %d", status)
+	}
+	status, _, _ = getManagement(t, server, firstCanonical, rotated.Token)
+	if status != http.StatusOK {
+		t.Fatalf("rotated capability is unavailable on canonical API: status %d", status)
 	}
 
 	// An ordinary update reports the durable debug policy, not the bearer that
@@ -123,9 +147,14 @@ func TestLiveInspectionExpiresAndIsRevokedWithSessionLifecycle(t *testing.T) {
 	if second.Token == first.Token {
 		t.Fatal("expired token was reissued")
 	}
+	canonical := management.APIPrefix + "/sessions/" + second.SessionID + "/live"
 	status, _, _ = getInspection(t, server, second.Path, second.Token, "")
 	if status != http.StatusOK {
 		t.Fatalf("renewed inspection token is unavailable: status %d", status)
+	}
+	status, _, _ = getManagement(t, server, canonical, second.Token)
+	if status != http.StatusOK {
+		t.Fatalf("renewed capability is unavailable canonically: status %d", status)
 	}
 	client.configurePCM16(map[string]any{
 		"version": openrealtime.Version,
@@ -136,13 +165,18 @@ func TestLiveInspectionExpiresAndIsRevokedWithSessionLifecycle(t *testing.T) {
 	if status != http.StatusNotFound {
 		t.Fatalf("disabling debug did not revoke inspection token: status %d", status)
 	}
+	status, _, _ = getManagement(t, server, canonical, second.Token)
+	if status != http.StatusNotFound {
+		t.Fatalf("disabling debug did not revoke canonical capability: status %d", status)
+	}
 	third := negotiateInspection(t, client)
 	if err := client.connection.Close(websocket.StatusNormalClosure, "test complete"); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		status, _, _ = getInspection(t, server, third.Path, third.Token, "")
+		status, _, _ = getManagement(t, server,
+			management.APIPrefix+"/sessions/"+third.SessionID+"/live", third.Token)
 		if status == http.StatusNotFound {
 			break
 		}
@@ -233,6 +267,78 @@ func TestLiveInspectionRedactsPayloadDerivedIdentifiersButPreservesConfiguration
 	}
 }
 
+func TestCanonicalManagementTraceAndDeltasRequireExplicitRecording(t *testing.T) {
+	artifact := inspect.ArtifactIdentity{
+		ID: "go://openrealtime/test/gateway-compat-binding", Revision: "test-build-1",
+		Digest: inspectionDigest('f'),
+	}
+	server := startInspectionServerWithGraphConfig(t, time.Minute, "", nil, graphbinding.Config{
+		ImplementationArtifact: &artifact,
+		TraceRecording: &graphbinding.TraceRecordingConfig{
+			MaxRetainedBytes: 64 << 10,
+			CaptureInterval:  time.Millisecond,
+		},
+	})
+	client := dialInspection(t, server, "")
+	client.await("session.created", 5*time.Second)
+	access := negotiateInspection(t, client)
+	const privateText = "PRIVATE-MANAGEMENT-TRACE-PAYLOAD"
+	client.send(map[string]any{
+		"type": "conversation.item.create",
+		"item": map[string]any{
+			"type": "message", "role": "user",
+			"content": []map[string]any{{"type": "input_text", "text": privateText}},
+		},
+	})
+	client.await("conversation.item.created", 5*time.Second)
+	base := management.APIPrefix + "/sessions/" + access.SessionID
+
+	status, payload, _ := getManagement(t, server, base+"/trace", access.Token)
+	if status != http.StatusOK {
+		t.Fatalf("canonical recorded trace status = %d: %s", status, payload)
+	}
+	if bytes.Contains(payload, []byte(privateText)) {
+		t.Fatalf("canonical trace retained conversation payload: %s", payload)
+	}
+	var trace inspect.LiveTrace
+	if err := json.Unmarshal(payload, &trace); err != nil {
+		t.Fatal(err)
+	}
+	if err := trace.Validate(); err != nil {
+		t.Fatalf("canonical trace is not exact replay evidence: %v", err)
+	}
+	if len(trace.Snapshots) == 0 || trace.Configuration.Digest == "" {
+		t.Fatalf("canonical trace lacks baseline/configuration evidence: %+v", trace)
+	}
+
+	status, payload, _ = getManagement(t, server, base+"/deltas?after=0&limit=32", access.Token)
+	if status != http.StatusOK {
+		t.Fatalf("canonical deltas status = %d: %s", status, payload)
+	}
+	var page management.DeltaPage
+	if err := json.Unmarshal(payload, &page); err != nil {
+		t.Fatal(err)
+	}
+	if err := management.ValidateDeltaPage(access.SessionID, 0, 32, page); err != nil {
+		t.Fatalf("canonical delta page is invalid: %v", err)
+	}
+	if page.Baseline == nil {
+		t.Fatalf("initial delta page has no exact baseline: %+v", page)
+	}
+
+	disabledServer := startInspectionServer(t, time.Minute, "", nil)
+	disabledClient := dialInspection(t, disabledServer, "")
+	disabledClient.await("session.created", 5*time.Second)
+	disabledAccess := negotiateInspection(t, disabledClient)
+	disabledBase := management.APIPrefix + "/sessions/" + disabledAccess.SessionID
+	for _, path := range []string{disabledBase + "/trace", disabledBase + "/deltas?after=0&limit=32"} {
+		status, payload, _ = getManagement(t, disabledServer, path, disabledAccess.Token)
+		if status != http.StatusServiceUnavailable {
+			t.Fatalf("recording-disabled endpoint %s fabricated evidence: %d %s", path, status, payload)
+		}
+	}
+}
+
 type inspectionSnapshotBinding struct {
 	binding.Binding
 	snapshot inspect.Live
@@ -261,6 +367,17 @@ func startInspectionServer(
 	t *testing.T, ttl time.Duration, token string, snapshot func(ir.Graph) inspect.Live,
 ) *httptest.Server {
 	t.Helper()
+	return startInspectionServerWithGraphConfig(t, ttl, token, snapshot, graphbinding.Config{})
+}
+
+func startInspectionServerWithGraphConfig(
+	t *testing.T,
+	ttl time.Duration,
+	token string,
+	snapshot func(ir.Graph) inspect.Live,
+	graphConfig graphbinding.Config,
+) *httptest.Server {
+	t.Helper()
 	legacy, err := cascade.New(cascade.Config{
 		Perception: func() (v1.PerceptionProvider, error) { return staticASR{text: "hello"}, nil },
 		Fast:       fast(), Slow: slow(), Speech: toneSpeech{}, Voice: "test-voice", FastMaxTokens: 512,
@@ -268,7 +385,7 @@ func startInspectionServer(
 	if err != nil {
 		t.Fatal(err)
 	}
-	mounted, err := graphbinding.New(legacy)
+	mounted, err := graphbinding.NewWithConfig(legacy, graphConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +401,14 @@ func startInspectionServer(
 		t.Fatal(err)
 	}
 	httpServer := httptest.NewServer(server.Handler())
-	t.Cleanup(httpServer.Close)
+	t.Cleanup(func() {
+		httpServer.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := server.Close(ctx); err != nil {
+			t.Errorf("close gateway management realm: %v", err)
+		}
+	})
 	return httpServer
 }
 
@@ -363,6 +487,29 @@ func getInspection(
 	}
 	if deploymentToken != "" {
 		request.Header.Set("Authorization", "Bearer "+deploymentToken)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	payload, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response.StatusCode, payload, response.Header.Clone()
+}
+
+func getManagement(
+	t *testing.T, server *httptest.Server, path, capability string,
+) (int, []byte, http.Header) {
+	t.Helper()
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if capability != "" {
+		request.Header.Set(management.CapabilityHeader, capability)
 	}
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {

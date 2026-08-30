@@ -665,6 +665,18 @@ func TestHealthReportsTheBindingAndProtocol(t *testing.T) {
 	}
 }
 
+func TestGatewayHasNoPresentationRoute(t *testing.T) {
+	server := startServer(t, fast(), slow(), "hello")
+	response, err := http.Get(server.URL + "/demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("gateway /demo status = %d, want %d", response.StatusCode, http.StatusNotFound)
+	}
+}
+
 func TestHealthExpandsLegacyInteractionOwnership(t *testing.T) {
 	bind, err := cascade.New(cascade.Config{
 		Perception: func() (v1.PerceptionProvider, error) { return staticASR{text: "hi"}, nil },

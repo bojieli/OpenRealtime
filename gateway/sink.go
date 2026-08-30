@@ -392,9 +392,14 @@ func (session *session) SpeechEnd(ctx context.Context, utterance action.Utteranc
 // own: a client that was told the response was done before the calls arrived
 // would have stopped reading exactly where the work was.
 func (session *session) ToolCalls(ctx context.Context, calls binding.ToolCallEvent) error {
+	prepared, err := session.prepareClientEffectCalls(ctx, calls.Calls)
+	if err != nil {
+		return err
+	}
 	session.config.Metrics.toolCallsOut.Add(uint64(len(calls.Calls)))
 	session.recordCallNames(calls.Calls)
-	for _, call := range calls.Calls {
+	for _, emission := range prepared {
+		call := emission.call
 		_ = session.Debug(ctx, binding.DebugEvent{
 			Category: string(openrealtime.DebugTool), Name: "tool.call.emitted", Phase: "start",
 			CorrelationID: call.CallID, Attributes: map[string]any{
@@ -410,7 +415,8 @@ func (session *session) ToolCalls(ctx context.Context, calls binding.ToolCallEve
 	// rest claim their own. Giving it back and re-claiming would be a race:
 	// a concurrent utterance opening the same response could take the slot in
 	// between, and two output items would carry the same index.
-	for offset, call := range calls.Calls {
+	for offset, emission := range prepared {
+		call := emission.call
 		index := first
 		if offset > 0 {
 			index = session.claimOutputIndex()
@@ -428,10 +434,14 @@ func (session *session) ToolCalls(ctx context.Context, calls binding.ToolCallEve
 		})); err != nil {
 			return err
 		}
-		if err := session.send(event("response.function_call_arguments.done", session.nextID("event"), map[string]any{
+		done := map[string]any{
 			"response_id": responseID, "item_id": itemID, "output_index": index,
 			"call_id": call.CallID, "name": call.Name, "arguments": string(call.Arguments),
-		})); err != nil {
+		}
+		if emission.extension != nil {
+			done["openrealtime"] = map[string]any{"client_effect": *emission.extension}
+		}
+		if err := session.send(event("response.function_call_arguments.done", session.nextID("event"), done)); err != nil {
 			return err
 		}
 		completed := functionCallItem(itemID, "completed", call)

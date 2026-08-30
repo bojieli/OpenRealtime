@@ -7,7 +7,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/bojieli/OpenRealtime/adapters/bysentence"
 	"io"
 	"log/slog"
 	"net/http"
@@ -19,6 +18,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/action"
+	"github.com/bojieli/OpenRealtime/adapters/bysentence"
 	"github.com/bojieli/OpenRealtime/adapters/gemini"
 	"github.com/bojieli/OpenRealtime/adapters/openaicompat"
 	"github.com/bojieli/OpenRealtime/adapters/openaitts"
@@ -39,14 +39,15 @@ import (
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/computeruse/browser"
 	"github.com/bojieli/OpenRealtime/continuation"
-	browserdemo "github.com/bojieli/OpenRealtime/examples/browser"
 	"github.com/bojieli/OpenRealtime/gateway"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	"github.com/bojieli/OpenRealtime/interaction"
+	"github.com/bojieli/OpenRealtime/internal/runtimeartifact"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/perception/voices"
 	"github.com/bojieli/OpenRealtime/policymodel"
 	"github.com/bojieli/OpenRealtime/providers"
+	serverprofile "github.com/bojieli/OpenRealtime/server"
 	"github.com/bojieli/OpenRealtime/sidecar"
 	"github.com/bojieli/OpenRealtime/trajectory"
 	webrtcadapter "github.com/bojieli/OpenRealtime/transport/webrtc"
@@ -124,7 +125,6 @@ type serveOptions struct {
 	toolProgress    bool
 	instruction     string
 	validateWire    bool
-	demo            bool
 
 	logFormat string
 	logLevel  string
@@ -321,7 +321,6 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.BoolVar(&options.toolProgress, "tool-progress", false, "let a completed tool result trigger a short spoken status")
 	flags.StringVar(&options.instruction, "instructions", "", "agent instruction composed ahead of every phase instruction")
 	flags.BoolVar(&options.validateWire, "validate-wire", true, "validate every protocol event against the pinned schema")
-	flags.BoolVar(&options.demo, "demo", false, "serve the browser demo at /demo")
 	flags.StringVar(&options.logFormat, "log-format", "text", "structured log format: text or json")
 	flags.StringVar(&options.logLevel, "log-level", "info", "log level: debug, info, warn, or error")
 	flags.StringVar(&options.webrtcListen, "webrtc-listen", "", "additional WebRTC listen address; empty disables the adapter")
@@ -410,9 +409,12 @@ func runServe(arguments []string, output io.Writer) error {
 	return serve(options, output)
 }
 
-func serve(options serveOptions, output io.Writer) error {
+func serve(options serveOptions, output io.Writer) (returnErr error) {
 	if strings.TrimSpace(options.listen) == "" {
 		return errors.New("a listen address is required")
+	}
+	if options.shutdownTimeout <= 0 || options.shutdownTimeout > 2*time.Minute {
+		return errors.New("shutdown timeout must be in (0,2m]")
 	}
 	logger, err := buildLogger(options)
 	if err != nil {
@@ -426,27 +428,55 @@ func serve(options serveOptions, output io.Writer) error {
 	// warming until then, because a caller that asks whether the server is
 	// ready is asking whether its next turn will be answered properly.
 	var warmed atomic.Bool
-
-	server, err := gateway.New(gateway.Config{
-		Binding: bind, Token: os.Getenv(options.tokenEnv), Model: options.model,
-		TranscriptionModel: options.asrModel, ValidateWire: options.validateWire,
-		Logger: logger, Demo: demoHandler(options.demo),
-		Recogniser: recogniserReport(recogniser),
-		Warm:       warmed.Load,
+	artifact, err := runtimeartifact.Executable("go://openrealtime/openrealtime-process")
+	if err != nil {
+		return fmt.Errorf("identify server plugin runtime: %w", err)
+	}
+	bundle, err := serverprofile.NewBundle(serverprofile.BundleConfig{
+		ProfileName: "openrealtime.server.realtime", ProfileRevision: 1,
+		Provider: bind,
+		Gateway: gateway.Config{
+			Token: os.Getenv(options.tokenEnv), Model: options.model,
+			TranscriptionModel: options.asrModel, ValidateWire: options.validateWire,
+			Logger:     logger,
+			Recogniser: recogniserReport(recogniser),
+			Warm:       warmed.Load,
+		},
+		ProviderArtifact: artifact, GatewayArtifact: artifact,
 	})
 	if err != nil {
 		return err
 	}
-	httpServer := &http.Server{
-		Addr: options.listen, Handler: server.Handler(),
-		ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 2 * time.Minute,
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	realm, err := bundle.Mount(ctx)
+	if err != nil {
+		return err
+	}
+	// The mounted server realm owns the gateway and its scoped management
+	// plugins. Close it after listeners and active handlers have drained so no
+	// route, capability, or session owner outlives the exact process profile.
+	defer func() {
+		shutdown, cancel := context.WithTimeout(context.Background(), options.shutdownTimeout)
+		defer cancel()
+		returnErr = errors.Join(returnErr, realm.Close(shutdown))
+	}()
+	httpServer := &http.Server{
+		Addr: options.listen, Handler: realm.Handler(),
+		ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 2 * time.Minute,
+	}
 	serveError := make(chan error, 2)
 	go func() { serveError <- httpServer.ListenAndServe() }()
+	defer func() {
+		shutdown, cancel := context.WithTimeout(context.Background(), options.shutdownTimeout)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdown); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			returnErr = errors.Join(returnErr, err)
+		}
+	}()
 	fmt.Fprintf(output, "OpenRealtime %s listening on http://%s/v1/realtime\n", bind.Name(), options.listen)
 	fmt.Fprintf(output, "  health   http://%s/healthz\n", options.listen)
+	fmt.Fprintf(output, "  server profile %s\n", realm.Live().Fingerprint)
 	go func() {
 		warmModels(ctx, options)
 		warmed.Store(true)
@@ -1971,17 +2001,6 @@ func buildLogger(options serveOptions) (*slog.Logger, error) {
 	default:
 		return nil, fmt.Errorf("log format must be text or json, got %q", options.logFormat)
 	}
-}
-
-// demoHandler returns the browser demo when an operator asked for it.
-//
-// Off by default: a realtime server's job is one protocol on one port, and a
-// page that appears on every deployment is surface nobody asked for.
-func demoHandler(enabled bool) http.Handler {
-	if !enabled {
-		return nil
-	}
-	return browserdemo.Handler()
 }
 
 // splitList turns a comma-separated flag into a list, dropping empties so a

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/action"
+	effectauthority "github.com/bojieli/OpenRealtime/authority"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/perception"
@@ -24,13 +25,17 @@ import (
 )
 
 type settings struct {
-	instruction  string
-	tools        []action.ToolSpec
-	inputFormat  audioFormat
-	outputFormat audioFormat
-	voice        string
-	modalities   []string
-	gate         perception.GateConfig
+	instruction string
+	tools       []action.ToolSpec
+	// clientEffects commits host-owned effect declarations independently of
+	// the generic action.ToolSpec surface. It is active only while the feature
+	// is negotiated and never contains a receipt or key material.
+	clientEffects map[string]openrealtime.ClientEffectDeclaration
+	inputFormat   audioFormat
+	outputFormat  audioFormat
+	voice         string
+	modalities    []string
+	gate          perception.GateConfig
 	// manualTurns records that the client turned server VAD off and will
 	// declare its own turns.
 	manualTurns bool
@@ -83,9 +88,10 @@ type session struct {
 	settingsMu sync.RWMutex
 	settings   settings
 
-	inspectionMu     sync.Mutex
-	inspectionLease  inspectionLease
-	inspectionClosed bool
+	inspectionMu      sync.Mutex
+	inspectionRevoke  func()
+	inspectionDispose func()
+	inspectionClosed  bool
 
 	sourcesMu sync.Mutex
 	sources   map[string]*videoSource
@@ -178,6 +184,13 @@ func newSession(parent context.Context, connection *websocket.Conn, config Confi
 		return nil, err
 	}
 	result.runtime = runtime
+	dispose, _, err := config.management.register(result.id, runtime)
+	if err != nil {
+		_ = runtime.Close(context.Background(), err)
+		cancel(err)
+		return nil, fmt.Errorf("register session management runtime: %w", err)
+	}
+	result.inspectionDispose = dispose
 	return result, nil
 }
 
@@ -461,6 +474,7 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 	session.settingsMu.RLock()
 	current := session.settings
 	session.settingsMu.RUnlock()
+	current.clientEffects = cloneClientEffectDeclarations(current.clientEffects)
 
 	// Fields this deployment cannot honour. They are collected rather than
 	// returned because they are not failures of the event: everything else in
@@ -489,6 +503,7 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 	}
 	if update.Tools != nil {
 		specs := make([]action.ToolSpec, 0, len(update.Tools))
+		clientEffects := make(map[string]openrealtime.ClientEffectDeclaration)
 		seen := make(map[string]struct{}, len(update.Tools))
 		for _, tool := range update.Tools {
 			spec, err := tool.spec()
@@ -500,8 +515,12 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 			}
 			seen[spec.Name] = struct{}{}
 			specs = append(specs, spec)
+			if tool.OpenRealtime != nil && tool.OpenRealtime.ClientEffect != nil {
+				clientEffects[spec.Name] = *tool.OpenRealtime.ClientEffect
+			}
 		}
 		current.tools = specs
+		current.clientEffects = clientEffects
 	}
 	if update.Audio.Input.Format.Type != "" {
 		current.inputFormat = update.Audio.Input.Format.audioFormat
@@ -625,6 +644,10 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 			current.limits = *response.Video
 		}
 	}
+	if update.Tools != nil && len(current.clientEffects) > 0 &&
+		!hasFeature(current.extension, openrealtime.FeatureClientEffects) {
+		return errors.New("tool openrealtime.client_effect requires negotiated client.effects and a server authority issuer")
+	}
 
 	session.settingsMu.Lock()
 	session.settings = current
@@ -683,7 +706,126 @@ func (session *session) supportedFeatures() []openrealtime.Feature {
 	if capabilities.ComputerUse {
 		supported = append(supported, openrealtime.FeatureComputerUse)
 	}
+	if session.config.ClientEffectIssuer != nil && session.config.ClientEffectIssuer.Available() {
+		supported = append(supported, openrealtime.FeatureClientEffects)
+	}
 	return supported
+}
+
+func cloneClientEffectDeclarations(
+	source map[string]openrealtime.ClientEffectDeclaration,
+) map[string]openrealtime.ClientEffectDeclaration {
+	if len(source) == 0 {
+		return nil
+	}
+	cloned := make(map[string]openrealtime.ClientEffectDeclaration, len(source))
+	for name, declaration := range source {
+		cloned[name] = declaration
+	}
+	return cloned
+}
+
+type preparedClientEffectCall struct {
+	call      trajectory.ToolCall
+	extension *openrealtime.ClientEffectCall
+}
+
+// prepareClientEffectCalls seals every effect call before any item in the
+// batch reaches the client. An issuer failure therefore cannot partially
+// authorize a multi-call batch.
+func (session *session) prepareClientEffectCalls(
+	ctx context.Context, calls []trajectory.ToolCall,
+) ([]preparedClientEffectCall, error) {
+	session.settingsMu.RLock()
+	negotiated := hasFeature(session.settings.extension, openrealtime.FeatureClientEffects)
+	declarations := cloneClientEffectDeclarations(session.settings.clientEffects)
+	tools := slices.Clone(session.settings.tools)
+	session.settingsMu.RUnlock()
+
+	prepared := make([]preparedClientEffectCall, len(calls))
+	issuedAuthority := false
+	for index, call := range calls {
+		prepared[index].call = call
+		declaration, effect := declarations[call.Name]
+		if !negotiated || !effect {
+			continue
+		}
+		if session.config.ClientEffectIssuer == nil || !session.config.ClientEffectIssuer.Available() {
+			return nil, errors.New("client-effect call has no server authority issuer")
+		}
+		var target string
+		declared := false
+		for _, tool := range tools {
+			if tool.Name == call.Name {
+				target, declared = tool.Target, true
+				break
+			}
+		}
+		if !declared {
+			return nil, fmt.Errorf("client-effect tool %q declaration drifted before authority issuance", call.Name)
+		}
+		_, argumentsDigest, err := effectauthority.CanonicalEffectArguments(call.Arguments)
+		if err != nil {
+			return nil, fmt.Errorf("client-effect tool %q arguments: %w", call.Name, err)
+		}
+		claims := effectauthority.EffectReceiptClaims{
+			SessionID: session.id, CallID: call.CallID, Name: call.Name,
+			ArgumentsDigest: argumentsDigest, DeclarationDigest: declaration.DeclarationDigest,
+			Target: target,
+		}
+		receipt, err := session.config.ClientEffectIssuer.IssueEffectReceipt(ctx, claims)
+		if err != nil {
+			if ctx != nil && ctx.Err() != nil {
+				return nil, context.Cause(ctx)
+			}
+			return nil, errors.New("client-effect server authority issuer refused the exact call")
+		}
+		emitted := &openrealtime.ClientEffectCall{
+			Version: openrealtime.Version, DeclarationDigest: declaration.DeclarationDigest,
+			Authority: receipt,
+		}
+		if err := emitted.Validate(); err != nil {
+			return nil, fmt.Errorf("client-effect issuer returned an invalid receipt: %w", err)
+		}
+		prepared[index].extension = emitted
+		issuedAuthority = true
+	}
+	if issuedAuthority && session.config.ClientEffectIssuer != nil &&
+		!session.config.ClientEffectIssuer.Available() {
+		return nil, errors.New("client-effect server authority issuer became unavailable")
+	}
+
+	// Recheck only the authority-relevant settings after potentially remote
+	// issuer calls. Voice or debug updates do not invalidate a call; declaration
+	// or target changes do.
+	session.settingsMu.RLock()
+	defer session.settingsMu.RUnlock()
+	for _, emission := range prepared {
+		if emission.extension == nil {
+			continue
+		}
+		if !hasFeature(session.settings.extension, openrealtime.FeatureClientEffects) ||
+			session.settings.clientEffects[emission.call.Name].DeclarationDigest !=
+				emission.extension.DeclarationDigest {
+			return nil, errors.New("client-effect declaration drifted during authority issuance")
+		}
+		matched := false
+		for _, tool := range session.settings.tools {
+			if tool.Name == emission.call.Name {
+				matched = true
+				for _, snapshot := range tools {
+					if snapshot.Name == tool.Name && snapshot.Target != tool.Target {
+						return nil, errors.New("client-effect target drifted during authority issuance")
+					}
+				}
+				break
+			}
+		}
+		if !matched {
+			return nil, errors.New("client-effect tool disappeared during authority issuance")
+		}
+	}
+	return prepared, nil
 }
 
 func (session *session) onAudio(input []byte) error {
@@ -817,10 +959,19 @@ func (session *session) sessionEvent(eventType string) map[string]any {
 			"type": "function", "name": tool.Name, "description": tool.Description,
 			"parameters": parameters,
 		}
-		if tool.Confirm != action.ConfirmNever || tool.Target != "" || tool.Background {
-			definition["openrealtime"] = openrealtime.ToolExtension{
-				Confirm: string(tool.Confirm), Target: tool.Target, Background: tool.Background,
+		extension := openrealtime.ToolExtension{Target: tool.Target, Background: tool.Background}
+		if tool.Confirm != action.ConfirmNever {
+			extension.Confirm = string(tool.Confirm)
+		}
+		if hasFeature(current.extension, openrealtime.FeatureClientEffects) {
+			if declaration, found := current.clientEffects[tool.Name]; found {
+				copy := declaration
+				extension.ClientEffect = &copy
 			}
+		}
+		if extension.Confirm != "" || extension.Target != "" || extension.Background ||
+			extension.ClientEffect != nil {
+			definition["openrealtime"] = extension
 		}
 		tools = append(tools, definition)
 	}

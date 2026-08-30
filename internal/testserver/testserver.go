@@ -26,10 +26,23 @@ import (
 	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	effectauthority "github.com/bojieli/OpenRealtime/authority"
+	legacybinding "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/cascade"
 	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/element"
+	compat "github.com/bojieli/OpenRealtime/elements/compatbinding"
 	"github.com/bojieli/OpenRealtime/gateway"
+	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
+	"github.com/bojieli/OpenRealtime/graph/ir"
+	"github.com/bojieli/OpenRealtime/graph/resolve"
+	graphschema "github.com/bojieli/OpenRealtime/graph/schema"
+	"github.com/bojieli/OpenRealtime/graph/syntax"
+	"github.com/bojieli/OpenRealtime/management"
+	managementserver "github.com/bojieli/OpenRealtime/management/server"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/plugin"
 	"github.com/bojieli/OpenRealtime/trajectory"
 	"github.com/bojieli/OpenRealtime/transport/webrtc"
 )
@@ -58,6 +71,23 @@ type Config struct {
 	FastSpendsBudgetThinking bool
 	// AllowedOrigins are the web origins the WebRTC adapter will answer.
 	AllowedOrigins []string
+	// GraphInspection mounts the real compatibility graph adapter so a client
+	// can negotiate and consume the canonical management API. Tests that only
+	// need protocol behavior leave it off and retain the smallest stack.
+	GraphInspection bool
+	// TraceRecording opts the mounted compatibility graph into the bounded,
+	// payload-free recorder. It is separate from live inspection so tests can
+	// measure and assert the zero-recorder profile explicitly.
+	TraceRecording bool
+	// ClientEffectIssuer enables negotiated server-issued host effect receipts.
+	// It is deliberately an interface seam so integration fixtures exercise
+	// the same issuer selected by a real deployment.
+	ClientEffectIssuer effectauthority.EffectReceiptIssuerProvider
+	// ManagementAuthorizer explicitly enables the static-catalog and authoring
+	// management profile on the same server as realtime. Session inspection
+	// keeps its independently negotiated gateway capability. Tests issue their
+	// own operator grants through this seam; no token is built into the server.
+	ManagementAuthorizer management.Authorizer
 }
 
 // ScriptedCall is one tool call the slow provider issues, on its own turn.
@@ -72,6 +102,12 @@ type Stack struct {
 	ProtocolURL string
 	// AdapterURL is where a WebRTC client POSTs an SDP offer.
 	AdapterURL string
+	// Static management identities are non-secret evidence used by clients to
+	// request and rebind the exact graph, values schema, and descriptor.
+	Graph           ir.Graph
+	ValuesSchema    graphschema.Bundle
+	ElementIdentity element.Identity
+	AuthoringSource string
 }
 
 // Start brings up a server and registers its shutdown with the test.
@@ -138,12 +174,96 @@ func Start(t testing.TB, config Config) Stack {
 	if err != nil {
 		t.Fatalf("cascade: %v", err)
 	}
-	server, err := gateway.New(gateway.Config{Binding: bind, ValidateWire: true})
+	var served legacybinding.Binding = bind
+	var graphServed *graphbinding.Binding
+	if config.GraphInspection {
+		if config.TraceRecording {
+			artifact := inspect.ArtifactIdentity{
+				ID:       "go://openrealtime/internal-testserver/compat-binding",
+				Revision: "scripted-v1", Digest: "sha256:" + strings.Repeat("d", 64),
+			}
+			graphServed, err = graphbinding.NewWithConfig(bind, graphbinding.Config{
+				ImplementationArtifact: &artifact,
+				TraceRecording: &graphbinding.TraceRecordingConfig{
+					MaxRetainedBytes: 2 << 20, CaptureInterval: time.Millisecond,
+				},
+			})
+		} else {
+			graphServed, err = graphbinding.New(bind)
+		}
+		if err != nil {
+			t.Fatalf("mount test binding through Graph IR: %v", err)
+		}
+		served = graphServed
+	}
+	if config.TraceRecording && !config.GraphInspection {
+		t.Fatal("testserver trace recording requires graph inspection")
+	}
+	if config.ManagementAuthorizer != nil && graphServed == nil {
+		t.Fatal("testserver static/authoring management requires graph inspection")
+	}
+	server, err := gateway.New(gateway.Config{
+		Binding: served, ValidateWire: true, ClientEffectIssuer: config.ClientEffectIssuer,
+	})
 	if err != nil {
 		t.Fatalf("gateway: %v", err)
 	}
-	protocol := httptest.NewServer(server.Handler())
-	t.Cleanup(protocol.Close)
+	protocolHandler := server.Handler()
+	var staticGraph ir.Graph
+	var valuesSchema graphschema.Bundle
+	var elementIdentity element.Identity
+	authoringSource := ""
+	if config.ManagementAuthorizer != nil {
+		staticGraph = graphServed.Graph()
+		elementCatalog := resolve.NewCatalog()
+		descriptor := compat.Descriptor()
+		if err := elementCatalog.Register(descriptor); err != nil {
+			t.Fatalf("register test management element: %v", err)
+		}
+		plugins := plugin.NewCatalog()
+		staticCatalog, err := management.NewCatalog(elementCatalog, plugins)
+		if err != nil {
+			t.Fatalf("create test management catalog: %v", err)
+		}
+		valuesSchema, err = graphschema.Generate(context.Background(), staticGraph, elementCatalog,
+			graphschema.Options{})
+		if err != nil {
+			t.Fatalf("generate test values schema: %v", err)
+		}
+		if err := staticCatalog.RegisterGraph(staticGraph, valuesSchema); err != nil {
+			t.Fatalf("register test management graph: %v", err)
+		}
+		authoring, err := management.NewAuthoringEngine(management.AuthoringOptions{Catalog: elementCatalog})
+		if err != nil {
+			t.Fatalf("create test authoring engine: %v", err)
+		}
+		operatorAPI, err := managementserver.MountOperatorAPI(context.Background(), protocolHandler,
+			managementserver.OperatorAPIConfig{
+				Authorizer: config.ManagementAuthorizer, StaticCatalog: staticCatalog, Authoring: authoring,
+			})
+		if err != nil {
+			t.Fatalf("mount test static/authoring management API: %v", err)
+		}
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if err := operatorAPI.Close(ctx); err != nil {
+				t.Errorf("close test static/authoring management API: %v", err)
+			}
+		})
+		protocolHandler = operatorAPI.Handler()
+		elementIdentity = staticGraph.Nodes[0].Element
+		authoringSource = compatibilityAuthoringSource("browser_authoring")
+	}
+	protocol := httptest.NewServer(protocolHandler)
+	t.Cleanup(func() {
+		protocol.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := server.Close(ctx); err != nil {
+			t.Errorf("close test gateway: %v", err)
+		}
+	})
 	protocolURL := "ws" + strings.TrimPrefix(protocol.URL, "http") + "/v1/realtime"
 
 	adapter, err := webrtc.New(webrtc.Config{
@@ -155,7 +275,27 @@ func Start(t testing.TB, config Config) Stack {
 	adapterServer := httptest.NewServer(adapter.Handler())
 	t.Cleanup(adapterServer.Close)
 
-	return Stack{ProtocolURL: protocolURL, AdapterURL: adapterServer.URL + "/v1/realtime"}
+	return Stack{
+		ProtocolURL: protocolURL, AdapterURL: adapterServer.URL + "/v1/realtime",
+		Graph: staticGraph, ValuesSchema: valuesSchema, ElementIdentity: elementIdentity,
+		AuthoringSource: authoringSource,
+	}
+}
+
+func compatibilityAuthoringSource(name string) string {
+	descriptor := compat.Descriptor()
+	statements := []syntax.Statement{{Node: &syntax.Node{Element: descriptor.Name, Name: "runtime"}}}
+	for _, port := range descriptor.Ports {
+		direction := syntax.BoundaryInput
+		if port.Direction == element.Output {
+			direction = syntax.BoundaryOutput
+		}
+		statements = append(statements, syntax.Statement{Boundary: &syntax.Boundary{
+			Direction: direction, Name: port.Name,
+			Endpoint: syntax.Endpoint{Node: "runtime", Port: port.Name},
+		}})
+	}
+	return syntax.Format(syntax.File{Graph: syntax.Graph{Name: name, Statements: statements}})
 }
 
 // --- the scripted stand-ins -------------------------------------------------

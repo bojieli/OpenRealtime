@@ -343,6 +343,7 @@ func TestServeRejectsFlagsItCannotHonour(t *testing.T) {
 	for _, arguments := range [][]string{
 		{"-binding", "telepathy"},
 		{"-rollout", "sideways"},
+		{"-demo"},
 		{"positional-argument"},
 	} {
 		if err := runServe(arguments, &output); err == nil {

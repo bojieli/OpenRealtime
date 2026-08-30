@@ -185,6 +185,11 @@ func (tool wireTool) spec() (action.ToolSpec, error) {
 		spec.Confirm = confirm
 		spec.Target = strings.TrimSpace(tool.OpenRealtime.Target)
 		spec.Background = tool.OpenRealtime.Background
+		if tool.OpenRealtime.ClientEffect != nil {
+			if err := tool.OpenRealtime.ClientEffect.Validate(); err != nil {
+				return action.ToolSpec{}, fmt.Errorf("tool %q: %w", tool.Name, err)
+			}
+		}
 	}
 	return spec, nil
 }

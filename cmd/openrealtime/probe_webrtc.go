@@ -161,8 +161,8 @@ func (collector *webrtcCollector) audio(bytes int) {
 	defer collector.mu.Unlock()
 	collector.outcome.audioFrames++
 	collector.outcome.audioSeconds += float64(bytes) / 8000
-	if collector.outcome.firstAudio == 0 && !collector.endpoint.IsZero() {
-		collector.outcome.firstAudio = time.Since(collector.endpoint)
+	if collector.outcome.firstAudioReceipt == 0 && !collector.endpoint.IsZero() {
+		collector.outcome.firstAudioReceipt = time.Since(collector.endpoint)
 	}
 }
 

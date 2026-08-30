@@ -137,7 +137,8 @@ func reportProbe(result probeResult, generated bool, output io.Writer) error {
 	fmt.Fprintf(output, "transcript : %s\n", result.transcript)
 	fmt.Fprintf(output, "spoken     : %s\n", strings.Join(result.spoken, " | "))
 	fmt.Fprintf(output, "audio      : %.2f s in %d frames\n", result.audioSeconds, result.audioFrames)
-	fmt.Fprintf(output, "first audio: %s after the endpoint\n", result.firstAudio.Round(time.Millisecond))
+	fmt.Fprintf(output, "first received audio: %s after the endpoint\n",
+		result.firstAudioReceipt.Round(time.Millisecond))
 	fmt.Fprintf(output, "responses  : %d\n", result.responses)
 	if len(result.toolCalls) > 0 {
 		fmt.Fprintf(output, "tool calls : %s\n", strings.Join(result.toolCalls, ", "))
@@ -167,14 +168,14 @@ const secondResponseGrace = 5 * time.Second
 type probeResult struct {
 	// responses counts the response.done events the turn produced. One and two
 	// are both correct; which one happens is a timing question.
-	responses    int
-	transcript   string
-	spoken       []string
-	toolCalls    []string
-	audioFrames  int
-	audioSeconds float64
-	firstAudio   time.Duration
-	err          error
+	responses         int
+	transcript        string
+	spoken            []string
+	toolCalls         []string
+	audioFrames       int
+	audioSeconds      float64
+	firstAudioReceipt time.Duration
+	err               error
 }
 
 func collectProbe(ctx context.Context, client *realtimeclient.Client, output io.Writer) probeResult {
@@ -226,8 +227,8 @@ func collectProbe(ctx context.Context, client *realtimeclient.Client, output io.
 				if err == nil {
 					result.audioFrames++
 					result.audioSeconds += float64(len(payload)/2) / 24_000
-					if result.firstAudio == 0 && !endpoint.IsZero() {
-						result.firstAudio = time.Since(endpoint)
+					if result.firstAudioReceipt == 0 && !endpoint.IsZero() {
+						result.firstAudioReceipt = time.Since(endpoint)
 					}
 				}
 			case "response.function_call_arguments.done":

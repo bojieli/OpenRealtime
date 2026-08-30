@@ -13,6 +13,7 @@
 package gateway
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -20,11 +21,16 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	effectauthority "github.com/bojieli/OpenRealtime/authority"
 	"github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/management"
+	"github.com/bojieli/OpenRealtime/plugin"
+	pluginruntime "github.com/bojieli/OpenRealtime/plugin/runtime"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/coder/websocket"
 )
@@ -47,9 +53,6 @@ type Config struct {
 	Binding binding.Binding
 	// Token, when set, is the bearer token required on the upgrade request.
 	Token string
-	// Demo, when set, is served at /demo. It is nil unless an operator asks
-	// for it, because a page is not part of a realtime server's job.
-	Demo http.Handler
 	// Model is the compatibility model identifier reported to clients.
 	Model string
 	// TranscriptionModel is reported in the session object so a client can see
@@ -98,14 +101,32 @@ type Config struct {
 	// hour. The capability is revoked earlier when debugging is disabled or the
 	// owning session ends.
 	InspectionTokenTTL time.Duration
+	// SessionInspection and ManagementHandler are the clean server-composition
+	// seams for session observability. They must either both be absent, in which
+	// case New preserves the standalone Handler compatibility surface, or both
+	// be supplied by an exact server plugin profile. The handler is used only as
+	// the canonical management delegate; it is never rendered into protocol
+	// state or retained by a session.
+	SessionInspection *SessionInspectionPlane
+	ManagementHandler http.Handler
+	// ClientEffectIssuer is the replaceable server authority seam for the
+	// negotiated client.effects extension. Nil means the feature is not
+	// offered. The issuer is never rendered into session state, graphs, logs,
+	// or evidence; only its opaque per-call receipt crosses the wire.
+	ClientEffectIssuer effectauthority.EffectReceiptIssuerProvider
+	// ServerProfile supplies the exact mounted server-realm composition. It is
+	// optional for compatibility constructors; production launchers set it
+	// before exposing the handler. Health refuses an incomplete configured
+	// profile instead of reporting only caller-asserted binding labels.
+	ServerProfile func() pluginruntime.Live
 
-	inspections *inspectionRegistry
+	management *gatewayManagement
 }
 
 // Server serves /v1/realtime and /healthz.
 type Server struct {
-	config      Config
-	inspections *inspectionRegistry
+	config     Config
+	management *gatewayManagement
 }
 
 // New validates the configuration and creates a server.
@@ -142,29 +163,118 @@ func New(config Config) (*Server, error) {
 	if config.Logger == nil {
 		config.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	if config.InspectionTokenTTL < 0 {
-		return nil, errors.New("inspection token TTL cannot be negative")
+	if nilInterface(config.ClientEffectIssuer) {
+		config.ClientEffectIssuer = nil
 	}
-	config.inspections = newInspectionRegistry(config.InspectionTokenTTL)
+	var managementPlane *gatewayManagement
+	inspectionSupplied := config.SessionInspection != nil
+	managementHandlerSupplied := !nilInterface(config.ManagementHandler)
+	switch {
+	case !inspectionSupplied && !managementHandlerSupplied:
+		var err error
+		managementPlane, err = newGatewayManagement(config.InspectionTokenTTL)
+		if err != nil {
+			return nil, err
+		}
+	case !inspectionSupplied || !managementHandlerSupplied:
+		return nil, errors.New("gateway session inspection and management handler must be supplied together")
+	case config.InspectionTokenTTL != 0:
+		return nil, errors.New("gateway inspection token TTL belongs to the supplied session-inspection plane")
+	default:
+		if err := config.SessionInspection.Validate(); err != nil {
+			return nil, fmt.Errorf("gateway session inspection: %w", err)
+		}
+		managementPlane = &gatewayManagement{
+			plane: config.SessionInspection, handler: config.ManagementHandler,
+		}
+	}
+	config.management = managementPlane
 	config.Token = strings.TrimSpace(config.Token)
-	return &Server{config: config, inspections: config.inspections}, nil
+	return &Server{config: config, management: managementPlane}, nil
 }
 
-// Handler returns the HTTP surface.
+func nilInterface(value any) bool {
+	if value == nil {
+		return true
+	}
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return reflected.IsNil()
+	default:
+		return false
+	}
+}
+
+// Handler returns the compatibility HTTP surface. New server compositions use
+// the narrower handler accessors below and let descriptor-locked route plugins
+// decide which surfaces are mounted. Keeping this method assembled here
+// preserves existing embedders without making its fixed route set the server
+// plugin API.
 func (server *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", server.health)
-	mux.HandleFunc("GET /metrics", server.metrics)
-	mux.Handle("GET /v1/realtime", server)
-	mux.HandleFunc("GET /v1/realtime/sessions/{session}/live", server.inspectLive)
-	// The demo is opt-in. A production server has no business serving a page,
-	// and one that appeared on every deployment would be surface nobody asked
-	// for; but with it enabled, trying the system out is one command.
-	if server.config.Demo != nil {
-		mux.Handle("GET /demo", server.config.Demo)
-		mux.Handle("GET /demo/", http.StripPrefix("/demo", server.config.Demo))
-	}
+	mux.Handle("GET /healthz", server.HealthHandler())
+	mux.Handle("GET /metrics", server.MetricsHandler())
+	mux.Handle("GET /v1/realtime", server.RealtimeHandler())
+	mux.Handle("GET /v1/realtime/sessions/{session}/live", server.InspectionHandler())
+	mux.Handle(management.APIPrefix+"/", server.ManagementHandler())
 	return mux
+}
+
+// RealtimeHandler is the OpenAI-compatible WebSocket endpoint implementation.
+// It carries no route pattern so a server profile, rather than the gateway,
+// owns public route selection.
+func (server *Server) RealtimeHandler() http.Handler {
+	if server == nil {
+		return http.NotFoundHandler()
+	}
+	return server
+}
+
+// HealthHandler is the payload-only readiness endpoint implementation.
+func (server *Server) HealthHandler() http.Handler {
+	if server == nil {
+		return http.NotFoundHandler()
+	}
+	return http.HandlerFunc(server.health)
+}
+
+// MetricsHandler is the payload-only bounded telemetry endpoint
+// implementation.
+func (server *Server) MetricsHandler() http.Handler {
+	if server == nil {
+		return http.NotFoundHandler()
+	}
+	return http.HandlerFunc(server.metrics)
+}
+
+// ManagementHandler is the canonical, capability-authorized management API
+// implementation. Server route plugins select its exact public resource
+// families; compatibility Handler retains the historical prefix delegation.
+func (server *Server) ManagementHandler() http.Handler {
+	if server == nil || server.management == nil || server.management.handler == nil {
+		return http.NotFoundHandler()
+	}
+	return server.management.handler
+}
+
+// InspectionHandler is the historical session-live compatibility adapter.
+// Canonical clients use ManagementHandler with the management capability
+// header.
+func (server *Server) InspectionHandler() http.Handler {
+	if server == nil {
+		return http.NotFoundHandler()
+	}
+	return http.HandlerFunc(server.inspectLive)
+}
+
+// Close releases the mounted management route realm. Active realtime sessions
+// retain ownership of their own runtimes and unregister on session shutdown.
+func (server *Server) Close(ctx context.Context) error {
+	if server == nil || ctx == nil {
+		return errors.New("close gateway: nil server or context")
+	}
+	return server.management.close(ctx)
 }
 
 // readLimit bounds one inbound message at the largest thing this deployment
@@ -205,6 +315,12 @@ func (server *Server) readLimit() int64 {
 func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
 	writer.Header().Set("Content-Type", "application/json")
 	warm := server.config.Warm == nil || server.config.Warm()
+	var profile *pluginruntime.Live
+	if server.config.ServerProfile != nil {
+		live := server.config.ServerProfile()
+		profile = &live
+		warm = warm && validServerProfile(live)
+	}
 	status := "ok"
 	if !warm {
 		// Serving, and not yet ready to be measured or routed to.
@@ -224,10 +340,33 @@ func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
 		},
 		"sessions": server.config.Metrics.Snapshot(),
 	}
+	if profile != nil {
+		payload["server_profile"] = profile
+	}
 	if server.config.Recogniser != nil {
 		payload["recogniser"] = server.config.Recogniser()
 	}
 	_ = json.NewEncoder(writer).Encode(payload)
+}
+
+func validServerProfile(live pluginruntime.Live) bool {
+	if live.FormatVersion != pluginruntime.LiveFormatVersion ||
+		live.Realm != plugin.ServerRealm || live.State != "active" ||
+		!management.CanonicalDigest(live.Fingerprint) || len(live.Entries) == 0 {
+		return false
+	}
+	for _, entry := range live.Entries {
+		if entry.State != "active" || !entry.Desired || entry.Implementation == "" ||
+			entry.Runtime.Validate() != nil {
+			return false
+		}
+	}
+	for _, export := range live.Exports {
+		if !export.Available || export.Revision == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (server *Server) metrics(writer http.ResponseWriter, _ *http.Request) {
