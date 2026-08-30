@@ -45,9 +45,10 @@ applications rather than compositions of the same client platform:
 - browser end-to-end tests exercise real Chromium and the real gateway, while
   the current cross-platform macOS gate can only inspect source text on Linux.
 
-These are strong prototypes and regression oracles. They must be migrated, not
-silently discarded. The target removes their privileged coupling and duplicate
-protocol semantics while preserving their security properties and behavior.
+These are reference-only prototypes and regression oracles, not production
+inputs. New profile-composed implementations must preserve their relevant
+security and behavior contracts; obsolete applications and duplicated modules
+are then deleted rather than carried through a compatibility adapter.
 
 ## 2. Architectural decisions
 
@@ -123,12 +124,11 @@ Names are distribution defaults only. Runtime code resolves services and
 descriptors; it does not switch on these names.
 
 The Go `server.Bundle` now compiles the headless HTTP boundary as a stable
-router plus separate realtime, observability, session-inspection, canonical
-management-session API, and compatibility-alias entries. Every entry carries
-the exact selected runtime artifact in server-realm live evidence. Direct
-`gateway.New(...).Handler()` remains a compatibility facade, while the compiled
-server path injects its inspection plane and canonical handler and therefore
-does not mount a hidden second management realm.
+router plus separate realtime, observability, session-inspection, and canonical
+management-session API entries. Every entry carries the exact selected runtime
+artifact in server-realm live evidence. Remaining historical route aliases and
+direct gateway facades are deletion work, not dependencies of the target
+profile or APIs.
 
 ## 3. Plugin contract
 
@@ -218,7 +218,7 @@ transport plugins and still reach the same server-side session graph.
 | Contract | Purpose |
 | --- | --- |
 | `GET /v1/realtime` | OpenAI-compatible WebSocket upgrade and OpenRealtime-negotiated events |
-| WebRTC call/SDP endpoint | media tracks plus the same protocol event stream over a data channel; the current compatibility route remains during migration |
+| WebRTC call/SDP endpoint | media tracks plus the same protocol event stream over a data channel through the stable OpenAI-compatible call boundary |
 | `openrealtime.*` events | additive multimodal, interaction, authority, and inspection negotiation |
 
 The transport interface exposes connection state, negotiated capabilities,
@@ -234,8 +234,8 @@ and explicit PCM/event transport.
 
 Observability is a versioned data/control API, not code embedded in a canvas.
 The target API exposes these resource families under an OpenRealtime-specific
-namespace while retaining the current session-live route as a compatibility
-alias during migration:
+namespace. The historical session-live alias is not part of the target and is
+deleted once all new profiles use the canonical management API:
 
 ```text
 GET  graph descriptor and exact canonical Graph IR by fingerprint
@@ -322,11 +322,12 @@ platform APIs require separate implementations.
 - Observability is payload-free by default, bounded, redacted, and independently
   authorized. Turning it off cannot change session semantics.
 
-## 7. Migration plan
+## 7. Replacement and deletion plan
 
-The migration preserves working behavior in independently reviewable slices.
-Compatibility adapters are removed only after their replacements pass the
-same end-to-end matrix.
+Replacement proceeds in independently reviewable slices. Old implementations
+are consulted only as behavior references; no adapter, dual-run path, or
+historical loader is added to the new runtime. Once a replacement passes its
+declared end-to-end matrix, the obsolete path is deleted.
 
 ### Stage P0: contracts and regression oracle
 
@@ -357,11 +358,11 @@ same end-to-end matrix.
   providers as separate host plugins.
 - Build the browser client from transport, media, protocol, tool, inspection,
   editor, and view plugins selected by the manifest.
-- Migrate console and surface into profiles over those plugins, then delete
+- Replace console and surface with profiles over those plugins, then delete
   duplicated modules once golden and real-Chromium parity holds.
 - [x] Remove `serve -demo`, `gateway.Config.Demo`, and `/demo` from the gateway;
-  retain the one-file example as a standalone migration oracle while the
-  minimal locked browser profile grows media parity.
+  the one-file example remains reference-only and is deleted when the minimal
+  locked browser profile closes its media gates.
 
 ### Stage P4: macOS client
 
@@ -383,13 +384,14 @@ same end-to-end matrix.
 - Exercise client/host plugin hot replacement, safe-point server graph changes,
   state migration/refusal, rollback, and leak detection end to end.
 
-### Stage P6: compatibility removal
+### Stage P6: obsolete-path deletion
 
-- Migrate documentation, examples, production launch paths, test launchers,
-  and benchmark harnesses to profiles and the clean APIs.
+- Replace documentation, examples, production launch paths, test launchers,
+  and benchmark harnesses with profiles and the clean APIs.
 - Reject unpinned client modules and hidden UI/effect registration.
 - Remove duplicate routes, constructors, event reducers, presentation-specific
-  gateway fields, and client-name switches after the compatibility window.
+  gateway fields, and client-name switches before accepting a production
+  candidate.
 
 ## 8. End-to-end and release gates
 
@@ -532,7 +534,7 @@ tau2/τ-Voice matrix defined by the parent plan.
   disposal and permission ceilings. Locked minimal, observer, developer
   WebSocket, and developer WebRTC browser profiles now boot in real Chromium,
   and shuffled race gates cover the shared host, reducer, and realtime client;
-  migration of the standalone console/surface/demo forks and full lifecycle
+  replacement of the standalone console/surface/demo forks and full lifecycle
   leak evidence remain open.
 - [ ] The browser and macOS applications connect to the same unchanged server
   APIs and pass the shared protocol/client conformance corpus. A real Chromium
@@ -551,7 +553,7 @@ tau2/τ-Voice matrix defined by the parent plan.
   server profile now exposes session live/delta/trace through exact outer-realm
   plugins, and the separate operator overlay supplies the other local API
   families. Deployment-provided operator authority, full delta/reconciliation
-  E2E, and every presentation consumer's migration remain open.
+  E2E, and replacement of every presentation consumer remain open.
 - [ ] View plugins have no implicit effect authority; the authority host still
   proves admission, target, confirmation, ledger, dispatch, and audit.
 - [ ] Cross-client realtime/media/tool/inspection/reconnect/reconciliation E2E

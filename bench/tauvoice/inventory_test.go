@@ -41,7 +41,7 @@ func TestTaskInventoryCanonicalRoundTrip(t *testing.T) {
 	}
 
 	// Freeze owns its task slice; later mutation of the source must not alter
-	// evidence already admitted into a migration census.
+	// evidence already admitted into a candidate inventory.
 	frozen, err := tauvoice.FreezeTaskInventory(inventory)
 	if err != nil {
 		t.Fatal(err)
