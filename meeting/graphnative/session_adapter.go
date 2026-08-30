@@ -80,6 +80,13 @@ type meetingAdapterPorts struct {
 	outputs                                map[string]element.InputPort
 }
 
+type meetingAdapterSpeech struct {
+	utterance action.Utterance
+	ready     chan struct{}
+	beginErr  error
+	done      chan struct{}
+}
+
 type meetingSessionAdapter struct {
 	ctx       context.Context
 	sessionID string
@@ -95,7 +102,7 @@ type meetingSessionAdapter struct {
 	videoCaptured map[string]uint64
 	turnMu        sync.Mutex
 	activeTurn    string
-	activeSpeech  map[string]action.Utterance
+	activeSpeech  map[string]*meetingAdapterSpeech
 	closed        atomic.Bool
 }
 
@@ -131,7 +138,7 @@ func newMeetingSessionAdapter(
 	return &meetingSessionAdapter{
 		ctx: ctx, sessionID: sessionID, sink: options.Sink, profile: profile.Clone(), ports: ports,
 		status: status, frameRate: config.FrameRateMilliHz, store: store,
-		videoCaptured: make(map[string]uint64), activeSpeech: make(map[string]action.Utterance),
+		videoCaptured: make(map[string]uint64), activeSpeech: make(map[string]*meetingAdapterSpeech),
 	}, nil
 }
 
@@ -433,9 +440,9 @@ func (session *meetingSessionAdapter) publishText(
 	if delta.Boundary != cognitionelements.TextChunk {
 		return nil
 	}
-	utterance, ok := session.speech(envelope.RunID)
-	if !ok {
-		return errors.New("meeting prepared text arrived outside an active utterance")
+	utterance, err := session.speech(ctx, envelope.RunID)
+	if err != nil {
+		return fmt.Errorf("meeting prepared text arrived outside an active utterance: %w", err)
 	}
 	return session.sink.SpeechText(ctx, utterance, delta.Text)
 }
@@ -460,18 +467,23 @@ func (session *meetingSessionAdapter) publishAudio(
 		if strings.TrimSpace(utterance.ID) == "" {
 			utterance.ID = frame.UtteranceID
 		}
+		state := &meetingAdapterSpeech{
+			utterance: utterance, ready: make(chan struct{}), done: make(chan struct{}),
+		}
 		session.turnMu.Lock()
 		if _, duplicate := session.activeSpeech[runID]; duplicate {
 			session.turnMu.Unlock()
 			return errors.New("meeting graph opened the same utterance twice")
 		}
-		session.activeSpeech[runID] = utterance
+		session.activeSpeech[runID] = state
 		session.turnMu.Unlock()
-		return session.sink.SpeechBegin(ctx, utterance)
+		state.beginErr = session.sink.SpeechBegin(ctx, utterance)
+		close(state.ready)
+		return state.beginErr
 	case speechelements.AudioChunk:
-		utterance, found := session.speech(runID)
-		if !found {
-			return errors.New("meeting graph emitted audio outside an active utterance")
+		utterance, err := session.speech(ctx, runID)
+		if err != nil {
+			return fmt.Errorf("meeting graph emitted audio outside an active utterance: %w", err)
 		}
 		duration := time.Duration(0)
 		if frame.Chunk.SampleRateHz > 0 {
@@ -483,14 +495,16 @@ func (session *meetingSessionAdapter) publishAudio(
 			Duration: duration, Final: frame.Chunk.Final,
 		})
 	case speechelements.AudioEnd:
-		utterance, found := session.takeSpeech(runID)
+		state, found := session.takeSpeech(runID)
 		if !found {
 			return errors.New("meeting graph ended unknown utterance")
 		}
 		completed := frame.Terminal.Kind == speechelements.OutcomeSucceeded
-		return session.sink.SpeechEnd(ctx, utterance, action.Outcome{
+		err := session.sink.SpeechEnd(ctx, state.utterance, action.Outcome{
 			Completed: completed, Reason: frame.Terminal.Message,
 		})
+		session.finishSpeech(runID, state)
+		return err
 	default:
 		return fmt.Errorf("meeting prepared audio has unknown kind %q", frame.Kind)
 	}
@@ -526,10 +540,14 @@ func (session *meetingSessionAdapter) publishForegroundOutcome(
 		return err
 	}
 	session.turnMu.Lock()
-	_, speechActive := session.activeSpeech[runID]
+	speech := session.activeSpeech[runID]
 	session.turnMu.Unlock()
-	if speechActive {
-		return errors.New("meeting foreground outcome arrived before active speech ended")
+	if speech != nil {
+		select {
+		case <-speech.done:
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
 	}
 	terminal := legacy.TurnOutcome{}
 	switch outcome.Kind {
@@ -598,19 +616,40 @@ func (session *meetingSessionAdapter) ensureTurn(ctx context.Context, runID stri
 	return nil
 }
 
-func (session *meetingSessionAdapter) speech(runID string) (action.Utterance, bool) {
+func (session *meetingSessionAdapter) speech(
+	ctx context.Context, runID string,
+) (action.Utterance, error) {
 	session.turnMu.Lock()
-	defer session.turnMu.Unlock()
-	utterance, found := session.activeSpeech[runID]
-	return utterance, found
+	state := session.activeSpeech[runID]
+	session.turnMu.Unlock()
+	if state == nil {
+		return action.Utterance{}, errors.New("unknown utterance")
+	}
+	select {
+	case <-state.ready:
+	case <-ctx.Done():
+		return action.Utterance{}, context.Cause(ctx)
+	}
+	if state.beginErr != nil {
+		return action.Utterance{}, state.beginErr
+	}
+	return state.utterance, nil
 }
 
-func (session *meetingSessionAdapter) takeSpeech(runID string) (action.Utterance, bool) {
+func (session *meetingSessionAdapter) takeSpeech(runID string) (*meetingAdapterSpeech, bool) {
 	session.turnMu.Lock()
 	defer session.turnMu.Unlock()
-	utterance, found := session.activeSpeech[runID]
-	delete(session.activeSpeech, runID)
-	return utterance, found
+	state, found := session.activeSpeech[runID]
+	return state, found
+}
+
+func (session *meetingSessionAdapter) finishSpeech(runID string, state *meetingAdapterSpeech) {
+	session.turnMu.Lock()
+	if state != nil && session.activeSpeech[runID] == state {
+		close(state.done)
+		delete(session.activeSpeech, runID)
+	}
+	session.turnMu.Unlock()
 }
 
 func (session *meetingSessionAdapter) send(

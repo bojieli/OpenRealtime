@@ -2,11 +2,18 @@ package graphnative
 
 import (
 	"context"
+	"errors"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/bojieli/OpenRealtime/action"
+	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/element"
 	acousticelements "github.com/bojieli/OpenRealtime/elements/acoustic"
+	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	modelelements "github.com/bojieli/OpenRealtime/elements/model"
+	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	"github.com/bojieli/OpenRealtime/perception"
 )
 
@@ -56,3 +63,121 @@ func assertMeetingExternalClock(t testing.TB, envelope element.Envelope, want ui
 		t.Fatalf("Meeting media capture clock = %d, want %d", envelope.CaptureNS, want)
 	}
 }
+
+type blockedMeetingSpeechSink struct {
+	beginEntered chan struct{}
+	releaseBegin chan struct{}
+	began        atomic.Bool
+	ended        atomic.Bool
+	turnEnded    atomic.Bool
+}
+
+func (*blockedMeetingSpeechSink) TurnBegin(context.Context) error { return nil }
+func (sink *blockedMeetingSpeechSink) TurnEnd(context.Context, legacy.TurnOutcome) error {
+	if !sink.ended.Load() {
+		return errors.New("turn ended before speech")
+	}
+	sink.turnEnded.Store(true)
+	return nil
+}
+func (*blockedMeetingSpeechSink) Activity(context.Context, legacy.ActivityEvent) error { return nil }
+func (*blockedMeetingSpeechSink) Transcript(context.Context, legacy.TranscriptEvent) error {
+	return nil
+}
+func (*blockedMeetingSpeechSink) Observation(context.Context, perception.Observation) error {
+	return nil
+}
+func (sink *blockedMeetingSpeechSink) SpeechBegin(context.Context, action.Utterance) error {
+	close(sink.beginEntered)
+	<-sink.releaseBegin
+	sink.began.Store(true)
+	return nil
+}
+func (sink *blockedMeetingSpeechSink) SpeechText(context.Context, action.Utterance, string) error {
+	if !sink.began.Load() {
+		return errors.New("text overtook speech begin")
+	}
+	return nil
+}
+func (*blockedMeetingSpeechSink) SpeechAudio(context.Context, action.Utterance, action.Frame) error {
+	return nil
+}
+func (sink *blockedMeetingSpeechSink) SpeechEnd(context.Context, action.Utterance, action.Outcome) error {
+	sink.ended.Store(true)
+	return nil
+}
+func (*blockedMeetingSpeechSink) ToolCalls(context.Context, legacy.ToolCallEvent) error { return nil }
+func (*blockedMeetingSpeechSink) Failed(context.Context, legacy.ErrorEvent)             {}
+
+func TestMeetingSessionAdapterOrdersCrossPortSpeechLifecycle(t *testing.T) {
+	sink := &blockedMeetingSpeechSink{
+		beginEntered: make(chan struct{}), releaseBegin: make(chan struct{}),
+	}
+	adapter := &meetingSessionAdapter{
+		ctx: context.Background(), sessionID: "meeting-speech-order", sink: sink,
+		activeSpeech: make(map[string]*meetingAdapterSpeech),
+	}
+	runID := "run-1"
+	utterance := action.Utterance{ID: "speech-1", Text: "Hello."}
+	beginDone := make(chan error, 1)
+	go func() {
+		beginDone <- adapter.publishAudio(context.Background(), element.Envelope{
+			RunID: runID, Payload: speechelements.AudioFrame{
+				Kind: speechelements.AudioBegin, UtteranceID: utterance.ID, Utterance: utterance,
+			},
+		})
+	}()
+	<-sink.beginEntered
+	textDone := make(chan error, 1)
+	go func() {
+		textDone <- adapter.publishText(context.Background(), element.Envelope{
+			RunID: runID, Payload: cognitionelements.PreparedTextDelta{
+				Boundary: cognitionelements.TextChunk, Index: 1, Text: "Hello.",
+			},
+		})
+	}()
+	select {
+	case err := <-textDone:
+		t.Fatalf("text did not wait for SpeechBegin: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(sink.releaseBegin)
+	if err := <-beginDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-textDone; err != nil {
+		t.Fatal(err)
+	}
+
+	outcomeDone := make(chan error, 1)
+	go func() {
+		outcomeDone <- adapter.publishForegroundOutcome(context.Background(), element.Envelope{
+			RunID: runID, Payload: cognitionelements.Outcome{
+				Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: runID,
+			},
+		})
+	}()
+	select {
+	case err := <-outcomeDone:
+		t.Fatalf("outcome did not wait for SpeechEnd: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	if err := adapter.publishAudio(context.Background(), element.Envelope{
+		RunID: runID, Payload: speechelements.AudioFrame{
+			Kind: speechelements.AudioEnd, UtteranceID: utterance.ID,
+			Terminal: speechelements.SynthesisOutcome{
+				UtteranceID: utterance.ID, Kind: speechelements.OutcomeSucceeded,
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-outcomeDone; err != nil {
+		t.Fatal(err)
+	}
+	if !sink.turnEnded.Load() {
+		t.Fatal("foreground outcome did not close the turn after speech")
+	}
+}
+
+var _ legacy.Sink = (*blockedMeetingSpeechSink)(nil)

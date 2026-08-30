@@ -15,6 +15,7 @@ import (
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
+	acousticelements "github.com/bojieli/OpenRealtime/elements/acoustic"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	modelelements "github.com/bojieli/OpenRealtime/elements/model"
 	perceptionelements "github.com/bojieli/OpenRealtime/elements/perception"
@@ -57,6 +58,7 @@ type foregroundTestRuntime struct {
 	sink            legacy.Sink
 	settings        legacy.Settings
 	texts           []legacy.TextInput
+	events          []string
 	createResponses int
 	closes          atomic.Int32
 }
@@ -64,11 +66,17 @@ type foregroundTestRuntime struct {
 func (runtime *foregroundTestRuntime) Update(_ context.Context, settings legacy.Settings) error {
 	runtime.mu.Lock()
 	runtime.settings = legacy.CloneSettings(settings)
+	runtime.events = append(runtime.events, "tools")
 	runtime.mu.Unlock()
 	return nil
 }
 
-func (*foregroundTestRuntime) Audio(context.Context, perception.Frame) error { return nil }
+func (runtime *foregroundTestRuntime) Audio(context.Context, perception.Frame) error {
+	runtime.mu.Lock()
+	runtime.events = append(runtime.events, "audio")
+	runtime.mu.Unlock()
+	return nil
+}
 
 func (*foregroundTestRuntime) Video(context.Context, perception.Frame) error { return nil }
 
@@ -108,6 +116,12 @@ func (runtime *foregroundTestRuntime) snapshot() (legacy.Sink, int, []legacy.Tex
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
 	return runtime.sink, runtime.createResponses, slices.Clone(runtime.texts)
+}
+
+func (runtime *foregroundTestRuntime) eventSnapshot() []string {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	return slices.Clone(runtime.events)
 }
 
 type foregroundTestClientSink struct{}
@@ -284,6 +298,12 @@ func foregroundTestSession(t testing.TB) (*foregroundSession, *foregroundTestRun
 	if !ok {
 		t.Fatalf("foreground session type = %T", created)
 	}
+	configuration := foregroundTestInputMessage(t, foregroundTestHello(t), "tools",
+		foregroundSessionSettings{Settings: legacy.Settings{}},
+		element.Envelope{ItemID: "meeting-engine-tools", Sequence: 1})
+	if err := session.Send(configuration); err != nil {
+		t.Fatalf("configure foreground test session: %v", err)
+	}
 	t.Cleanup(func() {
 		if err := session.Close(); err != nil {
 			t.Errorf("close foreground session: %v", err)
@@ -409,6 +429,40 @@ func TestForegroundSessionCausallyOrdersBackgroundInjectionBeforeGenerate(t *tes
 	}
 	if len(texts) != 1 || texts[0].Role != "system" || texts[0].Text != "quiet context" {
 		t.Fatalf("foreground text inputs = %+v", texts)
+	}
+}
+
+func TestForegroundSessionAppliesInitialConfigurationBeforeOvertakingAudio(t *testing.T) {
+	plugin, runtime, _ := foregroundTestPlugin(t)
+	hello := foregroundTestHello(t)
+	created, err := plugin.newForegroundSession(context.Background(), hello, legacy.Options{
+		SessionID: "meeting-session-1", Sink: foregroundTestClientSink{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := created.(*foregroundSession)
+	t.Cleanup(func() { _ = session.Close() })
+	audio := foregroundTestInputMessage(t, hello, "audio", acousticelements.InputFrame{
+		StreamID: "microphone", Frame: perception.Frame{
+			Kind: perception.FrameAudio, Source: "microphone", CapturedNS: 2,
+			PCM16LE: []byte{1, 0}, SampleRateHz: 24_000,
+		},
+	}, element.Envelope{ItemID: "audio-2", Sequence: 2, CaptureNS: 2})
+	if err := session.Send(audio); err != nil {
+		t.Fatal(err)
+	}
+	if events := runtime.eventSnapshot(); len(events) != 0 {
+		t.Fatalf("audio overtook initial settings: %v", events)
+	}
+	settings := foregroundTestInputMessage(t, hello, "tools",
+		foregroundSessionSettings{Settings: legacy.Settings{Instruction: "configured"}},
+		element.Envelope{ItemID: "tools-1", Sequence: 1})
+	if err := session.Send(settings); err != nil {
+		t.Fatal(err)
+	}
+	if events := runtime.eventSnapshot(); !slices.Equal(events, []string{"tools", "audio"}) {
+		t.Fatalf("initial input order = %v, want tools then audio", events)
 	}
 }
 

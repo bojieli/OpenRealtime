@@ -33,6 +33,7 @@ import (
 const (
 	maximumForegroundFrames          = 512
 	maximumForegroundPendingTriggers = 64
+	maximumForegroundPendingInputs   = 512
 	maximumForegroundTranscriptKeys  = 4096
 	foregroundCloseTimeout           = 10 * time.Second
 	foregroundContextWait            = 5 * time.Second
@@ -52,6 +53,11 @@ var expectedForegroundPorts = map[string]element.Direction{
 type pendingForegroundTrigger struct {
 	message sidecar.Message
 	payload cognitionelements.Generate
+}
+
+type pendingForegroundInput struct {
+	message sidecar.Message
+	payload any
 }
 
 type foregroundRun struct {
@@ -97,6 +103,11 @@ type foregroundSession struct {
 	sendMu  sync.Mutex
 	seen    map[string]struct{}
 	pending []pendingForegroundTrigger
+	// model.External forwards each selected input port independently. Hold
+	// ordinary inputs until the gateway's initial settings frame has actually
+	// reached the provider runtime; otherwise audio can overtake session.update.
+	configured   bool
+	initialQueue []pendingForegroundInput
 
 	mu                  sync.Mutex
 	settings            legacy.Settings
@@ -319,6 +330,44 @@ func (session *foregroundSession) Send(message sidecar.Message) error {
 	if err != nil {
 		return fmt.Errorf("decode meeting foreground input %s: %w", message.Port, err)
 	}
+	if !session.configured && message.Port != "tools" && message.Port != "cancel" {
+		if len(session.initialQueue) >= maximumForegroundPendingInputs {
+			return errors.New("meeting foreground initial configuration queue is full")
+		}
+		session.initialQueue = append(session.initialQueue, pendingForegroundInput{
+			message: message.Clone(), payload: payload,
+		})
+		return nil
+	}
+	if err := session.applyDecodedInput(message, payload); err != nil {
+		return err
+	}
+	if message.Port != "tools" || session.configured {
+		return nil
+	}
+	session.configured = true
+	queued := session.initialQueue
+	session.initialQueue = nil
+	slices.SortStableFunc(queued, func(left, right pendingForegroundInput) int {
+		leftSequence, rightSequence := left.message.Envelope.Sequence, right.message.Envelope.Sequence
+		switch {
+		case leftSequence == 0 || rightSequence == 0 || leftSequence == rightSequence:
+			return 0
+		case leftSequence < rightSequence:
+			return -1
+		default:
+			return 1
+		}
+	})
+	for _, pending := range queued {
+		if err := session.applyDecodedInput(pending.message, pending.payload); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (session *foregroundSession) applyDecodedInput(message sidecar.Message, payload any) error {
 	if message.Port == "trigger" {
 		generate, ok := foregroundGenerate(payload)
 		if !ok {
