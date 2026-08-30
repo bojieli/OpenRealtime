@@ -62,76 +62,52 @@ deliberate; local CI success is not model, dataset, or signed-native evidence.
 
 ## Checked performance protocol
 
-The FD-Bench migration comparison is opt-in because it pins a CPU, performs a
-warmup, and records twelve full 6,147-case comparison samples. Run just that
-gate with:
+The direct audiovisual review-bundle benchmark is opt-in because it performs
+the complete four-case Meeting retention path and the exact-sixteen
+Realtime-CU retention path, including receipt verification. Run just that gate
+with:
 
 ```sh
 ./scripts/release-validate.sh \
-  -gate performance.compare-fdbench6147 \
-  -artifacts .runtime/release-validation/fdbench-perf-001 \
-  -report .runtime/release-validation/fdbench-perf-001/report.json
+  -gate performance.review-bundles \
+  -artifacts .runtime/release-validation/review-perf-001 \
+  -report .runtime/release-validation/review-perf-001/report.json
 ```
 
-The matrix invokes
-`bench/migration/run_compare_fdbench6147_performance.sh` unchanged. The script
-still creates canonical evidence and exits nonzero unless the candidate is
-reportable, the artifact byte count exactly matches the checked baseline, and
-the comparable median allocation count does not regress. The matrix adds a
-postcondition requiring `reportable=true accepted=true artifact=pass
-allocations=pass` and a non-empty candidate artifact. Timing and B/op remain
-descriptive; the release wrapper does not turn them into unreviewed thresholds.
+The matrix invokes the repository-owned Meeting and Realtime-CU benchmarks
+directly at their complete review populations. The Meeting package also runs
+its checked allocation threshold. The gate requires both benchmark names in
+stdout; timing, bytes, and allocations remain visible for review. This local
+performance evidence does not substitute for either live behavioral suite.
 
-## Preregistered migration protocol
+## Direct candidate benchmark protocol
 
-The eight parity suites do not pass release validation merely by writing their
-ordinary result JSON. The FDB v1.5, FDB v3, FD-Bench, Meeting Assistant
-cascade, Realtime-CU, 11-scenario, tau control, and tau regular gates also
-preflight and retain an immutable launch intent and launch outcome in one
-preregistered migration store. A selected subset, a changed repetition, an
-unknown case, or an outcome without its intent is refused before it can become
-comparison evidence.
+The checked matrix executes only the new graph-native implementation. The old
+implementation is reference material, and the benchmark owner's recorded
+numbers are quality targets for the case-by-case review; neither is a
+production arm, command, registry, or runtime dependency.
 
-Create a fresh census and registration before either arm starts, then provide:
+The required direct candidates are FDB v1.5, FDB v3, FD-Bench, Meeting
+Assistant cascade, Realtime-CU, the eleven-scenario profile, tau control, and
+tau regular. Each gate must run its complete declared population against the
+shared Realtime API with an exact execution requirement and authenticated live
+graph inspection. Diagnostic subsets remain useful for iteration but cannot
+satisfy a release gate.
 
-- `OPENREALTIME_MIGRATION_STORE`, an existing absolute create-only evidence
-  directory;
-- `OPENREALTIME_MIGRATION_REGISTRATION` and
-  `OPENREALTIME_MIGRATION_REGISTRATION_SHA256`, the logical registration
-  location and exact digest printed by `bench migration register`.
+Every new attempt must retain its deterministic result and the media needed to
+review what happened. Audio cases retain playable audio; visual cases retain
+the exact submitted images; computer-use and other audiovisual cases retain
+synchronized video plus audio. Source manifests and external receipts are
+published create-only after the complete population closes. Advisory review
+uses the exact `google/gemini-3.7-flash` plug-in and never rewrites the
+deterministic scorer.
 
-The matrix has eight `external.benchmark.baseline.*` gates followed by their
-eight graph-native candidate gates. The arm values are checked literals, not
-operator-selected variables: a candidate endpoint cannot accidentally be
-retained as a baseline by changing an environment value. Baseline gates use
-`OPENREALTIME_MIGRATION_BASELINE_ENDPOINT`, the reviewed legacy requirement at
-`OPENREALTIME_MIGRATION_BASELINE_EXECUTION`, and the dedicated Meeting or
-scenario variables where applicable. Candidate gates use the ordinary
-`OPENREALTIME_BENCH_*`, Meeting, and scenario graph-native inputs. Run the
-baseline gates before changing the implementation; a complete all-scope job
-also preserves that order.
-
-Author the reviewed legacy requirement rather than hand-writing its JSON. For
-a binding-only cascade baseline:
-
-```sh
-go run ./cmd/openrealtime bench execution legacy \
-  -binding cascade \
-  -out .runtime/migration/baseline.execution.json
-```
-
-If the baseline reports a versioned architecture identity, also pass its exact
-ID, positive revision, and lowercase SHA-256 with the three `-architecture-*`
-flags. The authoring command rejects partial identities. It does not count as
-runtime evidence; each benchmark still negotiates the endpoint and retains a
-fresh `LegacyStatusAttestor` proof.
-
-The scenario commands each own their 15 `trial-N` repetitions and each tau
-command owns its declared trials. The five one-shot suites bind their complete
-result to `trial-1`. Meeting cascade is the canonical paired Meeting Assistant
-cell. Meeting omni remains a separate, required WebRTC/native-audio composition
-gate; recording it as a second result under the single registered meeting-suite
-identity would be ambiguous and is therefore forbidden.
+The final review reports new totals, per-case outcomes, safety and deadline
+failures, and latency distributions beside the trusted historical numbers. It
+does not fabricate historical attempts or require historical media. A material
+regression remains a blocker: retain the failed new run, diagnose it with the
+new graph/runtime evidence, rerun the affected diagnostic slice, and then rerun
+the complete candidate population.
 
 The graph-native scenario candidate also owns a create-only human/media review
 directory and an external source receipt. The source manifest is published
@@ -160,24 +136,6 @@ the command's receipt verifier binds all 165 attempts between those endpoints.
 `openrealtime review verify-scenario` provides the credential-free reopening
 path for a copied source/evaluation pair and both external receipts.
 
-After both arms are retained, set
-`OPENREALTIME_MIGRATION_REPORT_LOCATION` to a new logical location inside the
-store and run:
-
-```sh
-./scripts/release-validate.sh \
-  -gate external.migration.full-comparison \
-  -artifacts .runtime/release-validation/migration-comparison-001 \
-  -report .runtime/release-validation/migration-comparison-001/report.json
-```
-
-The comparison discovers every registered launch intent and outcome directly
-from the store; command-line omission cannot hide an attempted case. Missing
-arms, orphaned intents, unreportable source results, pairing violations, and
-metric regressions all make the command fail. The retained comparison is also
-exported create-only as `migration-comparison.json` in the release artifact
-directory, and the gate requires both `reportable=true` and `accepted=true`.
-
 ## Provisioned gates
 
 Use the all-scope plan as the authoritative prerequisite list. The principal
@@ -194,15 +152,6 @@ variables are:
 - `OPENREALTIME_TAU_USER_MODEL_ENDPOINT` and
   `OPENREALTIME_TAU_SYNTHESIS_ENDPOINT` for both complete 278-task tau2 speech
   conditions;
-- `OPENREALTIME_MIGRATION_STORE`, `OPENREALTIME_MIGRATION_REGISTRATION`, and
-  `OPENREALTIME_MIGRATION_REGISTRATION_SHA256` for both retained arms;
-- `OPENREALTIME_MIGRATION_BASELINE_ENDPOINT`,
-  `OPENREALTIME_MIGRATION_BASELINE_EXECUTION`, and
-  `OPENREALTIME_MIGRATION_BASELINE_MEETING_ENDPOINT` for the legacy baselines,
-  plus `OPENREALTIME_MIGRATION_BASELINE_SCENARIO_ARCHITECTURE_MANIFEST` and
-  `OPENREALTIME_MIGRATION_BASELINE_SCENARIO_ARCHITECTURE_CELL` for the scenario
-  baseline;
-- `OPENREALTIME_MIGRATION_REPORT_LOCATION` for the final comparison;
 - `OPENREALTIME_LIVE_ENDPOINT` for the real-model browser composition test;
 - `OPENREALTIME_SIGNED_APP` and `OPENREALTIME_MACOS_E2E_RUNNER` on Darwin for
   the authority-signed native application gate.

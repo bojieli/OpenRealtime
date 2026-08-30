@@ -176,7 +176,7 @@ that has never heard of this project.
 scripts/prepare-tau-voice.sh              # pin, patch, and check the checkout
 openrealtime bench tau-voice -verify      # confirm before spending hours
 openrealtime bench tau-voice inventory \
-  -out tau-voice-base-inventory.json      # exact migration-census task IDs
+  -out tau-voice-base-inventory.json      # exact direct-candidate task IDs
 openrealtime bench tau-voice -condition regular -out regular.json
 ```
 

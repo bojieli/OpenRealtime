@@ -1,8 +1,8 @@
 # Composable Real-Time Agent Element Graph
 
-- **Status:** proposed architecture and refactoring plan
+- **Status:** implementation in progress; unchecked validation gates remain open
 - **Scope:** the OpenRealtime runtime, component API, architecture catalog,
-  configuration, inspection, and migration path
+  configuration, inspection, benchmark, server, and client composition paths
 - **Audience:** runtime authors, element and model-adapter authors, deployment
   authors, benchmark authors, and UI/tooling authors
 
@@ -19,9 +19,11 @@ event handling, interaction policies, duplex evidence, explicit authority,
 the irreversibility ledger, sidecar isolation, provider adapters, and the
 measurement discipline. It changes how those parts are assembled.
 
-This is a design proposal, not a description of behavior already implemented.
-Existing APIs and configurations remain authoritative until the migration
-stages in this document are completed.
+This document is both the accepted design and its implementation tracker. The
+external Realtime API remains authoritative. Old internal implementations and
+configuration switches are reference material only; production paths must use
+the new graph, plug-in, and profile contracts, and unchecked boxes must not be
+reported as complete.
 
 ## Executive summary
 
@@ -182,7 +184,7 @@ This proposal does not:
 - make irreversible real-world actions reversible;
 - replace the OpenRealtime/OpenAI-compatible wire protocol with the internal
   graph protocol;
-- require live topology editing in the first migration stage;
+- require live topology editing in the initial implementation stage;
 - expose model-private reasoning text to other elements unless a provider
   explicitly offers a safe, typed output for it;
 - remove named reference architectures or benchmark identities; it makes
@@ -1334,9 +1336,10 @@ and placement settings use stable node and edge IDs in deployment config. A
 repository may split values or overrides into per-element files without
 changing this semantic separation.
 
-The current flattened flag file remains a compatibility frontend during
-migration. It should eventually select a reference graph and populate typed
-element configs rather than encode the topology indirectly.
+The old flattened flag file is reference material, not a supported production
+frontend. New launches select a profile and populate typed element configs;
+remaining topology flags are deletion work, not an API that the graph runtime
+must preserve.
 
 ## 18. Dynamic composition and lifecycle
 
@@ -1700,7 +1703,7 @@ existing test suite.
 | `sidecar` | Generalize handshake and transport descriptors for arbitrary typed model elements while retaining protocol-version conformance. |
 | `providers` and `adapters` | Register implementation factories and descriptors; do not own topology. |
 | `session` | Supply scoped duplex/media/session services where selected by a graph; text-only graphs need not instantiate audio state. |
-| `cmd/openrealtime` | Select graph, typed configs, deployment, and overrides; retain legacy flags as a compatibility frontend during migration. |
+| `cmd/openrealtime` | Select graph, typed configs, deployment, and overrides through the new profile APIs; remove obsolete production flags rather than making them a second architecture. |
 | `surface`, `console`, browser demo, and macOS tools | Become profiles over the shared plugin/client contracts in [Composable Presentation and Observability](composable-presentation.md); the gateway owns no UI. |
 | `bench` and measurement | Record Graph IR fingerprint, element/config revisions, live resolution, traces, and exact selected paths. |
 
@@ -1757,13 +1760,13 @@ catalog/       graph, element, config, deployment, and profile catalogs
 Existing packages can migrate into this structure gradually; a mass rename is
 not required before the contracts exist.
 
-## 25. Migration plan
+## 25. Implementation plan
 
 ### Living implementation tracker
 
-Last reconciled with the repository on **2026-08-29**. This is the progress
+Last reconciled with the repository on **2026-08-30**. This is the progress
 source of truth for the refactor. It must be updated in the same commit that
-closes or materially advances a migration item. The checked implementation
+closes or materially advances an implementation item. The checked implementation
 ledger and `git log origin/main..main` together identify the accepted local
 checkpoints without relying on a self-referential “latest commit” marker.
 
@@ -1776,15 +1779,15 @@ reference graphs, or conformance evidence.
 
 | Phase | Current state | What exists now | Principal remaining work |
 | --- | --- | --- | --- |
-| 0 — contracts | Complete | Accepted design, terminology, authoring decisions, and migration oracle | Keep decisions and superseded ADRs synchronized as implementation lands |
-| 1 — graph foundation | Exit evidence pending | Typed descriptors/runtime, `.ortg`, strict YAML/JSON interchange, Go SDK, lockfiles, Graph IR, validation, connectors, rendering, and coarse legacy mounting | Full reference-architecture regression and benchmark equivalence evidence |
-| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, cognition, interaction/result commit, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison | Gateway launch integration and measured behavioral/benchmark equivalence; the retained comparison intentionally records current divergence rather than claiming parity |
-| 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction parity, and removal of binding switches |
+| 0 — contracts | Complete | Accepted design, terminology, authoring decisions, and historical quality targets | Keep decisions and superseded ADRs synchronized as implementation lands |
+| 1 — graph foundation | Exit evidence pending | Typed descriptors/runtime, `.ortg`, strict YAML/JSON interchange, Go SDK, lockfiles, Graph IR, validation, connectors, rendering, and a coarse reference mount kept outside the production profile | Full new-architecture integration and benchmark-quality evidence |
+| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, cognition, interaction/result commit, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison | Shared-server launch integration and measured behavioral quality; the retained diagnostic records current divergence rather than claiming completion |
+| 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction quality, and removal of binding switches |
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Complete silent computer-use and independent voice/CU reference agents |
-| 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment bindings and secret-reference catalogs, exact live resolution evidence, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Mount-time deployment/secret assembly and evidence, evidence profiles, legacy translation, normal graph-native launch, and executed parity artifacts |
+| 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment bindings and secret-reference catalogs, exact live resolution evidence, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Mount-time deployment/secret assembly and evidence, evidence profiles, normal graph-native launch, and executed candidate artifacts |
 | 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, and a compiler-backed language-service core exposed through the UI-independent management API | Trigger/cancel/authority views, LSP/UI rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
-| 8 — legacy removal | Not started | Compatibility behavior is isolated behind a coarse element | Migrate every production/evaluation launch path, then remove obsolete flags, switches, and binding constraints |
+| 8 — obsolete-path deletion | In progress | Benchmark migration/parity code and flags are removed; old implementation remains reference-only | Move every remaining production/evaluation launch path to explicit profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
 
 Current checkpoint notes:
 
@@ -1813,13 +1816,15 @@ Current checkpoint notes:
   rendering, multi-file navigation, mediated writes, and sidecar media-format
   hardening remain unchecked until their independent slices are complete.
 - No item in the project-level definition of done is yet proven end to end.
-  Several have foundation-level support, but benchmark migration, production
-  inspection, reconciliation, and legacy removal are still outstanding.
+  Several have foundation-level support, but direct benchmark execution,
+  production inspection, reconciliation, and obsolete-path deletion are still
+  outstanding.
 
 Integrated checkpoint ledger:
 
 - [x] Typed `.ortg`/YAML/JSON/Go authoring, immutable Graph IR, lockfiles,
-  validation, bounded runtime, rendering, and coarse compatibility mounting.
+  validation, bounded runtime, rendering, and a coarse reference mount that is
+  not an accepted production profile.
 - [x] Graph-native ASR, observation commit, compare-and-append trajectory,
   provider-neutral cognition, TTS, playback, and exact live resolution.
 - [x] Explicit acoustic admission/endpoint policies with visible tick, commit,
@@ -1876,15 +1881,12 @@ Integrated checkpoint ledger:
   non-routing backbone and compile, bind values, resolve providers, and mount.
 - [x] Execute complete conversational turns through all three locked reference
   graphs and retain the regression artifacts.
-- [ ] Compare graph-native and legacy traces at every declared safe point.
-  The retained payload-free ordinary-turn comparison is fingerprint-bound and
-  exact, but it proves divergence rather than parity: graph-native references
-  activate both cognition lanes from version 1 and reject one stale terminal,
-  while cascade rollout profiles sequence fast/deliberative/fast work and
-  voice deliberative results through the fast lane.
+- [x] Retain the already-captured historical trace only as a diagnostic target.
+  The payload-free ordinary-turn record is fingerprint-bound and exposes the
+  old/new divergence; it is not a runtime dependency or a release arm.
 - [ ] Complete LSP/UI rendering, multi-file/subgraph navigation, mediated
-  authoring writes, reconciliation, benchmark execution parity, and legacy
-  launch-path removal.
+  authoring writes, reconciliation, direct benchmark execution, and obsolete
+  launch-path deletion.
 
 Active acceptance queue (work in the shared worktree remains unchecked until
 it has been reviewed, tested, and committed with its evidence):
@@ -1937,7 +1939,7 @@ it has been reviewed, tested, and committed with its evidence):
   - [ ] Validate every frame's media metadata and byte lanes against the exact
     negotiated per-port format profile.
   - [ ] Add a standard protocol-v4 conformance CLI fixture rather than routing
-    version 4 through the legacy audio-only `Hello` path.
+    version 4 through the version-1 audio-only `Hello` path.
   - [ ] Prove locked mount/dial negotiation for the omni, duplex-native, and
     upstream-native external-model references.
   - [ ] Pass focused and repository-wide race, test, vet, and diff gates; then
@@ -1963,8 +1965,9 @@ it has been reviewed, tested, and committed with its evidence):
   exact bound Graph IR before reading credentials or starting protocol work.
 - [x] All eleven scenario paths bind authenticated live graph evidence to the
   exact `scenario-name#run` attempt scope without retaining inspection tokens.
-- [x] Omitted and reviewed-legacy scenario evidence modes remain explicit
-  compatibility paths; `-inspection-graph` fails closed for either mode.
+- [ ] Delete omitted and reference-only scenario execution modes; production
+  scenario runs must require exact graph evidence and `-inspection-graph` must
+  fail closed for every unattested mode.
 - [ ] Execute and compare the eleven interaction scenarios; scenario names
   remain individually tracked below.
 - [ ] Complete descriptor-driven values-schema authoring support.
@@ -2002,8 +2005,8 @@ Reference-agent tracker:
   policy, ASR, observation commit, trajectory, independent fast/deliberative
   activation and cognition, result commit, interaction routing, segmentation,
   TTS, playback, cancellation/timing boundaries, and state. The fingerprinted
-  complete-turn artifact is retained; legacy safe-point parity remains tracked
-  separately because the exact comparison exposes rollout divergence.
+  complete-turn artifact is retained; its historical safe-point trace remains
+  diagnostic only because it exposes rollout divergence.
 - [x] Focused fast-only, slow-only, and both-speaking interaction graphs prove
   that either cognition stream can speak through explicit segmentation and
   arbitration topology.
@@ -2029,63 +2032,62 @@ Reference-agent tracker:
 - [x] Locked sidecar omni, duplex, and upstream topology graphs built over the
   shared `model.External` element rather than separate binding species.
 
-Evaluation and parity tracker (the existing suites remain the migration
-oracle; a box closes only when the suite selects and attests the new graph
-artifacts rather than legacy architecture/config switches). Unit, race, vet,
+Evaluation and direct-candidate tracker. The checked production surface is the
+new plug-in/API design. Old implementations are reference material only; the
+benchmark owner's recorded numbers are quality targets for the review, not a
+second production arm or a reason to preserve migration code. Unit, race, vet,
 fuzz, synthetic integration, mount, and protocol-conformance tests may close a
-component checkpoint, but none of them establishes behavioral parity or closes
-a phase exit gate, this tracker, or the definition of done:
+component checkpoint, but none establishes behavioral quality or closes this
+tracker by itself:
 
-- [ ] Establish accepted migration baselines and predeclared acceptance rules
-  before judging the refactored candidate.
-  - [x] Treat the benchmark owner's recorded original numbers as the
-    authoritative historical baselines for every required suite. Historical
-    per-attempt reconstruction is explicitly not required; immutable
-    per-attempt evidence is required for every new-architecture run.
-  - [ ] Pin the fixture revision, task set, model/provider revisions, voices,
-    tools, timing policy, machine class, concurrency, trial count/seeds where
-    applicable, and every non-treatment configuration field.
-  - [ ] Add a migration-parity comparator that permits the code/topology/config
-    change under test while refusing any undeclared model, fixture, provider,
-    hardware, scorer, or evidence change. The existing architecture-cell
-    comparator intentionally refuses different executables and therefore is
-    not by itself a before/after-refactor comparator.
-  - [ ] Predeclare a suite-specific paired non-inferiority margin and minimum
-    repetitions from baseline variance before inspecting candidate results.
-    Preserving an absolute pass rate above 80% is a sanity floor where the
-    accepted baseline exceeds 80%; it is not enough if it hides a large drop
-    from a materially stronger baseline.
-  - [ ] Retain every attempted candidate artifact, including failed and
-    regressed runs, in the immutable benchmark evidence store; check in their
-    redacted summaries, identities, and digests so iteration cannot select only
-    favorable samples or expose private benchmark content.
+- [x] Remove the benchmark migration/parity subsystem, paired-arm CLI flags,
+  historical-registry implementation, legacy-baseline release gates, and final
+  migration-comparison gate. Direct benchmark commands now exercise only the
+  new implementation.
+- [ ] Freeze every direct candidate contract before its full run.
+  - [x] Treat the benchmark owner's recorded original numbers as the trusted
+    historical comparison targets. Do not reconstruct historical attempts or
+    require historical media.
+  - [ ] Pin fixture/task revisions, model/provider revisions, voices, tools,
+    timing policy, machine class, concurrency, trial count/seeds where
+    applicable, and every graph/config/profile identity for each new run.
+  - [ ] Retain every new attempt—including failed, timed-out, and regressed
+    diagnostics—with deterministic outcomes, exact graph/runtime evidence,
+    playable audio and/or synchronized video as applicable, review manifests,
+    and create-only external receipts.
+  - [ ] Review every retained candidate recording with the exact
+    `google/gemini-3.7-flash` plug-in. Advisory review exposes media and behavior
+    problems but never changes the deterministic scorer.
+  - [ ] Publish a case-by-case pass/fail document that places the new totals,
+    safety/deadline outcomes, and latency distributions beside the trusted
+    historical numbers without inventing unavailable historical detail.
 
-The historical measurement narrative records early five-run subset totals from
-30/45 to 37/45, a later full eleven-scenario baseline of 140/165 (85%) at
-fifteen repetitions, and same-binary samples of 49/55 and 47/55. The benchmark
-owner has accepted those recorded numbers as the authoritative historical
-trail; the migration gate does not reconstruct historical per-attempt
-artifacts. Every new run still retains its complete exact attempt population,
-media, identities, deterministic outcomes, and review receipts. The historical
-evidence also shows that five repetitions can move substantially on identical
-code, so the final new-architecture scenario comparison uses at least fifteen
-repetitions per case. Smaller runs are for diagnosis only.
+The historical scenario trail includes the accepted 140/165 total at fifteen
+repetitions: 15/15 each for asked-not-to-be-interrupted, recorded-menu,
+requested-silence, acknowledgement, ordinary-question, and count-as-they-go;
+14/15 third-party conversation; 13/15 correction interruption; 11/15 each for
+translation and visual description; and 8/15 waiter. Earlier five-run samples
+moved materially on identical code, so the final new scenario run remains
+eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
 
-- [x] Migrate the shared benchmark/session evidence path to bind exact Graph IR,
+- [x] Bind the shared benchmark/session evidence path to exact Graph IR,
   element/config/deployment identities, selected edges, authenticated live
-  resolutions, and capability evidence. Executed before/after parity remains
-  tracked by the suite-specific boxes below.
+  resolutions, and capability evidence.
 - [x] Wire the scenario CLI to that authenticated graph-native evidence path,
-  with exact per-attempt scopes for all eleven cases and explicit
-  legacy/unattested compatibility behavior.
+  with exact per-attempt scopes for all eleven cases and explicit refusal of
+  unattested execution behavior.
 - [ ] Re-run and compare all eleven interaction scenarios with at least fifteen
   repetitions per scenario (at least 165 newly retained candidate attempts):
-  The exact eleven-row and 165-attempt sealed populations, shuffled/race gates,
-  offline verifier, and exact-model advisory transport gate are implemented and
-  green. This box and every case below remain open until the provisioned live
-  graph-native candidate artifact is retained and meets the accepted historical
-  140/165 total and documented per-case trail without a significant safety or
-  interaction regression.
+  The exact population, sealed review path, offline verifier, and exact-model
+  advisory transport are implemented. A retained 11×1 diagnostic passed 2/11
+  (`cutting-in` and `ordinary-question`) and exposed real behavioral failures in
+  counting, translation, requested silence, third-party conversation, and
+  visual completion, plus four infrastructure timeouts/drifts. The obsolete
+  inspection-capability validator and missing explicit interaction-profile
+  status found by that run are fixed. A distinct clean 11×1 run must pass
+  infrastructure and drive iteration before the 165-attempt run begins. This
+  box and every case below remain open until the full candidate meets or
+  improves on 140/165 without a significant case, safety, or latency regression.
   - [ ] `count-as-they-go`
   - [ ] `asked not to be interrupted`
   - [ ] `a recorded menu`
@@ -2097,31 +2099,36 @@ repetitions per case. Smaller runs are for diagnosis only.
   - [ ] `an acknowledgement is not an interruption`
   - [ ] `telling them what it saw`
   - [ ] `an ordinary question`
-- [ ] Migrate and run all four OpenRealtime Meeting Assistant v1 tasks. The
-  graph-native synchronized-media/review implementation is under adversarial
-  hardening; it does not count as a completed run until exact-four real FFmpeg,
-  model-review, retained-receipt, race/shuffle, and live gates pass.
-- [ ] Migrate and run all sixteen OpenRealtime Realtime-CU v1 cases (eight
-  task families under pixel and set-of-mark observation variants). Exact-sixteen
-  generated-frame FFmpeg evidence is not labeled as real-browser evidence; the
-  required exact-sixteen Chromium capture and independent audit remain open.
-- [ ] Migrate and run all 498 FDB v1.5 tasks.
-- [ ] Migrate and run all 100 released FDB v3 examples.
-- [ ] Migrate and run all 6,147 FD-Bench conversations across all 21 released
+- [ ] Run all four OpenRealtime Meeting Assistant v1 tasks through the new
+  production profile. Hermetic candidate-02 is deterministic 4/4 at the
+  declared 5 fps; all four A/V reviews are usable and exact Gemini 3.7 Flash
+  reported no significant, minor, or limitation findings. It remains honestly
+  nonreportable because it did not use the shared production server. The
+  missing Meeting application/session adapter and host registration are the
+  next implementation gate before a distinct production candidate.
+- [ ] Run all sixteen OpenRealtime Realtime-CU v1 cases (eight task families
+  under pixel and set-of-mark observation variants). Exact-sixteen real
+  Chromium/FFmpeg capture and independent full decode are green as hermetic
+  transport evidence only. The direct production profile, CLI review
+  composition, deterministic behavior, and per-case Gemini reviews remain open.
+- [ ] Run all 498 FDB v1.5 tasks through the new graph-native endpoint and
+  retain per-attempt review media.
+- [ ] Run all 100 released FDB v3 examples through the new graph-native
+  endpoint and retain per-attempt review media.
+- [ ] Run all 6,147 FD-Bench conversations across all 21 released
   conditions with comparable endpointing, overlap, answer, and latency
   distributions; an aggregate over a subset of conditions is not a full run.
 - [x] Add a canonical pinned tau2 inventory boundary that calls the upstream
   `base` split, refuses dirty task/loader inputs and data-path overrides, and
-  validates the exact 50 airline / 114 retail / 114 telecom partition before
-  migration preregistration.
-- [ ] Migrate and run the complete 278-task tau2-bench/τ-Voice task set in
+  validates the exact 50 airline / 114 retail / 114 telecom partition.
+- [ ] Run the complete 278-task tau2-bench/τ-Voice task set in
   both control and regular conditions with task and interaction metrics.
 - [ ] Preserve the DynaCU-Bench runner as independent optional validation.
-- [ ] Produce clean-worktree candidate artifacts for every required suite and
+- [ ] Produce clean-worktree new-architecture artifacts for every required suite and
   compare them with the benchmark owner's accepted original numbers;
   investigate differences instead of accepting a merely runnable graph.
-- [ ] Demonstrate that the final graph-native configurations are non-inferior
-  to the accepted baselines in aggregate pass rate and per-case behavior, with
+- [ ] Demonstrate that the final graph-native configurations meet or improve on
+  the trusted original numbers in aggregate pass rate and per-case behavior, with
   no safety regression and no material deadline or latency-distribution
   regression.
 - [ ] For every failed non-regression gate, retain the artifact, trace the
@@ -2134,11 +2141,12 @@ repetitions per case. Smaller runs are for diagnosis only.
 - [x] Review this design against current ADRs and measurement requirements.
 - [x] Decide `.ortg`, normalized graph, and Graph IR versioning; the initial
   grammar; the strict YAML subset; and stable type-identity rules.
-- [x] Mark current audio/topology and slow-speech restrictions as compatibility
-  behavior rather than future kernel invariants.
-- [x] Add architecture tests that preserve current behavior as a migration oracle.
+- [x] Mark the old audio/topology and slow-speech restrictions as historical
+  observations rather than future kernel invariants.
+- [x] Add architecture tests that preserve relevant behavior contracts as
+  historical quality targets.
 
-### Phase 1: build the graph foundation without changing behavior
+### Phase 1: build the graph foundation
 
 - [x] Implement element descriptors, the `.ortg` parser and formatter, normalized
   YAML/JSON loader, shared graph elaborator, Graph IR, bounded edge
@@ -2150,13 +2158,13 @@ repetitions per case. Smaller runs are for diagnosis only.
 - [x] Implement `Tee`, backward-compatible event `Mux`, protocol-generic typed
   `Mux`, state, explicit sinks, and core validation.
 - [x] Implement Mermaid/DOT export and static inspection.
-- [x] Wrap an entire existing binding runtime as one coarse legacy element so the
-  gateway can mount a graph without behavioral change.
+- [x] Wrap the old binding runtime as one coarse reference element to prove the
+  mount boundary. It is not an accepted production profile and remains slated
+  for deletion.
 
-- [ ] **Exit gate:** the current reference architectures run through Graph IR
-  with identical protocol conformance and regression results. Protocol sessions
-  now cross Graph IR through the compatibility element; complete benchmark and
-  reference-architecture parity evidence remains to be recorded.
+- [ ] **Exit gate:** every production reference architecture runs directly
+  through Graph IR with protocol conformance and complete new-candidate
+  benchmark evidence; no coarse reference element is reachable.
 
 ### Phase 2: decompose the component/cascade path
 
@@ -2168,16 +2176,16 @@ repetitions per case. Smaller runs are for diagnosis only.
   adapters required by the complete reference without falling back to a
   binding-owned event loop.
 - [x] Preserve trajectory compare-and-append and event-loop wake invariants in
-  the graph-native store/commit feedback loop and migration-oracle tests.
+  the graph-native store/commit feedback loop and direct behavior-contract tests.
 - [x] Check in exact-lock conversational fast-only, slow-only, and
   both-speaking reference graphs with an identical non-routing backbone,
   explicit cancellation/timing boundaries, no model-to-model edge, fresh-lock
   assertions, values binding, and mounted provider-resolution evidence.
-- [ ] Reproduce current behavior as a reference graph and compare traces at
-  every safe point. Checked-in acoustic, ASR/trajectory, activation, and
-  interaction components plus the complete conversational family cover the
-  topology. The retained ordinary-turn artifact now compares the actual paths,
-  but records rollout/speaking divergence rather than legacy parity.
+- [ ] Validate the reference graph directly at every safe point. Checked-in
+  acoustic, ASR/trajectory, activation, and interaction components plus the
+  complete conversational family cover the topology. The retained historical
+  ordinary-turn artifact is diagnostic only; production acceptance comes from
+  the new graph's direct integration and benchmark outcomes.
 - [x] Add alternative tests where deliberative output speaks directly or fast
   and deliberative streams meet at an explicit stream-aware arbiter.
 
@@ -2187,11 +2195,12 @@ repetitions per case. Smaller runs are for diagnosis only.
 ### Phase 3: decompose sidecar, end-to-end, and upstream paths
 
 - [x] Generalize the sidecar capability/type handshake through the versioned
-  element-graph protocol while preserving frozen legacy negotiation.
+  element-graph protocol while preserving its explicitly supported earlier
+  wire-version negotiation.
 - [x] Expose native audio, transcription, interaction acts, model state, text
   injection, tools, and cancellation as independent ports/capabilities.
 - [x] Check in locked `omni`, `duplex`, and upstream topologies over the shared
-  `model.External` element. Full mount/dial and benchmark parity is still open.
+  `model.External` element. Full mount/dial and benchmark validation is open.
 - [x] Express native and external interaction as topology changes over the same
   foreground element contract. Executed behavior parity remains open.
 
@@ -2234,8 +2243,8 @@ repetitions per case. Smaller runs are for diagnosis only.
     mount time and attest their exact private artifact identities.
   - [ ] Add separate evidence-profile artifacts and the normal graph-native
     launch path over all of these planes.
-- [ ] Translate legacy flags/config into a legacy reference graph with explicit
-  deprecation diagnostics.
+- [ ] Delete topology flags and flattened configuration paths after their
+  profile equivalents land; do not translate them into a compatibility graph.
 - [x] Update benchmark architecture cells and gateway inspection to attest exact
   graph/config fingerprints, reviewed selected edges, live runtime identities,
   and capability evidence before credential access.
@@ -2285,7 +2294,7 @@ repetitions per case. Smaller runs are for diagnosis only.
     gateway UI coupling, duplicated client protocol/media logic, and existing
     browser/native test evidence.
   - [x] Specify the shared server/host/client plugin contract, clean realtime
-    and management APIs, client profiles, trust boundaries, migration stages,
+    and management APIs, client profiles, trust boundaries, rollout/retirement stages,
     cross-client E2E matrix, and presentation performance gates.
   - [ ] Implement descriptor-locked server, presentation-host, and client
     plugin realms with dependencies, permission ceilings, scoped effects, and
@@ -2293,14 +2302,14 @@ repetitions per case. Smaller runs are for diagnosis only.
     host mount, permission, scoped-service, and browser lifecycle foundations
     exist; complete server-realm assembly, replacement/rollback, and leak
     evidence remain open.
-  - [ ] Complete migration of the browser presentation server and browser
-    client to manifest-composed plugins over the public server APIs. Locked
+  - [ ] Complete the browser presentation server and browser client as
+    manifest-composed plugins over the public server APIs. Locked
     minimal, observer, developer-WebSocket, and developer-WebRTC profiles now
     exercise text, media, effects, artifacts, inspection, trace, and authoring
     against a standalone host in real Chromium, and gateway-owned UI is
-    retired. The console, surface, and one-file demo remain migration oracles
+    retired. The console, surface, and one-file demo remain reference fixtures
     rather than profiles, and complete lifecycle/performance evidence is open.
-  - [ ] Migrate the macOS application to the same logical client services and
+  - [ ] Compose the macOS application from the same logical client services and
     public server APIs with native implementations. Native manifests,
     provider registry/factory seams, reducer, transport, media, effects,
     artifact, inspection, and view boundaries exist; a signed Darwin run and
@@ -2332,8 +2341,8 @@ repetitions per case. Smaller runs are for diagnosis only.
 
 ### Phase 8: remove obsolete constraints
 
-- [ ] Retire legacy binding-only launch paths after a documented compatibility
-  window.
+- [ ] Delete old binding-only launch paths once the corresponding explicit
+  profiles are live; no production compatibility window is required.
 - [ ] Remove kernel assumptions about slow ownership/speech and mandatory audio.
 - [ ] Reduce the architecture catalog and status model to graph-derived facts.
 - [ ] Amend or supersede ADRs whose statements became reference-graph choices.
@@ -2421,8 +2430,9 @@ repetitions per case. Smaller runs are for diagnosis only.
 Repository tests answer whether local contracts and deliberately constructed
 examples behave as implemented. They do not answer whether the refactored
 agent still succeeds on real conversations, meeting work, computer use, tool
-calling, overlap, or latency. Project completion therefore requires measured
-before/after benchmark evidence in addition to all preceding test gates.
+calling, overlap, or latency. Project completion therefore requires complete
+new-architecture benchmark evidence and a review against the trusted original
+numbers in addition to all preceding test gates.
 
 Each required comparison must follow this protocol:
 
@@ -2434,19 +2444,22 @@ Each required comparison must follow this protocol:
 2. Run the candidate through the graph-native launch path and exact new values,
    deployment, and policy artifacts. Every completed task must attest the
    immutable Graph IR fingerprint and live element/config/capability identities;
-   a candidate that silently falls back to a legacy binding is invalid.
-3. Compare matched tasks and repetitions. Report aggregate pass rate, every
-   per-task/per-condition transition, safety and authority failures, deadline
-   success, interaction errors, and relevant latency distributions including
-   median and tail behavior. An aggregate can never erase a severe scenario or
-   safety regression.
-4. Use a predeclared paired non-inferiority rule appropriate to the suite and
-   its measured variance. A non-significant difference is not proof of parity,
-   and merely remaining above 80% is not acceptable when the verified baseline
-   was materially higher. Final scenario evaluation uses at least fifteen
-   repetitions per case; five-run samples are diagnostic only because identical
-   binaries have shown material per-scenario variation at that size. Other
-   suites must declare their own minimum before the candidate is observed.
+   a candidate that silently falls back to an obsolete binding is invalid.
+3. Report the new aggregate pass rate, every per-task/per-condition result,
+   safety and authority failures, deadline success, interaction errors, and
+   relevant latency distributions including median and tail behavior. Place
+   those results beside every historical aggregate or per-case number that
+   actually survived. Do not fabricate matched historical attempts,
+   transitions, confidence intervals, or media. An aggregate can never erase a
+   severe scenario or safety regression.
+4. Require the complete predeclared candidate population and at least the
+   accepted historical quality target wherever comparable numbers exist. A
+   merely non-significant difference is not proof of parity, and remaining
+   above 80% is not acceptable when the trusted result was materially higher.
+   Final scenario evaluation uses at least fifteen repetitions per case;
+   five-run samples are diagnostic only because identical binaries have shown
+   material per-scenario variation at that size. Other suites declare their
+   own complete candidate population before the run.
 5. Treat any material correctness, interaction, safety, deadline, or latency
    regression as an implementation blocker. Preserve the failed artifact, use
    graph diff plus runtime/trace evidence to locate the changed path, fix it,
@@ -2557,7 +2570,7 @@ integration test for this matrix.
 - Whether visual layout is a sidecar artifact or a non-semantic graph
   annotation.
 - Which live changes are supported before full graph reconciliation.
-- The compatibility lifetime of legacy flags and binding packages.
+- The dependency-ordered deletion sequence for old flags and binding packages.
 
 These questions affect implementation shape, not the architectural separation
 between typed authoring, Graph IR, execution, configuration, and evidence.
