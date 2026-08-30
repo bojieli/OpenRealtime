@@ -1,0 +1,3 @@
+apiVersion: openrealtime.ai/evidence/v1alpha1
+graph: scenario_conversation
+profiles: []

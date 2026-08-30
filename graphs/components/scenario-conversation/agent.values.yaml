@@ -1,0 +1,93 @@
+apiVersion: openrealtime.ai/config/v1alpha1
+graph: scenario_conversation
+nodes:
+  admission:
+    threshold: 0.5
+    prefix_padding_ms: 300
+    silence_duration_ms: 500
+    speech_duration_ms: 120
+    cancellation_memory: 128
+    terminal_memory: 128
+    max_frame_bytes: 1048576
+    max_sample_rate_hz: 384000
+  endpoint_policy:
+    mode: automatic
+    cancellation_memory: 128
+    terminal_memory: 128
+  asr:
+    provider: deployment.scenario-conversation.asr
+    name: scenario-conversation-audio
+    source: microphone
+  content:
+    observer: client
+    text_source: text
+    attachment_source: message
+    retention_scope: session
+    max_text_bytes: 1048576
+    max_metadata_bytes: 65536
+    max_input_bytes: 33554432
+    max_pending: 32
+    max_pending_bytes: 67108864
+    max_streams: 256
+    terminal_memory: 512
+  retention:
+    scope: session
+    max_items: 32
+    max_bytes: 67108864
+    max_item_bytes: 33554432
+    max_metadata_bytes: 65536
+    max_active_leases: 256
+    terminal_memory: 512
+    cancel_memory: 256
+  media_resolver:
+    max_pending: 32
+    max_bytes: 67108864
+    max_metadata_bytes: 65536
+    allowed_mime_types:
+      - "*/*"
+    terminal_memory: 512
+  audio_observation_commit:
+    revision_namespace: audio
+  message_observation_commit:
+    revision_namespace: message
+  trajectory: {}
+  session_invocation:
+    role: foreground
+    terminal_memory: 512
+    cancel_memory: 256
+  model:
+    provider: deployment.scenario-conversation.model
+    retain_reasoning: false
+    max_output_bytes: 4194304
+    max_events: 65536
+    max_tool_proposals: 1024
+  model_result_commit: {}
+  segment:
+    minimum_runes: 1
+    max_segment_bytes: 65536
+    max_run_bytes: 1048576
+    max_segments: 256
+    terminal_memory: 256
+  provenance_join: {}
+  proposal_admission:
+    allow_system: false
+  tool_lookup:
+    registry: deployment.scenario-conversation.tools
+  confirmation:
+    provider: deployment.scenario-conversation.confirmation
+  target_fence:
+    target: deployment.scenario-conversation.target
+  canonical_call_commit: {}
+  ledger_commit:
+    ledger: deployment.scenario-conversation.ledger
+  dispatch:
+    registry: deployment.scenario-conversation.tools
+    ledger: deployment.scenario-conversation.ledger
+  tool_result_commit: {}
+  tts:
+    provider: deployment.scenario-conversation.tts
+  playback:
+    sink: deployment.scenario-conversation.playback
+    frame_duration_ms: 100
+    max_chunk_bytes: 4194304
+    cancel_memory: 256
