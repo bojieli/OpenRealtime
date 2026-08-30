@@ -1,0 +1,429 @@
+{
+  "format_version": 1,
+  "limits": {
+    "max_vectors": 64,
+    "max_steps_per_vector": 512,
+    "max_event_bytes": 65536,
+    "max_string_bytes": 16384,
+    "max_conversation_items": 1024,
+    "max_tool_calls": 256,
+    "max_outbound_events": 2048,
+    "max_protocol_log_entries": 4096,
+    "max_errors_per_vector": 128,
+    "max_reconnect_attempts": 3,
+    "max_virtual_time_ms": 86400000
+  },
+  "vectors": [
+    {
+      "name": "negotiation_streaming_and_additive_events",
+      "description": "Projects a negotiated session, keeps speech and text channels distinct, accounts audio, and retains additive or unknown event order.",
+      "steps": [
+        {"at_ms": 0, "operation": {"kind": "connect", "transport": "websocket"}},
+        {"at_ms": 1, "operation": {"kind": "connected"}},
+        {"at_ms": 2, "operation": {"kind": "inbound", "event": {"type": "session.created", "session": {"id": "s1"}}}},
+        {
+          "at_ms": 3,
+          "operation": {
+            "kind": "inbound",
+            "event": {
+              "type": "session.updated",
+              "session": {
+                "id": "s1",
+                "audio": {"input": {"turn_detection": {"type": "server_vad"}}},
+                "openrealtime": {
+                  "version": 1,
+                  "enabled": ["video.input", "observations"],
+                  "observers": ["audio", "video"],
+                  "available_observers": ["audio", "video"],
+                  "debug": {"enabled": true},
+                  "video": {"format": "jpeg", "fps_cap": 3, "max_dimension": 1280, "max_frame_bytes": 4194304}
+                }
+              }
+            }
+          }
+        },
+        {"at_ms": 4, "operation": {"kind": "inbound", "event": {"type": "conversation.item.input_audio_transcription.completed", "item_id": "u1", "transcript": "hello"}}},
+        {"at_ms": 5, "operation": {"kind": "inbound", "event": {"type": "response.created", "response": {"id": "r1", "status": "in_progress"}}}},
+        {"at_ms": 6, "operation": {"kind": "inbound", "event": {"type": "response.output_audio_transcript.delta", "item_id": "a1", "delta": "Hello"}}},
+        {"at_ms": 7, "operation": {"kind": "inbound", "event": {"type": "response.output_text.delta", "item_id": "a1", "delta": "A caption"}}},
+        {"at_ms": 8, "operation": {"kind": "inbound", "event": {"type": "response.output_audio.delta", "item_id": "a1", "delta": "AA=="}}},
+        {"at_ms": 9, "operation": {"kind": "inbound", "event": {"type": "response.output_audio.done", "item_id": "a1"}}},
+        {"at_ms": 10, "operation": {"kind": "inbound", "event": {"type": "openrealtime.observation.added", "observation_id": "obs1", "observer": "video", "source": "screen", "text": "A chart"}}},
+        {"at_ms": 11, "operation": {"kind": "inbound", "event": {"type": "openrealtime.debug.event", "category": "cognition", "name": "turn", "payload": {"private": "not retained"}}}},
+        {"at_ms": 12, "operation": {"kind": "inbound", "event": {"type": "future.server.event", "value": 1}}},
+        {"at_ms": 13, "operation": {"kind": "inbound", "event": {"type": "response.done", "response": {"id": "r1", "status": "completed", "status_details": null}}}}
+      ],
+      "expect": {
+        "snapshot": {
+          "now_ms": 13,
+          "connection": {"phase": "connected", "transport": "websocket", "reason": "", "attempt": 0, "next_retry_ms": 0},
+          "session": {"id": "s1", "manual_turns": false, "openrealtime": {"present": true, "version": 1, "enabled": ["video.input", "observations"], "observers": ["audio", "video"], "available_observers": ["audio", "video"], "debug_enabled": true, "video": {"format": "jpeg", "fps_cap": 3, "max_dimension": 1280, "max_frame_bytes": 4194304}}},
+          "response": {"id": "r1", "open": false, "status": "completed", "reason": ""},
+          "conversation": [
+            {"item_id": "u1", "role": "user", "channel": "input_audio_transcript", "text": "hello", "audio_deltas": 0, "audio_done": false, "truncated_ms": 0},
+            {"item_id": "a1", "role": "assistant", "channel": "output_audio_transcript", "text": "Hello", "audio_deltas": 1, "audio_done": true, "truncated_ms": 0},
+            {"item_id": "a1", "role": "assistant", "channel": "output_text", "text": "A caption", "audio_deltas": 0, "audio_done": false, "truncated_ms": 0},
+            {"item_id": "obs1", "role": "observation", "channel": "observation.screen", "text": "A chart", "audio_deltas": 0, "audio_done": false, "truncated_ms": 0}
+          ],
+          "playout": {"speaking": false, "item_id": "", "played_ms": 0},
+          "tools": [],
+          "last_truncation": {"item_id": "", "audio_end_ms": 0},
+          "last_error": "",
+          "protocol_log": [
+            {"at_ms": 2, "direction": "in", "type": "session.created"},
+            {"at_ms": 3, "direction": "in", "type": "session.updated"},
+            {"at_ms": 4, "direction": "in", "type": "conversation.item.input_audio_transcription.completed"},
+            {"at_ms": 5, "direction": "in", "type": "response.created"},
+            {"at_ms": 6, "direction": "in", "type": "response.output_audio_transcript.delta"},
+            {"at_ms": 7, "direction": "in", "type": "response.output_text.delta"},
+            {"at_ms": 8, "direction": "in", "type": "response.output_audio.delta"},
+            {"at_ms": 9, "direction": "in", "type": "response.output_audio.done"},
+            {"at_ms": 10, "direction": "in", "type": "openrealtime.observation.added"},
+            {"at_ms": 11, "direction": "in", "type": "openrealtime.debug.event"},
+            {"at_ms": 12, "direction": "in", "type": "future.server.event"},
+            {"at_ms": 13, "direction": "in", "type": "response.done"}
+          ]
+        },
+        "outbound": [],
+        "errors": []
+      }
+    },
+    {
+      "name": "manual_turn_and_typed_text_commands",
+      "description": "Uses the server-applied null turn detector and emits unmodified OpenAI session, text, commit, and response commands.",
+      "steps": [
+        {"at_ms": 0, "operation": {"kind": "connect", "transport": "websocket"}},
+        {"at_ms": 1, "operation": {"kind": "connected"}},
+        {"at_ms": 2, "operation": {"kind": "inbound", "event": {"type": "session.updated", "session": {"audio": {"input": {"turn_detection": null}}}}}},
+        {"at_ms": 3, "operation": {"kind": "session_update", "session": {"type": "realtime", "instructions": "concise"}}},
+        {"at_ms": 4, "operation": {"kind": "typed_text", "item_id": "local1", "text": "  hi  "}},
+        {"at_ms": 5, "operation": {"kind": "end_turn"}}
+      ],
+      "expect": {
+        "snapshot": {
+          "now_ms": 5,
+          "connection": {"phase": "connected", "transport": "websocket", "reason": "", "attempt": 0, "next_retry_ms": 0},
+          "session": {"id": "", "manual_turns": true, "openrealtime": {"present": false, "version": 0, "enabled": [], "observers": [], "available_observers": [], "debug_enabled": false, "video": {"format": "", "fps_cap": 0, "max_dimension": 0, "max_frame_bytes": 0}}},
+          "response": {"id": "", "open": false, "status": "", "reason": ""},
+          "conversation": [
+            {"item_id": "local1", "role": "user", "channel": "input_text", "text": "hi", "audio_deltas": 0, "audio_done": false, "truncated_ms": 0}
+          ],
+          "playout": {"speaking": false, "item_id": "", "played_ms": 0},
+          "tools": [],
+          "last_truncation": {"item_id": "", "audio_end_ms": 0},
+          "last_error": "",
+          "protocol_log": [
+            {"at_ms": 2, "direction": "in", "type": "session.updated"},
+            {"at_ms": 3, "direction": "out", "type": "session.update"},
+            {"at_ms": 4, "direction": "out", "type": "conversation.item.create"},
+            {"at_ms": 4, "direction": "out", "type": "response.create"},
+            {"at_ms": 5, "direction": "out", "type": "input_audio_buffer.commit"},
+            {"at_ms": 5, "direction": "out", "type": "response.create"}
+          ]
+        },
+        "outbound": [
+          {"type": "session.update", "session": {"type": "realtime", "instructions": "concise"}},
+          {"type": "conversation.item.create", "item": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi"}]}},
+          {"type": "response.create"},
+          {"type": "input_audio_buffer.commit"},
+          {"type": "response.create"}
+        ],
+        "errors": []
+      }
+    },
+    {
+      "name": "webrtc_barge_in_cancels_clears_and_truncates",
+      "description": "A WebRTC interruption cancels generation, clears server playout, and records exactly what was heard before terminal cancellation.",
+      "steps": [
+        {"at_ms": 0, "operation": {"kind": "connect", "transport": "webrtc"}},
+        {"at_ms": 1, "operation": {"kind": "connected"}},
+        {"at_ms": 2, "operation": {"kind": "inbound", "event": {"type": "response.created", "response": {"id": "r2", "status": "in_progress"}}}},
+        {"at_ms": 3, "operation": {"kind": "inbound", "event": {"type": "response.output_audio_transcript.delta", "item_id": "a2", "delta": "Speaking"}}},
+        {"at_ms": 4, "operation": {"kind": "playout", "speaking": true, "item_id": "a2", "played_ms": 420}},
+        {"at_ms": 5, "operation": {"kind": "inbound", "event": {"type": "input_audio_buffer.speech_started"}}},
+        {"at_ms": 6, "operation": {"kind": "inbound", "event": {"type": "conversation.item.truncated", "item_id": "a2", "content_index": 0, "audio_end_ms": 420}}},
+        {"at_ms": 7, "operation": {"kind": "inbound", "event": {"type": "response.done", "response": {"id": "r2", "status": "cancelled", "status_details": {"reason": "client_cancelled"}}}}}
+      ],
+      "expect": {
+        "snapshot": {
+          "now_ms": 7,
+          "connection": {"phase": "connected", "transport": "webrtc", "reason": "", "attempt": 0, "next_retry_ms": 0},
+          "session": {"id": "", "manual_turns": false, "openrealtime": {"present": false, "version": 0, "enabled": [], "observers": [], "available_observers": [], "debug_enabled": false, "video": {"format": "", "fps_cap": 0, "max_dimension": 0, "max_frame_bytes": 0}}},
+          "response": {"id": "r2", "open": false, "status": "cancelled", "reason": "client_cancelled"},
+          "conversation": [
+            {"item_id": "a2", "role": "assistant", "channel": "output_audio_transcript", "text": "Speaking", "audio_deltas": 0, "audio_done": false, "truncated_ms": 420}
+          ],
+          "playout": {"speaking": false, "item_id": "", "played_ms": 0},
+          "tools": [],
+          "last_truncation": {"item_id": "a2", "audio_end_ms": 420},
+          "last_error": "",
+          "protocol_log": [
+            {"at_ms": 2, "direction": "in", "type": "response.created"},
+            {"at_ms": 3, "direction": "in", "type": "response.output_audio_transcript.delta"},
+            {"at_ms": 5, "direction": "in", "type": "input_audio_buffer.speech_started"},
+            {"at_ms": 5, "direction": "out", "type": "response.cancel"},
+            {"at_ms": 5, "direction": "out", "type": "output_audio_buffer.clear"},
+            {"at_ms": 5, "direction": "out", "type": "conversation.item.truncate"},
+            {"at_ms": 6, "direction": "in", "type": "conversation.item.truncated"},
+            {"at_ms": 7, "direction": "in", "type": "response.done"}
+          ]
+        },
+        "outbound": [
+          {"type": "response.cancel", "response_id": "r2"},
+          {"type": "output_audio_buffer.clear"},
+          {"type": "conversation.item.truncate", "item_id": "a2", "content_index": 0, "audio_end_ms": 420}
+        ],
+        "errors": []
+      }
+    },
+    {
+      "name": "websocket_barge_in_cancels_without_server_clear",
+      "description": "A WebSocket interruption cancels generation and truncates heard audio but never emits the WebRTC-only server playout clear command.",
+      "steps": [
+        {"at_ms": 0, "operation": {"kind": "connect", "transport": "websocket"}},
+        {"at_ms": 1, "operation": {"kind": "connected"}},
+        {"at_ms": 2, "operation": {"kind": "inbound", "event": {"type": "response.created", "response": {"id": "r-ws", "status": "in_progress"}}}},
+        {"at_ms": 3, "operation": {"kind": "inbound", "event": {"type": "response.output_audio_transcript.delta", "item_id": "a-ws", "delta": "Speaking"}}},
+        {"at_ms": 4, "operation": {"kind": "playout", "speaking": true, "item_id": "a-ws", "played_ms": 200}},
+        {"at_ms": 5, "operation": {"kind": "inbound", "event": {"type": "input_audio_buffer.speech_started"}}},
+        {"at_ms": 6, "operation": {"kind": "inbound", "event": {"type": "conversation.item.truncated", "item_id": "a-ws", "content_index": 0, "audio_end_ms": 200}}},
+        {"at_ms": 7, "operation": {"kind": "inbound", "event": {"type": "response.done", "response": {"id": "r-ws", "status": "cancelled", "status_details": {"reason": "client_cancelled"}}}}}
+      ],
+      "expect": {
+        "snapshot": {
+          "now_ms": 7,
+          "connection": {"phase": "connected", "transport": "websocket", "reason": "", "attempt": 0, "next_retry_ms": 0},
+          "session": {"id": "", "manual_turns": false, "openrealtime": {"present": false, "version": 0, "enabled": [], "observers": [], "available_observers": [], "debug_enabled": false, "video": {"format": "", "fps_cap": 0, "max_dimension": 0, "max_frame_bytes": 0}}},
+          "response": {"id": "r-ws", "open": false, "status": "cancelled", "reason": "client_cancelled"},
+          "conversation": [
+            {"item_id": "a-ws", "role": "assistant", "channel": "output_audio_transcript", "text": "Speaking", "audio_deltas": 0, "audio_done": false, "truncated_ms": 200}
+          ],
+          "playout": {"speaking": false, "item_id": "", "played_ms": 0},
+          "tools": [],
+          "last_truncation": {"item_id": "a-ws", "audio_end_ms": 200},
+          "last_error": "",
+          "protocol_log": [
+            {"at_ms": 2, "direction": "in", "type": "response.created"},
+            {"at_ms": 3, "direction": "in", "type": "response.output_audio_transcript.delta"},
+            {"at_ms": 5, "direction": "in", "type": "input_audio_buffer.speech_started"},
+            {"at_ms": 5, "direction": "out", "type": "response.cancel"},
+            {"at_ms": 5, "direction": "out", "type": "conversation.item.truncate"},
+            {"at_ms": 6, "direction": "in", "type": "conversation.item.truncated"},
+            {"at_ms": 7, "direction": "in", "type": "response.done"}
+          ]
+        },
+        "outbound": [
+          {"type": "response.cancel", "response_id": "r-ws"},
+          {"type": "conversation.item.truncate", "item_id": "a-ws", "content_index": 0, "audio_end_ms": 200}
+        ],
+        "errors": []
+      }
+    },
+    {
+      "name": "websocket_late_barge_in_only_truncates",
+      "description": "After a response has closed, WebSocket playout still reports unheard audio without sending an invalid clear or redundant cancel.",
+      "steps": [
+        {"at_ms": 0, "operation": {"kind": "connect", "transport": "websocket"}},
+        {"at_ms": 1, "operation": {"kind": "connected"}},
+        {"at_ms": 2, "operation": {"kind": "inbound", "event": {"type": "response.created", "response": {"id": "r3", "status": "in_progress"}}}},
+        {"at_ms": 3, "operation": {"kind": "inbound", "event": {"type": "response.output_audio_transcript.delta", "item_id": "a3", "delta": "Finished"}}},
+        {"at_ms": 4, "operation": {"kind": "playout", "speaking": true, "item_id": "a3", "played_ms": 310}},
+        {"at_ms": 5, "operation": {"kind": "inbound", "event": {"type": "response.done", "response": {"id": "r3", "status": "completed", "status_details": null}}}},
+        {"at_ms": 6, "operation": {"kind": "inbound", "event": {"type": "input_audio_buffer.speech_started"}}},
+        {"at_ms": 7, "operation": {"kind": "inbound", "event": {"type": "conversation.item.truncated", "item_id": "a3", "content_index": 0, "audio_end_ms": 310}}}
+      ],
+      "expect": {
+        "snapshot": {
+          "now_ms": 7,
+          "connection": {"phase": "connected", "transport": "websocket", "reason": "", "attempt": 0, "next_retry_ms": 0},
+          "session": {"id": "", "manual_turns": false, "openrealtime": {"present": false, "version": 0, "enabled": [], "observers": [], "available_observers": [], "debug_enabled": false, "video": {"format": "", "fps_cap": 0, "max_dimension": 0, "max_frame_bytes": 0}}},
+          "response": {"id": "r3", "open": false, "status": "completed", "reason": ""},
+          "conversation": [
+            {"item_id": "a3", "role": "assistant", "channel": "output_audio_transcript", "text": "Finished", "audio_deltas": 0, "audio_done": false, "truncated_ms": 310}
+          ],
+          "playout": {"speaking": false, "item_id": "", "played_ms": 0},
+          "tools": [],
+          "last_truncation": {"item_id": "a3", "audio_end_ms": 310},
+          "last_error": "",
+          "protocol_log": [
+            {"at_ms": 2, "direction": "in", "type": "response.created"},
+            {"at_ms": 3, "direction": "in", "type": "response.output_audio_transcript.delta"},
+            {"at_ms": 5, "direction": "in", "type": "response.done"},
+            {"at_ms": 6, "direction": "in", "type": "input_audio_buffer.speech_started"},
+            {"at_ms": 6, "direction": "out", "type": "conversation.item.truncate"},
+            {"at_ms": 7, "direction": "in", "type": "conversation.item.truncated"}
+          ]
+        },
+        "outbound": [
+          {"type": "conversation.item.truncate", "item_id": "a3", "content_index": 0, "audio_end_ms": 310}
+        ],
+        "errors": []
+      }
+    },
+    {
+      "name": "tool_results_and_terminal_disconnect_cleanup",
+      "description": "Every completed or declined call is answered and resumes inference, while a pending call, response, playout, and session are terminalized on disconnect.",
+      "steps": [
+        {"at_ms": 0, "operation": {"kind": "connect", "transport": "websocket"}},
+        {"at_ms": 1, "operation": {"kind": "connected"}},
+        {"at_ms": 2, "operation": {"kind": "inbound", "event": {"type": "session.created", "session": {"id": "s-tools"}}}},
+        {"at_ms": 3, "operation": {"kind": "inbound", "event": {"type": "response.function_call_arguments.done", "call_id": "c1", "name": "calculate", "arguments": "{\"x\":2}"}}},
+        {"at_ms": 4, "operation": {"kind": "tool_result", "call_id": "c1", "status": "done", "output": "4"}},
+        {"at_ms": 5, "operation": {"kind": "inbound", "event": {"type": "response.function_call_arguments.done", "call_id": "c2", "name": "delete", "arguments": "{}"}}},
+        {"at_ms": 6, "operation": {"kind": "tool_result", "call_id": "c2", "status": "declined", "error": "user declined"}},
+        {"at_ms": 7, "operation": {"kind": "inbound", "event": {"type": "response.created", "response": {"id": "r-tools", "status": "in_progress"}}}},
+        {"at_ms": 8, "operation": {"kind": "inbound", "event": {"type": "response.function_call_arguments.done", "call_id": "c3", "name": "slow", "arguments": "{}"}}},
+        {"at_ms": 9, "operation": {"kind": "playout", "speaking": true, "item_id": "a-tools", "played_ms": 10}},
+        {"at_ms": 10, "operation": {"kind": "disconnect", "reason": "network lost"}}
+      ],
+      "expect": {
+        "snapshot": {
+          "now_ms": 10,
+          "connection": {"phase": "disconnected", "transport": "", "reason": "network lost", "attempt": 0, "next_retry_ms": 0},
+          "session": {"id": "", "manual_turns": false, "openrealtime": {"present": false, "version": 0, "enabled": [], "observers": [], "available_observers": [], "debug_enabled": false, "video": {"format": "", "fps_cap": 0, "max_dimension": 0, "max_frame_bytes": 0}}},
+          "response": {"id": "r-tools", "open": false, "status": "abandoned", "reason": "network lost"},
+          "conversation": [],
+          "playout": {"speaking": false, "item_id": "", "played_ms": 0},
+          "tools": [
+            {"call_id": "c1", "name": "calculate", "arguments": "{\"x\":2}", "status": "done", "output": "4", "error": ""},
+            {"call_id": "c2", "name": "delete", "arguments": "{}", "status": "declined", "output": "", "error": "user declined"},
+            {"call_id": "c3", "name": "slow", "arguments": "{}", "status": "failed", "output": "", "error": "network lost"}
+          ],
+          "last_truncation": {"item_id": "", "audio_end_ms": 0},
+          "last_error": "",
+          "protocol_log": [
+            {"at_ms": 2, "direction": "in", "type": "session.created"},
+            {"at_ms": 3, "direction": "in", "type": "response.function_call_arguments.done"},
+            {"at_ms": 4, "direction": "out", "type": "conversation.item.create"},
+            {"at_ms": 4, "direction": "out", "type": "response.create"},
+            {"at_ms": 5, "direction": "in", "type": "response.function_call_arguments.done"},
+            {"at_ms": 6, "direction": "out", "type": "conversation.item.create"},
+            {"at_ms": 6, "direction": "out", "type": "response.create"},
+            {"at_ms": 7, "direction": "in", "type": "response.created"},
+            {"at_ms": 8, "direction": "in", "type": "response.function_call_arguments.done"}
+          ]
+        },
+        "outbound": [
+          {"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "c1", "output": "4"}},
+          {"type": "response.create"},
+          {"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "c2", "output": "{\"error\":\"user declined\"}"}},
+          {"type": "response.create"}
+        ],
+        "errors": []
+      }
+    },
+    {
+      "name": "bounded_reconnect_exhaustion_cleans_session_scope",
+      "description": "Reconnect uses bounded deterministic backoff and leaves no open response, playout, session, or pending tool after exhaustion.",
+      "steps": [
+        {"at_ms": 0, "operation": {"kind": "connect", "transport": "websocket"}},
+        {"at_ms": 1, "operation": {"kind": "connected"}},
+        {"at_ms": 2, "operation": {"kind": "inbound", "event": {"type": "session.created", "session": {"id": "s-reconnect"}}}},
+        {"at_ms": 3, "operation": {"kind": "inbound", "event": {"type": "response.created", "response": {"id": "r-reconnect", "status": "in_progress"}}}},
+        {"at_ms": 4, "operation": {"kind": "inbound", "event": {"type": "response.function_call_arguments.done", "call_id": "c-reconnect", "name": "wait", "arguments": "{}"}}},
+        {"at_ms": 5, "operation": {"kind": "playout", "speaking": true, "item_id": "a-reconnect", "played_ms": 50}},
+        {"at_ms": 10, "operation": {"kind": "transport_lost", "reason": "drop one"}},
+        {"at_ms": 260, "operation": {"kind": "retry"}},
+        {"at_ms": 261, "operation": {"kind": "transport_lost", "reason": "drop two"}},
+        {"at_ms": 1261, "operation": {"kind": "retry"}},
+        {"at_ms": 1262, "operation": {"kind": "transport_lost", "reason": "drop three"}},
+        {"at_ms": 5262, "operation": {"kind": "retry"}},
+        {"at_ms": 5263, "operation": {"kind": "transport_lost", "reason": "drop four"}}
+      ],
+      "expect": {
+        "snapshot": {
+          "now_ms": 5263,
+          "connection": {"phase": "failed", "transport": "websocket", "reason": "drop four", "attempt": 3, "next_retry_ms": 0},
+          "session": {"id": "", "manual_turns": false, "openrealtime": {"present": false, "version": 0, "enabled": [], "observers": [], "available_observers": [], "debug_enabled": false, "video": {"format": "", "fps_cap": 0, "max_dimension": 0, "max_frame_bytes": 0}}},
+          "response": {"id": "r-reconnect", "open": false, "status": "abandoned", "reason": "drop one"},
+          "conversation": [],
+          "playout": {"speaking": false, "item_id": "", "played_ms": 0},
+          "tools": [
+            {"call_id": "c-reconnect", "name": "wait", "arguments": "{}", "status": "failed", "output": "", "error": "drop one"}
+          ],
+          "last_truncation": {"item_id": "", "audio_end_ms": 0},
+          "last_error": "drop four",
+          "protocol_log": [
+            {"at_ms": 2, "direction": "in", "type": "session.created"},
+            {"at_ms": 3, "direction": "in", "type": "response.created"},
+            {"at_ms": 4, "direction": "in", "type": "response.function_call_arguments.done"}
+          ]
+        },
+        "outbound": [],
+        "errors": []
+      }
+    },
+    {
+      "name": "malformed_operations_are_atomic_and_forward_compatible",
+      "description": "Known malformed events and invalid local actions fail atomically while unknown names remain ordered and a server error stays inspectable.",
+      "steps": [
+        {"at_ms": 0, "operation": {"kind": "connect", "transport": "websocket"}},
+        {"at_ms": 1, "operation": {"kind": "connected"}},
+        {"at_ms": 2, "operation": {"kind": "inbound", "event": {"type": "session.created", "session": {}}}},
+        {"at_ms": 3, "operation": {"kind": "inbound", "event": {"type": "response.output_text.delta", "item_id": "a-bad", "delta": "orphan"}}},
+        {"at_ms": 4, "operation": {"kind": "end_turn"}},
+        {"at_ms": 5, "operation": {"kind": "tool_result", "call_id": "missing", "status": "done", "output": "x"}},
+        {"at_ms": 6, "operation": {"kind": "inbound", "event": {"type": "vendor.future.event", "opaque": true}}},
+        {"at_ms": 7, "operation": {"kind": "inbound", "event": {"type": "error", "error": {"message": "bad request"}}}}
+      ],
+      "expect": {
+        "snapshot": {
+          "now_ms": 7,
+          "connection": {"phase": "connected", "transport": "websocket", "reason": "", "attempt": 0, "next_retry_ms": 0},
+          "session": {"id": "", "manual_turns": false, "openrealtime": {"present": false, "version": 0, "enabled": [], "observers": [], "available_observers": [], "debug_enabled": false, "video": {"format": "", "fps_cap": 0, "max_dimension": 0, "max_frame_bytes": 0}}},
+          "response": {"id": "", "open": false, "status": "", "reason": ""},
+          "conversation": [],
+          "playout": {"speaking": false, "item_id": "", "played_ms": 0},
+          "tools": [],
+          "last_truncation": {"item_id": "", "audio_end_ms": 0},
+          "last_error": "bad request",
+          "protocol_log": [
+            {"at_ms": 6, "direction": "in", "type": "vendor.future.event"},
+            {"at_ms": 7, "direction": "in", "type": "error"}
+          ]
+        },
+        "outbound": [],
+        "errors": [
+          "step 2: session.created: missing id",
+          "step 3: response delta arrived without an open response",
+          "step 4: end_turn requires negotiated manual turn detection",
+          "step 5: unknown tool call \"missing\""
+        ]
+      }
+    },
+    {
+      "name": "explicit_response_cancellation_is_idempotently_guarded",
+      "description": "Explicit cancellation emits one targeted OpenAI command and refuses a duplicate until the terminal response arrives.",
+      "steps": [
+        {"at_ms": 0, "operation": {"kind": "connect", "transport": "websocket"}},
+        {"at_ms": 1, "operation": {"kind": "connected"}},
+        {"at_ms": 2, "operation": {"kind": "inbound", "event": {"type": "response.created", "response": {"id": "r4", "status": "in_progress"}}}},
+        {"at_ms": 3, "operation": {"kind": "cancel_response"}},
+        {"at_ms": 4, "operation": {"kind": "cancel_response"}},
+        {"at_ms": 5, "operation": {"kind": "inbound", "event": {"type": "response.done", "response": {"id": "r4", "status": "cancelled", "status_details": {"reason": "client_cancelled"}}}}}
+      ],
+      "expect": {
+        "snapshot": {
+          "now_ms": 5,
+          "connection": {"phase": "connected", "transport": "websocket", "reason": "", "attempt": 0, "next_retry_ms": 0},
+          "session": {"id": "", "manual_turns": false, "openrealtime": {"present": false, "version": 0, "enabled": [], "observers": [], "available_observers": [], "debug_enabled": false, "video": {"format": "", "fps_cap": 0, "max_dimension": 0, "max_frame_bytes": 0}}},
+          "response": {"id": "r4", "open": false, "status": "cancelled", "reason": "client_cancelled"},
+          "conversation": [],
+          "playout": {"speaking": false, "item_id": "", "played_ms": 0},
+          "tools": [],
+          "last_truncation": {"item_id": "", "audio_end_ms": 0},
+          "last_error": "",
+          "protocol_log": [
+            {"at_ms": 2, "direction": "in", "type": "response.created"},
+            {"at_ms": 3, "direction": "out", "type": "response.cancel"},
+            {"at_ms": 5, "direction": "in", "type": "response.done"}
+          ]
+        },
+        "outbound": [
+          {"type": "response.cancel", "response_id": "r4"}
+        ],
+        "errors": ["step 4: response cancellation is already pending"]
+      }
+    }
+  ]
+}
