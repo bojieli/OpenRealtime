@@ -198,13 +198,11 @@ func runScenarioEvaluationContext(
 			completed, source.Checklist.Expected, entry.Case, entry.Trial,
 		)
 	}
-	if resolved.Provider == gemini.RegistrationName {
-		if credential, exists := os.LookupEnv("GEMINI_API_KEY"); exists && len(strings.TrimSpace(credential)) >= 8 {
-			for index := range requests {
-				requests[index].SensitiveValues = append(requests[index].SensitiveValues, credential)
-			}
-		}
-	}
+	// Provider credentials remain provider-owned. In particular, the Gemini
+	// plug-in scans its prepared prompt, context, media, and final encoded body
+	// with the active credential before transport. Copying that credential into
+	// the generic request guard duplicates the policy and can synthesize a false
+	// match by concatenating otherwise unrelated JSON tokens.
 	root, rootInfo, err := createScenarioEvaluationRoot(resolved.OutputDirectory)
 	if err != nil {
 		return err

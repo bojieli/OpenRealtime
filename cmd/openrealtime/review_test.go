@@ -101,6 +101,12 @@ func (provider *scenarioEvaluationFixtureProvider) Close() error {
 func scenarioEvaluationFixtureRegistry(
 	t testing.TB, fail bool,
 ) (*benchreview.Registry, *scenarioEvaluationFixtureProvider) {
+	return scenarioEvaluationFixtureRegistryNamed(t, "fixture.scenario-review", fail)
+}
+
+func scenarioEvaluationFixtureRegistryNamed(
+	t testing.TB, name string, fail bool,
+) (*benchreview.Registry, *scenarioEvaluationFixtureProvider) {
 	t.Helper()
 	implementation := []byte("openrealtime scenario evaluation fixture implementation v1")
 	configuration := []byte(`{"fixture":"scenario"}`)
@@ -126,7 +132,7 @@ func scenarioEvaluationFixtureRegistry(
 		implementation: implementation, configuration: configuration, fail: fail,
 	}
 	registry, err := benchreview.NewRegistry([]benchreview.Registration{{
-		Name: "fixture.scenario-review", Descriptor: descriptor,
+		Name: name, Descriptor: descriptor,
 		Capabilities: capabilities, Implementation: implementation, Configuration: configuration,
 		Factory: func(context.Context) (benchreview.Provider, error) { return provider, nil },
 	}})
@@ -134,6 +140,33 @@ func scenarioEvaluationFixtureRegistry(
 		t.Fatal(err)
 	}
 	return registry, provider
+}
+
+func TestScenarioEvaluationLeavesCredentialScanningToSelectedProvider(t *testing.T) {
+	t.Chdir("../..")
+	sourceDirectory, _, _ := publishScenarioGraphPopulationFixture(t, 1, true)
+	// This value occurs in a case prompt. The command layer must not reinterpret
+	// a provider-owned credential as a generic declared source secret; the real
+	// Gemini plug-in independently rejects literal, split-token, media, and
+	// encoding-synthesized credential material before transport.
+	t.Setenv("GEMINI_API_KEY", "ordering from a waiter")
+	registry, provider := scenarioEvaluationFixtureRegistryNamed(
+		t, "google.gemini-3.7-flash", false,
+	)
+	outputDirectory := filepath.Join(t.TempDir(), "provider-owned-credential")
+	if err := runScenarioEvaluation([]string{
+		"-source-dir", sourceDirectory,
+		"-source-receipt", sourceDirectory + ".receipt.json",
+		"-out", outputDirectory,
+		"-provider", "google.gemini-3.7-flash",
+		"-parallel", "3",
+	}, &bytes.Buffer{}, registry); err != nil {
+		t.Fatal(err)
+	}
+	if provider.reviewCalls.Load() != 11 || provider.closeCalls.Load() != 1 {
+		t.Fatalf("provider-owned credential run = review %d close %d",
+			provider.reviewCalls.Load(), provider.closeCalls.Load())
+	}
 }
 
 func TestScenarioEvaluationPublishesAndReopensAllElevenAttempts(t *testing.T) {
