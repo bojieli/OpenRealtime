@@ -290,6 +290,66 @@ func TestProvenanceJoinRejectsUnselectedBasisAndCrossSessionEvidence(t *testing.
 	}
 }
 
+func TestProvenanceJoinAllowsSpeechOnlyManualResultButNeverAuthorizesWithoutContext(t *testing.T) {
+	t.Run("speech only", func(t *testing.T) {
+		mounted, done, cancel := mountGraph(t, provenanceJoinGraph,
+			map[string]json.RawMessage{"join": json.RawMessage(`{}`)}, graphruntime.NewServiceSet())
+		defer stopMounted(t, mounted, done, cancel)
+		_, _, result := provenanceJoinEvidence("manual-run", "unused-call", "join-session")
+		value := result.Payload.(cognitionelements.Result)
+		value.Invocation.SourceRevision = 0
+		value.ContextVersion = 0
+		value.ContextTailID = ""
+		value.Outputs = nil
+		value.ToolProposals = nil
+		value.Interrupted = true
+		result.Payload = value
+		send(t, mustIngressAction(t, mounted, "result"), result)
+		outcome := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+		if outcome.Kind != OutcomeIgnored || outcome.Operation != "result" ||
+			outcome.Code != "no_tool_proposals" {
+			t.Fatalf("speech-only manual result outcome = %+v", outcome)
+		}
+		assertNoEnvelope(t, mustEgressAction(t, mounted, "provenance"))
+	})
+
+	t.Run("interrupted tool proposal", func(t *testing.T) {
+		mounted, done, cancel := mountGraph(t, provenanceJoinGraph,
+			map[string]json.RawMessage{"join": json.RawMessage(`{}`)}, graphruntime.NewServiceSet())
+		defer stopMounted(t, mounted, done, cancel)
+		_, _, result := provenanceJoinEvidence("interrupted-run", "interrupted-call", "join-session")
+		value := result.Payload.(cognitionelements.Result)
+		value.Interrupted = true
+		result.Payload = value
+		send(t, mustIngressAction(t, mounted, "result"), result)
+		outcome := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+		if outcome.Kind != OutcomeRejected || outcome.Operation != "result" ||
+			outcome.Code != "interrupted_result" {
+			t.Fatalf("interrupted authority result outcome = %+v", outcome)
+		}
+		assertNoEnvelope(t, mustEgressAction(t, mounted, "provenance"))
+	})
+
+	t.Run("tool proposal", func(t *testing.T) {
+		mounted, done, cancel := mountGraph(t, provenanceJoinGraph,
+			map[string]json.RawMessage{"join": json.RawMessage(`{}`)}, graphruntime.NewServiceSet())
+		defer stopMounted(t, mounted, done, cancel)
+		_, _, result := provenanceJoinEvidence("manual-run", "manual-call", "join-session")
+		value := result.Payload.(cognitionelements.Result)
+		value.Invocation.SourceRevision = 0
+		value.ContextVersion = 0
+		value.ContextTailID = ""
+		result.Payload = value
+		send(t, mustIngressAction(t, mounted, "result"), result)
+		outcome := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+		if outcome.Kind != OutcomeRejected || outcome.Operation != "result" ||
+			outcome.Code != "missing_context" {
+			t.Fatalf("authority-free tool result outcome = %+v", outcome)
+		}
+		assertNoEnvelope(t, mustEgressAction(t, mounted, "provenance"))
+	})
+}
+
 func TestProvenanceJoinDoesNotLetAnUnrelatedStreamedCallFinishExpectedResults(t *testing.T) {
 	mounted, done, cancel := mountGraph(t, provenanceJoinGraph,
 		map[string]json.RawMessage{"join": json.RawMessage(`{}`)}, graphruntime.NewServiceSet())

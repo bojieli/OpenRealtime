@@ -370,6 +370,14 @@ func (runner *observationCommitRunner) acceptCommit(
 ) error {
 	requestID, pending, found := runner.pendingForReply(envelope)
 	if !found {
+		// A single trajectory store may fan one immutable receipt to several
+		// commit components. Only the component whose instance-scoped request
+		// identity is named may interpret that receipt; foreign receipts are
+		// routing noise, not failed observations. An own-instance request that
+		// is missing (including a replay) remains an explicit negative outcome.
+		if !runner.replyTargetsInstance(envelope) {
+			return nil
+		}
 		return runner.publishOutcome(ctx, envelope, ObservationCommitOutcome{
 			Kind: ObservationRejected, TriggerItemID: envelope.ItemID,
 			Code: "unknown_commit_reply", Message: "trajectory commit reply has no pending request",
@@ -411,6 +419,9 @@ func (runner *observationCommitRunner) acceptRejection(
 ) error {
 	requestID, pending, found := runner.pendingForReply(envelope)
 	if !found {
+		if !runner.replyTargetsInstance(envelope) {
+			return nil
+		}
 		return runner.publishOutcome(ctx, envelope, ObservationCommitOutcome{
 			Kind: ObservationRejected, TriggerItemID: envelope.ItemID,
 			Code: "unknown_rejection_reply", Message: "trajectory rejection reply has no pending request",
@@ -477,12 +488,40 @@ func (runner *observationCommitRunner) rejectWaiting(
 func (runner *observationCommitRunner) pendingForReply(
 	envelope element.Envelope,
 ) (string, pendingObservationCommit, bool) {
-	for _, candidate := range append(slices.Clone(envelope.CausalParents), replyBaseID(envelope.ItemID)) {
+	for _, candidate := range observationReplyCandidates(envelope) {
 		if pending, found := runner.pending[candidate]; found {
 			return candidate, pending, true
 		}
 	}
 	return "", pendingObservationCommit{}, false
+}
+
+func (runner *observationCommitRunner) replyTargetsInstance(envelope element.Envelope) bool {
+	prefix := runner.instance + "-append-"
+	for _, candidate := range observationReplyCandidates(envelope) {
+		if !strings.HasPrefix(candidate, prefix) {
+			continue
+		}
+		suffix := strings.TrimPrefix(candidate, prefix)
+		if suffix == "" || suffix[0] == '0' {
+			continue
+		}
+		canonical := true
+		for _, character := range suffix {
+			if character < '0' || character > '9' {
+				canonical = false
+				break
+			}
+		}
+		if canonical {
+			return true
+		}
+	}
+	return false
+}
+
+func observationReplyCandidates(envelope element.Envelope) []string {
+	return append(slices.Clone(envelope.CausalParents), replyBaseID(envelope.ItemID))
 }
 
 func (runner *observationCommitRunner) publishOutcome(

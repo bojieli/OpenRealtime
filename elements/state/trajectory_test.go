@@ -3,8 +3,10 @@ package state_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +40,40 @@ const observationCommitGraph = `graph observation_commit {
     store.rejected -> commit.rejected;
     input observations = commit.observations;
     output outcome = commit.outcome;
+    output snapshot = store.snapshot;
+}
+`
+
+const observationCommitReplyGraph = `graph observation_commit_reply {
+    state.ObservationCommit :: commit;
+    input observations = commit.observations;
+    input committed = commit.committed;
+    input rejected = commit.rejected;
+    output append = commit.append;
+    output outcome = commit.outcome;
+}
+`
+
+const sharedObservationCommitGraph = `graph shared_observation_commit {
+    state.ObservationCommit :: audio_commit;
+    state.ObservationCommit :: message_commit;
+    state.TrajectoryStore :: store;
+    flow.Mux :: append_mux;
+    flow.Tee :: committed_copy;
+    flow.Tee :: rejected_copy;
+    audio_commit.append -> append_mux.in;
+    message_commit.append -> append_mux.in;
+    append_mux.out -> store.append;
+    store.committed -> committed_copy.in;
+    committed_copy.out -> audio_commit.committed;
+    committed_copy.out -> message_commit.committed;
+    store.rejected -> rejected_copy.in;
+    rejected_copy.out -> audio_commit.rejected;
+    rejected_copy.out -> message_commit.rejected;
+    input audio = audio_commit.observations;
+    input message = message_commit.observations;
+    output audio_outcome = audio_commit.outcome;
+    output message_outcome = message_commit.outcome;
     output snapshot = store.snapshot;
 }
 `
@@ -304,6 +340,268 @@ func TestObservationCommitSerializesRevisionsThroughAuthoritativeStoreReplies(t 
 	if rejected.Kind != stateelements.ObservationRejected || rejected.Code != "unknown_superseded_revision" {
 		t.Fatalf("unknown supersession outcome = %+v", rejected)
 	}
+	assertNoStateEnvelope(t, snapshots)
+}
+
+func TestObservationCommitFanoutIgnoresOnlyForeignInstanceReceipts(t *testing.T) {
+	graph := compileStateGraph(t, sharedObservationCommitGraph)
+	registry, err := elements.RuntimeRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := graphruntime.Mount(context.Background(), graphruntime.Config{
+		Graph: graph, Registry: registry,
+		Values: map[string]json.RawMessage{
+			"audio_commit": json.RawMessage(`{}`), "message_commit": json.RawMessage(`{}`),
+			"store": json.RawMessage(`{}`),
+		},
+		Now: func() uint64 { return 42 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runCtx, cancelRun := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() { runDone <- mounted.Run(runCtx) }()
+	defer func() {
+		cancelRun()
+		select {
+		case err := <-runDone:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				t.Errorf("shared observation commit graph: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Error("shared observation commit graph did not stop")
+		}
+	}()
+
+	audio, _ := mounted.Ingress("audio")
+	message, _ := mounted.Ingress("message")
+	audioOutcomes, _ := mounted.Egress("audio_outcome")
+	messageOutcomes, _ := mounted.Egress("message_outcome")
+	snapshots, _ := mounted.Egress("snapshot")
+	if seed := receiveState(t, snapshots).Payload.(trajectory.Snapshot); seed.Version != 0 {
+		t.Fatalf("shared store seed = %+v", seed)
+	}
+
+	typeOf := stateelements.ObservationType()
+	sendObservation := func(port element.OutputPort, itemID, stream, text string) {
+		t.Helper()
+		delivery, sendErr := port.Broadcast(context.Background(), element.Envelope{
+			Type: typeOf, ItemID: itemID, SessionID: "session-shared-store", SourceID: stream,
+			Payload: perception.Observation{
+				Text: text, Observer: "client", Source: stream,
+				Authority: trajectory.AuthorityUser, Revision: 1, StableText: text, Final: true,
+			},
+		})
+		if sendErr != nil || delivery.Delivered != 1 || delivery.Dropped != 0 {
+			t.Fatalf("send shared observation = %+v, %v", delivery, sendErr)
+		}
+	}
+
+	sendObservation(audio, "audio-final", "audio-stream", "heard speech")
+	first := receiveState(t, snapshots).Payload.(trajectory.Snapshot)
+	audioOutcome := receiveState(t, audioOutcomes).Payload.(stateelements.ObservationCommitOutcome)
+	if first.Version != 1 || audioOutcome.Kind != stateelements.ObservationCommitted ||
+		audioOutcome.StreamID != "audio-stream" {
+		t.Fatalf("audio shared-store commit = %+v / %+v", first, audioOutcome)
+	}
+	assertNoStateEnvelope(t, messageOutcomes)
+
+	sendObservation(message, "message-final", "message-stream", "typed request")
+	second := receiveState(t, snapshots).Payload.(trajectory.Snapshot)
+	messageOutcome := receiveState(t, messageOutcomes).Payload.(stateelements.ObservationCommitOutcome)
+	if second.Version != 2 || len(second.Items) != 2 ||
+		messageOutcome.Kind != stateelements.ObservationCommitted ||
+		messageOutcome.StreamID != "message-stream" {
+		t.Fatalf("message shared-store commit = %+v / %+v", second, messageOutcome)
+	}
+	assertNoStateEnvelope(t, audioOutcomes)
+}
+
+func TestObservationCommitMountedReplyOwnershipAndReplayAreExact(t *testing.T) {
+	graph := compileStateGraph(t, observationCommitReplyGraph)
+	registry, err := elements.RuntimeRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := graphruntime.Mount(context.Background(), graphruntime.Config{
+		Graph: graph, Registry: registry,
+		Values: map[string]json.RawMessage{"commit": json.RawMessage(`{}`)},
+		Now:    func() uint64 { return 42 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runCtx, cancelRun := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() { runDone <- mounted.Run(runCtx) }()
+	defer func() {
+		cancelRun()
+		select {
+		case err := <-runDone:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				t.Errorf("observation reply graph: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Error("observation reply graph did not stop")
+		}
+	}()
+
+	observations, _ := mounted.Ingress("observations")
+	committed, _ := mounted.Ingress("committed")
+	rejected, _ := mounted.Ingress("rejected")
+	appends, _ := mounted.Egress("append")
+	outcomes, _ := mounted.Egress("outcome")
+
+	foreign := element.Envelope{
+		Type: stateelements.CommitType(), ItemID: "other_commit-append-1:committed",
+		SessionID: "session-reply", CausalParents: []string{"other_commit-append-1"},
+		Payload: stateelements.Commit{},
+	}
+	sendStateEnvelope(t, committed, foreign)
+	assertNoStateEnvelope(t, outcomes)
+
+	sendStateEnvelope(t, observations, element.Envelope{
+		Type: stateelements.ObservationType(), ItemID: "typed-observation-1",
+		SessionID: "session-reply", SourceID: "typed-stream",
+		Payload: perception.Observation{
+			Text: "typed request", Observer: "client", Source: "message",
+			Authority: trajectory.AuthorityUser, Revision: 1, StableText: "typed request", Final: true,
+		},
+	})
+	appendEnvelope := receiveState(t, appends)
+	appendRequest := appendEnvelope.Payload.(stateelements.Append)
+	if len(appendRequest.Items) != 1 || appendEnvelope.ItemID != "commit-append-1" {
+		t.Fatalf("observation append = %+v / %+v", appendRequest, appendEnvelope)
+	}
+	reply, commit := mountedObservationCommitReply(t, appendEnvelope, "session-reply")
+	sendStateEnvelope(t, committed, reply)
+	accepted := receiveState(t, outcomes).Payload.(stateelements.ObservationCommitOutcome)
+	if accepted.Kind != stateelements.ObservationCommitted || accepted.StoreVersion != 1 ||
+		accepted.Context != commit.Context {
+		t.Fatalf("mounted observation commit = %+v", accepted)
+	}
+
+	sendStateEnvelope(t, committed, reply)
+	replay := receiveState(t, outcomes).Payload.(stateelements.ObservationCommitOutcome)
+	if replay.Kind != stateelements.ObservationRejected || replay.Code != "unknown_commit_reply" {
+		t.Fatalf("same-instance commit replay = %+v", replay)
+	}
+	sendStateEnvelope(t, rejected, element.Envelope{
+		Type: stateelements.RejectionType(), ItemID: "commit-append-999:rejected",
+		SessionID: "session-reply", CausalParents: []string{"commit-append-999"},
+		Payload: stateelements.Rejection{Code: "forged", Message: "forged"},
+	})
+	unknown := receiveState(t, outcomes).Payload.(stateelements.ObservationCommitOutcome)
+	if unknown.Kind != stateelements.ObservationRejected || unknown.Code != "unknown_rejection_reply" {
+		t.Fatalf("same-instance unknown rejection = %+v", unknown)
+	}
+
+	for _, itemID := range []string{
+		"other-commit-append-2:committed", "Commit-append-2:committed",
+		"commit-append-2suffix:committed", "commit-append-02:committed",
+	} {
+		nearCollision := foreign.Clone()
+		nearCollision.ItemID = itemID
+		nearCollision.CausalParents = []string{strings.TrimSuffix(itemID, ":committed")}
+		sendStateEnvelope(t, committed, nearCollision)
+		assertNoStateEnvelope(t, outcomes)
+	}
+}
+
+func TestObservationCommitMountedMatchingReplyTamperFailsClosed(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*element.Envelope, *stateelements.Commit)
+		want   string
+	}{
+		{
+			name: "cross session",
+			mutate: func(envelope *element.Envelope, _ *stateelements.Commit) {
+				envelope.SessionID = "other-session"
+			},
+			want: "does not match pending observation session",
+		},
+		{
+			name: "tampered appended identity",
+			mutate: func(_ *element.Envelope, commit *stateelements.Commit) {
+				commit.AppendedIDs[0] = "forged-observation"
+			},
+			want: "do not exactly attest pending observation",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			graph := compileStateGraph(t, observationCommitReplyGraph)
+			registry, err := elements.RuntimeRegistry()
+			if err != nil {
+				t.Fatal(err)
+			}
+			mounted, err := graphruntime.Mount(context.Background(), graphruntime.Config{
+				Graph: graph, Registry: registry,
+				Values: map[string]json.RawMessage{"commit": json.RawMessage(`{}`)},
+				Now:    func() uint64 { return 42 },
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			runCtx, cancelRun := context.WithCancel(context.Background())
+			defer cancelRun()
+			runDone := make(chan error, 1)
+			go func() { runDone <- mounted.Run(runCtx) }()
+
+			observations, _ := mounted.Ingress("observations")
+			committed, _ := mounted.Ingress("committed")
+			appends, _ := mounted.Egress("append")
+			sendStateEnvelope(t, observations, element.Envelope{
+				Type: stateelements.ObservationType(), ItemID: "typed-observation-1",
+				SessionID: "session-reply", SourceID: "typed-stream",
+				Payload: perception.Observation{
+					Text: "typed request", Observer: "client", Source: "message",
+					Authority: trajectory.AuthorityUser, Revision: 1,
+					StableText: "typed request", Final: true,
+				},
+			})
+			appendEnvelope := receiveState(t, appends)
+			reply, commit := mountedObservationCommitReply(t, appendEnvelope, "session-reply")
+			test.mutate(&reply, &commit)
+			reply.Payload = commit
+			sendStateEnvelope(t, committed, reply)
+			select {
+			case runErr := <-runDone:
+				if runErr == nil || !strings.Contains(runErr.Error(), test.want) {
+					t.Fatalf("tampered matching reply error = %v, want %q", runErr, test.want)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("tampered matching reply did not fail the mounted graph")
+			}
+		})
+	}
+}
+
+func mountedObservationCommitReply(
+	t testing.TB, appendEnvelope element.Envelope, sessionID string,
+) (element.Envelope, stateelements.Commit) {
+	t.Helper()
+	appendRequest := appendEnvelope.Payload.(stateelements.Append)
+	snapshot := trajectory.Snapshot{Version: 1, Items: slices.Clone(appendRequest.Items)}
+	prefix, err := trajectory.IdentifyPrefix(snapshot, snapshot.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := stateelements.Commit{
+		Version: 1, AppendedIDs: []string{appendRequest.Items[0].ID}, Snapshot: snapshot,
+		Context: stateelements.CommittedContext{
+			Prefix: prefix, StateItemID: "trajectory-state-1",
+		},
+	}
+	return element.Envelope{
+		Type: stateelements.CommitType(), ItemID: appendEnvelope.ItemID + ":committed",
+		SessionID:     sessionID,
+		CausalParents: []string{appendEnvelope.ItemID, commit.Context.StateItemID},
+		Payload:       commit,
+	}, commit
 }
 
 func compileTrajectoryGraph(t *testing.T) ir.Graph {
@@ -340,6 +638,25 @@ func receiveState(t *testing.T, input element.InputPort) element.Envelope {
 	return envelope
 }
 
+func sendStateEnvelope(t *testing.T, output element.OutputPort, envelope element.Envelope) {
+	t.Helper()
+	delivery, err := output.Broadcast(context.Background(), envelope)
+	if err != nil || delivery.Delivered != 1 || delivery.Dropped != 0 {
+		t.Fatalf("send state envelope = %+v, %v", delivery, err)
+	}
+}
+
+func assertNoStateEnvelope(t *testing.T, input element.InputPort) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if envelope, err := input.Receive(ctx); err == nil {
+		t.Fatalf("unexpected state envelope %+v", envelope)
+	} else if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("wait for absent state envelope: %v", err)
+	}
+}
+
 func assertPureStateResolution(
 	t *testing.T, mounted *graphruntime.Mounted, node, elementName string,
 ) {
@@ -347,9 +664,13 @@ func assertPureStateResolution(
 	deadline := time.Now().Add(time.Second)
 	for {
 		resolution := mounted.Live().Nodes[node].Resolution
+		wantRevision := "implementation:2"
+		if elementName == "state.ObservationCommit" {
+			wantRevision = "implementation:3"
+		}
 		if resolution != nil && resolution.RuntimeEvidence == inspect.EvidenceLive &&
 			resolution.Runtime.ID == "builtin://openrealtime/elements/"+elementName &&
-			resolution.Runtime.Revision == "implementation:2" &&
+			resolution.Runtime.Revision == wantRevision &&
 			resolution.CapabilitiesEvidence == inspect.EvidenceLive &&
 			len(resolution.Capabilities) == 0 {
 			return

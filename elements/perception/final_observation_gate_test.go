@@ -11,6 +11,7 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/elements"
 	perceptionelements "github.com/bojieli/OpenRealtime/elements/perception"
+	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphcompiler "github.com/bojieli/OpenRealtime/graph"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
@@ -26,6 +27,21 @@ const finalObservationGateGraph = `graph final_observation_gate {
     input flush = gate.flush;
     output finals = gate.finals;
     output outcome = gate.outcome;
+}`
+
+const finalObservationCommitGraph = `graph final_observation_commit {
+    perception.FinalObservationGate :: gate;
+    state.ObservationCommit :: commit;
+    state.TrajectoryStore :: store;
+    gate.finals -> commit.observations;
+    commit.append -> store.append;
+    store.committed -> commit.committed;
+    store.rejected -> commit.rejected;
+    input observations = gate.observations;
+    input flush = gate.flush;
+    output gate_outcome = gate.outcome;
+    output commit_outcome = commit.outcome;
+    output snapshot = store.snapshot;
 }`
 
 func TestFinalObservationGateKeepsPartialsObservableButActivatesOnlyFlushFinal(t *testing.T) {
@@ -64,7 +80,8 @@ func TestFinalObservationGateKeepsPartialsObservableButActivatesOnlyFlushFinal(t
 			StreamID: "stream-a", ObservationCount: 1}))
 	emittedEnvelope := receive(t, finals)
 	emitted := emittedEnvelope.Payload.(coreperception.Observation)
-	if emitted.Revision != 2 || !emitted.Final || emitted.Provisional || emittedEnvelope.ItemID == "final-a" ||
+	if emitted.Revision != 2 || emitted.Supersedes != 0 || !emitted.Final || emitted.Provisional ||
+		emittedEnvelope.ItemID == "final-a" ||
 		len(emittedEnvelope.CausalParents) != 2 || emittedEnvelope.CausalParents[0] != "final-a" ||
 		emittedEnvelope.CausalParents[1] != "flush-a:outcome" {
 		t.Fatalf("emitted final = %+v / %+v", emitted, emittedEnvelope)
@@ -150,6 +167,96 @@ func TestFinalObservationGateJoinsFlushArrivingBeforeFinalExactlyOnce(t *testing
 	if emitted := receive(t, outcomes).Payload.(perceptionelements.FinalObservationGateOutcome); emitted.Kind != perceptionelements.FinalObservationEmitted {
 		t.Fatalf("reverse-order outcome = %+v", emitted)
 	}
+}
+
+func TestFinalObservationGateCommitsNoPartialAndExactlyOneFlushAttestedFinal(t *testing.T) {
+	graph := compileFinalObservationSource(t, finalObservationCommitGraph)
+	registry, err := elements.RuntimeRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := graphruntime.Mount(context.Background(), graphruntime.Config{
+		Graph: graph, Registry: registry,
+		Values: map[string]json.RawMessage{
+			"gate": json.RawMessage(`{}`), "commit": json.RawMessage(`{}`), "store": json.RawMessage(`{}`),
+		},
+		Now: func() uint64 { return 42 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- mounted.Run(ctx) }()
+	defer stopASR(t, mounted, done, cancel)
+
+	observations, _ := mounted.Ingress("observations")
+	flush, _ := mounted.Ingress("flush")
+	gateOutcomes, _ := mounted.Egress("gate_outcome")
+	commitOutcomes, _ := mounted.Egress("commit_outcome")
+	snapshots, _ := mounted.Egress("snapshot")
+	if seed := receive(t, snapshots).Payload.(trajectory.Snapshot); seed.Version != 0 {
+		t.Fatalf("final-gate store seed = %+v", seed)
+	}
+
+	partial := gateObservationEnvelope("session-a", "stream-a", "observe-a", "partial-a",
+		coreperception.Observation{
+			Text: "weather", Observer: "audio", Source: "microphone",
+			Authority: trajectory.AuthorityUser, Revision: 1,
+			StableText: "weather", Provisional: true,
+		})
+	sendGate(t, observations, partial)
+	ignored := receive(t, gateOutcomes).Payload.(perceptionelements.FinalObservationGateOutcome)
+	if ignored.Kind != perceptionelements.FinalObservationIgnored || ignored.Code != "non_final" {
+		t.Fatalf("partial gate outcome = %+v", ignored)
+	}
+	assertNoGateEnvelope(t, commitOutcomes)
+	assertNoGateEnvelope(t, snapshots)
+
+	final := gateObservationEnvelope("session-a", "stream-a", "flush-a", "final-a",
+		coreperception.Observation{
+			Text: "weather in Paris", Observer: "audio", Source: "microphone",
+			Authority: trajectory.AuthorityUser, Revision: 2, Supersedes: 1,
+			StableText: "weather in Paris", Final: true,
+		})
+	sendGate(t, observations, final)
+	pending := receive(t, gateOutcomes).Payload.(perceptionelements.FinalObservationGateOutcome)
+	if pending.Kind != perceptionelements.FinalObservationPending || pending.Code != "awaiting_flush" {
+		t.Fatalf("final gate pending = %+v", pending)
+	}
+	assertNoGateEnvelope(t, commitOutcomes)
+
+	flushEnvelope := gateFlushEnvelope("session-a", "stream-a", "flush-a", "flush-a:outcome",
+		perceptionelements.Outcome{
+			Kind: perceptionelements.OutcomeSucceeded, Operation: "flush",
+			StreamID: "stream-a", ObservationCount: 1,
+		})
+	sendGate(t, flush, flushEnvelope)
+	emitted := receive(t, gateOutcomes).Payload.(perceptionelements.FinalObservationGateOutcome)
+	committedSnapshot := receive(t, snapshots).Payload.(trajectory.Snapshot)
+	committed := receive(t, commitOutcomes).Payload.(stateelements.ObservationCommitOutcome)
+	if emitted.Kind != perceptionelements.FinalObservationEmitted ||
+		committed.Kind != stateelements.ObservationCommitted || committed.ObservationRevision != 2 ||
+		committedSnapshot.Version != 1 || len(committedSnapshot.Items) != 1 {
+		t.Fatalf("flush-attested commit = gate %+v commit %+v snapshot %+v",
+			emitted, committed, committedSnapshot)
+	}
+	item := committedSnapshot.Items[0]
+	if item.Content != "weather in Paris" || item.Event == nil ||
+		item.Event.SupersedesRevision != 0 || item.SourceRevision != committed.SourceRevision {
+		t.Fatalf("flush-attested trajectory item = %+v", item)
+	}
+
+	sendGate(t, observations, final)
+	if replay := receive(t, gateOutcomes).Payload.(perceptionelements.FinalObservationGateOutcome); replay.Kind != perceptionelements.FinalObservationIgnored || replay.Code != "terminal_replay" {
+		t.Fatalf("final replay outcome = %+v", replay)
+	}
+	sendGate(t, flush, flushEnvelope)
+	if replay := receive(t, gateOutcomes).Payload.(perceptionelements.FinalObservationGateOutcome); replay.Kind != perceptionelements.FinalObservationIgnored || replay.Code != "terminal_replay" {
+		t.Fatalf("flush replay outcome = %+v", replay)
+	}
+	assertNoGateEnvelope(t, commitOutcomes)
+	assertNoGateEnvelope(t, snapshots)
 }
 
 func TestFinalObservationGatePreservesCancelFailureSemanticsAndRefusedCancelCannotErase(t *testing.T) {
@@ -438,7 +545,12 @@ func mountFinalObservationGate(
 
 func compileFinalObservationGate(t *testing.T) ir.Graph {
 	t.Helper()
-	parsed, err := syntax.Parse("final-observation-gate.ortg", []byte(finalObservationGateGraph))
+	return compileFinalObservationSource(t, finalObservationGateGraph)
+}
+
+func compileFinalObservationSource(t *testing.T, source string) ir.Graph {
+	t.Helper()
+	parsed, err := syntax.Parse("final-observation-gate.ortg", []byte(source))
 	if err != nil {
 		t.Fatal(err)
 	}

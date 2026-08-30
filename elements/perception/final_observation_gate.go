@@ -458,6 +458,13 @@ func (runner *finalObservationGateRunner) emit(
 	envelope.CausalParents = []string{final.envelope.ItemID, flush.envelope.ItemID}
 	observation := final.observation
 	observation.Media = slices.Clone(final.observation.Media)
+	// Supersedes is an ASR-revision relationship. Provisional revisions stay
+	// observable but deliberately never cross this activation gate, so carrying
+	// their revision ID into the canonical commit boundary would falsely claim
+	// that the predecessor was committed. The original final observation and
+	// its complete revision relationship remain immutable causal evidence; the
+	// derived flush-attested snapshot starts the canonical revision chain.
+	observation.Supersedes = 0
 	envelope.Payload = observation
 	delivery, err := runner.finals.Broadcast(ctx, envelope)
 	if err != nil {

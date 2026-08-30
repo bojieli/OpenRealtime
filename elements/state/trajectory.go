@@ -22,7 +22,10 @@ import (
 
 const TrajectoryStoreService = "state.trajectory.store"
 
-const stateImplementationRevision = "implementation:2"
+const (
+	trajectoryStoreImplementationRevision   = "implementation:2"
+	observationCommitImplementationRevision = "implementation:3"
+)
 
 func stateRuntimeID(descriptor element.Descriptor) string {
 	return "builtin://openrealtime/elements/" + descriptor.Name
@@ -353,8 +356,15 @@ func reportStateResolution(
 	reporter element.ResolutionReporter, descriptor element.Descriptor,
 ) error {
 	return liveidentity.Report(reporter, liveidentity.Artifact{
-		ID: stateRuntimeID(descriptor), Revision: stateImplementationRevision,
+		ID: stateRuntimeID(descriptor), Revision: stateRuntimeRevision(descriptor),
 	}, nil)
+}
+
+func stateRuntimeRevision(descriptor element.Descriptor) string {
+	if descriptor.Name == ObservationCommitDescriptor().Name {
+		return observationCommitImplementationRevision
+	}
+	return trajectoryStoreImplementationRevision
 }
 
 func Descriptors() []element.Descriptor {
@@ -392,8 +402,9 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
 	entries := make([]factoryprofile.Entry, 0, len(Descriptors()))
 	for _, factory := range []element.Factory{trajectoryStoreFactory{}, observationCommitFactory{}} {
+		descriptor := factory.Descriptor()
 		entries = append(entries, factoryprofile.Entry{Factory: factory, Artifact: inspect.ArtifactIdentity{
-			ID: stateRuntimeID(factory.Descriptor()), Revision: stateImplementationRevision,
+			ID: stateRuntimeID(descriptor), Revision: stateRuntimeRevision(descriptor),
 		}})
 	}
 	return factoryprofile.Registrations(entries...)

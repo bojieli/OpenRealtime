@@ -144,6 +144,80 @@ func TestObservationCommitReplyRequiresExactCommittedContext(t *testing.T) {
 	}
 }
 
+func TestObservationCommitReplyOwnershipIsExactAndInstanceScoped(t *testing.T) {
+	runner := &observationCommitRunner{
+		instance: "message_observation_commit",
+		pending: map[string]pendingObservationCommit{
+			"message_observation_commit-append-7": {},
+		},
+	}
+	tests := []struct {
+		name      string
+		envelope  element.Envelope
+		found     bool
+		addressed bool
+	}{
+		{
+			name: "pending exact causal parent", found: true, addressed: true,
+			envelope: element.Envelope{
+				ItemID:        "trajectory:committed",
+				CausalParents: []string{"message_observation_commit-append-7"},
+			},
+		},
+		{
+			name: "pending exact reply base", found: true, addressed: true,
+			envelope: element.Envelope{ItemID: "message_observation_commit-append-7:committed"},
+		},
+		{
+			name: "foreign fanout receipt", found: false, addressed: false,
+			envelope: element.Envelope{
+				ItemID:        "audio_observation_commit-append-8:committed",
+				CausalParents: []string{"audio_observation_commit-append-8"},
+			},
+		},
+		{
+			name: "missing own receipt", found: false, addressed: true,
+			envelope: element.Envelope{
+				ItemID:        "message_observation_commit-append-9:committed",
+				CausalParents: []string{"message_observation_commit-append-9"},
+			},
+		},
+		{
+			name: "prefix confusion", found: false, addressed: false,
+			envelope: element.Envelope{
+				ItemID: "other-message_observation_commit-append-9:committed",
+			},
+		},
+		{
+			name: "case confusion", found: false, addressed: false,
+			envelope: element.Envelope{
+				ItemID: "Message_observation_commit-append-9:committed",
+			},
+		},
+		{
+			name: "suffix collision", found: false, addressed: false,
+			envelope: element.Envelope{
+				ItemID: "message_observation_commit-append-9evil:committed",
+			},
+		},
+		{
+			name: "noncanonical leading zero", found: false, addressed: false,
+			envelope: element.Envelope{
+				ItemID: "message_observation_commit-append-09:committed",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, found := runner.pendingForReply(test.envelope)
+			if found != test.found || runner.replyTargetsInstance(test.envelope) != test.addressed {
+				t.Fatalf("reply ownership found=%t addressed=%t, want %t/%t",
+					found, runner.replyTargetsInstance(test.envelope), test.found, test.addressed)
+			}
+		})
+	}
+}
+
 func validObservationCommitReply(
 	t *testing.T,
 ) (element.Envelope, Commit, pendingObservationCommit) {

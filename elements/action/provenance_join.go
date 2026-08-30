@@ -402,18 +402,11 @@ func validateProvenanceResult(envelope element.Envelope, result cognitionelement
 	if strings.TrimSpace(result.ProviderReference) == "" {
 		return "missing_provider_reference", errors.New("cognition result requires a deployment provider reference")
 	}
-	if result.Interrupted {
-		return "interrupted_result", errors.New("an interrupted cognition result cannot authorize a tool proposal")
-	}
 	if err := continuation.ValidateDescriptor(result.Descriptor); err != nil {
 		return "invalid_descriptor", fmt.Errorf("invalid cognition descriptor: %w", err)
 	}
 	if err := continuation.ValidateInvocation(result.Invocation, result.Descriptor); err != nil {
 		return "invalid_invocation", fmt.Errorf("invalid cognition invocation: %w", err)
-	}
-	if result.ContextVersion == 0 || strings.TrimSpace(result.ContextTailID) == "" ||
-		result.Invocation.SourceRevision == 0 {
-		return "missing_context", errors.New("result requires a positive context version, tail, and source revision")
 	}
 	outputProposals := make([]cognitionelements.ToolProposal, 0, len(result.ToolProposals))
 	for index, output := range result.Outputs {
@@ -452,6 +445,20 @@ func validateProvenanceResult(envelope element.Envelope, result cognitionelement
 		if !sameProposal(outputProposals[index], proposal) {
 			return "result_membership_mismatch", errors.New("ordered outputs and aggregate tool proposals differ")
 		}
+	}
+	// Observation context is execution authority, not a prerequisite for a
+	// speech-only continuation. Explicit response.create runs deliberately
+	// carry no observation authority; they must remain visible to this join so
+	// a forged streamed proposal cannot hide from the aggregate result, but a
+	// result with no tool proposal has nothing to authorize. Validate the
+	// complete result membership above before making this authority decision.
+	if len(result.ToolProposals) > 0 && result.Interrupted {
+		return "interrupted_result", errors.New("an interrupted cognition result cannot authorize a tool proposal")
+	}
+	if len(result.ToolProposals) > 0 &&
+		(result.ContextVersion == 0 || strings.TrimSpace(result.ContextTailID) == "" ||
+			result.Invocation.SourceRevision == 0) {
+		return "missing_context", errors.New("result requires a positive context version, tail, and source revision")
 	}
 	return "", nil
 }
