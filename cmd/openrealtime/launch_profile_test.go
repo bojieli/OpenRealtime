@@ -7,13 +7,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bojieli/OpenRealtime/graph/ir"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
+	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
 )
 
 func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "scenario-profile.yaml")
+	directory := t.TempDir()
+	path := filepath.Join(directory, "scenario-profile.yaml")
+	graphPath := filepath.Join(directory, "scenario.ir.json")
+	valuesPath := filepath.Join(directory, "scenario.values.json")
 	var output bytes.Buffer
-	if err := runLaunchProfile([]string{"scenario", "-out", path}, &output); err != nil {
+	if err := runLaunchProfile([]string{
+		"scenario", "-out", path, "-graph-out", graphPath, "-values-out", valuesPath,
+	}, &output); err != nil {
 		t.Fatal(err)
 	}
 	payload, err := os.ReadFile(path)
@@ -59,9 +66,53 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 	if !strings.Contains(output.String(), "executable  sha256:") {
 		t.Fatalf("profile output omitted executable identity:\n%s", output.String())
 	}
+	graphPayload, err := os.ReadFile(graphPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundGraph, err := ir.Parse(graphPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valuesPayload, err := os.ReadFile(valuesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values, err := graphvalues.ParseJSON(valuesPath, valuesPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rebound, err := graphvalues.Bind(boundGraph, values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rebound.Graph.Fingerprint != boundGraph.Fingerprint ||
+		boundGraph.Fingerprint != profile.Plan.GraphFingerprint {
+		t.Fatalf("emitted graph/values/profile disagree: rebound=%s graph=%s profile=%s",
+			rebound.Graph.Fingerprint, boundGraph.Fingerprint, profile.Plan.GraphFingerprint)
+	}
 	if err := runLaunchProfile([]string{"scenario", "-out", path}, &bytes.Buffer{}); err == nil ||
 		!strings.Contains(err.Error(), "exclusively") {
 		t.Fatalf("create-only second freeze error = %v", err)
+	}
+}
+
+func TestScenarioProfileFreezeRequiresPairedDistinctCompanionOutputs(t *testing.T) {
+	directory := t.TempDir()
+	profile := filepath.Join(directory, "scenario-profile.yaml")
+	graph := filepath.Join(directory, "scenario.ir.json")
+	if err := runLaunchProfile([]string{
+		"scenario", "-out", profile, "-graph-out", graph,
+	}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "together") {
+		t.Fatalf("unpaired companion error = %v", err)
+	}
+	if err := runLaunchProfile([]string{
+		"scenario", "-out", profile, "-graph-out", graph, "-values-out", graph,
+	}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "distinct") {
+		t.Fatalf("aliased companion error = %v", err)
+	}
+	if _, err := os.Lstat(profile); !os.IsNotExist(err) {
+		t.Fatalf("invalid companion selection created profile: %v", err)
 	}
 }
 
