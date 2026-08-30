@@ -38,7 +38,9 @@ func TestMeetingEvidenceAttemptPrecedesEnvironmentAndCarriesExactTreatment(t *te
 		},
 		finish: func(context.Context, bench.Result) error { return nil },
 	}
-	outcome := runTask(context.Background(), nil, Options{Evidence: plugin}, Suite()[0])
+	outcome := runTask(context.Background(), meetingRunEnvironment{}, Options{
+		Evidence: plugin, evidenceOrigin: fixtureMeetingOrigin(),
+	}, Suite()[0])
 	if called != 1 || outcome.Completed || !strings.Contains(outcome.Error, want.Error()) {
 		t.Fatalf("runTask() outcome=%+v begin calls=%d", outcome, called)
 	}
