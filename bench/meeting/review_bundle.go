@@ -1061,7 +1061,7 @@ func (bundle *ReviewBundle) FinishSuite(ctx context.Context, result bench.Result
 			continue
 		}
 		published, publishErr := bundle.publishPreparedMeetingReview(
-			publicationContext, root, preparedAttempt,
+			publicationContext, preparedAttempt,
 		)
 		if publishErr != nil {
 			publicationErr = errors.Join(publicationErr,
@@ -2092,9 +2092,8 @@ func evaluationBundleFileMediaType(file revieweval.EvaluationBundleFile) string 
 }
 
 func (bundle *ReviewBundle) publishPreparedMeetingReview(
-	ctx context.Context, root *os.Root, prepared preparedMeetingReview,
+	ctx context.Context, prepared preparedMeetingReview,
 ) (result ReviewAttempt, resultErr error) {
-	_ = root // retained for call-site compatibility while evaluations remain siblings of source
 	attempt := cloneReviewAttempt(prepared.Attempt)
 	if prepared.Publication != nil {
 		defer func() {
