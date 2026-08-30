@@ -36,6 +36,7 @@ type campaignProvider struct {
 	capabilities   review.ProviderCapabilities
 	implementation []byte
 	configuration  []byte
+	assessment     []byte
 	claimed        atomic.Bool
 	closed         atomic.Bool
 	calls          atomic.Int32
@@ -81,8 +82,12 @@ func (provider *campaignProvider) Review(
 	}
 	request := []byte(`{"attempt":` + strconvQuote(prepared.AttemptID) + `}`)
 	raw := []byte(`{"id":` + strconvQuote("request-"+prepared.Case) + `}`)
+	output := fixtureAssessment
+	if len(provider.assessment) != 0 {
+		output = provider.assessment
+	}
 	return review.ProviderResponse{
-		Raw: raw, Output: slices.Clone(fixtureAssessment), ReportedModel: provider.descriptor.Model,
+		Raw: raw, Output: slices.Clone(output), ReportedModel: provider.descriptor.Model,
 		RequestID: "request-" + prepared.Case, RequestIDState: review.ProviderRequestIDValue,
 		Request: request,
 	}, nil
