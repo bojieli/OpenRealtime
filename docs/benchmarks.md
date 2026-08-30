@@ -248,13 +248,16 @@ vocabulary remains dimension-free. Realtime-CU also repeats the viewport extent
 in its pixel instruction so a model cannot silently assume the source image's
 encoded or training-time dimensions.
 
-```sh
-openrealtime serve \
-  -computer-use -fast-computer-use \
-  -fast-provider google -fast-sees \
-  -observers audio+video -observer-components keyframe
+Launch the locked graph-native provider through the constructor and exact
+profile-artifact path described in
+[Graph-native Realtime Computer Use](realtime-computer-use-graph.md). It serves
+the unchanged Realtime extension endpoint and has no Realtime-CU implementation
+switch or fallback to the legacy `-computer-use` / `-fast-computer-use` path.
+Then run the complete suite against that one endpoint:
 
+```sh
 openrealtime bench realtime-cu \
+  -endpoint ws://127.0.0.1:8765/v1/realtime \
   -grounding pixel,set_of_mark -fps 3 \
   -vary F10 -level bounded-fast \
   -out results/realtime-cu.json
