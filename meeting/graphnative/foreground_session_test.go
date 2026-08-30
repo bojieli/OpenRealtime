@@ -583,6 +583,106 @@ func TestForegroundSessionSerializesOverlappingProviderTurns(t *testing.T) {
 	}
 }
 
+func TestForegroundSessionStartsNextRunWhilePriorSpeechDrains(t *testing.T) {
+	session, runtime, _ := foregroundTestSession(t)
+	hello := foregroundTestHello(t)
+	for index, runID := range []string{"foreground-run-1", "foreground-run-2"} {
+		trigger := foregroundTestInputMessage(t, hello, "trigger", cognitionelements.Generate{
+			Invocation: continuation.Invocation{
+				Instruction: "meeting turn", MaxOutputTokens: 32,
+			},
+		}, element.Envelope{
+			ItemID: "trigger-" + runID, RunID: runID, Sequence: uint64(index + 2),
+		})
+		if err := session.Send(trigger); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sink, calls, _ := runtime.snapshot()
+	if calls != 2 || sink == nil {
+		t.Fatalf("runtime state: calls=%d sink=%T", calls, sink)
+	}
+	reservation := sink.(legacy.SpeechReservationSink)
+	utterance := action.Utterance{ID: "draining-utterance", Text: "Still speaking."}
+	if err := sink.TurnBegin(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := reservation.SpeechReserved(context.Background(), utterance); err != nil {
+		t.Fatal(err)
+	}
+	// Cascade returns from cognition after reserving the action-plane speech.
+	// Its actual Begin/Text/Audio/End callbacks may arrive later.
+	if err := sink.TurnEnd(context.Background(), legacy.TurnOutcome{}); err != nil {
+		t.Fatal(err)
+	}
+
+	started := make(chan error, 1)
+	go func() { started <- sink.TurnBegin(context.Background()) }()
+	select {
+	case err := <-started:
+		if err != nil {
+			t.Fatalf("next run while speech drains = %v", err)
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("next run was serialized behind prior paced speech")
+	}
+	// The prior action-plane stream continues while the next cognition run is
+	// active. Every speech frame must retain the prior graph run identity.
+	if err := sink.SpeechBegin(context.Background(), utterance); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.SpeechText(context.Background(), utterance, utterance.Text); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.SpeechAudio(context.Background(), utterance, action.Frame{
+		PCM16LE: []byte{1, 0, 2, 0}, SampleRateHz: 24_000, Final: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for index, port := range []string{"audio_out", "text_out", "text_out", "audio_out"} {
+		frame := foregroundTestReadFrame(t, session)
+		if frame.Port != port || frame.Envelope.RunID != "foreground-run-1" {
+			t.Fatalf("overlapping speech frame %d = port %q run %q", index, frame.Port, frame.Envelope.RunID)
+		}
+	}
+	if err := sink.ToolCalls(context.Background(), legacy.ToolCallEvent{
+		InvocationID: "visual-reflex-invocation",
+		Calls: []trajectory.ToolCall{{
+			CallID: "visual-call-1", Name: "computer.click_normalized",
+			Arguments: json.RawMessage(`{"x":500,"y":500}`),
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.TurnEnd(context.Background(), legacy.TurnOutcome{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The second, silent action run completes before the first turn's paced
+	// audio. Its graph identity must remain independent.
+	for index, port := range []string{"tool_proposal", "result", "outcome"} {
+		frame := foregroundTestReadFrame(t, session)
+		if frame.Port != port || frame.Envelope.RunID != "foreground-run-2" {
+			t.Fatalf("second run frame %d = port %q run %q", index, frame.Port, frame.Envelope.RunID)
+		}
+	}
+
+	if err := sink.SpeechEnd(context.Background(), utterance, action.Outcome{Completed: true}); err != nil {
+		t.Fatal(err)
+	}
+	for index, port := range []string{
+		"text_out", "audio_out", "result", "outcome",
+	} {
+		frame := foregroundTestReadFrame(t, session)
+		if frame.Port != port || frame.Envelope.RunID != "foreground-run-1" {
+			t.Fatalf("draining run frame %d = port %q run %q", index, frame.Port, frame.Envelope.RunID)
+		}
+	}
+	if len(session.draining) != 0 || len(session.utteranceRuns) != 0 {
+		t.Fatalf("completed speech retained run=%d utterance=%d", len(session.draining), len(session.utteranceRuns))
+	}
+}
+
 func TestForegroundSessionCanceledOverlappingTurnDoesNotStrandAdmission(t *testing.T) {
 	_, runtime, _ := foregroundTestSession(t)
 	sink, _, _ := runtime.snapshot()

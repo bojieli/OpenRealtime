@@ -166,13 +166,15 @@ type meetingLocalForegroundConfig struct {
 	VisionModel   string `json:"vision_model"`
 	VisionURL     string `json:"vision_url"`
 
-	MaxOutputTokens   int   `json:"max_output_tokens"`
-	ASRCadenceMS      int64 `json:"asr_cadence_ms"`
-	FrameRateMilliHz  int   `json:"frame_rate_millihz"`
-	RequestTimeoutMS  int64 `json:"request_timeout_ms"`
-	SentenceMinRunes  int   `json:"sentence_min_runes"`
-	AttachKeyframes   bool  `json:"attach_keyframes"`
-	ExternalVideoGate bool  `json:"external_video_gate"`
+	MaxOutputTokens       int   `json:"max_output_tokens"`
+	VisualReflexMaxTokens int   `json:"visual_reflex_max_output_tokens"`
+	VisualReflexTimeoutMS int64 `json:"visual_reflex_timeout_ms"`
+	ASRCadenceMS          int64 `json:"asr_cadence_ms"`
+	FrameRateMilliHz      int   `json:"frame_rate_millihz"`
+	RequestTimeoutMS      int64 `json:"request_timeout_ms"`
+	SentenceMinRunes      int   `json:"sentence_min_runes"`
+	AttachKeyframes       bool  `json:"attach_keyframes"`
+	ExternalVideoGate     bool  `json:"external_video_gate"`
 
 	ModelDeployment  inspect.ArtifactIdentity `json:"model_deployment"`
 	ASRDeployment    inspect.ArtifactIdentity `json:"asr_deployment"`
@@ -194,7 +196,7 @@ func defaultMeetingLocalConfiguration(
 	executable inspect.ArtifactIdentity, deployments meetingDeploymentIdentities,
 ) meetingLocalConfiguration {
 	return meetingLocalConfiguration{
-		FormatVersion: 1,
+		FormatVersion: 2,
 		Executable:    executable,
 		Foreground: meetingLocalForegroundConfig{
 			ModelProvider: meetingLocalModelProvider, Model: meetingLocalModelName,
@@ -204,7 +206,8 @@ func defaultMeetingLocalConfiguration(
 			TTSProvider: meetingLocalTTSProvider, TTSModel: meetingLocalTTSModel,
 			TTSURL: meetingLocalTTSURL, TTSVoice: "default",
 			VisionModel: meetingLocalModelName, VisionURL: meetingLocalModelURL,
-			MaxOutputTokens: 512, ASRCadenceMS: 200, FrameRateMilliHz: 5_000,
+			MaxOutputTokens: 512, VisualReflexMaxTokens: 96, VisualReflexTimeoutMS: 2_000,
+			ASRCadenceMS: 200, FrameRateMilliHz: 5_000,
 			RequestTimeoutMS: 30_000, SentenceMinRunes: 12,
 			AttachKeyframes: true, ExternalVideoGate: true,
 			ModelDeployment: deployments.Model, ASRDeployment: deployments.ASR,
@@ -462,6 +465,23 @@ func meetingForegroundLLMRequest(config meetingLocalForegroundConfig) providers.
 	}
 }
 
+// meetingVisualReflexLLMRequest gives the existing local multimodal plug-in a
+// separate, tightly bounded action role. It is not a second voice and cannot
+// invent a server-side action surface: cascade exposes only caller-declared,
+// target-bound computer actions to this silent provider.
+func meetingVisualReflexLLMRequest(config meetingLocalForegroundConfig) providers.LLMRequest {
+	vision := true
+	temperature := 0.0
+	return providers.LLMRequest{
+		Provider: config.ModelProvider, Model: config.Model, BaseURL: config.ModelURL,
+		APIKey: os.Getenv("OPENREALTIME_LOCAL_API_KEY"), Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortMinimal, ToolAuthority: continuation.ToolAuthorityExecute,
+		SpeechAuthority: continuation.SpeechAuthoritySilent, Reason: providers.ReasonOff,
+		Vision: &vision, RetainReasoning: false, Temperature: &temperature,
+		RequestTimeout: time.Duration(config.VisualReflexTimeoutMS) * time.Millisecond,
+	}
+}
+
 func meetingBackgroundLLMRequest(config meetingLocalBackgroundConfig) providers.LLMRequest {
 	vision := true
 	return providers.LLMRequest{
@@ -581,22 +601,33 @@ func newMeetingForegroundBinding(
 	if err := profileProviderContext(ctx); err != nil {
 		return nil, err
 	}
+	if config.VisualReflexMaxTokens <= 0 || config.VisualReflexTimeoutMS <= 0 {
+		return nil, errors.New("Meeting visual reflex requires positive token and timeout bounds")
+	}
 	fast, err := providers.NewLLM(meetingForegroundLLMRequest(config))
 	if err != nil {
 		return nil, fmt.Errorf("create Meeting foreground model: %w", err)
 	}
+	visualReflex, err := providers.NewLLM(meetingVisualReflexLLMRequest(config))
+	if err != nil {
+		_ = closeReadinessResource(fast)
+		return nil, fmt.Errorf("create Meeting visual reflex model: %w", err)
+	}
 	asr, err := providers.NewASRFactory(meetingASRRequest(config))
 	if err != nil {
+		_ = closeReadinessResource(visualReflex)
 		_ = closeReadinessResource(fast)
 		return nil, fmt.Errorf("create Meeting foreground ASR: %w", err)
 	}
 	asrDescriptor, err := providers.DescribeASR(meetingASRRequest(config))
 	if err != nil {
+		_ = closeReadinessResource(visualReflex)
 		_ = closeReadinessResource(fast)
 		return nil, fmt.Errorf("describe Meeting foreground ASR: %w", err)
 	}
 	speech, err := providers.NewTTS(meetingTTSRequest(config))
 	if err != nil {
+		_ = closeReadinessResource(visualReflex)
 		_ = closeReadinessResource(fast)
 		return nil, fmt.Errorf("create Meeting foreground TTS: %w", err)
 	}
@@ -608,6 +639,7 @@ func newMeetingForegroundBinding(
 	})
 	if err != nil {
 		_ = closeReadinessResource(speech)
+		_ = closeReadinessResource(visualReflex)
 		_ = closeReadinessResource(fast)
 		return nil, fmt.Errorf("create Meeting foreground vision: %w", err)
 	}
@@ -616,6 +648,7 @@ func newMeetingForegroundBinding(
 	})
 	if err != nil {
 		_ = closeReadinessResource(speech)
+		_ = closeReadinessResource(visualReflex)
 		_ = closeReadinessResource(fast)
 		return nil, err
 	}
@@ -639,6 +672,8 @@ func newMeetingForegroundBinding(
 		// than building a Meeting UI or action surface into the server.
 		FastComputerUse:     true,
 		FastBackgroundTools: true,
+		VisualReflex:        visualReflex, VisualReflexMaxTokens: config.VisualReflexMaxTokens,
+		VisualReflexTimeout: time.Duration(config.VisualReflexTimeoutMS) * time.Millisecond,
 		Policies:            policies, ObservationPolicy: cascade.ObservationEndpointOnly,
 		ASRCadence: time.Duration(config.ASRCadenceMS) * time.Millisecond,
 		Observers: []perception.Factory{perception.VideoFactory(perception.VideoConfig{
@@ -650,6 +685,7 @@ func newMeetingForegroundBinding(
 	})
 	if err != nil {
 		_ = closeReadinessResource(speech)
+		_ = closeReadinessResource(visualReflex)
 		_ = closeReadinessResource(fast)
 		return nil, fmt.Errorf("compose Meeting foreground binding: %w", err)
 	}

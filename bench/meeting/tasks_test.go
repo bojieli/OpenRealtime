@@ -39,8 +39,8 @@ func TestReferenceCellIsOnlyDirectGraphNativeCandidate(t *testing.T) {
 		bench.FactorObservers: "audio+screen",
 		bench.FactorCadence:   "200ms", bench.FactorFloor: "foreground-engine",
 		bench.FactorSlowModel:  "gemini-3.7-flash/minimal",
-		bench.FactorComponents: "narration-only",
-		bench.FactorPolicy:     "foreground-fast-tool-continuations+graph-background-injection",
+		bench.FactorComponents: "narration+silent-visual-reflex",
+		bench.FactorPolicy:     "bounded-visual-reflex+foreground-fast-tool-continuations+graph-background-injection",
 		bench.FactorFastModel:  "qwen-fast/minimal",
 		bench.FactorFastAction: "bounded-execution-via-graph",
 		bench.FactorVideoRate:  "5fps", bench.FactorRecognizer: "sensevoice-small",
@@ -61,6 +61,42 @@ func TestReferenceCellIsOnlyDirectGraphNativeCandidate(t *testing.T) {
 			strings.Contains(legacy, "qwen3-vl") || strings.Contains(legacy, "gemini-3.5") {
 			t.Fatalf("Meeting candidate retained legacy %s level %q", factor, level)
 		}
+	}
+}
+
+func TestMeetingInstructionsDisambiguateGroundedMetricAndVisibleAlertAction(t *testing.T) {
+	var openTask, alertTask Task
+	for _, task := range Suite() {
+		switch task.ID {
+		case "open-share-present":
+			openTask = task
+		case "visual-alert-during-presentation":
+			alertTask = task
+		}
+	}
+	result := string(launchReviewResult(ToolReadLaunchReview))
+	for _, want := range []string{
+		`"latest_conversion_rate_percent":18.4`,
+		`"change_from_prior_points":3.1`,
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("launch review result %q omitted %q", result, want)
+		}
+	}
+	for _, obsolete := range []string{`"conversion_rate_percent"`, `"change_points"`} {
+		if strings.Contains(result, obsolete) {
+			t.Fatalf("launch review result retained ambiguous field %q", obsolete)
+		}
+	}
+	openInstruction := taskInstruction(openTask)
+	if !strings.Contains(openInstruction, "exact latest_conversion_rate_percent") ||
+		!strings.Contains(openInstruction, "do not substitute change_from_prior_points") {
+		t.Fatalf("open/share instruction is ambiguous: %q", openInstruction)
+	}
+	alertInstruction := taskInstruction(alertTask)
+	if !strings.Contains(alertInstruction, "click the alert's visible Acknowledge control immediately") ||
+		!strings.Contains(alertInstruction, "verbal acknowledgment alone does not satisfy") {
+		t.Fatalf("visual alert instruction lacks an explicit UI action: %q", alertInstruction)
 	}
 }
 

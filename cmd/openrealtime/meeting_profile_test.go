@@ -197,8 +197,30 @@ func TestMeetingForegroundCompositionDisablesPrivateSlowLane(t *testing.T) {
 	if descriptor := meetingForegroundLLMRequest(config).ToolAuthority; descriptor != continuation.ToolAuthorityExecute {
 		t.Fatalf("foreground tool authority = %q, want execute", descriptor)
 	}
+	reflex := meetingVisualReflexLLMRequest(config)
+	if reflex.Provider != config.ModelProvider || reflex.Model != config.Model ||
+		reflex.BaseURL != config.ModelURL || reflex.Phase != meetingForegroundLLMRequest(config).Phase ||
+		reflex.ToolAuthority != continuation.ToolAuthorityExecute ||
+		reflex.SpeechAuthority != continuation.SpeechAuthoritySilent ||
+		reflex.Vision == nil || !*reflex.Vision ||
+		reflex.RequestTimeout != 2_000_000_000 {
+		t.Fatalf("Meeting visual reflex request = %+v", reflex)
+	}
 	if !foreground.inner.Capabilities().FastSlow {
 		t.Fatal("cascade test precondition changed: inner binding no longer exposes its private slow slot")
+	}
+	runtime, err := binding.Start(context.Background(), legacy.Options{Sink: meetingProfileProbeSink{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := runtime.Status()
+	if status.Fast != meetingLocalModelProvider+"/"+meetingLocalModelName ||
+		status.Reflex != meetingLocalModelProvider+"/"+meetingLocalModelName ||
+		status.Slow != "" || status.Tools.Fast != string(continuation.ToolAuthorityExecute) {
+		t.Fatalf("Meeting foreground live role status = %+v", status)
+	}
+	if err := runtime.Close(context.Background(), errors.New("composition test complete")); err != nil {
+		t.Fatal(err)
 	}
 	dormant := meetingDormantProvider{descriptor: meetingDormantDescriptor()}
 	if dormant.Descriptor().EffectiveToolAuthority() != continuation.ToolAuthorityExecute ||
@@ -257,7 +279,10 @@ func TestFreezeMeetingProfileBindsExactGraphResolutionAndDeployments(t *testing.
 		frozen.Profile.Server.Model != meetingLocalModelName ||
 		frozen.Profile.Server.TranscriptionModel != meetingLocalASRModel ||
 		frozen.Profile.Server.TokenEnvironment != "OPENREALTIME_TOKEN" ||
+		frozen.Configuration.FormatVersion != 2 ||
 		frozen.Configuration.Foreground.TTSVoice != "default" ||
+		frozen.Configuration.Foreground.VisualReflexMaxTokens != 96 ||
+		frozen.Configuration.Foreground.VisualReflexTimeoutMS != 2_000 ||
 		!frozen.Configuration.Foreground.AttachKeyframes ||
 		frozen.Configuration.Background.Model != "gemini-3.7-flash" ||
 		frozen.Configuration.Background.Deployment != options.deployments.Background {
@@ -284,6 +309,31 @@ func TestFreezeMeetingProfileBindsExactGraphResolutionAndDeployments(t *testing.
 	if other.Profile.Fingerprint == frozen.Profile.Fingerprint ||
 		other.Plan.Identity() == frozen.Plan.Identity() {
 		t.Fatal("background deployment drift did not change exact Meeting profile and plan identities")
+	}
+
+	reflexDrift := options
+	reflexDrift.verifier = verifier
+	reflexFrozen, err := freezeProductionMeetingProfile(
+		context.Background(), reflexDrift, executable,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reflexFrozen.Configuration.Foreground.VisualReflexTimeoutMS++
+	reflexArtifact, err := meetingConfigurationArtifact(
+		meetingRuntimeArtifactID, reflexFrozen.Configuration.Foreground, executable,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalArtifact, err := meetingConfigurationArtifact(
+		meetingRuntimeArtifactID, frozen.Configuration.Foreground, executable,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reflexArtifact == originalArtifact {
+		t.Fatal("visual reflex bound drift did not change Meeting foreground artifact")
 	}
 }
 
@@ -320,5 +370,23 @@ func TestMeetingProfileRejectsCancellationAndInvalidDeploymentBeforeComposition(
 		context.Background(), options, meetingProfileExecutable(),
 	); err == nil || !strings.Contains(err.Error(), "without a deployment verifier") {
 		t.Fatalf("unverified Meeting profile error = %v", err)
+	}
+}
+
+func TestMeetingForegroundRejectsUnboundedVisualReflexBeforeProviderComposition(t *testing.T) {
+	config := defaultMeetingLocalConfiguration(
+		meetingProfileExecutable(), meetingProfileDeployments(),
+	).Foreground
+	for _, mutate := range []func(*meetingLocalForegroundConfig){
+		func(config *meetingLocalForegroundConfig) { config.VisualReflexMaxTokens = 0 },
+		func(config *meetingLocalForegroundConfig) { config.VisualReflexTimeoutMS = 0 },
+	} {
+		candidate := config
+		mutate(&candidate)
+		if _, err := newMeetingForegroundBinding(
+			context.Background(), candidate, legacy.Options{},
+		); err == nil || !strings.Contains(err.Error(), "positive token and timeout bounds") {
+			t.Fatalf("unbounded visual reflex error = %v", err)
+		}
 	}
 }

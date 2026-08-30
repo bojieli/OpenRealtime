@@ -31,8 +31,8 @@ func ReferenceCell() bench.Cell {
 	cell.Levels[bench.FactorCadence] = "200ms"
 	cell.Levels[bench.FactorFloor] = "foreground-engine"
 	cell.Levels[bench.FactorSlowModel] = "gemini-3.7-flash/minimal"
-	cell.Levels[bench.FactorComponents] = "narration-only"
-	cell.Levels[bench.FactorPolicy] = "foreground-fast-tool-continuations+graph-background-injection"
+	cell.Levels[bench.FactorComponents] = "narration+silent-visual-reflex"
+	cell.Levels[bench.FactorPolicy] = "bounded-visual-reflex+foreground-fast-tool-continuations+graph-background-injection"
 	cell.Levels[bench.FactorFastModel] = "qwen-fast/minimal"
 	cell.Levels[bench.FactorFastAction] = "bounded-execution-via-graph"
 	cell.Levels[bench.FactorVideoRate] = "5fps"
@@ -631,7 +631,7 @@ func declarations(target computeruse.Target, task Task) ([]json.RawMessage, erro
 
 func launchReviewResult(tool string) json.RawMessage {
 	return json.RawMessage(fmt.Sprintf(
-		`{"tool":%q,"document":"launch-review","conversion_rate_percent":18.4,"change_points":3.1,"risks":["EU onboarding latency","mobile crash rate"],"recommendation":"proceed with monitored rollout"}`,
+		`{"tool":%q,"document":"launch-review","latest_conversion_rate_percent":18.4,"change_from_prior_points":3.1,"risks":["EU onboarding latency","mobile crash rate"],"recommendation":"proceed with monitored rollout"}`,
 		tool,
 	))
 }
@@ -647,11 +647,11 @@ func taskInstruction(task Task) string {
 	switch task.ID {
 	case "open-share-present":
 		return base + "Use meeting.read_launch_review for authoritative metrics. The requested screen actions are an ordered dependency: " +
-			"first click Open launch review; only after that action succeeds may you click Share screen. Then present the requested result."
+			"first click Open launch review; only after that action succeeds may you click Share screen. Then state the tool result's exact latest_conversion_rate_percent as the latest conversion rate; do not substitute change_from_prior_points."
 	case "follow-up-during-analysis":
 		return base + "Start meeting.analyze_launch_review for the requested background analysis. Do not wait for it before responding to a later navigation request."
 	case "visual-alert-during-presentation":
-		return base + "Present the overview and watch for a visual deployment alert. Acknowledge it immediately and continue the presentation. " +
+		return base + "Present the overview and watch for a visual deployment alert. If it appears, click the alert's visible Acknowledge control immediately while continuing the presentation; verbal acknowledgment alone does not satisfy the request. " +
 			"Do not click Share screen; nobody requested screen sharing in this case."
 	case "spoken-navigation-correction":
 		return base + "Navigate as requested, but treat the latest spoken correction as authoritative and reverse an earlier navigation promptly."

@@ -100,11 +100,12 @@ type foregroundSession struct {
 	sequence  atomic.Uint64
 	closeOnce sync.Once
 	closeErr  error
-	// Cascade may finish synthesizing one turn while its event loop has already
-	// admitted the next visual or transcript trigger. Its Sink callbacks carry
-	// no provider run ID, so the adapter must serialize those callback spans;
-	// otherwise the second TurnBegin can either fail a valid overlapping Meeting
-	// event or attach its output to the previous graph run.
+	// Cascade may finish cognition for one turn while its action plane is still
+	// synthesizing that turn's reserved utterance. A later visual or transcript
+	// trigger must be allowed to start then: blocking it behind playback defeats
+	// concurrent-I/O and misses deadline-sensitive Meeting actions. The adapter
+	// still serializes overlapping cognition spans, and routes asynchronous
+	// speech by the globally unique utterance ID to the exact draining graph run.
 	turnAdmission chan struct{}
 
 	sendMu  sync.Mutex
@@ -122,6 +123,8 @@ type foregroundSession struct {
 	contextChanged      chan struct{}
 	pendingRunIDs       []pendingForegroundTrigger
 	active              *foregroundRun
+	draining            map[string]*foregroundRun
+	utteranceRuns       map[string]*foregroundRun
 	runChanged          chan struct{}
 	transcriptRevision  uint64
 	transcriptByItem    map[string]uint64
@@ -158,6 +161,7 @@ func (plugin *SessionPlugin) newForegroundSession(
 		seen: make(map[string]struct{}), settings: legacy.CloneSettings(options.Settings),
 		contextChanged: make(chan struct{}), runChanged: make(chan struct{}),
 		turnAdmission: make(chan struct{}, 1), transcriptByItem: make(map[string]uint64),
+		draining: make(map[string]*foregroundRun), utteranceRuns: make(map[string]*foregroundRun),
 	}
 	session.turnAdmission <- struct{}{}
 	binding, err := plugin.config.Foreground.Factory(sessionCtx, cloneLegacyOptions(options))
@@ -687,9 +691,19 @@ func (session *foregroundSession) TurnEnd(
 		session.mu.Unlock()
 		return errors.New("end meeting foreground turn: run already ended")
 	}
-	session.active.turnEnded = true
-	session.active.turnOutcome = outcome
-	run := session.takeFinalRunLocked()
+	run := session.active
+	run.turnEnded = true
+	run.turnOutcome = outcome
+	// TurnEnd brackets provider cognition, not paced playback. Once it arrives,
+	// all future non-speech callbacks belong to the next run. Keep this run in a
+	// separately addressed draining set until every reserved utterance ends.
+	session.active = nil
+	close(session.runChanged)
+	session.runChanged = make(chan struct{})
+	if !foregroundRunSpeechComplete(run) {
+		session.draining[run.id] = run
+	}
+	run = session.takeFinalRunLocked(run)
 	session.mu.Unlock()
 	if run == nil {
 		return nil
@@ -777,7 +791,11 @@ func (session *foregroundSession) SpeechReserved(
 	if _, duplicate := session.active.utterances[utterance.ID]; duplicate {
 		return errors.New("reserve meeting foreground speech: duplicate utterance")
 	}
+	if _, duplicate := session.utteranceRuns[utterance.ID]; duplicate {
+		return errors.New("reserve meeting foreground speech: duplicate utterance")
+	}
 	session.active.utterances[utterance.ID] = &foregroundUtterance{value: cloneForegroundUtterance(utterance)}
+	session.utteranceRuns[utterance.ID] = session.active
 	return nil
 }
 
@@ -785,18 +803,19 @@ func (session *foregroundSession) SpeechReservationCancelled(
 	_ context.Context, utterance action.Utterance,
 ) {
 	session.mu.Lock()
-	if session.active == nil {
+	run := session.utteranceRuns[utterance.ID]
+	if run == nil {
 		session.mu.Unlock()
 		return
 	}
-	pending := session.active.utterances[utterance.ID]
+	pending := run.utterances[utterance.ID]
 	if pending != nil && !pending.audioOpened && !pending.textOpened {
 		pending.done = true
 	}
-	run := session.takeFinalRunLocked()
+	final := session.takeFinalRunLocked(run)
 	session.mu.Unlock()
-	if run != nil {
-		if err := session.finalizeForegroundRun(session.ctx, run); err != nil {
+	if final != nil {
+		if err := session.finalizeForegroundRun(session.ctx, final); err != nil {
 			session.fail(err)
 		}
 	}
@@ -812,16 +831,25 @@ func (session *foregroundSession) SpeechBegin(
 		return errors.New("begin meeting foreground speech: canonical ID and text are required")
 	}
 	session.mu.Lock()
-	if session.active == nil {
-		session.mu.Unlock()
-		return errors.New("begin meeting foreground speech outside an active turn")
+	run := session.utteranceRuns[utterance.ID]
+	if run == nil {
+		if session.active == nil || session.active.turnEnded {
+			session.mu.Unlock()
+			return errors.New("begin meeting foreground speech outside an active turn")
+		}
+		run = session.active
 	}
-	runID := session.active.id
-	parents := slices.Clone(session.active.parentIDs)
-	pending := session.active.utterances[utterance.ID]
+	runID := run.id
+	parents := slices.Clone(run.parentIDs)
+	pending := run.utterances[utterance.ID]
 	if pending == nil {
 		pending = &foregroundUtterance{value: cloneForegroundUtterance(utterance)}
-		session.active.utterances[utterance.ID] = pending
+		run.utterances[utterance.ID] = pending
+		if _, duplicate := session.utteranceRuns[utterance.ID]; duplicate {
+			session.mu.Unlock()
+			return errors.New("begin meeting foreground speech: duplicate utterance")
+		}
+		session.utteranceRuns[utterance.ID] = run
 	}
 	if pending.audioOpened || pending.textOpened || pending.done {
 		session.mu.Unlock()
@@ -853,21 +881,22 @@ func (session *foregroundSession) SpeechText(
 		return errors.New("publish meeting foreground speech text: bounded UTF-8 delta is required")
 	}
 	session.mu.Lock()
-	if session.active == nil {
+	run := session.utteranceRuns[utterance.ID]
+	if run == nil {
 		session.mu.Unlock()
-		return errors.New("publish meeting foreground speech text outside an active turn")
+		return errors.New("publish meeting foreground speech text outside a retained turn")
 	}
-	pending := session.active.utterances[utterance.ID]
+	pending := run.utterances[utterance.ID]
 	if pending == nil || !pending.textOpened || pending.done {
 		session.mu.Unlock()
 		return errors.New("publish meeting foreground speech text outside an open utterance")
 	}
 	pending.textIndex++
 	index := pending.textIndex
-	runID := session.active.id
-	parents := slices.Clone(session.active.parentIDs)
-	session.active.assistant.WriteString(text)
-	session.active.outputs = append(session.active.outputs, cognitionelements.PreparedOutput{
+	runID := run.id
+	parents := slices.Clone(run.parentIDs)
+	run.assistant.WriteString(text)
+	run.outputs = append(run.outputs, cognitionelements.PreparedOutput{
 		Kind: cognitionelements.PreparedAssistant, Text: text,
 	})
 	session.mu.Unlock()
@@ -885,11 +914,12 @@ func (session *foregroundSession) SpeechAudio(
 		return errors.New("publish meeting foreground speech audio: PCM16 and sample rate are required")
 	}
 	session.mu.Lock()
-	if session.active == nil {
+	run := session.utteranceRuns[utterance.ID]
+	if run == nil {
 		session.mu.Unlock()
-		return errors.New("publish meeting foreground speech audio outside an active turn")
+		return errors.New("publish meeting foreground speech audio outside a retained turn")
 	}
-	pending := session.active.utterances[utterance.ID]
+	pending := run.utterances[utterance.ID]
 	if pending == nil || !pending.audioOpened || pending.done {
 		session.mu.Unlock()
 		return errors.New("publish meeting foreground speech audio outside an open utterance")
@@ -901,8 +931,8 @@ func (session *foregroundSession) SpeechAudio(
 	}
 	offset := pending.sampleOffset
 	pending.sampleOffset += samples
-	runID := session.active.id
-	parents := slices.Clone(session.active.parentIDs)
+	runID := run.id
+	parents := slices.Clone(run.parentIDs)
 	session.mu.Unlock()
 	chunk := speechelements.AudioFrame{
 		Kind: speechelements.AudioChunk, UtteranceID: utterance.ID,
@@ -923,20 +953,21 @@ func (session *foregroundSession) SpeechEnd(
 		return err
 	}
 	session.mu.Lock()
-	if session.active == nil {
+	owner := session.utteranceRuns[utterance.ID]
+	if owner == nil {
 		session.mu.Unlock()
-		return errors.New("end meeting foreground speech outside an active turn")
+		return errors.New("end meeting foreground speech outside a retained turn")
 	}
-	pending := session.active.utterances[utterance.ID]
+	pending := owner.utterances[utterance.ID]
 	if pending == nil || pending.done || !pending.audioOpened || !pending.textOpened {
 		session.mu.Unlock()
 		return errors.New("end meeting foreground speech: unknown or closed utterance")
 	}
-	runID := session.active.id
-	parents := slices.Clone(session.active.parentIDs)
+	runID := owner.id
+	parents := slices.Clone(owner.parentIDs)
 	textIndex := pending.textIndex + 1
 	pending.done = true
-	run := session.takeFinalRunLocked()
+	run := session.takeFinalRunLocked(owner)
 	session.mu.Unlock()
 	if err := session.emit(ctx, "text_out", modelelements.PreparedTextType(), runID, parents,
 		cognitionelements.PreparedTextDelta{
@@ -1022,19 +1053,35 @@ func (session *foregroundSession) Failed(_ context.Context, event legacy.ErrorEv
 	session.fail(fmt.Errorf("meeting foreground runtime failed: %s: %s", event.Code, event.Message))
 }
 
-func (session *foregroundSession) takeFinalRunLocked() *foregroundRun {
-	if session.active == nil || !session.active.turnEnded {
-		return nil
+func foregroundRunSpeechComplete(run *foregroundRun) bool {
+	if run == nil {
+		return false
 	}
-	for _, utterance := range session.active.utterances {
+	for _, utterance := range run.utterances {
 		if !utterance.done {
-			return nil
+			return false
 		}
 	}
-	run := session.active
-	session.active = nil
-	close(session.runChanged)
-	session.runChanged = make(chan struct{})
+	return true
+}
+
+func (session *foregroundSession) takeFinalRunLocked(run *foregroundRun) *foregroundRun {
+	if run == nil || !run.turnEnded || !foregroundRunSpeechComplete(run) {
+		return nil
+	}
+	if session.active == run {
+		session.active = nil
+		close(session.runChanged)
+		session.runChanged = make(chan struct{})
+	}
+	if session.draining[run.id] == run {
+		delete(session.draining, run.id)
+	}
+	for utteranceID := range run.utterances {
+		if session.utteranceRuns[utteranceID] == run {
+			delete(session.utteranceRuns, utteranceID)
+		}
+	}
 	return run
 }
 
