@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	legacy "github.com/bojieli/OpenRealtime/binding"
@@ -475,6 +476,13 @@ func (session *session) acceptInvocationOutcome(envelope element.Envelope) error
 	if envelope.SessionID != session.sessionID || outcome.Role != "foreground" {
 		return errors.New("scenario conversation invocation outcome drifted from its exact session or role")
 	}
+	internal := outcome.Operation == "committed"
+	if !internal && len(envelope.CausalParents) != 1 {
+		internal = exactPostCommitSilenceCreateOutcome(envelope, outcome)
+		if !internal {
+			return errors.New("scenario conversation invocation outcome has no exact gateway parent")
+		}
+	}
 	if outcome.Kind == policyelements.SessionInvocationEmitted {
 		if !canonicalIdentity(outcome.GenerationID) ||
 			(outcome.Operation != "create" && outcome.Operation != "committed") {
@@ -490,12 +498,8 @@ func (session *session) acceptInvocationOutcome(envelope element.Envelope) error
 		}
 		session.activityMu.Unlock()
 	}
-
-	if len(envelope.CausalParents) != 1 {
-		if outcome.Operation == "committed" {
-			return nil
-		}
-		return errors.New("scenario conversation invocation outcome has no exact gateway parent")
+	if internal {
+		return nil
 	}
 	parent := envelope.CausalParents[0]
 	session.operationMu.Lock()
@@ -540,6 +544,42 @@ func (session *session) acceptInvocationOutcome(envelope element.Envelope) error
 		pending.result <- result
 	}
 	return nil
+}
+
+// exactPostCommitSilenceCreateOutcome recognizes the one graph-internal create
+// path in this descriptor-locked profile. The silence element preserves the
+// durable commit parents and adds its own response ID, so its policy outcome is
+// intentionally not a one-parent gateway acknowledgement. Binding both the
+// fixed node identity and the policy runner's direct-cause item identity keeps
+// an arbitrary multi-parent create from acquiring an active generation.
+func exactPostCommitSilenceCreateOutcome(
+	envelope element.Envelope, outcome policyelements.SessionInvocationOutcome,
+) bool {
+	if outcome.Operation != "create" || outcome.Kind != policyelements.SessionInvocationEmitted {
+		return false
+	}
+	const (
+		causePrefix  = "post_commit_silence:post_commit_silence:"
+		outcomeInfix = ":session_invocation_outcome:"
+	)
+	causeID, outcomeSequence, found := strings.Cut(envelope.ItemID, outcomeInfix)
+	if !found || !strings.HasPrefix(causeID, causePrefix) {
+		return false
+	}
+	causeSequence := strings.TrimPrefix(causeID, causePrefix)
+	if sequence, err := strconv.ParseUint(causeSequence, 10, 64); err != nil || sequence == 0 {
+		return false
+	}
+	if sequence, err := strconv.ParseUint(outcomeSequence, 10, 64); err != nil || sequence == 0 {
+		return false
+	}
+	parents := 0
+	for _, parent := range envelope.CausalParents {
+		if parent == causeID {
+			parents++
+		}
+	}
+	return parents == 1
 }
 
 func invocationOutcomeError(outcome policyelements.SessionInvocationOutcome) error {

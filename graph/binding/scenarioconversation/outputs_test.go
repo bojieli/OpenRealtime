@@ -10,6 +10,7 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	acousticelements "github.com/bojieli/OpenRealtime/elements/acoustic"
 	actionelements "github.com/bojieli/OpenRealtime/elements/action"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -105,6 +106,70 @@ func TestResponseCreateContextWaitsForExactPublishedSnapshot(t *testing.T) {
 		Payload: session.bundle.store.Snapshot(),
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestInvocationOutcomeAcceptsOnlyTheExactGraphInternalSilenceCreate(t *testing.T) {
+	const (
+		sessionID    = "session-a"
+		generationID = "generation-a"
+		causeID      = "post_commit_silence:post_commit_silence:7"
+	)
+	outcome := policyelements.SessionInvocationOutcome{
+		Kind: policyelements.SessionInvocationEmitted, Operation: "create",
+		Role: "foreground", GenerationID: generationID,
+	}
+	valid := element.Envelope{
+		ItemID: causeID + ":session_invocation_outcome:9", SessionID: sessionID,
+		CausalParents: []string{"durable-commit", "trajectory-state", causeID}, Payload: outcome,
+	}
+	newSession := func() *session {
+		return &session{
+			sessionID: sessionID, pendingOps: make(map[string]*pendingOperation),
+			active: make(map[string]struct{}), terminalRuns: make(map[string]struct{}),
+		}
+	}
+	accepted := newSession()
+	if err := accepted.acceptInvocationOutcome(valid); err != nil {
+		t.Fatal(err)
+	}
+	if _, found := accepted.active[generationID]; !found {
+		t.Fatal("exact post-commit silence create did not acquire its generation")
+	}
+
+	tests := []struct {
+		name string
+		edit func(*element.Envelope, *policyelements.SessionInvocationOutcome)
+	}{
+		{name: "missing direct cause", edit: func(envelope *element.Envelope, _ *policyelements.SessionInvocationOutcome) {
+			envelope.CausalParents = []string{"durable-commit", "trajectory-state"}
+		}},
+		{name: "wrong node", edit: func(envelope *element.Envelope, _ *policyelements.SessionInvocationOutcome) {
+			envelope.ItemID = "other:post_commit_silence:7:session_invocation_outcome:9"
+			envelope.CausalParents[2] = "other:post_commit_silence:7"
+		}},
+		{name: "invalid cause sequence", edit: func(envelope *element.Envelope, _ *policyelements.SessionInvocationOutcome) {
+			envelope.ItemID = "post_commit_silence:post_commit_silence:latest:session_invocation_outcome:9"
+			envelope.CausalParents[2] = "post_commit_silence:post_commit_silence:latest"
+		}},
+		{name: "refused create", edit: func(_ *element.Envelope, outcome *policyelements.SessionInvocationOutcome) {
+			outcome.Kind = policyelements.SessionInvocationRefused
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := newSession()
+			envelope := valid.Clone()
+			candidateOutcome := outcome
+			test.edit(&envelope, &candidateOutcome)
+			envelope.Payload = candidateOutcome
+			if err := candidate.acceptInvocationOutcome(envelope); err == nil {
+				t.Fatal("drifted internal create was accepted")
+			}
+			if len(candidate.active) != 0 {
+				t.Fatal("invalid internal create mutated active generations")
+			}
+		})
 	}
 }
 
