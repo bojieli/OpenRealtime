@@ -199,7 +199,7 @@ func (session *meetingSessionAdapter) Audio(ctx context.Context, frame perceptio
 		return fmt.Errorf("send meeting audio: %w", err)
 	}
 	streamID := canonicalMediaStream(frame.Source, "microphone")
-	return session.send(ctx, session.ports.audio, "audio", streamID,
+	return session.sendCaptured(ctx, session.ports.audio, "audio", streamID, frame.CapturedNS,
 		acousticelements.InputFrame{StreamID: streamID, Frame: cloneMeetingFrame(frame)})
 }
 
@@ -232,9 +232,10 @@ func (session *meetingSessionAdapter) Video(ctx context.Context, frame perceptio
 	}
 	session.videoCaptured[streamID] = frame.CapturedNS
 	session.videoMu.Unlock()
-	return session.send(ctx, session.ports.video, "video", streamID, modelelements.VideoInputFrame{
-		StreamID: streamID, Frame: cloneMeetingFrame(frame), FrameRateMilliHz: frameRate,
-	})
+	return session.sendCaptured(ctx, session.ports.video, "video", streamID, frame.CapturedNS,
+		modelelements.VideoInputFrame{
+			StreamID: streamID, Frame: cloneMeetingFrame(frame), FrameRateMilliHz: frameRate,
+		})
 }
 
 func (session *meetingSessionAdapter) Text(ctx context.Context, input legacy.TextInput) error {
@@ -618,23 +619,34 @@ func (session *meetingSessionAdapter) send(
 	sequence := session.sequence.Add(1)
 	kind = strings.ReplaceAll(strings.TrimSpace(kind), "_", "-")
 	itemID := fmt.Sprintf("meeting-%s-%d", kind, sequence)
-	return session.sendEnvelope(ctx, port, itemID, runID, sequence, payload)
+	return session.sendEnvelope(ctx, port, itemID, runID, sequence, 0, payload)
+}
+
+func (session *meetingSessionAdapter) sendCaptured(
+	ctx context.Context, port element.OutputPort, kind, runID string, capturedNS uint64, payload any,
+) error {
+	sequence := session.sequence.Add(1)
+	kind = strings.ReplaceAll(strings.TrimSpace(kind), "_", "-")
+	itemID := fmt.Sprintf("meeting-%s-%d", kind, sequence)
+	return session.sendEnvelope(ctx, port, itemID, runID, sequence, capturedNS, payload)
 }
 
 func (session *meetingSessionAdapter) sendWithID(
 	ctx context.Context, port element.OutputPort, itemID, runID string, payload any,
 ) error {
 	sequence := session.sequence.Add(1)
-	return session.sendEnvelope(ctx, port, itemID, runID, sequence, payload)
+	return session.sendEnvelope(ctx, port, itemID, runID, sequence, 0, payload)
 }
 
 func (session *meetingSessionAdapter) sendEnvelope(
-	ctx context.Context, port element.OutputPort, itemID, runID string, sequence uint64, payload any,
+	ctx context.Context, port element.OutputPort, itemID, runID string, sequence, capturedNS uint64,
+	payload any,
 ) error {
 	envelope := element.Envelope{
 		Type: port.Type(), ItemID: itemID, SessionID: session.sessionID,
 		SourceID: "gateway", OpportunityID: itemID, RunID: runID, Sequence: sequence,
-		TraceID: itemID, CancellationScope: session.sessionID, Payload: payload,
+		CaptureNS: capturedNS, TraceID: itemID, CancellationScope: session.sessionID,
+		Payload: payload,
 	}
 	delivery, err := port.Broadcast(ctx, envelope)
 	if err != nil {
