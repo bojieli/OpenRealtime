@@ -1,0 +1,762 @@
+{
+  "version": 1,
+  "gates": [
+    {
+      "id": "external.benchmark.dataset.fdb15",
+      "description": "Run all 498 Full-Duplex-Bench v1.5 recordings with exact runtime evidence",
+      "availability": "provisioned",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdb", "-dataset", "{root}/.runtime/full-duplex-bench-v1.5/dataset", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-out", "{artifacts}/fdb15.json"],
+      "timeout": "30h",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "directory", "value": "{root}/.runtime/full-duplex-bench-v1.5/dataset", "description": "the digest-checked FDB v1.5 dataset is prepared"},
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
+        {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"}
+      ],
+      "assertions": [
+        {"kind": "file_nonempty", "value": "{artifacts}/fdb15.json"},
+        {"kind": "stdout_regex", "value": "(?m)^reportable$"},
+        {"kind": "stdout_regex", "value": "(?m)^tasks      : 498 completed, 0 failed, of 498 expected$"}
+      ]
+    },
+    {
+      "id": "external.benchmark.dataset.fdb3",
+      "description": "Run all 100 Full-Duplex-Bench v3 tool-use recordings with exact runtime evidence",
+      "availability": "provisioned",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdbv3", "-dataset", "{root}/.runtime/full-duplex-bench-v3/dataset/fdb_v3_data_released", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-out", "{artifacts}/fdb3.json"],
+      "timeout": "12h",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "directory", "value": "{root}/.runtime/full-duplex-bench-v3/dataset/fdb_v3_data_released", "description": "the digest-checked FDB v3 dataset is prepared"},
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
+        {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"}
+      ],
+      "assertions": [
+        {"kind": "file_nonempty", "value": "{artifacts}/fdb3.json"},
+        {"kind": "stdout_regex", "value": "(?m)^reportable$"},
+        {"kind": "stdout_regex", "value": "(?m)^tasks      : 100 completed, 0 failed, of 100 expected$"}
+      ]
+    },
+    {
+      "id": "external.benchmark.dataset.fdbench",
+      "description": "Run all 6,147 FD-Bench conversations across every published partition",
+      "availability": "provisioned",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdbench", "-dataset", "{root}/.runtime/fd-bench/dataset", "-conditions", "chattts-single-round-combine-easy,chattts-single-round-combine-hard,chattts-single-round-combine-med,cosyvoice2-single-round-combine-easy,cosyvoice2-single-round-combine-easy-noisy-bg-0dB,cosyvoice2-single-round-combine-easy-noisy-bg-10dB,cosyvoice2-single-round-combine-easy-noisy-bg-20dB,cosyvoice2-single-round-combine-easy-noisy-gap-0dB,cosyvoice2-single-round-combine-easy-noisy-gap-10dB,cosyvoice2-single-round-combine-easy-noisy-gap-20dB,cosyvoice2-single-round-combine-hard,cosyvoice2-single-round-combine-med,f5tts-single-round-combine-easy,f5tts-single-round-combine-easy-noisy-bg-0dB,f5tts-single-round-combine-easy-noisy-bg-10dB,f5tts-single-round-combine-easy-noisy-bg-20dB,f5tts-single-round-combine-easy-noisy-gap-0dB,f5tts-single-round-combine-easy-noisy-gap-10dB,f5tts-single-round-combine-easy-noisy-gap-20dB,f5tts-single-round-combine-hard,f5tts-single-round-combine-med", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-out", "{artifacts}/fdbench6147.json"],
+      "timeout": "72h",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "directory", "value": "{root}/.runtime/fd-bench/dataset", "description": "the digest-checked FD-Bench dataset is prepared"},
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
+        {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"}
+      ],
+      "assertions": [
+        {"kind": "file_nonempty", "value": "{artifacts}/fdbench6147.json"},
+        {"kind": "stdout_regex", "value": "(?m)^reportable$"},
+        {"kind": "stdout_regex", "value": "(?m)^tasks      : 6147 completed, 0 failed, of 6147 expected$"}
+      ]
+    },
+    {
+      "id": "external.benchmark.dynacu",
+      "description": "Run the pinned upstream DynaCU 150-task browser suite without restrictions",
+      "availability": "provisioned",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "dynacu", "-aoi-dir", "{root}/.runtime/dynacu-bench/aoi", "-python", "{root}/.runtime/dynacu-bench/aoi/.venv/bin/python", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-out", "{artifacts}/dynacu.json"],
+      "timeout": "12h",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "directory", "value": "{root}/.runtime/dynacu-bench/aoi/.git", "description": "the pinned DynaCU checkout is prepared"},
+        {"kind": "executable", "value": "{root}/.runtime/dynacu-bench/aoi/.venv/bin/python", "description": "the DynaCU Python environment is prepared"},
+        {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"}
+      ],
+      "assertions": [
+        {"kind": "file_nonempty", "value": "{artifacts}/dynacu.json"},
+        {"kind": "stdout_regex", "value": "(?m)^completed  : 150$"}
+      ]
+    },
+    {
+      "id": "external.benchmark.meeting.cascade",
+      "description": "Run all four Meeting Assistant cases through the composable cascade foreground",
+      "availability": "provisioned",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "meeting", "-foreground", "cascade", "-transport", "websocket", "-endpoint", "{env:OPENREALTIME_MEETING_CASCADE_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-out", "{artifacts}/meeting-cascade.json"],
+      "timeout": "2h",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "browser", "description": "a real Chromium executable is available"},
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"},
+        {"kind": "env_url", "value": "OPENREALTIME_MEETING_CASCADE_ENDPOINT", "description": "the cascade Realtime endpoint is supplied"}
+      ],
+      "assertions": [
+        {"kind": "file_nonempty", "value": "{artifacts}/meeting-cascade.json"},
+        {"kind": "stdout_regex", "value": "(?m)^reportable$"},
+        {"kind": "stdout_regex", "value": "(?m)^tasks      : 4 completed, 0 infrastructure failures, of 4 expected$"}
+      ]
+    },
+    {
+      "id": "external.benchmark.meeting.omni",
+      "description": "Run all four Meeting Assistant cases through the composable native-audio foreground",
+      "availability": "provisioned",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "meeting", "-foreground", "omni", "-transport", "webrtc", "-endpoint", "{env:OPENREALTIME_MEETING_OMNI_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-out", "{artifacts}/meeting-omni.json"],
+      "timeout": "2h",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "browser", "description": "a real Chromium executable is available"},
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"},
+        {"kind": "env_url", "value": "OPENREALTIME_MEETING_OMNI_ENDPOINT", "description": "the native-audio Realtime endpoint is supplied"}
+      ],
+      "assertions": [
+        {"kind": "file_nonempty", "value": "{artifacts}/meeting-omni.json"},
+        {"kind": "stdout_regex", "value": "(?m)^reportable$"},
+        {"kind": "stdout_regex", "value": "(?m)^tasks      : 4 completed, 0 infrastructure failures, of 4 expected$"}
+      ]
+    },
+    {
+      "id": "external.benchmark.realtime-cu",
+      "description": "Run all sixteen Realtime-CU cases across pixel and set-of-mark grounding",
+      "availability": "provisioned",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "realtime-cu", "-grounding", "pixel,set_of_mark", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-out", "{artifacts}/realtime-cu.json"],
+      "timeout": "4h",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "browser", "description": "a real Chromium executable is available"},
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
+        {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"}
+      ],
+      "assertions": [
+        {"kind": "file_nonempty", "value": "{artifacts}/realtime-cu.json"},
+        {"kind": "stdout_regex", "value": "(?m)^reportable$"},
+        {"kind": "stdout_regex", "value": "(?m)^tasks      : 16 completed, 0 infrastructure failures, of 16 expected$"}
+      ]
+    },
+    {
+      "id": "external.benchmark.scenario",
+      "description": "Run all eleven owned interaction scenarios at the preregistered fifteen repetitions",
+      "availability": "provisioned",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "run", "./cmd/openrealtime", "scenario", "-url", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-speech-url", "{env:OPENREALTIME_SPEECH_ENDPOINT}", "-repeat", "15", "-architecture-manifest", "{env:OPENREALTIME_SCENARIO_ARCHITECTURE_MANIFEST}", "-architecture-cell", "{env:OPENREALTIME_SCENARIO_ARCHITECTURE_CELL}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-record", "{artifacts}/scenario.json"],
+      "timeout": "24h",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"},
+        {"kind": "env_file", "value": "OPENREALTIME_SCENARIO_ARCHITECTURE_MANIFEST", "description": "the reviewed graph architecture manifest is supplied"},
+        {"kind": "env", "value": "OPENREALTIME_SCENARIO_ARCHITECTURE_CELL", "description": "the exact runnable architecture cell is named"},
+        {"kind": "env_url", "value": "OPENREALTIME_SPEECH_ENDPOINT", "description": "the speech synthesis endpoint is supplied"}
+      ],
+      "assertions": [
+        {"kind": "file_nonempty", "value": "{artifacts}/scenario.json"},
+        {"kind": "stdout_regex", "value": "(?m)^  reportable architecture cell$"},
+        {"kind": "stdout_regex", "value": "(?m)^  scenarios 165/165$"}
+      ]
+    },
+    {
+      "id": "external.benchmark.tau.control",
+      "description": "Run all 278 pinned tau2 base tasks with control speech",
+      "availability": "provisioned",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "tau-voice", "-tau2", "{root}/.runtime/tau2-bench", "-python", "{root}/.runtime/tau2-bench/.venv/bin/python", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-user-model-url", "{env:OPENREALTIME_TAU_USER_MODEL_ENDPOINT}", "-synthesis-url", "{env:OPENREALTIME_TAU_SYNTHESIS_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-condition", "control", "-out", "{artifacts}/tau-control.json"],
+      "timeout": "72h",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "directory", "value": "{root}/.runtime/tau2-bench/.git", "description": "the pinned and patched tau2 checkout is prepared"},
+        {"kind": "executable", "value": "{root}/.runtime/tau2-bench/.venv/bin/python", "description": "the complete tau2 voice environment is prepared"},
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
+        {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
+        {"kind": "env_url", "value": "OPENREALTIME_TAU_SYNTHESIS_ENDPOINT", "description": "the simulated caller speech endpoint is supplied"},
+        {"kind": "env_url", "value": "OPENREALTIME_TAU_USER_MODEL_ENDPOINT", "description": "the simulated caller model endpoint is supplied"}
+      ],
+      "assertions": [
+        {"kind": "file_nonempty", "value": "{artifacts}/tau-control.json"},
+        {"kind": "stdout_regex", "value": "(?m)^reportable$"},
+        {"kind": "stdout_regex", "value": "(?m)^tasks      : 278 completed, 0 failed, of 278 expected$"}
+      ]
+    },
+    {
+      "id": "external.benchmark.tau.regular",
+      "description": "Run all 278 pinned tau2 base tasks with regular realistic speech",
+      "availability": "provisioned",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "tau-voice", "-tau2", "{root}/.runtime/tau2-bench", "-python", "{root}/.runtime/tau2-bench/.venv/bin/python", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-user-model-url", "{env:OPENREALTIME_TAU_USER_MODEL_ENDPOINT}", "-synthesis-url", "{env:OPENREALTIME_TAU_SYNTHESIS_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-condition", "regular", "-out", "{artifacts}/tau-regular.json"],
+      "timeout": "72h",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "directory", "value": "{root}/.runtime/tau2-bench/.git", "description": "the pinned and patched tau2 checkout is prepared"},
+        {"kind": "executable", "value": "{root}/.runtime/tau2-bench/.venv/bin/python", "description": "the complete tau2 voice environment is prepared"},
+        {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
+        {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
+        {"kind": "env_url", "value": "OPENREALTIME_TAU_SYNTHESIS_ENDPOINT", "description": "the simulated caller speech endpoint is supplied"},
+        {"kind": "env_url", "value": "OPENREALTIME_TAU_USER_MODEL_ENDPOINT", "description": "the simulated caller model endpoint is supplied"}
+      ],
+      "assertions": [
+        {"kind": "file_nonempty", "value": "{artifacts}/tau-regular.json"},
+        {"kind": "stdout_regex", "value": "(?m)^reportable$"},
+        {"kind": "stdout_regex", "value": "(?m)^tasks      : 278 completed, 0 failed, of 278 expected$"}
+      ]
+    },
+    {
+      "id": "external.macos.signed-e2e",
+      "description": "Verify and drive the signed native macOS application with the trusted E2E runner",
+      "availability": "provisioned",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-tags", "signed_macos_e2e", "./macos", "-run", "^TestSignedNativeRunnerReleaseGate$", "-count=1", "-v"],
+      "environment": {"OPENREALTIME_SIGNED_MACOS_E2E": "1"},
+      "timeout": "30m",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "command", "value": "codesign", "description": "Apple codesign is available"},
+        {"kind": "env_directory", "value": "OPENREALTIME_SIGNED_APP", "description": "an absolute signed OpenRealtime.app is supplied"},
+        {"kind": "env_executable", "value": "OPENREALTIME_MACOS_E2E_RUNNER", "description": "the trusted native E2E driver is supplied"},
+        {"kind": "os", "value": "darwin", "description": "the job runs on macOS"}
+      ]
+    },
+    {
+      "id": "external.model.live-surface",
+      "description": "Drive the live browser surface against the provisioned real-model deployment",
+      "availability": "provisioned",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-count=1", "-v", "./surface", "-run", "^TestLiveSurfaceAgainstRealModels$"],
+      "environment": {"OPENREALTIME_LIVE_ENDPOINT": "{env:OPENREALTIME_LIVE_ENDPOINT}"},
+      "timeout": "30m",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "browser", "description": "a real Chromium executable is available"},
+        {"kind": "command", "value": "node", "description": "Node.js is available"},
+        {"kind": "env_url", "value": "OPENREALTIME_LIVE_ENDPOINT", "description": "the live model-backed Realtime endpoint is supplied"}
+      ]
+    },
+    {
+      "id": "external.tau.upstream",
+      "description": "Run tau2 check-data, lint, formatting, full tests, and the audio-native provider suite",
+      "availability": "provisioned",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{root}/scripts/release-tau-upstream-gate.sh"],
+      "environment": {"TAU2_DIR": "{root}/.runtime/tau2-bench"},
+      "timeout": "3h",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "directory", "value": "{root}/.runtime/tau2-bench/.git", "description": "the pinned and patched tau2 checkout is prepared"},
+        {"kind": "env", "value": "DASHSCOPE_API_KEY", "description": "Qwen Realtime credentials are supplied"},
+        {"kind": "env", "value": "DEEPGRAM_API_KEY", "description": "LiveKit cascaded speech credentials are supplied"},
+        {"kind": "any_env", "alternatives": ["GEMINI_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_SERVICE_ACCOUNT_KEY"], "description": "one supported Gemini credential source is supplied"},
+        {"kind": "env", "value": "LIVEKIT_TEST_ENABLED", "description": "both LiveKit cascaded profiles are explicitly enabled"},
+        {"kind": "command", "value": "make", "description": "make is available"},
+        {"kind": "env", "value": "NOVA_TEST_ENABLED", "description": "Amazon Nova Sonic is explicitly enabled"},
+        {"kind": "env", "value": "OPENAI_API_KEY", "description": "OpenAI Realtime and LiveKit model credentials are supplied"},
+        {"kind": "any_env", "alternatives": ["AWS_ACCESS_KEY_ID", "AWS_PROFILE", "AWS_WEB_IDENTITY_TOKEN_FILE"], "description": "one supported AWS credential source is supplied for Nova Sonic"},
+        {"kind": "command", "value": "uv", "description": "uv is available"},
+        {"kind": "env", "value": "XAI_API_KEY", "description": "xAI Realtime credentials are supplied"}
+      ]
+    },
+    {
+      "id": "local.build.release",
+      "description": "Build and checksum every declared release target",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{root}/scripts/build-release.sh", "{artifacts}/release"],
+      "timeout": "15m",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "command", "value": "sha256sum", "description": "sha256sum is available"}
+      ],
+      "assertions": [
+        {"kind": "stdout_regex", "value": "(?m)^checksums: .*/SHA256SUMS-[^/]+\\.txt$"}
+      ]
+    },
+    {
+      "id": "local.client.javascript",
+      "description": "Run the language-neutral reducer corpus in the JavaScript client",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{root}/scripts/release-local-gate.sh", "javascript-client"],
+      "timeout": "5m",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "command", "value": "node", "description": "Node.js is available"}
+      ]
+    },
+    {
+      "id": "local.client.swift-linux",
+      "description": "Test and strict-concurrency build the shared Swift client in the pinned Linux container",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{root}/scripts/release-local-gate.sh", "swift-linux"],
+      "timeout": "20m",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "command", "value": "docker", "description": "Docker is available"},
+        {"kind": "docker_image", "value": "swift:5.10-jammy", "description": "the pinned Swift Linux image is already present"}
+      ]
+    },
+    {
+      "id": "local.conformance.extension",
+      "description": "Run the OpenAI Realtime and OpenRealtime extension wire conformance suites",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "run", "./cmd/openrealtime", "conformance", "all"],
+      "timeout": "10m",
+      "skip_policy": "forbid"
+    },
+    {
+      "id": "local.fuzz.authority.canonical-effect-arguments",
+      "description": "Fuzz canonical effect arguments",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzCanonicalEffectArguments$", "-fuzztime", "5s", "./authority"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:authority/FuzzCanonicalEffectArguments"]
+    },
+    {
+      "id": "local.fuzz.authority.effect-receipt",
+      "description": "Fuzz effect-receipt tamper resistance",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzEffectReceiptTamperNeverAuthorizes$", "-fuzztime", "5s", "./authority"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:authority/FuzzEffectReceiptTamperNeverAuthorizes"]
+    },
+    {
+      "id": "local.fuzz.client.reducer-corpus",
+      "description": "Fuzz the language-neutral reducer corpus loader",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzLoadCorpus$", "-fuzztime", "5s", "./client/reducer"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:client/reducer/FuzzLoadCorpus"]
+    },
+    {
+      "id": "local.fuzz.elements.standard-config",
+      "description": "Fuzz exact standard element config schema resolution",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzStandardConfigSchemaResolverIsExactAndSnapshotIsolated$", "-fuzztime", "5s", "./elements"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:elements/FuzzStandardConfigSchemaResolverIsExactAndSnapshotIsolated"]
+    },
+    {
+      "id": "local.fuzz.graph.assembly-inventory",
+      "description": "Fuzz graph assembly implementation-inventory drift rejection",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzPreflightRejectsImplementationInventoryDriftBeforeAcquisition$", "-fuzztime", "5s", "./graph/assembly"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:graph/assembly/FuzzPreflightRejectsImplementationInventoryDriftBeforeAcquisition"]
+    },
+    {
+      "id": "local.fuzz.graph.catalog",
+      "description": "Fuzz strict graph catalog parsing",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzCatalogParseNeverPanics$", "-fuzztime", "5s", "./graph/catalog"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:graph/catalog/FuzzCatalogParseNeverPanics"]
+    },
+    {
+      "id": "local.fuzz.graph.config-values",
+      "description": "Fuzz graph values artifact creation",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzCreateValuesArtifactNeverPanics$", "-fuzztime", "5s", "./graph/config"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:graph/config/FuzzCreateValuesArtifactNeverPanics"]
+    },
+    {
+      "id": "local.fuzz.graph.deployment-evidence",
+      "description": "Fuzz deployment evidence fingerprint admission",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzDeploymentEvidenceRejectsUnsafeFingerprint$", "-fuzztime", "5s", "./graph/inspect"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:graph/inspect/FuzzDeploymentEvidenceRejectsUnsafeFingerprint"]
+    },
+    {
+      "id": "local.fuzz.graph.evidence",
+      "description": "Fuzz graph evidence parsing and refingerprinting",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzEvidenceParsersNeverPanicAndSuccessfulDocumentsRefingerprint$", "-fuzztime", "5s", "./graph/evidence"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:graph/evidence/FuzzEvidenceParsersNeverPanicAndSuccessfulDocumentsRefingerprint"]
+    },
+    {
+      "id": "local.fuzz.graph.property-metadata",
+      "description": "Fuzz graph property metadata determinism",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzPropertyMetadataNeverAdmitsInvalidOrNondeterministicSchema$", "-fuzztime", "5s", "./graph/schema"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:graph/schema/FuzzPropertyMetadataNeverAdmitsInvalidOrNondeterministicSchema"]
+    },
+    {
+      "id": "local.fuzz.graph.runtime-broadcast-accounting",
+      "description": "Fuzz atomic broadcast tee accounting",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzBroadcastTeeAtomicAccounting$", "-fuzztime", "5s", "./graph/runtime"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:graph/runtime/FuzzBroadcastTeeAtomicAccounting"]
+    },
+    {
+      "id": "local.fuzz.graph.runtime-broadcast-cancellation",
+      "description": "Fuzz atomic broadcast cancellation",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzBroadcastTeeCancellationIsAtomic$", "-fuzztime", "5s", "./graph/runtime"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:graph/runtime/FuzzBroadcastTeeCancellationIsAtomic"]
+    },
+    {
+      "id": "local.fuzz.graph.runtime-mux",
+      "description": "Fuzz fair FIFO receive-any multiplexing",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzReceiveAnyMuxFairFIFO$", "-fuzztime", "5s", "./graph/runtime"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:graph/runtime/FuzzReceiveAnyMuxFairFIFO"]
+    },
+    {
+      "id": "local.fuzz.graph.runtime-prepare",
+      "description": "Fuzz exact prepared-plan profile drift rejection",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzPreparePlanRejectsExactProfileDrift$", "-fuzztime", "5s", "./graph/runtime"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:graph/runtime/FuzzPreparePlanRejectsExactProfileDrift"]
+    },
+    {
+      "id": "local.fuzz.graph.runtime-queue-cancellation",
+      "description": "Fuzz queue cancellation race quiescence",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzQueueCancellationRacesQuiesce$", "-fuzztime", "5s", "./graph/runtime"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:graph/runtime/FuzzQueueCancellationRacesQuiesce"]
+    },
+    {
+      "id": "local.fuzz.graph.runtime-queue-fifo",
+      "description": "Fuzz queue FIFO and drop accounting",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzQueueFIFOAndDropAccounting$", "-fuzztime", "5s", "./graph/runtime"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:graph/runtime/FuzzQueueFIFOAndDropAccounting"]
+    },
+    {
+      "id": "local.fuzz.graph.runtime-waiter-close",
+      "description": "Fuzz queue waiter cancellation and close quiescence",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzQueueWaiterCancellationAndCloseQuiesce$", "-fuzztime", "5s", "./graph/runtime"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:graph/runtime/FuzzQueueWaiterCancellationAndCloseQuiesce"]
+    },
+    {
+      "id": "local.fuzz.graph.syntax-recovery",
+      "description": "Fuzz bounded graph syntax recovery",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzRecoveryIsBoundedAndNeverPromotesToStrictParse$", "-fuzztime", "5s", "./graph/syntax"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:graph/syntax/FuzzRecoveryIsBoundedAndNeverPromotesToStrictParse"]
+    },
+    {
+      "id": "local.fuzz.presentation.effect-arguments",
+      "description": "Fuzz presentation effect argument admission",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzEffectArgumentAdmission$", "-fuzztime", "5s", "./presentation/host"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:presentation/host/FuzzEffectArgumentAdmission"]
+    },
+    {
+      "id": "local.fuzz.presentation.effect-wire",
+      "description": "Fuzz presentation effect wire decoding",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzEffectWireMessageDecoding$", "-fuzztime", "5s", "./presentation/host"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:presentation/host/FuzzEffectWireMessageDecoding"]
+    },
+    {
+      "id": "local.go.livekit.normal",
+      "description": "Run normal tests in the isolated LiveKit integration module",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": "integrations/livekit",
+      "command": ["{go}", "test", "-json", "-count=1", "./..."],
+      "timeout": "15m",
+      "skip_policy": "record",
+      "covers": ["go:normal:integrations/livekit"]
+    },
+    {
+      "id": "local.go.livekit.race",
+      "description": "Run race-instrumented tests in the isolated LiveKit integration module",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": "integrations/livekit",
+      "command": ["{go}", "test", "-json", "-race", "-count=1", "./..."],
+      "timeout": "30m",
+      "skip_policy": "record",
+      "covers": ["go:race:integrations/livekit"]
+    },
+    {
+      "id": "local.go.livekit.vet",
+      "description": "Vet every package in the isolated LiveKit integration module",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": "integrations/livekit",
+      "command": ["{go}", "vet", "./..."],
+      "timeout": "15m",
+      "skip_policy": "forbid",
+      "covers": ["go:vet:integrations/livekit"]
+    },
+    {
+      "id": "local.go.root.normal",
+      "description": "Run every normal Go test in the root module",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-json", "-count=1", "./..."],
+      "timeout": "30m",
+      "skip_policy": "record",
+      "covers": ["go:normal:."]
+    },
+    {
+      "id": "local.go.root.race",
+      "description": "Run every race-instrumented Go test in the root module",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-json", "-race", "-count=1", "./..."],
+      "timeout": "60m",
+      "skip_policy": "record",
+      "covers": ["go:race:."]
+    },
+    {
+      "id": "local.go.root.vet",
+      "description": "Vet every package in the root Go module",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "vet", "./..."],
+      "timeout": "30m",
+      "skip_policy": "forbid",
+      "covers": ["go:vet:."]
+    },
+    {
+      "id": "local.presentation.chromium",
+      "description": "Run every composable browser presentation test in real Chromium with release skip refusal",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-count=1", "-v", "./presentation/browser"],
+      "environment": {"OPENREALTIME_RELEASE_GATE": "1"},
+      "timeout": "15m",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "browser", "description": "a real Chromium executable is available"},
+        {"kind": "command", "value": "node", "description": "Node.js is available"}
+      ]
+    },
+    {
+      "id": "local.prompt-injection",
+      "description": "Run the complete prompt-injection authority package under the race detector",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-race", "-count=1", "-v", "./computeruse/injection"],
+      "timeout": "10m",
+      "skip_policy": "forbid"
+    },
+    {
+      "id": "local.python.sidecars",
+      "description": "Run Python sidecar protocol and Qwen integration conformance",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["python3", "-m", "pytest", "-q", "sidecars/test_protocol.py", "sidecars/test_qwen3_omni_sidecar.py"],
+      "environment": {"PYTHONPATH": "{root}/sidecars"},
+      "timeout": "10m",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "command", "value": "python3", "description": "Python 3 is available"},
+        {"kind": "python_module", "value": "python3:pytest", "description": "pytest is installed for Python 3"}
+      ]
+    },
+    {
+      "id": "local.sdk.official",
+      "description": "Run the unmodified official OpenAI Realtime SDK over WebSocket and WebRTC",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-count=1", "-v", "./examples/sdk-client", "-run", "^TestTheOfficialSDKCompletesAToolUsingSessionOver(WebSocket|WebRTC)$"],
+      "environment": {"OPENREALTIME_RELEASE_GATE": "1"},
+      "timeout": "15m",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "browser", "description": "a real Chromium executable is available"},
+        {"kind": "command", "value": "node", "description": "Node.js is available"},
+        {"kind": "directory", "value": "{root}/examples/sdk-client/node_modules/@openai/agents-realtime", "description": "the official SDK dependency is installed"}
+      ]
+    },
+    {
+      "id": "local.shell",
+      "description": "Parse and shellcheck every repository release and macOS shell script",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{root}/scripts/release-local-gate.sh", "shell"],
+      "timeout": "5m",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "command", "value": "shellcheck", "description": "shellcheck is available and cannot be silently omitted"}
+      ]
+    },
+    {
+      "id": "local.source.gofmt",
+      "description": "Require gofmt-clean Go sources outside provisioned runtime checkouts",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{root}/scripts/release-local-gate.sh", "gofmt"],
+      "timeout": "5m",
+      "skip_policy": "forbid"
+    },
+    {
+      "id": "performance.compare-fdbench6147",
+      "description": "Run the checked CompareFDBench6147 artifact and allocation regression protocol",
+      "availability": "local",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{root}/bench/migration/run_compare_fdbench6147_performance.sh", "{artifacts}/compare-fdbench6147.json"],
+      "timeout": "30m",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "command", "value": "git", "description": "git is available for exact source identity"},
+        {"kind": "command", "value": "sha256sum", "description": "sha256sum is available for exact source identity"},
+        {"kind": "command", "value": "taskset", "description": "taskset is available for the checked CPU-affinity protocol"}
+      ],
+      "assertions": [
+        {"kind": "file_nonempty", "value": "{artifacts}/compare-fdbench6147.json"},
+        {"kind": "stdout_regex", "value": "reportable=true accepted=true artifact=pass allocations=pass"}
+      ]
+    }
+  ]
+}

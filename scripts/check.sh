@@ -127,6 +127,75 @@ check_official_client() {
   echo "  not fatal for an ordinary run; set OPENREALTIME_RELEASE_GATE=1 to require it" >&2
 }
 
+# check_portable_client_languages runs the shared client contract in the two
+# implementations that the Go wrapper is allowed to skip. A green Go package
+# is not cross-language evidence when node or Swift was absent, so release mode
+# turns either missing runtime into a named failure. The pinned Swift container
+# is an offline fallback when the host toolchain is unavailable; image inspect
+# prevents Docker from pulling during this no-network gate.
+check_portable_client_languages() {
+  local missing=()
+
+  if command -v node >/dev/null 2>&1; then
+    node client/reducer/javascript/conformance.mjs \
+      client/reducer/testdata/reducer_vectors.json || return 1
+    node --test client/reducer/javascript/reducer.test.mjs || return 1
+  else
+    missing+=("node")
+  fi
+
+  if command -v swift >/dev/null 2>&1 && command -v swiftc >/dev/null 2>&1; then
+    (
+      cd client/reducer/swift
+      swift test -c release -Xswiftc -warnings-as-errors
+      swift build -c release \
+        -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
+    ) || return 1
+  elif command -v docker >/dev/null 2>&1 && \
+    docker image inspect swift:5.10-jammy >/dev/null 2>&1; then
+    docker run --rm --network none -v "${repository_root}:/src:ro" swift:5.10-jammy bash -lc '
+      cp -R /src/client/reducer /tmp/reducer
+      # A developer workspace may contain SwiftPM output whose module-cache
+      # paths are absolute. Never let that copied cache become release
+      # evidence for a different checkout path inside this container.
+      rm -rf /tmp/reducer/swift/.build
+      cd /tmp/reducer/swift
+      swift test -c release -Xswiftc -warnings-as-errors
+      swift build -c release -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
+    ' || return 1
+  else
+    missing+=("Swift 5.10 or the preloaded swift:5.10-jammy image")
+  fi
+
+  if (( ${#missing[@]} == 0 )); then
+    echo "the JavaScript and Swift portable client gates passed"
+    return 0
+  fi
+  echo "NOT VERIFIED: portable client runtimes missing: ${missing[*]}" >&2
+  if [[ -n "${OPENREALTIME_RELEASE_GATE:-}" ]]; then
+    echo "  release mode requires the language-neutral corpus in JavaScript and Swift" >&2
+    return 1
+  fi
+  echo "  not fatal for an ordinary run; set OPENREALTIME_RELEASE_GATE=1 to require it" >&2
+}
+
+# The Go sidecar fixture exercises one real subprocess, while these tests own
+# the complete Python protocol/parser and Qwen integration contract. Keep the
+# skip policy explicit for the same reason as the official and portable-client
+# gates above.
+check_python_sidecars() {
+  if python3 -c 'import pytest' >/dev/null 2>&1; then
+    PYTHONPATH="${repository_root}/sidecars" python3 -m pytest -q \
+      sidecars/test_protocol.py sidecars/test_qwen3_omni_sidecar.py
+    return
+  fi
+  echo "NOT VERIFIED: Python sidecar conformance requires pytest" >&2
+  if [[ -n "${OPENREALTIME_RELEASE_GATE:-}" ]]; then
+    return 1
+  fi
+  echo "  not fatal for an ordinary run; set OPENREALTIME_RELEASE_GATE=1 to require it" >&2
+}
+
 # check_protocol_conformance runs the wire-level suites against the pinned
 # OpenAI Realtime schema and the OpenRealtime extension.
 #
@@ -218,6 +287,8 @@ stage "protocol and extension conformance" check_protocol_conformance
 stage "prompt-injection release gate" check_injection_gate
 stage "examples" check_examples
 stage "official Realtime client" check_official_client
+stage "portable JavaScript and Swift clients" check_portable_client_languages
+stage "Python sidecar conformance" check_python_sidecars
 stage "shell scripts" check_shell
 
 printf '\n'
