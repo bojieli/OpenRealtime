@@ -19,6 +19,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/bench"
 	archbench "github.com/bojieli/OpenRealtime/bench/architecture"
+	benchreview "github.com/bojieli/OpenRealtime/bench/review"
 	"github.com/bojieli/OpenRealtime/bench/scenario"
 	"github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
 	"github.com/bojieli/OpenRealtime/binding"
@@ -255,6 +256,35 @@ func TestScenarioGraphReviewPublishesHermeticOneHundredSixtyFiveAttemptPopulatio
 		len(verified.ArchitectureResult.Records) != 165 ||
 		verified.Manifest.ArchitectureReportable {
 		t.Fatalf("verified hermetic 165-attempt source = %+v", verified.Manifest)
+	}
+	requests, err := graphnative.BuildSourceReviewRequests(
+		context.Background(), graphnative.SourceBundleOptions{Directory: directory}, receipt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 165 || requests[0].AttemptID != verified.Manifest.Attempts[0].Record.Fingerprint ||
+		requests[0].Case != verified.Manifest.Attempts[0].Record.Key.CaseName ||
+		len(requests[0].Media) != 1 || len(requests[9*repetitions].Media) != 3 {
+		t.Fatalf("scenario source review requests = first %+v visual %+v count %d",
+			requests[0], requests[9*repetitions], len(requests))
+	}
+	var reviewContext graphnative.SourceReviewContext
+	if err := json.Unmarshal(requests[0].Context, &reviewContext); err != nil {
+		t.Fatal(err)
+	}
+	if reviewContext.SourceReceiptSHA256 != receipt.ReceiptSHA256 ||
+		reviewContext.Attempt.Behavior != graphnative.BehaviorFailed ||
+		reviewContext.Result.Passed || reviewContext.Architecture.Task.Passed {
+		t.Fatalf("secondary review deterministic context = %+v", reviewContext)
+	}
+	preparedVisual, err := benchreview.Prepare(requests[9*repetitions])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preparedVisual.Media) != 3 ||
+		preparedVisual.Media[0].Validation != benchreview.MediaValidationVersion {
+		t.Fatalf("prepared visual source review = %+v", preparedVisual.Media)
 	}
 	var allocationErr error
 	allocations := testing.AllocsPerRun(1, func() {
