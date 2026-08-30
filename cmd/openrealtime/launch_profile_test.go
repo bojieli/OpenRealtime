@@ -67,7 +67,7 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 		`"base_url":"http://127.0.0.1:8123/v1/tts"`,
 		`"description":"Send a keypad tone on the open call."`,
 		`"digit":{"type":"string"}`,
-		`"max_output_tokens":4096`,
+		`"max_output_tokens":512`,
 	} {
 		if !bytes.Contains(profile.Application.Configuration, []byte(exact)) {
 			t.Fatalf("profile application configuration omitted %s", exact)
