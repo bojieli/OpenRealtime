@@ -2906,7 +2906,7 @@ func VerifyReviewBundle(directory, expectedManifestSHA256 string) (ReviewManifes
 	if !bytes.Equal(reviewPayload, []byte(renderMeetingReview(manifest))) {
 		return ReviewManifest{}, errors.New("meeting human review document is not the canonical render")
 	}
-	if err := verifyMeetingReviewExactTree(verificationRoot, expectedFiles); err != nil {
+	if err := verifyMeetingReviewExactTree(verificationRoot, expectedFiles, nil); err != nil {
 		return ReviewManifest{}, err
 	}
 	manifestArtifact.SHA256 = expectedManifestSHA256
@@ -3049,7 +3049,9 @@ func readMeetingReviewFileContext(
 	return payload, info, nil
 }
 
-func verifyMeetingReviewExactTree(root *os.Root, expectedFiles map[string]ReviewArtifact) error {
+func verifyMeetingReviewExactTree(
+	root *os.Root, expectedFiles map[string]ReviewArtifact, requiredDirectories []string,
+) error {
 	if root == nil {
 		return errors.New("meeting review exact-tree verifier has no anchored root")
 	}
@@ -3064,7 +3066,16 @@ func verifyMeetingReviewExactTree(root *os.Root, expectedFiles map[string]Review
 			}
 		}
 	}
+	for _, directory := range requiredDirectories {
+		directory = filepath.ToSlash(directory)
+		if directory == "." || filepath.IsAbs(directory) || filepath.Clean(directory) != directory ||
+			strings.Contains(directory, "\\") {
+			return errors.New("meeting review exact-tree required directory is invalid")
+		}
+		expectedDirectories[directory] = struct{}{}
+	}
 	seenFiles := make(map[string]struct{}, len(expectedFiles))
+	seenDirectories := make(map[string]struct{}, len(expectedDirectories))
 	identities := make([]os.FileInfo, 0, len(expectedFiles))
 	err := fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -3079,10 +3090,12 @@ func verifyMeetingReviewExactTree(root *os.Root, expectedFiles map[string]Review
 			if !entry.IsDir() {
 				return errors.New("meeting review root is not a directory")
 			}
+			seenDirectories[relative] = struct{}{}
 			return nil
 		}
 		if entry.IsDir() {
 			if _, expected := expectedDirectories[relative]; expected {
+				seenDirectories[relative] = struct{}{}
 				return nil
 			}
 			return errors.New("meeting review tree contains an unexpected directory")
@@ -3105,7 +3118,8 @@ func verifyMeetingReviewExactTree(root *os.Root, expectedFiles map[string]Review
 		seenFiles[relative] = struct{}{}
 		return nil
 	})
-	if err != nil || len(seenFiles) != len(expectedFiles) {
+	if err != nil || len(seenFiles) != len(expectedFiles) ||
+		len(seenDirectories) != len(expectedDirectories) {
 		return errors.New("meeting review tree differs from its exact manifest")
 	}
 	return nil
@@ -3116,6 +3130,18 @@ func sealMeetingReviewTree(directory string) error {
 }
 
 func sealMeetingReviewTreeContext(ctx context.Context, directory string) (resultErr error) {
+	return sealMeetingReviewTreeWithDirectories(ctx, directory, nil)
+}
+
+func sealMeetingReviewSourceTreeContext(ctx context.Context, directory string) error {
+	return sealMeetingReviewTreeWithDirectories(
+		ctx, directory, []string{"contexts", "media"},
+	)
+}
+
+func sealMeetingReviewTreeWithDirectories(
+	ctx context.Context, directory string, requiredDirectories []string,
+) (resultErr error) {
 	if ctx == nil {
 		return errors.New("seal meeting review tree: nil context")
 	}
@@ -3231,7 +3257,7 @@ func sealMeetingReviewTreeContext(ctx context.Context, directory string) (result
 	if err := verifyMeetingSourceRootIdentity(absolute, root, rootInfo); err != nil {
 		return err
 	}
-	if err := verifyMeetingReviewExactTree(root, expectedFiles); err != nil {
+	if err := verifyMeetingReviewExactTree(root, expectedFiles, requiredDirectories); err != nil {
 		return errors.New("sealed meeting review tree differs from its exact pre-seal snapshot")
 	}
 	return verifyMeetingSourceRootIdentity(absolute, root, rootInfo)

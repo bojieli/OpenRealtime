@@ -578,7 +578,7 @@ func commitStagedMeetingReviewSource(
 		}
 	}
 	if finalExists {
-		if err := sealMeetingReviewTreeContext(ctx, sourceDirectory); err != nil {
+		if err := sealMeetingReviewSourceTreeContext(ctx, sourceDirectory); err != nil {
 			return ReviewSourceBundle{}, errors.New("reseal recovered final meeting source")
 		}
 		return VerifyMeetingReviewSource(ctx, sourceDirectory, expected)
@@ -599,7 +599,7 @@ func commitStagedMeetingReviewSource(
 	if err := promoteMeetingSourceMarker(sourceDirectory, root, rootInfo); err != nil {
 		return ReviewSourceBundle{}, err
 	}
-	if err := sealMeetingReviewTreeContext(ctx, sourceDirectory); err != nil {
+	if err := sealMeetingReviewSourceTreeContext(ctx, sourceDirectory); err != nil {
 		return ReviewSourceBundle{}, errors.New("seal promoted meeting source tree")
 	}
 	opened, err := VerifyMeetingReviewSource(ctx, sourceDirectory, expected)

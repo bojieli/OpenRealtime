@@ -1597,6 +1597,48 @@ func TestMeetingReviewBundleFinalVerificationRejectsPostReviewMediaMutation(t *t
 	}
 }
 
+func TestSealMeetingReviewSourceRetainsRequiredEmptyNamespaces(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "source")
+	if err := os.Mkdir(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	makeMeetingReviewTreeRemovable(t, directory)
+	for _, relative := range []string{"contexts", "media"} {
+		if err := os.Mkdir(filepath.Join(directory, relative), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(directory, "media", "diagnostic.bin"), []byte("diagnostic"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := sealMeetingReviewSourceTreeContext(context.Background(), directory); err != nil {
+		t.Fatalf("seal diagnostic source with empty context namespace: %v", err)
+	}
+	for _, relative := range []string{".", "contexts", "media"} {
+		info, err := os.Stat(filepath.Join(directory, relative))
+		if err != nil || info.Mode().Perm() != 0o500 {
+			t.Fatalf("sealed source directory %q mode=%v error=%v", relative, info, err)
+		}
+	}
+
+	unexpected := filepath.Join(t.TempDir(), "source")
+	if err := os.Mkdir(unexpected, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	makeMeetingReviewTreeRemovable(t, unexpected)
+	for _, relative := range []string{"contexts", "media", "unreviewed"} {
+		if err := os.Mkdir(filepath.Join(unexpected, relative), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(unexpected, "media", "diagnostic.bin"), []byte("diagnostic"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := sealMeetingReviewSourceTreeContext(context.Background(), unexpected); err == nil {
+		t.Fatal("unexpected empty source namespace was promoted into the sealed tree")
+	}
+}
+
 func TestMeetingReviewBundleRejectsFindingOutsideRetainedMediaTimeline(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "finding-timeline")
 	beyond := int64(10_000)
