@@ -34,6 +34,12 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	"github.com/bojieli/OpenRealtime/bench/review/candidate"
+)
+
+const (
+	attemptEvidenceTimeout = 2 * time.Minute
+	suiteEvidenceTimeout   = 5 * time.Minute
 )
 
 // Category is one of the four overlap conditions.
@@ -160,10 +166,24 @@ type Options struct {
 	Progress   func(string)
 	// RuntimeAttestor captures exact graph execution evidence for each sample.
 	RuntimeAttestor bench.RuntimeAttestor
+	// Evidence receives only new candidate attempts and exact audio captured
+	// from the same Realtime session used by the deterministic scorer.
+	Evidence candidate.Plugin
+	// EvidenceOrigin must explicitly identify a production or hermetic shared
+	// endpoint whenever Evidence is configured.
+	EvidenceOrigin candidate.RunOrigin
 }
 
 // Run executes the suite.
 func Run(ctx context.Context, options Options) (bench.Result, error) {
+	if ctx == nil {
+		return bench.Result{}, errors.New("FDB evaluation requires a context")
+	}
+	if options.Evidence != nil {
+		if err := options.EvidenceOrigin.Validate(); err != nil {
+			return bench.Result{}, fmt.Errorf("FDB candidate evidence origin: %w", err)
+		}
+	}
 	if options.YieldWindow <= 0 {
 		options.YieldWindow = time.Second
 	}
@@ -193,18 +213,40 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	result := bench.Result{
 		Suite: "fdb-v1.5", Cell: options.Cell, Provenance: bench.Capture(), Expected: expected,
 	}
+	finish := func(runErr error) (bench.Result, error) {
+		result.Finish()
+		if options.Evidence == nil {
+			return result, runErr
+		}
+		frozen, err := candidate.CloneResult(result)
+		if err != nil {
+			return result, errors.Join(runErr, candidate.StageError("", "snapshot final result", err))
+		}
+		evidenceContext, cancel := context.WithTimeout(
+			context.WithoutCancel(ctx), suiteEvidenceTimeout,
+		)
+		defer cancel()
+		if err := options.Evidence.FinishSuite(evidenceContext, frozen); err != nil {
+			runErr = errors.Join(runErr, candidate.StageError("", "finish suite", err))
+		}
+		return result, runErr
+	}
+	var runErr error
 	for index, sample := range samples {
 		if options.Progress != nil {
 			options.Progress(fmt.Sprintf("[%d/%d] %s", index+1, len(samples), sample.ID))
 		}
-		result.Tasks = append(result.Tasks, runSample(ctx, options, sample))
+		outcome, evidenceErr := runSample(ctx, options, sample, result.Provenance)
+		result.Tasks = append(result.Tasks, outcome)
+		runErr = errors.Join(runErr, evidenceErr)
 	}
-	result.Finish()
-	return result, nil
+	return finish(runErr)
 }
 
-func runSample(ctx context.Context, options Options, sample Sample) bench.TaskOutcome {
-	outcome := bench.TaskOutcome{
+func runSample(
+	ctx context.Context, options Options, sample Sample, provenance bench.Provenance,
+) (outcome bench.TaskOutcome, evidenceErr error) {
+	outcome = bench.TaskOutcome{
 		ID: sample.ID,
 		Notes: map[string]string{
 			"category": string(sample.Category),
@@ -212,20 +254,93 @@ func runSample(ctx context.Context, options Options, sample Sample) bench.TaskOu
 			"event":    sample.EventText,
 		},
 	}
-	transcript, err := bench.Play(ctx, bench.SessionConfig{
+	var transcript bench.Transcript
+	var attempt candidate.AttemptEvidence
+	if options.Evidence != nil {
+		specification, err := candidate.NewAttempt(
+			"fdb-v1.5", sample.ID, 1, options.Cell, provenance, options.EvidenceOrigin,
+			struct {
+				Category      Category `json:"category"`
+				ContextText   string   `json:"context_text"`
+				EventText     string   `json:"event_text"`
+				EventStartMS  float64  `json:"event_start_ms"`
+				EventEndMS    float64  `json:"event_end_ms"`
+				ShouldYield   bool     `json:"should_yield"`
+				YieldWindowMS int64    `json:"yield_window_ms"`
+				HoldWindowMS  int64    `json:"hold_window_ms"`
+			}{
+				Category: sample.Category, ContextText: sample.ContextText, EventText: sample.EventText,
+				EventStartMS: sample.EventStartMS, EventEndMS: sample.EventEndMS,
+				ShouldYield:   sample.Category.ShouldYield(),
+				YieldWindowMS: options.YieldWindow.Milliseconds(), HoldWindowMS: options.HoldWindow.Milliseconds(),
+			},
+		)
+		if err != nil {
+			outcome.Error = err.Error()
+			return outcome, candidate.StageError(sample.ID, "validate attempt", err)
+		}
+		providerAttempt, err := candidate.CloneAttempt(specification)
+		if err != nil {
+			outcome.Error = err.Error()
+			return outcome, candidate.StageError(sample.ID, "snapshot attempt", err)
+		}
+		attempt, err = options.Evidence.BeginAttempt(ctx, providerAttempt)
+		if err != nil {
+			outcome.Error = err.Error()
+			return outcome, candidate.StageError(sample.ID, "begin attempt", err)
+		}
+		if attempt == nil {
+			err := errors.New("candidate evidence plug-in returned a nil attempt")
+			outcome.Error = err.Error()
+			return outcome, candidate.StageError(sample.ID, "begin attempt", err)
+		}
+		defer func() {
+			completion, err := candidate.CloneCompletion(candidate.Completion{
+				Attempt: specification, Outcome: outcome, Transcript: transcript,
+			})
+			if err == nil {
+				evidenceContext, cancel := context.WithTimeout(
+					context.WithoutCancel(ctx), attemptEvidenceTimeout,
+				)
+				err = attempt.Complete(evidenceContext, completion)
+				cancel()
+			}
+			if err != nil {
+				evidenceErr = errors.Join(
+					evidenceErr,
+					candidate.StageError(sample.ID, "complete attempt", err),
+					candidate.StageError(sample.ID, "abort attempt", attempt.Abort()),
+				)
+			}
+		}()
+	}
+	config := bench.SessionConfig{
 		Endpoint: options.Endpoint, Token: options.Token, Model: options.Model,
 		Instructions: "You are a helpful voice assistant. Answer the user's question.",
 		Realtime:     true, Timeout: options.Timeout, RuntimeAttestor: options.RuntimeAttestor,
 		AttestationScope: sample.ID,
-	}, sample.AudioPath)
+	}
+	if attempt != nil {
+		config.CaptureAudio = func(capture bench.SessionAudioCapture) error {
+			err := attempt.CaptureAudio(capture)
+			if err != nil {
+				evidenceErr = errors.Join(
+					evidenceErr, candidate.StageError(sample.ID, "capture audio", err),
+				)
+			}
+			return err
+		}
+	}
+	var err error
+	transcript, err = bench.Play(ctx, config, sample.AudioPath)
 	outcome.AttachExecution(transcript)
 	if err != nil {
 		outcome.Error = err.Error()
-		return outcome
+		return outcome, evidenceErr
 	}
 	if transcript.Failure != "" {
 		outcome.Error = transcript.Failure
-		return outcome
+		return outcome, evidenceErr
 	}
 	outcome.Completed = true
 
@@ -250,7 +365,7 @@ func runSample(ctx context.Context, options Options, sample Sample) bench.TaskOu
 		// a latency problem. It is reported as its own thing.
 		outcome.Notes["applicable"] = "false"
 		outcome.Passed = true
-		return outcome
+		return outcome, evidenceErr
 	}
 	outcome.Notes["applicable"] = "true"
 
@@ -264,18 +379,18 @@ func runSample(ctx context.Context, options Options, sample Sample) bench.TaskOu
 			// No audio at all after the event: it stopped immediately.
 			outcome.Metrics["yield_latency_ms"] = 0
 			outcome.Passed = true
-			return outcome
+			return outcome, evidenceErr
 		}
 		outcome.Metrics["yield_latency_ms"] = latency
 		outcome.Passed = latency <= yieldWindow
-		return outcome
+		return outcome, evidenceErr
 	}
 	// Holding means the audio continues.
 	holdWindow := float64(options.HoldWindow.Milliseconds())
 	held := transcript.AudioBetween(sample.EventStartMS, sample.EventStartMS+holdWindow)
 	outcome.Metrics["agent_audio_hold_window_ms"] = held
 	outcome.Passed = held > 0
-	return outcome
+	return outcome, evidenceErr
 }
 
 // stopLatency is how long the interrupted utterance kept going.

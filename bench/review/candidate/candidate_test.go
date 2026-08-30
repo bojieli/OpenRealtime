@@ -3,6 +3,7 @@ package candidate_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/bench"
@@ -135,5 +136,33 @@ func TestCloneCompletionOwnsOutcomeTranscriptAndContext(t *testing.T) {
 	if clone.Outcome.Notes["state"] != "ok" || clone.Transcript.Moments[0].Text != "hello" ||
 		clone.Attempt.Context[0] != '{' {
 		t.Fatal("cloned completion aliases source storage")
+	}
+}
+
+func TestCloneResultAndStageErrorDoNotAliasOrHideCause(t *testing.T) {
+	source := bench.Result{
+		Suite: "suite", Cell: bench.Reference(),
+		Tasks: []bench.TaskOutcome{{ID: "case", Notes: map[string]string{"state": "original"}}},
+		Summary: bench.Summary{Distributions: map[string]bench.Distribution{
+			"latency_ms": {Count: 1, Unit: "ms", P50: 10},
+		}},
+	}
+	clone, err := candidate.CloneResult(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source.Cell.Levels[bench.FactorBinding] = "mutated"
+	source.Tasks[0].Notes["state"] = "mutated"
+	source.Summary.Distributions["latency_ms"] = bench.Distribution{P50: 99}
+	if clone.Cell.Levels[bench.FactorBinding] == "mutated" ||
+		clone.Tasks[0].Notes["state"] != "original" ||
+		clone.Summary.Distributions["latency_ms"].P50 != 10 {
+		t.Fatal("cloned result aliases source storage")
+	}
+
+	cause := errors.New("retention unavailable")
+	wrapped := candidate.StageError("case", "finish suite", cause)
+	if !errors.Is(wrapped, cause) || candidate.StageError("", "", nil) != nil {
+		t.Fatal("candidate stage error did not preserve its cause or nil semantics")
 	}
 }

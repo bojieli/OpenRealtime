@@ -265,6 +265,47 @@ type Completion struct {
 	Transcript bench.Transcript  `json:"transcript"`
 }
 
+// EvidenceError identifies which candidate-retention stage failed without
+// conflating it with the deterministic scorer outcome.
+type EvidenceError struct {
+	Case  string
+	Stage string
+	cause error
+}
+
+func (failure *EvidenceError) Error() string {
+	if failure == nil {
+		return "candidate evidence failed"
+	}
+	message := "candidate evidence"
+	if failure.Case != "" {
+		message += " for " + failure.Case
+	}
+	if failure.Stage != "" {
+		message += " during " + failure.Stage
+	}
+	if failure.cause == nil {
+		return message + " failed"
+	}
+	return message + ": " + failure.cause.Error()
+}
+
+func (failure *EvidenceError) Unwrap() error {
+	if failure == nil {
+		return nil
+	}
+	return failure.cause
+}
+
+// StageError wraps one non-nil plug-in failure with its attempt and lifecycle
+// stage. Nil remains nil so callers can use it directly with errors.Join.
+func StageError(caseID, stage string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &EvidenceError{Case: caseID, Stage: stage, cause: err}
+}
+
 // Validate checks that a terminal record still belongs to its preregistered
 // attempt. Incomplete outcomes are valid evidence and must be retained too.
 func (completion Completion) Validate() error {
@@ -305,6 +346,19 @@ func CloneCompletion(source Completion) (Completion, error) {
 	}
 	if err := result.Validate(); err != nil {
 		return Completion{}, err
+	}
+	return result, nil
+}
+
+// CloneResult freezes the final deterministic cell before a plug-in sees it.
+func CloneResult(source bench.Result) (bench.Result, error) {
+	payload, err := json.Marshal(source)
+	if err != nil {
+		return bench.Result{}, errors.New("snapshot candidate result")
+	}
+	var result bench.Result
+	if err := json.Unmarshal(payload, &result); err != nil {
+		return bench.Result{}, errors.New("snapshot candidate result")
 	}
 	return result, nil
 }
