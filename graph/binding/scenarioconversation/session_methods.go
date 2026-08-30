@@ -499,6 +499,15 @@ func (session *session) Status() legacy.Status {
 	if selected.Control != nil {
 		control = *selected.Control
 	}
+	policies := interaction.Policies{}.Report()
+	// The graph's semantic gate is the external interaction policy selected by
+	// this profile. It is not represented by interaction.Policies because that
+	// legacy assembly is deliberately bypassed by the typed graph element, but
+	// omitting it here would make the live architecture report claim that a
+	// composed-policy session had no policy at all. Keep the established report
+	// spelling used by InteractionModel and bind its provider/model identity in
+	// the separately reviewed architecture pins.
+	policies.Interaction = "model:" + session.config.Policy.Descriptor.Model
 	model := session.config.Model.Descriptor.Provider + ":" + session.config.Model.Descriptor.Model
 	return legacy.Status{
 		Architecture:       definition.Identity(),
@@ -507,12 +516,16 @@ func (session *session) Status() legacy.Status {
 		Perception:         session.config.ASR.Reference,
 		PerceptionRevision: session.config.ASR.Descriptor.Version,
 		Speech:             session.config.TTS.Reference, SpeechRevision: session.config.TTS.Descriptor.Version,
-		Policies: interaction.Policies{}.Report(),
+		Policies: policies,
 		Interaction: legacy.InteractionStatus{
 			Evidence: string(selected.Evidence), EvidenceCapabilities: evidence,
-			Transport: selected.Transport, ProtocolVersion: selected.ProtocolVersion,
-			ActHandoff: string(selected.Handoff), NativeSuppression: selected.NativeSuppression,
-			Control: control,
+			Recognizer:         session.config.ASR.Descriptor.Name,
+			RecognizerRevision: session.config.ASR.Descriptor.Version,
+			Transport:          selected.Transport, ProtocolVersion: selected.ProtocolVersion,
+			ActHandoff:        string(selected.Handoff),
+			DecisionTimeoutMS: int(session.config.Policy.Descriptor.DecisionTimeoutMS),
+			NativeSuppression: selected.NativeSuppression,
+			Control:           control,
 		},
 		Tools: legacy.ToolStatus{
 			Fast: "propose", Slow: "propose", Authorization: "graph-native",
