@@ -63,6 +63,10 @@ type Options struct {
 	AnalysisDelay   time.Duration
 	Progress        func(string)
 	RuntimeAttestor bench.RuntimeAttestor
+	// Evidence is an optional caller-supplied attempt/suite plug-in. It receives
+	// exact audio/video callbacks from the same shared Realtime session used by
+	// the scorer and cannot alter the deterministic outcome.
+	Evidence EvidencePlugin
 }
 
 func Run(ctx context.Context, options Options) (bench.Result, error) {
@@ -111,13 +115,22 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	result := bench.Result{
 		Suite: SuiteName, Cell: cell, Provenance: bench.Capture(), Expected: ExpectedTasks(),
 	}
+	finish := func(runErr error) (bench.Result, error) {
+		result.Finish()
+		if options.Evidence != nil {
+			if evidenceErr := options.Evidence.FinishSuite(ctx, result); evidenceErr != nil {
+				runErr = errors.Join(runErr, evidenceErr)
+			}
+		}
+		return result, runErr
+	}
 	toRun := tasks
 	if options.Limit > 0 && options.Limit < len(toRun) {
 		toRun = toRun[:options.Limit]
 	}
 	environment, err := NewEnvironment(ctx, EnvironmentConfig{Browser: options.Browser})
 	if err != nil {
-		return result, err
+		return finish(err)
 	}
 	defer environment.Close()
 	for index, task := range toRun {
@@ -126,14 +139,61 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 		}
 		result.Tasks = append(result.Tasks, runTask(ctx, environment, options, task))
 	}
-	result.Finish()
-	return result, nil
+	return finish(nil)
 }
 
-func runTask(ctx context.Context, environment *Environment, options Options, task Task) bench.TaskOutcome {
+func runTask(
+	ctx context.Context, environment *Environment, options Options, task Task,
+) (outcome bench.TaskOutcome) {
 	incomplete := bench.TaskOutcome{
 		ID: task.ID, Metrics: map[string]float64{},
 		Notes: map[string]string{"category": task.Category, "difficulty": task.Difficulty},
+	}
+	var transcript bench.Transcript
+	var playErr error
+	var attempt AttemptEvidence
+	if options.Evidence != nil {
+		specification := EvidenceAttempt{
+			Suite: SuiteName, Case: task.ID, Trial: 1, Task: task,
+			ExecutionRequirement: options.Cell.Execution,
+		}
+		if err := specification.validate(); err != nil {
+			incomplete.Error = err.Error()
+			return incomplete
+		}
+		var err error
+		attempt, err = options.Evidence.BeginAttempt(ctx, specification)
+		if err != nil {
+			incomplete.Error = err.Error()
+			return incomplete
+		}
+		if attempt == nil {
+			incomplete.Error = "meeting evidence plug-in returned a nil attempt"
+			return incomplete
+		}
+		terminal := false
+		defer func() {
+			if terminal {
+				return
+			}
+			if err := attempt.Abort(); err != nil {
+				outcome.Completed = false
+				outcome.Passed = false
+				outcome.Error = appendOutcomeError(outcome.Error, err)
+			}
+		}()
+		defer func() {
+			completion := EvidenceCompletion{
+				Attempt: specification, Outcome: cloneTaskOutcome(outcome), Transcript: cloneTranscript(transcript),
+			}
+			if err := attempt.Complete(ctx, completion); err != nil {
+				outcome.Completed = false
+				outcome.Passed = false
+				outcome.Error = appendOutcomeError(outcome.Error, err)
+				return
+			}
+			terminal = true
+		}()
 	}
 	episode, err := environment.Episode(ctx, task)
 	if err != nil {
@@ -237,7 +297,7 @@ func runTask(ctx context.Context, environment *Environment, options Options, tas
 		}
 	}
 
-	transcript, playErr := bench.PlaySamples(ctx, bench.SessionConfig{
+	config := bench.SessionConfig{
 		Endpoint: options.Endpoint, Transport: options.Transport,
 		Token: options.Token, Model: options.Model,
 		Instructions: taskInstruction(task), Tools: tools, HandleTool: handle,
@@ -252,7 +312,12 @@ func runTask(ctx context.Context, environment *Environment, options Options, tas
 			Interval: time.Second / time.Duration(options.FrameRate), Capture: episode.CaptureScreen,
 		}},
 		Ready: episode.Ready,
-	}, samples)
+	}
+	if attempt != nil {
+		config.CaptureAudio = attempt.CaptureAudio
+		config.CaptureVideo = attempt.CaptureVideo
+	}
+	transcript, playErr = bench.PlaySamples(ctx, config, samples)
 	incomplete.AttachExecution(transcript)
 	timedOut := errors.Is(playErr, bench.ErrConversationTimeout)
 	if playErr != nil && !timedOut {
@@ -274,7 +339,7 @@ func runTask(ctx context.Context, environment *Environment, options Options, tas
 	sort.SliceStable(toolTrace, func(left, right int) bool {
 		return toolTrace[left].ReceivedAtMS < toolTrace[right].ReceivedAtMS
 	})
-	outcome := score(task, page, actionTrace, toolTrace, transcript)
+	outcome = score(task, page, actionTrace, toolTrace, transcript)
 	outcome.AttachExecution(transcript)
 	outcome.Metrics["session_timeout_count"] = truth(timedOut)
 	if timedOut {
@@ -287,6 +352,47 @@ func runTask(ctx context.Context, environment *Environment, options Options, tas
 		outcome.Metrics["task_success_rate"] = 0
 	}
 	return outcome
+}
+
+func appendOutcomeError(existing string, next error) string {
+	if next == nil {
+		return existing
+	}
+	if strings.TrimSpace(existing) == "" {
+		return next.Error()
+	}
+	return errors.Join(errors.New(existing), next).Error()
+}
+
+func cloneTaskOutcome(source bench.TaskOutcome) bench.TaskOutcome {
+	result := source
+	result.Metrics = make(map[string]float64, len(source.Metrics))
+	for name, value := range source.Metrics {
+		result.Metrics[name] = value
+	}
+	result.Notes = make(map[string]string, len(source.Notes))
+	for name, value := range source.Notes {
+		result.Notes[name] = value
+	}
+	if source.Execution != nil {
+		copy := source.Execution.Clone()
+		result.Execution = &copy
+	}
+	return result
+}
+
+func cloneTranscript(source bench.Transcript) bench.Transcript {
+	result := source
+	result.Moments = slices.Clone(source.Moments)
+	if source.Runtime != nil {
+		copy := *source.Runtime
+		result.Runtime = &copy
+	}
+	if source.Execution != nil {
+		copy := source.Execution.Clone()
+		result.Execution = &copy
+	}
+	return result
 }
 
 func declarations(target computeruse.Target, task Task) ([]json.RawMessage, error) {
