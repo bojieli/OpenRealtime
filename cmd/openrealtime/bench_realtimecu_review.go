@@ -290,7 +290,9 @@ func openRealtimeCUReviewCLI(
 		if externalDirectories != nil {
 			cleanupErr = externalDirectories.Rollback()
 		}
-		return nil, errors.Join(errors.New("create Realtime-CU review evidence plug-in"), cleanupErr)
+		return nil, errors.Join(
+			errors.New("create Realtime-CU review evidence plug-in"), err, cleanupErr,
+		)
 	}
 	if externalDirectories != nil {
 		if err := externalDirectories.Commit(); err != nil {
