@@ -95,7 +95,7 @@ func TestEvaluationBundleRoundTripRetainsExactCanonicalReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opened, err := OpenEvaluationBundle(t.Context(), options)
+	opened, err := VerifyEvaluationBundle(t.Context(), options, receipt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,6 +145,148 @@ func TestEvaluationBundleRoundTripRetainsExactCanonicalReview(t *testing.T) {
 	if !opened.Manifest.Complete || opened.Manifest.IndependentRemoteAttestation ||
 		opened.Manifest.AuthenticityCaveat != evaluationBundleCaveat {
 		t.Fatalf("manifest overstates provenance: %+v", opened.Manifest)
+	}
+}
+
+func TestEvaluationBundleSealRejectsMutationAndFabricationBeforeFilesystemSideEffect(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, *Evaluation)
+	}{
+		{
+			name: "self-consistent normalized verdict mutation",
+			mutate: func(t *testing.T, evaluation *Evaluation) {
+				t.Helper()
+				candidate := bytes.Replace(
+					evaluation.NormalizedOutput,
+					[]byte(`"observed_outcome": "pass"`),
+					[]byte(`"observed_outcome": "fail"`), 1,
+				)
+				assessment, normalized, err := normalizeAssessment(candidate)
+				if err != nil {
+					t.Fatal(err)
+				}
+				evaluation.NormalizedOutput = normalized
+				evaluation.Record.NormalizedOutputSHA256 = digest(normalized)
+				evaluation.Record.Assessment = assessment
+				if err := VerifyArtifacts(
+					evaluation.Record, evaluation.ProviderImplementation,
+					evaluation.ProviderConfiguration, evaluation.ProviderRequest,
+					evaluation.Prompt, evaluation.Schema, evaluation.Context,
+					evaluation.RawResponse, evaluation.NormalizedOutput,
+				); err != nil {
+					t.Fatalf("forgery fixture is not self-consistent: %v", err)
+				}
+			},
+		},
+		{
+			name: "fabricated unsealed evaluation",
+			mutate: func(_ *testing.T, evaluation *Evaluation) {
+				evaluation.retentionSeal = nil
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			evaluation, _ := testEvaluationBundleEvaluation(t, nil)
+			test.mutate(t, &evaluation)
+			directory := filepath.Join(t.TempDir(), "evaluation")
+			if _, err := WriteEvaluationBundle(t.Context(), EvaluationBundleOptions{
+				Directory: directory,
+			}, evaluation); err == nil || !strings.Contains(err.Error(), "seal") {
+				t.Fatalf("WriteEvaluationBundle() error = %v, want sealed provenance rejection", err)
+			}
+			if _, err := os.Lstat(directory); !os.IsNotExist(err) {
+				t.Fatalf("invalid Evaluation created a final directory: %v", err)
+			}
+		})
+	}
+}
+
+func TestEvaluationBundleSealUsesOriginalSensitiveGuard(t *testing.T) {
+	const original = "original-bundle-secret-value"
+	evaluation, _ := testEvaluationBundleEvaluation(t, []string{original})
+	evaluation.ProviderRequest = append(slices.Clone(evaluation.ProviderRequest), original...)
+	evaluation.Record.ProviderRequestSHA256 = digest(evaluation.ProviderRequest)
+	if err := VerifyArtifacts(
+		evaluation.Record, evaluation.ProviderImplementation, evaluation.ProviderConfiguration,
+		evaluation.ProviderRequest, evaluation.Prompt, evaluation.Schema, evaluation.Context,
+		evaluation.RawResponse, evaluation.NormalizedOutput,
+	); err != nil {
+		t.Fatalf("sensitive substitution fixture is not self-consistent: %v", err)
+	}
+	directory := filepath.Join(t.TempDir(), "evaluation")
+	_, err := WriteEvaluationBundle(t.Context(), EvaluationBundleOptions{
+		Directory: directory, SensitiveValues: []string{"different-dummy-secret-value"},
+	}, evaluation)
+	if err == nil || strings.Contains(err.Error(), original) {
+		t.Fatalf("WriteEvaluationBundle() substituted the original guard: %v", err)
+	}
+	if _, statErr := os.Lstat(directory); !os.IsNotExist(statErr) {
+		t.Fatalf("sensitive mutation created a final directory: %v", statErr)
+	}
+
+	pathEvaluation, _ := testEvaluationBundleEvaluation(t, []string{original})
+	sensitiveDirectory := filepath.Join(t.TempDir(), original)
+	_, err = WriteEvaluationBundle(t.Context(), EvaluationBundleOptions{
+		Directory:       sensitiveDirectory,
+		SensitiveValues: []string{"different-dummy-secret-value"},
+	}, pathEvaluation)
+	if err == nil || strings.Contains(err.Error(), original) {
+		t.Fatalf("WriteEvaluationBundle() exposed a secret-bearing directory: %v", err)
+	}
+	if _, statErr := os.Lstat(sensitiveDirectory); !os.IsNotExist(statErr) {
+		t.Fatalf("sensitive path created a final directory: %v", statErr)
+	}
+}
+
+func TestEvaluationBundleRetentionSealIsOneUseAcrossDestinations(t *testing.T) {
+	evaluation, _ := testEvaluationBundleEvaluation(t, nil)
+	firstDirectory := filepath.Join(t.TempDir(), "first")
+	if _, err := WriteEvaluationBundle(t.Context(), EvaluationBundleOptions{
+		Directory: firstDirectory,
+	}, evaluation); err != nil {
+		t.Fatal(err)
+	}
+	secondDirectory := filepath.Join(t.TempDir(), "second")
+	if _, err := WriteEvaluationBundle(t.Context(), EvaluationBundleOptions{
+		Directory: secondDirectory,
+	}, evaluation); err == nil || !strings.Contains(err.Error(), "claimed") {
+		t.Fatalf("second WriteEvaluationBundle() error = %v, want one-use rejection", err)
+	}
+	if _, err := os.Lstat(secondDirectory); !os.IsNotExist(err) {
+		t.Fatalf("claimed Evaluation created a second directory: %v", err)
+	}
+}
+
+func TestVerifyEvaluationBundleRequiresExactPortableReceipt(t *testing.T) {
+	evaluation, _ := testEvaluationBundleEvaluation(t, nil)
+	directory := filepath.Join(t.TempDir(), "evaluation")
+	options := EvaluationBundleOptions{Directory: directory}
+	receipt, err := WriteEvaluationBundle(t.Context(), options, evaluation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyEvaluationBundle(t.Context(), options, receipt); err != nil {
+		t.Fatal(err)
+	}
+	wrong := receipt
+	wrong.ManifestSHA256 = digest([]byte("a different valid manifest identity"))
+	wrong.ReceiptSHA256, err = evaluationBundleReceiptDigest(
+		wrong.ManifestSHA256, wrong.RecordSHA256, wrong.FileSetSHA256,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyEvaluationBundle(t.Context(), options, wrong); err == nil ||
+		!strings.Contains(err.Error(), "expected receipt") {
+		t.Fatalf("VerifyEvaluationBundle() wrong receipt error = %v", err)
+	}
+	invalid := receipt
+	invalid.ReceiptSHA256 = digest([]byte("invalid receipt checksum"))
+	if _, err := VerifyEvaluationBundle(t.Context(), options, invalid); err == nil ||
+		!strings.Contains(err.Error(), "receipt digest") {
+		t.Fatalf("VerifyEvaluationBundle() invalid receipt error = %v", err)
 	}
 }
 
@@ -359,8 +501,14 @@ func TestEvaluationBundleRejectsSensitiveLeakage(t *testing.T) {
 	evaluation, _ := testEvaluationBundleEvaluation(t, []string{secret})
 	directory := filepath.Join(t.TempDir(), "evaluation")
 	options := EvaluationBundleOptions{Directory: directory, SensitiveValues: []string{secret}}
-	if _, err := WriteEvaluationBundle(t.Context(), options, evaluation); err != nil {
+	receipt, err := WriteEvaluationBundle(t.Context(), options, evaluation)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := OpenEvaluationBundle(t.Context(), EvaluationBundleOptions{
+		Directory: directory,
+	}); err != nil {
+		t.Fatalf("opaque original guard required caller secret repetition: %v", err)
 	}
 	manifest := readTestEvaluationManifest(t, directory)
 	reviewPath := filepath.Join(directory, evaluationBundleReviewName)
@@ -382,10 +530,10 @@ func TestEvaluationBundleRejectsSensitiveLeakage(t *testing.T) {
 		!strings.Contains(err.Error(), "sensitive") || strings.Contains(err.Error(), secret) {
 		t.Fatalf("OpenEvaluationBundle() sensitive error = %v", err)
 	}
-	if _, err := OpenEvaluationBundle(t.Context(), EvaluationBundleOptions{
+	if _, err := VerifyEvaluationBundle(t.Context(), EvaluationBundleOptions{
 		Directory: directory,
-	}); err == nil || !strings.Contains(err.Error(), "count") {
-		t.Fatalf("OpenEvaluationBundle() without required sensitive set = %v", err)
+	}, receipt); err == nil {
+		t.Fatalf("VerifyEvaluationBundle() accepted changed bytes without repeated secrets: %v", err)
 	}
 }
 
@@ -449,6 +597,280 @@ func TestEvaluationBundleConcurrentCreateAndReopen(t *testing.T) {
 		if err != nil {
 			t.Fatalf("concurrent OpenEvaluationBundle() error = %v", err)
 		}
+	}
+}
+
+func TestEvaluationBundleFinalVerificationRejectsDeterministicPathAndByteRaces(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, string)
+	}{
+		{
+			name: "manifest changed after first read",
+			mutate: func(t *testing.T, directory string) {
+				t.Helper()
+				path := filepath.Join(directory, evaluationBundleManifestName)
+				payload, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeTestEvaluationFile(t, directory, evaluationBundleManifestName,
+					append(payload, ' '))
+			},
+		},
+		{
+			name: "artifact changed after semantic verification",
+			mutate: func(t *testing.T, directory string) {
+				t.Helper()
+				path := filepath.Join(directory, "provider-request.bin")
+				payload, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeTestEvaluationFile(t, directory, "provider-request.bin",
+					append(payload, ' '))
+			},
+		},
+		{
+			name: "visible root replaced after semantic verification",
+			mutate: func(t *testing.T, directory string) {
+				t.Helper()
+				if err := os.Rename(directory, directory+"-moved"); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(directory, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			evaluation, _ := testEvaluationBundleEvaluation(t, nil)
+			directory := filepath.Join(t.TempDir(), "evaluation")
+			options := EvaluationBundleOptions{Directory: directory}
+			if _, err := WriteEvaluationBundle(t.Context(), options, evaluation); err != nil {
+				t.Fatal(err)
+			}
+			mutated := false
+			_, err := openEvaluationBundleWithOperations(
+				t.Context(), options, evaluationBundleOpenOperations{
+					beforeFinalVerification: func() error {
+						if mutated {
+							t.Fatal("final verification hook ran more than once")
+						}
+						mutated = true
+						test.mutate(t, directory)
+						return nil
+					},
+				},
+			)
+			if err == nil || !mutated {
+				t.Fatalf("OpenEvaluationBundle() accepted a final-verification race: %v", err)
+			}
+		})
+	}
+}
+
+func TestEvaluationBundleFinalSnapshotRejectsInterphaseMutation(t *testing.T) {
+	evaluation, _ := testEvaluationBundleEvaluation(t, nil)
+	directory := filepath.Join(t.TempDir(), "evaluation")
+	options := EvaluationBundleOptions{Directory: directory}
+	if _, err := WriteEvaluationBundle(t.Context(), options, evaluation); err != nil {
+		t.Fatal(err)
+	}
+	mutated := false
+	_, err := openEvaluationBundleWithOperations(
+		t.Context(), options, evaluationBundleOpenOperations{
+			afterFinalPayloadRead: func() error {
+				mutated = true
+				path := filepath.Join(directory, "provider-request.bin")
+				payload, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				return os.WriteFile(path, append(payload, ' '), 0o600)
+			},
+		},
+	)
+	if err == nil || !mutated || !strings.Contains(err.Error(), "final snapshot") {
+		t.Fatalf("OpenEvaluationBundle() interphase mutation error = %v", err)
+	}
+}
+
+func TestEvaluationBundleOpenFailsClosedOnRootCloseFailure(t *testing.T) {
+	evaluation, _ := testEvaluationBundleEvaluation(t, nil)
+	directory := filepath.Join(t.TempDir(), "evaluation")
+	options := EvaluationBundleOptions{Directory: directory}
+	if _, err := WriteEvaluationBundle(t.Context(), options, evaluation); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := openEvaluationBundleWithOperations(
+		t.Context(), options, evaluationBundleOpenOperations{
+			closeRoot: func(root *os.Root) error {
+				if err := root.Close(); err != nil {
+					return err
+				}
+				return errors.New("injected open close failure")
+			},
+		},
+	)
+	if err == nil || !reflect.DeepEqual(opened, EvaluationBundle{}) ||
+		!strings.Contains(err.Error(), "close verified") {
+		t.Fatalf("OpenEvaluationBundle() close failure = %+v, %v", opened, err)
+	}
+}
+
+func TestEvaluationBundlePublicationFailuresInvalidateCommitMarker(t *testing.T) {
+	tests := []struct {
+		name       string
+		operations func(*testing.T) evaluationBundleWriteOperations
+	}{
+		{
+			name: "post-manifest failure",
+			operations: func(*testing.T) evaluationBundleWriteOperations {
+				return evaluationBundleWriteOperations{afterManifest: func() error {
+					return errors.New("injected post-manifest failure")
+				}}
+			},
+		},
+		{
+			name: "final root close failure",
+			operations: func(*testing.T) evaluationBundleWriteOperations {
+				return evaluationBundleWriteOperations{closeRoot: func(root *os.Root) error {
+					if err := root.Close(); err != nil {
+						return err
+					}
+					return errors.New("injected close failure")
+				}}
+			},
+		},
+		{
+			name: "manifest removal retries but surfaces first failure",
+			operations: func(t *testing.T) evaluationBundleWriteOperations {
+				t.Helper()
+				calls := 0
+				return evaluationBundleWriteOperations{
+					afterManifest: func() error { return errors.New("force invalidation") },
+					removeManifest: func(root *os.Root) error {
+						calls++
+						if calls == 1 {
+							return errors.New("injected remove failure")
+						}
+						return root.Remove(evaluationBundleManifestName)
+					},
+				}
+			},
+		},
+		{
+			name: "directory sync retries but surfaces first failure",
+			operations: func(t *testing.T) evaluationBundleWriteOperations {
+				t.Helper()
+				calls := 0
+				return evaluationBundleWriteOperations{
+					afterManifest: func() error { return errors.New("force invalidation") },
+					syncInvalidation: func(root *os.Root) error {
+						calls++
+						if calls == 1 {
+							return errors.New("injected sync failure")
+						}
+						return syncEvaluationBundleDirectory(root)
+					},
+				}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			evaluation, _ := testEvaluationBundleEvaluation(t, nil)
+			directory := filepath.Join(t.TempDir(), "evaluation")
+			receipt, err := writeEvaluationBundleWithOperations(
+				t.Context(), EvaluationBundleOptions{Directory: directory},
+				evaluation, test.operations(t),
+			)
+			if err == nil {
+				t.Fatal("WriteEvaluationBundle() accepted an injected publication failure")
+			}
+			if !reflect.DeepEqual(receipt, EvaluationBundleReceipt{}) {
+				t.Fatalf("failed invalidated publication returned a receipt: %+v", receipt)
+			}
+			if _, statErr := os.Lstat(filepath.Join(
+				directory, evaluationBundleManifestName,
+			)); !os.IsNotExist(statErr) {
+				t.Fatalf("reported publication failure left a commit marker: %v", statErr)
+			}
+		})
+	}
+}
+
+func TestEvaluationBundlePublicationErrorAnchorsUnremovableMarker(t *testing.T) {
+	evaluation, _ := testEvaluationBundleEvaluation(t, nil)
+	directory := filepath.Join(t.TempDir(), "evaluation")
+	options := EvaluationBundleOptions{Directory: directory}
+	receipt, err := writeEvaluationBundleWithOperations(
+		t.Context(), options, evaluation, evaluationBundleWriteOperations{
+			afterManifest: func() error { return errors.New("force invalidation") },
+			removeManifest: func(*os.Root) error {
+				return errors.New("injected persistent remove failure")
+			},
+		},
+	)
+	if err == nil {
+		t.Fatal("WriteEvaluationBundle() accepted an unremovable commit marker")
+	}
+	var publicationFailure *EvaluationBundlePublicationError
+	if !errors.As(err, &publicationFailure) ||
+		!publicationFailure.MarkerMayRemain ||
+		!sameEvaluationBundleReceipt(publicationFailure.ExpectedReceipt, receipt) ||
+		!sameEvaluationBundleReceipt(publicationFailure.VerifiedReceipt, receipt) {
+		t.Fatalf("publication error/receipt = %T %+v / %+v", err, publicationFailure, receipt)
+	}
+	if _, statErr := os.Lstat(filepath.Join(
+		directory, evaluationBundleManifestName,
+	)); statErr != nil {
+		t.Fatalf("unremovable marker state was not represented accurately: %v", statErr)
+	}
+	if _, err := VerifyEvaluationBundle(t.Context(), options, receipt); err != nil {
+		t.Fatalf("publication failure receipt did not anchor surviving bytes: %v", err)
+	}
+}
+
+func TestEvaluationBundlePublicationErrorDoesNotAnchorMutatedSurvivor(t *testing.T) {
+	evaluation, _ := testEvaluationBundleEvaluation(t, nil)
+	directory := filepath.Join(t.TempDir(), "evaluation")
+	options := EvaluationBundleOptions{Directory: directory}
+	receipt, err := writeEvaluationBundleWithOperations(
+		t.Context(), options, evaluation, evaluationBundleWriteOperations{
+			afterManifest: func() error {
+				path := filepath.Join(directory, "provider-request.bin")
+				payload, readErr := os.ReadFile(path)
+				if readErr != nil {
+					return readErr
+				}
+				if writeErr := os.WriteFile(path, append(payload, 'x'), 0o600); writeErr != nil {
+					return writeErr
+				}
+				return errors.New("force invalidation after mutation")
+			},
+			removeManifest: func(*os.Root) error {
+				return errors.New("injected persistent remove failure")
+			},
+		},
+	)
+	if err == nil || !reflect.DeepEqual(receipt, EvaluationBundleReceipt{}) {
+		t.Fatalf("mutated survivor publication = %+v, %v", receipt, err)
+	}
+	var publicationFailure *EvaluationBundlePublicationError
+	if !errors.As(err, &publicationFailure) ||
+		!publicationFailure.MarkerMayRemain ||
+		reflect.DeepEqual(publicationFailure.ExpectedReceipt, EvaluationBundleReceipt{}) ||
+		!reflect.DeepEqual(publicationFailure.VerifiedReceipt, EvaluationBundleReceipt{}) {
+		t.Fatalf("mutated survivor error state = %T %+v", err, publicationFailure)
+	}
+	if _, verifyErr := VerifyEvaluationBundle(
+		t.Context(), options, publicationFailure.ExpectedReceipt,
+	); verifyErr == nil {
+		t.Fatal("intended receipt unexpectedly anchored the mutated surviving tree")
 	}
 }
 

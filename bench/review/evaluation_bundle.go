@@ -30,10 +30,10 @@ const (
 	maximumEvaluationFiles       = maximumMediaCount + 10
 )
 
-// EvaluationBundleOptions names one final create-only directory and the exact
-// in-memory sensitive values against which every retained byte is checked.
-// SensitiveValues are never serialized. Reopen callers must provide the same
-// values if Record.SensitiveValueCount is non-zero.
+// EvaluationBundleOptions names one final create-only directory. Optional
+// SensitiveValues add a caller-local leakage scan and are never serialized or
+// fingerprinted. WriteEvaluationBundle always enforces the exact opaque guard
+// captured by Evaluate; callers do not need to repeat those values.
 type EvaluationBundleOptions struct {
 	Directory       string
 	SensitiveValues []string
@@ -95,11 +95,65 @@ type evaluationBundlePayload struct {
 	maximum int64
 }
 
+type evaluationBundlePathIdentity struct {
+	path string
+	info os.FileInfo
+}
+
+type evaluationBundleVisibility struct {
+	paths []evaluationBundlePathIdentity
+}
+
+// EvaluationBundlePublicationError reports the exceptional case in which a
+// writer failed after publishing manifest.json and could not prove that its
+// invalidation removed the marker. ExpectedReceipt identifies the bytes the
+// writer intended to publish. VerifiedReceipt is non-zero only when a fresh
+// anchored verification proved that the still-visible tree matches them.
+type EvaluationBundlePublicationError struct {
+	ExpectedReceipt EvaluationBundleReceipt
+	VerifiedReceipt EvaluationBundleReceipt
+	MarkerMayRemain bool
+	cause           error
+}
+
+func (failure *EvaluationBundlePublicationError) Error() string {
+	return "evaluation bundle publication failed and its commit marker could not be invalidated"
+}
+
+func (failure *EvaluationBundlePublicationError) Unwrap() error {
+	if failure == nil {
+		return nil
+	}
+	return failure.cause
+}
+
+type evaluationBundleWriteOperations struct {
+	closeRoot        func(*os.Root) error
+	afterManifest    func() error
+	removeManifest   func(*os.Root) error
+	syncInvalidation func(*os.Root) error
+}
+
+type evaluationBundleOpenOperations struct {
+	beforeFinalVerification func() error
+	afterFinalPayloadRead   func() error
+	closeRoot               func(*os.Root) error
+}
+
 // WriteEvaluationBundle retains one successful Evaluation at an exclusive
 // final directory, publishes manifest.json last, reopens the result, and
 // returns its verified portable receipt. It never replaces an existing path.
 func WriteEvaluationBundle(
 	ctx context.Context, options EvaluationBundleOptions, source Evaluation,
+) (receipt EvaluationBundleReceipt, resultErr error) {
+	return writeEvaluationBundleWithOperations(
+		ctx, options, source, evaluationBundleWriteOperations{},
+	)
+}
+
+func writeEvaluationBundleWithOperations(
+	ctx context.Context, options EvaluationBundleOptions, source Evaluation,
+	operations evaluationBundleWriteOperations,
 ) (receipt EvaluationBundleReceipt, resultErr error) {
 	if ctx == nil {
 		return EvaluationBundleReceipt{}, errors.New("write evaluation bundle: nil context")
@@ -107,32 +161,121 @@ func WriteEvaluationBundle(
 	if err := ctx.Err(); err != nil {
 		return EvaluationBundleReceipt{}, err
 	}
-	directory, guard, err := prepareEvaluationBundleOptions(ctx, options)
+	directory, additionalGuard, err := prepareEvaluationBundleOptions(ctx, options)
 	if err != nil {
 		return EvaluationBundleReceipt{}, err
 	}
-	evaluation, recordPayload, err := snapshotEvaluationForBundle(ctx, source, guard)
+	evaluation, recordPayload, seal, originalGuard, err := snapshotEvaluationForBundle(ctx, source)
 	if err != nil {
 		return EvaluationBundleReceipt{}, err
+	}
+	if err := rejectEvaluationSensitive(ctx, originalGuard, []byte(directory)); err != nil {
+		if cause := ctx.Err(); cause != nil {
+			return EvaluationBundleReceipt{}, cause
+		}
+		return EvaluationBundleReceipt{}, errors.New(
+			"evaluation bundle directory contains an evaluation sensitive value")
 	}
 	payloads, err := evaluationBundlePayloads(ctx, evaluation, recordPayload)
 	if err != nil {
 		return EvaluationBundleReceipt{}, err
 	}
 	for _, payload := range payloads {
-		if err := rejectEvaluationSensitive(ctx, guard, payload.payload); err != nil {
+		if err := rejectEvaluationSensitive(ctx, originalGuard, payload.payload); err != nil {
 			return EvaluationBundleReceipt{}, err
 		}
+		if err := rejectEvaluationSensitive(ctx, additionalGuard, payload.payload); err != nil {
+			return EvaluationBundleReceipt{}, err
+		}
+	}
+	manifest, manifestPayload, err := buildEvaluationBundleManifest(evaluation.Record, payloads)
+	if err != nil {
+		return EvaluationBundleReceipt{}, err
+	}
+	if err := rejectEvaluationSensitive(ctx, originalGuard, manifestPayload); err != nil {
+		return EvaluationBundleReceipt{}, err
+	}
+	if err := rejectEvaluationSensitive(ctx, additionalGuard, manifestPayload); err != nil {
+		return EvaluationBundleReceipt{}, err
+	}
+	expectedReceipt, err := evaluationBundleReceipt(directory, manifestPayload, manifest)
+	if err != nil {
+		return EvaluationBundleReceipt{}, err
+	}
+	receiptPayload, err := marshalCanonicalCompact(expectedReceipt, maximumEvaluationManifest)
+	if err != nil {
+		return EvaluationBundleReceipt{}, err
+	}
+	if err := rejectEvaluationSensitive(ctx, originalGuard, receiptPayload); err != nil {
+		return EvaluationBundleReceipt{}, err
+	}
+	if err := rejectEvaluationSensitive(ctx, additionalGuard, receiptPayload); err != nil {
+		return EvaluationBundleReceipt{}, err
+	}
+	// Claim only after every source byte, destination option, generated review,
+	// and manifest has been validated, but before the first filesystem side
+	// effect. A failed publication is deliberately fail-closed and cannot be
+	// retried under a different identity.
+	if err := claimEvaluationRetentionSeal(seal); err != nil {
+		return EvaluationBundleReceipt{}, err
 	}
 	root, err := createEvaluationBundleRoot(directory)
 	if err != nil {
 		return EvaluationBundleReceipt{}, err
 	}
-	defer func() {
-		if closeErr := root.Close(); resultErr == nil && closeErr != nil {
-			resultErr = errors.New("close evaluation bundle directory")
-			receipt = EvaluationBundleReceipt{}
+	rootIdentity, err := root.Stat(".")
+	if err != nil {
+		closeErr := root.Close()
+		if closeErr != nil {
+			return EvaluationBundleReceipt{}, errors.Join(
+				errors.New("inspect created evaluation bundle directory"),
+				errors.New("close uninspected evaluation bundle directory"),
+			)
 		}
+		return EvaluationBundleReceipt{},
+			errors.New("inspect created evaluation bundle directory")
+	}
+	published := false
+	rootClosed := false
+	defer func() {
+		if !rootClosed {
+			if closeErr := closeEvaluationBundleRoot(operations, root); closeErr != nil {
+				// A failed Close does not guarantee that the descriptor was consumed.
+				// Retry with the real method before releasing ownership.
+				_ = root.Close()
+				resultErr = errors.Join(resultErr, errors.New("close evaluation bundle directory"))
+				receipt = EvaluationBundleReceipt{}
+			}
+			rootClosed = true
+		}
+		if resultErr == nil || !published {
+			return
+		}
+		markerRemains, cleanupErr := invalidateEvaluationBundleManifest(
+			directory, rootIdentity, operations,
+		)
+		if cleanupErr != nil {
+			resultErr = errors.Join(resultErr, cleanupErr)
+		}
+		if markerRemains {
+			verifiedReceipt := EvaluationBundleReceipt{}
+			if opened, verifyErr := VerifyEvaluationBundle(
+				context.Background(), options, expectedReceipt,
+			); verifyErr == nil {
+				verifiedReceipt = opened.Receipt
+				receipt = opened.Receipt
+			} else {
+				receipt = EvaluationBundleReceipt{}
+			}
+			resultErr = &EvaluationBundlePublicationError{
+				ExpectedReceipt: expectedReceipt,
+				VerifiedReceipt: verifiedReceipt,
+				MarkerMayRemain: true,
+				cause:           resultErr,
+			}
+			return
+		}
+		receipt = EvaluationBundleReceipt{}
 	}()
 
 	for _, payload := range payloads {
@@ -141,14 +284,7 @@ func WriteEvaluationBundle(
 				"retain evaluation bundle %s: %w", payload.file.Purpose, err)
 		}
 	}
-	if err := verifyEvaluationBundleEntries(ctx, root, payloads, false); err != nil {
-		return EvaluationBundleReceipt{}, err
-	}
-	manifest, manifestPayload, err := buildEvaluationBundleManifest(evaluation.Record, payloads)
-	if err != nil {
-		return EvaluationBundleReceipt{}, err
-	}
-	if err := rejectEvaluationSensitive(ctx, guard, manifestPayload); err != nil {
+	if err := verifyEvaluationBundleEntries(ctx, root, payloads, nil, nil); err != nil {
 		return EvaluationBundleReceipt{}, err
 	}
 	if err := writeEvaluationBundleFile(
@@ -156,14 +292,13 @@ func WriteEvaluationBundle(
 	); err != nil {
 		return EvaluationBundleReceipt{}, errors.New("publish evaluation bundle manifest")
 	}
-	published := true
-	defer func() {
-		if resultErr != nil && published {
-			_ = root.Remove(evaluationBundleManifestName)
-			_ = syncEvaluationBundleDirectory(root)
+	published = true
+	if operations.afterManifest != nil {
+		if err := operations.afterManifest(); err != nil {
+			return EvaluationBundleReceipt{}, errors.New("finalize evaluation bundle publication")
 		}
-	}()
-	opened, err := OpenEvaluationBundle(ctx, options)
+	}
+	opened, err := VerifyEvaluationBundle(ctx, options, expectedReceipt)
 	if err != nil {
 		return EvaluationBundleReceipt{}, fmt.Errorf("reopen retained evaluation bundle: %w", err)
 	}
@@ -173,16 +308,46 @@ func WriteEvaluationBundle(
 	if err := ctx.Err(); err != nil {
 		return EvaluationBundleReceipt{}, err
 	}
-	published = false
 	return opened.Receipt, nil
 }
 
-// OpenEvaluationBundle strictly reopens one committed bundle. Missing, extra,
-// symlinked, aliased, noncanonical, mutated, traversal-bearing, sensitive, and
-// incomplete trees are rejected.
+// VerifyEvaluationBundle reopens a bundle and requires an externally retained
+// portable receipt. Unlike a local OpenEvaluationBundle consistency check,
+// this rejects a fully recomputed mutable tree whose bytes no longer match the
+// trusted receipt. Directory is informational and excluded from portability.
+func VerifyEvaluationBundle(
+	ctx context.Context, options EvaluationBundleOptions, expected EvaluationBundleReceipt,
+) (EvaluationBundle, error) {
+	if err := validateEvaluationBundleReceipt(expected); err != nil {
+		return EvaluationBundle{}, fmt.Errorf("verify evaluation bundle receipt: %w", err)
+	}
+	opened, err := OpenEvaluationBundle(ctx, options)
+	if err != nil {
+		return EvaluationBundle{}, err
+	}
+	if !sameEvaluationBundleReceipt(opened.Receipt, expected) {
+		return EvaluationBundle{}, errors.New("evaluation bundle differs from its expected receipt")
+	}
+	return opened, nil
+}
+
+// OpenEvaluationBundle strictly checks the current local bytes of one
+// committed bundle. Missing, extra, symlinked, in-tree duplicate-identity,
+// noncanonical, traversal-bearing, sensitive, and incomplete trees are
+// rejected. It does not authenticate mutable storage across time; callers
+// retaining evidence must use VerifyEvaluationBundle with a trusted receipt.
 func OpenEvaluationBundle(
 	ctx context.Context, options EvaluationBundleOptions,
 ) (EvaluationBundle, error) {
+	return openEvaluationBundleWithOperations(
+		ctx, options, evaluationBundleOpenOperations{},
+	)
+}
+
+func openEvaluationBundleWithOperations(
+	ctx context.Context, options EvaluationBundleOptions,
+	operations evaluationBundleOpenOperations,
+) (bundle EvaluationBundle, resultErr error) {
 	if ctx == nil {
 		return EvaluationBundle{}, errors.New("open evaluation bundle: nil context")
 	}
@@ -200,7 +365,25 @@ func OpenEvaluationBundle(
 	if err != nil {
 		return EvaluationBundle{}, err
 	}
-	defer root.Close()
+	defer func() {
+		var closeErr error
+		if operations.closeRoot != nil {
+			closeErr = operations.closeRoot(root)
+		} else {
+			closeErr = root.Close()
+		}
+		if closeErr != nil {
+			_ = root.Close()
+			bundle = EvaluationBundle{}
+			resultErr = errors.Join(
+				resultErr, errors.New("close verified evaluation bundle directory"),
+			)
+		}
+	}()
+	visibility, err := captureEvaluationBundleVisibility(directory, root)
+	if err != nil {
+		return EvaluationBundle{}, err
+	}
 	manifestPayload, err := readEvaluationBundleFile(
 		ctx, root, evaluationBundleManifestName, maximumEvaluationManifest,
 	)
@@ -232,9 +415,6 @@ func OpenEvaluationBundle(
 	if err != nil {
 		return EvaluationBundle{}, err
 	}
-	if record.SensitiveValueCount != guard.count {
-		return EvaluationBundle{}, errors.New("evaluation bundle sensitive-value set count differs from its record")
-	}
 	expectedLayout, err := evaluationBundleLayout(record)
 	if err != nil {
 		return EvaluationBundle{}, err
@@ -259,9 +439,6 @@ func OpenEvaluationBundle(
 			return EvaluationBundle{}, err
 		}
 		payloads[index] = evaluationBundlePayload{file: file, payload: payload, maximum: maximum}
-	}
-	if err := verifyEvaluationBundleEntries(ctx, root, payloads, true); err != nil {
-		return EvaluationBundle{}, err
 	}
 	artifact := func(purpose string) ([]byte, error) {
 		for _, payload := range payloads {
@@ -303,8 +480,8 @@ func OpenEvaluationBundle(
 	if err != nil {
 		return EvaluationBundle{}, err
 	}
-	if err := VerifyArtifacts(
-		record, implementation, configuration, providerRequest, prompt, schema,
+	if err := VerifyArtifactsContext(
+		ctx, record, implementation, configuration, providerRequest, prompt, schema,
 		contextJSON, rawResponse, normalizedOutput,
 	); err != nil {
 		return EvaluationBundle{}, fmt.Errorf("verify evaluation bundle artifacts: %w", err)
@@ -346,25 +523,55 @@ func OpenEvaluationBundle(
 	if err := ctx.Err(); err != nil {
 		return EvaluationBundle{}, err
 	}
+	if operations.beforeFinalVerification != nil {
+		if err := operations.beforeFinalVerification(); err != nil {
+			return EvaluationBundle{}, errors.New("prepare final evaluation bundle verification")
+		}
+	}
+	// The semantic checks above operate on owned snapshots. Immediately before
+	// success, reread every artifact and the manifest, re-enumerate the exact
+	// tree, and prove that the visible directory and each ancestor are still the
+	// same non-symlink identities captured at open time.
+	if err := visibility.verify(directory, root); err != nil {
+		return EvaluationBundle{}, err
+	}
+	if err := verifyEvaluationBundleEntries(
+		ctx, root, payloads, manifestPayload, operations.afterFinalPayloadRead,
+	); err != nil {
+		return EvaluationBundle{}, err
+	}
+	if err := visibility.verify(directory, root); err != nil {
+		return EvaluationBundle{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return EvaluationBundle{}, err
+	}
 	return EvaluationBundle{Manifest: manifest, Record: record, Receipt: receipt}, nil
 }
 
 func snapshotEvaluationForBundle(
-	ctx context.Context, source Evaluation, guard *declaredSensitiveGuard,
-) (Evaluation, []byte, error) {
+	ctx context.Context, source Evaluation,
+) (Evaluation, []byte, *evaluationRetentionSeal, *declaredSensitiveGuard, error) {
+	seal := source.retentionSeal
+	if seal == nil || seal.guard == nil || seal.guard.matcher == nil {
+		return Evaluation{}, nil, nil, nil,
+			errors.New("evaluation has no provider-verified retention seal")
+	}
+	guard := seal.guard
 	recordPayload, err := MarshalRecord(source.Record)
 	if err != nil {
-		return Evaluation{}, nil, err
+		return Evaluation{}, nil, nil, nil, err
 	}
 	if err := rejectEvaluationSensitive(ctx, guard, recordPayload); err != nil {
-		return Evaluation{}, nil, err
+		return Evaluation{}, nil, nil, nil, err
 	}
 	record, err := DecodeRecord(bytes.NewReader(recordPayload))
 	if err != nil {
-		return Evaluation{}, nil, err
+		return Evaluation{}, nil, nil, nil, err
 	}
 	if record.SensitiveValueCount != guard.count {
-		return Evaluation{}, nil, errors.New("evaluation sensitive-value set count differs from its record")
+		return Evaluation{}, nil, nil, nil,
+			errors.New("evaluation sensitive-value capability differs from its record")
 	}
 	evaluation := Evaluation{
 		Record: record, Media: make([]PreparedMedia, len(source.Media)),
@@ -376,47 +583,58 @@ func snapshotEvaluationForBundle(
 		Context:                slices.Clone(source.Context),
 		RawResponse:            slices.Clone(source.RawResponse),
 		NormalizedOutput:       slices.Clone(source.NormalizedOutput),
+		retentionSeal:          seal,
 	}
 	for index := range source.Media {
 		evaluation.Media[index] = source.Media[index]
 		evaluation.Media[index].Bytes = slices.Clone(source.Media[index].Bytes)
 	}
-	if err := VerifyArtifacts(
-		evaluation.Record, evaluation.ProviderImplementation, evaluation.ProviderConfiguration,
+	if err := VerifyArtifactsContext(
+		ctx, evaluation.Record, evaluation.ProviderImplementation, evaluation.ProviderConfiguration,
 		evaluation.ProviderRequest, evaluation.Prompt, evaluation.Schema, evaluation.Context,
 		evaluation.RawResponse, evaluation.NormalizedOutput,
 	); err != nil {
-		return Evaluation{}, nil, err
+		return Evaluation{}, nil, nil, nil, err
 	}
 	if len(evaluation.Media) != len(record.Media) {
-		return Evaluation{}, nil, errors.New("evaluation reviewed media count differs from its record")
+		return Evaluation{}, nil, nil, nil,
+			errors.New("evaluation reviewed media count differs from its record")
 	}
 	total := int64(0)
 	for index := range evaluation.Media {
 		item := evaluation.Media[index]
 		if item.Media != record.Media[index] || item.SizeBytes != int64(len(item.Bytes)) ||
 			len(item.Bytes) == 0 || digest(item.Bytes) != item.SHA256 {
-			return Evaluation{}, nil, errors.New("evaluation reviewed media differs from its record")
+			return Evaluation{}, nil, nil, nil,
+				errors.New("evaluation reviewed media differs from its record")
 		}
 		if total > maximumMediaBytes-int64(len(item.Bytes)) {
-			return Evaluation{}, nil, errors.New("evaluation reviewed media exceeds its aggregate bound")
+			return Evaluation{}, nil, nil, nil,
+				errors.New("evaluation reviewed media exceeds its aggregate bound")
 		}
 		total += int64(len(item.Bytes))
 		if err := validateMediaPayloadContext(ctx, item.Kind, item.MediaType, item.Bytes); err != nil {
-			return Evaluation{}, nil, errors.New("evaluation reviewed media is structurally invalid")
+			return Evaluation{}, nil, nil, nil,
+				errors.New("evaluation reviewed media is structurally invalid")
 		}
 		metadata, err := marshalCanonicalCompact(item.Media, maximumPreparedPublicBytes)
 		if err != nil {
-			return Evaluation{}, nil, err
+			return Evaluation{}, nil, nil, nil, err
 		}
 		if err := rejectEvaluationSensitive(ctx, guard, metadata); err != nil {
-			return Evaluation{}, nil, err
+			return Evaluation{}, nil, nil, nil, err
 		}
 		if err := rejectEvaluationSensitive(ctx, guard, item.Bytes); err != nil {
-			return Evaluation{}, nil, err
+			return Evaluation{}, nil, nil, nil, err
 		}
 	}
-	return evaluation, recordPayload, ctx.Err()
+	if _, err := validateEvaluationRetentionSealContext(ctx, evaluation); err != nil {
+		return Evaluation{}, nil, nil, nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return Evaluation{}, nil, nil, nil, err
+	}
+	return evaluation, recordPayload, seal, guard, nil
 }
 
 func evaluationBundlePayloads(
@@ -677,19 +895,56 @@ func evaluationBundleReceipt(
 		Directory: directory, ManifestSHA256: digest(manifestPayload),
 		RecordSHA256: manifest.RecordSHA256, FileSetSHA256: manifest.FileSetSHA256,
 	}
+	receiptDigest, err := evaluationBundleReceiptDigest(
+		receipt.ManifestSHA256, receipt.RecordSHA256, receipt.FileSetSHA256,
+	)
+	if err != nil {
+		return EvaluationBundleReceipt{}, err
+	}
+	receipt.ReceiptSHA256 = receiptDigest
+	return receipt, nil
+}
+
+func evaluationBundleReceiptDigest(
+	manifestSHA256, recordSHA256, fileSetSHA256 string,
+) (string, error) {
 	source, err := marshalCanonicalCompact(struct {
 		Format         string `json:"format"`
 		FormatVersion  int    `json:"format_version"`
 		ManifestSHA256 string `json:"manifest_sha256"`
 		RecordSHA256   string `json:"record_sha256"`
 		FileSetSHA256  string `json:"file_set_sha256"`
-	}{EvaluationBundleFormat, EvaluationBundleFormatVersion, receipt.ManifestSHA256,
-		receipt.RecordSHA256, receipt.FileSetSHA256}, maximumEvaluationManifest)
+	}{EvaluationBundleFormat, EvaluationBundleFormatVersion, manifestSHA256,
+		recordSHA256, fileSetSHA256}, maximumEvaluationManifest)
 	if err != nil {
-		return EvaluationBundleReceipt{}, err
+		return "", err
 	}
-	receipt.ReceiptSHA256 = digest(source)
-	return receipt, nil
+	return digest(source), nil
+}
+
+func validateEvaluationBundleReceipt(receipt EvaluationBundleReceipt) error {
+	for _, value := range []string{
+		receipt.ManifestSHA256, receipt.RecordSHA256,
+		receipt.FileSetSHA256, receipt.ReceiptSHA256,
+	} {
+		if err := validateDigest(value); err != nil {
+			return errors.New("evaluation bundle receipt contains an invalid digest")
+		}
+	}
+	want, err := evaluationBundleReceiptDigest(
+		receipt.ManifestSHA256, receipt.RecordSHA256, receipt.FileSetSHA256,
+	)
+	if err != nil || !secureReviewDigestEqual(want, receipt.ReceiptSHA256) {
+		return errors.New("evaluation bundle receipt digest differs from its fields")
+	}
+	return nil
+}
+
+func sameEvaluationBundleReceipt(left, right EvaluationBundleReceipt) bool {
+	return secureReviewDigestEqual(left.ManifestSHA256, right.ManifestSHA256) &&
+		secureReviewDigestEqual(left.RecordSHA256, right.RecordSHA256) &&
+		secureReviewDigestEqual(left.FileSetSHA256, right.FileSetSHA256) &&
+		secureReviewDigestEqual(left.ReceiptSHA256, right.ReceiptSHA256)
 }
 
 func renderEvaluationBundleReview(
@@ -1006,7 +1261,12 @@ func readEvaluationBundleFile(
 	if err != nil {
 		return nil, errors.New("open evaluation bundle artifact")
 	}
-	defer file.Close()
+	closed := false
+	defer func() {
+		if !closed {
+			_ = file.Close()
+		}
+	}()
 	opened, openErr := file.Stat()
 	afterOpen, afterOpenErr := root.Lstat(name)
 	if openErr != nil || afterOpenErr != nil || afterOpen.Mode()&os.ModeSymlink != 0 ||
@@ -1042,11 +1302,25 @@ func readEvaluationBundleFile(
 		len(payload) == 0 || int64(len(payload)) > maximum {
 		return nil, errors.New("evaluation bundle artifact changed while reading")
 	}
-	return payload, ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := file.Close(); err != nil {
+		return nil, errors.New("close verified evaluation bundle artifact")
+	}
+	closed = true
+	afterClose, err := root.Lstat(name)
+	if err != nil || afterClose.Mode()&os.ModeSymlink != 0 ||
+		!afterClose.Mode().IsRegular() || !os.SameFile(afterRead, afterClose) ||
+		afterClose.Size() != int64(len(payload)) {
+		return nil, errors.New("evaluation bundle artifact changed after verified close")
+	}
+	return payload, nil
 }
 
 func verifyEvaluationBundleEntries(
-	ctx context.Context, root *os.Root, payloads []evaluationBundlePayload, includeManifest bool,
+	ctx context.Context, root *os.Root, payloads []evaluationBundlePayload,
+	manifestPayload []byte, afterPayloadRead func() error,
 ) error {
 	expected := make(map[string]struct{}, len(payloads)+1)
 	for _, payload := range payloads {
@@ -1062,14 +1336,63 @@ func verifyEvaluationBundleEntries(
 			return errors.New("evaluation bundle retained artifact verification failed")
 		}
 	}
-	if includeManifest {
+	if manifestPayload != nil {
 		expected[evaluationBundleManifestName] = struct{}{}
+		retained, err := readEvaluationBundleFile(
+			ctx, root, evaluationBundleManifestName, maximumEvaluationManifest,
+		)
+		if err != nil || !bytes.Equal(retained, manifestPayload) ||
+			digest(retained) != digest(manifestPayload) {
+			return errors.New("evaluation bundle manifest changed during final verification")
+		}
 	}
+	if afterPayloadRead != nil {
+		if err := afterPayloadRead(); err != nil {
+			return errors.New("evaluation bundle final payload-read hook failed")
+		}
+	}
+	if err := verifyEvaluationBundleDirectoryEntries(ctx, root, expected); err != nil {
+		return err
+	}
+	// A mutator can race the first content pass while the directory is being
+	// enumerated. Re-read in reverse order and then enumerate once more so both
+	// sides of that inter-phase window are covered before the caller receives a
+	// receipt. The receipt remains the durable cross-time anchor for mutable
+	// local filesystems.
+	for index := len(payloads) - 1; index >= 0; index-- {
+		payload := payloads[index]
+		retained, err := readEvaluationBundleFile(
+			ctx, root, payload.file.Path, payload.maximum,
+		)
+		if err != nil || !bytes.Equal(retained, payload.payload) ||
+			digest(retained) != payload.file.SHA256 {
+			return errors.New("evaluation bundle artifact changed during final snapshot")
+		}
+	}
+	if manifestPayload != nil {
+		retained, err := readEvaluationBundleFile(
+			ctx, root, evaluationBundleManifestName, maximumEvaluationManifest,
+		)
+		if err != nil || !bytes.Equal(retained, manifestPayload) {
+			return errors.New("evaluation bundle manifest changed during final snapshot")
+		}
+	}
+	return verifyEvaluationBundleDirectoryEntries(ctx, root, expected)
+}
+
+func verifyEvaluationBundleDirectoryEntries(
+	ctx context.Context, root *os.Root, expected map[string]struct{},
+) error {
 	directory, err := root.Open(".")
 	if err != nil {
 		return errors.New("open evaluation bundle directory listing")
 	}
-	defer directory.Close()
+	closed := false
+	defer func() {
+		if !closed {
+			_ = directory.Close()
+		}
+	}()
 	identities := make([]os.FileInfo, 0, len(expected))
 	count := 0
 	for {
@@ -1107,6 +1430,58 @@ func verifyEvaluationBundleEntries(
 	if count != len(expected) {
 		return errors.New("evaluation bundle is missing expected entries")
 	}
+	if err := directory.Close(); err != nil {
+		return errors.New("close verified evaluation bundle directory listing")
+	}
+	closed = true
+	return nil
+}
+
+func captureEvaluationBundleVisibility(
+	directory string, root *os.Root,
+) (evaluationBundleVisibility, error) {
+	if root == nil {
+		return evaluationBundleVisibility{}, errors.New("evaluation bundle root is unavailable")
+	}
+	paths := make([]evaluationBundlePathIdentity, 0, 16)
+	for current := directory; ; current = filepath.Dir(current) {
+		info, err := os.Lstat(current)
+		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return evaluationBundleVisibility{},
+				errors.New("evaluation bundle visible path has a non-directory or symlink component")
+		}
+		paths = append(paths, evaluationBundlePathIdentity{path: current, info: info})
+		if current == filepath.Dir(current) {
+			break
+		}
+	}
+	opened, err := root.Stat(".")
+	if err != nil || len(paths) == 0 || !os.SameFile(opened, paths[0].info) {
+		return evaluationBundleVisibility{},
+			errors.New("evaluation bundle visible directory differs from its open root")
+	}
+	return evaluationBundleVisibility{paths: paths}, nil
+}
+
+func (visibility evaluationBundleVisibility) verify(directory string, root *os.Root) error {
+	if root == nil || len(visibility.paths) == 0 || visibility.paths[0].path != directory {
+		return errors.New("evaluation bundle visibility snapshot is invalid")
+	}
+	opened, err := root.Stat(".")
+	if err != nil || !os.SameFile(opened, visibility.paths[0].info) {
+		return errors.New("evaluation bundle open root identity changed")
+	}
+	for _, identity := range visibility.paths {
+		current, err := os.Lstat(identity.path)
+		if err != nil || current.Mode()&os.ModeSymlink != 0 || !current.IsDir() ||
+			!os.SameFile(identity.info, current) {
+			return errors.New("evaluation bundle visible path identity changed during verification")
+		}
+	}
+	visible, err := os.Lstat(directory)
+	if err != nil || !os.SameFile(opened, visible) {
+		return errors.New("evaluation bundle final path no longer names its open root")
+	}
 	return nil
 }
 
@@ -1120,6 +1495,90 @@ func syncEvaluationBundleDirectory(root *os.Root) error {
 		return errors.New("sync evaluation bundle directory")
 	}
 	return nil
+}
+
+func closeEvaluationBundleRoot(
+	operations evaluationBundleWriteOperations, root *os.Root,
+) error {
+	if operations.closeRoot != nil {
+		return operations.closeRoot(root)
+	}
+	return root.Close()
+}
+
+func invalidateEvaluationBundleManifest(
+	directory string, expectedRoot os.FileInfo, operations evaluationBundleWriteOperations,
+) (bool, error) {
+	if expectedRoot == nil {
+		return true, errors.New("evaluation bundle invalidation has no root identity")
+	}
+	root, err := openValidatedRoot(directory, nil)
+	if err != nil {
+		return true, errors.New("open evaluation bundle for invalidation")
+	}
+	var failures []error
+	closed := false
+	defer func() {
+		if !closed {
+			_ = root.Close()
+		}
+	}()
+	opened, openErr := root.Stat(".")
+	visible, visibleErr := os.Lstat(directory)
+	if openErr != nil || visibleErr != nil || visible.Mode()&os.ModeSymlink != 0 ||
+		!visible.IsDir() || !os.SameFile(expectedRoot, opened) ||
+		!os.SameFile(opened, visible) {
+		return true, errors.New("evaluation bundle identity changed before invalidation")
+	}
+
+	remove := func() error {
+		if operations.removeManifest != nil {
+			return operations.removeManifest(root)
+		}
+		return root.Remove(evaluationBundleManifestName)
+	}
+	removed := false
+	for attempt := 0; attempt < 2; attempt++ {
+		removeErr := remove()
+		if removeErr == nil || os.IsNotExist(removeErr) {
+			removed = true
+			break
+		}
+		failures = append(failures,
+			errors.New("remove evaluation bundle manifest during invalidation"))
+	}
+
+	syncDirectory := func() error {
+		if operations.syncInvalidation != nil {
+			return operations.syncInvalidation(root)
+		}
+		return syncEvaluationBundleDirectory(root)
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		if syncErr := syncDirectory(); syncErr == nil {
+			break
+		} else {
+			failures = append(failures,
+				errors.New("sync evaluation bundle invalidation"))
+		}
+	}
+
+	markerRemains := true
+	if _, statErr := root.Lstat(evaluationBundleManifestName); os.IsNotExist(statErr) {
+		markerRemains = false
+	} else if statErr != nil {
+		failures = append(failures,
+			errors.New("inspect evaluation bundle manifest after invalidation"))
+	} else if removed {
+		failures = append(failures,
+			errors.New("evaluation bundle manifest reappeared after invalidation"))
+	}
+	if closeErr := root.Close(); closeErr != nil {
+		failures = append(failures,
+			errors.New("close evaluation bundle invalidation root"))
+	}
+	closed = true
+	return markerRemains, errors.Join(failures...)
 }
 
 func validateEvaluationBundleName(name string) error {

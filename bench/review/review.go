@@ -302,6 +302,11 @@ type Evaluation struct {
 	Context                []byte
 	RawResponse            []byte
 	NormalizedOutput       []byte
+	// retentionSeal is an opaque, one-use capability minted only after the
+	// provider exchange and every retention byte have passed validation. Public
+	// copies share the capability, so at most one exact snapshot can be
+	// published as provider-verified evidence.
+	retentionSeal *evaluationRetentionSeal
 }
 
 // Evaluate prepares a content-addressed request, invokes one provider plugin,
@@ -462,8 +467,8 @@ func Evaluate(
 		Context: slices.Clone(prepared.Context), RawResponse: slices.Clone(response.Raw),
 		NormalizedOutput: slices.Clone(normalized),
 	}
-	if err := VerifyArtifacts(
-		evaluation.Record, evaluation.ProviderImplementation, evaluation.ProviderConfiguration,
+	if err := VerifyArtifactsContext(
+		ctx, evaluation.Record, evaluation.ProviderImplementation, evaluation.ProviderConfiguration,
 		evaluation.ProviderRequest, evaluation.Prompt, evaluation.Schema, evaluation.Context,
 		evaluation.RawResponse, evaluation.NormalizedOutput,
 	); err != nil {
@@ -493,6 +498,12 @@ func Evaluate(
 	}
 	if cause := ctx.Err(); cause != nil {
 		return Evaluation{}, cause
+	}
+	evaluation.retentionSeal, err = newEvaluationRetentionSealContext(
+		ctx, evaluation, prepared.sensitiveGuard,
+	)
+	if err != nil {
+		return Evaluation{}, fmt.Errorf("seal review evaluation for retention: %w", err)
 	}
 	return evaluation, nil
 }

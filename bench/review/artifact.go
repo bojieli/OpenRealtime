@@ -2,6 +2,7 @@ package review
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -224,6 +225,25 @@ func VerifyArtifacts(
 	record Record, implementation, configuration, providerRequest,
 	prompt, schema, contextJSON, rawResponse, normalizedOutput []byte,
 ) error {
+	return VerifyArtifactsContext(
+		context.Background(), record, implementation, configuration, providerRequest,
+		prompt, schema, contextJSON, rawResponse, normalizedOutput,
+	)
+}
+
+// VerifyArtifactsContext is VerifyArtifacts with cooperative cancellation
+// through every potentially large retained-artifact hash and between bounded
+// canonicalization steps.
+func VerifyArtifactsContext(
+	ctx context.Context, record Record, implementation, configuration, providerRequest,
+	prompt, schema, contextJSON, rawResponse, normalizedOutput []byte,
+) error {
+	if ctx == nil {
+		return errors.New("verify review artifacts: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := record.Validate(); err != nil {
 		return err
 	}
@@ -252,9 +272,16 @@ func VerifyArtifacts(
 		}
 	}
 	for _, artifact := range artifacts {
-		if digest(artifact.payload) != artifact.digest {
+		got, err := digestContext(ctx, artifact.payload)
+		if err != nil {
+			return err
+		}
+		if got != artifact.digest {
 			return fmt.Errorf("review %s digest does not match its record", artifact.label)
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	canonicalConfiguration, err := canonicalJSON(configuration, maximumProviderConfigurationBytes)
 	if err != nil || !bytes.Equal(configuration, canonicalConfiguration) {
@@ -262,6 +289,9 @@ func VerifyArtifacts(
 	}
 	if !bytes.Equal(schema, caseReviewSchema()) {
 		return errors.New("review schema bytes differ from the declared schema version")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	canonicalContext, err := canonicalJSON(contextJSON, maximumContextBytes)
 	if err != nil || !bytes.Equal(contextJSON, canonicalContext) {
@@ -276,6 +306,9 @@ func VerifyArtifacts(
 	}{record.Suite, record.Case, record.Trial, contextJSON, record.Media}, maximumPromptBytes)
 	if err != nil || !bytes.Equal(prompt, []byte(caseReviewPrompt(string(promptContext)))) {
 		return errors.New("review prompt bytes differ from the declared prompt version and context")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	fingerprintSource, err := marshalCanonicalCompact(struct {
 		AttemptID           string  `json:"attempt_id"`
@@ -292,15 +325,25 @@ func VerifyArtifacts(
 		record.Schema.Version, record.Schema.SHA256, record.ContextSHA256, record.Media,
 		record.Sanitization, record.SensitiveValueCount,
 	}, maximumPreparedPublicBytes)
-	if err != nil || digest(fingerprintSource) != record.RequestFingerprint {
+	if err != nil {
+		return errors.New("review request fingerprint cannot be reconstructed")
+	}
+	fingerprintDigest, err := digestContext(ctx, fingerprintSource)
+	if err != nil {
+		return err
+	}
+	if fingerprintDigest != record.RequestFingerprint {
 		return errors.New("review request fingerprint differs from its retained inputs")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	assessment, canonicalOutput, err := normalizeAssessment(normalizedOutput)
 	if err != nil || !bytes.Equal(normalizedOutput, canonicalOutput) ||
 		!reflect.DeepEqual(assessment, record.Assessment) {
 		return errors.New("review normalized output is not canonical or differs from its record")
 	}
-	return nil
+	return ctx.Err()
 }
 
 func strictRecordJSON(payload []byte) error {

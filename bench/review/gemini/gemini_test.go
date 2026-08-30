@@ -244,6 +244,51 @@ func TestPluginSendsExactPinnedMultimodalInteractionAndProvenance(t *testing.T) 
 	}
 }
 
+func TestPluginEvaluationRetainsOneAnchoredHumanReviewBundle(t *testing.T) {
+	request, _, payloads := preparedMultimodalRequest(t)
+	responseBody := successfulInteraction(t, testAssessment)
+	client := &http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusOK, responseBody), nil
+		})}
+	evaluation, err := review.Evaluate(t.Context(), openGeminiLease(t, client), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(t.TempDir(), "gemini-evaluation")
+	options := review.EvaluationBundleOptions{Directory: directory}
+	receipt, err := review.WriteEvaluationBundle(t.Context(), options, evaluation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, err := review.VerifyEvaluationBundle(t.Context(), options, receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opened.Record.Provider.Model != ModelID ||
+		opened.Record.ProviderRequestID != "interaction-request-1" ||
+		opened.Record.RawResponseSHA256 != digest(responseBody) ||
+		opened.Receipt != receipt {
+		t.Fatalf("anchored Gemini bundle drift: %+v", opened)
+	}
+	for index, expected := range payloads {
+		path := filepath.Join(directory, []string{
+			"media-001.wav", "media-002.png", "media-003.mp4",
+		}[index])
+		retained, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(retained, expected) {
+			t.Fatalf("retained Gemini medium %d differs: %v", index, err)
+		}
+	}
+	if _, err := review.WriteEvaluationBundle(
+		t.Context(), review.EvaluationBundleOptions{
+			Directory: filepath.Join(t.TempDir(), "second-bundle"),
+		}, evaluation,
+	); err == nil {
+		t.Fatal("Gemini Evaluation retention seal was reusable")
+	}
+}
+
 func TestPluginAcceptsNullRequestIDWhenStoreIsDisabled(t *testing.T) {
 	request, _, _ := preparedMultimodalRequest(t)
 	responseBody := bytes.Replace(
