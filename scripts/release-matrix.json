@@ -959,6 +959,17 @@
       ]
     },
     {
+      "id": "local.scenario.profiled-websocket",
+      "description": "Exercise the exact eleven-case graph-native scenario contract through profiled WebSocket sessions",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-count=1", "-v", "./bench/scenario/graphnative", "-run", "^TestProfiledGraphNativeWebSocketExercisesExactElevenScenarioContract$"],
+      "timeout": "5m",
+      "skip_policy": "forbid"
+    },
+    {
       "id": "local.sdk.official",
       "description": "Run the unmodified official OpenAI Realtime SDK over WebSocket and WebRTC",
       "availability": "local",

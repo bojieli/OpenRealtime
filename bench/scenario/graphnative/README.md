@@ -53,6 +53,11 @@ event covers the adapter's typed failure boundary. This catches profile, mount,
 gateway, and wire regressions, but deliberately does not score the scripted
 interaction behavior.
 
+The checked release matrix runs that test as the required default local gate
+`local.scenario.profiled-websocket`. Its skip policy is `forbid`, and it has no
+credential, browser, network, or provider prerequisite; a release cannot turn
+an unavailable live benchmark into a local pass by skipping this checkpoint.
+
 The checked full-suite contract fingerprint is in
 `testdata/full-suite-contract.sha256`. Changing a case's external composition
 surface requires an explicit artifact review.

@@ -280,6 +280,7 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		"local.client.swift-linux",
 		"local.presentation.chromium",
 		"local.presentation.shared-server",
+		"local.scenario.profiled-websocket",
 		"local.sdk.official",
 		"performance.compare-fdbench6147",
 	)
@@ -288,6 +289,16 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		if !exists || !gate.Required {
 			t.Errorf("required special gate is missing: %s", id)
 		}
+	}
+	scenarioWebSocket := byID["local.scenario.profiled-websocket"]
+	if scenarioWebSocket.Availability != AvailabilityLocal ||
+		scenarioWebSocket.Selection != SelectionDefault ||
+		scenarioWebSocket.SkipPolicy != SkipForbid ||
+		!slices.Equal(scenarioWebSocket.Command, []string{
+			"{go}", "test", "-count=1", "-v", "./bench/scenario/graphnative", "-run",
+			"^TestProfiledGraphNativeWebSocketExercisesExactElevenScenarioContract$",
+		}) {
+		t.Fatalf("profiled scenario WebSocket gate was weakened: %+v", scenarioWebSocket)
 	}
 	performance := byID["performance.compare-fdbench6147"]
 	if performance.Selection != SelectionOptIn || !slices.Contains(performance.Command,
