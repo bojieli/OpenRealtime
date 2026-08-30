@@ -3,6 +3,7 @@ package graphnative
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,7 +19,7 @@ import (
 
 const (
 	SourceReviewContextFormat        = "openrealtime.scenario-source-review-context"
-	SourceReviewContextFormatVersion = 1
+	SourceReviewContextFormatVersion = 2
 	maximumSourceReviewContext       = 4 << 20
 )
 
@@ -48,6 +49,7 @@ type SourceReviewContext struct {
 	SourceManifestSHA256   string                   `json:"source_manifest_sha256"`
 	SourceFileSetSHA256    string                   `json:"source_file_set_sha256"`
 	ChecklistFingerprint   string                   `json:"checklist_fingerprint"`
+	MediaDurationMS        int64                    `json:"media_duration_ms"`
 	Attempt                AttemptRecord            `json:"attempt"`
 	Result                 scenario.Result          `json:"deterministic_result"`
 	Architecture           SourceReviewArchitecture `json:"architecture"`
@@ -134,6 +136,16 @@ func BuildSourceReviewPopulation(
 			digest != attempt.Record.Execution.ResultSHA256 {
 			return SourceReviewPopulation{}, errors.New("scenario source review result differs from the checklist")
 		}
+		audioPayload, err := readSourceFile(ctx, root, attempt.Audio)
+		if err != nil {
+			return SourceReviewPopulation{}, err
+		}
+		mediaDurationMS, err := sourceReviewStereoWAVDurationMS(audioPayload)
+		if err != nil {
+			return SourceReviewPopulation{}, fmt.Errorf(
+				"scenario source review %s: %w", attempt.Record.Key.TaskID, err,
+			)
+		}
 		architecture := SourceReviewArchitecture{
 			ResultVersion:   bundle.ArchitectureResult.Version,
 			Experiment:      bundle.ArchitectureResult.Experiment,
@@ -155,6 +167,7 @@ func BuildSourceReviewPopulation(
 			SourceManifestSHA256:   expected.ManifestSHA256,
 			SourceFileSetSHA256:    expected.FileSetSHA256,
 			ChecklistFingerprint:   bundle.Checklist.Fingerprint,
+			MediaDurationMS:        mediaDurationMS,
 			Attempt:                attempt.Record.Clone(), Result: deterministic, Architecture: architecture,
 		}, maximumSourceReviewContext)
 		if err != nil {
@@ -194,6 +207,41 @@ func BuildSourceReviewPopulation(
 		return SourceReviewPopulation{}, errors.New("scenario source bundle changed while building review requests")
 	}
 	return SourceReviewPopulation{Bundle: reopened, Requests: requests}, nil
+}
+
+// sourceReviewStereoWAVDurationMS validates the exact graph-native scenario
+// recording shape and returns its inclusive integer timestamp ceiling. A
+// fractional final millisecond rounds up so a finding at the last audio frame
+// remains representable without admitting timestamps from a later second.
+func sourceReviewStereoWAVDurationMS(payload []byte) (int64, error) {
+	const (
+		headerBytes = uint64(44)
+		sampleRate  = uint64(24_000)
+		blockAlign  = uint64(4)
+		byteRate    = uint64(96_000)
+	)
+	size := uint64(len(payload))
+	if size <= headerBytes ||
+		string(payload[:4]) != "RIFF" || string(payload[8:12]) != "WAVE" ||
+		string(payload[12:16]) != "fmt " || string(payload[36:40]) != "data" ||
+		binary.LittleEndian.Uint32(payload[16:20]) != 16 ||
+		binary.LittleEndian.Uint16(payload[20:22]) != 1 ||
+		binary.LittleEndian.Uint16(payload[22:24]) != 2 ||
+		uint64(binary.LittleEndian.Uint32(payload[24:28])) != sampleRate ||
+		uint64(binary.LittleEndian.Uint32(payload[28:32])) != byteRate ||
+		uint64(binary.LittleEndian.Uint16(payload[32:34])) != blockAlign ||
+		binary.LittleEndian.Uint16(payload[34:36]) != 16 ||
+		uint64(binary.LittleEndian.Uint32(payload[4:8])) != size-8 ||
+		uint64(binary.LittleEndian.Uint32(payload[40:44])) != size-headerBytes ||
+		(size-headerBytes)%blockAlign != 0 {
+		return 0, errors.New("scenario source review audio is not exact 24 kHz stereo PCM16 WAV")
+	}
+	frames := (size - headerBytes) / blockAlign
+	durationMS := (frames*1000 + sampleRate - 1) / sampleRate
+	if durationMS == 0 {
+		return 0, errors.New("scenario source review audio duration is invalid")
+	}
+	return int64(durationMS), nil
 }
 
 func decodeSourceScenarioResult(payload []byte) (scenario.Result, error) {

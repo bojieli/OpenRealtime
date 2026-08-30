@@ -38,7 +38,7 @@ import (
 const (
 	RecordFormat              = "openrealtime.multimodal-review"
 	FormatVersion             = 4
-	CasePromptVersion         = "openrealtime.case-media-review.prompt.v3"
+	CasePromptVersion         = "openrealtime.case-media-review.prompt.v4"
 	CaseSchemaVersion         = "openrealtime.case-media-review.schema.v2"
 	SanitizationVersion       = "openrealtime.review-sanitization.v4"
 	MediaValidationVersion    = "openrealtime.media-container-validation.v4"

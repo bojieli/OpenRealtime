@@ -632,6 +632,9 @@ func evaluateScenarioRequest(
 	if err != nil {
 		return scenarioEvaluationEntry{}, err
 	}
+	if err := validateScenarioEvaluationTimeline(request, evaluation.Record.Assessment); err != nil {
+		return scenarioEvaluationEntry{}, err
+	}
 	bundleName, receiptName := scenarioEvaluationNames(index, attempt)
 	bundleDirectory := filepath.Join(options.OutputDirectory, bundleName)
 	receipt, err := benchreview.WriteEvaluationBundle(ctx, benchreview.EvaluationBundleOptions{
@@ -825,6 +828,42 @@ func escapeScenarioEvaluationMarkdown(value string) string {
 	return replacer.Replace(value)
 }
 
+func validateScenarioEvaluationTimeline(
+	request benchreview.Request, assessment benchreview.Assessment,
+) error {
+	// Evaluate has already admitted and canonicalized this context on the write
+	// path; CanonicalContextSHA256 does the same immediately before this helper
+	// on the reopen path. Decode only the sealed timing header here instead of
+	// rehydrating the large transcript and architecture payload per record.
+	var source struct {
+		Format          string `json:"format"`
+		FormatVersion   int    `json:"format_version"`
+		MediaDurationMS int64  `json:"media_duration_ms"`
+	}
+	if err := json.Unmarshal(request.Context, &source); err != nil {
+		return errors.New("scenario evaluation context is invalid")
+	}
+	if source.Format != graphnative.SourceReviewContextFormat ||
+		source.FormatVersion != graphnative.SourceReviewContextFormatVersion ||
+		source.MediaDurationMS <= 0 || source.MediaDurationMS > 24*60*60*1000 {
+		return errors.New("scenario evaluation context media duration is invalid")
+	}
+	for _, findings := range [][]benchreview.Finding{
+		assessment.SignificantProblems, assessment.MinorObservations,
+	} {
+		for _, finding := range findings {
+			for _, timestamp := range []*int64{finding.StartMS, finding.EndMS} {
+				if timestamp != nil && (*timestamp < 0 || *timestamp > source.MediaDurationMS) {
+					return errors.New(
+						"scenario evaluation finding timestamp exceeds sealed media duration",
+					)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func verifyScenarioEvaluationRecord(
 	ctx context.Context,
 	record benchreview.Record,
@@ -846,6 +885,9 @@ func verifyScenarioEvaluationRecord(
 		request.Trial != attempt.Record.Key.Trial ||
 		record.ContextSHA256 != contextSHA256 {
 		return errors.New("retained evaluation record differs from its sealed source request")
+	}
+	if err := validateScenarioEvaluationTimeline(request, record.Assessment); err != nil {
+		return err
 	}
 	if len(record.Media) != len(request.Media) || len(request.Media) != len(attempt.Submitted)+1 {
 		return errors.New("retained evaluation media count differs from its sealed source request")
