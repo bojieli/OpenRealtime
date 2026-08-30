@@ -105,6 +105,15 @@ func TestPixelInstructionStatesTheTargetCoordinateSpace(t *testing.T) {
 			t.Errorf("pixel instruction does not contain %q: %s", wanted, instruction)
 		}
 	}
+	for _, wanted := range []string{
+		"take no placeholder or precondition action", "exactly one computer action at a time",
+		"wait for its result and changed screen", "focus the intended input with a click",
+		"match its sounds against visible labels", "stop immediately when the page reports success",
+	} {
+		if !strings.Contains(instruction, wanted) {
+			t.Errorf("pixel instruction does not contain behavior contract %q: %s", wanted, instruction)
+		}
+	}
 
 	marked := taskInstruction(Case{Grounding: GroundingSetOfMark}, computeruse.Target{
 		Name: "browser", Sources: []string{"screen"}, Width: 1280, Height: 577,
