@@ -42,7 +42,8 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 			artifacts.Gateway, artifacts.ScenarioProvider)
 	}
 	for _, exact := range []string{
-		`"architecture":{"id":"cascade.controlled","revision":3,"fingerprint":"sha256:`,
+		`"architecture":{"fingerprint":"sha256:`,
+		`"id":"cascade.controlled","revision":3`,
 		`"reference":"provider.openrealtime.asr.sensevoice.v1"`,
 		`"model":"iic/SenseVoiceSmall"`,
 		`"base_url":"http://127.0.0.1:8002/v1"`,
