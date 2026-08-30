@@ -1666,9 +1666,12 @@ func TestProductionArtifactsContainInspectableSourceAndExactPolicyPreimages(t *t
 	}
 	if decoded["request_binding"] != "prepared_request_fingerprint_text_block_v1" ||
 		decoded["request_fingerprint_label"] != requestFingerprintLabel ||
-		decoded["media_order"] != "prompt_then_request_fingerprint_then_manifest_media" {
-		t.Fatalf("configuration request binding = %#v / %#v / %#v",
-			decoded["request_binding"], decoded["request_fingerprint_label"], decoded["media_order"])
+		decoded["media_order"] != "prompt_then_request_fingerprint_then_manifest_media" ||
+		decoded["thinking_level"] != "high" ||
+		decoded["max_output_tokens"] != float64(maximumOutputTokens) {
+		t.Fatalf("configuration request binding = %#v / %#v / %#v thinking=%#v max=%#v",
+			decoded["request_binding"], decoded["request_fingerprint_label"], decoded["media_order"],
+			decoded["thinking_level"], decoded["max_output_tokens"])
 	}
 	headers, ok := decoded["headers"].(map[string]any)
 	if !ok || headers["credential_header"] != "x-goog-api-key" ||
@@ -1682,7 +1685,7 @@ func TestProductionArtifactsContainInspectableSourceAndExactPolicyPreimages(t *t
 		t.Fatalf("configuration transport policy = %#v", decoded["transport"])
 	}
 	descriptor := Descriptor()
-	if descriptor.Implementation.Version != "openrealtime.gemini-review.impl.v7" ||
+	if descriptor.Implementation.Version != "openrealtime.gemini-review.impl.v8" ||
 		descriptor.Implementation.SHA256 != digest(implementation) ||
 		descriptor.ConfigurationSHA256 != digest(configuration) {
 		t.Fatalf("production descriptor = %+v", descriptor)

@@ -45,10 +45,15 @@ const (
 	// Three is the deliberately narrow plugin policy exercised by the exact
 	// WAV + PNG + MP4 contract fixture. A live run is reportable only when its
 	// separate create-only conformance receipt has been retained.
-	maximumPreparedMedia       = 3
-	maximumPromptBytes         = 8 << 20
-	maximumSchemaBytes         = 1 << 20
-	maximumContextBytes        = 4 << 20
+	maximumPreparedMedia = 3
+	maximumPromptBytes   = 8 << 20
+	maximumSchemaBytes   = 1 << 20
+	maximumContextBytes  = 4 << 20
+	// Gemini 3.7 Flash supports 65,536 output tokens. High thinking consumes
+	// this same budget, so a smaller legacy cap can end an otherwise valid
+	// structured media review with interaction status "incomplete" before the
+	// assessment is emitted.
+	maximumOutputTokens        = 65_536
 	maximumResponseHeaderBytes = 1 << 20
 	maximumAPIKeyBytes         = 4096
 	minimumAPIKeyBytes         = 16
@@ -156,7 +161,7 @@ func descriptorFor(implementation, configuration []byte) review.ProviderDescript
 		Provider: "google", Model: ModelID, API: interactionsAPI,
 		APIRevision: APIRevision,
 		Implementation: review.ContentIdentity{
-			Version: "openrealtime.gemini-review.impl.v7", SHA256: digest(implementation),
+			Version: "openrealtime.gemini-review.impl.v8", SHA256: digest(implementation),
 		},
 		ConfigurationSHA256: digest(configuration),
 		CapabilitiesSHA256:  capabilitiesSHA256,
@@ -281,11 +286,11 @@ func configurationArtifact(transport map[string]any) []byte {
 			"accept": "application/json", "content_type": "application/json",
 			"credential_header": "x-goog-api-key", "user_agent": "OpenRealtime-benchmark-review/1",
 		},
-		"implementation":           "openrealtime.gemini-review.v7",
+		"implementation":           "openrealtime.gemini-review.v8",
 		"inline_media_max_count":   maximumPreparedMedia,
 		"inline_media_max_bytes":   maximumInlineMediaBytes,
 		"inline_request_max_bytes": maximumInlineRequestBytes,
-		"input_shape":              "ordered_content_blocks", "max_output_tokens": 16_384,
+		"input_shape":              "ordered_content_blocks", "max_output_tokens": maximumOutputTokens,
 		"media_order": "prompt_then_request_fingerprint_then_manifest_media", "seed": 1,
 		"request_binding":              "prepared_request_fingerprint_text_block_v1",
 		"request_fingerprint_label":    requestFingerprintLabel,
@@ -907,7 +912,7 @@ func marshalValidatedRequestContext(
 			Type: "text", MediaType: "application/json", Schema: slices.Clone(prepared.Schema),
 		},
 		GenerationConfig: generationConfig{
-			ThinkingLevel: "high", MaxOutputTokens: 16_384, Seed: 1,
+			ThinkingLevel: "high", MaxOutputTokens: maximumOutputTokens, Seed: 1,
 		},
 		Store: false, Stream: false, Background: false,
 	})
