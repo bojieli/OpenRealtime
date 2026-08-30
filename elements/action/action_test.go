@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphcompiler "github.com/bojieli/OpenRealtime/graph"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/graph/syntax"
@@ -1877,6 +1879,66 @@ func TestConfirmationRequiredDeniedAndApproved(t *testing.T) {
 			t.Fatalf("canonical proposal/call/result lifecycle is incomplete: %+v", snapshot.Items)
 		}
 	})
+}
+
+func TestLedgerArchitectureResolutionIsStableAcrossFreshSessionCapabilities(t *testing.T) {
+	first := newFixture(t, legacyaction.ConfirmNever, false, &testDispatcher{name: "computer:browser"})
+	defer first.stop(t)
+	second := newFixture(t, legacyaction.ConfirmNever, false, &testDispatcher{name: "computer:browser"})
+	defer second.stop(t)
+
+	firstLedger, err := first.ledgers.resolve(first.ledgerReference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondLedger, err := second.ledgers.resolve(second.ledgerReference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstLedger.identity == secondLedger.identity {
+		t.Fatal("fresh session ledgers reused one internal capability identity")
+	}
+
+	resolved := func(fixture *fixture) map[string]inspect.CapabilityIdentity {
+		t.Helper()
+		deadline := time.Now().Add(time.Second)
+		for {
+			live := fixture.mounted.Live()
+			result := make(map[string]inspect.CapabilityIdentity, 2)
+			for _, nodeID := range []string{"ledger", "dispatch"} {
+				node, found := live.Nodes[nodeID]
+				if !found || node.Resolution == nil ||
+					node.Resolution.CapabilitiesEvidence != inspect.EvidenceLive {
+					continue
+				}
+				for _, capability := range node.Resolution.Capabilities {
+					if capability.Name == "ledger" {
+						result[nodeID] = capability
+					}
+				}
+			}
+			if len(result) == 2 {
+				for nodeID, capability := range result {
+					if capability.Contract != "action.Ledger/v1" ||
+						capability.Provider.ID != "ledger://main" ||
+						capability.Provider.Revision == "" || capability.Provider.Digest != "" {
+						t.Fatalf("%s ledger architecture capability = %+v", nodeID, capability)
+					}
+				}
+				return result
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("ledger architecture resolution did not become live: %+v", live.Nodes)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	firstResolution := resolved(first)
+	secondResolution := resolved(second)
+	if !reflect.DeepEqual(firstResolution, secondResolution) {
+		t.Fatalf("fresh session ledger architecture drifted: first=%+v second=%+v",
+			firstResolution, secondResolution)
+	}
 }
 
 func TestAddressedConfirmationTimeoutIsTerminal(t *testing.T) {

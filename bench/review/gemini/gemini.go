@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -40,8 +41,15 @@ const (
 	interactionsURL  = "https://generativelanguage.googleapis.com/v1beta/interactions"
 
 	maximumInlineRequestBytes = 20_000_000
-	maximumInlineMediaBytes   = 8 << 20
-	maximumResponseBytes      = 8 << 20
+	maximumFindingTimestampMS = int64(24 * 60 * 60 * 1000)
+	// A 150-second, 24 kHz, stereo PCM16 review recording is 14,400,044
+	// bytes. Keep that lossless evidence admissible while leaving roughly
+	// 666 kB for the prompt, schema, system instruction, and JSON envelope
+	// after base64 expansion. marshalRequest remains the final authority and
+	// rejects any combination whose encoded body exceeds the documented
+	// 20 MB Interactions inline-request limit before transport.
+	maximumInlineMediaBytes = 14_500_000
+	maximumResponseBytes    = 8 << 20
 	// Three is the deliberately narrow plugin policy exercised by the exact
 	// WAV + PNG + MP4 contract fixture. A live run is reportable only when its
 	// separate create-only conformance receipt has been retained.
@@ -886,6 +894,10 @@ func marshalValidatedRequestContext(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	boundedSchema, err := boundedFindingTimestampSchema(prepared)
+	if err != nil {
+		return nil, err
+	}
 	input := make([]contentBlock, 0, len(prepared.Media)+2)
 	input = append(input, contentBlock{Type: "text", Text: prepared.Prompt})
 	input = append(input, contentBlock{
@@ -903,14 +915,14 @@ func marshalValidatedRequestContext(
 			MediaType: media.MediaType,
 		})
 	}
-	responseSchema, schemaErr := geminiResponseSchema(prepared.Schema)
+	responseSchema, schemaErr := geminiResponseSchema(boundedSchema)
 	if schemaErr != nil {
 		return nil, schemaErr
 	}
 	var output bytes.Buffer
 	encoder := json.NewEncoder(&output)
 	encoder.SetEscapeHTML(false)
-	err := encoder.Encode(interactionRequest{
+	err = encoder.Encode(interactionRequest{
 		Model: ModelID, Input: input,
 		SystemInstruction: systemInstruction,
 		ResponseFormat: responseFormat{
@@ -996,6 +1008,29 @@ func geminiResponseSchema(source json.RawMessage) (json.RawMessage, error) {
 		return nil, fmt.Errorf("derive Gemini response schema: encode: %w", err)
 	}
 	return encoded, nil
+}
+
+func boundedFindingTimestampSchema(
+	prepared review.PreparedRequest,
+) (json.RawMessage, error) {
+	maximumMS := prepared.FindingTimestampMaximumMS
+	if maximumMS <= 0 || maximumMS > maximumFindingTimestampMS {
+		return nil, errors.New("Gemini review finding timestamp maximum is invalid")
+	}
+	standard := []byte(`"maximum": 86400000`)
+	if bytes.Count(prepared.Schema, standard) != 4 {
+		return nil, errors.New("Gemini standard review schema has unexpected timestamp bounds")
+	}
+	// The caller has already passed PreparedRequest.Validate, which requires
+	// the exact standard schema. Replacing four decimal integer literals with a
+	// bounded decimal integer preserves duplicate safety and container shape.
+	replacement := []byte(`"maximum": ` + strconv.FormatInt(maximumMS, 10))
+	bounded := bytes.ReplaceAll(prepared.Schema, standard, replacement)
+	if len(bounded) == 0 || len(bounded) > maximumSchemaBytes ||
+		!json.Valid(bounded) {
+		return nil, errors.New("Gemini bounded review schema is invalid")
+	}
+	return json.RawMessage(bounded), nil
 }
 
 func preflightProviderResponse(response review.ProviderResponse) error {

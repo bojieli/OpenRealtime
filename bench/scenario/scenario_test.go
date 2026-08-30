@@ -1,12 +1,55 @@
 package scenario_test
 
 import (
+	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/bench/scenario"
 )
+
+func TestToolFunctionDeclarationOwnsTheExactRequiredSchema(t *testing.T) {
+	declaration, err := (scenario.Tool{
+		Name: "press_key", Description: "Send a keypad tone on the open call.",
+		Parameters: []string{"digit"},
+	}).FunctionDeclaration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if declaration.Type != "function" || declaration.Name != "press_key" ||
+		declaration.Description != "Send a keypad tone on the open call." {
+		t.Fatalf("scenario tool declaration = %+v", declaration)
+	}
+	var schema struct {
+		Type       string                       `json:"type"`
+		Properties map[string]map[string]string `json:"properties"`
+		Required   []string                     `json:"required"`
+	}
+	if err := json.Unmarshal(declaration.Parameters, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if schema.Type != "object" || !reflect.DeepEqual(schema.Required, []string{"digit"}) ||
+		!reflect.DeepEqual(schema.Properties, map[string]map[string]string{
+			"digit": {"type": "string"},
+		}) {
+		t.Fatalf("scenario tool schema = %+v", schema)
+	}
+}
+
+func TestToolFunctionDeclarationRejectsAmbiguousParameterIdentity(t *testing.T) {
+	for _, tool := range []scenario.Tool{
+		{Name: ""},
+		{Name: " press_key"},
+		{Name: "press_key", Parameters: []string{""}},
+		{Name: "press_key", Parameters: []string{"digit", "digit"}},
+	} {
+		if _, err := tool.FunctionDeclaration(); err == nil {
+			t.Fatalf("ambiguous scenario tool was accepted: %+v", tool)
+		}
+	}
+}
 
 func timeline(spans ...scenario.Span) scenario.Timeline {
 	total := 0

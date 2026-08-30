@@ -198,13 +198,11 @@ func runScenarioEvaluationContext(
 			completed, source.Checklist.Expected, entry.Case, entry.Trial,
 		)
 	}
-	if resolved.Provider == gemini.RegistrationName {
-		if credential, exists := os.LookupEnv("GEMINI_API_KEY"); exists && len(strings.TrimSpace(credential)) >= 8 {
-			for index := range requests {
-				requests[index].SensitiveValues = append(requests[index].SensitiveValues, credential)
-			}
-		}
-	}
+	// Provider credentials remain provider-owned. In particular, the Gemini
+	// plug-in scans its prepared prompt, context, media, and final encoded body
+	// with the active credential before transport. Copying that credential into
+	// the generic request guard duplicates the policy and can synthesize a false
+	// match by concatenating otherwise unrelated JSON tokens.
 	root, rootInfo, err := createScenarioEvaluationRoot(resolved.OutputDirectory)
 	if err != nil {
 		return err
@@ -634,6 +632,9 @@ func evaluateScenarioRequest(
 	if err != nil {
 		return scenarioEvaluationEntry{}, err
 	}
+	if err := validateScenarioEvaluationTimeline(request, evaluation.Record.Assessment); err != nil {
+		return scenarioEvaluationEntry{}, err
+	}
 	bundleName, receiptName := scenarioEvaluationNames(index, attempt)
 	bundleDirectory := filepath.Join(options.OutputDirectory, bundleName)
 	receipt, err := benchreview.WriteEvaluationBundle(ctx, benchreview.EvaluationBundleOptions{
@@ -827,6 +828,45 @@ func escapeScenarioEvaluationMarkdown(value string) string {
 	return replacer.Replace(value)
 }
 
+func validateScenarioEvaluationTimeline(
+	request benchreview.Request, assessment benchreview.Assessment,
+) error {
+	// Evaluate has already admitted and canonicalized this context on the write
+	// path; CanonicalContextSHA256 does the same immediately before this helper
+	// on the reopen path. Decode only the sealed timing header here instead of
+	// rehydrating the large transcript and architecture payload per record.
+	var source struct {
+		Format          string `json:"format"`
+		FormatVersion   int    `json:"format_version"`
+		MediaDurationMS int64  `json:"media_duration_ms"`
+	}
+	if err := json.Unmarshal(request.Context, &source); err != nil {
+		return errors.New("scenario evaluation context is invalid")
+	}
+	if source.Format != graphnative.SourceReviewContextFormat ||
+		source.FormatVersion != graphnative.SourceReviewContextFormatVersion ||
+		source.MediaDurationMS <= 0 || source.MediaDurationMS > 24*60*60*1000 {
+		return errors.New("scenario evaluation context media duration is invalid")
+	}
+	if request.FindingTimestampMaximumMS != source.MediaDurationMS {
+		return errors.New("scenario evaluation timestamp maximum differs from sealed media duration")
+	}
+	for _, findings := range [][]benchreview.Finding{
+		assessment.SignificantProblems, assessment.MinorObservations,
+	} {
+		for _, finding := range findings {
+			for _, timestamp := range []*int64{finding.StartMS, finding.EndMS} {
+				if timestamp != nil && (*timestamp < 0 || *timestamp > source.MediaDurationMS) {
+					return errors.New(
+						"scenario evaluation finding timestamp exceeds sealed media duration",
+					)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func verifyScenarioEvaluationRecord(
 	ctx context.Context,
 	record benchreview.Record,
@@ -844,10 +884,14 @@ func verifyScenarioEvaluationRecord(
 	}
 	if record.AttemptID != request.AttemptID || record.Suite != request.Suite ||
 		record.Case != request.Case || record.Trial != request.Trial ||
+		record.FindingTimestampMaximumMS != request.FindingTimestampMaximumMS ||
 		request.AttemptID != attempt.Record.Fingerprint || request.Case != attempt.Record.Key.CaseName ||
 		request.Trial != attempt.Record.Key.Trial ||
 		record.ContextSHA256 != contextSHA256 {
 		return errors.New("retained evaluation record differs from its sealed source request")
+	}
+	if err := validateScenarioEvaluationTimeline(request, record.Assessment); err != nil {
+		return err
 	}
 	if len(record.Media) != len(request.Media) || len(request.Media) != len(attempt.Submitted)+1 {
 		return errors.New("retained evaluation media count differs from its sealed source request")

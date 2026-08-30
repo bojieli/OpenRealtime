@@ -91,7 +91,10 @@ func defaultScenarioProfileOptions() scenarioProfileOptions {
 		ttsTimeoutMS: 30_000, ttsSentenceWrap: true, ttsSentenceMinimum: 12,
 		gateThreshold: 0.5, gatePrefixMS: 300, gateSilenceMS: 500,
 		gateSpeechMS: 120, maxOutputTokens: 4096,
-		inspectionTokenTTL: 30_000, maxAudioFrameBytes: 1 << 20,
+		// Runtime evidence is read only after an entire authored conversation
+		// and its trailing quiet period. Five minutes covers the client's
+		// two-minute per-attempt deadline without making the capability durable.
+		inspectionTokenTTL: 300_000, maxAudioFrameBytes: 1 << 20,
 	}
 }
 
@@ -334,26 +337,13 @@ func productionScenarioToolDeclarations() ([]scenarioconversation.ToolDeclaratio
 	var order []string
 	for _, item := range scenario.Suite() {
 		for _, tool := range item.Tools {
-			properties := make(map[string]map[string]string, len(tool.Parameters))
-			for _, parameter := range tool.Parameters {
-				if strings.TrimSpace(parameter) == "" || parameter != strings.TrimSpace(parameter) {
-					return nil, fmt.Errorf("scenario tool %q has non-canonical parameter %q", tool.Name, parameter)
-				}
-				if _, duplicate := properties[parameter]; duplicate {
-					return nil, fmt.Errorf("scenario tool %q repeats parameter %q", tool.Name, parameter)
-				}
-				properties[parameter] = map[string]string{"type": "string"}
-			}
-			parameters, err := json.Marshal(map[string]any{
-				"type": "object", "properties": properties,
-				"required": tool.Parameters,
-			})
+			canonical, err := tool.FunctionDeclaration()
 			if err != nil {
-				return nil, fmt.Errorf("encode scenario tool %q schema: %w", tool.Name, err)
+				return nil, err
 			}
 			declaration := scenarioconversation.ToolDeclaration{
-				Name: tool.Name, Description: tool.Description,
-				Parameters: parameters, Confirm: legacyaction.ConfirmNever,
+				Name: canonical.Name, Description: canonical.Description,
+				Parameters: canonical.Parameters, Confirm: legacyaction.ConfirmNever,
 			}
 			if existing, found := byName[tool.Name]; found {
 				if existing.Description != declaration.Description ||

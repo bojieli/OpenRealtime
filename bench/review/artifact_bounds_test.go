@@ -57,6 +57,13 @@ func TestArtifactRecordTypedCardinalityIsRejectedBeforeMarshal(t *testing.T) {
 			},
 			want: "sensitive-value count",
 		},
+		{
+			name: "finding timestamp maximum",
+			mutate: func(record *Record) {
+				record.FindingTimestampMaximumMS = 0
+			},
+			want: "timestamp maximum",
+		},
 	}
 
 	for _, test := range tests {

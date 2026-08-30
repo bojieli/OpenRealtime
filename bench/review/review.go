@@ -37,9 +37,9 @@ import (
 
 const (
 	RecordFormat              = "openrealtime.multimodal-review"
-	FormatVersion             = 4
-	CasePromptVersion         = "openrealtime.case-media-review.prompt.v3"
-	CaseSchemaVersion         = "openrealtime.case-media-review.schema.v1"
+	FormatVersion             = 5
+	CasePromptVersion         = "openrealtime.case-media-review.prompt.v7"
+	CaseSchemaVersion         = "openrealtime.case-media-review.schema.v3"
 	SanitizationVersion       = "openrealtime.review-sanitization.v4"
 	MediaValidationVersion    = "openrealtime.media-container-validation.v4"
 	maximumContextBytes       = 4 << 20
@@ -53,6 +53,7 @@ const (
 	maximumSensitiveWork      = 512 << 20
 	maximumSensitiveQueued    = 128 << 20
 	maximumProviderErrorBytes = 64 << 10
+	maximumFindingTimestampMS = int64(24 * 60 * 60 * 1000)
 
 	ProviderRequestIDMissing = "missing"
 	ProviderRequestIDNull    = "null"
@@ -107,13 +108,17 @@ type Media struct {
 // self-contained JSON object containing scorer outcomes, errors, transcripts,
 // action traces, and any suite-specific criteria intended for the reviewer.
 type Request struct {
-	AttemptID     string          `json:"attempt_id"`
-	Suite         string          `json:"suite"`
-	Case          string          `json:"case"`
-	Trial         int             `json:"trial"`
-	RootDirectory string          `json:"-"`
-	Context       json.RawMessage `json:"context"`
-	Media         []Media         `json:"media"`
+	AttemptID string `json:"attempt_id"`
+	Suite     string `json:"suite"`
+	Case      string `json:"case"`
+	Trial     int    `json:"trial"`
+	// FindingTimestampMaximumMS is the inclusive end of the sealed media
+	// timeline. Zero selects the contract-wide 24-hour ceiling for callers that
+	// have no more precise, attested media duration.
+	FindingTimestampMaximumMS int64           `json:"finding_timestamp_maximum_ms,omitempty"`
+	RootDirectory             string          `json:"-"`
+	Context                   json.RawMessage `json:"context"`
+	Media                     []Media         `json:"media"`
 	// SensitiveValues are exact in-memory secrets that must not occur in the
 	// public context or retained media. Values are checked before a provider
 	// can observe bytes and are never serialized or fingerprinted themselves.
@@ -130,21 +135,22 @@ type PreparedMedia struct {
 // PreparedRequest is the exact provider input produced by Prepare. Prompt,
 // schema, context, and media identities are all versioned and fingerprinted.
 type PreparedRequest struct {
-	AttemptID           string          `json:"attempt_id"`
-	Suite               string          `json:"suite"`
-	Case                string          `json:"case"`
-	Trial               int             `json:"trial"`
-	PromptVersion       string          `json:"prompt_version"`
-	Prompt              string          `json:"prompt"`
-	SchemaVersion       string          `json:"schema_version"`
-	Schema              json.RawMessage `json:"schema"`
-	Context             json.RawMessage `json:"context"`
-	Media               []PreparedMedia `json:"media"`
-	RequestFingerprint  string          `json:"request_fingerprint"`
-	Sanitization        string          `json:"sanitization"`
-	SensitiveValueCount int             `json:"sensitive_value_count"`
-	sensitiveGuard      *declaredSensitiveGuard
-	validationSeal      *preparedValidationSeal
+	AttemptID                 string          `json:"attempt_id"`
+	Suite                     string          `json:"suite"`
+	Case                      string          `json:"case"`
+	Trial                     int             `json:"trial"`
+	FindingTimestampMaximumMS int64           `json:"finding_timestamp_maximum_ms"`
+	PromptVersion             string          `json:"prompt_version"`
+	Prompt                    string          `json:"prompt"`
+	SchemaVersion             string          `json:"schema_version"`
+	Schema                    json.RawMessage `json:"schema"`
+	Context                   json.RawMessage `json:"context"`
+	Media                     []PreparedMedia `json:"media"`
+	RequestFingerprint        string          `json:"request_fingerprint"`
+	Sanitization              string          `json:"sanitization"`
+	SensitiveValueCount       int             `json:"sensitive_value_count"`
+	sensitiveGuard            *declaredSensitiveGuard
+	validationSeal            *preparedValidationSeal
 }
 
 // declaredSensitiveGuard is an opaque, immutable capability. The closure owns
@@ -264,28 +270,29 @@ type ContentIdentity struct {
 // RawResponse and NormalizedOutput are returned separately so the bundle can
 // retain them as create-only files and verify these digests.
 type Record struct {
-	Format                 string               `json:"format"`
-	FormatVersion          int                  `json:"format_version"`
-	AttemptID              string               `json:"attempt_id"`
-	Suite                  string               `json:"suite"`
-	Case                   string               `json:"case"`
-	Trial                  int                  `json:"trial"`
-	Provider               ProviderDescriptor   `json:"provider"`
-	ProviderCapabilities   ProviderCapabilities `json:"provider_capabilities"`
-	Prompt                 ContentIdentity      `json:"prompt"`
-	Schema                 ContentIdentity      `json:"schema"`
-	ContextSHA256          string               `json:"context_sha256"`
-	Media                  []Media              `json:"media"`
-	RequestFingerprint     string               `json:"request_fingerprint"`
-	Sanitization           string               `json:"sanitization"`
-	SensitiveValueCount    int                  `json:"sensitive_value_count"`
-	ProviderRequestID      string               `json:"provider_request_id,omitempty"`
-	ProviderRequestIDState string               `json:"provider_request_id_state"`
-	ProviderRequestSHA256  string               `json:"provider_request_sha256"`
-	ReportedModel          string               `json:"reported_model"`
-	RawResponseSHA256      string               `json:"raw_response_sha256"`
-	NormalizedOutputSHA256 string               `json:"normalized_output_sha256"`
-	Assessment             Assessment           `json:"assessment"`
+	Format                    string               `json:"format"`
+	FormatVersion             int                  `json:"format_version"`
+	AttemptID                 string               `json:"attempt_id"`
+	Suite                     string               `json:"suite"`
+	Case                      string               `json:"case"`
+	Trial                     int                  `json:"trial"`
+	FindingTimestampMaximumMS int64                `json:"finding_timestamp_maximum_ms"`
+	Provider                  ProviderDescriptor   `json:"provider"`
+	ProviderCapabilities      ProviderCapabilities `json:"provider_capabilities"`
+	Prompt                    ContentIdentity      `json:"prompt"`
+	Schema                    ContentIdentity      `json:"schema"`
+	ContextSHA256             string               `json:"context_sha256"`
+	Media                     []Media              `json:"media"`
+	RequestFingerprint        string               `json:"request_fingerprint"`
+	Sanitization              string               `json:"sanitization"`
+	SensitiveValueCount       int                  `json:"sensitive_value_count"`
+	ProviderRequestID         string               `json:"provider_request_id,omitempty"`
+	ProviderRequestIDState    string               `json:"provider_request_id_state"`
+	ProviderRequestSHA256     string               `json:"provider_request_sha256"`
+	ReportedModel             string               `json:"reported_model"`
+	RawResponseSHA256         string               `json:"raw_response_sha256"`
+	NormalizedOutputSHA256    string               `json:"normalized_output_sha256"`
+	Assessment                Assessment           `json:"assessment"`
 }
 
 type Evaluation struct {
@@ -436,6 +443,11 @@ func Evaluate(
 	if err != nil {
 		return Evaluation{}, fmt.Errorf("validate review provider output: %w", err)
 	}
+	if err := validateAssessmentTimestampMaximum(
+		assessment, prepared.FindingTimestampMaximumMS,
+	); err != nil {
+		return Evaluation{}, fmt.Errorf("validate review provider output: %w", err)
+	}
 	promptDigest := digest([]byte(prepared.Prompt))
 	schemaDigest := digest(prepared.Schema)
 	contextDigest := digest(prepared.Context)
@@ -449,10 +461,11 @@ func Evaluate(
 		Format: RecordFormat, FormatVersion: FormatVersion,
 		AttemptID: prepared.AttemptID, Suite: prepared.Suite, Case: prepared.Case,
 		Trial: prepared.Trial, Provider: descriptor,
-		ProviderCapabilities: capabilities.Clone(),
-		Prompt:               ContentIdentity{Version: prepared.PromptVersion, SHA256: promptDigest},
-		Schema:               ContentIdentity{Version: prepared.SchemaVersion, SHA256: schemaDigest},
-		ContextSHA256:        contextDigest, Media: media,
+		FindingTimestampMaximumMS: prepared.FindingTimestampMaximumMS,
+		ProviderCapabilities:      capabilities.Clone(),
+		Prompt:                    ContentIdentity{Version: prepared.PromptVersion, SHA256: promptDigest},
+		Schema:                    ContentIdentity{Version: prepared.SchemaVersion, SHA256: schemaDigest},
+		ContextSHA256:             contextDigest, Media: media,
 		RequestFingerprint: prepared.RequestFingerprint,
 		Sanitization:       prepared.Sanitization, SensitiveValueCount: prepared.SensitiveValueCount,
 		ProviderRequestID: response.RequestID, ProviderRequestIDState: response.RequestIDState,
@@ -492,8 +505,20 @@ func Evaluate(
 		metadata, err := marshalCanonicalCompact(
 			evaluation.Media[index].Media, maximumPreparedPublicBytes,
 		)
-		if err != nil || prepared.ContainsDeclaredSensitiveValue(metadata) ||
-			prepared.ContainsDeclaredSensitiveValue(evaluation.Media[index].Bytes) {
+		if err != nil {
+			return Evaluation{}, errors.New("retained review media metadata is invalid")
+		}
+		metadataSensitive, scanErr := prepared.ContainsDeclaredSensitiveValueContext(ctx, metadata)
+		if scanErr != nil {
+			return Evaluation{}, scanErr
+		}
+		mediaSensitive, scanErr := prepared.sensitiveGuard.matcher.containsContext(
+			ctx, evaluation.Media[index].Bytes,
+		)
+		if scanErr != nil {
+			return Evaluation{}, scanErr
+		}
+		if metadataSensitive || mediaSensitive {
 			return Evaluation{}, errors.New("retained review media contains a declared sensitive value")
 		}
 	}
@@ -629,6 +654,10 @@ func PrepareContext(
 	if err := preflightRequest(request); err != nil {
 		return PreparedRequest{}, err
 	}
+	findingTimestampMaximumMS := request.FindingTimestampMaximumMS
+	if findingTimestampMaximumMS == 0 {
+		findingTimestampMaximumMS = maximumFindingTimestampMS
+	}
 	if err := validateHumanIdentifier("review attempt ID", request.AttemptID, 1024); err != nil {
 		return PreparedRequest{}, err
 	}
@@ -733,12 +762,16 @@ func PrepareContext(
 
 	schema := caseReviewSchema()
 	contextEnvelope, err := marshalCanonicalCompact(struct {
-		Suite   string          `json:"suite"`
-		Case    string          `json:"case"`
-		Trial   int             `json:"trial"`
-		Context json.RawMessage `json:"deterministic_context"`
-		Media   []Media         `json:"media"`
-	}{request.Suite, request.Case, request.Trial, contextJSON, validatedMedia}, maximumPromptBytes)
+		Suite                     string          `json:"suite"`
+		Case                      string          `json:"case"`
+		Trial                     int             `json:"trial"`
+		FindingTimestampMaximumMS int64           `json:"finding_timestamp_maximum_ms"`
+		Context                   json.RawMessage `json:"deterministic_context"`
+		Media                     []Media         `json:"media"`
+	}{
+		request.Suite, request.Case, request.Trial, findingTimestampMaximumMS,
+		contextJSON, validatedMedia,
+	}, maximumPromptBytes)
 	if err != nil {
 		return PreparedRequest{}, fmt.Errorf("encode review prompt context: %w", err)
 	}
@@ -759,7 +792,8 @@ func PrepareContext(
 	}
 	prepared := PreparedRequest{
 		AttemptID: request.AttemptID, Suite: request.Suite, Case: request.Case, Trial: request.Trial,
-		PromptVersion: CasePromptVersion, Prompt: prompt,
+		FindingTimestampMaximumMS: findingTimestampMaximumMS,
+		PromptVersion:             CasePromptVersion, Prompt: prompt,
 		SchemaVersion: CaseSchemaVersion, Schema: schema, Context: contextJSON,
 		Media: preparedMedia, Sanitization: SanitizationVersion,
 		SensitiveValueCount: len(secrets),
@@ -858,12 +892,16 @@ func (prepared PreparedRequest) ValidateContext(ctx context.Context) (resultErr 
 		media[index] = item.Media
 	}
 	contextEnvelope, err := marshalCanonicalCompact(struct {
-		Suite   string          `json:"suite"`
-		Case    string          `json:"case"`
-		Trial   int             `json:"trial"`
-		Context json.RawMessage `json:"deterministic_context"`
-		Media   []Media         `json:"media"`
-	}{prepared.Suite, prepared.Case, prepared.Trial, prepared.Context, media}, maximumPromptBytes)
+		Suite                     string          `json:"suite"`
+		Case                      string          `json:"case"`
+		Trial                     int             `json:"trial"`
+		FindingTimestampMaximumMS int64           `json:"finding_timestamp_maximum_ms"`
+		Context                   json.RawMessage `json:"deterministic_context"`
+		Media                     []Media         `json:"media"`
+	}{
+		prepared.Suite, prepared.Case, prepared.Trial, prepared.FindingTimestampMaximumMS,
+		prepared.Context, media,
+	}, maximumPromptBytes)
 	if err != nil || prepared.Prompt != caseReviewPrompt(string(contextEnvelope)) {
 		return errors.New("prepared review prompt differs from its context or media manifest")
 	}
@@ -928,19 +966,21 @@ func (prepared PreparedRequest) fingerprintContext(ctx context.Context) (string,
 		media[index] = prepared.Media[index].Media
 	}
 	source, err := marshalCanonicalCompact(struct {
-		AttemptID           string  `json:"attempt_id"`
-		PromptVersion       string  `json:"prompt_version"`
-		PromptSHA256        string  `json:"prompt_sha256"`
-		SchemaVersion       string  `json:"schema_version"`
-		SchemaSHA256        string  `json:"schema_sha256"`
-		ContextSHA256       string  `json:"context_sha256"`
-		Media               []Media `json:"media"`
-		Sanitization        string  `json:"sanitization"`
-		SensitiveValueCount int     `json:"sensitive_value_count"`
+		AttemptID                 string  `json:"attempt_id"`
+		PromptVersion             string  `json:"prompt_version"`
+		PromptSHA256              string  `json:"prompt_sha256"`
+		SchemaVersion             string  `json:"schema_version"`
+		SchemaSHA256              string  `json:"schema_sha256"`
+		ContextSHA256             string  `json:"context_sha256"`
+		Media                     []Media `json:"media"`
+		FindingTimestampMaximumMS int64   `json:"finding_timestamp_maximum_ms"`
+		Sanitization              string  `json:"sanitization"`
+		SensitiveValueCount       int     `json:"sensitive_value_count"`
 	}{
 		prepared.AttemptID, prepared.PromptVersion, promptDigest,
 		prepared.SchemaVersion, schemaDigest, contextDigest, media,
-		prepared.Sanitization, prepared.SensitiveValueCount,
+		prepared.FindingTimestampMaximumMS, prepared.Sanitization,
+		prepared.SensitiveValueCount,
 	}, maximumPreparedPublicBytes)
 	if err != nil {
 		return "", fmt.Errorf("fingerprint review request: %w", err)
@@ -1067,17 +1107,45 @@ func validateExactAssessmentShape(source json.RawMessage) error {
 			return fmt.Errorf("review assessment field %q must be a non-null array", name)
 		}
 		for index, rawFinding := range findings {
-			if _, err := exactJSONObject(
+			finding, err := exactJSONObject(
 				rawFinding, fmt.Sprintf("review assessment %s %d", name, index),
 				[]string{"category", "evidence", "impact"}, []string{"start_ms", "end_ms"},
-			); err != nil {
+			)
+			if err != nil {
 				return err
+			}
+			for _, timestamp := range []string{"start_ms", "end_ms"} {
+				if rawTimestamp, exists := finding[timestamp]; exists {
+					if err := validateAssessmentTimestamp(
+						fmt.Sprintf("review assessment %s %d %s", name, index, timestamp),
+						rawTimestamp,
+					); err != nil {
+						return err
+					}
+				}
 			}
 		}
 	}
 	var limitations []json.RawMessage
 	if err := json.Unmarshal(top["limitations"], &limitations); err != nil || limitations == nil {
 		return errors.New("review assessment field \"limitations\" must be a non-null array")
+	}
+	return nil
+}
+
+func validateAssessmentTimestamp(label string, source []byte) error {
+	value, err := strconv.ParseInt(string(source), 10, 64)
+	if err != nil {
+		if len(source) > 0 && source[0] == '-' {
+			return fmt.Errorf("%s must not be negative", label)
+		}
+		return fmt.Errorf("%s must be an integer in the supported range", label)
+	}
+	if value < 0 {
+		return fmt.Errorf("%s must not be negative", label)
+	}
+	if value > maximumFindingTimestampMS {
+		return fmt.Errorf("%s exceeds the supported timestamp range", label)
 	}
 	return nil
 }
@@ -1133,10 +1201,131 @@ func validateFinding(label string, finding Finding) error {
 		(finding.EndMS != nil && *finding.EndMS < 0) {
 		return fmt.Errorf("%s timestamps must not be negative", label)
 	}
+	if (finding.StartMS != nil && *finding.StartMS > maximumFindingTimestampMS) ||
+		(finding.EndMS != nil && *finding.EndMS > maximumFindingTimestampMS) {
+		return fmt.Errorf("%s timestamps exceed the supported range", label)
+	}
 	if finding.StartMS != nil && finding.EndMS != nil && *finding.EndMS < *finding.StartMS {
 		return fmt.Errorf("%s end_ms precedes start_ms", label)
 	}
 	return nil
+}
+
+func validateAssessmentTimestampMaximum(
+	assessment Assessment, maximumMS int64,
+) error {
+	if maximumMS <= 0 || maximumMS > maximumFindingTimestampMS {
+		return errors.New("review assessment timestamp maximum is invalid")
+	}
+	for _, findings := range [][]Finding{
+		assessment.SignificantProblems, assessment.MinorObservations,
+	} {
+		for _, finding := range findings {
+			for _, timestamp := range []*int64{finding.StartMS, finding.EndMS} {
+				if timestamp != nil && (*timestamp < 0 || *timestamp > maximumMS) {
+					return errors.New("review assessment finding timestamp exceeds the sealed media timeline")
+				}
+				if timestamp != nil && !evidenceContainsExactTimestampMS(finding.Evidence, *timestamp) {
+					return errors.New(
+						"review assessment finding timestamp is not repeated exactly with ms in its evidence",
+					)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func evidenceContainsExactTimestampMS(evidence string, wanted int64) bool {
+	if wanted < 0 {
+		return false
+	}
+	for index := 0; index < len(evidence); {
+		if evidence[index] < '0' || evidence[index] > '9' {
+			index++
+			continue
+		}
+		if index >= 2 && (evidence[index-1] == '.' || evidence[index-1] == ',') &&
+			evidence[index-2] >= '0' && evidence[index-2] <= '9' {
+			for index < len(evidence) && evidence[index] >= '0' && evidence[index] <= '9' {
+				index++
+			}
+			continue
+		}
+		first, next, ok := reviewTimestampDecimal(evidence, index)
+		if !ok {
+			index = next
+			continue
+		}
+		if reviewTimestampHasMSUnit(evidence, next) && first == wanted {
+			return true
+		}
+		rangeIndex := reviewTimestampSpaces(evidence, next)
+		switch {
+		case rangeIndex < len(evidence) && evidence[rangeIndex] == '-':
+			rangeIndex++
+		case rangeIndex+3 <= len(evidence) &&
+			(evidence[rangeIndex:rangeIndex+3] == "–" || evidence[rangeIndex:rangeIndex+3] == "—"):
+			rangeIndex += 3
+		default:
+			index = next
+			continue
+		}
+		rangeIndex = reviewTimestampSpaces(evidence, rangeIndex)
+		second, rangeEnd, rangeOK := reviewTimestampDecimal(evidence, rangeIndex)
+		if rangeOK && reviewTimestampHasMSUnit(evidence, rangeEnd) &&
+			(first == wanted || second == wanted) {
+			return true
+		}
+		index = next
+	}
+	return false
+}
+
+func reviewTimestampDecimal(source string, offset int) (int64, int, bool) {
+	value := int64(0)
+	index := offset
+	valid := false
+	for index < len(source) && source[index] >= '0' && source[index] <= '9' {
+		digit := int64(source[index] - '0')
+		if value > (math.MaxInt64-digit)/10 {
+			for index < len(source) && source[index] >= '0' && source[index] <= '9' {
+				index++
+			}
+			return 0, index, false
+		}
+		value = value*10 + digit
+		valid = true
+		index++
+	}
+	return value, index, valid
+}
+
+func reviewTimestampHasMSUnit(source string, offset int) bool {
+	index := reviewTimestampSpaces(source, offset)
+	if index+2 > len(source) || (source[index] != 'm' && source[index] != 'M') ||
+		(source[index+1] != 's' && source[index+1] != 'S') {
+		return false
+	}
+	index += 2
+	return index == len(source) || !reviewTimestampWordByte(source[index])
+}
+
+func reviewTimestampSpaces(source string, offset int) int {
+	for offset < len(source) {
+		switch source[offset] {
+		case ' ', '\t', '\r', '\n':
+			offset++
+		default:
+			return offset
+		}
+	}
+	return offset
+}
+
+func reviewTimestampWordByte(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' ||
+		value >= '0' && value <= '9' || value == '_'
 }
 
 func lowerSnakeCase(value string) bool {

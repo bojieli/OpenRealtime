@@ -39,6 +39,9 @@ func TestPreparedRequestValidateRejectsEveryBoundInputMutation(t *testing.T) {
 		{"suite", func(value *PreparedRequest) { value.Suite += "-other" }},
 		{"case", func(value *PreparedRequest) { value.Case += "-other" }},
 		{"trial", func(value *PreparedRequest) { value.Trial++ }},
+		{"finding timestamp maximum", func(value *PreparedRequest) {
+			value.FindingTimestampMaximumMS--
+		}},
 		{"prompt version", func(value *PreparedRequest) { value.PromptVersion += "-other" }},
 		{"prompt", func(value *PreparedRequest) { value.Prompt += "\nforged" }},
 		{"schema version", func(value *PreparedRequest) { value.SchemaVersion += "-other" }},
@@ -359,6 +362,43 @@ func TestEvaluateRejectsDeclaredSecretSynthesizedInProviderExchange(t *testing.T
 	}
 	if provider.reviewCalls.Load() != 1 || provider.verifyCalls.Load() != 0 {
 		t.Fatalf("provider calls review=%d verify=%d", provider.reviewCalls.Load(), provider.verifyCalls.Load())
+	}
+}
+
+func TestEvaluatePostScanTreatsRawMediaAsLiteralBytes(t *testing.T) {
+	const secret = "resume-sensitive-value-0123456789abcdefghijklmnop"
+	escaped := strings.ReplaceAll(secret, "-", `\u002d`)
+	if strings.Contains(escaped, secret) {
+		t.Fatal("escaped media fixture contains the literal secret")
+	}
+	request, _ := testRequest(t)
+	payload := append(slices.Clone(testWAVPayload()), []byte(escaped)...)
+	if (len(payload)-44)%2 != 0 {
+		payload = append(payload, 0)
+	}
+	binary.LittleEndian.PutUint32(payload[4:8], uint32(len(payload)-8))
+	binary.LittleEndian.PutUint32(payload[40:44], uint32(len(payload)-44))
+	if err := os.WriteFile(filepath.Join(request.RootDirectory, request.Media[0].Path), payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	request.Media[0].SHA256 = digest(payload)
+	request.SensitiveValues = []string{secret}
+	descriptor := testDescriptor("literal-media-post-scan-model")
+	provider := &testProvider{
+		descriptor: descriptor,
+		response: ProviderResponse{
+			Raw: []byte(`{}`), Output: validAssessment, ReportedModel: descriptor.Model,
+			RequestIDState: ProviderRequestIDMissing, Request: []byte(`{"wire":true}`),
+		},
+	}
+	evaluation, err := Evaluate(t.Context(), openTestLease(t, provider), request)
+	if err != nil {
+		t.Fatalf("escaped raw media produced a contextual secret false positive: %v", err)
+	}
+	if len(evaluation.Media) != 1 || !bytes.Equal(evaluation.Media[0].Bytes, payload) ||
+		provider.reviewCalls.Load() != 1 || provider.verifyCalls.Load() != 1 {
+		t.Fatalf("literal media post-scan evaluation = %+v; calls review=%d verify=%d",
+			evaluation.Record, provider.reviewCalls.Load(), provider.verifyCalls.Load())
 	}
 }
 
@@ -1318,11 +1358,13 @@ func TestMediaIdentityRejectsInvalidUTF8AndControlPaths(t *testing.T) {
 }
 
 func TestReviewContractVersionsReflectIncompatibleFormatChanges(t *testing.T) {
-	if FormatVersion != 4 || CasePromptVersion != "openrealtime.case-media-review.prompt.v3" ||
+	if FormatVersion != 5 || CasePromptVersion != "openrealtime.case-media-review.prompt.v7" ||
+		CaseSchemaVersion != "openrealtime.case-media-review.schema.v3" ||
 		SanitizationVersion != "openrealtime.review-sanitization.v4" ||
 		MediaValidationVersion != "openrealtime.media-container-validation.v4" {
-		t.Fatalf("contract versions = format:%d prompt:%q sanitization:%q media:%q",
-			FormatVersion, CasePromptVersion, SanitizationVersion, MediaValidationVersion)
+		t.Fatalf("contract versions = format:%d prompt:%q schema:%q sanitization:%q media:%q",
+			FormatVersion, CasePromptVersion, CaseSchemaVersion,
+			SanitizationVersion, MediaValidationVersion)
 	}
 }
 

@@ -53,6 +53,17 @@ func actionCapability(
 	}
 }
 
+// ledgerArchitectureCapability identifies the deployed ledger service without
+// publishing its per-session capability identity. A fresh session receives a
+// distinct HMAC key so actions cannot cross session boundaries; the public
+// hash of that key belongs in executable action evidence, not in the immutable
+// graph treatment compared across benchmark attempts.
+func ledgerArchitectureCapability(reference string, serviceRevision uint64) element.CapabilityResolution {
+	return actionCapability(
+		"ledger", "action.Ledger/v1", "ledger://"+reference, serviceRevision, "",
+	)
+}
+
 func resolveRuntimeDependencies(services element.Services) (runtimeDependencies, error) {
 	clockService, _, found := services.Lookup(graphruntime.ClockServiceName)
 	if !found {

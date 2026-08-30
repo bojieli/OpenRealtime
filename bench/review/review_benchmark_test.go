@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -88,6 +89,30 @@ func BenchmarkNormalizeAssessmentAtCardinalityLimit(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		if _, _, err := normalizeAssessment(payload); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkValidateAssessmentTimestampEvidenceAtCardinalityLimit(b *testing.B) {
+	timestamp := int64(12_345)
+	finding := Finding{
+		Category: "timed_observation", StartMS: &timestamp, EndMS: &timestamp,
+		Evidence: strings.Repeat("observable retained evidence ", 140) + "at 12345 ms",
+		Impact:   "bounded review impact",
+	}
+	assessment := Assessment{
+		SignificantProblems: make([]Finding, 128), MinorObservations: make([]Finding, 128),
+	}
+	for index := range 128 {
+		assessment.SignificantProblems[index] = finding
+		assessment.MinorObservations[index] = finding
+	}
+	b.ReportAllocs()
+	b.SetBytes(int64(len(finding.Evidence) * 256))
+	b.ResetTimer()
+	for range b.N {
+		if err := validateAssessmentTimestampMaximum(assessment, timestamp); err != nil {
 			b.Fatal(err)
 		}
 	}
