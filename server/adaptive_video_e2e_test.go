@@ -29,6 +29,7 @@ import (
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
+	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	graphsecret "github.com/bojieli/OpenRealtime/graph/secret"
 	"github.com/bojieli/OpenRealtime/management"
@@ -400,6 +401,32 @@ func compileAdaptiveVideoPlan(
 	t testing.TB, dependency adaptivevideo.ProviderDependency,
 ) (*graphconfig.Plan, graphassembly.Catalog, *graphsecret.Document) {
 	t.Helper()
+	fixture := newAdaptiveVideoGraphFixture(t, dependency)
+	discovery, err := fixture.catalog.Discovery()
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := fixture.options
+	options.Discovery = discovery
+	options.SecretCatalog = fixture.secrets
+	plan, err := graphconfig.Create(context.Background(), fixture.artifacts, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return plan, fixture.catalog, fixture.secrets
+}
+
+type adaptiveVideoGraphFixture struct {
+	artifacts graphconfig.Artifacts
+	options   graphconfig.Options
+	catalog   graphassembly.Catalog
+	secrets   *graphsecret.Document
+}
+
+func newAdaptiveVideoGraphFixture(
+	t testing.TB, dependency adaptivevideo.ProviderDependency,
+) adaptiveVideoGraphFixture {
+	t.Helper()
 	descriptors, err := elements.Catalog()
 	if err != nil {
 		t.Fatal(err)
@@ -409,10 +436,6 @@ func compileAdaptiveVideoPlan(
 		t.Fatal(err)
 	}
 	catalog.Dependencies = append(catalog.Dependencies, dependency.AssemblyDependency())
-	discovery, err := catalog.Discovery()
-	if err != nil {
-		t.Fatal(err)
-	}
 	schemas, err := elements.StandardConfigSchemaCatalog()
 	if err != nil {
 		t.Fatal(err)
@@ -432,7 +455,7 @@ func compileAdaptiveVideoPlan(
 		len(secrets.Secrets) != 0 || len(evidence.Profiles) != 0 {
 		t.Fatalf("adaptive video auxiliary artifacts = secrets %+v evidence %+v", secrets, evidence)
 	}
-	plan, err := graphconfig.Create(context.Background(), graphconfig.Artifacts{
+	return adaptiveVideoGraphFixture{artifacts: graphconfig.Artifacts{
 		Topology: graphconfig.Artifact{
 			Path: "agent.ortg", Data: readAdaptiveVideoArtifact(t, "agent.ortg"),
 		},
@@ -445,14 +468,58 @@ func compileAdaptiveVideoPlan(
 		Deployment: graphconfig.Artifact{
 			Path: "agent.deployment.yaml", Data: readAdaptiveVideoArtifact(t, "agent.deployment.yaml"),
 		},
-	}, graphconfig.Options{
-		Catalog: descriptors, Discovery: discovery, SchemaResolver: schemas,
-		Loader: graphcompiler.FileLoader{}, SecretCatalog: &secrets,
-	})
-	if err != nil {
-		t.Fatal(err)
+	}, options: graphconfig.Options{
+		Catalog: descriptors, SchemaResolver: schemas, Loader: graphcompiler.FileLoader{},
+	}, catalog: catalog, secrets: &secrets}
+}
+
+func adaptiveVideoLaunchConfig(
+	t testing.TB,
+	dependency adaptivevideo.ProviderDependency,
+	adapterArtifact inspect.ArtifactIdentity,
+) graphlaunch.Config {
+	t.Helper()
+	fixture := newAdaptiveVideoGraphFixture(t, dependency)
+	const adapterReference = "go://openrealtime/graph-adapters/adaptive-video"
+	const profileName = "openrealtime.graph.adaptive-video"
+	const profileRevision = uint64(1)
+	adapterPlugin := graphlaunch.AdapterPlugin{
+		Reference: adapterReference,
+		Artifact:  adapterArtifact,
+		Bind: func(_ context.Context, plan *graphconfig.Plan) (graphlaunch.BoundAdapter, error) {
+			adapter, err := adaptivevideo.New(plan, adaptivevideo.Config{
+				ProfileName: profileName, ProfileRevision: profileRevision,
+				Reference: adapterReference, Artifact: adapterArtifact,
+				Ownership: adaptiveVideoOwnership(),
+			})
+			if err != nil {
+				return graphlaunch.BoundAdapter{}, err
+			}
+			return graphlaunch.BoundAdapter{
+				Profile: adapter.Profile(), Registration: adapter.Registration(),
+			}, nil
+		},
 	}
-	return plan, catalog, &secrets
+	providerMetadata := dependency.AssemblyDependency()
+	return graphlaunch.Config{
+		Artifacts: fixture.artifacts, PlanOptions: fixture.options,
+		Catalog: graphlaunch.Catalog{
+			Assembly: fixture.catalog,
+			Adapters: []graphlaunch.AdapterPlugin{adapterPlugin},
+			MountDependencies: []graphlaunch.MountDependencyPlugin{{
+				Name: providerMetadata.Name, Artifact: providerMetadata.Artifact,
+				Factory: dependency.MountDependencyFactory(),
+			}},
+		},
+		SecretCatalog: fixture.secrets,
+		Adapter:       adapterPlugin.Selection(profileName, profileRevision),
+		Inspection: graphruntime.InspectionConfig{
+			MaxFlows: 64, MaxEdgesPerFlow: 64, MaxCorrelationBytes: 512,
+		},
+		TraceRecording: &graphbinding.TraceRecordingConfig{
+			MaxRetainedBytes: 512 << 10, CaptureInterval: time.Millisecond,
+		},
+	}
 }
 
 func readAdaptiveVideoArtifact(t testing.TB, name string) []byte {
