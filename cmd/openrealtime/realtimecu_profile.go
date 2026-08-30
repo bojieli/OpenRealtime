@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/action"
-	"github.com/bojieli/OpenRealtime/adapters/openaivision"
 	"github.com/bojieli/OpenRealtime/bench"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
@@ -47,12 +46,13 @@ const (
 	realtimeCULocalASRKeyEnvironment   = "OPENREALTIME_ASR_API_KEY"
 
 	realtimeCULocalModelReference    = "provider.openrealtime.realtime-cu.model.vllm.qwen-fast.local.v1"
-	realtimeCULocalObserverReference = "provider.openrealtime.realtime-cu.observer.sensevoice-qwen-fast.local.v1"
+	realtimeCULocalObserverReference = "provider.openrealtime.realtime-cu.observer.sensevoice-keyframe.local.v2"
 	realtimeCULocalObserverName      = "openrealtime.realtime-cu.local-audiovisual-observer"
 
 	realtimeCUApplicationArtifactID = "go://github.com/bojieli/OpenRealtime/graphs/realtime-computer-use/application/v1"
 	realtimeCUProviderArtifactID    = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/session-provider/v1"
 	realtimeCUInspectionTokenTTLMS  = uint64((5 * time.Minute) / time.Millisecond)
+	realtimeCUAttachedKeyframeMode  = "attached-keyframe-v1"
 )
 
 type realtimeCUProfileOptions struct {
@@ -179,15 +179,15 @@ type realtimeCULocalModelConfig struct {
 }
 
 type realtimeCULocalObserverConfig struct {
-	ASRProvider      string                   `json:"asr_provider"`
-	ASRModel         string                   `json:"asr_model"`
-	ASRBaseURL       string                   `json:"asr_base_url"`
-	VisionModel      string                   `json:"vision_model"`
-	VisionURL        string                   `json:"vision_url"`
-	Narration        string                   `json:"narration"`
-	Gate             perception.GateConfig    `json:"gate"`
-	ASRDeployment    inspect.ArtifactIdentity `json:"asr_deployment"`
-	VisionDeployment inspect.ArtifactIdentity `json:"vision_deployment"`
+	ASRProvider     string                   `json:"asr_provider"`
+	ASRModel        string                   `json:"asr_model"`
+	ASRBaseURL      string                   `json:"asr_base_url"`
+	VideoMode       string                   `json:"video_mode"`
+	AttachKeyframes bool                     `json:"attach_keyframes"`
+	ExternalCadence bool                     `json:"external_cadence"`
+	ChangeThreshold float64                  `json:"change_threshold"`
+	Gate            perception.GateConfig    `json:"gate"`
+	ASRDeployment   inspect.ArtifactIdentity `json:"asr_deployment"`
 }
 
 func newServeRealtimeCURegistration(
@@ -235,10 +235,9 @@ func newServeRealtimeCURegistration(
 		},
 		Observer: realtimeCULocalObserverConfig{
 			ASRProvider: realtimeCULocalASRProvider, ASRModel: realtimeCULocalASRModel,
-			ASRBaseURL: realtimeCULocalASRURL, VisionModel: realtimeCULocalModelName,
-			VisionURL: realtimeCULocalModelURL, Narration: "actionable",
-			Gate:          perception.DefaultGateConfig(),
-			ASRDeployment: deployments.ASR, VisionDeployment: deployments.Vision,
+			ASRBaseURL: realtimeCULocalASRURL, VideoMode: realtimeCUAttachedKeyframeMode,
+			AttachKeyframes: true, ExternalCadence: true, ChangeThreshold: 0.02,
+			Gate: perception.DefaultGateConfig(), ASRDeployment: deployments.ASR,
 		},
 	}
 	observerArtifact, err := realtimeCUConfigurationArtifact(
@@ -305,8 +304,10 @@ func newServeRealtimeCURegistration(
 					}
 					return nil
 				},
-				Factory: func(ctx context.Context, _ legacy.Options) (realtimecubinding.Observer, error) {
-					return newRealtimeCULocalObserver(ctx, local.Observer)
+				ResourceFactory: func(
+					ctx context.Context, _ legacy.Options, resources realtimecubinding.ObserverResources,
+				) (realtimecubinding.Observer, error) {
+					return newRealtimeCULocalObserver(ctx, local.Observer, resources.Retainer)
 				},
 			}},
 		},
@@ -361,13 +362,20 @@ func realtimeCUConfigurationArtifact(
 }
 
 func newRealtimeCULocalObserver(
-	ctx context.Context, config realtimeCULocalObserverConfig,
+	ctx context.Context, config realtimeCULocalObserverConfig, retainer perception.Retainer,
 ) (realtimecubinding.Observer, error) {
 	if ctx == nil {
 		return nil, errors.New("open Realtime-CU local observer: nil context")
 	}
 	if cause := context.Cause(ctx); cause != nil {
 		return nil, cause
+	}
+	if config.VideoMode != realtimeCUAttachedKeyframeMode || !config.AttachKeyframes ||
+		!config.ExternalCadence || config.ChangeThreshold <= 0 || config.ChangeThreshold > 1 {
+		return nil, errors.New("open Realtime-CU local observer: invalid attached-keyframe contract")
+	}
+	if retainer == nil {
+		return nil, errors.New("open Realtime-CU local observer: attached keyframes require the session media retainer")
 	}
 	asrFactory, err := providers.NewASRFactory(providers.ASRRequest{
 		Provider: config.ASRProvider, Model: config.ASRModel, BaseURL: config.ASRBaseURL,
@@ -384,28 +392,12 @@ func newRealtimeCULocalObserver(
 	if err != nil {
 		return nil, err
 	}
-	vision, err := openaivision.New(openaivision.Config{
-		BaseURL: config.VisionURL, Model: config.VisionModel,
-		APIKey: os.Getenv(realtimeCULocalModelKeyEnvironment), MaxOutputTokens: 2048,
-		RequestTimeout: 30 * time.Second, Temperature: 0,
-	})
-	if err != nil {
-		_ = audio.Close()
-		return nil, fmt.Errorf("create Realtime-CU vision plug-in: %w", err)
-	}
-	narrator, err := perception.NewNarrator(perception.NarratorConfig{
-		Vision: vision, Prompt: perception.ActionableNarrationPrompt,
-		Label: "realtime-cu-local-dedicated",
-	})
-	if err != nil {
-		_ = audio.Close()
-		return nil, err
-	}
 	video, err := perception.NewVideoObserver(perception.VideoConfig{
 		Name:            realtimeCULocalObserverName,
 		Sources:         []string{realtimecubinding.SourceCamera, realtimecubinding.SourceScreen},
-		ExternalCadence: true, ChangeThreshold: 0.02, Narrator: narrator,
-		AttachKeyframes: false,
+		ExternalCadence: config.ExternalCadence, ChangeThreshold: config.ChangeThreshold,
+		Narrator: realtimeCUAttachedKeyframeNarrator{}, Retainer: retainer,
+		AttachKeyframes: config.AttachKeyframes,
 	})
 	if err != nil {
 		_ = audio.Close()

@@ -1,16 +1,112 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/trajectory"
 )
+
+type realtimeCUKeyframeRetainerFixture struct {
+	references []trajectory.MediaRef
+	payloads   [][]byte
+}
+
+func (fixture *realtimeCUKeyframeRetainerFixture) Retain(
+	reference trajectory.MediaRef, payload []byte,
+) (trajectory.MediaRef, error) {
+	reference.Handle = fmt.Sprintf("keyframe-%d", len(fixture.references)+1)
+	reference.Bytes = len(payload)
+	fixture.references = append(fixture.references, reference)
+	fixture.payloads = append(fixture.payloads, slices.Clone(payload))
+	return reference, nil
+}
+
+func TestRealtimeCULocalObserverAttachesExactChangedScreenAndCameraKeyframes(t *testing.T) {
+	config := realtimeCULocalObserverConfig{
+		ASRProvider: realtimeCULocalASRProvider, ASRModel: realtimeCULocalASRModel,
+		ASRBaseURL: realtimeCULocalASRURL, VideoMode: realtimeCUAttachedKeyframeMode,
+		AttachKeyframes: true, ExternalCadence: true, ChangeThreshold: 0.02,
+		Gate: perception.DefaultGateConfig(),
+	}
+	retainer := &realtimeCUKeyframeRetainerFixture{}
+	observer, err := newRealtimeCULocalObserver(context.Background(), config, retainer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if closeErr := observer.Close(); closeErr != nil {
+			t.Errorf("close keyframe observer: %v", closeErr)
+		}
+	})
+	for index, source := range []string{"screen", "camera"} {
+		payload := realtimeCUProfileJPEG(t, color.RGBA{R: uint8(40 + index*160), G: 20, B: 200, A: 255})
+		observations, err := observer.Video(context.Background(), perception.Frame{
+			Kind: perception.FrameImage, Source: source, CapturedNS: uint64(index + 1),
+			MIMEType: "image/jpeg", Image: payload, Width: 32, Height: 24,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(observations) != 1 || len(observations[0].Media) != 1 ||
+			observations[0].Source != source || observations[0].Media[0].Source != source ||
+			observations[0].Media[0].Handle == "" ||
+			observations[0].Text != "Current "+source+" visual evidence is attached as a keyframe." {
+			t.Fatalf("%s keyframe observation = %+v", source, observations)
+		}
+		if len(retainer.payloads) != index+1 || !bytes.Equal(retainer.payloads[index], payload) ||
+			retainer.references[index].CapturedNS != uint64(index+1) ||
+			retainer.references[index].Width != 32 || retainer.references[index].Height != 24 {
+			t.Fatalf("%s retained keyframe = refs %+v payloads %d", source, retainer.references, len(retainer.payloads))
+		}
+	}
+}
+
+func TestRealtimeCULocalObserverRefusesUnretainedOrNarratedVideoModes(t *testing.T) {
+	valid := realtimeCULocalObserverConfig{
+		ASRProvider: realtimeCULocalASRProvider, ASRModel: realtimeCULocalASRModel,
+		ASRBaseURL: realtimeCULocalASRURL, VideoMode: realtimeCUAttachedKeyframeMode,
+		AttachKeyframes: true, ExternalCadence: true, ChangeThreshold: 0.02,
+		Gate: perception.DefaultGateConfig(),
+	}
+	if _, err := newRealtimeCULocalObserver(context.Background(), valid, nil); err == nil ||
+		!strings.Contains(err.Error(), "session media retainer") {
+		t.Fatalf("nil retainer error = %v", err)
+	}
+	invalid := valid
+	invalid.VideoMode = "dedicated-narrator"
+	if _, err := newRealtimeCULocalObserver(context.Background(), invalid, &realtimeCUKeyframeRetainerFixture{}); err == nil ||
+		!strings.Contains(err.Error(), "attached-keyframe contract") {
+		t.Fatalf("narration fallback error = %v", err)
+	}
+}
+
+func realtimeCUProfileJPEG(t *testing.T, fill color.RGBA) []byte {
+	t.Helper()
+	frame := image.NewRGBA(image.Rect(0, 0, 32, 24))
+	for y := 0; y < 24; y++ {
+		for x := 0; x < 32; x++ {
+			frame.SetRGBA(x, y, fill)
+		}
+	}
+	var encoded bytes.Buffer
+	if err := jpeg.Encode(&encoded, frame, &jpeg.Options{Quality: 90}); err != nil {
+		t.Fatal(err)
+	}
+	return encoded.Bytes()
+}
 
 type endpointingASRFixture struct {
 	frames      int

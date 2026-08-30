@@ -11,7 +11,30 @@ import (
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/trajectory"
 )
+
+type realtimeCUAttachedKeyframeNarrator struct{}
+
+func (realtimeCUAttachedKeyframeNarrator) Name() string {
+	return realtimeCUAttachedKeyframeMode
+}
+
+func (realtimeCUAttachedKeyframeNarrator) Narrate(
+	ctx context.Context, frames []perception.Frame, _ trajectory.Snapshot,
+) (string, error) {
+	if ctx == nil {
+		return "", errors.New("narrate Realtime-CU attached keyframe: nil context")
+	}
+	if cause := context.Cause(ctx); cause != nil {
+		return "", cause
+	}
+	if len(frames) != 1 || frames[0].Kind != perception.FrameImage ||
+		(frames[0].Source != "screen" && frames[0].Source != "camera") {
+		return "", errors.New("Realtime-CU attached-keyframe narrator requires one screen or camera image")
+	}
+	return "Current " + frames[0].Source + " visual evidence is attached as a keyframe.", nil
+}
 
 // endpointingAudioObserver adds an acoustic endpoint to a provider-neutral
 // perception observer. Realtime-CU receives protocol audio frames rather than
