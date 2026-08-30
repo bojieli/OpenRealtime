@@ -802,6 +802,7 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 		model           string
 		out             string
 		browser         string
+		observers       string
 		groundings      string
 		categories      string
 		limit           int
@@ -814,12 +815,15 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 		executionPath   string
 		inspectionGraph string
 		list            bool
+		reviewConfig    realtimeCUReviewCLIConfig
 	)
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
 	flags.StringVar(&tokenEnv, "token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token")
 	flags.StringVar(&model, "model", "openrealtime", "model to request")
 	flags.StringVar(&out, "out", "", "write the result to this path as JSON")
 	flags.StringVar(&browser, "browser", "", "Chromium executable; empty discovers it")
+	flags.StringVar(&observers, "observers", realtimeCULocalObserverName,
+		"comma-separated exact OpenRealtime perception plug-in names")
 	flags.StringVar(&groundings, "grounding", "pixel,set_of_mark", "comma-separated grounding conditions")
 	flags.StringVar(&categories, "categories", "", "comma-separated task categories; empty runs all")
 	flags.IntVar(&limit, "limit", 0, "stop after this many cases; a limited run is incomplete")
@@ -831,16 +835,40 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
 	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
+	flags.StringVar(&reviewConfig.Directory, "review-dir", "", "retain sealed Realtime-CU source media and advisory review evidence")
+	flags.BoolVar(&reviewConfig.Resume, "review-resume", false,
+		"resume a receipt-anchored Realtime-CU review campaign without rerunning browser actions")
+	flags.StringVar(&reviewConfig.Provider, "review-provider", gemini.RegistrationName,
+		"offline reviewer plug-in (exactly google.gemini-3.7-flash)")
+	flags.StringVar(&reviewConfig.APIKeyEnvironment, "review-key-env", "GEMINI_API_KEY",
+		"environment variable holding the Gemini review key")
+	flags.StringVar(&reviewConfig.SourceReceiptPath, "review-source-receipt", "",
+		"external create-only deterministic source receipt path")
+	flags.StringVar(&reviewConfig.EvaluationReceiptDirectory, "review-evaluation-receipts", "",
+		"external directory for create-only per-case evaluation receipts")
+	flags.StringVar(&reviewConfig.EvaluationQuarantineDirectory, "review-evaluation-quarantine", "",
+		"external directory preserving interrupted pre-receipt evaluation stages")
+	flags.IntVar(&reviewConfig.Concurrency, "review-concurrency", 4,
+		"parallel advisory reviews; maximum 16")
+	flags.StringVar(&reviewConfig.FFmpegPath, "review-ffmpeg", "", "explicit FFmpeg binary for review video")
+	flags.StringVar(&reviewConfig.FFprobePath, "review-ffprobe", "", "explicit FFprobe binary for full-decode attestation")
+	flags.StringVar(&reviewConfig.BubblewrapPath, "review-bwrap", "", "explicit bubblewrap binary for media sandboxing")
 	flags.BoolVar(&list, "list", false, "list repository-owned tasks and stop")
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
 		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("realtime-cu accepts flags only")
 	}
 	if list {
 		for _, task := range realtimecu.Suite() {
 			fmt.Fprintf(output, "%-30s %-18s %-6s %s\n", task.ID, task.Category, task.Difficulty, axes(task.Axes))
 		}
 		return nil
+	}
+	if fps != 3 {
+		return errors.New("the production Realtime-CU benchmark profile requires exactly 3 fps")
 	}
 	cell, err := resolveRealtimeCUCell(cellName, referenceLevels, varyFactor, varyLevel)
 	if err != nil {
@@ -874,13 +902,43 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	result, err := realtimecu.Run(ctx, realtimecu.Options{
-		Endpoint: endpoint, Token: deploymentToken, Model: model,
-		Cell: cell, Browser: browser, Groundings: selectedGroundings,
-		Categories: selectedCategories, Limit: limit, FrameRate: fps, Timeout: timeout,
-		RuntimeAttestor: attestor,
-		Progress:        func(line string) { fmt.Fprintln(output, line) },
-	})
+	reviewResources, err := openRealtimeCUReviewCLI(
+		ctx, reviewConfig, deploymentToken, os.LookupEnv,
+	)
+	if err != nil {
+		return err
+	}
+	var result bench.Result
+	if reviewResources != nil && reviewResources.resumedResult != nil {
+		result, err = finishRealtimeCUReviewResume(ctx, reviewResources)
+	} else {
+		var evidence realtimecu.EvidencePlugin
+		if reviewResources != nil {
+			evidence = reviewResources.bundle
+		}
+		result, err = realtimecu.Run(ctx, realtimecu.Options{
+			Endpoint: endpoint, Token: deploymentToken, Model: model,
+			Cell: cell, Browser: browser, Observers: splitList(observers), Groundings: selectedGroundings,
+			Categories: selectedCategories, Limit: limit, FrameRate: fps, Timeout: timeout,
+			RuntimeAttestor: attestor, Evidence: evidence,
+			Progress: func(line string) { fmt.Fprintln(output, line) },
+		})
+	}
+	if reviewResources != nil {
+		retentionContext, cancelRetention := context.WithTimeout(
+			context.WithoutCancel(ctx), 2*time.Minute,
+		)
+		retentionErr := reviewResources.retain(retentionContext, output)
+		cancelRetention()
+		err = errors.Join(err, retentionErr, reviewResources.close())
+	}
+	if strings.TrimSpace(out) != "" && result.Suite != "" {
+		if writeErr := result.Write(out); writeErr != nil {
+			err = errors.Join(err, writeErr)
+		} else {
+			fmt.Fprintf(output, "written to %s\n", out)
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -911,18 +969,23 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 			distribution.Count, distribution.Format(distribution.P50),
 			distribution.Format(distribution.P95), distribution.Format(distribution.Max))
 	}
+	var releaseErr error
 	if reportErr := result.Reportable(); reportErr != nil {
 		fmt.Fprintf(output, "\nNOT REPORTABLE: %v\n", reportErr)
+	} else if reviewResources == nil {
+		releaseErr = errors.New(
+			"deterministic Realtime-CU result lacks the required synchronized A/V and Gemini 3.7 Flash evidence",
+		)
+		fmt.Fprintf(output, "\ndeterministic result reportable; NOT EVIDENCE-COMPLETE: %v\n", releaseErr)
+	} else if !reviewResources.evidenceComplete {
+		releaseErr = errors.New(
+			"Realtime-CU result lacks a fully verified exact16 source/evaluation receipt set",
+		)
+		fmt.Fprintf(output, "\ndeterministic result reportable; NOT EVIDENCE-COMPLETE: %v\n", releaseErr)
 	} else {
-		fmt.Fprintln(output, "\nreportable")
+		fmt.Fprintln(output, "\nevidence-complete reportable (deterministic score + exact16 synchronized A/V + Gemini 3.7 Flash)")
 	}
-	if strings.TrimSpace(out) != "" {
-		if err := result.Write(out); err != nil {
-			return err
-		}
-		fmt.Fprintf(output, "written to %s\n", out)
-	}
-	return nil
+	return releaseErr
 }
 
 func resolveRealtimeCUCell(name, referenceLevels, factor, level string) (bench.Cell, error) {
@@ -1644,7 +1707,7 @@ func runTauVoice(arguments []string, output io.Writer) error {
 }
 
 // runTauVoiceInventory exports the exact upstream base-split task universe
-// consumed by migration preregistration. It is intentionally a subcommand of
+// consumed by the direct candidate run. It is intentionally a subcommand of
 // the benchmark harness: the server and presentation layers do not own, cache,
 // or reinterpret upstream task identities.
 func runTauVoiceInventory(arguments []string, output io.Writer) error {
