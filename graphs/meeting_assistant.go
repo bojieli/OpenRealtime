@@ -38,6 +38,7 @@ type MeetingAssistantRegistrationConfig struct {
 	Inspection          graphruntime.InspectionConfig
 	ShutdownTimeout     time.Duration
 	TraceRecording      *graphbinding.TraceRecordingConfig
+	Readiness           []graphlaunch.ReadinessCheck
 }
 
 // MeetingAssistantRegistration exposes the generic application registration
@@ -137,6 +138,7 @@ func MeetingAssistantApplicationRegistration(
 		Adapters:   []meetinggraph.AdapterPluginConfig{adapterConfig},
 		Inspection: config.Inspection, ShutdownTimeout: config.ShutdownTimeout,
 		TraceRecording: config.TraceRecording,
+		Readiness:      slices.Clone(config.Readiness),
 	})
 	if err != nil {
 		return MeetingAssistantRegistration{}, err

@@ -24,13 +24,15 @@ func TestSessionPluginConstructionIsResourceFreeAndDeclaresExactMountServices(t 
 	backgroundDescriptor := foregroundTestDescriptor()
 	backgroundDescriptor.Phase = trajectory.PhaseSlow
 	backgroundDescriptor.SpeechAuthority = continuation.SpeechAuthoritySilent
+	foregroundCapabilities := foregroundTestCapabilities()
+	foregroundCapabilities.Observers = []string{"screen", "audio", "meeting-notes"}
 	config := SessionPluginConfig{
 		AdapterArtifact: artifacts["adapter"],
 		Foreground: ForegroundPlugin{
 			Artifact: artifacts["foreground"], ProviderArtifact: artifacts["foreground-provider"],
 			RuntimeArtifact:     artifacts["foreground-runtime"],
 			WireAdapterArtifact: artifacts["foreground-wire"], BindingName: "meeting-fixture",
-			Ownership: foregroundTestOwnership(), Capabilities: foregroundTestCapabilities(),
+			Ownership: foregroundTestOwnership(), Capabilities: foregroundCapabilities,
 			Descriptor: foregroundTestDescriptor(),
 			Factory: func(context.Context, legacy.Options) (legacy.Binding, error) {
 				foregroundCalls.Add(1)
@@ -68,6 +70,9 @@ func TestSessionPluginConstructionIsResourceFreeAndDeclaresExactMountServices(t 
 	if adapter.Reference != SessionAdapterReference || adapter.Profile.Name != SessionProfileName ||
 		adapter.Profile.Revision != SessionProfileRevision || adapter.Factory == nil {
 		t.Fatalf("adapter contribution = %+v", adapter)
+	}
+	if got := adapter.Profile.AdditionalObservers; !slices.Equal(got, []string{"audio", "meeting-notes"}) {
+		t.Fatalf("adapter additional observers = %v, want exact foreground selectors without built-in screen", got)
 	}
 	wantNames := []string{
 		modelelements.DeploymentRegistryService, modelelements.PayloadCodecService,

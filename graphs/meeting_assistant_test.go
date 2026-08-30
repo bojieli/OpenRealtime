@@ -91,9 +91,23 @@ func meetingApplicationFixture(t testing.TB) (graphs.MeetingAssistantRegistratio
 
 func TestMeetingAssistantRegistrationResolvesExactGraphWithoutAcquiringProviders(t *testing.T) {
 	config, calls := meetingApplicationFixture(t)
+	var readinessCalls atomic.Int32
+	config.Readiness = []graphlaunch.ReadinessCheck{{
+		Name: "meeting-production-readiness",
+		Check: func(context.Context) error {
+			readinessCalls.Add(1)
+			return nil
+		},
+	}}
 	registration, err := graphs.MeetingAssistantApplicationRegistration(config)
 	if err != nil {
 		t.Fatal(err)
+	}
+	config.Readiness[0] = graphlaunch.ReadinessCheck{
+		Name: "mutated-after-registration",
+		Check: func(context.Context) error {
+			return errors.New("caller-owned readiness callback leaked into registration")
+		},
 	}
 	application, err := graphs.MeetingAssistantApplicationConfig(registration, 1)
 	if err != nil {
@@ -117,6 +131,19 @@ func TestMeetingAssistantRegistrationResolvesExactGraphWithoutAcquiringProviders
 	if prepared.Plan == nil || prepared.Plan.Graph().ID != meetinggraph.GraphID ||
 		prepared.Plan.Graph().Fingerprint == "" || launchConfig.Adapter != registration.Adapter {
 		t.Fatalf("prepared Meeting application = %+v", prepared.Plan)
+	}
+	if got := prepared.Binding.Capabilities().Observers; !slices.Equal(got, []string{"audio", "screen"}) {
+		t.Fatalf("Meeting observer selectors = %v, want exact foreground audio plus built-in screen", got)
+	}
+	if readinessCalls.Load() != 0 || len(prepared.Readiness) != 1 ||
+		prepared.Readiness[0].Name != "meeting-production-readiness" {
+		t.Fatalf("resource-free readiness composition = %+v, calls=%d", prepared.Readiness, readinessCalls.Load())
+	}
+	if err := prepared.Readiness[0].Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if readinessCalls.Load() != 1 {
+		t.Fatalf("explicit readiness calls = %d, want 1", readinessCalls.Load())
 	}
 	if got := calls.Load(); got != 0 {
 		t.Fatalf("resource-free application resolution acquired %d provider(s)", got)

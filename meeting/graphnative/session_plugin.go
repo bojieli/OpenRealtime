@@ -104,6 +104,12 @@ func NewSessionPlugin(source SessionPluginConfig) (*SessionPlugin, error) {
 		return nil, err
 	}
 	plugin := &SessionPlugin{config: config, coordinator: newMeetingStoreCoordinator()}
+	additionalObservers := make([]string, 0, len(config.Foreground.Capabilities.Observers))
+	for _, observer := range config.Foreground.Capabilities.Observers {
+		if observer != "screen" {
+			additionalObservers = append(additionalObservers, observer)
+		}
+	}
 	adapter := AdapterPluginConfig{
 		Reference: SessionAdapterReference,
 		Artifact:  config.AdapterArtifact,
@@ -113,7 +119,7 @@ func NewSessionPlugin(source SessionPluginConfig) (*SessionPlugin, error) {
 			Voice:               config.Foreground.Capabilities.Voice,
 			Stack:               config.Foreground.Capabilities.Stack,
 			MaxOutputTokens:     config.Foreground.Capabilities.MaxOutputTokens,
-			AdditionalObservers: []string{"meeting.foreground.asr"},
+			AdditionalObservers: additionalObservers,
 		},
 		Factory: plugin.sessionAdapterFactory(),
 	}
