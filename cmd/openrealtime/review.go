@@ -848,6 +848,9 @@ func validateScenarioEvaluationTimeline(
 		source.MediaDurationMS <= 0 || source.MediaDurationMS > 24*60*60*1000 {
 		return errors.New("scenario evaluation context media duration is invalid")
 	}
+	if request.FindingTimestampMaximumMS != source.MediaDurationMS {
+		return errors.New("scenario evaluation timestamp maximum differs from sealed media duration")
+	}
 	for _, findings := range [][]benchreview.Finding{
 		assessment.SignificantProblems, assessment.MinorObservations,
 	} {
@@ -881,6 +884,7 @@ func verifyScenarioEvaluationRecord(
 	}
 	if record.AttemptID != request.AttemptID || record.Suite != request.Suite ||
 		record.Case != request.Case || record.Trial != request.Trial ||
+		record.FindingTimestampMaximumMS != request.FindingTimestampMaximumMS ||
 		request.AttemptID != attempt.Record.Fingerprint || request.Case != attempt.Record.Key.CaseName ||
 		request.Trial != attempt.Record.Key.Trial ||
 		record.ContextSHA256 != contextSHA256 {

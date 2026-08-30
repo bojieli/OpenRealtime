@@ -194,7 +194,8 @@ func BuildSourceReviewPopulation(
 		requests = append(requests, review.Request{
 			AttemptID: attempt.Record.Fingerprint,
 			Suite:     SuiteName, Case: attempt.Record.Key.CaseName, Trial: attempt.Record.Key.Trial,
-			RootDirectory: options.Directory, Context: contextPayload, Media: media,
+			FindingTimestampMaximumMS: mediaDurationMS,
+			RootDirectory:             options.Directory, Context: contextPayload, Media: media,
 			SensitiveValues: slices.Clone(options.SensitiveValues),
 		})
 	}

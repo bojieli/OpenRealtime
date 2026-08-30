@@ -37,8 +37,8 @@ import (
 
 const (
 	RecordFormat              = "openrealtime.multimodal-review"
-	FormatVersion             = 4
-	CasePromptVersion         = "openrealtime.case-media-review.prompt.v4"
+	FormatVersion             = 5
+	CasePromptVersion         = "openrealtime.case-media-review.prompt.v5"
 	CaseSchemaVersion         = "openrealtime.case-media-review.schema.v2"
 	SanitizationVersion       = "openrealtime.review-sanitization.v4"
 	MediaValidationVersion    = "openrealtime.media-container-validation.v4"
@@ -108,13 +108,17 @@ type Media struct {
 // self-contained JSON object containing scorer outcomes, errors, transcripts,
 // action traces, and any suite-specific criteria intended for the reviewer.
 type Request struct {
-	AttemptID     string          `json:"attempt_id"`
-	Suite         string          `json:"suite"`
-	Case          string          `json:"case"`
-	Trial         int             `json:"trial"`
-	RootDirectory string          `json:"-"`
-	Context       json.RawMessage `json:"context"`
-	Media         []Media         `json:"media"`
+	AttemptID string `json:"attempt_id"`
+	Suite     string `json:"suite"`
+	Case      string `json:"case"`
+	Trial     int    `json:"trial"`
+	// FindingTimestampMaximumMS is the inclusive end of the sealed media
+	// timeline. Zero selects the contract-wide 24-hour ceiling for callers that
+	// have no more precise, attested media duration.
+	FindingTimestampMaximumMS int64           `json:"finding_timestamp_maximum_ms,omitempty"`
+	RootDirectory             string          `json:"-"`
+	Context                   json.RawMessage `json:"context"`
+	Media                     []Media         `json:"media"`
 	// SensitiveValues are exact in-memory secrets that must not occur in the
 	// public context or retained media. Values are checked before a provider
 	// can observe bytes and are never serialized or fingerprinted themselves.
@@ -131,21 +135,22 @@ type PreparedMedia struct {
 // PreparedRequest is the exact provider input produced by Prepare. Prompt,
 // schema, context, and media identities are all versioned and fingerprinted.
 type PreparedRequest struct {
-	AttemptID           string          `json:"attempt_id"`
-	Suite               string          `json:"suite"`
-	Case                string          `json:"case"`
-	Trial               int             `json:"trial"`
-	PromptVersion       string          `json:"prompt_version"`
-	Prompt              string          `json:"prompt"`
-	SchemaVersion       string          `json:"schema_version"`
-	Schema              json.RawMessage `json:"schema"`
-	Context             json.RawMessage `json:"context"`
-	Media               []PreparedMedia `json:"media"`
-	RequestFingerprint  string          `json:"request_fingerprint"`
-	Sanitization        string          `json:"sanitization"`
-	SensitiveValueCount int             `json:"sensitive_value_count"`
-	sensitiveGuard      *declaredSensitiveGuard
-	validationSeal      *preparedValidationSeal
+	AttemptID                 string          `json:"attempt_id"`
+	Suite                     string          `json:"suite"`
+	Case                      string          `json:"case"`
+	Trial                     int             `json:"trial"`
+	FindingTimestampMaximumMS int64           `json:"finding_timestamp_maximum_ms"`
+	PromptVersion             string          `json:"prompt_version"`
+	Prompt                    string          `json:"prompt"`
+	SchemaVersion             string          `json:"schema_version"`
+	Schema                    json.RawMessage `json:"schema"`
+	Context                   json.RawMessage `json:"context"`
+	Media                     []PreparedMedia `json:"media"`
+	RequestFingerprint        string          `json:"request_fingerprint"`
+	Sanitization              string          `json:"sanitization"`
+	SensitiveValueCount       int             `json:"sensitive_value_count"`
+	sensitiveGuard            *declaredSensitiveGuard
+	validationSeal            *preparedValidationSeal
 }
 
 // declaredSensitiveGuard is an opaque, immutable capability. The closure owns
@@ -265,28 +270,29 @@ type ContentIdentity struct {
 // RawResponse and NormalizedOutput are returned separately so the bundle can
 // retain them as create-only files and verify these digests.
 type Record struct {
-	Format                 string               `json:"format"`
-	FormatVersion          int                  `json:"format_version"`
-	AttemptID              string               `json:"attempt_id"`
-	Suite                  string               `json:"suite"`
-	Case                   string               `json:"case"`
-	Trial                  int                  `json:"trial"`
-	Provider               ProviderDescriptor   `json:"provider"`
-	ProviderCapabilities   ProviderCapabilities `json:"provider_capabilities"`
-	Prompt                 ContentIdentity      `json:"prompt"`
-	Schema                 ContentIdentity      `json:"schema"`
-	ContextSHA256          string               `json:"context_sha256"`
-	Media                  []Media              `json:"media"`
-	RequestFingerprint     string               `json:"request_fingerprint"`
-	Sanitization           string               `json:"sanitization"`
-	SensitiveValueCount    int                  `json:"sensitive_value_count"`
-	ProviderRequestID      string               `json:"provider_request_id,omitempty"`
-	ProviderRequestIDState string               `json:"provider_request_id_state"`
-	ProviderRequestSHA256  string               `json:"provider_request_sha256"`
-	ReportedModel          string               `json:"reported_model"`
-	RawResponseSHA256      string               `json:"raw_response_sha256"`
-	NormalizedOutputSHA256 string               `json:"normalized_output_sha256"`
-	Assessment             Assessment           `json:"assessment"`
+	Format                    string               `json:"format"`
+	FormatVersion             int                  `json:"format_version"`
+	AttemptID                 string               `json:"attempt_id"`
+	Suite                     string               `json:"suite"`
+	Case                      string               `json:"case"`
+	Trial                     int                  `json:"trial"`
+	FindingTimestampMaximumMS int64                `json:"finding_timestamp_maximum_ms"`
+	Provider                  ProviderDescriptor   `json:"provider"`
+	ProviderCapabilities      ProviderCapabilities `json:"provider_capabilities"`
+	Prompt                    ContentIdentity      `json:"prompt"`
+	Schema                    ContentIdentity      `json:"schema"`
+	ContextSHA256             string               `json:"context_sha256"`
+	Media                     []Media              `json:"media"`
+	RequestFingerprint        string               `json:"request_fingerprint"`
+	Sanitization              string               `json:"sanitization"`
+	SensitiveValueCount       int                  `json:"sensitive_value_count"`
+	ProviderRequestID         string               `json:"provider_request_id,omitempty"`
+	ProviderRequestIDState    string               `json:"provider_request_id_state"`
+	ProviderRequestSHA256     string               `json:"provider_request_sha256"`
+	ReportedModel             string               `json:"reported_model"`
+	RawResponseSHA256         string               `json:"raw_response_sha256"`
+	NormalizedOutputSHA256    string               `json:"normalized_output_sha256"`
+	Assessment                Assessment           `json:"assessment"`
 }
 
 type Evaluation struct {
@@ -437,6 +443,11 @@ func Evaluate(
 	if err != nil {
 		return Evaluation{}, fmt.Errorf("validate review provider output: %w", err)
 	}
+	if err := validateAssessmentTimestampMaximum(
+		assessment, prepared.FindingTimestampMaximumMS,
+	); err != nil {
+		return Evaluation{}, fmt.Errorf("validate review provider output: %w", err)
+	}
 	promptDigest := digest([]byte(prepared.Prompt))
 	schemaDigest := digest(prepared.Schema)
 	contextDigest := digest(prepared.Context)
@@ -450,10 +461,11 @@ func Evaluate(
 		Format: RecordFormat, FormatVersion: FormatVersion,
 		AttemptID: prepared.AttemptID, Suite: prepared.Suite, Case: prepared.Case,
 		Trial: prepared.Trial, Provider: descriptor,
-		ProviderCapabilities: capabilities.Clone(),
-		Prompt:               ContentIdentity{Version: prepared.PromptVersion, SHA256: promptDigest},
-		Schema:               ContentIdentity{Version: prepared.SchemaVersion, SHA256: schemaDigest},
-		ContextSHA256:        contextDigest, Media: media,
+		FindingTimestampMaximumMS: prepared.FindingTimestampMaximumMS,
+		ProviderCapabilities:      capabilities.Clone(),
+		Prompt:                    ContentIdentity{Version: prepared.PromptVersion, SHA256: promptDigest},
+		Schema:                    ContentIdentity{Version: prepared.SchemaVersion, SHA256: schemaDigest},
+		ContextSHA256:             contextDigest, Media: media,
 		RequestFingerprint: prepared.RequestFingerprint,
 		Sanitization:       prepared.Sanitization, SensitiveValueCount: prepared.SensitiveValueCount,
 		ProviderRequestID: response.RequestID, ProviderRequestIDState: response.RequestIDState,
@@ -630,6 +642,10 @@ func PrepareContext(
 	if err := preflightRequest(request); err != nil {
 		return PreparedRequest{}, err
 	}
+	findingTimestampMaximumMS := request.FindingTimestampMaximumMS
+	if findingTimestampMaximumMS == 0 {
+		findingTimestampMaximumMS = maximumFindingTimestampMS
+	}
 	if err := validateHumanIdentifier("review attempt ID", request.AttemptID, 1024); err != nil {
 		return PreparedRequest{}, err
 	}
@@ -734,12 +750,16 @@ func PrepareContext(
 
 	schema := caseReviewSchema()
 	contextEnvelope, err := marshalCanonicalCompact(struct {
-		Suite   string          `json:"suite"`
-		Case    string          `json:"case"`
-		Trial   int             `json:"trial"`
-		Context json.RawMessage `json:"deterministic_context"`
-		Media   []Media         `json:"media"`
-	}{request.Suite, request.Case, request.Trial, contextJSON, validatedMedia}, maximumPromptBytes)
+		Suite                     string          `json:"suite"`
+		Case                      string          `json:"case"`
+		Trial                     int             `json:"trial"`
+		FindingTimestampMaximumMS int64           `json:"finding_timestamp_maximum_ms"`
+		Context                   json.RawMessage `json:"deterministic_context"`
+		Media                     []Media         `json:"media"`
+	}{
+		request.Suite, request.Case, request.Trial, findingTimestampMaximumMS,
+		contextJSON, validatedMedia,
+	}, maximumPromptBytes)
 	if err != nil {
 		return PreparedRequest{}, fmt.Errorf("encode review prompt context: %w", err)
 	}
@@ -760,7 +780,8 @@ func PrepareContext(
 	}
 	prepared := PreparedRequest{
 		AttemptID: request.AttemptID, Suite: request.Suite, Case: request.Case, Trial: request.Trial,
-		PromptVersion: CasePromptVersion, Prompt: prompt,
+		FindingTimestampMaximumMS: findingTimestampMaximumMS,
+		PromptVersion:             CasePromptVersion, Prompt: prompt,
 		SchemaVersion: CaseSchemaVersion, Schema: schema, Context: contextJSON,
 		Media: preparedMedia, Sanitization: SanitizationVersion,
 		SensitiveValueCount: len(secrets),
@@ -859,12 +880,16 @@ func (prepared PreparedRequest) ValidateContext(ctx context.Context) (resultErr 
 		media[index] = item.Media
 	}
 	contextEnvelope, err := marshalCanonicalCompact(struct {
-		Suite   string          `json:"suite"`
-		Case    string          `json:"case"`
-		Trial   int             `json:"trial"`
-		Context json.RawMessage `json:"deterministic_context"`
-		Media   []Media         `json:"media"`
-	}{prepared.Suite, prepared.Case, prepared.Trial, prepared.Context, media}, maximumPromptBytes)
+		Suite                     string          `json:"suite"`
+		Case                      string          `json:"case"`
+		Trial                     int             `json:"trial"`
+		FindingTimestampMaximumMS int64           `json:"finding_timestamp_maximum_ms"`
+		Context                   json.RawMessage `json:"deterministic_context"`
+		Media                     []Media         `json:"media"`
+	}{
+		prepared.Suite, prepared.Case, prepared.Trial, prepared.FindingTimestampMaximumMS,
+		prepared.Context, media,
+	}, maximumPromptBytes)
 	if err != nil || prepared.Prompt != caseReviewPrompt(string(contextEnvelope)) {
 		return errors.New("prepared review prompt differs from its context or media manifest")
 	}
@@ -929,19 +954,21 @@ func (prepared PreparedRequest) fingerprintContext(ctx context.Context) (string,
 		media[index] = prepared.Media[index].Media
 	}
 	source, err := marshalCanonicalCompact(struct {
-		AttemptID           string  `json:"attempt_id"`
-		PromptVersion       string  `json:"prompt_version"`
-		PromptSHA256        string  `json:"prompt_sha256"`
-		SchemaVersion       string  `json:"schema_version"`
-		SchemaSHA256        string  `json:"schema_sha256"`
-		ContextSHA256       string  `json:"context_sha256"`
-		Media               []Media `json:"media"`
-		Sanitization        string  `json:"sanitization"`
-		SensitiveValueCount int     `json:"sensitive_value_count"`
+		AttemptID                 string  `json:"attempt_id"`
+		PromptVersion             string  `json:"prompt_version"`
+		PromptSHA256              string  `json:"prompt_sha256"`
+		SchemaVersion             string  `json:"schema_version"`
+		SchemaSHA256              string  `json:"schema_sha256"`
+		ContextSHA256             string  `json:"context_sha256"`
+		Media                     []Media `json:"media"`
+		FindingTimestampMaximumMS int64   `json:"finding_timestamp_maximum_ms"`
+		Sanitization              string  `json:"sanitization"`
+		SensitiveValueCount       int     `json:"sensitive_value_count"`
 	}{
 		prepared.AttemptID, prepared.PromptVersion, promptDigest,
 		prepared.SchemaVersion, schemaDigest, contextDigest, media,
-		prepared.Sanitization, prepared.SensitiveValueCount,
+		prepared.FindingTimestampMaximumMS, prepared.Sanitization,
+		prepared.SensitiveValueCount,
 	}, maximumPreparedPublicBytes)
 	if err != nil {
 		return "", fmt.Errorf("fingerprint review request: %w", err)
@@ -1168,6 +1195,26 @@ func validateFinding(label string, finding Finding) error {
 	}
 	if finding.StartMS != nil && finding.EndMS != nil && *finding.EndMS < *finding.StartMS {
 		return fmt.Errorf("%s end_ms precedes start_ms", label)
+	}
+	return nil
+}
+
+func validateAssessmentTimestampMaximum(
+	assessment Assessment, maximumMS int64,
+) error {
+	if maximumMS <= 0 || maximumMS > maximumFindingTimestampMS {
+		return errors.New("review assessment timestamp maximum is invalid")
+	}
+	for _, findings := range [][]Finding{
+		assessment.SignificantProblems, assessment.MinorObservations,
+	} {
+		for _, finding := range findings {
+			for _, timestamp := range []*int64{finding.StartMS, finding.EndMS} {
+				if timestamp != nil && (*timestamp < 0 || *timestamp > maximumMS) {
+					return errors.New("review assessment finding timestamp exceeds the sealed media timeline")
+				}
+			}
+		}
 	}
 	return nil
 }

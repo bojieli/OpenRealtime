@@ -276,6 +276,7 @@ func TestScenarioGraphReviewPublishesHermeticOneHundredSixtyFiveAttemptPopulatio
 	if reviewContext.SourceReceiptSHA256 != receipt.ReceiptSHA256 ||
 		reviewContext.FormatVersion != graphnative.SourceReviewContextFormatVersion ||
 		reviewContext.MediaDurationMS <= 0 ||
+		requests[0].FindingTimestampMaximumMS != reviewContext.MediaDurationMS ||
 		reviewContext.Attempt.Behavior != graphnative.BehaviorFailed ||
 		reviewContext.Result.Passed || reviewContext.Architecture.Task.Passed {
 		t.Fatalf("secondary review deterministic context = %+v", reviewContext)

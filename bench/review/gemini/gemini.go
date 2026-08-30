@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -40,6 +41,7 @@ const (
 	interactionsURL  = "https://generativelanguage.googleapis.com/v1beta/interactions"
 
 	maximumInlineRequestBytes = 20_000_000
+	maximumFindingTimestampMS = int64(24 * 60 * 60 * 1000)
 	// A 150-second, 24 kHz, stereo PCM16 review recording is 14,400,044
 	// bytes. Keep that lossless evidence admissible while leaving roughly
 	// 666 kB for the prompt, schema, system instruction, and JSON envelope
@@ -886,6 +888,10 @@ func marshalValidatedRequestContext(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	responseSchema, err := boundedFindingTimestampSchema(prepared)
+	if err != nil {
+		return nil, err
+	}
 	input := make([]contentBlock, 0, len(prepared.Media)+2)
 	input = append(input, contentBlock{Type: "text", Text: prepared.Prompt})
 	input = append(input, contentBlock{
@@ -906,11 +912,11 @@ func marshalValidatedRequestContext(
 	var output bytes.Buffer
 	encoder := json.NewEncoder(&output)
 	encoder.SetEscapeHTML(false)
-	err := encoder.Encode(interactionRequest{
+	err = encoder.Encode(interactionRequest{
 		Model: ModelID, Input: input,
 		SystemInstruction: systemInstruction,
 		ResponseFormat: responseFormat{
-			Type: "text", MediaType: "application/json", Schema: slices.Clone(prepared.Schema),
+			Type: "text", MediaType: "application/json", Schema: responseSchema,
 		},
 		GenerationConfig: generationConfig{
 			ThinkingLevel: "high", MaxOutputTokens: 16_384, Seed: 1,
@@ -930,6 +936,29 @@ func marshalValidatedRequestContext(
 			len(body), maximumInlineRequestBytes)
 	}
 	return slices.Clone(body), nil
+}
+
+func boundedFindingTimestampSchema(
+	prepared review.PreparedRequest,
+) (json.RawMessage, error) {
+	maximumMS := prepared.FindingTimestampMaximumMS
+	if maximumMS <= 0 || maximumMS > maximumFindingTimestampMS {
+		return nil, errors.New("Gemini review finding timestamp maximum is invalid")
+	}
+	standard := []byte(`"maximum": 86400000`)
+	if bytes.Count(prepared.Schema, standard) != 4 {
+		return nil, errors.New("Gemini standard review schema has unexpected timestamp bounds")
+	}
+	// The caller has already passed PreparedRequest.Validate, which requires
+	// the exact standard schema. Replacing four decimal integer literals with a
+	// bounded decimal integer preserves duplicate safety and container shape.
+	replacement := []byte(`"maximum": ` + strconv.FormatInt(maximumMS, 10))
+	bounded := bytes.ReplaceAll(prepared.Schema, standard, replacement)
+	if len(bounded) == 0 || len(bounded) > maximumSchemaBytes ||
+		!json.Valid(bounded) {
+		return nil, errors.New("Gemini bounded review schema is invalid")
+	}
+	return json.RawMessage(bounded), nil
 }
 
 func preflightProviderResponse(response review.ProviderResponse) error {

@@ -184,7 +184,9 @@ func TestScenarioEvaluationTimelineUsesSealedMediaDuration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return benchreview.Request{Context: contextPayload}
+		return benchreview.Request{
+			Context: contextPayload, FindingTimestampMaximumMS: duration,
+		}
 	}
 	value := func(candidate int64) *int64 { return &candidate }
 	within := benchreview.Assessment{
@@ -218,21 +220,35 @@ func TestScenarioEvaluationTimelineUsesSealedMediaDuration(t *testing.T) {
 		},
 		{
 			name: "wrong context version",
-			request: benchreview.Request{Context: json.RawMessage(
-				`{"format":"openrealtime.scenario-source-review-context","format_version":1,"media_duration_ms":1000}`,
-			)},
+			request: benchreview.Request{
+				Context: json.RawMessage(
+					`{"format":"openrealtime.scenario-source-review-context","format_version":1,"media_duration_ms":1000}`,
+				),
+				FindingTimestampMaximumMS: 1000,
+			},
 			assessment: within, match: "media duration is invalid",
 		},
 		{
 			name: "trailing context",
-			request: benchreview.Request{Context: json.RawMessage(
-				`{"format":"openrealtime.scenario-source-review-context","format_version":2,"media_duration_ms":1000} {}`,
-			)},
+			request: benchreview.Request{
+				Context: json.RawMessage(
+					`{"format":"openrealtime.scenario-source-review-context","format_version":2,"media_duration_ms":1000} {}`,
+				),
+				FindingTimestampMaximumMS: 1000,
+			},
 			assessment: within, match: "context is invalid",
 		},
 		{
 			name: "duration beyond schema horizon", request: requestForDuration(86_400_001),
 			assessment: within, match: "media duration is invalid",
+		},
+		{
+			name: "request bound differs", request: func() benchreview.Request {
+				request := requestForDuration(1000)
+				request.FindingTimestampMaximumMS = 999
+				return request
+			}(),
+			assessment: within, match: "differs from sealed media duration",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -266,7 +282,7 @@ func TestScenarioEvaluationRejectsOutOfMediaTimestampBeforeRetention(t *testing.
 		"-provider", "fixture.scenario-review",
 		"-parallel", "1",
 	}, &bytes.Buffer{}, registry)
-	if err == nil || !strings.Contains(err.Error(), "sealed media duration") ||
+	if err == nil || !strings.Contains(err.Error(), "sealed media timeline") ||
 		provider.reviewCalls.Load() != 1 || provider.closeCalls.Load() != 1 {
 		t.Fatalf("out-of-media review = %v, calls=%d close=%d",
 			err, provider.reviewCalls.Load(), provider.closeCalls.Load())

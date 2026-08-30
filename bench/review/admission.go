@@ -46,6 +46,10 @@ func preflightRequest(request Request) error {
 	if request.Trial <= 0 {
 		return errors.New("review trial must be positive")
 	}
+	if request.FindingTimestampMaximumMS < 0 ||
+		request.FindingTimestampMaximumMS > maximumFindingTimestampMS {
+		return errors.New("review finding timestamp maximum is outside the supported range")
+	}
 	if len(request.RootDirectory) == 0 || len(request.RootDirectory) > maximumRootDirectoryBytes ||
 		!utf8.ValidString(request.RootDirectory) || containsControl(request.RootDirectory) ||
 		!filepath.IsAbs(request.RootDirectory) || filepath.Clean(request.RootDirectory) != request.RootDirectory {
@@ -102,6 +106,8 @@ func preflightPrepared(prepared PreparedRequest, requireSeal bool) error {
 		return errors.New("prepared review identity is empty or oversized")
 	}
 	if prepared.Trial <= 0 || len(prepared.Prompt) == 0 || len(prepared.Prompt) > maximumPromptBytes ||
+		prepared.FindingTimestampMaximumMS <= 0 ||
+		prepared.FindingTimestampMaximumMS > maximumFindingTimestampMS ||
 		len(prepared.Schema) == 0 || len(prepared.Schema) > maximumSchemaBytes ||
 		len(prepared.Context) == 0 || len(prepared.Context) > maximumContextBytes ||
 		len(prepared.Media) == 0 || len(prepared.Media) > maximumMediaCount {
@@ -234,6 +240,7 @@ func preparedSealDigestContext(
 		}
 	}
 	writeSealInt(hasher, int64(prepared.Trial))
+	writeSealInt(hasher, prepared.FindingTimestampMaximumMS)
 	writeSealInt(hasher, int64(prepared.SensitiveValueCount))
 	writeSealInt(hasher, int64(len(prepared.Media)))
 	for _, item := range prepared.Media {
