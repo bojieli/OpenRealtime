@@ -17,6 +17,11 @@ import (
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
+const (
+	meetingAttemptEvidenceTimeout = 2 * time.Minute
+	meetingSuiteEvidenceTimeout   = 12 * time.Minute
+)
+
 func ReferenceCell() bench.Cell {
 	cell := bench.Reference()
 	cell.Levels[bench.FactorBinding] = "cascade"
@@ -133,6 +138,9 @@ func (dependencies *runDependencies) validate() error {
 }
 
 func Run(ctx context.Context, options Options) (bench.Result, error) {
+	if ctx == nil {
+		return bench.Result{}, errors.New("meeting evaluation requires a context")
+	}
 	if strings.TrimSpace(options.Endpoint) == "" {
 		return bench.Result{}, errors.New("meeting evaluation requires a Realtime endpoint")
 	}
@@ -200,9 +208,16 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 		if options.Evidence != nil {
 			frozen, freezeErr := cloneMeetingResult(result)
 			if freezeErr != nil {
-				runErr = errors.Join(runErr, freezeErr)
-			} else if evidenceErr := options.Evidence.FinishSuite(ctx, frozen); evidenceErr != nil {
-				runErr = errors.Join(runErr, evidenceErr)
+				runErr = errors.Join(runErr, meetingEvidenceError("", "snapshot final result", freezeErr))
+			} else {
+				evidenceContext, cancelEvidence := context.WithTimeout(
+					context.WithoutCancel(ctx), meetingSuiteEvidenceTimeout,
+				)
+				evidenceErr := options.Evidence.FinishSuite(evidenceContext, frozen)
+				cancelEvidence()
+				if evidenceErr != nil {
+					runErr = errors.Join(runErr, meetingEvidenceError("", "finish suite", evidenceErr))
+				}
 			}
 		}
 		return result, runErr
@@ -224,23 +239,31 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 			_ = environment.close()
 		}
 	}()
+	var evidenceFailures error
 	for index, task := range toRun {
 		if options.Progress != nil {
 			options.Progress(fmt.Sprintf("meeting: %d/%d %s", index+1, len(toRun), task.ID))
 		}
-		result.Tasks = append(result.Tasks, runTask(ctx, environment, options, task))
+		outcome, evidenceErr := runTask(
+			ctx, environment, options, task, result.Cell, result.Provenance,
+		)
+		result.Tasks = append(result.Tasks, outcome)
+		if evidenceErr != nil {
+			evidenceFailures = errors.Join(evidenceFailures, evidenceErr)
+		}
 	}
-	closeErr := environment.close()
+	environmentCloseErr := environment.close()
 	closed = true
-	if closeErr != nil {
-		closeErr = errors.New("close meeting environment")
+	if environmentCloseErr != nil {
+		environmentCloseErr = errors.New("close meeting environment")
 	}
-	return finish(closeErr)
+	return finish(errors.Join(evidenceFailures, environmentCloseErr))
 }
 
 func runTask(
 	ctx context.Context, environment meetingRunEnvironment, options Options, task Task,
-) (outcome bench.TaskOutcome) {
+	cell bench.Cell, provenance bench.Provenance,
+) (outcome bench.TaskOutcome, evidenceErr error) {
 	incomplete := bench.TaskOutcome{
 		ID: task.ID, Metrics: map[string]float64{},
 		Notes: map[string]string{"category": task.Category, "difficulty": task.Difficulty},
@@ -248,50 +271,68 @@ func runTask(
 	var transcript bench.Transcript
 	var playErr error
 	var attempt AttemptEvidence
+	var evidenceMu sync.Mutex
+	var evidenceFailures []error
+	recordEvidenceFailure := func(stage string, err error) {
+		if err == nil {
+			return
+		}
+		evidenceMu.Lock()
+		defer evidenceMu.Unlock()
+		// Each stage is called a bounded number of times except video capture.
+		// Retain the first failure per stage so a broken sink cannot grow an
+		// unbounded aggregate while the deterministic session continues.
+		for _, existing := range evidenceFailures {
+			var typed *EvidenceError
+			if errors.As(existing, &typed) && typed.Stage == stage {
+				return
+			}
+		}
+		evidenceFailures = append(evidenceFailures, meetingEvidenceError(task.ID, stage, err))
+	}
+	defer func() {
+		evidenceMu.Lock()
+		failures := slices.Clone(evidenceFailures)
+		evidenceMu.Unlock()
+		evidenceErr = errors.Join(evidenceErr, errors.Join(failures...))
+	}()
 	if options.Evidence != nil {
 		specification := EvidenceAttempt{
 			Suite: SuiteName, Case: task.ID, Trial: 1, Task: task,
+			Cell:                 cell,
+			Provenance:           provenance,
 			Origin:               options.evidenceOrigin,
-			ExecutionRequirement: options.Cell.Execution,
+			ExecutionRequirement: cell.Execution,
 		}
 		if err := specification.validate(); err != nil {
-			incomplete.Error = err.Error()
-			return incomplete
+			recordEvidenceFailure("validate attempt", err)
+		} else {
+			attempt, err = options.Evidence.BeginAttempt(ctx, cloneEvidenceAttempt(specification))
+			if err != nil {
+				recordEvidenceFailure("begin attempt", err)
+				attempt = nil
+			} else if attempt == nil {
+				recordEvidenceFailure("begin attempt", errors.New("plug-in returned a nil attempt"))
+			}
 		}
-		var err error
-		attempt, err = options.Evidence.BeginAttempt(ctx, cloneEvidenceAttempt(specification))
-		if err != nil {
-			incomplete.Error = err.Error()
-			return incomplete
+		if attempt != nil {
+			defer func() {
+				evidenceContext, cancelEvidence := context.WithTimeout(
+					context.WithoutCancel(ctx), meetingAttemptEvidenceTimeout,
+				)
+				defer cancelEvidence()
+				completion := EvidenceCompletion{
+					Attempt: cloneEvidenceAttempt(specification),
+					Outcome: cloneTaskOutcome(outcome), Transcript: cloneTranscript(transcript),
+				}
+				if err := attempt.Complete(evidenceContext, completion); err != nil {
+					recordEvidenceFailure("complete attempt", err)
+					if abortErr := attempt.Abort(); abortErr != nil {
+						recordEvidenceFailure("abort attempt", abortErr)
+					}
+				}
+			}()
 		}
-		if attempt == nil {
-			incomplete.Error = "meeting evidence plug-in returned a nil attempt"
-			return incomplete
-		}
-		terminal := false
-		defer func() {
-			if terminal {
-				return
-			}
-			if err := attempt.Abort(); err != nil {
-				outcome.Completed = false
-				outcome.Passed = false
-				outcome.Error = appendOutcomeError(outcome.Error, err)
-			}
-		}()
-		defer func() {
-			completion := EvidenceCompletion{
-				Attempt: cloneEvidenceAttempt(specification),
-				Outcome: cloneTaskOutcome(outcome), Transcript: cloneTranscript(transcript),
-			}
-			if err := attempt.Complete(ctx, completion); err != nil {
-				outcome.Completed = false
-				outcome.Passed = false
-				outcome.Error = appendOutcomeError(outcome.Error, err)
-				return
-			}
-			terminal = true
-		}()
 	}
 	dependencies := options.dependencies
 	if dependencies == nil {
@@ -300,12 +341,12 @@ func runTask(
 	episode, err := environment.episode(ctx, task)
 	if err != nil {
 		incomplete.Error = err.Error()
-		return incomplete
+		return incomplete, nil
 	}
 	width, height, err := episode.surface.Viewport(ctx)
 	if err != nil {
 		incomplete.Error = err.Error()
-		return incomplete
+		return incomplete, nil
 	}
 	target := computeruse.Target{Name: "meeting-browser", Sources: []string{"screen"}, Width: width, Height: height}
 	dispatcher, err := computeruse.NewDispatcher(computeruse.DispatcherConfig{
@@ -313,22 +354,22 @@ func runTask(
 	})
 	if err != nil {
 		incomplete.Error = err.Error()
-		return incomplete
+		return incomplete, nil
 	}
 	tools, err := declarations(target, task)
 	if err != nil {
 		incomplete.Error = err.Error()
-		return incomplete
+		return incomplete, nil
 	}
 	rawAudio, err := audioAssets.ReadFile("testdata/audio/" + task.AudioAsset)
 	if err != nil {
 		incomplete.Error = err.Error()
-		return incomplete
+		return incomplete, nil
 	}
 	samples, err := bench.DecodePCM24k(rawAudio)
 	if err != nil {
 		incomplete.Error = err.Error()
-		return incomplete
+		return incomplete, nil
 	}
 
 	var recordsMu sync.Mutex
@@ -416,20 +457,26 @@ func runTask(
 		Ready: episode.ready,
 	}
 	if attempt != nil {
-		config.CaptureAudio = attempt.CaptureAudio
-		config.CaptureVideo = attempt.CaptureVideo
+		config.CaptureAudio = func(capture bench.SessionAudioCapture) error {
+			recordEvidenceFailure("capture audio", attempt.CaptureAudio(capture))
+			return nil
+		}
+		config.CaptureVideo = func(capture bench.SessionVideoCapture) error {
+			recordEvidenceFailure("capture video", attempt.CaptureVideo(capture))
+			return nil
+		}
 	}
 	transcript, playErr = dependencies.playSamples(ctx, config, samples)
 	incomplete.AttachExecution(transcript)
 	timedOut := errors.Is(playErr, bench.ErrConversationTimeout)
 	if playErr != nil && !timedOut {
 		incomplete.Error = playErr.Error()
-		return incomplete
+		return incomplete, nil
 	}
 	page, err := episode.result(ctx)
 	if err != nil {
 		incomplete.Error = err.Error()
-		return incomplete
+		return incomplete, nil
 	}
 	recordsMu.Lock()
 	actionTrace := slices.Clone(actions)
@@ -453,17 +500,7 @@ func runTask(
 		outcome.Passed = false
 		outcome.Metrics["task_success_rate"] = 0
 	}
-	return outcome
-}
-
-func appendOutcomeError(existing string, next error) string {
-	if next == nil {
-		return existing
-	}
-	if strings.TrimSpace(existing) == "" {
-		return next.Error()
-	}
-	return errors.Join(errors.New(existing), next).Error()
+	return outcome, nil
 }
 
 func cloneTaskOutcome(source bench.TaskOutcome) bench.TaskOutcome {
@@ -513,12 +550,33 @@ func cloneTranscript(source bench.Transcript) bench.Transcript {
 func cloneEvidenceAttempt(source EvidenceAttempt) EvidenceAttempt {
 	result := source
 	result.Task.Cues = slices.Clone(source.Task.Cues)
-	if source.ExecutionRequirement.Required() {
-		if payload, err := bench.MarshalExecutionRequirement(source.ExecutionRequirement); err == nil {
-			if requirement, parseErr := bench.ParseExecutionRequirement(payload); parseErr == nil {
-				result.ExecutionRequirement = requirement
-			}
-		}
+	result.Cell = cloneMeetingCell(source.Cell)
+	result.ExecutionRequirement = cloneMeetingExecutionRequirement(source.ExecutionRequirement)
+	return result
+}
+
+func cloneMeetingCell(source bench.Cell) bench.Cell {
+	result := source
+	result.Levels = make(map[bench.Factor]string, len(source.Levels))
+	for factor, level := range source.Levels {
+		result.Levels[factor] = level
+	}
+	result.Varies = slices.Clone(source.Varies)
+	result.Execution = cloneMeetingExecutionRequirement(source.Execution)
+	return result
+}
+
+func cloneMeetingExecutionRequirement(source bench.ExecutionRequirement) bench.ExecutionRequirement {
+	if !source.Required() {
+		return source
+	}
+	payload, err := bench.MarshalExecutionRequirement(source)
+	if err != nil {
+		return bench.ExecutionRequirement{}
+	}
+	result, err := bench.ParseExecutionRequirement(payload)
+	if err != nil {
+		return bench.ExecutionRequirement{}
 	}
 	return result
 }
