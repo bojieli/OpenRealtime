@@ -804,6 +804,18 @@
       "covers": ["fuzz:graph/syntax/FuzzRecoveryIsBoundedAndNeverPromotesToStrictParse"]
     },
     {
+      "id": "local.fuzz.internal.strictjson",
+      "description": "Fuzz bounded duplicate-safe strict JSON validation",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzValidate$", "-fuzztime", "5s", "./internal/strictjson"],
+      "timeout": "2m",
+      "skip_policy": "forbid",
+      "covers": ["fuzz:internal/strictjson/FuzzValidate"]
+    },
+    {
       "id": "local.fuzz.presentation.effect-arguments",
       "description": "Fuzz presentation effect argument admission",
       "availability": "local",
