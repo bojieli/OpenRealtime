@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -699,7 +698,7 @@ func exactUploadURL(header http.Header) (string, error) {
 func validateUploadedFile(source filesAPIFile, media review.PreparedMedia) (filesAPIFile, error) {
 	if !validFileName(source.Name) || !validFileURI(source.Name, source.URI) ||
 		source.MIMEType != media.MediaType || source.SizeBytes != strconv.FormatInt(int64(len(media.Bytes)), 10) ||
-		source.SHA256Hash != preparedDigestBase64(media.SHA256) ||
+		canonicalFileDigest(source.SHA256Hash) != media.SHA256 ||
 		(source.State != "ACTIVE" && source.State != "PROCESSING" && source.State != "FAILED") ||
 		(source.Source != "" && source.Source != "UPLOADED") {
 		return filesAPIFile{}, errors.New("Gemini Files upload response differs from exact prepared media")
@@ -739,22 +738,32 @@ func retainFileIdentity(file filesAPIFile) retainedFileIdentity {
 	size, _ := strconv.ParseInt(file.SizeBytes, 10, 64)
 	return retainedFileIdentity{
 		Name: file.Name, URI: file.URI, MIMEType: file.MIMEType, SizeBytes: size,
-		SHA256: "sha256:" + hex.EncodeToString(mustDecodeBase64(file.SHA256Hash)),
+		SHA256: canonicalFileDigest(file.SHA256Hash),
 		State:  file.State, Source: file.Source,
 	}
 }
 
 func preparedDigestBase64(value string) string {
-	raw, err := hex.DecodeString(strings.TrimPrefix(value, "sha256:"))
-	if err != nil {
+	if !validDigest(value) {
 		return ""
 	}
-	return base64.StdEncoding.EncodeToString(raw)
+	// Gemini's File.sha256Hash is a protobuf bytes field whose live v1beta
+	// value contains the 64 lowercase hexadecimal digest bytes. JSON then
+	// base64-encodes those bytes, yielding 88 characters. It is not base64 of
+	// the underlying 32 raw digest bytes.
+	return base64.StdEncoding.EncodeToString([]byte(strings.TrimPrefix(value, "sha256:")))
 }
 
-func mustDecodeBase64(value string) []byte {
-	raw, _ := base64.StdEncoding.DecodeString(value)
-	return raw
+func canonicalFileDigest(value string) string {
+	raw, err := base64.StdEncoding.Strict().DecodeString(value)
+	if err != nil || len(raw) != 64 || base64.StdEncoding.EncodeToString(raw) != value {
+		return ""
+	}
+	result := "sha256:" + string(raw)
+	if !validDigest(result) {
+		return ""
+	}
+	return result
 }
 
 func readAndCloseBounded(

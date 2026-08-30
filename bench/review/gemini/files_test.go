@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -287,6 +289,28 @@ func fixtureFile(prepared review.PreparedRequest, ordinal int, state string) fil
 		Name: name, DisplayName: "fixture", MIMEType: media.MediaType,
 		SizeBytes: strconv.Itoa(len(media.Bytes)), SHA256Hash: preparedDigestBase64(media.SHA256),
 		URI: filesResourceURL + "/file-" + strconv.Itoa(ordinal), State: state, Source: "UPLOADED",
+	}
+}
+
+func TestFilesSHA256HashUsesExactLiveV1BetaEncoding(t *testing.T) {
+	_, prepared, _ := preparedMultimodalRequest(t)
+	digestValue := prepared.Media[0].SHA256
+	encoded := preparedDigestBase64(digestValue)
+	decoded, err := base64.StdEncoding.Strict().DecodeString(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoded) != 88 || len(decoded) != 64 || string(decoded) != strings.TrimPrefix(digestValue, "sha256:") ||
+		canonicalFileDigest(encoded) != digestValue {
+		t.Fatalf("Gemini Files digest encoding length=%d decoded=%d canonical=%q",
+			len(encoded), len(decoded), canonicalFileDigest(encoded))
+	}
+	rawDigest, err := hex.DecodeString(strings.TrimPrefix(digestValue, "sha256:"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canonicalFileDigest(base64.StdEncoding.EncodeToString(rawDigest)) != "" {
+		t.Fatal("base64 of raw 32-byte digest was accepted as the live v1beta File encoding")
 	}
 }
 

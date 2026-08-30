@@ -1226,6 +1226,7 @@ func TestPinnedInteractionCapabilityTableClaimsOnlyEvidencedInlineFormats(t *tes
 		FilesMaxBytes  int64    `json:"files_media_max_bytes"`
 		FilesEndpoint  string   `json:"files_upload_endpoint"`
 		FilesEvidence  string   `json:"files_transport_evidence"`
+		FilesSHA256    string   `json:"files_sha256_encoding"`
 	}
 	if err := json.Unmarshal(configuration, &artifact); err != nil {
 		t.Fatal(err)
@@ -1234,6 +1235,7 @@ func TestPinnedInteractionCapabilityTableClaimsOnlyEvidencedInlineFormats(t *tes
 		artifact.MaxCount != 3 || artifact.MaxBytes != maximumInlineMediaBytes ||
 		artifact.FilesMaxBytes != maximumFileMediaBytes || artifact.FilesEndpoint != filesUploadURL ||
 		artifact.FilesEvidence != filesTransportEvidenceFormat ||
+		artifact.FilesSHA256 != "base64_lowercase_hex_digest_bytes_v1" ||
 		providerCapabilities().MaximumMediaCount != 3 ||
 		providerCapabilities().MaximumMediaBytes != maximumFileMediaBytes {
 		t.Fatalf("configuration capabilities = %+v", artifact)
@@ -1822,7 +1824,7 @@ func TestProductionArtifactsContainInspectableSourceAndExactPolicyPreimages(t *t
 	if decoded["response_schema_policy"] != "omit_redundant_finding_timestamps_v1" {
 		t.Fatalf("configuration response schema policy = %#v", decoded["response_schema_policy"])
 	}
-	if descriptor.Implementation.Version != "openrealtime.gemini-review.impl.v10" ||
+	if descriptor.Implementation.Version != "openrealtime.gemini-review.impl.v11" ||
 		descriptor.Implementation.SHA256 != digest(implementation) ||
 		descriptor.ConfigurationSHA256 != digest(configuration) {
 		t.Fatalf("production descriptor = %+v", descriptor)
