@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -195,6 +196,187 @@ func (bundle *scenarioGraphReviewBundle) Close() error {
 	}
 	bundle.closeErr = result
 	return bundle.closeErr
+}
+
+// Finalize closes the legacy human-review writer, derives the source index
+// from the exact final checklist, closes every writable handle, and only then
+// publishes the receipt-anchored source manifest. The external receipt lives
+// outside the source directory, so copying or mutating the directory cannot
+// manufacture a different accepted run.
+func (bundle *scenarioGraphReviewBundle) Finalize(
+	ctx context.Context,
+	checklist graphnative.Checklist,
+	architecture json.RawMessage,
+	origin graphnative.SourceOrigin,
+	receiptPath string,
+) (graphnative.SourceReceipt, error) {
+	if bundle == nil {
+		return graphnative.SourceReceipt{}, errors.New("finalize graph-native scenario review: nil bundle")
+	}
+	if ctx == nil {
+		return graphnative.SourceReceipt{}, errors.New("finalize graph-native scenario review: nil context")
+	}
+	if cause := context.Cause(ctx); cause != nil {
+		return graphnative.SourceReceipt{}, cause
+	}
+	bundle.mu.Lock()
+	defer bundle.mu.Unlock()
+	if bundle.closed || bundle.root == nil || bundle.review == nil {
+		return graphnative.SourceReceipt{}, errors.New("scenario review bundle is closed")
+	}
+	attempts, err := bundle.sourceAttempts(checklist)
+	if err != nil {
+		return graphnative.SourceReceipt{}, err
+	}
+	directory := bundle.review.Directory()
+	closeErr := bundle.review.Close()
+	bundle.review = nil
+	closeErr = errors.Join(closeErr, bundle.root.Close())
+	bundle.root = nil
+	bundle.closed = true
+	bundle.closeErr = closeErr
+	if closeErr != nil {
+		return graphnative.SourceReceipt{}, closeErr
+	}
+	receipt, err := graphnative.PublishSourceBundle(ctx, graphnative.SourcePublication{
+		SourceBundleOptions: graphnative.SourceBundleOptions{
+			Directory: directory, SensitiveValues: slices.Clone(bundle.secrets),
+		},
+		ReceiptPath: receiptPath, Origin: origin, Checklist: checklist,
+		ArchitectureResult: slices.Clone(architecture), Attempts: attempts,
+	})
+	if err != nil {
+		return graphnative.SourceReceipt{}, err
+	}
+	return receipt, nil
+}
+
+func (bundle *scenarioGraphReviewBundle) sourceAttempts(
+	checklist graphnative.Checklist,
+) ([]graphnative.SourceAttempt, error) {
+	if err := checklist.Validate(); err != nil {
+		return nil, fmt.Errorf("index final graph-native scenario checklist: %w", err)
+	}
+	if len(bundle.media) != checklist.Expected || len(checklist.Attempts) != checklist.Expected {
+		return nil, errors.New("scenario review media population differs from the final checklist")
+	}
+	result := make([]graphnative.SourceAttempt, 0, checklist.Expected)
+	for _, record := range checklist.Attempts {
+		if record.Media == nil {
+			return nil, fmt.Errorf("scenario attempt %s has no verified media", record.Key.TaskID)
+		}
+		reference, found := bundle.media[record.Key.TaskID]
+		if !found || reference.Handle != record.Media.Handle ||
+			reference.ManifestSHA256 != record.Media.ManifestSHA256 ||
+			!reflect.DeepEqual(reference.Submitted, record.Media.Submitted) {
+			return nil, fmt.Errorf("scenario attempt %s media differs from its verified checklist row",
+				record.Key.TaskID)
+		}
+		manifestPayload, err := bundle.root.ReadFile(reference.Handle)
+		if err != nil || scenarioGraphDigest(manifestPayload) != reference.ManifestSHA256 {
+			return nil, fmt.Errorf("scenario attempt %s media manifest changed", record.Key.TaskID)
+		}
+		manifest, err := bundle.readMediaManifest(reference.Handle)
+		if err != nil {
+			return nil, err
+		}
+		canonicalManifest, err := json.MarshalIndent(manifest, "", "  ")
+		canonicalManifest = append(canonicalManifest, '\n')
+		if err != nil || !bytes.Equal(canonicalManifest, manifestPayload) ||
+			manifest.Format != scenarioGraphMediaFormat ||
+			manifest.FormatVersion != scenarioGraphMediaFormatVersion || manifest.Key != record.Key {
+			return nil, fmt.Errorf("scenario attempt %s media manifest is invalid or noncanonical",
+				record.Key.TaskID)
+		}
+		if err := bundle.verifyArtifact(
+			manifest.Result, "application/json", "deterministic_scorer_result",
+		); err != nil {
+			return nil, err
+		}
+		resultPayload, err := bundle.root.ReadFile(manifest.Result.Path)
+		if err != nil {
+			return nil, err
+		}
+		var scorerResult scenario.Result
+		decoder := json.NewDecoder(bytes.NewReader(resultPayload))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&scorerResult); err != nil || requireScenarioGraphJSONEOF(decoder) != nil {
+			return nil, fmt.Errorf("scenario attempt %s scorer result is invalid", record.Key.TaskID)
+		}
+		resultDigest, err := graphnative.FingerprintResult(scorerResult)
+		if err != nil || resultDigest != record.Execution.ResultSHA256 ||
+			manifest.Result.SHA256 != record.Execution.ResultSHA256 ||
+			scorerResult.Scenario != record.Key.CaseName {
+			return nil, fmt.Errorf("scenario attempt %s scorer result changed", record.Key.TaskID)
+		}
+		if err := bundle.verifyArtifact(
+			manifest.Audio, "audio/wav", "stereo_room_and_agent",
+		); err != nil {
+			return nil, err
+		}
+		audioPayload, err := bundle.root.ReadFile(manifest.Audio.Path)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateScenarioGraphStereoWAV(audioPayload); err != nil {
+			return nil, err
+		}
+		source := graphnative.SourceAttempt{
+			Record: record.Clone(),
+			Result: graphnative.SourceFile{
+				Path: manifest.Result.Path, Purpose: "scorer_result",
+				SHA256: manifest.Result.SHA256, SizeBytes: manifest.Result.SizeBytes,
+			},
+			MediaManifest: graphnative.SourceFile{
+				Path: reference.Handle, Purpose: "media_manifest",
+				SHA256: reference.ManifestSHA256, SizeBytes: int64(len(manifestPayload)),
+			},
+			Audio: graphnative.SourceFile{
+				Path: manifest.Audio.Path, Purpose: "stereo_audio",
+				SHA256: manifest.Audio.SHA256, SizeBytes: manifest.Audio.SizeBytes,
+			},
+		}
+		for _, submitted := range manifest.Submitted {
+			if err := bundle.verifyArtifact(
+				submitted.Media, submitted.Receipt.MediaType, "submitted_visual_input",
+			); err != nil {
+				return nil, err
+			}
+			source.Submitted = append(source.Submitted, graphnative.SourceSubmittedInput{
+				Receipt: submitted.Receipt,
+				File: graphnative.SourceFile{
+					Path: submitted.Media.Path, Purpose: "submitted_input",
+					SHA256: submitted.Media.SHA256, SizeBytes: submitted.Media.SizeBytes,
+				},
+			})
+		}
+		result = append(result, source)
+	}
+	return result, nil
+}
+
+func scenarioGraphSourceOrigin(endpoint, transport string) (graphnative.SourceOrigin, error) {
+	if strings.TrimSpace(transport) == "" {
+		transport = bench.TransportWebSocket
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.Opaque != "" {
+		return graphnative.SourceOrigin{}, errors.New("scenario source endpoint is not an absolute URL")
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
+	origin := graphnative.SourceOrigin{
+		Kind: "live_realtime_endpoint", Transport: transport,
+		EndpointSHA256: scenarioGraphDigest([]byte(parsed.String())),
+	}
+	if err := origin.Validate(); err != nil {
+		return graphnative.SourceOrigin{}, err
+	}
+	return origin, nil
 }
 
 func (bundle *scenarioGraphReviewBundle) Retain(

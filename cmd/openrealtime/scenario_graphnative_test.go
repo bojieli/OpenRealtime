@@ -90,8 +90,58 @@ func TestScenarioGraphChecklistRetainsVerifiesAndIndexesAllElevenAttempts(t *tes
 	if _, err := os.Stat(filepath.Join(directory, "manifest.json")); !os.IsNotExist(err) {
 		t.Fatalf("review bundle published before caller finalization: %v", err)
 	}
-	if err := bundle.Close(); err != nil {
+	architecture := archbench.Result{
+		Version: archbench.ResultVersion,
+		Measurement: bench.Result{
+			Suite: graphnative.SuiteName, Expected: outcome.Checklist.Expected,
+			Provenance: bench.Provenance{StartedAt: time.Now().UTC().Format(time.RFC3339)},
+		},
+	}
+	if err := appendScenarioGraphArchitectureAttempts(&architecture, outcome.Attempts); err != nil {
 		t.Fatal(err)
+	}
+	architecture.Finish()
+	architecturePayload, err := marshalScenarioArchitectureResult(architecture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiptPath := directory + ".receipt.json"
+	receipt, err := bundle.Finalize(
+		context.Background(), outcome.Checklist, architecturePayload,
+		graphnative.SourceOrigin{
+			Kind: "hermetic_fixture", Transport: bench.TransportWebSocket,
+			EndpointSHA256: scenarioGraphTestDigest("hermetic-endpoint"),
+		},
+		receiptPath,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bundle.Close(); err != nil {
+		t.Fatalf("idempotent finalized bundle close: %v", err)
+	}
+	retainedReceipt, err := graphnative.ReadSourceReceipt(receiptPath)
+	if err != nil || retainedReceipt != receipt {
+		t.Fatalf("retained source receipt = %+v, %v; want %+v", retainedReceipt, err, receipt)
+	}
+	source, err := graphnative.VerifySourceBundle(
+		context.Background(), graphnative.SourceBundleOptions{
+			Directory: directory, SensitiveValues: []string{secret},
+		},
+		retainedReceipt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.Manifest.ExpectedAttempts != 11 || len(source.Manifest.Attempts) != 11 ||
+		source.Checklist.Fingerprint != outcome.Checklist.Fingerprint ||
+		len(source.ArchitectureResult.Records) != 11 {
+		t.Fatalf("verified scenario source bundle = %+v", source.Manifest)
+	}
+	if retainedArchitecture, err := os.ReadFile(
+		filepath.Join(directory, graphnative.SourceArchitectureName),
+	); err != nil || !bytes.Equal(retainedArchitecture, architecturePayload) {
+		t.Fatalf("retained final architecture result differs: %v", err)
 	}
 
 	payload, err := os.ReadFile(filepath.Join(directory, "checklist.json"))
@@ -170,10 +220,140 @@ func TestScenarioGraphChecklistRetainsVerifiesAndIndexesAllElevenAttempts(t *tes
 		t.Fatalf("review evidence counts = %+v", counts)
 	}
 
+	tampered := source.Manifest.Attempts[0].Result.Path
+	if err := os.WriteFile(filepath.Join(directory, tampered), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graphnative.VerifySourceBundle(
+		context.Background(), graphnative.SourceBundleOptions{Directory: directory}, retainedReceipt,
+	); err == nil {
+		t.Fatal("tampered scenario source bundle unexpectedly verified")
+	}
+
 	_, err = newScenarioGraphReviewBundle(directory, 1, requirement, nil)
 	if err == nil || !strings.Contains(err.Error(), "exclusively") || executorBuilds.Load() != 1 {
 		t.Fatalf("create-only rerun error = %v, executor builds=%d", err, executorBuilds.Load())
 	}
+}
+
+func TestScenarioGraphReviewPublishesHermeticOneHundredSixtyFiveAttemptPopulation(t *testing.T) {
+	t.Chdir("../..")
+	const repetitions = graphnative.MinimumReportableRepetitions
+	directory, receipt, outcome := publishScenarioGraphPopulationFixture(t, repetitions, true)
+	if outcome.Checklist.Expected != 165 || outcome.Checklist.Executed != 165 ||
+		outcome.Checklist.ReportableAttempts != 165 || !outcome.Checklist.Reportable ||
+		outcome.Checklist.Passed || outcome.Checklist.FailedAttempts != 1 {
+		t.Fatalf("165-attempt checklist = %+v", outcome.Checklist)
+	}
+	verified, err := graphnative.VerifySourceBundle(
+		context.Background(), graphnative.SourceBundleOptions{Directory: directory}, receipt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verified.Manifest.ExpectedAttempts != 165 || len(verified.Manifest.Attempts) != 165 ||
+		len(verified.ArchitectureResult.Records) != 165 ||
+		verified.Manifest.ArchitectureReportable {
+		t.Fatalf("verified hermetic 165-attempt source = %+v", verified.Manifest)
+	}
+	var allocationErr error
+	allocations := testing.AllocsPerRun(1, func() {
+		_, allocationErr = graphnative.VerifySourceBundle(
+			context.Background(), graphnative.SourceBundleOptions{Directory: directory}, receipt,
+		)
+	})
+	if allocationErr != nil {
+		t.Fatal(allocationErr)
+	}
+	if allocations > 250_000 {
+		t.Fatalf("165-attempt source verification allocations = %.0f, want <= 250000", allocations)
+	}
+}
+
+func BenchmarkScenarioGraphSourceVerifyOneHundredSixtyFiveAttempts(b *testing.B) {
+	b.Chdir("../..")
+	directory, receipt, _ := publishScenarioGraphPopulationFixture(
+		b, graphnative.MinimumReportableRepetitions, true,
+	)
+	options := graphnative.SourceBundleOptions{Directory: directory}
+	b.ReportAllocs()
+	b.ReportMetric(165, "attempts/op")
+	b.ResetTimer()
+	for range b.N {
+		if _, err := graphnative.VerifySourceBundle(context.Background(), options, receipt); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func publishScenarioGraphPopulationFixture(
+	tb testing.TB, repetitions int, retainBehavioralFailure bool,
+) (string, graphnative.SourceReceipt, scenarioGraphOutcome) {
+	tb.Helper()
+	selection, requirement, adapterFingerprint := scenarioGraphCommandFixture(tb)
+	directory := filepath.Join(tb.TempDir(), "review-population")
+	bundle, err := newScenarioGraphReviewBundle(directory, repetitions, requirement, nil)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	newExecutor := func(
+		config graphnative.LiveExecutorConfig,
+	) (graphnative.AttemptExecutor, error) {
+		return func(
+			ctx context.Context, key graphnative.AttemptKey, item scenario.Scenario,
+		) (graphnative.AttemptObservation, error) {
+			result := scenarioGraphSuccessfulResult(
+				tb, requirement, selection, adapterFingerprint, key, item,
+			)
+			if retainBehavioralFailure && key.CaseOrdinal == 1 && key.Trial == 1 {
+				result.Passed = false
+				result.Failures = []string{"hermetic behavioral failure retained for review"}
+			}
+			reference, err := config.Retain(ctx, graphnative.AttemptCapture{
+				Key: key, Result: result, RunSucceeded: true,
+				Audio: bench.SessionAudioCapture{
+					SampleRateHz: 24_000, RoomPCM16: []int16{1, 2},
+					Agent: []bench.TimedAudioChunk{{AtMS: 0.05, PCM16: []int16{3, 4}}},
+				},
+				Submitted: scenarioGraphSubmittedFixture(tb, item),
+			})
+			return graphnative.AttemptObservation{Result: result, Media: &reference}, err
+		}, nil
+	}
+	outcome, err := executeScenarioGraphChecklist(
+		context.Background(), selection, requirement, adapterFingerprint,
+		repetitions, time.Second, bundle, scenario.SpeechVoice{}, bench.SessionConfig{}, newExecutor,
+	)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	architecture := archbench.Result{
+		Version: archbench.ResultVersion,
+		Measurement: bench.Result{
+			Suite: graphnative.SuiteName, Expected: outcome.Checklist.Expected,
+			Provenance: bench.Provenance{StartedAt: time.Now().UTC().Format(time.RFC3339)},
+		},
+	}
+	if err := appendScenarioGraphArchitectureAttempts(&architecture, outcome.Attempts); err != nil {
+		tb.Fatal(err)
+	}
+	architecture.Finish()
+	architecturePayload, err := marshalScenarioArchitectureResult(architecture)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	receipt, err := bundle.Finalize(
+		context.Background(), outcome.Checklist, architecturePayload,
+		graphnative.SourceOrigin{
+			Kind: "hermetic_fixture", Transport: bench.TransportWebSocket,
+			EndpointSHA256: scenarioGraphTestDigest("hermetic-population-endpoint"),
+		},
+		directory+".receipt.json",
+	)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return directory, receipt, outcome
 }
 
 func TestScenarioGraphReviewRejectsSensitiveScorerResultBeforeAttemptWrites(t *testing.T) {
@@ -276,6 +456,33 @@ func TestScenarioLaunchProfileCannotBeIgnoredByCompatibilityExecution(t *testing
 	}, &output)
 	if err == nil || !strings.Contains(err.Error(), "graph-native architecture cell") {
 		t.Fatalf("compatibility launch-profile error = %v", err)
+	}
+}
+
+func TestScenarioGraphSourceOriginRemovesEndpointCredentialsAndQuery(t *testing.T) {
+	origin, err := scenarioGraphSourceOrigin(
+		"WSS://review-user:review-secret@example.COM/v1/realtime?api_key=query-secret#fragment",
+		bench.TransportWebSocket,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := scenarioGraphDigest([]byte("wss://example.com/v1/realtime"))
+	if origin.Kind != "live_realtime_endpoint" || origin.Transport != bench.TransportWebSocket ||
+		origin.EndpointSHA256 != want {
+		t.Fatalf("source origin = %+v, want endpoint digest %q", origin, want)
+	}
+	payload, err := json.Marshal(origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"review-user", "review-secret", "query-secret", "example.com"} {
+		if bytes.Contains(payload, []byte(secret)) {
+			t.Fatalf("source origin retained %q: %s", secret, payload)
+		}
+	}
+	if _, err := scenarioGraphSourceOrigin("relative/realtime", ""); err == nil {
+		t.Fatal("relative source endpoint unexpectedly accepted")
 	}
 }
 

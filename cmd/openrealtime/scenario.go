@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -39,6 +40,7 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 		timeout          = flags.Duration("timeout", 3*time.Minute, "bound on one scenario")
 		record           = flags.String("record", "", "write the timed record of each scenario to this file")
 		reviewDir        = flags.String("review-dir", "", "create this new directory with per-attempt stereo WAVs, a manifest, and a Markdown review")
+		reviewReceipt    = flags.String("review-receipt", "", "write the graph-native source receipt outside -review-dir (default: <review-dir>.receipt.json)")
 		repeat           = flags.Int("repeat", 1, "runs per scenario; latency from one run is noise, so a latency claim needs several")
 		experiment       = flags.String("architecture-manifest", "", "versioned P/T/C/N architecture experiment manifest")
 		architectureCell = flags.String("architecture-cell", "", "cell name in -architecture-manifest")
@@ -117,6 +119,9 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 	if !graphNative && strings.TrimSpace(*launchProfile) != "" {
 		return errors.New("-launch-profile requires a graph-native architecture cell")
 	}
+	if !graphNative && strings.TrimSpace(*reviewReceipt) != "" {
+		return errors.New("-review-receipt requires a graph-native architecture cell")
+	}
 	var graphSelection scenarioGraphSelection
 	if graphNative {
 		if strings.TrimSpace(*only) != "" {
@@ -175,6 +180,7 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 
 	var review *scenario.ReviewRun
 	var graphReview *scenarioGraphReviewBundle
+	var graphChecklist graphnative.Checklist
 	if !graphNative && strings.TrimSpace(*reviewDir) != "" {
 		review, err = scenario.NewReviewRun(scenario.ReviewOptions{
 			Directory:            *reviewDir,
@@ -214,6 +220,7 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 		if err != nil {
 			return err
 		}
+		graphChecklist = outcome.Checklist
 		if err := appendScenarioGraphArchitectureAttempts(architectureResult, outcome.Attempts); err != nil {
 			return err
 		}
@@ -280,6 +287,7 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 		fmt.Fprintf(output, "\n  scenarios %d/%d\n", passed, len(results))
 	}
 
+	var architecturePayload []byte
 	if architectureResult != nil {
 		architectureResult.Finish()
 		if err := migrationMode.retain(*architectureResult, output); err != nil {
@@ -292,10 +300,14 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 		} else {
 			fmt.Fprintln(output, "  reportable architecture cell")
 		}
+		architecturePayload, err = marshalScenarioArchitectureResult(*architectureResult)
+		if err != nil {
+			return err
+		}
 	}
 
 	if strings.TrimSpace(*record) != "" && architectureResult != nil {
-		if err := architectureResult.Write(*record); err != nil {
+		if err := writeScenarioArchitectureRecord(*record, architecturePayload); err != nil {
 			return fmt.Errorf("write the architecture record: %w", err)
 		}
 	} else if strings.TrimSpace(*record) != "" {
@@ -307,7 +319,48 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 			return fmt.Errorf("write the record: %w", err)
 		}
 	}
+	if graphNative {
+		origin, err := scenarioGraphSourceOrigin(config.Endpoint, config.Transport)
+		if err != nil {
+			return err
+		}
+		receiptPath := strings.TrimSpace(*reviewReceipt)
+		if receiptPath == "" {
+			receiptPath = graphReview.Directory() + ".receipt.json"
+		} else {
+			receiptPath, err = filepath.Abs(receiptPath)
+			if err != nil {
+				return fmt.Errorf("resolve graph-native source receipt path: %w", err)
+			}
+		}
+		receipt, err := graphReview.Finalize(
+			context.Background(), graphChecklist, architecturePayload, origin, receiptPath,
+		)
+		if err != nil {
+			return fmt.Errorf("finalize graph-native scenario source bundle: %w", err)
+		}
+		fmt.Fprintf(output, "  source       %s\n", receipt.ManifestSHA256)
+		fmt.Fprintf(output, "  receipt      %s\n", receiptPath)
+	}
 	return nil
+}
+
+func marshalScenarioArchitectureResult(result archbench.Result) ([]byte, error) {
+	payload, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode the architecture record: %w", err)
+	}
+	return append(payload, '\n'), nil
+}
+
+func writeScenarioArchitectureRecord(path string, payload []byte) error {
+	if strings.TrimSpace(path) == "" || len(payload) == 0 {
+		return errors.New("an architecture result needs a path and payload")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, payload, 0o644)
 }
 
 // configureScenarioSession selects evidence for a CLI-owned Realtime session.
