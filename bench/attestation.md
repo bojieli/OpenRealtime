@@ -57,6 +57,24 @@ openrealtime bench execution graph \
   -out agent.execution.json
 ```
 
+An explicitly legacy baseline is authored separately. The binding is always
+required; the three architecture fields are supplied together only when the
+legacy server was launched from a versioned architecture catalog entry:
+
+```text
+openrealtime bench execution legacy \
+  -binding cascade \
+  -architecture-id cascade.external-policy \
+  -architecture-revision 4 \
+  -architecture-fingerprint sha256:<reviewed-digest> \
+  -out baseline.execution.json
+```
+
+Omitting all three architecture flags records the older binding-only launch.
+Supplying a partial or mutable architecture identity is rejected. This command
+authors expected legacy identity; `LegacyStatusAttestor` must still capture
+the independently negotiated live status for every task.
+
 The Graph IR must already contain every node's configuration reference and
 digest. The command re-binds the supplied values and requires the resulting
 Graph IR fingerprint to be identical, then derives the configuration artifact

@@ -111,6 +111,21 @@ scenario variables where applicable. Candidate gates use the ordinary
 baseline gates before changing the implementation; a complete all-scope job
 also preserves that order.
 
+Author the reviewed legacy requirement rather than hand-writing its JSON. For
+a binding-only cascade baseline:
+
+```sh
+go run ./cmd/openrealtime bench execution legacy \
+  -binding cascade \
+  -out .runtime/migration/baseline.execution.json
+```
+
+If the baseline reports a versioned architecture identity, also pass its exact
+ID, positive revision, and lowercase SHA-256 with the three `-architecture-*`
+flags. The authoring command rejects partial identities. It does not count as
+runtime evidence; each benchmark still negotiates the endpoint and retains a
+fresh `LegacyStatusAttestor` proof.
+
 The scenario commands each own their 15 `trial-N` repetitions and each tau
 command owns its declared trials. The five one-shot suites bind their complete
 result to `trial-1`. Meeting cascade is the canonical paired Meeting Assistant

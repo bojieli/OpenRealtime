@@ -110,6 +110,75 @@ func TestBenchExecutionGraphAuthorsRequirementFromExactIndependentArtifacts(t *t
 	}
 }
 
+func TestBenchExecutionLegacyAuthorsReviewedCompatibilityRequirement(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "legacy.execution.json")
+	fingerprint := "sha256:" + strings.Repeat("a", 64)
+	var output bytes.Buffer
+	if err := runBench([]string{
+		"execution", "legacy", "-binding", "cascade",
+		"-architecture-id", "cascade.external-policy",
+		"-architecture-revision", "4",
+		"-architecture-fingerprint", fingerprint,
+		"-out", path,
+	}, &output); err != nil {
+		t.Fatalf("author legacy execution requirement: %v", err)
+	}
+	actual, err := bench.ReadExecutionRequirement(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := bench.RequireLegacy("cascade", binding.ArchitectureIdentity{
+		ID: "cascade.external-policy", Revision: 4, Fingerprint: fingerprint,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(actual, want) ||
+		!strings.Contains(output.String(), "cascade.external-policy@4") {
+		t.Fatalf("legacy requirement = %+v, output = %q", actual, output.String())
+	}
+
+	var stdout bytes.Buffer
+	if err := runBench([]string{
+		"execution", "legacy", "-binding", "cascade", "-out", "-",
+	}, &stdout); err != nil {
+		t.Fatalf("author unversioned legacy requirement: %v", err)
+	}
+	decoded, err := bench.ParseExecutionRequirement(stdout.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Kind != bench.ExecutionLegacy || decoded.Legacy.Binding != "cascade" ||
+		!decoded.Legacy.Architecture.Empty() {
+		t.Fatalf("unversioned legacy requirement = %+v", decoded)
+	}
+}
+
+func TestBenchExecutionLegacyRejectsIncompleteOrMutableIdentity(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		arguments []string
+		want      string
+	}{
+		{name: "missing binding", arguments: []string{"-out", "-"}, want: "requires -binding"},
+		{name: "partial architecture", arguments: []string{
+			"-binding", "cascade", "-architecture-id", "cascade.external-policy", "-out", "-",
+		}, want: "canonical ID and positive revision"},
+		{name: "mutable fingerprint", arguments: []string{
+			"-binding", "cascade", "-architecture-id", "cascade.external-policy",
+			"-architecture-revision", "4", "-architecture-fingerprint", "latest", "-out", "-",
+		}, want: "canonical SHA-256"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := runBench(append([]string{"execution", "legacy"}, test.arguments...), &bytes.Buffer{})
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("legacy authoring error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestBenchExecutionGraphRefusesUnboundMismatchedAndIncompleteInputs(t *testing.T) {
 	fixture := writeGraphExecutionFixture(t)
 	t.Run("unbound graph", func(t *testing.T) {
