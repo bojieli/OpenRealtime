@@ -279,6 +279,9 @@ func TestFreezeMeetingProfileBindsExactGraphResolutionAndDeployments(t *testing.
 		frozen.Profile.Server.Model != meetingLocalModelName ||
 		frozen.Profile.Server.TranscriptionModel != meetingLocalASRModel ||
 		frozen.Profile.Server.TokenEnvironment != "OPENREALTIME_TOKEN" ||
+		frozen.Profile.Server.VideoLimits.FPSCap != 5 ||
+		frozen.Profile.Server.VideoLimits.FPSCap !=
+			(frozen.Configuration.Foreground.FrameRateMilliHz+999)/1_000 ||
 		frozen.Configuration.FormatVersion != 2 ||
 		frozen.Configuration.Foreground.TTSVoice != "default" ||
 		frozen.Configuration.Foreground.VisualReflexMaxTokens != 96 ||

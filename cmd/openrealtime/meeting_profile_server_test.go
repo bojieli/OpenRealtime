@@ -140,12 +140,27 @@ func TestMeetingProductionProfileUsesTheSharedAuthenticatedRealtimeServer(t *tes
 				"output": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24_000}},
 			},
 			"openrealtime": map[string]any{
-				"version": openrealtime.Version,
-				"debug":   map[string]any{"enabled": true, "categories": []string{"session"}},
+				"version":  openrealtime.Version,
+				"supports": []string{string(openrealtime.FeatureVideoInput)},
+				"debug":    map[string]any{"enabled": true, "categories": []string{"session"}},
 			},
 		},
 	})
 	updated := client.awaitType(5*time.Second, "session.updated")
+	updatedSession, ok := updated["session"].(map[string]any)
+	if !ok {
+		t.Fatalf("Meeting session.updated = %+v", updated)
+	}
+	extension, ok := updatedSession["openrealtime"].(map[string]any)
+	if !ok {
+		t.Fatalf("Meeting OpenRealtime negotiation = %+v", updatedSession)
+	}
+	video, ok := extension["video"].(map[string]any)
+	fps, fpsOK := video["fps_cap"].(float64)
+	if !ok || !fpsOK || int(fps) != (frozen.Configuration.Foreground.FrameRateMilliHz+999)/1_000 {
+		t.Fatalf("Meeting negotiated video cadence = %+v, configured %d millihertz",
+			video, frozen.Configuration.Foreground.FrameRateMilliHz)
+	}
 	access := meetingInspectionAccess(t, updated)
 	live := awaitMeetingExactLiveResolution(t, endpoint, deploymentToken, access, frozen)
 	graph := frozen.Plan.Graph()

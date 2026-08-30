@@ -857,6 +857,12 @@ func freezeProductionMeetingProfile(
 		return frozenMeetingProfile{}, err
 	}
 	plan := prepared.Plan
+	videoLimits := openrealtime.DefaultLimits()
+	// The Meeting benchmark and foreground adapter both bind their cadence in
+	// millihertz, while the Realtime negotiation exposes an integer FPS cap.
+	// Round the cap up so the gateway never silently samples frames out of the
+	// exact configured condition before the graph can observe them.
+	videoLimits.FPSCap = (selected.Configuration.Foreground.FrameRateMilliHz + 999) / 1_000
 	profile, err := launchprofile.Freeze(launchprofile.Document{
 		FormatVersion: launchprofile.FormatVersion,
 		Name:          options.name, Revision: options.revision,
@@ -879,7 +885,7 @@ func freezeProductionMeetingProfile(
 			Model:            meetingLocalModelName, TranscriptionModel: meetingLocalASRModel,
 			ValidateWire: true, InspectionTokenTTLMS: options.inspectionTTL,
 			MaxAudioFrameBytes: options.maxAudioBytes,
-			VideoLimits:        openrealtime.DefaultLimits(),
+			VideoLimits:        videoLimits,
 		},
 	})
 	if err != nil {
