@@ -21,6 +21,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/bench/review"
 	"github.com/bojieli/OpenRealtime/bench/review/candidate/sourcebundle"
 )
@@ -39,14 +40,15 @@ type Options struct {
 }
 
 type CaseEvaluation struct {
-	AttemptID   string                         `json:"attempt_id"`
-	Suite       string                         `json:"suite"`
-	Case        string                         `json:"case"`
-	Trial       int                            `json:"trial"`
-	Recovered   bool                           `json:"recovered"`
-	ReceiptPath string                         `json:"receipt_path"`
-	Receipt     review.EvaluationBundleReceipt `json:"receipt"`
-	Assessment  review.Assessment              `json:"assessment"`
+	AttemptID     string                         `json:"attempt_id"`
+	Suite         string                         `json:"suite"`
+	Case          string                         `json:"case"`
+	Trial         int                            `json:"trial"`
+	Recovered     bool                           `json:"-"`
+	ReceiptPath   string                         `json:"receipt_path"`
+	Receipt       review.EvaluationBundleReceipt `json:"receipt"`
+	Deterministic bench.TaskOutcome              `json:"deterministic_outcome"`
+	Assessment    review.Assessment              `json:"assessment"`
 }
 
 type Result struct {
@@ -219,6 +221,7 @@ func Run(ctx context.Context, options Options) (result Result, resultErr error) 
 			evaluation.Trial != entry.Trial || evaluation.Suite != entry.Suite {
 			return result, errors.New("candidate review results differ from source order")
 		}
+		result.Evaluations[index].Deterministic = cloneOutcome(entry.Deterministic)
 	}
 	return cloneResult(result), nil
 }
@@ -338,24 +341,8 @@ func prepareOptions(options Options) (Options, error) {
 	if options.Concurrency < 1 || options.Concurrency > maximumConcurrency {
 		return Options{}, fmt.Errorf("candidate review concurrency must be 1..%d", maximumConcurrency)
 	}
-	if len(options.SensitiveValues) > 256 {
-		return Options{}, errors.New("candidate review sensitive-value count is oversized")
-	}
-	totalSensitive := 0
-	seenSensitive := make(map[string]struct{}, len(options.SensitiveValues))
-	for _, value := range options.SensitiveValues {
-		if len(value) < 8 || len(value) > 4096 || strings.TrimSpace(value) != value ||
-			!utf8.ValidString(value) || strings.IndexFunc(value, unicode.IsControl) >= 0 {
-			return Options{}, errors.New("candidate review sensitive value is short, oversized, or noncanonical")
-		}
-		if _, duplicate := seenSensitive[value]; duplicate {
-			continue
-		}
-		if totalSensitive > 64<<10-len(value) {
-			return Options{}, errors.New("candidate review sensitive-value bytes are oversized")
-		}
-		totalSensitive += len(value)
-		seenSensitive[value] = struct{}{}
+	if err := validateSensitiveValues(options.SensitiveValues); err != nil {
+		return Options{}, err
 	}
 	for _, item := range []struct{ label, path string }{
 		{"source directory", options.SourceDirectory},
@@ -384,6 +371,29 @@ func prepareOptions(options Options) (Options, error) {
 	}
 	options.SensitiveValues = slices.Clone(options.SensitiveValues)
 	return options, nil
+}
+
+func validateSensitiveValues(values []string) error {
+	if len(values) > 256 {
+		return errors.New("candidate review sensitive-value count is oversized")
+	}
+	totalSensitive := 0
+	seenSensitive := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if len(value) < 8 || len(value) > 4096 || strings.TrimSpace(value) != value ||
+			!utf8.ValidString(value) || strings.IndexFunc(value, unicode.IsControl) >= 0 {
+			return errors.New("candidate review sensitive value is short, oversized, or noncanonical")
+		}
+		if _, duplicate := seenSensitive[value]; duplicate {
+			continue
+		}
+		if totalSensitive > 64<<10-len(value) {
+			return errors.New("candidate review sensitive-value bytes are oversized")
+		}
+		totalSensitive += len(value)
+		seenSensitive[value] = struct{}{}
+	}
+	return nil
 }
 
 func ensureCampaignDirectories(options Options) error {
@@ -501,6 +511,7 @@ func cloneResult(source Result) Result {
 	result.Evaluations = make([]CaseEvaluation, len(source.Evaluations))
 	for index, evaluation := range source.Evaluations {
 		result.Evaluations[index] = evaluation
+		result.Evaluations[index].Deterministic = cloneOutcome(evaluation.Deterministic)
 		result.Evaluations[index].Assessment.SignificantProblems = slices.Clone(
 			evaluation.Assessment.SignificantProblems,
 		)
@@ -510,6 +521,23 @@ func cloneResult(source Result) Result {
 		result.Evaluations[index].Assessment.Limitations = slices.Clone(
 			evaluation.Assessment.Limitations,
 		)
+	}
+	return result
+}
+
+func cloneOutcome(source bench.TaskOutcome) bench.TaskOutcome {
+	result := source
+	result.Metrics = make(map[string]float64, len(source.Metrics))
+	for name, value := range source.Metrics {
+		result.Metrics[name] = value
+	}
+	result.Notes = make(map[string]string, len(source.Notes))
+	for name, value := range source.Notes {
+		result.Notes[name] = value
+	}
+	if source.Execution != nil {
+		copy := source.Execution.Clone()
+		result.Execution = &copy
 	}
 	return result
 }
