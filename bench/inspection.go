@@ -11,6 +11,114 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/ir"
 )
 
+// AuthorExpectedResolutionFromInspection freezes the complete task-independent
+// identity contract reported by one deployment probe. It is intentionally
+// stricter than ordinary per-task conversion: every graph node must have
+// crossed its live runtime and capability-reporting boundary, and the mount
+// must expose exact public/private deployment evidence. Registered or declared
+// startup metadata cannot be promoted into a reviewed benchmark requirement.
+//
+// Selected paths are deliberately absent. A resource-free probe has not run a
+// benchmark task, so it has no authority to infer semantic route selections
+// from incidental startup traffic. Callers that require a task path must add a
+// separately reviewed path contract before RequireGraph.
+func AuthorExpectedResolutionFromInspection(
+	graph ir.Graph,
+	configuration ArtifactIdentity,
+	snapshot inspect.Live,
+) (LiveResolution, error) {
+	if err := graph.Validate(); err != nil {
+		return LiveResolution{}, fmt.Errorf("author expected live resolution: graph: %w", err)
+	}
+	if err := validateInspectionIdentity(graph, configuration, snapshot); err != nil {
+		return LiveResolution{}, fmt.Errorf("author expected live resolution: %w", err)
+	}
+	if snapshot.State != "running" {
+		return LiveResolution{}, fmt.Errorf(
+			"author expected live resolution: probe graph state is %q, want running", snapshot.State,
+		)
+	}
+	if snapshot.Deployment == nil {
+		return LiveResolution{}, errors.New(
+			"author expected live resolution: probe has no exact deployment evidence",
+		)
+	}
+	deployment, err := inspect.CanonicalDeploymentEvidence(*snapshot.Deployment)
+	if err != nil {
+		return LiveResolution{}, fmt.Errorf("author expected live resolution: deployment evidence: %w", err)
+	}
+	if err := deployment.ValidateExact(); err != nil {
+		return LiveResolution{}, fmt.Errorf("author expected live resolution: deployment evidence: %w", err)
+	}
+
+	graphNodes := make(map[string]ir.Node, len(graph.Nodes))
+	for _, node := range graph.Nodes {
+		graphNodes[node.ID] = node
+	}
+	for nodeID := range snapshot.Nodes {
+		if _, found := graphNodes[nodeID]; !found {
+			return LiveResolution{}, fmt.Errorf(
+				"author expected live resolution: probe contains extra node %q", nodeID,
+			)
+		}
+	}
+	result := LiveResolution{
+		Deployment: &deployment,
+		Elements:   make([]ElementResolution, 0, len(graph.Nodes)),
+	}
+	for _, graphNode := range graph.Nodes {
+		live, found := snapshot.Nodes[graphNode.ID]
+		if !found {
+			return LiveResolution{}, fmt.Errorf(
+				"author expected live resolution: probe is missing graph node %q", graphNode.ID,
+			)
+		}
+		if live.Error != "" || live.State == "failed" {
+			return LiveResolution{}, fmt.Errorf(
+				"author expected live resolution: probe graph node %q is %q: %s",
+				graphNode.ID, live.State, live.Error,
+			)
+		}
+		if live.State != "running" {
+			return LiveResolution{}, fmt.Errorf(
+				"author expected live resolution: probe graph node %q state is %q, want running",
+				graphNode.ID, live.State,
+			)
+		}
+		if live.Resolution == nil {
+			return LiveResolution{}, fmt.Errorf(
+				"author expected live resolution: probe graph node %q has no resolution", graphNode.ID,
+			)
+		}
+		if live.Resolution.RuntimeEvidence != inspect.EvidenceLive {
+			return LiveResolution{}, fmt.Errorf(
+				"author expected live resolution: probe graph node %q runtime has %q evidence, want %q",
+				graphNode.ID, live.Resolution.RuntimeEvidence, inspect.EvidenceLive,
+			)
+		}
+		if live.Resolution.CapabilitiesEvidence != inspect.EvidenceLive {
+			return LiveResolution{}, fmt.Errorf(
+				"author expected live resolution: probe graph node %q capabilities have %q evidence, want %q",
+				graphNode.ID, live.Resolution.CapabilitiesEvidence, inspect.EvidenceLive,
+			)
+		}
+		converted, convertErr := convertNodeResolution(
+			graphNode, ElementResolution{}, *live.Resolution,
+		)
+		if convertErr != nil {
+			return LiveResolution{}, fmt.Errorf(
+				"author expected live resolution: probe graph node %q: %w", graphNode.ID, convertErr,
+			)
+		}
+		result.Elements = append(result.Elements, converted)
+	}
+	result = canonicalResolution(result)
+	if err := ValidateExpectedResolution(result); err != nil {
+		return LiveResolution{}, fmt.Errorf("author expected live resolution: %w", err)
+	}
+	return result, nil
+}
+
 // ResolutionFromInspection converts one management-plane snapshot into the
 // deployment resolution consumed by GraphAttestor. The expected resolution is
 // the reviewed contract used to author the benchmark cell: its capabilities
