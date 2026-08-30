@@ -288,7 +288,12 @@ type Record struct {
 }
 
 type Evaluation struct {
-	Record                 Record
+	Record Record
+	// Media owns the exact immutable media bytes passed to the provider. The
+	// paths in Record identify the source artifacts, while this snapshot lets a
+	// create-only retention layer preserve what was actually reviewed even if
+	// those source paths later change.
+	Media                  []PreparedMedia
 	ProviderImplementation []byte
 	ProviderConfiguration  []byte
 	ProviderRequest        []byte
@@ -450,8 +455,9 @@ func Evaluate(
 		Assessment: assessment,
 	}
 	evaluation = Evaluation{
-		Record: record, ProviderImplementation: implementation,
-		ProviderConfiguration: configuration, ProviderRequest: slices.Clone(response.Request),
+		Record: record, Media: clonePreparedRequest(prepared).Media,
+		ProviderImplementation: implementation,
+		ProviderConfiguration:  configuration, ProviderRequest: slices.Clone(response.Request),
 		Prompt: []byte(prepared.Prompt), Schema: slices.Clone(prepared.Schema),
 		Context: slices.Clone(prepared.Context), RawResponse: slices.Clone(response.Raw),
 		NormalizedOutput: slices.Clone(normalized),
@@ -474,6 +480,15 @@ func Evaluate(
 	} {
 		if prepared.ContainsDeclaredSensitiveValue(artifact) {
 			return Evaluation{}, errors.New("retained review evaluation contains a declared sensitive value")
+		}
+	}
+	for index := range evaluation.Media {
+		metadata, err := marshalCanonicalCompact(
+			evaluation.Media[index].Media, maximumPreparedPublicBytes,
+		)
+		if err != nil || prepared.ContainsDeclaredSensitiveValue(metadata) ||
+			prepared.ContainsDeclaredSensitiveValue(evaluation.Media[index].Bytes) {
+			return Evaluation{}, errors.New("retained review media contains a declared sensitive value")
 		}
 	}
 	if cause := ctx.Err(); cause != nil {
