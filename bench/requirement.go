@@ -14,12 +14,12 @@ import (
 )
 
 // MarshalExecutionRequirement returns one deterministic, newline-terminated
-// execution-requirement artifact. The historical zero value is valid when it
-// is embedded in an old cell, but it is not a useful standalone artifact: an
-// explicitly supplied file must select graph-native or legacy execution.
+// execution-requirement artifact. The zero value is reserved for local
+// diagnostics and is not a useful standalone artifact: an explicitly supplied
+// file must select graph-native execution.
 func MarshalExecutionRequirement(requirement ExecutionRequirement) ([]byte, error) {
 	if !requirement.Required() {
-		return nil, errors.New("encode execution requirement: an artifact must select graph-native or legacy execution")
+		return nil, errors.New("encode execution requirement: an artifact must select graph-native execution")
 	}
 	if err := requirement.Validate(); err != nil {
 		return nil, fmt.Errorf("encode execution requirement: %w", err)
@@ -34,7 +34,7 @@ func MarshalExecutionRequirement(requirement ExecutionRequirement) ([]byte, erro
 
 // ParseExecutionRequirement strictly decodes one standalone execution
 // requirement. It rejects unknown or duplicate fields, trailing values, and
-// the unattested historical zero value.
+// the unattested diagnostic zero value.
 func ParseExecutionRequirement(source []byte) (ExecutionRequirement, error) {
 	if err := strictjson.Validate(source); err != nil {
 		return ExecutionRequirement{}, fmt.Errorf("decode execution requirement: %w", err)
@@ -53,7 +53,7 @@ func ParseExecutionRequirement(source []byte) (ExecutionRequirement, error) {
 	}
 	if !requirement.Required() {
 		return ExecutionRequirement{}, errors.New(
-			"decode execution requirement: an artifact must select graph-native or legacy execution",
+			"decode execution requirement: an artifact must select graph-native execution",
 		)
 	}
 	if err := requirement.Validate(); err != nil {

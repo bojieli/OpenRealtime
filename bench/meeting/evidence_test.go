@@ -255,15 +255,12 @@ func TestMeetingEvidenceAttemptCloneOwnsCellAndRequirementGraphs(t *testing.T) {
 
 func fixtureMeetingExecutionEvidence(t testing.TB, scope string) bench.ExecutionEvidence {
 	t.Helper()
-	const digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	_, graph := fixtureMeetingGraphRequirement(t)
 	evidence, err := bench.FreezeExecutionEvidence(bench.ExecutionEvidence{
 		FormatVersion: bench.AttestationFormatVersion,
-		Kind:          bench.ExecutionLegacy,
+		Kind:          bench.ExecutionGraphNative,
 		Scope:         scope,
-		Legacy: &bench.LegacyEvidence{
-			Binding:       "meeting-fixture",
-			RuntimeDigest: digest,
-		},
+		Graph:         &graph,
 	})
 	if err != nil {
 		t.Fatal(err)

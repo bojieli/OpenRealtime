@@ -5,17 +5,15 @@ produced each task is also known. Source and binary provenance remain in
 `bench.Provenance`; execution attestation answers the separate question of
 which graph, values, runtime elements, providers, and routes that binary used.
 
-The schema is versioned by `AttestationFormatVersion` and has two deliberately
-incompatible kinds:
+The schema is versioned by `AttestationFormatVersion` and has one production
+kind:
 
 - `graph-native` records the frozen Graph IR identity, the separate values
   artifact identity, every node's config reference and digest, exact live
   element/runtime/capability resolutions, and any selected edge paths.
-- `legacy` records a compatibility binding and a digest of its live status. It
-  remains useful historical evidence but cannot satisfy a graph-native cell.
-
-An empty `Cell.Execution` is an unattested historical cell. This preserves old
-artifacts; it does not promote them to graph-native evidence.
+An empty `Cell.Execution` is reserved for local diagnostics and is never a
+reportable candidate. Old implementations and recorded numbers may be
+consulted separately, but neither has a runtime attestation kind.
 
 ## Authoring a graph-native cell
 
@@ -41,7 +39,7 @@ requirement, err = bench.ReadExecutionRequirement("agent.execution.json")
 
 `openrealtime bench architecture cell -execution agent.execution.json ...`
 attaches that reviewed contract to the authored cell. Omitting `-execution`
-retains the historical unattested-cell behavior; explicitly supplying `{}` is
+creates only an unattested diagnostic cell; explicitly supplying `{}` is
 rejected so a misspelled or empty artifact cannot look like graph attestation.
 The requirement contains expected identities and required paths. It is not
 runtime evidence and cannot substitute for the per-task proof below.
@@ -56,24 +54,6 @@ openrealtime bench execution graph \
   -resolution agent.expected-resolution.json \
   -out agent.execution.json
 ```
-
-An explicitly legacy baseline is authored separately. The binding is always
-required; the three architecture fields are supplied together only when the
-legacy server was launched from a versioned architecture catalog entry:
-
-```text
-openrealtime bench execution legacy \
-  -binding cascade \
-  -architecture-id cascade.external-policy \
-  -architecture-revision 4 \
-  -architecture-fingerprint sha256:<reviewed-digest> \
-  -out baseline.execution.json
-```
-
-Omitting all three architecture flags records the older binding-only launch.
-Supplying a partial or mutable architecture identity is rejected. This command
-authors expected legacy identity; `LegacyStatusAttestor` must still capture
-the independently negotiated live status for every task.
 
 The Graph IR must already contain every node's configuration reference and
 digest. The command re-binds the supplied values and requires the resulting
@@ -145,7 +125,3 @@ every later conversation would be false precision. Deployments with a trace
 store can instead provide tau-Voice's `TaskAttestor`, which resolves evidence
 after each task and may retain selected paths when its scope equals that task
 ID.
-
-Use `LegacyStatusAttestor` only for a status with no mounted graph. It refuses a
-graph-bearing status and produces evidence whose kind can never match a
-graph-native requirement.

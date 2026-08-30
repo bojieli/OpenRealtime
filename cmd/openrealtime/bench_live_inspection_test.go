@@ -190,60 +190,34 @@ func TestPrepareReviewedGraphInspectionPreservesExactDeploymentEvidence(t *testi
 	}
 }
 
-func TestInspectionGraphDoesNotChangeLegacyOrUnattestedCompatibility(t *testing.T) {
-	legacy, err := bench.RequireLegacy("cascade", binding.ArchitectureIdentity{})
+func TestUnattestedDiagnosticHasNoImplicitRuntimeAttestor(t *testing.T) {
+	var reads atomic.Int32
+	attestor, token, err := configureSessionBenchmarkAttestor(
+		bench.ExecutionRequirement{}, "",
+		"ws://127.0.0.1:8765/v1/realtime", "TOKEN_ENV",
+		func(string) string { reads.Add(1); return "diagnostic-token" },
+	)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("configure diagnostic session: %v", err)
 	}
-	tests := []struct {
-		name        string
-		requirement bench.ExecutionRequirement
-		wantLegacy  bool
-	}{
-		{name: "unattested"},
-		{name: "legacy", requirement: legacy, wantLegacy: true},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			var reads atomic.Int32
-			attestor, token, err := configureSessionBenchmarkAttestor(
-				test.requirement, "",
-				"ws://127.0.0.1:8765/v1/realtime", "TOKEN_ENV",
-				func(string) string { reads.Add(1); return "compatibility-token" },
-			)
-			if err != nil {
-				t.Fatalf("compatibility behavior changed: %v", err)
-			}
-			if token != "compatibility-token" || reads.Load() != 1 {
-				t.Fatalf("token = %q, reads = %d", token, reads.Load())
-			}
-			_, isLegacy := attestor.(bench.LegacyStatusAttestor)
-			if isLegacy != test.wantLegacy || (!test.wantLegacy && attestor != nil) {
-				t.Fatalf("attestor = %T, want legacy=%t", attestor, test.wantLegacy)
-			}
-		})
+	if token != "diagnostic-token" || reads.Load() != 1 || attestor != nil {
+		t.Fatalf("diagnostic token = %q, reads = %d, attestor = %T", token, reads.Load(), attestor)
 	}
 }
 
 func TestInspectionGraphIsNeverSilentlyIgnored(t *testing.T) {
-	legacy, err := bench.RequireLegacy("cascade", binding.ArchitectureIdentity{})
-	if err != nil {
-		t.Fatal(err)
+	var reads atomic.Int32
+	_, _, err := configureSessionBenchmarkAttestor(
+		bench.ExecutionRequirement{}, filepath.Join(t.TempDir(), "not-read.ir.json"),
+		"ws://127.0.0.1:8765/v1/realtime", "TOKEN_ENV",
+		func(string) string { reads.Add(1); return "secret" },
+	)
+	if err == nil || !strings.Contains(err.Error(),
+		"requires a graph-native -execution requirement") {
+		t.Fatalf("irrelevant inspection graph refusal = %v", err)
 	}
-	for _, requirement := range []bench.ExecutionRequirement{{}, legacy} {
-		var reads atomic.Int32
-		_, _, err := configureSessionBenchmarkAttestor(
-			requirement, filepath.Join(t.TempDir(), "not-read.ir.json"),
-			"ws://127.0.0.1:8765/v1/realtime", "TOKEN_ENV",
-			func(string) string { reads.Add(1); return "secret" },
-		)
-		if err == nil || !strings.Contains(err.Error(),
-			"requires a graph-native -execution requirement") {
-			t.Fatalf("irrelevant inspection graph refusal = %v", err)
-		}
-		if reads.Load() != 0 {
-			t.Fatalf("credential environment was read for an irrelevant inspection graph")
-		}
+	if reads.Load() != 0 {
+		t.Fatalf("credential environment was read for an irrelevant inspection graph")
 	}
 }
 

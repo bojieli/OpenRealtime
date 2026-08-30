@@ -13,12 +13,12 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/ir"
 )
 
-const benchmarkExecutionFlagHelp = "reviewed execution-requirement JSON; empty preserves the historical unattested cell"
+const benchmarkExecutionFlagHelp = "reviewed graph-native execution-requirement JSON; empty is diagnostic-only and never reportable"
 const benchmarkInspectionGraphFlagHelp = "exact bound Graph IR JSON used for authenticated live inspection"
 
 // attachBenchmarkExecution keeps the reviewed execution contract independent
-// from the flags that describe a benchmark's treatment. Omission is a strict
-// compatibility path: it does not alter the historical cell identity.
+// from the flags that describe a benchmark's treatment. Omission is permitted
+// only for diagnostic callers; release publication refuses unattested cells.
 func attachBenchmarkExecution(cell *bench.Cell, path string) error {
 	if strings.TrimSpace(path) == "" {
 		return nil
@@ -34,9 +34,8 @@ func attachBenchmarkExecution(cell *bench.Cell, path string) error {
 	return nil
 }
 
-// sharedDriverAttestor selects the evidence source available to suites that
-// own their Realtime protocol session. A legacy requirement can be proven from
-// the negotiated status itself. A graph-native requirement cannot: it needs a
+// sharedDriverAttestor selects the graph-native evidence source available to
+// suites that own their Realtime protocol session. A graph requirement needs a
 // deployment-backed live resolver, which callers must configure explicitly.
 func sharedDriverAttestor(
 	requirement bench.ExecutionRequirement, configured bench.RuntimeAttestor,
@@ -50,17 +49,10 @@ func sharedDriverAttestor(
 	if configured != nil {
 		return configured, nil
 	}
-	switch requirement.Kind {
-	case bench.ExecutionLegacy:
-		return bench.LegacyStatusAttestor{}, nil
-	case bench.ExecutionGraphNative:
-		return nil, errors.New(
-			"graph-native execution requirement needs a configured live runtime attestor; " +
-				"declared Graph IR and launch flags are not execution evidence",
-		)
-	default:
-		return nil, fmt.Errorf("unsupported benchmark execution kind %q", requirement.Kind)
-	}
+	return nil, errors.New(
+		"graph-native execution requirement needs a configured live runtime attestor; " +
+			"declared Graph IR and launch flags are not execution evidence",
+	)
 }
 
 // configureSessionBenchmarkAttestor binds one credential value to both the
@@ -82,7 +74,7 @@ func configureSessionBenchmarkAttestor(
 		strings.TrimSpace(inspectionGraphPath) != "" {
 		return nil, "", errors.New(
 			"-inspection-graph requires a graph-native -execution requirement; " +
-				"it cannot attest a legacy or unattested cell",
+				"it cannot attest an unattested diagnostic cell",
 		)
 	}
 

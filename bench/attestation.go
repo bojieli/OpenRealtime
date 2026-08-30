@@ -30,14 +30,12 @@ import (
 // attestation contract.
 const AttestationFormatVersion uint64 = 1
 
-// ExecutionKind distinguishes a graph-native execution proof from an explicit
-// compatibility-path proof. An empty kind is an historical, unattested cell;
-// it is retained for old benchmark artifacts but can never satisfy a
+// ExecutionKind identifies the execution-proof contract. An empty kind is
+// reserved for local diagnostic cells and can never satisfy a reportable
 // graph-native requirement.
 type ExecutionKind string
 
 const (
-	ExecutionLegacy      ExecutionKind = "legacy"
 	ExecutionGraphNative ExecutionKind = "graph-native"
 )
 
@@ -146,16 +144,6 @@ type GraphEvidence struct {
 	Paths         []GraphPath                 `json:"selected_paths,omitempty"`
 }
 
-// LegacyEvidence identifies a compatibility execution without claiming it is
-// graph-native. RuntimeDigest protects the complete status snapshot used to
-// make the record; its older, less formal fields remain intentionally distinct
-// from GraphEvidence.
-type LegacyEvidence struct {
-	Binding       string                       `json:"binding"`
-	Architecture  binding.ArchitectureIdentity `json:"architecture,omitempty"`
-	RuntimeDigest string                       `json:"runtime_digest"`
-}
-
 // ExecutionEvidence is one immutable, fingerprinted live-session proof.
 type ExecutionEvidence struct {
 	FormatVersion uint64        `json:"format_version"`
@@ -164,28 +152,18 @@ type ExecutionEvidence struct {
 	// It is optional for independently captured cell-wide evidence (such as an
 	// external tau-Voice preflight), and otherwise binds selected paths to the
 	// row whose execution produced them.
-	Scope       string          `json:"scope,omitempty"`
-	Fingerprint string          `json:"fingerprint"`
-	Graph       *GraphEvidence  `json:"graph,omitempty"`
-	Legacy      *LegacyEvidence `json:"legacy,omitempty"`
-}
-
-// LegacyRequirement describes an explicitly legacy benchmark cell. A legacy
-// requirement can constrain an architecture identity when that catalog was in
-// use, but it never accepts graph evidence as a substitute.
-type LegacyRequirement struct {
-	Binding      string                       `json:"binding"`
-	Architecture binding.ArchitectureIdentity `json:"architecture,omitempty"`
+	Scope       string         `json:"scope,omitempty"`
+	Fingerprint string         `json:"fingerprint"`
+	Graph       *GraphEvidence `json:"graph,omitempty"`
 }
 
 // ExecutionRequirement is the immutable execution contract carried by a
 // benchmark cell. For graph-native cells, Paths are required selections while
 // extra observed paths remain valid task evidence.
 type ExecutionRequirement struct {
-	FormatVersion uint64             `json:"format_version,omitempty"`
-	Kind          ExecutionKind      `json:"kind,omitempty"`
-	Graph         *GraphEvidence     `json:"graph,omitempty"`
-	Legacy        *LegacyRequirement `json:"legacy,omitempty"`
+	FormatVersion uint64         `json:"format_version,omitempty"`
+	Kind          ExecutionKind  `json:"kind,omitempty"`
+	Graph         *GraphEvidence `json:"graph,omitempty"`
 }
 
 // AttestationRequest binds the live status and server-issued inspection
@@ -203,10 +181,6 @@ func (requirement ExecutionRequirement) canonicalized() ExecutionRequirement {
 		copy := requirement.Graph.clone()
 		copy.canonicalize()
 		result.Graph = &copy
-	}
-	if requirement.Legacy != nil {
-		copy := *requirement.Legacy
-		result.Legacy = &copy
 	}
 	return result
 }
@@ -294,45 +268,6 @@ func (attestor GraphAttestor) Attest(
 	})
 }
 
-// LegacyStatusAttestor records the complete legacy status digest and refuses a
-// runtime that reports a mounted graph. This prevents a compatibility helper
-// from silently relabeling graph evidence as legacy (or vice versa).
-type LegacyStatusAttestor struct{}
-
-func (LegacyStatusAttestor) Attest(
-	ctx context.Context, request AttestationRequest,
-) (ExecutionEvidence, error) {
-	if ctx == nil {
-		return ExecutionEvidence{}, errors.New("attest legacy execution: nil context")
-	}
-	if err := context.Cause(ctx); err != nil {
-		return ExecutionEvidence{}, err
-	}
-	status := request.Status
-	if !status.Graph.Empty() {
-		return ExecutionEvidence{}, fmt.Errorf(
-			"attest legacy execution: runtime mounted graph %s@%d; graph evidence requires GraphAttestor",
-			status.Graph.ID, status.Graph.Revision,
-		)
-	}
-	if strings.TrimSpace(status.Binding) == "" {
-		return ExecutionEvidence{}, errors.New("attest legacy execution: live status has no binding")
-	}
-	digest, err := digestJSON(status)
-	if err != nil {
-		return ExecutionEvidence{}, fmt.Errorf("attest legacy execution: %w", err)
-	}
-	legacy := LegacyEvidence{
-		Binding: status.Binding, Architecture: status.Architecture, RuntimeDigest: digest,
-	}
-	return FreezeExecutionEvidence(ExecutionEvidence{
-		FormatVersion: AttestationFormatVersion,
-		Kind:          ExecutionLegacy,
-		Scope:         request.Scope,
-		Legacy:        &legacy,
-	})
-}
-
 // RequireGraph constructs a canonical graph-native cell requirement. Expected
 // contains the exact live element/capability identities the deployment is
 // meant to resolve and any route selections every task must report.
@@ -351,39 +286,22 @@ func RequireGraph(
 	}, nil
 }
 
-// RequireLegacy constructs an explicit compatibility-cell requirement.
-func RequireLegacy(
-	bindingName string, architecture binding.ArchitectureIdentity,
-) (ExecutionRequirement, error) {
-	requirement := ExecutionRequirement{
-		FormatVersion: AttestationFormatVersion,
-		Kind:          ExecutionLegacy,
-		Legacy: &LegacyRequirement{
-			Binding: bindingName, Architecture: architecture,
-		},
-	}
-	if err := requirement.Validate(); err != nil {
-		return ExecutionRequirement{}, err
-	}
-	return requirement, nil
-}
-
 // Required reports whether this cell demands per-task execution evidence.
 func (requirement ExecutionRequirement) Required() bool { return requirement.Kind != "" }
 
-// IsZero lets result and manifest JSON omit the unattested historical default.
-// This preserves existing artifact and manifest fingerprints while still
-// serializing an explicit legacy or graph-native contract.
+// IsZero lets diagnostic result and manifest JSON omit an unattested default.
+// A production execution requirement always serializes its graph-native
+// contract explicitly.
 func (requirement ExecutionRequirement) IsZero() bool {
 	return requirement.FormatVersion == 0 && requirement.Kind == "" &&
-		requirement.Graph == nil && requirement.Legacy == nil
+		requirement.Graph == nil
 }
 
 // Validate checks an execution requirement independently of any result.
 func (requirement ExecutionRequirement) Validate() error {
 	switch requirement.Kind {
 	case "":
-		if requirement.FormatVersion != 0 || requirement.Graph != nil || requirement.Legacy != nil {
+		if requirement.FormatVersion != 0 || requirement.Graph != nil {
 			return errors.New("an unattested execution requirement cannot carry evidence fields")
 		}
 		return nil
@@ -391,23 +309,12 @@ func (requirement ExecutionRequirement) Validate() error {
 		if requirement.FormatVersion != AttestationFormatVersion {
 			return fmt.Errorf("execution requirement format must be %d", AttestationFormatVersion)
 		}
-		if requirement.Graph == nil || requirement.Legacy != nil {
-			return errors.New("a graph-native execution requirement needs graph evidence only")
+		if requirement.Graph == nil {
+			return errors.New("a graph-native execution requirement needs graph evidence")
 		}
 		copy := requirement.Graph.clone()
 		copy.canonicalize()
 		return copy.validate()
-	case ExecutionLegacy:
-		if requirement.FormatVersion != AttestationFormatVersion {
-			return fmt.Errorf("execution requirement format must be %d", AttestationFormatVersion)
-		}
-		if requirement.Legacy == nil || requirement.Graph != nil {
-			return errors.New("a legacy execution requirement needs legacy identity only")
-		}
-		if !canonical(requirement.Legacy.Binding) {
-			return errors.New("legacy execution requirement needs a canonical binding name")
-		}
-		return validateArchitectureIdentity("legacy architecture", requirement.Legacy.Architecture, true)
 	default:
 		return fmt.Errorf("unknown execution requirement kind %q", requirement.Kind)
 	}
@@ -425,19 +332,6 @@ func (requirement ExecutionRequirement) MatchStatus(status binding.Status) error
 		return nil
 	case ExecutionGraphNative:
 		return matchLiveGraph(requirement.Graph.Graph, status.Graph)
-	case ExecutionLegacy:
-		if !status.Graph.Empty() {
-			return fmt.Errorf("expected legacy execution, runtime mounted graph %s@%d",
-				status.Graph.ID, status.Graph.Revision)
-		}
-		if status.Binding != requirement.Legacy.Binding {
-			return fmt.Errorf("legacy binding is %q, want %q", status.Binding, requirement.Legacy.Binding)
-		}
-		if !requirement.Legacy.Architecture.Empty() &&
-			status.Architecture != requirement.Legacy.Architecture {
-			return errors.New("legacy architecture identity differs")
-		}
-		return nil
 	default:
 		panic("validated execution requirement has an unknown kind")
 	}
@@ -458,24 +352,14 @@ func (requirement ExecutionRequirement) Match(evidence *ExecutionEvidence) error
 		return fmt.Errorf("invalid execution evidence: %w", err)
 	}
 	if !requirement.Required() {
-		// Valid evidence attached to an historical cell remains useful, but it
-		// does not retroactively turn that cell into a graph-native experiment.
+		// Valid graph evidence attached to a diagnostic cell remains inspectable,
+		// but it does not turn that cell into a reportable benchmark attempt.
 		return nil
 	}
 	if evidence.Kind != requirement.Kind {
 		return fmt.Errorf("execution evidence kind is %q, want %q", evidence.Kind, requirement.Kind)
 	}
 	switch requirement.Kind {
-	case ExecutionLegacy:
-		if evidence.Legacy.Binding != requirement.Legacy.Binding {
-			return fmt.Errorf("legacy binding is %q, want %q",
-				evidence.Legacy.Binding, requirement.Legacy.Binding)
-		}
-		if !requirement.Legacy.Architecture.Empty() &&
-			evidence.Legacy.Architecture != requirement.Legacy.Architecture {
-			return errors.New("legacy architecture identity differs")
-		}
-		return nil
 	case ExecutionGraphNative:
 		expected := requirement.Graph.clone()
 		expected.canonicalize()
@@ -552,10 +436,6 @@ func (evidence ExecutionEvidence) Clone() ExecutionEvidence {
 	if evidence.Graph != nil {
 		copy := evidence.Graph.clone()
 		result.Graph = &copy
-	}
-	if evidence.Legacy != nil {
-		copy := *evidence.Legacy
-		result.Legacy = &copy
 	}
 	return result
 }
@@ -732,21 +612,10 @@ func (evidence ExecutionEvidence) validateStructure() error {
 	}
 	switch evidence.Kind {
 	case ExecutionGraphNative:
-		if evidence.Graph == nil || evidence.Legacy != nil {
-			return errors.New("graph-native execution evidence needs graph evidence only")
+		if evidence.Graph == nil {
+			return errors.New("graph-native execution evidence needs graph evidence")
 		}
 		return evidence.Graph.validate()
-	case ExecutionLegacy:
-		if evidence.Legacy == nil || evidence.Graph != nil {
-			return errors.New("legacy execution evidence needs legacy evidence only")
-		}
-		if !canonical(evidence.Legacy.Binding) {
-			return errors.New("legacy execution evidence needs a canonical binding name")
-		}
-		if err := validateArchitectureIdentity("legacy architecture", evidence.Legacy.Architecture, true); err != nil {
-			return err
-		}
-		return validateSHA256("legacy runtime digest", evidence.Legacy.RuntimeDigest)
 	default:
 		return fmt.Errorf("unknown execution evidence kind %q", evidence.Kind)
 	}
@@ -1022,21 +891,6 @@ func livePlaceholder(value string) bool {
 		}
 	}
 	return strings.ContainsAny(normalized, "${}<>*")
-}
-
-func validateArchitectureIdentity(
-	label string, identity binding.ArchitectureIdentity, optional bool,
-) error {
-	if identity.Empty() {
-		if optional {
-			return nil
-		}
-		return fmt.Errorf("%s is missing", label)
-	}
-	if !canonical(identity.ID) || identity.Revision <= 0 {
-		return fmt.Errorf("%s requires a canonical ID and positive revision", label)
-	}
-	return validateSHA256(label+" fingerprint", identity.Fingerprint)
 }
 
 func validateSHA256(label, value string) error {

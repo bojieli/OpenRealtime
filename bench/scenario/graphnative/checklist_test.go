@@ -16,7 +16,7 @@ import (
 	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/bench/scenario"
 	graphnative "github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
-	legacy "github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
@@ -241,12 +241,11 @@ func TestChecklistRejectsConfigurationDriftBeforeAnyPluginRuns(t *testing.T) {
 		{name: "adapter fingerprint", mutate: func(config *graphnative.ChecklistConfig) {
 			config.AdapterProfileFingerprint = "latest"
 		}, want: "adapter profile"},
-		{name: "legacy requirement", mutate: func(config *graphnative.ChecklistConfig) {
+		{name: "removed execution kind", mutate: func(config *graphnative.ChecklistConfig) {
 			config.ExecutionRequirement = bench.ExecutionRequirement{
-				FormatVersion: bench.AttestationFormatVersion, Kind: bench.ExecutionLegacy,
-				Legacy: &bench.LegacyRequirement{Binding: "compat"},
+				FormatVersion: bench.AttestationFormatVersion, Kind: bench.ExecutionKind("legacy"),
 			}
-		}, want: "graph-native"},
+		}, want: "unknown execution requirement kind"},
 		{name: "requirement graph drift", mutate: func(config *graphnative.ChecklistConfig) {
 			copy := *config.ExecutionRequirement.Graph
 			copy.Graph.Fingerprint = checklistDigest("other-graph")
@@ -686,8 +685,8 @@ func (fixture checklistFixture) observation(
 ) graphnative.AttemptObservation {
 	t.Helper()
 	evidence := checklistEvidence(t, fixture.requirement, key.TaskID)
-	status := legacy.Status{
-		Graph: legacy.ArchitectureIdentity{
+	status := binding.Status{
+		Graph: binding.ArchitectureIdentity{
 			ID:          fixture.requirement.Graph.Graph.ID,
 			Revision:    int(fixture.requirement.Graph.Graph.Revision),
 			Fingerprint: fixture.requirement.Graph.Graph.Fingerprint,

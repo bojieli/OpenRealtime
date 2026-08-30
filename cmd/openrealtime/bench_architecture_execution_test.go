@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/bojieli/OpenRealtime/bench"
 	archbench "github.com/bojieli/OpenRealtime/bench/architecture"
-	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
@@ -20,21 +18,16 @@ import (
 
 func TestArchitectureExecutionAttachmentIsExplicitAndIdentityBearing(t *testing.T) {
 	cell := archbench.Cell{Name: "reviewed-cell"}
-	historicalID := cell.MeasurementCell().ID()
+	diagnosticID := cell.MeasurementCell().ID()
 	if err := attachArchitectureExecution(&cell, ""); err != nil {
-		t.Fatalf("omitted execution artifact changed historical authoring: %v", err)
+		t.Fatalf("omitted execution artifact changed diagnostic authoring: %v", err)
 	}
-	if cell.Execution.Required() || cell.MeasurementCell().ID() != historicalID {
+	if cell.Execution.Required() || cell.MeasurementCell().ID() != diagnosticID {
 		t.Fatalf("omitted execution artifact changed the cell: %+v", cell.Execution)
 	}
 
-	requirement, err := bench.RequireLegacy("cascade", binding.ArchitectureIdentity{
-		ID: "cascade.external-policy", Revision: 4,
-		Fingerprint: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := writeGraphExecutionFixture(t)
+	requirement := requirementForGraphFixture(t, fixture)
 	path := filepath.Join(t.TempDir(), "cell.execution.json")
 	if err := bench.WriteExecutionRequirement(path, requirement); err != nil {
 		t.Fatal(err)
@@ -42,7 +35,7 @@ func TestArchitectureExecutionAttachmentIsExplicitAndIdentityBearing(t *testing.
 	if err := attachArchitectureExecution(&cell, path); err != nil {
 		t.Fatalf("attach reviewed execution requirement: %v", err)
 	}
-	if cell.Execution.Kind != bench.ExecutionLegacy || cell.MeasurementCell().ID() == historicalID {
+	if cell.Execution.Kind != bench.ExecutionGraphNative || cell.MeasurementCell().ID() == diagnosticID {
 		t.Fatalf("execution requirement was not attached to cell identity: %+v", cell.Execution)
 	}
 }
@@ -58,8 +51,13 @@ func TestArchitectureExecutionAttachmentRejectsEvidenceAndEmptyArtifacts(t *test
 		t.Fatalf("empty explicit execution artifact was accepted: %v", err)
 	}
 
-	evidence, err := (bench.LegacyStatusAttestor{}).Attest(context.Background(), bench.AttestationRequest{
-		Status: binding.Status{Binding: "cascade"},
+	fixture := writeGraphExecutionFixture(t)
+	requirement := requirementForGraphFixture(t, fixture)
+	evidence, err := bench.FreezeExecutionEvidence(bench.ExecutionEvidence{
+		FormatVersion: bench.AttestationFormatVersion,
+		Kind:          bench.ExecutionGraphNative,
+		Scope:         "reviewed-cell",
+		Graph:         requirement.Graph,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -110,72 +108,16 @@ func TestBenchExecutionGraphAuthorsRequirementFromExactIndependentArtifacts(t *t
 	}
 }
 
-func TestBenchExecutionLegacyAuthorsReviewedCompatibilityRequirement(t *testing.T) {
-	directory := t.TempDir()
-	path := filepath.Join(directory, "legacy.execution.json")
-	fingerprint := "sha256:" + strings.Repeat("a", 64)
-	var output bytes.Buffer
-	if err := runBench([]string{
-		"execution", "legacy", "-binding", "cascade",
-		"-architecture-id", "cascade.external-policy",
-		"-architecture-revision", "4",
-		"-architecture-fingerprint", fingerprint,
-		"-out", path,
-	}, &output); err != nil {
-		t.Fatalf("author legacy execution requirement: %v", err)
+func TestBenchExecutionRejectsRemovedLegacyKind(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "must-not-exist.json")
+	err := runBench([]string{
+		"execution", "legacy", "-binding", "cascade", "-out", path,
+	}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "must be graph-native") {
+		t.Fatalf("removed legacy execution kind was accepted: %v", err)
 	}
-	actual, err := bench.ReadExecutionRequirement(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want, err := bench.RequireLegacy("cascade", binding.ArchitectureIdentity{
-		ID: "cascade.external-policy", Revision: 4, Fingerprint: fingerprint,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(actual, want) ||
-		!strings.Contains(output.String(), "cascade.external-policy@4") {
-		t.Fatalf("legacy requirement = %+v, output = %q", actual, output.String())
-	}
-
-	var stdout bytes.Buffer
-	if err := runBench([]string{
-		"execution", "legacy", "-binding", "cascade", "-out", "-",
-	}, &stdout); err != nil {
-		t.Fatalf("author unversioned legacy requirement: %v", err)
-	}
-	decoded, err := bench.ParseExecutionRequirement(stdout.Bytes())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if decoded.Kind != bench.ExecutionLegacy || decoded.Legacy.Binding != "cascade" ||
-		!decoded.Legacy.Architecture.Empty() {
-		t.Fatalf("unversioned legacy requirement = %+v", decoded)
-	}
-}
-
-func TestBenchExecutionLegacyRejectsIncompleteOrMutableIdentity(t *testing.T) {
-	for _, test := range []struct {
-		name      string
-		arguments []string
-		want      string
-	}{
-		{name: "missing binding", arguments: []string{"-out", "-"}, want: "requires -binding"},
-		{name: "partial architecture", arguments: []string{
-			"-binding", "cascade", "-architecture-id", "cascade.external-policy", "-out", "-",
-		}, want: "canonical ID and positive revision"},
-		{name: "mutable fingerprint", arguments: []string{
-			"-binding", "cascade", "-architecture-id", "cascade.external-policy",
-			"-architecture-revision", "4", "-architecture-fingerprint", "latest", "-out", "-",
-		}, want: "canonical SHA-256"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			err := runBench(append([]string{"execution", "legacy"}, test.arguments...), &bytes.Buffer{})
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("legacy authoring error = %v, want %q", err, test.want)
-			}
-		})
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("removed legacy command created output: %v", statErr)
 	}
 }
 

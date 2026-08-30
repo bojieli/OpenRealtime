@@ -11,7 +11,8 @@ import (
 
 	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/bench/tauvoice"
-	"github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/graph/ir"
 )
 
 func TestConditionsCoverTheAblationsTau2Accepts(t *testing.T) {
@@ -36,10 +37,7 @@ func TestConditionsCoverTheAblationsTau2Accepts(t *testing.T) {
 }
 
 func TestAttestedTauVoiceCellRequiresIndependentEvidenceBeforeRunning(t *testing.T) {
-	requirement, err := bench.RequireLegacy("cascade", binding.ArchitectureIdentity{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	requirement, evidence := fixtureTauGraphExecution(t)
 	cell := bench.Reference()
 	cell.Execution = requirement
 	config := tauvoice.Config{Cell: cell}
@@ -48,17 +46,48 @@ func TestAttestedTauVoiceCellRequiresIndependentEvidenceBeforeRunning(t *testing
 		t.Fatalf("tau-Voice reached its expensive environment checks without evidence: %v", err)
 	}
 
-	evidence, err := (bench.LegacyStatusAttestor{}).Attest(context.Background(), bench.AttestationRequest{
-		Status: binding.Status{Binding: "cascade"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	config.ExecutionEvidence = &evidence
 	if err := config.Verify(context.Background()); err == nil ||
 		!strings.Contains(err.Error(), "prepared tau2-bench checkout") {
 		t.Fatalf("matching evidence was not accepted before ordinary environment validation: %v", err)
 	}
+}
+
+func fixtureTauGraphExecution(t testing.TB) (bench.ExecutionRequirement, bench.ExecutionEvidence) {
+	t.Helper()
+	const digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	graph := bench.GraphEvidence{
+		Graph: bench.GraphIdentity{
+			FormatVersion: ir.FormatVersion, ID: "tau_voice", Revision: 1, Fingerprint: digest,
+		},
+		Configuration: bench.ArtifactIdentity{ID: "config://tau-voice", Digest: digest},
+		Nodes: []bench.GraphNodeEvidence{{
+			Node: "agent",
+			Element: element.Identity{
+				Name: "tauvoice.FixtureAgent", Revision: 1, Digest: digest,
+			},
+			Implementation: "fixture.tauvoice.agent.v1",
+			Config:         bench.ArtifactIdentity{ID: "config://tau-voice/agent", Digest: digest},
+			Runtime:        bench.ArtifactIdentity{ID: "runtime://tau-voice/agent", Revision: "1"},
+		}},
+	}
+	requirement := bench.ExecutionRequirement{
+		FormatVersion: bench.AttestationFormatVersion,
+		Kind:          bench.ExecutionGraphNative,
+		Graph:         &graph,
+	}
+	if err := requirement.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := bench.FreezeExecutionEvidence(bench.ExecutionEvidence{
+		FormatVersion: bench.AttestationFormatVersion,
+		Kind:          bench.ExecutionGraphNative,
+		Graph:         &graph,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return requirement, evidence
 }
 
 // Every check in Verify is a way to produce numbers that look fine and mean

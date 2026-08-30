@@ -15,7 +15,8 @@ import (
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/bench"
-	"github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/graph/ir"
 )
 
 func TestEncodeReviewStereoWAVAlignsChannelsAndSaturatesOverlaps(t *testing.T) {
@@ -62,12 +63,7 @@ func TestReviewRunWritesCompleteElevenCaseMultimodalBundle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	evidence, err := (bench.LegacyStatusAttestor{}).Attest(t.Context(), bench.AttestationRequest{
-		Scope: "fixture#1", Status: binding.Status{Binding: "fixture-legacy-adapter"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, evidence := fixtureScenarioGraphExecution(t, "fixture#1")
 	for caseIndex, item := range suite {
 		for trial := 1; trial <= 2; trial++ {
 			capture := bench.SessionAudioCapture{
@@ -176,7 +172,7 @@ func TestReviewRunWritesCompleteElevenCaseMultimodalBundle(t *testing.T) {
 	}
 	if manifest.Attempts[2].Evidence == nil ||
 		manifest.Attempts[2].EvidenceStatus != "attested" ||
-		manifest.Attempts[2].Evidence.Kind != bench.ExecutionLegacy ||
+		manifest.Attempts[2].Evidence.Kind != bench.ExecutionGraphNative ||
 		manifest.Attempts[2].Evidence.Fingerprint != evidence.Fingerprint {
 		t.Fatalf("execution evidence identity = %+v", manifest.Attempts[2].Evidence)
 	}
@@ -393,16 +389,7 @@ func TestReviewAudioRejectsInvalidRatesAndTimelineOffsets(t *testing.T) {
 }
 
 func TestReviewRunRequiresMatchingExecutionEvidenceForReportability(t *testing.T) {
-	requirement, err := bench.RequireLegacy("fixture-legacy-adapter", binding.ArchitectureIdentity{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	evidence, err := (bench.LegacyStatusAttestor{}).Attest(t.Context(), bench.AttestationRequest{
-		Scope: "fixture#1", Status: binding.Status{Binding: "fixture-legacy-adapter"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	requirement, evidence := fixtureScenarioGraphExecution(t, "fixture#1")
 	directory := filepath.Join(t.TempDir(), "required-evidence")
 	run, err := NewReviewRun(ReviewOptions{
 		Directory: directory, Scenarios: []Scenario{{Name: "fixture"}}, Repeats: 1,
@@ -430,6 +417,51 @@ func TestReviewRunRequiresMatchingExecutionEvidenceForReportability(t *testing.T
 		"Behavioral reportable: yes") {
 		t.Fatal("human review did not state exact-evidence reportability")
 	}
+}
+
+func fixtureScenarioGraphExecution(
+	t testing.TB, scope string,
+) (bench.ExecutionRequirement, bench.ExecutionEvidence) {
+	t.Helper()
+	const digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	graph := bench.GraphEvidence{
+		Graph: bench.GraphIdentity{
+			FormatVersion: ir.FormatVersion, ID: "scenario_review", Revision: 1,
+			Fingerprint: digest,
+		},
+		Configuration: bench.ArtifactIdentity{ID: "config://scenario-review", Digest: digest},
+		Nodes: []bench.GraphNodeEvidence{{
+			Node: "interaction",
+			Element: element.Identity{
+				Name: "scenario.FixtureInteraction", Revision: 1, Digest: digest,
+			},
+			Implementation: "fixture.scenario.interaction.v1",
+			Config: bench.ArtifactIdentity{
+				ID: "config://scenario-review/interaction", Digest: digest,
+			},
+			Runtime: bench.ArtifactIdentity{
+				ID: "runtime://scenario-review/interaction", Revision: "1",
+			},
+		}},
+	}
+	requirement := bench.ExecutionRequirement{
+		FormatVersion: bench.AttestationFormatVersion,
+		Kind:          bench.ExecutionGraphNative,
+		Graph:         &graph,
+	}
+	if err := requirement.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := bench.FreezeExecutionEvidence(bench.ExecutionEvidence{
+		FormatVersion: bench.AttestationFormatVersion,
+		Kind:          bench.ExecutionGraphNative,
+		Scope:         scope,
+		Graph:         &graph,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return requirement, evidence
 }
 
 func TestReviewRunRejectsSymlinkedStillBeforeCreatingDirectory(t *testing.T) {

@@ -229,7 +229,7 @@ func TestExecutionRequirementArtifactIsDeterministicStrictAndExplicit(t *testing
 	}
 	if _, err := bench.MarshalExecutionRequirement(bench.ExecutionRequirement{}); err == nil ||
 		!strings.Contains(err.Error(), "must select") {
-		t.Fatalf("historical zero value became an explicit requirement artifact: %v", err)
+		t.Fatalf("diagnostic zero value became an explicit requirement artifact: %v", err)
 	}
 	if _, err := bench.ParseExecutionRequirement([]byte("{}\n")); err == nil ||
 		!strings.Contains(err.Error(), "must select") {
@@ -265,7 +265,7 @@ func TestGraphNativeResultsRefuseMissingMismatchedOrCorruptEvidence(t *testing.T
 		t.Fatal(err)
 	}
 	if bytes.Contains(historicalJSON, []byte(`"execution"`)) {
-		t.Fatalf("zero execution contract changed historical cell JSON: %s", historicalJSON)
+		t.Fatalf("zero execution contract changed diagnostic cell JSON: %s", historicalJSON)
 	}
 	result.Cell.Execution = requirement
 	if result.Cell.ID() == historicalID {
@@ -343,60 +343,25 @@ func TestGraphNativeResultsRefuseMissingMismatchedOrCorruptEvidence(t *testing.T
 	}
 }
 
-func TestLegacyEvidenceIsExplicitAndCannotSatisfyGraphCells(t *testing.T) {
-	architecture := binding.ArchitectureIdentity{
-		ID: "legacy-cascade", Revision: 4, Fingerprint: testDigest('8'),
+func TestExecutionArtifactsRejectRemovedLegacyKinds(t *testing.T) {
+	legacyRequirement := []byte(`{"format_version":1,"kind":"legacy","legacy":{"binding":"cascade"}}`)
+	if _, err := bench.ParseExecutionRequirement(legacyRequirement); err == nil ||
+		!strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("removed legacy requirement was accepted: %v", err)
 	}
-	legacy, err := (bench.LegacyStatusAttestor{}).Attest(context.Background(), bench.AttestationRequest{
-		Scope: "a", Status: binding.Status{Binding: "cascade", Architecture: architecture},
-	})
-	if err != nil {
-		t.Fatalf("attest legacy status: %v", err)
-	}
-	if legacy.Kind != bench.ExecutionLegacy || legacy.Graph != nil || legacy.Legacy == nil {
-		t.Fatalf("legacy evidence was mislabeled: %+v", legacy)
-	}
-	legacyRequirement, err := bench.RequireLegacy("cascade", architecture)
-	if err != nil {
-		t.Fatalf("build legacy requirement: %v", err)
-	}
-	if err := legacyRequirement.Match(&legacy); err != nil {
-		t.Fatalf("matching explicit legacy evidence was refused: %v", err)
-	}
-
-	graphRequirement, graphEvidence := graphAttestation(t)
-	if err := graphRequirement.Match(&legacy); err == nil || !strings.Contains(err.Error(), "kind") {
-		t.Fatalf("legacy evidence satisfied a graph cell: %v", err)
-	}
-	if err := legacyRequirement.Match(&graphEvidence); err == nil || !strings.Contains(err.Error(), "kind") {
-		t.Fatalf("graph evidence silently relabeled a legacy cell: %v", err)
-	}
-
-	graph := graphEvidence.Graph.Graph
-	if _, err := (bench.LegacyStatusAttestor{}).Attest(context.Background(), bench.AttestationRequest{
-		Status: binding.Status{Binding: "cascade", Graph: binding.ArchitectureIdentity{
-			ID: graph.ID, Revision: int(graph.Revision), Fingerprint: graph.Fingerprint,
-		}},
-	}); err == nil || !strings.Contains(err.Error(), "GraphAttestor") {
-		t.Fatalf("legacy attestor accepted a mounted graph: %v", err)
-	}
-
-	// Historical cells remain compatible, but valid attached legacy evidence
-	// does not change their unattested execution contract.
-	historical := complete("historical", 1, 1)
-	historical.Tasks[0].Execution = &legacy
-	if historical.Cell.Execution.Required() {
-		t.Fatal("legacy evidence retroactively changed the historical cell")
-	}
-	if err := historical.Reportable(); err != nil {
-		t.Fatalf("valid explicit legacy evidence broke historical compatibility: %v", err)
+	legacyEvidence := []byte(`{"format_version":1,"kind":"legacy","fingerprint":"` +
+		testDigest('8') + `","legacy":{"binding":"cascade","runtime_digest":"` +
+		testDigest('7') + `"}}`)
+	if _, err := bench.ParseExecutionEvidence(legacyEvidence); err == nil ||
+		!strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("removed legacy evidence was accepted: %v", err)
 	}
 }
 
-func TestArchivedUnattestedRowsCannotSatisfyAMigratedGraphRequirement(t *testing.T) {
+func TestArchivedUnattestedRowsCannotSatisfyGraphRequirement(t *testing.T) {
 	requirement, _ := graphAttestation(t)
-	historical := complete("historical", 1, 1)
-	payload, err := json.Marshal(historical)
+	diagnostic := complete("diagnostic", 1, 1)
+	payload, err := json.Marshal(diagnostic)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,19 +370,19 @@ func TestArchivedUnattestedRowsCannotSatisfyAMigratedGraphRequirement(t *testing
 		t.Fatal(err)
 	}
 	if archived.Cell.Execution.Required() || archived.Tasks[0].Execution != nil {
-		t.Fatalf("fixture is not an unattested historical result: %+v", archived)
+		t.Fatalf("fixture is not an unattested diagnostic result: %+v", archived)
 	}
 
-	// Migrating the declared treatment changes the cell identity and makes
-	// evidence mandatory for every completed archived row. The old score stays
-	// inspectable, but it cannot be relabeled as a graph-native measurement.
-	historicalID := archived.Cell.ID()
+	// Adding the declared graph treatment changes the cell identity and makes
+	// evidence mandatory for every completed row. A diagnostic score cannot be
+	// relabeled as a graph-native measurement.
+	diagnosticID := archived.Cell.ID()
 	archived.Cell.Execution = requirement
-	if archived.Cell.ID() == historicalID {
-		t.Fatal("graph migration did not change the historical cell identity")
+	if archived.Cell.ID() == diagnosticID {
+		t.Fatal("graph requirement did not change the diagnostic cell identity")
 	}
 	if err := archived.Reportable(); err == nil || !strings.Contains(err.Error(), "evidence is missing") {
-		t.Fatalf("an archived unattested row satisfied a migrated graph requirement: %v", err)
+		t.Fatalf("an unattested row satisfied a graph requirement: %v", err)
 	}
 }
 

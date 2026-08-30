@@ -352,27 +352,21 @@ func TestScenarioGraphAttestorRejectsForgedLiveInspectionEvidence(t *testing.T) 
 	}
 }
 
-func TestScenarioInspectionGraphCannotAttestLegacyOrUnattestedExecution(t *testing.T) {
-	legacy, err := bench.RequireLegacy("cascade", binding.ArchitectureIdentity{})
-	if err != nil {
-		t.Fatal(err)
+func TestScenarioInspectionGraphCannotAttestUnattestedExecution(t *testing.T) {
+	var environmentReads atomic.Int32
+	_, err := configureScenarioSession(bench.SessionConfig{
+		Endpoint: "ws://127.0.0.1:8765/v1/realtime",
+	}, bench.ExecutionRequirement{}, filepath.Join(t.TempDir(), "must-not-be-read.ir.json"),
+		"SCENARIO_TOKEN", func(string) string {
+			environmentReads.Add(1)
+			return "secret"
+		})
+	if err == nil || !strings.Contains(err.Error(),
+		"requires a graph-native -execution requirement") {
+		t.Fatalf("unattested scenario inspection graph refusal = %v", err)
 	}
-	for _, requirement := range []bench.ExecutionRequirement{{}, legacy} {
-		var environmentReads atomic.Int32
-		_, err := configureScenarioSession(bench.SessionConfig{
-			Endpoint: "ws://127.0.0.1:8765/v1/realtime",
-		}, requirement, filepath.Join(t.TempDir(), "must-not-be-read.ir.json"),
-			"SCENARIO_TOKEN", func(string) string {
-				environmentReads.Add(1)
-				return "secret"
-			})
-		if err == nil || !strings.Contains(err.Error(),
-			"requires a graph-native -execution requirement") {
-			t.Fatalf("irrelevant scenario inspection graph refusal = %v", err)
-		}
-		if environmentReads.Load() != 0 {
-			t.Fatal("credential was read for a legacy/unattested inspection graph")
-		}
+	if environmentReads.Load() != 0 {
+		t.Fatal("credential was read for an unattested inspection graph")
 	}
 
 	err = runScenario([]string{
@@ -384,50 +378,25 @@ func TestScenarioInspectionGraphCannotAttestLegacyOrUnattestedExecution(t *testi
 	}
 }
 
-func TestScenarioOmittedAndLegacyEvidencePathsRemainCompatible(t *testing.T) {
-	legacy, err := bench.RequireLegacy("cascade", binding.ArchitectureIdentity{})
+func TestScenarioUnattestedModeRemainsDiagnosticOnly(t *testing.T) {
+	var environmentReads atomic.Int32
+	config, err := configureScenarioSession(bench.SessionConfig{
+		Endpoint: "ws://127.0.0.1:8765/v1/realtime",
+		Model:    "diagnostic-model",
+	}, bench.ExecutionRequirement{}, "", "SCENARIO_TOKEN", func(string) string {
+		environmentReads.Add(1)
+		return "diagnostic-bearer"
+	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("configure scenario diagnostic: %v", err)
 	}
-	tests := []struct {
-		name        string
-		requirement bench.ExecutionRequirement
-		capture     bool
-		wantLegacy  bool
-	}{
-		{name: "historical unattested"},
-		{name: "architecture capture remains enabled", capture: true},
-		{name: "reviewed legacy", requirement: legacy, capture: true, wantLegacy: true},
+	if config.Token != "diagnostic-bearer" || config.Model != "diagnostic-model" ||
+		environmentReads.Load() != 1 || config.CaptureRuntimeEvidence || config.RuntimeAttestor != nil {
+		t.Fatalf("scenario diagnostic config = %+v, reads=%d", config, environmentReads.Load())
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			var environmentReads atomic.Int32
-			config, err := configureScenarioSession(bench.SessionConfig{
-				Endpoint: "ws://127.0.0.1:8765/v1/realtime",
-				Model:    "compatibility-model", CaptureRuntimeEvidence: test.capture,
-			}, test.requirement, "", "SCENARIO_TOKEN", func(string) string {
-				environmentReads.Add(1)
-				return "compatibility-bearer"
-			})
-			if err != nil {
-				t.Fatalf("scenario compatibility path: %v", err)
-			}
-			if config.Token != "compatibility-bearer" || config.Model != "compatibility-model" ||
-				environmentReads.Load() != 1 || config.CaptureRuntimeEvidence != test.capture {
-				t.Fatalf("scenario compatibility config = %+v, reads=%d", config, environmentReads.Load())
-			}
-			_, isLegacy := config.RuntimeAttestor.(bench.LegacyStatusAttestor)
-			if isLegacy != test.wantLegacy || (!test.wantLegacy && config.RuntimeAttestor != nil) {
-				t.Fatalf("scenario compatibility attestor = %T", config.RuntimeAttestor)
-			}
-			taskConfig := scenarioSessionForTask(config, "an ordinary question#1")
-			if test.wantLegacy && taskConfig.AttestationScope != "an ordinary question#1" {
-				t.Fatalf("legacy scenario evidence scope = %q", taskConfig.AttestationScope)
-			}
-			if !test.wantLegacy && taskConfig.AttestationScope != "" {
-				t.Fatalf("unattested scenario gained scope %q", taskConfig.AttestationScope)
-			}
-		})
+	taskConfig := scenarioSessionForTask(config, "an ordinary question#1")
+	if taskConfig.AttestationScope != "" {
+		t.Fatalf("unattested scenario gained scope %q", taskConfig.AttestationScope)
 	}
 }
 
@@ -443,19 +412,14 @@ func scenarioInspectionAccess(sessionID string, fill byte) openrealtime.Inspecti
 }
 
 func TestScenarioTaskPreservesTaskExecutionEvidence(t *testing.T) {
-	evidence, err := (bench.LegacyStatusAttestor{}).Attest(
-		context.Background(),
-		bench.AttestationRequest{
-			Scope: "ordinary-question#1",
-			Status: binding.Status{
-				Binding: "cascade",
-				Architecture: binding.ArchitectureIdentity{
-					ID: "cascade.external-policy", Revision: 4,
-					Fingerprint: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-				},
-			},
-		},
-	)
+	fixture := writeGraphExecutionFixture(t)
+	requirement := requirementForGraphFixture(t, fixture)
+	evidence, err := bench.FreezeExecutionEvidence(bench.ExecutionEvidence{
+		FormatVersion: bench.AttestationFormatVersion,
+		Kind:          bench.ExecutionGraphNative,
+		Scope:         "ordinary-question#1",
+		Graph:         requirement.Graph,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,8 +438,8 @@ func TestScenarioTaskPreservesTaskExecutionEvidence(t *testing.T) {
 		t.Fatalf("scenario evidence scope = %q, want task %q", outcome.Execution.Scope, outcome.ID)
 	}
 
-	result.Transcript.Execution.Legacy.Binding = "mutated"
-	if outcome.Execution.Legacy.Binding != "cascade" {
+	result.Transcript.Execution.Graph.Nodes[0].Node = "mutated"
+	if outcome.Execution.Graph.Nodes[0].Node == "mutated" {
 		t.Fatal("scenario task retained an alias into transcript execution evidence")
 	}
 }
