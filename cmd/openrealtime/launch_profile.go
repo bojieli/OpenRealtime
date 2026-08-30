@@ -25,7 +25,7 @@ import (
 	openrealtime "github.com/bojieli/OpenRealtime/protocol/openrealtime"
 )
 
-const launchProfileUsage = `usage: openrealtime profile <scenario|realtime-cu> [flags]
+const launchProfileUsage = `usage: openrealtime profile <scenario|meeting|realtime-cu> [flags]
 
 Freeze one strict graph/server profile against the exact running executable
 and explicit provider configurations. Outputs are create-only and contain no
@@ -102,13 +102,15 @@ func runLaunchProfile(arguments []string, output io.Writer) error {
 	switch strings.ToLower(strings.TrimSpace(arguments[0])) {
 	case "scenario":
 		return runScenarioProfileFreeze(arguments[1:], output)
+	case "meeting", "meeting-assistant":
+		return runMeetingProfileFreeze(arguments[1:], output)
 	case "realtime-cu", "realtime-computer-use", "computer-use":
 		return runRealtimeCUProfileFreeze(arguments[1:], output)
 	case "help", "-h", "--help":
 		fmt.Fprintln(output, launchProfileUsage)
 		return nil
 	default:
-		return fmt.Errorf("profile kind must be scenario or realtime-cu, got %q\n%s", arguments[0], launchProfileUsage)
+		return fmt.Errorf("profile kind must be scenario, meeting, or realtime-cu, got %q\n%s", arguments[0], launchProfileUsage)
 	}
 }
 

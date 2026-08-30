@@ -300,6 +300,7 @@ type serveProfileHost struct {
 	Providers     serveScenarioProviders
 	Delegate      launchprofile.Registration
 	ScenarioSuite launchprofile.Registration
+	Meeting       *serveMeetingRegistration
 	RealtimeCU    *serveRealtimeCURegistration
 	Applications  *launchprofile.Registry
 }
@@ -329,6 +330,15 @@ func newServeProfileHost(
 		return serveProfileHost{}, fmt.Errorf("register scenario-suite application: %w", err)
 	}
 	applicationsToRegister := []launchprofile.Registration{delegate, suite}
+	meeting, err := newProductionServeMeetingRegistration(
+		context.Background(), artifacts.Gateway,
+	)
+	if err != nil {
+		return serveProfileHost{}, fmt.Errorf("register Meeting application: %w", err)
+	}
+	if meeting != nil {
+		applicationsToRegister = append(applicationsToRegister, meeting.Application)
+	}
 	var realtimeCU *serveRealtimeCURegistration
 	if strings.TrimSpace(os.Getenv(realtimeCULocalDeploymentEnvironment)) != "" {
 		if os.Getenv(realtimeCULocalDeploymentEnvironment) != "1" {
@@ -357,7 +367,7 @@ func newServeProfileHost(
 	}
 	return serveProfileHost{
 		Artifacts: artifacts, Providers: providerInventory,
-		Delegate: delegate, ScenarioSuite: suite, RealtimeCU: realtimeCU,
+		Delegate: delegate, ScenarioSuite: suite, Meeting: meeting, RealtimeCU: realtimeCU,
 		Applications: applications,
 	}, nil
 }
