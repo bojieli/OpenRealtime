@@ -20,7 +20,8 @@ Two cases add protocol seams without adding a launcher species:
 - `a recorded menu` requires the function-call, tool-result, and
   `response.create` round trip;
 - `telling them what it saw` requires a typed text/message input carrying the
-  still image, plus visual-input and text-injection capability evidence.
+  still image, an ordered explicit `response.create` after each durable image
+  item, plus visual-input and text-injection capability evidence.
 
 `BuildContract` derives and fingerprints those requirements from the reviewed
 suite. `GuardAdapter` is the composable plugin decorator. `GuardLaunch` applies
@@ -48,7 +49,8 @@ through that generic profile registry and exact graph-native server path. Every
 case crosses session configuration, realtime PCM input, concurrent input/output,
 and a complete response lifecycle. The recorded-menu case additionally crosses
 function call, result, and `response.create`; the visual case sends the checked
-PNG as an official `input_image` message. A separate deterministic failure
+PNG as an official `input_image` message and then explicitly creates its
+response. A separate deterministic failure
 event covers the adapter's typed failure boundary. This catches profile, mount,
 gateway, and wire regressions, but deliberately does not score the scripted
 interaction behavior.

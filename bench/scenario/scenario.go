@@ -576,12 +576,16 @@ func declare(tools []Tool) []json.RawMessage {
 // They go as input_image content on a conversation item, which is the shape
 // the official clients produce and the one the gateway already accepts. The
 // harness does not narrate them: the deployment's own observer looks at the
-// picture and writes what it sees, which is the thing under test.
+// picture and writes what it sees, which is the thing under test. Each durable
+// image item is followed by an explicit response.create at the same cue. An
+// authored conversation item does not itself request a response when automatic
+// turn detection is disabled, and the visual scenario has no later audio event
+// that could accidentally hide a missing invocation.
 func sights(seen []Sight) ([]bench.ScheduledEvent, error) {
 	if len(seen) == 0 {
 		return nil, nil
 	}
-	events := make([]bench.ScheduledEvent, 0, len(seen))
+	events := make([]bench.ScheduledEvent, 0, 2*len(seen))
 	for index, sight := range seen {
 		payload, err := os.ReadFile(sight.Path)
 		if err != nil {
@@ -600,6 +604,11 @@ func sights(seen []Sight) ([]bench.ScheduledEvent, error) {
 					}},
 				},
 			},
+		})
+		events = append(events, bench.ScheduledEvent{
+			AtMS:  sight.AtMS,
+			Name:  fmt.Sprintf("scenario.sight.%d.response-create", index+1),
+			Event: map[string]any{"type": "response.create"},
 		})
 	}
 	return events, nil

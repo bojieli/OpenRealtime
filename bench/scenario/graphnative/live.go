@@ -153,6 +153,7 @@ func (executor *liveExecutor) execute(
 	var audio bench.SessionAudioCapture
 	audioCalls := 0
 	submitted := make([]SubmittedInputCapture, 0, len(item.Sees))
+	scheduledCalls := 0
 	var captureErr error
 	task := executor.session
 	task.AttestationScope = key.TaskID
@@ -170,19 +171,26 @@ func (executor *liveExecutor) execute(
 	task.CaptureScheduled = func(value bench.SessionScheduledCapture) error {
 		captureMu.Lock()
 		defer captureMu.Unlock()
-		input, err := decodeSubmittedInput(item, value, len(submitted))
-		if err != nil {
-			captureErr = errors.Join(captureErr, err)
-			return err
-		}
-		for _, previous := range submitted {
-			if previous.Receipt.SightID == input.Receipt.SightID {
-				err := fmt.Errorf("scenario submitted input %q was captured more than once", input.Receipt.SightID)
+		index := scheduledCalls / 2
+		if scheduledCalls%2 == 0 {
+			input, err := decodeSubmittedInput(item, value, index)
+			if err != nil {
 				captureErr = errors.Join(captureErr, err)
 				return err
 			}
+			for _, previous := range submitted {
+				if previous.Receipt.SightID == input.Receipt.SightID {
+					err := fmt.Errorf("scenario submitted input %q was captured more than once", input.Receipt.SightID)
+					captureErr = errors.Join(captureErr, err)
+					return err
+				}
+			}
+			submitted = append(submitted, input)
+		} else if err := validateSubmittedResponseCreate(item, value, index); err != nil {
+			captureErr = errors.Join(captureErr, err)
+			return err
 		}
-		submitted = append(submitted, input)
+		scheduledCalls++
 		return nil
 	}
 
@@ -191,7 +199,7 @@ func (executor *liveExecutor) execute(
 	captureMu.Lock()
 	ownedAudio := cloneSessionAudio(audio)
 	ownedSubmitted := cloneSubmittedCaptures(submitted)
-	calls, retainedCaptureErr := audioCalls, captureErr
+	calls, scheduled, retainedCaptureErr := audioCalls, scheduledCalls, captureErr
 	captureMu.Unlock()
 	if cause := context.Cause(ctx); cause != nil {
 		return observation, errors.Join(runErr, retainedCaptureErr, cause)
@@ -204,7 +212,7 @@ func (executor *liveExecutor) execute(
 			"scenario live attempt did not produce one non-empty 24 kHz session audio capture",
 		))
 	}
-	if err := validateSubmittedCaptures(item, result.Transcript, ownedSubmitted); err != nil {
+	if err := validateSubmittedCaptures(item, result.Transcript, ownedSubmitted, scheduled); err != nil {
 		return observation, errors.Join(runErr, err)
 	}
 
@@ -238,6 +246,31 @@ func (executor *liveExecutor) execute(
 	copy := cloneMediaReference(reference)
 	observation.Media = &copy
 	return observation, runErr
+}
+
+func validateSubmittedResponseCreate(
+	item scenario.Scenario, capture bench.SessionScheduledCapture, index int,
+) error {
+	if index >= len(item.Sees) {
+		return errors.New("scenario emitted an unexpected scheduled response invocation")
+	}
+	wantID := "scenario.sight." + strconv.Itoa(index+1) + ".response-create"
+	if capture.Name != wantID || capture.AtMS != item.Sees[index].AtMS ||
+		capture.EventType != "response.create" {
+		return fmt.Errorf("scenario visual response invocation %d has a drifted cue identity", index+1)
+	}
+	var event struct {
+		Type string `json:"type"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(capture.EventJSON))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&event); err != nil || event.Type != capture.EventType {
+		return errors.New("scenario visual response invocation is not the closed response.create shape")
+	}
+	if err := requireJSONEOF(decoder); err != nil {
+		return errors.New("scenario visual response invocation has trailing JSON")
+	}
+	return nil
 }
 
 func validateLiveAttempt(key AttemptKey, item scenario.Scenario) error {
@@ -336,7 +369,13 @@ func decodeSubmittedInput(
 
 func validateSubmittedCaptures(
 	item scenario.Scenario, transcript bench.Transcript, captured []SubmittedInputCapture,
+	scheduledCalls int,
 ) error {
+	if scheduledCalls != 2*len(item.Sees) {
+		return fmt.Errorf(
+			"scenario captured %d/%d authored visual protocol events", scheduledCalls, 2*len(item.Sees),
+		)
+	}
 	if len(captured) != len(item.Sees) {
 		return fmt.Errorf(
 			"scenario retained %d/%d successfully submitted still inputs", len(captured), len(item.Sees),
@@ -350,11 +389,12 @@ func validateSubmittedCaptures(
 	}
 	for index, input := range captured {
 		wantID := "scenario.sight." + strconv.Itoa(index+1)
-		if input.Receipt.SightID != wantID || moments[wantID] != 1 {
+		responseID := wantID + ".response-create"
+		if input.Receipt.SightID != wantID || moments[wantID] != 1 || moments[responseID] != 1 {
 			return fmt.Errorf("scenario submitted input %q lacks one successful transcript moment", wantID)
 		}
 	}
-	if len(moments) != len(item.Sees) {
+	if len(moments) != 2*len(item.Sees) {
 		return errors.New("scenario transcript contains an unexpected scheduled input identity")
 	}
 	return nil

@@ -172,6 +172,46 @@ func TestLiveExecutorRejectsMissingMalformedAndDuplicateStillEvidence(t *testing
 			},
 		},
 		{
+			name: "response invocation before image",
+			play: func(t *testing.T) scenarioPlay {
+				return func(_ context.Context, _ scenario.Voice, session bench.SessionConfig, item scenario.Scenario) (scenario.Result, error) {
+					captureFixtureAudio(t, session)
+					err := session.CaptureScheduled(scheduledResponseCreateFixture(item, 0))
+					return scenario.Result{Scenario: item.Name}, err
+				}
+			},
+		},
+		{
+			name: "missing response invocation",
+			play: func(t *testing.T) scenarioPlay {
+				return func(_ context.Context, _ scenario.Voice, session bench.SessionConfig, item scenario.Scenario) (scenario.Result, error) {
+					captureFixtureAudio(t, session)
+					capture := scheduledFixtureCapture(t, item, 0)
+					if err := session.CaptureScheduled(capture); err != nil {
+						return scenario.Result{Scenario: item.Name}, err
+					}
+					return scenario.Result{Scenario: item.Name, Transcript: bench.Transcript{Moments: []bench.Moment{{
+						Kind: bench.MomentScheduled, Name: capture.Name,
+					}}}}, nil
+				}
+			},
+		},
+		{
+			name: "malformed response invocation",
+			play: func(t *testing.T) scenarioPlay {
+				return func(_ context.Context, _ scenario.Voice, session bench.SessionConfig, item scenario.Scenario) (scenario.Result, error) {
+					captureFixtureAudio(t, session)
+					if err := session.CaptureScheduled(scheduledFixtureCapture(t, item, 0)); err != nil {
+						return scenario.Result{Scenario: item.Name}, err
+					}
+					capture := scheduledResponseCreateFixture(item, 0)
+					capture.EventJSON = []byte(`{"type":"response.create","response":{"modalities":["audio"]}}`)
+					err := session.CaptureScheduled(capture)
+					return scenario.Result{Scenario: item.Name}, err
+				}
+			},
+		},
+		{
 			name: "duplicate sent identity",
 			play: func(t *testing.T) scenarioPlay {
 				return func(_ context.Context, _ scenario.Voice, session bench.SessionConfig, item scenario.Scenario) (scenario.Result, error) {
@@ -529,12 +569,19 @@ func successfulLiveFixture(t *testing.T, session bench.SessionConfig, item scena
 	captureFixtureAudio(t, session)
 	transcript := bench.Transcript{}
 	for index := range item.Sees {
-		capture := scheduledFixtureCapture(t, item, index)
-		if err := session.CaptureScheduled(capture); err != nil {
+		input := scheduledFixtureCapture(t, item, index)
+		if err := session.CaptureScheduled(input); err != nil {
 			t.Fatalf("capture scheduled fixture: %v", err)
 		}
 		transcript.Moments = append(transcript.Moments, bench.Moment{
-			Kind: bench.MomentScheduled, Name: capture.Name,
+			Kind: bench.MomentScheduled, Name: input.Name,
+		})
+		create := scheduledResponseCreateFixture(item, index)
+		if err := session.CaptureScheduled(create); err != nil {
+			t.Fatalf("capture scheduled response fixture: %v", err)
+		}
+		transcript.Moments = append(transcript.Moments, bench.Moment{
+			Kind: bench.MomentScheduled, Name: create.Name,
 		})
 	}
 	return scenario.Result{Scenario: item.Name, Passed: true, Transcript: transcript}
@@ -577,6 +624,16 @@ func scheduledFixtureCapture(
 	return bench.SessionScheduledCapture{
 		AtMS: item.Sees[index].AtMS, Name: "scenario.sight." + strconv.Itoa(index+1),
 		EventType: "conversation.item.create", EventJSON: event,
+	}
+}
+
+func scheduledResponseCreateFixture(
+	item scenario.Scenario, index int,
+) bench.SessionScheduledCapture {
+	return bench.SessionScheduledCapture{
+		AtMS:      item.Sees[index].AtMS,
+		Name:      "scenario.sight." + strconv.Itoa(index+1) + ".response-create",
+		EventType: "response.create", EventJSON: []byte(`{"type":"response.create"}`),
 	}
 }
 

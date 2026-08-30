@@ -249,7 +249,7 @@ func TestProfiledGraphNativeWebSocketExercisesExactElevenScenarioContract(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if contract.Fingerprint != "sha256:ed9a3a6eb302f0ca807b7ff2bd4a8dc594c0f227dc0311b44e4ea8051355561c" {
+	if contract.Fingerprint != "sha256:b450d1e6147c50b114be3f676ec2cb53cbcc1dcfea2c7b1d52fae71eb222d44f" {
 		t.Fatalf("full scenario contract fingerprint = %s", contract.Fingerprint)
 	}
 	probe := newScenarioProtocolProbe(contract)
@@ -320,6 +320,7 @@ func TestProfiledGraphNativeWebSocketExercisesExactElevenScenarioContract(t *tes
 			case "telling them what it saw":
 				client.send(scenarioImageMessage(t))
 				client.await("conversation.item.created")
+				client.send(map[string]any{"type": "response.create"})
 				client.await("response.output_audio.delta")
 				// Audio arrives while the visual response is still open. The
 				// adapter ends only after this frame, proving concurrent input/output.
@@ -559,6 +560,7 @@ type scenarioProtocolAdapter struct {
 	speechOpen  bool
 	responded   bool
 	toolResult  bool
+	visualInput bool
 	utterance   action.Utterance
 }
 
@@ -641,17 +643,18 @@ func (adapter *scenarioProtocolAdapter) Video(context.Context, perception.Frame)
 	return legacy.ErrUnsupported
 }
 
-func (adapter *scenarioProtocolAdapter) Text(ctx context.Context, input legacy.TextInput) error {
+func (adapter *scenarioProtocolAdapter) Text(_ context.Context, input legacy.TextInput) error {
 	adapter.mu.Lock()
 	defer adapter.mu.Unlock()
 	if adapter.caseName != "telling them what it saw" || len(input.Images) == 0 {
 		return errors.New("scenario visual probe requires an image in the reviewed visual case")
 	}
 	adapter.probe.record(adapter.caseName, graphbinding.AdapterInputText)
-	if adapter.responded || adapter.speechOpen {
-		return errors.New("scenario visual probe received duplicate image response trigger")
+	if adapter.visualInput || adapter.responded || adapter.speechOpen {
+		return errors.New("scenario visual probe received duplicate image input")
 	}
-	return adapter.openSpeechTurn(ctx, "the build finished")
+	adapter.visualInput = true
+	return nil
 }
 
 func (adapter *scenarioProtocolAdapter) ToolResult(
@@ -673,14 +676,25 @@ func (*scenarioProtocolAdapter) CommitAudio(context.Context) error { return lega
 func (adapter *scenarioProtocolAdapter) CreateResponse(ctx context.Context) error {
 	adapter.mu.Lock()
 	defer adapter.mu.Unlock()
-	if adapter.caseName != "a recorded menu" || !adapter.toolResult {
-		return errors.New("scenario response.create arrived before the menu tool result")
+	switch adapter.caseName {
+	case "a recorded menu":
+		if !adapter.toolResult {
+			return errors.New("scenario response.create arrived before the menu tool result")
+		}
+		adapter.probe.record(adapter.caseName, graphbinding.AdapterInputCreateResponse)
+		if err := adapter.openSpeechTurn(ctx, "order status reached"); err != nil {
+			return err
+		}
+		return adapter.closeSpeechTurn(ctx)
+	case "telling them what it saw":
+		if !adapter.visualInput || adapter.responded || adapter.speechOpen {
+			return errors.New("scenario response.create arrived before one durable visual input")
+		}
+		adapter.probe.record(adapter.caseName, graphbinding.AdapterInputCreateResponse)
+		return adapter.openSpeechTurn(ctx, "the build finished")
+	default:
+		return errors.New("scenario response.create has no reviewed trigger")
 	}
-	adapter.probe.record(adapter.caseName, graphbinding.AdapterInputCreateResponse)
-	if err := adapter.openSpeechTurn(ctx, "order status reached"); err != nil {
-		return err
-	}
-	return adapter.closeSpeechTurn(ctx)
 }
 
 func (*scenarioProtocolAdapter) Cancel(context.Context, string) error { return nil }

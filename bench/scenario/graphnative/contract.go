@@ -177,7 +177,10 @@ func requirementFor(item scenario.Scenario) CaseRequirement {
 	}
 	if len(item.Sees) > 0 {
 		requirement.Seams = append(requirement.Seams, SeamStillImageMessage)
-		requirement.Operations = append(requirement.Operations, graphbinding.AdapterInputText)
+		requirement.Operations = append(requirement.Operations,
+			graphbinding.AdapterInputText,
+			graphbinding.AdapterInputCreateResponse,
+		)
 		requirement.Capabilities.VisualInput = true
 		requirement.Capabilities.TextInjection = true
 	}

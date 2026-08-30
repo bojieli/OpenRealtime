@@ -209,9 +209,18 @@ func TestScenarioSightScheduleCarriesExactReviewMediaIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 2 || events[0].Name != "scenario.sight.1" ||
-		events[1].Name != "scenario.sight.2" {
+	if len(events) != 4 || events[0].Name != "scenario.sight.1" ||
+		events[1].Name != "scenario.sight.1.response-create" ||
+		events[2].Name != "scenario.sight.2" ||
+		events[3].Name != "scenario.sight.2.response-create" {
 		t.Fatalf("scenario sight identities = %+v", events)
+	}
+	for index := 0; index < len(events); index += 2 {
+		if events[index].AtMS != events[index+1].AtMS ||
+			events[index].Event["type"] != "conversation.item.create" ||
+			events[index+1].Event["type"] != "response.create" {
+			t.Fatalf("scenario sight pair %d = %+v / %+v", index/2+1, events[index], events[index+1])
+		}
 	}
 }
 

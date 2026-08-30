@@ -42,6 +42,7 @@ func TestFullSuiteContractCoversTheReviewedElevenCasesAndOnlyTheirWireSeams(t *t
 	visual := caseNamed(t, contract, "telling them what it saw")
 	assertSeam(t, visual, graphnative.SeamStillImageMessage)
 	assertOperation(t, visual, graphbinding.AdapterInputText)
+	assertOperation(t, visual, graphbinding.AdapterInputCreateResponse)
 	if !visual.Capabilities.VisualInput || !visual.Capabilities.TextInjection {
 		t.Fatalf("still-image scenario capabilities = %+v", visual.Capabilities)
 	}
