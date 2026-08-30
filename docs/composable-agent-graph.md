@@ -2035,11 +2035,12 @@ fuzz, synthetic integration, mount, and protocol-conformance tests may close a
 component checkpoint, but none of them establishes behavioral parity or closes
 a phase exit gate, this tracker, or the definition of done:
 
-- [ ] Establish clean, reportable migration baselines and predeclared
-  acceptance rules before judging the refactored candidate.
-  - [ ] Recover an immutable pre-refactor result or rerun the legacy reference
-    for every required suite; prose summaries and hand-picked successful runs
-    are not baseline artifacts.
+- [ ] Establish accepted migration baselines and predeclared acceptance rules
+  before judging the refactored candidate.
+  - [x] Treat the benchmark owner's recorded original numbers as the
+    authoritative historical baselines for every required suite. Historical
+    per-attempt reconstruction is explicitly not required; immutable
+    per-attempt evidence is required for every new-architecture run.
   - [ ] Pin the fixture revision, task set, model/provider revisions, voices,
     tools, timing policy, machine class, concurrency, trial count/seeds where
     applicable, and every non-treatment configuration field.
@@ -2060,14 +2061,14 @@ a phase exit gate, this tracker, or the definition of done:
 
 The historical measurement narrative records early five-run subset totals from
 30/45 to 37/45, a later full eleven-scenario baseline of 140/165 (85%) at
-fifteen repetitions, and same-binary samples of 49/55 and 47/55. These are
-important variance priors and confirm the expected pass rate is above 80%, but
-no corresponding clean, exactly attested result artifact is checked into the
-repository. The migration gate must recover or rerun that baseline; prose and
-ignored diagnostic files cannot satisfy it. The same evidence shows that five
-repetitions can move substantially on identical code, so the final scenario
-comparison uses at least fifteen repetitions per case. Smaller runs are for
-diagnosis only.
+fifteen repetitions, and same-binary samples of 49/55 and 47/55. The benchmark
+owner has accepted those recorded numbers as the authoritative historical
+trail; the migration gate does not reconstruct historical per-attempt
+artifacts. Every new run still retains its complete exact attempt population,
+media, identities, deterministic outcomes, and review receipts. The historical
+evidence also shows that five repetitions can move substantially on identical
+code, so the final new-architecture scenario comparison uses at least fifteen
+repetitions per case. Smaller runs are for diagnosis only.
 
 - [x] Migrate the shared benchmark/session evidence path to bind exact Graph IR,
   element/config/deployment identities, selected edges, authenticated live
@@ -2077,12 +2078,13 @@ diagnosis only.
   with exact per-attempt scopes for all eleven cases and explicit
   legacy/unattested compatibility behavior.
 - [ ] Re-run and compare all eleven interaction scenarios with at least fifteen
-  matched repetitions per scenario (at least 165 baseline/candidate pairs):
+  repetitions per scenario (at least 165 newly retained candidate attempts):
   The exact eleven-row and 165-attempt sealed populations, shuffled/race gates,
   offline verifier, and exact-model advisory transport gate are implemented and
   green. This box and every case below remain open until the provisioned live
-  baseline and graph-native candidate artifacts are both retained and pass the
-  predeclared paired comparison.
+  graph-native candidate artifact is retained and meets the accepted historical
+  140/165 total and documented per-case trail without a significant safety or
+  interaction regression.
   - [ ] `count-as-they-go`
   - [ ] `asked not to be interrupted`
   - [ ] `a recorded menu`
@@ -2422,10 +2424,11 @@ before/after benchmark evidence in addition to all preceding test gates.
 
 Each required comparison must follow this protocol:
 
-1. Produce or recover a complete, clean-worktree, reportable pre-refactor
-   baseline artifact. Pin its source, executable, fixture/scorer, model and
-   provider revisions, deployment identities, machine class, task set,
-   repetitions, and non-treatment configuration.
+1. Record the benchmark owner's accepted original baseline number and available
+   per-case trail before observing the candidate. Historical per-attempt
+   reconstruction is not required. Pin the complete fixture/scorer and
+   deployment configuration for the new run so its result is reproducible and
+   cannot be silently relabeled.
 2. Run the candidate through the graph-native launch path and exact new values,
    deployment, and policy artifacts. Every completed task must attest the
    immutable Graph IR fingerprint and live element/config/capability identities;
