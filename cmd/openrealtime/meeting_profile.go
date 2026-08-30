@@ -455,7 +455,7 @@ func meetingForegroundLLMRequest(config meetingLocalForegroundConfig) providers.
 	return providers.LLMRequest{
 		Provider: config.ModelProvider, Model: config.Model, BaseURL: config.ModelURL,
 		APIKey: os.Getenv("OPENREALTIME_LOCAL_API_KEY"), Phase: trajectory.PhaseFast,
-		Effort: continuation.EffortMinimal, ToolAuthority: continuation.ToolAuthorityPropose,
+		Effort: continuation.EffortMinimal, ToolAuthority: continuation.ToolAuthorityExecute,
 		SpeechAuthority: continuation.SpeechAuthorityVoice, Reason: providers.ReasonOff,
 		Vision: &vision, RetainReasoning: false, Temperature: &temperature,
 		RequestTimeout: time.Duration(config.RequestTimeoutMS) * time.Millisecond,
@@ -516,6 +516,32 @@ func meetingForegroundCapabilities(config meetingLocalForegroundConfig) legacy.C
 
 type meetingDormantProvider struct {
 	descriptor continuation.Descriptor
+}
+
+// meetingForegroundRollout is the profile's narrow local control policy. It
+// never schedules the private cascade slow slot (the graph owns background
+// cognition), but unlike the generic fast-only control condition it gives a
+// successful tool result one fast turn in which to continue an ordered action
+// chain or speak the grounded result.
+type meetingForegroundRollout struct{}
+
+func (meetingForegroundRollout) Name() string { return "meeting-fast-tool-continuations" }
+
+func (meetingForegroundRollout) Plan(input interaction.RolloutInput) []interaction.Step {
+	if input.Cause.ToolError {
+		return []interaction.Step{{Kind: interaction.StepFast, Reason: interaction.ReasonToolFailure}}
+	}
+	if input.Cause.Observation || input.Cause.CompositeResume || input.Cause.ToolResult {
+		reason := "answer now"
+		switch {
+		case input.Cause.CompositeResume:
+			reason = interaction.ReasonCompositeResume
+		case input.Cause.ToolResult:
+			reason = "continue after foreground tool result"
+		}
+		return []interaction.Step{{Kind: interaction.StepFast, Reason: reason}}
+	}
+	return nil
 }
 
 func meetingDormantDescriptor() continuation.Descriptor {
@@ -594,7 +620,7 @@ func newMeetingForegroundBinding(
 		return nil, err
 	}
 	policies := interaction.Defaults()
-	policies.Rollout = interaction.NewFastOnlyRollout()
+	policies.Rollout = meetingForegroundRollout{}
 	dormant := meetingDormantProvider{descriptor: meetingDormantDescriptor()}
 	inner, err := cascade.New(cascade.Config{
 		Profile: "voice+vision", Perception: asr,
@@ -604,8 +630,16 @@ func newMeetingForegroundBinding(
 		SlowMaxTokens: 1, Speech: bysentence.Provider{
 			Inner: speech, Minimum: config.SentenceMinRunes,
 		},
-		Voice:    config.TTSVoice,
-		Policies: policies, ObservationPolicy: cascade.ObservationEndpointOnly,
+		Voice: config.TTSVoice,
+		// The Meeting profile deliberately gives its local, attested foreground
+		// provider only the two bounded client-declared action lanes. Standard
+		// computer actions still require an exact target and confirm=never; other
+		// tools must explicitly opt into the background-safe contract. Keeping
+		// the allowlist in cascade preserves the caller-owned tool catalog rather
+		// than building a Meeting UI or action surface into the server.
+		FastComputerUse:     true,
+		FastBackgroundTools: true,
+		Policies:            policies, ObservationPolicy: cascade.ObservationEndpointOnly,
 		ASRCadence: time.Duration(config.ASRCadenceMS) * time.Millisecond,
 		Observers: []perception.Factory{perception.VideoFactory(perception.VideoConfig{
 			Name: "screen", Sources: []string{"screen"}, ExternalCadence: config.ExternalVideoGate,

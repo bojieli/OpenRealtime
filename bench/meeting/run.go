@@ -32,9 +32,9 @@ func ReferenceCell() bench.Cell {
 	cell.Levels[bench.FactorFloor] = "foreground-engine"
 	cell.Levels[bench.FactorSlowModel] = "gemini-3.7-flash/minimal"
 	cell.Levels[bench.FactorComponents] = "narration-only"
-	cell.Levels[bench.FactorPolicy] = "foreground-fast-only+graph-background-injection"
+	cell.Levels[bench.FactorPolicy] = "foreground-fast-tool-continuations+graph-background-injection"
 	cell.Levels[bench.FactorFastModel] = "qwen-fast/minimal"
-	cell.Levels[bench.FactorFastAction] = "proposal-via-graph"
+	cell.Levels[bench.FactorFastAction] = "bounded-execution-via-graph"
 	cell.Levels[bench.FactorVideoRate] = "5fps"
 	cell.Levels[bench.FactorRecognizer] = "sensevoice-small"
 	cell.Levels[bench.FactorTransport] = bench.TransportWebSocket
@@ -611,7 +611,11 @@ func declarations(target computeruse.Target, task Task) ([]json.RawMessage, erro
 		description = "Perform a deliberately long background analysis of the launch review. Start immediately when the user asks to analyze the launch review; that imperative alone is a complete request, and later speech is not a prerequisite. It is safe to keep listening and operate the meeting while this runs."
 	}
 	if customName != "" {
-		background := customName == ToolAnalyzeLaunchReview
+		// Both Meeting knowledge operations are read-only and remain valid if a
+		// newer utterance arrives. Declaring that exact property lets the local
+		// foreground lane start them without granting arbitrary client tools or
+		// moving the tool implementation into the server.
+		background := true
 		encoded, err := json.Marshal(map[string]any{
 			"type": "function", "name": customName, "description": description,
 			"parameters":   map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false},

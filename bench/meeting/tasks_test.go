@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	"github.com/bojieli/OpenRealtime/computeruse"
 )
 
 func TestSuiteOwnsValidRecordedScenarios(t *testing.T) {
@@ -39,9 +40,9 @@ func TestReferenceCellIsOnlyDirectGraphNativeCandidate(t *testing.T) {
 		bench.FactorCadence:   "200ms", bench.FactorFloor: "foreground-engine",
 		bench.FactorSlowModel:  "gemini-3.7-flash/minimal",
 		bench.FactorComponents: "narration-only",
-		bench.FactorPolicy:     "foreground-fast-only+graph-background-injection",
+		bench.FactorPolicy:     "foreground-fast-tool-continuations+graph-background-injection",
 		bench.FactorFastModel:  "qwen-fast/minimal",
-		bench.FactorFastAction: "proposal-via-graph",
+		bench.FactorFastAction: "bounded-execution-via-graph",
 		bench.FactorVideoRate:  "5fps", bench.FactorRecognizer: "sensevoice-small",
 		bench.FactorTransport: bench.TransportWebSocket,
 	}
@@ -59,6 +60,54 @@ func TestReferenceCellIsOnlyDirectGraphNativeCandidate(t *testing.T) {
 		if strings.Contains(legacy, "cascade") || strings.Contains(legacy, "omni") ||
 			strings.Contains(legacy, "qwen3-vl") || strings.Contains(legacy, "gemini-3.5") {
 			t.Fatalf("Meeting candidate retained legacy %s level %q", factor, level)
+		}
+	}
+}
+
+func TestMeetingKnowledgeDeclarationsExplicitlyOptIntoBoundedForegroundExecution(t *testing.T) {
+	target := computeruse.Target{
+		Name: "meeting-browser", Sources: []string{"screen"}, Width: 1280, Height: 720,
+	}
+	for _, taskID := range []string{"open-share-present", "follow-up-during-analysis"} {
+		var task Task
+		for _, candidate := range Suite() {
+			if candidate.ID == taskID {
+				task = candidate
+				break
+			}
+		}
+		if task.ID == "" {
+			t.Fatalf("suite omitted %s", taskID)
+		}
+		declared, err := declarations(target, task)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantName := ToolReadLaunchReview
+		if taskID == "follow-up-during-analysis" {
+			wantName = ToolAnalyzeLaunchReview
+		}
+		found := false
+		for _, raw := range declared {
+			var tool struct {
+				Name         string `json:"name"`
+				OpenRealtime struct {
+					Background bool `json:"background"`
+				} `json:"openrealtime"`
+			}
+			if err := json.Unmarshal(raw, &tool); err != nil {
+				t.Fatal(err)
+			}
+			if tool.Name != wantName {
+				continue
+			}
+			found = true
+			if !tool.OpenRealtime.Background {
+				t.Fatalf("%s did not declare its read-only background-safe execution contract", wantName)
+			}
+		}
+		if !found {
+			t.Fatalf("%s declaration was omitted", wantName)
 		}
 	}
 }

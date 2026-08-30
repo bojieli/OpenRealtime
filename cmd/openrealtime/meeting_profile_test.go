@@ -7,6 +7,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	legacy "github.com/bojieli/OpenRealtime/binding"
@@ -15,6 +16,7 @@ import (
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	"github.com/bojieli/OpenRealtime/graphs"
+	"github.com/bojieli/OpenRealtime/interaction"
 	meetinggraph "github.com/bojieli/OpenRealtime/meeting/graphnative"
 )
 
@@ -47,14 +49,14 @@ func meetingProfileExecutable() inspect.ArtifactIdentity {
 type fixtureMeetingDeploymentVerifier struct {
 	identities meetingDeploymentIdentities
 	err        error
-	resolve    int
-	verify     int
+	resolve    atomic.Int32
+	verify     atomic.Int32
 }
 
 func (verifier *fixtureMeetingDeploymentVerifier) Resolve(
 	ctx context.Context,
 ) (meetingDeploymentIdentities, error) {
-	verifier.resolve++
+	verifier.resolve.Add(1)
 	if err := context.Cause(ctx); err != nil {
 		return meetingDeploymentIdentities{}, err
 	}
@@ -70,7 +72,7 @@ func (verifier *fixtureMeetingDeploymentVerifier) Resolve(
 func (verifier *fixtureMeetingDeploymentVerifier) Verify(
 	ctx context.Context, expected meetingDeploymentIdentities,
 ) error {
-	verifier.verify++
+	verifier.verify.Add(1)
 	if err := context.Cause(ctx); err != nil {
 		return err
 	}
@@ -189,8 +191,11 @@ func TestMeetingForegroundCompositionDisablesPrivateSlowLane(t *testing.T) {
 		!slices.Equal(capabilities.Observers, []string{"audio", "screen"}) {
 		t.Fatalf("foreground capabilities = %+v", capabilities)
 	}
-	if got := foreground.policies.Report().Rollout; got != "fast-only" {
+	if got := foreground.policies.Report().Rollout; got != "meeting-fast-tool-continuations" {
 		t.Fatalf("foreground rollout = %q", got)
+	}
+	if descriptor := meetingForegroundLLMRequest(config).ToolAuthority; descriptor != continuation.ToolAuthorityExecute {
+		t.Fatalf("foreground tool authority = %q, want execute", descriptor)
 	}
 	if !foreground.inner.Capabilities().FastSlow {
 		t.Fatal("cascade test precondition changed: inner binding no longer exposes its private slow slot")
@@ -203,6 +208,31 @@ func TestMeetingForegroundCompositionDisablesPrivateSlowLane(t *testing.T) {
 	if _, err := dormant.Continue(context.Background(), continuation.Request{}, nil); err == nil ||
 		!strings.Contains(err.Error(), "graph owns background") {
 		t.Fatalf("dormant foreground slow provider error = %v", err)
+	}
+}
+
+func TestMeetingForegroundRolloutContinuesToolResultsWithoutPrivateSlowWork(t *testing.T) {
+	policy := meetingForegroundRollout{}
+	for _, test := range []struct {
+		name  string
+		cause interaction.Cause
+	}{
+		{name: "observation", cause: interaction.Cause{Observation: true}},
+		{name: "tool result", cause: interaction.Cause{ToolResult: true}},
+		{name: "tool error", cause: interaction.Cause{ToolError: true}},
+		{name: "composite resume", cause: interaction.Cause{CompositeResume: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			steps := policy.Plan(interaction.RolloutInput{Cause: test.cause})
+			if len(steps) != 1 || steps[0].Kind != interaction.StepFast {
+				t.Fatalf("Meeting foreground steps = %+v", steps)
+			}
+		})
+	}
+	for _, cause := range []interaction.Cause{{Escalated: true}, {BackgroundResult: true}} {
+		if steps := policy.Plan(interaction.RolloutInput{Cause: cause}); len(steps) != 0 {
+			t.Fatalf("Meeting foreground scheduled private work for %+v: %+v", cause, steps)
+		}
 	}
 }
 

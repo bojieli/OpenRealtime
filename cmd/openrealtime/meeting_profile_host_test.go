@@ -24,9 +24,9 @@ func TestMeetingHostRegistrationIsExplicitAndLiveVerified(t *testing.T) {
 	registration, err := newProductionServeMeetingRegistrationWithDependencies(
 		context.Background(), executable, dependencies,
 	)
-	if err != nil || registration != nil || verifier.resolve != 0 {
+	if err != nil || registration != nil || verifier.resolve.Load() != 0 {
 		t.Fatalf("disabled Meeting host registration=%+v resolve=%d error=%v",
-			registration, verifier.resolve, err)
+			registration, verifier.resolve.Load(), err)
 	}
 
 	lookupPresent, lookupValue = true, "yes"
@@ -44,9 +44,9 @@ func TestMeetingHostRegistrationIsExplicitAndLiveVerified(t *testing.T) {
 		t.Fatal(err)
 	}
 	if registration == nil || registration.Application.Reference == "" ||
-		verifier.resolve != 1 || verifier.verify == 0 {
+		verifier.resolve.Load() != 1 || verifier.verify.Load() == 0 {
 		t.Fatalf("enabled Meeting host registration=%+v resolve=%d verify=%d",
-			registration, verifier.resolve, verifier.verify)
+			registration, verifier.resolve.Load(), verifier.verify.Load())
 	}
 }
 
