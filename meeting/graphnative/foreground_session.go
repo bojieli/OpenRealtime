@@ -35,6 +35,8 @@ const (
 	maximumForegroundPendingTriggers = 64
 	maximumForegroundPendingInputs   = 512
 	maximumForegroundTranscriptKeys  = 4096
+	maximumForegroundDrainingRuns    = 64
+	maximumForegroundIdentities      = 65_536
 	foregroundCloseTimeout           = 10 * time.Second
 	foregroundContextWait            = 5 * time.Second
 	foregroundTurnWait               = 30 * time.Second
@@ -75,7 +77,10 @@ type foregroundRun struct {
 	utterances         map[string]*foregroundUtterance
 	turnEnded          bool
 	turnOutcome        legacy.TurnOutcome
+	contextReady       bool
+	contextErr         error
 	requiredTranscript string
+	requiredRevision   uint64
 }
 
 type foregroundUtterance struct {
@@ -125,6 +130,8 @@ type foregroundSession struct {
 	active              *foregroundRun
 	draining            map[string]*foregroundRun
 	utteranceRuns       map[string]*foregroundRun
+	seenRunIDs          map[string]struct{}
+	seenUtteranceIDs    map[string]struct{}
 	runChanged          chan struct{}
 	transcriptRevision  uint64
 	transcriptByItem    map[string]uint64
@@ -162,6 +169,7 @@ func (plugin *SessionPlugin) newForegroundSession(
 		contextChanged: make(chan struct{}), runChanged: make(chan struct{}),
 		turnAdmission: make(chan struct{}, 1), transcriptByItem: make(map[string]uint64),
 		draining: make(map[string]*foregroundRun), utteranceRuns: make(map[string]*foregroundRun),
+		seenRunIDs: make(map[string]struct{}), seenUtteranceIDs: make(map[string]struct{}),
 	}
 	session.turnAdmission <- struct{}{}
 	binding, err := plugin.config.Foreground.Factory(sessionCtx, cloneLegacyOptions(options))
@@ -625,6 +633,10 @@ func (session *foregroundSession) TurnBegin(ctx context.Context) error {
 	for {
 		session.mu.Lock()
 		if session.active == nil {
+			if len(session.draining) >= maximumForegroundDrainingRuns {
+				session.mu.Unlock()
+				return errors.New("begin meeting foreground turn: draining run limit reached")
+			}
 			break
 		}
 		changed := session.runChanged
@@ -660,9 +672,20 @@ func (session *foregroundSession) TurnBegin(ctx context.Context) error {
 		session.mu.Unlock()
 		return fmt.Errorf("begin meeting foreground turn: %w", err)
 	}
+	if _, duplicate := session.seenRunIDs[runID]; duplicate {
+		session.mu.Unlock()
+		return fmt.Errorf("begin meeting foreground turn: duplicate run ID %q", runID)
+	}
+	if len(session.seenRunIDs) >= maximumForegroundIdentities {
+		session.mu.Unlock()
+		return errors.New("begin meeting foreground turn: run identity limit reached")
+	}
+	session.seenRunIDs[runID] = struct{}{}
 	requiredTranscript := ""
+	requiredRevision := uint64(0)
 	if session.lastFinalRevision > session.boundFinalRevision {
 		requiredTranscript = session.lastFinalTranscript
+		requiredRevision = session.lastFinalRevision
 		session.boundFinalRevision = session.lastFinalRevision
 	}
 	session.active = &foregroundRun{
@@ -671,6 +694,7 @@ func (session *foregroundSession) TurnBegin(ctx context.Context) error {
 		parentIDs: canonicalForegroundParents(parents), startedNS: foregroundNowNS(),
 		utterances:         make(map[string]*foregroundUtterance),
 		requiredTranscript: requiredTranscript,
+		requiredRevision:   requiredRevision,
 	}
 	session.mu.Unlock()
 	return nil
@@ -694,6 +718,23 @@ func (session *foregroundSession) TurnEnd(
 	run := session.active
 	run.turnEnded = true
 	run.turnOutcome = outcome
+	atCognitionEnd := cloneForegroundSnapshot(session.contextSnapshot)
+	session.mu.Unlock()
+
+	// The graph may admit another run while this run's speech drains. Freeze
+	// the authoritative context before releasing that admission boundary so a
+	// later turn can never be stamped into this run with hindsight. A final ASR
+	// transcript may still be crossing the trajectory boundary; when it is,
+	// wait only for the exact source revision and retain the prefix through that
+	// observation rather than the mutable snapshot visible at playback end.
+	frozen, contextErr := session.contextAtCognitionEnd(
+		ctx, run.requiredTranscript, run.requiredRevision, atCognitionEnd,
+	)
+
+	session.mu.Lock()
+	run.context = frozen
+	run.contextErr = contextErr
+	run.contextReady = true
 	// TurnEnd brackets provider cognition, not paced playback. Once it arrives,
 	// all future non-speech callbacks belong to the next run. Keep this run in a
 	// separately addressed draining set until every reserved utterance ends.
@@ -794,8 +835,15 @@ func (session *foregroundSession) SpeechReserved(
 	if _, duplicate := session.utteranceRuns[utterance.ID]; duplicate {
 		return errors.New("reserve meeting foreground speech: duplicate utterance")
 	}
+	if _, duplicate := session.seenUtteranceIDs[utterance.ID]; duplicate {
+		return errors.New("reserve meeting foreground speech: reused utterance ID")
+	}
+	if len(session.seenUtteranceIDs) >= maximumForegroundIdentities {
+		return errors.New("reserve meeting foreground speech: utterance identity limit reached")
+	}
 	session.active.utterances[utterance.ID] = &foregroundUtterance{value: cloneForegroundUtterance(utterance)}
 	session.utteranceRuns[utterance.ID] = session.active
+	session.seenUtteranceIDs[utterance.ID] = struct{}{}
 	return nil
 }
 
@@ -843,13 +891,22 @@ func (session *foregroundSession) SpeechBegin(
 	parents := slices.Clone(run.parentIDs)
 	pending := run.utterances[utterance.ID]
 	if pending == nil {
-		pending = &foregroundUtterance{value: cloneForegroundUtterance(utterance)}
-		run.utterances[utterance.ID] = pending
 		if _, duplicate := session.utteranceRuns[utterance.ID]; duplicate {
 			session.mu.Unlock()
 			return errors.New("begin meeting foreground speech: duplicate utterance")
 		}
+		if _, duplicate := session.seenUtteranceIDs[utterance.ID]; duplicate {
+			session.mu.Unlock()
+			return errors.New("begin meeting foreground speech: reused utterance ID")
+		}
+		if len(session.seenUtteranceIDs) >= maximumForegroundIdentities {
+			session.mu.Unlock()
+			return errors.New("begin meeting foreground speech: utterance identity limit reached")
+		}
+		pending = &foregroundUtterance{value: cloneForegroundUtterance(utterance)}
+		run.utterances[utterance.ID] = pending
 		session.utteranceRuns[utterance.ID] = run
+		session.seenUtteranceIDs[utterance.ID] = struct{}{}
 	}
 	if pending.audioOpened || pending.textOpened || pending.done {
 		session.mu.Unlock()
@@ -1066,7 +1123,7 @@ func foregroundRunSpeechComplete(run *foregroundRun) bool {
 }
 
 func (session *foregroundSession) takeFinalRunLocked(run *foregroundRun) *foregroundRun {
-	if run == nil || !run.turnEnded || !foregroundRunSpeechComplete(run) {
+	if run == nil || !run.turnEnded || !run.contextReady || !foregroundRunSpeechComplete(run) {
 		return nil
 	}
 	if session.active == run {
@@ -1091,7 +1148,8 @@ func (session *foregroundSession) finalizeForegroundRun(
 	if run == nil {
 		return errors.New("finalize meeting foreground run: nil run")
 	}
-	snapshot, err := session.contextForRun(ctx, run.requiredTranscript)
+	snapshot := cloneForegroundSnapshot(run.context)
+	err := run.contextErr
 	if err != nil {
 		outcome := cognitionelements.Outcome{
 			Kind: cognitionelements.OutcomeFailed, Operation: "generate", RunID: run.id,
@@ -1142,14 +1200,21 @@ func (session *foregroundSession) finalizeForegroundRun(
 	return session.emit(ctx, "outcome", modelelements.OutcomeType(), run.id, run.parentIDs, outcome)
 }
 
-func (session *foregroundSession) contextForRun(
-	ctx context.Context, requiredTranscript string,
+func (session *foregroundSession) contextAtCognitionEnd(
+	ctx context.Context, requiredTranscript string, requiredRevision uint64,
+	atCognitionEnd trajectory.Snapshot,
 ) (trajectory.Snapshot, error) {
+	if requiredRevision == 0 {
+		return cloneForegroundSnapshot(atCognitionEnd), nil
+	}
 	if strings.TrimSpace(requiredTranscript) == "" {
-		session.mu.Lock()
-		result := cloneForegroundSnapshot(session.contextSnapshot)
-		session.mu.Unlock()
-		return result, nil
+		return cloneForegroundSnapshot(atCognitionEnd),
+			errors.New("final transcript revision has no canonical text")
+	}
+	if _, found := foregroundRequiredTranscriptIndex(
+		atCognitionEnd, requiredTranscript, requiredRevision,
+	); found {
+		return cloneForegroundSnapshot(atCognitionEnd), nil
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, foregroundContextWait)
 	defer cancel()
@@ -1158,11 +1223,13 @@ func (session *foregroundSession) contextForRun(
 		snapshot := cloneForegroundSnapshot(session.contextSnapshot)
 		changed := session.contextChanged
 		session.mu.Unlock()
-		if slices.ContainsFunc(snapshot.Items, func(item trajectory.Item) bool {
-			return item.Kind == trajectory.KindObservation && item.Content == requiredTranscript &&
-				trajectory.AuthorityOf(item) == trajectory.AuthorityUser
-		}) {
-			return snapshot, nil
+		if index, found := foregroundRequiredTranscriptIndex(
+			snapshot, requiredTranscript, requiredRevision,
+		); found {
+			prefix := trajectory.Snapshot{
+				Version: uint64(index + 1), Items: snapshot.Items[:index+1],
+			}
+			return cloneForegroundSnapshot(prefix), nil
 		}
 		select {
 		case <-waitCtx.Done():
@@ -1171,6 +1238,19 @@ func (session *foregroundSession) contextForRun(
 		case <-changed:
 		}
 	}
+}
+
+func foregroundRequiredTranscriptIndex(
+	snapshot trajectory.Snapshot, requiredTranscript string, requiredRevision uint64,
+) (int, bool) {
+	for index, item := range snapshot.Items {
+		if item.Kind == trajectory.KindObservation && item.Content == requiredTranscript &&
+			item.SourceRevision == requiredRevision &&
+			trajectory.AuthorityOf(item) == trajectory.AuthorityUser {
+			return index, true
+		}
+	}
+	return 0, false
 }
 
 func (session *foregroundSession) emit(

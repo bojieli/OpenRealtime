@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -586,6 +588,14 @@ func TestForegroundSessionSerializesOverlappingProviderTurns(t *testing.T) {
 func TestForegroundSessionStartsNextRunWhilePriorSpeechDrains(t *testing.T) {
 	session, runtime, _ := foregroundTestSession(t)
 	hello := foregroundTestHello(t)
+	runOneContext := trajectory.Snapshot{Version: 1, Items: []trajectory.Item{{
+		ID: "context-run-1", Kind: trajectory.KindObservation,
+		Content: "context visible to run one", SourceRevision: 1,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+	}}}
+	if err := session.updateContext(runOneContext); err != nil {
+		t.Fatal(err)
+	}
 	for index, runID := range []string{"foreground-run-1", "foreground-run-2"} {
 		trigger := foregroundTestInputMessage(t, hello, "trigger", cognitionelements.Generate{
 			Invocation: continuation.Invocation{
@@ -626,6 +636,16 @@ func TestForegroundSessionStartsNextRunWhilePriorSpeechDrains(t *testing.T) {
 	case <-time.After(250 * time.Millisecond):
 		t.Fatal("next run was serialized behind prior paced speech")
 	}
+	runTwoContext := cloneForegroundSnapshot(runOneContext)
+	runTwoContext.Version = 2
+	runTwoContext.Items = append(runTwoContext.Items, trajectory.Item{
+		ID: "context-run-2", Kind: trajectory.KindObservation,
+		Content: "context visible only to run two", SourceRevision: 2,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseObserver},
+	})
+	if err := session.updateContext(runTwoContext); err != nil {
+		t.Fatal(err)
+	}
 	// The prior action-plane stream continues while the next cognition run is
 	// active. Every speech frame must retain the prior graph run identity.
 	if err := sink.SpeechBegin(context.Background(), utterance); err != nil {
@@ -665,6 +685,19 @@ func TestForegroundSessionStartsNextRunWhilePriorSpeechDrains(t *testing.T) {
 		if frame.Port != port || frame.Envelope.RunID != "foreground-run-2" {
 			t.Fatalf("second run frame %d = port %q run %q", index, frame.Port, frame.Envelope.RunID)
 		}
+		switch port {
+		case "result":
+			result := foregroundTestCognitionResult(t, frame)
+			if result.ContextVersion != 2 || result.ContextTailID != "context-run-2" {
+				t.Fatalf("second run context = version %d tail %q, want 2/context-run-2",
+					result.ContextVersion, result.ContextTailID)
+			}
+		case "outcome":
+			outcome := foregroundTestCognitionOutcome(t, frame)
+			if outcome.ContextVersion != 2 {
+				t.Fatalf("second run outcome context = %d, want 2", outcome.ContextVersion)
+			}
+		}
 	}
 
 	if err := sink.SpeechEnd(context.Background(), utterance, action.Outcome{Completed: true}); err != nil {
@@ -677,10 +710,185 @@ func TestForegroundSessionStartsNextRunWhilePriorSpeechDrains(t *testing.T) {
 		if frame.Port != port || frame.Envelope.RunID != "foreground-run-1" {
 			t.Fatalf("draining run frame %d = port %q run %q", index, frame.Port, frame.Envelope.RunID)
 		}
+		switch port {
+		case "result":
+			result := foregroundTestCognitionResult(t, frame)
+			if result.ContextVersion != 1 || result.ContextTailID != "context-run-1" {
+				t.Fatalf("draining run context was stamped with hindsight: version %d tail %q",
+					result.ContextVersion, result.ContextTailID)
+			}
+		case "outcome":
+			outcome := foregroundTestCognitionOutcome(t, frame)
+			if outcome.ContextVersion != 1 {
+				t.Fatalf("draining run outcome was stamped with context %d, want 1",
+					outcome.ContextVersion)
+			}
+		}
 	}
 	if len(session.draining) != 0 || len(session.utteranceRuns) != 0 {
 		t.Fatalf("completed speech retained run=%d utterance=%d", len(session.draining), len(session.utteranceRuns))
 	}
+}
+
+func TestForegroundSessionFreezesAtExactDelayedTranscriptRevision(t *testing.T) {
+	session, runtime, _ := foregroundTestSession(t)
+	sink, _, _ := runtime.snapshot()
+	if err := sink.Transcript(context.Background(), legacy.TranscriptEvent{
+		ItemID: "microphone-turn", Text: "show the latest conversion rate", Final: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	transcript := foregroundTestReadFrame(t, session)
+	if transcript.Port != "transcript" {
+		t.Fatalf("transcript frame port = %q", transcript.Port)
+	}
+	if err := sink.TurnBegin(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ended := make(chan error, 1)
+	go func() { ended <- sink.TurnEnd(context.Background(), legacy.TurnOutcome{}) }()
+	select {
+	case err := <-ended:
+		t.Fatalf("turn did not wait for its exact committed transcript: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	// The transcript arrives in a later context snapshot. An unrelated item
+	// follows it in that mutable snapshot; only the exact prefix through source
+	// revision 1 belongs to the run that was already ending.
+	if err := session.updateContext(trajectory.Snapshot{Version: 2, Items: []trajectory.Item{
+		{
+			ID: "transcript-revision-1", Kind: trajectory.KindObservation,
+			Content: "show the latest conversion rate", SourceRevision: 1,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+		},
+		{
+			ID: "later-observation", Kind: trajectory.KindObservation,
+			Content: "later screen state", SourceRevision: 2,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseObserver},
+		},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-ended; err != nil {
+		t.Fatal(err)
+	}
+	resultFrame := foregroundTestReadFrame(t, session)
+	outcomeFrame := foregroundTestReadFrame(t, session)
+	if resultFrame.Port != "result" || outcomeFrame.Port != "outcome" {
+		t.Fatalf("terminal ports = %q/%q", resultFrame.Port, outcomeFrame.Port)
+	}
+	result := foregroundTestCognitionResult(t, resultFrame)
+	if result.ContextVersion != 1 || result.ContextTailID != "transcript-revision-1" {
+		t.Fatalf("delayed transcript context = version %d tail %q, want exact prefix 1",
+			result.ContextVersion, result.ContextTailID)
+	}
+	if outcome := foregroundTestCognitionOutcome(t, outcomeFrame); outcome.ContextVersion != 1 {
+		t.Fatalf("delayed transcript outcome context = %d, want 1", outcome.ContextVersion)
+	}
+}
+
+func TestForegroundSessionRejectsReusedGraphIdentitiesAndBoundsDraining(t *testing.T) {
+	t.Run("run ID", func(t *testing.T) {
+		session, runtime, _ := foregroundTestSession(t)
+		hello := foregroundTestHello(t)
+		for index := 0; index < 2; index++ {
+			if err := session.Send(foregroundTestInputMessage(t, hello, "trigger",
+				cognitionelements.Generate{Invocation: continuation.Invocation{
+					Instruction: "answer", MaxOutputTokens: 32,
+				}}, element.Envelope{
+					ItemID: "duplicate-trigger-" + string(rune('a'+index)),
+					RunID:  "duplicate-foreground-run", Sequence: uint64(index + 1),
+				})); err != nil {
+				t.Fatal(err)
+			}
+		}
+		sink, _, _ := runtime.snapshot()
+		if err := sink.TurnBegin(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if err := sink.TurnEnd(context.Background(), legacy.TurnOutcome{}); err != nil {
+			t.Fatal(err)
+		}
+		_ = foregroundTestReadFrame(t, session)
+		_ = foregroundTestReadFrame(t, session)
+		if err := sink.TurnBegin(context.Background()); err == nil ||
+			!strings.Contains(err.Error(), "duplicate run ID") {
+			t.Fatalf("reused run ID = %v", err)
+		}
+	})
+
+	t.Run("utterance ID", func(t *testing.T) {
+		session, runtime, _ := foregroundTestSession(t)
+		sink, _, _ := runtime.snapshot()
+		reservation := sink.(legacy.SpeechReservationSink)
+		utterance := action.Utterance{ID: "never-reuse-this-utterance", Text: "hello"}
+		if err := sink.TurnBegin(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if err := reservation.SpeechReserved(context.Background(), utterance); err != nil {
+			t.Fatal(err)
+		}
+		reservation.SpeechReservationCancelled(context.Background(), utterance)
+		if err := sink.TurnEnd(context.Background(), legacy.TurnOutcome{}); err != nil {
+			t.Fatal(err)
+		}
+		_ = foregroundTestReadFrame(t, session)
+		_ = foregroundTestReadFrame(t, session)
+		if err := sink.TurnBegin(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if err := reservation.SpeechReserved(context.Background(), utterance); err == nil ||
+			!strings.Contains(err.Error(), "reused utterance ID") {
+			t.Fatalf("reused utterance ID = %v", err)
+		}
+		if err := sink.TurnEnd(context.Background(), legacy.TurnOutcome{}); err != nil {
+			t.Fatal(err)
+		}
+		_ = foregroundTestReadFrame(t, session)
+		_ = foregroundTestReadFrame(t, session)
+	})
+
+	t.Run("draining bound", func(t *testing.T) {
+		session, runtime, _ := foregroundTestSession(t)
+		session.mu.Lock()
+		for index := 0; index < maximumForegroundDrainingRuns; index++ {
+			runID := fmt.Sprintf("retained-run-%d", index)
+			session.draining[runID] = &foregroundRun{id: runID}
+		}
+		session.mu.Unlock()
+		sink, _, _ := runtime.snapshot()
+		if err := sink.TurnBegin(context.Background()); err == nil ||
+			!strings.Contains(err.Error(), "draining run limit") {
+			t.Fatalf("draining run admission = %v", err)
+		}
+	})
+}
+
+func foregroundTestCognitionResult(t testing.TB, frame sidecar.Message) cognitionelements.Result {
+	t.Helper()
+	decoded := foregroundTestDecode(t, frame)
+	if pointer, ok := decoded.(*cognitionelements.Result); ok && pointer != nil {
+		return *pointer
+	}
+	if result, ok := decoded.(cognitionelements.Result); ok {
+		return result
+	}
+	t.Fatalf("foreground result payload = %T", decoded)
+	return cognitionelements.Result{}
+}
+
+func foregroundTestCognitionOutcome(t testing.TB, frame sidecar.Message) cognitionelements.Outcome {
+	t.Helper()
+	decoded := foregroundTestDecode(t, frame)
+	if pointer, ok := decoded.(*cognitionelements.Outcome); ok && pointer != nil {
+		return *pointer
+	}
+	if outcome, ok := decoded.(cognitionelements.Outcome); ok {
+		return outcome
+	}
+	t.Fatalf("foreground outcome payload = %T", decoded)
+	return cognitionelements.Outcome{}
 }
 
 func TestForegroundSessionCanceledOverlappingTurnDoesNotStrandAdmission(t *testing.T) {
