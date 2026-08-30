@@ -332,6 +332,38 @@ func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
 		admission.SpeechDurationMS != config.Gate.SpeechDurationMS {
 		return errors.New("scenario conversation graph acoustic gate drifted from application selection")
 	}
+	var content struct {
+		MaxInputBytes   int `json:"max_input_bytes"`
+		MaxPending      int `json:"max_pending"`
+		MaxPendingBytes int `json:"max_pending_bytes"`
+	}
+	if err := json.Unmarshal(values["content"], &content); err != nil {
+		return fmt.Errorf("decode scenario conversation content values: %w", err)
+	}
+	var retention struct {
+		MaxItems        int `json:"max_items"`
+		MaxBytes        int `json:"max_bytes"`
+		MaxItemBytes    int `json:"max_item_bytes"`
+		MaxActiveLeases int `json:"max_active_leases"`
+	}
+	if err := json.Unmarshal(values["retention"], &retention); err != nil {
+		return fmt.Errorf("decode scenario conversation retention values: %w", err)
+	}
+	var resolver struct {
+		MaxPending int `json:"max_pending"`
+		MaxBytes   int `json:"max_bytes"`
+	}
+	if err := json.Unmarshal(values["media_resolver"], &resolver); err != nil {
+		return fmt.Errorf("decode scenario conversation media resolver values: %w", err)
+	}
+	media := config.Media
+	if content.MaxInputBytes != media.MaxItemBytes || content.MaxPending != media.MaxPending ||
+		content.MaxPendingBytes != media.MaxBytes || retention.MaxItems != media.MaxItems ||
+		retention.MaxBytes != media.MaxBytes || retention.MaxItemBytes != media.MaxItemBytes ||
+		retention.MaxActiveLeases != media.MaxActiveLeases || resolver.MaxPending != media.MaxPending ||
+		resolver.MaxBytes != media.MaxBytes {
+		return errors.New("scenario conversation graph retained-media bounds drifted from application selection")
+	}
 	return nil
 }
 

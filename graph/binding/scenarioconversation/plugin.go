@@ -52,16 +52,7 @@ type Plugin struct {
 }
 
 func NewPlugin(source PluginConfig) (*Plugin, error) {
-	config := clonePluginConfig(source)
-	if err := validatePluginConfig(config); err != nil {
-		return nil, err
-	}
-	var err error
-	config.Tools, err = normalizeToolDeclarations(config.Tools)
-	if err != nil {
-		return nil, err
-	}
-	config.Media, err = config.Media.normalized()
+	config, err := NormalizePluginConfig(source)
 	if err != nil {
 		return nil, err
 	}

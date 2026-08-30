@@ -146,6 +146,27 @@ type PluginConfig struct {
 	MaxOutputTokens    int
 }
 
+// NormalizePluginConfig validates and snapshots one complete resource-free
+// plugin selection. It never invokes a provider factory; graph application
+// registries use it to derive immutable values and dependency identities
+// before a session is allowed to start.
+func NormalizePluginConfig(source PluginConfig) (PluginConfig, error) {
+	config := clonePluginConfig(source)
+	if err := validatePluginConfig(config); err != nil {
+		return PluginConfig{}, err
+	}
+	var err error
+	config.Tools, err = normalizeToolDeclarations(config.Tools)
+	if err != nil {
+		return PluginConfig{}, err
+	}
+	config.Media, err = config.Media.normalized()
+	if err != nil {
+		return PluginConfig{}, err
+	}
+	return config, nil
+}
+
 func clonePluginConfig(source PluginConfig) PluginConfig {
 	result := source
 	result.ASR.Descriptor.Capabilities = maps.Clone(source.ASR.Descriptor.Capabilities)
@@ -171,19 +192,12 @@ func validatePluginConfig(config PluginConfig) error {
 	if err := validateTTSPlugin(config.TTS); err != nil {
 		return err
 	}
-	if _, err := normalizeToolDeclarations(config.Tools); err != nil {
+	tools, err := normalizeToolDeclarations(config.Tools)
+	if err != nil {
 		return err
 	}
-	if err := config.Target.Validate(); err != nil {
-		return fmt.Errorf("scenario conversation action target: %w", err)
-	}
-	if !canonicalIdentity(config.Target.Name) {
-		return errors.New("scenario conversation action target name is not canonical")
-	}
-	for _, source := range config.Target.Sources {
-		if !canonicalIdentity(source) {
-			return errors.New("scenario conversation action target source is not canonical")
-		}
+	if err := validateActionTarget(config.Target, tools, "scenario conversation action"); err != nil {
+		return err
 	}
 	if _, err := perception.NewEnergyGate(config.Gate, 24_000); err != nil {
 		return fmt.Errorf("scenario conversation acoustic gate: %w", err)
@@ -193,6 +207,34 @@ func validatePluginConfig(config PluginConfig) error {
 	}
 	if config.MaxOutputTokens < 1 || config.MaxOutputTokens > 1_000_000 {
 		return errors.New("scenario conversation max_output_tokens must be between 1 and 1000000")
+	}
+	return nil
+}
+
+func validateActionTarget(target computeruse.Target, tools []ToolDeclaration, prefix string) error {
+	if err := target.Validate(); err != nil {
+		return fmt.Errorf("%s target: %w", prefix, err)
+	}
+	if !canonicalIdentity(target.Name) {
+		return fmt.Errorf("%s target name is not canonical", prefix)
+	}
+	seenSources := make(map[string]struct{}, len(target.Sources))
+	for _, source := range target.Sources {
+		if !canonicalIdentity(source) {
+			return fmt.Errorf("%s target source is not canonical", prefix)
+		}
+		if _, duplicate := seenSources[source]; duplicate {
+			return fmt.Errorf("%s target source %q is repeated", prefix, source)
+		}
+		seenSources[source] = struct{}{}
+	}
+	for _, tool := range tools {
+		if tool.Target != "" && tool.Target != target.Name {
+			return fmt.Errorf(
+				"%s tool %q selects target %q, want %q",
+				prefix, tool.Name, tool.Target, target.Name,
+			)
+		}
 	}
 	return nil
 }
