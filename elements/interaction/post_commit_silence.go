@@ -20,6 +20,7 @@ import (
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/internal/clock"
 	"github.com/bojieli/OpenRealtime/internal/elementconfig"
+	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 const (
@@ -54,10 +55,12 @@ func PostCommitSilenceDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "interaction.PostCommitSilence",
-		Revision:      1,
+		Revision:      2,
 		Ports: []element.Port{
 			{Name: "committed", Direction: element.Input, Type: stateelements.ObservationCommitOutcomeType(),
 				Cardinality: element.Variadic, Required: true, MinConnections: 1, DefaultDepth: 32},
+			{Name: "context", Direction: element.Input, Type: stateelements.SnapshotType(),
+				Cardinality: element.One, Required: true, DefaultDepth: 32},
 			{Name: "create", Direction: element.Output, Type: policyelements.ResponseCreateType(),
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "state", Direction: element.Output, Type: postCommitSilenceStateType,
@@ -66,7 +69,7 @@ func PostCommitSilenceDescriptor() element.Descriptor {
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
 		},
 		Reaction: element.Reaction{
-			Triggers: []string{"committed"}, Outcomes: []string{"create", "state", "outcome"},
+			Triggers: []string{"committed", "context"}, Outcomes: []string{"create", "state", "outcome"},
 			MaxConcurrency: 1, BreaksCycles: true,
 		},
 		StateSchema:  "schema://openrealtime/interaction/post-commit-silence-state/v1",
@@ -107,17 +110,19 @@ type PostCommitSilenceOutcome struct {
 }
 
 type PostCommitSilenceState struct {
-	Armed          bool   `json:"armed"`
-	Generation     uint64 `json:"generation"`
-	DeadlineNS     uint64 `json:"deadline_ns,omitempty"`
-	ContextVersion uint64 `json:"context_version"`
-	ContextItemID  string `json:"context_item_id,omitempty"`
-	TriggerItemID  string `json:"trigger_item_id,omitempty"`
-	ArmedCount     uint64 `json:"armed_count"`
-	ResetCount     uint64 `json:"reset_count"`
-	FiredCount     uint64 `json:"fired_count"`
-	IgnoredCount   uint64 `json:"ignored_count"`
-	RefusedCount   uint64 `json:"refused_count"`
+	Armed                bool   `json:"armed"`
+	Generation           uint64 `json:"generation"`
+	DeadlineNS           uint64 `json:"deadline_ns,omitempty"`
+	ContextVersion       uint64 `json:"context_version"`
+	ContextItemID        string `json:"context_item_id,omitempty"`
+	TriggerItemID        string `json:"trigger_item_id,omitempty"`
+	LatestContextVersion uint64 `json:"latest_context_version"`
+	LatestContextItemID  string `json:"latest_context_item_id,omitempty"`
+	ArmedCount           uint64 `json:"armed_count"`
+	ResetCount           uint64 `json:"reset_count"`
+	FiredCount           uint64 `json:"fired_count"`
+	IgnoredCount         uint64 `json:"ignored_count"`
+	RefusedCount         uint64 `json:"refused_count"`
 }
 
 func decodePostCommitSilenceConfig(source json.RawMessage) (PostCommitSilenceConfig, error) {
@@ -183,6 +188,10 @@ func (postCommitSilenceFactory) Mount(
 	if err != nil {
 		return nil, err
 	}
+	contextInput, err := mount.Ports.Input("context")
+	if err != nil {
+		return nil, err
+	}
 	create, err := mount.Ports.Output("create")
 	if err != nil {
 		return nil, err
@@ -198,7 +207,8 @@ func (postCommitSilenceFactory) Mount(
 	return &postCommitSilenceRunner{
 		instance: mount.InstanceID, config: config, clock: runtimeClock,
 		sequences: sequences, scheduler: scheduler, committed: committed,
-		create: create, stateOutput: state, outcomeOutput: outcome,
+		contextInput: contextInput,
+		create:       create, stateOutput: state, outcomeOutput: outcome,
 		resolution: mount.Resolution,
 	}, nil
 }
@@ -211,6 +221,7 @@ type postCommitSilenceRunner struct {
 	scheduler clock.Scheduler
 
 	committed     element.InputPort
+	contextInput  element.InputPort
 	create        element.OutputPort
 	stateOutput   element.OutputPort
 	outcomeOutput element.OutputPort
@@ -220,6 +231,11 @@ type postCommitSilenceRunner struct {
 	cause  element.Envelope
 	commit stateelements.ObservationCommitOutcome
 	state  PostCommitSilenceState
+
+	haveContext          bool
+	contextSessionID     string
+	latestContextVersion uint64
+	latestContextItemID  string
 }
 
 func (runner *postCommitSilenceRunner) Run(parent context.Context) error {
@@ -229,11 +245,13 @@ func (runner *postCommitSilenceRunner) Run(parent context.Context) error {
 		return err
 	}
 	commits := make(chan element.Envelope)
+	contexts := make(chan element.Envelope)
 	fired := make(chan uint64)
 	failures := make(chan error, 1)
 	var receivers sync.WaitGroup
-	receivers.Add(1)
+	receivers.Add(2)
 	go receivePostCommitSilence(ctx, runner.committed, commits, failures, &receivers)
+	go receivePostCommitSilenceContext(ctx, runner.contextInput, contexts, failures, &receivers)
 	defer func() {
 		if runner.timer != nil {
 			runner.timer.Stop()
@@ -250,6 +268,11 @@ func (runner *postCommitSilenceRunner) Run(parent context.Context) error {
 			return err
 		case envelope := <-commits:
 			if err := runner.acceptCommit(ctx, envelope, fired); err != nil {
+				cancel(err)
+				return err
+			}
+		case envelope := <-contexts:
+			if err := runner.acceptContext(ctx, envelope); err != nil {
 				cancel(err)
 				return err
 			}
@@ -287,6 +310,14 @@ func (runner *postCommitSilenceRunner) acceptCommit(
 			Kind: PostCommitSilenceRefused, Generation: runner.state.Generation,
 			ContextVersion: commit.StoreVersion, TriggerItemID: commit.TriggerItemID,
 			Code: "invalid_commit", Message: err.Error(),
+		})
+	}
+	if runner.haveContext && envelope.SessionID != runner.contextSessionID {
+		runner.state.RefusedCount++
+		return runner.publishTerminal(ctx, envelope, PostCommitSilenceOutcome{
+			Kind: PostCommitSilenceRefused, Generation: runner.state.Generation,
+			ContextVersion: commit.StoreVersion, TriggerItemID: commit.TriggerItemID,
+			Code: "invalid_commit", Message: "committed observation and trajectory context sessions differ",
 		})
 	}
 	if commit.StoreVersion <= runner.state.ContextVersion {
@@ -335,9 +366,54 @@ func (runner *postCommitSilenceRunner) acceptCommit(
 	return runner.publishState(ctx, envelope)
 }
 
+func (runner *postCommitSilenceRunner) acceptContext(
+	ctx context.Context, envelope element.Envelope,
+) error {
+	snapshot, ok := postCommitSilenceContextPayload(envelope.Payload)
+	if !ok {
+		return fmt.Errorf("post-commit silence context has payload %T", envelope.Payload)
+	}
+	bootstrap := snapshot.Version == 0 && len(snapshot.Items) == 0 && envelope.SessionID == ""
+	if !canonicalPostCommitSilenceIdentifier(envelope.ItemID) ||
+		(!bootstrap && !canonicalPostCommitSilenceIdentifier(envelope.SessionID)) {
+		return errors.New("post-commit silence context has non-canonical identity")
+	}
+	if snapshot.Version != uint64(len(snapshot.Items)) {
+		return fmt.Errorf("post-commit silence context version %d has %d items",
+			snapshot.Version, len(snapshot.Items))
+	}
+	if runner.haveContext {
+		switch {
+		case runner.contextSessionID != "" && envelope.SessionID != runner.contextSessionID:
+			return errors.New("post-commit silence context changed session")
+		case runner.contextSessionID == "" && envelope.SessionID == "" && snapshot.Version != 0:
+			return errors.New("post-commit silence non-empty context has no session")
+		case snapshot.Version < runner.latestContextVersion:
+			return fmt.Errorf("post-commit silence context regressed from %d to %d",
+				runner.latestContextVersion, snapshot.Version)
+		case snapshot.Version == runner.latestContextVersion && envelope.ItemID != runner.latestContextItemID:
+			return errors.New("post-commit silence context changed identity at the same version")
+		}
+	}
+	runner.haveContext = true
+	if envelope.SessionID != "" {
+		runner.contextSessionID = envelope.SessionID
+	}
+	runner.latestContextVersion = snapshot.Version
+	runner.latestContextItemID = envelope.ItemID
+	runner.state.LatestContextVersion = snapshot.Version
+	runner.state.LatestContextItemID = envelope.ItemID
+	return runner.publishState(ctx, envelope)
+}
+
 func (runner *postCommitSilenceRunner) fire(ctx context.Context, generation uint64) error {
 	if !runner.state.Armed || generation != runner.state.Generation {
 		return nil
+	}
+	if !runner.haveContext || runner.contextSessionID != runner.cause.SessionID ||
+		runner.latestContextVersion < runner.commit.StoreVersion ||
+		!canonicalPostCommitSilenceIdentifier(runner.latestContextItemID) {
+		return errors.New("post-commit silence has no current trajectory context for its armed observation")
 	}
 	runner.timer = nil
 	runner.state.Armed = false
@@ -347,16 +423,17 @@ func (runner *postCommitSilenceRunner) fire(ctx context.Context, generation uint
 		return err
 	}
 	responseID := fmt.Sprintf("%s:post_commit_silence:%d", runner.instance, sequence)
-	version := runner.commit.Context.Prefix.Version
+	version := runner.latestContextVersion
+	contextItemID := runner.latestContextItemID
 	envelope := runner.cause.Clone()
 	envelope.Type = policyelements.ResponseCreateType()
 	envelope.ItemID = responseID
 	envelope.CaptureNS = runner.clock.NowNS()
 	envelope.CausalParents = appendPostCommitParent(envelope.CausalParents, runner.cause.ItemID)
-	envelope.CausalParents = appendPostCommitParent(envelope.CausalParents, runner.commit.Context.StateItemID)
+	envelope.CausalParents = appendPostCommitParent(envelope.CausalParents, contextItemID)
 	envelope.Payload = policyelements.ResponseCreate{
 		ResponseID: responseID, ExpectedContextVersion: &version,
-		ExpectedContextItemID: runner.commit.Context.StateItemID,
+		ExpectedContextItemID: contextItemID,
 	}
 	delivery, err := runner.create.Broadcast(ctx, envelope)
 	if err != nil {
@@ -368,7 +445,7 @@ func (runner *postCommitSilenceRunner) fire(ctx context.Context, generation uint
 	if err := runner.publishOutcome(ctx, envelope, PostCommitSilenceOutcome{
 		Kind: PostCommitSilenceFired, Generation: generation,
 		DeadlineNS: runner.state.DeadlineNS, ContextVersion: version,
-		ContextItemID: runner.commit.Context.StateItemID,
+		ContextItemID: contextItemID,
 		TriggerItemID: runner.commit.TriggerItemID, ResponseID: responseID,
 	}); err != nil {
 		return err
@@ -440,6 +517,28 @@ func receivePostCommitSilence(
 	}
 }
 
+func receivePostCommitSilenceContext(
+	ctx context.Context, input element.InputPort, output chan<- element.Envelope,
+	failures chan<- error, wait *sync.WaitGroup,
+) {
+	defer wait.Done()
+	for {
+		envelope, err := input.Receive(ctx)
+		if terminalInteractionReceive(ctx, err) {
+			return
+		}
+		if err != nil {
+			sendInteractionFailure(ctx, failures, err)
+			return
+		}
+		select {
+		case output <- envelope:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 func postCommitSilencePayload(payload any) (stateelements.ObservationCommitOutcome, bool) {
 	switch value := payload.(type) {
 	case stateelements.ObservationCommitOutcome:
@@ -450,6 +549,18 @@ func postCommitSilencePayload(payload any) (stateelements.ObservationCommitOutco
 		}
 	}
 	return stateelements.ObservationCommitOutcome{}, false
+}
+
+func postCommitSilenceContextPayload(payload any) (trajectory.Snapshot, bool) {
+	switch value := payload.(type) {
+	case trajectory.Snapshot:
+		return value, true
+	case *trajectory.Snapshot:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return trajectory.Snapshot{}, false
 }
 
 func validatePostCommitSilenceCommit(

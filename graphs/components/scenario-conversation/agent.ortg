@@ -94,6 +94,7 @@ graph scenario_conversation {
     trajectory_snapshot_copy.out -> model.context;
     trajectory_snapshot_copy.out -> canonical_call_commit.context;
     trajectory_snapshot_copy.out -> tool_result_commit.context;
+    trajectory_snapshot_copy.out -> post_commit_silence.context;
     trajectory.committed -> trajectory_committed_copy.in;
     trajectory_committed_copy.out -> audio_observation_commit.committed;
     trajectory_committed_copy.out -> message_observation_commit.committed;

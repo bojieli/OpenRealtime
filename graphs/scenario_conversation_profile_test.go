@@ -322,6 +322,7 @@ func TestScenarioConversationGraphOwnsPostCommitFifteenSecondSilenceWakeup(t *te
 	for _, edge := range [][4]string{
 		{"audio_commit_outcome_copy", "out", "post_commit_silence", "committed"},
 		{"message_commit_outcome_copy", "out", "post_commit_silence", "committed"},
+		{"trajectory_snapshot_copy", "out", "post_commit_silence", "context"},
 		{"post_commit_silence", "create", "response_create_mux", "in"},
 		{"response_create_mux", "out", "session_invocation", "create"},
 	} {

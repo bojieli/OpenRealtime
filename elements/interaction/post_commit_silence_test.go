@@ -21,6 +21,7 @@ const postCommitSilenceGraph = `graph post_commit_silence_test {
     interaction.PostCommitSilence :: silence;
     input audio_commit = silence.committed;
     input message_commit = silence.committed;
+    input context = silence.context;
     output create = silence.create;
     output state = silence.state;
     output outcome = silence.outcome;
@@ -34,11 +35,13 @@ func TestPostCommitSilenceWaitsExactIntervalAndResetsFromLatestDurableCommit(t *
 
 	audio := ingress(t, mounted, "audio_commit")
 	message := ingress(t, mounted, "message_commit")
+	contextInput := ingress(t, mounted, "context")
 	created := egress(t, mounted, "create")
 	states := egress(t, mounted, "state")
 	outcomes := egress(t, mounted, "outcome")
 
 	first := postCommitSilenceEnvelope(1, "audio")
+	sendPostCommitSilenceContext(t, contextInput, states, 1, "state-audio-1")
 	send(t, audio, first)
 	armed := receive(t, outcomes).Payload.(PostCommitSilenceOutcome)
 	state := receive(t, states).Payload.(PostCommitSilenceState)
@@ -53,6 +56,7 @@ func TestPostCommitSilenceWaitsExactIntervalAndResetsFromLatestDurableCommit(t *
 	assertNoEnvelope(t, created)
 
 	second := postCommitSilenceEnvelope(2, "message")
+	sendPostCommitSilenceContext(t, contextInput, states, 2, "state-message-2")
 	send(t, message, second)
 	armed = receive(t, outcomes).Payload.(PostCommitSilenceOutcome)
 	state = receive(t, states).Payload.(PostCommitSilenceState)
@@ -80,24 +84,29 @@ func TestPostCommitSilenceWaitsExactIntervalAndResetsFromLatestDurableCommit(t *
 
 	manual.AdvanceNS(uint64(14*time.Second + 998*time.Millisecond))
 	assertNoEnvelope(t, created)
+	// Assistant/model result commits advance the append-only trajectory without
+	// resetting a timer whose condition is user silence. The eventual create must
+	// bind the latest State, not the now-stale observation prefix that armed it.
+	sendPostCommitSilenceContext(t, contextInput, states, 4, "trajectory-snapshot-4")
 	manual.AdvanceNS(uint64(time.Millisecond))
 
 	createEnvelope := receive(t, created)
 	create, ok := createEnvelope.Payload.(policyelements.ResponseCreate)
 	if !ok || create.ResponseID != createEnvelope.ItemID ||
-		create.ExpectedContextVersion == nil || *create.ExpectedContextVersion != 2 ||
-		create.ExpectedContextItemID != "state-message-2" ||
+		create.ExpectedContextVersion == nil || *create.ExpectedContextVersion != 4 ||
+		create.ExpectedContextItemID != "trajectory-snapshot-4" ||
 		!createEnvelope.Type.Equal(policyelements.ResponseCreateType()) ||
 		createEnvelope.SessionID != second.SessionID ||
 		!slicesContain(createEnvelope.CausalParents, second.ItemID) ||
-		!slicesContain(createEnvelope.CausalParents, "state-message-2") {
+		!slicesContain(createEnvelope.CausalParents, "trajectory-snapshot-4") {
 		t.Fatalf("post-commit response create = %+v payload=%+v", createEnvelope, create)
 	}
 	fired := receive(t, outcomes).Payload.(PostCommitSilenceOutcome)
 	state = receive(t, states).Payload.(PostCommitSilenceState)
 	if fired.Kind != PostCommitSilenceFired || fired.Generation != 2 ||
 		fired.ResponseID != create.ResponseID || state.Armed || state.FiredCount != 1 ||
-		state.ContextVersion != 2 {
+		state.ContextVersion != 2 || fired.ContextVersion != 4 ||
+		fired.ContextItemID != "trajectory-snapshot-4" {
 		t.Fatalf("fired silence outcome=%+v state=%+v", fired, state)
 	}
 	manual.AdvanceNS(uint64(time.Minute))
@@ -110,9 +119,11 @@ func TestPostCommitSilenceRejectsInvalidEvidenceWithoutDisarmingAValidTimer(t *t
 	defer stopInteractionGraph(t, done, cancel)
 
 	audio := ingress(t, mounted, "audio_commit")
+	contextInput := ingress(t, mounted, "context")
 	created := egress(t, mounted, "create")
 	states := egress(t, mounted, "state")
 	outcomes := egress(t, mounted, "outcome")
+	sendPostCommitSilenceContext(t, contextInput, states, 1, "state-audio-1")
 	send(t, audio, postCommitSilenceEnvelope(1, "audio"))
 	_ = receive(t, outcomes)
 	_ = receive(t, states)
@@ -154,11 +165,14 @@ func TestPostCommitSilenceDescriptorAndConfigAreExplicitAndBounded(t *testing.T)
 		t.Fatal(err)
 	}
 	committed, _ := descriptor.Port("committed")
+	contextInput, _ := descriptor.Port("context")
 	create, _ := descriptor.Port("create")
 	if committed.Cardinality != element.Variadic || committed.MinConnections != 1 ||
 		!committed.Type.Equal(stateelements.ObservationCommitOutcomeType()) ||
+		contextInput.Cardinality != element.One || !contextInput.Required ||
+		!contextInput.Type.Equal(stateelements.SnapshotType()) ||
 		!create.Type.Equal(policyelements.ResponseCreateType()) ||
-		!descriptor.Reaction.BreaksCycles {
+		descriptor.Revision != 2 || !descriptor.Reaction.BreaksCycles {
 		t.Fatalf("post-commit silence descriptor = %+v", descriptor)
 	}
 	for _, source := range []string{
@@ -172,6 +186,54 @@ func TestPostCommitSilenceDescriptorAndConfigAreExplicitAndBounded(t *testing.T)
 	config, err := decodePostCommitSilenceConfig(json.RawMessage(`{"delay_ms":15000}`))
 	if err != nil || config.DelayMS != 15_000 {
 		t.Fatalf("post-commit silence config=%+v err=%v", config, err)
+	}
+}
+
+func TestPostCommitSilenceAcceptsOnlyTheTrajectoryStoresEmptyBootstrap(t *testing.T) {
+	manual := clock.NewManual(0)
+	mounted, done, cancel := mountPostCommitSilence(t, manual)
+	defer stopInteractionGraph(t, done, cancel)
+	contextInput := ingress(t, mounted, "context")
+	states := egress(t, mounted, "state")
+	send(t, contextInput, element.Envelope{
+		Type: stateelements.SnapshotType(), ItemID: "trajectory-snapshot-0",
+		Payload: trajectory.Snapshot{},
+	})
+	bootstrap := receive(t, states).Payload.(PostCommitSilenceState)
+	if bootstrap.LatestContextVersion != 0 || bootstrap.LatestContextItemID != "trajectory-snapshot-0" {
+		t.Fatalf("bootstrap context state = %+v", bootstrap)
+	}
+	sendPostCommitSilenceContext(t, contextInput, states, 1, "trajectory-snapshot-1")
+}
+
+func TestPostCommitSilenceFailsClosedOnRegressedOrEquivocatedContext(t *testing.T) {
+	tests := []struct {
+		name       string
+		version    uint64
+		contextID  string
+		wantDetail string
+	}{
+		{name: "regression", version: 1, contextID: "trajectory-snapshot-1", wantDetail: "regressed"},
+		{name: "same version different identity", version: 2, contextID: "forged-snapshot-2", wantDetail: "same version"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			manual := clock.NewManual(0)
+			mounted, done, cancel := mountPostCommitSilence(t, manual)
+			defer cancel()
+			contextInput := ingress(t, mounted, "context")
+			states := egress(t, mounted, "state")
+			sendPostCommitSilenceContext(t, contextInput, states, 2, "trajectory-snapshot-2")
+			send(t, contextInput, postCommitSilenceContextEnvelope(test.version, test.contextID))
+			select {
+			case err := <-done:
+				if err == nil || !strings.Contains(err.Error(), test.wantDetail) {
+					t.Fatalf("context drift failure = %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("context drift did not stop the graph")
+			}
+		})
 	}
 }
 
@@ -236,6 +298,24 @@ func postCommitSilenceEnvelope(version uint64, source string) element.Envelope {
 		Type:   stateelements.ObservationCommitOutcomeType(),
 		ItemID: "commit-" + source + "-" + identity, SessionID: "session-silence",
 		CausalParents: []string{stateID}, Payload: commit,
+	}
+}
+
+func sendPostCommitSilenceContext(
+	t *testing.T, input element.OutputPort, states element.InputPort, version uint64, itemID string,
+) {
+	t.Helper()
+	send(t, input, postCommitSilenceContextEnvelope(version, itemID))
+	state := receive(t, states).Payload.(PostCommitSilenceState)
+	if state.LatestContextVersion != version || state.LatestContextItemID != itemID {
+		t.Fatalf("latest post-commit context state = %+v", state)
+	}
+}
+
+func postCommitSilenceContextEnvelope(version uint64, itemID string) element.Envelope {
+	return element.Envelope{
+		Type: stateelements.SnapshotType(), ItemID: itemID, SessionID: "session-silence",
+		Payload: trajectory.Snapshot{Version: version, Items: make([]trajectory.Item, version)},
 	}
 }
 
