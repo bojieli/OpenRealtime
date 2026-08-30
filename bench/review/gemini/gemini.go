@@ -156,7 +156,7 @@ func descriptorFor(implementation, configuration []byte) review.ProviderDescript
 		Provider: "google", Model: ModelID, API: interactionsAPI,
 		APIRevision: APIRevision,
 		Implementation: review.ContentIdentity{
-			Version: "openrealtime.gemini-review.impl.v5", SHA256: digest(implementation),
+			Version: "openrealtime.gemini-review.impl.v6", SHA256: digest(implementation),
 		},
 		ConfigurationSHA256: digest(configuration),
 		CapabilitiesSHA256:  capabilitiesSHA256,
@@ -281,7 +281,7 @@ func configurationArtifact(transport map[string]any) []byte {
 			"accept": "application/json", "content_type": "application/json",
 			"credential_header": "x-goog-api-key", "user_agent": "OpenRealtime-benchmark-review/1",
 		},
-		"implementation":           "openrealtime.gemini-review.v5",
+		"implementation":           "openrealtime.gemini-review.v6",
 		"inline_media_max_count":   maximumPreparedMedia,
 		"inline_media_max_bytes":   maximumInlineMediaBytes,
 		"inline_request_max_bytes": maximumInlineRequestBytes,
@@ -1297,7 +1297,10 @@ func interactionHTTPError(
 		return err
 	}
 	if contains {
-		return errors.New(prefix)
+		return fmt.Errorf(
+			"Gemini Interactions API returned HTTP %d with credential material; response discarded",
+			statusCode,
+		)
 	}
 	if rejectRecognizedFieldAliases(raw, "Gemini error envelope", []string{"error"}) != nil {
 		return errors.New(prefix)
@@ -1418,13 +1421,33 @@ type jsonCredentialScanner struct {
 	credential        []byte
 	failure           []int
 	fragmentPositions map[uint32][]int
+	transforms        []*jsonCredentialScanner
 }
 
 func newJSONCredentialScanner(credential string) (*jsonCredentialScanner, error) {
 	if err := validateAPIKey(credential); err != nil {
 		return nil, err
 	}
-	pattern := []byte(credential)
+	scanner := newJSONCredentialPatternScanner([]byte(credential))
+	seen := map[string]struct{}{credential: {}}
+	for _, transformed := range []string{
+		base64.StdEncoding.EncodeToString([]byte(credential)),
+		base64.RawStdEncoding.EncodeToString([]byte(credential)),
+		base64.URLEncoding.EncodeToString([]byte(credential)),
+		base64.RawURLEncoding.EncodeToString([]byte(credential)),
+	} {
+		if _, duplicate := seen[transformed]; duplicate {
+			continue
+		}
+		seen[transformed] = struct{}{}
+		scanner.transforms = append(
+			scanner.transforms, newJSONCredentialPatternScanner([]byte(transformed)),
+		)
+	}
+	return scanner, nil
+}
+
+func newJSONCredentialPatternScanner(pattern []byte) *jsonCredentialScanner {
 	failure := make([]int, len(pattern))
 	fragmentPositions := make(map[uint32][]int, len(pattern))
 	for offset := 0; offset+4 <= len(pattern); offset++ {
@@ -1442,7 +1465,7 @@ func newJSONCredentialScanner(credential string) (*jsonCredentialScanner, error)
 	}
 	return &jsonCredentialScanner{
 		credential: pattern, failure: failure, fragmentPositions: fragmentPositions,
-	}, nil
+	}
 }
 
 func (scanner *jsonCredentialScanner) wipe() {
@@ -1454,9 +1477,14 @@ func (scanner *jsonCredentialScanner) wipe() {
 	for fragment := range scanner.fragmentPositions {
 		delete(scanner.fragmentPositions, fragment)
 	}
+	for _, transformed := range scanner.transforms {
+		transformed.wipe()
+	}
+	clear(scanner.transforms)
 	scanner.credential = nil
 	scanner.failure = nil
 	scanner.fragmentPositions = nil
+	scanner.transforms = nil
 }
 
 func containsCredentialJSON(payload []byte, credential string) bool {
@@ -1491,6 +1519,12 @@ func (scanner *jsonCredentialScanner) containsJSONContext(
 	if scanner == nil || len(scanner.credential) == 0 ||
 		len(scanner.failure) != len(scanner.credential) || len(payload) > maximumInlineRequestBytes {
 		return true, nil
+	}
+	for _, transformed := range scanner.transforms {
+		contains, err := transformed.containsJSONContext(ctx, payload)
+		if err != nil || contains {
+			return contains, err
+		}
 	}
 	literalState := 0
 	literal, err := scanner.advanceCredentialContext(ctx, payload, &literalState)

@@ -3,6 +3,7 @@ package gemini
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -453,6 +454,62 @@ func TestPluginRejectsEscapedCredentialInDeepThoughtSummary(t *testing.T) {
 	if _, err := plugin.Review(t.Context(), prepared); err == nil ||
 		!strings.Contains(err.Error(), "credential material") || strings.Contains(err.Error(), testAPIKey) {
 		t.Fatalf("Review() error = %v", err)
+	}
+}
+
+func TestPluginRejectsBase64CredentialInSuccessAndHTTPError(t *testing.T) {
+	encodings := map[string]string{
+		"standard": base64.StdEncoding.EncodeToString([]byte(testAPIKey)),
+		"raw URL":  base64.RawURLEncoding.EncodeToString([]byte(testAPIKey)),
+	}
+	for encodingName, transformed := range encodings {
+		for _, response := range []struct {
+			name   string
+			status int
+			body   func() []byte
+		}{
+			{name: "success", status: http.StatusOK, body: func() []byte {
+				return bytes.Replace(
+					successfulInteraction(t, testAssessment),
+					[]byte("reviewed evidence"), []byte(transformed), 1,
+				)
+			}},
+			{name: "HTTP error", status: http.StatusBadRequest, body: func() []byte {
+				payload, err := json.Marshal(map[string]any{
+					"error": map[string]string{
+						"message": transformed, "status": "INVALID_ARGUMENT",
+					},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return payload
+			}},
+		} {
+			t.Run(encodingName+"/"+response.name, func(t *testing.T) {
+				body := response.body()
+				if bytes.Contains(body, []byte(testAPIKey)) {
+					t.Fatal("base64 fixture contains the literal credential")
+				}
+				_, prepared, _ := preparedMultimodalRequest(t)
+				plugin, err := newWithHTTPClient(testAPIKey, &http.Client{Transport: roundTripFunc(
+					func(*http.Request) (*http.Response, error) {
+						return jsonResponse(response.status, body), nil
+					})})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer plugin.Close()
+				_, reviewErr := plugin.Review(t.Context(), prepared)
+				if reviewErr == nil || strings.Contains(reviewErr.Error(), testAPIKey) ||
+					strings.Contains(reviewErr.Error(), transformed) {
+					t.Fatalf("Review() error = %v", reviewErr)
+				}
+				if !strings.Contains(reviewErr.Error(), "credential material") {
+					t.Fatalf("Review() error = %v", reviewErr)
+				}
+			})
+		}
 	}
 }
 
@@ -1559,7 +1616,7 @@ func TestProductionArtifactsContainInspectableSourceAndExactPolicyPreimages(t *t
 		t.Fatalf("configuration transport policy = %#v", decoded["transport"])
 	}
 	descriptor := Descriptor()
-	if descriptor.Implementation.Version != "openrealtime.gemini-review.impl.v5" ||
+	if descriptor.Implementation.Version != "openrealtime.gemini-review.impl.v6" ||
 		descriptor.Implementation.SHA256 != digest(implementation) ||
 		descriptor.ConfigurationSHA256 != digest(configuration) {
 		t.Fatalf("production descriptor = %+v", descriptor)
