@@ -547,6 +547,64 @@ func TestForegroundSessionGeneratedRunIdentityBindsOrderedSpeechResultAndOutcome
 	}
 }
 
+func TestForegroundSessionSerializesOverlappingProviderTurns(t *testing.T) {
+	_, runtime, _ := foregroundTestSession(t)
+	sink, _, _ := runtime.snapshot()
+	if err := sink.TurnBegin(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	entered := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		close(entered)
+		done <- sink.TurnBegin(context.Background())
+	}()
+	<-entered
+	select {
+	case err := <-done:
+		t.Fatalf("overlapping TurnBegin returned before the active run ended: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	if err := sink.TurnEnd(context.Background(), legacy.TurnOutcome{}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serialized TurnBegin = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("serialized TurnBegin did not resume after the active run ended")
+	}
+	if err := sink.TurnEnd(context.Background(), legacy.TurnOutcome{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestForegroundSessionCanceledOverlappingTurnDoesNotStrandAdmission(t *testing.T) {
+	_, runtime, _ := foregroundTestSession(t)
+	sink, _, _ := runtime.snapshot()
+	if err := sink.TurnBegin(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := sink.TurnBegin(canceled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled overlapping TurnBegin = %v", err)
+	}
+	if err := sink.TurnEnd(context.Background(), legacy.TurnOutcome{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.TurnBegin(context.Background()); err != nil {
+		t.Fatalf("TurnBegin after canceled waiter = %v", err)
+	}
+	if err := sink.TurnEnd(context.Background(), legacy.TurnOutcome{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestForegroundTranscriptSupersessionUsesStableStreamAndIndependentFrames(t *testing.T) {
 	session, runtime, _ := foregroundTestSession(t)
 	sink, _, _ := runtime.snapshot()

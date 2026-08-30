@@ -37,6 +37,7 @@ const (
 	maximumForegroundTranscriptKeys  = 4096
 	foregroundCloseTimeout           = 10 * time.Second
 	foregroundContextWait            = 5 * time.Second
+	foregroundTurnWait               = 30 * time.Second
 )
 
 var expectedForegroundPorts = map[string]element.Direction{
@@ -99,6 +100,12 @@ type foregroundSession struct {
 	sequence  atomic.Uint64
 	closeOnce sync.Once
 	closeErr  error
+	// Cascade may finish synthesizing one turn while its event loop has already
+	// admitted the next visual or transcript trigger. Its Sink callbacks carry
+	// no provider run ID, so the adapter must serialize those callback spans;
+	// otherwise the second TurnBegin can either fail a valid overlapping Meeting
+	// event or attach its output to the previous graph run.
+	turnAdmission chan struct{}
 
 	sendMu  sync.Mutex
 	seen    map[string]struct{}
@@ -115,6 +122,7 @@ type foregroundSession struct {
 	contextChanged      chan struct{}
 	pendingRunIDs       []pendingForegroundTrigger
 	active              *foregroundRun
+	runChanged          chan struct{}
 	transcriptRevision  uint64
 	transcriptByItem    map[string]uint64
 	lastFinalTranscript string
@@ -148,8 +156,10 @@ func (plugin *SessionPlugin) newForegroundSession(
 		options: cloneLegacyOptions(options), ready: ready, contract: contract,
 		codec: modelelements.NewStandardJSONCodec(), frames: make(chan sidecar.Message, maximumForegroundFrames),
 		seen: make(map[string]struct{}), settings: legacy.CloneSettings(options.Settings),
-		contextChanged: make(chan struct{}), transcriptByItem: make(map[string]uint64),
+		contextChanged: make(chan struct{}), runChanged: make(chan struct{}),
+		turnAdmission: make(chan struct{}, 1), transcriptByItem: make(map[string]uint64),
 	}
+	session.turnAdmission <- struct{}{}
 	binding, err := plugin.config.Foreground.Factory(sessionCtx, cloneLegacyOptions(options))
 	if err != nil {
 		cancel(err)
@@ -598,10 +608,30 @@ func (session *foregroundSession) TurnBegin(ctx context.Context) error {
 	if err := session.outputUsable(ctx, "begin meeting foreground turn"); err != nil {
 		return err
 	}
-	session.mu.Lock()
-	if session.active != nil {
+	waitCtx, cancel := context.WithTimeout(ctx, foregroundTurnWait)
+	defer cancel()
+	select {
+	case <-session.turnAdmission:
+		defer func() { session.turnAdmission <- struct{}{} }()
+	case <-waitCtx.Done():
+		return fmt.Errorf("begin meeting foreground turn admission: %w", context.Cause(waitCtx))
+	case <-session.ctx.Done():
+		return context.Cause(session.ctx)
+	}
+	for {
+		session.mu.Lock()
+		if session.active == nil {
+			break
+		}
+		changed := session.runChanged
 		session.mu.Unlock()
-		return errors.New("begin meeting foreground turn: another run is active")
+		select {
+		case <-changed:
+		case <-waitCtx.Done():
+			return fmt.Errorf("begin meeting foreground turn after active run: %w", context.Cause(waitCtx))
+		case <-session.ctx.Done():
+			return context.Cause(session.ctx)
+		}
 	}
 	runID := ""
 	invocation := continuation.Invocation{}
@@ -1003,6 +1033,8 @@ func (session *foregroundSession) takeFinalRunLocked() *foregroundRun {
 	}
 	run := session.active
 	session.active = nil
+	close(session.runChanged)
+	session.runChanged = make(chan struct{})
 	return run
 }
 
