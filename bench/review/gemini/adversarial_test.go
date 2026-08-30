@@ -1124,11 +1124,11 @@ func TestPluginRejectsDeclaredSecretSynthesizedOnlyByBase64Encoding(t *testing.T
 	}
 }
 
-func TestStableV1CapabilityTableClaimsOnlyEvidencedInlineFormats(t *testing.T) {
+func TestPinnedInteractionCapabilityTableClaimsOnlyEvidencedInlineFormats(t *testing.T) {
 	want := []string{
 		"audio/wav", "image/png", "video/mp4",
 	}
-	capabilities := stableV1InlineMediaCapabilities()
+	capabilities := interactionInlineMediaCapabilities()
 	if len(capabilities) != len(want) {
 		t.Fatalf("runtime capabilities = %v, want %v", capabilities, want)
 	}
@@ -1682,7 +1682,7 @@ func TestProductionArtifactsContainInspectableSourceAndExactPolicyPreimages(t *t
 		t.Fatalf("configuration transport policy = %#v", decoded["transport"])
 	}
 	descriptor := Descriptor()
-	if descriptor.Implementation.Version != "openrealtime.gemini-review.impl.v6" ||
+	if descriptor.Implementation.Version != "openrealtime.gemini-review.impl.v7" ||
 		descriptor.Implementation.SHA256 != digest(implementation) ||
 		descriptor.ConfigurationSHA256 != digest(configuration) {
 		t.Fatalf("production descriptor = %+v", descriptor)

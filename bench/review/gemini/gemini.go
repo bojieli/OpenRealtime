@@ -35,9 +35,9 @@ import (
 const (
 	RegistrationName = "google.gemini-3.7-flash"
 	ModelID          = "gemini-3.7-flash"
-	APIRevision      = "v1"
+	APIRevision      = "v1beta"
 	interactionsAPI  = "gemini.interactions"
-	interactionsURL  = "https://generativelanguage.googleapis.com/v1/interactions"
+	interactionsURL  = "https://generativelanguage.googleapis.com/v1beta/interactions"
 
 	maximumInlineRequestBytes = 20_000_000
 	maximumInlineMediaBytes   = 8 << 20
@@ -73,10 +73,10 @@ type inlineMediaCapability struct {
 	mediaType string
 }
 
-// stableV1InlineMediaCapabilities is the one source of truth for both the
+// interactionInlineMediaCapabilities is the one source of truth for both the
 // retained configuration artifact and runtime admission. Return a fresh slice
 // so tests or callers inside this package cannot mutate production policy.
-func stableV1InlineMediaCapabilities() []inlineMediaCapability {
+func interactionInlineMediaCapabilities() []inlineMediaCapability {
 	return []inlineMediaCapability{
 		{kind: "audio", mediaType: "audio/wav"},
 		{kind: "image", mediaType: "image/png"},
@@ -84,8 +84,8 @@ func stableV1InlineMediaCapabilities() []inlineMediaCapability {
 	}
 }
 
-func stableV1InlineMediaTypes() []string {
-	capabilities := stableV1InlineMediaCapabilities()
+func interactionInlineMediaTypes() []string {
+	capabilities := interactionInlineMediaCapabilities()
 	result := make([]string, len(capabilities))
 	for index, capability := range capabilities {
 		result[index] = capability.mediaType
@@ -95,7 +95,7 @@ func stableV1InlineMediaTypes() []string {
 
 func providerCapabilities() review.ProviderCapabilities {
 	return review.ProviderCapabilities{
-		MediaTypes: stableV1InlineMediaTypes(), MaximumMediaCount: maximumPreparedMedia,
+		MediaTypes: interactionInlineMediaTypes(), MaximumMediaCount: maximumPreparedMedia,
 		MaximumMediaBytes: maximumInlineMediaBytes,
 	}
 }
@@ -156,7 +156,7 @@ func descriptorFor(implementation, configuration []byte) review.ProviderDescript
 		Provider: "google", Model: ModelID, API: interactionsAPI,
 		APIRevision: APIRevision,
 		Implementation: review.ContentIdentity{
-			Version: "openrealtime.gemini-review.impl.v6", SHA256: digest(implementation),
+			Version: "openrealtime.gemini-review.impl.v7", SHA256: digest(implementation),
 		},
 		ConfigurationSHA256: digest(configuration),
 		CapabilitiesSHA256:  capabilitiesSHA256,
@@ -281,15 +281,15 @@ func configurationArtifact(transport map[string]any) []byte {
 			"accept": "application/json", "content_type": "application/json",
 			"credential_header": "x-goog-api-key", "user_agent": "OpenRealtime-benchmark-review/1",
 		},
-		"implementation":           "openrealtime.gemini-review.v6",
+		"implementation":           "openrealtime.gemini-review.v7",
 		"inline_media_max_count":   maximumPreparedMedia,
 		"inline_media_max_bytes":   maximumInlineMediaBytes,
 		"inline_request_max_bytes": maximumInlineRequestBytes,
-		"input_shape":              "one_user_input", "max_output_tokens": 16_384,
+		"input_shape":              "ordered_content_blocks", "max_output_tokens": 16_384,
 		"media_order": "prompt_then_request_fingerprint_then_manifest_media", "seed": 1,
 		"request_binding":              "prepared_request_fingerprint_text_block_v1",
 		"request_fingerprint_label":    requestFingerprintLabel,
-		"supported_inline_media_types": stableV1InlineMediaTypes(),
+		"supported_inline_media_types": interactionInlineMediaTypes(),
 		"store":                        false, "stream": false, "system_instruction": systemInstruction,
 		"thinking_level": "high", "transport": transport,
 	})
@@ -831,14 +831,9 @@ type contentBlock struct {
 	MediaType string `json:"mime_type,omitempty"`
 }
 
-type userInputStep struct {
-	Type    string         `json:"type"`
-	Content []contentBlock `json:"content"`
-}
-
 type interactionRequest struct {
 	Model             string           `json:"model"`
-	Input             []userInputStep  `json:"input"`
+	Input             []contentBlock   `json:"input"`
 	SystemInstruction string           `json:"system_instruction"`
 	ResponseFormat    responseFormat   `json:"response_format"`
 	GenerationConfig  generationConfig `json:"generation_config"`
@@ -906,7 +901,7 @@ func marshalValidatedRequestContext(
 	encoder := json.NewEncoder(&output)
 	encoder.SetEscapeHTML(false)
 	err := encoder.Encode(interactionRequest{
-		Model: ModelID, Input: []userInputStep{{Type: "user_input", Content: input}},
+		Model: ModelID, Input: input,
 		SystemInstruction: systemInstruction,
 		ResponseFormat: responseFormat{
 			Type: "text", MediaType: "application/json", Schema: slices.Clone(prepared.Schema),
@@ -1036,7 +1031,7 @@ func validatePreparedContext(ctx context.Context, prepared review.PreparedReques
 }
 
 func supportedMediaType(kind, mediaType string) bool {
-	for _, capability := range stableV1InlineMediaCapabilities() {
+	for _, capability := range interactionInlineMediaCapabilities() {
 		if capability.kind == kind && capability.mediaType == mediaType {
 			return true
 		}
