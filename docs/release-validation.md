@@ -143,6 +143,17 @@ ordinary result JSON by itself is not retained-review evidence. Advisory model
 reviews remain separate evaluations of that receipt and cannot change the
 deterministic pass/fail result.
 
+For operator review, run `openrealtime review scenario` against that sealed
+directory and external receipt. The production registration is pinned to
+`google.gemini-3.7-flash`; the evaluator receives only the canonical public
+attempt context and digest-verified WAV/image bytes. It emits one create-only
+evaluation bundle and sibling portable receipt per attempt, then a reproducible
+case-by-case `REVIEW.md`, aggregate manifest, and aggregate external receipt.
+These artifacts are secondary review evidence: they expose disagreement and
+media-quality findings but never rewrite the checklist outcome. They must not
+be represented as a passing live release gate unless the complete provisioned
+population and all retained receipts were actually produced and verified.
+
 After both arms are retained, set
 `OPENREALTIME_MIGRATION_REPORT_LOCATION` to a new logical location inside the
 store and run:

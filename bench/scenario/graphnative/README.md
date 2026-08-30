@@ -134,6 +134,30 @@ deterministic checklist and source receipt are the authority; any multimodal
 model review is a separate, secondary evaluation bound to that immutable
 source receipt and cannot convert a failed checklist row into a pass.
 
+Run that secondary pass only after retaining the external source receipt. The
+reviewer is an offline plug-in client; it does not start or alter a Realtime
+session:
+
+```sh
+GEMINI_API_KEY="$GEMINI_API_KEY" go run ./cmd/openrealtime review scenario \
+  -source-dir results/candidate-scenario-review \
+  -source-receipt results/candidate-scenario-review.receipt.json \
+  -out results/candidate-scenario-evaluations \
+  -provider google.gemini-3.7-flash \
+  -parallel 4
+```
+
+The command verifies the complete source population before opening the selected
+provider. Each attempt gets a create-only evaluation directory, its own
+external sibling receipt, and a link from the case-by-case `REVIEW.md`. The
+aggregate `manifest.json` and portable receipt are published only after every
+attempt bundle reopens against its receipt, the source re-verifies unchanged,
+and the provider closes successfully. A provider failure leaves no aggregate
+marker; any completed per-attempt bundles remain diagnostic evidence for that
+failed invocation. Evaluation provenance describes a provider-verified
+in-process exchange and local digest retention, not independent remote-service
+attestation.
+
 Missing endpoints, provider credentials, reviewed manifests, inspection
 authority, or migration registration are an unavailable provisioned gate—not a
 passing synthetic result. The credential-free WebSocket test above must never
