@@ -53,6 +53,15 @@ type SourceReviewContext struct {
 	Architecture           SourceReviewArchitecture `json:"architecture"`
 }
 
+// SourceReviewPopulation is one receipt-verified source snapshot and the
+// exact provider-neutral requests derived from it. Returning both avoids an
+// orchestration layer performing a redundant full source verification merely
+// to recover checklist and manifest metadata already authenticated here.
+type SourceReviewPopulation struct {
+	Bundle   SourceBundle
+	Requests []review.Request
+}
+
 // BuildSourceReviewRequests converts one externally anchored scenario source
 // bundle into provider-neutral offline review requests. It performs no model,
 // credential, or network work. The source tree is receipt-verified before and
@@ -62,52 +71,68 @@ func BuildSourceReviewRequests(
 	ctx context.Context,
 	options SourceBundleOptions,
 	expected SourceReceipt,
-) (requests []review.Request, resultErr error) {
+) ([]review.Request, error) {
+	population, err := BuildSourceReviewPopulation(ctx, options, expected)
+	if err != nil {
+		return nil, err
+	}
+	return population.Requests, nil
+}
+
+// BuildSourceReviewPopulation verifies the externally anchored source before
+// and after deriving every request, and returns the verified bundle metadata
+// from that same operation. It performs no provider, credential, or network
+// work.
+func BuildSourceReviewPopulation(
+	ctx context.Context,
+	options SourceBundleOptions,
+	expected SourceReceipt,
+) (population SourceReviewPopulation, resultErr error) {
 	if ctx == nil {
-		return nil, errors.New("build scenario source reviews: nil context")
+		return SourceReviewPopulation{}, errors.New("build scenario source reviews: nil context")
 	}
 	bundle, err := VerifySourceBundle(ctx, options, expected)
 	if err != nil {
-		return nil, err
+		return SourceReviewPopulation{}, err
 	}
 	root, rootInfo, err := openSourceRoot(options.Directory)
 	if err != nil {
-		return nil, err
+		return SourceReviewPopulation{}, err
 	}
 	defer func() {
 		if closeErr := root.Close(); closeErr != nil {
-			requests = nil
+			population = SourceReviewPopulation{}
 			resultErr = errors.Join(resultErr, errors.New("close scenario source review root"))
 		}
 	}()
 	if len(bundle.Manifest.Attempts) != bundle.Checklist.Expected ||
 		len(bundle.ArchitectureResult.Measurement.Tasks) != bundle.Checklist.Expected {
-		return nil, errors.New("scenario source review population is incomplete")
+		return SourceReviewPopulation{}, errors.New("scenario source review population is incomplete")
 	}
 	observations := make(map[string]archbench.Observation, len(bundle.ArchitectureResult.Observed))
 	for _, observation := range bundle.ArchitectureResult.Observed {
 		if _, duplicate := observations[observation.TaskID]; duplicate {
-			return nil, errors.New("scenario source architecture observations are duplicated")
+			return SourceReviewPopulation{}, errors.New("scenario source architecture observations are duplicated")
 		}
 		observations[observation.TaskID] = observation
 	}
 	guard := sourceSensitiveValues(options.SensitiveValues)
-	requests = make([]review.Request, 0, bundle.Checklist.Expected)
+	requests := make([]review.Request, 0, bundle.Checklist.Expected)
 	for index, attempt := range bundle.Manifest.Attempts {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return SourceReviewPopulation{}, err
 		}
 		resultPayload, err := readSourceFile(ctx, root, attempt.Result)
 		if err != nil {
-			return nil, err
+			return SourceReviewPopulation{}, err
 		}
 		deterministic, err := decodeSourceScenarioResult(resultPayload)
 		if err != nil {
-			return nil, fmt.Errorf("scenario source review %s: %w", attempt.Record.Key.TaskID, err)
+			return SourceReviewPopulation{}, fmt.Errorf("scenario source review %s: %w", attempt.Record.Key.TaskID, err)
 		}
 		if digest, err := FingerprintResult(deterministic); err != nil ||
 			digest != attempt.Record.Execution.ResultSHA256 {
-			return nil, errors.New("scenario source review result differs from the checklist")
+			return SourceReviewPopulation{}, errors.New("scenario source review result differs from the checklist")
 		}
 		architecture := SourceReviewArchitecture{
 			ResultVersion:   bundle.ArchitectureResult.Version,
@@ -133,10 +158,10 @@ func BuildSourceReviewRequests(
 			Attempt:                attempt.Record.Clone(), Result: deterministic, Architecture: architecture,
 		}, maximumSourceReviewContext)
 		if err != nil {
-			return nil, err
+			return SourceReviewPopulation{}, err
 		}
 		if sourceContainsSensitive(contextPayload, guard) {
-			return nil, errors.New("scenario source review context contains a declared sensitive value")
+			return SourceReviewPopulation{}, errors.New("scenario source review context contains a declared sensitive value")
 		}
 		media := []review.Media{{
 			Kind: "audio", Role: "stereo_room_and_agent", Path: attempt.Audio.Path,
@@ -145,7 +170,7 @@ func BuildSourceReviewRequests(
 		for submittedIndex, submitted := range attempt.Submitted {
 			kind, mediaType, err := sourceReviewImageType(submitted.Receipt.MediaType)
 			if err != nil {
-				return nil, fmt.Errorf("scenario source review %s input %d: %w",
+				return SourceReviewPopulation{}, fmt.Errorf("scenario source review %s input %d: %w",
 					attempt.Record.Key.TaskID, submittedIndex+1, err)
 			}
 			media = append(media, review.Media{
@@ -161,14 +186,14 @@ func BuildSourceReviewRequests(
 		})
 	}
 	if err := verifySourceRootIdentity(options.Directory, root, rootInfo); err != nil {
-		return nil, err
+		return SourceReviewPopulation{}, err
 	}
 	reopened, err := VerifySourceBundle(ctx, options, expected)
 	if err != nil || !reflect.DeepEqual(reopened.Receipt, bundle.Receipt) ||
 		reopened.Checklist.Fingerprint != bundle.Checklist.Fingerprint {
-		return nil, errors.New("scenario source bundle changed while building review requests")
+		return SourceReviewPopulation{}, errors.New("scenario source bundle changed while building review requests")
 	}
-	return requests, nil
+	return SourceReviewPopulation{Bundle: reopened, Requests: requests}, nil
 }
 
 func decodeSourceScenarioResult(payload []byte) (scenario.Result, error) {

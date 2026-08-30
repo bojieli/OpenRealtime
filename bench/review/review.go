@@ -565,6 +565,21 @@ func Prepare(request Request) (PreparedRequest, error) {
 	return PrepareContext(context.Background(), request)
 }
 
+// CanonicalContextSHA256 returns the same content identity Evaluate records
+// for a public review context, without opening or validating any media. This
+// lets retention and aggregation plug-ins rebind an already verified source
+// request without repeating expensive evidence reads. The input must still be
+// one strict, bounded JSON object.
+func CanonicalContextSHA256(
+	ctx context.Context, source json.RawMessage,
+) (string, error) {
+	canonical, err := canonicalJSONContext(ctx, source, maximumContextBytes)
+	if err != nil {
+		return "", fmt.Errorf("canonical review context: %w", err)
+	}
+	return digestContext(ctx, canonical)
+}
+
 // PrepareContext is Prepare with cancellation checks before and during every
 // potentially large evidence read.
 func PrepareContext(
