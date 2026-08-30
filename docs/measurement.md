@@ -85,6 +85,7 @@ is unmodified in both directions:
 ```sh
 scripts/prepare-tau-voice.sh
 openrealtime bench tau-voice -verify
+openrealtime bench tau-voice inventory -out tau-voice-base-inventory.json
 openrealtime bench tau-voice -condition regular -out regular.json
 ```
 
@@ -95,6 +96,12 @@ refuse in advance it records honestly — a restricted run is reported incomplet
 however well it scores, and a simulation that never reached evaluation is
 incomplete rather than failed, because scoring a dead endpoint zero is how
 infrastructure trouble becomes a published capability claim.
+
+Migration preregistration uses the inventory emitted by the same pinned
+harness, not a hand-maintained list. The exporter invokes tau2's exact `base`
+split, requires clean task-universe sources, fixes the checkout data/import
+paths, validates the 50/114/114 domain partition, and writes canonical bytes
+that can be archived and hashed by `bench migration census`.
 
 DynaCU-Bench needs no bridge either, and for the same reason: its own GA
 Realtime baseline takes the websocket base as an argument, so a strict superset

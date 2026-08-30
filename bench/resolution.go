@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/internal/strictjson"
 )
 
@@ -22,15 +23,21 @@ import (
 const ExpectedResolutionFormatVersion uint64 = 1
 
 type expectedResolutionDocument struct {
-	FormatVersion uint64              `json:"format_version"`
-	Elements      []ElementResolution `json:"elements"`
-	Paths         []SelectedPath      `json:"required_paths,omitempty"`
+	FormatVersion uint64                      `json:"format_version"`
+	Deployment    *inspect.DeploymentEvidence `json:"deployment,omitempty"`
+	Elements      []ElementResolution         `json:"elements"`
+	Paths         []SelectedPath              `json:"required_paths,omitempty"`
 }
 
 // ValidateExpectedResolution verifies the deployment identities and path
 // declarations that can be checked without the target Graph IR. RequireGraph
 // performs the graph-relative node, implementation, and edge checks later.
 func ValidateExpectedResolution(resolution LiveResolution) error {
+	if resolution.Deployment != nil {
+		if err := resolution.Deployment.ValidateExact(); err != nil {
+			return fmt.Errorf("expected deployment evidence: %w", err)
+		}
+	}
 	if len(resolution.Elements) == 0 {
 		return errors.New("expected resolution has no elements")
 	}
@@ -117,6 +124,7 @@ func MarshalExpectedResolution(resolution LiveResolution) ([]byte, error) {
 	canonical := canonicalResolution(resolution)
 	payload, err := json.MarshalIndent(expectedResolutionDocument{
 		FormatVersion: ExpectedResolutionFormatVersion,
+		Deployment:    canonical.Deployment,
 		Elements:      canonical.Elements,
 		Paths:         canonical.Paths,
 	}, "", "  ")
@@ -148,7 +156,9 @@ func ParseExpectedResolution(source []byte) (LiveResolution, error) {
 		return LiveResolution{}, fmt.Errorf("decode expected resolution: format must be %d, got %d",
 			ExpectedResolutionFormatVersion, document.FormatVersion)
 	}
-	resolution := LiveResolution{Elements: document.Elements, Paths: document.Paths}
+	resolution := LiveResolution{
+		Deployment: document.Deployment, Elements: document.Elements, Paths: document.Paths,
+	}
 	if err := ValidateExpectedResolution(resolution); err != nil {
 		return LiveResolution{}, fmt.Errorf("decode expected resolution: %w", err)
 	}
@@ -185,8 +195,9 @@ func WriteExpectedResolution(path string, resolution LiveResolution) error {
 
 func canonicalResolution(resolution LiveResolution) LiveResolution {
 	result := LiveResolution{
-		Elements: make([]ElementResolution, len(resolution.Elements)),
-		Paths:    make([]SelectedPath, len(resolution.Paths)),
+		Deployment: cloneBenchDeploymentEvidence(resolution.Deployment),
+		Elements:   make([]ElementResolution, len(resolution.Elements)),
+		Paths:      make([]SelectedPath, len(resolution.Paths)),
 	}
 	for index, item := range resolution.Elements {
 		result.Elements[index] = cloneElementResolution(item)
@@ -211,4 +222,12 @@ func canonicalResolution(resolution LiveResolution) LiveResolution {
 		return result.Paths[left].Name < result.Paths[right].Name
 	})
 	return result
+}
+
+func cloneBenchDeploymentEvidence(source *inspect.DeploymentEvidence) *inspect.DeploymentEvidence {
+	if source == nil {
+		return nil
+	}
+	copy := source.Clone()
+	return &copy
 }

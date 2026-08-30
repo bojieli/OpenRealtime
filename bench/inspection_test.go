@@ -1,6 +1,7 @@
 package bench_test
 
 import (
+	"bytes"
 	"reflect"
 	"strings"
 	"testing"
@@ -148,8 +149,70 @@ func TestResolutionFromInspectionDoesNotRequireRouteTraceWithoutSemanticPaths(t 
 	}
 }
 
+func TestBenchmarkEvidenceCarriesExactRedactedDeploymentAndRejectsDrift(t *testing.T) {
+	graph, configuration, expected := attestationFixture(t)
+	deployment := benchmarkDeploymentEvidence()
+	expected.Deployment = &deployment
+	snapshot := liveInspectionFixture(t, graph, configuration, expected)
+
+	resolution, err := bench.ResolutionFromInspection(graph, configuration, expected, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolution.Deployment == nil || !reflect.DeepEqual(*resolution.Deployment, deployment) {
+		t.Fatalf("inspection deployment = %+v", resolution.Deployment)
+	}
+	requirement, err := bench.RequireGraph(graph, configuration, resolution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frozen, err := bench.FreezeExecutionEvidence(bench.ExecutionEvidence{
+		FormatVersion: bench.AttestationFormatVersion, Kind: bench.ExecutionGraphNative,
+		Scope: "deployment-evidence-test", Graph: requirement.Graph,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := requirement.Match(&frozen); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := bench.MarshalExecutionEvidence(frozen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		"secret://private/reference", "PRIVATE_PROVIDER_LOCATOR", "private-credential-bytes",
+	} {
+		if bytes.Contains(payload, []byte(forbidden)) {
+			t.Fatalf("benchmark evidence leaked %q: %s", forbidden, payload)
+		}
+	}
+	for _, required := range []string{
+		deployment.PrivateDeploymentFingerprint, deployment.SecretCatalogFingerprint,
+	} {
+		if !bytes.Contains(payload, []byte(required)) {
+			t.Fatalf("benchmark evidence omitted %q", required)
+		}
+	}
+
+	drifted := frozen.Clone()
+	drifted.Graph.Deployment.SecretCatalogFingerprint = testDigest('9')
+	drifted, err = bench.FreezeExecutionEvidence(drifted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := requirement.Match(&drifted); err == nil || !strings.Contains(err.Error(), "deployment") {
+		t.Fatalf("deployment drift match error = %v", err)
+	}
+	snapshot.Deployment.SecretCatalogFingerprint = testDigest('8')
+	if _, err := bench.ResolutionFromInspection(graph, configuration, expected, snapshot); err == nil ||
+		!strings.Contains(err.Error(), "drifted") {
+		t.Fatalf("inspection deployment drift error = %v", err)
+	}
+}
+
 func liveInspectionFixture(
-	t *testing.T, graph ir.Graph, configuration bench.ArtifactIdentity, expected bench.LiveResolution,
+	t testing.TB, graph ir.Graph, configuration bench.ArtifactIdentity, expected bench.LiveResolution,
 ) inspect.Live {
 	t.Helper()
 	nodes := make(map[string]ir.Node, len(graph.Nodes))
@@ -175,6 +238,10 @@ func liveInspectionFixture(
 				},
 			},
 		},
+	}
+	if expected.Deployment != nil {
+		copy := expected.Deployment.Clone()
+		live.Deployment = &copy
 	}
 	for _, item := range expected.Elements {
 		node := nodes[item.Node]
@@ -208,6 +275,37 @@ func liveInspectionFixture(
 		live.Nodes[item.Node] = inspect.NodeLive{State: "running", Resolution: resolution}
 	}
 	return live
+}
+
+func BenchmarkResolutionFromInspectionWithDeploymentEvidence(b *testing.B) {
+	graph, configuration, expected := attestationFixture(b)
+	deployment := benchmarkDeploymentEvidence()
+	expected.Deployment = &deployment
+	snapshot := liveInspectionFixture(b, graph, configuration, expected)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for iteration := 0; iteration < b.N; iteration++ {
+		if _, err := bench.ResolutionFromInspection(graph, configuration, expected, snapshot); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func benchmarkDeploymentEvidence() inspect.DeploymentEvidence {
+	return inspect.DeploymentEvidence{
+		Public: inspect.ArtifactIdentity{
+			ID: "deployment://bench-agent", Revision: "openrealtime.ai/deployment/v1alpha1",
+			Digest: testDigest('5'),
+		},
+		PrivateDeploymentFingerprint: testDigest('6'),
+		SecretCatalogFingerprint:     testDigest('7'),
+		Secrets: []inspect.SecretProviderEvidence{{
+			Node: "model", Slot: "token", BindingFingerprint: testDigest('8'),
+			Provider: "vault", Runtime: inspect.ArtifactIdentity{
+				ID: "provider://vault", Revision: "image:1", Digest: testDigest('9'),
+			},
+		}},
+	}
 }
 
 func resolutionElement(t *testing.T, resolution bench.LiveResolution, node string) bench.ElementResolution {

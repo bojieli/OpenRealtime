@@ -20,7 +20,7 @@ func testDigest(character byte) string {
 	return "sha256:" + strings.Repeat(string(character), 64)
 }
 
-func attestationFixture(t *testing.T) (ir.Graph, bench.ArtifactIdentity, bench.LiveResolution) {
+func attestationFixture(t testing.TB) (ir.Graph, bench.ArtifactIdentity, bench.LiveResolution) {
 	t.Helper()
 	message := element.Event(element.Named("text.Message"))
 	graph, err := ir.Freeze(ir.Graph{

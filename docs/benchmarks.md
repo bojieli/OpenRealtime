@@ -175,8 +175,18 @@ that has never heard of this project.
 ```sh
 scripts/prepare-tau-voice.sh              # pin, patch, and check the checkout
 openrealtime bench tau-voice -verify      # confirm before spending hours
+openrealtime bench tau-voice inventory \
+  -out tau-voice-base-inventory.json      # exact migration-census task IDs
 openrealtime bench tau-voice -condition regular -out regular.json
 ```
+
+The inventory command calls tau2's own `load_tasks(domain, "base")` for all
+three domains. It accepts only the pinned revision with clean task and loader
+inputs, overrides `TAU2_DATA_DIR` and `PYTHONPATH` to the verified checkout,
+and emits strict canonical JSON. It also checks the exact published partition
+(50 airline, 114 retail, 114 telecom), not just the plausible total of 278.
+Calling the loader without the explicit `base` split would currently select
+2,285 telecom tasks and is therefore rejected by this boundary.
 
 Two conditions carry the measurement. **Control** is clean synthesised speech
 and **regular** carries the disfluencies, backchannels, and non-directed audio

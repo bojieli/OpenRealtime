@@ -16,6 +16,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	"github.com/bojieli/OpenRealtime/internal/strictjson"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
@@ -93,8 +94,9 @@ type SelectedPath struct {
 // because not every graph makes a runtime route choice and not every current
 // runtime exports route traces yet.
 type LiveResolution struct {
-	Elements []ElementResolution `json:"elements"`
-	Paths    []SelectedPath      `json:"paths,omitempty"`
+	Deployment *inspect.DeploymentEvidence `json:"deployment,omitempty"`
+	Elements   []ElementResolution         `json:"elements"`
+	Paths      []SelectedPath              `json:"paths,omitempty"`
 }
 
 // EdgeEndpoint is a concrete graph port lane retained in a selected path.
@@ -137,10 +139,11 @@ type GraphNodeEvidence struct {
 // digests, resolutions, and paths make that authority reviewable without
 // guessing what a compact fingerprint contained.
 type GraphEvidence struct {
-	Graph         GraphIdentity       `json:"graph"`
-	Configuration ArtifactIdentity    `json:"configuration"`
-	Nodes         []GraphNodeEvidence `json:"nodes"`
-	Paths         []GraphPath         `json:"selected_paths,omitempty"`
+	Graph         GraphIdentity               `json:"graph"`
+	Configuration ArtifactIdentity            `json:"configuration"`
+	Deployment    *inspect.DeploymentEvidence `json:"deployment,omitempty"`
+	Nodes         []GraphNodeEvidence         `json:"nodes"`
+	Paths         []GraphPath                 `json:"selected_paths,omitempty"`
 }
 
 // LegacyEvidence identifies a compatibility execution without claiming it is
@@ -484,6 +487,9 @@ func (requirement ExecutionRequirement) Match(evidence *ExecutionEvidence) error
 		if expected.Configuration != observed.Configuration {
 			return errors.New("configuration artifact identity or digest differs")
 		}
+		if !reflect.DeepEqual(expected.Deployment, observed.Deployment) {
+			return errors.New("deployment identity, secret catalog, or provider evidence differs")
+		}
 		if !reflect.DeepEqual(expected.Nodes, observed.Nodes) {
 			return errors.New("live element, config, or capability resolutions differ")
 		}
@@ -620,6 +626,16 @@ func buildGraphEvidence(
 		Graph: graphIdentity(graph), Configuration: configuration,
 		Nodes: make([]GraphNodeEvidence, 0, len(graph.Nodes)),
 	}
+	if resolution.Deployment != nil {
+		canonical, err := inspect.CanonicalDeploymentEvidence(*resolution.Deployment)
+		if err != nil {
+			return GraphEvidence{}, fmt.Errorf("live deployment evidence: %w", err)
+		}
+		if err := canonical.ValidateExact(); err != nil {
+			return GraphEvidence{}, fmt.Errorf("live deployment evidence: %w", err)
+		}
+		result.Deployment = &canonical
+	}
 	knownNodes := make(map[string]struct{}, len(graph.Nodes))
 	for _, node := range graph.Nodes {
 		knownNodes[node.ID] = struct{}{}
@@ -744,6 +760,12 @@ func (evidence ExecutionEvidence) computeFingerprint() (string, error) {
 }
 
 func (graph *GraphEvidence) canonicalize() {
+	if graph.Deployment != nil {
+		canonical, err := inspect.CanonicalDeploymentEvidence(*graph.Deployment)
+		if err == nil {
+			graph.Deployment = &canonical
+		}
+	}
 	sort.Slice(graph.Nodes, func(left, right int) bool {
 		return graph.Nodes[left].Node < graph.Nodes[right].Node
 	})
@@ -780,6 +802,11 @@ func (graph GraphEvidence) validate() error {
 	}
 	if graph.Configuration.Digest == "" {
 		return errors.New("configuration artifact requires a digest")
+	}
+	if graph.Deployment != nil {
+		if err := graph.Deployment.ValidateExact(); err != nil {
+			return fmt.Errorf("deployment evidence: %w", err)
+		}
 	}
 	if len(graph.Nodes) == 0 {
 		return errors.New("graph execution evidence has no nodes")
@@ -891,6 +918,10 @@ func (graph GraphEvidence) validate() error {
 
 func (graph GraphEvidence) clone() GraphEvidence {
 	result := graph
+	if graph.Deployment != nil {
+		copy := graph.Deployment.Clone()
+		result.Deployment = &copy
+	}
 	result.Nodes = slices.Clone(graph.Nodes)
 	for index := range result.Nodes {
 		result.Nodes[index].Capabilities = cloneCapabilities(result.Nodes[index].Capabilities)

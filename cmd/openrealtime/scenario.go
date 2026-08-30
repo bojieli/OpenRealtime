@@ -14,6 +14,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/bench"
 	archbench "github.com/bojieli/OpenRealtime/bench/architecture"
+	"github.com/bojieli/OpenRealtime/bench/migration"
 	"github.com/bojieli/OpenRealtime/bench/scenario"
 )
 
@@ -40,7 +41,9 @@ func runScenario(arguments []string, output io.Writer) error {
 		experiment       = flags.String("architecture-manifest", "", "versioned P/T/C/N architecture experiment manifest")
 		architectureCell = flags.String("architecture-cell", "", "cell name in -architecture-manifest")
 		inspectionGraph  = flags.String("inspection-graph", "", benchmarkInspectionGraphFlagHelp)
+		migrationMode    migrationLaunchFlags
 	)
+	migrationMode.bind(flags)
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -51,6 +54,9 @@ func runScenario(arguments []string, output io.Writer) error {
 	var manifest archbench.Manifest
 	var selectedCell archbench.Cell
 	architectureRun := strings.TrimSpace(*experiment) != ""
+	if migrationMode.enabled() && !architectureRun {
+		return errors.New("migration scenario launches require an architecture manifest result")
+	}
 	if architectureRun {
 		var err error
 		manifest, err = archbench.Read(*experiment)
@@ -116,6 +122,20 @@ func runScenario(arguments []string, output io.Writer) error {
 	var results []scenario.Result
 	passed := 0
 	runs := max(1, *repeat)
+	if migrationMode.enabled() {
+		repetitions := make([]string, runs)
+		for index := range runs {
+			repetitions[index] = fmt.Sprintf("trial-%d", index+1)
+		}
+		launchCases := make([]migrationLaunchCase, 0, len(selected))
+		for _, item := range selected {
+			launchCases = append(launchCases, migrationLaunchCase{Condition: item.Name, ID: item.Name})
+		}
+		if err := migrationMode.preflight(migration.SuiteScenario, launchCases, repetitions,
+			selectedCell.MeasurementCell()); err != nil {
+			return err
+		}
+	}
 	var architectureResult *archbench.Result
 	if architectureRun {
 		// -only is a diagnostic filter, not a smaller definition of the suite.
@@ -161,6 +181,9 @@ func runScenario(arguments []string, output io.Writer) error {
 
 	if architectureResult != nil {
 		architectureResult.Finish()
+		if err := migrationMode.retain(*architectureResult, output); err != nil {
+			return err
+		}
 		fmt.Fprintf(output, "  measured    %d/%d tasks completed\n",
 			architectureResult.Measurement.Summary.Completed, architectureResult.Measurement.Expected)
 		if err := architectureResult.Reportable(); err != nil {

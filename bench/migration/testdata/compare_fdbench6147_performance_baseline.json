@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "benchmark": "BenchmarkCompareFDBench6147",
+  "protocol": {
+    "go_version": "go1.25.0",
+    "goos": "linux",
+    "goarch": "amd64",
+    "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+    "gomaxprocs": 1,
+    "affinity": "8",
+    "benchtime": "1x",
+    "warmup_count": 1,
+    "sample_count": 12
+  },
+  "source": {
+    "revision": "b4cb8dbc7f742b6e620b8f01d8e4f48cba32dd03",
+    "modified": true,
+    "sha256": "449deadf774c7a5abc49706111322619b117099b2cef0edf91c6ab6978c9e4d9",
+    "files": [
+      "bench/migration/adversarial_test.go",
+      "bench/migration/canonical.go",
+      "bench/migration/compare.go",
+      "bench/migration/stats.go",
+      "bench/migration/types.go",
+      "bench/migration/validate.go"
+    ]
+  },
+  "samples": [
+    {
+      "ns_per_op": 217113002,
+      "bytes_per_op": 61538200,
+      "allocs_per_op": 289873,
+      "artifact_bytes": 23462253
+    },
+    {
+      "ns_per_op": 222882206,
+      "bytes_per_op": 61538320,
+      "allocs_per_op": 289875,
+      "artifact_bytes": 23462253
+    },
+    {
+      "ns_per_op": 225002082,
+      "bytes_per_op": 61538320,
+      "allocs_per_op": 289875,
+      "artifact_bytes": 23462253
+    },
+    {
+      "ns_per_op": 225045173,
+      "bytes_per_op": 61538312,
+      "allocs_per_op": 289875,
+      "artifact_bytes": 23462253
+    },
+    {
+      "ns_per_op": 222888393,
+      "bytes_per_op": 61538320,
+      "allocs_per_op": 289875,
+      "artifact_bytes": 23462253
+    },
+    {
+      "ns_per_op": 227847322,
+      "bytes_per_op": 61538320,
+      "allocs_per_op": 289875,
+      "artifact_bytes": 23462253
+    },
+    {
+      "ns_per_op": 227257167,
+      "bytes_per_op": 61538336,
+      "allocs_per_op": 289875,
+      "artifact_bytes": 23462253
+    },
+    {
+      "ns_per_op": 224993932,
+      "bytes_per_op": 61538320,
+      "allocs_per_op": 289875,
+      "artifact_bytes": 23462253
+    },
+    {
+      "ns_per_op": 224273782,
+      "bytes_per_op": 61538320,
+      "allocs_per_op": 289875,
+      "artifact_bytes": 23462253
+    },
+    {
+      "ns_per_op": 230130560,
+      "bytes_per_op": 61538320,
+      "allocs_per_op": 289875,
+      "artifact_bytes": 23462253
+    },
+    {
+      "ns_per_op": 230417458,
+      "bytes_per_op": 61538320,
+      "allocs_per_op": 289875,
+      "artifact_bytes": 23462253
+    },
+    {
+      "ns_per_op": 243823626,
+      "bytes_per_op": 95093272,
+      "allocs_per_op": 289908,
+      "artifact_bytes": 23462253
+    }
+  ],
+  "summary": {
+    "time_ns": {
+      "minimum": 217113002,
+      "median": 225023627.5,
+      "mean": 226806225.25,
+      "maximum": 243823626
+    },
+    "bytes_per_op": {
+      "minimum": 61538200,
+      "median": 61538320,
+      "mean": 64334556.666666664,
+      "maximum": 95093272
+    },
+    "allocs_per_op": {
+      "minimum": 289873,
+      "median": 289875,
+      "mean": 289877.5833333333,
+      "maximum": 289908
+    },
+    "artifact_bytes": 23462253
+  }
+}

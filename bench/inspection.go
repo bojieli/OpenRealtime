@@ -3,6 +3,7 @@ package bench
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -54,6 +55,21 @@ func ResolutionFromInspection(
 	}
 
 	result := LiveResolution{Elements: make([]ElementResolution, 0, len(graph.Nodes))}
+	if snapshot.Deployment != nil {
+		canonical, err := inspect.CanonicalDeploymentEvidence(*snapshot.Deployment)
+		if err != nil {
+			return LiveResolution{}, fmt.Errorf("resolve live inspection: deployment evidence: %w", err)
+		}
+		if err := canonical.ValidateExact(); err != nil {
+			return LiveResolution{}, fmt.Errorf("resolve live inspection: deployment evidence: %w", err)
+		}
+		if expected.Deployment != nil && !reflect.DeepEqual(canonical, *expected.Deployment) {
+			return LiveResolution{}, errors.New("resolve live inspection: deployment evidence drifted from the reviewed contract")
+		}
+		result.Deployment = &canonical
+	} else if expected.Deployment != nil {
+		return LiveResolution{}, errors.New("resolve live inspection: live snapshot has no deployment evidence")
+	}
 	for _, graphNode := range graph.Nodes {
 		live, found := snapshot.Nodes[graphNode.ID]
 		if !found {
