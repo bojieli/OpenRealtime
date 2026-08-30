@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/bench/scenario"
@@ -56,6 +57,14 @@ type LiveExecutorConfig struct {
 	Voice   scenario.Voice
 	Session bench.SessionConfig
 	Retain  AttemptRetainer
+	// EvidenceContext is owned by the complete checklist run rather than one
+	// attempt. A timed-out attempt may therefore finish retaining bytes that
+	// SessionConfig already captured, while cancellation of the whole run still
+	// stops filesystem or provider-side evidence work.
+	EvidenceContext context.Context
+	// EvidenceTimeout bounds one retention call independently of the live
+	// attempt deadline. It is deployment policy, not a behavioral timeout.
+	EvidenceTimeout time.Duration
 }
 
 type scenarioPlay func(
@@ -63,11 +72,13 @@ type scenarioPlay func(
 ) (scenario.Result, error)
 
 type liveExecutor struct {
-	voice   scenario.Voice
-	session bench.SessionConfig
-	retain  AttemptRetainer
-	play    scenarioPlay
-	claim   chan struct{}
+	voice           scenario.Voice
+	session         bench.SessionConfig
+	retain          AttemptRetainer
+	play            scenarioPlay
+	evidenceContext context.Context
+	evidenceTimeout time.Duration
+	claim           chan struct{}
 }
 
 // NewLiveExecutor freezes the live client composition without opening a
@@ -92,6 +103,15 @@ func newLiveExecutor(config LiveExecutorConfig, play scenarioPlay) (*liveExecuto
 	if play == nil {
 		return nil, errors.New("scenario live executor requires the scenario player")
 	}
+	if config.EvidenceContext == nil {
+		return nil, errors.New("scenario live executor requires a run-owned evidence context")
+	}
+	if cause := context.Cause(config.EvidenceContext); cause != nil {
+		return nil, fmt.Errorf("scenario live executor evidence context is already done: %w", cause)
+	}
+	if config.EvidenceTimeout <= 0 || config.EvidenceTimeout > 2*time.Minute {
+		return nil, errors.New("scenario live executor evidence timeout must be in (0,2m]")
+	}
 	if err := validateLiveSession(config.Session); err != nil {
 		return nil, err
 	}
@@ -99,6 +119,7 @@ func newLiveExecutor(config LiveExecutorConfig, play scenarioPlay) (*liveExecuto
 	session.CaptureRuntimeEvidence = true
 	return &liveExecutor{
 		voice: config.Voice, session: session, retain: config.Retain, play: play,
+		evidenceContext: config.EvidenceContext, evidenceTimeout: config.EvidenceTimeout,
 		claim: make(chan struct{}, 1),
 	}, nil
 }
@@ -201,51 +222,66 @@ func (executor *liveExecutor) execute(
 	ownedSubmitted := cloneSubmittedCaptures(submitted)
 	calls, scheduled, retainedCaptureErr := audioCalls, scheduledCalls, captureErr
 	captureMu.Unlock()
-	if cause := context.Cause(ctx); cause != nil {
-		return observation, errors.Join(runErr, retainedCaptureErr, cause)
-	}
-	if retainedCaptureErr != nil {
-		return observation, errors.Join(runErr, retainedCaptureErr)
-	}
+	attemptCause := context.Cause(ctx)
+	var audioErr error
 	if calls != 1 || ownedAudio.SampleRateHz != 24_000 || len(ownedAudio.RoomPCM16) == 0 {
-		return observation, errors.Join(runErr, errors.New(
+		audioErr = errors.New(
 			"scenario live attempt did not produce one non-empty 24 kHz session audio capture",
-		))
+		)
 	}
-	if err := validateSubmittedCaptures(item, result.Transcript, ownedSubmitted, scheduled); err != nil {
-		return observation, errors.Join(runErr, err)
+	submittedErr := validateSubmittedCaptures(item, result.Transcript, ownedSubmitted, scheduled)
+	attemptErr := errors.Join(runErr, retainedCaptureErr, audioErr, submittedErr, attemptCause)
+	// Retention needs valid audio because the source bundle's primary timeline
+	// is a stereo WAV. Submitted inputs may be partial: preserving those bytes
+	// is still useful diagnostic evidence, but the resulting reference cannot
+	// satisfy validateMediaReference and therefore cannot become reportable.
+	if audioErr != nil {
+		return observation, attemptErr
 	}
 
 	retainedResult, err := cloneScenarioResult(result)
 	if err != nil {
-		return observation, errors.Join(runErr, err)
+		return observation, errors.Join(attemptErr, err)
 	}
 	retentionInput := AttemptCapture{
 		Key: key, Result: retainedResult, Audio: cloneSessionAudio(ownedAudio),
-		Submitted: cloneSubmittedCaptures(ownedSubmitted), RunSucceeded: runErr == nil,
+		Submitted: cloneSubmittedCaptures(ownedSubmitted), RunSucceeded: attemptErr == nil,
 	}
-	if cause := context.Cause(ctx); cause != nil {
-		return observation, errors.Join(runErr, cause)
+	retentionContext, cancelRetention := context.WithTimeout(
+		executor.evidenceContext, executor.evidenceTimeout,
+	)
+	if retentionCause := context.Cause(retentionContext); retentionCause != nil {
+		cancelRetention()
+		return observation, errors.Join(attemptErr, retentionCause)
 	}
-	reference, retainErr := executor.retain(ctx, retentionInput)
-	if cause := context.Cause(ctx); cause != nil {
-		return observation, errors.Join(runErr, cause, retainErr)
-	}
+	reference, retainErr := executor.retain(retentionContext, retentionInput)
+	retentionCause := context.Cause(retentionContext)
+	cancelRetention()
+	terminalAttemptCause := context.Cause(ctx)
 	if retainErr != nil {
-		return observation, errors.Join(runErr, fmt.Errorf("retain scenario attempt evidence: %w", retainErr))
+		return observation, errors.Join(
+			attemptErr, terminalAttemptCause, retentionCause,
+			fmt.Errorf("retain scenario attempt evidence: %w", retainErr),
+		)
+	}
+	if retentionCause != nil {
+		return observation, errors.Join(attemptErr, terminalAttemptCause, retentionCause)
 	}
 	receipts := submittedReceipts(ownedSubmitted)
 	if !reflect.DeepEqual(reference.Submitted, receipts) {
-		return observation, errors.Join(runErr, errors.New(
+		return observation, errors.Join(attemptErr, terminalAttemptCause, errors.New(
 			"scenario attempt retainer changed the exact submitted-input receipts",
 		))
 	}
 	if err := validateMediaReference(reference, item); err != nil {
-		return observation, errors.Join(runErr, fmt.Errorf("scenario attempt retention receipt: %w", err))
+		return observation, errors.Join(
+			attemptErr, terminalAttemptCause,
+			fmt.Errorf("scenario attempt retention receipt: %w", err),
+		)
 	}
 	copy := cloneMediaReference(reference)
 	observation.Media = &copy
-	return observation, runErr
+	return observation, errors.Join(attemptErr, terminalAttemptCause)
 }
 
 func validateSubmittedResponseCreate(

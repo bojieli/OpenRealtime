@@ -31,6 +31,7 @@ const (
 	scenarioGraphMediaFormat        = "openrealtime.scenario.graphnative.media"
 	scenarioGraphMediaFormatVersion = 1
 	maximumScenarioGraphMediaBytes  = 4 << 20
+	scenarioGraphEvidenceTimeout    = 30 * time.Second
 )
 
 type scenarioGraphSelection struct {
@@ -504,6 +505,7 @@ func executeScenarioGraphChecklist(
 	defer func() { returnErr = errors.Join(returnErr, bundle.Close()) }()
 	executor, err := newExecutor(graphnative.LiveExecutorConfig{
 		Voice: voice, Session: session, Retain: bundle.Retain,
+		EvidenceContext: ctx, EvidenceTimeout: scenarioGraphEvidenceTimeout,
 	})
 	if err != nil {
 		return outcome, err

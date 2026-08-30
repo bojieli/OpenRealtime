@@ -141,7 +141,7 @@ func TestLiveExecutorRetainsDiagnosticAttemptWithoutPromotingRunFailure(t *testi
 	}
 }
 
-func TestLiveExecutorRejectsMissingMalformedAndDuplicateStillEvidence(t *testing.T) {
+func TestLiveExecutorRetainsDiagnosticAudioForMissingMalformedAndDuplicateStillEvidence(t *testing.T) {
 	t.Chdir("../../..")
 	item := scenario.Suite()[9]
 	key := AttemptKey{CaseOrdinal: 10, CaseName: item.Name, Trial: 1, TaskID: item.Name + "#1"}
@@ -226,16 +226,20 @@ func TestLiveExecutorRejectsMissingMalformedAndDuplicateStillEvidence(t *testing
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var retainCalls atomic.Int32
-			config := liveExecutorFixture(func(context.Context, AttemptCapture) (MediaReference, error) {
+			var retained AttemptCapture
+			config := liveExecutorFixture(func(_ context.Context, capture AttemptCapture) (MediaReference, error) {
 				retainCalls.Add(1)
-				return MediaReference{}, nil
+				retained = cloneAttemptCaptureForTest(t, capture)
+				return liveMediaReference(capture.Key, submittedReceipts(capture.Submitted)), nil
 			})
 			executor, err := newLiveExecutor(config, test.play(t))
 			if err != nil {
 				t.Fatal(err)
 			}
 			observation, err := executor.execute(t.Context(), key, item)
-			if err == nil || observation.Media != nil || retainCalls.Load() != 0 {
+			if err == nil || retainCalls.Load() != 1 ||
+				retained.RunSucceeded || retained.Audio.SampleRateHz != 24_000 ||
+				len(retained.Audio.RoomPCM16) == 0 {
 				t.Fatalf("failed still evidence observation=%+v err=%v retain=%d",
 					observation, err, retainCalls.Load())
 			}
@@ -330,6 +334,14 @@ func TestLiveExecutorRejectsEveryTaskOwnedSessionOverrideBeforePlugins(t *testin
 			config.Voice = (*typedNilLiveVoiceFixture)(nil)
 		}},
 		{"nil retainer", func(config *LiveExecutorConfig) { config.Retain = nil }},
+		{"nil evidence context", func(config *LiveExecutorConfig) { config.EvidenceContext = nil }},
+		{"done evidence context", func(config *LiveExecutorConfig) {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			config.EvidenceContext = ctx
+		}},
+		{"zero evidence timeout", func(config *LiveExecutorConfig) { config.EvidenceTimeout = 0 }},
+		{"long evidence timeout", func(config *LiveExecutorConfig) { config.EvidenceTimeout = 3 * time.Minute }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -382,7 +394,7 @@ func TestLiveExecutorRejectsKeyFixtureAndCancellationWithoutRetention(t *testing
 	}
 }
 
-func TestLiveExecutorCancellationAfterRetentionNeverReturnsReceipt(t *testing.T) {
+func TestLiveExecutorCancellationAfterRetentionReturnsCompletedReceipt(t *testing.T) {
 	item := scenario.Suite()[10]
 	key := AttemptKey{CaseOrdinal: 11, CaseName: item.Name, Trial: 1, TaskID: item.Name + "#1"}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -395,21 +407,24 @@ func TestLiveExecutorCancellationAfterRetentionNeverReturnsReceipt(t *testing.T)
 		t.Fatal(err)
 	}
 	observation, err := executor.execute(ctx, key, item)
-	if !errors.Is(err, context.Canceled) || observation.Media != nil {
+	if !errors.Is(err, context.Canceled) || observation.Media == nil {
 		t.Fatalf("canceled retention observation=%+v err=%v", observation, err)
 	}
 }
 
-func TestLiveExecutorCancellationAfterPlaySkipsRetention(t *testing.T) {
+func TestLiveExecutorCancellationAfterPlayRetainsCapturedEvidence(t *testing.T) {
 	item := scenario.Suite()[10]
 	key := AttemptKey{CaseOrdinal: 11, CaseName: item.Name, Trial: 1, TaskID: item.Name + "#1"}
 	ctx, cancel := context.WithCancel(t.Context())
 	var retains atomic.Int32
 	executor, err := newLiveExecutor(liveExecutorFixture(func(
-		context.Context, AttemptCapture,
+		_ context.Context, capture AttemptCapture,
 	) (MediaReference, error) {
 		retains.Add(1)
-		return MediaReference{}, nil
+		if capture.RunSucceeded {
+			t.Fatal("canceled attempt was promoted to a successful retention capture")
+		}
+		return liveMediaReference(capture.Key, nil), nil
 	}), func(
 		_ context.Context, _ scenario.Voice, session bench.SessionConfig, item scenario.Scenario,
 	) (scenario.Result, error) {
@@ -425,8 +440,37 @@ func TestLiveExecutorCancellationAfterPlaySkipsRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 	observation, err := executor.execute(ctx, key, item)
-	if !errors.Is(err, context.Canceled) || observation.Media != nil || retains.Load() != 0 {
+	if !errors.Is(err, context.Canceled) || observation.Media == nil || retains.Load() != 1 {
 		t.Fatalf("post-play cancellation observation=%+v err=%v retains=%d",
+			observation, err, retains.Load())
+	}
+}
+
+func TestLiveExecutorSuiteCancellationStopsEvidencePlugin(t *testing.T) {
+	item := scenario.Suite()[10]
+	key := AttemptKey{CaseOrdinal: 11, CaseName: item.Name, Trial: 1, TaskID: item.Name + "#1"}
+	evidenceContext, cancelEvidence := context.WithCancel(t.Context())
+	var retains atomic.Int32
+	config := liveExecutorFixture(func(
+		context.Context, AttemptCapture,
+	) (MediaReference, error) {
+		retains.Add(1)
+		return MediaReference{}, errors.New("suite-canceled retainer must not run")
+	})
+	config.EvidenceContext = evidenceContext
+	executor, err := newLiveExecutor(config, func(
+		_ context.Context, _ scenario.Voice, session bench.SessionConfig, item scenario.Scenario,
+	) (scenario.Result, error) {
+		captureFixtureAudio(t, session)
+		cancelEvidence()
+		return scenario.Result{Scenario: item.Name}, errors.New("fixture run failed")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation, err := executor.execute(t.Context(), key, item)
+	if !errors.Is(err, context.Canceled) || observation.Media != nil || retains.Load() != 0 {
+		t.Fatalf("suite cancellation observation=%+v err=%v retains=%d",
 			observation, err, retains.Load())
 	}
 }
@@ -541,7 +585,7 @@ func liveExecutorFixture(retain AttemptRetainer) LiveExecutorConfig {
 				return bench.ExecutionEvidence{}, errors.New("fixture attestor should not be invoked")
 			}),
 		},
-		Retain: retain,
+		Retain: retain, EvidenceContext: context.Background(), EvidenceTimeout: time.Second,
 	}
 }
 
