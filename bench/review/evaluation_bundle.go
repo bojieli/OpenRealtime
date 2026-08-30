@@ -192,7 +192,7 @@ func writeEvaluationBundleWithOperations(
 	for _, payload := range payloads {
 		rejectOriginal := rejectEvaluationSensitive
 		rejectAdditional := rejectEvaluationSensitive
-		if payload.file.MediaOrdinal > 0 {
+		if evaluationBundlePayloadUsesLiteralScan(payload.file) {
 			rejectOriginal = rejectEvaluationLiteralSensitive
 			rejectAdditional = rejectEvaluationLiteralSensitive
 		}
@@ -460,7 +460,7 @@ func openEvaluationBundleWithOperations(
 			return EvaluationBundle{}, errors.New("retained evaluation bundle file identity changed")
 		}
 		reject := rejectEvaluationSensitive
-		if file.MediaOrdinal > 0 {
+		if evaluationBundlePayloadUsesLiteralScan(file) {
 			reject = rejectEvaluationLiteralSensitive
 		}
 		if err := reject(ctx, guard, payload); err != nil {
@@ -1146,6 +1146,10 @@ func rejectEvaluationLiteralSensitive(
 		return errors.New("evaluation bundle content contains a declared sensitive value")
 	}
 	return nil
+}
+
+func evaluationBundlePayloadUsesLiteralScan(file EvaluationBundleFile) bool {
+	return file.MediaOrdinal > 0 || file.Purpose == "provider_request" || file.Purpose == "prompt"
 }
 
 func validateEvaluationBundleDirectory(path string, mustExist bool) error {
