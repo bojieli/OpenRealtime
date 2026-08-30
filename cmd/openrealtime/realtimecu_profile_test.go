@@ -51,6 +51,21 @@ func TestFreezeProductionRealtimeCUProfilePublishesExactInspectionCompanions(t *
 		t.Fatalf("frozen Realtime-CU profile = %+v execution=%+v",
 			frozen.Profile, frozen.Execution)
 	}
+	if frozen.Resolution.Deployment == nil ||
+		frozen.Resolution.Deployment.PrivateDeploymentFingerprint == "" {
+		t.Fatalf("frozen Realtime-CU resolution lacks exact deployment evidence: %+v",
+			frozen.Resolution.Deployment)
+	}
+	activationResolution := realtimeCUResolutionElement(t, frozen.Resolution, "activation")
+	if activationResolution.Runtime.ID !=
+		"go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v2" ||
+		activationResolution.Runtime.Revision != "implementation:2" {
+		t.Fatalf("frozen activation runtime = %+v", activationResolution.Runtime)
+	}
+	modelResolution := realtimeCUResolutionElement(t, frozen.Resolution, "model")
+	if len(modelResolution.Capabilities) == 0 {
+		t.Fatalf("frozen model resolution omitted live capabilities: %+v", modelResolution)
+	}
 	application, err := realtimecubinding.DecodeApplicationConfig(
 		frozen.Profile.Application.Configuration,
 	)
@@ -130,6 +145,19 @@ func TestFreezeProductionRealtimeCUProfilePublishesExactInspectionCompanions(t *
 	if err := writeFrozenRealtimeCUProfile(&output, options, frozen); err == nil {
 		t.Fatal("Realtime-CU profile publication adopted a drifted campaign")
 	}
+}
+
+func realtimeCUResolutionElement(
+	t *testing.T, resolution bench.LiveResolution, node string,
+) bench.ElementResolution {
+	t.Helper()
+	for _, element := range resolution.Elements {
+		if element.Node == node {
+			return element
+		}
+	}
+	t.Fatalf("Realtime-CU resolution omitted node %q", node)
+	return bench.ElementResolution{}
 }
 
 func TestValidateRealtimeCUProfileOptionsRequiresDistinctCompleteOutputs(t *testing.T) {

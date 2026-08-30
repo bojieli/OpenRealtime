@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/adapters/openaivision"
 	"github.com/bojieli/OpenRealtime/bench"
 	legacy "github.com/bojieli/OpenRealtime/binding"
@@ -508,7 +509,7 @@ func freezeProductionRealtimeCUProfile(
 	if err != nil || bound.Graph.Fingerprint != plan.Graph().Fingerprint {
 		return frozenRealtimeCUProfile{}, errors.New("freeze Realtime-CU values did not reproduce the exact bound graph")
 	}
-	resolution, err := realtimeCUExpectedResolution(plan)
+	resolution, err := probeRealtimeCUExpectedResolution(ctx, prepared.Binding, plan)
 	if err != nil {
 		return frozenRealtimeCUProfile{}, err
 	}
@@ -525,67 +526,130 @@ func freezeProductionRealtimeCUProfile(
 	}, nil
 }
 
-func realtimeCUExpectedResolution(plan *graphconfig.Plan) (bench.LiveResolution, error) {
-	if plan == nil {
-		return bench.LiveResolution{}, errors.New("derive Realtime-CU expected resolution: nil plan")
-	}
-	graph := plan.Graph()
-	byID := make(map[string]int, len(graph.Nodes))
-	for index, node := range graph.Nodes {
-		byID[node.ID] = index
-	}
-	result := bench.LiveResolution{Elements: make([]bench.ElementResolution, 0, len(graph.Nodes))}
-	for _, resolved := range plan.Resolution().Nodes {
-		index, found := byID[resolved.NodeID]
-		if !found {
-			return bench.LiveResolution{}, fmt.Errorf("Realtime-CU resolution names unknown node %q", resolved.NodeID)
-		}
-		node := graph.Nodes[index]
-		if resolved.Implementation.Reference != node.Implementation ||
-			resolved.Implementation.Contract != node.Element {
-			return bench.LiveResolution{}, fmt.Errorf("Realtime-CU resolution drifted for node %q", node.ID)
-		}
-		runtime, err := realtimeCUBenchArtifact(resolved.Implementation.Artifact)
-		if err != nil {
-			return bench.LiveResolution{}, err
-		}
-		capabilities := make([]bench.CapabilityIdentity, len(resolved.Implementation.Capabilities))
-		for index, capability := range resolved.Implementation.Capabilities {
-			provider, err := realtimeCUBenchArtifact(capability.Provider)
-			if err != nil {
-				return bench.LiveResolution{}, err
-			}
-			capabilities[index] = bench.CapabilityIdentity{
-				Name: capability.Name, Contract: capability.Contract, Provider: provider,
-			}
-			if capability.Adapter != nil {
-				adapter, err := realtimeCUBenchArtifact(*capability.Adapter)
-				if err != nil {
-					return bench.LiveResolution{}, err
-				}
-				capabilities[index].Adapter = &adapter
-			}
-		}
-		result.Elements = append(result.Elements, bench.ElementResolution{
-			Node: node.ID, Element: node.Element, Implementation: node.Implementation,
-			Runtime: runtime, Capabilities: capabilities,
-		})
-	}
-	if len(result.Elements) != len(graph.Nodes) {
-		return bench.LiveResolution{}, errors.New("Realtime-CU expected resolution omitted graph nodes")
-	}
-	if err := bench.ValidateExpectedResolution(result); err != nil {
-		return bench.LiveResolution{}, err
-	}
-	return result, nil
+type realtimeCUProfileProbeRuntime interface {
+	legacy.Runtime
+	Live() inspect.Live
+	Done() <-chan struct{}
 }
 
-func realtimeCUBenchArtifact(source inspect.ArtifactIdentity) (bench.ArtifactIdentity, error) {
-	if err := source.Validate(); err != nil {
-		return bench.ArtifactIdentity{}, err
+// probeRealtimeCUExpectedResolution mounts the exact selected application long
+// enough for every factory/provider boundary to publish its live immutable
+// runtime and capability identities. It submits no user input and therefore
+// cannot invent task-specific selected paths.
+func probeRealtimeCUExpectedResolution(
+	ctx context.Context,
+	binding legacy.Binding,
+	plan *graphconfig.Plan,
+) (resolution bench.LiveResolution, resultErr error) {
+	if ctx == nil {
+		return bench.LiveResolution{}, errors.New("probe Realtime-CU expected resolution: nil context")
 	}
-	return bench.ArtifactIdentity{ID: source.ID, Revision: source.Revision, Digest: source.Digest}, nil
+	if binding == nil || plan == nil {
+		return bench.LiveResolution{}, errors.New(
+			"probe Realtime-CU expected resolution: binding and plan are required",
+		)
+	}
+	probeContext, cancelProbe := context.WithTimeout(ctx, time.Minute)
+	defer cancelProbe()
+	runtimeValue, err := binding.Start(probeContext, legacy.Options{
+		Sink:      realtimeCUProfileProbeSink{},
+		SessionID: "realtime-cu-profile-resolution-probe",
+	})
+	if err != nil {
+		return bench.LiveResolution{}, fmt.Errorf("probe Realtime-CU expected resolution: start: %w", err)
+	}
+	runtime, ok := runtimeValue.(realtimeCUProfileProbeRuntime)
+	if !ok {
+		closeContext, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer closeCancel()
+		return bench.LiveResolution{}, errors.Join(
+			errors.New("probe Realtime-CU expected resolution: runtime has no graph inspection surface"),
+			runtimeValue.Close(closeContext, errors.New("profile resolution probe refused runtime")),
+		)
+	}
+	defer func() {
+		closeContext, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer closeCancel()
+		resultErr = errors.Join(resultErr, runtime.Close(
+			closeContext, errors.New("profile resolution probe complete"),
+		))
+	}()
+
+	configuration := bench.ArtifactIdentity{
+		ID:       "values://" + plan.Graph().ID,
+		Revision: graphvalues.APIVersion,
+		Digest:   plan.Identity().ValuesDigest,
+	}
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		snapshot := runtime.Live()
+		if realtimeCUProfileProbeIsLive(plan, snapshot) {
+			resolution, err = bench.AuthorExpectedResolutionFromInspection(
+				plan.Graph(), configuration, snapshot,
+			)
+			if err != nil {
+				return bench.LiveResolution{}, fmt.Errorf(
+					"probe Realtime-CU expected resolution: freeze: %w", err,
+				)
+			}
+			return resolution, nil
+		}
+		select {
+		case <-probeContext.Done():
+			return bench.LiveResolution{}, fmt.Errorf(
+				"probe Realtime-CU expected resolution: readiness: %w", context.Cause(probeContext),
+			)
+		case <-runtime.Done():
+			return bench.LiveResolution{}, errors.New(
+				"probe Realtime-CU expected resolution: runtime stopped before every live identity was reported",
+			)
+		case <-ticker.C:
+		}
+	}
 }
+
+func realtimeCUProfileProbeIsLive(plan *graphconfig.Plan, snapshot inspect.Live) bool {
+	if plan == nil || snapshot.State != "running" || snapshot.Deployment == nil ||
+		len(snapshot.Nodes) != len(plan.Graph().Nodes) {
+		return false
+	}
+	for _, node := range plan.Graph().Nodes {
+		live, found := snapshot.Nodes[node.ID]
+		if !found || live.State != "running" || live.Resolution == nil ||
+			live.Resolution.RuntimeEvidence != inspect.EvidenceLive ||
+			live.Resolution.CapabilitiesEvidence != inspect.EvidenceLive {
+			return false
+		}
+	}
+	return true
+}
+
+type realtimeCUProfileProbeSink struct{}
+
+func (realtimeCUProfileProbeSink) TurnBegin(context.Context) error { return nil }
+func (realtimeCUProfileProbeSink) TurnEnd(context.Context, legacy.TurnOutcome) error {
+	return nil
+}
+func (realtimeCUProfileProbeSink) Activity(context.Context, legacy.ActivityEvent) error { return nil }
+func (realtimeCUProfileProbeSink) Transcript(context.Context, legacy.TranscriptEvent) error {
+	return nil
+}
+func (realtimeCUProfileProbeSink) Observation(context.Context, perception.Observation) error {
+	return nil
+}
+func (realtimeCUProfileProbeSink) SpeechBegin(context.Context, action.Utterance) error { return nil }
+func (realtimeCUProfileProbeSink) SpeechText(context.Context, action.Utterance, string) error {
+	return nil
+}
+func (realtimeCUProfileProbeSink) SpeechAudio(context.Context, action.Utterance, action.Frame) error {
+	return nil
+}
+func (realtimeCUProfileProbeSink) SpeechEnd(context.Context, action.Utterance, action.Outcome) error {
+	return nil
+}
+func (realtimeCUProfileProbeSink) ToolCalls(context.Context, legacy.ToolCallEvent) error { return nil }
+func (realtimeCUProfileProbeSink) Failed(context.Context, legacy.ErrorEvent)             {}
 
 func writeFrozenRealtimeCUProfile(
 	output io.Writer, options realtimeCUProfileOptions, frozen frozenRealtimeCUProfile,
