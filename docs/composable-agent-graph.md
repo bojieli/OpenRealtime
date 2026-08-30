@@ -1905,7 +1905,7 @@ it has been reviewed, tested, and committed with its evidence):
     and external-receipt read/write boundary. The fail-closed Linux, Darwin, and
     Windows implementations have adversarial source/bundle/receipt tests plus
     normal, shuffled, race, vet, cross-build, and performance coverage.
-  - [ ] Make provider-evaluation publication crash-consistent across the
+  - [x] Make provider-evaluation publication crash-consistent across the
     create-only evaluation directory and its caller-owned external receipt.
     Stage and verify the complete provider response first, durably publish its
     portable receipt before exposing the final sibling name, and prove restart
@@ -1926,7 +1926,8 @@ it has been reviewed, tested, and committed with its evidence):
     the release matrix with retained source/evaluation receipts, audio/video
     decode assertions, exact population counts, redacted summaries, and
     credential-free offline verification.
-  - [ ] Run the provisioned live 165-pair scenario comparison, live four-case
+  - [ ] Run the provisioned live 165-attempt scenario candidate comparison
+    against the accepted historical trail, live four-case
     Meeting Assistant review, live exact-sixteen Realtime-CU review, and signed
     Darwin macOS client gate. Local synthetic, transport-only, Linux Swift, or
     manifest-derived probes do not close these live/native requirements.
@@ -2116,8 +2117,9 @@ repetitions per case. Smaller runs are for diagnosis only.
 - [ ] Migrate and run the complete 278-task tau2-bench/τ-Voice task set in
   both control and regular conditions with task and interaction metrics.
 - [ ] Preserve the DynaCU-Bench runner as independent optional validation.
-- [ ] Produce clean-worktree before/after parity artifacts for every required
-  suite; investigate differences instead of accepting a merely runnable graph.
+- [ ] Produce clean-worktree candidate artifacts for every required suite and
+  compare them with the benchmark owner's accepted original numbers;
+  investigate differences instead of accepting a merely runnable graph.
 - [ ] Demonstrate that the final graph-native configurations are non-inferior
   to the accepted baselines in aggregate pass rate and per-case behavior, with
   no safety regression and no material deadline or latency-distribution
