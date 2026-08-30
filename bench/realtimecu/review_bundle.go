@@ -3497,7 +3497,10 @@ func verifyReviewBundleWithOperations(
 		rebuilt.SourceManifest = &copy
 	}
 	if err != nil || !reflect.DeepEqual(rebuilt, manifest) {
-		return ReviewManifest{}, errors.New("realtime computer-use review manifest differs from retained evidence")
+		return ReviewManifest{}, fmt.Errorf(
+			"realtime computer-use review manifest differs from retained evidence (%s)",
+			reviewManifestMismatchField(rebuilt, manifest, err),
+		)
 	}
 	markdownPayload, markdownInfo, err := readReviewFile(root, "REVIEW.md", maximumReviewMarkdownBytes)
 	if err != nil || string(markdownPayload) != renderReview(manifest) {
@@ -3534,6 +3537,44 @@ func verifyReviewBundleWithOperations(
 		return ReviewManifest{}, errors.New("realtime computer-use review tree changed during final verification")
 	}
 	return manifest, nil
+}
+
+func reviewManifestMismatchField(rebuilt, retained ReviewManifest, buildErr error) string {
+	if buildErr != nil {
+		return "rebuild"
+	}
+	if rebuilt.Format != retained.Format || rebuilt.FormatVersion != retained.FormatVersion ||
+		rebuilt.Phase != retained.Phase || rebuilt.Suite != retained.Suite ||
+		rebuilt.Expected != retained.Expected {
+		return "identity"
+	}
+	if rebuilt.Complete != retained.Complete || rebuilt.Reportable != retained.Reportable ||
+		rebuilt.CoreReportable != retained.CoreReportable ||
+		rebuilt.CoreReportability != retained.CoreReportability {
+		return "completion-reportability"
+	}
+	if !reflect.DeepEqual(rebuilt.Result, retained.Result) {
+		return "result"
+	}
+	if !reflect.DeepEqual(rebuilt.SourceManifest, retained.SourceManifest) {
+		return "source-manifest"
+	}
+	if !reflect.DeepEqual(rebuilt.Cell, retained.Cell) {
+		return "cell"
+	}
+	if !reflect.DeepEqual(rebuilt.Provenance, retained.Provenance) {
+		return "provenance"
+	}
+	if !reflect.DeepEqual(rebuilt.ReportabilityErrors, retained.ReportabilityErrors) {
+		return "reportability-errors"
+	}
+	if !reflect.DeepEqual(rebuilt.Missing, retained.Missing) {
+		return "missing"
+	}
+	if !reflect.DeepEqual(rebuilt.Attempts, retained.Attempts) {
+		return "attempts"
+	}
+	return "unknown"
 }
 
 func reverifyReviewSubtrees(directory string, manifest ReviewManifest) error {
