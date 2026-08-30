@@ -190,10 +190,16 @@ func writeEvaluationBundleWithOperations(
 		return EvaluationBundleReceipt{}, err
 	}
 	for _, payload := range payloads {
-		if err := rejectEvaluationSensitive(ctx, originalGuard, payload.payload); err != nil {
+		rejectOriginal := rejectEvaluationSensitive
+		rejectAdditional := rejectEvaluationSensitive
+		if payload.file.MediaOrdinal > 0 {
+			rejectOriginal = rejectEvaluationLiteralSensitive
+			rejectAdditional = rejectEvaluationLiteralSensitive
+		}
+		if err := rejectOriginal(ctx, originalGuard, payload.payload); err != nil {
 			return EvaluationBundleReceipt{}, err
 		}
-		if err := rejectEvaluationSensitive(ctx, additionalGuard, payload.payload); err != nil {
+		if err := rejectAdditional(ctx, additionalGuard, payload.payload); err != nil {
 			return EvaluationBundleReceipt{}, err
 		}
 	}
@@ -453,7 +459,11 @@ func openEvaluationBundleWithOperations(
 		if int64(len(payload)) != file.SizeBytes || digest(payload) != file.SHA256 {
 			return EvaluationBundle{}, errors.New("retained evaluation bundle file identity changed")
 		}
-		if err := rejectEvaluationSensitive(ctx, guard, payload); err != nil {
+		reject := rejectEvaluationSensitive
+		if file.MediaOrdinal > 0 {
+			reject = rejectEvaluationLiteralSensitive
+		}
+		if err := reject(ctx, guard, payload); err != nil {
 			return EvaluationBundle{}, err
 		}
 		payloads[index] = evaluationBundlePayload{file: file, payload: payload, maximum: maximum}
@@ -642,7 +652,7 @@ func snapshotEvaluationForBundle(
 		if err := rejectEvaluationSensitive(ctx, guard, metadata); err != nil {
 			return Evaluation{}, nil, nil, nil, err
 		}
-		if err := rejectEvaluationSensitive(ctx, guard, item.Bytes); err != nil {
+		if err := rejectEvaluationLiteralSensitive(ctx, guard, item.Bytes); err != nil {
 			return Evaluation{}, nil, nil, nil, err
 		}
 	}
@@ -1110,6 +1120,25 @@ func rejectEvaluationSensitive(
 		return ctx.Err()
 	}
 	matched, err := guard.hasContext(ctx, payload)
+	if err != nil {
+		return err
+	}
+	if matched {
+		return errors.New("evaluation bundle content contains a declared sensitive value")
+	}
+	return nil
+}
+
+func rejectEvaluationLiteralSensitive(
+	ctx context.Context, guard *declaredSensitiveGuard, payload []byte,
+) error {
+	if ctx == nil {
+		return errors.New("evaluation literal sensitive scan requires a context")
+	}
+	if guard == nil || guard.count == 0 {
+		return ctx.Err()
+	}
+	matched, err := guard.matcher.containsContext(ctx, payload)
 	if err != nil {
 		return err
 	}
