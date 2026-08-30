@@ -24,7 +24,7 @@
       },
       "graph_native": {
         "composition": "conversational-fast-only",
-        "graph_fingerprint": "sha256:4d8eaa8b5966d4b7db7051a8a7439360ca59f748565c0d818a72eb371605bf72",
+        "graph_fingerprint": "sha256:89cb70cf0916b09cd0c34d5f1926c1acdd06dff63f6e698685ec61ad340fcdea",
         "safe_points": [
           {"kind": "observation_commit", "ordinal": 1, "decision": "committed", "version": 1, "source_revision": 1},
           {"kind": "continuation_prefix", "role": "deliberative", "ordinal": 1, "version": 1, "source_revision": 1, "prefix": [
@@ -68,7 +68,7 @@
       },
       "graph_native": {
         "composition": "conversational-slow-only",
-        "graph_fingerprint": "sha256:89b078a7262ba4cb1a33a851a38395f4daf5c5a338f4c4736272069fb66f7c96",
+        "graph_fingerprint": "sha256:2804cb2c3a86ace5ca0c94227d7f4cee73914ca18ce407ac2eb3cec8e0194d80",
         "safe_points": [
           {"kind": "observation_commit", "ordinal": 1, "decision": "committed", "version": 1, "source_revision": 1},
           {"kind": "continuation_prefix", "role": "deliberative", "ordinal": 1, "version": 1, "source_revision": 1, "prefix": [
@@ -126,7 +126,7 @@
       },
       "graph_native": {
         "composition": "conversational-both",
-        "graph_fingerprint": "sha256:98adf5022a6e4b98a39cb1bd2a63f07a1204e538de380b908ad9bf3ec406e6b0",
+        "graph_fingerprint": "sha256:0ba91b3d28fa58ce5e62d37ca99f7d567e10e81fbef94e6c3b844a1b39e3c137",
         "safe_points": [
           {"kind": "observation_commit", "ordinal": 1, "decision": "committed", "version": 1, "source_revision": 1},
           {"kind": "continuation_prefix", "role": "deliberative", "ordinal": 1, "version": 1, "source_revision": 1, "prefix": [
@@ -143,5 +143,5 @@
       }
     }
   ],
-  "fingerprint": "sha256:16e1141cd74ab2e5b2fba70cd0648637a321c749c2995349fdb676aa6315653c"
+  "fingerprint": "sha256:7baaf5b0fa59d33d59e044c65b37e2d0076bb46fff48e64659a8505ac1d97663"
 }
