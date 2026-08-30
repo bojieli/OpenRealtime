@@ -141,7 +141,10 @@ func (encoder *fixtureEncoder) Encode(ctx context.Context, request EncodeRequest
 	if filepath.Dir(request.OutputPath) != filepath.Join(request.WorkspaceRoot, "output") {
 		return errors.New("output is not isolated beneath output/")
 	}
-	payload := structuralAVMP4Fixture()
+	// A real encoder binds the output bytes to this source's frame stream. Keep
+	// the hermetic encoder faithful to that contract so a multi-source attempt
+	// does not manufacture byte-identical review artifacts with different roles.
+	payload := structuralAVMP4Fixture(request.Source)
 	if mode == "symlink_output" {
 		target := filepath.Join(filepath.Dir(request.OutputPath), "target.mp4")
 		if err := os.WriteFile(target, payload, 0o600); err != nil {
@@ -293,7 +296,8 @@ func (attestor *fixtureAttestor) Attest(ctx context.Context, request Attestation
 		report = []byte(`{"detail":"super-secret-value"}`)
 	}
 	if mode == "mutate_output" {
-		if err := os.WriteFile(request.OutputPath, append(structuralAVMP4Fixture(), 0), 0o600); err != nil {
+		if err := os.WriteFile(request.OutputPath,
+			append(structuralAVMP4Fixture(request.Source), 0), 0o600); err != nil {
 			return Attestation{}, err
 		}
 	}
@@ -363,6 +367,8 @@ func TestRecorderRetainsExactMultiSourceMediaAndReceipt(t *testing.T) {
 	if !manifest.Complete || manifest.AttemptEndUS != 500_000 ||
 		manifest.Encoder == nil || manifest.Attestor == nil || len(manifest.Video) != 2 ||
 		manifest.Video[0].Source != "camera" || manifest.Video[1].Source != "screen" ||
+		manifest.Video[0].Playable == nil || manifest.Video[1].Playable == nil ||
+		manifest.Video[0].Playable.SHA256 == manifest.Video[1].Playable.SHA256 ||
 		manifest.Video[0].Frames[0].EpisodeAtUS != 50_000 ||
 		manifest.Video[1].Frames[0].EpisodeAtUS != 75_125 || !validDigest(receipt.ManifestSHA256) {
 		t.Fatalf("receipt = %+v", receipt)
@@ -902,7 +908,7 @@ func TestVerifyBundleRejectsMutationExtrasAndSymlinks(t *testing.T) {
 				if err := os.Chmod(path, 0o600); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.WriteFile(path, append(structuralAVMP4Fixture(), 0), 0o600); err != nil {
+				if err := os.WriteFile(path, append(structuralAVMP4Fixture("screen"), 0), 0o600); err != nil {
 					t.Fatal(err)
 				}
 			case "extra":
@@ -1092,11 +1098,12 @@ func jpegFixture(t testing.TB, width, height int, fill color.RGBA) []byte {
 	return output.Bytes()
 }
 
-func structuralAVMP4Fixture() []byte {
+func structuralAVMP4Fixture(source string) []byte {
 	fileType := append([]byte("mp42"), []byte{0, 0, 0, 0}...)
 	fileType = append(fileType, []byte("mp42")...)
 	movie := append(isoTrack("vide", "avc1"), isoTrack("soun", "mp4a")...)
-	return bytes.Join([][]byte{isoBox("ftyp", fileType), isoBox("moov", movie), isoBox("mdat", []byte{1})}, nil)
+	mediaData := append([]byte("fixture-source:"), source...)
+	return bytes.Join([][]byte{isoBox("ftyp", fileType), isoBox("moov", movie), isoBox("mdat", mediaData)}, nil)
 }
 
 func isoTrack(handler, codec string) []byte {
