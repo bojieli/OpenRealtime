@@ -391,6 +391,12 @@ func (runner *dispatchRunner) start(
 	}
 	job.started = runner.emit.clock.NowNS()
 	dispatchCtx, cancel := context.WithCancelCause(ctx)
+	admitted := job.executable.Canonical.Authorized.Confirmed.Declared.Admitted
+	dispatchCtx = withDispatchContext(dispatchCtx, DispatchContext{
+		SessionID: admitted.SessionID, RunID: admitted.ModelRunID,
+		CommitmentID:        job.executable.CommitmentID,
+		CanonicalCallItemID: job.executable.Canonical.TrajectoryItemID,
+	})
 	job.cancel = cancel
 	runner.active = job
 
@@ -442,18 +448,22 @@ func (runner *dispatchRunner) complete(
 	call := callOfExecutable(job.executable)
 	runner.terminal.add(actionIdentity(job.executable.Canonical.Authorized.Confirmed.Declared.Admitted))
 	result := cloneToolResult(completion.result)
+	hostSynthesized := completion.err != nil
 	if completion.err != nil {
 		result = trajectory.ToolResult{CallID: call.CallID, Name: call.Name, Error: completion.err.Error()}
 	}
 	identityError := result.CallID != call.CallID || result.Name != call.Name
 	if identityError {
+		hostSynthesized = true
 		result = trajectory.ToolResult{CallID: call.CallID, Name: call.Name,
 			Error: fmt.Sprintf("tool %q returned mismatched result identity", call.Name)}
 	}
 	if len(result.Output) == 0 && result.Error == "" {
+		hostSynthesized = true
 		result.Error = "dispatcher returned neither output nor error"
 	}
 	if len(result.Output) != 0 && (!json.Valid(result.Output) || result.Error != "") {
+		hostSynthesized = true
 		result.Output = nil
 		result.Error = "dispatcher returned an invalid terminal result"
 	}
@@ -477,7 +487,13 @@ func (runner *dispatchRunner) complete(
 	}
 	executionResult := ExecutionResult{
 		Executable: cloneExecutable(job.executable),
-		CallID:     call.CallID, Name: call.Name, CommitmentID: job.executable.CommitmentID,
+		CompletionOrigin: func() CompletionOrigin {
+			if hostSynthesized {
+				return CompletionDispatcherError
+			}
+			return CompletionReturned
+		}(),
+		CallID: call.CallID, Name: call.Name, CommitmentID: job.executable.CommitmentID,
 		Result: result, CrossedNS: job.crossed, FinishedNS: completion.finished,
 	}
 	resultCapability, err := runner.ledger.signResult(executionResult)
@@ -485,7 +501,9 @@ func (runner *dispatchRunner) complete(
 		return fmt.Errorf("authenticate dispatch result for %s: %w", call.CallID, err)
 	}
 	executionResult.ResultCapability = resultCapability
-	if err := publishPayload(ctx, runner.emit, runner.resultOutput, job.envelope, resultType, executionResult, "result"); err != nil {
+	resultCause := job.envelope.Clone()
+	resultCause.OpportunityID = job.executable.Canonical.Authorized.Confirmed.Declared.Admitted.ActivationItemID
+	if err := publishPayload(ctx, runner.emit, runner.resultOutput, resultCause, resultType, executionResult, "result"); err != nil {
 		return err
 	}
 	audit := runner.audit(job, result, completion.finished)

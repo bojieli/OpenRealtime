@@ -13,8 +13,8 @@
       "reference": "action.Dispatch",
       "identity": {
         "name": "action.Dispatch",
-        "revision": 2,
-        "digest": "sha256:a01a4c56c22b690a9c6a97cba6e3a891e5569445c92029c1359d26acd31ca1c8"
+        "revision": 3,
+        "digest": "sha256:9b5840098e40fc35cb86f758e417460ce2b7d4254a0d1b0ab21f74786c96027a"
       }
     },
     {
@@ -37,8 +37,8 @@
       "reference": "action.ToolResultCommit",
       "identity": {
         "name": "action.ToolResultCommit",
-        "revision": 2,
-        "digest": "sha256:e94ae97efa3578c018012d07bb77bdb6bae788805ae738b895e3690598a7f3eb"
+        "revision": 3,
+        "digest": "sha256:b9ba6a55ed3e2b177f9e0ba33380b28e50f03b37f094a8c1c29794576d4f919c"
       }
     },
     {

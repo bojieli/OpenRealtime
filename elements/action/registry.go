@@ -412,15 +412,17 @@ func (entry ledgerEntry) verifyResult(result ExecutionResult) bool {
 
 func resultCapabilityPayload(result ExecutionResult) ([]byte, error) {
 	return json.Marshal(struct {
-		Executable   ExecutableAction      `json:"executable"`
-		CallID       string                `json:"call_id"`
-		Name         string                `json:"name"`
-		CommitmentID string                `json:"commitment_id"`
-		Result       trajectory.ToolResult `json:"result"`
-		CrossedNS    uint64                `json:"crossed_ns"`
-		FinishedNS   uint64                `json:"finished_ns"`
+		Executable       ExecutableAction      `json:"executable"`
+		CompletionOrigin CompletionOrigin      `json:"completion_origin"`
+		CallID           string                `json:"call_id"`
+		Name             string                `json:"name"`
+		CommitmentID     string                `json:"commitment_id"`
+		Result           trajectory.ToolResult `json:"result"`
+		CrossedNS        uint64                `json:"crossed_ns"`
+		FinishedNS       uint64                `json:"finished_ns"`
 	}{
-		Executable: result.Executable, CallID: result.CallID, Name: result.Name,
+		Executable: result.Executable, CompletionOrigin: result.CompletionOrigin,
+		CallID: result.CallID, Name: result.Name,
 		CommitmentID: result.CommitmentID, Result: result.Result,
 		CrossedNS: result.CrossedNS, FinishedNS: result.FinishedNS,
 	})

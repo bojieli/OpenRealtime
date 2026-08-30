@@ -3,6 +3,8 @@ package trajectory
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 )
 
@@ -194,6 +196,232 @@ func TestToolProposalRequiresExactCausalPromotionBeforeResult(t *testing.T) {
 		ToolResult: &ToolResult{CallID: "proposal-1", Name: "lookup", Output: json.RawMessage(`true`)},
 	}); err != nil {
 		t.Fatalf("promoted call rejected its result: %v", err)
+	}
+}
+
+func TestToolIdentityScopesProviderCallIDByInvocation(t *testing.T) {
+	t.Parallel()
+	store := NewStore()
+	call := func(run string) *ToolCall {
+		return &ToolCall{CallID: "provider-call", Name: "lookup", Arguments: json.RawMessage(`{"run":"` + run + `"}`)}
+	}
+	if err := store.AppendBatch([]Item{
+		{ID: "proposal-a", Kind: KindToolProposal, InvocationID: "run-a", Producer: Producer{Phase: PhaseSlow}, ToolCall: call("a")},
+		{ID: "call-a", Kind: KindToolCall, InvocationID: "run-a", CausalParentIDs: []string{"proposal-a"}, Producer: Producer{Phase: PhaseRuntime}, ToolCall: call("a")},
+		{ID: "proposal-b", Kind: KindToolProposal, InvocationID: "run-b", Producer: Producer{Phase: PhaseSlow}, ToolCall: call("b")},
+		{ID: "call-b", Kind: KindToolCall, InvocationID: "run-b", CausalParentIDs: []string{"proposal-b"}, Producer: Producer{Phase: PhaseRuntime}, ToolCall: call("b")},
+		{ID: "result-a", Kind: KindToolResult, InvocationID: "run-a", CausalParentIDs: []string{"call-a"}, Producer: Producer{Phase: PhaseTool}, ToolResult: &ToolResult{CallID: "provider-call", Name: "lookup", Output: json.RawMessage(`{"run":"a"}`)}},
+	}); err != nil {
+		t.Fatalf("append two invocation scopes: %v", err)
+	}
+
+	pending := UnresolvedToolCalls(store.Snapshot())
+	if len(pending) != 1 || pending[0].InvocationID != "run-b" || pending[0].ItemID != "call-b" {
+		t.Fatalf("result from run-a resolved the wrong provider call: %#v", pending)
+	}
+	matched, err := MatchToolResultBatch(store.Snapshot(), "run-b", []ToolResult{{
+		CallID: "provider-call", Name: "lookup", Output: json.RawMessage(`{"run":"b"}`),
+	}})
+	if err != nil {
+		t.Fatalf("match run-b result: %v", err)
+	}
+	if len(matched) != 1 || matched[0].Pending.ItemID != "call-b" || matched[0].Pending.InvocationID != "run-b" {
+		t.Fatalf("matched provider call from wrong invocation: %#v", matched)
+	}
+	if err := store.Append(Item{
+		ID: "result-b", Kind: KindToolResult, InvocationID: "run-b", CausalParentIDs: []string{"call-b"},
+		Producer: Producer{Phase: PhaseTool}, ToolResult: &matched[0].Result,
+	}); err != nil {
+		t.Fatalf("append run-b result: %v", err)
+	}
+	if pending := UnresolvedToolCalls(store.Snapshot()); len(pending) != 0 {
+		t.Fatalf("resolved scoped calls remained pending: %#v", pending)
+	}
+}
+
+func TestToolIdentityRejectsSameInvocationReplayAndTamper(t *testing.T) {
+	t.Parallel()
+	store := NewStore()
+	canonical := &ToolCall{CallID: "shared", Name: "lookup", Arguments: json.RawMessage(`{"key":"x"}`)}
+	if err := store.AppendBatch([]Item{
+		{ID: "proposal", Kind: KindToolProposal, InvocationID: "run", Producer: Producer{Phase: PhaseSlow}, ToolCall: canonical},
+		{ID: "call", Kind: KindToolCall, InvocationID: "run", CausalParentIDs: []string{"proposal"}, Producer: Producer{Phase: PhaseRuntime}, ToolCall: canonical},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, item := range map[string]Item{
+		"proposal replay":    {ID: "proposal-replay", Kind: KindToolProposal, InvocationID: "run", Producer: Producer{Phase: PhaseSlow}, ToolCall: canonical},
+		"call replay":        {ID: "call-replay", Kind: KindToolCall, InvocationID: "run", Producer: Producer{Phase: PhaseRuntime}, ToolCall: canonical},
+		"result name tamper": {ID: "result-tamper", Kind: KindToolResult, InvocationID: "run", Producer: Producer{Phase: PhaseTool}, ToolResult: &ToolResult{CallID: "shared", Name: "different", Output: json.RawMessage(`true`)}},
+		"forged invocation":  {ID: "result-forged", Kind: KindToolResult, InvocationID: "other", Producer: Producer{Phase: PhaseTool}, ToolResult: &ToolResult{CallID: "shared", Name: "lookup", Output: json.RawMessage(`true`)}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := store.Append(item); err == nil {
+				t.Fatal("invalid scoped replay or tamper was accepted")
+			}
+		})
+	}
+	result := Item{ID: "result", Kind: KindToolResult, InvocationID: "run", CausalParentIDs: []string{"call"}, Producer: Producer{Phase: PhaseTool}, ToolResult: &ToolResult{CallID: "shared", Name: "lookup", Output: json.RawMessage(`true`)}}
+	if err := store.Append(result); err != nil {
+		t.Fatalf("append canonical result: %v", err)
+	}
+	result.ID = "result-replay"
+	if err := store.Append(result); err == nil {
+		t.Fatal("same-invocation terminal replay was accepted")
+	}
+}
+
+func TestToolIdentityMissingInvocationIsCanonicalizedOrRejected(t *testing.T) {
+	t.Parallel()
+
+	legacyCompatible := NewStore()
+	if err := legacyCompatible.Append(Item{
+		ID: "call-a", Kind: KindToolCall, InvocationID: "run-a", Producer: Producer{Phase: PhaseSlow},
+		ToolCall: &ToolCall{CallID: "shared", Name: "lookup", Arguments: json.RawMessage(`{}`)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := legacyCompatible.Append(Item{
+		ID: "result-a", Kind: KindToolResult, Producer: Producer{Phase: PhaseTool},
+		ToolResult: &ToolResult{CallID: "shared", Name: "lookup", Output: json.RawMessage(`true`)},
+	}); err != nil {
+		t.Fatalf("unambiguous legacy result: %v", err)
+	}
+	snapshot := legacyCompatible.Snapshot()
+	if got := snapshot.Items[len(snapshot.Items)-1].InvocationID; got != "run-a" {
+		t.Fatalf("legacy result retained without canonical invocation: %q", got)
+	}
+	if err := legacyCompatible.Append(Item{
+		ID: "call-b", Kind: KindToolCall, InvocationID: "run-b", Producer: Producer{Phase: PhaseSlow},
+		ToolCall: &ToolCall{CallID: "shared", Name: "lookup", Arguments: json.RawMessage(`{}`)},
+	}); err != nil {
+		t.Fatalf("later scoped provider ID reuse: %v", err)
+	}
+	pending := UnresolvedToolCalls(legacyCompatible.Snapshot())
+	if len(pending) != 1 || pending[0].InvocationID != "run-b" {
+		t.Fatalf("canonicalized legacy result changed scope after reuse: %#v", pending)
+	}
+
+	ambiguous := NewStore()
+	if err := ambiguous.AppendBatch([]Item{
+		{ID: "call-a", Kind: KindToolCall, InvocationID: "run-a", Producer: Producer{Phase: PhaseSlow}, ToolCall: &ToolCall{CallID: "shared", Name: "lookup", Arguments: json.RawMessage(`{}`)}},
+		{ID: "call-b", Kind: KindToolCall, InvocationID: "run-b", Producer: Producer{Phase: PhaseSlow}, ToolCall: &ToolCall{CallID: "shared", Name: "lookup", Arguments: json.RawMessage(`{}`)}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for name, item := range map[string]Item{
+		"result":      {ID: "missing-result", Kind: KindToolResult, Producer: Producer{Phase: PhaseTool}, ToolResult: &ToolResult{CallID: "shared", Name: "lookup", Output: json.RawMessage(`true`)}},
+		"placeholder": {ID: "missing-placeholder", Kind: KindToolPlaceholder, Producer: Producer{Phase: PhaseRuntime}, ToolPlaceholder: &ToolPlaceholder{CallID: "shared", Name: "lookup", Reason: "interrupted"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := ambiguous.Append(item); err == nil {
+				t.Fatal("ambiguous invocation omission was accepted")
+			}
+		})
+	}
+	forged := Item{ID: "forged-placeholder", Kind: KindToolPlaceholder, InvocationID: "run-c", Producer: Producer{Phase: PhaseRuntime}, ToolPlaceholder: &ToolPlaceholder{CallID: "shared", Name: "lookup", Reason: "interrupted"}}
+	if err := ambiguous.Append(forged); err == nil {
+		t.Fatal("placeholder with forged invocation was accepted")
+	}
+}
+
+func TestLegacyUnscopedToolIdentityCannotBecomeAmbiguous(t *testing.T) {
+	t.Parallel()
+	for _, order := range []string{"legacy-first", "scoped-first"} {
+		t.Run(order, func(t *testing.T) {
+			store := NewStore()
+			firstInvocation, secondInvocation := "", "run-b"
+			if order == "scoped-first" {
+				firstInvocation, secondInvocation = "run-a", ""
+			}
+			if err := store.Append(Item{
+				ID: "first", Kind: KindToolCall, InvocationID: firstInvocation, Producer: Producer{Phase: PhaseSlow},
+				ToolCall: &ToolCall{CallID: "legacy", Name: "lookup", Arguments: json.RawMessage(`{}`)},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Append(Item{
+				ID: "second", Kind: KindToolCall, InvocationID: secondInvocation, Producer: Producer{Phase: PhaseSlow},
+				ToolCall: &ToolCall{CallID: "legacy", Name: "lookup", Arguments: json.RawMessage(`{}`)},
+			}); err == nil {
+				t.Fatal("unscoped identity was allowed to become ambiguous")
+			}
+		})
+	}
+}
+
+func TestToolIdentityConcurrentScopedResultsAndReplay(t *testing.T) {
+	t.Parallel()
+	const scopes = 64
+	store := NewStore()
+	calls := make([]Item, 0, scopes)
+	for index := 0; index < scopes; index++ {
+		run := fmt.Sprintf("run-%03d", index)
+		calls = append(calls, Item{
+			ID: "call-" + run, Kind: KindToolCall, InvocationID: run, Producer: Producer{Phase: PhaseSlow},
+			ToolCall: &ToolCall{CallID: "reused", Name: "lookup", Arguments: json.RawMessage(`{}`)},
+		})
+	}
+	if err := store.AppendBatch(calls); err != nil {
+		t.Fatal(err)
+	}
+	errorsByRun := make(chan error, scopes)
+	var group sync.WaitGroup
+	for index := 0; index < scopes; index++ {
+		run := fmt.Sprintf("run-%03d", index)
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			errorsByRun <- store.Append(Item{
+				ID: "result-" + run, Kind: KindToolResult, InvocationID: run,
+				CausalParentIDs: []string{"call-" + run}, Producer: Producer{Phase: PhaseTool},
+				ToolResult: &ToolResult{CallID: "reused", Name: "lookup", Output: json.RawMessage(`true`)},
+			})
+		}()
+	}
+	group.Wait()
+	close(errorsByRun)
+	for err := range errorsByRun {
+		if err != nil {
+			t.Fatalf("concurrent scoped result: %v", err)
+		}
+	}
+	if pending := UnresolvedToolCalls(store.Snapshot()); len(pending) != 0 {
+		t.Fatalf("concurrent scoped results crossed identities: %#v", pending)
+	}
+
+	replay := NewStore()
+	if err := replay.Append(Item{
+		ID: "call", Kind: KindToolCall, InvocationID: "run", Producer: Producer{Phase: PhaseSlow},
+		ToolCall: &ToolCall{CallID: "same", Name: "lookup", Arguments: json.RawMessage(`{}`)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	const racers = 32
+	results := make(chan error, racers)
+	for index := 0; index < racers; index++ {
+		index := index
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			results <- replay.Append(Item{
+				ID: fmt.Sprintf("result-%02d", index), Kind: KindToolResult, InvocationID: "run",
+				Producer:   Producer{Phase: PhaseTool},
+				ToolResult: &ToolResult{CallID: "same", Name: "lookup", Output: json.RawMessage(`true`)},
+			})
+		}()
+	}
+	group.Wait()
+	close(results)
+	succeeded := 0
+	for err := range results {
+		if err == nil {
+			succeeded++
+		}
+	}
+	if succeeded != 1 || replay.Snapshot().Version != 2 {
+		t.Fatalf("concurrent terminal replay accepted %d results; version=%d", succeeded, replay.Snapshot().Version)
 	}
 }
 

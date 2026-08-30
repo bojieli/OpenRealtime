@@ -232,6 +232,11 @@ func (runner *authorizedCallCommitRunner) acceptAction(
 	}
 	runner.pending[identity] = &pendingAuthorizedCommit{
 		cause: envelope.Clone(), action: cloneAuthorized(action),
+		// The proposal append and the admitted action travel on independent
+		// graph lanes. Do not misclassify a temporarily older retained snapshot
+		// as forged context; wait until the exact admitted prefix can exist, then
+		// attest it normally. Cancellation still addresses this pending identity.
+		waitVersion: admitted.ContextVersion,
 	}
 	return runner.tryStart(ctx, identity)
 }
@@ -663,15 +668,17 @@ func authorizedPromotionEvidence(
 	var committedCall *trajectory.Item
 	for index := range snapshot.Items {
 		item := &snapshot.Items[index]
-		if item.Kind == trajectory.KindToolProposal && item.ToolCall != nil && item.ToolCall.CallID == call.CallID {
+		if item.Kind == trajectory.KindToolProposal && item.ToolCall != nil &&
+			item.ToolCall.CallID == call.CallID && item.InvocationID == admitted.ModelRunID {
 			if proposal != nil {
-				return promotionEvidence{}, "duplicate_canonical_proposal", errors.New("canonical trajectory repeats a proposal call ID")
+				return promotionEvidence{}, "duplicate_canonical_proposal", errors.New("canonical trajectory repeats a proposal in one invocation scope")
 			}
 			proposal = item
 		}
-		if item.Kind == trajectory.KindToolCall && item.ToolCall != nil && item.ToolCall.CallID == call.CallID {
+		if item.Kind == trajectory.KindToolCall && item.ToolCall != nil &&
+			item.ToolCall.CallID == call.CallID && item.InvocationID == admitted.ModelRunID {
 			if committedCall != nil {
-				return promotionEvidence{}, "duplicate_canonical_call", errors.New("canonical trajectory repeats a tool call ID")
+				return promotionEvidence{}, "duplicate_canonical_call", errors.New("canonical trajectory repeats a tool call in one invocation scope")
 			}
 			committedCall = item
 		}
@@ -916,6 +923,10 @@ func (runner *toolResultCommitRunner) acceptResult(
 	if code, err := runner.attestExecutionResult(envelope, result); err != nil {
 		return runner.publishOutcome(ctx, envelope, OutcomeRejected, "attest", result.CallID, code, err.Error())
 	}
+	if err := validateExecutionResultOriginSemantics(result); err != nil {
+		return runner.publishOutcome(ctx, envelope, OutcomeRejected, "attest", result.CallID,
+			"invalid_result_origin", err.Error())
+	}
 	identity := actionIdentity(result.Executable.Canonical.Authorized.Confirmed.Declared.Admitted)
 	if runner.terminal.contains(identity) {
 		return runner.publishOutcome(ctx, envelope, OutcomeIgnored, "result", result.CallID,
@@ -947,6 +958,10 @@ func validateExecutionResult(result ExecutionResult) error {
 		call.CallID != result.CallID || call.Name != result.Name {
 		return errors.New("execution result has incomplete call, name, or commitment identity")
 	}
+	if result.CompletionOrigin != CompletionReturned &&
+		result.CompletionOrigin != CompletionDispatcherError {
+		return fmt.Errorf("execution result has unknown completion origin %q", result.CompletionOrigin)
+	}
 	if result.Result.CallID != result.CallID || result.Result.Name != result.Name {
 		return errors.New("execution result payload does not match its dispatch identity")
 	}
@@ -957,6 +972,13 @@ func validateExecutionResult(result ExecutionResult) error {
 	}
 	if result.CrossedNS == 0 || result.FinishedNS < result.CrossedNS {
 		return errors.New("execution result does not prove a valid external-effect interval")
+	}
+	return nil
+}
+
+func validateExecutionResultOriginSemantics(result ExecutionResult) error {
+	if result.CompletionOrigin == CompletionDispatcherError && result.Result.Error == "" {
+		return errors.New("dispatcher-generated completion requires an error result")
 	}
 	return nil
 }
@@ -1243,25 +1265,29 @@ func (runner *toolResultCommitRunner) publishOutcome(
 func toolResultEvidence(
 	snapshot trajectory.Snapshot, execution ExecutionResult, envelopeRunID string,
 ) (trajectory.Item, *trajectory.Item, string, error) {
+	modelRunID := execution.Executable.Canonical.Authorized.Confirmed.Declared.Admitted.ModelRunID
 	var proposal *trajectory.Item
 	var call *trajectory.Item
 	var result *trajectory.Item
 	for index := range snapshot.Items {
 		item := &snapshot.Items[index]
 		switch {
-		case item.Kind == trajectory.KindToolProposal && item.ToolCall != nil && item.ToolCall.CallID == execution.CallID:
+		case item.Kind == trajectory.KindToolProposal && item.ToolCall != nil &&
+			item.ToolCall.CallID == execution.CallID && item.InvocationID == modelRunID:
 			if proposal != nil {
-				return trajectory.Item{}, nil, "duplicate_canonical_proposal", errors.New("canonical trajectory repeats a proposal call ID")
+				return trajectory.Item{}, nil, "duplicate_canonical_proposal", errors.New("canonical trajectory repeats a proposal in one invocation scope")
 			}
 			proposal = item
-		case item.Kind == trajectory.KindToolCall && item.ToolCall != nil && item.ToolCall.CallID == execution.CallID:
+		case item.Kind == trajectory.KindToolCall && item.ToolCall != nil &&
+			item.ToolCall.CallID == execution.CallID && item.InvocationID == modelRunID:
 			if call != nil {
-				return trajectory.Item{}, nil, "duplicate_canonical_call", errors.New("canonical trajectory repeats a tool call ID")
+				return trajectory.Item{}, nil, "duplicate_canonical_call", errors.New("canonical trajectory repeats a tool call in one invocation scope")
 			}
 			call = item
-		case item.Kind == trajectory.KindToolResult && item.ToolResult != nil && item.ToolResult.CallID == execution.CallID:
+		case item.Kind == trajectory.KindToolResult && item.ToolResult != nil &&
+			item.ToolResult.CallID == execution.CallID && item.InvocationID == modelRunID:
 			if result != nil {
-				return trajectory.Item{}, nil, "duplicate_canonical_result", errors.New("canonical trajectory repeats a tool result call ID")
+				return trajectory.Item{}, nil, "duplicate_canonical_result", errors.New("canonical trajectory repeats a tool result in one invocation scope")
 			}
 			result = item
 		}

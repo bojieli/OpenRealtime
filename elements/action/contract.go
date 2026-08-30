@@ -10,6 +10,7 @@
 package action
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +27,34 @@ import (
 	"github.com/bojieli/OpenRealtime/internal/elementconfig"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
+
+// DispatchContext is immutable graph authority attached by action.Dispatch to
+// the context passed to every deployment-selected Dispatcher. It lets a
+// dispatcher correlate provider-local call IDs without falling back to a
+// process- or session-global CallID namespace.
+type DispatchContext struct {
+	SessionID           string
+	RunID               string
+	CommitmentID        string
+	CanonicalCallItemID string
+}
+
+type dispatchContextKey struct{}
+
+func withDispatchContext(ctx context.Context, scope DispatchContext) context.Context {
+	return context.WithValue(ctx, dispatchContextKey{}, scope)
+}
+
+// DispatchContextFromContext returns the exact graph authority attached at the
+// irreversible dispatch boundary. A false result means the caller did not come
+// through action.Dispatch and must not be treated as graph-authorized.
+func DispatchContextFromContext(ctx context.Context) (DispatchContext, bool) {
+	if ctx == nil {
+		return DispatchContext{}, false
+	}
+	scope, ok := ctx.Value(dispatchContextKey{}).(DispatchContext)
+	return scope, ok
+}
 
 const (
 	ToolRegistryService         = "action.tool.registries"
@@ -186,6 +215,7 @@ type CommittedAction struct {
 type ExecutionResult struct {
 	Executable       ExecutableAction      `json:"executable"`
 	ResultCapability string                `json:"result_capability"`
+	CompletionOrigin CompletionOrigin      `json:"completion_origin"`
 	CallID           string                `json:"call_id"`
 	Name             string                `json:"name"`
 	CommitmentID     string                `json:"commitment_id"`
@@ -193,6 +223,19 @@ type ExecutionResult struct {
 	CrossedNS        uint64                `json:"crossed_ns"`
 	FinishedNS       uint64                `json:"finished_ns"`
 }
+
+// CompletionOrigin is ledger-authenticated dispatch evidence. Returned means
+// the selected dispatcher supplied the terminal ToolResult; DispatcherError
+// means Dispatch synthesized the ToolResult from the dispatcher's returned
+// error (including cancellation after the external boundary was crossed).
+// Profiles that accept client tool results can therefore require an explicit
+// graph ingress attestation only for bytes claimed to have been returned.
+type CompletionOrigin string
+
+const (
+	CompletionReturned        CompletionOrigin = "returned"
+	CompletionDispatcherError CompletionOrigin = "dispatcher_error"
+)
 
 // CanonicalResult attests the trajectory safe point containing a dispatch
 // result. Consumers can sample the matching snapshot without racing a merely
@@ -216,15 +259,21 @@ const (
 )
 
 type Outcome struct {
-	Kind       OutcomeKind `json:"kind"`
-	Stage      string      `json:"stage"`
-	Operation  string      `json:"operation"`
-	CallID     string      `json:"call_id,omitempty"`
-	Code       string      `json:"code,omitempty"`
-	Message    string      `json:"message,omitempty"`
-	Crossed    bool        `json:"crossed,omitempty"`
-	StartedNS  uint64      `json:"started_ns,omitempty"`
-	FinishedNS uint64      `json:"finished_ns,omitempty"`
+	Kind                      OutcomeKind `json:"kind"`
+	Stage                     string      `json:"stage"`
+	Operation                 string      `json:"operation"`
+	CallID                    string      `json:"call_id,omitempty"`
+	Code                      string      `json:"code,omitempty"`
+	Message                   string      `json:"message,omitempty"`
+	Crossed                   bool        `json:"crossed,omitempty"`
+	StartedNS                 uint64      `json:"started_ns,omitempty"`
+	FinishedNS                uint64      `json:"finished_ns,omitempty"`
+	ResultDigest              string      `json:"result_digest,omitempty"`
+	IngressItemID             string      `json:"ingress_item_id,omitempty"`
+	AcceptedItemID            string      `json:"accepted_item_id,omitempty"`
+	CanonicalEnvelopeItemID   string      `json:"canonical_envelope_item_id,omitempty"`
+	CanonicalTrajectoryItemID string      `json:"canonical_trajectory_item_id,omitempty"`
+	CanonicalStoreVersion     uint64      `json:"canonical_store_version,omitempty"`
 }
 
 type LedgerTransition struct {
@@ -546,7 +595,7 @@ func AuthorizedCallCommitDescriptor() element.Descriptor {
 // dispatch. External completion is not model context until this commit lands.
 func ToolResultCommitDescriptor() element.Descriptor {
 	return element.Descriptor{
-		FormatVersion: element.DescriptorFormatVersion, Name: "action.ToolResultCommit", Revision: 2,
+		FormatVersion: element.DescriptorFormatVersion, Name: "action.ToolResultCommit", Revision: 3,
 		Ports: []element.Port{
 			port("result", element.Input, resultType, 32), port("context", element.Input, snapshotType, 1),
 			port("committed", element.Input, commitType, 16), port("rejected", element.Input, rejectionType, 16),
@@ -569,7 +618,7 @@ func ToolResultCommitDescriptor() element.Descriptor {
 
 func DispatchDescriptor() element.Descriptor {
 	return element.Descriptor{
-		FormatVersion: element.DescriptorFormatVersion, Name: "action.Dispatch", Revision: 2,
+		FormatVersion: element.DescriptorFormatVersion, Name: "action.Dispatch", Revision: 3,
 		Ports: []element.Port{port("execute", element.Input, executableType, 32), port("cancel", element.Input, interruptType, 16),
 			port("timeout", element.Input, interruptType, 16), port("committed", element.Output, committedType, 32),
 			port("result", element.Output, resultType, 32), port("transition", element.Output, transitionType, 32),
@@ -589,7 +638,8 @@ func DispatchDescriptor() element.Descriptor {
 func Descriptors() []element.Descriptor {
 	return []element.Descriptor{
 		ProvenanceJoinDescriptor(), ProposalAdmissionDescriptor(), ToolLookupDescriptor(), ConfirmationDescriptor(),
-		TargetFenceDescriptor(), AuthorizedCallCommitDescriptor(), LedgerCommitDescriptor(), DispatchDescriptor(),
+		TargetFenceDescriptor(), AuthorizedCallCommitDescriptor(), ClientToolResultDescriptor(), ClientToolResultJoinDescriptor(),
+		LedgerCommitDescriptor(), DispatchDescriptor(),
 		ToolResultCommitDescriptor(),
 	}
 }
@@ -626,7 +676,8 @@ func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
 	entries := make([]factoryprofile.Entry, 0, len(Descriptors()))
 	for _, factory := range []element.Factory{
 		provenanceJoinFactory{}, proposalAdmissionFactory{}, toolLookupFactory{}, confirmationFactory{},
-		targetFenceFactory{}, authorizedCallCommitFactory{}, ledgerCommitFactory{}, dispatchFactory{},
+		targetFenceFactory{}, authorizedCallCommitFactory{}, clientToolResultFactory{}, clientToolResultJoinFactory{},
+		ledgerCommitFactory{}, dispatchFactory{},
 		toolResultCommitFactory{},
 	} {
 		entries = append(entries, factoryprofile.Entry{Factory: factory})

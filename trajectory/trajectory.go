@@ -335,10 +335,14 @@ func MatchToolResultBatch(snapshot Snapshot, invocationID string, results []Tool
 	if len(results) == 0 {
 		return nil, errors.New("tool result batch is empty")
 	}
-	resolved := make(map[string]struct{})
+	callScopes := toolCallScopes(snapshot)
+	resolved := make(map[toolIdentity]struct{})
 	for _, item := range snapshot.Items {
 		if item.Kind == KindToolResult && item.ToolResult != nil {
-			resolved[item.ToolResult.CallID] = struct{}{}
+			if identity, found := snapshotToolIdentity(item.InvocationID,
+				item.ToolResult.CallID, callScopes); found {
+				resolved[identity] = struct{}{}
+			}
 		}
 	}
 	var pending []PendingToolCall
@@ -346,7 +350,8 @@ func MatchToolResultBatch(snapshot Snapshot, invocationID string, results []Tool
 		if item.Kind != KindToolCall || item.ToolCall == nil || item.InvocationID != invocationID {
 			continue
 		}
-		if _, done := resolved[item.ToolCall.CallID]; done {
+		identity := toolIdentity{invocationID: item.InvocationID, callID: item.ToolCall.CallID}
+		if _, done := resolved[identity]; done {
 			continue
 		}
 		call := *item.ToolCall
@@ -392,10 +397,10 @@ type Store struct {
 
 	items            []Item
 	byID             map[string]int
-	toolProposals    map[string]toolProposalRecord
-	toolCalls        map[string]string
-	toolResults      map[string]struct{}
-	toolPlaceholders map[string]struct{}
+	toolProposals    map[toolIdentity]toolProposalRecord
+	toolCalls        map[toolIdentity]string
+	toolResults      map[toolIdentity]struct{}
+	toolPlaceholders map[toolIdentity]struct{}
 	assistantStates  map[string]Visibility
 	pendingRepairs   map[string]string
 	hasMonotonicTime bool
@@ -415,14 +420,23 @@ type toolProposalRecord struct {
 	call           ToolCall
 }
 
+// toolIdentity scopes provider-local call IDs to the invocation that minted
+// them. A Store is already session-scoped; adding InvocationID completes the
+// canonical (session, invocation, call) identity without rewriting provider
+// payloads or imposing a process-global call-ID namespace.
+type toolIdentity struct {
+	invocationID string
+	callID       string
+}
+
 // NewStore creates an empty trajectory.
 func NewStore() *Store {
 	return &Store{
 		byID:             make(map[string]int),
-		toolProposals:    make(map[string]toolProposalRecord),
-		toolCalls:        make(map[string]string),
-		toolResults:      make(map[string]struct{}),
-		toolPlaceholders: make(map[string]struct{}),
+		toolProposals:    make(map[toolIdentity]toolProposalRecord),
+		toolCalls:        make(map[toolIdentity]string),
+		toolResults:      make(map[toolIdentity]struct{}),
+		toolPlaceholders: make(map[toolIdentity]struct{}),
 		assistantStates:  make(map[string]Visibility),
 		pendingRepairs:   make(map[string]string),
 	}
@@ -587,6 +601,9 @@ func (store *Store) appendLocked(item Item) error {
 		}
 		seenParent[parent] = struct{}{}
 	}
+	if err := store.normalizeToolInvocationLocked(&item); err != nil {
+		return err
+	}
 	if err := store.validateSupersessionLocked(item); err != nil {
 		return err
 	}
@@ -711,13 +728,17 @@ func (store *Store) validateKindLocked(item Item) error {
 		if err := validateToolCall(*item.ToolCall); err != nil {
 			return err
 		}
-		if _, exists := store.toolProposals[item.ToolCall.CallID]; exists {
+		identity := toolIdentity{invocationID: item.InvocationID, callID: item.ToolCall.CallID}
+		if store.hasUnscopedToolIdentityConflictLocked(identity) {
+			return fmt.Errorf("tool proposal ID %q conflicts with an unscoped call identity", item.ToolCall.CallID)
+		}
+		if _, exists := store.toolProposals[identity]; exists {
 			return fmt.Errorf("duplicate tool proposal ID %q", item.ToolCall.CallID)
 		}
-		if _, exists := store.toolCalls[item.ToolCall.CallID]; exists {
+		if _, exists := store.toolCalls[identity]; exists {
 			return fmt.Errorf("tool proposal ID %q conflicts with an executable call", item.ToolCall.CallID)
 		}
-		store.toolProposals[item.ToolCall.CallID] = toolProposalRecord{
+		store.toolProposals[identity] = toolProposalRecord{
 			itemID: item.ID, invocationID: item.InvocationID,
 			sourceRevision: item.SourceRevision,
 			call:           cloneToolCall(*item.ToolCall),
@@ -729,10 +750,14 @@ func (store *Store) validateKindLocked(item Item) error {
 		if err := validateToolCall(*item.ToolCall); err != nil {
 			return err
 		}
-		if _, exists := store.toolCalls[item.ToolCall.CallID]; exists {
+		identity := toolIdentity{invocationID: item.InvocationID, callID: item.ToolCall.CallID}
+		if store.hasUnscopedToolIdentityConflictLocked(identity) {
+			return fmt.Errorf("tool call ID %q conflicts with an unscoped call identity", item.ToolCall.CallID)
+		}
+		if _, exists := store.toolCalls[identity]; exists {
 			return fmt.Errorf("duplicate tool call ID %q", item.ToolCall.CallID)
 		}
-		if proposal, exists := store.toolProposals[item.ToolCall.CallID]; exists {
+		if proposal, exists := store.toolProposals[identity]; exists {
 			if !slices.Contains(item.CausalParentIDs, proposal.itemID) {
 				return fmt.Errorf("tool call %q does not causally promote proposal item %q",
 					item.ToolCall.CallID, proposal.itemID)
@@ -744,26 +769,84 @@ func (store *Store) validateKindLocked(item Item) error {
 				!bytes.Equal(item.ToolCall.Arguments, proposal.call.Arguments) {
 				return fmt.Errorf("tool call %q changes the canonical proposal", item.ToolCall.CallID)
 			}
+		} else {
+			for proposalIdentity, proposal := range store.toolProposals {
+				if proposalIdentity.callID == item.ToolCall.CallID &&
+					slices.Contains(item.CausalParentIDs, proposal.itemID) {
+					return fmt.Errorf("tool call %q changes proposal invocation or source revision", item.ToolCall.CallID)
+				}
+			}
 		}
-		store.toolCalls[item.ToolCall.CallID] = item.ToolCall.Name
+		store.toolCalls[identity] = item.ToolCall.Name
 	case KindToolPlaceholder:
 		if item.ToolPlaceholder == nil || payloadCount != 1 || item.Content != "" || item.Visibility != "" {
 			return errors.New("tool_placeholder requires exactly one placeholder payload")
 		}
-		if err := store.acceptToolPlaceholderLocked(*item.ToolPlaceholder); err != nil {
+		if err := store.acceptToolPlaceholderLocked(item); err != nil {
 			return err
 		}
 	case KindToolResult:
 		if item.ToolResult == nil || payloadCount != 1 || item.Content != "" || item.Visibility != "" {
 			return errors.New("tool_result requires exactly one result payload")
 		}
-		if err := store.acceptToolResultLocked(*item.ToolResult); err != nil {
+		if err := store.acceptToolResultLocked(item); err != nil {
 			return err
 		}
 	default:
 		return fmt.Errorf("unknown trajectory item kind %q", item.Kind)
 	}
 	return nil
+}
+
+// normalizeToolInvocationLocked turns the legacy, unambiguous omission of an
+// invocation on a result or placeholder into explicit canonical identity
+// before the item is retained. Without this normalization, later reuse of a
+// provider-local CallID could retroactively make an already accepted result
+// ambiguous when a snapshot is inspected.
+func (store *Store) normalizeToolInvocationLocked(item *Item) error {
+	if item.InvocationID != "" {
+		return nil
+	}
+	var callID, kind string
+	switch {
+	case item.Kind == KindToolResult && item.ToolResult != nil:
+		callID, kind = item.ToolResult.CallID, "tool result"
+	case item.Kind == KindToolPlaceholder && item.ToolPlaceholder != nil:
+		callID, kind = item.ToolPlaceholder.CallID, "tool placeholder"
+	default:
+		return nil
+	}
+	if strings.TrimSpace(callID) == "" {
+		return nil
+	}
+	identity, _, err := store.resolveToolCallLocked("", callID)
+	if err != nil {
+		return fmt.Errorf("%s references call %q: %w", kind, callID, err)
+	}
+	item.InvocationID = identity.invocationID
+	return nil
+}
+
+// hasUnscopedToolIdentityConflictLocked keeps the historical empty-invocation
+// identity usable without letting it become ambiguous. A legacy unscoped call
+// owns its CallID for the session; scoped provider IDs may otherwise be reused
+// freely across invocations.
+func (store *Store) hasUnscopedToolIdentityConflictLocked(identity toolIdentity) bool {
+	conflicts := func(candidate toolIdentity) bool {
+		return candidate.callID == identity.callID && candidate != identity &&
+			(candidate.invocationID == "" || identity.invocationID == "")
+	}
+	for candidate := range store.toolProposals {
+		if conflicts(candidate) {
+			return true
+		}
+	}
+	for candidate := range store.toolCalls {
+		if conflicts(candidate) {
+			return true
+		}
+	}
+	return false
 }
 
 func validateToolCall(call ToolCall) error {
@@ -785,18 +868,19 @@ func cloneToolCall(call ToolCall) ToolCall {
 	return call
 }
 
-func (store *Store) acceptToolResultLocked(result ToolResult) error {
+func (store *Store) acceptToolResultLocked(item Item) error {
+	result := *item.ToolResult
 	if strings.TrimSpace(result.CallID) == "" || strings.TrimSpace(result.Name) == "" {
 		return errors.New("tool result call ID and name are required")
 	}
-	name, exists := store.toolCalls[result.CallID]
-	if !exists {
-		return fmt.Errorf("tool result references unknown call %q", result.CallID)
+	identity, name, err := store.resolveToolCallLocked(item.InvocationID, result.CallID)
+	if err != nil {
+		return fmt.Errorf("tool result references call %q: %w", result.CallID, err)
 	}
 	if name != result.Name {
 		return fmt.Errorf("tool result name %q does not match call name %q", result.Name, name)
 	}
-	if _, exists := store.toolResults[result.CallID]; exists {
+	if _, exists := store.toolResults[identity]; exists {
 		return fmt.Errorf("tool call %q already has a terminal result", result.CallID)
 	}
 	hasOutput := len(result.Output) != 0
@@ -804,33 +888,63 @@ func (store *Store) acceptToolResultLocked(result ToolResult) error {
 	if hasOutput == hasError || hasOutput && !json.Valid(result.Output) {
 		return errors.New("tool result requires exactly one valid JSON output or error")
 	}
-	store.toolResults[result.CallID] = struct{}{}
-	delete(store.toolPlaceholders, result.CallID)
+	store.toolResults[identity] = struct{}{}
+	delete(store.toolPlaceholders, identity)
 	return nil
 }
 
 // acceptToolPlaceholderLocked admits one placeholder for an executable call
 // that is still outstanding. A placeholder is not terminal: the call remains
 // unsatisfied and its eventual result still commits and supersedes it.
-func (store *Store) acceptToolPlaceholderLocked(placeholder ToolPlaceholder) error {
+func (store *Store) acceptToolPlaceholderLocked(item Item) error {
+	placeholder := *item.ToolPlaceholder
 	if err := placeholder.validate(); err != nil {
 		return err
 	}
-	name, exists := store.toolCalls[placeholder.CallID]
-	if !exists {
-		return fmt.Errorf("tool placeholder references unknown call %q", placeholder.CallID)
+	identity, name, err := store.resolveToolCallLocked(item.InvocationID, placeholder.CallID)
+	if err != nil {
+		return fmt.Errorf("tool placeholder references call %q: %w", placeholder.CallID, err)
 	}
 	if name != placeholder.Name {
 		return fmt.Errorf("tool placeholder name %q does not match call name %q", placeholder.Name, name)
 	}
-	if _, done := store.toolResults[placeholder.CallID]; done {
+	if _, done := store.toolResults[identity]; done {
 		return fmt.Errorf("tool call %q already has a terminal result", placeholder.CallID)
 	}
-	if _, duplicate := store.toolPlaceholders[placeholder.CallID]; duplicate {
+	if _, duplicate := store.toolPlaceholders[identity]; duplicate {
 		return fmt.Errorf("tool call %q already has a placeholder", placeholder.CallID)
 	}
-	store.toolPlaceholders[placeholder.CallID] = struct{}{}
+	store.toolPlaceholders[identity] = struct{}{}
 	return nil
+}
+
+func (store *Store) resolveToolCallLocked(
+	invocationID, callID string,
+) (toolIdentity, string, error) {
+	if invocationID != "" {
+		identity := toolIdentity{invocationID: invocationID, callID: callID}
+		name, found := store.toolCalls[identity]
+		if !found {
+			return toolIdentity{}, "", errors.New("is unknown in the named invocation")
+		}
+		return identity, name, nil
+	}
+	var matched toolIdentity
+	var name string
+	found := false
+	for identity, candidateName := range store.toolCalls {
+		if identity.callID != callID {
+			continue
+		}
+		if found {
+			return toolIdentity{}, "", errors.New("is ambiguous without an invocation ID")
+		}
+		matched, name, found = identity, candidateName, true
+	}
+	if !found {
+		return toolIdentity{}, "", errors.New("is unknown")
+	}
+	return matched, name, nil
 }
 
 func (store *Store) transitionAssistantLocked(state AssistantState) error {
@@ -1031,10 +1145,10 @@ func (store *Store) cloneLocked() *Store {
 	clone := &Store{
 		items:            cloneItems(store.items),
 		byID:             make(map[string]int, len(store.byID)),
-		toolProposals:    make(map[string]toolProposalRecord, len(store.toolProposals)),
-		toolCalls:        make(map[string]string, len(store.toolCalls)),
-		toolResults:      make(map[string]struct{}, len(store.toolResults)),
-		toolPlaceholders: make(map[string]struct{}, len(store.toolPlaceholders)),
+		toolProposals:    make(map[toolIdentity]toolProposalRecord, len(store.toolProposals)),
+		toolCalls:        make(map[toolIdentity]string, len(store.toolCalls)),
+		toolResults:      make(map[toolIdentity]struct{}, len(store.toolResults)),
+		toolPlaceholders: make(map[toolIdentity]struct{}, len(store.toolPlaceholders)),
 		assistantStates:  make(map[string]Visibility, len(store.assistantStates)),
 		pendingRepairs:   make(map[string]string, len(store.pendingRepairs)),
 		hasMonotonicTime: store.hasMonotonicTime,

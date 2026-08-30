@@ -120,6 +120,15 @@ const dispatchGraph = `graph action_dispatch {
 }
 `
 
+const clientToolResultJoinGraph = `graph client_tool_result_join {
+    action.ClientToolResultJoin :: join;
+    input result = join.result;
+    input accepted = join.accepted;
+    input cancel = join.cancel;
+    output joined = join.joined;
+    output outcome = join.outcome;
+}`
+
 const provenanceJoinGraph = `graph provenance_join_test {
     authority.ProvenanceJoin :: join;
     input candidate = join.candidate;
@@ -653,6 +662,27 @@ func TestToolResultCommitRequiresLedgerAuthenticatedExactDispatchResult(t *testi
 			code: "invalid_capability",
 		},
 		{
+			name: "missing completion origin",
+			edit: func(result *ExecutionResult, _ *element.Envelope) {
+				result.CompletionOrigin = ""
+			},
+			code: "invalid_result",
+		},
+		{
+			name: "unknown completion origin",
+			edit: func(result *ExecutionResult, _ *element.Envelope) {
+				result.CompletionOrigin = CompletionOrigin("forged")
+			},
+			code: "invalid_result",
+		},
+		{
+			name: "tampered valid completion origin",
+			edit: func(result *ExecutionResult, _ *element.Envelope) {
+				result.CompletionOrigin = CompletionDispatcherError
+			},
+			code: "invalid_capability",
+		},
+		{
 			name: "mutated executable capability",
 			edit: func(result *ExecutionResult, _ *element.Envelope) { result.Executable.Capability += "00" },
 			code: "invalid_capability",
@@ -693,6 +723,246 @@ func TestToolResultCommitRequiresLedgerAuthenticatedExactDispatchResult(t *testi
 				t.Fatalf("forged result outcome = %+v version %d", outcome, store.Snapshot().Version)
 			}
 			assertNoEnvelope(t, mustEgressAction(t, mounted, "canonical"))
+		})
+	}
+}
+
+func TestClientToolResultJoinRequiresExactAcceptedIngressForReturnedResultsInEitherOrder(t *testing.T) {
+	for _, acceptedFirst := range []bool{true, false} {
+		name := "result_first"
+		if acceptedFirst {
+			name = "accepted_first"
+		}
+		t.Run(name, func(t *testing.T) {
+			mounted, done, cancel, result, accepted, _ := mountClientToolResultJoin(t)
+			defer stopMounted(t, mounted, done, cancel)
+			resultEnvelope := clientJoinResultEnvelope(result, "dispatch-result")
+			acceptedEnvelope := clientJoinAcceptedEnvelope(accepted, "accepted-result")
+			if acceptedFirst {
+				send(t, mustIngressAction(t, mounted, "accepted"), acceptedEnvelope)
+				pending := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+				if pending.Code != "awaiting_result" {
+					t.Fatalf("accepted-first pending = %+v", pending)
+				}
+				send(t, mustIngressAction(t, mounted, "result"), resultEnvelope)
+			} else {
+				send(t, mustIngressAction(t, mounted, "result"), resultEnvelope)
+				pending := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+				if pending.Code != "awaiting_accepted" {
+					t.Fatalf("result-first pending = %+v", pending)
+				}
+				send(t, mustIngressAction(t, mounted, "accepted"), acceptedEnvelope)
+			}
+			joinedEnvelope := receive(t, mustEgressAction(t, mounted, "joined"))
+			joined := joinedEnvelope.Payload.(ExecutionResult)
+			if joined.ResultCapability != result.ResultCapability || joined.CompletionOrigin != CompletionReturned ||
+				!contains(joinedEnvelope.CausalParents, resultEnvelope.ItemID) ||
+				!contains(joinedEnvelope.CausalParents, acceptedEnvelope.ItemID) ||
+				!contains(joinedEnvelope.CausalParents, accepted.IngressItemID) {
+				t.Fatalf("joined result = %+v / %+v", joined, joinedEnvelope)
+			}
+			outcome := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+			if outcome.Kind != OutcomeSucceeded || outcome.Code != "client_result_joined" ||
+				outcome.ResultDigest != accepted.Receipt.ResultDigest {
+				t.Fatalf("join outcome = %+v", outcome)
+			}
+		})
+	}
+}
+
+func TestClientToolResultJoinAuthenticatesDispatcherErrorsWithoutFabricatingClientIngress(t *testing.T) {
+	mounted, done, cancel, result, _, entry := mountClientToolResultJoin(t)
+	defer stopMounted(t, mounted, done, cancel)
+	result.CompletionOrigin = CompletionDispatcherError
+	result.Result = trajectory.ToolResult{CallID: result.CallID, Name: result.Name, Error: "dispatcher canceled"}
+	var err error
+	result.ResultCapability, err = entry.signResult(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	send(t, mustIngressAction(t, mounted, "result"), clientJoinResultEnvelope(result, "dispatch-error"))
+	joinedEnvelope := receive(t, mustEgressAction(t, mounted, "joined"))
+	joined := joinedEnvelope.Payload.(ExecutionResult)
+	if joined.CompletionOrigin != CompletionDispatcherError || len(joinedEnvelope.CausalParents) != 1 ||
+		joinedEnvelope.CausalParents[0] != "dispatch-error" {
+		t.Fatalf("dispatcher error join = %+v / %+v", joined, joinedEnvelope)
+	}
+	outcome := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+	if outcome.Code != "dispatcher_error_joined" || outcome.IngressItemID != "" || outcome.AcceptedItemID != "" {
+		t.Fatalf("dispatcher error outcome = %+v", outcome)
+	}
+}
+
+func TestClientToolResultJoinRejectsTamperedOrSemanticallyFalseOrigins(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		resign bool
+		code   string
+	}{
+		{name: "tampered", code: "invalid_capability"},
+		{name: "signed output falsely called dispatcher error", resign: true, code: "invalid_result_origin"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			mounted, done, cancel, result, _, entry := mountClientToolResultJoin(t)
+			defer stopMounted(t, mounted, done, cancel)
+			result.CompletionOrigin = CompletionDispatcherError
+			if test.resign {
+				var err error
+				result.ResultCapability, err = entry.signResult(result)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			send(t, mustIngressAction(t, mounted, "result"), clientJoinResultEnvelope(result, "false-origin"))
+			outcome := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+			if outcome.Kind != OutcomeRejected || outcome.Code != test.code {
+				t.Fatalf("false origin outcome = %+v", outcome)
+			}
+			assertNoEnvelope(t, mustEgressAction(t, mounted, "joined"))
+		})
+	}
+}
+
+func TestClientToolResultJoinCancellationCannotSuppressCrossedExactResult(t *testing.T) {
+	mounted, done, cancel, result, accepted, _ := mountClientToolResultJoin(t)
+	defer stopMounted(t, mounted, done, cancel)
+	send(t, mustIngressAction(t, mounted, "cancel"), element.Envelope{
+		Type: InterruptType(), ItemID: "cancel-before-result", SessionID: accepted.Receipt.SessionID,
+		RunID: accepted.Receipt.RunID, OpportunityID: accepted.Receipt.CallID,
+		CancellationScope: accepted.Receipt.RunID,
+		Payload:           Interrupt{CallID: accepted.Receipt.CallID, Reason: "race"},
+	})
+	canceled := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+	if canceled.Operation != "cancel" || canceled.Code != "crossed_result_still_canonical" {
+		t.Fatalf("join cancellation = %+v", canceled)
+	}
+	send(t, mustIngressAction(t, mounted, "accepted"), clientJoinAcceptedEnvelope(accepted, "accepted-after-cancel"))
+	_ = receive(t, mustEgressAction(t, mounted, "outcome"))
+	send(t, mustIngressAction(t, mounted, "result"), clientJoinResultEnvelope(result, "result-after-cancel"))
+	_ = receive(t, mustEgressAction(t, mounted, "joined"))
+	if outcome := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome); outcome.Kind != OutcomeSucceeded {
+		t.Fatalf("joined result after cancel = %+v", outcome)
+	}
+}
+
+func TestClientToolResultJoinTerminalReplayIsExactAndMetadataDriftPoisons(t *testing.T) {
+	mounted, done, cancel, result, accepted, _ := mountClientToolResultJoin(t)
+	resultEnvelope := clientJoinResultEnvelope(result, "terminal-result")
+	resultEnvelope.Sequence = 7
+	resultEnvelope.TraceID = "trace-result"
+	acceptedEnvelope := clientJoinAcceptedEnvelope(accepted, "terminal-accepted")
+	acceptedEnvelope.Sequence = 8
+	acceptedEnvelope.TraceID = "trace-accepted"
+	send(t, mustIngressAction(t, mounted, "result"), resultEnvelope)
+	_ = receive(t, mustEgressAction(t, mounted, "outcome"))
+	send(t, mustIngressAction(t, mounted, "accepted"), acceptedEnvelope)
+	_ = receive(t, mustEgressAction(t, mounted, "joined"))
+	_ = receive(t, mustEgressAction(t, mounted, "outcome"))
+	send(t, mustIngressAction(t, mounted, "result"), resultEnvelope)
+	if replay := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome); replay.Kind != OutcomeIgnored || replay.Code != "terminal_replay" {
+		t.Fatalf("exact terminal replay = %+v", replay)
+	}
+	drifted := resultEnvelope.Clone()
+	drifted.TraceID = "trace-drifted"
+	send(t, mustIngressAction(t, mounted, "result"), drifted)
+	poisonedEnvelope := receive(t, mustEgressAction(t, mounted, "outcome"))
+	poisoned := poisonedEnvelope.Payload.(Outcome)
+	if poisoned.Kind != OutcomeFailed || poisoned.Code != "terminal_result_conflict" ||
+		!contains(poisonedEnvelope.CausalParents, resultEnvelope.ItemID) {
+		t.Fatalf("terminal metadata conflict = %+v / %+v", poisoned, poisonedEnvelope)
+	}
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "poisoned") {
+			t.Fatalf("terminal conflict stop = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("terminal conflict did not fail closed")
+	}
+	cancel()
+}
+
+func TestClientToolResultJoinPoisonsAcceptedAndDispatcherErrorInEitherOrder(t *testing.T) {
+	for _, acceptedFirst := range []bool{true, false} {
+		name := "dispatcher_error_first"
+		if acceptedFirst {
+			name = "accepted_first"
+		}
+		t.Run(name, func(t *testing.T) {
+			mounted, done, cancel, result, accepted, entry := mountClientToolResultJoin(t)
+			result.CompletionOrigin = CompletionDispatcherError
+			result.Result = trajectory.ToolResult{CallID: result.CallID, Name: result.Name, Error: "dispatch timeout"}
+			var err error
+			result.ResultCapability, err = entry.signResult(result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resultEnvelope := clientJoinResultEnvelope(result, "dispatcher-error")
+			acceptedEnvelope := clientJoinAcceptedEnvelope(accepted, "accepted-before-error")
+			if acceptedFirst {
+				send(t, mustIngressAction(t, mounted, "accepted"), acceptedEnvelope)
+				_ = receive(t, mustEgressAction(t, mounted, "outcome"))
+				send(t, mustIngressAction(t, mounted, "result"), resultEnvelope)
+			} else {
+				send(t, mustIngressAction(t, mounted, "result"), resultEnvelope)
+				_ = receive(t, mustEgressAction(t, mounted, "joined"))
+				_ = receive(t, mustEgressAction(t, mounted, "outcome"))
+				send(t, mustIngressAction(t, mounted, "accepted"), acceptedEnvelope)
+			}
+			poisonedEnvelope := receive(t, mustEgressAction(t, mounted, "outcome"))
+			poisoned := poisonedEnvelope.Payload.(Outcome)
+			if poisoned.Kind != OutcomeFailed ||
+				(poisoned.Code != "accepted_dispatcher_error" && poisoned.Code != "accepted_after_dispatcher_error") ||
+				!contains(poisonedEnvelope.CausalParents, resultEnvelope.ItemID) ||
+				!contains(poisonedEnvelope.CausalParents, acceptedEnvelope.ItemID) {
+				t.Fatalf("accepted/dispatcher error conflict = %+v / %+v", poisoned, poisonedEnvelope)
+			}
+			select {
+			case err := <-done:
+				if err == nil || !strings.Contains(err.Error(), "poisoned") {
+					t.Fatalf("accepted/dispatcher error stop = %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("accepted/dispatcher error conflict did not fail closed")
+			}
+			cancel()
+		})
+	}
+}
+
+func TestClientToolResultJoinAlwaysAdmitsExactCounterpartAtPendingCapacity(t *testing.T) {
+	for _, acceptedFirst := range []bool{true, false} {
+		name := "results_pending"
+		if acceptedFirst {
+			name = "accepted_pending"
+		}
+		t.Run(name, func(t *testing.T) {
+			mounted, done, cancel, base, _, entry := mountClientToolResultJoin(t)
+			defer stopMounted(t, mounted, done, cancel)
+			results := make([]ExecutionResult, maximumClientToolResultJoinPending)
+			accepted := make([]ClientToolResultAccepted, maximumClientToolResultJoinPending)
+			for index := range results {
+				results[index], accepted[index] = distinctClientJoinEvidence(t, entry, base, index)
+				if acceptedFirst {
+					send(t, mustIngressAction(t, mounted, "accepted"),
+						clientJoinAcceptedEnvelope(accepted[index], fmt.Sprintf("accepted-capacity-%d", index)))
+				} else {
+					send(t, mustIngressAction(t, mounted, "result"),
+						clientJoinResultEnvelope(results[index], fmt.Sprintf("result-capacity-%d", index)))
+				}
+				_ = receive(t, mustEgressAction(t, mounted, "outcome"))
+			}
+			if acceptedFirst {
+				send(t, mustIngressAction(t, mounted, "result"),
+					clientJoinResultEnvelope(results[0], "result-capacity-counterpart"))
+			} else {
+				send(t, mustIngressAction(t, mounted, "accepted"),
+					clientJoinAcceptedEnvelope(accepted[0], "accepted-capacity-counterpart"))
+			}
+			_ = receive(t, mustEgressAction(t, mounted, "joined"))
+			if outcome := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome); outcome.Kind != OutcomeSucceeded {
+				t.Fatalf("capacity counterpart = %+v", outcome)
+			}
 		})
 	}
 }
@@ -1048,7 +1318,8 @@ func mountToolResultAttestation(
 		CommitmentID: commitmentID, Capability: capability,
 	}
 	result := ExecutionResult{
-		Executable: executable, CallID: "attested-call", Name: computeruse.Click,
+		Executable: executable, CompletionOrigin: CompletionReturned,
+		CallID: "attested-call", Name: computeruse.Click,
 		CommitmentID: commitmentID,
 		Result: trajectory.ToolResult{CallID: "attested-call", Name: computeruse.Click,
 			Output: json.RawMessage(`{"ok":true}`)},
@@ -1070,6 +1341,103 @@ func mountToolResultAttestation(
 	mounted, done, cancel := mountGraph(t, toolResultAttestationGraph,
 		map[string]json.RawMessage{"commit": json.RawMessage(`{}`), "trajectory": json.RawMessage(`{}`)}, services)
 	return mounted, done, cancel, store, result
+}
+
+func mountClientToolResultJoin(t *testing.T) (*graphruntime.Mounted, chan error,
+	context.CancelFunc, ExecutionResult, ClientToolResultAccepted, ledgerEntry) {
+	t.Helper()
+	_, canonical := canonicalAttestationFixture(t, trajectory.PhaseRuntime)
+	ledgers := NewLedgerRegistries()
+	if err := ledgers.Register("main", legacyaction.NewLedger()); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := ledgers.resolve("main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	admitted := canonical.Authorized.Confirmed.Declared.Admitted
+	commitmentID := actionCommitmentID(admitted)
+	capability, err := entry.sign(canonical, commitmentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executable := ExecutableAction{Canonical: canonical, LedgerReference: entry.reference,
+		LedgerIdentity: entry.identity, CommitmentID: commitmentID, Capability: capability}
+	result := ExecutionResult{Executable: executable, CompletionOrigin: CompletionReturned,
+		CallID: admitted.Proposal.Call.CallID, Name: admitted.Proposal.Call.Name, CommitmentID: commitmentID,
+		Result: trajectory.ToolResult{CallID: admitted.Proposal.Call.CallID, Name: admitted.Proposal.Call.Name,
+			Output: json.RawMessage(`{"ok":true}`)}, CrossedNS: 10, FinishedNS: 20}
+	result.ResultCapability, err = entry.signResult(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt := ClientToolResultReceipt{ID: "receipt-attested-call", SessionID: admitted.SessionID,
+		RunID: admitted.ModelRunID, CallID: result.CallID, Name: result.Name,
+		CommitmentID: commitmentID, CanonicalCallItemID: canonical.TrajectoryItemID,
+		ResultDigest: ClientToolResultDigest(result.Result)}
+	accepted := ClientToolResultAccepted{Receipt: receipt, IngressItemID: "api-result-ingress"}
+	services := graphruntime.NewServiceSet()
+	if _, err := services.Set(LedgerRegistryService, ledgers); err != nil {
+		t.Fatal(err)
+	}
+	mounted, done, cancel := mountGraph(t, clientToolResultJoinGraph,
+		map[string]json.RawMessage{}, services)
+	return mounted, done, cancel, result, accepted, entry
+}
+
+func distinctClientJoinEvidence(
+	t *testing.T, entry ledgerEntry, base ExecutionResult, index int,
+) (ExecutionResult, ClientToolResultAccepted) {
+	t.Helper()
+	result := cloneExecutionResult(base)
+	runID := fmt.Sprintf("capacity-run-%d", index)
+	callID := fmt.Sprintf("capacity-call-%d", index)
+	canonical := result.Executable.Canonical
+	admitted := &canonical.Authorized.Confirmed.Declared.Admitted
+	admitted.ModelRunID = runID
+	admitted.Proposal.Call.CallID = callID
+	admitted.ProposalItemID = fmt.Sprintf("capacity-proposal-%d", index)
+	canonical.ProposalItemID = admitted.ProposalItemID
+	canonical.TrajectoryItemID = fmt.Sprintf("capacity-call-item-%d", index)
+	commitmentID := actionCommitmentID(*admitted)
+	capability, err := entry.sign(canonical, commitmentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.Executable = ExecutableAction{
+		Canonical: canonical, LedgerReference: entry.reference, LedgerIdentity: entry.identity,
+		CommitmentID: commitmentID, Capability: capability,
+	}
+	result.CallID, result.Result.CallID = callID, callID
+	result.CommitmentID = commitmentID
+	result.ResultCapability, err = entry.signResult(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt := ClientToolResultReceipt{
+		ID: fmt.Sprintf("capacity-receipt-%d", index), SessionID: admitted.SessionID,
+		RunID: runID, CallID: callID, Name: result.Name, CommitmentID: commitmentID,
+		CanonicalCallItemID: canonical.TrajectoryItemID,
+		ResultDigest:        ClientToolResultDigest(result.Result),
+	}
+	return result, ClientToolResultAccepted{
+		Receipt: receipt, IngressItemID: fmt.Sprintf("capacity-ingress-%d", index),
+	}
+}
+
+func clientJoinResultEnvelope(result ExecutionResult, itemID string) element.Envelope {
+	admitted := result.Executable.Canonical.Authorized.Confirmed.Declared.Admitted
+	return element.Envelope{Type: ResultType(), ItemID: itemID, SessionID: admitted.SessionID,
+		RunID: admitted.ModelRunID, OpportunityID: admitted.ActivationItemID,
+		CancellationScope: admitted.ModelRunID, Payload: result}
+}
+
+func clientJoinAcceptedEnvelope(accepted ClientToolResultAccepted, itemID string) element.Envelope {
+	return element.Envelope{Type: ClientToolResultAcceptedType(), ItemID: itemID,
+		SessionID: accepted.Receipt.SessionID, RunID: accepted.Receipt.RunID,
+		OpportunityID:     accepted.Receipt.CallID,
+		CancellationScope: accepted.Receipt.RunID,
+		CausalParents:     []string{accepted.IngressItemID}, Payload: accepted}
 }
 
 func provenanceJoinEvidence(runID, callID, sessionID string) (element.Envelope, element.Envelope, element.Envelope) {
@@ -1127,20 +1495,22 @@ func provenanceJoinEvidence(runID, callID, sessionID string) (element.Envelope, 
 	return candidate, proposal, result
 }
 
-func TestDescriptorsExposeNineDistinctBoundariesAndOnlyDispatchIsExternal(t *testing.T) {
+func TestDescriptorsExposeElevenDistinctBoundariesAndOnlyDispatchIsExternal(t *testing.T) {
 	descriptors := Descriptors()
-	if len(descriptors) != 9 {
-		t.Fatalf("descriptor count = %d, want 9", len(descriptors))
+	if len(descriptors) != 11 {
+		t.Fatalf("descriptor count = %d, want 11", len(descriptors))
 	}
 	existingRevisions := map[string]uint64{
-		"authority.ProposalAdmission": 2,
-		"action.ToolLookup":           2,
-		"authority.Confirmation":      2,
-		"authority.TargetFence":       2,
-		"action.AuthorizedCallCommit": 2,
-		"action.LedgerCommit":         2,
-		"action.ToolResultCommit":     2,
-		"action.Dispatch":             2,
+		"authority.ProposalAdmission":    2,
+		"action.ToolLookup":              2,
+		"authority.Confirmation":         2,
+		"authority.TargetFence":          2,
+		"action.AuthorizedCallCommit":    2,
+		"action.ClientToolResultIngress": 2,
+		"action.ClientToolResultJoin":    1,
+		"action.LedgerCommit":            2,
+		"action.ToolResultCommit":        3,
+		"action.Dispatch":                3,
 	}
 	for _, descriptor := range descriptors {
 		if err := descriptor.Validate(); err != nil {
@@ -1699,6 +2069,48 @@ func TestSameCallIDHasDistinctLedgerCommitmentsAcrossScopes(t *testing.T) {
 	}
 }
 
+func TestCanonicalPromotionAndResultEvidenceScopeProviderCallIDByInvocation(t *testing.T) {
+	store, canonical := canonicalAttestationFixture(t, trajectory.PhaseRuntime)
+	snapshot := store.Snapshot()
+	shared := cloneToolCall(canonical.Authorized.Confirmed.Declared.Admitted.Proposal.Call)
+	snapshot.Items = append(snapshot.Items,
+		trajectory.Item{
+			ID: "other-run-proposal", Kind: trajectory.KindToolProposal, MonotonicNS: 4,
+			CausalParentIDs: []string{"canonical-call"}, SourceRevision: 8, InvocationID: "other-run",
+			Producer: testModelProducer(), ToolCall: &shared,
+		},
+		trajectory.Item{
+			ID: "other-run-call", Kind: trajectory.KindToolCall, MonotonicNS: 5,
+			CausalParentIDs: []string{"other-run-proposal"}, SourceRevision: 8, InvocationID: "other-run",
+			Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, ToolCall: func() *trajectory.ToolCall {
+				copy := cloneToolCall(shared)
+				return &copy
+			}(),
+		},
+		trajectory.Item{
+			ID: "other-run-result", Kind: trajectory.KindToolResult, MonotonicNS: 6,
+			CausalParentIDs: []string{"other-run-call"}, SourceRevision: 8, InvocationID: "other-run",
+			Producer:   trajectory.Producer{Phase: trajectory.PhaseTool},
+			ToolResult: &trajectory.ToolResult{CallID: shared.CallID, Name: shared.Name, Output: json.RawMessage(`true`)},
+		},
+	)
+	snapshot.Version = uint64(len(snapshot.Items))
+	promotion, code, err := authorizedPromotionEvidence(snapshot, canonical.Authorized)
+	if err != nil || code != "" || promotion.proposal.ID != canonical.ProposalItemID ||
+		promotion.call == nil || promotion.call.ID != canonical.TrajectoryItemID {
+		t.Fatalf("invocation-scoped promotion = %+v / %q / %v", promotion, code, err)
+	}
+	execution := ExecutionResult{
+		Executable: ExecutableAction{Canonical: canonical}, CallID: shared.CallID, Name: shared.Name,
+		Result: trajectory.ToolResult{CallID: shared.CallID, Name: shared.Name, Output: json.RawMessage(`{"ok":true}`)},
+	}
+	call, existing, code, err := toolResultEvidence(snapshot, execution,
+		canonical.Authorized.Confirmed.Declared.Admitted.ModelRunID)
+	if err != nil || code != "" || call.ID != canonical.TrajectoryItemID || existing != nil {
+		t.Fatalf("invocation-scoped result evidence = %+v / %+v / %q / %v", call, existing, code, err)
+	}
+}
+
 func TestQueuedDispatchReattestsDeploymentAuthorityAtEffectBoundary(t *testing.T) {
 	dispatcher := &testDispatcher{
 		name: "computer:browser", entered: make(chan string, 1), release: make(chan struct{}),
@@ -1904,8 +2316,35 @@ func TestMalformedInputAndMismatchedDispatcherResultBecomeTypedOutcomes(t *testi
 	_ = receive(t, fixture.egress(t, "committed"))
 	result := receive(t, fixture.egress(t, "result")).Payload.(ExecutionResult)
 	if result.CallID != "mismatch-call" || result.Result.CallID != "mismatch-call" ||
-		result.Result.Name != computeruse.Click || !strings.Contains(result.Result.Error, "mismatched") {
+		result.Result.Name != computeruse.Click || !strings.Contains(result.Result.Error, "mismatched") ||
+		result.CompletionOrigin != CompletionDispatcherError {
 		t.Fatalf("mismatched result = %+v", result)
+	}
+}
+
+func TestDispatchAuthenticatesEveryHostRewrittenResultAsDispatcherError(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		result trajectory.ToolResult
+	}{
+		{name: "empty", result: trajectory.ToolResult{CallID: "rewrite", Name: computeruse.Click}},
+		{name: "both output and error", result: trajectory.ToolResult{CallID: "rewrite", Name: computeruse.Click,
+			Output: json.RawMessage(`true`), Error: "also failed"}},
+		{name: "invalid JSON", result: trajectory.ToolResult{CallID: "rewrite", Name: computeruse.Click,
+			Output: json.RawMessage(`{"unterminated"`)}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dispatcher := &testDispatcher{name: "computer:browser", terminal: &test.result}
+			fixture := newFixture(t, legacyaction.ConfirmNever, true, dispatcher)
+			defer fixture.stop(t)
+			fixture.sendCall(t, "rewrite", "screen", "user-observation")
+			_ = receive(t, fixture.egress(t, "committed"))
+			result := receive(t, fixture.egress(t, "result")).Payload.(ExecutionResult)
+			if result.CompletionOrigin != CompletionDispatcherError || result.Result.Error == "" ||
+				len(result.Result.Output) != 0 {
+				t.Fatalf("rewritten result = %+v", result)
+			}
+		})
 	}
 }
 
@@ -1913,6 +2352,7 @@ type testDispatcher struct {
 	name     string
 	block    bool
 	mismatch bool
+	terminal *trajectory.ToolResult
 	entered  chan string
 	release  chan struct{}
 	calls    atomic.Int32
@@ -1933,6 +2373,9 @@ func (dispatcher *testDispatcher) Dispatch(ctx context.Context, call trajectory.
 	}
 	if dispatcher.mismatch {
 		return trajectory.ToolResult{CallID: "wrong", Name: "wrong", Output: json.RawMessage(`true`)}, nil
+	}
+	if dispatcher.terminal != nil {
+		return cloneToolResult(*dispatcher.terminal), nil
 	}
 	return trajectory.ToolResult{CallID: call.CallID, Name: call.Name, Output: json.RawMessage(`{"ok":true}`)}, nil
 }

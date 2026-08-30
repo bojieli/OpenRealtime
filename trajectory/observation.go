@@ -161,16 +161,23 @@ func (placeholder ToolPlaceholder) validate() error {
 // a terminal result nor a placeholder. These are the calls a runtime must
 // either await or explicitly place a placeholder for before it stops.
 func UnresolvedToolCalls(snapshot Snapshot) []PendingToolCall {
-	resolved := make(map[string]struct{})
+	callScopes := toolCallScopes(snapshot)
+	resolved := make(map[toolIdentity]struct{})
 	for _, item := range snapshot.Items {
 		switch item.Kind {
 		case KindToolResult:
 			if item.ToolResult != nil {
-				resolved[item.ToolResult.CallID] = struct{}{}
+				if identity, found := snapshotToolIdentity(item.InvocationID,
+					item.ToolResult.CallID, callScopes); found {
+					resolved[identity] = struct{}{}
+				}
 			}
 		case KindToolPlaceholder:
 			if item.ToolPlaceholder != nil {
-				resolved[item.ToolPlaceholder.CallID] = struct{}{}
+				if identity, found := snapshotToolIdentity(item.InvocationID,
+					item.ToolPlaceholder.CallID, callScopes); found {
+					resolved[identity] = struct{}{}
+				}
 			}
 		}
 	}
@@ -179,7 +186,8 @@ func UnresolvedToolCalls(snapshot Snapshot) []PendingToolCall {
 		if item.Kind != KindToolCall || item.ToolCall == nil {
 			continue
 		}
-		if _, done := resolved[item.ToolCall.CallID]; done {
+		identity := toolIdentity{invocationID: item.InvocationID, callID: item.ToolCall.CallID}
+		if _, done := resolved[identity]; done {
 			continue
 		}
 		call := *item.ToolCall
@@ -190,4 +198,35 @@ func UnresolvedToolCalls(snapshot Snapshot) []PendingToolCall {
 		})
 	}
 	return pending
+}
+
+func toolCallScopes(snapshot Snapshot) map[string][]toolIdentity {
+	result := make(map[string][]toolIdentity)
+	for _, item := range snapshot.Items {
+		if item.Kind != KindToolCall || item.ToolCall == nil {
+			continue
+		}
+		identity := toolIdentity{invocationID: item.InvocationID, callID: item.ToolCall.CallID}
+		result[identity.callID] = append(result[identity.callID], identity)
+	}
+	return result
+}
+
+func snapshotToolIdentity(
+	invocationID, callID string, callScopes map[string][]toolIdentity,
+) (toolIdentity, bool) {
+	if invocationID != "" {
+		identity := toolIdentity{invocationID: invocationID, callID: callID}
+		for _, candidate := range callScopes[callID] {
+			if candidate == identity {
+				return identity, true
+			}
+		}
+		return toolIdentity{}, false
+	}
+	candidates := callScopes[callID]
+	if len(candidates) != 1 {
+		return toolIdentity{}, false
+	}
+	return candidates[0], true
 }

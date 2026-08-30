@@ -8,7 +8,13 @@ import (
 	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
 )
 
-const perceptionImplementationRevision = "implementation:1"
+const (
+	// ASR implementation:2 adds immutable operation identity to observation
+	// and outcome envelopes so a graph-owned final/flush gate can join exact
+	// evidence without relying on delivery order.
+	asrImplementationRevision    = "implementation:2"
+	visualImplementationRevision = "implementation:1"
+)
 
 const (
 	asrRuntimeID    = "builtin://openrealtime/elements/perception.ASR"
@@ -24,7 +30,7 @@ func reportASRLiveResolution(
 		ID:       "provider://openrealtime/api/v1/perception/" + descriptor.Name,
 		Revision: descriptor.Version,
 	}
-	adapter := liveidentity.Artifact{ID: asrAdapterID, Revision: perceptionImplementationRevision}
+	adapter := liveidentity.Artifact{ID: asrAdapterID, Revision: asrImplementationRevision}
 	capabilities := []element.CapabilityResolution{liveidentity.Capability(
 		"asr.transcription", "openrealtime.api/v1.PerceptionProvider", provider, adapter,
 	)}
@@ -41,7 +47,7 @@ func reportASRLiveResolution(
 		))
 	}
 	return liveidentity.Report(reporter, liveidentity.Artifact{
-		ID: asrRuntimeID, Revision: perceptionImplementationRevision,
+		ID: asrRuntimeID, Revision: asrImplementationRevision,
 	}, capabilities)
 }
 
@@ -52,9 +58,9 @@ func reportVisualLiveResolution(
 		ID:       "provider://openrealtime/visual/" + descriptor.Name,
 		Revision: descriptor.Revision, Digest: descriptor.Digest,
 	}
-	adapter := liveidentity.Artifact{ID: visualAdapterID, Revision: perceptionImplementationRevision}
+	adapter := liveidentity.Artifact{ID: visualAdapterID, Revision: visualImplementationRevision}
 	return liveidentity.Report(reporter, liveidentity.Artifact{
-		ID: visualRuntimeID, Revision: perceptionImplementationRevision,
+		ID: visualRuntimeID, Revision: visualImplementationRevision,
 	}, []element.CapabilityResolution{liveidentity.Capability(
 		"vision.narration", "openrealtime.perception/Narrator-v1", provider, adapter,
 	)})

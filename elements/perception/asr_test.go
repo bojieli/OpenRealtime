@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -84,13 +85,17 @@ func TestASRElementStreamsRevisionsFlushesAndRecreatesPerUtterance(t *testing.T)
 	partialEnvelope := receive(t, observations)
 	partial, ok := partialEnvelope.Payload.(coreperception.Observation)
 	if !ok || partial.Text != "hello" || !partial.Provisional || partial.Final ||
-		partialEnvelope.CaptureNS != 100 {
+		partialEnvelope.CaptureNS != 100 || partialEnvelope.OpportunityID != "observe-1" ||
+		!slices.Contains(partialEnvelope.CausalParents, "observe-1") {
 		t.Fatalf("partial = %#v, envelope = %+v", partialEnvelope.Payload, partialEnvelope)
 	}
-	firstOutcome := receive(t, outcomes).Payload.(perceptionelements.Outcome)
+	firstOutcomeEnvelope := receive(t, outcomes)
+	firstOutcome := firstOutcomeEnvelope.Payload.(perceptionelements.Outcome)
 	if firstOutcome.Kind != perceptionelements.OutcomeSucceeded ||
-		firstOutcome.Operation != "observe" || firstOutcome.ObservationCount != 1 {
-		t.Fatalf("observe outcome = %+v", firstOutcome)
+		firstOutcome.Operation != "observe" || firstOutcome.ObservationCount != 1 ||
+		firstOutcome.CauseItemID != "observe-1" || firstOutcomeEnvelope.OpportunityID != "observe-1" ||
+		!slices.Contains(firstOutcomeEnvelope.CausalParents, "observe-1") {
+		t.Fatalf("observe outcome = %+v / %+v", firstOutcome, firstOutcomeEnvelope)
 	}
 
 	if _, err := flush.Broadcast(context.Background(), element.Envelope{
@@ -99,13 +104,18 @@ func TestASRElementStreamsRevisionsFlushesAndRecreatesPerUtterance(t *testing.T)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	final := receive(t, observations).Payload.(coreperception.Observation)
-	if final.Text != "hello world" || !final.Final || final.Provisional || final.Supersedes == 0 {
-		t.Fatalf("final observation = %+v", final)
+	finalEnvelope := receive(t, observations)
+	final := finalEnvelope.Payload.(coreperception.Observation)
+	if final.Text != "hello world" || !final.Final || final.Provisional || final.Supersedes == 0 ||
+		finalEnvelope.OpportunityID != "flush-1" || !slices.Contains(finalEnvelope.CausalParents, "flush-1") {
+		t.Fatalf("final observation = %+v / %+v", final, finalEnvelope)
 	}
-	flushOutcome := receive(t, outcomes).Payload.(perceptionelements.Outcome)
-	if flushOutcome.Kind != perceptionelements.OutcomeSucceeded || flushOutcome.Operation != "flush" {
-		t.Fatalf("flush outcome = %+v", flushOutcome)
+	flushOutcomeEnvelope := receive(t, outcomes)
+	flushOutcome := flushOutcomeEnvelope.Payload.(perceptionelements.Outcome)
+	if flushOutcome.Kind != perceptionelements.OutcomeSucceeded || flushOutcome.Operation != "flush" ||
+		flushOutcome.CauseItemID != "flush-1" || flushOutcomeEnvelope.OpportunityID != "flush-1" ||
+		!slices.Contains(flushOutcomeEnvelope.CausalParents, "flush-1") {
+		t.Fatalf("flush outcome = %+v / %+v", flushOutcome, flushOutcomeEnvelope)
 	}
 
 	if _, err := observe.Broadcast(context.Background(), element.Envelope{
@@ -370,7 +380,7 @@ func assertASRLiveResolution(t *testing.T, mounted *graphruntime.Mounted) {
 	resolution := mounted.Live().Nodes["asr"].Resolution
 	if resolution == nil || resolution.RuntimeEvidence != inspect.EvidenceLive ||
 		resolution.Runtime.ID != "builtin://openrealtime/elements/perception.ASR" ||
-		resolution.Runtime.Revision != "implementation:1" ||
+		resolution.Runtime.Revision != "implementation:2" ||
 		resolution.CapabilitiesEvidence != inspect.EvidenceLive {
 		t.Fatalf("ASR live resolution = %+v", resolution)
 	}
@@ -379,7 +389,7 @@ func assertASRLiveResolution(t *testing.T, mounted *graphruntime.Mounted) {
 			capability.Provider.ID == "provider://openrealtime/api/v1/perception/test-asr" &&
 			capability.Provider.Revision == "1" && capability.Adapter != nil &&
 			capability.Adapter.ID == "builtin://openrealtime/adapters/perception.ASR-api-v1" &&
-			capability.Adapter.Revision == "implementation:1" {
+			capability.Adapter.Revision == "implementation:2" {
 			return
 		}
 	}

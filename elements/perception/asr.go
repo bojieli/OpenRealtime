@@ -37,6 +37,9 @@ var (
 	providerResolutionType = element.State(element.Named("perception.ProviderResolution"))
 )
 
+func ObservationType() element.Type { return observationType.Clone() }
+func OutcomeType() element.Type     { return perceptionOutcomeType.Clone() }
+
 // ASRDescriptor separates batching/cadence and acoustic endpointing from
 // recognition. Each admitted batch is an explicit trigger; Flush is the
 // independently visible utterance boundary; Cancel is an addressed interrupt.
@@ -105,6 +108,7 @@ type Outcome struct {
 	Kind             OutcomeKind `json:"kind"`
 	Operation        string      `json:"operation"`
 	StreamID         string      `json:"stream_id,omitempty"`
+	CauseItemID      string      `json:"cause_item_id"`
 	ObservationCount int         `json:"observation_count,omitempty"`
 	Code             string      `json:"code,omitempty"`
 	Message          string      `json:"message,omitempty"`
@@ -655,6 +659,7 @@ func (runner *asrRunner) publishObservation(
 	envelope := cause.Clone()
 	envelope.Type = observationType
 	envelope.ItemID = fmt.Sprintf("%s:observation:%d:%d", cause.ItemID, observation.Revision, index)
+	envelope.OpportunityID = cause.ItemID
 	if envelope.SourceID == "" {
 		envelope.SourceID = observation.Source
 	}
@@ -672,8 +677,10 @@ func (runner *asrRunner) publishOutcome(
 	envelope := cause.Clone()
 	envelope.Type = perceptionOutcomeType
 	envelope.ItemID = cause.ItemID + ":outcome"
+	envelope.OpportunityID = cause.ItemID
 	envelope.SourceID = firstNonempty(outcome.StreamID, envelope.SourceID)
 	envelope.CausalParents = appendUnique(envelope.CausalParents, cause.ItemID)
+	outcome.CauseItemID = cause.ItemID
 	envelope.Payload = outcome
 	_, err := runner.outcomeOutput.Broadcast(ctx, envelope)
 	return err
@@ -833,7 +840,7 @@ func terminal(ctx context.Context, err error) bool {
 }
 
 func Descriptors() []element.Descriptor {
-	return []element.Descriptor{ASRDescriptor(), VisualObserverDescriptor()}
+	return []element.Descriptor{ASRDescriptor(), FinalObservationGateDescriptor(), VisualObserverDescriptor()}
 }
 
 func RegisterDescriptors(catalog *resolve.Catalog) error {
@@ -867,10 +874,11 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
 	return factoryprofile.Registrations(
 		factoryprofile.Entry{Factory: asrFactory{}, Artifact: inspect.ArtifactIdentity{
-			ID: asrRuntimeID, Revision: perceptionImplementationRevision,
+			ID: asrRuntimeID, Revision: asrImplementationRevision,
 		}},
+		finalObservationGateRegistration(),
 		factoryprofile.Entry{Factory: visualObserverFactory{}, Artifact: inspect.ArtifactIdentity{
-			ID: visualRuntimeID, Revision: perceptionImplementationRevision,
+			ID: visualRuntimeID, Revision: visualImplementationRevision,
 		}},
 	)
 }
