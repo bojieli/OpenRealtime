@@ -48,6 +48,8 @@ func run(arguments []string, stdout, stderr io.Writer) error {
 		return runEval(arguments[1:], stdout)
 	case "scenario":
 		return runScenario(arguments[1:], stdout)
+	case "profile":
+		return runLaunchProfile(arguments[1:], stdout)
 	case "review":
 		return runReview(arguments[1:], stdout)
 	case "compare":
@@ -86,6 +88,7 @@ commands:
   efficiency    measure the costs the design claims are small
   bench         run a measurement suite against a running server
   review        run secondary offline reviews from sealed benchmark evidence
+  profile       freeze strict executable-bound graph launch profiles
   simulate      hold a conversation between two agents and check what happened
   compare       read two saved cells and report the pairing
   datasets      inventory a prepared benchmark dataset
