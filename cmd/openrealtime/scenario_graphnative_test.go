@@ -544,6 +544,10 @@ func TestScenarioGraphMediaVerifierRejectsRetainedByteTampering(t *testing.T) {
 	if err != nil || !verified.Audio {
 		t.Fatalf("initial media verification = %+v, %v", verified, err)
 	}
+	if reference.Submitted != nil || verified.Submitted != nil {
+		t.Fatalf("nonvisual media receipts were not canonical nil: reference=%+v verified=%+v",
+			reference.Submitted, verified.Submitted)
+	}
 	payload, err := os.ReadFile(filepath.Join(directory, reference.Handle))
 	if err != nil {
 		t.Fatal(err)
