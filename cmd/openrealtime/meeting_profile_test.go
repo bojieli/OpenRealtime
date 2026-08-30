@@ -233,8 +233,13 @@ func TestFreezeMeetingProfileBindsExactGraphResolutionAndDeployments(t *testing.
 		t.Fatalf("frozen Meeting profile = %+v", frozen)
 	}
 	if len(frozen.Resolution.Elements) != len(frozen.Plan.Graph().Nodes) ||
+		frozen.Resolution.Deployment == nil ||
+		frozen.Resolution.Deployment.PrivateDeploymentFingerprint == "" ||
 		frozen.Execution.Graph == nil ||
-		frozen.Execution.Graph.Graph.Fingerprint != frozen.Plan.Graph().Fingerprint {
+		frozen.Execution.Graph.Graph.Fingerprint != frozen.Plan.Graph().Fingerprint ||
+		frozen.Execution.Graph.Deployment == nil ||
+		frozen.Execution.Graph.Deployment.PrivateDeploymentFingerprint !=
+			frozen.Resolution.Deployment.PrivateDeploymentFingerprint {
 		t.Fatalf("frozen Meeting execution = %+v", frozen.Execution)
 	}
 

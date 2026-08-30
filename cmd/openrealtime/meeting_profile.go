@@ -823,7 +823,10 @@ func freezeProductionMeetingProfile(
 		return frozenMeetingProfile{},
 			errors.New("freeze Meeting Assistant values did not reproduce the exact bound graph")
 	}
-	resolution, err := meetingExpectedResolution(plan)
+	resolution, err := probeMeetingExpectedResolution(ctx, prepared.Binding, plan, bench.ArtifactIdentity{
+		ID: "values://" + plan.Graph().ID, Revision: graphvalues.APIVersion,
+		Digest: bound.Fingerprint,
+	})
 	if err != nil {
 		return frozenMeetingProfile{}, err
 	}
@@ -844,70 +847,6 @@ func selectedRegistration(selected serveMeetingRegistration) graphs.MeetingAssis
 	return graphs.MeetingAssistantRegistration{
 		Application: selected.Application, Adapter: selected.Adapter,
 	}
-}
-
-func meetingExpectedResolution(plan *graphconfig.Plan) (bench.LiveResolution, error) {
-	if plan == nil {
-		return bench.LiveResolution{}, errors.New("derive Meeting expected resolution: nil plan")
-	}
-	graph := plan.Graph()
-	byID := make(map[string]int, len(graph.Nodes))
-	for index, node := range graph.Nodes {
-		byID[node.ID] = index
-	}
-	result := bench.LiveResolution{Elements: make([]bench.ElementResolution, 0, len(graph.Nodes))}
-	for _, resolved := range plan.Resolution().Nodes {
-		index, found := byID[resolved.NodeID]
-		if !found {
-			return bench.LiveResolution{}, fmt.Errorf("Meeting resolution names unknown node %q", resolved.NodeID)
-		}
-		node := graph.Nodes[index]
-		if resolved.Implementation.Reference != node.Implementation ||
-			resolved.Implementation.Contract != node.Element {
-			return bench.LiveResolution{}, fmt.Errorf("Meeting resolution drifted for node %q", node.ID)
-		}
-		runtime, err := meetingBenchArtifact(resolved.Implementation.Artifact)
-		if err != nil {
-			return bench.LiveResolution{}, err
-		}
-		capabilities := make([]bench.CapabilityIdentity, len(resolved.Implementation.Capabilities))
-		for index, capability := range resolved.Implementation.Capabilities {
-			provider, err := meetingBenchArtifact(capability.Provider)
-			if err != nil {
-				return bench.LiveResolution{}, err
-			}
-			capabilities[index] = bench.CapabilityIdentity{
-				Name: capability.Name, Contract: capability.Contract, Provider: provider,
-			}
-			if capability.Adapter != nil {
-				adapter, err := meetingBenchArtifact(*capability.Adapter)
-				if err != nil {
-					return bench.LiveResolution{}, err
-				}
-				capabilities[index].Adapter = &adapter
-			}
-		}
-		result.Elements = append(result.Elements, bench.ElementResolution{
-			Node: node.ID, Element: node.Element, Implementation: node.Implementation,
-			Runtime: runtime, Capabilities: capabilities,
-		})
-	}
-	if len(result.Elements) != len(graph.Nodes) {
-		return bench.LiveResolution{}, errors.New("Meeting expected resolution omitted graph nodes")
-	}
-	if err := bench.ValidateExpectedResolution(result); err != nil {
-		return bench.LiveResolution{}, err
-	}
-	return result, nil
-}
-
-func meetingBenchArtifact(source inspect.ArtifactIdentity) (bench.ArtifactIdentity, error) {
-	if err := source.Validate(); err != nil {
-		return bench.ArtifactIdentity{}, err
-	}
-	return bench.ArtifactIdentity{
-		ID: source.ID, Revision: source.Revision, Digest: source.Digest,
-	}, nil
 }
 
 var (
