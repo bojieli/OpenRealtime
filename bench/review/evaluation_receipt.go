@@ -25,6 +25,13 @@ const maximumEvaluationReceiptBytes = 64 << 10
 func WriteEvaluationBundleReceipt(
 	ctx context.Context, path string, receipt EvaluationBundleReceipt,
 ) (resultErr error) {
+	return writeEvaluationBundleReceipt(ctx, path, receipt, true)
+}
+
+func writeEvaluationBundleReceipt(
+	ctx context.Context, path string, receipt EvaluationBundleReceipt,
+	requireCommittedDirectory bool,
+) (resultErr error) {
 	if ctx == nil {
 		return errors.New("write evaluation receipt: nil context")
 	}
@@ -34,8 +41,12 @@ func WriteEvaluationBundleReceipt(
 	if err := validateEvaluationBundleReceipt(receipt); err != nil {
 		return err
 	}
-	if err := validateEvaluationBundleDirectory(receipt.Directory, true); err != nil {
-		return errors.New("evaluation receipt does not name a committed bundle directory")
+	if requireCommittedDirectory {
+		if err := validateEvaluationBundleDirectory(receipt.Directory, true); err != nil {
+			return errors.New("evaluation receipt does not name a committed bundle directory")
+		}
+	} else if !validEvaluationReceiptDirectory(receipt.Directory) {
+		return errors.New("evaluation receipt does not name a canonical future bundle directory")
 	}
 	if err := validateExternalEvaluationReceiptPath(path, receipt.Directory, false); err != nil {
 		return err

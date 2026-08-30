@@ -133,6 +133,7 @@ type evaluationBundleWriteOperations struct {
 	afterManifest    func() error
 	removeManifest   func(*os.Root) error
 	syncInvalidation func(*os.Root) error
+	receiptDirectory string
 }
 
 type evaluationBundleOpenOperations struct {
@@ -165,6 +166,13 @@ func writeEvaluationBundleWithOperations(
 	directory, additionalGuard, err := prepareEvaluationBundleOptions(ctx, options)
 	if err != nil {
 		return EvaluationBundleReceipt{}, err
+	}
+	receiptDirectory := directory
+	if operations.receiptDirectory != "" {
+		if err := validateEvaluationBundleDirectory(operations.receiptDirectory, false); err != nil {
+			return EvaluationBundleReceipt{}, errors.New("evaluation receipt directory is invalid")
+		}
+		receiptDirectory = operations.receiptDirectory
 	}
 	evaluation, recordPayload, seal, originalGuard, err := snapshotEvaluationForBundle(ctx, source)
 	if err != nil {
@@ -199,7 +207,15 @@ func writeEvaluationBundleWithOperations(
 	if err := rejectEvaluationSensitive(ctx, additionalGuard, manifestPayload); err != nil {
 		return EvaluationBundleReceipt{}, err
 	}
-	expectedReceipt, err := evaluationBundleReceipt(directory, manifestPayload, manifest)
+	if receiptDirectory != directory {
+		if err := rejectEvaluationSensitive(ctx, originalGuard, []byte(receiptDirectory)); err != nil {
+			return EvaluationBundleReceipt{}, err
+		}
+		if err := rejectEvaluationSensitive(ctx, additionalGuard, []byte(receiptDirectory)); err != nil {
+			return EvaluationBundleReceipt{}, err
+		}
+	}
+	expectedReceipt, err := evaluationBundleReceipt(receiptDirectory, manifestPayload, manifest)
 	if err != nil {
 		return EvaluationBundleReceipt{}, err
 	}
@@ -309,6 +325,7 @@ func writeEvaluationBundleWithOperations(
 	if err := ctx.Err(); err != nil {
 		return EvaluationBundleReceipt{}, err
 	}
+	opened.Receipt.Directory = receiptDirectory
 	return opened.Receipt, nil
 }
 
