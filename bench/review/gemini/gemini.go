@@ -444,7 +444,7 @@ func (plugin *Plugin) Review(
 	// Encoding is itself a transformation boundary: base64 media can synthesize
 	// a credential or another declared secret substring that did not occur in
 	// the raw prepared bytes.
-	containsSensitive, err := prepared.ContainsDeclaredSensitiveValueContext(ctx, body)
+	containsSensitive, err := prepared.ContainsDeclaredSensitiveLiteralContext(ctx, body)
 	if err != nil {
 		return review.ProviderResponse{}, err
 	}
@@ -452,7 +452,7 @@ func (plugin *Plugin) Review(
 		return review.ProviderResponse{}, errors.New(
 			"Gemini encoded review request contains declared sensitive material and was discarded")
 	}
-	containsCredential, err = credentialScan.containsJSONContext(ctx, body)
+	containsCredential, err = credentialScan.containsLiteralContext(ctx, body)
 	if err != nil {
 		return review.ProviderResponse{}, err
 	}
@@ -623,7 +623,7 @@ func (plugin *Plugin) VerifyResponse(
 	if err != nil {
 		return err
 	}
-	containsSensitive, err := prepared.ContainsDeclaredSensitiveValueContext(ctx, expected)
+	containsSensitive, err := prepared.ContainsDeclaredSensitiveLiteralContext(ctx, expected)
 	if err != nil {
 		return err
 	}
@@ -634,7 +634,7 @@ func (plugin *Plugin) VerifyResponse(
 		return errors.New("Gemini retained request differs from the prepared review")
 	}
 	for _, payload := range [][]byte{
-		response.Raw, response.Output, response.Request,
+		response.Raw, response.Output,
 		[]byte(response.ReportedModel), []byte(response.RequestID), []byte(response.RequestIDState),
 	} {
 		containsSensitive, err = prepared.ContainsDeclaredSensitiveValueContext(ctx, payload)
@@ -645,7 +645,14 @@ func (plugin *Plugin) VerifyResponse(
 			return errors.New("Gemini retained exchange contains declared sensitive material")
 		}
 	}
-	for _, payload := range [][]byte{response.Raw, response.Output, response.Request} {
+	containsSensitive, err = prepared.ContainsDeclaredSensitiveLiteralContext(ctx, response.Request)
+	if err != nil {
+		return err
+	}
+	if containsSensitive {
+		return errors.New("Gemini retained exchange contains declared sensitive material")
+	}
+	for _, payload := range [][]byte{response.Raw, response.Output} {
 		containsCredential, err = credentialScan.containsJSONContext(ctx, payload)
 		if err != nil {
 			return err
@@ -653,6 +660,13 @@ func (plugin *Plugin) VerifyResponse(
 		if containsCredential {
 			return errors.New("Gemini retained exchange contains credential material")
 		}
+	}
+	containsCredential, err = credentialScan.containsLiteralContext(ctx, response.Request)
+	if err != nil {
+		return err
+	}
+	if containsCredential {
+		return errors.New("Gemini retained exchange contains credential material")
 	}
 	for _, value := range []string{
 		response.ReportedModel, response.RequestID, response.RequestIDState,
@@ -1601,6 +1615,40 @@ func containsCredentialJSON(payload []byte, credential string) bool {
 func (scanner *jsonCredentialScanner) containsJSON(payload []byte) bool {
 	contains, err := scanner.containsJSONContext(context.Background(), payload)
 	return contains || err != nil
+}
+
+// containsLiteralContext scans the exact encoded wire for the credential and
+// every pinned base64 transform without recursively replaying JSON strings.
+// Callers use it only after provider-specific structured text has been scanned
+// contextually and immediately before/after the exact body crosses transport.
+func (scanner *jsonCredentialScanner) containsLiteralContext(
+	ctx context.Context, payload []byte,
+) (bool, error) {
+	if ctx == nil {
+		return false, errors.New("Gemini literal credential scan requires a context")
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if scanner == nil || len(scanner.credential) == 0 ||
+		len(scanner.failure) != len(scanner.credential) || len(payload) > maximumInlineRequestBytes {
+		return true, nil
+	}
+	candidates := make([]*jsonCredentialScanner, 0, len(scanner.transforms)+1)
+	candidates = append(candidates, scanner)
+	candidates = append(candidates, scanner.transforms...)
+	for _, candidate := range candidates {
+		if candidate == nil || len(candidate.credential) == 0 ||
+			len(candidate.failure) != len(candidate.credential) {
+			return true, nil
+		}
+		state := 0
+		contains, err := candidate.advanceCredentialContext(ctx, payload, &state)
+		if err != nil || contains {
+			return contains, err
+		}
+	}
+	return false, ctx.Err()
 }
 
 func (scanner *jsonCredentialScanner) containsJSONContext(
