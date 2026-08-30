@@ -514,6 +514,20 @@ type meetingDormantProvider struct {
 	descriptor continuation.Descriptor
 }
 
+func meetingDormantDescriptor() continuation.Descriptor {
+	return continuation.Descriptor{
+		Provider: "openrealtime-graph", Model: "background-owned-by-meeting-graph",
+		Phase: trajectory.PhaseSlow, Effort: continuation.EffortMinimal, Streaming: true,
+		// Cascade validates its dormant slot against the live client tool
+		// catalog before the fast-only rollout is selected. Execution authority
+		// is required for that slot, while Continue still fails closed if policy
+		// drift ever schedules it: the graph's independent background node is
+		// the only real slow provider.
+		ToolAuthority:   continuation.ToolAuthorityExecute,
+		SpeechAuthority: continuation.SpeechAuthoritySilent,
+	}
+}
+
 func (provider meetingDormantProvider) Descriptor() continuation.Descriptor {
 	return provider.descriptor
 }
@@ -577,12 +591,7 @@ func newMeetingForegroundBinding(
 	}
 	policies := interaction.Defaults()
 	policies.Rollout = interaction.NewFastOnlyRollout()
-	dormant := meetingDormantProvider{descriptor: continuation.Descriptor{
-		Provider: "openrealtime-graph", Model: "background-owned-by-meeting-graph",
-		Phase: trajectory.PhaseSlow, Effort: continuation.EffortMinimal, Streaming: true,
-		ToolAuthority:   continuation.ToolAuthorityPropose,
-		SpeechAuthority: continuation.SpeechAuthoritySilent,
-	}}
+	dormant := meetingDormantProvider{descriptor: meetingDormantDescriptor()}
 	inner, err := cascade.New(cascade.Config{
 		Profile: "voice+vision", Perception: asr,
 		PerceptionDescriptor: asrDescriptor,
@@ -659,6 +668,10 @@ type meetingVisualProvider struct {
 	descriptor perceptionelements.VisualProviderDescriptor
 }
 
+func (provider *meetingVisualProvider) Name() string {
+	return provider.descriptor.Name
+}
+
 func (provider *meetingVisualProvider) Descriptor() perceptionelements.VisualProviderDescriptor {
 	return provider.descriptor
 }
@@ -700,6 +713,7 @@ type meetingProfileOptions struct {
 func defaultMeetingProfileOptions() meetingProfileOptions {
 	return meetingProfileOptions{
 		name: "openrealtime.launch.meeting-assistant-local", revision: 1,
+		tokenEnv:      "OPENREALTIME_TOKEN",
 		inspectionTTL: 30_000, maxAudioBytes: 1 << 20,
 	}
 }
@@ -723,7 +737,8 @@ func freezeProductionMeetingProfile(
 		return frozenMeetingProfile{}, cause
 	}
 	if strings.TrimSpace(options.name) == "" || options.revision == 0 ||
-		options.inspectionTTL == 0 || options.maxAudioBytes <= 0 {
+		strings.TrimSpace(options.tokenEnv) == "" || options.inspectionTTL == 0 ||
+		options.maxAudioBytes <= 0 {
 		return frozenMeetingProfile{}, errors.New("Meeting Assistant profile has invalid identity or server bounds")
 	}
 	if err := options.deployments.validate(); err != nil {

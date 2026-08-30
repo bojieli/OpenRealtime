@@ -188,9 +188,11 @@ func TestMeetingForegroundCompositionDisablesPrivateSlowLane(t *testing.T) {
 	if !foreground.inner.Capabilities().FastSlow {
 		t.Fatal("cascade test precondition changed: inner binding no longer exposes its private slow slot")
 	}
-	dormant := meetingDormantProvider{descriptor: continuation.Descriptor{
-		Provider: "openrealtime-graph", Model: "background-owned-by-meeting-graph",
-	}}
+	dormant := meetingDormantProvider{descriptor: meetingDormantDescriptor()}
+	if dormant.Descriptor().EffectiveToolAuthority() != continuation.ToolAuthorityExecute ||
+		dormant.Descriptor().EffectiveSpeechAuthority() != continuation.SpeechAuthoritySilent {
+		t.Fatalf("dormant foreground descriptor = %+v", dormant.Descriptor())
+	}
 	if _, err := dormant.Continue(context.Background(), continuation.Request{}, nil); err == nil ||
 		!strings.Contains(err.Error(), "graph owns background") {
 		t.Fatalf("dormant foreground slow provider error = %v", err)
@@ -215,6 +217,7 @@ func TestFreezeMeetingProfileBindsExactGraphResolutionAndDeployments(t *testing.
 		frozen.Profile.Plan != frozen.Plan.Identity() ||
 		frozen.Profile.Server.Model != meetingLocalModelName ||
 		frozen.Profile.Server.TranscriptionModel != meetingLocalASRModel ||
+		frozen.Profile.Server.TokenEnvironment != "OPENREALTIME_TOKEN" ||
 		frozen.Configuration.Background.Model != "gemini-3.7-flash" ||
 		frozen.Configuration.Background.Deployment != options.deployments.Background {
 		t.Fatalf("frozen Meeting profile = %+v", frozen)
@@ -252,5 +255,13 @@ func TestMeetingProfileRejectsCancellationAndInvalidDeploymentBeforeComposition(
 		context.Background(), options, meetingProfileExecutable(),
 	); err == nil || !strings.Contains(err.Error(), "vision deployment") {
 		t.Fatalf("invalid Meeting deployment error = %v", err)
+	}
+
+	options.deployments = meetingProfileDeployments()
+	options.tokenEnv = ""
+	if _, err := freezeProductionMeetingProfile(
+		context.Background(), options, meetingProfileExecutable(),
+	); err == nil || !strings.Contains(err.Error(), "server bounds") {
+		t.Fatalf("unauthenticated Meeting profile error = %v", err)
 	}
 }
