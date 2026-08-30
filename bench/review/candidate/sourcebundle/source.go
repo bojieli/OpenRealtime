@@ -77,6 +77,19 @@ func (source *ReviewSource) Manifest() (Manifest, error) {
 	return cloneManifest(source.manifest), nil
 }
 
+// Receipt returns the exact portable receipt verified when the cursor opened.
+func (source *ReviewSource) Receipt() (Receipt, error) {
+	if source == nil {
+		return Receipt{}, errors.New("candidate review source is nil")
+	}
+	source.mu.Lock()
+	defer source.mu.Unlock()
+	if source.closed || source.root == nil {
+		return Receipt{}, errors.New("candidate review source is closed")
+	}
+	return source.record, nil
+}
+
 // Next returns the next reconstructable review request. Attempts without a
 // complete context/media pair remain in the source manifest and REVIEW.md but
 // are skipped because no multimodal provider can truthfully assess them.
