@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
 )
@@ -69,6 +70,30 @@ func TestMeetingRunFinishesEvidenceBundleOnEnvironmentFailure(t *testing.T) {
 	})
 	if err == nil || finished != 1 || result.Summary.Complete {
 		t.Fatalf("Run() result=%+v error=%v finish calls=%d", result, err, finished)
+	}
+}
+
+func TestMeetingRunSurfacesEnvironmentCloseFailure(t *testing.T) {
+	dependencies := &runDependencies{
+		newEnvironment: func(context.Context, EnvironmentConfig) (meetingRunEnvironment, error) {
+			return meetingRunEnvironment{
+				episode: func(context.Context, Task) (meetingRunEpisode, error) {
+					return meetingRunEpisode{}, errors.New("fixture episode refusal")
+				},
+				close: func() error { return errors.New("private close detail") },
+			}, nil
+		},
+		playSamples: func(context.Context, bench.SessionConfig, []int16) (bench.Transcript, error) {
+			return bench.Transcript{}, errors.New("unexpected session invocation")
+		},
+		now: time.Now,
+	}
+	result, err := Run(context.Background(), Options{
+		Endpoint: "ws://hermetic.invalid/v1/realtime", Limit: 1, dependencies: dependencies,
+	})
+	if err == nil || err.Error() != "close meeting environment" || len(result.Tasks) != 1 ||
+		result.Tasks[0].Completed {
+		t.Fatalf("Run() close result=%+v error=%v", result, err)
 	}
 }
 
