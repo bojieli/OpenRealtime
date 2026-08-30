@@ -495,6 +495,32 @@
       ]
     },
     {
+      "id": "external.model.gemini-review",
+      "description": "Retain and receipt a live multimodal review exchange from the exact Gemini 3.7 Flash plug-in",
+      "availability": "provisioned",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-count=1", "-v", "./bench/review/gemini", "-run", "^TestLiveGeminiMultimodalReview$"],
+      "environment": {
+        "OPENREALTIME_GEMINI_LIVE": "1",
+        "OPENREALTIME_GEMINI_LIVE_REVIEW_DIR": "{artifacts}/gemini-live-review"
+      },
+      "timeout": "30m",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "command", "value": "ffmpeg", "description": "FFmpeg is available to construct the synchronized audiovisual transport fixture"},
+        {"kind": "env", "value": "GEMINI_API_KEY", "description": "the Gemini 3.7 Flash review credential is supplied"}
+      ],
+      "assertions": [
+        {"kind": "file_nonempty", "value": "{artifacts}/gemini-live-review/manifest.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/gemini-live-review/REVIEW.md"},
+        {"kind": "file_nonempty", "value": "{artifacts}/gemini-live-review.receipt.json"},
+        {"kind": "stdout_regex", "value": "(?m)retained pinned-model gemini-3\\.7-flash store=false exchange"}
+      ],
+      "covers": ["live-review:gemini-3.7-flash"]
+    },
+    {
       "id": "external.model.live-surface",
       "description": "Drive the live browser surface against the provisioned real-model deployment",
       "availability": "provisioned",

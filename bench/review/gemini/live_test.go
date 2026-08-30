@@ -2,21 +2,26 @@ package gemini
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/bench/review"
 )
 
 // TestLiveGeminiMultimodalReview is an opt-in transport/contract smoke, not a
-// benchmark result. It uses repository-owned fixture inputs only and does not
-// write a review bundle or claim behavioral coverage.
+// benchmark result. It uses repository-owned fixture inputs only, retains the
+// exact provider-verified exchange at a caller-owned create-only path, and
+// does not claim behavioral coverage.
 func TestLiveGeminiMultimodalReview(t *testing.T) {
 	if os.Getenv("OPENREALTIME_GEMINI_LIVE") != "1" {
 		t.Skip("set OPENREALTIME_GEMINI_LIVE=1 to call the pinned Google endpoint")
 	}
+	bundleDirectory, receiptPath := liveReviewDestinations(t)
 	root := t.TempDir()
 	videoPath := filepath.Join(root, "synthetic-synchronized-av.mp4")
 	command := exec.CommandContext(t.Context(), "ffmpeg",
@@ -83,6 +88,127 @@ func TestLiveGeminiMultimodalReview(t *testing.T) {
 		evaluation.Record.ReportedModel != ModelID {
 		t.Fatalf("live review provenance = %+v", evaluation.Record)
 	}
-	t.Logf("pinned model %s completed a store=false request (provider ID state %q, ID %q)",
-		ModelID, evaluation.Record.ProviderRequestIDState, evaluation.Record.ProviderRequestID)
+	receipt, err := review.WriteEvaluationBundle(t.Context(), review.EvaluationBundleOptions{
+		Directory: bundleDirectory,
+	}, evaluation)
+	if err != nil {
+		t.Fatalf("retain live Gemini review bundle: %v", err)
+	}
+	opened, err := review.VerifyEvaluationBundle(t.Context(), review.EvaluationBundleOptions{
+		Directory: bundleDirectory,
+	}, receipt)
+	if err != nil {
+		t.Fatalf("verify retained live Gemini review bundle: %v", err)
+	}
+	if opened.Record.Provider.Model != ModelID || opened.Receipt != receipt {
+		t.Fatalf("retained live Gemini review changed provenance or receipt")
+	}
+	writeLiveReviewReceipt(t, receiptPath, receipt)
+	t.Logf("retained pinned-model %s store=false exchange at %s (receipt %s; provider ID state %q, ID %q)",
+		ModelID, bundleDirectory, receipt.ReceiptSHA256,
+		evaluation.Record.ProviderRequestIDState, evaluation.Record.ProviderRequestID)
+}
+
+func liveReviewDestinations(t *testing.T) (string, string) {
+	t.Helper()
+	directory, receiptPath, err := validateLiveReviewDestinations(
+		os.Getenv("OPENREALTIME_GEMINI_LIVE_REVIEW_DIR"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return directory, receiptPath
+}
+
+func validateLiveReviewDestinations(value string) (string, string, error) {
+	directory := strings.TrimSpace(value)
+	if directory == "" || !filepath.IsAbs(directory) || filepath.Clean(directory) != directory {
+		return "", "", errors.New(
+			"OPENREALTIME_GEMINI_LIVE_REVIEW_DIR must name a clean absolute create-only directory",
+		)
+	}
+	if info, err := os.Stat(filepath.Dir(directory)); err != nil || !info.IsDir() {
+		return "", "", errors.New(
+			"OPENREALTIME_GEMINI_LIVE_REVIEW_DIR parent must be an existing directory",
+		)
+	}
+	receiptPath := directory + ".receipt.json"
+	for _, path := range []string{directory, receiptPath} {
+		if _, err := os.Lstat(path); err == nil {
+			return "", "", fmt.Errorf("live Gemini review destination already exists: %s", path)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", "", fmt.Errorf("inspect live Gemini review destination %s: %w", path, err)
+		}
+	}
+	return directory, receiptPath, nil
+}
+
+func writeLiveReviewReceipt(
+	t *testing.T, path string, receipt review.EvaluationBundleReceipt,
+) {
+	t.Helper()
+	payload, err := json.MarshalIndent(receipt, "", "  ")
+	if err != nil {
+		t.Fatalf("encode live Gemini review receipt: %v", err)
+	}
+	payload = append(payload, '\n')
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		t.Fatalf("create live Gemini review receipt: %v", err)
+	}
+	complete := false
+	closed := false
+	defer func() {
+		if !closed {
+			if closeErr := file.Close(); closeErr != nil && complete {
+				t.Errorf("close live Gemini review receipt: %v", closeErr)
+			}
+		}
+		if !complete {
+			_ = os.Remove(path)
+		}
+	}()
+	if _, err := file.Write(payload); err != nil {
+		t.Fatalf("write live Gemini review receipt: %v", err)
+	}
+	if err := file.Sync(); err != nil {
+		t.Fatalf("sync live Gemini review receipt: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close live Gemini review receipt: %v", err)
+	}
+	closed = true
+	complete = true
+}
+
+func TestLiveReviewDestinationsRequireAnAbsentAbsoluteBundleAndReceipt(t *testing.T) {
+	root := t.TempDir()
+	bundle := filepath.Join(root, "retained-review")
+	directory, receipt, err := validateLiveReviewDestinations(bundle)
+	if err != nil || directory != bundle || receipt != bundle+".receipt.json" {
+		t.Fatalf("validate absent destinations = %q, %q, %v", directory, receipt, err)
+	}
+	for name, setup := range map[string]func() string{
+		"relative": func() string { return "retained-review" },
+		"existing bundle": func() string {
+			if err := os.Mkdir(bundle, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			return bundle
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := setup()
+			if _, _, err := validateLiveReviewDestinations(candidate); err == nil {
+				t.Fatalf("validateLiveReviewDestinations(%q) unexpectedly succeeded", candidate)
+			}
+		})
+	}
+	receiptOnlyBundle := filepath.Join(root, "receipt-exists")
+	if err := os.WriteFile(receiptOnlyBundle+".receipt.json", []byte("occupied"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := validateLiveReviewDestinations(receiptOnlyBundle); err == nil {
+		t.Fatal("validateLiveReviewDestinations accepted an existing external receipt")
+	}
 }
