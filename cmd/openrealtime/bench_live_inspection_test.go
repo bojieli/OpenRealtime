@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -161,6 +162,31 @@ func TestConfigureSessionBenchmarkAttestorRefusesGraphDriftBeforeCredentialLooku
 				t.Fatalf("refusal exposed a deployment credential: %v", err)
 			}
 		})
+	}
+}
+
+func TestPrepareReviewedGraphInspectionPreservesExactDeploymentEvidence(t *testing.T) {
+	fixture := writeGraphExecutionFixture(t)
+	fixture.resolution.Deployment = &inspect.DeploymentEvidence{
+		Public: inspect.ArtifactIdentity{
+			ID: "deployment://benchmark-test", Revision: "deployment:1",
+			Digest: "sha256:" + strings.Repeat("a", 64),
+		},
+		PrivateDeploymentFingerprint: "sha256:" + strings.Repeat("b", 64),
+	}
+	requirement := requirementForGraphFixture(t, fixture)
+	prepared, err := prepareReviewedGraphInspection(requirement, fixture.graphPath)
+	if err != nil {
+		t.Fatalf("prepare deployment-attested graph inspection: %v", err)
+	}
+	if prepared.expected.Deployment == nil ||
+		!reflect.DeepEqual(prepared.expected.Deployment, requirement.Graph.Deployment) {
+		t.Fatalf("prepared deployment = %+v, want %+v",
+			prepared.expected.Deployment, requirement.Graph.Deployment)
+	}
+	prepared.expected.Deployment.Public.ID = "deployment://mutated-copy"
+	if requirement.Graph.Deployment.Public.ID != "deployment://benchmark-test" {
+		t.Fatal("prepared inspection aliases reviewed deployment evidence")
 	}
 }
 

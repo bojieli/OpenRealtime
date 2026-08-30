@@ -206,6 +206,10 @@ func resolutionFromReviewedGraph(reviewed bench.GraphEvidence) bench.LiveResolut
 		Elements: make([]bench.ElementResolution, 0, len(reviewed.Nodes)),
 		Paths:    make([]bench.SelectedPath, 0, len(reviewed.Paths)),
 	}
+	if reviewed.Deployment != nil {
+		deployment := reviewed.Deployment.Clone()
+		resolution.Deployment = &deployment
+	}
 	for _, node := range reviewed.Nodes {
 		resolution.Elements = append(resolution.Elements, bench.ElementResolution{
 			Node: node.Node, Element: node.Element, Implementation: node.Implementation,
