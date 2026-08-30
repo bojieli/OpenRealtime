@@ -315,7 +315,7 @@ func TestSessionVideoCaptureSinkErrorAfterSendWinsProtocolSuccessAndDoesNotOverl
 	}
 }
 
-func TestSessionVideoCaptureErrorJoinsEarlyScheduledSendFailure(t *testing.T) {
+func TestSessionScheduledEncodingFailurePrecedesVideoSideEffects(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		connection, err := websocket.Accept(writer, request, &websocket.AcceptOptions{})
 		if err != nil {
@@ -351,10 +351,10 @@ func TestSessionVideoCaptureErrorJoinsEarlyScheduledSendFailure(t *testing.T) {
 			Event: map[string]any{"invalid": sessionVideoFailingJSON{err: scheduledFailure}},
 		}},
 	}, make([]int16, 4800))
-	if err == nil || !errors.Is(err, sinkFailure) || !errors.Is(err, scheduledFailure) {
-		t.Fatalf("PlaySamples() error = %v, want joined scheduled and video failures", err)
+	if err == nil || errors.Is(err, sinkFailure) || !errors.Is(err, scheduledFailure) {
+		t.Fatalf("PlaySamples() error = %v, want only preflight scheduled failure", err)
 	}
-	if videoCalls.Load() != 1 {
-		t.Fatalf("video capture calls = %d, want 1", videoCalls.Load())
+	if videoCalls.Load() != 0 {
+		t.Fatalf("video capture calls = %d, want zero before preflight succeeds", videoCalls.Load())
 	}
 }

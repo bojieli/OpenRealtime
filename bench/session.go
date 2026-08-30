@@ -269,6 +269,13 @@ type SessionConfig struct {
 	// configured stream; a sink error terminates the attempt. Frame bytes are
 	// owned by the recipient and are not added to Transcript or its JSON.
 	CaptureVideo func(SessionVideoCapture) error
+	// CaptureScheduled receives an immutable owned copy of each authored event
+	// only after the exact canonical JSON value was successfully submitted to
+	// the transport. Calls are synchronous and ordered by cue time. A callback
+	// error terminates the attempt and the event is not recorded as a successful
+	// MomentScheduled. Scheduled metadata and encoded bytes are validated and
+	// bounded before the session connection is opened.
+	CaptureScheduled func(SessionScheduledCapture) error
 	// CaptureRuntimeEvidence negotiates the session debug category and retains
 	// the live binding status. Architecture experiments set it for every task;
 	// it is opt-in because the developer trace is not application behavior.
@@ -395,12 +402,15 @@ func PlaySamples(
 			stream.Interval = time.Second / 3
 		}
 	}
+	scheduled, err := prepareScheduledEvents(config.Scheduled)
+	if err != nil {
+		return Transcript{}, err
+	}
 	samples = append(samples, make([]int16, int(config.TrailingSilence.Seconds()*24_000))...)
 	audioRecorder.setRoom(samples)
 
 	timed, cancel := context.WithTimeout(ctx, config.Timeout)
 	defer cancel()
-	var err error
 	endpoint := config.Endpoint
 	if transport == TransportWebRTC &&
 		(strings.HasPrefix(strings.ToLower(endpoint), "ws://") ||
@@ -569,8 +579,6 @@ func PlaySamples(
 		frameSamples = 480
 	}
 	started := time.Now()
-	scheduled := append([]ScheduledEvent(nil), config.Scheduled...)
-	sort.SliceStable(scheduled, func(i, j int) bool { return scheduled[i].AtMS < scheduled[j].AtMS })
 	sent := 0
 	for offset := 0; offset < len(samples); offset += frameSamples {
 		end := min(offset+frameSamples, len(samples))
@@ -578,8 +586,20 @@ func PlaySamples(
 		// event lands before the audio that follows it rather than after.
 		atMS := offset * 1000 / 24_000
 		for sent < len(scheduled) && scheduled[sent].AtMS <= atMS {
-			if err := client.Send(timed, scheduled[sent].Event); err != nil {
-				return Transcript{}, err
+			if cause := context.Cause(timed); cause != nil {
+				return recorder.snapshot(), cause
+			}
+			sendErr := client.Send(timed, scheduled[sent].EventJSON)
+			if cause := context.Cause(timed); cause != nil {
+				return recorder.snapshot(), errors.Join(cause, sendErr)
+			}
+			if sendErr != nil {
+				return recorder.snapshot(), sendErr
+			}
+			if err := emitScheduledCapture(timed, config.CaptureScheduled, scheduled[sent]); err != nil {
+				return recorder.snapshot(), fmt.Errorf(
+					"capture sent scheduled event %q: %w", scheduled[sent].Name, err,
+				)
 			}
 			recorder.add(Moment{
 				AtMS: float64(scheduled[sent].AtMS), Kind: MomentScheduled, Name: scheduled[sent].Name,
