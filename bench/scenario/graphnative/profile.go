@@ -17,6 +17,12 @@ import (
 )
 
 const (
+	// ApplicationReference is the production host key for the scenario-suite
+	// decorator. The delegate remains an independently registered application;
+	// a strict launch profile selects this reference only when it requires the
+	// reviewed scenario contract around that delegate.
+	ApplicationReference = "application.openrealtime.scenario-suite.v1"
+
 	// ApplicationConfigurationFormatVersion identifies the scenario suite's
 	// plugin-owned portion of a generic graph launch profile.
 	ApplicationConfigurationFormatVersion uint64 = 1

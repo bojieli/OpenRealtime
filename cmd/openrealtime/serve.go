@@ -41,6 +41,7 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/gateway"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
+	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/internal/runtimeartifact"
 	"github.com/bojieli/OpenRealtime/perception"
@@ -59,6 +60,7 @@ type serveOptions struct {
 	binding             string
 	architectureRef     string
 	architectureCatalog string
+	launchProfile       string
 	profile             string
 	model               string
 	tokenEnv            string
@@ -206,6 +208,7 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.binding, "binding", "cascade", "voice stack preset: cascade, upstream, omni, omni+text-policy, duplex, or sidecar")
 	flags.StringVar(&options.architectureRef, "architecture", "", "exact architecture id@revision; resolves structural binding, ownership, capabilities, and interaction")
 	flags.StringVar(&options.architectureCatalog, "architecture-catalog", "", "external architecture catalog; empty uses the repository-owned catalog")
+	flags.StringVar(&options.launchProfile, "launch-profile", "", "strict graph launch profile; empty preserves the legacy serve composition")
 	flags.StringVar(&options.profile, "profile", "voice", "runtime profile: voice or voice+vision")
 	flags.StringVar(&options.model, "model", "openrealtime", "compatibility model identifier reported to clients")
 	flags.StringVar(&options.tokenEnv, "token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token; empty disables authentication")
@@ -420,35 +423,66 @@ func serve(options serveOptions, output io.Writer) (returnErr error) {
 	if err != nil {
 		return err
 	}
-	bind, recogniser, err := buildBinding(options)
-	if err != nil {
-		return err
-	}
+	// Install production cancellation before any strict-profile file read,
+	// executable hashing, catalog validation, or graph preflight so a shutdown
+	// signal can cancel the entire preparation path.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	// Set when the models a turn waits on have answered once. Health reports
 	// warming until then, because a caller that asks whether the server is
 	// ready is asking whether its next turn will be answered properly.
 	var warmed atomic.Bool
-	artifact, err := runtimeartifact.Executable("go://openrealtime/openrealtime-process")
-	if err != nil {
-		return fmt.Errorf("identify server plugin runtime: %w", err)
+	profiled := strings.TrimSpace(options.launchProfile) != ""
+	var (
+		bundle           *serverprofile.Bundle
+		providerName     string
+		graphFingerprint string
+		clientModel      = options.model
+		gatewayToken     string
+		profileReadiness *serveProfileReadiness
+		profileChecks    []graphlaunch.ReadinessCheck
+	)
+	if profiled {
+		composition, err := newProductionProfiledServeComposition(
+			ctx, options, logger,
+		)
+		if err != nil {
+			return err
+		}
+		bundle = composition.Graph.ServerBundle
+		providerName = composition.Profile.Adapter.ProfileName
+		graphFingerprint = composition.Profile.Plan.PlanFingerprint
+		clientModel = composition.Profile.Server.Model
+		gatewayToken = composition.GatewayToken
+		profileReadiness = composition.Readiness
+		profileChecks = composition.Graph.Readiness
+	} else {
+		bind, recogniser, err := buildBinding(options)
+		if err != nil {
+			return err
+		}
+		artifact, err := runtimeartifact.Executable("go://openrealtime/openrealtime-process")
+		if err != nil {
+			return fmt.Errorf("identify server plugin runtime: %w", err)
+		}
+		gatewayToken = os.Getenv(options.tokenEnv)
+		bundle, err = serverprofile.NewBundle(serverprofile.BundleConfig{
+			ProfileName: "openrealtime.server.realtime", ProfileRevision: 1,
+			Provider: bind,
+			Gateway: gateway.Config{
+				Token: gatewayToken, Model: options.model,
+				TranscriptionModel: options.asrModel, ValidateWire: options.validateWire,
+				Logger:     logger,
+				Recogniser: recogniserReport(recogniser),
+				Warm:       warmed.Load,
+			},
+			ProviderArtifact: artifact, GatewayArtifact: artifact,
+		})
+		if err != nil {
+			return err
+		}
+		providerName = bind.Name()
 	}
-	bundle, err := serverprofile.NewBundle(serverprofile.BundleConfig{
-		ProfileName: "openrealtime.server.realtime", ProfileRevision: 1,
-		Provider: bind,
-		Gateway: gateway.Config{
-			Token: os.Getenv(options.tokenEnv), Model: options.model,
-			TranscriptionModel: options.asrModel, ValidateWire: options.validateWire,
-			Logger:     logger,
-			Recogniser: recogniserReport(recogniser),
-			Warm:       warmed.Load,
-		},
-		ProviderArtifact: artifact, GatewayArtifact: artifact,
-	})
-	if err != nil {
-		return err
-	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	realm, err := bundle.Mount(ctx)
 	if err != nil {
 		return err
@@ -474,17 +508,24 @@ func serve(options serveOptions, output io.Writer) (returnErr error) {
 			returnErr = errors.Join(returnErr, err)
 		}
 	}()
-	fmt.Fprintf(output, "OpenRealtime %s listening on http://%s/v1/realtime\n", bind.Name(), options.listen)
+	fmt.Fprintf(output, "OpenRealtime %s listening on http://%s/v1/realtime\n", providerName, options.listen)
 	fmt.Fprintf(output, "  health   http://%s/healthz\n", options.listen)
 	fmt.Fprintf(output, "  server profile %s\n", realm.Live().Fingerprint)
-	go func() {
-		warmModels(ctx, options)
-		warmed.Store(true)
-	}()
+	if graphFingerprint != "" {
+		fmt.Fprintf(output, "  graph launch %s\n", graphFingerprint)
+	}
+	if !profiled {
+		go func() {
+			warmModels(ctx, options)
+			warmed.Store(true)
+		}()
+	} else {
+		go profileReadiness.Run(ctx, profileChecks, logger)
+	}
 
 	var webrtcServer *http.Server
 	if strings.TrimSpace(options.webrtcListen) != "" {
-		webrtcServer, err = startWebRTC(options, serveError)
+		webrtcServer, err = startWebRTC(options, gatewayToken, clientModel, serveError)
 		if err != nil {
 			return err
 		}
@@ -1678,7 +1719,24 @@ func narratorComposition(options serveOptions) (string, narratorSource, error) {
 // It connects to this server's own protocol endpoint over a real WebSocket
 // rather than reaching into it, which is the whole point: the adapter is a
 // client, and running it in the same process changes nothing about that.
-func startWebRTC(options serveOptions, serveError chan error) (*http.Server, error) {
+func startWebRTC(
+	options serveOptions, gatewayToken, model string, serveError chan error,
+) (*http.Server, error) {
+	adapter, err := newWebRTCAdapter(options, gatewayToken, model)
+	if err != nil {
+		return nil, err
+	}
+	server := &http.Server{
+		Addr: options.webrtcListen, Handler: adapter.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() { serveError <- server.ListenAndServe() }()
+	return server, nil
+}
+
+func newWebRTCAdapter(
+	options serveOptions, gatewayToken, model string,
+) (*webrtcadapter.Adapter, error) {
 	var iceServers []webrtc.ICEServer
 	for _, server := range strings.Split(options.webrtcSTUN, ",") {
 		server = strings.TrimSpace(server)
@@ -1689,20 +1747,15 @@ func startWebRTC(options serveOptions, serveError chan error) (*http.Server, err
 	}
 	adapter, err := webrtcadapter.New(webrtcadapter.Config{
 		Endpoint:       "ws://" + options.listen + "/v1/realtime",
-		Token:          os.Getenv(options.tokenEnv),
-		Model:          options.model,
+		Token:          gatewayToken,
+		Model:          model,
 		ICEServers:     iceServers,
 		AllowedOrigins: splitList(options.webrtcOrigin),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("configure the WebRTC adapter: %w", err)
 	}
-	server := &http.Server{
-		Addr: options.webrtcListen, Handler: adapter.Handler(),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-	go func() { serveError <- server.ListenAndServe() }()
-	return server, nil
+	return adapter, nil
 }
 
 // buildSidecarBinding configures a model that lives behind a process boundary.
