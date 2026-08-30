@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/elements/internal/factoryprofile"
 	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
@@ -30,19 +31,27 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if registry == nil {
 		return errors.New("register video factories: nil registry")
 	}
-	registrations := []struct {
-		factory  element.Factory
-		artifact inspect.ArtifactIdentity
-	}{
-		{frameIngressFactory{}, inspect.ArtifactIdentity{ID: frameIngressRuntimeID, Revision: implementationRev}},
-		{adaptiveObservationFactory{}, inspect.ArtifactIdentity{ID: policyRuntimeID, Revision: implementationRev}},
+	registrations, err := FactoryRegistrations()
+	if err != nil {
+		return err
 	}
 	for _, registration := range registrations {
-		if err := registry.RegisterArtifact("", registration.artifact, registration.factory); err != nil {
+		if err := registry.RegisterFactory(registration); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
+	return factoryprofile.Registrations(
+		factoryprofile.Entry{Factory: frameIngressFactory{}, Artifact: inspect.ArtifactIdentity{
+			ID: frameIngressRuntimeID, Revision: implementationRev,
+		}},
+		factoryprofile.Entry{Factory: adaptiveObservationFactory{}, Artifact: inspect.ArtifactIdentity{
+			ID: policyRuntimeID, Revision: implementationRev,
+		}},
+	)
 }
 
 func reportLiveResolution(reporter element.ResolutionReporter, runtimeID string) error {

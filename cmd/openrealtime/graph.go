@@ -31,6 +31,8 @@ commands:
   check      compile with the lock and report validation findings
   compile    compile with the lock and write canonical Graph IR
   render     compile with the lock and generate Mermaid or DOT
+  preflight  seal a plan against the exact built-in graph assembly without mounting
+  inventory  print the built-in factories and unresolved plugin/schema surfaces
 
 topology contains only nodes, edges, boundaries, and ->/=> delivery. Element
 values, deployment, secrets, evidence profiles, and rare depth overrides are
@@ -53,6 +55,10 @@ func runGraph(arguments []string, stdout, stderr io.Writer) error {
 		return runGraphCompile(arguments[1:], stdout, stderr, false, true, false)
 	case "render":
 		return runGraphCompile(arguments[1:], stdout, stderr, false, false, true)
+	case "preflight":
+		return runGraphPreflight(arguments[1:], stdout)
+	case "inventory":
+		return runGraphInventory(arguments[1:], stdout)
 	case "help", "-h", "--help":
 		fmt.Fprintln(stdout, graphUsage)
 		return nil

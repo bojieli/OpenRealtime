@@ -40,6 +40,8 @@ nodes:
   slow_model:
     provider: deployment.slow
     retain_reasoning: true
+  fast_action_join: {}
+  slow_action_join: {}
   fast_result_commit: {}
   slow_result_commit: {}
   segment: {}

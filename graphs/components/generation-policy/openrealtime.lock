@@ -5,8 +5,8 @@
       "reference": "policy.GenerateOnObservation",
       "identity": {
         "name": "policy.GenerateOnObservation",
-        "revision": 1,
-        "digest": "sha256:4c45180c1dac44fcfb55205807d4d073ec737cfae7eace0d13e09a6f77852394"
+        "revision": 3,
+        "digest": "sha256:7c43ec6bd816082a56a62808573faac2e8949d3c2d594bd348a4d3464fcae5aa"
       }
     }
   ]

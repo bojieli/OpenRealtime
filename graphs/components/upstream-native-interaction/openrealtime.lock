@@ -5,8 +5,8 @@
       "reference": "model.External",
       "identity": {
         "name": "model.External",
-        "revision": 1,
-        "digest": "sha256:d657c09d18d011901964f2b8778c1e55e53410142dda0ac6365978965aace284"
+        "revision": 2,
+        "digest": "sha256:0e0223c709776c15f7f1e32f5fb434e57621ceceaca7518d135cbd349e6aba4d"
       }
     }
   ]

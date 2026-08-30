@@ -4,6 +4,29 @@ nodes:
   foreground:
     deployment: deployment.upstream
     settings: {}
+    port_formats:
+      audio:
+        - payload_mode: json_binary
+          max_json_bytes: 65536
+          max_binary_bytes: 4800
+          media:
+            kind: audio
+            encoding: audio/pcm
+            sample_format: s16le
+            sample_rate_hz: 24000
+            channels: 1
+            max_frame_duration_ms: 100
+      audio_out:
+        - payload_mode: json_binary
+          max_json_bytes: 65536
+          max_binary_bytes: 4800
+          media:
+            kind: audio
+            encoding: audio/pcm
+            sample_format: s16le
+            sample_rate_hz: 24000
+            channels: 1
+            max_frame_duration_ms: 100
     required_capabilities:
       - name: transport.upstream-realtime
       - name: model.native-interaction

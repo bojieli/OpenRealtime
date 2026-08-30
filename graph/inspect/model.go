@@ -4,7 +4,6 @@ package inspect
 
 import (
 	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -93,6 +92,7 @@ type Live struct {
 	GraphRevision uint64              `json:"graph_revision"`
 	Fingerprint   string              `json:"fingerprint"`
 	Configuration *ArtifactIdentity   `json:"configuration,omitempty"`
+	Deployment    *DeploymentEvidence `json:"deployment,omitempty"`
 	Sequence      uint64              `json:"sequence"`
 	ObservedAt    time.Time           `json:"observed_at"`
 	State         string              `json:"state"`
@@ -101,6 +101,10 @@ type Live struct {
 	Edges         map[string]EdgeLive `json:"edges,omitempty"`
 	Flows         map[string]FlowLive `json:"flows,omitempty"`
 	TraceDropped  uint64              `json:"trace_dropped,omitempty"`
+	// Adapter identifies the exact protocol-to-boundary projection outside
+	// the graph node set. It is nil for legacy/compatibility mounts; a native
+	// session must not masquerade this process boundary as an element node.
+	Adapter *SessionAdapterResolution `json:"adapter,omitempty"`
 }
 
 // Clone returns a recursively independent management-plane snapshot.
@@ -109,6 +113,14 @@ func (live Live) Clone() Live {
 	if live.Configuration != nil {
 		copy := *live.Configuration
 		result.Configuration = &copy
+	}
+	if live.Deployment != nil {
+		copy := live.Deployment.Clone()
+		result.Deployment = &copy
+	}
+	if live.Adapter != nil {
+		copy := *live.Adapter
+		result.Adapter = &copy
 	}
 	result.Nodes = make(map[string]NodeLive, len(live.Nodes))
 	for id, node := range live.Nodes {
@@ -123,6 +135,64 @@ func (live Live) Clone() Live {
 		result.Flows[id] = flow.Clone()
 	}
 	return result
+}
+
+// SessionAdapterResolution is the exact live identity of the stable Realtime
+// API to Graph IR boundary adapter. ProfileFingerprint binds its complete
+// operation map and public capability/ownership projection; the two explicit
+// digests let inspectors compare those dimensions without loading profile
+// bytes. RuntimeEvidence is registered until an implementation-specific live
+// handshake can strengthen it.
+type SessionAdapterResolution struct {
+	ContractName       string             `json:"contract_name"`
+	ContractRevision   uint64             `json:"contract_revision"`
+	ContractDigest     string             `json:"contract_digest"`
+	ProfileFingerprint string             `json:"profile_fingerprint"`
+	Implementation     string             `json:"implementation"`
+	Runtime            ArtifactIdentity   `json:"runtime"`
+	RuntimeEvidence    ResolutionEvidence `json:"runtime_evidence"`
+	BoundaryMapDigest  string             `json:"boundary_map_digest"`
+	ProjectionDigest   string             `json:"projection_digest"`
+}
+
+// Validate verifies the identity-bearing adapter evidence without importing a
+// concrete gateway, binding, or plugin implementation into graph inspection.
+func (resolution SessionAdapterResolution) Validate() error {
+	if resolution.ContractName == "" || resolution.ContractName != strings.TrimSpace(resolution.ContractName) ||
+		resolution.ContractRevision == 0 || resolution.Implementation == "" ||
+		resolution.Implementation != strings.TrimSpace(resolution.Implementation) ||
+		len(resolution.ContractName) > 64<<10 || len(resolution.Implementation) > 64<<10 ||
+		strings.ContainsAny(resolution.ContractName+resolution.Implementation, "\x00\r\n") {
+		return errors.New("session adapter resolution has a non-canonical contract or implementation")
+	}
+	for name, digest := range map[string]string{
+		"contract": resolution.ContractDigest, "profile": resolution.ProfileFingerprint,
+		"boundary map": resolution.BoundaryMapDigest, "projection": resolution.ProjectionDigest,
+	} {
+		if !validIdentityDigest(digest) {
+			return fmt.Errorf("session adapter resolution has an invalid %s digest", name)
+		}
+	}
+	if err := resolution.Runtime.Validate(); err != nil {
+		return fmt.Errorf("session adapter resolution runtime: %w", err)
+	}
+	if len(resolution.Runtime.ID) > 64<<10 || len(resolution.Runtime.Revision) > 64<<10 ||
+		strings.ContainsAny(resolution.Runtime.ID+resolution.Runtime.Revision, "\x00\r\n") ||
+		(resolution.Runtime.Digest != "" && !validIdentityDigest(resolution.Runtime.Digest)) {
+		return errors.New("session adapter resolution runtime identity is not canonical")
+	}
+	switch resolution.RuntimeEvidence {
+	case EvidenceRegistered, EvidenceLive:
+		return nil
+	default:
+		return fmt.Errorf("session adapter resolution runtime evidence is %q", resolution.RuntimeEvidence)
+	}
+}
+
+func validIdentityDigest(value string) bool {
+	const prefix = "sha256:"
+	return strings.HasPrefix(value, prefix) && len(value) == len(prefix)+sha256.Size*2 &&
+		validHexadecimal(value[len(prefix):], true)
 }
 
 type NodeLive struct {
@@ -177,11 +247,24 @@ func (artifact ArtifactIdentity) Validate() error {
 			len(artifact.Digest) != len(prefix)+sha256.Size*2 {
 			return errors.New("artifact identity has an invalid SHA-256 digest")
 		}
-		if _, err := hex.DecodeString(strings.TrimPrefix(artifact.Digest, prefix)); err != nil {
-			return fmt.Errorf("artifact identity has an invalid SHA-256 digest: %w", err)
+		if !validHexadecimal(artifact.Digest[len(prefix):], false) {
+			return errors.New("artifact identity has an invalid SHA-256 digest")
 		}
 	}
 	return nil
+}
+
+func validHexadecimal(value string, lowercaseOnly bool) bool {
+	for index := 0; index < len(value); index++ {
+		character := value[index]
+		if character >= '0' && character <= '9' ||
+			character >= 'a' && character <= 'f' ||
+			!lowercaseOnly && character >= 'A' && character <= 'F' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func placeholderIdentity(value string) bool {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/elements/internal/factoryprofile"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -74,23 +75,27 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if registry == nil {
 		return errors.New("register acoustic factories: nil registry")
 	}
-	registrations := []struct {
-		factory  element.Factory
-		artifact inspect.ArtifactIdentity
-	}{
-		{factory: admissionFactory{}, artifact: inspect.ArtifactIdentity{
-			ID: admissionRuntimeID, Revision: implementationRevision,
-		}},
-		{factory: endpointFactory{}, artifact: inspect.ArtifactIdentity{
-			ID: endpointRuntimeID, Revision: implementationRevision,
-		}},
+	registrations, err := FactoryRegistrations()
+	if err != nil {
+		return err
 	}
 	for _, registration := range registrations {
-		if err := registry.RegisterArtifact("", registration.artifact, registration.factory); err != nil {
+		if err := registry.RegisterFactory(registration); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
+	return factoryprofile.Registrations(
+		factoryprofile.Entry{Factory: admissionFactory{}, Artifact: inspect.ArtifactIdentity{
+			ID: admissionRuntimeID, Revision: implementationRevision,
+		}},
+		factoryprofile.Entry{Factory: endpointFactory{}, Artifact: inspect.ArtifactIdentity{
+			ID: endpointRuntimeID, Revision: implementationRevision,
+		}},
+	)
 }
 
 type admissionPorts struct {

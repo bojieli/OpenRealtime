@@ -2,6 +2,7 @@ package editor
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
+	"github.com/bojieli/OpenRealtime/graph/schema"
 	"github.com/bojieli/OpenRealtime/graph/syntax"
 )
 
@@ -502,7 +504,7 @@ func analyzeValid(t *testing.T, limits Limits) *Document {
 	return document
 }
 
-func testCatalog(t *testing.T) *resolve.Catalog {
+func testCatalog(t testing.TB) *resolve.Catalog {
 	t.Helper()
 	catalog := resolve.NewCatalog()
 	for _, descriptor := range []element.Descriptor{sourceDescriptor(1), sourceDescriptor(2), sinkDescriptor()} {
@@ -647,5 +649,142 @@ func TestPartialAuthoringCompletionAPIsNeverInventDescriptorsOrPorts(t *testing.
 	}
 	if _, err := document.PortCompletions(insert, "consumer", "", element.Direction("sideways")); err == nil {
 		t.Fatal("invalid completion direction was accepted")
+	}
+}
+
+type editorSchemaResolver func(context.Context, string) (schema.ResolvedSchema, error)
+
+func (resolver editorSchemaResolver) ResolveConfigSchema(ctx context.Context, reference string) (schema.ResolvedSchema, error) {
+	return resolver(ctx, reference)
+}
+
+func TestRecoverySnapshotSupportsExplicitPartialCompletionsButNotFormatting(t *testing.T) {
+	source := `graph partial {
+    test.Source :: producer;
+    producer.
+`
+	document, err := Analyze("partial.ortg", []byte(source), testCatalog(t), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.Parsed() || !document.Recovered() || document.Canonical() ||
+		!hasDiagnostic(document.Diagnostics(), "E_SYNTAX") {
+		t.Fatalf("recovery snapshot parsed=%v recovered=%v diagnostics=%+v",
+			document.Parsed(), document.Recovered(), document.Diagnostics())
+	}
+	cursor, err := document.Cursor(len(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ports, err := document.PortCompletions(cursor, "producer", "o", element.Output)
+	if err != nil || !slices.Equal(completionLabels(ports), []string{"out"}) {
+		t.Fatalf("recovered port completions = %+v, %v", ports, err)
+	}
+	elements, err := document.ElementCompletions(cursor, "test.S")
+	if err != nil || !slices.Equal(completionLabels(elements), []string{"test.Sink", "test.Source"}) {
+		t.Fatalf("recovered element completions = %+v, %v", elements, err)
+	}
+	if _, err := document.FormatEdits(); !errors.Is(err, ErrFormattingUnavailable) {
+		t.Fatalf("recovery formatter error = %v", err)
+	}
+}
+
+func TestFormatEditsAreCanonicalAtomicAndStaleSafe(t *testing.T) {
+	source := []byte(strings.Replace(validSource, "test.Source ::", "test.Source  ::", 1))
+	document, err := Analyze("format.ortg", source, testCatalog(t), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	edits, err := document.FormatEdits()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(edits.Edits) != 1 || edits.SourceDigest != document.SourceDigest() ||
+		edits.Edits[0].OldText != string(source) || edits.Edits[0].NewText != validSource {
+		t.Fatalf("format edit set = %+v", edits)
+	}
+	formatted, err := ApplyEdits(source, edits)
+	if err != nil || string(formatted) != validSource {
+		t.Fatalf("formatted source = %q, %v", formatted, err)
+	}
+	if _, err := ApplyEdits(append(slices.Clone(source), ' '), edits); !errors.Is(err, ErrStalePosition) {
+		t.Fatalf("stale format edits = %v", err)
+	}
+	canonical := analyzeValid(t, Limits{})
+	noOp, err := canonical.FormatEdits()
+	if err != nil || len(noOp.Edits) != 0 || noOp.SourceDigest != canonical.SourceDigest() {
+		t.Fatalf("canonical format edits = %+v, %v", noOp, err)
+	}
+}
+
+func TestResolvedValuesPropertiesAreImmutableAndInvalidSchemasAreDiagnostic(t *testing.T) {
+	resolver := editorSchemaResolver(func(_ context.Context, reference string) (schema.ResolvedSchema, error) {
+		if reference != "schema://test/source-config/v1" {
+			return schema.ResolvedSchema{}, schema.ErrSchemaNotFound
+		}
+		return schema.ResolvedSchema{
+			ID: "https://schemas.example.test/source-config-v1.json",
+			Document: json.RawMessage(`{
+                "$id":"https://schemas.example.test/source-config-v1.json",
+                "type":"object","required":["model"],
+                "properties":{"temperature":{"type":"number","default":0.2},"model":{"type":"string"}},
+                "additionalProperties":false
+            }`),
+		}, nil
+	})
+	document, err := AnalyzeWithOptions(context.Background(), "agent.ortg", []byte(validSource), testCatalog(t), Options{
+		SchemaResolver: resolver,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata := document.CatalogMetadata().Elements[1]
+	if metadata.Config.SchemaStatus != ConfigSchemaResolved || !metadata.Config.PropertiesComplete ||
+		len(metadata.Config.Properties) != 2 || metadata.Config.Properties[0].Name != "model" ||
+		!metadata.Config.Properties[0].Required || metadata.Config.SchemaDigest == "" {
+		t.Fatalf("resolved config metadata = %+v", metadata.Config)
+	}
+	metadata.Config.Properties[0].Schema[0] = 'X'
+	again := document.CatalogMetadata().Elements[1].Config
+	if again.Properties[0].Name != "model" || again.Properties[0].Schema[0] == 'X' {
+		t.Fatal("config property metadata retained caller aliases")
+	}
+
+	invalid := editorSchemaResolver(func(context.Context, string) (schema.ResolvedSchema, error) {
+		return schema.ResolvedSchema{
+			ID:       "https://schemas.example.test/invalid.json",
+			Document: json.RawMessage(`{"$id":"https://schemas.example.test/invalid.json","type":"object","properties":{"x":{"$ref":"https://remote.test/x"}}}`),
+		}, nil
+	})
+	broken, err := AnalyzeWithOptions(context.Background(), "agent.ortg", []byte(validSource), testCatalog(t), Options{
+		SchemaResolver: invalid,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	brokenMetadata := broken.CatalogMetadata().Elements[1].Config
+	if brokenMetadata.SchemaStatus != ConfigSchemaInvalid || len(brokenMetadata.Properties) != 0 ||
+		!hasDiagnostic(broken.Diagnostics(), "E_VALUES_SCHEMA_INVALID") {
+		t.Fatalf("invalid schema metadata = %+v diagnostics=%+v", brokenMetadata, broken.Diagnostics())
+	}
+}
+
+func BenchmarkAnalyzeRecoveryWithResolvedSchema(b *testing.B) {
+	catalog := testCatalog(b)
+	resolver := editorSchemaResolver(func(context.Context, string) (schema.ResolvedSchema, error) {
+		return schema.ResolvedSchema{
+			ID:       "https://schemas.example.test/source-config-v1.json",
+			Document: json.RawMessage(`{"$id":"https://schemas.example.test/source-config-v1.json","type":"object","properties":{"model":{"type":"string"}},"additionalProperties":false}`),
+		}, nil
+	})
+	source := []byte("graph partial {\n    test.Source :: producer;\n    producer.\n")
+	b.ReportAllocs()
+	for range b.N {
+		document, err := AnalyzeWithOptions(context.Background(), "partial.ortg", source, catalog, Options{
+			SchemaResolver: resolver,
+		})
+		if err != nil || !document.Recovered() || document.CatalogMetadata().Elements[1].Config.SchemaStatus != ConfigSchemaResolved {
+			b.Fatalf("analysis = %+v, %v", document, err)
+		}
 	}
 }

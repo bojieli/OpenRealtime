@@ -13,18 +13,28 @@ import (
 // TraceOverlay is the deterministic canvas state after a trace record. Maps
 // are keyed only by immutable graph identities or opaque flow digests.
 type TraceOverlay struct {
-	Graph         GraphReference           `json:"graph"`
-	Configuration ArtifactIdentity         `json:"configuration"`
-	Sequence      uint64                   `json:"sequence"`
-	AtNS          uint64                   `json:"at_ns"`
-	Live          TraceGraphLive           `json:"live"`
-	Nodes         map[string]TraceNodeLive `json:"nodes"`
-	Edges         map[string]TraceEdgeLive `json:"edges"`
-	Flows         map[string]TraceFlowLive `json:"flows,omitempty"`
+	Graph         GraphReference            `json:"graph"`
+	Configuration ArtifactIdentity          `json:"configuration"`
+	Deployment    *DeploymentEvidence       `json:"deployment,omitempty"`
+	Adapter       *SessionAdapterResolution `json:"adapter,omitempty"`
+	Sequence      uint64                    `json:"sequence"`
+	AtNS          uint64                    `json:"at_ns"`
+	Live          TraceGraphLive            `json:"live"`
+	Nodes         map[string]TraceNodeLive  `json:"nodes"`
+	Edges         map[string]TraceEdgeLive  `json:"edges"`
+	Flows         map[string]TraceFlowLive  `json:"flows,omitempty"`
 }
 
 func (overlay TraceOverlay) Clone() TraceOverlay {
 	result := overlay
+	if overlay.Deployment != nil {
+		copy := overlay.Deployment.Clone()
+		result.Deployment = &copy
+	}
+	if overlay.Adapter != nil {
+		copy := *overlay.Adapter
+		result.Adapter = &copy
+	}
 	result.Nodes = make(map[string]TraceNodeLive, len(overlay.Nodes))
 	for id, node := range overlay.Nodes {
 		result.Nodes[id] = cloneTraceNode(node)
@@ -53,6 +63,8 @@ type TraceRecordSummary struct {
 type TraceReplayer struct {
 	graph         GraphReference
 	configuration ArtifactIdentity
+	deployment    *DeploymentEvidence
+	adapter       *SessionAdapterResolution
 	records       []traceRecord
 	nodes         map[string]ir.Node
 	edges         map[string]int
@@ -82,6 +94,14 @@ func NewTraceReplayer(graph ir.Graph, trace LiveTrace) (*TraceReplayer, error) {
 		records: records, nodes: make(map[string]ir.Node, len(graph.Nodes)),
 		edges:         make(map[string]int, len(graph.Edges)+len(graph.Boundaries)),
 		internalEdges: make(map[string]struct{}, len(graph.Edges)), limits: private.Limits,
+	}
+	if private.Deployment != nil {
+		copy := private.Deployment.Clone()
+		replayer.deployment = &copy
+	}
+	if private.Adapter != nil {
+		copy := *private.Adapter
+		replayer.adapter = &copy
 	}
 	for _, node := range graph.Nodes {
 		replayer.nodes[node.ID] = cloneDiffNode(node)
@@ -174,7 +194,9 @@ func (replayer *TraceReplayer) applySnapshot(state *replayState, snapshot TraceS
 	}
 	next := TraceOverlay{
 		Graph: replayer.graph, Configuration: replayer.configuration,
-		Live: snapshot.Graph, Nodes: make(map[string]TraceNodeLive, len(snapshot.Nodes)),
+		Deployment: cloneDeploymentEvidencePointer(replayer.deployment),
+		Adapter:    cloneSessionAdapterResolution(replayer.adapter),
+		Live:       snapshot.Graph, Nodes: make(map[string]TraceNodeLive, len(snapshot.Nodes)),
 		Edges: make(map[string]TraceEdgeLive, len(snapshot.Edges)),
 		Flows: make(map[string]TraceFlowLive, len(snapshot.Flows)),
 	}
@@ -217,6 +239,16 @@ func (replayer *TraceReplayer) applySnapshot(state *replayState, snapshot TraceS
 	}
 	state.overlay = next
 	return nil
+}
+
+func cloneSessionAdapterResolution(
+	source *SessionAdapterResolution,
+) *SessionAdapterResolution {
+	if source == nil {
+		return nil
+	}
+	copy := *source
+	return &copy
 }
 
 func (replayer *TraceReplayer) applyEvent(state *replayState, event TraceEvent) error {
@@ -464,6 +496,31 @@ func monotonicFlow(before, after TraceFlowLive) error {
 func TraceSnapshotFromLive(
 	graph ir.Graph, configuration ArtifactIdentity, live Live, atNS uint64,
 ) (TraceSnapshot, error) {
+	return traceSnapshotFromLive(graph, configuration, nil, live, atNS, false)
+}
+
+// TraceSnapshotFromLiveWithDeployment additionally binds the checkpoint to
+// exact deployment evidence. The trace snapshot remains payload-free; the
+// deployment identity is retained once at the LiveTrace envelope and replay
+// overlay rather than duplicated into every telemetry checkpoint.
+func TraceSnapshotFromLiveWithDeployment(
+	graph ir.Graph,
+	configuration ArtifactIdentity,
+	deployment *DeploymentEvidence,
+	live Live,
+	atNS uint64,
+) (TraceSnapshot, error) {
+	return traceSnapshotFromLive(graph, configuration, deployment, live, atNS, true)
+}
+
+func traceSnapshotFromLive(
+	graph ir.Graph,
+	configuration ArtifactIdentity,
+	deployment *DeploymentEvidence,
+	live Live,
+	atNS uint64,
+	requireDeployment bool,
+) (TraceSnapshot, error) {
 	if err := graph.Validate(); err != nil {
 		return TraceSnapshot{}, fmt.Errorf("capture live trace snapshot: graph: %w", err)
 	}
@@ -479,6 +536,18 @@ func TraceSnapshotFromLive(
 	}
 	if live.Configuration == nil || *live.Configuration != configuration {
 		return TraceSnapshot{}, errors.New("capture live trace snapshot: live configuration identity differs")
+	}
+	if requireDeployment {
+		if deployment == nil || live.Deployment == nil {
+			return TraceSnapshot{}, errors.New("capture live trace snapshot: exact deployment evidence is required")
+		}
+		canonical, err := CanonicalDeploymentEvidence(*deployment)
+		if err != nil {
+			return TraceSnapshot{}, fmt.Errorf("capture live trace snapshot: deployment: %w", err)
+		}
+		if !sameJSON(canonical, *deployment) || !sameJSON(canonical, *live.Deployment) {
+			return TraceSnapshot{}, errors.New("capture live trace snapshot: live deployment identity differs")
+		}
 	}
 	graphState, err := traceGraphState(live.State)
 	if err != nil {
@@ -552,6 +621,14 @@ func TraceSnapshotFromLive(
 		return TraceSnapshot{}, fmt.Errorf("capture live trace snapshot: %w", err)
 	}
 	return snapshot, nil
+}
+
+func cloneDeploymentEvidencePointer(source *DeploymentEvidence) *DeploymentEvidence {
+	if source == nil {
+		return nil
+	}
+	copy := source.Clone()
+	return &copy
 }
 
 func expectedTraceChannels(graph ir.Graph) map[string]int {

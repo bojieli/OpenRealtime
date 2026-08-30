@@ -38,6 +38,9 @@ func TestLiveTraceStrictRoundTripAndDeterministicReplay(t *testing.T) {
 	if parsed.Graph.Fingerprint != graph.Fingerprint || parsed.Configuration != configuration {
 		t.Fatalf("trace lost exact graph/config identity: %+v", parsed)
 	}
+	if parsed.Adapter == nil || parsed.Adapter.ProfileFingerprint != traceAdapterResolution().ProfileFingerprint {
+		t.Fatalf("trace lost exact session adapter identity: %+v", parsed.Adapter)
+	}
 
 	replayer, err := inspect.NewTraceReplayer(graph, parsed)
 	if err != nil {
@@ -62,11 +65,61 @@ func TestLiveTraceStrictRoundTripAndDeterministicReplay(t *testing.T) {
 	correlation := inspect.OpaqueTraceCorrelation("trace:" + secret)
 	if final.Sequence != 6 || final.Live.TraceDropped != 1 ||
 		final.Edges["stream"].Occupancy != 0 || final.Edges["stream"].Dequeued != 1 ||
-		len(final.Flows) != 1 || final.Flows[correlation].Edges[0] != "stream" {
+		len(final.Flows) != 1 || final.Flows[correlation].Edges[0] != "stream" ||
+		final.Adapter == nil || final.Adapter.Implementation != "go://test/session-adapter/v1" {
 		t.Fatalf("final overlay = %+v", final)
 	}
 	if _, err := replayer.At(0); err == nil || !strings.Contains(err.Error(), "outside") {
 		t.Fatalf("replay pretended to cover unrecorded time: %v", err)
+	}
+}
+
+func TestLiveTraceReadsStrictV1WithoutGrantingV2EvidenceFields(t *testing.T) {
+	graph, _, current, _ := liveTraceFixture(t)
+	legacy := current.Clone()
+	legacy.FormatVersion = 1
+	legacy.Adapter = nil
+	legacy.Deployment = nil
+	legacy.Fingerprint = ""
+	frozen, err := inspect.FreezeLiveTrace(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := inspect.MarshalLiveTrace(frozen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := inspect.ParseLiveTrace(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.FormatVersion != 1 || parsed.Adapter != nil || parsed.Deployment != nil {
+		t.Fatalf("strict v1 trace acquired v2 evidence: %+v", parsed)
+	}
+	if _, err := inspect.NewTraceReplayer(graph, parsed); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, field := range []string{"adapter", "deployment"} {
+		t.Run(field, func(t *testing.T) {
+			candidate := frozen.Clone()
+			candidate.Fingerprint = ""
+			if field == "adapter" {
+				candidate.Adapter = traceAdapterResolution()
+			} else {
+				candidate.Deployment = &inspect.DeploymentEvidence{
+					Public: inspect.ArtifactIdentity{
+						ID: "deployment://trace-test", Revision: "deployment:1",
+						Digest: "sha256:" + strings.Repeat("f", 64),
+					},
+					PrivateDeploymentFingerprint: "sha256:" + strings.Repeat("1", 64),
+				}
+			}
+			_, err := inspect.FreezeLiveTrace(candidate)
+			if err == nil || !strings.Contains(err.Error(), "format 1 cannot carry") {
+				t.Fatalf("v1 %s evidence refusal = %v", field, err)
+			}
+		})
 	}
 }
 
@@ -83,13 +136,13 @@ func TestLiveTraceParserRejectsTamperDuplicateUnknownAndTrailingData(t *testing.
 	}{
 		{
 			name: "duplicate", want: "duplicate JSON key",
-			source: bytes.Replace(payload, []byte(`"format_version": 1,`),
-				[]byte(`"format_version": 1, "format_version": 1,`), 1),
+			source: bytes.Replace(payload, []byte(`"format_version": 2,`),
+				[]byte(`"format_version": 2, "format_version": 2,`), 1),
 		},
 		{
 			name: "unknown payload field", want: "unknown field",
-			source: bytes.Replace(payload, []byte(`"format_version": 1,`),
-				[]byte(`"format_version": 1, "private_payload": "do not accept",`), 1),
+			source: bytes.Replace(payload, []byte(`"format_version": 2,`),
+				[]byte(`"format_version": 2, "private_payload": "do not accept",`), 1),
 		},
 		{name: "trailing", source: append(append([]byte(nil), payload...), []byte("{}")...), want: "trailing"},
 		{
@@ -217,6 +270,42 @@ func TestLiveTraceRequiresCanonicalArtifactDigests(t *testing.T) {
 			if _, err := inspect.FreezeLiveTrace(candidate); err == nil ||
 				!strings.Contains(err.Error(), "canonical SHA-256") {
 				t.Fatalf("non-canonical digest refusal = %v", err)
+			}
+		})
+	}
+}
+
+func TestLiveTraceRejectsInvalidSessionAdapterEvidence(t *testing.T) {
+	_, _, frozen, _ := liveTraceFixture(t)
+	tests := []struct {
+		name   string
+		mutate func(*inspect.SessionAdapterResolution)
+		want   string
+	}{
+		{name: "boundary map digest", want: "boundary map digest", mutate: func(adapter *inspect.SessionAdapterResolution) {
+			adapter.BoundaryMapDigest = "sha256:" + strings.Repeat("A", 64)
+		}},
+		{name: "runtime evidence", want: "runtime evidence", mutate: func(adapter *inspect.SessionAdapterResolution) {
+			adapter.RuntimeEvidence = inspect.ResolutionEvidence("assumed")
+		}},
+		{name: "runtime artifact", want: "runtime", mutate: func(adapter *inspect.SessionAdapterResolution) {
+			adapter.Runtime.ID = ""
+		}},
+		{name: "runtime digest canonical case", want: "runtime identity", mutate: func(adapter *inspect.SessionAdapterResolution) {
+			adapter.Runtime.Digest = "sha256:" + strings.Repeat("A", 64)
+		}},
+		{name: "runtime control character", want: "runtime identity", mutate: func(adapter *inspect.SessionAdapterResolution) {
+			adapter.Runtime.Revision = "build:1\nsubstituted"
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := frozen.Clone()
+			candidate.Fingerprint = ""
+			test.mutate(candidate.Adapter)
+			_, err := inspect.FreezeLiveTrace(candidate)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("invalid adapter evidence refusal = %v, want %q", err, test.want)
 			}
 		})
 	}
@@ -359,8 +448,10 @@ func TestLiveTraceCloneAndConcurrentReplayAreRecursivelyIndependent(t *testing.T
 	}
 	input.Snapshots[0].Nodes[0].Resolution.Runtime.ID = "mutated"
 	input.Snapshots[1].Flows[0].Edges[0] = "mutated"
+	input.Adapter.Runtime.ID = "mutated"
 	if refrozen.Snapshots[0].Nodes[0].Resolution.Runtime.ID == "mutated" ||
-		refrozen.Snapshots[1].Flows[0].Edges[0] == "mutated" {
+		refrozen.Snapshots[1].Flows[0].Edges[0] == "mutated" ||
+		refrozen.Adapter.Runtime.ID == "mutated" {
 		t.Fatal("FreezeLiveTrace retained caller aliases")
 	}
 	replayer, err := inspect.NewTraceReplayer(graph, frozen)
@@ -377,11 +468,13 @@ func TestLiveTraceCloneAndConcurrentReplayAreRecursivelyIndependent(t *testing.T
 		flow.Edges[0] = "mutated"
 		first.Flows[id] = flow
 	}
+	first.Adapter.Runtime.ID = "mutated"
 	again, err := replayer.Final()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again.Nodes["source"].Node != "source" || again.Edges["stream"].Depth == 0 {
+	if again.Nodes["source"].Node != "source" || again.Edges["stream"].Depth == 0 ||
+		again.Adapter == nil || again.Adapter.Runtime.ID == "mutated" {
 		t.Fatal("replayer retained returned overlay aliases")
 	}
 	for _, flow := range again.Flows {
@@ -530,7 +623,7 @@ func liveTraceFixture(t *testing.T) (ir.Graph, inspect.ArtifactIdentity, inspect
 			FormatVersion: graph.FormatVersion, ID: graph.ID,
 			Revision: graph.Revision, Fingerprint: graph.Fingerprint,
 		},
-		Configuration: configuration, Limits: inspect.DefaultTraceLimits(),
+		Configuration: configuration, Adapter: traceAdapterResolution(), Limits: inspect.DefaultTraceLimits(),
 		Snapshots: []inspect.TraceSnapshot{initial, finalSnapshot},
 		Events: []inspect.TraceEvent{
 			{Sequence: 2, AtNS: 110, Kind: inspect.TraceEventNode, Node: &source},
@@ -546,6 +639,23 @@ func liveTraceFixture(t *testing.T) (ir.Graph, inspect.ArtifactIdentity, inspect
 		t.Fatal(err)
 	}
 	return graph, configuration, frozen, secret
+}
+
+func traceAdapterResolution() *inspect.SessionAdapterResolution {
+	return &inspect.SessionAdapterResolution{
+		ContractName:       "openrealtime.realtime.session",
+		ContractRevision:   1,
+		ContractDigest:     "sha256:" + strings.Repeat("a", 64),
+		ProfileFingerprint: "sha256:" + strings.Repeat("b", 64),
+		Implementation:     "go://test/session-adapter/v1",
+		Runtime: inspect.ArtifactIdentity{
+			ID: "runtime://session-adapter", Revision: "build:1",
+			Digest: "sha256:" + strings.Repeat("c", 64),
+		},
+		RuntimeEvidence:   inspect.EvidenceRegistered,
+		BoundaryMapDigest: "sha256:" + strings.Repeat("d", 64),
+		ProjectionDigest:  "sha256:" + strings.Repeat("e", 64),
+	}
 }
 
 func traceLiveView(

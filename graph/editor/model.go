@@ -4,6 +4,7 @@
 package editor
 
 import (
+	"encoding/json"
 	"errors"
 
 	"github.com/bojieli/OpenRealtime/element"
@@ -11,29 +12,33 @@ import (
 )
 
 var (
-	ErrStalePosition       = errors.New("editor position belongs to another source revision")
-	ErrInvalidPosition     = errors.New("editor position is invalid")
-	ErrSyntaxUnavailable   = errors.New("editor operation requires canonical parsed topology")
-	ErrNoCompletionContext = errors.New("position has no completion context")
-	ErrNoSymbol            = errors.New("position does not name a graph symbol")
-	ErrDefinitionMissing   = errors.New("symbol has no resolvable definition")
-	ErrInvalidRename       = errors.New("invalid graph node rename")
-	ErrRenameCollision     = errors.New("graph node rename collides with an existing node")
-	ErrEditLimit           = errors.New("graph node rename exceeds the edit bound")
+	ErrStalePosition         = errors.New("editor position belongs to another source revision")
+	ErrInvalidPosition       = errors.New("editor position is invalid")
+	ErrSyntaxUnavailable     = errors.New("editor operation requires canonical parsed topology")
+	ErrNoCompletionContext   = errors.New("position has no completion context")
+	ErrNoSymbol              = errors.New("position does not name a graph symbol")
+	ErrDefinitionMissing     = errors.New("symbol has no resolvable definition")
+	ErrInvalidRename         = errors.New("invalid graph node rename")
+	ErrRenameCollision       = errors.New("graph node rename collides with an existing node")
+	ErrEditLimit             = errors.New("graph node rename exceeds the edit bound")
+	ErrFormattingUnavailable = errors.New("editor formatting requires a strictly parsed topology")
 )
 
 // Limits bounds every input collection retained by a Document and every
 // collection returned by its query methods. Zero fields select defaults.
 type Limits struct {
-	MaxPathBytes       int `json:"max_path_bytes"`
-	MaxSourceBytes     int `json:"max_source_bytes"`
-	MaxCatalogElements int `json:"max_catalog_elements"`
-	MaxCatalogPorts    int `json:"max_catalog_ports"`
-	MaxCatalogBytes    int `json:"max_catalog_bytes"`
-	MaxGraphStatements int `json:"max_graph_statements"`
-	MaxResultItems     int `json:"max_result_items"`
-	MaxRenameEdits     int `json:"max_rename_edits"`
-	MaxIdentifierBytes int `json:"max_identifier_bytes"`
+	MaxPathBytes                int `json:"max_path_bytes"`
+	MaxSourceBytes              int `json:"max_source_bytes"`
+	MaxCatalogElements          int `json:"max_catalog_elements"`
+	MaxCatalogPorts             int `json:"max_catalog_ports"`
+	MaxCatalogBytes             int `json:"max_catalog_bytes"`
+	MaxGraphStatements          int `json:"max_graph_statements"`
+	MaxResultItems              int `json:"max_result_items"`
+	MaxRenameEdits              int `json:"max_rename_edits"`
+	MaxIdentifierBytes          int `json:"max_identifier_bytes"`
+	MaxResolvedSchemaBytes      int `json:"max_resolved_schema_bytes"`
+	MaxTotalResolvedSchemaBytes int `json:"max_total_resolved_schema_bytes"`
+	MaxSchemaProperties         int `json:"max_schema_properties"`
 }
 
 var defaultLimits = Limits{
@@ -42,6 +47,8 @@ var defaultLimits = Limits{
 	MaxCatalogBytes:    8 << 20,
 	MaxGraphStatements: 16384, MaxResultItems: 2048,
 	MaxRenameEdits: 8192, MaxIdentifierBytes: 256,
+	MaxResolvedSchemaBytes: 2 << 20, MaxTotalResolvedSchemaBytes: 16 << 20,
+	MaxSchemaProperties: 4096,
 }
 
 // DefaultLimits returns bounds deliberately sized for an interactive editor
@@ -118,11 +125,39 @@ const (
 // ConfigContract makes the topology/values boundary explicit. A descriptor
 // supplies a schema reference, not inline .ortg configuration fields.
 type ConfigContract struct {
-	Artifact             string `json:"artifact"`
-	Resolved             bool   `json:"resolved"`
-	SchemaReference      string `json:"schema_reference,omitempty"`
-	InlineTopologyValues bool   `json:"inline_topology_values"`
-	EmptyObjectOnly      bool   `json:"empty_object_only"`
+	Artifact             string                   `json:"artifact"`
+	Resolved             bool                     `json:"resolved"`
+	SchemaReference      string                   `json:"schema_reference,omitempty"`
+	InlineTopologyValues bool                     `json:"inline_topology_values"`
+	EmptyObjectOnly      bool                     `json:"empty_object_only"`
+	SchemaStatus         ConfigSchemaStatus       `json:"schema_status"`
+	SchemaID             string                   `json:"schema_id,omitempty"`
+	SchemaDigest         string                   `json:"schema_digest,omitempty"`
+	PropertiesComplete   bool                     `json:"properties_complete"`
+	Properties           []ValuesPropertyMetadata `json:"properties"`
+	AdditionalProperties json.RawMessage          `json:"additional_properties,omitempty"`
+}
+
+type ConfigSchemaStatus string
+
+const (
+	ConfigSchemaEmpty      ConfigSchemaStatus = "empty-object-only"
+	ConfigSchemaUnresolved ConfigSchemaStatus = "unresolved"
+	ConfigSchemaResolved   ConfigSchemaStatus = "resolved"
+	ConfigSchemaInvalid    ConfigSchemaStatus = "invalid"
+)
+
+type ValuesPropertyMetadata struct {
+	Name        string            `json:"name"`
+	Pointer     string            `json:"pointer"`
+	Required    bool              `json:"required,omitempty"`
+	Types       []string          `json:"types,omitempty"`
+	Title       string            `json:"title,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Format      string            `json:"format,omitempty"`
+	Default     json.RawMessage   `json:"default,omitempty"`
+	Enum        []json.RawMessage `json:"enum,omitempty"`
+	Schema      json.RawMessage   `json:"schema"`
 }
 
 type NodeConfigContract struct {

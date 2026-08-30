@@ -1,16 +1,16 @@
-// A model activation policy is an ordinary graph element. It joins a
-// successful observation commit with the exact trajectory State envelope that
-// contains it, then emits a context-bound cognition trigger. Instantiate this
-// component once per independently wired fast, deliberative, or specialist
-// model; routing between those models remains outside the policy.
+// A model activation policy is an ordinary graph element. A successful
+// observation commit already carries the store-attested identity of the exact
+// trajectory prefix that contains it, so activation does not race a second
+// State input. Instantiate this component once per independently wired fast,
+// deliberative, or specialist model; routing remains outside the policy.
 graph generation_policy {
     policy.GenerateOnObservation :: activation;
-
-    input context = activation.context;
     input committed = activation.committed;
     input cancel = activation.cancel;
-
     output trigger = activation.trigger;
+    // Wire this only when the model path may propose external effects. The
+    // candidate names the exact observation basis selected by this policy.
+    output authority = activation.authority;
     output state = activation.state;
     output outcome = activation.outcome;
 }

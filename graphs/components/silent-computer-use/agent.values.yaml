@@ -1,0 +1,43 @@
+apiVersion: openrealtime.ai/config/v1alpha1
+graph: silent_computer_use
+nodes:
+  observation_commit: {}
+  trajectory: {}
+  activation:
+    role: computer-use
+    invocation:
+      instruction: Act only on the committed user observation using declared computer-use tools.
+      max_output_tokens: 256
+      tools:
+        - name: computer.click
+          description: Click a point on the declared browser surface.
+          parameters:
+            type: object
+            additionalProperties: false
+            required: [source, x, y]
+            properties:
+              source: {type: string}
+              x: {type: integer}
+              y: {type: integer}
+    max_pending: 64
+    terminal_memory: 512
+    cancel_memory: 256
+  model:
+    provider: deployment.computer-use
+    retain_reasoning: false
+  model_result_commit: {}
+  provenance_join: {}
+  proposal_admission: {}
+  tool_lookup:
+    registry: deployment.tools
+  confirmation:
+    provider: deployment.confirmation
+  target_fence:
+    target: deployment.browser
+  canonical_call_commit: {}
+  ledger_commit:
+    ledger: deployment.ledger
+  dispatch:
+    registry: deployment.tools
+    ledger: deployment.ledger
+  tool_result_commit: {}

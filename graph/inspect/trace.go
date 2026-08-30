@@ -18,8 +18,12 @@ import (
 )
 
 const (
-	LiveTraceFormatVersion uint64 = 1
-	MaxLiveTraceBytes             = 32 << 20
+	// LiveTraceFormatVersion 2 adds exact deployment and session-adapter
+	// evidence to the envelope. Version 1 remains readable only when both
+	// fields are absent; a strict v1 artifact must never acquire v2 semantics.
+	LiveTraceFormatVersion       uint64 = 2
+	legacyLiveTraceFormatVersion uint64 = 1
+	MaxLiveTraceBytes                   = 32 << 20
 )
 
 // Absolute ceilings bound hostile artifacts before their self-declared limits
@@ -183,17 +187,27 @@ type TraceEvent struct {
 // LiveTrace is an immutable, fingerprinted, payload-free recording. Events
 // and snapshots share one strictly increasing sequence/time domain.
 type LiveTrace struct {
-	FormatVersion uint64           `json:"format_version"`
-	Graph         GraphReference   `json:"graph"`
-	Configuration ArtifactIdentity `json:"configuration"`
-	Limits        TraceLimits      `json:"limits"`
-	Snapshots     []TraceSnapshot  `json:"snapshots"`
-	Events        []TraceEvent     `json:"events,omitempty"`
-	Fingerprint   string           `json:"fingerprint"`
+	FormatVersion uint64                    `json:"format_version"`
+	Graph         GraphReference            `json:"graph"`
+	Configuration ArtifactIdentity          `json:"configuration"`
+	Deployment    *DeploymentEvidence       `json:"deployment,omitempty"`
+	Adapter       *SessionAdapterResolution `json:"adapter,omitempty"`
+	Limits        TraceLimits               `json:"limits"`
+	Snapshots     []TraceSnapshot           `json:"snapshots"`
+	Events        []TraceEvent              `json:"events,omitempty"`
+	Fingerprint   string                    `json:"fingerprint"`
 }
 
 func (trace LiveTrace) Clone() LiveTrace {
 	result := trace
+	if trace.Deployment != nil {
+		copy := trace.Deployment.Clone()
+		result.Deployment = &copy
+	}
+	if trace.Adapter != nil {
+		copy := *trace.Adapter
+		result.Adapter = &copy
+	}
 	result.Snapshots = make([]TraceSnapshot, len(trace.Snapshots))
 	for index, snapshot := range trace.Snapshots {
 		result.Snapshots[index] = snapshot.Clone()
@@ -348,6 +362,13 @@ func (trace LiveTrace) computeFingerprint() (string, error) {
 }
 
 func canonicalizeTrace(trace *LiveTrace) error {
+	if trace.Deployment != nil {
+		canonical, err := CanonicalDeploymentEvidence(*trace.Deployment)
+		if err != nil {
+			return fmt.Errorf("deployment evidence: %w", err)
+		}
+		trace.Deployment = &canonical
+	}
 	for snapshotIndex := range trace.Snapshots {
 		snapshot := &trace.Snapshots[snapshotIndex]
 		for nodeIndex := range snapshot.Nodes {
@@ -385,6 +406,11 @@ func canonicalizeTrace(trace *LiveTrace) error {
 			event.Flow = &copy
 		}
 	}
+	if trace.Adapter != nil {
+		if err := trace.Adapter.Validate(); err != nil {
+			return fmt.Errorf("live trace adapter: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -402,8 +428,13 @@ func canonicalTraceNode(node TraceNodeLive) (TraceNodeLive, error) {
 }
 
 func (trace LiveTrace) validateStructure() error {
-	if trace.FormatVersion != LiveTraceFormatVersion {
-		return fmt.Errorf("live trace format is %d, want %d", trace.FormatVersion, LiveTraceFormatVersion)
+	if trace.FormatVersion != legacyLiveTraceFormatVersion && trace.FormatVersion != LiveTraceFormatVersion {
+		return fmt.Errorf("live trace format is %d, want %d or %d",
+			trace.FormatVersion, legacyLiveTraceFormatVersion, LiveTraceFormatVersion)
+	}
+	if trace.FormatVersion == legacyLiveTraceFormatVersion &&
+		(trace.Deployment != nil || trace.Adapter != nil) {
+		return errors.New("live trace format 1 cannot carry deployment or session-adapter evidence")
 	}
 	if err := validateGraphReference(trace.Graph); err != nil {
 		return err
@@ -413,6 +444,11 @@ func (trace LiveTrace) validateStructure() error {
 	}
 	if trace.Configuration.Digest == "" {
 		return errors.New("live trace configuration requires a digest")
+	}
+	if trace.Deployment != nil {
+		if err := trace.Deployment.Validate(); err != nil {
+			return fmt.Errorf("live trace deployment: %w", err)
+		}
 	}
 	if err := trace.Limits.Validate(); err != nil {
 		return err

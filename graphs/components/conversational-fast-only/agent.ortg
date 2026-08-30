@@ -11,12 +11,13 @@ graph conversational_fast_only {
     policy.GenerateOnObservation :: slow_activation;
     cognition.TextModel :: fast_model;
     cognition.TextModel :: slow_model;
+    authority.ProvenanceJoin :: fast_action_join;
+    authority.ProvenanceJoin :: slow_action_join;
     interaction.ModelResultCommit :: fast_result_commit;
     interaction.ModelResultCommit :: slow_result_commit;
     interaction.SegmentPreparedText :: segment;
     speech.TTS :: tts;
     speech.Playback :: playback;
-
     flow.Tee :: endpoint_state_copy;
     flow.Tee :: endpoint_candidate_copy;
     flow.Tee :: endpoint_command_copy;
@@ -30,12 +31,13 @@ graph conversational_fast_only {
     flow.Tee :: slow_text_copy;
     flow.Tee :: fast_result_copy;
     flow.Tee :: slow_result_copy;
+    flow.Tee :: fast_tool_copy;
+    flow.Tee :: slow_tool_copy;
     flow.Tee :: fast_outcome_copy;
     flow.Tee :: slow_outcome_copy;
     flow.Tee :: speech_cancel_copy;
     flow.Mux :: tts_cancel_mux;
     flow.Mux :: playback_cancel_mux;
-
     endpoint_policy.state -> endpoint_state_copy.in;
     endpoint_state_copy.out -> admission.policy;
     admission.candidate -> endpoint_candidate_copy.in;
@@ -45,16 +47,13 @@ graph conversational_fast_only {
     audio_cancel_copy.out -> admission.cancel;
     audio_cancel_copy.out -> endpoint_policy.cancel;
     audio_cancel_copy.out -> asr.cancel;
-
     admission.admitted -> asr.observe;
     admission.endpoint -> asr.flush;
     asr.observations -> observation_commit.observations;
-
     observation_commit.append -> append_mux.in;
     fast_result_commit.append -> append_mux.in;
     slow_result_commit.append -> append_mux.in;
     append_mux.out -> trajectory.append;
-
     trajectory.committed -> committed_copy.in;
     committed_copy.out -> observation_commit.committed;
     committed_copy.out -> fast_result_commit.committed;
@@ -63,27 +62,30 @@ graph conversational_fast_only {
     rejected_copy.out -> observation_commit.rejected;
     rejected_copy.out -> fast_result_commit.rejected;
     rejected_copy.out -> slow_result_commit.rejected;
-
     trajectory.snapshot -> snapshot_copy.in;
-    snapshot_copy.out => fast_activation.context;
-    snapshot_copy.out => slow_activation.context;
-    snapshot_copy.out => fast_model.context;
-    snapshot_copy.out => slow_model.context;
+    snapshot_copy.out -> fast_model.context;
+    snapshot_copy.out -> slow_model.context;
     observation_commit.outcome -> observation_outcome_copy.in;
     observation_outcome_copy.out -> fast_activation.committed;
     observation_outcome_copy.out -> slow_activation.committed;
-
     fast_activation.trigger -> fast_model.trigger;
     slow_activation.trigger -> slow_model.trigger;
+    fast_activation.authority -> fast_action_join.candidate;
+    slow_activation.authority -> slow_action_join.candidate;
     fast_model.text -> fast_text_copy.in;
     slow_model.text -> slow_text_copy.in;
     fast_model.result -> fast_result_copy.in;
     slow_model.result -> slow_result_copy.in;
     fast_result_copy.out -> fast_result_commit.result;
     slow_result_copy.out -> slow_result_commit.result;
+    fast_result_copy.out -> fast_action_join.result;
+    slow_result_copy.out -> slow_action_join.result;
+    fast_model.tools -> fast_tool_copy.in;
+    slow_model.tools -> slow_tool_copy.in;
+    fast_tool_copy.out -> fast_action_join.proposal;
+    slow_tool_copy.out -> slow_action_join.proposal;
     fast_model.outcome -> fast_outcome_copy.in;
     slow_model.outcome -> slow_outcome_copy.in;
-
     // Speech authority is topology: the slow prepared stream remains visible
     // and commits to state, but has no edge into segmentation.
     fast_text_copy.out -> segment.text;
@@ -95,7 +97,6 @@ graph conversational_fast_only {
     tts_cancel_mux.out -> tts.cancel;
     tts.audio -> playback.audio;
     playback_cancel_mux.out -> playback.cancel;
-
     input audio = admission.audio;
     input endpoint_tick = endpoint_policy.tick;
     input endpoint_commit = endpoint_policy.commit;
@@ -105,11 +106,14 @@ graph conversational_fast_only {
     input slow_activation_cancel = slow_activation.cancel;
     input fast_model_cancel = fast_model.cancel;
     input slow_model_cancel = slow_model.cancel;
+    input fast_action_cancel = fast_action_join.cancel;
+    input slow_action_cancel = slow_action_join.cancel;
+    input fast_action_timeout = fast_action_join.timeout;
+    input slow_action_timeout = slow_action_join.timeout;
     input segmentation_timeout = segment.timeout;
     input segmentation_cancel = segment.cancel;
     input tts_cancel = tts_cancel_mux.in;
     input playback_cancel = playback_cancel_mux.in;
-
     output endpoint_policy_state = endpoint_state_copy.out;
     output endpoint_candidate = endpoint_candidate_copy.out;
     output endpoint_command = endpoint_command_copy.out;
@@ -132,8 +136,16 @@ graph conversational_fast_only {
     output slow_prepared_text = slow_text_copy.out;
     output fast_result = fast_result_copy.out;
     output slow_result = slow_result_copy.out;
-    output fast_tools = fast_model.tools;
-    output slow_tools = slow_model.tools;
+    output fast_tools = fast_tool_copy.out;
+    output slow_tools = slow_tool_copy.out;
+    // This component deliberately stops before action admission. Provenance is
+    // retained at an explicit terminal audit boundary for an embedding graph.
+    output fast_action_provenance_audit = fast_action_join.provenance;
+    output slow_action_provenance_audit = slow_action_join.provenance;
+    output fast_action_join_outcome = fast_action_join.outcome;
+    output slow_action_join_outcome = slow_action_join.outcome;
+    output fast_action_join_resolution = fast_action_join.resolved;
+    output slow_action_join_resolution = slow_action_join.resolved;
     output fast_model_outcome = fast_outcome_copy.out;
     output slow_model_outcome = slow_outcome_copy.out;
     output fast_model_resolution = fast_model.resolved;

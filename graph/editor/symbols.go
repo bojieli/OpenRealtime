@@ -152,7 +152,7 @@ func sourceSpan(positions sourcePositions, start, end int) (syntax.Span, error) 
 }
 
 func (document *Document) symbolAt(cursor Cursor) (symbol, error) {
-	if !document.parsed || !document.canonical {
+	if document == nil || !document.parsed || !document.canonical {
 		return symbol{}, ErrSyntaxUnavailable
 	}
 	if err := document.validateCursor(cursor); err != nil {
@@ -217,7 +217,7 @@ func (document *Document) CompleteElements(cursor Cursor) (CompletionList, error
 // require an already-valid element token, so an LSP may use it while the user
 // is creating a new node declaration.
 func (document *Document) ElementCompletions(cursor Cursor, prefix string) (CompletionList, error) {
-	if !document.parsed || !document.canonical {
+	if !document.languageSnapshotAvailable() {
 		return CompletionList{}, ErrSyntaxUnavailable
 	}
 	if err := document.validateCursor(cursor); err != nil {
@@ -246,7 +246,7 @@ func (document *Document) ElementCompletions(cursor Cursor, prefix string) (Comp
 // named port in the requested direction. It is suitable for a partial
 // endpoint before the parser can form an Endpoint AST.
 func (document *Document) NodeCompletions(cursor Cursor, prefix, port string, direction element.Direction) (CompletionList, error) {
-	if !document.parsed || !document.canonical {
+	if !document.languageSnapshotAvailable() {
 		return CompletionList{}, ErrSyntaxUnavailable
 	}
 	if err := document.validateCursor(cursor); err != nil {
@@ -293,7 +293,7 @@ func (document *Document) NodeCompletions(cursor Cursor, prefix, port string, di
 // declared node and requested direction. Unknown/ambiguous nodes yield an
 // empty list; no speculative port is manufactured.
 func (document *Document) PortCompletions(cursor Cursor, node, prefix string, direction element.Direction) (CompletionList, error) {
-	if !document.parsed || !document.canonical {
+	if !document.languageSnapshotAvailable() {
 		return CompletionList{}, ErrSyntaxUnavailable
 	}
 	if err := document.validateCursor(cursor); err != nil {
@@ -466,12 +466,12 @@ func (document *Document) Hover(cursor Cursor) (Hover, error) {
 		contract := NodeConfigContract{
 			ConfigContract: ConfigContract{
 				Artifact: valuesArtifact, Resolved: found, InlineTopologyValues: false,
-				EmptyObjectOnly: found && entry.descriptor.ConfigSchema == "",
+				SchemaStatus: ConfigSchemaUnresolved, Properties: []ValuesPropertyMetadata{},
 			},
 			ValuesPath: "nodes." + value.node,
 		}
 		if found {
-			contract.SchemaReference = entry.descriptor.ConfigSchema
+			contract.ConfigContract = cloneConfigContract(entry.metadata.Config)
 		}
 		hover.Config = &contract
 	}
@@ -483,6 +483,10 @@ func (document *Document) Hover(cursor Cursor) (Hover, error) {
 		}
 	}
 	return cloneHover(hover), nil
+}
+
+func (document *Document) languageSnapshotAvailable() bool {
+	return document != nil && (document.parsed && document.canonical || document.recovered)
 }
 
 func metadataPort(metadata ElementMetadata, name string) (PortMetadata, bool) {
@@ -505,6 +509,7 @@ func cloneHover(value Hover) Hover {
 	}
 	if value.Config != nil {
 		copy := *value.Config
+		copy.ConfigContract = cloneConfigContract(value.Config.ConfigContract)
 		value.Config = &copy
 	}
 	return value

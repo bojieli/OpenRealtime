@@ -18,11 +18,19 @@
       }
     },
     {
+      "reference": "authority.ProvenanceJoin",
+      "identity": {
+        "name": "authority.ProvenanceJoin",
+        "revision": 1,
+        "digest": "sha256:4c6eb489dbeac31b3fbfc93ebd3e44cf4c3f992878b6cbf09acbe0686a672cac"
+      }
+    },
+    {
       "reference": "cognition.TextModel",
       "identity": {
         "name": "cognition.TextModel",
-        "revision": 1,
-        "digest": "sha256:a231f3846c391b07869c84135afacb61e17fd11e5482eab4be8d73142de4012f"
+        "revision": 2,
+        "digest": "sha256:2d2e3e9848fd63da995721c81c5eec6a8fcb969fe69585ad4e96630f31b37f31"
       }
     },
     {
@@ -77,8 +85,8 @@
       "reference": "policy.GenerateOnObservation",
       "identity": {
         "name": "policy.GenerateOnObservation",
-        "revision": 1,
-        "digest": "sha256:4c45180c1dac44fcfb55205807d4d073ec737cfae7eace0d13e09a6f77852394"
+        "revision": 3,
+        "digest": "sha256:7c43ec6bd816082a56a62808573faac2e8949d3c2d594bd348a4d3464fcae5aa"
       }
     },
     {
@@ -101,16 +109,16 @@
       "reference": "state.ObservationCommit",
       "identity": {
         "name": "state.ObservationCommit",
-        "revision": 1,
-        "digest": "sha256:5a0ed9f64ebec584954026daa65af749bee351a3c53fad830d29bdedf5fa416e"
+        "revision": 2,
+        "digest": "sha256:c66bb9dccc83f20e053bf6bdd0289bd46d185718ff0f458c00eca1533bcd5b35"
       }
     },
     {
       "reference": "state.TrajectoryStore",
       "identity": {
         "name": "state.TrajectoryStore",
-        "revision": 1,
-        "digest": "sha256:6d54a1b0d6d2056d8835c6310504ec24e850180a76f4bd68c1d321e67b281758"
+        "revision": 2,
+        "digest": "sha256:b3d813911f931b5e61b6a2edb782ad25a3d4ffe6e256b8a713a1e61c1b2dead7"
       }
     }
   ]

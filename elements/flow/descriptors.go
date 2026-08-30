@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/elements/internal/factoryprofile"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -139,15 +140,27 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if registry == nil {
 		return errors.New("register flow factories: nil registry")
 	}
-	for _, factory := range []element.Factory{
-		teeFactory{}, muxFactory{descriptor: MuxDescriptor()}, muxFactory{descriptor: EventMuxDescriptor()}, dropFactory{descriptor: DropDescriptor()},
-		dropFactory{descriptor: IgnoreInterruptDescriptor()}, latestFactory{},
-	} {
-		if err := registry.RegisterArtifact("", inspect.ArtifactIdentity{
-			ID: flowRuntimeID(factory.Descriptor()), Revision: flowImplementationRevision,
-		}, factory); err != nil {
+	registrations, err := FactoryRegistrations()
+	if err != nil {
+		return err
+	}
+	for _, registration := range registrations {
+		if err := registry.RegisterFactory(registration); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
+	entries := make([]factoryprofile.Entry, 0, len(Descriptors()))
+	for _, factory := range []element.Factory{
+		teeFactory{}, muxFactory{descriptor: MuxDescriptor()}, muxFactory{descriptor: EventMuxDescriptor()}, dropFactory{descriptor: DropDescriptor()},
+		dropFactory{descriptor: IgnoreInterruptDescriptor()}, latestFactory{},
+	} {
+		entries = append(entries, factoryprofile.Entry{Factory: factory, Artifact: inspect.ArtifactIdentity{
+			ID: flowRuntimeID(factory.Descriptor()), Revision: flowImplementationRevision,
+		}})
+	}
+	return factoryprofile.Registrations(entries...)
 }

@@ -2,6 +2,7 @@ package editor
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	graphcompiler "github.com/bojieli/OpenRealtime/graph"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
+	"github.com/bojieli/OpenRealtime/graph/schema"
 	"github.com/bojieli/OpenRealtime/graph/syntax"
 )
 
@@ -35,6 +37,7 @@ type Document struct {
 	limits      Limits
 	file        syntax.File
 	parsed      bool
+	recovered   bool
 	canonical   bool
 	diagnostics []Diagnostic
 	catalog     map[string]catalogEntry
@@ -44,11 +47,33 @@ type Document struct {
 	positions   sourcePositions
 }
 
+// Options controls one immutable language-service analysis snapshot.
+type Options struct {
+	Limits         Limits
+	SchemaResolver schema.Resolver
+	SchemaLimits   schema.Limits
+}
+
 // Analyze captures a stable latest-revision catalog snapshot and analyzes one
 // in-memory .ortg document. Syntax/semantic failures are diagnostics, while
 // invalid API inputs and configured bound violations are returned as errors.
 func Analyze(path string, source []byte, catalog *resolve.Catalog, limits Limits) (*Document, error) {
-	resolved, err := normalizeLimits(limits)
+	return AnalyzeWithOptions(context.Background(), path, source, catalog, Options{Limits: limits})
+}
+
+// AnalyzeWithOptions is the context-aware form used by management services.
+// Schema resolution is optional and its results are captured into the same
+// immutable descriptor snapshot as syntax and diagnostics.
+func AnalyzeWithOptions(
+	ctx context.Context, path string, source []byte, catalog *resolve.Catalog, options Options,
+) (*Document, error) {
+	if ctx == nil {
+		return nil, errors.New("editor analysis requires a context")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("editor analysis canceled: %w", err)
+	}
+	resolved, err := normalizeLimits(options.Limits)
 	if err != nil {
 		return nil, err
 	}
@@ -67,9 +92,37 @@ func Analyze(path string, source []byte, catalog *resolve.Catalog, limits Limits
 		path: path, source: owned, digest: sourceDigest(owned), limits: resolved,
 		catalog: entries, metadata: metadata, positions: newSourcePositions(owned),
 	}
+	if options.SchemaResolver != nil {
+		diagnostics, err := resolveSchemaMetadata(ctx, path, document.catalog, document.metadata,
+			options.SchemaResolver, options.SchemaLimits, resolved)
+		if err != nil {
+			return nil, err
+		}
+		document.diagnostics = append(document.diagnostics, diagnostics...)
+	}
 	file, parseErr := syntax.Parse(path, owned)
 	if parseErr != nil {
-		document.diagnostics = []Diagnostic{syntaxDiagnostic(path, parseErr)}
+		recovery, recoveryErr := syntax.Recover(path, owned, syntax.RecoveryLimits{
+			MaxSourceBytes: resolved.MaxSourceBytes,
+			MaxTokens:      min(max(131_072, resolved.MaxGraphStatements*16), 1<<20),
+			MaxStatements:  resolved.MaxGraphStatements, MaxDiagnostics: min(resolved.MaxResultItems, 65_536),
+		})
+		if recoveryErr != nil {
+			return nil, fmt.Errorf("editor recover topology: %w", recoveryErr)
+		}
+		document.file = recovery.File
+		document.recovered = true
+		document.nodes = buildRecoveredNodeIndex(recovery.File)
+		for _, failure := range recovery.Diagnostics {
+			document.diagnostics = append(document.diagnostics, Diagnostic{
+				Code: "E_SYNTAX", Severity: SeverityError, Path: failure.Path,
+				Span: failure.Span, Message: failure.Message,
+			})
+		}
+		if len(recovery.Diagnostics) == 0 {
+			document.diagnostics = append(document.diagnostics, syntaxDiagnostic(path, parseErr))
+		}
+		sortDiagnostics(document.diagnostics)
 		return document, nil
 	}
 	document.file = file
@@ -107,6 +160,7 @@ func Analyze(path string, source []byte, catalog *resolve.Catalog, limits Limits
 func (document *Document) Path() string         { return document.path }
 func (document *Document) SourceDigest() string { return document.digest }
 func (document *Document) Parsed() bool         { return document.parsed }
+func (document *Document) Recovered() bool      { return document.recovered }
 func (document *Document) Canonical() bool      { return document.canonical }
 
 func (document *Document) Source() []byte { return slices.Clone(document.source) }
@@ -169,6 +223,9 @@ func normalizeLimits(value Limits) (Limits, error) {
 		{"max_result_items", &value.MaxResultItems, defaults.MaxResultItems, 65536},
 		{"max_rename_edits", &value.MaxRenameEdits, defaults.MaxRenameEdits, 1 << 20},
 		{"max_identifier_bytes", &value.MaxIdentifierBytes, defaults.MaxIdentifierBytes, 4096},
+		{"max_resolved_schema_bytes", &value.MaxResolvedSchemaBytes, defaults.MaxResolvedSchemaBytes, 16 << 20},
+		{"max_total_resolved_schema_bytes", &value.MaxTotalResolvedSchemaBytes, defaults.MaxTotalResolvedSchemaBytes, 64 << 20},
+		{"max_schema_properties", &value.MaxSchemaProperties, defaults.MaxSchemaProperties, 65_536},
 	}
 	for _, field := range fields {
 		if *field.set == 0 {
@@ -179,6 +236,20 @@ func normalizeLimits(value Limits) (Limits, error) {
 		}
 	}
 	return value, nil
+}
+
+func buildRecoveredNodeIndex(file syntax.File) map[string]nodeRecord {
+	nodes := make(map[string]nodeRecord)
+	for _, node := range file.Graph.Nodes() {
+		record, duplicate := nodes[node.Name]
+		if duplicate {
+			record.ambiguous = true
+			nodes[node.Name] = record
+			continue
+		}
+		nodes[node.Name] = nodeRecord{name: node.Name, element: node.Element}
+	}
+	return nodes
 }
 
 func snapshotCatalog(catalog *resolve.Catalog, limits Limits) (map[string]catalogEntry, []ElementMetadata, error) {
@@ -352,6 +423,14 @@ func metadataFromDescriptor(descriptor element.Descriptor, identity element.Iden
 		Config: ConfigContract{
 			Artifact: valuesArtifact, Resolved: true, SchemaReference: descriptor.ConfigSchema,
 			InlineTopologyValues: false, EmptyObjectOnly: descriptor.ConfigSchema == "",
+			SchemaStatus: func() ConfigSchemaStatus {
+				if descriptor.ConfigSchema == "" {
+					return ConfigSchemaEmpty
+				}
+				return ConfigSchemaUnresolved
+			}(),
+			PropertiesComplete: descriptor.ConfigSchema == "",
+			Properties:         []ValuesPropertyMetadata{},
 		},
 		Dependencies:         slices.Clone(descriptor.Dependencies),
 		Effects:              slices.Clone(descriptor.Effects),
@@ -452,6 +531,25 @@ func cloneElementMetadata(value ElementMetadata) ElementMetadata {
 	value.Reaction.Outcomes = slices.Clone(value.Reaction.Outcomes)
 	value.Dependencies = slices.Clone(value.Dependencies)
 	value.Effects = slices.Clone(value.Effects)
+	value.Config = cloneConfigContract(value.Config)
+	return value
+}
+
+func cloneConfigContract(value ConfigContract) ConfigContract {
+	value.AdditionalProperties = slices.Clone(value.AdditionalProperties)
+	properties := value.Properties
+	value.Properties = make([]ValuesPropertyMetadata, len(properties))
+	for index, property := range properties {
+		property.Types = slices.Clone(property.Types)
+		property.Default = slices.Clone(property.Default)
+		property.Schema = slices.Clone(property.Schema)
+		values := property.Enum
+		property.Enum = make([]json.RawMessage, len(values))
+		for enumIndex := range values {
+			property.Enum[enumIndex] = slices.Clone(values[enumIndex])
+		}
+		value.Properties[index] = property
+	}
 	return value
 }
 

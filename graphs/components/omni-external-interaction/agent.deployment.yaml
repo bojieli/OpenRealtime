@@ -1,0 +1,3 @@
+apiVersion: openrealtime.ai/deployment/v1alpha1
+graph: omni_external_interaction
+nodes: {}

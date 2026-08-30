@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/elements/internal/factoryprofile"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -27,7 +28,17 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 	if registry == nil {
 		return errors.New("register ingress factories: nil registry")
 	}
-	return registry.RegisterArtifact("", inspect.ArtifactIdentity{
-		ID: userContentRuntimeID, Revision: ingressImplementationRev,
-	}, userContentFactory{})
+	registrations, err := FactoryRegistrations()
+	if err != nil {
+		return err
+	}
+	return registry.RegisterFactory(registrations[0])
+}
+
+func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
+	return factoryprofile.Registrations(factoryprofile.Entry{
+		Factory: userContentFactory{}, Artifact: inspect.ArtifactIdentity{
+			ID: userContentRuntimeID, Revision: ingressImplementationRev,
+		},
+	})
 }

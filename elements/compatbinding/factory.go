@@ -45,6 +45,13 @@ func (Factory) Mount(ctx context.Context, mount element.MountContext) (element.R
 	if !reflect.DeepEqual(config, want) {
 		return nil, fmt.Errorf("compatibility binding identity config %+v does not match live binding %+v", config, want)
 	}
+	// The coarse compatibility element selects no descriptor-level provider
+	// capabilities. Reporting the complete empty set is live evidence; leaving
+	// it unknown would make payload-free trace attestation fail closed even
+	// though the registered runtime artifact is exact.
+	if err := mount.Resolution.Capabilities(nil); err != nil {
+		return nil, fmt.Errorf("report compatibility binding capabilities: %w", err)
+	}
 	output, err := mount.Ports.Output("events")
 	if err != nil {
 		return nil, err
