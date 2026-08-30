@@ -3,6 +3,7 @@ package graphs_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	scenarioconversation "github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation"
@@ -24,6 +26,7 @@ import (
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	"github.com/bojieli/OpenRealtime/graphs"
+	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
 	openrealtime "github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	serverplugin "github.com/bojieli/OpenRealtime/server"
@@ -64,7 +67,7 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 		}, want: "fingerprint differs"},
 		{name: "unsupported mode", mutate: func(config *scenarioconversation.PluginConfig) {
 			config.Architecture = unsupported
-		}, want: "not an exactly attested predicate controller"},
+		}, want: "not the exact composed semantic-policy controller"},
 	}
 	for _, test := range pluginArchitectureTests {
 		t.Run("plugin architecture "+test.name, func(t *testing.T) {
@@ -183,12 +186,18 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 				t.Fatal(resolveErr)
 			}
 			config.Architecture = definition.Identity()
-		}), want: "not an exactly attested predicate controller"},
+		}), want: "not the exact composed semantic-policy controller"},
 		{name: "ASR missing", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
 			config.ASR.Reference = "asr://test/uninstalled"
 		}), want: "ASR registry is missing"},
 		{name: "ASR artifact drift", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
 			config.ASR.Artifact.Revision = "build:drift"
+		}), want: "artifact or descriptor drifted"},
+		{name: "semantic policy missing", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
+			config.Policy.Reference = "policy://test/uninstalled"
+		}), want: "semantic policy registry is missing"},
+		{name: "semantic policy descriptor drift", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
+			config.Policy.Descriptor.Model = "drifted-policy"
 		}), want: "artifact or descriptor drifted"},
 		{name: "model descriptor drift", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
 			config.Model.Descriptor.Model = "drifted"
@@ -196,6 +205,14 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 		{name: "model authority escalation", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
 			config.Model.Descriptor.ToolAuthority = continuation.ToolAuthorityExecute
 		}), want: "proposal-only"},
+		{name: "silent model gains voice authority", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
+			config.SilentModel.Descriptor.SpeechAuthority = continuation.SpeechAuthorityVoice
+		}), want: "silent-authoritative"},
+		{name: "silent model uses another provider artifact", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
+			config.SilentModel.Artifact = inspect.ArtifactIdentity{
+				ID: "plugin://test/scenario/other-model", Revision: "build:1",
+			}
+		}), want: "artifact or descriptor drifted"},
 		{name: "TTS voice drift", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
 			config.TTS.Voice = "different-voice"
 		}), want: "voice drifted"},
@@ -366,15 +383,20 @@ func TestScenarioConversationGraphOwnsPostCommitFifteenSecondSilenceWakeup(t *te
 		{"audio_commit_outcome_copy", "out", "post_commit_silence", "committed"},
 		{"message_commit_outcome_copy", "out", "post_commit_silence", "committed"},
 		{"trajectory_snapshot_copy", "out", "post_commit_silence", "context"},
-		{"post_commit_silence", "create", "response_create_mux", "in"},
-		{"response_create_mux", "out", "session_invocation", "create"},
+		{"post_commit_silence", "create", "semantic_admission", "quiet"},
+		{"semantic_admission", "voice_create", "voice_session_invocation", "create"},
+		{"semantic_admission", "silent_create", "silent_session_invocation", "create"},
 	} {
 		if !scenarioGraphHasEdge(graph, edge[0], edge[1], edge[2], edge[3]) {
 			t.Fatalf("scenario graph omits timer edge %s.%s -> %s.%s", edge[0], edge[1], edge[2], edge[3])
 		}
 	}
+	if scenarioGraphHasEdge(graph,
+		"message_commit_outcome_copy", "out", "semantic_admission", "committed") {
+		t.Fatal("conversation.item.create bypasses explicit response.create through automatic semantic admission")
+	}
 	for name, endpoint := range map[string]ir.Endpoint{
-		"response_create":             {Node: "response_create_mux", Port: "in"},
+		"response_create":             {Node: "semantic_admission", Port: "create"},
 		"post_commit_silence_state":   {Node: "post_commit_silence", Port: "state"},
 		"post_commit_silence_outcome": {Node: "post_commit_silence", Port: "outcome"},
 	} {
@@ -406,6 +428,50 @@ func TestScenarioConversationGraphOwnsPostCommitFifteenSecondSilenceWakeup(t *te
 		t.Fatalf("scenario post-commit silence delay = %dms, want 15000ms", timerConfig.DelayMS)
 	}
 	assertScenarioFactoriesUnopened(t, fixture)
+}
+
+func TestScenarioConversationGraphTerminatesSilentTextBeforeSpeech(t *testing.T) {
+	fixture := newScenarioProfileFixture(t)
+	config, err := graphs.ScenarioConversationLaunchConfig(fixture.pluginConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := graphlaunch.New(context.Background(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph := preview.Plan.Graph()
+	for _, edge := range [][4]string{
+		{"semantic_admission", "silent_committed", "silent_session_invocation", "committed"},
+		{"semantic_admission", "silent_create", "silent_session_invocation", "create"},
+		{"silent_session_invocation", "trigger", "silent_model", "trigger"},
+		{"silent_model", "text", "silent_model_text_drop", "in"},
+		{"voice_model", "text", "model_text_copy", "in"},
+		{"voice_model_outcome_copy", "out", "segment", "terminal"},
+	} {
+		if !scenarioGraphHasEdge(graph, edge[0], edge[1], edge[2], edge[3]) {
+			t.Fatalf("scenario graph omits authority edge %s.%s -> %s.%s",
+				edge[0], edge[1], edge[2], edge[3])
+		}
+	}
+	for _, forbidden := range [][4]string{
+		{"silent_model", "text", "model_text_copy", "in"},
+		{"silent_model", "text", "segment", "text"},
+		{"silent_model", "outcome", "segment", "terminal"},
+		{"message_commit_outcome_copy", "out", "semantic_admission", "committed"},
+	} {
+		if scenarioGraphHasEdge(graph, forbidden[0], forbidden[1], forbidden[2], forbidden[3]) {
+			t.Fatalf("silent/text authority escaped through %s.%s -> %s.%s",
+				forbidden[0], forbidden[1], forbidden[2], forbidden[3])
+		}
+	}
+	for _, node := range graph.Nodes {
+		if node.ID == "silent_model_text_drop" && node.Element.Name == "flow.Drop" {
+			assertScenarioFactoriesUnopened(t, fixture)
+			return
+		}
+	}
+	t.Fatal("scenario graph has no descriptor-locked terminal drop for silent model text")
 }
 
 func scenarioGraphHasEdge(graph ir.Graph, fromNode, fromPort, toNode, toPort string) bool {
@@ -511,7 +577,7 @@ type scenarioProfileFixture struct {
 
 func newScenarioProfileFixture(t testing.TB) scenarioProfileFixture {
 	t.Helper()
-	architecture, err := projectarch.Default().Resolve("cascade.controlled@3")
+	architecture, err := projectarch.Default().Resolve("cascade.composed-policy@1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -533,6 +599,13 @@ func newScenarioProfileFixture(t testing.TB) scenarioProfileFixture {
 			SpeechAuthority: continuation.SpeechAuthorityVoice,
 		},
 	}
+	silentModelSelection := modelSelection
+	silentModelSelection.Reference = "model://test/scenario/silent/v1"
+	silentModelSelection.Descriptor.SpeechAuthority = continuation.SpeechAuthoritySilent
+	policySelection := scenarioconversation.ApplicationPolicySelection{
+		Reference: "policy://test/scenario/v1", Artifact: artifact("policy"),
+		Descriptor: testScenarioSemanticDescriptor(),
+	}
 	ttsSelection := scenarioconversation.ApplicationTTSSelection{
 		Reference: "tts://test/scenario/v1", Artifact: artifact("tts"), Voice: "scenario-voice",
 		Descriptor: v1.Descriptor{Name: "scenario-tts", Version: "1", Capabilities: v1.Capabilities{
@@ -542,7 +615,8 @@ func newScenarioProfileFixture(t testing.TB) scenarioProfileFixture {
 	application := scenarioconversation.ApplicationConfig{
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
 		Architecture:  architecture.Identity(),
-		ASR:           asrSelection, Model: modelSelection, TTS: ttsSelection,
+		ASR:           asrSelection, Policy: policySelection, Model: modelSelection,
+		SilentModel: silentModelSelection, TTS: ttsSelection,
 		Tools: []scenarioconversation.ToolDeclaration{{
 			Name: "lookup.weather", Description: "Look up weather.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`),
@@ -569,8 +643,20 @@ func newScenarioProfileFixture(t testing.TB) scenarioProfileFixture {
 				return nil, nil
 			},
 		}},
+		Policies: []scenarioconversation.PolicyFactoryRegistration{{
+			ApplicationPolicySelection: policySelection,
+			Factory: func(context.Context, legacy.Options) (policyelements.SemanticDecider, error) {
+				return testScenarioSemanticDecider{}, nil
+			},
+		}},
 		Models: []scenarioconversation.ModelFactoryRegistration{{
 			ApplicationModelSelection: modelSelection,
+			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
+				modelOpened.Add(1)
+				return nil, nil
+			},
+		}, {
+			ApplicationModelSelection: silentModelSelection,
 			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
 				modelOpened.Add(1)
 				return nil, nil
@@ -600,9 +686,17 @@ func (fixture scenarioProfileFixture) pluginConfig() scenarioconversation.Plugin
 			Reference: scenarioconversation.ASRReference, Artifact: fixture.application.ASR.Artifact,
 			Descriptor: fixture.application.ASR.Descriptor, Factory: fixture.registration.ASR[0].Factory,
 		},
+		Policy: scenarioconversation.PolicyPlugin{
+			Reference: scenarioconversation.PolicyReference, Artifact: fixture.application.Policy.Artifact,
+			Descriptor: fixture.application.Policy.Descriptor, Factory: fixture.registration.Policies[0].Factory,
+		},
 		Model: scenarioconversation.ModelPlugin{
 			Reference: scenarioconversation.ModelReference, Artifact: fixture.application.Model.Artifact,
 			Descriptor: fixture.application.Model.Descriptor, Factory: fixture.registration.Models[0].Factory,
+		},
+		SilentModel: scenarioconversation.ModelPlugin{
+			Reference: scenarioconversation.SilentModelReference, Artifact: fixture.application.SilentModel.Artifact,
+			Descriptor: fixture.application.SilentModel.Descriptor, Factory: fixture.registration.Models[1].Factory,
 		},
 		TTS: scenarioconversation.TTSPlugin{
 			Reference: scenarioconversation.TTSReference, Artifact: fixture.application.TTS.Artifact,
@@ -617,6 +711,31 @@ func (fixture scenarioProfileFixture) pluginConfig() scenarioconversation.Plugin
 			SpeechDurationMS:  fixture.application.Gate.SpeechDurationMS,
 		},
 		Media: fixture.application.Media, MaxOutputTokens: fixture.application.MaxOutputTokens,
+	}
+}
+
+type testScenarioSemanticDecider struct{}
+
+func (testScenarioSemanticDecider) Name() string { return "test-scenario-semantic" }
+func (testScenarioSemanticDecider) Descriptor() policyelements.SemanticDeciderDescriptor {
+	return testScenarioSemanticDescriptor()
+}
+func (testScenarioSemanticDecider) Decide(
+	_ context.Context, decision coreinteraction.Decision,
+) (coreinteraction.Outcome, error) {
+	for index, option := range decision.Options {
+		if option == string(coreinteraction.ActAnswer) {
+			return coreinteraction.Outcome{Index: index, Option: option}, nil
+		}
+	}
+	return coreinteraction.Outcome{}, errors.New("answer act is unavailable")
+}
+
+func testScenarioSemanticDescriptor() policyelements.SemanticDeciderDescriptor {
+	return policyelements.SemanticDeciderDescriptor{
+		Provider: "test", Model: "scenario-policy", Protocol: "test-enumerated",
+		Revision: "1", ConfigurationDigest: "sha256:" + strings.Repeat("0", 64),
+		DecisionTimeoutMS: 1000,
 	}
 }
 

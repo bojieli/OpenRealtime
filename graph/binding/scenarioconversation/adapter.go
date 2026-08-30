@@ -59,6 +59,10 @@ const (
 	mediaResolvedBoundary               = "media_resolved"
 	mediaLeaseReturnedBoundary          = "media_lease_returned"
 	messageCommitBoundary               = "message_commit_outcome"
+	semanticDecisionBoundary            = "semantic_decision"
+	semanticAdmissionStateBoundary      = "semantic_admission_state"
+	semanticAdmissionOutcomeBoundary    = "semantic_admission_outcome"
+	semanticPolicyResolutionBoundary    = "semantic_policy_resolution"
 	invocationOutcomeBoundary           = "invocation_outcome"
 	dispatchCommitBoundary              = "dispatch_commit"
 	canonicalResultBoundary             = "canonical_result"
@@ -237,6 +241,10 @@ func validateAdapterBoundaryTypes(graph ir.Graph) (map[string]ir.Boundary, error
 		mediaResolvedBoundary:               {ir.OutputBoundary, mediaelements.ResolvedAttachmentType()},
 		mediaLeaseReturnedBoundary:          {ir.OutputBoundary, mediaelements.ReturnLeaseResultType()},
 		messageCommitBoundary:               {ir.OutputBoundary, stateelements.ObservationCommitOutcomeType()},
+		semanticDecisionBoundary:            {ir.OutputBoundary, policyelements.SemanticDecisionType()},
+		semanticAdmissionStateBoundary:      {ir.OutputBoundary, policyelements.SemanticAdmissionStateType()},
+		semanticAdmissionOutcomeBoundary:    {ir.OutputBoundary, policyelements.SemanticAdmissionOutcomeType()},
+		semanticPolicyResolutionBoundary:    {ir.OutputBoundary, policyelements.SemanticDeciderResolutionType()},
 		invocationOutcomeBoundary:           {ir.OutputBoundary, policyelements.SessionInvocationOutcomeType()},
 		dispatchCommitBoundary:              {ir.OutputBoundary, actionelements.CommittedType()},
 		canonicalResultBoundary:             {ir.OutputBoundary, actionelements.CanonicalResultType()},
@@ -317,22 +325,26 @@ func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
 	}{
 		{cognitionelements.MediaResolverService, config.DependencyArtifact},
 		{stateelements.TrajectoryStoreService, config.DependencyArtifact},
+		{policyelements.SemanticDeciderRegistryService, config.Policy.Artifact},
 	} {
 		if err := validateSelectedScenarioDependency(plan, selected.name, selected.artifact); err != nil {
 			return err
 		}
 	}
 	wanted := map[string]map[string]string{
-		"asr":                {"provider": ASRReference},
-		"model":              {"provider": ModelReference},
-		"tool_lookup":        {"registry": ToolReference},
-		"confirmation":       {"provider": ConfirmationReference},
-		"target_fence":       {"target": TargetReference},
-		"ledger_commit":      {"ledger": LedgerReference},
-		"dispatch":           {"registry": ToolReference, "ledger": LedgerReference},
-		"tts":                {"provider": TTSReference},
-		"playback":           {"sink": PlaybackReference},
-		"session_invocation": {"role": "foreground"},
+		"asr":                       {"provider": ASRReference},
+		"semantic_admission":        {"decider": PolicyReference},
+		"voice_model":               {"provider": ModelReference},
+		"silent_model":              {"provider": SilentModelReference},
+		"tool_lookup":               {"registry": ToolReference},
+		"confirmation":              {"provider": ConfirmationReference},
+		"target_fence":              {"target": TargetReference},
+		"ledger_commit":             {"ledger": LedgerReference},
+		"dispatch":                  {"registry": ToolReference, "ledger": LedgerReference},
+		"tts":                       {"provider": TTSReference},
+		"playback":                  {"sink": PlaybackReference},
+		"voice_session_invocation":  {"role": "foreground"},
+		"silent_session_invocation": {"role": "silent"},
 	}
 	values := plan.Values()
 	for node, fields := range wanted {
@@ -686,6 +698,8 @@ func (session *session) runOutput(ctx context.Context, name string, port element
 			err = session.bundle.media.AcceptLeaseReturned(envelope)
 		case messageCommitBoundary:
 			err = session.acceptMessageCommit(envelope)
+		case semanticAdmissionOutcomeBoundary:
+			err = session.acceptSemanticAdmissionOutcome(ctx, envelope)
 		case invocationOutcomeBoundary:
 			err = session.acceptInvocationOutcome(envelope)
 		case dispatchCommitBoundary:

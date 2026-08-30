@@ -12,6 +12,7 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	perceptionelements "github.com/bojieli/OpenRealtime/elements/perception"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/perception"
@@ -19,11 +20,11 @@ import (
 )
 
 func TestPluginInventoryIsResourceFreeAndPinsProviderDependencies(t *testing.T) {
-	architecture, err := projectarch.Default().Resolve("cascade.controlled@3")
+	architecture, err := projectarch.Default().Resolve("cascade.composed-policy@1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var asrOpened, modelOpened, ttsOpened atomic.Int32
+	var asrOpened, policyOpened, modelOpened, ttsOpened atomic.Int32
 	artifact := func(name string) inspect.ArtifactIdentity {
 		return inspect.ArtifactIdentity{ID: "plugin://test/" + name, Revision: "build:1"}
 	}
@@ -38,6 +39,18 @@ func TestPluginInventoryIsResourceFreeAndPinsProviderDependencies(t *testing.T) 
 				return nil, nil
 			},
 		},
+		Policy: PolicyPlugin{
+			Reference: PolicyReference, Artifact: artifact("policy"),
+			Descriptor: policyelements.SemanticDeciderDescriptor{
+				Provider: "test", Model: "test-policy", Protocol: "test-enumerated", Revision: "1",
+				ConfigurationDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+				DecisionTimeoutMS:   1000,
+			},
+			Factory: func(context.Context, legacy.Options) (policyelements.SemanticDecider, error) {
+				policyOpened.Add(1)
+				return nil, nil
+			},
+		},
 		Model: ModelPlugin{
 			Reference: ModelReference, Artifact: artifact("model"),
 			Descriptor: continuation.Descriptor{
@@ -45,6 +58,19 @@ func TestPluginInventoryIsResourceFreeAndPinsProviderDependencies(t *testing.T) 
 				Effort: continuation.EffortLow, Streaming: true,
 				ToolAuthority:   continuation.ToolAuthorityPropose,
 				SpeechAuthority: continuation.SpeechAuthorityVoice,
+			},
+			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
+				modelOpened.Add(1)
+				return nil, nil
+			},
+		},
+		SilentModel: ModelPlugin{
+			Reference: SilentModelReference, Artifact: artifact("model"),
+			Descriptor: continuation.Descriptor{
+				Provider: "test", Model: "test-model", Phase: trajectory.PhaseFast,
+				Effort: continuation.EffortLow, Streaming: true,
+				ToolAuthority:   continuation.ToolAuthorityPropose,
+				SpeechAuthority: continuation.SpeechAuthoritySilent,
 			},
 			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
 				modelOpened.Add(1)
@@ -78,6 +104,7 @@ func TestPluginInventoryIsResourceFreeAndPinsProviderDependencies(t *testing.T) 
 	wantProvider := map[string]inspect.ArtifactIdentity{
 		cognitionelements.ProviderRegistryService:     config.Model.Artifact,
 		perceptionelements.ASRProviderRegistryService: config.ASR.Artifact,
+		policyelements.SemanticDeciderRegistryService: config.Policy.Artifact,
 		speechelements.TTSProviderRegistryService:     config.TTS.Artifact,
 	}
 	for index, dependency := range assembly {
@@ -90,8 +117,8 @@ func TestPluginInventoryIsResourceFreeAndPinsProviderDependencies(t *testing.T) 
 				dependency.Name, dependency.Artifact, mount[index].Artifact, want)
 		}
 	}
-	if asrOpened.Load() != 0 || modelOpened.Load() != 0 || ttsOpened.Load() != 0 {
-		t.Fatalf("resource-free inventory opened providers: asr=%d model=%d tts=%d",
-			asrOpened.Load(), modelOpened.Load(), ttsOpened.Load())
+	if asrOpened.Load() != 0 || policyOpened.Load() != 0 || modelOpened.Load() != 0 || ttsOpened.Load() != 0 {
+		t.Fatalf("resource-free inventory opened providers: asr=%d policy=%d model=%d tts=%d",
+			asrOpened.Load(), policyOpened.Load(), modelOpened.Load(), ttsOpened.Load())
 	}
 }

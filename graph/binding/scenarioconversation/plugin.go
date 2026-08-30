@@ -15,6 +15,7 @@ import (
 	actionelements "github.com/bojieli/OpenRealtime/elements/action"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	perceptionelements "github.com/bojieli/OpenRealtime/elements/perception"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
@@ -36,6 +37,7 @@ var dependencyNames = []string{
 	cognitionelements.MediaResolverService,
 	cognitionelements.ProviderRegistryService,
 	perceptionelements.ASRProviderRegistryService,
+	policyelements.SemanticDeciderRegistryService,
 	speechelements.IrreversibilityLedgerService,
 	speechelements.PlaybackSinkRegistryService,
 	speechelements.TTSProviderRegistryService,
@@ -133,6 +135,8 @@ func (plugin *Plugin) dependencyArtifact(name string) inspect.ArtifactIdentity {
 	switch name {
 	case cognitionelements.ProviderRegistryService:
 		return plugin.config.Model.Artifact
+	case policyelements.SemanticDeciderRegistryService:
+		return plugin.config.Policy.Artifact
 	case perceptionelements.ASRProviderRegistryService:
 		return plugin.config.ASR.Artifact
 	case speechelements.TTSProviderRegistryService:
@@ -169,6 +173,19 @@ func newSessionBundle(
 	providers := cognitionelements.NewProviderRegistry()
 	if err := providers.Register(ModelReference, config.Model.Descriptor, func() (continuation.Provider, error) {
 		return config.Model.Factory(ctx, options)
+	}); err != nil {
+		mediaBridge.Close(err)
+		return nil, err
+	}
+	if err := providers.Register(SilentModelReference, config.SilentModel.Descriptor, func() (continuation.Provider, error) {
+		return config.SilentModel.Factory(ctx, options)
+	}); err != nil {
+		mediaBridge.Close(err)
+		return nil, err
+	}
+	semanticDeciders := policyelements.NewSemanticDeciderRegistry()
+	if err := semanticDeciders.Register(PolicyReference, config.Policy.Descriptor, func() (policyelements.SemanticDecider, error) {
+		return config.Policy.Factory(ctx, options)
 	}); err != nil {
 		mediaBridge.Close(err)
 		return nil, err
@@ -236,6 +253,7 @@ func newSessionBundle(
 		cognitionelements.MediaResolverService:           continuation.MediaResolver(mediaBridge.Resolve),
 		cognitionelements.ProviderRegistryService:        providers,
 		perceptionelements.ASRProviderRegistryService:    asrProviders,
+		policyelements.SemanticDeciderRegistryService:    semanticDeciders,
 		speechelements.IrreversibilityLedgerService:      speechLedger,
 		speechelements.PlaybackSinkRegistryService:       playback,
 		speechelements.TTSProviderRegistryService:        ttsProviders,

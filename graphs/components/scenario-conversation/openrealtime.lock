@@ -114,6 +114,14 @@
       }
     },
     {
+      "reference": "flow.Drop",
+      "identity": {
+        "name": "flow.Drop",
+        "revision": 1,
+        "digest": "sha256:03b27e94e4488594bce430b7deb5b27f0a42f6bebf69dd613ed98d742426aa7d"
+      }
+    },
+    {
       "reference": "flow.Mux",
       "identity": {
         "name": "flow.Mux",
@@ -191,6 +199,14 @@
         "name": "perception.FinalObservationGate",
         "revision": 1,
         "digest": "sha256:b8b9c866c22e87c847a1ec6c5c36ee490bdb3438a8f98a510a603c13bf748036"
+      }
+    },
+    {
+      "reference": "policy.SemanticAdmission",
+      "identity": {
+        "name": "policy.SemanticAdmission",
+        "revision": 1,
+        "digest": "sha256:a068aab11d2ff65b28811b80a745dab294cc9e28fb7ef9d55f51e6b165e9efd1"
       }
     },
     {

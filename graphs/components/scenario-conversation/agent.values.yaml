@@ -51,14 +51,30 @@ nodes:
   message_observation_commit:
     revision_namespace: message
   trajectory: {}
-  session_invocation:
+  semantic_admission:
+    decider: deployment.scenario-conversation.semantic-policy
+    recent_lines: 12
+    max_pending: 64
+    terminal_memory: 512
+    cancel_memory: 256
+  voice_session_invocation:
     role: foreground
+    terminal_memory: 512
+    cancel_memory: 256
+  silent_session_invocation:
+    role: silent
     terminal_memory: 512
     cancel_memory: 256
   post_commit_silence:
     delay_ms: 15000
-  model:
+  voice_model:
     provider: deployment.scenario-conversation.model
+    retain_reasoning: false
+    max_output_bytes: 4194304
+    max_events: 65536
+    max_tool_proposals: 1024
+  silent_model:
+    provider: deployment.scenario-conversation.model-silent
     retain_reasoning: false
     max_output_bytes: 4194304
     max_events: 65536

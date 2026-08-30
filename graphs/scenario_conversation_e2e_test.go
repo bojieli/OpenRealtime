@@ -26,10 +26,12 @@ import (
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	scenarioconversation "github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	"github.com/bojieli/OpenRealtime/graphs"
+	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
 	protocol "github.com/bojieli/OpenRealtime/protocol/openai"
 	openrealtime "github.com/bojieli/OpenRealtime/protocol/openrealtime"
@@ -39,11 +41,12 @@ import (
 )
 
 const (
-	scenarioEndpointModelName = "scenario-conversation-endpoint-test"
-	scenarioEndpointVoice     = "scenario-endpoint-voice"
-	scenarioEndpointTool      = "lookup.weather"
-	scenarioEndpointCallID    = "call_weather_endpoint_1"
-	scenarioEndpointPrompt    = "Follow the exact endpoint scenario instructions."
+	scenarioEndpointModelName    = "scenario-conversation-endpoint-test"
+	scenarioEndpointVoice        = "scenario-endpoint-voice"
+	scenarioEndpointTool         = "lookup.weather"
+	scenarioEndpointCallID       = "call_weather_endpoint_1"
+	scenarioEndpointSilentCallID = "call_weather_silent_endpoint_1"
+	scenarioEndpointPrompt       = "Follow the exact endpoint scenario instructions."
 )
 
 var errScenarioEndpointProvider = errors.New("scripted endpoint provider failure")
@@ -196,8 +199,11 @@ func TestScenarioConversationGraphRoundTripsUnchangedRealtimeEndpoint(t *testing
 	select {
 	case resultEvidence = <-fixture.model.toolResults:
 	case <-time.After(10 * time.Second):
-		t.Fatalf("timed out waiting for canonical tool result; model invocations=%d",
-			fixture.model.invocations.Load())
+		readContext, cancelRead := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		_, wire, wireErr := client.connection.Read(readContext)
+		cancelRead()
+		t.Fatalf("timed out waiting for canonical tool result; model invocations=%d policy decisions=%d next_wire=%s read_error=%v",
+			fixture.model.invocations.Load(), fixture.policy.decisions.Load(), wire, wireErr)
 	}
 	if resultEvidence.CallID != scenarioEndpointCallID || resultEvidence.Name != scenarioEndpointTool ||
 		string(resultEvidence.Output) != `{"ok":true,"temperature_c":21}` {
@@ -275,16 +281,57 @@ func TestScenarioConversationGraphRoundTripsUnchangedRealtimeEndpoint(t *testing
 	assertScenarioEndpointAudio(t, recoveryAudio)
 	recoveryResponse, _ := recoveryAudio["response_id"].(string)
 	client.awaitResponseDone(10*time.Second, recoveryResponse, "completed")
+
+	// A second automatic audio turn deterministically selects act-silently.
+	// Silent cognition may still produce an authorized tool action, but its
+	// text port is graph-terminated before segmentation/TTS/playback.
+	ttsPlansBeforeSilent := fixture.tts.plans.Load()
+	silentEventStart := len(client.received)
+	for index := 0; index < 3; index++ {
+		client.send(map[string]any{
+			"type": "input_audio_buffer.append", "audio": scenarioEndpointTone(2_400),
+		})
+	}
+	for index := 0; index < 5; index++ {
+		client.send(map[string]any{
+			"type": "input_audio_buffer.append", "audio": scenarioEndpointSilence(2_400),
+		})
+	}
+	client.awaitType(5*time.Second, "input_audio_buffer.speech_started")
+	client.awaitType(5*time.Second, "input_audio_buffer.speech_stopped")
+	client.awaitType(5*time.Second, "conversation.item.input_audio_transcription.completed")
+	silentCall := client.awaitType(10*time.Second, "response.function_call_arguments.done")
+	if silentCall["call_id"] != scenarioEndpointSilentCallID ||
+		silentCall["name"] != scenarioEndpointTool {
+		t.Fatalf("silent cognition tool call = %+v", silentCall)
+	}
+	silentResponseID, _ := silentCall["response_id"].(string)
+	client.awaitResponseDone(10*time.Second, silentResponseID, "completed")
 	barrier := scenarioEndpointSessionUpdate()
 	barrier["event_id"] = "evt_final_session_barrier"
 	client.send(barrier)
 	client.awaitType(5*time.Second, "session.updated")
 	client.assertNoResponseOutputAfterDone(t, cancelResponse)
-
-	if fixture.model.invocations.Load() != 6 {
-		t.Fatalf("scenario endpoint model invocations = %d, want 6", fixture.model.invocations.Load())
+	if fixture.tts.plans.Load() != ttsPlansBeforeSilent {
+		t.Fatalf("silent cognition reached TTS: plans moved from %d to %d",
+			ttsPlansBeforeSilent, fixture.tts.plans.Load())
 	}
-	fixture.assertFactories(t, 1)
+	for _, event := range client.received[silentEventStart:] {
+		if event["type"] == "response.output_audio.delta" {
+			t.Fatalf("silent cognition emitted gateway audio: %+v", event)
+		}
+	}
+
+	if fixture.model.invocations.Load() != 7 || fixture.policy.decisions.Load() != 7 {
+		t.Fatalf("scenario endpoint model invocations=%d policy decisions=%d, want 7/7",
+			fixture.model.invocations.Load(), fixture.policy.decisions.Load())
+	}
+	if fixture.asrFactories.Load() != 2 || fixture.policyFactories.Load() != 1 ||
+		fixture.modelFactories.Load() != 2 || fixture.ttsFactories.Load() != 1 {
+		t.Fatalf("scenario endpoint factories ASR=%d policy=%d model=%d TTS=%d, want 2/1/2/1",
+			fixture.asrFactories.Load(), fixture.policyFactories.Load(),
+			fixture.modelFactories.Load(), fixture.ttsFactories.Load())
+	}
 	client.assertBalancedResponseLifecycle(t)
 }
 
@@ -297,7 +344,9 @@ type scenarioEndpointFixture struct {
 	tts             *scenarioEndpointTTS
 	asrFactories    atomic.Int32
 	modelFactories  atomic.Int32
+	policyFactories atomic.Int32
 	ttsFactories    atomic.Int32
+	policy          *scenarioEndpointPolicy
 }
 
 func newScenarioEndpointFixture(t testing.TB) *scenarioEndpointFixture {
@@ -305,6 +354,7 @@ func newScenarioEndpointFixture(t testing.TB) *scenarioEndpointFixture {
 	fixture := &scenarioEndpointFixture{}
 	fixture.asr = &scenarioEndpointASR{}
 	fixture.model = newScenarioEndpointModel()
+	fixture.policy = &scenarioEndpointPolicy{}
 	fixture.tts = newScenarioEndpointTTS()
 	fixture.gatewayArtifact = fixture.artifact("gateway", "1")
 	asrSelection := scenarioconversation.ApplicationASRSelection{
@@ -315,19 +365,27 @@ func newScenarioEndpointFixture(t testing.TB) *scenarioEndpointFixture {
 		Reference: "plugin.test.scenario-endpoint.model.v1", Artifact: fixture.artifact("model", "1"),
 		Descriptor: scenarioEndpointModelDescriptor(),
 	}
+	silentModelSelection := modelSelection
+	silentModelSelection.Reference = "plugin.test.scenario-endpoint.model-silent.v1"
+	silentModelSelection.Descriptor.SpeechAuthority = continuation.SpeechAuthoritySilent
+	policySelection := scenarioconversation.ApplicationPolicySelection{
+		Reference: "plugin.test.scenario-endpoint.policy.v1", Artifact: fixture.artifact("policy", "1"),
+		Descriptor: scenarioEndpointPolicyDescriptor(),
+	}
 	ttsSelection := scenarioconversation.ApplicationTTSSelection{
 		Reference: "plugin.test.scenario-endpoint.tts.v1", Artifact: fixture.artifact("tts", "1"),
 		Descriptor: scenarioEndpointTTSDescriptor(), Voice: scenarioEndpointVoice,
 	}
 	gate := perception.DefaultGateConfig()
-	architecture, err := projectarch.Default().Resolve("cascade.controlled@3")
+	architecture, err := projectarch.Default().Resolve("cascade.composed-policy@1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	fixture.application = scenarioconversation.ApplicationConfig{
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
 		Architecture:  architecture.Identity(),
-		ASR:           asrSelection, Model: modelSelection, TTS: ttsSelection,
+		ASR:           asrSelection, Policy: policySelection, Model: modelSelection,
+		SilentModel: silentModelSelection, TTS: ttsSelection,
 		Tools: []scenarioconversation.ToolDeclaration{{
 			Name: scenarioEndpointTool, Description: "Look up exact weather data.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`),
@@ -359,11 +417,26 @@ func newScenarioEndpointFixture(t testing.TB) *scenarioEndpointFixture {
 				return fixture.asr, nil
 			},
 		}},
+		Policies: []scenarioconversation.PolicyFactoryRegistration{{
+			ApplicationPolicySelection: policySelection,
+			Factory: func(context.Context, legacy.Options) (policyelements.SemanticDecider, error) {
+				fixture.policyFactories.Add(1)
+				return fixture.policy, nil
+			},
+		}},
 		Models: []scenarioconversation.ModelFactoryRegistration{{
 			ApplicationModelSelection: modelSelection,
 			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
 				fixture.modelFactories.Add(1)
 				return fixture.model, nil
+			},
+		}, {
+			ApplicationModelSelection: silentModelSelection,
+			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
+				fixture.modelFactories.Add(1)
+				return scenarioSpeechAuthorityProvider{
+					Provider: fixture.model, descriptor: silentModelSelection.Descriptor,
+				}, nil
 			},
 		}},
 		TTS: []scenarioconversation.TTSFactoryRegistration{{
@@ -385,11 +458,54 @@ func (fixture *scenarioEndpointFixture) artifact(name, revision string) inspect.
 
 func (fixture *scenarioEndpointFixture) assertFactories(t testing.TB, wanted int32) {
 	t.Helper()
-	if fixture.asrFactories.Load() != wanted || fixture.modelFactories.Load() != wanted ||
-		fixture.ttsFactories.Load() != wanted {
-		t.Fatalf("scenario endpoint factories ASR=%d model=%d TTS=%d, want %d each",
-			fixture.asrFactories.Load(), fixture.modelFactories.Load(),
-			fixture.ttsFactories.Load(), wanted)
+	modelWanted, policyWanted := wanted, wanted
+	if wanted > 0 {
+		modelWanted = wanted * 2
+	}
+	if fixture.asrFactories.Load() != wanted || fixture.modelFactories.Load() != modelWanted ||
+		fixture.policyFactories.Load() != policyWanted || fixture.ttsFactories.Load() != wanted {
+		t.Fatalf("scenario endpoint factories ASR=%d policy=%d model=%d TTS=%d, want %d/%d/%d/%d",
+			fixture.asrFactories.Load(), fixture.policyFactories.Load(),
+			fixture.modelFactories.Load(), fixture.ttsFactories.Load(),
+			wanted, policyWanted, modelWanted, wanted)
+	}
+}
+
+type scenarioSpeechAuthorityProvider struct {
+	continuation.Provider
+	descriptor continuation.Descriptor
+}
+
+func (provider scenarioSpeechAuthorityProvider) Descriptor() continuation.Descriptor {
+	return provider.descriptor
+}
+
+type scenarioEndpointPolicy struct{ decisions atomic.Int32 }
+
+func (*scenarioEndpointPolicy) Name() string { return "scenario-endpoint-policy" }
+func (*scenarioEndpointPolicy) Descriptor() policyelements.SemanticDeciderDescriptor {
+	return scenarioEndpointPolicyDescriptor()
+}
+func (policy *scenarioEndpointPolicy) Decide(
+	_ context.Context, decision coreinteraction.Decision,
+) (coreinteraction.Outcome, error) {
+	call := policy.decisions.Add(1)
+	wanted := coreinteraction.ActAnswer
+	if call == 7 {
+		wanted = coreinteraction.ActActSilently
+	}
+	for index, option := range decision.Options {
+		if option == string(wanted) {
+			return coreinteraction.Outcome{Index: index, Option: option}, nil
+		}
+	}
+	return coreinteraction.Outcome{}, fmt.Errorf("%s act is unavailable", wanted)
+}
+
+func scenarioEndpointPolicyDescriptor() policyelements.SemanticDeciderDescriptor {
+	return policyelements.SemanticDeciderDescriptor{
+		Provider: "test", Model: "scenario-endpoint-policy", Protocol: "test-enumerated", Revision: "1",
+		ConfigurationDigest: "sha256:" + strings.Repeat("0", 64), DecisionTimeoutMS: 1000,
 	}
 }
 
@@ -526,6 +642,21 @@ func (provider *scenarioEndpointModel) Continue(
 		return continuation.Completion{}, errScenarioEndpointProvider
 	case 6:
 		return scenarioEndpointSpeak(emit, "Session recovered.")
+	case 7:
+		if err := emit(continuation.Event{
+			Kind: continuation.EventAssistantDelta,
+			Text: "Background reasoning that must never be synthesized.",
+		}); err != nil {
+			return continuation.Completion{}, err
+		}
+		call := trajectory.ToolCall{
+			CallID: scenarioEndpointSilentCallID, Name: scenarioEndpointTool,
+			Arguments: json.RawMessage(`{"city":"Paris"}`),
+		}
+		if err := emit(continuation.Event{Kind: continuation.EventToolCall, ToolCall: &call}); err != nil {
+			return continuation.Completion{}, err
+		}
+		return continuation.Completion{StopReason: "tool_call"}, nil
 	default:
 		return continuation.Completion{}, fmt.Errorf("unexpected endpoint model invocation %d", invocation)
 	}

@@ -19,6 +19,7 @@ import (
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	ingresselements "github.com/bojieli/OpenRealtime/elements/ingress"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
+	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -357,7 +358,7 @@ func (session *session) CreateResponse(ctx context.Context) error {
 	if err := usableContext(ctx, "create scenario conversation response"); err != nil {
 		return err
 	}
-	contextVersion, contextItemID, err := session.responseCreateContext(ctx)
+	committedContext, err := session.responseCreateContext(ctx)
 	if err != nil {
 		return fmt.Errorf("bind scenario conversation response creation: %w", err)
 	}
@@ -371,8 +372,9 @@ func (session *session) CreateResponse(ctx context.Context) error {
 		SourceID: "gateway", OpportunityID: itemID, Sequence: sequence,
 		TraceID: itemID, CancellationScope: session.sessionID,
 		Payload: policyelements.ResponseCreate{
-			ResponseID: itemID, ExpectedContextVersion: &contextVersion,
-			ExpectedContextItemID: contextItemID,
+			ResponseID: itemID, ExpectedContextVersion: &committedContext.Prefix.Version,
+			ExpectedContextItemID: committedContext.StateItemID,
+			CommittedContext:      &committedContext,
 		},
 	}, "send scenario conversation response creation"); err != nil {
 		session.removeOperation(itemID, pending)
@@ -387,20 +389,27 @@ func (session *session) CreateResponse(ctx context.Context) error {
 // policy trigger then carries this exact state identity, so cognition waits
 // for the matching snapshot instead of sampling whichever snapshot it last
 // happened to process.
-func (session *session) responseCreateContext(ctx context.Context) (uint64, string, error) {
+func (session *session) responseCreateContext(
+	ctx context.Context,
+) (stateelements.CommittedContext, error) {
 	required := session.bundle.store.Snapshot().Version
 	for {
 		session.contentMu.Lock()
 		if session.snapshotItemID != "" && session.snapshotVersion >= required {
 			version, itemID := session.snapshotVersion, session.snapshotItemID
 			session.contentMu.Unlock()
-			return version, itemID, nil
+			current := session.bundle.store.Snapshot()
+			prefix, err := trajectory.IdentifyPrefix(current, version)
+			if err != nil {
+				return stateelements.CommittedContext{}, err
+			}
+			return stateelements.CommittedContext{Prefix: prefix, StateItemID: itemID}, nil
 		}
 		changed := session.snapshotChanged
 		session.contentMu.Unlock()
 		select {
 		case <-ctx.Done():
-			return 0, "", context.Cause(ctx)
+			return stateelements.CommittedContext{}, context.Cause(ctx)
 		case <-changed:
 		}
 	}
