@@ -42,8 +42,8 @@ func TestStandardConfigSchemaCatalogCoversEveryFactoryContract(t *testing.T) {
 	if !reflect.DeepEqual(catalog.References(), references) {
 		t.Fatalf("schema references = %v, want %v", catalog.References(), references)
 	}
-	if len(references) != 29 {
-		t.Fatalf("standard config schema count = %d, want 29", len(references))
+	if len(references) != 30 {
+		t.Fatalf("standard config schema count = %d, want 30", len(references))
 	}
 
 	registrations, err := elements.FactoryRegistrations()
@@ -226,7 +226,7 @@ func BenchmarkStandardConfigSchemaCatalog(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if len(catalog.References()) != 27 {
+		if len(catalog.References()) != 30 {
 			b.Fatal("incomplete standard config schema catalog")
 		}
 	}
@@ -302,6 +302,7 @@ func standardValidConfigSamples() map[string]string {
 		"schema://openrealtime/perception/asr-config/v1":                    `{"provider":"asr"}`,
 		"schema://openrealtime/perception/visual-observer-config/v1":        `{"provider":"vision","source":"screen"}`,
 		"schema://openrealtime/policy/generate-on-observation-config/v1":    `{"role":"fast","invocation":{"instruction":"Answer briefly."}}`,
+		"schema://openrealtime/policy/semantic-admission-config/v1":         `{"decider":"semantic-primary"}`,
 		"schema://openrealtime/policy/session-invocation-config/v1":         `{"role":"fast"}`,
 		"schema://openrealtime/speech/playback-config/v1":                   `{"sink":"speaker"}`,
 		"schema://openrealtime/speech/tts-config/v1":                        `{"provider":"tts"}`,
@@ -336,6 +337,7 @@ func standardStructurallyInvalidConfigSamples() map[string]string {
 		"schema://openrealtime/perception/asr-config/v1":                    `{}`,
 		"schema://openrealtime/perception/visual-observer-config/v1":        `{}`,
 		"schema://openrealtime/policy/generate-on-observation-config/v1":    `{}`,
+		"schema://openrealtime/policy/semantic-admission-config/v1":         `{}`,
 		"schema://openrealtime/policy/session-invocation-config/v1":         `{}`,
 		"schema://openrealtime/speech/playback-config/v1":                   `{}`,
 		"schema://openrealtime/speech/tts-config/v1":                        `{}`,
