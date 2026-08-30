@@ -12,6 +12,7 @@ token queue to the decoder and leaves the allocator alone.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import queue
@@ -65,6 +66,85 @@ ENROLMENT = (
     "This is my voice. I sound like this whenever I speak, "
     "in this room and in this conversation."
 )
+
+
+def file_sha256(path):
+    """Return the digest of one exact regular file."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
+
+
+def voice_digests(path):
+    """Bind the complete, flat voice set loaded by this service."""
+    result = {}
+    with os.scandir(path) as entries:
+        for entry in sorted(entries, key=lambda value: value.name):
+            if entry.is_symlink() or not entry.is_file(follow_symlinks=False):
+                raise RuntimeError(f"unsupported voice entry: {entry.name}")
+            result[entry.name] = file_sha256(entry.path)
+    if not result:
+        raise RuntimeError("voice directory is empty")
+    return result
+
+
+def module_root(name):
+    """Resolve the exact imported module implementation used by this process."""
+    if name == "fish_speech":
+        semantic = sys.modules.get("fish_speech.models.text2semantic.inference")
+        decoder = sys.modules.get("fish_speech.models.vqgan.inference")
+        paths = []
+        for module in (semantic, decoder):
+            origin = getattr(module, "__file__", None)
+            if not origin:
+                raise RuntimeError("loaded Fish Speech implementation is unresolved")
+            paths.append(os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.realpath(origin)
+            ))))
+        if len(set(paths)) != 1:
+            raise RuntimeError("loaded Fish Speech implementation is ambiguous")
+        return paths[0]
+    module = sys.modules.get(name)
+    origin = getattr(module, "__file__", None)
+    if not origin:
+        locations = sorted({
+            os.path.realpath(location)
+            for location in getattr(module, "__path__", ())
+            if os.path.isabs(location) and os.path.isdir(location)
+        })
+        if len(locations) != 1:
+            raise RuntimeError(f"runtime module is unresolved: {name}")
+        return locations[0]
+    resolved = os.path.realpath(origin)
+    if os.path.basename(resolved).startswith("__init__."):
+        return os.path.dirname(resolved)
+    return resolved
+
+
+def deployment_identity(arguments, speech):
+    """Describe selections already consumed by the loaded Speech instance."""
+    checkpoint = os.path.realpath(arguments.checkpoint)
+    voices = os.path.realpath(arguments.voices)
+    service = os.path.realpath(__file__)
+    return {
+        "status": "ready",
+        "checkpoint_root": checkpoint,
+        "checkpoint_revision": os.path.basename(checkpoint),
+        "voices_root": voices,
+        "voices": voice_digests(voices),
+        "device": speech.device,
+        "compile_graphs": speech.compile_graphs,
+        "service_path": service,
+        "service_sha256": file_sha256(service),
+        "runtime_executable": os.path.abspath(sys.executable),
+        "working_directory": os.getcwd(),
+        "runtime_modules": {
+            name: module_root(name)
+            for name in ("fish_speech", "soundfile", "torch", "torchaudio")
+        },
+    }
 
 
 def wav_file(pcm, sample_rate=SAMPLE_RATE, channels=1, bits=16):
@@ -234,7 +314,7 @@ def defaults(text):
     }
 
 
-def handler_for(speech):
+def handler_for(speech, deployment):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -317,10 +397,14 @@ def handler_for(speech):
             if self.path.rstrip("/") != "/health":
                 self.send_error(404)
                 return
+            payload = json.dumps(
+                deployment, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
             self.send_response(200)
-            self.send_header("Content-Length", "2")
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
-            self.wfile.write(b"ok")
+            self.wfile.write(payload)
 
     return Handler
 
@@ -339,9 +423,12 @@ def main():
     speech = Speech(arguments.checkpoint, arguments.device, not arguments.no_compile,
                     arguments.voices)
     speech.warm()
+    deployment = deployment_identity(arguments, speech)
     print(f"ready on :{arguments.port} after {time.perf_counter() - started:.1f}s", flush=True)
 
-    ThreadingHTTPServer(("127.0.0.1", arguments.port), handler_for(speech)).serve_forever()
+    ThreadingHTTPServer(
+        ("127.0.0.1", arguments.port), handler_for(speech, deployment)
+    ).serve_forever()
 
 
 if __name__ == "__main__":

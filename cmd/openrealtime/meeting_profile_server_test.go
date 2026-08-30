@@ -32,13 +32,17 @@ func TestMeetingProductionProfileUsesTheSharedAuthenticatedRealtimeServer(t *tes
 
 	executable := meetingProfileExecutable()
 	deployments := meetingProfileDeployments()
+	verifier := &fixtureMeetingDeploymentVerifier{identities: deployments}
 	options := defaultMeetingProfileOptions()
 	options.deployments = deployments
+	options.verifier = verifier
 	frozen, err := freezeProductionMeetingProfile(context.Background(), options, executable)
 	if err != nil {
 		t.Fatal(err)
 	}
-	selected, err := newServeMeetingRegistration(executable, deployments)
+	selected, err := newServeMeetingRegistration(
+		context.Background(), executable, deployments, verifier,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

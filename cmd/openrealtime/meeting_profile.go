@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -56,22 +57,6 @@ const (
 	meetingAdapterArtifactID     = "go://github.com/bojieli/OpenRealtime/meeting/graphnative/session-adapter/v1"
 	meetingRuntimeArtifactID     = "go://github.com/bojieli/OpenRealtime/meeting/graphnative/foreground-runtime/v1"
 	meetingWireArtifactID        = "go://github.com/bojieli/OpenRealtime/meeting/graphnative/foreground-wire/v1"
-
-	meetingModelDeploymentIDEnvironment        = "OPENREALTIME_MEETING_MODEL_DEPLOYMENT_ID"
-	meetingModelDeploymentRevisionEnvironment  = "OPENREALTIME_MEETING_MODEL_DEPLOYMENT_REVISION"
-	meetingModelDeploymentDigestEnvironment    = "OPENREALTIME_MEETING_MODEL_DEPLOYMENT_DIGEST"
-	meetingASRDeploymentIDEnvironment          = "OPENREALTIME_MEETING_ASR_DEPLOYMENT_ID"
-	meetingASRDeploymentRevisionEnvironment    = "OPENREALTIME_MEETING_ASR_DEPLOYMENT_REVISION"
-	meetingASRDeploymentDigestEnvironment      = "OPENREALTIME_MEETING_ASR_DEPLOYMENT_DIGEST"
-	meetingTTSDeploymentIDEnvironment          = "OPENREALTIME_MEETING_TTS_DEPLOYMENT_ID"
-	meetingTTSDeploymentRevisionEnvironment    = "OPENREALTIME_MEETING_TTS_DEPLOYMENT_REVISION"
-	meetingTTSDeploymentDigestEnvironment      = "OPENREALTIME_MEETING_TTS_DEPLOYMENT_DIGEST"
-	meetingVisionDeploymentIDEnvironment       = "OPENREALTIME_MEETING_VISION_DEPLOYMENT_ID"
-	meetingVisionDeploymentRevisionEnvironment = "OPENREALTIME_MEETING_VISION_DEPLOYMENT_REVISION"
-	meetingVisionDeploymentDigestEnvironment   = "OPENREALTIME_MEETING_VISION_DEPLOYMENT_DIGEST"
-	meetingBackgroundDeploymentIDEnvironment   = "OPENREALTIME_MEETING_BACKGROUND_DEPLOYMENT_ID"
-	meetingBackgroundRevisionEnvironment       = "OPENREALTIME_MEETING_BACKGROUND_DEPLOYMENT_REVISION"
-	meetingBackgroundDigestEnvironment         = "OPENREALTIME_MEETING_BACKGROUND_DEPLOYMENT_DIGEST"
 )
 
 type meetingDeploymentIdentities struct {
@@ -80,6 +65,62 @@ type meetingDeploymentIdentities struct {
 	TTS        inspect.ArtifactIdentity `json:"tts"`
 	Vision     inspect.ArtifactIdentity `json:"vision"`
 	Background inspect.ArtifactIdentity `json:"background"`
+}
+
+// meetingDeploymentVerifier is the production proof seam for the provider
+// plug-ins selected by the Meeting application. Resolve derives identities
+// from live backends; Verify binds those opaque proofs to profile freeze,
+// readiness, and session resource creation. Caller-authored identity strings
+// are never treated as deployment evidence.
+type meetingDeploymentVerifier interface {
+	Resolve(context.Context) (meetingDeploymentIdentities, error)
+	Verify(context.Context, meetingDeploymentIdentities) error
+}
+
+type meetingDeploymentComponentVerifier interface {
+	VerifyForeground(context.Context, meetingDeploymentIdentities) error
+	VerifyVision(context.Context, meetingDeploymentIdentities) error
+	VerifyBackground(context.Context, meetingDeploymentIdentities) error
+}
+
+func verifyMeetingForegroundDeployments(
+	ctx context.Context, verifier meetingDeploymentVerifier, expected meetingDeploymentIdentities,
+) error {
+	if components, ok := verifier.(meetingDeploymentComponentVerifier); ok {
+		return components.VerifyForeground(ctx, expected)
+	}
+	return verifier.Verify(ctx, expected)
+}
+
+func verifyMeetingVisionDeployment(
+	ctx context.Context, verifier meetingDeploymentVerifier, expected meetingDeploymentIdentities,
+) error {
+	if components, ok := verifier.(meetingDeploymentComponentVerifier); ok {
+		return components.VerifyVision(ctx, expected)
+	}
+	return verifier.Verify(ctx, expected)
+}
+
+func verifyMeetingBackgroundSelection(
+	ctx context.Context, verifier meetingDeploymentVerifier, expected meetingDeploymentIdentities,
+) error {
+	if components, ok := verifier.(meetingDeploymentComponentVerifier); ok {
+		return components.VerifyBackground(ctx, expected)
+	}
+	return verifier.Verify(ctx, expected)
+}
+
+func nilMeetingDeploymentInterface(value any) bool {
+	if value == nil {
+		return true
+	}
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return reflected.IsNil()
+	default:
+		return false
+	}
 }
 
 func (identities meetingDeploymentIdentities) validate() error {
@@ -102,72 +143,6 @@ func (identities meetingDeploymentIdentities) validate() error {
 		}
 	}
 	return nil
-}
-
-func meetingDeploymentsFromEnvironment(
-	lookup func(string) (string, bool),
-) (meetingDeploymentIdentities, bool, error) {
-	if lookup == nil {
-		return meetingDeploymentIdentities{}, false,
-			errors.New("Meeting Assistant deployment environment lookup is nil")
-	}
-	type environmentIdentity struct {
-		id, revision, digest string
-	}
-	read := func(names environmentIdentity) (inspect.ArtifactIdentity, int) {
-		identity := inspect.ArtifactIdentity{}
-		present := 0
-		if value, ok := lookup(names.id); ok && strings.TrimSpace(value) != "" {
-			identity.ID, present = value, present+1
-		}
-		if value, ok := lookup(names.revision); ok && strings.TrimSpace(value) != "" {
-			identity.Revision, present = value, present+1
-		}
-		if value, ok := lookup(names.digest); ok && strings.TrimSpace(value) != "" {
-			identity.Digest, present = value, present+1
-		}
-		return identity, present
-	}
-	model, modelFields := read(environmentIdentity{
-		meetingModelDeploymentIDEnvironment,
-		meetingModelDeploymentRevisionEnvironment,
-		meetingModelDeploymentDigestEnvironment,
-	})
-	asr, asrFields := read(environmentIdentity{
-		meetingASRDeploymentIDEnvironment,
-		meetingASRDeploymentRevisionEnvironment,
-		meetingASRDeploymentDigestEnvironment,
-	})
-	tts, ttsFields := read(environmentIdentity{
-		meetingTTSDeploymentIDEnvironment,
-		meetingTTSDeploymentRevisionEnvironment,
-		meetingTTSDeploymentDigestEnvironment,
-	})
-	vision, visionFields := read(environmentIdentity{
-		meetingVisionDeploymentIDEnvironment,
-		meetingVisionDeploymentRevisionEnvironment,
-		meetingVisionDeploymentDigestEnvironment,
-	})
-	background, backgroundFields := read(environmentIdentity{
-		meetingBackgroundDeploymentIDEnvironment,
-		meetingBackgroundRevisionEnvironment,
-		meetingBackgroundDigestEnvironment,
-	})
-	total := modelFields + asrFields + ttsFields + visionFields + backgroundFields
-	if total == 0 {
-		return meetingDeploymentIdentities{}, false, nil
-	}
-	identities := meetingDeploymentIdentities{
-		Model: model, ASR: asr, TTS: tts, Vision: vision, Background: background,
-	}
-	if total != 15 {
-		return meetingDeploymentIdentities{}, false,
-			errors.New("Meeting Assistant deployment identity environment is partial")
-	}
-	if err := identities.validate(); err != nil {
-		return meetingDeploymentIdentities{}, false, err
-	}
-	return identities, true, nil
 }
 
 type meetingLocalConfiguration struct {
@@ -227,7 +202,7 @@ func defaultMeetingLocalConfiguration(
 			ASRProvider: meetingLocalASRProvider, ASRModel: meetingLocalASRModel,
 			ASRURL:      meetingLocalASRURL,
 			TTSProvider: meetingLocalTTSProvider, TTSModel: meetingLocalTTSModel,
-			TTSURL:      meetingLocalTTSURL,
+			TTSURL: meetingLocalTTSURL, TTSVoice: "default",
 			VisionModel: meetingLocalModelName, VisionURL: meetingLocalModelURL,
 			MaxOutputTokens: 512, ASRCadenceMS: 200, FrameRateMilliHz: 5_000,
 			RequestTimeoutMS: 30_000, SentenceMinRunes: 12,
@@ -252,13 +227,27 @@ type serveMeetingRegistration struct {
 }
 
 func newServeMeetingRegistration(
-	executable inspect.ArtifactIdentity, deployments meetingDeploymentIdentities,
+	ctx context.Context, executable inspect.ArtifactIdentity, deployments meetingDeploymentIdentities,
+	verifier meetingDeploymentVerifier,
 ) (serveMeetingRegistration, error) {
+	if ctx == nil || nilMeetingDeploymentInterface(verifier) {
+		return serveMeetingRegistration{}, errors.New(
+			"Meeting Assistant registration requires a deployment verifier",
+		)
+	}
+	if cause := context.Cause(ctx); cause != nil {
+		return serveMeetingRegistration{}, cause
+	}
 	if err := executable.Validate(); err != nil {
 		return serveMeetingRegistration{}, fmt.Errorf("Meeting Assistant profile executable: %w", err)
 	}
 	if err := deployments.validate(); err != nil {
 		return serveMeetingRegistration{}, err
+	}
+	if err := verifier.Verify(ctx, deployments); err != nil {
+		return serveMeetingRegistration{}, fmt.Errorf(
+			"verify Meeting Assistant registration deployments: %w", err,
+		)
 	}
 	configuration := defaultMeetingLocalConfiguration(executable, deployments)
 	linked := func(id string) (inspect.ArtifactIdentity, error) {
@@ -333,11 +322,21 @@ func newServeMeetingRegistration(
 	}
 	foregroundCapabilities := meetingForegroundCapabilities(configuration.Foreground)
 	foregroundFactory := func(ctx context.Context, options legacy.Options) (legacy.Binding, error) {
+		if err := verifyMeetingForegroundDeployments(ctx, verifier, deployments); err != nil {
+			return nil, fmt.Errorf(
+				"verify Meeting Assistant foreground deployments at session open: %w", err,
+			)
+		}
 		return newMeetingForegroundBinding(ctx, configuration.Foreground, options)
 	}
 	visualFactory := func(
 		ctx context.Context, _ legacy.Options,
 	) (perceptionelements.VisualProvider, error) {
+		if err := verifyMeetingVisionDeployment(ctx, verifier, deployments); err != nil {
+			return nil, fmt.Errorf(
+				"verify Meeting Assistant visual deployment at session open: %w", err,
+			)
+		}
 		return newMeetingVisualProvider(ctx, configuration.Foreground, visualDescriptor)
 	}
 	backgroundFactory := func(
@@ -345,6 +344,11 @@ func newServeMeetingRegistration(
 	) (continuation.Provider, error) {
 		if err := profileProviderContext(ctx); err != nil {
 			return nil, err
+		}
+		if err := verifyMeetingBackgroundSelection(ctx, verifier, deployments); err != nil {
+			return nil, fmt.Errorf(
+				"verify Meeting Assistant background selection at session open: %w", err,
+			)
 		}
 		request := meetingBackgroundLLMRequest(configuration.Background)
 		return providers.NewLLM(request)
@@ -702,12 +706,18 @@ func newMeetingVisualProvider(
 }
 
 type meetingProfileOptions struct {
+	out           string
+	graphOut      string
+	valuesOut     string
+	resolutionOut string
+	executionOut  string
 	name          string
 	revision      uint64
 	tokenEnv      string
 	inspectionTTL uint64
 	maxAudioBytes int
 	deployments   meetingDeploymentIdentities
+	verifier      meetingDeploymentVerifier
 }
 
 func defaultMeetingProfileOptions() meetingProfileOptions {
@@ -741,10 +751,22 @@ func freezeProductionMeetingProfile(
 		options.maxAudioBytes <= 0 {
 		return frozenMeetingProfile{}, errors.New("Meeting Assistant profile has invalid identity or server bounds")
 	}
+	if nilMeetingDeploymentInterface(options.verifier) {
+		return frozenMeetingProfile{}, errors.New(
+			"freeze production Meeting Assistant profile without a deployment verifier",
+		)
+	}
 	if err := options.deployments.validate(); err != nil {
 		return frozenMeetingProfile{}, err
 	}
-	selected, err := newServeMeetingRegistration(executable, options.deployments)
+	if err := options.verifier.Verify(ctx, options.deployments); err != nil {
+		return frozenMeetingProfile{}, fmt.Errorf(
+			"verify Meeting Assistant deployments for profile freeze: %w", err,
+		)
+	}
+	selected, err := newServeMeetingRegistration(
+		ctx, executable, options.deployments, options.verifier,
+	)
 	if err != nil {
 		return frozenMeetingProfile{}, err
 	}

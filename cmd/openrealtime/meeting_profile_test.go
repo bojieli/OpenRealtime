@@ -44,44 +44,50 @@ func meetingProfileExecutable() inspect.ArtifactIdentity {
 	}
 }
 
-func TestMeetingDeploymentsFromEnvironmentIsAllOrNothing(t *testing.T) {
-	if deployments, present, err := meetingDeploymentsFromEnvironment(func(string) (string, bool) {
-		return "", false
-	}); err != nil || present || deployments != (meetingDeploymentIdentities{}) {
-		t.Fatalf("empty deployment environment = %+v, present=%v, err=%v", deployments, present, err)
-	}
+type fixtureMeetingDeploymentVerifier struct {
+	identities meetingDeploymentIdentities
+	err        error
+	resolve    int
+	verify     int
+}
 
-	values := map[string]string{meetingModelDeploymentIDEnvironment: "model://partial"}
-	lookup := func(name string) (string, bool) {
-		value, found := values[name]
-		return value, found
+func (verifier *fixtureMeetingDeploymentVerifier) Resolve(
+	ctx context.Context,
+) (meetingDeploymentIdentities, error) {
+	verifier.resolve++
+	if err := context.Cause(ctx); err != nil {
+		return meetingDeploymentIdentities{}, err
 	}
-	if _, _, err := meetingDeploymentsFromEnvironment(lookup); err == nil ||
-		!strings.Contains(err.Error(), "partial") {
-		t.Fatalf("partial deployment environment error = %v", err)
+	if verifier.err != nil {
+		return meetingDeploymentIdentities{}, verifier.err
 	}
+	if err := verifier.identities.validate(); err != nil {
+		return meetingDeploymentIdentities{}, err
+	}
+	return verifier.identities, nil
+}
 
-	want := meetingProfileDeployments()
-	for _, item := range []struct {
-		identity inspect.ArtifactIdentity
-		id       string
-		revision string
-		digest   string
-	}{
-		{want.Model, meetingModelDeploymentIDEnvironment, meetingModelDeploymentRevisionEnvironment, meetingModelDeploymentDigestEnvironment},
-		{want.ASR, meetingASRDeploymentIDEnvironment, meetingASRDeploymentRevisionEnvironment, meetingASRDeploymentDigestEnvironment},
-		{want.TTS, meetingTTSDeploymentIDEnvironment, meetingTTSDeploymentRevisionEnvironment, meetingTTSDeploymentDigestEnvironment},
-		{want.Vision, meetingVisionDeploymentIDEnvironment, meetingVisionDeploymentRevisionEnvironment, meetingVisionDeploymentDigestEnvironment},
-		{want.Background, meetingBackgroundDeploymentIDEnvironment, meetingBackgroundRevisionEnvironment, meetingBackgroundDigestEnvironment},
-	} {
-		values[item.id] = item.identity.ID
-		values[item.revision] = item.identity.Revision
-		values[item.digest] = item.identity.Digest
+func (verifier *fixtureMeetingDeploymentVerifier) Verify(
+	ctx context.Context, expected meetingDeploymentIdentities,
+) error {
+	verifier.verify++
+	if err := context.Cause(ctx); err != nil {
+		return err
 	}
-	got, present, err := meetingDeploymentsFromEnvironment(lookup)
-	if err != nil || !present || got != want {
-		t.Fatalf("exact deployment environment = %+v, present=%v, err=%v", got, present, err)
+	if verifier.err != nil {
+		return verifier.err
 	}
+	if err := expected.validate(); err != nil {
+		return err
+	}
+	if expected != verifier.identities {
+		return errors.New("fixture Meeting deployment identity differs from live attestation")
+	}
+	return nil
+}
+
+func meetingProfileVerifier() *fixtureMeetingDeploymentVerifier {
+	return &fixtureMeetingDeploymentVerifier{identities: meetingProfileDeployments()}
 }
 
 func TestMeetingRegistrationIsResourceFreeAndRetainsExactLazyReadiness(t *testing.T) {
@@ -91,8 +97,9 @@ func TestMeetingRegistrationIsResourceFreeAndRetainsExactLazyReadiness(t *testin
 	t.Setenv("OPENREALTIME_ASR_API_KEY", "asr-secret-not-evidence")
 	t.Setenv("OPENREALTIME_TTS_API_KEY", "tts-secret-not-evidence")
 
+	verifier := meetingProfileVerifier()
 	selected, err := newServeMeetingRegistration(
-		meetingProfileExecutable(), meetingProfileDeployments(),
+		context.Background(), meetingProfileExecutable(), verifier.identities, verifier,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -201,7 +208,9 @@ func TestMeetingForegroundCompositionDisablesPrivateSlowLane(t *testing.T) {
 
 func TestFreezeMeetingProfileBindsExactGraphResolutionAndDeployments(t *testing.T) {
 	options := defaultMeetingProfileOptions()
-	options.deployments = meetingProfileDeployments()
+	verifier := meetingProfileVerifier()
+	options.deployments = verifier.identities
+	options.verifier = verifier
 	executable := meetingProfileExecutable()
 	frozen, err := freezeProductionMeetingProfile(context.Background(), options, executable)
 	if err != nil {
@@ -218,6 +227,7 @@ func TestFreezeMeetingProfileBindsExactGraphResolutionAndDeployments(t *testing.
 		frozen.Profile.Server.Model != meetingLocalModelName ||
 		frozen.Profile.Server.TranscriptionModel != meetingLocalASRModel ||
 		frozen.Profile.Server.TokenEnvironment != "OPENREALTIME_TOKEN" ||
+		frozen.Configuration.Foreground.TTSVoice != "default" ||
 		frozen.Configuration.Background.Model != "gemini-3.7-flash" ||
 		frozen.Configuration.Background.Deployment != options.deployments.Background {
 		t.Fatalf("frozen Meeting profile = %+v", frozen)
@@ -230,6 +240,7 @@ func TestFreezeMeetingProfileBindsExactGraphResolutionAndDeployments(t *testing.
 
 	drifted := options
 	drifted.deployments.Background.Digest = "sha256:" + strings.Repeat("6", 64)
+	drifted.verifier = &fixtureMeetingDeploymentVerifier{identities: drifted.deployments}
 	other, err := freezeProductionMeetingProfile(context.Background(), drifted, executable)
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +253,9 @@ func TestFreezeMeetingProfileBindsExactGraphResolutionAndDeployments(t *testing.
 
 func TestMeetingProfileRejectsCancellationAndInvalidDeploymentBeforeComposition(t *testing.T) {
 	options := defaultMeetingProfileOptions()
-	options.deployments = meetingProfileDeployments()
+	verifier := meetingProfileVerifier()
+	options.deployments = verifier.identities
+	options.verifier = verifier
 	ctx, cancel := context.WithCancelCause(context.Background())
 	want := errors.New("cancel Meeting profile freeze")
 	cancel(want)
@@ -257,11 +270,19 @@ func TestMeetingProfileRejectsCancellationAndInvalidDeploymentBeforeComposition(
 		t.Fatalf("invalid Meeting deployment error = %v", err)
 	}
 
-	options.deployments = meetingProfileDeployments()
+	options.deployments = verifier.identities
 	options.tokenEnv = ""
 	if _, err := freezeProductionMeetingProfile(
 		context.Background(), options, meetingProfileExecutable(),
 	); err == nil || !strings.Contains(err.Error(), "server bounds") {
 		t.Fatalf("unauthenticated Meeting profile error = %v", err)
+	}
+
+	options = defaultMeetingProfileOptions()
+	options.deployments = verifier.identities
+	if _, err := freezeProductionMeetingProfile(
+		context.Background(), options, meetingProfileExecutable(),
+	); err == nil || !strings.Contains(err.Error(), "without a deployment verifier") {
+		t.Fatalf("unverified Meeting profile error = %v", err)
 	}
 }

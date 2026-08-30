@@ -76,9 +76,18 @@ fi
 # The synthesiser. Startup compiles CUDA graphs and warms the decoder, about
 # twenty seconds, and anything arriving before that would pay for it.
 if ! running 8123; then
-  ( cd "${repository}/.runtime/fish/fish-speech" && setsid nohup \
-      env PYTHONPATH="${repository}/.runtime/fish/fish-speech" \
-      "${shared}/.runtime/fish-env/bin/python" "${repository}/tools/fish15/server.py" \
+  fish_model_repository="${FISH_SPEECH_MODEL_REPOSITORY:-/home/ubuntu/.cache/huggingface/hub/models--fishaudio--fish-speech-1.5}"
+  fish_revision="$(tr -d '[:space:]' < "${fish_model_repository}/refs/main")"
+  fish_snapshot="${fish_model_repository}/snapshots/${fish_revision}"
+  fish_source="${repository}/.runtime/fish/fish-speech"
+  if [[ ! "${fish_revision}" =~ ^[0-9a-f]{40}$ ]] || [[ ! -d "${fish_snapshot}" ]]; then
+    echo "Fish Speech immutable snapshot revision is unavailable" >&2
+    exit 1
+  fi
+  ( cd "${fish_source}" && setsid nohup \
+      env PYTHONPATH="${fish_source}" \
+      "${shared}/.runtime/fish-env/bin/python" "${shared}/tools/fish15/server.py" \
+        --checkpoint "${fish_snapshot}" --device cuda \
         --port 8123 --voices "${repository}/.runtime/fish-voices" \
       > "${logs}/fish.log" 2>&1 & )
 fi
