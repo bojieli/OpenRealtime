@@ -127,6 +127,44 @@ func TestScenarioGraphAttestorCoversAllElevenExactSessionScopes(t *testing.T) {
 	}
 }
 
+func TestScenarioReviewDirectoryRequiresTheCompleteSuite(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "must-not-be-created")
+	var output bytes.Buffer
+	err := runScenario([]string{
+		"-review-dir", directory,
+		"-only", scenario.Suite()[0].Name,
+	}, &output)
+	if err == nil || !strings.Contains(err.Error(), "requires the complete scenario suite") {
+		t.Fatalf("partial review error = %v", err)
+	}
+	if _, statErr := os.Stat(directory); !os.IsNotExist(statErr) {
+		t.Fatalf("partial review created a directory: %v", statErr)
+	}
+}
+
+func TestScenarioReviewDirectoryIsCreateOnlyBeforeSpeechOrSessionWork(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "existing-review")
+	if err := os.Mkdir(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(directory, "owned-by-user")
+	if err := os.WriteFile(marker, []byte("preserve"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	err := runScenario([]string{
+		"-review-dir", directory,
+		"-url", "ws://127.0.0.1:1/v1/realtime",
+		"-speech-url", "http://127.0.0.1:1/v1/audio/speech",
+	}, &output)
+	if err == nil || !strings.Contains(err.Error(), "exclusively") {
+		t.Fatalf("existing review error = %v", err)
+	}
+	if got, readErr := os.ReadFile(marker); readErr != nil || string(got) != "preserve" {
+		t.Fatalf("existing review contents were changed: %q, %v", got, readErr)
+	}
+}
+
 func TestScenarioRejectsReviewedGraphDriftBeforeCredentialWork(t *testing.T) {
 	fixture := writeGraphExecutionFixture(t)
 	requirement := requirementForGraphFixture(t, fixture)

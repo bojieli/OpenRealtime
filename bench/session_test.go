@@ -13,6 +13,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -41,6 +42,7 @@ func TestSessionDrivesAudioVideoAndToolsOverWebRTC(t *testing.T) {
 	var handled atomic.Bool
 	var unexpectedTool atomic.Bool
 	var captures atomic.Int32
+	var capturedAudio bench.SessionAudioCapture
 	samples := make([]int16, 24_000)
 	for index := range samples {
 		samples[index] = int16(8_000 * math.Sin(2*math.Pi*220*float64(index)/24_000))
@@ -52,6 +54,10 @@ func TestSessionDrivesAudioVideoAndToolsOverWebRTC(t *testing.T) {
 		// their canonical protocol port.
 		Endpoint: stack.ProtocolURL, Transport: bench.TransportWebRTC,
 		Timeout: 15 * time.Second, TrailingSilence: 700 * time.Millisecond,
+		CaptureAudio: func(audio bench.SessionAudioCapture) error {
+			capturedAudio = audio
+			return nil
+		},
 		Tools: []json.RawMessage{json.RawMessage(
 			`{"type":"function","name":"meeting.read_launch_review","description":"Read the launch review","parameters":{"type":"object","properties":{}}}`,
 		)},
@@ -94,10 +100,131 @@ func TestSessionDrivesAudioVideoAndToolsOverWebRTC(t *testing.T) {
 		t.Fatalf("incomplete WebRTC evidence: transcript=%t video=%t output_audio=%t\n%+v",
 			heard, sawFrame, heardAgent, transcript.Moments)
 	}
+	if capturedAudio.SampleRateHz != 24_000 ||
+		len(capturedAudio.RoomPCM16) != len(samples)+24_000*700/1000 ||
+		len(capturedAudio.Agent) == 0 {
+		t.Fatalf("incomplete WebRTC review audio capture: %+v", capturedAudio)
+	}
 	for _, moment := range transcript.Moments {
 		if moment.Kind == bench.MomentReady && moment.AtMS > 100 {
 			t.Fatalf("WebRTC setup leaked into the episode clock: ready at %.1f ms", moment.AtMS)
 		}
+	}
+}
+
+func TestSessionAudioCaptureRetainsWireOutputOutsideTranscriptJSON(t *testing.T) {
+	agentPCM := []byte{0x34, 0x12, 0x00, 0x80, 0xff, 0x7f}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(writer, request, &websocket.AcceptOptions{})
+		if err != nil {
+			return
+		}
+		defer connection.Close(websocket.StatusNormalClosure, "fixture complete")
+		sent := false
+		for {
+			_, raw, err := connection.Read(request.Context())
+			if err != nil {
+				return
+			}
+			var event struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(raw, &event) != nil ||
+				event.Type != "input_audio_buffer.append" || sent {
+				continue
+			}
+			sent = true
+			for _, payload := range []map[string]any{
+				{"type": "response.created"},
+				{"type": "response.output_audio.delta", "delta": base64.StdEncoding.EncodeToString(agentPCM)},
+				{"type": "response.done"},
+			} {
+				encoded, _ := json.Marshal(payload)
+				if err := connection.Write(request.Context(), websocket.MessageText, encoded); err != nil {
+					return
+				}
+			}
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	var captured bench.SessionAudioCapture
+	callbackCalls := 0
+	transcript, err := bench.PlaySamples(t.Context(), bench.SessionConfig{
+		Endpoint:          "ws" + strings.TrimPrefix(server.URL, "http"),
+		Timeout:           3 * time.Second,
+		TrailingSilence:   time.Millisecond,
+		PostPlaybackQuiet: time.Millisecond,
+		CaptureAudio: func(audio bench.SessionAudioCapture) error {
+			callbackCalls++
+			captured = audio
+			return nil
+		},
+	}, []int16{1, 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if callbackCalls != 1 || captured.SampleRateHz != 24_000 ||
+		len(captured.RoomPCM16) != 2+24 || len(captured.Agent) != 1 ||
+		!slices.Equal(captured.Agent[0].PCM16, []int16{0x1234, -32768, 32767}) {
+		t.Fatalf("session audio capture = %+v, callback calls %d", captured, callbackCalls)
+	}
+	encoded, err := json.Marshal(transcript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, agentPCM) || bytes.Contains(encoded, []byte(base64.StdEncoding.EncodeToString(agentPCM))) ||
+		bytes.Contains(encoded, []byte("room_pcm")) {
+		t.Fatalf("transcript JSON embedded captured PCM: %s", encoded)
+	}
+}
+
+func TestSessionAudioCaptureRejectsOddWirePCM16(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(writer, request, &websocket.AcceptOptions{})
+		if err != nil {
+			return
+		}
+		defer connection.Close(websocket.StatusNormalClosure, "fixture complete")
+		for {
+			_, raw, err := connection.Read(request.Context())
+			if err != nil {
+				return
+			}
+			var event struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(raw, &event) != nil || event.Type != "input_audio_buffer.append" {
+				continue
+			}
+			encoded, _ := json.Marshal(map[string]any{
+				"type":  "response.output_audio.delta",
+				"delta": base64.StdEncoding.EncodeToString([]byte{0x01, 0x02, 0x03}),
+			})
+			_ = connection.Write(request.Context(), websocket.MessageText, encoded)
+			return
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	var captured bench.SessionAudioCapture
+	transcript, err := bench.PlaySamples(t.Context(), bench.SessionConfig{
+		Endpoint:          "ws" + strings.TrimPrefix(server.URL, "http"),
+		Timeout:           3 * time.Second,
+		TrailingSilence:   time.Millisecond,
+		PostPlaybackQuiet: time.Millisecond,
+		CaptureAudio: func(audio bench.SessionAudioCapture) error {
+			captured = audio
+			return nil
+		},
+	}, []int16{1})
+	if err == nil || !errors.Is(err, bench.ErrSessionFailure) ||
+		!strings.Contains(err.Error(), "PCM16 requires whole two-byte samples") {
+		t.Fatalf("odd PCM16 error = %v", err)
+	}
+	if !strings.Contains(transcript.Failure, "PCM16 requires whole two-byte samples") ||
+		len(captured.Agent) != 0 {
+		t.Fatalf("odd PCM16 transcript/capture = %+v / %+v", transcript, captured)
 	}
 }
 

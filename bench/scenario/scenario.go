@@ -582,13 +582,14 @@ func sights(seen []Sight) ([]bench.ScheduledEvent, error) {
 		return nil, nil
 	}
 	events := make([]bench.ScheduledEvent, 0, len(seen))
-	for _, sight := range seen {
+	for index, sight := range seen {
 		payload, err := os.ReadFile(sight.Path)
 		if err != nil {
 			return nil, fmt.Errorf("read the frame for %dms: %w", sight.AtMS, err)
 		}
 		events = append(events, bench.ScheduledEvent{
 			AtMS: sight.AtMS,
+			Name: fmt.Sprintf("scenario.sight.%d", index+1),
 			Event: map[string]any{
 				"type": "conversation.item.create",
 				"item": map[string]any{

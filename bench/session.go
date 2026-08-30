@@ -258,6 +258,12 @@ type SessionConfig struct {
 	Timeout time.Duration
 	// Quiet suppresses per-task progress.
 	Quiet bool
+	// CaptureAudio receives a copy of the exact room/input PCM and timed agent
+	// output after the attempt ends. It is called once on every return path,
+	// including connection, protocol, and timeout failures. Audio is not added
+	// to Transcript or its JSON representation. A capture error is joined to
+	// the attempt error so a requested review artifact cannot fail silently.
+	CaptureAudio func(SessionAudioCapture) error
 	// CaptureRuntimeEvidence negotiates the session debug category and retains
 	// the live binding status. Architecture experiments set it for every task;
 	// it is opt-in because the developer trace is not application behavior.
@@ -312,7 +318,11 @@ type ScheduledEvent struct {
 	// AtMS is measured from the start of playback, like everything else in a
 	// transcript, so a scheduled event and an utterance can be placed against
 	// each other.
-	AtMS  int
+	AtMS int
+	// Name is a stable harness-local identity copied onto MomentScheduled.
+	// Review consumers use it to distinguish authored media from other
+	// protocol events without inferring event kind from a generic moment count.
+	Name  string
 	Event map[string]any
 }
 
@@ -338,7 +348,17 @@ func Play(ctx context.Context, config SessionConfig, wavPath string) (Transcript
 }
 
 // PlaySamples drives 24 kHz PCM16 samples through a session.
-func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Transcript, error) {
+func PlaySamples(
+	ctx context.Context, config SessionConfig, samples []int16,
+) (transcript Transcript, runErr error) {
+	audioRecorder := newSessionAudioRecorder(samples)
+	if config.CaptureAudio != nil {
+		defer func() {
+			if err := config.CaptureAudio(audioRecorder.snapshot()); err != nil {
+				runErr = errors.Join(runErr, fmt.Errorf("capture session audio: %w", err))
+			}
+		}()
+	}
 	if strings.TrimSpace(config.Endpoint) == "" {
 		return Transcript{}, errors.New("a session needs an endpoint")
 	}
@@ -371,6 +391,7 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 		}
 	}
 	samples = append(samples, make([]int16, int(config.TrailingSilence.Seconds()*24_000))...)
+	audioRecorder.setRoom(samples)
 
 	timed, cancel := context.WithTimeout(ctx, config.Timeout)
 	defer cancel()
@@ -403,7 +424,9 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 	}
 	defer client.Close()
 
-	recorder := &recorder{started: time.Now(), configured: make(chan struct{})}
+	recorder := &recorder{
+		started: time.Now(), configured: make(chan struct{}), audio: audioRecorder,
+	}
 	collected := make(chan Transcript, 1)
 	go func() { collected <- recorder.collect(timed, client, config) }()
 
@@ -529,7 +552,9 @@ func PlaySamples(ctx context.Context, config SessionConfig, samples []int16) (Tr
 			if err := client.Send(timed, scheduled[sent].Event); err != nil {
 				return Transcript{}, err
 			}
-			recorder.add(Moment{AtMS: float64(scheduled[sent].AtMS), Kind: MomentScheduled})
+			recorder.add(Moment{
+				AtMS: float64(scheduled[sent].AtMS), Kind: MomentScheduled, Name: scheduled[sent].Name,
+			})
 			sent++
 		}
 		if mediaTransport, ok := client.(pcmInput); ok {
@@ -704,6 +729,7 @@ type recorder struct {
 	inspection         *openrealtime.InspectionAccess
 	configured         chan struct{}
 	configuredOnce     sync.Once
+	audio              *sessionAudioRecorder
 }
 
 func (recorder *recorder) at() float64 {
@@ -727,6 +753,7 @@ func (recorder *recorder) beginEpisode() {
 	recorder.started = time.Now()
 	recorder.moments = nil
 	recorder.lastActivity = time.Time{}
+	recorder.audio.beginEpisode()
 }
 
 func (recorder *recorder) touch() {
@@ -908,7 +935,19 @@ func (recorder *recorder) handle(
 		}
 		_ = event.Decode(&decoded)
 		payload, err := base64.StdEncoding.DecodeString(decoded.Delta)
-		if err == nil && len(payload) > 0 {
+		switch {
+		case err != nil:
+			recorder.failProtocol("response.output_audio.delta is not valid base64")
+		case len(payload)%2 != 0:
+			recorder.failProtocol(fmt.Sprintf(
+				"response.output_audio.delta carried %d bytes; PCM16 requires whole two-byte samples",
+				len(payload)))
+		case len(payload) > 0:
+			samples := make([]int16, len(payload)/2)
+			for index := range samples {
+				samples[index] = int16(binary.LittleEndian.Uint16(payload[index*2:]))
+			}
+			recorder.audio.addAgent(recorder.at(), samples)
 			recorder.add(Moment{Kind: MomentAgentAudio, AudioMS: float64(len(payload)/2) / 24.0})
 		}
 	case "response.done":
@@ -1003,6 +1042,15 @@ func (recorder *recorder) handle(
 		recorder.failure = decoded.Error.Message
 		recorder.mu.Unlock()
 	}
+}
+
+func (recorder *recorder) failProtocol(message string) {
+	recorder.add(Moment{Kind: MomentError, Text: message})
+	recorder.mu.Lock()
+	if recorder.failure == "" {
+		recorder.failure = message
+	}
+	recorder.mu.Unlock()
 }
 
 // answer returns a tool result.

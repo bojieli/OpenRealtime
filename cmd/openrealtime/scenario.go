@@ -25,7 +25,7 @@ import (
 // was completed; a scenario scripts a conversation and asks whether the agent
 // spoke at the right moments. A system can pass every benchmark here while
 // talking over everybody in it.
-func runScenario(arguments []string, output io.Writer) error {
+func runScenario(arguments []string, output io.Writer) (returnErr error) {
 	flags := flag.NewFlagSet("scenario", flag.ContinueOnError)
 	flags.SetOutput(output)
 	var (
@@ -37,6 +37,7 @@ func runScenario(arguments []string, output io.Writer) error {
 		only             = flags.String("only", "", "run one scenario by name")
 		timeout          = flags.Duration("timeout", 3*time.Minute, "bound on one scenario")
 		record           = flags.String("record", "", "write the timed record of each scenario to this file")
+		reviewDir        = flags.String("review-dir", "", "create this new directory with per-attempt stereo WAVs, a manifest, and a Markdown review")
 		repeat           = flags.Int("repeat", 1, "runs per scenario; latency from one run is noise, so a latency claim needs several")
 		experiment       = flags.String("architecture-manifest", "", "versioned P/T/C/N architecture experiment manifest")
 		architectureCell = flags.String("architecture-cell", "", "cell name in -architecture-manifest")
@@ -49,6 +50,9 @@ func runScenario(arguments []string, output io.Writer) error {
 	}
 	if flags.NArg() != 0 {
 		return errors.New("scenario accepts flags only")
+	}
+	if strings.TrimSpace(*reviewDir) != "" && strings.TrimSpace(*only) != "" {
+		return errors.New("-review-dir requires the complete scenario suite; remove -only")
 	}
 
 	var manifest archbench.Manifest
@@ -145,13 +149,52 @@ func runScenario(arguments []string, output io.Writer) error {
 		architectureResult = &started
 		fmt.Fprintf(output, "  architecture %s  F52=%s\n", selectedCell.Name, selectedCell.Architecture.Level)
 	}
+	var review *scenario.ReviewRun
+	if strings.TrimSpace(*reviewDir) != "" {
+		review, err = scenario.NewReviewRun(scenario.ReviewOptions{
+			Directory:            *reviewDir,
+			Scenarios:            selected,
+			Repeats:              runs,
+			ExecutionRequirement: requirement,
+			Secrets:              []string{config.Token},
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "  review       %s\n", review.Directory())
+		defer func() {
+			if err := review.Close(); err != nil {
+				returnErr = errors.Join(returnErr, err)
+			}
+		}()
+	}
 	for _, item := range selected {
 		var attempts []scenario.Result
 		for run := 0; run < runs; run++ {
 			taskID := fmt.Sprintf("%s#%d", item.Name, run+1)
 			ctx, cancel := context.WithTimeout(context.Background(), *timeout)
-			result, err := scenario.Play(ctx, speaker, scenarioSessionForTask(config, taskID), item)
+			taskConfig := scenarioSessionForTask(config, taskID)
+			var captured bench.SessionAudioCapture
+			if review != nil {
+				previousCapture := taskConfig.CaptureAudio
+				taskConfig.CaptureAudio = func(audio bench.SessionAudioCapture) error {
+					captured = audio
+					if previousCapture != nil {
+						return previousCapture(audio)
+					}
+					return nil
+				}
+			}
+			result, err := scenario.Play(ctx, speaker, taskConfig, item)
 			cancel()
+			if review != nil {
+				if captured.SampleRateHz == 0 {
+					captured.SampleRateHz = 24_000
+				}
+				if reviewErr := review.Record(item.Name, run+1, captured, result, err); reviewErr != nil {
+					return reviewErr
+				}
+			}
 			if err != nil {
 				fmt.Fprintf(output, "  ERR  %-28s %v\n", item.Name, err)
 			}
