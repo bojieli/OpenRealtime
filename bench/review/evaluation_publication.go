@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/bojieli/OpenRealtime/internal/fileidentity"
 )
@@ -92,6 +93,12 @@ func (lease *fileEvaluationBundleReceiptLease) Load(
 ) (EvaluationBundleReceipt, bool, error) {
 	lease.mu.Lock()
 	defer lease.mu.Unlock()
+	if ctx == nil {
+		return EvaluationBundleReceipt{}, false, errors.New("load evaluation receipt lease: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return EvaluationBundleReceipt{}, false, err
+	}
 	if lease.closed || lease.lock == nil {
 		return EvaluationBundleReceipt{}, false, errors.New("evaluation receipt lease is closed")
 	}
@@ -716,7 +723,9 @@ func evaluationPublicationDirectoryExists(path string) (bool, error) {
 }
 
 func validateEvaluationQuarantineDirectory(path, publicationParent string) error {
-	if !filepath.IsAbs(path) || filepath.Clean(path) != path || path == filepath.Dir(path) {
+	if len(path) == 0 || len(path) > maximumRootDirectoryBytes || !utf8.ValidString(path) ||
+		containsControl(path) || !filepath.IsAbs(path) || filepath.Clean(path) != path ||
+		path == filepath.Dir(path) {
 		return errors.New("evaluation quarantine directory must be canonical, absolute, and non-root")
 	}
 	if err := validateDirectoryAncestorChain(path); err != nil {
@@ -818,8 +827,9 @@ func acquireEvaluationReceiptFileLock(ctx context.Context, path string) (*os.Fil
 }
 
 func validateExternalLockPath(path string) error {
-	if len(path) == 0 || len(path) > maximumRootDirectoryBytes || !filepath.IsAbs(path) ||
-		filepath.Clean(path) != path || path == filepath.Dir(path) {
+	if len(path) == 0 || len(path) > maximumRootDirectoryBytes || !utf8.ValidString(path) ||
+		containsControl(path) || !filepath.IsAbs(path) || filepath.Clean(path) != path ||
+		path == filepath.Dir(path) {
 		return errors.New("evaluation receipt lock path is invalid")
 	}
 	return validateDirectoryAncestorChain(filepath.Dir(path))
