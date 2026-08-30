@@ -26,6 +26,7 @@ import (
 	"unicode"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	"github.com/bojieli/OpenRealtime/bench/review/candidate"
 )
 
 // ExpectedCall is one call the recording says should happen.
@@ -177,10 +178,22 @@ type Options struct {
 	Progress func(string)
 	// RuntimeAttestor captures exact graph execution evidence per task.
 	RuntimeAttestor bench.RuntimeAttestor
+	// Evidence receives only newly executed candidate attempts and exact audio
+	// from the same shared Realtime session used by deterministic scoring.
+	Evidence       candidate.Plugin
+	EvidenceOrigin candidate.RunOrigin
 }
 
 // Run executes the suite.
 func Run(ctx context.Context, options Options) (bench.Result, error) {
+	if ctx == nil {
+		return bench.Result{}, errors.New("FDB v3 evaluation requires a context")
+	}
+	if options.Evidence != nil {
+		if err := options.EvidenceOrigin.Validate(); err != nil {
+			return bench.Result{}, fmt.Errorf("FDB v3 candidate evidence origin: %w", err)
+		}
+	}
 	if options.Timeout <= 0 {
 		options.Timeout = 3 * time.Minute
 	}
@@ -203,26 +216,68 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	result := bench.Result{
 		Suite: "fdb-v3", Cell: options.Cell, Provenance: bench.Capture(), Expected: len(all),
 	}
+	var evidenceLifecycle *candidate.Lifecycle
+	if options.Evidence != nil {
+		evidenceLifecycle, err = candidate.NewLifecycle(candidate.LifecycleConfig{
+			Context: ctx, Plugin: options.Evidence, Suite: result.Suite,
+			Cell: result.Cell, Provenance: result.Provenance, Origin: options.EvidenceOrigin,
+		})
+		if err != nil {
+			return bench.Result{}, fmt.Errorf("create FDB v3 candidate evidence lifecycle: %w", err)
+		}
+	}
+	finish := func(runErr error) (bench.Result, error) {
+		result.Finish()
+		if evidenceLifecycle == nil {
+			return result, runErr
+		}
+		return result, errors.Join(runErr, evidenceLifecycle.Finish(result))
+	}
+	var runErr error
 	for index, task := range tasks {
 		if options.Progress != nil {
 			options.Progress(fmt.Sprintf("[%d/%d] %s", index+1, len(tasks), task.ID))
 		}
-		result.Tasks = append(result.Tasks, runTask(ctx, options, task, catalog))
+		outcome, evidenceErr := runTask(ctx, options, task, catalog, evidenceLifecycle)
+		result.Tasks = append(result.Tasks, outcome)
+		runErr = errors.Join(runErr, evidenceErr)
 	}
-	result.Finish()
-	return result, nil
+	return finish(runErr)
 }
 
-func runTask(ctx context.Context, options Options, task Task, catalog []json.RawMessage) bench.TaskOutcome {
-	outcome := bench.TaskOutcome{
+func runTask(
+	ctx context.Context, options Options, task Task, catalog []json.RawMessage,
+	evidenceLifecycle *candidate.Lifecycle,
+) (outcome bench.TaskOutcome, evidenceErr error) {
+	outcome = bench.TaskOutcome{
 		ID: task.ID,
 		Notes: map[string]string{
 			"domain": task.Domain, "difficulty": task.Difficulty,
 			"features": strings.Join(task.Features, ","),
 		},
 	}
+	var transcript bench.Transcript
+	var attempt *candidate.ActiveAttempt
+	if evidenceLifecycle != nil {
+		var err error
+		attempt, err = evidenceLifecycle.Begin(task.ID, 1, struct {
+			Task        Task              `json:"task"`
+			ToolCatalog []json.RawMessage `json:"tool_catalog"`
+			Criterion   string            `json:"criterion"`
+		}{
+			Task: task, ToolCatalog: catalog,
+			Criterion: "every expected call must use the expected function and annotated argument values",
+		})
+		if err != nil {
+			outcome.Error = err.Error()
+			return outcome, err
+		}
+		defer func() {
+			evidenceErr = errors.Join(evidenceErr, attempt.Complete(outcome, transcript))
+		}()
+	}
 	var observed []observedCall
-	transcript, err := bench.Play(ctx, bench.SessionConfig{
+	config := bench.SessionConfig{
 		Endpoint: options.Endpoint, Token: options.Token, Model: options.Model,
 		Instructions: "You are a customer support voice agent. Use the available tools to do what the " +
 			"customer asks. Preserve identifiers exactly as the customer gave them.",
@@ -234,15 +289,20 @@ func runTask(ctx context.Context, options Options, task Task, catalog []json.Raw
 			// tool returns is not what this suite measures.
 			return json.RawMessage(`{"status":"ok"}`), nil
 		},
-	}, task.AudioPath)
+	}
+	if attempt != nil {
+		config.CaptureAudio = attempt.CaptureAudio
+	}
+	var err error
+	transcript, err = bench.Play(ctx, config, task.AudioPath)
 	outcome.AttachExecution(transcript)
 	if err != nil {
 		outcome.Error = err.Error()
-		return outcome
+		return outcome, evidenceErr
 	}
 	if transcript.Failure != "" {
 		outcome.Error = transcript.Failure
-		return outcome
+		return outcome, evidenceErr
 	}
 	outcome.Completed = true
 
@@ -260,7 +320,7 @@ func runTask(ctx context.Context, options Options, task Task, catalog []json.Raw
 	// arguments. Getting the function right and the identifier wrong is a
 	// failure - it is a call to the wrong record.
 	outcome.Passed = matchedArguments == len(task.Expected)
-	return outcome
+	return outcome, evidenceErr
 }
 
 type observedCall struct {

@@ -37,11 +37,6 @@ import (
 	"github.com/bojieli/OpenRealtime/bench/review/candidate"
 )
 
-const (
-	attemptEvidenceTimeout = 2 * time.Minute
-	suiteEvidenceTimeout   = 5 * time.Minute
-)
-
 // Category is one of the four overlap conditions.
 type Category string
 
@@ -213,30 +208,29 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	result := bench.Result{
 		Suite: "fdb-v1.5", Cell: options.Cell, Provenance: bench.Capture(), Expected: expected,
 	}
+	var evidenceLifecycle *candidate.Lifecycle
+	if options.Evidence != nil {
+		evidenceLifecycle, err = candidate.NewLifecycle(candidate.LifecycleConfig{
+			Context: ctx, Plugin: options.Evidence, Suite: result.Suite,
+			Cell: result.Cell, Provenance: result.Provenance, Origin: options.EvidenceOrigin,
+		})
+		if err != nil {
+			return bench.Result{}, fmt.Errorf("create FDB candidate evidence lifecycle: %w", err)
+		}
+	}
 	finish := func(runErr error) (bench.Result, error) {
 		result.Finish()
-		if options.Evidence == nil {
+		if evidenceLifecycle == nil {
 			return result, runErr
 		}
-		frozen, err := candidate.CloneResult(result)
-		if err != nil {
-			return result, errors.Join(runErr, candidate.StageError("", "snapshot final result", err))
-		}
-		evidenceContext, cancel := context.WithTimeout(
-			context.WithoutCancel(ctx), suiteEvidenceTimeout,
-		)
-		defer cancel()
-		if err := options.Evidence.FinishSuite(evidenceContext, frozen); err != nil {
-			runErr = errors.Join(runErr, candidate.StageError("", "finish suite", err))
-		}
-		return result, runErr
+		return result, errors.Join(runErr, evidenceLifecycle.Finish(result))
 	}
 	var runErr error
 	for index, sample := range samples {
 		if options.Progress != nil {
 			options.Progress(fmt.Sprintf("[%d/%d] %s", index+1, len(samples), sample.ID))
 		}
-		outcome, evidenceErr := runSample(ctx, options, sample, result.Provenance)
+		outcome, evidenceErr := runSample(ctx, options, sample, evidenceLifecycle)
 		result.Tasks = append(result.Tasks, outcome)
 		runErr = errors.Join(runErr, evidenceErr)
 	}
@@ -244,7 +238,7 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 }
 
 func runSample(
-	ctx context.Context, options Options, sample Sample, provenance bench.Provenance,
+	ctx context.Context, options Options, sample Sample, evidenceLifecycle *candidate.Lifecycle,
 ) (outcome bench.TaskOutcome, evidenceErr error) {
 	outcome = bench.TaskOutcome{
 		ID: sample.ID,
@@ -255,10 +249,11 @@ func runSample(
 		},
 	}
 	var transcript bench.Transcript
-	var attempt candidate.AttemptEvidence
-	if options.Evidence != nil {
-		specification, err := candidate.NewAttempt(
-			"fdb-v1.5", sample.ID, 1, options.Cell, provenance, options.EvidenceOrigin,
+	var attempt *candidate.ActiveAttempt
+	if evidenceLifecycle != nil {
+		var err error
+		attempt, err = evidenceLifecycle.Begin(
+			sample.ID, 1,
 			struct {
 				Category      Category `json:"category"`
 				ContextText   string   `json:"context_text"`
@@ -277,41 +272,10 @@ func runSample(
 		)
 		if err != nil {
 			outcome.Error = err.Error()
-			return outcome, candidate.StageError(sample.ID, "validate attempt", err)
-		}
-		providerAttempt, err := candidate.CloneAttempt(specification)
-		if err != nil {
-			outcome.Error = err.Error()
-			return outcome, candidate.StageError(sample.ID, "snapshot attempt", err)
-		}
-		attempt, err = options.Evidence.BeginAttempt(ctx, providerAttempt)
-		if err != nil {
-			outcome.Error = err.Error()
-			return outcome, candidate.StageError(sample.ID, "begin attempt", err)
-		}
-		if attempt == nil {
-			err := errors.New("candidate evidence plug-in returned a nil attempt")
-			outcome.Error = err.Error()
-			return outcome, candidate.StageError(sample.ID, "begin attempt", err)
+			return outcome, err
 		}
 		defer func() {
-			completion, err := candidate.CloneCompletion(candidate.Completion{
-				Attempt: specification, Outcome: outcome, Transcript: transcript,
-			})
-			if err == nil {
-				evidenceContext, cancel := context.WithTimeout(
-					context.WithoutCancel(ctx), attemptEvidenceTimeout,
-				)
-				err = attempt.Complete(evidenceContext, completion)
-				cancel()
-			}
-			if err != nil {
-				evidenceErr = errors.Join(
-					evidenceErr,
-					candidate.StageError(sample.ID, "complete attempt", err),
-					candidate.StageError(sample.ID, "abort attempt", attempt.Abort()),
-				)
-			}
+			evidenceErr = errors.Join(evidenceErr, attempt.Complete(outcome, transcript))
 		}()
 	}
 	config := bench.SessionConfig{
@@ -321,15 +285,7 @@ func runSample(
 		AttestationScope: sample.ID,
 	}
 	if attempt != nil {
-		config.CaptureAudio = func(capture bench.SessionAudioCapture) error {
-			err := attempt.CaptureAudio(capture)
-			if err != nil {
-				evidenceErr = errors.Join(
-					evidenceErr, candidate.StageError(sample.ID, "capture audio", err),
-				)
-			}
-			return err
-		}
+		config.CaptureAudio = attempt.CaptureAudio
 	}
 	var err error
 	transcript, err = bench.Play(ctx, config, sample.AudioPath)
