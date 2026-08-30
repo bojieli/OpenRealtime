@@ -1219,16 +1219,23 @@ func TestPinnedInteractionCapabilityTableClaimsOnlyEvidencedInlineFormats(t *tes
 		t.Fatal("stable-v1 configuration artifact does not exactly claim bounded video without WebM")
 	}
 	var artifact struct {
-		Supported []string `json:"supported_inline_media_types"`
-		MaxCount  int      `json:"inline_media_max_count"`
-		MaxBytes  int64    `json:"inline_media_max_bytes"`
+		Supported      []string `json:"supported_inline_media_types"`
+		FilesSupported []string `json:"supported_files_media_types"`
+		MaxCount       int      `json:"inline_media_max_count"`
+		MaxBytes       int64    `json:"inline_media_max_bytes"`
+		FilesMaxBytes  int64    `json:"files_media_max_bytes"`
+		FilesEndpoint  string   `json:"files_upload_endpoint"`
+		FilesEvidence  string   `json:"files_transport_evidence"`
 	}
 	if err := json.Unmarshal(configuration, &artifact); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(artifact.Supported, want) || artifact.MaxCount != 3 ||
-		artifact.MaxBytes != maximumInlineMediaBytes ||
-		providerCapabilities().MaximumMediaCount != 3 {
+	if !slices.Equal(artifact.Supported, want) || !slices.Equal(artifact.FilesSupported, want) ||
+		artifact.MaxCount != 3 || artifact.MaxBytes != maximumInlineMediaBytes ||
+		artifact.FilesMaxBytes != maximumFileMediaBytes || artifact.FilesEndpoint != filesUploadURL ||
+		artifact.FilesEvidence != filesTransportEvidenceFormat ||
+		providerCapabilities().MaximumMediaCount != 3 ||
+		providerCapabilities().MaximumMediaBytes != maximumFileMediaBytes {
 		t.Fatalf("configuration capabilities = %+v", artifact)
 	}
 }
@@ -1255,13 +1262,13 @@ func TestInlineMediaAggregateBoundariesWithScenarioVisualShape(t *testing.T) {
 		return payload
 	}
 	for _, test := range []struct {
-		name    string
-		delta   int
-		allowed bool
+		name      string
+		delta     int
+		wantFiles bool
 	}{
-		{name: "just_under", delta: -2, allowed: true},
-		{name: "at", delta: 0, allowed: true},
-		{name: "over", delta: 2, allowed: false},
+		{name: "just_under", delta: -2},
+		{name: "at", delta: 0},
+		{name: "over", delta: 2, wantFiles: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			request, _, payloads := preparedMultimodalRequest(t)
@@ -1297,6 +1304,14 @@ func TestInlineMediaAggregateBoundariesWithScenarioVisualShape(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if got := useFilesTransport(prepared); got != test.wantFiles {
+				t.Fatalf("Files transport selection = %t, want %t", got, test.wantFiles)
+			}
+			if test.wantFiles {
+				// The full create/review/cleanup/bundle path for this exact first
+				// over-boundary shape is exercised in files_test.go.
+				return
+			}
 			var calls atomic.Int32
 			plugin, err := newWithHTTPClient(testAPIKey, &http.Client{Transport: roundTripFunc(
 				func(*http.Request) (*http.Response, error) {
@@ -1308,11 +1323,7 @@ func TestInlineMediaAggregateBoundariesWithScenarioVisualShape(t *testing.T) {
 			}
 			defer plugin.Close()
 			_, err = plugin.Review(t.Context(), prepared)
-			if !test.allowed {
-				if err == nil || calls.Load() != 0 {
-					t.Fatalf("over-limit Review() = %v; calls=%d", err, calls.Load())
-				}
-			} else if err != nil || calls.Load() != 1 {
+			if err != nil || calls.Load() != 1 {
 				t.Fatalf("exact-limit Review() = %v; calls=%d", err, calls.Load())
 			}
 		})
@@ -1811,7 +1822,7 @@ func TestProductionArtifactsContainInspectableSourceAndExactPolicyPreimages(t *t
 	if decoded["response_schema_policy"] != "omit_redundant_finding_timestamps_v1" {
 		t.Fatalf("configuration response schema policy = %#v", decoded["response_schema_policy"])
 	}
-	if descriptor.Implementation.Version != "openrealtime.gemini-review.impl.v9" ||
+	if descriptor.Implementation.Version != "openrealtime.gemini-review.impl.v10" ||
 		descriptor.Implementation.SHA256 != digest(implementation) ||
 		descriptor.ConfigurationSHA256 != digest(configuration) {
 		t.Fatalf("production descriptor = %+v", descriptor)
