@@ -188,6 +188,7 @@ func runMigrationCompare(arguments []string, output io.Writer) error {
 	registrationLocation := flags.String("registration", "", "registration location inside the store")
 	registrationSHA := flags.String("registration-sha256", "", "registration artifact SHA-256")
 	reportLocation := flags.String("report", "", "new logical report location inside the store")
+	out := flags.String("out", "", "also write the canonical retained report to this create-only path")
 	var baselinePaths, candidatePaths, baselineOutcomes, candidateOutcomes, historyPaths migrationPaths
 	flags.Var(&baselinePaths, "baseline", "unwrapped suite[:repetition]=result.json; retained as a comparison refusal")
 	flags.Var(&candidatePaths, "candidate", "unwrapped suite[:repetition]=result.json; retained as a comparison refusal")
@@ -263,6 +264,15 @@ func runMigrationCompare(arguments []string, output io.Writer) error {
 		baseline, candidate, history, *reportLocation)
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(*out) != "" {
+		resolvedHistory, err := migration.ResolveReportHistory(store, history)
+		if err != nil {
+			return fmt.Errorf("resolve migration report export history: %w", err)
+		}
+		if err := report.WriteWithHistory(*out, resolvedHistory); err != nil {
+			return fmt.Errorf("write migration report export: %w", err)
+		}
 	}
 	if err := writeMigrationReference(output, reference); err != nil {
 		return err
