@@ -2358,9 +2358,14 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     Chromium developer/observer WebSocket and WebRTC profiles, the unchanged
     clean-server browser/macOS protocol probe, JavaScript conformance, portable
     strict-concurrency Swift tests, shuffled race gates, and focused
-    presentation benchmarks are green. A signed native Darwin application run,
-    full lifecycle/leak evidence, and the complete release-matrix rerun remain
-    open.
+    presentation benchmarks are green. The 2026-08-30 candidate rerun retained
+    passing release reports for the complete real-Chromium profile suite, the
+    unchanged-server browser/macOS-profile probe, JavaScript conformance, and
+    strict-concurrency Swift-Linux conformance under
+    `.runtime/release-validation/*-candidate-01`; focused normal, three
+    shuffled runs, race, vet, and presentation/client benchmarks also passed.
+    A signed native Darwin application run, full lifecycle/leak evidence, and
+    the complete release-matrix rerun remain open.
 
 - [ ] **Exit gate:** an operator can understand a running graph and trace an
   output to its causes without reading binding source.

@@ -558,5 +558,11 @@ tau2/τ-Voice matrix defined by the parent plan.
   tests and presentation performance gates pass without regression. Focused
   real-Chromium WebSocket/WebRTC media, tool, inspection, authoring, artifact,
   reconnect/dispose, JavaScript, Swift-Linux, shuffled race, and host/client
-  benchmark gates are green. Signed native macOS, complete reconciliation/leak
-  evidence, and the project-wide release matrix remain open.
+  benchmark gates are green. A fresh 2026-08-30 candidate run retained passing
+  release reports for `local.presentation.chromium`,
+  `local.presentation.shared-server`, `local.client.javascript`, and
+  `local.client.swift-linux` in `.runtime/release-validation/*-candidate-01`;
+  the focused package matrix also passed normal, three shuffled runs, race,
+  vet, and all presentation/client benchmarks. Signed native macOS, complete
+  reconciliation/leak evidence, and the project-wide release matrix remain
+  open.
