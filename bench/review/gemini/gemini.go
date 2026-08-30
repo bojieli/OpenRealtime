@@ -915,9 +915,9 @@ func marshalValidatedRequestContext(
 			MediaType: media.MediaType,
 		})
 	}
-	responseSchema, schemaErr := geminiResponseSchema(boundedSchema)
-	if schemaErr != nil {
-		return nil, schemaErr
+	responseSchema, err := geminiResponseSchema(boundedSchema)
+	if err != nil {
+		return nil, err
 	}
 	var output bytes.Buffer
 	encoder := json.NewEncoder(&output)
@@ -946,6 +946,29 @@ func marshalValidatedRequestContext(
 			len(body), maximumInlineRequestBytes)
 	}
 	return slices.Clone(body), nil
+}
+
+func boundedFindingTimestampSchema(
+	prepared review.PreparedRequest,
+) (json.RawMessage, error) {
+	maximumMS := prepared.FindingTimestampMaximumMS
+	if maximumMS <= 0 || maximumMS > maximumFindingTimestampMS {
+		return nil, errors.New("Gemini review finding timestamp maximum is invalid")
+	}
+	standard := []byte(`"maximum": 86400000`)
+	if bytes.Count(prepared.Schema, standard) != 4 {
+		return nil, errors.New("Gemini standard review schema has unexpected timestamp bounds")
+	}
+	// The caller has already passed PreparedRequest.Validate, which requires
+	// the exact standard schema. Replacing four decimal integer literals with a
+	// bounded decimal integer preserves duplicate safety and container shape.
+	replacement := []byte(`"maximum": ` + strconv.FormatInt(maximumMS, 10))
+	bounded := bytes.ReplaceAll(prepared.Schema, standard, replacement)
+	if len(bounded) == 0 || len(bounded) > maximumSchemaBytes ||
+		!json.Valid(bounded) {
+		return nil, errors.New("Gemini bounded review schema is invalid")
+	}
+	return json.RawMessage(bounded), nil
 }
 
 // geminiResponseSchema removes only the two redundant optional numeric
@@ -1008,29 +1031,6 @@ func geminiResponseSchema(source json.RawMessage) (json.RawMessage, error) {
 		return nil, fmt.Errorf("derive Gemini response schema: encode: %w", err)
 	}
 	return encoded, nil
-}
-
-func boundedFindingTimestampSchema(
-	prepared review.PreparedRequest,
-) (json.RawMessage, error) {
-	maximumMS := prepared.FindingTimestampMaximumMS
-	if maximumMS <= 0 || maximumMS > maximumFindingTimestampMS {
-		return nil, errors.New("Gemini review finding timestamp maximum is invalid")
-	}
-	standard := []byte(`"maximum": 86400000`)
-	if bytes.Count(prepared.Schema, standard) != 4 {
-		return nil, errors.New("Gemini standard review schema has unexpected timestamp bounds")
-	}
-	// The caller has already passed PreparedRequest.Validate, which requires
-	// the exact standard schema. Replacing four decimal integer literals with a
-	// bounded decimal integer preserves duplicate safety and container shape.
-	replacement := []byte(`"maximum": ` + strconv.FormatInt(maximumMS, 10))
-	bounded := bytes.ReplaceAll(prepared.Schema, standard, replacement)
-	if len(bounded) == 0 || len(bounded) > maximumSchemaBytes ||
-		!json.Valid(bounded) {
-		return nil, errors.New("Gemini bounded review schema is invalid")
-	}
-	return json.RawMessage(bounded), nil
 }
 
 func preflightProviderResponse(response review.ProviderResponse) error {

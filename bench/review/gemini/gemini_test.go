@@ -251,12 +251,16 @@ func TestPluginSendsExactPinnedMultimodalInteractionAndProvenance(t *testing.T) 
 	}
 }
 
-func TestGeminiWireSchemaValidatesTimestampMaximumButOmitsRedundantFields(t *testing.T) {
+func TestGeminiWireSchemaDerivesThenOmitsProviderNeutralTimestampMaximum(t *testing.T) {
 	request, _, _ := preparedMultimodalRequest(t)
 	for _, maximumMS := range []int64{1, 1000, maximumFindingTimestampMS} {
 		t.Run(fmt.Sprintf("maximum-%d", maximumMS), func(t *testing.T) {
 			request.FindingTimestampMaximumMS = maximumMS
 			prepared, err := review.Prepare(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bounded, err := boundedFindingTimestampSchema(prepared)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -289,6 +293,10 @@ func TestGeminiWireSchemaValidatesTimestampMaximumButOmitsRedundantFields(t *tes
 					} `json:"minor_observations"`
 				} `json:"properties"`
 			}
+			var boundedSchema = schema
+			if err := json.Unmarshal(bounded, &boundedSchema); err != nil {
+				t.Fatal(err)
+			}
 			if err := json.Unmarshal(wire.ResponseFormat.Schema, &schema); err != nil {
 				t.Fatal(err)
 			}
@@ -298,13 +306,18 @@ func TestGeminiWireSchemaValidatesTimestampMaximumButOmitsRedundantFields(t *tes
 			_, minorEnd := schema.Properties.Minor.Items.Properties["end_ms"]
 			_, significantEvidence := schema.Properties.Significant.Items.Properties["evidence"]
 			_, minorEvidence := schema.Properties.Minor.Items.Properties["evidence"]
-			if schema.Properties.Confidence.Maximum != 1 ||
+			if boundedSchema.Properties.Confidence.Maximum != 1 ||
+				boundedSchema.Properties.Significant.Items.Properties["start_ms"].Maximum != maximumMS ||
+				boundedSchema.Properties.Significant.Items.Properties["end_ms"].Maximum != maximumMS ||
+				boundedSchema.Properties.Minor.Items.Properties["start_ms"].Maximum != maximumMS ||
+				boundedSchema.Properties.Minor.Items.Properties["end_ms"].Maximum != maximumMS ||
 				significantStart || significantEnd || minorStart || minorEnd ||
 				!significantEvidence || !minorEvidence ||
+				schema.Properties.Confidence.Maximum != 1 ||
 				bytes.Count(prepared.Schema, []byte(`"maximum": 86400000`)) != 4 ||
 				prepared.FindingTimestampMaximumMS != maximumMS {
-				t.Fatalf("timestamp schema bound = %s; prepared=%d",
-					wire.ResponseFormat.Schema, prepared.FindingTimestampMaximumMS)
+				t.Fatalf("timestamp schema bounded=%s wire=%s prepared=%d",
+					bounded, wire.ResponseFormat.Schema, prepared.FindingTimestampMaximumMS)
 			}
 		})
 	}
