@@ -121,3 +121,40 @@ func BenchmarkHermeticReviewAndOneUseVerification(b *testing.B) {
 		benchmarkGeminiBytes = response.Raw
 	}
 }
+
+func BenchmarkValidateRetainedFilesTransportEvidence(b *testing.B) {
+	_, prepared, _ := preparedMultimodalRequest(b)
+	raw := successfulInteraction(b, testAssessment)
+	scanner, err := newJSONCredentialScanner(testAPIKey)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(scanner.wipe)
+	transport := newFilesFixtureTransport(prepared, raw)
+	client := &http.Client{Transport: transport}
+	state, interactionBody, err := beginFilesTransport(
+		b.Context(), prepared, testAPIKey, scanner, client,
+	)
+	if err != nil {
+		b.Fatal(err)
+	}
+	cleanup := state.cleanup(b.Context(), prepared, testAPIKey, scanner, client)
+	evidence, err := state.retainedEvidence(
+		interactionBody, raw, http.StatusOK, "application/json", cleanup,
+	)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.SetBytes(int64(len(evidence)))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		expected, validateErr := validateRetainedFilesTransport(
+			b.Context(), prepared, evidence, raw,
+		)
+		if validateErr != nil {
+			b.Fatal(validateErr)
+		}
+		benchmarkGeminiBytes = expected
+	}
+}
