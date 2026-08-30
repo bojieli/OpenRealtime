@@ -234,6 +234,23 @@ func TestProfileGraphBundleExactMatchesPluginsBeforeTokenOrResources(t *testing.
 		t.Fatal("competing gateway setting reached application, token, or provider")
 	}
 
+	cancelCtx, cancel := context.WithCancelCause(context.Background())
+	resolverCancellation := errors.New("profile token resolver cancelled launch")
+	if _, err := serverplugin.NewProfileGraphBundle(cancelCtx,
+		serverplugin.ProfileGraphBundleConfig{
+			Profile: profile, Applications: registry, GatewayArtifact: gatewayArtifact,
+			ResolveToken: func(_ context.Context, _ string) (string, error) {
+				tokenCalls.Add(1)
+				cancel(resolverCancellation)
+				return "profile-test-token", nil
+			},
+		}); !errors.Is(err, resolverCancellation) {
+		t.Fatalf("resolver cancellation error = %v", err)
+	}
+	if applicationCalls.Load() != 2 || tokenCalls.Load() != 1 || acquisitions.Load() != 0 {
+		t.Fatal("cancelled token resolution acquired a provider or lost call evidence")
+	}
+
 	composition, err := serverplugin.NewProfileGraphBundle(context.Background(),
 		serverplugin.ProfileGraphBundleConfig{
 			Profile: profile, Applications: registry, GatewayArtifact: gatewayArtifact,
@@ -242,7 +259,7 @@ func TestProfileGraphBundleExactMatchesPluginsBeforeTokenOrResources(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if applicationCalls.Load() != 2 || tokenCalls.Load() != 1 || acquisitions.Load() != 0 {
+	if applicationCalls.Load() != 3 || tokenCalls.Load() != 2 || acquisitions.Load() != 0 {
 		t.Fatalf("composition calls application=%d token=%d provider=%d",
 			applicationCalls.Load(), tokenCalls.Load(), acquisitions.Load())
 	}

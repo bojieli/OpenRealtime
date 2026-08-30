@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/bojieli/OpenRealtime/gateway"
@@ -67,9 +68,13 @@ func NewProfileGraphBundle(
 		if err != nil {
 			return nil, fmt.Errorf("compose profiled graph server bundle: resolve token environment %s: %w", environment, err)
 		}
-		if token == "" {
-			return nil, fmt.Errorf("compose profiled graph server bundle: token environment %s resolved an empty secret", environment)
+		if token == "" || token != strings.TrimSpace(token) || len(token) > 64<<10 ||
+			strings.ContainsAny(token, "\x00\r\n") {
+			return nil, fmt.Errorf("compose profiled graph server bundle: token environment %s resolved a non-canonical secret", environment)
 		}
+	}
+	if err := context.Cause(ctx); err != nil {
+		return nil, err
 	}
 
 	profile := config.Profile.Server
