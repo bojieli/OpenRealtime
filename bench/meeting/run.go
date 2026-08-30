@@ -24,34 +24,20 @@ const (
 
 func ReferenceCell() bench.Cell {
 	cell := bench.Reference()
-	cell.Levels[bench.FactorBinding] = "cascade"
-	cell.Name = "meeting-assistant-reference"
-	cell.Levels[bench.FactorObservers] = "audio+video"
-	cell.Levels[bench.FactorComponents] = "keyframe"
-	cell.Levels[bench.FactorPolicy] = "interaction-qwen3-vl-8b"
-	cell.Levels[bench.FactorFastModel] = "qwen3-vl-8b-instruct"
-	cell.Levels[bench.FactorFastAction] = "bounded-fast"
+	cell.Name = "meeting-assistant-graph-native-candidate"
+	cell.Levels[bench.FactorBinding] = "graph-native-meeting-v1"
+	cell.Levels[bench.FactorCognition] = "foreground-fast+graph-background"
+	cell.Levels[bench.FactorObservers] = "audio+screen"
+	cell.Levels[bench.FactorCadence] = "200ms"
+	cell.Levels[bench.FactorFloor] = "foreground-engine"
+	cell.Levels[bench.FactorSlowModel] = "gemini-3.7-flash/minimal"
+	cell.Levels[bench.FactorComponents] = "narration-only"
+	cell.Levels[bench.FactorPolicy] = "foreground-fast-only+graph-background-injection"
+	cell.Levels[bench.FactorFastModel] = "qwen-fast/minimal"
+	cell.Levels[bench.FactorFastAction] = "proposal-via-graph"
 	cell.Levels[bench.FactorVideoRate] = "5fps"
-	cell.Levels[bench.FactorRecognizer] = "sensevoice-small-control"
-	cell.Levels[bench.FactorSlowModel] = "gemini-3.5-flash/high"
+	cell.Levels[bench.FactorRecognizer] = "sensevoice-small"
 	cell.Levels[bench.FactorTransport] = bench.TransportWebSocket
-	return cell
-}
-
-// OmniCell is the native-audio foreground treatment. It is deliberately not
-// presented as a one-factor cell: topology/speech generation and foreground
-// model both change, so any result is an end-to-end system comparison.
-func OmniCell() bench.Cell {
-	reference := ReferenceCell()
-	cell := reference
-	cell.Name = "meeting-assistant-omni"
-	cell.Levels = make(map[bench.Factor]string, len(reference.Levels))
-	for factor, level := range reference.Levels {
-		cell.Levels[factor] = level
-	}
-	cell.Levels[bench.FactorBinding] = "omni-sidecar-v3"
-	cell.Levels[bench.FactorFastModel] = "qwen3-omni-30b-a3b-fp8-native-audio"
-	cell.Varies = bench.Compare(reference, cell)
 	return cell
 }
 

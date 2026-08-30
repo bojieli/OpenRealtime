@@ -145,7 +145,6 @@ func runMeetingWithDependencies(
 		referenceLevels string
 		varyFactor      string
 		varyLevel       string
-		foreground      string
 		executionPath   string
 		inspectionGraph string
 		list            bool
@@ -162,11 +161,10 @@ func runMeetingWithDependencies(
 	flags.IntVar(&fps, "fps", 5, "shared-screen capture rate")
 	flags.DurationVar(&timeout, "task-timeout", 40*time.Second, "bound one meeting episode")
 	flags.DurationVar(&analysisDelay, "analysis-delay", 8*time.Second, "duration of the deliberately outstanding analysis tool")
-	flags.StringVar(&cellName, "cell", "meeting-assistant-reference", "name for this cell")
+	flags.StringVar(&cellName, "cell", "meeting-assistant-graph-native-candidate", "name for this cell")
 	flags.StringVar(&referenceLevels, "reference-levels", "", "comma-separated factor=level overrides held fixed across a pair")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F9")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
-	flags.StringVar(&foreground, "foreground", "cascade", "fast foreground: cascade or omni")
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
 	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
 	flags.StringVar(&reviewConfig.Directory, "review-dir", "", "retain sealed Meeting source media and advisory review evidence")
@@ -199,16 +197,9 @@ func runMeetingWithDependencies(
 		}
 		return nil
 	}
-	var reference bench.Cell
-	switch strings.ToLower(strings.TrimSpace(foreground)) {
-	case "", "cascade", "asr-vlm":
-		reference = meeting.ReferenceCell()
-	case "omni", "native-audio":
-		reference = meeting.OmniCell()
-	default:
-		return fmt.Errorf("meeting foreground must be cascade or omni, got %q", foreground)
-	}
-	cell, err := resolveCellFrom(reference, cellName, referenceLevels, varyFactor, varyLevel)
+	cell, err := resolveCellFrom(
+		meeting.ReferenceCell(), cellName, referenceLevels, varyFactor, varyLevel,
+	)
 	if err != nil {
 		return err
 	}

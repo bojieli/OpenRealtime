@@ -2478,11 +2478,24 @@ func meetingAttemptReportability(
 	if err := requirement.Match(outcome.Execution); err != nil {
 		return false, "execution evidence did not match the reviewed requirement"
 	}
-	if strings.Contains(strings.ToLower(cell.Levels[bench.FactorObservers]), "video") &&
-		!fullyDecodedVideo {
-		return false, "the reviewed audio+video cell retained no independently full-decoded screen video"
+	if meetingCellRequiresScreenVideo(cell) && !fullyDecodedVideo {
+		return false, "the reviewed audio+screen cell retained no independently full-decoded screen video"
 	}
 	return true, ""
+}
+
+func meetingCellRequiresScreenVideo(cell bench.Cell) bool {
+	for _, observer := range strings.FieldsFunc(
+		strings.ToLower(cell.Levels[bench.FactorObservers]),
+		func(value rune) bool {
+			return value == '+' || value == ',' || value == ';' || value == '|' || value == '/'
+		},
+	) {
+		if strings.TrimSpace(observer) == "screen" || strings.TrimSpace(observer) == "video" {
+			return true
+		}
+	}
+	return false
 }
 
 func renderMeetingReview(manifest ReviewManifest) string {

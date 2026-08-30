@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/bench"
@@ -29,11 +30,36 @@ func TestSuiteOwnsValidRecordedScenarios(t *testing.T) {
 	}
 }
 
-func TestOmniCellIsExplicitlyASystemTreatment(t *testing.T) {
-	differences := bench.Compare(ReferenceCell(), OmniCell())
-	if len(differences) != 2 || differences[0] != bench.FactorBinding ||
-		differences[1] != bench.FactorFastModel {
-		t.Fatalf("omni treatment differences = %v", differences)
+func TestReferenceCellIsOnlyDirectGraphNativeCandidate(t *testing.T) {
+	cell := ReferenceCell()
+	want := map[bench.Factor]string{
+		bench.FactorBinding:   "graph-native-meeting-v1",
+		bench.FactorCognition: "foreground-fast+graph-background",
+		bench.FactorObservers: "audio+screen",
+		bench.FactorCadence:   "200ms", bench.FactorFloor: "foreground-engine",
+		bench.FactorSlowModel:  "gemini-3.7-flash/minimal",
+		bench.FactorComponents: "narration-only",
+		bench.FactorPolicy:     "foreground-fast-only+graph-background-injection",
+		bench.FactorFastModel:  "qwen-fast/minimal",
+		bench.FactorFastAction: "proposal-via-graph",
+		bench.FactorVideoRate:  "5fps", bench.FactorRecognizer: "sensevoice-small",
+		bench.FactorTransport: bench.TransportWebSocket,
+	}
+	if cell.Name != "meeting-assistant-graph-native-candidate" ||
+		len(cell.Levels) != len(want) || len(cell.Varies) != 0 {
+		t.Fatalf("Meeting candidate cell = %+v", cell)
+	}
+	for factor, level := range want {
+		if cell.Levels[factor] != level {
+			t.Fatalf("Meeting candidate %s = %q, want %q", factor, cell.Levels[factor], level)
+		}
+	}
+	for factor, level := range cell.Levels {
+		legacy := strings.ToLower(level)
+		if strings.Contains(legacy, "cascade") || strings.Contains(legacy, "omni") ||
+			strings.Contains(legacy, "qwen3-vl") || strings.Contains(legacy, "gemini-3.5") {
+			t.Fatalf("Meeting candidate retained legacy %s level %q", factor, level)
+		}
 	}
 }
 
