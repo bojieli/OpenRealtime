@@ -2027,6 +2027,66 @@ func TestReviewBundleVerifierRejectsNestedSealedReviewTampering(t *testing.T) {
 	}
 }
 
+func TestReviewBundleResumeRecoversRejectedOuterReviewWithoutManifest(t *testing.T) {
+	directory, _ := fixtureFinishedReviewedBundle(t)
+	sourceReceipt, err := ReadReviewSourceReceipt(
+		t.Context(), fixtureReviewSourceReceiptPath(directory),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	makeReviewTreeWritable(directory)
+	if err := os.Remove(filepath.Join(directory, "manifest.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := sealReviewTree(directory); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := ResumeReviewBundle(t.Context(), ReviewBundleResumeOptions{
+		Directory: directory, SourceReceipt: sourceReceipt,
+		SourceAnchor: fixtureReviewSourceAnchor(directory),
+	})
+	if err != nil {
+		t.Fatalf("recover rejected outer review: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(directory, "REVIEW.md")); !os.IsNotExist(err) {
+		t.Fatalf("rejected outer review survived recovery: %v", err)
+	}
+	if err := resumed.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReviewBundleResumePreservesPublishedOuterReview(t *testing.T) {
+	directory, _ := fixtureFinishedReviewedBundle(t)
+	sourceReceipt, err := ReadReviewSourceReceipt(
+		t.Context(), fixtureReviewSourceReceiptPath(directory),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewBefore, err := os.ReadFile(filepath.Join(directory, "REVIEW.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed, err := ResumeReviewBundle(t.Context(), ReviewBundleResumeOptions{
+		Directory: directory, SourceReceipt: sourceReceipt,
+		SourceAnchor: fixtureReviewSourceAnchor(directory),
+	}); err == nil || !strings.Contains(err.Error(), "already has an outer publication") {
+		if resumed != nil {
+			_ = resumed.Close()
+		}
+		t.Fatalf("resume published outer review error = %v", err)
+	}
+	reviewAfter, err := os.ReadFile(filepath.Join(directory, "REVIEW.md"))
+	if err != nil || !bytes.Equal(reviewAfter, reviewBefore) {
+		t.Fatalf("published outer review changed: error=%v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(directory, "manifest.json")); err != nil {
+		t.Fatalf("published outer manifest changed: %v", err)
+	}
+}
+
 func TestReviewBundleVerifierRejectsTamperingAndExtraEntries(t *testing.T) {
 	for _, mode := range []string{
 		"result", "context", "raw_frame", "source_manifest", "source_review",

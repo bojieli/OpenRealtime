@@ -471,6 +471,9 @@ func ResumeReviewBundle(
 			return nil, fmt.Errorf("verify recovered deterministic realtime computer-use source: %w", err)
 		}
 	}
+	if err := recoverRejectedReviewPublication(directory); err != nil {
+		return nil, err
+	}
 	for _, name := range []string{"manifest.json", "REVIEW.md"} {
 		if _, err := os.Lstat(filepath.Join(directory, name)); err == nil {
 			return nil, errors.New("realtime computer-use review bundle already has an outer publication")
@@ -4268,13 +4271,62 @@ func invalidateReviewManifestExpected(directory string, expectedRoot os.FileInfo
 }
 
 func invalidateReviewManifestRoot(root *os.Root) error {
+	return invalidateReviewPublicationRoot(root, true)
+}
+
+func recoverRejectedReviewPublication(directory string) (resultErr error) {
+	if _, err := os.Lstat(filepath.Join(directory, "manifest.json")); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return errors.New("inspect rejected realtime computer-use review manifest")
+	}
+	if _, err := os.Lstat(filepath.Join(directory, "REVIEW.md")); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return errors.New("inspect rejected realtime computer-use human review")
+	}
+	root, identity, err := openReviewDirectoryRoot(directory)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := root.Close(); closeErr != nil {
+			resultErr = errors.Join(resultErr,
+				errors.New("close rejected realtime computer-use review publication"))
+		}
+		current, statErr := os.Lstat(directory)
+		if statErr != nil || current.Mode()&os.ModeSymlink != 0 ||
+			!os.SameFile(current, identity) {
+			resultErr = errors.Join(resultErr,
+				errors.New("rejected realtime computer-use review root changed"))
+		}
+	}()
+	return invalidateReviewPublicationRoot(root, false)
+}
+
+func invalidateReviewPublicationRoot(root *os.Root, requireManifest bool) (resultErr error) {
 	if root == nil {
 		return errors.New("review manifest root is unavailable")
 	}
-	info, err := root.Lstat("manifest.json")
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 ||
-		reviewFileHasMultipleLinks(info) {
-		return errors.New("review manifest is not a regular owned file")
+	if !requireManifest {
+		if _, err := root.Lstat("manifest.json"); err == nil {
+			return errors.New("refuse to recover a review publication with a manifest")
+		} else if !os.IsNotExist(err) {
+			return errors.New("inspect rejected review manifest through anchored root")
+		}
+	}
+	names := []string{"REVIEW.md"}
+	if requireManifest {
+		names = append([]string{"manifest.json"}, names...)
+	}
+	infos := make(map[string]os.FileInfo, len(names))
+	for _, name := range names {
+		info, err := root.Lstat(name)
+		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 ||
+			reviewFileHasMultipleLinks(info) {
+			return errors.New("review publication is not a regular owned file set")
+		}
+		infos[name] = info
 	}
 	rootInfo, err := root.Stat(".")
 	if err != nil || !rootInfo.IsDir() {
@@ -4283,20 +4335,28 @@ func invalidateReviewManifestRoot(root *os.Root) error {
 	if err := chmodReviewEntryHandle(root, ".", rootInfo, 0o700); err != nil {
 		return err
 	}
-	if err := chmodReviewEntryHandle(root, "manifest.json", info, 0o600); err != nil {
-		return err
+	defer func() {
+		if restoreErr := chmodReviewEntryHandle(root, ".", rootInfo, 0o500); restoreErr != nil {
+			resultErr = errors.Join(resultErr,
+				errors.New("reseal rejected realtime computer-use review root"))
+		}
+	}()
+	for _, name := range names {
+		info := infos[name]
+		if err := chmodReviewEntryHandle(root, name, info, 0o600); err != nil {
+			return err
+		}
+		visible, err := root.Lstat(name)
+		if err != nil || !os.SameFile(info, visible) || visible.Mode()&os.ModeSymlink != 0 {
+			return errors.New("review publication changed before invalidation")
+		}
 	}
-	visible, err := root.Lstat("manifest.json")
-	if err != nil || !os.SameFile(info, visible) || visible.Mode()&os.ModeSymlink != 0 {
-		return errors.New("review manifest changed before invalidation")
+	for _, name := range names {
+		if err := root.Remove(name); err != nil {
+			return err
+		}
 	}
-	if err := root.Remove("manifest.json"); err != nil {
-		return err
-	}
-	if err := syncReviewRoot(root); err != nil {
-		return err
-	}
-	return chmodReviewEntryHandle(root, ".", rootInfo, 0o500)
+	return syncReviewRoot(root)
 }
 
 func invalidateReviewSourceManifest(directory string) (resultErr error) {
