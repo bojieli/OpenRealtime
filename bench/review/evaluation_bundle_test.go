@@ -148,6 +148,25 @@ func TestEvaluationBundleRoundTripRetainsExactCanonicalReview(t *testing.T) {
 	}
 }
 
+func TestVerifyEvaluationBundleRejectsExternalHardLink(t *testing.T) {
+	evaluation, _ := testEvaluationBundleEvaluation(t, nil)
+	directory := filepath.Join(t.TempDir(), "evaluation")
+	options := EvaluationBundleOptions{Directory: directory}
+	receipt, err := WriteEvaluationBundle(t.Context(), options, evaluation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(
+		filepath.Join(directory, "media-001.wav"),
+		filepath.Join(t.TempDir(), "outside.wav"),
+	); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	if _, err := VerifyEvaluationBundle(t.Context(), options, receipt); err == nil {
+		t.Fatal("VerifyEvaluationBundle accepted an artifact with an external hard link")
+	}
+}
+
 func TestEvaluationBundleSealRejectsMutationAndFabricationBeforeFilesystemSideEffect(t *testing.T) {
 	tests := []struct {
 		name   string

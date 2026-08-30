@@ -23,6 +23,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/bench/review"
+	"github.com/bojieli/OpenRealtime/internal/fileidentity"
 )
 
 func canonicalTimeUS(label string, milliseconds float64) (int64, error) {
@@ -334,7 +335,8 @@ func readRegularIdentity(root *os.Root, name string, maximum int64) (
 	afterOpen, afterOpenErr := root.Lstat(name)
 	if openErr != nil || afterOpenErr != nil || afterOpen.Mode()&os.ModeSymlink != 0 ||
 		!afterOpen.Mode().IsRegular() || !os.SameFile(before, opened) ||
-		!os.SameFile(opened, afterOpen) || opened.Size() != before.Size() {
+		!os.SameFile(opened, afterOpen) || opened.Size() != before.Size() ||
+		fileidentity.RequireSingleLink(file) != nil {
 		_ = file.Close()
 		return nil, "", "", nil, errors.New("artifact identity changed while it was opened")
 	}
@@ -347,7 +349,8 @@ func readRegularIdentity(root *os.Root, name string, maximum int64) (
 	visible, visibleErr := root.Lstat(name)
 	if afterReadErr != nil || visibleErr != nil || visible.Mode()&os.ModeSymlink != 0 ||
 		!visible.Mode().IsRegular() || !os.SameFile(opened, afterRead) ||
-		!os.SameFile(afterRead, visible) || afterRead.Size() != before.Size() {
+		!os.SameFile(afterRead, visible) || afterRead.Size() != before.Size() ||
+		fileidentity.RequireSingleLink(file) != nil {
 		_ = file.Close()
 		return nil, "", "", nil, errors.New("artifact identity changed while it was read")
 	}

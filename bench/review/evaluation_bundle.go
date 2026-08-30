@@ -14,6 +14,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/bojieli/OpenRealtime/internal/fileidentity"
 	"github.com/bojieli/OpenRealtime/internal/strictjson"
 )
 
@@ -1202,7 +1203,7 @@ func writeEvaluationBundleFile(
 		}
 	}()
 	created, err := file.Stat()
-	if err != nil || !created.Mode().IsRegular() {
+	if err != nil || !created.Mode().IsRegular() || fileidentity.RequireSingleLink(file) != nil {
 		return errors.New("created evaluation bundle artifact is not regular")
 	}
 	for offset := 0; offset < len(payload); {
@@ -1271,7 +1272,8 @@ func readEvaluationBundleFile(
 	afterOpen, afterOpenErr := root.Lstat(name)
 	if openErr != nil || afterOpenErr != nil || afterOpen.Mode()&os.ModeSymlink != 0 ||
 		!afterOpen.Mode().IsRegular() || !os.SameFile(before, opened) ||
-		!os.SameFile(opened, afterOpen) || opened.Size() != before.Size() {
+		!os.SameFile(opened, afterOpen) || opened.Size() != before.Size() ||
+		fileidentity.RequireSingleLink(file) != nil {
 		return nil, errors.New("evaluation bundle artifact changed while opening")
 	}
 	payload := make([]byte, 0, int(opened.Size()))
@@ -1299,7 +1301,8 @@ func readEvaluationBundleFile(
 	if statErr != nil || visibleErr != nil || visible.Mode()&os.ModeSymlink != 0 ||
 		!visible.Mode().IsRegular() || !os.SameFile(opened, afterRead) ||
 		!os.SameFile(afterRead, visible) || visible.Size() != int64(len(payload)) ||
-		len(payload) == 0 || int64(len(payload)) > maximum {
+		len(payload) == 0 || int64(len(payload)) > maximum ||
+		fileidentity.RequireSingleLink(file) != nil {
 		return nil, errors.New("evaluation bundle artifact changed while reading")
 	}
 	if err := ctx.Err(); err != nil {

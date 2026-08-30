@@ -75,6 +75,25 @@ func TestExternalEvaluationReceiptRejectsTamperingAndSymlinkedParent(t *testing.
 	}
 }
 
+func TestExternalEvaluationReceiptRejectsExternalHardLink(t *testing.T) {
+	parent := t.TempDir()
+	directory := filepath.Join(parent, "evaluation")
+	if err := os.Mkdir(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	receipt := evaluationReceiptFixture(t, directory)
+	path := filepath.Join(parent, "evaluation.receipt.json")
+	if err := WriteEvaluationBundleReceipt(t.Context(), path, receipt); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(path, filepath.Join(t.TempDir(), "outside.receipt.json")); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	if _, err := ReadEvaluationBundleReceipt(t.Context(), path); err == nil {
+		t.Fatal("external evaluation receipt with an external hard link was accepted")
+	}
+}
+
 func evaluationReceiptFixture(t testing.TB, directory string) EvaluationBundleReceipt {
 	t.Helper()
 	receipt := EvaluationBundleReceipt{

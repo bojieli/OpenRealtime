@@ -223,6 +223,18 @@ func testWAVPayload() []byte {
 	return payload
 }
 
+func TestPrepareRejectsMediaWithAnExternalHardLink(t *testing.T) {
+	request, _ := testRequest(t)
+	source := filepath.Join(request.RootDirectory, request.Media[0].Path)
+	external := filepath.Join(t.TempDir(), "outside.wav")
+	if err := os.Link(source, external); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	if _, err := PrepareContext(t.Context(), request); err == nil {
+		t.Fatal("PrepareContext accepted media mutable through an external hard link")
+	}
+}
+
 func TestPrepareSnapshotsContentAddressedEvidenceAndStableContract(t *testing.T) {
 	request, payload := testRequest(t)
 	prepared, err := Prepare(request)

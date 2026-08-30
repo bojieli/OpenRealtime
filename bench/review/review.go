@@ -31,6 +31,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/bojieli/OpenRealtime/internal/fileidentity"
 	"github.com/bojieli/OpenRealtime/internal/strictjson"
 )
 
@@ -2468,6 +2469,10 @@ func openRegularNoSymlink(
 		!os.SameFile(before, opened) || !os.SameFile(opened, after) {
 		_ = file.Close()
 		return nil, nil, fmt.Errorf("media path %q changed while it was opened", path)
+	}
+	if err := fileidentity.RequireSingleLink(file); err != nil {
+		_ = file.Close()
+		return nil, nil, fmt.Errorf("media path %q is not exclusively retained", path)
 	}
 	return file, opened, nil
 }

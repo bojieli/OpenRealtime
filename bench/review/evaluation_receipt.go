@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/bojieli/OpenRealtime/internal/fileidentity"
 	"github.com/bojieli/OpenRealtime/internal/strictjson"
 )
 
@@ -142,13 +143,17 @@ func readExternalEvaluationReceipt(
 	if info.Size() <= 0 || info.Size() > maximumEvaluationReceiptBytes || info.Mode().Perm()&0o077 != 0 {
 		return nil, errors.New("evaluation receipt is empty, oversized, or overly permissive")
 	}
+	if err := fileidentity.RequireSingleLink(file); err != nil {
+		return nil, errors.New("evaluation receipt is not exclusively retained")
+	}
 	payload, err := readBoundedContext(ctx, file, maximumEvaluationReceiptBytes)
 	if err != nil || int64(len(payload)) != info.Size() {
 		return nil, errors.New("read exact evaluation receipt")
 	}
 	after, err := root.Lstat(name)
 	if err != nil || after.Mode()&os.ModeSymlink != 0 || !after.Mode().IsRegular() ||
-		!os.SameFile(info, after) || after.Size() != info.Size() {
+		!os.SameFile(info, after) || after.Size() != info.Size() ||
+		fileidentity.RequireSingleLink(file) != nil {
 		return nil, errors.New("evaluation receipt changed while reading")
 	}
 	return payload, nil

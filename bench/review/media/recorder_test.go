@@ -423,6 +423,32 @@ func TestRecorderCompletesAudioOnlyWithoutMediaPlugins(t *testing.T) {
 	}
 }
 
+func TestVerifyBundleRejectsExternalHardLink(t *testing.T) {
+	parent := t.TempDir()
+	directory := filepath.Join(parent, "attempt")
+	t.Cleanup(func() { _ = makeTreeOwnerWritable(directory) })
+	recorder, err := New(t.Context(), Config{Directory: directory, RequireAudio: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recorder.CaptureAudio(testAudioCapture()); err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := recorder.Finalize(t.Context(), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(
+		filepath.Join(directory, "audio.stereo.wav"),
+		filepath.Join(parent, "outside.wav"),
+	); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	if _, err := VerifyBundle(directory, receipt.ManifestSHA256); err == nil {
+		t.Fatal("VerifyBundle accepted media with an external hard link")
+	}
+}
+
 func TestRecorderRejectsImplicitDuplicateAndSubMillisecondTiming(t *testing.T) {
 	for _, test := range []struct {
 		name       string
