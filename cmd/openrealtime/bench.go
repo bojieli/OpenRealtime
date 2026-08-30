@@ -1267,6 +1267,7 @@ func runTauVoice(arguments []string, output io.Writer) error {
 		varyFactor      string
 		varyLevel       string
 		executionPath   string
+		inspectionGraph string
 		timeout         time.Duration
 		verifyOnly      bool
 		metrics         bool
@@ -1308,6 +1309,7 @@ func runTauVoice(arguments []string, output io.Writer) error {
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F2")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
+	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
 	flags.DurationVar(&timeout, "task-timeout", 10*time.Minute, "how long one simulation may take")
 	flags.BoolVar(&verifyOnly, "verify", false, "check the environment and exit without running")
 	flags.BoolVar(&metrics, "interaction-metrics", true, "also compute tau2's turn-taking metrics")
@@ -1324,9 +1326,6 @@ func runTauVoice(arguments []string, output io.Writer) error {
 		return err
 	}
 	if err := attachBenchmarkExecution(&cell, executionPath); err != nil {
-		return err
-	}
-	if err := requireExternalExecutionSource(cell.Execution, false); err != nil {
 		return err
 	}
 	speech, err := tauvoice.ParseCondition(condition)
@@ -1360,13 +1359,23 @@ func runTauVoice(arguments []string, output io.Writer) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	var executionEvidence *bench.ExecutionEvidence
+	if cell.Execution.Required() {
+		executionEvidence, err = captureExternalExecutionEvidence(
+			ctx, cell.Execution, inspectionGraph, endpoint, tokenEnv, model, os.Getenv,
+		)
+		if err != nil {
+			return err
+		}
+	}
 
 	config := tauvoice.Config{
 		Tau2Dir: tau2Dir, Endpoint: endpoint, Model: model, Domain: domain,
 		Condition: speech, Trials: trials, Limit: limit, UserModel: userModel,
 		UserModelURL: userURL, UserModelThinking: thinking, HallucinationRetries: halluRetry,
 		Cadence: cadence, Timeout: timeout, Cell: cell, Python: python, TokenEnv: tokenEnv,
-		AgentVoice: agentVoice, AgentTranscriptionModel: agentASR,
+		ExecutionEvidence: executionEvidence,
+		AgentVoice:        agentVoice, AgentTranscriptionModel: agentASR,
 		SynthesisProvider: synthesis, SynthesisEndpoint: ttsURL,
 		SynthesisModel: ttsModel, SynthesisVoice: ttsVoice,
 		RunPrefix: runPrefix,

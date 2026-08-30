@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/graph/ir"
@@ -220,18 +222,79 @@ func resolutionFromReviewedGraph(reviewed bench.GraphEvidence) bench.LiveResolut
 	return resolution
 }
 
-// requireExternalExecutionSource fails closed for suites whose subprocess owns
-// the protocol sessions. The generic CLI currently has neither cell-wide
-// observed evidence nor a task-scoped external inspector to pass through.
-func requireExternalExecutionSource(requirement bench.ExecutionRequirement, configured bool) error {
+// captureExternalExecutionEvidence opens one ordinary protocol session
+// immediately before a subprocess-owned suite. The resulting pathless proof
+// is cell-wide evidence only: it is valid for an external client whose exact
+// per-task routes are unavailable, but it must never be relabelled as
+// task-scoped evidence or used when the inspector reports selected paths.
+func captureExternalExecutionEvidence(
+	ctx context.Context,
+	requirement bench.ExecutionRequirement,
+	inspectionGraphPath string,
+	endpoint string,
+	tokenEnvironment string,
+	model string,
+	getenv func(string) string,
+) (*bench.ExecutionEvidence, error) {
 	if err := requirement.Validate(); err != nil {
-		return fmt.Errorf("invalid benchmark execution requirement: %w", err)
+		return nil, fmt.Errorf("capture external execution evidence: %w", err)
 	}
-	if !requirement.Required() || configured {
-		return nil
+	if ctx == nil {
+		return nil, errors.New("capture external execution evidence: nil context")
 	}
-	return fmt.Errorf(
-		"%s execution requirement needs an external task attestor or observed evidence source; "+
-			"the generic CLI has neither configured", requirement.Kind,
+	if err := context.Cause(ctx); err != nil {
+		return nil, err
+	}
+	if !requirement.Required() {
+		if strings.TrimSpace(inspectionGraphPath) != "" {
+			return nil, errors.New(
+				"capture external execution evidence: inspection graph requires an execution requirement",
+			)
+		}
+		return nil, nil
+	}
+	attestor, deploymentToken, err := configureSessionBenchmarkAttestor(
+		requirement, inspectionGraphPath, endpoint, tokenEnvironment, getenv,
 	)
+	if err != nil {
+		return nil, err
+	}
+	if attestor == nil {
+		return nil, errors.New("capture external execution evidence: required cell has no attestor")
+	}
+	transcript, err := bench.PlaySamples(ctx, bench.SessionConfig{
+		Endpoint: endpoint,
+		Token:    deploymentToken,
+		Model:    model,
+		Timeout:  20 * time.Second,
+		Quiet:    true,
+		// This is an evidence-only session. It sends no user media and waits
+		// only long enough to negotiate session.update and final inspection.
+		TrailingSilence:        time.Millisecond,
+		PostPlaybackQuiet:      2 * time.Second,
+		CaptureRuntimeEvidence: true,
+		RuntimeAttestor:        attestor,
+	}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("capture external execution evidence: %w", err)
+	}
+	if transcript.ExecutionError != "" {
+		return nil, fmt.Errorf("capture external execution evidence: %s", transcript.ExecutionError)
+	}
+	if transcript.Execution == nil {
+		return nil, errors.New("capture external execution evidence: endpoint emitted no execution proof")
+	}
+	evidence := transcript.Execution.Clone()
+	if evidence.Scope != "" {
+		return nil, errors.New("capture external execution evidence: cell-wide proof has a task scope")
+	}
+	if evidence.Graph != nil && len(evidence.Graph.Paths) > 0 {
+		return nil, errors.New(
+			"capture external execution evidence: selected paths require a task-scoped external inspector",
+		)
+	}
+	if err := requirement.Match(&evidence); err != nil {
+		return nil, fmt.Errorf("capture external execution evidence: %w", err)
+	}
+	return &evidence, nil
 }

@@ -275,6 +275,7 @@ func TestGenericBenchmarkInspectionGraphMismatchWinsBeforeEnvironmentWork(t *tes
 		{name: "fdb", run: runFDB, args: []string{"-dataset", missingEnvironment}},
 		{name: "fd-bench", run: runFDBench, args: []string{"-conditions", "clean", "-dataset", missingEnvironment}},
 		{name: "fdb-v3", run: runFDBv3, args: []string{"-dataset", missingEnvironment}},
+		{name: "tau-voice", run: runTauVoice, args: []string{"-tau2", missingEnvironment}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
