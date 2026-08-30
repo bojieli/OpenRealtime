@@ -1085,7 +1085,8 @@ func TestReviewBundleCommitsSourceBeforeReviewerAndAdoptsVerifiedRetryReceipts(t
 	}
 	result.Finish()
 	if err := bundle.FinishSuite(t.Context(), result); err == nil ||
-		!strings.Contains(err.Error(), "transient outage") {
+		!strings.Contains(err.Error(), "transient outage") ||
+		!strings.Contains(err.Error(), cases[5].ID()) {
 		t.Fatalf("first FinishSuite() = %v", err)
 	}
 	sourceReceipt, ok := bundle.SourceReceipt()
@@ -1186,7 +1187,8 @@ func TestReviewBundleResumeAdoptsAnchoredReviewsWithoutProviderLease(t *testing.
 	}
 	result.Finish()
 	if err := bundle.FinishSuite(t.Context(), result); err == nil ||
-		!strings.Contains(err.Error(), "transient outage") {
+		!strings.Contains(err.Error(), "transient outage") ||
+		!strings.Contains(err.Error(), cases[5].ID()) {
 		t.Fatalf("first FinishSuite() = %v", err)
 	}
 	sourceReceipt, ok := bundle.SourceReceipt()

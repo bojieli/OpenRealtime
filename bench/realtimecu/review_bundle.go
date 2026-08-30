@@ -1405,6 +1405,11 @@ func attachSecondaryReviews(
 				ctx, retentionCtx, root, directory, resultPayload, localAttempts, localMedia,
 				localCompleted, reviewer, evaluationStores, sensitive, localEvaluations,
 			)
+			if err != nil {
+				err = fmt.Errorf(
+					"review realtime computer-use case %q: %w", job.attempt.Case, err,
+				)
+			}
 			var receipt *revieweval.EvaluationBundleReceipt
 			if retained, exists := localEvaluations[job.attempt.Case]; exists {
 				copy := retained
