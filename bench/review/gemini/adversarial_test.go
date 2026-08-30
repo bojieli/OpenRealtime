@@ -375,6 +375,72 @@ func TestCredentialScannerShortTokenCardinalityIsAllocationBounded(t *testing.T)
 	}
 }
 
+func TestCredentialScannerRelevantFragmentCardinalityIsAllocationBounded(t *testing.T) {
+	scanner, err := newJSONCredentialScanner(testAPIKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.wipe()
+	// "test" is a real four-byte atom from testAPIKey. Repeating it in many
+	// independent JSON values exercises the conservative unordered-fragment
+	// path without providing enough distinct physical bytes or credential
+	// coverage to reconstruct the credential.
+	const tokens = 100_000
+	var payload strings.Builder
+	payload.Grow(tokens*7 + 2)
+	payload.WriteByte('[')
+	for index := 0; index < tokens; index++ {
+		if index > 0 {
+			payload.WriteByte(',')
+		}
+		payload.WriteString(`"test"`)
+	}
+	payload.WriteByte(']')
+	encoded := []byte(payload.String())
+	if scanner.containsJSON(encoded) {
+		t.Fatal("relevant-fragment fixture synthesized credential material")
+	}
+	allocations := testing.AllocsPerRun(3, func() {
+		if scanner.containsJSON(encoded) {
+			t.Fatal("relevant-fragment fixture synthesized credential material")
+		}
+	})
+	if allocations > 160 {
+		t.Fatalf("relevant-fragment scan allocations = %.0f, want <= 160", allocations)
+	}
+}
+
+func TestCredentialScannerEscapedRelevantCardinalityIsAllocationBounded(t *testing.T) {
+	scanner, err := newJSONCredentialScanner(testAPIKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.wipe()
+	const tokens = 100_000
+	var payload strings.Builder
+	payload.Grow(tokens*27 + 2)
+	payload.WriteByte('[')
+	for index := 0; index < tokens; index++ {
+		if index > 0 {
+			payload.WriteByte(',')
+		}
+		payload.WriteString(`"\u0074\u0065\u0073\u0074"`)
+	}
+	payload.WriteByte(']')
+	encoded := []byte(payload.String())
+	if scanner.containsJSON(encoded) {
+		t.Fatal("escaped relevant-fragment fixture synthesized credential material")
+	}
+	allocations := testing.AllocsPerRun(3, func() {
+		if scanner.containsJSON(encoded) {
+			t.Fatal("escaped relevant-fragment fixture synthesized credential material")
+		}
+	})
+	if allocations > 160 {
+		t.Fatalf("escaped relevant-fragment scan allocations = %.0f, want <= 160", allocations)
+	}
+}
+
 func TestCredentialScannerDoesNotReplayOneNestedRepeatedHalf(t *testing.T) {
 	const credential = "abcdefghabcdefgh"
 	payload, err := json.Marshal(map[string]string{

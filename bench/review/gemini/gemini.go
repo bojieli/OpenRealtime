@@ -1583,6 +1583,11 @@ func (scanner *jsonCredentialScanner) containsJSONContext(
 			make([]int, maximumDepth), make([]int, maximumDepth), make([]int, maximumDepth)
 		allEscapedActive, keyEscapedActive, valueEscapedActive :=
 			make([]bool, maximumDepth), make([]bool, maximumDepth), make([]bool, maximumDepth)
+		// Escaped strings are inspected synchronously before the next token. Reuse
+		// one candidate-local decode buffer and copy only the rare nested JSON value
+		// that is admitted to the recursive queue. This keeps adversarial token
+		// cardinality from turning into one allocation per escaped scalar.
+		decodeScratch := make([]byte, 0, 256)
 		for offset := 0; offset < len(current.payload); offset++ {
 			if offset&4095 == 0 {
 				if err := ctx.Err(); err != nil {
@@ -1650,7 +1655,7 @@ func (scanner *jsonCredentialScanner) containsJSONContext(
 				ctx, current.payload, offset, end,
 				streamMatched, streamNormalizedMatched,
 				streamEscapedMatched, streamEscapedActive,
-				streamFragments, &work, maximumWork,
+				streamFragments, &decodeScratch, &work, maximumWork,
 			)
 			if !ok {
 				if err := ctx.Err(); err != nil {
@@ -1685,7 +1690,14 @@ func (scanner *jsonCredentialScanner) containsJSONContext(
 				}
 			}
 			nested = bytes.TrimSpace(nested)
-			if len(nested) <= 1 || !json.Valid(nested) {
+			// A decoded scalar cannot expose another structural token boundary:
+			// its exact bytes were already fed through every ordered, normalized,
+			// escaped, and fragment stream above. Recursive semantic candidates
+			// start with an object or array. Screening that byte before json.Valid
+			// also avoids allocating one syntax error per escaped ordinary token.
+			completeJSON := len(nested) > 1 && (nested[0] == '{' || nested[0] == '[') &&
+				json.Valid(nested)
+			if !completeJSON {
 				embedded, bounded, err := embeddedJSONCandidatesContext(
 					ctx, nested, maximumCandidates-totalCandidates,
 				)
@@ -1700,7 +1712,8 @@ func (scanner *jsonCredentialScanner) containsJSONContext(
 						len(embeddedPayload) > maximumCandidateBytes-queuedBytes {
 						return true, nil
 					}
-					queue = append(queue, candidate{payload: embeddedPayload, depth: current.depth + 1})
+					queuedPayload := slices.Clone(embeddedPayload)
+					queue = append(queue, candidate{payload: queuedPayload, depth: current.depth + 1})
 					queuedBytes += len(embeddedPayload)
 					totalCandidates++
 				}
@@ -1710,7 +1723,7 @@ func (scanner *jsonCredentialScanner) containsJSONContext(
 				len(nested) > maximumCandidateBytes-queuedBytes {
 				return true, nil
 			}
-			queue = append(queue, candidate{payload: nested, depth: current.depth + 1})
+			queue = append(queue, candidate{payload: slices.Clone(nested), depth: current.depth + 1})
 			queuedBytes += len(nested)
 			totalCandidates++
 		}
@@ -1722,7 +1735,8 @@ func (scanner *jsonCredentialScanner) scanJSONString(
 	ctx context.Context, source []byte, start, limit int, matched []*int,
 	normalizedMatched []*int,
 	escapedMatched [][]int, escapedActive [][]bool,
-	fragmentEvidence []*credentialFragmentEvidence, work *int64, maximumWork int64,
+	fragmentEvidence []*credentialFragmentEvidence, decodeScratch *[]byte,
+	work *int64, maximumWork int64,
 ) (end int, nested []byte, contains bool, ok bool) {
 	if ctx == nil || ctx.Err() != nil {
 		return 0, nil, false, false
@@ -1731,10 +1745,14 @@ func (scanner *jsonCredentialScanner) scanJSONString(
 		source[start] != '"' || source[limit] != '"' || len(matched) == 0 ||
 		len(normalizedMatched) != len(matched) ||
 		len(escapedMatched) != len(matched) || len(escapedActive) != len(matched) ||
-		len(fragmentEvidence) != len(matched) || work == nil {
+		len(fragmentEvidence) != len(matched) || decodeScratch == nil || work == nil {
 		return 0, nil, false, false
 	}
 	captureDecoded := bytes.IndexAny(source[start+1:limit], "\\[{") >= 0
+	if captureDecoded {
+		*decodeScratch = (*decodeScratch)[:0]
+		nested = *decodeScratch
+	}
 	feed := func(input []byte) bool {
 		for offset := 0; offset < len(input); {
 			if ctx.Err() != nil {
@@ -1744,6 +1762,7 @@ func (scanner *jsonCredentialScanner) scanJSONString(
 			encoded := input[offset:end]
 			if captureDecoded {
 				nested = append(nested, encoded...)
+				*decodeScratch = nested
 			}
 			for stream := range matched {
 				if scanner.advanceCredential(encoded, matched[stream]) {
@@ -1866,6 +1885,12 @@ func (scanner *jsonCredentialScanner) scanJSONString(
 type credentialFragmentEvidence struct {
 	coverage []bool
 	capacity int
+	// mapped persists for the lifetime of one semantic candidate stream. Once a
+	// four-byte atom has marked every matching credential position, replaying
+	// those immutable positions for every later JSON token cannot add evidence.
+	// Keeping this candidate-local (rather than scanner-global) preserves
+	// concurrent Review safety and avoids one map allocation per relevant token.
+	mapped map[uint32]struct{}
 }
 
 func newCredentialFragmentEvidence(size int) *credentialFragmentEvidence {
@@ -1896,7 +1921,6 @@ func (scanner *jsonCredentialScanner) markCredentialFragment(
 		len(scanner.fragmentPositions) == 0 || len(fragment) < 4 {
 		return false
 	}
-	var seen map[uint32]struct{}
 	physicalEnd := 0
 	for offset := 0; offset+4 <= len(fragment); offset++ {
 		key := credentialFragmentKey(fragment[offset : offset+4])
@@ -1913,13 +1937,13 @@ func (scanner *jsonCredentialScanner) markCredentialFragment(
 		if evidence.capacity > len(scanner.credential) {
 			evidence.capacity = len(scanner.credential)
 		}
-		if _, alreadyMapped := seen[key]; alreadyMapped {
+		if _, alreadyMapped := evidence.mapped[key]; alreadyMapped {
 			continue
 		}
-		if seen == nil {
-			seen = make(map[uint32]struct{})
+		if evidence.mapped == nil {
+			evidence.mapped = make(map[uint32]struct{})
 		}
-		seen[key] = struct{}{}
+		evidence.mapped[key] = struct{}{}
 		for _, start := range positions {
 			for index := start; index < start+4; index++ {
 				evidence.coverage[index] = true
