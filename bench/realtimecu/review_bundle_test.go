@@ -222,7 +222,7 @@ func (reviewer *fixtureCUReviewer) Review(
 	problems := "[]"
 	if reviewer.finding != nil {
 		problems = fmt.Sprintf(
-			`[{"category":"timing","start_ms":%d,"evidence":"The event at %d ms is outside the playable timeline.","impact":"The timestamp cannot be reviewed."}]`,
+			`[{"category":"timing","start_ms":%d,"evidence":"The reviewer observed the event at %d ms, beyond the playable timeline.","impact":"The timestamp cannot be reviewed."}]`,
 			*reviewer.finding, *reviewer.finding,
 		)
 	}
