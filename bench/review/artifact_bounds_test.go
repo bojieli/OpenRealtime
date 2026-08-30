@@ -95,6 +95,7 @@ func TestRecordStructuralLimitsAdmitEveryContractMaximum(t *testing.T) {
 	for index := range record.Media {
 		item := baseMedia
 		item.Path = fmt.Sprintf("media/case-%03d.wav", index)
+		item.SHA256 = digest([]byte(fmt.Sprintf("maximum-media-%03d", index)))
 		record.Media[index] = item
 	}
 	finding := Finding{Category: "observable_problem", Evidence: "evidence", Impact: "impact"}

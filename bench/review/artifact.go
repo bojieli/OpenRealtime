@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"slices"
 
 	"github.com/bojieli/OpenRealtime/internal/strictjson"
 )
@@ -44,6 +45,16 @@ func (record Record) Validate() error {
 	if err := record.Provider.Validate(); err != nil {
 		return fmt.Errorf("review record provider: %w", err)
 	}
+	if err := record.ProviderCapabilities.Validate(); err != nil {
+		return fmt.Errorf("review record provider capabilities: %w", err)
+	}
+	capabilitiesSHA256, err := record.ProviderCapabilities.SHA256()
+	if err != nil || capabilitiesSHA256 != record.Provider.CapabilitiesSHA256 {
+		return errors.New("review record provider capabilities differ from their pinned identity")
+	}
+	if len(record.Media) > record.ProviderCapabilities.MaximumMediaCount {
+		return errors.New("review record media count exceeds its retained provider capabilities")
+	}
 	if record.Prompt.Version != CasePromptVersion || record.Schema.Version != CaseSchemaVersion {
 		return errors.New("review record has unsupported prompt or schema versions")
 	}
@@ -78,6 +89,8 @@ func (record Record) Validate() error {
 		return errors.New("review record reported model differs from its pinned provider")
 	}
 	seen := make(map[string]struct{}, len(record.Media))
+	seenDigests := make(map[string]struct{}, len(record.Media))
+	totalMediaBytes := int64(0)
 	for index, media := range record.Media {
 		if err := validateMediaIdentity(media); err != nil {
 			return fmt.Errorf("review record media %d: %w", index, err)
@@ -85,10 +98,25 @@ func (record Record) Validate() error {
 		if media.Validation != MediaValidationVersion {
 			return fmt.Errorf("review record media %d has invalid validation provenance", index)
 		}
+		if media.SizeBytes <= 0 ||
+			media.SizeBytes > record.ProviderCapabilities.MaximumMediaBytes-totalMediaBytes {
+			return errors.New("review record media bytes exceed its retained provider capabilities")
+		}
+		totalMediaBytes += media.SizeBytes
 		if _, duplicate := seen[media.Path]; duplicate {
 			return fmt.Errorf("review record repeats media path %q", media.Path)
 		}
 		seen[media.Path] = struct{}{}
+		if _, duplicate := seenDigests[media.SHA256]; duplicate {
+			return fmt.Errorf("review record repeats media content digest %q", media.SHA256)
+		}
+		seenDigests[media.SHA256] = struct{}{}
+		if _, supported := slices.BinarySearch(
+			record.ProviderCapabilities.MediaTypes, media.MediaType,
+		); !supported {
+			return fmt.Errorf(
+				"review record media %d type is outside its retained provider capabilities", index)
+		}
 	}
 	assessment, err := marshalCanonicalCompact(record.Assessment, maximumNormalizedOutputBytes)
 	if err != nil {
