@@ -12,6 +12,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/elements"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	scenarioconversation "github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
@@ -176,7 +177,10 @@ func ScenarioConversationLaunchConfig(
 		Artifacts: artifacts,
 		PlanOptions: graphconfig.Options{
 			Catalog: descriptors, SchemaResolver: schemas, Revision: 1,
-			OptionalDependencies: []string{cognitionelements.MediaResolverService},
+			OptionalDependencies: []string{
+				cognitionelements.MediaResolverService,
+				stateelements.TrajectoryStoreService,
+			},
 		},
 		Catalog: graphlaunch.Catalog{
 			Assembly: assembly, Adapters: []graphlaunch.AdapterPlugin{plugin.AdapterPlugin()},

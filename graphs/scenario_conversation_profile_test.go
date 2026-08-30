@@ -13,6 +13,8 @@ import (
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
+	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	scenarioconversation "github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
@@ -288,6 +290,57 @@ func TestScenarioConversationAdapterCarriesFullScenarioContractWithDistinctPlayb
 			})
 			if _, err := graphnative.New(context.Background(), graphnative.Config{Launch: drifted}); err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("scenario playback projection error = %v, want %q", err, test.want)
+			}
+			assertScenarioFactoriesUnopened(t, fixture)
+		})
+	}
+}
+
+func TestScenarioConversationLaunchRequiresExactSharedTrajectoryStoreSelection(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*graphlaunch.Config, scenarioProfileFixture)
+		want   string
+	}{
+		{
+			name: "missing selection",
+			mutate: func(config *graphlaunch.Config, _ scenarioProfileFixture) {
+				config.PlanOptions.OptionalDependencies = []string{
+					cognitionelements.MediaResolverService,
+				}
+			},
+			want: stateelements.TrajectoryStoreService,
+		},
+		{
+			name: "mismatched artifact",
+			mutate: func(config *graphlaunch.Config, fixture scenarioProfileFixture) {
+				drifted := fixture.registration.DependencyArtifact
+				drifted.Revision = "build:trajectory-store-drift"
+				for index := range config.Catalog.Assembly.Dependencies {
+					if config.Catalog.Assembly.Dependencies[index].Name == stateelements.TrajectoryStoreService {
+						config.Catalog.Assembly.Dependencies[index].Artifact = drifted
+					}
+				}
+				for index := range config.Catalog.MountDependencies {
+					if config.Catalog.MountDependencies[index].Name == stateelements.TrajectoryStoreService {
+						config.Catalog.MountDependencies[index].Artifact = drifted
+					}
+				}
+			},
+			want: "selection drifted",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newScenarioProfileFixture()
+			config, err := graphs.ScenarioConversationLaunchConfig(fixture.pluginConfig())
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(&config, fixture)
+			if _, err := graphlaunch.New(context.Background(), config); err == nil ||
+				!strings.Contains(err.Error(), test.want) {
+				t.Fatalf("scenario trajectory-store selection error = %v, want %q", err, test.want)
 			}
 			assertScenarioFactoriesUnopened(t, fixture)
 		})

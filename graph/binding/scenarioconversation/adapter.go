@@ -24,6 +24,7 @@ import (
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/perception"
@@ -305,6 +306,17 @@ func descriptorPortTypeByName(descriptorName, portName string) element.Type {
 }
 
 func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
+	for _, selected := range []struct {
+		name     string
+		artifact inspect.ArtifactIdentity
+	}{
+		{cognitionelements.MediaResolverService, config.DependencyArtifact},
+		{stateelements.TrajectoryStoreService, config.DependencyArtifact},
+	} {
+		if err := validateSelectedScenarioDependency(plan, selected.name, selected.artifact); err != nil {
+			return err
+		}
+	}
 	wanted := map[string]map[string]string{
 		"asr":                {"provider": ASRReference},
 		"model":              {"provider": ModelReference},
@@ -382,6 +394,29 @@ func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
 		retention.MaxActiveLeases != media.MaxActiveLeases || resolver.MaxPending != media.MaxPending ||
 		resolver.MaxBytes != media.MaxBytes {
 		return errors.New("scenario conversation graph retained-media bounds drifted from application selection")
+	}
+	return nil
+}
+
+func validateSelectedScenarioDependency(
+	plan *graphconfig.Plan, name string, artifact inspect.ArtifactIdentity,
+) error {
+	matches := 0
+	for _, dependency := range plan.Resolution().Dependencies {
+		if dependency.Name != name {
+			continue
+		}
+		matches++
+		if dependency.Artifact != artifact || dependency.Scope != graphconfig.DependencyScopeMount {
+			return fmt.Errorf(
+				"scenario conversation dependency %q selection drifted from exact mount artifact", name,
+			)
+		}
+	}
+	if matches != 1 {
+		return fmt.Errorf(
+			"scenario conversation requires exactly one selected dependency %q; got %d", name, matches,
+		)
 	}
 	return nil
 }
