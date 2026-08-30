@@ -374,7 +374,7 @@
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "scenario", "-url", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-speech-url", "{env:OPENREALTIME_SPEECH_ENDPOINT}", "-repeat", "15", "-architecture-manifest", "{env:OPENREALTIME_SCENARIO_ARCHITECTURE_MANIFEST}", "-architecture-cell", "{env:OPENREALTIME_SCENARIO_ARCHITECTURE_CELL}", "-launch-profile", "{env:OPENREALTIME_SCENARIO_LAUNCH_PROFILE}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-review-dir", "{artifacts}/candidate-scenario-review", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "candidate", "-record", "{artifacts}/candidate-scenario.json"],
+      "command": ["{go}", "run", "./cmd/openrealtime", "scenario", "-url", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-speech-url", "{env:OPENREALTIME_SPEECH_ENDPOINT}", "-repeat", "15", "-architecture-manifest", "{env:OPENREALTIME_SCENARIO_ARCHITECTURE_MANIFEST}", "-architecture-cell", "{env:OPENREALTIME_SCENARIO_ARCHITECTURE_CELL}", "-launch-profile", "{env:OPENREALTIME_SCENARIO_LAUNCH_PROFILE}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-review-dir", "{artifacts}/candidate-scenario-review", "-review-receipt", "{artifacts}/candidate-scenario-review.receipt.json", "-migration-store", "{env:OPENREALTIME_MIGRATION_STORE}", "-migration-registration", "{env:OPENREALTIME_MIGRATION_REGISTRATION}", "-migration-registration-sha256", "{env:OPENREALTIME_MIGRATION_REGISTRATION_SHA256}", "-migration-arm", "candidate", "-record", "{artifacts}/candidate-scenario.json"],
       "timeout": "24h",
       "skip_policy": "forbid",
       "prerequisites": [
@@ -394,9 +394,14 @@
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-review/CHECKLIST.md"},
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-review/manifest.json"},
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-review/REVIEW.md"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-review/source-manifest.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-review/architecture-result.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-review.receipt.json"},
         {"kind": "stdout_regex", "value": "(?m)^  reportable graph-native checklist$"},
         {"kind": "stdout_regex", "value": "(?m)^  reportable architecture cell$"},
-        {"kind": "stdout_regex", "value": "(?m)^  scenarios 165/165$"}
+        {"kind": "stdout_regex", "value": "(?m)^  scenarios 165/165$"},
+        {"kind": "stdout_regex", "value": "(?m)^  source       sha256:[a-f0-9]{64}$"},
+        {"kind": "stdout_regex", "value": "(?m)^  receipt      .+/candidate-scenario-review\\.receipt\\.json$"}
       ]
     },
     {

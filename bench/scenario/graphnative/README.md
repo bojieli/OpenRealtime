@@ -97,6 +97,7 @@ go run ./cmd/openrealtime scenario \
   -launch-profile "$OPENREALTIME_SCENARIO_LAUNCH_PROFILE" \
   -inspection-graph "$OPENREALTIME_BENCH_INSPECTION_GRAPH" \
   -review-dir results/candidate-scenario-review \
+  -review-receipt results/candidate-scenario-review.receipt.json \
   -migration-store "$OPENREALTIME_MIGRATION_STORE" \
   -migration-registration "$OPENREALTIME_MIGRATION_REGISTRATION" \
   -migration-registration-sha256 "$OPENREALTIME_MIGRATION_REGISTRATION_SHA256" \
@@ -115,10 +116,23 @@ The selected `-review-dir` plug-in writes create-only per-attempt stereo WAVs,
 the exact submitted visual bytes, independently verified media manifests,
 per-attempt checklist rows, `checklist.json`, and a case-by-case
 `CHECKLIST.md`. The existing sanitized `REVIEW.md` and review manifest remain
-alongside those graph-native artifacts. A checklist is reportable only when
-all 165 attempts have exact live graph evidence and verifier-backed media; a
-smaller diagnostic run is labeled non-reportable even when its individual
-behavior checks pass.
+alongside those graph-native artifacts. After the final architecture result is
+finished and retained, the plug-in closes every writable review handle,
+snapshots the exact flat evidence tree, and publishes `source-manifest.json`
+last. That source manifest cross-binds every checklist row to its exact scorer
+result, media manifest, stereo WAV, submitted visual bytes, final
+`architecture-result.json`, and complete file-set digest. The create-only
+portable receipt selected by `-review-receipt` is written outside the review
+directory and is required to reopen the source bundle; its default is
+`<review-dir>.receipt.json`.
+
+A checklist is reportable only when all 165 attempts have exact live graph
+evidence and verifier-backed media; a smaller diagnostic run is labeled
+non-reportable even when its individual behavior checks pass. Behavioral
+failures are still published case by case with their recordings. The
+deterministic checklist and source receipt are the authority; any multimodal
+model review is a separate, secondary evaluation bound to that immutable
+source receipt and cannot convert a failed checklist row into a pass.
 
 Missing endpoints, provider credentials, reviewed manifests, inspection
 authority, or migration registration are an unavailable provisioned gate—not a

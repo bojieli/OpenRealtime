@@ -133,6 +133,16 @@ cell. Meeting omni remains a separate, required WebRTC/native-audio composition
 gate; recording it as a second result under the single registered meeting-suite
 identity would be ambiguous and is therefore forbidden.
 
+The graph-native scenario candidate also owns a create-only human/media review
+directory and an external source receipt. The source manifest is published
+only after all 165 checklist rows, exact scorer results, stereo WAVs, submitted
+visual inputs, legacy review indexes, and the finished architecture result are
+closed and cross-bound. The release gate requires both the committed source
+manifest and the portable receipt outside that directory; `CHECKLIST.md` or an
+ordinary result JSON by itself is not retained-review evidence. Advisory model
+reviews remain separate evaluations of that receipt and cannot change the
+deterministic pass/fail result.
+
 After both arms are retained, set
 `OPENREALTIME_MIGRATION_REPORT_LOCATION` to a new logical location inside the
 store and run:
@@ -214,7 +224,8 @@ external checkout are not offline repository inputs.
   requires all 6,147 across the checked 21 partitions, Realtime-CU requires 16,
   Meeting Assistant requires four per foreground, tau2 requires 278 in each of
   control and regular, DynaCU requires 150, and the owned scenario run requires
-  165/165 attempts.
+  165/165 attempts plus its externally anchored, reopenable source/media
+  receipt.
 - Tests discover every `Fuzz*` function and every non-runtime Go module and
   compare them with matrix coverage. Adding one without a normal/race/vet or
   exact fuzz gate breaks `go test ./internal/releasevalidation`.
