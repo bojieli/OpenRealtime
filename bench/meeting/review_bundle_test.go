@@ -653,6 +653,30 @@ func TestMeetingRunHermeticGraphNativeAllFourWithReviewBundle(t *testing.T) {
 			t.Fatalf("graph-native review attempt = %+v", attempt)
 		}
 	}
+	receipts := bundle.EvaluationReceipts()
+	if len(receipts) != len(manifest.Attempts) {
+		t.Fatalf("graph-native evaluation receipts = %d, want %d",
+			len(receipts), len(manifest.Attempts))
+	}
+	for index, attempt := range manifest.Attempts {
+		mediaDirectory := filepath.Join(directory, filepath.FromSlash(filepath.Dir(attempt.MediaManifest.Path)))
+		mediaManifest, err := reviewmedia.VerifyBundle(mediaDirectory, attempt.MediaManifest.SHA256)
+		if err != nil {
+			t.Fatal(err)
+		}
+		maximumMS, err := meetingFindingTimestampMaximumMS(mediaManifest.AttemptEndUS)
+		if err != nil {
+			t.Fatal(err)
+		}
+		opened, err := revieweval.VerifyEvaluationBundle(
+			context.Background(), revieweval.EvaluationBundleOptions{Directory: receipts[index].Directory},
+			receipts[index],
+		)
+		if err != nil || opened.Record.FindingTimestampMaximumMS != maximumMS {
+			t.Fatalf("graph-native review timeline case=%s maximum=%d want=%d error=%v",
+				attempt.Case, opened.Record.FindingTimestampMaximumMS, maximumMS, err)
+		}
+	}
 }
 
 func TestMeetingRunHermeticGraphNativeAllFourRealFFmpegReviewEndToEnd(t *testing.T) {
@@ -2471,6 +2495,25 @@ func TestMeetingReviewTimelineUsesExactMicrosecondBoundary(t *testing.T) {
 	}
 	if !meetingAssessmentBeyondMedia(assessment(&two), 1_999) {
 		t.Fatal("two-millisecond finding was admitted after a 1.999ms recording")
+	}
+	for _, test := range []struct {
+		endUS int64
+		want  int64
+	}{
+		{endUS: 1_000, want: 1},
+		{endUS: 1_999, want: 1},
+		{endUS: 2_000, want: 2},
+	} {
+		got, err := meetingFindingTimestampMaximumMS(test.endUS)
+		if err != nil || got != test.want {
+			t.Fatalf("finding timestamp maximum for %dus = %d, %v; want %d",
+				test.endUS, got, err, test.want)
+		}
+	}
+	for _, invalid := range []int64{-1, 0, 999} {
+		if _, err := meetingFindingTimestampMaximumMS(invalid); err == nil {
+			t.Fatalf("finding timestamp maximum admitted %dus", invalid)
+		}
 	}
 }
 

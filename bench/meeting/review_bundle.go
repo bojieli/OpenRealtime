@@ -1567,10 +1567,20 @@ func (bundle *ReviewBundle) publishDeterministicMeetingSource(
 			return nil, ReviewSourceManifest{}, ReviewSourceReceipt{},
 				errors.New("exact meeting source media tree changed before publication")
 		}
+		findingTimestampMaximumMS, err := meetingFindingTimestampMaximumMS(
+			input.MediaReceipt.Manifest.AttemptEndUS,
+		)
+		if err != nil {
+			manifest.Missing = append(manifest.Missing, ReviewMissing{
+				Case: task.ID, Reason: "sealed media has no exact advisory timeline bound",
+			})
+			continue
+		}
 		preparedRequest, err := revieweval.PrepareContext(ctx, revieweval.Request{
 			AttemptID: meetingReviewAttemptID(task.ID, resultSHA256),
 			Suite:     SuiteName, Case: task.ID, Trial: attempt.Trial,
-			RootDirectory: input.MediaReceipt.Directory, Context: slices.Clone(contextPayload),
+			FindingTimestampMaximumMS: findingTimestampMaximumMS,
+			RootDirectory:             input.MediaReceipt.Directory, Context: slices.Clone(contextPayload),
 			Media: input.MediaReceipt.Manifest.ReviewMedia(), SensitiveValues: slices.Clone(bundle.sensitive),
 		})
 		if err != nil || !meetingReviewContextsEqual(preparedRequest.Context, contextPayload) {
@@ -1739,10 +1749,21 @@ func (bundle *ReviewBundle) prepareMeetingReviews(
 			}
 			continue
 		}
+		findingTimestampMaximumMS, timelineErr := meetingFindingTimestampMaximumMS(
+			verified.AttemptEndUS,
+		)
+		if timelineErr != nil {
+			attempt = failedMeetingReviewAttempt(attempt, "sealed source media has no advisory timeline bound")
+			prepared[task.ID] = preparedMeetingReview{
+				Attempt: attempt, Pending: input.clone(), ContextPayload: contextPayload,
+			}
+			continue
+		}
 		request := revieweval.Request{
 			AttemptID: meetingReviewAttemptID(task.ID, resultSHA256),
 			Suite:     SuiteName, Case: task.ID, Trial: attempt.Trial,
-			RootDirectory: input.MediaReceipt.Directory, Context: slices.Clone(contextPayload),
+			FindingTimestampMaximumMS: findingTimestampMaximumMS,
+			RootDirectory:             input.MediaReceipt.Directory, Context: slices.Clone(contextPayload),
 			Media: verified.ReviewMedia(), SensitiveValues: slices.Clone(bundle.sensitive),
 		}
 		adopted, found, publication, adoptErr := bundle.beginMeetingReviewEvaluation(
@@ -1767,7 +1788,9 @@ func (bundle *ReviewBundle) prepareMeetingReviews(
 		if cause := context.Cause(ctx); cause != nil {
 			return prepared, errors.Join(cause, closeMeetingEvaluationPublication(publication))
 		}
-		inputErr := verifyMeetingEvaluationInputs(evaluation, contextPayload, verified.ReviewMedia())
+		inputErr := verifyMeetingEvaluationInputs(
+			evaluation, contextPayload, verified.ReviewMedia(), findingTimestampMaximumMS,
+		)
 		failureReason := ""
 		switch {
 		case reviewErr != nil:
@@ -1857,11 +1880,13 @@ func meetingReviewAttemptID(caseID, resultSHA256 string) string {
 
 func verifyMeetingEvaluationInputs(
 	evaluation revieweval.Evaluation, contextPayload []byte, media []revieweval.Media,
+	findingTimestampMaximumMS int64,
 ) error {
 	if !meetingReviewContextsEqual(evaluation.Context, contextPayload) ||
 		evaluation.Record.ContextSHA256 != reviewDigest(evaluation.Context) ||
+		evaluation.Record.FindingTimestampMaximumMS != findingTimestampMaximumMS ||
 		len(evaluation.Record.Media) != len(media) || len(evaluation.Media) != len(media) {
-		return errors.New("secondary review context or media count differs from its exact input")
+		return errors.New("secondary review context, timeline, or media count differs from its exact input")
 	}
 	for index, expected := range media {
 		item := evaluation.Media[index]
@@ -2033,6 +2058,7 @@ func (bundle *ReviewBundle) beginMeetingReviewEvaluation(
 	record := opened.Record
 	if record.Provider != bundle.reviewerID || record.AttemptID != request.AttemptID ||
 		record.Suite != request.Suite || record.Case != request.Case || record.Trial != request.Trial ||
+		record.FindingTimestampMaximumMS != request.FindingTimestampMaximumMS ||
 		record.ContextSHA256 != attempt.Context.SHA256 ||
 		meetingAssessmentBeyondMedia(record.Assessment, media.AttemptEndUS) ||
 		!meetingReviewRecordMediaMatches(record.Media, media.ReviewMedia(), pending.Media) {
@@ -2184,6 +2210,17 @@ func meetingAssessmentBeyondMedia(assessment revieweval.Assessment, attemptEndUS
 		}
 	}
 	return assessment.Limitations == nil
+}
+
+func meetingFindingTimestampMaximumMS(attemptEndUS int64) (int64, error) {
+	if attemptEndUS <= 0 {
+		return 0, errors.New("meeting review media has no positive terminal timestamp")
+	}
+	maximumMS := attemptEndUS / 1000
+	if maximumMS <= 0 {
+		return 0, errors.New("meeting review media is shorter than one advisory millisecond")
+	}
+	return maximumMS, nil
 }
 
 func meetingMillisecondBeyondUS(milliseconds, attemptEndUS int64) bool {
@@ -2840,11 +2877,19 @@ func VerifyReviewBundle(directory, expectedManifestSHA256 string) (ReviewManifes
 				return ReviewManifest{}, err
 			}
 		}
+		findingTimestampMaximumMS, err := meetingFindingTimestampMaximumMS(
+			verifiedMedia.AttemptEndUS,
+		)
+		if err != nil {
+			return ReviewManifest{}, errors.New("meeting review source has no exact advisory timeline bound")
+		}
 		record := opened.Record
 		if record.Provider != manifest.Reviewer ||
 			record.AttemptID != meetingReviewAttemptID(attempt.Case, manifest.Result.SHA256) ||
 			record.Suite != SuiteName || record.Case != attempt.Case ||
-			record.Trial != attempt.Trial || record.ContextSHA256 != attempt.Context.SHA256 ||
+			record.Trial != attempt.Trial ||
+			record.FindingTimestampMaximumMS != findingTimestampMaximumMS ||
+			record.ContextSHA256 != attempt.Context.SHA256 ||
 			record.RequestFingerprint != attempt.Assessment.RequestSHA256 ||
 			!reflect.DeepEqual(meetingReviewResponse(record), *attempt.Assessment) ||
 			meetingAssessmentBeyondMedia(record.Assessment, verifiedMedia.AttemptEndUS) ||
