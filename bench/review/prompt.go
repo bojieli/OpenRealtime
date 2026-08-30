@@ -33,8 +33,8 @@ func caseReviewSchema() json.RawMessage {
         "additionalProperties": false,
         "properties": {
           "category": {"type": "string"},
-          "start_ms": {"type": "integer", "minimum": 0},
-          "end_ms": {"type": "integer", "minimum": 0},
+          "start_ms": {"type": "integer", "minimum": 0, "maximum": 86400000},
+          "end_ms": {"type": "integer", "minimum": 0, "maximum": 86400000},
           "evidence": {"type": "string"},
           "impact": {"type": "string"}
         },
@@ -48,8 +48,8 @@ func caseReviewSchema() json.RawMessage {
         "additionalProperties": false,
         "properties": {
           "category": {"type": "string"},
-          "start_ms": {"type": "integer", "minimum": 0},
-          "end_ms": {"type": "integer", "minimum": 0},
+          "start_ms": {"type": "integer", "minimum": 0, "maximum": 86400000},
+          "end_ms": {"type": "integer", "minimum": 0, "maximum": 86400000},
           "evidence": {"type": "string"},
           "impact": {"type": "string"}
         },

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -464,6 +465,42 @@ func TestAssessmentStrictlyRequiresSchemaAndSemanticInvariants(t *testing.T) {
 				t.Fatalf("normalizeAssessment() error = %v, want %q", err, test.match)
 			}
 		})
+	}
+}
+
+func TestAssessmentTimestampBoundsAreSchemaAndRuntimePinned(t *testing.T) {
+	schema := caseReviewSchema()
+	if bytes.Count(schema, []byte(`"maximum": 86400000`)) != 4 {
+		t.Fatalf("review schema does not pin all four timestamp bounds: %s", schema)
+	}
+	assessment := func(timestamp string) json.RawMessage {
+		return json.RawMessage(fmt.Sprintf(
+			`{"media_usable":true,"observed_outcome":"fail","agrees_with_deterministic":true,"confidence":1,"summary":"bounded","significant_problems":[{"category":"latency","start_ms":%s,"end_ms":%s,"evidence":"late","impact":"miss"}],"minor_observations":[],"limitations":[]}`,
+			timestamp, timestamp,
+		))
+	}
+	if _, _, err := normalizeAssessment(assessment("86400000")); err != nil {
+		t.Fatalf("maximum timestamp rejected: %v", err)
+	}
+	if _, _, err := normalizeAssessment(assessment("86400001")); err == nil ||
+		!strings.Contains(err.Error(), "supported timestamp range") {
+		t.Fatalf("maximum+1 timestamp error = %v", err)
+	}
+	huge := strings.Repeat("9", 512)
+	if _, _, err := normalizeAssessment(assessment(huge)); err == nil ||
+		!strings.Contains(err.Error(), "supported range") || strings.Contains(err.Error(), huge) {
+		t.Fatalf("huge timestamp error = %v", err)
+	}
+	if _, _, err := normalizeAssessment(assessment("1e3")); err == nil ||
+		!strings.Contains(err.Error(), "must be an integer") {
+		t.Fatalf("exponent timestamp error = %v", err)
+	}
+	over := maximumFindingTimestampMS + 1
+	if err := validateFinding("finding", Finding{
+		Category: "latency", StartMS: &over, EndMS: &over,
+		Evidence: "late", Impact: "miss",
+	}); err == nil || !strings.Contains(err.Error(), "supported range") {
+		t.Fatalf("programmatic timestamp bound error = %v", err)
 	}
 }
 

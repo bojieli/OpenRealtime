@@ -39,7 +39,7 @@ const (
 	RecordFormat              = "openrealtime.multimodal-review"
 	FormatVersion             = 4
 	CasePromptVersion         = "openrealtime.case-media-review.prompt.v3"
-	CaseSchemaVersion         = "openrealtime.case-media-review.schema.v1"
+	CaseSchemaVersion         = "openrealtime.case-media-review.schema.v2"
 	SanitizationVersion       = "openrealtime.review-sanitization.v4"
 	MediaValidationVersion    = "openrealtime.media-container-validation.v4"
 	maximumContextBytes       = 4 << 20
@@ -53,6 +53,7 @@ const (
 	maximumSensitiveWork      = 512 << 20
 	maximumSensitiveQueued    = 128 << 20
 	maximumProviderErrorBytes = 64 << 10
+	maximumFindingTimestampMS = int64(24 * 60 * 60 * 1000)
 
 	ProviderRequestIDMissing = "missing"
 	ProviderRequestIDNull    = "null"
@@ -1067,17 +1068,45 @@ func validateExactAssessmentShape(source json.RawMessage) error {
 			return fmt.Errorf("review assessment field %q must be a non-null array", name)
 		}
 		for index, rawFinding := range findings {
-			if _, err := exactJSONObject(
+			finding, err := exactJSONObject(
 				rawFinding, fmt.Sprintf("review assessment %s %d", name, index),
 				[]string{"category", "evidence", "impact"}, []string{"start_ms", "end_ms"},
-			); err != nil {
+			)
+			if err != nil {
 				return err
+			}
+			for _, timestamp := range []string{"start_ms", "end_ms"} {
+				if rawTimestamp, exists := finding[timestamp]; exists {
+					if err := validateAssessmentTimestamp(
+						fmt.Sprintf("review assessment %s %d %s", name, index, timestamp),
+						rawTimestamp,
+					); err != nil {
+						return err
+					}
+				}
 			}
 		}
 	}
 	var limitations []json.RawMessage
 	if err := json.Unmarshal(top["limitations"], &limitations); err != nil || limitations == nil {
 		return errors.New("review assessment field \"limitations\" must be a non-null array")
+	}
+	return nil
+}
+
+func validateAssessmentTimestamp(label string, source []byte) error {
+	value, err := strconv.ParseInt(string(source), 10, 64)
+	if err != nil {
+		if len(source) > 0 && source[0] == '-' {
+			return fmt.Errorf("%s must not be negative", label)
+		}
+		return fmt.Errorf("%s must be an integer in the supported range", label)
+	}
+	if value < 0 {
+		return fmt.Errorf("%s must not be negative", label)
+	}
+	if value > maximumFindingTimestampMS {
+		return fmt.Errorf("%s exceeds the supported timestamp range", label)
 	}
 	return nil
 }
@@ -1132,6 +1161,10 @@ func validateFinding(label string, finding Finding) error {
 	if (finding.StartMS != nil && *finding.StartMS < 0) ||
 		(finding.EndMS != nil && *finding.EndMS < 0) {
 		return fmt.Errorf("%s timestamps must not be negative", label)
+	}
+	if (finding.StartMS != nil && *finding.StartMS > maximumFindingTimestampMS) ||
+		(finding.EndMS != nil && *finding.EndMS > maximumFindingTimestampMS) {
+		return fmt.Errorf("%s timestamps exceed the supported range", label)
 	}
 	if finding.StartMS != nil && finding.EndMS != nil && *finding.EndMS < *finding.StartMS {
 		return fmt.Errorf("%s end_ms precedes start_ms", label)

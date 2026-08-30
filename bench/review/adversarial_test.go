@@ -1319,10 +1319,12 @@ func TestMediaIdentityRejectsInvalidUTF8AndControlPaths(t *testing.T) {
 
 func TestReviewContractVersionsReflectIncompatibleFormatChanges(t *testing.T) {
 	if FormatVersion != 4 || CasePromptVersion != "openrealtime.case-media-review.prompt.v3" ||
+		CaseSchemaVersion != "openrealtime.case-media-review.schema.v2" ||
 		SanitizationVersion != "openrealtime.review-sanitization.v4" ||
 		MediaValidationVersion != "openrealtime.media-container-validation.v4" {
-		t.Fatalf("contract versions = format:%d prompt:%q sanitization:%q media:%q",
-			FormatVersion, CasePromptVersion, SanitizationVersion, MediaValidationVersion)
+		t.Fatalf("contract versions = format:%d prompt:%q schema:%q sanitization:%q media:%q",
+			FormatVersion, CasePromptVersion, CaseSchemaVersion,
+			SanitizationVersion, MediaValidationVersion)
 	}
 }
 
