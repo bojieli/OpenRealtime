@@ -259,6 +259,62 @@ func TestAPartialDoesNotBlockAudioIngestionOrEndpointFinalization(t *testing.T) 
 	}
 }
 
+func TestAPartialOutlivesThePushFrameCallContext(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		close(started)
+		select {
+		case <-release:
+		case <-request.Context().Done():
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"text":"context survived","language":"en"}`))
+	}))
+	defer server.Close()
+
+	adapter, err := New(Config{
+		BaseURL: server.URL + "/v1", APIKey: "secret",
+		PartialInterval: 500 * time.Millisecond, SampleRateHz: 16_000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	callContext, cancelCall := context.WithCancel(context.Background())
+	if _, err := adapter.PushFrame(callContext, v1.AudioFrame{
+		Index: 0, SampleOffset: 0, SampleRateHz: 16_000, PCM16LE: tone(8_000),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A graph event callback cancels this context immediately after PushFrame
+	// returns. That must not cancel the adapter-owned asynchronous request.
+	cancelCall()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("partial was canceled with its PushFrame call context")
+	}
+	close(release)
+	await(t, func() bool {
+		adapter.mu.Lock()
+		defer adapter.mu.Unlock()
+		return adapter.partialDone != nil && len(adapter.partialDone) == 1
+	})
+	revisions, err := adapter.PushFrame(context.Background(), v1.AudioFrame{
+		Index: 1, SampleOffset: 8_000, SampleRateHz: 16_000, PCM16LE: tone(160),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revisions) != 1 || revisions[0].UnstableText != "context survived" {
+		t.Fatalf("partial revision after call context ended: %+v", revisions)
+	}
+	if err := adapter.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestASlowPartialCoalescesMissedIntervals(t *testing.T) {
 	firstStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})

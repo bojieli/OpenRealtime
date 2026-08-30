@@ -336,7 +336,12 @@ func (adapter *Adapter) Close() error {
 // is in flight, so a slow endpoint coalesces stale decode opportunities rather
 // than building an unbounded request queue.
 func (adapter *Adapter) startPartial(ctx context.Context) {
-	requestContext, cancel := context.WithCancel(ctx)
+	// PushFrame is commonly called from an event handler whose context is
+	// canceled as soon as that handler returns. The speculative request is
+	// adapter-owned work and deliberately outlives that one call; retain its
+	// values while bounding it with the adapter's request timeout and explicit
+	// cancellation from Finalize or Close.
+	requestContext, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	done := make(chan partialResult, 1)
 	samples := slices.Clone(adapter.buffer)
 	sourceSample := adapter.nextSourceSample
