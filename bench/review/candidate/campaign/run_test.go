@@ -237,7 +237,8 @@ func TestRunPublishesEveryEvaluationAndRecoversWithoutRepeatingProvider(t *testi
 	}
 	for _, evaluation := range result.Evaluations {
 		if evaluation.Recovered || !evaluation.Assessment.MediaUsable ||
-			evaluation.Receipt.Directory == "" || evaluation.ReceiptPath == "" {
+			evaluation.Receipt.Directory == "" || evaluation.ReceiptPath == "" ||
+			evaluation.Deterministic.ID != evaluation.Case || !evaluation.Deterministic.Completed {
 			t.Fatalf("fresh evaluation = %+v", evaluation)
 		}
 		opened, err := review.VerifyEvaluationBundle(
@@ -259,7 +260,8 @@ func TestRunPublishesEveryEvaluationAndRecoversWithoutRepeatingProvider(t *testi
 		t.Fatalf("recovery repeated provider calls: %d", provider.calls.Load())
 	}
 	for _, evaluation := range recovered.Evaluations {
-		if !evaluation.Recovered {
+		if !evaluation.Recovered || evaluation.Deterministic.ID != evaluation.Case ||
+			!evaluation.Deterministic.Completed {
 			t.Fatalf("evaluation was not recovered: %+v", evaluation)
 		}
 	}

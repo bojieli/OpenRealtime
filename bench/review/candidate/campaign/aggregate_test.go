@@ -93,6 +93,14 @@ func TestPublishAggregateProducesCaseByCaseMediaReviewAndRecovers(t *testing.T) 
 			t.Fatalf("REVIEW.md is missing %q:\n%s", required, reviewText)
 		}
 	}
+	campaignPayload, err := os.ReadFile(filepath.Join(fixture.options.Directory, aggregateResultName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(campaignPayload), `"recovered"`) ||
+		!strings.Contains(string(campaignPayload), `"deterministic_outcome"`) {
+		t.Fatalf("campaign result exposes operational state or omits deterministic authority: %s", campaignPayload)
+	}
 
 	verified, err := VerifyAggregate(t.Context(), fixture.options)
 	if err != nil {
