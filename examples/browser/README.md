@@ -1,19 +1,20 @@
-# Browser demo
+# Legacy one-file WebRTC example
 
 A voice session in a browser, in one HTML file with no build step and no
-dependencies.
+dependencies. This package is retained as a compatibility oracle while its
+media behavior moves into the composable browser client.
 
 ```sh
-openrealtime serve -demo -webrtc-listen 127.0.0.1:8766
+openrealtime serve -webrtc-listen 127.0.0.1:8766 -webrtc-allow-origin http://127.0.0.1:8080
+python3 -m http.server 8080 --directory examples/browser
 ```
 
-Open `http://127.0.0.1:8765/demo` and press Connect. Point it somewhere else
+Open `http://127.0.0.1:8080` and press Connect. Point it at another adapter
 with `?adapter=http://host:port/v1/realtime`.
 
-The page is embedded in the binary, so there is nothing to serve separately —
-but `-demo` is off by default. A realtime server's job is one protocol on one
-port, and a page that appeared on every deployment would be surface nobody
-asked for.
+The realtime gateway deliberately does not serve this page. New client work
+uses `openrealtime present`, whose standalone host serves a descriptor-locked
+manifest and independently replaceable client modules.
 
 Browsers require a secure context for microphone access. `127.0.0.1` counts as
 one; any other host needs HTTPS.
@@ -36,8 +37,8 @@ client rather than a second way in.
 
 It also shows two things worth seeing:
 
-- **First-audio latency** after each endpoint, measured in the browser, which
-  is the number a person actually experiences.
+- **First received audio-delta latency** after each endpoint, measured when
+  the protocol event reaches the page. It is not an audio playout metric.
 - **Observed content**, rendered differently from speech on purpose. A person
   looking at narrated screen text is looking at something the agent read, not
   something anyone said.

@@ -12,11 +12,11 @@ let tools = null;
 const sources = new Map();
 
 // The session's own view of what is happening, which is not the same as the
-// UI's. Endpoint timing in particular has to be measured against the server's
-// own report of when the turn ended, or the number measures this page's
-// scheduling rather than the system's latency.
+// UI's. The scheduling metric uses the server's own report of when the turn
+// ended as its start and the local AudioBufferSourceNode.start call as its
+// end. It deliberately makes no claim about when a sample reached hardware.
 let endpointAt = null;
-let firstAudioAt = null;
+let firstAudioScheduledAt = null;
 let negotiated = null;
 let manualTurns = false;
 // Whether the server still has a response open. The local player and the
@@ -72,7 +72,7 @@ async function connect() {
   const name = ui.elements.transport.value;
   ui.clearLog();
   ui.resetStats();
-  endpointAt = firstAudioAt = negotiated = null;
+  endpointAt = firstAudioScheduledAt = negotiated = null;
 
   try {
     if (config.tools.length) {
@@ -98,7 +98,7 @@ async function connect() {
 
     if (!transport.carriesMedia) {
       player = new Player();
-      player.addEventListener("first-audio", noteFirstAudio);
+      player.addEventListener("first-audio-scheduled", noteFirstAudioScheduled);
       recorder = new Recorder();
       recorder.addEventListener("frame", (message) => {
         send({ type: "input_audio_buffer.append", audio: message.detail });
@@ -158,10 +158,11 @@ async function disconnect(reason) {
   else ui.setState("not connected", "");
 }
 
-function noteFirstAudio() {
-  if (firstAudioAt !== null || endpointAt === null) return;
-  firstAudioAt = performance.now();
-  ui.setStat("first audio after endpoint", `${Math.round(firstAudioAt - endpointAt)} ms`);
+function noteFirstAudioScheduled() {
+  if (firstAudioScheduledAt !== null || endpointAt === null) return;
+  firstAudioScheduledAt = performance.now();
+  ui.setStat("first audio scheduled after endpoint",
+    `${Math.round(firstAudioScheduledAt - endpointAt)} ms`);
 }
 
 // --- protocol ---------------------------------------------------------------
@@ -203,7 +204,7 @@ function handle(event) {
 
     case "input_audio_buffer.speech_stopped":
       endpointAt = performance.now();
-      firstAudioAt = null;
+      firstAudioScheduledAt = null;
       ui.setState("thinking", "working");
       break;
 

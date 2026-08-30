@@ -76,8 +76,9 @@ class CDP {
     client.#socket.addEventListener("message", (message) => {
       const frame = JSON.parse(message.data);
       if (frame.id && client.#pending.has(frame.id)) {
-        const { resolve, reject } = client.#pending.get(frame.id);
+        const { resolve, reject, timer } = client.#pending.get(frame.id);
         client.#pending.delete(frame.id);
+        clearTimeout(timer);
         frame.error ? reject(new Error(JSON.stringify(frame.error))) : resolve(frame.result);
       } else if (frame.method) {
         (client.#handlers.get(frame.method) ?? []).forEach((handler) => handler(frame.params));
@@ -94,7 +95,11 @@ class CDP {
   send(method, params = {}, sessionId) {
     const id = this.#next++;
     return new Promise((resolve, reject) => {
-      this.#pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        this.#pending.delete(id);
+        reject(new Error(`CDP ${method} timed out after 20 seconds`));
+      }, 20000);
+      this.#pending.set(id, { resolve, reject, timer });
       this.#socket.send(JSON.stringify({ id, method, params, sessionId }));
     });
   }
@@ -181,10 +186,26 @@ try {
     return last;
   };
 
+  // A rendered tool result precedes the response.done that closes its turn.
+  // Starting the next scripted turn in that interval races response.create
+  // against the previous response lifecycle, especially on the WebSocket
+  // path where media and control share one ordered connection. Require the
+  // protocol boundary itself rather than sleeping for a machine-dependent
+  // duration.
+  const responseSettled = async () => {
+    const inbound = await events("in");
+    const created = inbound.filter((line) => line.includes('"type":"response.created"')).length;
+    const done = inbound.filter((line) => line.includes('"type":"response.done"')).length;
+    return created > 0 && done >= created;
+  };
+
   // Chromium's fake microphone is a beep, not a voice: about forty
-  // milliseconds at full amplitude and then a second of quiet. That is the
-  // shape of a click, and a gate that admitted clicks would turn room tone
-  // into turns nobody took. So it is replaced with something that sustains.
+  // milliseconds at full amplitude and then a second of quiet. Its fake
+  // camera has also proved process-load-sensitive when several real-browser
+  // packages run together. Deterministic generated tracks still exercise the
+  // browser's MediaStream, video-element, canvas, JPEG, transport, and source
+  // lifecycle paths; physical-device permission remains a separate smoke
+  // gate. Use a sustained tone and a changing camera canvas here.
   await evaluate(`(() => {
     const context = new AudioContext();
     const oscillator = context.createOscillator();
@@ -194,13 +215,30 @@ try {
     gain.gain.value = 0.4;
     oscillator.connect(gain).connect(destination);
     oscillator.start();
-    const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+
+    const camera = document.createElement('canvas');
+    camera.width = 640;
+    camera.height = 480;
+    const cameraPaint = camera.getContext('2d');
+    let cameraFrame = 0;
+    const drawCamera = () => {
+      cameraPaint.fillStyle = cameraFrame++ % 2 ? '#5941a9' : '#7b61c9';
+      cameraPaint.fillRect(0, 0, camera.width, camera.height);
+      cameraPaint.fillStyle = 'white';
+      cameraPaint.font = 'bold 40px system-ui';
+      cameraPaint.fillText('Camera fixture', 130, 210);
+      cameraPaint.font = '24px system-ui';
+      cameraPaint.fillText('frame ' + cameraFrame, 230, 260);
+    };
+    drawCamera();
+    setInterval(drawCamera, 250);
+    const cameraStream = camera.captureStream(4);
+
     navigator.mediaDevices.getUserMedia = async (constraints) => {
-      if (!constraints || !constraints.audio) return real(constraints);
-      const stream = await real({ ...constraints, audio: false }).catch(() => new MediaStream());
-      const voice = new MediaStream([destination.stream.getAudioTracks()[0]]);
-      stream.getVideoTracks().forEach((track) => voice.addTrack(track));
-      return voice;
+      const stream = new MediaStream();
+      if (constraints?.audio) stream.addTrack(destination.stream.getAudioTracks()[0]);
+      if (constraints?.video) stream.addTrack(cameraStream.getVideoTracks()[0]);
+      return stream;
     };
 
     // Headless Chromium has no operating-system display picker, but display
@@ -279,8 +317,13 @@ try {
   const state = await evaluate("document.getElementById('state').textContent");
   check(`the session connects over ${MODE}`, live.includes(state), `state=${state}`);
 
-  await waitFor("session.updated to arrive", async () =>
-    (await evaluate("document.getElementById('negotiated').textContent")).length > 0);
+  // WebRTC may report the SDP-created ordinary session before the data
+  // channel carries our extension-bearing session.update. Wait for the
+  // acknowledgement of the requested capability, not merely the first
+  // session.updated event, so this remains a negotiation assertion rather
+  // than a scheduler race.
+  await waitFor("the requested extension negotiation to arrive", async () =>
+    (await evaluate("document.getElementById('negotiated').textContent")).includes("video.input"));
   const negotiated = await evaluate("document.getElementById('negotiated').textContent");
   check("the extension negotiated", negotiated.includes("video.input"), negotiated);
   check("the observers the server will actually run are reported",
@@ -371,17 +414,25 @@ try {
   // never declared". A live run turned the camera off to save context and
   // produced exactly that, which reads like a client that cannot count.
   await evaluate("document.getElementById('camera').click()");
-  await waitFor("the camera to declare itself closed", async () =>
-    (await events("out")).some((line) =>
-      line.includes("input_video_source.update") && line.includes('"source":"camera"')
-        && line.includes('"state":"closed"')));
+  // stop() publishes this boundary synchronously. Read it immediately:
+  // leaving the media-heavy inspector running for another polling deadline
+  // can evict the very event this assertion is looking for.
+  const cameraClosed = (await events("out")).some((line) =>
+    line.includes("input_video_source.update") && line.includes('"source":"camera"')
+      && line.includes('"state":"closed"'));
+  check("the stopped camera declares itself closed", cameraClosed);
+
+  // Give an encoder already in flight time to resolve. It must see the
+  // stopped fence and discard its result rather than publishing after close.
+  await sleep(1000);
 
   const outboundAfterClose = await events("out");
   const closedAt = outboundAfterClose.findLastIndex((line) =>
     line.includes("input_video_source.update") && line.includes('"source":"camera"')
       && line.includes('"state":"closed"'));
-  const framesAfterClose = outboundAfterClose.slice(closedAt + 1).filter((line) =>
-    line.includes("input_video_frame.append") && line.includes('"source":"camera"'));
+  const framesAfterClose = closedAt < 0 ? ["missing close boundary"] :
+    outboundAfterClose.slice(closedAt + 1).filter((line) =>
+      line.includes("input_video_frame.append") && line.includes('"source":"camera"'));
   check("no frame follows the close of the source that sent it",
     framesAfterClose.length === 0, `${framesAfterClose.length} late frames`);
   check("no session error followed stopping a source",
@@ -409,6 +460,11 @@ try {
   check("what the agent heard is rendered on the audio channel",
     (await channel("obs.audio")).entries.some((entry) => entry.title.includes("speech")),
     JSON.stringify((await channel("obs.audio")).entries.map((entry) => entry.title)));
+  if (MODE === "websocket") {
+    const audioScheduled = await waitFor("the first response audio to be scheduled", async () =>
+      "first audio scheduled after endpoint" in await stats());
+    check("first-audio scheduling latency was measured", Boolean(audioScheduled));
+  }
   check("the tool round trip was measured", "last tool round trip" in await stats());
 
   // --- generative UI --------------------------------------------------------
@@ -477,7 +533,24 @@ try {
   check("the file is shown on the download action channel",
     (await channel("act.download")).entries.some((entry) => entry.title === "publish_download"));
 
+  const downloadTurnSettled = await waitFor("the download turn to finish", responseSettled);
+  check("the download turn closes before the next turn starts", Boolean(downloadTurnSettled));
+
   // --- computer use ---------------------------------------------------------
+
+  // Race instrumentation can make a DevTools capture exceed the remote
+  // source's bounded retry window. A source provider is replaceable, so prove
+  // the client can remount it before asking the agent to act; an action on a
+  // detached coordinate space would make the landing mark meaningless.
+  let browserCanvas = await evaluate(
+    `Boolean(document.querySelector('.channel[data-channel="obs.browser"] .stage canvas'))`);
+  if (!browserCanvas) {
+    await evaluate("document.getElementById('browser').click()");
+    browserCanvas = await waitFor("the browser source to remount", async () =>
+      await evaluate(
+        `Boolean(document.querySelector('.channel[data-channel="obs.browser"] .stage canvas'))`));
+  }
+  check("the browser source is mounted before computer use", Boolean(browserCanvas));
 
   await evaluate(`
     document.getElementById('typed').value = 'press the browser button';
@@ -510,6 +583,9 @@ try {
   check("the browser the agent clicked really moved",
     Boolean(pressed), (await channel("obs.browser")).caption);
 
+  const computerTurnSettled = await waitFor("the computer-use turn to finish", responseSettled);
+  check("the computer-use turn closes before reconfiguration", Boolean(computerTurnSettled));
+
   // Written output is a distinct action channel, not the transcript of audio.
   // Reconfigure the same live session and require one real server turn to use
   // it so the end-to-end test cannot pass on a page that merely has a card for
@@ -539,6 +615,10 @@ try {
   await evaluate(`
     document.getElementById('instructions').value = 'Answer in one word.';
     document.getElementById('apply-instructions').click();`);
+  const promptOnlyUpdate = await waitFor("the prompt-only update to leave the client", async () =>
+    (await events("out")).some((line) =>
+      line.includes('"instructions":"Answer in one word."') && !line.includes("openrealtime")),
+    5000);
   // Wait for "in force", not the transient "sent": the former means the
   // server echoed the instructions it is actually running. Returning as soon
   // as the local send marker appears makes this assertion race its own
@@ -553,8 +633,7 @@ try {
     (await evaluate("document.getElementById('instructions-state').textContent")) === "in force",
     await evaluate("document.getElementById('instructions-state').textContent"));
   check("changing the prompt sends only the prompt",
-    (await events("out")).some((line) =>
-      line.includes('"instructions":"Answer in one word."') && !line.includes("openrealtime")),
+    Boolean(promptOnlyUpdate),
     "a session.update carrying instructions and nothing negotiated");
 
   const carried = [];

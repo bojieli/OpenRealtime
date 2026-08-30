@@ -4,7 +4,9 @@ __pycache__/
 .coverage
 .pytest_cache/
 .ruff_cache/
+*.swp
 build/
+.build/
 bin/
 dist/
 artifacts/

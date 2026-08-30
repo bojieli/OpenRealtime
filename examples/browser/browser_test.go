@@ -48,6 +48,7 @@ func TestTheDemoIsServedAndIsTheRealPage(t *testing.T) {
 		"input_audio_buffer.speech_started",
 		"openrealtime.observation.added",
 		"RTCPeerConnection",
+		"first received audio delta",
 	} {
 		if !strings.Contains(page, required) {
 			t.Errorf("the demo no longer mentions %q", required)

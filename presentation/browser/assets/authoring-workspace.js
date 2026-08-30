@@ -1,0 +1,120 @@
+const encoder = new TextEncoder();
+const MAX_SOURCE_BYTES = 1 << 20;
+
+function frozen(value) {
+  const copy = structuredClone(value);
+  const visit = (entry) => {
+    if (!entry || typeof entry !== "object" || Object.isFrozen(entry)) return entry;
+    for (const child of Object.values(entry)) visit(child);
+    return Object.freeze(entry);
+  };
+  return visit(copy);
+}
+
+function checkedDocument(path, source, revision = 1) {
+  if (typeof path !== "string" || path.length === 0 || path.length > 4096 || path.trim() !== path ||
+      /[\0\r\n]/.test(path) || !/\.(?:ortg|ya?ml|json)$/i.test(path) ||
+      typeof source !== "string" || encoder.encode(source).byteLength === 0 ||
+      encoder.encode(source).byteLength > MAX_SOURCE_BYTES ||
+      !Number.isSafeInteger(revision) || revision < 1) {
+    throw new Error("authoring workspace document is invalid");
+  }
+  return Object.freeze({ path, source, revision });
+}
+
+export default {
+  name: "openrealtime.presentation.client.authoring-workspace",
+  revision: 1,
+  async mount(context) {
+    const authoring = context.services.get("presentation.client.management_authoring");
+    if (!authoring) throw new Error("authoring workspace service is unavailable");
+    let disposed = false;
+    let epoch = 0;
+    let request = 0;
+    let state = {
+      document: checkedDocument("agent.ortg", "graph agent {\n}\n"),
+      phase: "idle", error: "", analysis: null, compiled: null, rendering: null,
+    };
+    const listeners = new Set();
+    const snapshot = () => frozen({ ...state, epoch });
+    const notify = () => {
+      const projection = snapshot();
+      for (const listener of listeners) {
+        try { listener(projection); } catch {}
+      }
+    };
+    const replace = (next) => {
+      state = next;
+      notify();
+      return snapshot();
+    };
+    const ready = () => {
+      if (disposed) throw new Error("authoring workspace is disposed");
+    };
+    const invoke = async (phase, operation, apply) => {
+      ready();
+      const expectedEpoch = epoch;
+      const expectedRequest = ++request;
+      replace({ ...state, phase, error: "" });
+      try {
+        const result = await operation();
+        ready();
+        if (epoch !== expectedEpoch || request !== expectedRequest) {
+          throw new Error("authoring document changed during request");
+        }
+        return replace(apply(state, result));
+      } catch (error) {
+        if (!disposed && epoch === expectedEpoch && request === expectedRequest) {
+          replace({ ...state, phase: "error", error: error?.message ?? String(error) });
+        }
+        throw error;
+      }
+    };
+
+    context.publish("presentation.client.authoring_workspace", Object.freeze({
+      snapshot,
+      subscribe(listener) {
+        ready();
+        if (typeof listener !== "function") throw new Error("workspace listener is invalid");
+        listeners.add(listener);
+        try { listener(snapshot()); } catch {}
+        return () => listeners.delete(listener);
+      },
+      setDocument(path, source, revision = 1) {
+        ready();
+        epoch++;
+        request++;
+        return replace({ document: checkedDocument(path, source, revision), phase: "idle", error: "",
+          analysis: null, compiled: null, rendering: null });
+      },
+      analyze() {
+        const input = state.document;
+        return invoke("analyzing", () => authoring.analyze(input), (current, analysis) => ({
+          ...current, phase: "analyzed", error: "", analysis,
+        }));
+      },
+      compile() {
+        const input = state.document;
+        return invoke("compiling", () => authoring.compile(input), (current, compiled) => ({
+          ...current, phase: "compiled", error: "", compiled, rendering: null,
+        }));
+      },
+      render(format = "model") {
+        ready();
+        const graph = state.compiled?.graph;
+        if (!graph) throw new Error("authoring workspace has no compiled graph");
+        return invoke("rendering", () => authoring.render(graph, format), (current, rendering) => ({
+          ...current, phase: "rendered", error: "", rendering,
+        }));
+      },
+    }));
+    context.lifecycle.defer("authoring-workspace", () => {
+      disposed = true;
+      epoch++;
+      request++;
+      listeners.clear();
+      state = { document: Object.freeze({ path: "", source: "", revision: 0 }), phase: "disposed",
+        error: "", analysis: null, compiled: null, rendering: null };
+    });
+  },
+};

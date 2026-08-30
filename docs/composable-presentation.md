@@ -1,0 +1,554 @@
+# Composable Presentation and Observability
+
+- **Status:** accepted target design; staged implementation is in progress and release evidence is pending
+- **Scope:** the OpenRealtime presentation host, browser client, macOS client,
+  observability APIs, client plugin lifecycle, security boundaries, and end-to-end gates
+- **Depends on:** [Composable Real-Time Agent Element Graph](composable-agent-graph.md)
+
+This document extends the element-graph design to the software around the
+agent. The browser application, its local server, the macOS application,
+inspection, editor, media capture, tool hosts, and view components are not
+privileged parts of the realtime server. They are replaceable plugins composed
+against versioned services. Both shipped clients connect to the same
+OpenRealtime server and consume the same protocol and observability contracts.
+
+The design follows the DeepSeek Harness/Cordis discipline: product behavior is
+mounted as a plugin; dependencies are named services; registrations and
+runtime effects are scoped to the plugin that created them; removing a
+provider disposes dependents; and profiles are patchable plugin trees rather
+than new application species. A tiny loader, schema validator, and lifecycle
+context are mechanics, not a place for product behavior or a hidden default UI.
+This is an architectural contract, not a claim that OpenRealtime plugins are
+currently loadable by `dsh`: no pinned DeepSeek Harness runtime, compatibility
+adapter, or cross-runtime conformance corpus exists yet.
+
+Nothing in this document weakens the OpenAI Realtime compatibility boundary.
+OpenRealtime remains an additive extension. A client that knows only the
+OpenAI protocol can still use the realtime endpoint. Graph inspection,
+multimodal extensions, and client composition are explicitly negotiated and
+versioned under the OpenRealtime namespace.
+
+## 1. Problems in the current presentation layer
+
+The repository already has useful working clients, but they are separate
+applications rather than compositions of the same client platform:
+
+- `examples/browser` began as an embedded one-file WebRTC demo mounted by the
+  gateway; it is now retained only as a standalone compatibility oracle after
+  removal of the presentation-specific gateway field and route;
+- `console` combines static assets, credential-holding protocol relay, WebRTC
+  relay, and a local file/command tool host behind one constructor;
+- `surface` repeats much of the console transport, media, session, and tool
+  code while adding browser control, artifacts, downloads, and inspection;
+- the macOS app has another transport and event reducer with no shared
+  machine-readable client conformance suite; and
+- browser end-to-end tests exercise real Chromium and the real gateway, while
+  the current cross-platform macOS gate can only inspect source text on Linux.
+
+These are strong prototypes and regression oracles. They must be migrated, not
+silently discarded. The target removes their privileged coupling and duplicate
+protocol semantics while preserving their security properties and behavior.
+
+## 2. Architectural decisions
+
+### 2.1 No UI in the realtime server
+
+The gateway owns protocol admission and rendering. It does not own HTML,
+Swift views, a browser asset tree, filesystem tools, browser automation, or a
+presentation manifest. In particular, the target `gateway.Config` has no demo
+handler and the normal `serve` command has no UI switch.
+
+A browser deployment consists of two independently deployable compositions:
+
+1. an OpenRealtime server profile, which may be headless; and
+2. an optional presentation-host profile, which serves client plugins and may
+   proxy authenticated protocol or local-effect connections.
+
+The host can run beside the gateway in one operating-system process for a
+developer profile, but this is a deployment choice expressed by a profile. It
+does not grant the host an untyped path into session internals. The host still
+uses the public realtime and management APIs exactly as a separately deployed
+host would.
+
+### 2.2 One plugin discipline on both sides
+
+Every product capability is a plugin in one of three realms:
+
+| Realm | Examples | Isolation boundary |
+| --- | --- | --- |
+| server | realtime gateway, graph runtime, inspection, metrics, authoring, transport adapters | process or sidecar placement selected by deployment |
+| presentation host | static module store, credential relay, local tool provider, browser-control provider, artifact store | operator-controlled HTTP process, loopback by default when it can perform local effects |
+| client | protocol reducer, WebSocket/WebRTC transport, microphone, camera, screen, playout, conversation view, graph inspector, editor | browser worker/window or macOS application scope |
+
+A realm has a service context and scoped child contexts. Plugins communicate
+through declared service interfaces and typed events, never by importing
+another plugin's concrete implementation. Cross-realm calls use the versioned
+wire API rather than pretending an in-process object exists remotely.
+
+### 2.3 Reuse Graph IR semantics without mixing trust planes
+
+Client and presentation compositions use the same descriptor, lock,
+dependency, values, deployment, and lifecycle vocabulary as agent graphs. A
+compiled client graph is still immutable and fingerprinted, and its selected
+implementations are attested at runtime. It is a different graph *profile* and
+runtime realm, not a second ad hoc plugin system.
+
+The semantic client graph contains services and event flow. View layout is a
+separate, non-semantic artifact keyed by stable slot and instance IDs. Moving a
+panel cannot change effect authority, media routing, or protocol behavior.
+Browser and macOS implementations may satisfy the same descriptor with
+platform-specific code; the deployment lock records which implementation ran.
+
+### 2.4 Profiles and patchable bundles
+
+A profile is an ordered, inspectable plugin tree. A bundle contributes
+descriptor-locked rows and assets. An operator overlay can replace a row by
+stable ID, insert a provider, or remove a UI feature without rebuilding the
+gateway.
+
+Initial shipped profiles are compositions, not kernel enums:
+
+- `server-headless`: graph runtime, realtime gateway, selected transports,
+  health, and bounded telemetry;
+- `browser-minimal`: presentation host, session relay, client loader,
+  protocol reducer, one transport, text input, and transcript view;
+- `browser-developer`: the minimal profile plus audio/video, tool providers,
+  graph inspection, trace timeline, artifacts, and authoring plugins;
+- `macos-developer`: native transport, reducer, audio/video capture and
+  playout, tool/confirmation host, inspection, and native view plugins; and
+- `client-headless`: the shared reducer and scripted sources/sinks used by
+  conformance, simulation, and benchmarks with no view provider.
+
+Names are distribution defaults only. Runtime code resolves services and
+descriptors; it does not switch on these names.
+
+The Go `server.Bundle` now compiles the headless HTTP boundary as a stable
+router plus separate realtime, observability, session-inspection, canonical
+management-session API, and compatibility-alias entries. Every entry carries
+the exact selected runtime artifact in server-realm live evidence. Direct
+`gateway.New(...).Handler()` remains a compatibility facade, while the compiled
+server path injects its inspection plane and canonical handler and therefore
+does not mount a hidden second management realm.
+
+## 3. Plugin contract
+
+### 3.1 Immutable descriptor
+
+Each plugin revision publishes a canonical descriptor containing at least:
+
+```text
+identity          symbolic id, semantic revision, content digest
+realm/platform    server, host, browser, macOS, or portable implementation
+provides          typed service interfaces and event schemas
+requires          required service revisions/capabilities
+optional          optional services observed reactively
+configuration     separately identified values-schema reference
+permissions       network, media, storage, filesystem, process, device, effect
+authority_ceiling maximum effect class and target scope the plugin may request
+assets            content-addressed module/resource digests
+state             optional state schema and migration declarations
+lifecycle         mount, ready, quiesce, snapshot, restore, dispose contracts
+health            readiness and bounded diagnostic vocabulary
+```
+
+Descriptors contain no secret values. A semantic contract change produces a
+new immutable revision. Implementations register against a descriptor and are
+resolved through a reviewable lock plus deployment bindings, just like agent
+elements.
+
+### 3.2 Services, dependencies, and scoped effects
+
+A plugin mounts only after every required service is ready. A missing required
+service leaves the plugin pending with a visible reason. If a provider
+disappears, dependent plugins quiesce and dispose in reverse dependency order;
+they may remount when a compatible provider returns.
+
+Every registration, listener, worker, timer, media track, socket, temporary
+file, device lease, and authority grant is owned by a scope. Disposal is
+idempotent and bounded. Unload completes only after the scope reports no live
+effects. Irreversible external actions are ledgered facts and are never called
+reversible merely because their registration can be removed.
+
+Multiple client sessions receive child scopes. Closing one session cannot stop
+another session's capture, consume its events, retain its tokens, or dispose a
+shared provider prematurely. A plugin that needs an isolated service declares
+the isolation boundary in the profile rather than creating a hidden singleton.
+
+### 3.3 Client slots are services, not authority
+
+A view plugin registers a renderer in a typed slot such as `root`,
+`conversation.activity`, `session.controls`, `inspection.graph`, or
+`artifact.viewer`. A slot declaration defines cardinality, ordering, child
+slots, and the immutable state projection provided to the renderer.
+
+Renderers receive data and callbacks through their declared face. They do not
+reach into the protocol connection, tool registry, or graph runtime. Streaming
+business state lives in framework-neutral services with immutable snapshots;
+the DOM/AppKit/SwiftUI layer is a projection, so replacing a view toolkit does
+not rewrite the session state machine.
+
+Registration in a confirmation slot does not grant effect authority. A local
+effect provider independently validates the signed proposal, target,
+confirmation receipt, authority decision, and idempotency key immediately
+before execution.
+
+### 3.4 Client module loading
+
+The browser host serves a fingerprinted boot manifest and content-addressed
+plugin modules. The small browser bootstrap verifies the manifest and assets,
+constructs the client context, activates required infrastructure plugins, and
+then mounts the selected view renderer. Cross-plugin cooperation occurs only
+through services/events; importing a sibling plugin's private state is a build
+and conformance error.
+
+The macOS app uses the same logical manifest and descriptor catalog but
+resolves native implementations from a signed local bundle. A manifest cannot
+make the native app load JavaScript or acquire a permission absent from the
+installed app entitlement and operator policy.
+
+## 4. Clean server and host APIs
+
+### 4.1 Realtime data plane
+
+The existing OpenAI-compatible WebSocket endpoint remains the common session
+entrance. WebRTC is a transport adapter over that entrance, not a second
+session implementation. Browser and native clients may select different
+transport plugins and still reach the same server-side session graph.
+
+| Contract | Purpose |
+| --- | --- |
+| `GET /v1/realtime` | OpenAI-compatible WebSocket upgrade and OpenRealtime-negotiated events |
+| WebRTC call/SDP endpoint | media tracks plus the same protocol event stream over a data channel; the current compatibility route remains during migration |
+| `openrealtime.*` events | additive multimodal, interaction, authority, and inspection negotiation |
+
+The transport interface exposes connection state, negotiated capabilities,
+ordered protocol events, close reasons, media-track attachment, data-channel
+limits, and backpressure. Session state does not branch on transport names.
+
+Browser/mobile profiles prefer WebRTC when media is carried because the
+browser media stack supplies pacing, jitter handling, and echo processing.
+WebSocket remains a first-class plugin for compatibility, debugging, text,
+and explicit PCM/event transport.
+
+### 4.2 OpenRealtime management plane
+
+Observability is a versioned data/control API, not code embedded in a canvas.
+The target API exposes these resource families under an OpenRealtime-specific
+namespace while retaining the current session-live route as a compatibility
+alias during migration:
+
+```text
+GET  graph descriptor and exact canonical Graph IR by fingerprint
+GET  descriptor/configuration schema catalogs by immutable identity
+GET  one live session snapshot
+GET  bounded live session deltas or events with resume cursor
+GET  a bounded causal trace or a deterministic trace export
+POST validate/compile/render a graph authoring document
+POST apply a mediated source edit or graph reconciliation candidate
+```
+
+Every schema has an explicit version. Snapshots and streams identify the exact
+Graph IR, values, deployment, resolved implementations, plugin profile, and
+client composition. Cursors are bounded and resumable; a slow inspector cannot
+backpressure the realtime graph. Payloads are omitted by default, and
+redaction, retention, rate limits, and dropped-record counters are observable.
+
+Management access uses narrow capabilities. A session may negotiate a
+short-lived, session-scoped read token. Authoring and reconciliation require a
+separate operator capability and never reuse the session bearer token.
+Capabilities stay in headers or protected channels, never URLs, Graph IR,
+client manifests, logs, or saved screenshots.
+
+### 4.3 Presentation-host API
+
+The optional host exposes only services selected by its profile:
+
+```text
+GET  /client/v1/manifest                 locked client graph and capability declaration
+GET  /client/v1/modules/{digest}         immutable browser plugin asset
+GET  /client/v1/realtime                 optional credential-holding WebSocket relay
+POST /client/v1/realtime/calls           optional credential-holding WebRTC relay
+GET  /client/v1/effects                  optional local tool/effect channel
+GET  /client/v1/artifacts/{id}           sandboxed artifact resource
+GET  /client/v1/downloads/{id}           attachment-only generated file
+```
+
+Routes exist only when their provider plugin is mounted. The manifest reports
+the same fact; the browser never guesses available tools or targets from UI
+code. A direct-to-server profile can omit both relays and use an ephemeral
+credential provider. An effect-capable host is loopback-only by default and
+declares the exact filesystem root, browser/device target, tools, and
+confirmation policy before the client can advertise them to a session.
+
+## 5. Shared client state machine
+
+Browser JavaScript, macOS Swift, and the Go headless driver share one generated
+protocol vocabulary and one language-neutral conformance corpus. Each runtime
+implements the same small services:
+
+- connection and reconnect state machine;
+- ordered inbound/outbound protocol event log;
+- negotiated session/capability projection;
+- conversation item and streaming response reducer;
+- interruption, truncate, cancel, and playout accounting;
+- media source/sink registration and backpressure;
+- tool proposal, confirmation, result, and error lifecycle;
+- inspection token, snapshot, delta, trace, and graph-identity projection; and
+- artifact/download references without executing model-authored content in the
+  application origin.
+
+The corpus contains event sequences, virtual times, expected snapshots,
+outbound commands, errors, and terminal cleanup. Code generation supplies
+event/schema types where practical; golden vectors establish parity where
+platform APIs require separate implementations.
+
+## 6. Security model
+
+- The realtime server never serves a UI merely because it is running.
+- The browser never receives a long-lived upstream/server credential.
+- Client manifests and modules are content-addressed and covered by a strict
+  content security policy; hot replacement is an explicit development profile.
+- Render plugins cannot register effect providers or exceed the profile's
+  authority ceiling.
+- Local effect providers bind to loopback unless an authenticated remote
+  deployment explicitly supplies an equivalent trust boundary.
+- Tool declarations come from the enforcing provider. The client cannot widen
+  schemas, confirmation requirements, target fences, or mutability.
+- Artifacts execute on a separate origin/policy boundary with sandboxing;
+  downloads use attachment disposition.
+- Camera, microphone, screen, filesystem, browser, process, and accessibility
+  permissions are separate provider capabilities and are visible in the live
+  client graph.
+- Observability is payload-free by default, bounded, redacted, and independently
+  authorized. Turning it off cannot change session semantics.
+
+## 7. Migration plan
+
+The migration preserves working behavior in independently reviewable slices.
+Compatibility adapters are removed only after their replacements pass the
+same end-to-end matrix.
+
+### Stage P0: contracts and regression oracle
+
+- Freeze the current `examples/browser`, `console`, `surface`, and macOS event
+  behavior as shared conformance vectors.
+- Inventory routes, assets, tools, permissions, transport behavior, UI state,
+  cleanup, and current browser end-to-end assertions.
+- Add client-visible performance measurements and record a clean baseline.
+
+### Stage P1: plugin lifecycle and catalogs
+
+- Extend the graph descriptor/runtime with client and host realms, permission
+  ceilings, scoped service registration, dependency loss, and asset identities.
+- Compile locked client profiles and expose their static/runtime identities.
+- Add mount/unmount, missing dependency, replacement, rollback, race, and leak
+  tests before moving product capabilities.
+
+### Stage P2: shared protocol/client core
+
+- Publish generated protocol schemas plus the language-neutral reducer corpus.
+- Extract transport, session reducer, media, tools, inspection, and artifact
+  interfaces from DOM/SwiftUI code.
+- Make Go headless, browser, and Swift implementations pass identical vectors.
+
+### Stage P3: standalone presentation host and browser client
+
+- Implement manifest/module, credential-relay, effect, artifact, and download
+  providers as separate host plugins.
+- Build the browser client from transport, media, protocol, tool, inspection,
+  editor, and view plugins selected by the manifest.
+- Migrate console and surface into profiles over those plugins, then delete
+  duplicated modules once golden and real-Chromium parity holds.
+- [x] Remove `serve -demo`, `gateway.Config.Demo`, and `/demo` from the gateway;
+  retain the one-file example as a standalone migration oracle while the
+  minimal locked browser profile grows media parity.
+
+### Stage P4: macOS client
+
+- Replace the monolithic `RealtimeClient`/view coupling with the same service
+  boundaries and generated conformance corpus.
+- Register native WebSocket/WebRTC, audio playout/capture, camera/screen,
+  browser/computer-use, confirmation/effect, inspection, and view providers.
+- Connect to the exact same realtime and management server APIs as the browser;
+  platform adapters may differ, protocol behavior may not.
+- Run actual Swift unit/integration tests and a signed app smoke/E2E test on a
+  macOS runner. Source-string tests remain a cheap lint, not release evidence.
+
+### Stage P5: inspection, authoring, and reconciliation
+
+- Implement graph/descriptor/schema/snapshot/delta/trace services without any
+  UI dependency.
+- Mount canvas, timeline, queue, authority, trace, and editor views as plugins
+  in both supported presentation profiles where the platform has a renderer.
+- Exercise client/host plugin hot replacement, safe-point server graph changes,
+  state migration/refusal, rollback, and leak detection end to end.
+
+### Stage P6: compatibility removal
+
+- Migrate documentation, examples, production launch paths, test launchers,
+  and benchmark harnesses to profiles and the clean APIs.
+- Reject unpinned client modules and hidden UI/effect registration.
+- Remove duplicate routes, constructors, event reducers, presentation-specific
+  gateway fields, and client-name switches after the compatibility window.
+
+## 8. End-to-end and release gates
+
+No presentation stage is complete from unit tests or source inspection alone.
+The release matrix runs a real gateway and presentation host, real browser or
+native client, and real protocol/media connections.
+
+| Contract | Browser | macOS | Headless/control |
+| --- | --- | --- | --- |
+| manifest, digest, dependency, permission validation | real browser boot | native catalog boot | invalid/golden fixtures |
+| text/session/event reducer parity | Chromium | Swift test/app | Go vectors |
+| WebSocket session | required | required | required |
+| WebRTC media/data channel | required | required when native provider ships | adapter/probe |
+| microphone capture and audio playout | virtual/fixture plus device smoke | virtual/device smoke | deterministic PCM fixtures |
+| image, camera, screen, and adaptive frame flow | required | required | deterministic frame fixtures |
+| interruption, truncate, cancel, manual turns | required | required | virtual-clock vectors |
+| tools, confirmation, authority, target fence, idempotency | required | required | adversarial vectors |
+| browser/computer-use and visual feedback | developer profile | native provider | evaluator control |
+| artifacts and downloads | sandbox/CSP checks | native safe viewer/export | schema/storage checks |
+| graph snapshot, delta resume, trace correlation, redaction | required | required | API conformance |
+| disconnect/reconnect/provider loss | required | required | fault injection |
+| mount/unmount/replacement/rollback and resource leaks | browser/host scopes | native scopes | race/leak harness |
+
+The same scripted fixture session must be runnable first through the browser
+and then through the macOS client against one unchanged server process. Both
+runs must attest the same server Graph IR and compatible negotiated
+capabilities, while separately attesting their client graph and platform
+implementation identities.
+
+Presentation performance is part of the benchmark evidence. At minimum record:
+
+- endpoint-to-first-played-audio and server-output-to-playout delay;
+- audio underflow/overrun, playout gaps, and captured frame drops;
+- video capture-to-admission age and client/transport queue occupancy;
+- reconnect detection, recovery, and lost/duplicated event counts;
+- reducer-to-view snapshot latency, long tasks, and bounded memory growth;
+- snapshot/delta/trace rendering latency; and
+- server and client overhead with observability disabled, sampled, and at the
+  release profile.
+
+### 8.1 Performance-evidence service contract
+
+Instrumentation is an optional client plugin service, not a view concern. The
+contract is `presentation.client.performance_evidence`, with schema identity
+`openrealtime/presentation/client-performance-evidence/v1`. A selected
+provider exposes a scoped payload-free recorder and immutable aggregate
+snapshots. The runtime binds every recorder to the selected manifest entry,
+implementation artifact, configuration digest, and mount generation; calling
+plugins cannot assert those identities themselves.
+
+The recording API is deliberately small:
+
+```text
+record duration(metric enum, integer nanoseconds, fixed dimensions)
+add counter(metric enum, integer delta, fixed dimensions)
+set gauge(metric enum, integer value, fixed dimensions)
+set coverage(metric enum, measured|simulated|unsupported, reason enum)
+snapshot immutable bounded aggregate
+```
+
+Metric names, units, dimensions, coverage, provenance, and unsupported reasons
+are closed enums. Arbitrary labels and error strings are forbidden. A probe
+that spans multiple services owns bounded local correlation tokens, completes
+the duration, and records only the aggregate; tokens never enter evidence. A
+view or exporter receives a declared read-only dependency. Upload, storage,
+network access, and device access belong to separate explicit sink or sensor
+plugins and are never permissions of the recorder.
+
+`disabled` omits both provider and probes entirely; a no-op recorder would
+contaminate the disabled-overhead measurement. `sampled` and `release` select
+exact collector/probe implementations and identity-bound deterministic
+sampling configuration. Provider loss invalidates its scoped recorders, and a
+remount starts a new generation so snapshots cannot silently combine two
+implementations.
+
+Every canonical evidence envelope identifies:
+
+- evidence class: exactly `deterministic_fixture`, `browser_runtime`, or
+  `macos_native`;
+- the evidence contract/digest and snapshot fingerprint;
+- the clock domain, resolution, provenance, and any cross-host error bound;
+- client platform plus exact profile, lock, plan, manifest, collector,
+  implementation artifact, configuration, generation, and observability mode;
+- the runtime-injected identity of each contributing selected source entry;
+- fixture identity when applicable, fixed aggregate series, explicit coverage,
+  and rejected/dropped-record counters.
+
+The canonical client manifest remains the content-addressed authority for the
+complete client composition. Server Graph IR and capability identity come from
+the existing execution/live evidence, not from a client collector. A
+browser-then-macOS run compares the unchanged server Graph IR fingerprint but
+retains distinct client/platform identities.
+
+Evidence stores fixed integer histograms (`count`, `sum`, `min`, `max`, fixed
+buckets), counters, and gauges rather than raw samples. Initial hard ceilings
+are 128 sources, 256 series, four fixed dimensions per series, 256 pending
+probe correlations, 4,096 observations per series with saturation, and a
+256-KiB canonical snapshot. Durations are non-negative and capped at 24 hours;
+backward clocks, overflow, unknown enums, identity drift, and bound violations
+increment typed rejection counters. Evidence never retains event payloads,
+text, transcripts, tool arguments, credentials, URLs/hosts, session/response/
+item IDs, paths, device names, or arbitrary diagnostics.
+
+Metric boundaries are normative. They include endpoint-to-first-rendered-audio
+and server-output-to-rendered-audio; audio gap, underflow, overrun, and capture
+drop counts; video capture-to-server-admission; client message/byte queues;
+reconnect detect/recover and sequence-proven lost/duplicate events;
+reducer-publish-to-view-commit; long task/main-loop stall; memory baseline,
+current, high-water, and growth; and live/delta/trace render durations.
+Received RTP bytes or decoded audio are not "played audio". An audio buffer
+scheduled or completed without a first-sample render boundary is named as such.
+Timestamps from different hosts are never subtracted unless the evidence states
+a valid synchronization/error bound. An acknowledgement measures
+capture-to-admission-ack, not one-way admission. Missing support is
+`unsupported`, never a numeric zero.
+
+A single virtual integer-nanosecond corpus must produce byte-identical
+snapshots in Go, JavaScript, and Swift and cover every metric plus unknown
+enum, backward/overflow time, unmatched/duplicate span, bounds, redaction,
+sampling, provider-loss/remount, immutability, and identity-mismatch failures.
+Full-workload benchmarks compare otherwise identical disabled, sampled, and
+release profiles. Browser runtime evidence distinguishes fake from physical
+devices. Portable Swift on Linux can produce only deterministic-fixture
+evidence; only a signed Darwin run with executable/signing and sensor
+attestation can emit `macos_native`.
+
+Any material correctness, safety, deadline, latency, queue, media-quality, or
+resource regression blocks release. Preserve the failing artifact, diagnose it
+with the exact client/server graphs and causal trace, rerun the affected slice,
+then rerun the complete relevant suite. Presentation benchmarks do not replace
+the project-wide scenario, Meeting Assistant, Realtime-CU, FDB, FD-Bench, or
+tau2/τ-Voice matrix defined by the parent plan.
+
+## 9. Definition of done
+
+- [x] The realtime gateway has no presentation-specific handler, asset, route,
+  command flag, or client-name branch.
+- [ ] Browser hosting, relays, local effects, artifacts, and every client
+  capability are replaceable descriptor-locked plugins with tested scoped
+  disposal and permission ceilings. Locked minimal, observer, developer
+  WebSocket, and developer WebRTC browser profiles now boot in real Chromium;
+  migration of the standalone console/surface/demo forks and full lifecycle
+  leak evidence remain open.
+- [ ] The browser and macOS applications connect to the same unchanged server
+  APIs and pass the shared protocol/client conformance corpus.
+- [ ] The browser application is assembled from a host-served locked client
+  graph; console, surface, and the minimal demo are profiles, not forks.
+- [ ] The macOS application is assembled from the same logical service
+  contracts with native implementations and has real macOS release evidence.
+  A native provider registry/factory seam and observer/effects profile split
+  now exist, but Linux Swift tests and source inspection are not substitutes
+  for a signed Darwin app run.
+- [ ] Static Graph IR, live snapshots/deltas, causal traces, and authoring are
+  clean versioned APIs usable without any shipped UI. The default compiled
+  server profile now exposes session live/delta/trace through exact outer-realm
+  plugins, and the separate operator overlay supplies the other local API
+  families. Deployment-provided operator authority, full delta/reconciliation
+  E2E, and every presentation consumer's migration remain open.
+- [ ] View plugins have no implicit effect authority; the authority host still
+  proves admission, target, confirmation, ledger, dispatch, and audit.
+- [ ] Cross-client realtime/media/tool/inspection/reconnect/reconciliation E2E
+  tests and presentation performance gates pass without regression.

@@ -45,7 +45,7 @@ directory, and this is the only process in the picture that can reach it.
 | **Conversation** | what you said, what the agent said, and what it *observed* — rendered differently, because narrated screen text is something the agent read rather than something anyone said |
 | **Events** | every event in both directions, raw, with audio and frame payloads elided; Save writes the whole session to a file, which is what a useful bug report contains |
 | **Session** | the `session.update` this page will send, editable — remove the `openrealtime` key to watch the session degrade to the base protocol |
-| **Stats** | first audio after the endpoint, tool round trip, the negotiated data channel limit, and whether each frame crossed whole or in chunks |
+| **Stats** | first WebSocket audio scheduled after the endpoint, tool round trip, the negotiated data channel limit, and whether each frame crossed whole or in chunks; no WebRTC packet or playout latency is claimed |
 | **Tools** | what this console will run, and the confirmation each one requires |
 
 ## The two transports are not a fallback and a primary

@@ -1,0 +1,174 @@
+// Package presentation defines language-neutral contracts shared by the
+// optional presentation host, browser clients, native clients, and headless
+// conformance drivers. None of these contracts grants access to a realtime
+// server implementation; cross-realm access always uses a versioned wire API.
+package presentation
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+
+	"github.com/bojieli/OpenRealtime/plugin"
+)
+
+var (
+	HTTPRoutesContract = semanticContract(
+		"presentation.host.http_routes",
+		"openrealtime/presentation/host/http-routes/v1:Register(owner,routes)->dispose",
+	)
+	HTTPHandlerContract = semanticContract(
+		"presentation.host.http_handler",
+		"openrealtime/presentation/host/http-handler/v1:http.Handler",
+	)
+	ModuleCatalogContract = semanticContract(
+		"presentation.host.module_catalog",
+		"openrealtime/presentation/host/module-catalog/v1:content-addressed-assets",
+	)
+	ClientManifestContract = semanticContract(
+		"presentation.host.client_manifest",
+		"openrealtime/presentation/client-manifest/v1:immutable-profile-lock-implementations-assets-endpoints",
+	)
+	ArtifactStoreContract = semanticContract(
+		"presentation.host.artifact_store",
+		"openrealtime/presentation/host/artifact-store/v1:bounded-publish-lookup-list-stats-sandboxed-resource",
+	)
+	DownloadStoreContract = semanticContract(
+		"presentation.host.download_store",
+		"openrealtime/presentation/host/download-store/v1:bounded-publish-lookup-list-stats-attachment-resource",
+	)
+	EffectsContract = semanticContract(
+		"presentation.host.effects",
+		"openrealtime/presentation/host/effects/v1:descriptor-locked-declarations-scoped-websocket-admission-authority-confirmation-target-idempotency-audit",
+	)
+	EffectAuthorityContract = semanticContract(
+		"presentation.host.effect_authority",
+		"openrealtime/presentation/host/effect-authority/v1:verify-opaque-receipt-exact-session-call-declaration-arguments-target",
+	)
+	ListenerContract = semanticContract(
+		"presentation.host.listener",
+		"openrealtime/presentation/host/listener/v1:network-address",
+	)
+	RealtimeTargetContract = semanticContract(
+		"presentation.host.realtime_target",
+		"openrealtime/presentation/host/realtime-target/v1:websocket-webrtc-model-timeout-limit",
+	)
+	EndpointDirectoryContract = semanticContract(
+		"presentation.host.endpoint_directory",
+		"openrealtime/presentation/host/endpoint-directory/v1:immutable-fingerprinted-closed-named-endpoints-model-timeout-limit",
+	)
+	CredentialContract = semanticContract(
+		"presentation.host.realtime_credential",
+		"openrealtime/presentation/host/realtime-credential/v1:authorization-header-provider",
+	)
+	RealtimeTargetConfigContract = semanticContract(
+		"presentation.host.realtime_target.config",
+		"openrealtime/presentation/host/realtime-target-config/v1",
+	)
+	EndpointDirectoryConfigContract = semanticContract(
+		"presentation.host.endpoint_directory.config",
+		"openrealtime/presentation/host/endpoint-directory-config/v1:closed-explicit-endpoints-model-timeout-limit",
+	)
+	ListenerConfigContract = semanticContract(
+		"presentation.host.listener.config",
+		"openrealtime/presentation/host/listener-config/v1:loopback-address-timeouts",
+	)
+	ArtifactStoreConfigContract = semanticContract(
+		"presentation.host.artifact_store.config",
+		"openrealtime/presentation/host/artifact-store-config/v1:max-entries-item-bytes-total-bytes",
+	)
+	DownloadStoreConfigContract = semanticContract(
+		"presentation.host.download_store.config",
+		"openrealtime/presentation/host/download-store-config/v1:max-entries-item-bytes-total-bytes",
+	)
+	EffectsConfigContract = semanticContract(
+		"presentation.host.effects.config",
+		"openrealtime/presentation/host/effects-config/v1:max-sessions-message-result-inflight-calls-audit-confirmation-execution-timeouts",
+	)
+	ClientConnectionContract = semanticContract(
+		"presentation.client.connection",
+		"openrealtime/presentation/client/connection/v1:connect-send-subscribe-close-state",
+	)
+	ClientTransportDiagnosticsContract = semanticContract(
+		"presentation.client.transport_diagnostics",
+		"openrealtime/presentation/client/transport-diagnostics/v1:payload-free-media-data-channel-queue-stats-snapshot",
+	)
+	ClientProtocolEventsContract = semanticContract(
+		"presentation.client.protocol_events",
+		"openrealtime/presentation/client/protocol-events/v1:bounded-validated-inbound-subscribe-no-send-or-effect-authority",
+	)
+	ClientSessionConfigurationContract = semanticContract(
+		"presentation.client.session_configuration",
+		"openrealtime/presentation/client/session-configuration/v1:scoped-declarative-contributions-merged-session-update",
+	)
+	ClientStateContract = semanticContract(
+		"presentation.client.session_state",
+		"openrealtime/presentation/client/session-state/v1:canonical-snapshot-subscribe-connect-send-text-end-turn-cancel-playout-tool-result",
+	)
+	ClientCodecContract = semanticContract(
+		"presentation.client.strict_json",
+		"openrealtime/presentation/client/strict-json/v1:duplicate-key-depth-finite-number-parse-stable-encode",
+	)
+	ClientSlotsContract = semanticContract(
+		"presentation.client.slots",
+		"openrealtime/presentation/client/slots/v1:register-dispose",
+	)
+	ClientMediaContract = semanticContract(
+		"presentation.client.media",
+		"openrealtime/presentation/client/media/v1:native-audio-video-capture-playout-lifecycle",
+	)
+	ClientVideoContract = semanticContract(
+		"presentation.client.video",
+		"openrealtime/presentation/client/video/v1:negotiated-camera-screen-capture-start-stop-snapshot-bounded-frame-publication",
+	)
+	ClientEffectsContract = semanticContract(
+		"presentation.client.tools_effects",
+		"openrealtime/presentation/client/tools-effects/v1:bounded-tools-confirmation-declared-targets",
+	)
+	ClientArtifactsContract = semanticContract(
+		"presentation.client.artifacts",
+		"openrealtime/presentation/client/artifacts/v1:bounded-immutable-artifact-download-references-view-export",
+	)
+	ClientInspectionAccessContract = semanticContract(
+		"presentation.client.inspection_access",
+		"openrealtime/presentation/client/inspection-access/v1:scoped-ephemeral-capability-subscribe",
+	)
+	ClientInspectionContract = semanticContract(
+		"presentation.client.inspection",
+		"openrealtime/presentation/client/inspection/v1:live-delta-trace-redacted-projections",
+	)
+	ClientManagementOperatorAccessContract = semanticContract(
+		"presentation.client.management_operator_access",
+		"openrealtime/presentation/client/management-operator-access/v1:private-lease-operation-resource-generation-abort-no-serialization",
+	)
+	ClientManagementOperatorControlContract = semanticContract(
+		"presentation.client.management_operator_control",
+		"openrealtime/presentation/client/management-operator-control/v1:replace-clear-redacted-status-subscribe",
+	)
+	ClientManagementTransportContract = semanticContract(
+		"presentation.client.management_transport",
+		"openrealtime/presentation/client/management-transport/v1:whitelisted-static-authoring-header-capability-strict-bounded-no-redirect",
+	)
+	ClientManagementStaticContract = semanticContract(
+		"presentation.client.management_static",
+		"openrealtime/presentation/client/management-static/v1:exact-graph-element-plugin-values-schema-by-immutable-identity",
+	)
+	ClientManagementAuthoringContract = semanticContract(
+		"presentation.client.management_authoring",
+		"openrealtime/presentation/client/management-authoring/v1:analyze-compile-render-exact-document-graph-identity",
+	)
+	ClientAuthoringWorkspaceContract = semanticContract(
+		"presentation.client.authoring_workspace",
+		"openrealtime/presentation/client/authoring-workspace/v1:bounded-document-analysis-compile-render-immutable-snapshot-subscribe",
+	)
+	ClientViewContract = semanticContract(
+		"presentation.client.view",
+		"openrealtime/presentation/client/view/v1:native-slots-state-media-effects-inspection",
+	)
+)
+
+func semanticContract(name, definition string) plugin.Contract {
+	digest := sha256.Sum256([]byte(definition))
+	return plugin.Contract{
+		Name: name, Revision: 1, Digest: "sha256:" + hex.EncodeToString(digest[:]),
+	}
+}

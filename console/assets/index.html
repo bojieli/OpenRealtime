@@ -77,10 +77,10 @@
     <div class="panel" id="tab-stats">
       <dl class="stats" id="stats"></dl>
       <p class="hint">
-        First audio is measured from the endpoint the server reported to the
-        first audio frame that reached this page, which is the wait a person
-        actually experiences. On WebRTC the audio arrives on the media track,
-        so that number is the track's first packet.
+        For WebSocket, first audio scheduled is measured from the endpoint the
+        server reported to the call that schedules the first decoded PCM
+        buffer. It is not a rendered or played-audio measurement. This page
+        does not report a corresponding WebRTC packet or playout metric.
       </p>
     </div>
 

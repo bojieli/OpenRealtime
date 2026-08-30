@@ -219,8 +219,11 @@ try {
   check(`the session connects over ${MODE}`,
     ["connected", "listening", "thinking", "responding"].includes(state), `state=${state}`);
 
-  await waitFor("session.updated to arrive", async () =>
-    (await evaluate("document.getElementById('negotiated').textContent")).length > 0);
+  // A WebRTC peer can expose its initial ordinary session before the data
+  // channel applies this client's extension-bearing session.update. Require
+  // the requested capability itself rather than racing the first update.
+  await waitFor("the requested extension negotiation to arrive", async () =>
+    (await evaluate("document.getElementById('negotiated').textContent")).includes("video.input"));
   const negotiated = await evaluate("document.getElementById('negotiated').textContent");
   check("the extension negotiated", negotiated.includes("video.input"), negotiated);
 
@@ -297,7 +300,8 @@ try {
   if (MODE === "websocket") {
     check("synthesised audio arrived and was scheduled",
       (await eventNames("in")).filter((n) => n.includes("response.output_audio.delta")).length > 0);
-    check("first-audio latency was measured", "first audio after endpoint" in await stats());
+    check("first-audio scheduling latency was measured",
+      "first audio scheduled after endpoint" in await stats());
   }
   check("the tool round trip was measured", "last tool round trip" in await stats());
 

@@ -2,10 +2,10 @@
 //
 // This is the plumbing a WebRTC client never writes, and having it here is the
 // argument for the adapter made concretely: capture, framing, playout
-// scheduling, and the accounting of what was actually heard. The browser still
-// does echo cancellation and noise suppression — those are requested from
-// getUserMedia and belong to the client on either transport, because the
-// server does neither and does not compensate for their absence.
+// scheduling, and an AudioContext-clock estimate of playback progress. The
+// browser still does echo cancellation and noise suppression — those are
+// requested from getUserMedia and belong to the client on either transport,
+// because the server does neither and does not compensate for their absence.
 
 export const SESSION_RATE = 24000;
 
@@ -28,8 +28,11 @@ export class Recorder extends EventTarget {
   #context = null;
   #stream = null;
   #node = null;
+  #silence = null;
   #analyser = null;
   #samples = null;
+  #muted = false;
+  #muteSettled = false;
 
   async start() {
     this.#stream = await navigator.mediaDevices.getUserMedia({
@@ -41,8 +44,12 @@ export class Recorder extends EventTarget {
     const source = this.#context.createMediaStreamSource(this.#stream);
     this.#node = new AudioWorkletNode(this.#context, "capture-processor");
     this.#node.port.onmessage = (message) => {
+      if (this.#muted && this.#muteSettled) return;
+      const bytes = this.#muted
+        ? new Uint8Array(message.data.byteLength)
+        : new Uint8Array(message.data.buffer);
       this.dispatchEvent(new CustomEvent("frame", {
-        detail: toBase64(new Uint8Array(message.data.buffer)),
+        detail: toBase64(bytes),
       }));
     };
     source.connect(this.#node);
@@ -54,6 +61,18 @@ export class Recorder extends EventTarget {
     const silence = this.#context.createGain();
     silence.gain.value = 0;
     this.#node.connect(silence).connect(this.#context.destination);
+
+    // Keep the capture graph clocked while the microphone track is disabled.
+    // Chromium may stop pulling a MediaStream source altogether when its only
+    // track is disabled. In that case the worklet emits no zero-valued frames,
+    // so a server-side VAD that was open before mute never observes the
+    // silence that closes the turn. A zero-valued constant source contributes
+    // no audio while making the worklet's 20 ms cadence independent of device
+    // activity; the microphone track still controls whether captured samples
+    // can enter the graph.
+    this.#silence = new ConstantSourceNode(this.#context, { offset: 0 });
+    this.#silence.connect(this.#node);
+    this.#silence.start();
 
     this.#analyser = this.#context.createAnalyser();
     this.#analyser.fftSize = 512;
@@ -68,14 +87,22 @@ export class Recorder extends EventTarget {
   // session knows the person is still talking and has just gone quiet on the
   // wire. Sending silence is what lets the turn end.
   setMuted(muted) {
+    this.#muted = Boolean(muted);
+    this.#muteSettled = false;
     for (const track of this.#stream?.getAudioTracks() ?? []) {
-      track.enabled = !muted;
+      track.enabled = !this.#muted;
     }
   }
 
   get muted() {
-    const track = this.#stream?.getAudioTracks()?.[0];
-    return track ? !track.enabled : false;
+    return this.#muted;
+  }
+
+  // Once the server confirms its VAD closed, a muted WebSocket client no
+  // longer needs to keep sending zero frames. Until that confirmation the
+  // silence is protocol data: stopping it early can strand the floor open.
+  settleMute() {
+    if (this.#muted) this.#muteSettled = true;
   }
 
   // level is the peak of the most recent window, 0 to 1.
@@ -89,15 +116,22 @@ export class Recorder extends EventTarget {
 
   stop() {
     this.#node?.port && (this.#node.port.onmessage = null);
+    try {
+      this.#silence?.stop();
+    } catch {
+      // An already stopped AudioScheduledSourceNode needs no further cleanup.
+    }
+    this.#silence?.disconnect();
     this.#node?.disconnect();
     this.#stream?.getTracks().forEach((track) => track.stop());
     this.#context?.close();
-    this.#context = this.#stream = this.#node = this.#analyser = null;
+    this.#context = this.#stream = this.#node = this.#silence = this.#analyser = null;
+    this.#muted = this.#muteSettled = false;
   }
 }
 
-// Player schedules PCM16 deltas and, crucially, keeps track of how much of
-// each utterance was actually heard.
+// Player schedules PCM16 deltas and keeps an AudioContext-clock estimate of
+// how much of each utterance has progressed past its scheduled start.
 //
 // That number is not bookkeeping. When a person interrupts, the server has
 // generated more speech than reached anyone, and the difference is the whole
@@ -152,7 +186,9 @@ export class Player extends EventTarget {
     source.start(this.#playhead);
     if (this.#utterance.startedAt === null) {
       this.#utterance.startedAt = this.#playhead;
-      this.dispatchEvent(new CustomEvent("first-audio", { detail: itemId }));
+      // This observes the scheduling call. It is not a first-sample render or
+      // hardware playout boundary.
+      this.dispatchEvent(new CustomEvent("first-audio-scheduled", { detail: itemId }));
     }
     this.#playhead += buffer.duration;
     this.#utterance.queuedMs += buffer.duration * 1000;
@@ -161,9 +197,8 @@ export class Player extends EventTarget {
     source.addEventListener("ended", () => this.#sources.delete(source));
   }
 
-  // playedMs is how much of the current utterance has actually reached the
-  // speakers, which is what the server needs to hear about after an
-  // interruption. Everything after it was generated and never heard.
+  // playedMs is the AudioContext-clock estimate used for protocol truncation
+  // after an interruption. It is not hardware-render evidence.
   playedMs() {
     if (!this.#context || !this.#utterance || this.#utterance.startedAt === null) return 0;
     const elapsed = (this.#context.currentTime - this.#utterance.startedAt) * 1000;

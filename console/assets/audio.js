@@ -2,10 +2,10 @@
 //
 // This is the plumbing a WebRTC client never writes, and having it here is the
 // argument for the adapter made concretely: capture, framing, playout
-// scheduling, and the accounting of what was actually heard. The browser still
-// does echo cancellation and noise suppression — those are requested from
-// getUserMedia and belong to the client on either transport, because the
-// server does neither and does not compensate for their absence.
+// scheduling, and an AudioContext-clock estimate of playback progress. The
+// browser still does echo cancellation and noise suppression — those are
+// requested from getUserMedia and belong to the client on either transport,
+// because the server does neither and does not compensate for their absence.
 
 export const SESSION_RATE = 24000;
 
@@ -96,8 +96,8 @@ export class Recorder extends EventTarget {
   }
 }
 
-// Player schedules PCM16 deltas and, crucially, keeps track of how much of
-// each utterance was actually heard.
+// Player schedules PCM16 deltas and keeps an AudioContext-clock estimate of
+// how much of each utterance has progressed past its scheduled start.
 //
 // That number is not bookkeeping. When a person interrupts, the server has
 // generated more speech than reached anyone, and the difference is the whole
@@ -152,7 +152,9 @@ export class Player extends EventTarget {
     source.start(this.#playhead);
     if (this.#utterance.startedAt === null) {
       this.#utterance.startedAt = this.#playhead;
-      this.dispatchEvent(new CustomEvent("first-audio", { detail: itemId }));
+      // This observes the scheduling call. It is not a first-sample render or
+      // hardware playout boundary.
+      this.dispatchEvent(new CustomEvent("first-audio-scheduled", { detail: itemId }));
     }
     this.#playhead += buffer.duration;
     this.#utterance.queuedMs += buffer.duration * 1000;
@@ -161,9 +163,8 @@ export class Player extends EventTarget {
     source.addEventListener("ended", () => this.#sources.delete(source));
   }
 
-  // playedMs is how much of the current utterance has actually reached the
-  // speakers, which is what the server needs to hear about after an
-  // interruption. Everything after it was generated and never heard.
+  // playedMs is the AudioContext-clock estimate used for protocol truncation
+  // after an interruption. It is not hardware-render evidence.
   playedMs() {
     if (!this.#context || !this.#utterance || this.#utterance.startedAt === null) return 0;
     const elapsed = (this.#context.currentTime - this.#utterance.startedAt) * 1000;

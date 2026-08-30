@@ -285,7 +285,7 @@ Plain ES modules, no build step, one file per concern:
 | | |
 | --- | --- |
 | `transport.js` | both transports, and the chunk framing |
-| `audio.js` | capture, playout, and the accounting of what was actually heard |
+| `audio.js` | capture, scheduled playout, and an AudioContext-clock playback-progress estimate |
 | `video.js` | screen and camera, and the browser as a third source |
 | `tools.js` | the bridge to this process |
 | `artifacts.js` | the sandbox, and what comes back out of it |

@@ -1,0 +1,518 @@
+package host
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/bojieli/OpenRealtime/graph/inspect"
+	"github.com/bojieli/OpenRealtime/plugin"
+	pluginruntime "github.com/bojieli/OpenRealtime/plugin/runtime"
+	"github.com/bojieli/OpenRealtime/presentation"
+	"github.com/coder/websocket"
+)
+
+func TestComposedHostServesExactManifestAndModulesAndUnmountsCleanly(t *testing.T) {
+	module, err := NewModuleStoreFactory(1, []ModuleSource{{
+		Name: "shell.js", MediaType: "text/javascript", Content: []byte("export const ready = true;\n"),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset := module.Descriptor().Assets[0]
+	clientPlan := makeClientPlan(t, asset)
+	manifest, err := presentation.FreezeManifest(presentation.ClientManifest{
+		FormatVersion: presentation.ManifestFormatVersion, Platform: "browser", Plan: clientPlan,
+		Implementations: []presentation.ManifestImplementation{{
+			Entry: "shell", Implementation: "browser-shell",
+			Artifact:   inspect.ArtifactIdentity{ID: "module://browser-shell", Digest: asset.Digest},
+			Entrypoint: "shell.js",
+		}},
+		Assets: []presentation.ManifestAsset{{
+			Entry: "shell", Name: asset.Name, MediaType: asset.MediaType, Digest: asset.Digest,
+			Path: "/client/v1/modules/" + strings.TrimPrefix(asset.Digest, "sha256:"),
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestFactory, err := NewManifestFactory(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routerFactory := NewRouterFactory()
+	hostPlan := makeHostPlan(t, []pluginruntime.Factory{manifestFactory, module, routerFactory})
+	registry := pluginruntime.NewRegistry()
+	for _, factory := range []pluginruntime.Factory{manifestFactory, module, routerFactory} {
+		if err := registry.Register("", factory); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mounted, err := pluginruntime.Mount(context.Background(), pluginruntime.Config{
+		Plan: hostPlan, Registry: registry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := HTTPHandler(mounted, "http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	response, err := http.Get(server.URL + "/client/v1/manifest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || response.Header.Get("ETag") != `"`+manifest.Fingerprint+`"` {
+		t.Fatalf("manifest response status=%d headers=%v body=%s", response.StatusCode, response.Header, payload)
+	}
+	gotManifest, err := presentation.ParseManifest(payload)
+	if err != nil || gotManifest.Fingerprint != manifest.Fingerprint {
+		t.Fatalf("served manifest = %#v, %v", gotManifest, err)
+	}
+	moduleResponse, err := http.Get(server.URL + manifest.Assets[0].Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modulePayload, _ := io.ReadAll(moduleResponse.Body)
+	moduleResponse.Body.Close()
+	if moduleResponse.StatusCode != http.StatusOK || string(modulePayload) != "export const ready = true;\n" ||
+		moduleResponse.Header.Get("Cache-Control") != "public, max-age=31536000, immutable" {
+		t.Fatalf("module response status=%d headers=%v body=%q",
+			moduleResponse.StatusCode, moduleResponse.Header, modulePayload)
+	}
+
+	if err := mounted.Unmount(context.Background(), "modules"); err != nil {
+		t.Fatal(err)
+	}
+	assertStatus(t, server.URL+"/client/v1/manifest", http.StatusNotFound)
+	assertStatus(t, server.URL+manifest.Assets[0].Path, http.StatusNotFound)
+	if live := mounted.Live(); live.Entries["router"].State != "active" ||
+		live.Entries["modules"].State != "inactive" || live.Entries["manifest"].State != "inactive" {
+		t.Fatalf("host state after module loss = %#v", live.Entries)
+	}
+	if err := mounted.Activate(context.Background(), "modules"); err != nil {
+		t.Fatal(err)
+	}
+	assertStatus(t, server.URL+"/client/v1/manifest", http.StatusOK)
+	if err := mounted.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	assertStatus(t, server.URL+"/client/v1/manifest", http.StatusNotFound)
+}
+
+func TestRouterRegistrationIsAtomicAndConcurrentRequestsSeeCompleteMuxes(t *testing.T) {
+	router := newRouter()
+	dispose, err := router.Register("first", []Route{{
+		Pattern: "GET /one", Handler: http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writer.WriteHeader(http.StatusNoContent)
+		})},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := router.Register("duplicate", []Route{{
+		Pattern: "GET /one", Handler: http.NotFoundHandler(),
+	}}); err == nil || !strings.Contains(err.Error(), "already owned") {
+		t.Fatalf("duplicate registration error = %v", err)
+	}
+
+	var wait sync.WaitGroup
+	for index := 0; index < 16; index++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			for iteration := 0; iteration < 100; iteration++ {
+				request := httptest.NewRequest(http.MethodGet, "/one", nil)
+				response := httptest.NewRecorder()
+				router.ServeHTTP(response, request)
+				if status := response.Code; status != http.StatusNoContent && status != http.StatusNotFound {
+					t.Errorf("partial mux status = %d", status)
+					return
+				}
+			}
+		}()
+	}
+	dispose()
+	dispose()
+	wait.Wait()
+}
+
+func TestCredentialHoldingRelaysUseOnlyPublicEndpoints(t *testing.T) {
+	const token = "relay-secret"
+	websocketSeen := make(chan string, 1)
+	sdpSeen := make(chan string, 1)
+	backend := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v1/realtime":
+			websocketSeen <- request.Header.Get("Authorization") + "\x00" + request.URL.Query().Get("model")
+			connection, err := websocket.Accept(writer, request, nil)
+			if err != nil {
+				return
+			}
+			defer connection.CloseNow()
+			kind, payload, err := connection.Read(request.Context())
+			if err == nil {
+				_ = connection.Write(request.Context(), kind, payload)
+			}
+		case "/v1/realtime/calls":
+			body, _ := io.ReadAll(request.Body)
+			sdpSeen <- request.Header.Get("Authorization") + "\x00" +
+				request.URL.Query().Get("model") + "\x00" + string(body)
+			writer.Header().Set("Content-Type", "application/sdp")
+			_, _ = writer.Write([]byte("answer-sdp"))
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer backend.Close()
+	websocketURL := "ws" + strings.TrimPrefix(backend.URL, "http") + "/v1/realtime"
+
+	routerFactory := NewRouterFactory()
+	targetFactory := NewTargetFactory()
+	credentialFactory, err := NewBearerCredentialFactory(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	websocketRelay := NewWebSocketRelayFactory(nil)
+	webrtcRelay := NewWebRTCRelayFactory(nil, nil)
+	plan := makeHostPlan(t, []pluginruntime.Factory{
+		websocketRelay, webrtcRelay, targetFactory, credentialFactory, routerFactory,
+	})
+	registry := pluginruntime.NewRegistry()
+	for _, factory := range []pluginruntime.Factory{
+		websocketRelay, webrtcRelay, targetFactory, credentialFactory, routerFactory,
+	} {
+		if err := registry.Register("", factory); err != nil {
+			t.Fatal(err)
+		}
+	}
+	values, _ := json.Marshal(targetConfig{
+		WebSocket: websocketURL, WebRTC: backend.URL + "/v1/realtime/calls", Model: "fixture-model",
+	})
+	mounted, err := pluginruntime.Mount(context.Background(), pluginruntime.Config{
+		Plan: plan, Registry: registry,
+		Values: map[string]json.RawMessage{"target": values},
+		Permissions: map[string][]plugin.Permission{
+			"credential": {{
+				Kind: credentialPermissionKind, Resource: credentialPermissionResource,
+				Operations: []string{credentialPermissionOperation},
+			}},
+			"websocket": {relayPermission(websocketOperation)},
+			"webrtc":    {relayPermission(httpOperation)},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := HTTPHandler(mounted, "http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostServer := httptest.NewServer(handler)
+	defer hostServer.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	client, _, err := websocket.Dial(ctx,
+		"ws"+strings.TrimPrefix(hostServer.URL, "http")+"/client/v1/realtime", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Write(ctx, websocket.MessageText, []byte(`{"type":"fixture"}`)); err != nil {
+		t.Fatal(err)
+	}
+	_, echoed, err := client.Read(ctx)
+	if err != nil || string(echoed) != `{"type":"fixture"}` {
+		t.Fatalf("relay echo = %q, %v", echoed, err)
+	}
+	_ = client.Close(websocket.StatusNormalClosure, "done")
+	select {
+	case seen := <-websocketSeen:
+		if seen != "Bearer "+token+"\x00fixture-model" {
+			t.Fatalf("WebSocket backend observed %q", seen)
+		}
+	case <-ctx.Done():
+		t.Fatal("WebSocket backend did not observe relay")
+	}
+
+	response, err := http.Post(hostServer.URL+"/client/v1/realtime/calls",
+		"application/sdp", strings.NewReader("offer-sdp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || string(answer) != "answer-sdp" {
+		t.Fatalf("WebRTC relay status=%d body=%q", response.StatusCode, answer)
+	}
+	select {
+	case seen := <-sdpSeen:
+		if seen != "Bearer "+token+"\x00fixture-model\x00offer-sdp" {
+			t.Fatalf("WebRTC backend observed %q", seen)
+		}
+	case <-ctx.Done():
+		t.Fatal("WebRTC backend did not observe relay")
+	}
+
+	if err := mounted.Unmount(context.Background(), "credential"); err != nil {
+		t.Fatal(err)
+	}
+	assertStatus(t, hostServer.URL+"/client/v1/realtime", http.StatusNotFound)
+	assertStatus(t, hostServer.URL+"/client/v1/realtime/calls", http.StatusNotFound)
+	if err := mounted.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWebRTCRelayRefusesCredentialBearingRedirect(t *testing.T) {
+	var captured atomic.Bool
+	backend := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/captured" {
+			captured.Store(true)
+			writer.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.Redirect(writer, request, "/captured", http.StatusTemporaryRedirect)
+	}))
+	defer backend.Close()
+
+	factory := NewWebRTCRelayFactory(nil, nil)
+	request := httptest.NewRequest(http.MethodPost, "/client/v1/realtime/calls", strings.NewReader("offer-sdp"))
+	response := httptest.NewRecorder()
+	factory.relayWebRTC(RealtimeTarget{
+		WebRTC: backend.URL + "/offer", DialTimeout: time.Second,
+	}, staticCredential("Bearer must-not-cross-redirect"), response, request)
+	if response.Code != http.StatusTemporaryRedirect || captured.Load() {
+		t.Fatalf("WebRTC redirect response=%d followed=%t", response.Code, captured.Load())
+	}
+}
+
+func TestRelaysFailClosedWithoutDeploymentPermission(t *testing.T) {
+	routerFactory := NewRouterFactory()
+	targetFactory := NewTargetFactory()
+	credentialFactory := NewAnonymousCredentialFactory()
+	relayFactory := NewWebSocketRelayFactory(nil)
+	plan := makeHostPlan(t, []pluginruntime.Factory{
+		routerFactory, targetFactory, credentialFactory, relayFactory,
+	})
+	registry := pluginruntime.NewRegistry()
+	for _, factory := range []pluginruntime.Factory{
+		routerFactory, targetFactory, credentialFactory, relayFactory,
+	} {
+		if err := registry.Register("", factory); err != nil {
+			t.Fatal(err)
+		}
+	}
+	values := relayTargetValues("ws://127.0.0.1:1/v1/realtime", "", "")
+	if _, err := pluginruntime.Mount(context.Background(), pluginruntime.Config{
+		Plan: plan, Registry: registry, Values: map[string]json.RawMessage{"target": values},
+	}); err == nil || !strings.Contains(err.Error(), "network-connect grant") {
+		t.Fatalf("missing relay permission error = %v", err)
+	}
+}
+
+func TestLoopbackListenerIsAPluginAndStopsWithItsScope(t *testing.T) {
+	routerFactory := NewRouterFactory()
+	routeFactory := &testRouteFactory{}
+	listenerFactory := NewLoopbackListenerFactory()
+	plan := makeHostPlan(t, []pluginruntime.Factory{listenerFactory, routeFactory, routerFactory})
+	registry := pluginruntime.NewRegistry()
+	for _, factory := range []pluginruntime.Factory{listenerFactory, routeFactory, routerFactory} {
+		if err := registry.Register("", factory); err != nil {
+			t.Fatal(err)
+		}
+	}
+	values, _ := json.Marshal(listenerConfig{Address: "127.0.0.1:0"})
+	mounted, err := pluginruntime.Mount(context.Background(), pluginruntime.Config{
+		Plan: plan, Registry: registry,
+		Values: map[string]json.RawMessage{"listener": values},
+		Permissions: map[string][]plugin.Permission{"listener": {{
+			Kind: listenPermissionKind, Resource: listenPermissionResource,
+			Operations: []string{listenPermissionOperation},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, contract, _, _, err := mounted.Export("listener")
+	if err != nil || contract != presentation.ListenerContract {
+		t.Fatalf("listener export = %#v, %#v, %v", value, contract, err)
+	}
+	info, ok := value.(ListenerInfo)
+	if !ok || info.URL == "" {
+		t.Fatalf("listener info = %#v", value)
+	}
+	response, err := http.Get(info.URL + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("listener health status = %d", response.StatusCode)
+	}
+	if err := mounted.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	requestContext, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	request, _ := http.NewRequestWithContext(requestContext, http.MethodGet, info.URL+"/healthz", nil)
+	if _, err := http.DefaultClient.Do(request); err == nil {
+		t.Fatal("closed listener still accepted a request")
+	}
+
+	badValues, _ := json.Marshal(listenerConfig{Address: "0.0.0.0:0"})
+	if _, err := pluginruntime.Mount(context.Background(), pluginruntime.Config{
+		Plan: plan, Registry: registry,
+		Values: map[string]json.RawMessage{"listener": badValues},
+		Permissions: map[string][]plugin.Permission{"listener": {{
+			Kind: listenPermissionKind, Resource: listenPermissionResource,
+			Operations: []string{listenPermissionOperation},
+		}}},
+	}); err == nil || !strings.Contains(err.Error(), "not loopback") {
+		t.Fatalf("non-loopback listener error = %v", err)
+	}
+}
+
+type testRouteFactory struct{}
+
+func (*testRouteFactory) Descriptor() plugin.Descriptor {
+	return plugin.Descriptor{
+		FormatVersion: plugin.DescriptorFormatVersion,
+		Name:          "openrealtime.presentation.host.test-route", Revision: 1,
+		Realm: plugin.PresentationHostRealm, Platforms: []string{"go"},
+		Requires: []plugin.Requirement{{Contract: presentation.HTTPRoutesContract}},
+	}
+}
+
+func (*testRouteFactory) Mount(_ context.Context, mount pluginruntime.MountContext) error {
+	return registerRoutes(mount, []Route{{
+		Pattern: "GET /healthz", Handler: http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writer.WriteHeader(http.StatusNoContent)
+		}),
+	}})
+}
+
+func makeClientPlan(t *testing.T, asset plugin.Asset) plugin.Plan {
+	t.Helper()
+	descriptor := plugin.Descriptor{
+		FormatVersion: plugin.DescriptorFormatVersion,
+		Name:          "openrealtime.presentation.client.shell", Revision: 1,
+		Realm: plugin.ClientRealm, Platforms: []string{"browser"}, Assets: []plugin.Asset{asset},
+	}
+	catalog := plugin.NewCatalog()
+	if _, err := catalog.Register(descriptor); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := plugin.FreezeProfile(plugin.Profile{
+		FormatVersion: plugin.ProfileFormatVersion,
+		Name:          "browser.test", Revision: 1, Realm: plugin.ClientRealm,
+		Scopes:  []plugin.ProfileScope{{Path: "root"}},
+		Entries: []plugin.ProfileEntry{{ID: "shell", Plugin: descriptor.Name, Scope: "root"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := plugin.ResolveProfile(profile, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := plugin.Compile(profile, lock, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return plan
+}
+
+func makeHostPlan(t *testing.T, factories []pluginruntime.Factory) plugin.Plan {
+	t.Helper()
+	catalog := plugin.NewCatalog()
+	entries := make([]plugin.ProfileEntry, 0, len(factories))
+	for _, factory := range factories {
+		descriptor := factory.Descriptor()
+		if _, err := catalog.Register(descriptor); err != nil {
+			t.Fatal(err)
+		}
+		id := ""
+		switch descriptor.Name {
+		case "openrealtime.presentation.host.router":
+			id = "router"
+		case "openrealtime.presentation.host.module-store":
+			id = "modules"
+		case "openrealtime.presentation.host.client-manifest":
+			id = "manifest"
+		case "openrealtime.presentation.host.realtime-target":
+			id = "target"
+		case "openrealtime.presentation.host.endpoint-directory":
+			id = "target"
+		case "openrealtime.presentation.host.secret-credential",
+			"openrealtime.presentation.host.anonymous-credential":
+			id = "credential"
+		case "openrealtime.presentation.host.websocket-relay":
+			id = "websocket"
+		case "openrealtime.presentation.host.webrtc-relay":
+			id = "webrtc"
+		case "openrealtime.presentation.host.management-relay":
+			id = "management"
+		case "openrealtime.presentation.host.loopback-listener":
+			id = "listener"
+		case "openrealtime.presentation.host.test-route":
+			id = "test_route"
+		default:
+			t.Fatalf("unknown test factory %s", descriptor.Name)
+		}
+		entries = append(entries, plugin.ProfileEntry{ID: id, Plugin: descriptor.Name, Scope: "root"})
+	}
+	exports := []plugin.ProfileExport{{
+		Name: "http", Provider: "router", Service: presentation.HTTPHandlerContract.Name,
+	}}
+	for _, entry := range entries {
+		if entry.ID == "listener" {
+			exports = append(exports, plugin.ProfileExport{
+				Name: "listener", Provider: "listener", Service: presentation.ListenerContract.Name,
+			})
+		}
+	}
+	profile, err := plugin.FreezeProfile(plugin.Profile{
+		FormatVersion: plugin.ProfileFormatVersion,
+		Name:          "host.test", Revision: 1, Realm: plugin.PresentationHostRealm,
+		Scopes: []plugin.ProfileScope{{Path: "root"}}, Entries: entries,
+		Exports: exports,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := plugin.ResolveProfile(profile, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := plugin.Compile(profile, lock, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return plan
+}
+
+func assertStatus(t *testing.T, target string, want int) {
+	t.Helper()
+	response, err := http.Get(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, response.Body)
+	response.Body.Close()
+	if response.StatusCode != want {
+		t.Fatalf("GET %s status = %d, want %d", target, response.StatusCode, want)
+	}
+}
