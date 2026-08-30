@@ -246,4 +246,10 @@ graph scenario_conversation {
     output playback_status = playback.status;
     output playback_outcome = playback.outcome;
     output playback_resolution = playback.resolved;
+    output gateway_turn_begin = playback.reserved;
+    output gateway_speech_begin = playback.begun;
+    output gateway_speech_text = playback.text_committed;
+    output gateway_speech_audio = playback.audio_emitted;
+    output gateway_speech_end = playback.ended;
+    output gateway_turn_end = playback.released;
 }

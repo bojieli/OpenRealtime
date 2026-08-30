@@ -8,7 +8,10 @@ import (
 	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
 )
 
-const speechImplementationRevision = "implementation:1"
+const (
+	ttsImplementationRevision      = "implementation:1"
+	playbackImplementationRevision = "implementation:2"
+)
 
 const (
 	ttsRuntimeID      = "builtin://openrealtime/elements/speech.TTS"
@@ -22,7 +25,8 @@ func reportTTSLiveResolution(
 ) error {
 	return reportSpeechProviderResolution(
 		reporter, descriptor, "tts", "provider://openrealtime/api/v1/speech/tts/",
-		ttsRuntimeID, ttsAdapterID, "tts.synthesis", "openrealtime.api/v1.SpeechProvider",
+		ttsRuntimeID, ttsAdapterID, ttsImplementationRevision,
+		"tts.synthesis", "openrealtime.api/v1.SpeechProvider",
 	)
 }
 
@@ -31,18 +35,19 @@ func reportPlaybackLiveResolution(
 ) error {
 	return reportSpeechProviderResolution(
 		reporter, descriptor, "playback", "device://openrealtime/api/v1/speech/playback/",
-		playbackRuntimeID, playbackAdapterID, "playback.output", "openrealtime.action/SpeechSink-v1",
+		playbackRuntimeID, playbackAdapterID, playbackImplementationRevision,
+		"playback.output", "openrealtime.action/SpeechSink-v1",
 	)
 }
 
 func reportSpeechProviderResolution(
 	reporter element.ResolutionReporter, descriptor v1.Descriptor, capabilityPrefix,
-	providerPrefix, runtimeID, adapterID, baseCapability, baseContract string,
+	providerPrefix, runtimeID, adapterID, implementationRevision, baseCapability, baseContract string,
 ) error {
 	provider := liveidentity.Artifact{
 		ID: providerPrefix + descriptor.Name, Revision: descriptor.Version,
 	}
-	adapter := liveidentity.Artifact{ID: adapterID, Revision: speechImplementationRevision}
+	adapter := liveidentity.Artifact{ID: adapterID, Revision: implementationRevision}
 	capabilities := []element.CapabilityResolution{
 		liveidentity.Capability(baseCapability, baseContract, provider, adapter),
 	}
@@ -59,6 +64,6 @@ func reportSpeechProviderResolution(
 		))
 	}
 	return liveidentity.Report(reporter, liveidentity.Artifact{
-		ID: runtimeID, Revision: speechImplementationRevision,
+		ID: runtimeID, Revision: implementationRevision,
 	}, capabilities)
 }

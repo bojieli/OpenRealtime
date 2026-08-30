@@ -85,8 +85,8 @@
       "reference": "speech.Playback",
       "identity": {
         "name": "speech.Playback",
-        "revision": 1,
-        "digest": "sha256:7846f8152096ca76133a2670af00d70aadb65f9d3b7b4136c7b97175dece6751"
+        "revision": 2,
+        "digest": "sha256:4a8f49c20ba366678fb5ed120130e34b6d8689923c3feb055cf076bafcdb598e"
       }
     },
     {

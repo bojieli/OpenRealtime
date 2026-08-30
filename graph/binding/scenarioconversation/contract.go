@@ -28,7 +28,7 @@ import (
 const (
 	AdapterReference = "go://github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation/session-adapter/v1"
 	ProfileName      = "openrealtime.scenario_conversation"
-	ProfileRevision  = uint64(1)
+	ProfileRevision  = uint64(2)
 
 	ASRReference          = "deployment.scenario-conversation.asr"
 	ModelReference        = "deployment.scenario-conversation.model"

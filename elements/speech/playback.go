@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -134,11 +135,37 @@ func (playbackFactory) Mount(_ context.Context, mount element.MountContext) (ele
 	if err != nil {
 		return nil, err
 	}
+	reservedOutput, err := mount.Ports.Output("reserved")
+	if err != nil {
+		return nil, err
+	}
+	begunOutput, err := mount.Ports.Output("begun")
+	if err != nil {
+		return nil, err
+	}
+	textOutput, err := mount.Ports.Output("text_committed")
+	if err != nil {
+		return nil, err
+	}
+	audioOutput, err := mount.Ports.Output("audio_emitted")
+	if err != nil {
+		return nil, err
+	}
+	endedOutput, err := mount.Ports.Output("ended")
+	if err != nil {
+		return nil, err
+	}
+	releasedOutput, err := mount.Ports.Output("released")
+	if err != nil {
+		return nil, err
+	}
 	return &playbackRunner{
 		instance: mount.InstanceID, config: config, sink: sink, ledger: ledger,
 		scheduler: scheduler, sinkReference: config.Sink, sinkDescriptor: entry.descriptor,
 		audioInput: audioInput, cancelInput: cancelInput,
 		statusOutput: statusOutput, outcomeOutput: outcomeOutput, resolvedOutput: resolvedOutput,
+		reservedOutput: reservedOutput, begunOutput: begunOutput, textOutput: textOutput,
+		audioOutput: audioOutput, endedOutput: endedOutput, releasedOutput: releasedOutput,
 		resolution:     mount.Resolution,
 		pendingCancels: newCancellationMemory(config.CancelMemory),
 	}, nil
@@ -157,7 +184,10 @@ type activePlayback struct {
 	sampleRate       uint32
 	nextSendNS       uint64
 	playedNS         uint64
+	receiptSequence  uint64
+	lastReceiptID    string
 	emittingReported bool
+	reserved         bool
 	begun            bool
 }
 
@@ -178,6 +208,12 @@ type playbackRunner struct {
 	statusOutput   element.OutputPort
 	outcomeOutput  element.OutputPort
 	resolvedOutput element.OutputPort
+	reservedOutput element.OutputPort
+	begunOutput    element.OutputPort
+	textOutput     element.OutputPort
+	audioOutput    element.OutputPort
+	endedOutput    element.OutputPort
+	releasedOutput element.OutputPort
 	resolution     element.ResolutionReporter
 	pendingCancels *cancellationMemory
 	active         *activePlayback
@@ -357,7 +393,7 @@ func (runner *playbackRunner) begin(
 			Code: "ledger_queue_failed", Message: err.Error(),
 		})
 	}
-	reserved := false
+	active := &activePlayback{cause: cause.Clone(), utterance: frame.Utterance}
 	if reserving, ok := runner.sink.(action.SpeechReservationSink); ok {
 		if err := reserving.Reserve(frame.Utterance); err != nil {
 			runner.discardID = frame.UtteranceID
@@ -370,25 +406,42 @@ func (runner *playbackRunner) begin(
 				Code: "sink_reservation_failed", Message: err.Error(),
 			})
 		}
-		reserved = true
+		active.reserved = true
+		if err := runner.publishReceipt(ctx, active, runner.reservedOutput, PlaybackReserved,
+			action.Frame{}, action.Outcome{}); err != nil {
+			reserving.CancelReservation(frame.Utterance)
+			_, _ = runner.ledger.Cancel(frame.UtteranceID, "publish sink reservation receipt failed")
+			return err
+		}
 	}
 	if err := runner.sink.Begin(ctx, frame.Utterance); err != nil {
 		runner.discardID = frame.UtteranceID
-		if reserved {
+		var receiptErr error
+		if active.reserved {
 			runner.sink.(action.SpeechReservationSink).CancelReservation(frame.Utterance)
+			receiptErr = runner.publishReceipt(ctx, active, runner.releasedOutput, PlaybackReleased,
+				action.Frame{}, action.Outcome{Reason: "sink begin failed"})
 		}
 		_, _ = runner.ledger.Cancel(frame.UtteranceID, "sink begin failed")
-		return runner.publishPlaybackTerminal(ctx, cause, Transition{
+		terminalErr := runner.publishPlaybackTerminal(ctx, cause, Transition{
 			UtteranceID: frame.UtteranceID, Stage: StagePlayback, State: StateFailed,
 			Reason: err.Error(),
 		}, PlaybackOutcome{
 			UtteranceID: frame.UtteranceID, Kind: OutcomeFailed,
 			Code: "sink_begin_failed", Message: err.Error(),
 		})
+		return errors.Join(receiptErr, terminalErr)
 	}
-	active := &activePlayback{
-		cause: cause.Clone(), utterance: frame.Utterance,
-		begun: true,
+	active.begun = true
+	if err := runner.publishReceipt(ctx, active, runner.begunOutput, PlaybackBegun,
+		action.Frame{}, action.Outcome{}); err != nil {
+		_, _ = runner.ledger.Cancel(frame.UtteranceID, "publish sink begin receipt failed")
+		return errors.Join(err, runner.endSink(ctx, active, action.Outcome{Reason: err.Error()}))
+	}
+	if err := runner.publishReceipt(ctx, active, runner.textOutput, PlaybackTextCommitted,
+		action.Frame{}, action.Outcome{}); err != nil {
+		_, _ = runner.ledger.Cancel(frame.UtteranceID, "publish sink text receipt failed")
+		return errors.Join(err, runner.endSink(ctx, active, action.Outcome{Reason: err.Error()}))
 	}
 	runner.active = active
 	commitment, _ = runner.ledger.Lookup(frame.UtteranceID)
@@ -497,10 +550,15 @@ func (runner *playbackRunner) playChunk(
 		if err := runner.ledger.Emit(active.utterance.ID); err != nil {
 			return err
 		}
-		if err := runner.sink.Audio(ctx, active.utterance, action.Frame{
+		emitted := action.Frame{
 			PCM16LE: append([]byte(nil), payload...), SampleRateHz: chunk.SampleRateHz,
 			Duration: time.Duration(durationNS), Final: final,
-		}); err != nil {
+		}
+		if err := runner.sink.Audio(ctx, active.utterance, emitted); err != nil {
+			return err
+		}
+		if err := runner.publishReceipt(ctx, active, runner.audioOutput, PlaybackAudioEmitted,
+			emitted, action.Outcome{}); err != nil {
 			return err
 		}
 		if durationNS > math.MaxUint64-active.playedNS {
@@ -634,7 +692,18 @@ func (runner *playbackRunner) endSink(
 		return nil
 	}
 	active.begun = false
-	return runner.sink.End(ctx, active.utterance, outcome)
+	if err := runner.sink.End(ctx, active.utterance, outcome); err != nil {
+		return err
+	}
+	if err := runner.publishReceipt(ctx, active, runner.endedOutput, PlaybackEnded,
+		action.Frame{}, outcome); err != nil {
+		return err
+	}
+	if active.reserved {
+		return runner.publishReceipt(ctx, active, runner.releasedOutput, PlaybackReleased,
+			action.Frame{}, outcome)
+	}
+	return nil
 }
 
 func (runner *playbackRunner) handleIdleCancel(ctx context.Context, envelope element.Envelope) error {
@@ -679,6 +748,39 @@ func (runner *playbackRunner) publishTransition(
 	envelope.Payload = transition
 	_, err := runner.statusOutput.Broadcast(ctx, envelope)
 	return err
+}
+
+func (runner *playbackRunner) publishReceipt(
+	ctx context.Context, active *activePlayback, output element.OutputPort,
+	kind PlaybackReceiptKind, frame action.Frame, outcome action.Outcome,
+) error {
+	if active == nil || output == nil || active.utterance.ID == "" {
+		return errors.New("publish playback receipt: missing active effect or output")
+	}
+	active.receiptSequence++
+	itemID := fmt.Sprintf("%s:playback-receipt:%06d:%s",
+		active.cause.ItemID, active.receiptSequence, kind)
+	envelope := childEnvelope(active.cause, playbackReceiptType, itemID, active.utterance.ID)
+	if active.lastReceiptID != "" && !slices.Contains(envelope.CausalParents, active.lastReceiptID) {
+		envelope.CausalParents = append(envelope.CausalParents, active.lastReceiptID)
+	}
+	utterance := active.utterance
+	utterance.AssistantItemIDs = slices.Clone(active.utterance.AssistantItemIDs)
+	frame.PCM16LE = slices.Clone(frame.PCM16LE)
+	envelope.Payload = PlaybackReceipt{
+		Kind: kind, Sequence: active.receiptSequence, Utterance: utterance,
+		Frame: frame, Outcome: outcome,
+	}
+	delivery, err := output.Broadcast(ctx, envelope)
+	if err != nil {
+		return fmt.Errorf("publish playback %s receipt: %w", kind, err)
+	}
+	if lanes := len(output.Lanes()); delivery.Delivered != lanes || delivery.Dropped != 0 {
+		return fmt.Errorf("publish playback %s receipt delivered %d/%d and dropped %d lanes",
+			kind, delivery.Delivered, lanes, delivery.Dropped)
+	}
+	active.lastReceiptID = itemID
+	return nil
 }
 
 func (runner *playbackRunner) publishPlaybackTerminal(

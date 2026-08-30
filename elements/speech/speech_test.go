@@ -41,6 +41,12 @@ const speechGraph = `graph speech_pipeline {
     output playback_status   = playback.status;
     output playback_outcome  = playback.outcome;
     output playback_resolved = playback.resolved;
+    output playback_reserved = playback.reserved;
+    output playback_begun = playback.begun;
+    output playback_text_committed = playback.text_committed;
+    output playback_audio_emitted = playback.audio_emitted;
+    output playback_ended = playback.ended;
+    output playback_released = playback.released;
 }
 `
 
@@ -825,26 +831,28 @@ func cloneDescriptor(descriptor v1.Descriptor) v1.Descriptor {
 func assertSpeechLiveResolution(t *testing.T, mounted *graphruntime.Mounted) {
 	t.Helper()
 	checks := []struct {
-		node, runtimeID, capability, providerID, adapterID string
+		node, runtimeID, capability, providerID, adapterID, implementationRevision string
 	}{
 		{
 			node: "tts", runtimeID: "builtin://openrealtime/elements/speech.TTS",
-			capability: "tts.synthesis",
-			providerID: "provider://openrealtime/api/v1/speech/tts/test-tts",
-			adapterID:  "builtin://openrealtime/adapters/speech.TTS-api-v1",
+			capability:             "tts.synthesis",
+			providerID:             "provider://openrealtime/api/v1/speech/tts/test-tts",
+			adapterID:              "builtin://openrealtime/adapters/speech.TTS-api-v1",
+			implementationRevision: "implementation:1",
 		},
 		{
 			node: "playback", runtimeID: "builtin://openrealtime/elements/speech.Playback",
-			capability: "playback.output",
-			providerID: "device://openrealtime/api/v1/speech/playback/test-speaker",
-			adapterID:  "builtin://openrealtime/adapters/speech.Playback-api-v1",
+			capability:             "playback.output",
+			providerID:             "device://openrealtime/api/v1/speech/playback/test-speaker",
+			adapterID:              "builtin://openrealtime/adapters/speech.Playback-api-v1",
+			implementationRevision: "implementation:2",
 		},
 	}
 	for _, check := range checks {
 		resolution := mounted.Live().Nodes[check.node].Resolution
 		if resolution == nil || resolution.RuntimeEvidence != inspect.EvidenceLive ||
 			resolution.Runtime.ID != check.runtimeID ||
-			resolution.Runtime.Revision != "implementation:1" ||
+			resolution.Runtime.Revision != check.implementationRevision ||
 			resolution.CapabilitiesEvidence != inspect.EvidenceLive {
 			t.Fatalf("%s live resolution = %+v", check.node, resolution)
 		}
@@ -853,7 +861,7 @@ func assertSpeechLiveResolution(t *testing.T, mounted *graphruntime.Mounted) {
 			if capability.Name == check.capability && capability.Provider.ID == check.providerID &&
 				capability.Provider.Revision == "1" && capability.Adapter != nil &&
 				capability.Adapter.ID == check.adapterID &&
-				capability.Adapter.Revision == "implementation:1" {
+				capability.Adapter.Revision == check.implementationRevision {
 				found = true
 				break
 			}

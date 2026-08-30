@@ -9,10 +9,13 @@ import (
 
 	legacyaction "github.com/bojieli/OpenRealtime/action"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	"github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
+	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	scenarioconversation "github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation"
+	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
@@ -179,6 +182,146 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 			assertScenarioFactoriesUnopened(t, fixture)
 		})
 	}
+}
+
+func TestScenarioConversationAdapterCarriesFullScenarioContractWithDistinctPlaybackReceipts(t *testing.T) {
+	fixture := newScenarioProfileFixture()
+	contract, err := graphnative.BuildContract()
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := graphs.ScenarioConversationLaunchConfig(fixture.pluginConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selected graphbinding.SessionAdapterProfile
+	decorateScenarioAdapter(t, &config, func(profile *graphbinding.SessionAdapterProfile) error {
+		selected = profile.Clone()
+		return nil
+	})
+	launched, err := graphnative.New(context.Background(), graphnative.Config{Launch: config})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := contract.ValidateProfile(selected, launched.Plan.Graph()); err != nil {
+		t.Fatal(err)
+	}
+	want := map[graphbinding.AdapterOperation]string{
+		graphbinding.AdapterOutputTurnBegin:   "gateway_turn_begin",
+		graphbinding.AdapterOutputTurnEnd:     "gateway_turn_end",
+		graphbinding.AdapterOutputSpeechBegin: "gateway_speech_begin",
+		graphbinding.AdapterOutputSpeechText:  "gateway_speech_text",
+		graphbinding.AdapterOutputSpeechAudio: "gateway_speech_audio",
+		graphbinding.AdapterOutputSpeechEnd:   "gateway_speech_end",
+	}
+	seenBoundaries := make(map[string]struct{}, len(want))
+	for _, boundary := range selected.Boundaries {
+		expected, relevant := want[boundary.Operation]
+		if !relevant {
+			continue
+		}
+		if boundary.Boundary != expected {
+			t.Fatalf("scenario operation %s maps %q, want %q",
+				boundary.Operation, boundary.Boundary, expected)
+		}
+		if _, aliased := seenBoundaries[boundary.Boundary]; aliased {
+			t.Fatalf("scenario playback receipt boundary %q is aliased", boundary.Boundary)
+		}
+		seenBoundaries[boundary.Boundary] = struct{}{}
+		delete(want, boundary.Operation)
+	}
+	if len(want) != 0 {
+		t.Fatalf("scenario profile omitted playback receipt operations: %v", want)
+	}
+	assertScenarioFactoriesUnopened(t, fixture)
+
+	tests := []struct {
+		name   string
+		mutate func(*graphbinding.SessionAdapterProfile)
+		want   string
+	}{
+		{
+			name: "missing playback receipt",
+			mutate: func(profile *graphbinding.SessionAdapterProfile) {
+				for index, boundary := range profile.Boundaries {
+					if boundary.Operation == graphbinding.AdapterOutputSpeechAudio {
+						profile.Boundaries = append(profile.Boundaries[:index], profile.Boundaries[index+1:]...)
+						return
+					}
+				}
+			},
+			want: "missing required seams",
+		},
+		{
+			name: "aliased playback receipts",
+			mutate: func(profile *graphbinding.SessionAdapterProfile) {
+				var turnBegin graphbinding.AdapterBoundary
+				for _, boundary := range profile.Boundaries {
+					if boundary.Operation == graphbinding.AdapterOutputTurnBegin {
+						turnBegin = boundary
+					}
+				}
+				for index := range profile.Boundaries {
+					if profile.Boundaries[index].Operation == graphbinding.AdapterOutputTurnEnd {
+						profile.Boundaries[index].Boundary = turnBegin.Boundary
+						profile.Boundaries[index].Type = turnBegin.Type.Clone()
+					}
+				}
+			},
+			want: "mapped more than once",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			drifted, err := graphs.ScenarioConversationLaunchConfig(fixture.pluginConfig())
+			if err != nil {
+				t.Fatal(err)
+			}
+			decorateScenarioAdapter(t, &drifted, func(profile *graphbinding.SessionAdapterProfile) error {
+				test.mutate(profile)
+				frozen, freezeErr := graphbinding.FreezeSessionAdapterProfile(*profile)
+				if freezeErr != nil {
+					return freezeErr
+				}
+				*profile = frozen
+				return nil
+			})
+			if _, err := graphnative.New(context.Background(), graphnative.Config{Launch: drifted}); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("scenario playback projection error = %v, want %q", err, test.want)
+			}
+			assertScenarioFactoriesUnopened(t, fixture)
+		})
+	}
+}
+
+func decorateScenarioAdapter(
+	t *testing.T, config *graphlaunch.Config,
+	mutate func(*graphbinding.SessionAdapterProfile) error,
+) {
+	t.Helper()
+	for index := range config.Catalog.Adapters {
+		plugin := &config.Catalog.Adapters[index]
+		if plugin.Reference != config.Adapter.Reference {
+			continue
+		}
+		original := plugin.Bind
+		plugin.Bind = func(
+			ctx context.Context, plan *graphconfig.Plan,
+		) (graphlaunch.BoundAdapter, error) {
+			bound, err := original(ctx, plan)
+			if err != nil {
+				return graphlaunch.BoundAdapter{}, err
+			}
+			profile := bound.Profile.Clone()
+			if err := mutate(&profile); err != nil {
+				return graphlaunch.BoundAdapter{}, err
+			}
+			bound.Profile = profile
+			return bound, nil
+		}
+		return
+	}
+	t.Fatal("scenario launch config omitted selected adapter plugin")
 }
 
 type scenarioProfileFixture struct {

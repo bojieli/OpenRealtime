@@ -20,6 +20,7 @@ import (
 	ingresselements "github.com/bojieli/OpenRealtime/elements/ingress"
 	mediaelements "github.com/bojieli/OpenRealtime/elements/media"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
+	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
@@ -73,6 +74,12 @@ const (
 	resultCommitOutcomeBoundary         = "result_commit_outcome"
 	clientToolResultOutcomeBoundary     = "client_tool_result_outcome"
 	clientToolResultJoinOutcomeBoundary = "client_tool_result_join_outcome"
+	gatewayTurnBeginBoundary            = "gateway_turn_begin"
+	gatewayTurnEndBoundary              = "gateway_turn_end"
+	gatewaySpeechBeginBoundary          = "gateway_speech_begin"
+	gatewaySpeechTextBoundary           = "gateway_speech_text"
+	gatewaySpeechAudioBoundary          = "gateway_speech_audio"
+	gatewaySpeechEndBoundary            = "gateway_speech_end"
 
 	maximumAdapterTextBytes   = 1 << 20
 	maximumAdapterImageBytes  = 32 << 20
@@ -146,9 +153,15 @@ func bind(plan *graphconfig.Plan, plugin *Plugin) (boundAdapter, error) {
 			{Operation: graphbinding.AdapterInputToolResult, Boundary: toolResultBoundary, Direction: ir.InputBoundary, Type: selected[toolResultBoundary].Type},
 			{Operation: graphbinding.AdapterInputCreateResponse, Boundary: responseCreateBoundary, Direction: ir.InputBoundary, Type: selected[responseCreateBoundary].Type},
 			{Operation: graphbinding.AdapterInputCancel, Boundary: generationCancelBoundary, Direction: ir.InputBoundary, Type: selected[generationCancelBoundary].Type},
+			{Operation: graphbinding.AdapterOutputTurnBegin, Boundary: gatewayTurnBeginBoundary, Direction: ir.OutputBoundary, Type: selected[gatewayTurnBeginBoundary].Type},
+			{Operation: graphbinding.AdapterOutputTurnEnd, Boundary: gatewayTurnEndBoundary, Direction: ir.OutputBoundary, Type: selected[gatewayTurnEndBoundary].Type},
 			{Operation: graphbinding.AdapterOutputActivity, Boundary: acousticActivityBoundary, Direction: ir.OutputBoundary, Type: selected[acousticActivityBoundary].Type},
 			{Operation: graphbinding.AdapterOutputTranscript, Boundary: transcriptBoundary, Direction: ir.OutputBoundary, Type: selected[transcriptBoundary].Type},
 			{Operation: graphbinding.AdapterOutputObservation, Boundary: observationBoundary, Direction: ir.OutputBoundary, Type: selected[observationBoundary].Type},
+			{Operation: graphbinding.AdapterOutputSpeechBegin, Boundary: gatewaySpeechBeginBoundary, Direction: ir.OutputBoundary, Type: selected[gatewaySpeechBeginBoundary].Type},
+			{Operation: graphbinding.AdapterOutputSpeechText, Boundary: gatewaySpeechTextBoundary, Direction: ir.OutputBoundary, Type: selected[gatewaySpeechTextBoundary].Type},
+			{Operation: graphbinding.AdapterOutputSpeechAudio, Boundary: gatewaySpeechAudioBoundary, Direction: ir.OutputBoundary, Type: selected[gatewaySpeechAudioBoundary].Type},
+			{Operation: graphbinding.AdapterOutputSpeechEnd, Boundary: gatewaySpeechEndBoundary, Direction: ir.OutputBoundary, Type: selected[gatewaySpeechEndBoundary].Type},
 			{Operation: graphbinding.AdapterOutputToolCalls, Boundary: dispatchCommitBoundary, Direction: ir.OutputBoundary, Type: selected[dispatchCommitBoundary].Type},
 			{Operation: graphbinding.AdapterOutputFailed, Boundary: modelOutcomeBoundary, Direction: ir.OutputBoundary, Type: selected[modelOutcomeBoundary].Type},
 		},
@@ -234,6 +247,12 @@ func validateAdapterBoundaryTypes(graph ir.Graph) (map[string]ir.Boundary, error
 		resultCommitOutcomeBoundary:         {ir.OutputBoundary, actionelements.OutcomeType()},
 		clientToolResultOutcomeBoundary:     {ir.OutputBoundary, actionelements.OutcomeType()},
 		clientToolResultJoinOutcomeBoundary: {ir.OutputBoundary, actionelements.OutcomeType()},
+		gatewayTurnBeginBoundary:            {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
+		gatewayTurnEndBoundary:              {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
+		gatewaySpeechBeginBoundary:          {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
+		gatewaySpeechTextBoundary:           {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
+		gatewaySpeechAudioBoundary:          {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
+		gatewaySpeechEndBoundary:            {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
 	}
 	boundaries := make(map[string]ir.Boundary, len(graph.Boundaries))
 	for _, boundary := range graph.Boundaries {

@@ -39,6 +39,7 @@ var (
 	)
 	synthesisOutcomeType   = element.Event(element.Named("speech.SynthesisOutcome"))
 	playbackOutcomeType    = element.Event(element.Named("speech.PlaybackOutcome"))
+	playbackReceiptType    = element.Event(element.Named("speech.PlaybackReceipt"))
 	providerResolutionType = element.State(element.Named("speech.ProviderResolution"))
 	sinkResolutionType     = element.State(element.Named("speech.SinkResolution"))
 )
@@ -51,6 +52,7 @@ func AudioType() element.Type              { return audioType.Clone() }
 func TransitionType() element.Type         { return transitionType.Clone() }
 func SynthesisOutcomeType() element.Type   { return synthesisOutcomeType.Clone() }
 func PlaybackOutcomeType() element.Type    { return playbackOutcomeType.Clone() }
+func PlaybackReceiptType() element.Type    { return playbackReceiptType.Clone() }
 func ProviderResolutionType() element.Type { return providerResolutionType.Clone() }
 func SinkResolutionType() element.Type     { return sinkResolutionType.Clone() }
 
@@ -180,6 +182,29 @@ type PlaybackOutcome struct {
 	Message         string      `json:"message,omitempty"`
 }
 
+// PlaybackReceipt is a post-success receipt for one concrete sink effect.
+// Every kind has its own graph port, so an adapter can attest a presentation
+// seam without aliasing a generic status stream. Sequence and the receipt
+// envelopes' causal parents establish the exact effect order.
+type PlaybackReceipt struct {
+	Kind      PlaybackReceiptKind `json:"kind"`
+	Sequence  uint64              `json:"sequence"`
+	Utterance action.Utterance    `json:"utterance"`
+	Frame     action.Frame        `json:"frame,omitempty"`
+	Outcome   action.Outcome      `json:"outcome,omitempty"`
+}
+
+type PlaybackReceiptKind string
+
+const (
+	PlaybackReserved      PlaybackReceiptKind = "reserved"
+	PlaybackBegun         PlaybackReceiptKind = "begun"
+	PlaybackTextCommitted PlaybackReceiptKind = "text_committed"
+	PlaybackAudioEmitted  PlaybackReceiptKind = "audio_emitted"
+	PlaybackEnded         PlaybackReceiptKind = "ended"
+	PlaybackReleased      PlaybackReceiptKind = "released"
+)
+
 type ProviderResolution struct {
 	Reference  string          `json:"reference"`
 	Descriptor v1.Descriptor   `json:"descriptor"`
@@ -225,7 +250,7 @@ func TTSDescriptor() element.Descriptor {
 func PlaybackDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
-		Name:          "speech.Playback", Revision: 1,
+		Name:          "speech.Playback", Revision: 2,
 		Ports: []element.Port{
 			{Name: "audio", Direction: element.Input, Type: audioType,
 				Cardinality: element.One, Required: true, DefaultDepth: 8},
@@ -237,9 +262,23 @@ func PlaybackDescriptor() element.Descriptor {
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "resolved", Direction: element.Output, Type: sinkResolutionType,
 				Cardinality: element.One, Required: true, DefaultDepth: 1},
+			{Name: "reserved", Direction: element.Output, Type: playbackReceiptType,
+				Cardinality: element.One, DefaultDepth: 16},
+			{Name: "begun", Direction: element.Output, Type: playbackReceiptType,
+				Cardinality: element.One, DefaultDepth: 16},
+			{Name: "text_committed", Direction: element.Output, Type: playbackReceiptType,
+				Cardinality: element.One, DefaultDepth: 16},
+			{Name: "audio_emitted", Direction: element.Output, Type: playbackReceiptType,
+				Cardinality: element.One, DefaultDepth: 64},
+			{Name: "ended", Direction: element.Output, Type: playbackReceiptType,
+				Cardinality: element.One, DefaultDepth: 16},
+			{Name: "released", Direction: element.Output, Type: playbackReceiptType,
+				Cardinality: element.One, DefaultDepth: 16},
 		},
 		Reaction: element.Reaction{
 			Triggers: []string{"audio"}, Interrupts: []string{"cancel"},
+			// Receipts are post-effect audit projections, not competing terminal
+			// outcomes. Status/outcome remain the decision-bearing reaction ports.
 			Outcomes:       []string{"status", "outcome", "resolved"},
 			MaxConcurrency: 1,
 		},
@@ -294,10 +333,10 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
 	return factoryprofile.Registrations(
 		factoryprofile.Entry{Factory: ttsFactory{}, Artifact: inspect.ArtifactIdentity{
-			ID: ttsRuntimeID, Revision: speechImplementationRevision,
+			ID: ttsRuntimeID, Revision: ttsImplementationRevision,
 		}},
 		factoryprofile.Entry{Factory: playbackFactory{}, Artifact: inspect.ArtifactIdentity{
-			ID: playbackRuntimeID, Revision: speechImplementationRevision,
+			ID: playbackRuntimeID, Revision: playbackImplementationRevision,
 		}},
 	)
 }

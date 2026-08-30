@@ -3,7 +3,7 @@
   "cases": [
     {
       "profile": "conversational-fast-only",
-      "graph_fingerprint": "sha256:4d8eaa8b5966d4b7db7051a8a7439360ca59f748565c0d818a72eb371605bf72",
+      "graph_fingerprint": "sha256:89cb70cf0916b09cd0c34d5f1926c1acdd06dff63f6e698685ec61ad340fcdea",
       "played_speech": ["fast response."],
       "committed_results": 1,
       "rejected_results": 1,
@@ -15,7 +15,7 @@
     },
     {
       "profile": "conversational-slow-only",
-      "graph_fingerprint": "sha256:89b078a7262ba4cb1a33a851a38395f4daf5c5a338f4c4736272069fb66f7c96",
+      "graph_fingerprint": "sha256:2804cb2c3a86ace5ca0c94227d7f4cee73914ca18ce407ac2eb3cec8e0194d80",
       "played_speech": ["slow response."],
       "committed_results": 1,
       "rejected_results": 1,
@@ -27,7 +27,7 @@
     },
     {
       "profile": "conversational-both",
-      "graph_fingerprint": "sha256:98adf5022a6e4b98a39cb1bd2a63f07a1204e538de380b908ad9bf3ec406e6b0",
+      "graph_fingerprint": "sha256:0ba91b3d28fa58ce5e62d37ca99f7d567e10e81fbef94e6c3b844a1b39e3c137",
       "played_speech": ["fast response.", "slow response."],
       "committed_results": 1,
       "rejected_results": 1,
