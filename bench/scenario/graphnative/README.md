@@ -72,6 +72,14 @@ Those claims still require the preregistered live run of all eleven scenarios
 at the required repetitions with authenticated runtime evidence. Provider
 credentials and live results are intentionally outside this package.
 
+The repository-owned scenario-conversation graph now composes the reusable
+`interaction.PostCommitSilence` element at an explicit 15,000 ms. Virtual-clock
+tests prove that only a successful durable audio/message commit arms or resets
+the deadline and that expiry emits a response invocation bound to the latest
+committed prefix. That establishes the case-7 mechanism, not a live behavioral
+pass: the model still has to interpret the user's request and produce the
+requested check-in in the retained 15-repeat run.
+
 The provisioned candidate remains wired as
 `external.benchmark.scenario` in `scripts/release-matrix.json`. It runs the
 existing public scenario client against the graph-native endpoint with the

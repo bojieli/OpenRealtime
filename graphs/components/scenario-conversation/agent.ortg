@@ -13,6 +13,7 @@ graph scenario_conversation {
     state.ObservationCommit :: message_observation_commit;
     state.TrajectoryStore :: trajectory;
     policy.SessionInvocation :: session_invocation;
+    interaction.PostCommitSilence :: post_commit_silence;
     cognition.TextModel :: model;
     interaction.ModelResultCommit :: model_result_commit;
     interaction.SegmentPreparedText :: segment;
@@ -36,12 +37,14 @@ graph scenario_conversation {
     flow.Tee :: asr_observation_copy;
     flow.Tee :: asr_outcome_copy;
     flow.Tee :: content_observation_copy;
+    flow.Tee :: message_commit_outcome_copy;
     flow.Mux :: observation_output_mux;
     flow.Mux :: trajectory_append_mux;
     flow.Tee :: trajectory_snapshot_copy;
     flow.Tee :: trajectory_committed_copy;
     flow.Tee :: trajectory_rejected_copy;
     flow.Tee :: audio_commit_outcome_copy;
+    flow.Mux :: response_create_mux;
     flow.Tee :: model_text_copy;
     flow.Tee :: model_result_copy;
     flow.Tee :: model_proposal_copy;
@@ -105,6 +108,11 @@ graph scenario_conversation {
     trajectory_rejected_copy.out -> tool_result_commit.rejected;
     audio_observation_commit.outcome -> audio_commit_outcome_copy.in;
     audio_commit_outcome_copy.out -> session_invocation.committed;
+    audio_commit_outcome_copy.out -> post_commit_silence.committed;
+    message_observation_commit.outcome -> message_commit_outcome_copy.in;
+    message_commit_outcome_copy.out -> post_commit_silence.committed;
+    post_commit_silence.create -> response_create_mux.in;
+    response_create_mux.out -> session_invocation.create;
     session_invocation.trigger -> model.trigger;
     session_invocation.authority -> provenance_join.candidate;
     model.text -> model_text_copy.in;
@@ -153,7 +161,7 @@ graph scenario_conversation {
     tts.audio -> playback.audio;
     playback_cancel_mux.out -> playback.cancel;
     input invocation_update = session_invocation.update;
-    input response_create = session_invocation.create;
+    input response_create = response_create_mux.in;
     input generation_cancel = session_invocation.cancel;
     input tool_result = client_tool_result.result;
     input audio = admission.audio;
@@ -201,7 +209,9 @@ graph scenario_conversation {
     output trajectory_commit = trajectory_committed_copy.out;
     output trajectory_rejection = trajectory_rejected_copy.out;
     output audio_commit_outcome = audio_commit_outcome_copy.out;
-    output message_commit_outcome = message_observation_commit.outcome;
+    output message_commit_outcome = message_commit_outcome_copy.out;
+    output post_commit_silence_state = post_commit_silence.state;
+    output post_commit_silence_outcome = post_commit_silence.outcome;
     output invocation_state = session_invocation.state;
     output invocation_outcome = session_invocation.outcome;
     output prepared_text = model_text_copy.out;

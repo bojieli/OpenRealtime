@@ -348,6 +348,13 @@ func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
 	if err := json.Unmarshal(values["endpoint_policy"], &endpoint); err != nil || endpoint.Mode != "automatic" {
 		return errors.New("scenario conversation endpoint policy must be exact automatic mode")
 	}
+	var postCommitSilence struct {
+		DelayMS int `json:"delay_ms"`
+	}
+	if err := json.Unmarshal(values["post_commit_silence"], &postCommitSilence); err != nil ||
+		postCommitSilence.DelayMS != 15_000 {
+		return errors.New("scenario conversation post-commit silence must be exactly 15000ms")
+	}
 	var admission struct {
 		Threshold         float64 `json:"threshold"`
 		PrefixPaddingMS   int     `json:"prefix_padding_ms"`

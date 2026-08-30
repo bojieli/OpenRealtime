@@ -146,6 +146,14 @@
       }
     },
     {
+      "reference": "interaction.PostCommitSilence",
+      "identity": {
+        "name": "interaction.PostCommitSilence",
+        "revision": 1,
+        "digest": "sha256:242a63f346568698bc6c5748fbaa07dc43e02e81e65fe182d804d3988b8cbebf"
+      }
+    },
+    {
       "reference": "interaction.SegmentPreparedText",
       "identity": {
         "name": "interaction.SegmentPreparedText",

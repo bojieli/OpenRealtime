@@ -19,6 +19,7 @@ import (
 	scenarioconversation "github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
+	"github.com/bojieli/OpenRealtime/graph/ir"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	"github.com/bojieli/OpenRealtime/graphs"
@@ -294,6 +295,83 @@ func TestScenarioConversationAdapterCarriesFullScenarioContractWithDistinctPlayb
 			assertScenarioFactoriesUnopened(t, fixture)
 		})
 	}
+}
+
+func TestScenarioConversationGraphOwnsPostCommitFifteenSecondSilenceWakeup(t *testing.T) {
+	fixture := newScenarioProfileFixture()
+	config, err := graphs.ScenarioConversationLaunchConfig(fixture.pluginConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := graphlaunch.New(context.Background(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph := preview.Plan.Graph()
+	var timerFound bool
+	for _, node := range graph.Nodes {
+		if node.ID != "post_commit_silence" {
+			continue
+		}
+		timerFound = node.Element.Name == "interaction.PostCommitSilence" &&
+			node.ConfigSchema == "schema://openrealtime/interaction/post-commit-silence-config/v1"
+	}
+	if !timerFound {
+		t.Fatal("scenario graph has no descriptor-locked post-commit silence timer")
+	}
+	for _, edge := range [][4]string{
+		{"audio_commit_outcome_copy", "out", "post_commit_silence", "committed"},
+		{"message_commit_outcome_copy", "out", "post_commit_silence", "committed"},
+		{"post_commit_silence", "create", "response_create_mux", "in"},
+		{"response_create_mux", "out", "session_invocation", "create"},
+	} {
+		if !scenarioGraphHasEdge(graph, edge[0], edge[1], edge[2], edge[3]) {
+			t.Fatalf("scenario graph omits timer edge %s.%s -> %s.%s", edge[0], edge[1], edge[2], edge[3])
+		}
+	}
+	for name, endpoint := range map[string]ir.Endpoint{
+		"response_create":             {Node: "response_create_mux", Port: "in"},
+		"post_commit_silence_state":   {Node: "post_commit_silence", Port: "state"},
+		"post_commit_silence_outcome": {Node: "post_commit_silence", Port: "outcome"},
+	} {
+		var found bool
+		for _, boundary := range graph.Boundaries {
+			if boundary.Name == name && boundary.Endpoint.Node == endpoint.Node &&
+				boundary.Endpoint.Port == endpoint.Port {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("scenario graph boundary %q does not bind %+v", name, endpoint)
+		}
+	}
+
+	var values struct {
+		Nodes map[string]json.RawMessage `json:"nodes"`
+	}
+	if err := json.Unmarshal(config.Artifacts.Values.Data, &values); err != nil {
+		t.Fatal(err)
+	}
+	var timerConfig struct {
+		DelayMS int `json:"delay_ms"`
+	}
+	if err := json.Unmarshal(values.Nodes["post_commit_silence"], &timerConfig); err != nil {
+		t.Fatal(err)
+	}
+	if timerConfig.DelayMS != 15_000 {
+		t.Fatalf("scenario post-commit silence delay = %dms, want 15000ms", timerConfig.DelayMS)
+	}
+	assertScenarioFactoriesUnopened(t, fixture)
+}
+
+func scenarioGraphHasEdge(graph ir.Graph, fromNode, fromPort, toNode, toPort string) bool {
+	for _, edge := range graph.Edges {
+		if edge.From.Node == fromNode && edge.From.Port == fromPort &&
+			edge.To.Node == toNode && edge.To.Port == toPort {
+			return true
+		}
+	}
+	return false
 }
 
 func TestScenarioConversationLaunchRequiresExactSharedTrajectoryStoreSelection(t *testing.T) {

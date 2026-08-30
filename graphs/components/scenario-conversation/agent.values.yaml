@@ -55,6 +55,8 @@ nodes:
     role: foreground
     terminal_memory: 512
     cancel_memory: 256
+  post_commit_silence:
+    delay_ms: 15000
   model:
     provider: deployment.scenario-conversation.model
     retain_reasoning: false
