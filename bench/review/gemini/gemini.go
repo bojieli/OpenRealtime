@@ -1849,12 +1849,20 @@ func credentialFragmentKey(fragment []byte) uint32 {
 func (scanner *jsonCredentialScanner) markCredentialFragment(
 	fragment []byte, evidence *credentialFragmentEvidence,
 ) bool {
+	// Unordered reconstruction is deliberately bounded to four-byte atoms.
+	// Smaller pieces are handled only when their decoded token stream remains
+	// ordered and contiguous through the KMP paths above; treating arbitrary
+	// one-byte atoms as unordered evidence would reject ordinary JSON that
+	// merely shares the credential's alphabet. Coverage is intentionally
+	// order-independent once an atom reaches this minimum, and physical-byte
+	// capacity prevents overlapping atoms from counting the same source bytes
+	// more than once.
 	if scanner == nil || len(scanner.credential) < 4 ||
 		evidence == nil || len(evidence.coverage) != len(scanner.credential) ||
 		len(scanner.fragmentPositions) == 0 || len(fragment) < 4 {
 		return false
 	}
-	seen := make(map[uint32]struct{})
+	var seen map[uint32]struct{}
 	physicalEnd := 0
 	for offset := 0; offset+4 <= len(fragment); offset++ {
 		key := credentialFragmentKey(fragment[offset : offset+4])
@@ -1873,6 +1881,9 @@ func (scanner *jsonCredentialScanner) markCredentialFragment(
 		}
 		if _, alreadyMapped := seen[key]; alreadyMapped {
 			continue
+		}
+		if seen == nil {
+			seen = make(map[uint32]struct{})
 		}
 		seen[key] = struct{}{}
 		for _, start := range positions {
