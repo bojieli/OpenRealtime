@@ -71,14 +71,6 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	if handled, err := runtime.processParallelVisual(ctx, batch); handled {
 		return err
 	}
-	// A turn-scoped policy suppresses one answer - wait, I have more to say -
-	// and is discharged once that answer happens. Expiring it when the speaker
-	// stopped would be too early: they stop constantly while making the point
-	// the policy was protecting. Expiring it here, where the agent is about to
-	// respond to a completed turn, is the moment it was asking about.
-	if respondToObservation {
-		defer runtime.pinboard.EndTurn()
-	}
 	revision := runtime.latestRevision(batch)
 	plan := runtime.policies.Rollout.Plan(interaction.RolloutInput{
 		Context: interaction.Context{
@@ -128,6 +120,16 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	// the client stops reading after the first.
 	if err := runtime.sink.TurnBegin(ctx); err != nil {
 		return err
+	}
+	// A turn-scoped policy suppresses one answer - wait, I have more to say -
+	// and is discharged once that answer happens. Observer-only evidence may
+	// be admitted in a manual-turn session so its silent monitor stays current,
+	// but a zero-step or otherwise inactionable batch is not an answer and must
+	// not spend that policy. Install the expiry only after a real response turn
+	// has begun; the matching TurnEnd below then closes the exact lifetime the
+	// policy governed.
+	if respondToObservation {
+		defer runtime.pinboard.EndTurn()
 	}
 	turn := &turnReport{}
 	batchBegan := runtime.scheduler.NowNS()
