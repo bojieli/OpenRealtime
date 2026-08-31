@@ -1946,9 +1946,13 @@ it has been reviewed, tested, and committed with its evidence):
     FDB/FDB3/FD-Bench/tau2 benchmark recording and advisory-review bundle into
     the release matrix with retained source/evaluation receipts, audio/video
     decode assertions, exact population counts, redacted summaries, and
-    credential-free offline verification. Candidate lifecycle hooks are now
-    committed for FDB, FDB v3, FD-Bench, and tau-Voice; the shared durable
-    review-bundle composition and complete live populations remain open.
+    credential-free offline verification. Candidate lifecycle hooks and the
+    suite-neutral fresh-prefix source/campaign/aggregate CLI composition are
+    now implemented for FDB, FDB v3, FD-Bench, and tau-Voice. Interrupted
+    current-run campaigns have an offline recovery command, and completed
+    aggregates have a credential-free verifier. These commands accept no
+    historical bundle, migration input, or baseline registry. The complete
+    live populations and their release-matrix publication remain open.
   - [ ] Run the provisioned live 165-attempt scenario candidate comparison
     against the accepted historical trail, live four-case
     Meeting Assistant review, live exact-sixteen Realtime-CU review, and signed
@@ -2154,6 +2158,15 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   WebSocket/live-inspection path now pass against the strict listeners. A
   second frozen independent audit remains required before the new exact-sixteen
   deterministic run and its per-case Gemini reviews begin.
+- [x] Compose the FDB v1.5, FDB v3, FD-Bench, and tau-Voice direct commands
+  with the candidate-only evidence plug-in. `-review-prefix` reserves a fresh
+  current-run source namespace, preflights exact `gemini-3.7-flash` without a
+  remote model call, retains shared-session or external-harness WAV per attempt,
+  publishes create-only per-attempt advisory evaluations plus a media-linked
+  aggregate, and reopens the transitive receipts without credentials. The
+  `review-candidate` command resumes an interrupted new campaign; the
+  `verify-candidate-review` command verifies a finished one. Neither command
+  reads or reconstructs historical attempts.
 - [ ] Run all 498 FDB v1.5 tasks through the new graph-native endpoint and
   retain per-attempt review media.
 - [ ] Run all 100 released FDB v3 examples through the new graph-native

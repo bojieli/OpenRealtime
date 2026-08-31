@@ -81,7 +81,7 @@ type meetingReviewCLIResources struct {
 // users get is not a measurement of anything.
 func runBench(arguments []string, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: openrealtime bench <execution|architecture|meeting|realtime-cu|fdb|fdbv3|fdbench|tau-voice|dynacu> [flags]")
+		return errors.New("usage: openrealtime bench <execution|architecture|meeting|realtime-cu|fdb|fdbv3|fdbench|tau-voice|dynacu|review-candidate|verify-candidate-review> [flags]")
 	}
 	suite := strings.ToLower(strings.TrimSpace(arguments[0]))
 	switch suite {
@@ -103,6 +103,10 @@ func runBench(arguments []string, output io.Writer) error {
 		return runMeeting(arguments[1:], output)
 	case "dynacu":
 		return runDynaCU(arguments[1:], output)
+	case "review-candidate":
+		return runCandidateReviewRecovery(arguments[1:], output)
+	case "verify-candidate-review":
+		return runCandidateReviewVerification(arguments[1:], output)
 	default:
 		return fmt.Errorf("unknown suite %q", suite)
 	}
@@ -1040,6 +1044,7 @@ func axes(values []realtimecu.Axis) string {
 
 func runFDB(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench fdb", flag.ContinueOnError)
+	var reviewConfig candidateReviewCLIConfig
 	var (
 		root            string
 		endpoint        string
@@ -1068,6 +1073,7 @@ func runFDB(arguments []string, output io.Writer) error {
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
 	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
 	flags.DurationVar(&timeout, "task-timeout", 3*time.Minute, "how long one recording may take")
+	reviewConfig.bind(flags)
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -1095,14 +1101,25 @@ func runFDB(arguments []string, output io.Writer) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	result, err := fdb.Run(ctx, fdb.Options{
+	reviewResources, err := openCandidateReviewCLI(
+		ctx, reviewConfig, deploymentToken, endpoint, os.LookupEnv,
+	)
+	if err != nil {
+		return err
+	}
+	runOptions := fdb.Options{
 		Root: root, Endpoint: endpoint, Token: deploymentToken, Model: model,
 		Cell: cell, Categories: wanted, Limit: limit, Timeout: timeout,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
-	})
-	if err != nil {
-		return err
+	}
+	if reviewResources != nil {
+		runOptions.Evidence, runOptions.EvidenceOrigin = reviewResources.bundle, reviewResources.origin
+	}
+	result, runErr := fdb.Run(ctx, runOptions)
+	reviewErr := finishCandidateReviewIfConfigured(ctx, reviewResources, output)
+	if runErr != nil || reviewErr != nil {
+		return errors.Join(runErr, reviewErr)
 	}
 
 	fmt.Fprintln(output)
@@ -1200,6 +1217,7 @@ func readResult(path string) (bench.Result, error) {
 
 func runFDBench(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench fdbench", flag.ContinueOnError)
+	var reviewConfig candidateReviewCLIConfig
 	var (
 		root            string
 		endpoint        string
@@ -1232,6 +1250,7 @@ func runFDBench(arguments []string, output io.Writer) error {
 	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
 	flags.DurationVar(&budget, "latency-budget", 2*time.Second, "how long a reply may take before it counts as late")
 	flags.DurationVar(&timeout, "task-timeout", 5*time.Minute, "how long one conversation may take")
+	reviewConfig.bind(flags)
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -1271,14 +1290,25 @@ func runFDBench(arguments []string, output io.Writer) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	result, err := fdbench.Run(ctx, fdbench.Options{
+	reviewResources, err := openCandidateReviewCLI(
+		ctx, reviewConfig, deploymentToken, endpoint, os.LookupEnv,
+	)
+	if err != nil {
+		return err
+	}
+	runOptions := fdbench.Options{
 		Root: root, Conditions: selected, Endpoint: endpoint, Token: deploymentToken,
 		Model: model, Cell: cell, Limit: limit, LatencyBudget: budget, Timeout: timeout,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
-	})
-	if err != nil {
-		return err
+	}
+	if reviewResources != nil {
+		runOptions.Evidence, runOptions.EvidenceOrigin = reviewResources.bundle, reviewResources.origin
+	}
+	result, runErr := fdbench.Run(ctx, runOptions)
+	reviewErr := finishCandidateReviewIfConfigured(ctx, reviewResources, output)
+	if runErr != nil || reviewErr != nil {
+		return errors.Join(runErr, reviewErr)
 	}
 
 	fmt.Fprintln(output)
@@ -1317,6 +1347,7 @@ func runFDBench(arguments []string, output io.Writer) error {
 
 func runFDBv3(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench fdbv3", flag.ContinueOnError)
+	var reviewConfig candidateReviewCLIConfig
 	var (
 		root            string
 		endpoint        string
@@ -1343,6 +1374,7 @@ func runFDBv3(arguments []string, output io.Writer) error {
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
 	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
 	flags.DurationVar(&timeout, "task-timeout", 3*time.Minute, "how long one recording may take")
+	reviewConfig.bind(flags)
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -1362,14 +1394,25 @@ func runFDBv3(arguments []string, output io.Writer) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	result, err := fdbv3.Run(ctx, fdbv3.Options{
+	reviewResources, err := openCandidateReviewCLI(
+		ctx, reviewConfig, deploymentToken, endpoint, os.LookupEnv,
+	)
+	if err != nil {
+		return err
+	}
+	runOptions := fdbv3.Options{
 		Root: root, Endpoint: endpoint, Token: deploymentToken, Model: model,
 		Cell: cell, Limit: limit, Timeout: timeout,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
-	})
-	if err != nil {
-		return err
+	}
+	if reviewResources != nil {
+		runOptions.Evidence, runOptions.EvidenceOrigin = reviewResources.bundle, reviewResources.origin
+	}
+	result, runErr := fdbv3.Run(ctx, runOptions)
+	reviewErr := finishCandidateReviewIfConfigured(ctx, reviewResources, output)
+	if runErr != nil || reviewErr != nil {
+		return errors.Join(runErr, reviewErr)
 	}
 	breakdown := fdbv3.Summarise(result)
 
@@ -1528,6 +1571,7 @@ func runTauVoice(arguments []string, output io.Writer) error {
 		return runTauVoiceInventory(arguments[1:], output)
 	}
 	flags := flag.NewFlagSet("openrealtime bench tau-voice", flag.ContinueOnError)
+	var reviewConfig candidateReviewCLIConfig
 	var (
 		tau2Dir         string
 		endpoint        string
@@ -1601,6 +1645,7 @@ func runTauVoice(arguments []string, output io.Writer) error {
 	flags.DurationVar(&timeout, "task-timeout", 10*time.Minute, "how long one simulation may take")
 	flags.BoolVar(&verifyOnly, "verify", false, "check the environment and exit without running")
 	flags.BoolVar(&metrics, "interaction-metrics", true, "also compute tau2's turn-taking metrics")
+	reviewConfig.bind(flags)
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -1644,6 +1689,9 @@ func runTauVoice(arguments []string, output io.Writer) error {
 		Logf:      func(format string, args ...any) { fmt.Fprintf(output, format+"\n", args...) },
 	}
 	if verifyOnly {
+		if strings.TrimSpace(reviewConfig.Prefix) != "" {
+			return errors.New("tau-voice -verify does not execute candidate attempts and cannot use -review-prefix")
+		}
 		if err := config.Verify(ctx); err != nil {
 			return err
 		}
@@ -1652,9 +1700,19 @@ func runTauVoice(arguments []string, output io.Writer) error {
 		return nil
 	}
 
-	result, err := tauvoice.Run(ctx, config)
+	reviewResources, err := openCandidateReviewCLI(
+		ctx, reviewConfig, os.Getenv(tokenEnv), endpoint, os.LookupEnv,
+	)
 	if err != nil {
 		return err
+	}
+	if reviewResources != nil {
+		config.Evidence, config.EvidenceOrigin = reviewResources.bundle, reviewResources.origin
+	}
+	result, runErr := tauvoice.Run(ctx, config)
+	reviewErr := finishCandidateReviewIfConfigured(ctx, reviewResources, output)
+	if runErr != nil || reviewErr != nil {
+		return errors.Join(runErr, reviewErr)
 	}
 
 	fmt.Fprintln(output)
