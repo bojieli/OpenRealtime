@@ -1,6 +1,7 @@
 package realtimecu
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -96,13 +97,47 @@ func TestRealtimeCUReferenceNamesTheConfigurationItRuns(t *testing.T) {
 	}
 }
 
-func TestPixelInstructionStatesTheTargetCoordinateSpace(t *testing.T) {
-	instruction := taskInstruction(Case{Grounding: GroundingPixel}, computeruse.Target{
+func TestPixelGroundingSelectsOnlyNormalizedFrameActions(t *testing.T) {
+	target := computeruse.Target{
 		Name: "browser", Sources: []string{"screen"}, Width: 1280, Height: 577,
-	})
-	for _, wanted := range []string{"1280 by 577 CSS pixels", "x is 0 through 1279", "y is 0 through 576"} {
+	}
+	instruction := taskInstruction(Case{Grounding: GroundingPixel}, target)
+	for _, wanted := range []string{
+		computeruse.ClickNormalized, "normalized 0 through 1000 scale",
+		"1280 by 577 CSS-pixel target", "do not send absolute pixel coordinates",
+	} {
 		if !strings.Contains(instruction, wanted) {
 			t.Errorf("pixel instruction does not contain %q: %s", wanted, instruction)
+		}
+	}
+	tools, err := declarations(target, GroundingPixel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected := make(map[string]bool, len(tools))
+	for _, raw := range tools {
+		var tool struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(raw, &tool); err != nil {
+			t.Fatal(err)
+		}
+		selected[tool.Name] = true
+	}
+	for _, wanted := range []string{
+		computeruse.ClickNormalized, computeruse.Type, computeruse.Key,
+		computeruse.Screenshot, computeruse.Wait,
+	} {
+		if !selected[wanted] {
+			t.Errorf("pixel declarations omitted %q: %v", wanted, selected)
+		}
+	}
+	for _, forbidden := range []string{
+		computeruse.Click, computeruse.ClickElement, computeruse.DoubleClick,
+		computeruse.Move, computeruse.Drag, computeruse.Scroll,
+	} {
+		if selected[forbidden] {
+			t.Errorf("pixel declarations retained ambiguous coordinate action %q", forbidden)
 		}
 	}
 	for _, wanted := range []string{
@@ -118,7 +153,7 @@ func TestPixelInstructionStatesTheTargetCoordinateSpace(t *testing.T) {
 	marked := taskInstruction(Case{Grounding: GroundingSetOfMark}, computeruse.Target{
 		Name: "browser", Sources: []string{"screen"}, Width: 1280, Height: 577,
 	})
-	if strings.Contains(marked, "x is 0 through") || !strings.Contains(marked, computeruse.ClickElement) {
+	if strings.Contains(marked, "normalized 0 through") || !strings.Contains(marked, computeruse.ClickElement) {
 		t.Fatalf("set-of-mark instruction must name marks without inviting coordinates: %s", marked)
 	}
 }

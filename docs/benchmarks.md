@@ -233,15 +233,17 @@ for sixteen declared cases:
 | incident-code form | dependent click, literal typing, and submission |
 
 Pixel grounding is the portable baseline for a desktop, virtual machine, or
-Android display. Set-of-mark grounding is the browser condition: the evaluator
-renders numbered bubbles over interactive elements, and
+Android display. Its selected click contract uses explicit 0–1000 normalized
+frame coordinates, which the target-bound dispatcher maps into the exact CSS
+pixel space before applying its coordinate fence. This avoids treating a
+vision model's normalized point as an absolute pixel while retaining a
+pixel-only observation boundary. Set-of-mark grounding is the browser
+condition: the evaluator renders numbered bubbles over interactive elements, and
 `computer.click_element` resolves the visible label at action time. DOM access
 stays inside the browser grounding/evaluator boundary; the model never receives
-a CSS selector or hidden task state. A deployment-bound pixel tool schema names
-the target's exact inclusive coordinate maxima, while the portable published
-vocabulary remains dimension-free. Realtime-CU also repeats the viewport extent
-in its pixel instruction so a model cannot silently assume the source image's
-encoded or training-time dimensions.
+a CSS selector or hidden task state. The portable published vocabulary remains
+dimension-free, while the deployment-bound target and dispatcher retain the
+exact inclusive CSS coordinate maxima.
 
 Launch the locked graph-native provider through the constructor and exact
 profile-artifact path described in

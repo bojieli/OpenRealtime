@@ -487,7 +487,20 @@ func declarations(target computeruse.Target, grounding Grounding) ([]json.RawMes
 	wanted := func(name string) bool {
 		switch grounding {
 		case GroundingPixel:
-			return name != computeruse.ClickElement
+			// Pixel grounding still acts only from the visible frame, but the
+			// selected local VLM emits its trained 0..1000 image coordinates.
+			// Exposing both absolute and normalized clicks is ambiguous: the
+			// model can choose computer.click while retaining normalized
+			// arguments, which either misses or is correctly refused by the
+			// target fence. Select the explicit normalized vocabulary and let
+			// the dispatcher map it into the exact deployment-bound CSS space.
+			switch name {
+			case computeruse.ClickNormalized, computeruse.Type, computeruse.Key,
+				computeruse.Screenshot, computeruse.Wait:
+				return true
+			default:
+				return false
+			}
 		case GroundingSetOfMark:
 			switch name {
 			case computeruse.ClickElement, computeruse.Type, computeruse.Key,
@@ -520,8 +533,8 @@ func declarations(target computeruse.Target, grounding Grounding) ([]json.RawMes
 
 func taskInstruction(item Case, target computeruse.Target) string {
 	grounding := fmt.Sprintf(
-		"Use pixel coordinates from the current screen frame. Its coordinate space is %d by %d CSS pixels: x is 0 through %d and y is 0 through %d.",
-		target.Width, target.Height, target.Width-1, target.Height-1)
+		"Use %s for pixel grounding. Read x and y from the current screen frame on a normalized 0 through 1000 scale: 0 is the left/top edge and 1000 is the right/bottom edge. The dispatcher maps that point explicitly into the declared %d by %d CSS-pixel target; do not send absolute pixel coordinates.",
+		computeruse.ClickNormalized, target.Width, target.Height)
 	if item.Grounding == GroundingSetOfMark {
 		grounding = "The current screen frame labels interactive elements with red numbered marks. Use computer.click_element with the visible label; do not invent pixel coordinates."
 	}

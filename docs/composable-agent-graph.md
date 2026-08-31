@@ -2220,15 +2220,23 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   manifest
   `sha256:e899491212b6426114661d0898d9797823207b660f59a85671f50cb93257d020`.
 - [ ] Run all sixteen OpenRealtime Realtime-CU v1 cases (eight task families
-  under pixel and set-of-mark observation variants). Exact-sixteen real
-  Chromium/FFmpeg capture and independent full decode are green as hermetic
-  transport evidence only. Immutable Qwen and resolved SenseVoice module
-  snapshots, handle/TOCTOU protection, complete secret-safe behavior-environment
-  identity, mandatory authentication, observer proof, bounded session
-  revalidation, and the actual production profile-file/host/authenticated
-  WebSocket/live-inspection path now pass against the strict listeners. A
-  second frozen independent audit remains required before the new exact-sixteen
-  deterministic run and its per-case Gemini reviews begin.
+  under pixel and set-of-mark observation variants). Candidate-04 completed
+  16/16 with zero infrastructure failures through the clean binary, frozen
+  Qwen/Whisper deployments, production profile, authenticated WebSocket, and
+  live-inspection path. Its exact Gemini 3.7 Flash campaign retained and
+  reopened all 16 synchronized A/V evaluations and agreed with every
+  deterministic outcome; result
+  `realtime-cu-candidate-exact16-20260831-04-full-reviewed.json` is
+  `sha256:2df4222fb1e2ca677055533af2a4e55e1ab56df92bcb7e1dcafb51f9290bc3de`
+  and its reportable review manifest is
+  `sha256:88de2d8a995e26087b187e9cb62d8c1094eb18eeffb43fc0200ecf087a44f8b9`.
+  Quality remains open: 0/8 pixel plus 4/8 set-of-mark trails the trusted 6/16
+  slow-only reference. Retained calls and direct sealed-request replay traced
+  the pixel regression to Qwen emitting trained 0–1000 frame coordinates under
+  the absolute-pixel tool name. Pixel grounding now selects the existing typed
+  normalized-click contract exclusively and maps it through the exact target
+  fence; the affected pixel cases and then a fresh full immutable suite must
+  pass before this box closes.
 - [x] Compose the FDB v1.5, FDB v3, FD-Bench, and tau-Voice direct commands
   with the candidate-only evidence plug-in. `-review-prefix` reserves a fresh
   current-run source namespace, preflights exact `gemini-3.7-flash` without a
