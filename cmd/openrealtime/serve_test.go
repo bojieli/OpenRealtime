@@ -353,6 +353,7 @@ func TestServeRejectsFlagsItCannotHonour(t *testing.T) {
 }
 
 func TestProductionBuildBindingMountsTheSelectedStackThroughGraphIR(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "upstream-graph-fixture-credential")
 	options := defaultOptions()
 	options.binding = "upstream"
 	options.profile = "voice"

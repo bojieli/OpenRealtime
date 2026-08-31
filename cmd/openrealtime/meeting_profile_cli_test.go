@@ -85,6 +85,8 @@ func TestMeetingProfileConcurrentPublicationNeverReplacesCampaign(t *testing.T) 
 }
 
 func TestMeetingProfileCommandPublishesExactCreateOnlyCampaign(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "meeting-profile-fixture-credential")
+	t.Setenv("GOOGLE_API_KEY", "")
 	parent := t.TempDir()
 	campaign := filepath.Join(parent, "meeting-profile")
 	verifier := meetingProfileVerifier()
