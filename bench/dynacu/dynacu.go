@@ -38,6 +38,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	"github.com/bojieli/OpenRealtime/bench/review/candidate"
 )
 
 // PinnedRevision is the AOI commit the suite is measured against.
@@ -114,6 +115,16 @@ type Config struct {
 	// Output is where per-task records are written. Empty selects a file under
 	// the checkout's results directory.
 	Output string
+	// EvidenceDirectory is a fresh, absent directory the embedded driver owns.
+	// It writes one preregistered raw task directory before opening that task's
+	// browser or Realtime websocket. The Go runner later imports and seals those
+	// exact synchronized wire artifacts through Evidence.
+	EvidenceDirectory string
+	// Evidence is the provider-neutral source publisher. DynaCU attempts refuse
+	// to run without it; Report remains the non-attempting result reader.
+	Evidence candidate.Plugin
+	// EvidenceOrigin binds the external harness to the exact shared endpoint.
+	EvidenceOrigin candidate.RunOrigin
 	// Timeout bounds the whole run. Zero selects six hours.
 	Timeout time.Duration
 	// Cell is the measured configuration this run belongs to.
@@ -162,6 +173,13 @@ func (config *Config) applyDefaults() {
 	}
 	if strings.TrimSpace(config.Output) == "" {
 		config.Output = filepath.Join(config.AOIDir, "results", "openrealtime-dynacu.jsonl")
+	}
+	for _, target := range []*string{&config.Output, &config.EvidenceDirectory} {
+		if value := strings.TrimSpace(*target); value != "" {
+			if absolute, err := filepath.Abs(value); err == nil {
+				*target = absolute
+			}
+		}
 	}
 	if config.Logf == nil {
 		config.Logf = func(string, ...any) {}
@@ -354,12 +372,16 @@ func Run(ctx context.Context, config Config) (bench.Result, error) {
 	if err := config.Verify(ctx); err != nil {
 		return bench.Result{}, err
 	}
-	if !config.Resume {
-		if err := os.Remove(config.Output); err != nil && !os.IsNotExist(err) {
-			return bench.Result{}, fmt.Errorf("clear the previous run: %w", err)
-		}
+	if err := config.validateAttemptEvidence(); err != nil {
+		return bench.Result{}, err
 	}
-	if err := os.MkdirAll(filepath.Dir(config.Output), 0o755); err != nil {
+	provenance := bench.Capture()
+	evidenceBase := context.WithoutCancel(ctx)
+	lifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
+		Context: evidenceBase, Plugin: config.Evidence, Suite: "dynacu-bench", Cell: config.Cell,
+		Provenance: provenance, Origin: config.EvidenceOrigin,
+	})
+	if err != nil {
 		return bench.Result{}, err
 	}
 
@@ -372,14 +394,17 @@ func Run(ctx context.Context, config Config) (bench.Result, error) {
 	command.Stderr = progress(config.Logf)
 	runErr := command.Run()
 
-	result, readErr := config.report()
-	if readErr != nil {
-		return bench.Result{}, errors.Join(runErr, readErr)
+	result, readErr := config.reportWithProvenance(provenance)
+	retentionContext, retentionCancel := context.WithTimeout(evidenceBase, 30*time.Minute)
+	evidenceErr := config.retainEvidence(retentionContext, lifecycle, &result)
+	if len(result.Tasks) > 0 {
+		evidenceErr = errors.Join(evidenceErr, lifecycle.Finish(result))
 	}
+	retentionCancel()
 	// A run that died is reported with whatever it completed rather than
 	// discarded: the tasks that ran are evidence, and the cell is incomplete
 	// either way, which the summary already says.
-	return result, runErr
+	return result, errors.Join(runErr, readErr, evidenceErr)
 }
 
 // driverArguments is the command line the driver is invoked with.
@@ -392,6 +417,9 @@ func (config Config) driverArguments() []string {
 		"--out", config.Output,
 		"--max-steps", strconv.Itoa(config.MaxSteps),
 		"--step-interval", strconv.FormatFloat(config.StepInterval.Seconds(), 'f', 2, 64),
+	}
+	if config.EvidenceDirectory != "" {
+		arguments = append(arguments, "--evidence-dir", config.EvidenceDirectory)
 	}
 	if config.Category != "" {
 		arguments = append(arguments, "--category", config.Category)
@@ -461,17 +489,21 @@ func (config Config) agentToken() (string, error) {
 
 // record is one task as the suite reported it.
 type record struct {
-	TaskID     string  `json:"task_id"`
-	Category   string  `json:"category"`
-	Difficulty string  `json:"difficulty"`
-	Success    bool    `json:"success"`
-	ResultVal  string  `json:"result_val"`
-	Steps      int     `json:"steps_taken"`
-	TotalTime  float64 `json:"total_time_s"`
-	Error      string  `json:"error"`
-	FinalScore float64 `json:"final_score"`
-	Heard      string  `json:"heard_audio"`
-	WallS      float64 `json:"wall_s"`
+	TaskID          string          `json:"task_id"`
+	Category        string          `json:"category"`
+	Difficulty      string          `json:"difficulty"`
+	ModelName       string          `json:"model_name,omitempty"`
+	ObservationMode string          `json:"observation_mode,omitempty"`
+	Success         bool            `json:"success"`
+	ResultVal       string          `json:"result_val"`
+	Steps           int             `json:"steps_taken"`
+	StepLog         json.RawMessage `json:"steps,omitempty"`
+	TotalTime       float64         `json:"total_time_s"`
+	Error           string          `json:"error"`
+	FinalScore      float64         `json:"final_score"`
+	Heard           string          `json:"heard_audio"`
+	WallS           float64         `json:"wall_s"`
+	EvidenceError   string          `json:"evidence_error,omitempty"`
 }
 
 // Report turns the driver's per-task records into a cell.
@@ -482,12 +514,16 @@ type record struct {
 // invalid is kept out of the pass rate.
 func Report(config Config) (bench.Result, error) {
 	config.applyDefaults()
-	return config.report()
+	return config.reportWithProvenance(bench.Capture())
 }
 
 func (config Config) report() (bench.Result, error) {
+	return config.reportWithProvenance(bench.Capture())
+}
+
+func (config Config) reportWithProvenance(provenance bench.Provenance) (bench.Result, error) {
 	result := bench.Result{
-		Suite: "dynacu-bench", Cell: config.Cell, Provenance: bench.Capture(),
+		Suite: "dynacu-bench", Cell: config.Cell, Provenance: provenance,
 		Expected: TaskCount,
 	}
 	handle, err := os.Open(config.Output)
@@ -501,6 +537,7 @@ func (config Config) report() (bench.Result, error) {
 	defer handle.Close()
 
 	seen := make(map[string]struct{})
+	var resultErr error
 	scanner := bufio.NewScanner(handle)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8<<20)
 	for scanner.Scan() {
@@ -510,7 +547,12 @@ func (config Config) report() (bench.Result, error) {
 		}
 		var decoded record
 		if err := json.Unmarshal([]byte(line), &decoded); err != nil {
-			return bench.Result{}, fmt.Errorf("read a task record: %w", err)
+			resultErr = errors.Join(resultErr, fmt.Errorf("read a task record: %w", err))
+			continue
+		}
+		if strings.TrimSpace(decoded.TaskID) == "" {
+			resultErr = errors.Join(resultErr, errors.New("read a task record: empty task identity"))
+			continue
 		}
 		if _, duplicate := seen[decoded.TaskID]; duplicate {
 			// A resumed run rewrites a task it retried. The last word wins.
@@ -526,7 +568,7 @@ func (config Config) report() (bench.Result, error) {
 		result.Tasks = append(result.Tasks, decoded.outcome())
 	}
 	if err := scanner.Err(); err != nil {
-		return bench.Result{}, err
+		resultErr = errors.Join(resultErr, err)
 	}
 	result.Finish()
 	if config.Restricted() {
@@ -534,7 +576,7 @@ func (config Config) report() (bench.Result, error) {
 		result.Summary.Complete = false
 		result.Summary.Incompleteness = "the run was restricted to a subset of the suite"
 	}
-	return result, nil
+	return result, resultErr
 }
 
 func (decoded record) outcome() bench.TaskOutcome {
