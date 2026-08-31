@@ -13,7 +13,7 @@ struct NativeMediaSnapshot: Equatable {
 @MainActor
 final class NativeMediaBoundary {
     private let audio = AudioIO()
-    private let transport: RealtimeClient
+    private let transport: any RealtimeTransport
     private let reducer: NativeReducerController
     private let protocolEvents: ValidatedProtocolEventService
     private var unsubscribeEvents: (() -> Void)?
@@ -22,7 +22,7 @@ final class NativeMediaBoundary {
     private var outputStatus = "idle"
 
     init(
-        transport: RealtimeClient,
+        transport: any RealtimeTransport,
         reducer: NativeReducerController,
         protocolEvents: ValidatedProtocolEventService
     ) {
@@ -147,7 +147,7 @@ struct NativeVideoSnapshot: Equatable {
 final class NativeVideoBoundary {
     private static let sources = Set(["camera", "screen", "browser"])
 
-    private let transport: RealtimeClient
+    private let transport: any RealtimeTransport
     private let reducer: NativeReducerController
     private let configuration: SessionConfigurationService
     private let capture = MediaCaptureController()
@@ -169,7 +169,7 @@ final class NativeVideoBoundary {
     private var browserCleanupTask: Task<Void, Never>?
 
     init(
-        transport: RealtimeClient,
+        transport: any RealtimeTransport,
         reducer: NativeReducerController,
         configuration: SessionConfigurationService
     ) {

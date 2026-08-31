@@ -11,7 +11,7 @@ final class NativeReducerController {
         let session: [String: Any]
     }
 
-    private let transport: RealtimeClient
+    private let transport: any RealtimeTransport
     private let reducer: RealtimeReducerService
     private weak var inspectionAccess: SessionInspectionAccessService?
     private weak var inspectionClient: SessionInspectionClient?
@@ -26,7 +26,7 @@ final class NativeReducerController {
     private var listeners: [UUID: ([String: Any]) -> Void] = [:]
 
     init(
-        transport: RealtimeClient,
+        transport: any RealtimeTransport,
         reducer: RealtimeReducerService = RealtimeReducerService()
     ) {
         self.transport = transport

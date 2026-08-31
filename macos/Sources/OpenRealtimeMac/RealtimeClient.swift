@@ -118,8 +118,10 @@ private final class RealtimeWebSocketSessionDelegate: NSObject,
     }
 }
 
+/// The WebSocket transport: every event, audio included, travels as a protocol
+/// message on one socket.
 @MainActor
-final class RealtimeClient {
+final class RealtimeClient: RealtimeTransport {
     var onEvent: (([String: Any]) -> Void)?
     var onState: ((ConnectionState, String) -> Void)?
     var onProtocol: ((String, [String: Any]) -> Void)?

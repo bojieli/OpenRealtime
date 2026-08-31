@@ -535,3 +535,51 @@ func TestNativeDeploymentIsChosenByTheOperatorAndStillFrozen(t *testing.T) {
 		t.Error("native view can mutate immutable endpoint-directory wiring")
 	}
 }
+
+// The reducer and the media and video providers are written against a
+// transport protocol rather than a WebSocket, because a WebRTC transport
+// carries the same session differently. Binding them back to the concrete
+// WebSocket client would make the second transport unimplementable without
+// touching every provider again.
+func TestNativeProvidersDependOnTheTransportProtocol(t *testing.T) {
+	transport, err := os.ReadFile("Sources/OpenRealtimeMac/RealtimeTransport.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(transport), "protocol RealtimeTransport: AnyObject {") {
+		t.Fatal("the transport protocol is gone")
+	}
+	for _, member := range []string{
+		"func connect(token: String) async throws",
+		"func send(_ event: [String: Any])",
+		"func sendAudio(_ pcm16LE: Data)",
+		"func sendVideo(source: String, data: Data, timestampMS: Int64)",
+		"func updateVideoSource(",
+	} {
+		if !strings.Contains(string(transport), member) {
+			t.Errorf("the transport protocol no longer requires %q", member)
+		}
+	}
+	client, err := os.ReadFile("Sources/OpenRealtimeMac/RealtimeClient.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(client), "final class RealtimeClient: RealtimeTransport {") {
+		t.Error("the WebSocket client no longer conforms to the transport protocol")
+	}
+	for _, name := range []string{
+		"Sources/OpenRealtimeMac/NativeReducerController.swift",
+		"Sources/OpenRealtimeMac/NativePresentationProviders.swift",
+	} {
+		content, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(content), "transport: RealtimeClient") {
+			t.Errorf("%s is bound to the concrete WebSocket client", name)
+		}
+		if !strings.Contains(string(content), "transport: any RealtimeTransport") {
+			t.Errorf("%s does not take the transport protocol", name)
+		}
+	}
+}
