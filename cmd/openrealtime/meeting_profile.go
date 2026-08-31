@@ -538,6 +538,12 @@ type meetingDormantProvider struct {
 	descriptor continuation.Descriptor
 }
 
+const meetingForegroundInstruction = "Assist with the live meeting. Ground every response in the shared transcript and screen observations, honor later corrections, and stay concise. " +
+	"Complete every explicitly requested client tool call and visible action before announcing completion; a claimed action without its successful tool result is not complete. " +
+	"For ordered visible actions, execute one action, use the next retained frame, and continue until the user's requested sequence is complete. " +
+	"When a requested visual condition appears, use its declared visible control silently; never substitute a verbal acknowledgment for the action. " +
+	"A screen observation or background result alone does not authorize a spoken response, and without a new user request or correction never repeat an answer already given."
+
 // meetingForegroundRollout is the profile's narrow local control policy. It
 // never schedules the private cascade slow slot (the graph owns background
 // cognition), but unlike the generic fast-only control condition it gives a
@@ -681,7 +687,7 @@ func newMeetingForegroundBinding(
 			ChangeThreshold: 0.02, Narrator: narrator, AttachKeyframes: config.AttachKeyframes,
 		})},
 		DefaultObservers: []string{"audio", "screen"},
-		AgentInstruction: "Assist with the live meeting. Ground answers in the shared transcript and screen observations, honor later corrections, and stay concise.",
+		AgentInstruction: meetingForegroundInstruction,
 	})
 	if err != nil {
 		_ = closeReadinessResource(speech)
@@ -794,7 +800,7 @@ func defaultMeetingProfileOptions() meetingProfileOptions {
 	return meetingProfileOptions{
 		name: "openrealtime.launch.meeting-assistant-local", revision: 1,
 		tokenEnv:      "OPENREALTIME_TOKEN",
-		inspectionTTL: 30_000, maxAudioBytes: 1 << 20,
+		inspectionTTL: 300_000, maxAudioBytes: 1 << 20,
 	}
 }
 

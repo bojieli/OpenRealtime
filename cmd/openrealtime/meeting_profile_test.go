@@ -258,6 +258,34 @@ func TestMeetingForegroundRolloutContinuesToolResultsWithoutPrivateSlowWork(t *t
 	}
 }
 
+func TestMeetingForegroundInstructionKeepsActionsSilentCompleteAndNonRepeating(t *testing.T) {
+	for _, required := range []string{
+		"successful tool result is not complete",
+		"continue until the user's requested sequence is complete",
+		"use its declared visible control silently",
+		"screen observation or background result alone does not authorize a spoken response",
+		"never repeat an answer already given",
+	} {
+		if !strings.Contains(meetingForegroundInstruction, required) {
+			t.Fatalf("Meeting foreground instruction omitted %q: %q", required, meetingForegroundInstruction)
+		}
+	}
+	for _, benchmarkSpecific := range []string{
+		"launch review", "share screen", "deployment alert", "18.4",
+	} {
+		if strings.Contains(strings.ToLower(meetingForegroundInstruction), benchmarkSpecific) {
+			t.Fatalf("Meeting foreground instruction embeds benchmark fixture %q", benchmarkSpecific)
+		}
+	}
+}
+
+func TestDefaultMeetingInspectionLeaseCoversFullCandidateCaseAndAttestation(t *testing.T) {
+	const minimumLeaseMS = 120_000
+	if got := defaultMeetingProfileOptions().inspectionTTL; got < minimumLeaseMS {
+		t.Fatalf("default Meeting inspection lease = %d ms, want at least %d", got, minimumLeaseMS)
+	}
+}
+
 func TestFreezeMeetingProfileBindsExactGraphResolutionAndDeployments(t *testing.T) {
 	options := defaultMeetingProfileOptions()
 	verifier := meetingProfileVerifier()
