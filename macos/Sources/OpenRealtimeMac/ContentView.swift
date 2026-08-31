@@ -51,6 +51,19 @@ struct ContentView: View {
                         }
                     }
                     .disabled(model.connectionState != .disconnected)
+                    Picker("Transport", selection: $host.draft.transport) {
+                        ForEach(NativeTransportKind.allCases) { kind in
+                            Text(kind.title).tag(kind)
+                        }
+                    }
+                    .disabled(model.connectionState != .disconnected)
+                    Text(host.draft.transport.detail)
+                        .font(.caption).foregroundStyle(.secondary)
+                    if host.draft.transport == .webRTC {
+                        TextField("WebRTC adapter base URL", text: $host.draft.webRTCBase)
+                            .textFieldStyle(.roundedBorder)
+                            .disabled(model.connectionState != .disconnected)
+                    }
                     HStack {
                         Button("Apply and rebuild client") { host.applyDraft() }
                             .disabled(model.connectionState != .disconnected)
@@ -66,7 +79,7 @@ struct ContentView: View {
             }
 
             Section("Connection") {
-                LabeledContent("WebSocket endpoint") {
+                LabeledContent("\(model.transportName) endpoint") {
                     Text(model.endpoint).font(.caption.monospaced()).textSelection(.enabled)
                 }
                 SecureField("Bearer token (optional)", text: $model.token)

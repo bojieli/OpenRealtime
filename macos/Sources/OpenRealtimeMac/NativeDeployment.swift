@@ -38,6 +38,32 @@ enum NativeDeploymentLayout: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// Which realtime transport the client uses.
+///
+/// Both carry the same session. They differ in what the network has to allow:
+/// the WebSocket is one HTTP origin and traverses any HTTP proxy or tunnel,
+/// while WebRTC needs its media plane, which is UDP and does not.
+enum NativeTransportKind: String, CaseIterable, Identifiable, Sendable {
+    case webSocket
+    case webRTC
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .webSocket: return "OpenRealtime over WebSocket"
+        case .webRTC: return "WebRTC"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .webSocket: return "one HTTP origin; works through an HTTP tunnel"
+        case .webRTC: return "needs UDP media; will not traverse an HTTP tunnel"
+        }
+    }
+}
+
 /// An operator-entered deployment: one base URL plus the layout it serves.
 ///
 /// This is the only value the view may edit. It is deployment wiring the
@@ -46,6 +72,10 @@ enum NativeDeploymentLayout: String, CaseIterable, Identifiable, Sendable {
 struct NativeDeploymentSelection: Equatable, Sendable {
     var base: String
     var layout: NativeDeploymentLayout
+    var transport: NativeTransportKind = .webSocket
+    /// The WebRTC adapter is a separate listener from the Realtime server, so
+    /// it cannot be derived from the same base.
+    var webRTCBase: String = "http://127.0.0.1:8766"
 
     static let presentationHostDefault = NativeDeploymentSelection(
         base: "http://127.0.0.1:8767", layout: .presentationHost
@@ -82,12 +112,26 @@ enum NativeDeploymentDirectory {
                 "the effects distribution needs a presentation host: the Realtime server serves no effect or resource endpoints"
             )
         }
-        var endpoints: [NativeEndpoint] = [
-            NativeEndpoint(
+        let realtime: NativeEndpoint
+        switch selection.transport {
+        case .webSocket:
+            realtime = NativeEndpoint(
                 name: .realtimeWebSocket,
                 protocolName: NativeEndpoint.realtimeWebSocketProtocol,
                 url: base.websocket + selection.layout.realtimePath
-            ),
+            )
+        case .webRTC:
+            // The adapter is its own listener and answers a single SDP POST
+            // at the path the Realtime API publishes.
+            let adapter = try canonicalBase(selection.webRTCBase)
+            realtime = NativeEndpoint(
+                name: .realtimeWebRTC,
+                protocolName: NativeEndpoint.realtimeWebRTCProtocol,
+                url: adapter.http + "/v1/realtime/calls"
+            )
+        }
+        var endpoints: [NativeEndpoint] = [
+            realtime,
             NativeEndpoint(
                 name: .management,
                 protocolName: NativeEndpoint.managementProtocol,
@@ -169,24 +213,38 @@ enum NativeDeploymentDirectory {
 enum NativeDeploymentStore {
     private static let baseKey = "ai.openrealtime.developer.deployment.base"
     private static let layoutKey = "ai.openrealtime.developer.deployment.layout"
+    private static let transportKey = "ai.openrealtime.developer.deployment.transport"
+    private static let webRTCKey = "ai.openrealtime.developer.deployment.webrtc"
 
     static func load() -> NativeDeploymentSelection? {
         let defaults = UserDefaults.standard
         guard let base = defaults.string(forKey: baseKey), !base.isEmpty,
               let raw = defaults.string(forKey: layoutKey),
               let layout = NativeDeploymentLayout(rawValue: raw) else { return nil }
-        return NativeDeploymentSelection(base: base, layout: layout)
+        var selection = NativeDeploymentSelection(base: base, layout: layout)
+        if let raw = defaults.string(forKey: transportKey),
+           let transport = NativeTransportKind(rawValue: raw) {
+            selection.transport = transport
+        }
+        if let webRTC = defaults.string(forKey: webRTCKey), !webRTC.isEmpty {
+            selection.webRTCBase = webRTC
+        }
+        return selection
     }
 
     static func save(_ selection: NativeDeploymentSelection) {
         let defaults = UserDefaults.standard
         defaults.set(selection.base, forKey: baseKey)
         defaults.set(selection.layout.rawValue, forKey: layoutKey)
+        defaults.set(selection.transport.rawValue, forKey: transportKey)
+        defaults.set(selection.webRTCBase, forKey: webRTCKey)
     }
 
     static func clear() {
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: baseKey)
         defaults.removeObject(forKey: layoutKey)
+        defaults.removeObject(forKey: transportKey)
+        defaults.removeObject(forKey: webRTCKey)
     }
 }

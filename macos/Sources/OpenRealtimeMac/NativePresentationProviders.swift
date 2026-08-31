@@ -37,7 +37,7 @@ final class NativeMediaBoundary {
         guard !mounted else { throw NativeProviderError("native media provider mounted twice") }
         mounted = true
         audio.onFrame = { [weak self] data in
-            guard let self, self.mounted else { return }
+            guard let self, self.mounted, !self.transport.carriesAudioAsMedia else { return }
             self.transport.sendAudio(data)
         }
         audio.onStatus = { [weak self] status in
@@ -68,7 +68,15 @@ final class NativeMediaBoundary {
     }
 
     func snapshot() -> NativeMediaSnapshot {
-        NativeMediaSnapshot(
+        if let media = transport as? WebRTCTransport {
+            return NativeMediaSnapshot(
+                microphoneActive: media.microphoneActive,
+                microphoneMuted: false,
+                outputStatus: media.connected ? "negotiated media" : "idle",
+                permission: audio.permission
+            )
+        }
+        return NativeMediaSnapshot(
             microphoneActive: audio.microphoneActive,
             microphoneMuted: audio.muted,
             outputStatus: outputStatus,
@@ -88,6 +96,15 @@ final class NativeMediaBoundary {
 
     func toggleMicrophone() async throws {
         guard mounted else { throw NativeProviderError("native media provider is unavailable") }
+        // A media transport already captures and plays out through its own
+        // audio device module. Opening AVAudioEngine as well would prompt for
+        // a permission nothing needs and put a second copy of the same speech
+        // on the wire, so the toggle drives the transport's own track.
+        if let media = transport as? WebRTCTransport {
+            media.setMicrophone(enabled: !media.microphoneActive)
+            publish()
+            return
+        }
         if audio.microphoneActive {
             audio.toggleMute()
         } else {
@@ -97,11 +114,19 @@ final class NativeMediaBoundary {
     }
 
     func stopMicrophone() {
+        if let media = transport as? WebRTCTransport {
+            media.setMicrophone(enabled: false)
+            publish()
+            return
+        }
         audio.stopMicrophone()
         publish()
     }
 
     private func consume(_ event: [String: Any]) {
+        // Assistant audio arrives as RTP on a media transport, so there is no
+        // delta to enqueue and no local playout clock to truncate against.
+        if transport.carriesAudioAsMedia { return }
         switch event["type"] as? String {
         case "input_audio_buffer.speech_started":
             if let interruption = audio.interrupt() {

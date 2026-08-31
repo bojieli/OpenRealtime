@@ -6,6 +6,10 @@ import OpenRealtimeClientCore
 @MainActor
 final class DeveloperModel: ObservableObject {
     let endpoint: String
+    /// Which transport this client was built against, for the view to state.
+    let transportName: String
+    /// The same transport under the reducer's own name, for the hosted proof.
+    let transportKind: String
     let distribution: String
     let manifestFingerprint: String
     let endpointFingerprint: String
@@ -106,10 +110,23 @@ final class DeveloperModel: ObservableObject {
         self.distribution = distribution.rawValue
         manifestFingerprint = assembly.manifest.manifestFingerprint
         endpointFingerprint = assembly.endpointDirectory.fingerprint
-        endpoint = try assembly.endpointDirectory.endpoint(
+        // Whichever realtime transport the deployment declared. The directory
+        // carries exactly one, and it is the address this client is bound to.
+        if let webSocket = try? assembly.endpointDirectory.endpoint(
             named: .realtimeWebSocket,
             protocol: NativeEndpoint.realtimeWebSocketProtocol
-        ).url
+        ) {
+            endpoint = webSocket.url
+            transportName = "WebSocket"
+            transportKind = "websocket"
+        } else {
+            endpoint = try assembly.endpointDirectory.endpoint(
+                named: .realtimeWebRTC,
+                protocol: NativeEndpoint.realtimeWebRTCProtocol
+            ).url
+            transportName = "WebRTC"
+            transportKind = "webrtc"
+        }
         let services = assembly.view.services
         reducer = services.reducer
         media = services.media

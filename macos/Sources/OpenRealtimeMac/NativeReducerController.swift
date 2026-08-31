@@ -100,7 +100,7 @@ final class NativeReducerController {
         guard phase == "disconnected" || phase == "failed" else { return }
         reconnectTask?.cancel()
         configuration = ConnectionConfiguration(token: token, session: session)
-        try apply(["kind": "connect", "transport": "websocket"])
+        try apply(["kind": "connect", "transport": transport.transportKind])
         do {
             try await transport.connect(token: token)
             try apply(["kind": "connected"])
