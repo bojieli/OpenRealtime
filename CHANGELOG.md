@@ -40,56 +40,27 @@
   wire, and with the enum in place the same model named `"browser"` and the
   click landed.
 
-### The test surface
+### Composable presentation
 
-- **Every channel, both directions, on one page.** `openrealtime surface` is a
-  second local client, and deliberately not a second console: the console is
-  the minimal worked example of the protocol, and this is the bench. Six
-  channels in — audio, typed text, screen, camera, a browser, tool results —
-  and six out: speech, text, computer use, tool calls, HTML artifacts, and
-  downloadable files.
-  Each one shows whether it is carrying anything and how much, because a
-  channel at zero when you expected traffic is the most common finding in an
-  end-to-end run and is invisible in a transcript, which only shows what did
-  arrive.
+- **Presentation is a replaceable client composition, not server UI.** The
+  standalone host mounts descriptor-locked browser profiles over explicit
+  public Realtime and management endpoints. The host owns upstream endpoint
+  selection and credentials; the browser manifest contains only relative
+  public routes and exact module identities.
 
-- **The browser channel closes a loop the protocol described and nothing
-  implemented.** A context the surface both captures frames from and performs
-  clicks against: ordinary `video.input` frames under a source name, ordinary
-  `computer.*` actions naming that source, so what the agent looks at and what
-  it acts on are the same page in the same coordinate space.
-  `browser.Capture` had existed since the beginning for "a caller that is
-  feeding the video stream rather than acting", and nothing was that caller.
+- **Browser behavior is assembled from independently declared modules.** Text,
+  WebSocket/WebRTC transport, media, tools, effects, artifacts, inspection,
+  authoring, and views are selected through client contracts and scoped
+  permissions. Callers can add a source-digested module through the same clean
+  composition API without acquiring implicit effect authority.
 
-- **Generative UI is an ordinary function tool, and stays one.** `display_artifact`
-  adds no event, no namespace, and nothing the protocol knows about — a model
-  that can call a function can drive it against any Realtime server. The
-  surface renders it in a frame loaded from its own route rather than from
-  `srcdoc`, so it carries a policy written for an artifact: its own inline
-  script runs and it has no network at all. The frame withholds the origin, so
-  the one way out is `postMessage`, and a person clicking a button inside an
-  artifact reaches the session as a person speaking.
-
-- **Generated files are ordinary tools too.** `publish_download` accepts one
-  safe filename and at most 8 MiB of text or base64, stores it in a bounded
-  in-memory shelf, and serves a revisioned same-origin attachment with
-  `nosniff`. The browser test fetches the published CSV and checks the twelfth
-  channel rather than treating a tool result containing bytes as a file.
-
-- **Channel coverage is separated from model choice.** A deterministic real-
-  browser test now carries all twelve channels in one session over WebSocket
-  and WebRTC, including a changing canvas display-capture stream and a text-
-  only response turn. A separate local-model run - Qwen3-30B reasoning,
-  Qwen2.5-VL-7B narrating, SenseVoice listening, FishAudio speaking - hears
-  real speech, reads a real file, renders a real HTML table, and presses a real
-  browser button; channels a selected model elects not to use remain reported
-  separately from transport coverage.
-
-- **A fragment is wrapped.** Found by a real model doing it: asked for a table,
-  a good one returns a style block and a table and stops, because that is what
-  the answer is. Insisting on a full document would be holding out for
-  boilerplate that adds nothing from a model that will keep declining to write
-  it.
+- **The duplicate presentation forks are retired with stronger coverage in
+  place.** A real-Chromium gate mounts the public descriptor-locked host and
+  client, hides the upstream endpoint and credential, negotiates a caller
+  module's function tool, and requires the model to return an unpredictable
+  value available only through that tool. Its provisioned real-model form is a
+  release-matrix gate; the hermetic peer exercises the same browser and public
+  relay path without making a behavioral provider claim.
 
 ### Measurement
 

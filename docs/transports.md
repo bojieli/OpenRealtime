@@ -72,29 +72,25 @@ The requested headers are echoed rather than enumerated, because a client sends
 its own alongside the two the exchange needs and a server cannot know in
 advance what every client will identify itself with.
 
-That is the adapter's half. The page has a half of its own, and it is the
-mirror image: a `Content-Security-Policy` with `connect-src 'self'` forbids the
-browser from making the very request the adapter has just agreed to answer. The
-demo shipped that way and could not reach an adapter in any documented
-configuration — served intact, script parsing, every event name present, and
-dead, because the one request it exists to make was blocked before it left the
-page.
+That is the adapter's half. The browser half is now one descriptor-locked
+composition served by the standalone presentation host. Its manifest declares
+only relative public routes (`/client/v1/realtime` or
+`/client/v1/realtime/calls`), and its shell policy permits those same-origin
+WebSocket/WebRTC requests. The host relay, not page JavaScript, owns any bearer
+credential and the explicit upstream endpoint directory. Neither is serialized
+into the client manifest or inferred from the page origin.
 
-**The two pages in this repository need opposite values, and the difference is
-decided by where the credential lives.** They are worth reading together before
-changing either, because they look like the same header set wrong in one place:
+This gives every shipped browser profile one transport rule:
 
-| | `examples/browser` | `console` |
+| Browser profile | Browser destination | Upstream selection and credential |
 | --- | --- | --- |
-| Where the SDP goes | direct to the adapter, at an address the page takes as a `?adapter=` parameter | to `/api/webrtc` on its own origin, which the server proxies onward |
-| Where the credential lives | nowhere — the adapter is reached unauthenticated or through an operator's own edge | in the server, attached to the proxied request, never in the browser |
-| Correct `connect-src` | `'self' http: https: ws: wss:` — the destination is a parameter and cannot be enumerated | `'self' ws: wss:` — every connection is same-origin by construction |
+| WebSocket | same-origin `/client/v1/realtime` | explicit host endpoint directory; credential held by the relay |
+| WebRTC | same-origin `/client/v1/realtime/calls` | explicit host endpoint directory; credential held by the relay |
 
-So the console's stricter policy is not extra diligence to be copied, and the
-demo's broader one is not laxity to be tightened. Each follows from the shape of
-its page. Harmonising them breaks whichever one gets changed, and it breaks it
-in the way that is hardest to see: the page still loads, still parses, and still
-does nothing.
+A deployment that wants direct cross-origin access can compose a different
+transport plug-in and declare that permission and endpoint explicitly. There is
+no same-origin inference or query-parameter endpoint fallback in the normal
+client.
 
 ### Large events: chunk framing
 
@@ -211,16 +207,17 @@ voice+vision.
 
 ## Video
 
-Video always enters the engine as protocol events. The repository console and
-surface capture a selected screen/camera, encode retained JPEG/PNG frames, and
-send those events over the WebRTC data channel; the audio track remains RTP.
+Video always enters the engine as protocol events. The descriptor-locked WebRTC
+browser profile captures a selected screen/camera, encodes retained JPEG/PNG
+frames, and sends those events over the WebRTC data channel; the audio track
+remains RTP.
 The in-process adapter currently ignores inbound video tracks rather than
 pretending encoded RTP is a model image. Likewise, the LiveKit integration
 forwards video events in data packets but does not decode room video tracks.
 
 | Client path | Audio | Direct screen pixels |
 | --- | --- | --- |
-| repository console/surface over WebRTC | RTP media track | protocol frames on the data channel |
+| composable browser WebRTC profile | RTP media track | protocol frames on the data channel |
 | custom LiveKit client publishing protocol frames | room audio track | protocol frames in data packets |
 | stock WebRTC or LiveKit client publishing only a video track | RTP/room audio | not yet bridged |
 

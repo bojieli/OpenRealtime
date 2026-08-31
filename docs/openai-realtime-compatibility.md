@@ -390,11 +390,12 @@ would bury the one case that matters under a dozen pointless ones, which is the
 same failure as a test that cannot fail. Ask of each: *can this consumer now
 receive this, and what happens if it does?*
 
-Two worked answers. `examples/browser/index.html` handles no text events and
-needs none: it declares no modalities, and no deployment flag can force text,
-so it cannot reach a text session. The `upstream` mirror ignores every function
-call event and should: this binding declares no tools to the remote, because
-the remote is the fast voice and has no execution authority.
+Two worked answers. The descriptor-composed browser WebSocket transport handles
+no text events and needs none: it forwards validated protocol frames to the
+selected reducer service, while a separately replaceable view decides what to
+render. The `upstream` mirror ignores every function call event and should:
+this binding declares no tools to the remote, because the remote is the fast
+voice and has no execution authority.
 
 Assert on what the consumer rendered, never on what crossed the wire. A
 wire-only test agrees there is nothing wrong.
