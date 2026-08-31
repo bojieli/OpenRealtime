@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 
@@ -26,10 +27,13 @@ import (
 const (
 	dynaCUEvidenceFormat        = "openrealtime.dynacu-wire-evidence"
 	dynaCUEvidenceFormatVersion = 1
+	dynaCUTimestampBasis        = "task_recorder_monotonic_elapsed_microseconds"
 	maximumDynaCUEvidenceFile   = int64(128 << 20)
 	maximumDynaCUTraceFile      = int64(64 << 20)
 	maximumDynaCUAttempts       = 10_000
 )
+
+var errDynaCURawManifestMissing = errors.New("DynaCU raw attempt has no sealed manifest")
 
 type dynaCURawAttempt struct {
 	Format        string `json:"format"`
@@ -50,19 +54,21 @@ type dynaCURawFile struct {
 }
 
 type dynaCURawManifest struct {
-	Format          string                   `json:"format"`
-	FormatVersion   int                      `json:"format_version"`
-	Complete        bool                     `json:"complete"`
-	TaskID          string                   `json:"task_id"`
-	Category        string                   `json:"category"`
-	Difficulty      string                   `json:"difficulty"`
-	DurationUS      int64                    `json:"duration_us"`
-	AudioChunkCount int                      `json:"audio_chunk_count"`
-	FrameCount      int                      `json:"frame_count"`
-	ActionCount     int                      `json:"action_count"`
-	CaptureErrors   []string                 `json:"capture_errors"`
-	Files           map[string]dynaCURawFile `json:"files"`
-	Terminal        string                   `json:"terminal"`
+	Format             string                   `json:"format"`
+	FormatVersion      int                      `json:"format_version"`
+	Complete           bool                     `json:"complete"`
+	TaskID             string                   `json:"task_id"`
+	Category           string                   `json:"category"`
+	Difficulty         string                   `json:"difficulty"`
+	DurationUS         int64                    `json:"duration_us"`
+	TimestampBasis     string                   `json:"timestamp_basis"`
+	ProcessInterrupted bool                     `json:"process_interrupted"`
+	AudioChunkCount    int                      `json:"audio_chunk_count"`
+	FrameCount         int                      `json:"frame_count"`
+	ActionCount        int                      `json:"action_count"`
+	CaptureErrors      []string                 `json:"capture_errors"`
+	Files              map[string]dynaCURawFile `json:"files"`
+	Terminal           string                   `json:"terminal"`
 }
 
 type dynaCUWireEvent struct {
@@ -94,6 +100,8 @@ type dynaCURawTrace struct {
 	Category            string             `json:"category"`
 	Difficulty          string             `json:"difficulty"`
 	DurationUS          int64              `json:"duration_us"`
+	TimestampBasis      string             `json:"timestamp_basis"`
+	ProcessInterrupted  bool               `json:"process_interrupted"`
 	Actions             []dynaCUAction     `json:"actions"`
 	Transcripts         []dynaCUTranscript `json:"transcripts"`
 	WireEvents          []dynaCUWireEvent  `json:"wire_events"`
@@ -102,9 +110,25 @@ type dynaCURawTrace struct {
 }
 
 type dynaCUWireIndex struct {
-	Format        string            `json:"format"`
-	FormatVersion int               `json:"format_version"`
-	Events        []dynaCUWireEvent `json:"events"`
+	Format         string            `json:"format"`
+	FormatVersion  int               `json:"format_version"`
+	TimestampBasis string            `json:"timestamp_basis"`
+	Events         []dynaCUWireEvent `json:"events"`
+}
+
+type dynaCUJournalRecord struct {
+	Kind           string            `json:"kind"`
+	AtUS           int64             `json:"at_us,omitempty"`
+	TimestampBasis string            `json:"timestamp_basis,omitempty"`
+	Event          *dynaCUWireEvent  `json:"event,omitempty"`
+	Action         *dynaCUAction     `json:"action,omitempty"`
+	Transcript     *dynaCUTranscript `json:"transcript,omitempty"`
+}
+
+type dynaCUJournal struct {
+	Wire        []dynaCUWireEvent
+	Actions     []dynaCUAction
+	Transcripts []dynaCUTranscript
 }
 
 type dynaCUEvidenceEntry struct {
@@ -124,6 +148,9 @@ type dynaCUEvidenceInventory struct {
 }
 
 func (config Config) validateAttemptEvidence() error {
+	if err := candidate.RequirePlugin(config.Evidence); err != nil {
+		return fmt.Errorf("DynaCU candidate evidence: %w", err)
+	}
 	if config.Resume {
 		return errors.New("DynaCU candidate attempts are create-only; resume is recovery, not a new run")
 	}
@@ -225,6 +252,15 @@ func (config Config) retainEvidence(
 			loaded, loadErr := readDynaCUEvidenceEntryFromDirectory(
 				config.EvidenceDirectory, entry.directory,
 			)
+			if errors.Is(loadErr, errDynaCURawManifestMissing) {
+				recoveryErr := config.recoverDynaCUAttempt(ctx, entry.directory)
+				resultErr = errors.Join(resultErr, recoveryErr)
+				if recoveryErr == nil {
+					loaded, loadErr = readDynaCUEvidenceEntryFromDirectory(
+						config.EvidenceDirectory, entry.directory,
+					)
+				}
+			}
 			if loadErr != nil {
 				loaded.attempt = entry.attempt
 				loaded.directory = entry.directory
@@ -234,7 +270,20 @@ func (config Config) retainEvidence(
 			entry = loaded
 			retained, hasRecord := records[taskID]
 			if !hasRecord {
-				entry.problem = errors.Join(entry.problem, errors.New("deterministic row is missing"))
+				if entry.trace == nil {
+					entry.problem = errors.Join(entry.problem, errors.New("deterministic row is missing"))
+				} else {
+					var recovered record
+					if err := decodeDynaCURawJSON(entry.trace.DeterministicResult, &recovered, 8<<20); err != nil ||
+						recovered.TaskID != taskID || recovered.Category != entry.attempt.Category ||
+						recovered.Difficulty != entry.attempt.Difficulty ||
+						entry.manifest != nil && entry.manifest.ProcessInterrupted &&
+							!strings.HasPrefix(recovered.Error, "INCOMPLETE:") {
+						entry.problem = errors.Join(entry.problem, errors.New("sealed trace result is invalid"))
+					} else {
+						outcome = recovered.outcome()
+					}
+				}
 			} else if entry.trace != nil {
 				if err := validateDynaCUTraceResult(*entry.trace, retained); err != nil {
 					entry.problem = errors.Join(entry.problem, err)
@@ -262,6 +311,8 @@ func (config Config) retainEvidence(
 				contextValue["video_frames"] = entry.manifest.FrameCount
 				contextValue["actions"] = entry.manifest.ActionCount
 				contextValue["capture_errors"] = entry.manifest.CaptureErrors
+				contextValue["process_interrupted"] = entry.manifest.ProcessInterrupted
+				contextValue["timestamp_basis"] = entry.manifest.TimestampBasis
 			}
 		} else {
 			contextValue["capture_errors"] = []string{"raw_attempt_missing"}
@@ -299,12 +350,13 @@ func retainDynaCUAttemptEvidence(
 		return attempt.RecordFailure("validate raw evidence", errors.New("raw task evidence is incomplete or invalid"))
 	}
 	var resultErr error
-	if entry.manifest.Complete {
+	if len(entry.mediaBytes) > 0 {
 		resultErr = errors.Join(resultErr, attempt.CaptureMedia(candidate.CapturedMedia{
 			Name: "review.mp4", Kind: "video", Role: "synchronized_screen_audio_and_actions",
 			MediaType: "video/mp4", Bytes: entry.mediaBytes,
 		}))
-	} else {
+	}
+	if !entry.manifest.Complete {
 		resultErr = errors.Join(resultErr, attempt.RecordFailure(
 			"validate raw evidence", errors.New("raw task evidence is not complete"),
 		))
@@ -464,6 +516,75 @@ func verifyDynaCUEvidenceRoot(directory string, expected os.FileInfo) error {
 	return nil
 }
 
+func (config Config) recoverDynaCUAttempt(ctx context.Context, child string) error {
+	if ctx == nil {
+		return errors.New("recover DynaCU evidence: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	visible, err := os.Lstat(config.EvidenceDirectory)
+	if err != nil || visible.Mode()&os.ModeSymlink != 0 || !visible.IsDir() {
+		return errors.New("recover DynaCU evidence: raw root is invalid")
+	}
+	root, err := os.OpenRoot(config.EvidenceDirectory)
+	if err != nil {
+		return errors.New("recover DynaCU evidence: open raw root")
+	}
+	opened, openErr := root.Stat(".")
+	if openErr != nil || !os.SameFile(visible, opened) {
+		root.Close()
+		return errors.New("recover DynaCU evidence: raw root changed")
+	}
+	journalPath := filepath.ToSlash(filepath.Join(child, "capture.journal.jsonl"))
+	journalBytes, journalErr := readDynaCURawFile(root, journalPath, maximumDynaCUTraceFile)
+	if journalErr == nil && journalBytes[len(journalBytes)-1] != '\n' {
+		if last := bytes.LastIndexByte(journalBytes, '\n'); last >= 0 {
+			journalBytes = journalBytes[:last+1]
+		} else {
+			journalErr = errors.New("DynaCU partial capture journal has no durable record")
+		}
+	}
+	journal, decodeErr := decodeDynaCUJournal(journalBytes)
+	seen := make(map[string]struct{})
+	if journalErr == nil && decodeErr == nil {
+		for _, event := range journal.Wire {
+			if event.Path == "" {
+				continue
+			}
+			if _, duplicate := seen[event.Path]; duplicate {
+				decodeErr = errors.New("DynaCU partial capture journal duplicates a media path")
+				break
+			}
+			seen[event.Path] = struct{}{}
+			payload, readErr := readDynaCURawFile(
+				root, filepath.ToSlash(filepath.Join(child, event.Path)), maximumDynaCUEvidenceFile,
+			)
+			if readErr != nil || int64(len(payload)) != event.SizeBytes || dynaCUDigest(payload) != event.SHA256 {
+				decodeErr = errors.New("DynaCU partial capture media differs from its durable journal")
+				break
+			}
+		}
+	}
+	closeErr := root.Close()
+	if journalErr != nil || decodeErr != nil || closeErr != nil {
+		return errors.New("recover DynaCU evidence: partial journal is invalid")
+	}
+	directory := filepath.Join(config.EvidenceDirectory, filepath.FromSlash(child))
+	driverPath := filepath.Join(config.AOIDir, driverName)
+	output, err := runWith(ctx, config.AOIDir, config.Python, []string{
+		driverPath, "--recover-partial", directory,
+	}, []string{"PYTHONUNBUFFERED=1"})
+	if err != nil {
+		return errors.New("recover DynaCU synchronized evidence")
+	}
+	want := filepath.Join(directory, "manifest.json")
+	if lastLine(output) != want {
+		return errors.New("recover DynaCU evidence: recovery output identity differs")
+	}
+	return nil
+}
+
 func readDynaCUEvidence(ctx context.Context, directory string) ([]dynaCUEvidenceEntry, error) {
 	if ctx == nil {
 		return nil, errors.New("read DynaCU evidence: nil context")
@@ -549,7 +670,7 @@ func readDynaCUEvidenceEntry(root *os.Root, directory string) (dynaCUEvidenceEnt
 	manifestPath := filepath.ToSlash(filepath.Join(directory, "manifest.json"))
 	manifestBytes, err := readDynaCURawFile(root, manifestPath, 1<<20)
 	if err != nil {
-		return entry, errors.New("DynaCU raw attempt has no sealed manifest")
+		return entry, errDynaCURawManifestMissing
 	}
 	var manifest dynaCURawManifest
 	if err := decodeDynaCURawJSON(manifestBytes, &manifest, 1<<20); err != nil {
@@ -560,6 +681,7 @@ func readDynaCUEvidenceEntry(root *os.Root, directory string) (dynaCUEvidenceEnt
 		manifest.TaskID != entry.attempt.TaskID || manifest.Category != entry.attempt.Category ||
 		manifest.Difficulty != entry.attempt.Difficulty || manifest.Terminal != "completed" ||
 		manifest.DurationUS <= 0 || manifest.DurationUS > 30*60*1_000_000 ||
+		manifest.TimestampBasis != dynaCUTimestampBasis ||
 		manifest.AudioChunkCount < 0 || manifest.FrameCount < 0 || manifest.ActionCount < 0 ||
 		len(manifest.CaptureErrors) > 64 {
 		return entry, errors.New("DynaCU raw evidence manifest identity is invalid")
@@ -570,7 +692,9 @@ func readDynaCUEvidenceEntry(root *os.Root, directory string) (dynaCUEvidenceEnt
 			return entry, errors.New("DynaCU raw capture-error set is invalid")
 		}
 	}
-	wantKeys := []string{"timeline_audio", "trace", "wire_archive"}
+	wantKeys := []string{
+		"capture_journal", "deterministic_result", "timeline_audio", "trace", "wire_archive",
+	}
 	_, hasReviewMedia := manifest.Files["review_media"]
 	if manifest.Complete && !hasReviewMedia {
 		return entry, errors.New("DynaCU raw evidence file set is incomplete")
@@ -587,7 +711,41 @@ func readDynaCUEvidenceEntry(root *os.Root, directory string) (dynaCUEvidenceEnt
 			return entry, errors.New("DynaCU raw evidence file set is incomplete")
 		}
 	}
-	traceBytes, err := readDynaCURawIdentity(root, directory, manifest.Files["trace"], "trace.json", maximumDynaCUTraceFile)
+	journalBytes, err := readDynaCURawIdentity(
+		root, directory, manifest.Files["capture_journal"],
+		[]string{"capture.journal.jsonl", "recovered-capture.journal.jsonl"}, maximumDynaCUTraceFile,
+	)
+	if err != nil {
+		return entry, err
+	}
+	journal, err := decodeDynaCUJournal(journalBytes)
+	if err != nil {
+		return entry, err
+	}
+	audioCount, frameCount := 0, 0
+	for _, event := range journal.Wire {
+		switch event.Kind {
+		case "input_audio_pcm16_24000_mono":
+			audioCount++
+		case "input_image_jpeg":
+			frameCount++
+		}
+	}
+	if audioCount != manifest.AudioChunkCount || frameCount != manifest.FrameCount ||
+		len(journal.Actions) != manifest.ActionCount {
+		return entry, errors.New("DynaCU capture journal population differs from its manifest")
+	}
+	deterministicBytes, err := readDynaCURawIdentity(
+		root, directory, manifest.Files["deterministic_result"],
+		[]string{"deterministic-result.json", "recovered-deterministic-result.json"}, 8<<20,
+	)
+	if err != nil {
+		return entry, err
+	}
+	traceBytes, err := readDynaCURawIdentity(
+		root, directory, manifest.Files["trace"],
+		[]string{"trace.json", "recovered-trace.json"}, maximumDynaCUTraceFile,
+	)
 	if err != nil {
 		return entry, err
 	}
@@ -597,17 +755,29 @@ func readDynaCUEvidenceEntry(root *os.Root, directory string) (dynaCUEvidenceEnt
 		trace.FormatVersion != dynaCUEvidenceFormatVersion ||
 		trace.TaskID != manifest.TaskID || trace.Category != manifest.Category ||
 		trace.Difficulty != manifest.Difficulty || trace.DurationUS != manifest.DurationUS ||
+		trace.TimestampBasis != dynaCUTimestampBasis ||
+		trace.ProcessInterrupted != manifest.ProcessInterrupted ||
 		!reflect.DeepEqual(trace.CaptureErrors, manifest.CaptureErrors) ||
-		len(trace.Actions) != manifest.ActionCount {
+		len(trace.Actions) != manifest.ActionCount ||
+		!reflect.DeepEqual(trace.WireEvents, journal.Wire) ||
+		!reflect.DeepEqual(trace.Actions, journal.Actions) ||
+		!reflect.DeepEqual(trace.Transcripts, journal.Transcripts) ||
+		!bytes.Equal(trace.DeterministicResult, bytes.TrimSpace(deterministicBytes)) {
 		return entry, errors.New("DynaCU raw action trace differs from its manifest")
 	}
 	entry.trace, entry.traceBytes = &trace, traceBytes
-	wireBytes, err := readDynaCURawIdentity(root, directory, manifest.Files["wire_archive"], "wire.zip", 64<<20)
+	wireBytes, err := readDynaCURawIdentity(
+		root, directory, manifest.Files["wire_archive"],
+		[]string{"wire.zip", "recovered-wire.zip"}, 64<<20,
+	)
 	if err != nil || verifyDynaCUWireArchive(wireBytes, attemptBytes, trace.WireEvents) != nil {
 		return entry, errors.New("DynaCU exact wire archive is invalid")
 	}
 	entry.wireBytes = wireBytes
-	if _, err := readDynaCURawIdentity(root, directory, manifest.Files["timeline_audio"], "timeline.wav", maximumDynaCUEvidenceFile); err != nil {
+	if _, err := readDynaCURawIdentity(
+		root, directory, manifest.Files["timeline_audio"],
+		[]string{"timeline.wav", "recovered-timeline.wav"}, maximumDynaCUEvidenceFile,
+	); err != nil {
 		return entry, err
 	}
 	if hasReviewMedia {
@@ -617,7 +787,8 @@ func readDynaCUEvidenceEntry(root *os.Root, directory string) (dynaCUEvidenceEnt
 			return entry, errors.New("DynaCU raw evidence has invalid review media")
 		}
 		entry.mediaBytes, err = readDynaCURawIdentity(
-			root, directory, media, "review.mp4", maximumDynaCUEvidenceFile,
+			root, directory, media,
+			[]string{"review.mp4", "recovered-review.mp4"}, maximumDynaCUEvidenceFile,
 		)
 		if err != nil {
 			return entry, err
@@ -633,9 +804,9 @@ func readDynaCUEvidenceEntry(root *os.Root, directory string) (dynaCUEvidenceEnt
 }
 
 func readDynaCURawIdentity(
-	root *os.Root, directory string, identity dynaCURawFile, name string, maximum int64,
+	root *os.Root, directory string, identity dynaCURawFile, names []string, maximum int64,
 ) ([]byte, error) {
-	if identity.Path != name || identity.SizeBytes <= 0 || identity.SizeBytes > maximum ||
+	if !slices.Contains(names, identity.Path) || identity.SizeBytes <= 0 || identity.SizeBytes > maximum ||
 		!validDynaCUDigest(identity.SHA256) {
 		return nil, errors.New("DynaCU raw file identity is invalid")
 	}
@@ -674,6 +845,92 @@ func readDynaCURawFile(root *os.Root, path string, maximum int64) ([]byte, error
 	return payload, nil
 }
 
+func decodeDynaCUJournal(payload []byte) (dynaCUJournal, error) {
+	if len(payload) == 0 || len(payload) > int(maximumDynaCUTraceFile) || payload[len(payload)-1] != '\n' {
+		return dynaCUJournal{}, errors.New("DynaCU capture journal is empty, oversized, or unsealed")
+	}
+	result := dynaCUJournal{}
+	scanner := bufio.NewScanner(bytes.NewReader(payload))
+	scanner.Buffer(make([]byte, 0, 64<<10), 8<<20)
+	ordinal := 0
+	for scanner.Scan() {
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 {
+			return dynaCUJournal{}, errors.New("DynaCU capture journal contains an empty record")
+		}
+		var item dynaCUJournalRecord
+		if err := decodeDynaCURawJSON(line, &item, 8<<20); err != nil {
+			return dynaCUJournal{}, errors.New("DynaCU capture journal record is invalid")
+		}
+		switch item.Kind {
+		case "begin":
+			if ordinal != 0 || item.AtUS != 0 || item.TimestampBasis != dynaCUTimestampBasis ||
+				item.Event != nil || item.Action != nil || item.Transcript != nil {
+				return dynaCUJournal{}, errors.New("DynaCU capture journal header is invalid")
+			}
+		case "wire":
+			if ordinal == 0 || item.Event == nil || item.Action != nil || item.Transcript != nil ||
+				item.AtUS != 0 || item.TimestampBasis != "" || validateDynaCUWireEvent(*item.Event) != nil {
+				return dynaCUJournal{}, errors.New("DynaCU capture journal wire record is invalid")
+			}
+			result.Wire = append(result.Wire, *item.Event)
+		case "action":
+			if ordinal == 0 || item.Event != nil || item.Action == nil || item.Transcript != nil ||
+				item.AtUS != 0 || item.TimestampBasis != "" || item.Action.AtUS < 0 ||
+				item.Action.AtUS > 30*60*1_000_000 || item.Action.Name == "" ||
+				strings.TrimSpace(item.Action.Name) != item.Action.Name || len(item.Action.Arguments) == 0 {
+				return dynaCUJournal{}, errors.New("DynaCU capture journal action record is invalid")
+			}
+			result.Actions = append(result.Actions, *item.Action)
+		case "transcript":
+			if ordinal == 0 || item.Event != nil || item.Action != nil || item.Transcript == nil ||
+				item.AtUS != 0 || item.TimestampBasis != "" || item.Transcript.AtUS < 0 ||
+				item.Transcript.AtUS > 30*60*1_000_000 || item.Transcript.Text == "" ||
+				strings.TrimSpace(item.Transcript.Text) == "" || len(item.Transcript.Text) > 16_384 {
+				return dynaCUJournal{}, errors.New("DynaCU capture journal transcript record is invalid")
+			}
+			result.Transcripts = append(result.Transcripts, *item.Transcript)
+		default:
+			return dynaCUJournal{}, errors.New("DynaCU capture journal record kind is invalid")
+		}
+		ordinal++
+		if ordinal > 200_000 {
+			return dynaCUJournal{}, errors.New("DynaCU capture journal population is oversized")
+		}
+	}
+	if err := scanner.Err(); err != nil || ordinal == 0 {
+		return dynaCUJournal{}, errors.New("read DynaCU capture journal")
+	}
+	return result, nil
+}
+
+func validateDynaCUWireEvent(event dynaCUWireEvent) error {
+	if event.AtUS < 0 || event.AtUS > 30*60*1_000_000 {
+		return errors.New("DynaCU wire timestamp is invalid")
+	}
+	switch event.Kind {
+	case "client_event":
+		if event.EventType == "" || strings.TrimSpace(event.EventType) != event.EventType ||
+			event.Path != "" || event.SizeBytes != 0 || event.SHA256 != "" || event.SampleCount != 0 {
+			return errors.New("DynaCU client event is invalid")
+		}
+	case "input_audio_pcm16_24000_mono":
+		if !strings.HasPrefix(event.Path, "audio/") || event.EventType != "" ||
+			event.SizeBytes <= 0 || event.SizeBytes%2 != 0 || event.SampleCount != event.SizeBytes/2 ||
+			!validDynaCUDigest(event.SHA256) {
+			return errors.New("DynaCU audio wire event is invalid")
+		}
+	case "input_image_jpeg":
+		if !strings.HasPrefix(event.Path, "frames/") || event.EventType != "" ||
+			event.SizeBytes <= 0 || event.SampleCount != 0 || !validDynaCUDigest(event.SHA256) {
+			return errors.New("DynaCU image wire event is invalid")
+		}
+	default:
+		return errors.New("DynaCU wire event kind is invalid")
+	}
+	return nil
+}
+
 func decodeDynaCURawJSON(payload []byte, destination any, maximum int) error {
 	if len(payload) == 0 || len(payload) > maximum {
 		return errors.New("DynaCU raw JSON is outside its bound")
@@ -704,6 +961,9 @@ func verifyDynaCUWireArchive(payload, attempt []byte, events []dynaCUWireEvent) 
 	}
 	expected := map[string]struct{}{"attempt.json": {}, "wire-index.json": {}}
 	for _, event := range events {
+		if err := validateDynaCUWireEvent(event); err != nil {
+			return err
+		}
 		if event.Path == "" {
 			continue
 		}
@@ -763,7 +1023,8 @@ func verifyDynaCUWireArchive(payload, attempt []byte, events []dynaCUWireEvent) 
 	var index dynaCUWireIndex
 	if err := decodeDynaCURawJSON(indexBytes, &index, int(maximumDynaCUTraceFile)); err != nil ||
 		index.Format != dynaCUEvidenceFormat+".wire-index" ||
-		index.FormatVersion != dynaCUEvidenceFormatVersion || !reflect.DeepEqual(index.Events, events) {
+		index.FormatVersion != dynaCUEvidenceFormatVersion ||
+		index.TimestampBasis != dynaCUTimestampBasis || !reflect.DeepEqual(index.Events, events) {
 		return errors.New("DynaCU wire archive index differs from its action trace")
 	}
 	return nil

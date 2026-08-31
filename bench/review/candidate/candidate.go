@@ -434,3 +434,14 @@ type Plugin interface {
 	BeginAttempt(context.Context, Attempt) (AttemptEvidence, error)
 	FinishSuite(context.Context, bench.Result) error
 }
+
+// RequirePlugin validates the mandatory candidate evidence boundary before a
+// benchmark may start its first session. It rejects both a nil interface and a
+// typed-nil implementation; callers must never interpret either as recording
+// being disabled.
+func RequirePlugin(plugin Plugin) error {
+	if nilPlugin(plugin) {
+		return errors.New("candidate benchmark attempts require an evidence plug-in")
+	}
+	return nil
+}

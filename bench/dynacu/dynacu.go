@@ -319,6 +319,8 @@ for module in ("playwright.sync_api", "websocket", "numpy", "PIL"):
         __import__(module)
     except Exception as failure:
         missing.append(f"{module}: {failure}")
+if not shutil.which("ffmpeg"):
+    missing.append("ffmpeg: executable not found")
 print(json.dumps({"missing": missing}))
 `
 	output, err := runWith(ctx, config.AOIDir, config.Python, []string{"-c", probe}, nil)
@@ -369,10 +371,11 @@ func (config *Config) verifySelection(ctx context.Context) error {
 
 // Run executes the cell and reports what came back.
 func Run(ctx context.Context, config Config) (bench.Result, error) {
-	if err := config.Verify(ctx); err != nil {
+	config.applyDefaults()
+	if err := config.validateAttemptEvidence(); err != nil {
 		return bench.Result{}, err
 	}
-	if err := config.validateAttemptEvidence(); err != nil {
+	if err := config.Verify(ctx); err != nil {
 		return bench.Result{}, err
 	}
 	provenance := bench.Capture()
@@ -392,6 +395,13 @@ func Run(ctx context.Context, config Config) (bench.Result, error) {
 	command.Env = append(os.Environ(), config.environment()...)
 	command.Stdout = progress(config.Logf)
 	command.Stderr = progress(config.Logf)
+	command.Cancel = func() error {
+		if command.Process == nil {
+			return os.ErrProcessDone
+		}
+		return command.Process.Signal(os.Interrupt)
+	}
+	command.WaitDelay = 3 * time.Minute
 	runErr := command.Run()
 
 	result, readErr := config.reportWithProvenance(provenance)

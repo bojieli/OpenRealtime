@@ -35,6 +35,18 @@ func (plugin *lifecyclePlugin) FinishSuite(_ context.Context, result bench.Resul
 
 type lifecycleAttempt struct{ plugin *lifecyclePlugin }
 
+func TestRequirePluginRejectsNilAndTypedNil(t *testing.T) {
+	var typed *lifecyclePlugin
+	for _, plugin := range []candidate.Plugin{nil, typed} {
+		if err := candidate.RequirePlugin(plugin); err == nil {
+			t.Fatal("nil candidate evidence plug-in was accepted")
+		}
+	}
+	if err := candidate.RequirePlugin(&lifecyclePlugin{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (attempt *lifecycleAttempt) CaptureAudio(bench.SessionAudioCapture) error {
 	return attempt.plugin.captureErr
 }

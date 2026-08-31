@@ -2,6 +2,7 @@ package dynacu
 
 import (
 	"archive/zip"
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -17,6 +18,16 @@ import (
 	"github.com/bojieli/OpenRealtime/bench/review/candidate"
 	"github.com/bojieli/OpenRealtime/bench/review/candidate/sourcebundle"
 )
+
+type dynaCUNoopPlugin struct{}
+
+func (*dynaCUNoopPlugin) BeginAttempt(
+	context.Context, candidate.Attempt,
+) (candidate.AttemptEvidence, error) {
+	return nil, errors.New("not used")
+}
+
+func (*dynaCUNoopPlugin) FinishSuite(context.Context, bench.Result) error { return nil }
 
 func runDynaCURecorderSelfTest(t testing.TB) string {
 	t.Helper()
@@ -37,6 +48,50 @@ func runDynaCURecorderSelfTest(t testing.TB) string {
 	return root
 }
 
+func runDynaCUInterruptedRecorderSelfTest(t testing.TB) (string, string) {
+	t.Helper()
+	directory := t.TempDir()
+	script := filepath.Join(directory, driverName)
+	if err := os.WriteFile(script, driver, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(directory, "raw-evidence")
+	command := exec.CommandContext(
+		t.Context(), "python3", script, "--recorder-partial-self-test", root,
+	)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("interrupted recorder self-test: %v: %s", err, output)
+	}
+	return root, directory
+}
+
+type dynaCUHookLatency struct {
+	Iterations           int   `json:"iterations"`
+	P99NS                int64 `json:"p99_ns"`
+	MaximumNS            int64 `json:"maximum_ns"`
+	BackpressureRecorded bool  `json:"backpressure_recorded"`
+}
+
+func runDynaCUHookLatencySelfTest(t testing.TB) dynaCUHookLatency {
+	t.Helper()
+	directory := t.TempDir()
+	script := filepath.Join(directory, "driver.py")
+	if err := os.WriteFile(script, driver, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.CommandContext(t.Context(), "python3", script, "--recorder-backpressure-self-test")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("recorder backpressure self-test: %v: %s", err, output)
+	}
+	var result dynaCUHookLatency
+	if err := json.Unmarshal(bytes.TrimSpace(output), &result); err != nil {
+		t.Fatalf("decode recorder latency: %v: %s", err, output)
+	}
+	return result
+}
+
 func BenchmarkValidateOneDynaCUSynchronizedAttempt(b *testing.B) {
 	root := runDynaCURecorderSelfTest(b)
 	inventory, err := listDynaCUEvidence(b.Context(), root)
@@ -51,6 +106,17 @@ func BenchmarkValidateOneDynaCUSynchronizedAttempt(b *testing.B) {
 		if err != nil || entry.problem != nil || len(entry.mediaBytes) == 0 {
 			b.Fatalf("validated entry = %+v, %v", entry.manifest, err)
 		}
+	}
+}
+
+func BenchmarkDynaCUCaptureHookUnderBackpressure(b *testing.B) {
+	for index := 0; index < b.N; index++ {
+		result := runDynaCUHookLatencySelfTest(b)
+		if !result.BackpressureRecorded {
+			b.Fatal("capture backpressure was not retained")
+		}
+		b.ReportMetric(float64(result.P99NS), "hook-p99-ns/op")
+		b.ReportMetric(float64(result.MaximumNS), "hook-max-ns/op")
 	}
 }
 
@@ -91,6 +157,140 @@ func TestEmbeddedDriverRetainsExactSynchronizedWireMediaAndAction(t *testing.T) 
 	if len(entry.trace.Actions) != 1 || entry.trace.Actions[0].Name != "click" ||
 		len(entry.trace.Transcripts) != 1 || entry.trace.Transcripts[0].Text != "heard words" {
 		t.Fatalf("action trace = %+v / %+v", entry.trace.Actions, entry.trace.Transcripts)
+	}
+}
+
+func TestCaptureHookIsBoundedAndUpstreamSendPrecedesObservation(t *testing.T) {
+	result := runDynaCUHookLatencySelfTest(t)
+	if result.Iterations != 20_000 || !result.BackpressureRecorded || result.P99NS > 1_000_000 {
+		t.Fatalf("capture hook latency = %+v, want p99 <= 1ms", result)
+	}
+	upstream := bytes.Index(driver, []byte("result = OpenAIRealtimeWSBaseline._send(self, ws, event)"))
+	observer := bytes.Index(driver, []byte("recorder.observe_send(event, at_us)"))
+	if upstream < 0 || observer < 0 || upstream >= observer {
+		t.Fatal("embedded recorder observes before the pinned upstream send returns")
+	}
+}
+
+func TestInterruptedRecorderIsRecoveredAsPlayableReceiptBoundEvidence(t *testing.T) {
+	rawRoot, driverDirectory := runDynaCUInterruptedRecorderSelfTest(t)
+	entries, err := readDynaCUEvidence(t.Context(), rawRoot)
+	if err == nil || len(entries) != 1 || !errors.Is(entries[0].problem, errDynaCURawManifestMissing) {
+		t.Fatalf("unsealed partial entry = %+v, %v", entries, err)
+	}
+	parent := t.TempDir()
+	origin, err := candidate.NewRunOrigin(
+		candidate.OriginHermetic, bench.TransportWebSocket, "ws://127.0.0.1:8765/v1/realtime",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cell := bench.Reference()
+	provenance := bench.Provenance{
+		Revision: "test-revision", ExecutableSHA256: strings.Repeat("a", 64),
+		StartedAt: time.Unix(1, 0).UTC().Format(time.RFC3339),
+		Machine:   bench.Machine{OS: "test", Arch: "test", Cores: 1, GoVersion: "test"},
+	}
+	sourceDirectory := filepath.Join(parent, "source")
+	receiptPath := filepath.Join(parent, "source.receipt.json")
+	bundle, err := sourcebundle.New(sourcebundle.Options{
+		Directory: sourceDirectory, ReceiptPath: receiptPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
+		Context: t.Context(), Plugin: bundle, Suite: "dynacu-bench", Cell: cell,
+		Provenance: provenance, Origin: origin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := bench.Result{
+		Suite: "dynacu-bench", Cell: cell, Provenance: provenance, Expected: TaskCount,
+	}
+	result.Finish()
+	config := Config{
+		AOIDir: driverDirectory, Python: "python3", Output: filepath.Join(parent, "absent.jsonl"),
+		EvidenceDirectory: rawRoot, Evidence: bundle, EvidenceOrigin: origin,
+		Model: "openrealtime", MaxSteps: 15, StepInterval: 2 * time.Second, Cell: cell,
+	}
+	if err := config.retainEvidence(t.Context(), lifecycle, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Tasks) != 1 || result.Tasks[0].Completed ||
+		!strings.Contains(result.Tasks[0].Error, "external harness process ended") {
+		t.Fatalf("recovered deterministic failure = %+v", result.Tasks)
+	}
+	if err := lifecycle.Finish(result); err != nil {
+		t.Fatal(err)
+	}
+	manifest, _, err := sourcebundle.Verify(t.Context(), sourceDirectory, receiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Attempts) != 1 || !manifest.Attempts[0].EvidenceComplete ||
+		manifest.Attempts[0].Media == nil || manifest.Attempts[0].Media.Kind != "video" ||
+		len(manifest.Attempts[0].Artifacts) != 2 {
+		t.Fatalf("recovered source attempt = %+v", manifest.Attempts)
+	}
+	recovered, err := readDynaCUEvidence(t.Context(), rawRoot)
+	if err != nil || len(recovered) != 1 || recovered[0].manifest == nil ||
+		!recovered[0].manifest.Complete || !recovered[0].manifest.ProcessInterrupted ||
+		recovered[0].manifest.TimestampBasis != dynaCUTimestampBasis {
+		t.Fatalf("recovered raw attempt = %+v, %v", recovered, err)
+	}
+}
+
+func TestRecorderSignalSealsTheActiveAttemptBeforeExit(t *testing.T) {
+	directory := t.TempDir()
+	script := filepath.Join(directory, "driver.py")
+	if err := os.WriteFile(script, driver, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(directory, "raw-evidence")
+	command := exec.Command("python3", script, "--recorder-signal-self-test", root)
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.Stderr = os.Stderr
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	ready := make(chan error, 1)
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			if strings.TrimSpace(scanner.Text()) == "recorder-ready" {
+				ready <- nil
+				return
+			}
+		}
+		ready <- scanner.Err()
+	}()
+	select {
+	case err := <-ready:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		_ = command.Process.Kill()
+		t.Fatal("signal self-test did not become ready")
+	}
+	if err := command.Process.Signal(os.Interrupt); err != nil {
+		_ = command.Process.Kill()
+		t.Fatal(err)
+	}
+	if err := command.Wait(); err == nil {
+		t.Fatal("interrupted recorder exited successfully")
+	}
+	entries, err := readDynaCUEvidence(t.Context(), root)
+	if err != nil || len(entries) != 1 || entries[0].manifest == nil ||
+		!entries[0].manifest.Complete || !entries[0].manifest.ProcessInterrupted ||
+		len(entries[0].mediaBytes) == 0 || len(entries[0].wireBytes) == 0 ||
+		len(entries[0].traceBytes) == 0 {
+		t.Fatalf("signal-sealed raw attempt = %+v, %v", entries, err)
 	}
 }
 
@@ -155,6 +355,7 @@ func TestAttemptEvidencePreflightIsCreateOnlyAndRefusesVideoOptOut(t *testing.T)
 	config := Config{
 		Output:            filepath.Join(parent, "result.jsonl"),
 		EvidenceDirectory: filepath.Join(parent, "raw"), EvidenceOrigin: origin,
+		Evidence: &dynaCUNoopPlugin{},
 	}
 	if err := config.validateAttemptEvidence(); err != nil {
 		t.Fatal(err)
