@@ -10,8 +10,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -91,7 +93,7 @@ func TestCompanionSupervisesExactPublicProcessesWithNoClientLaunch(t *testing.T)
 	if ready.BrowserManifest.Platform != "browser" || ready.BrowserManifest.Fingerprint == "" {
 		t.Fatalf("companion manifest = %#v", ready.BrowserManifest)
 	}
-	if ready.NativeEndpointFile == "" || !ready.NativeEndpointFileRetain {
+	if ready.NativeEndpointFile == "" {
 		t.Fatalf("custom presentation did not publish native endpoint file: %#v", ready)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(ready.NativeEndpointFile)) })
@@ -126,6 +128,9 @@ func TestCompanionSupervisesExactPublicProcessesWithNoClientLaunch(t *testing.T)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatalf("companion did not stop children\n%s", output.String())
+	}
+	if _, err := os.Stat(ready.NativeEndpointFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("native endpoint file remains after companion shutdown: %v", err)
 	}
 	text := output.String()
 	for _, required := range []string{
@@ -184,7 +189,10 @@ func TestCompanionParserRejectsOwnedServeFlagsAndUnsafeSelections(t *testing.T) 
 		{name: "owned listen", arguments: []string{"--", "-listen", "127.0.0.1:9999"}, want: "owned by companion"},
 		{name: "owned equals", arguments: []string{"--", "--webrtc-listen=127.0.0.1:9999"}, want: "owned by companion"},
 		{name: "missing delimiter", arguments: []string{"value"}, want: "literal --"},
-		{name: "unsafe server", arguments: []string{"-server-listen", "0.0.0.0:8765"}, want: "must be loopback"},
+		{name: "unsafe server", arguments: []string{"-server-listen", "0.0.0.0:8765"}, want: "explicit loopback IP"},
+		{name: "hostname alias", arguments: []string{"-server-listen", "localhost:8765"}, want: "explicit loopback IP"},
+		{name: "zero port", arguments: []string{"-server-listen", "127.0.0.1:0"}, want: "canonical integer"},
+		{name: "noncanonical port", arguments: []string{"-server-listen", "127.0.0.1:08765"}, want: "canonical integer"},
 		{name: "shared port", arguments: []string{"-server-listen", "127.0.0.1:8767"}, want: "must be distinct"},
 		{name: "unknown client", arguments: []string{"-client", "desktop"}, want: "unknown companion client"},
 		{name: "token value not environment", arguments: []string{"-token-env", "literal-secret=value"}, want: "environment name is invalid"},
@@ -194,6 +202,41 @@ func TestCompanionParserRejectsOwnedServeFlagsAndUnsafeSelections(t *testing.T) 
 			_, err := parseCompanionOptions(test.arguments, io.Discard)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("parse error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestCompanionMacOSApplicationPreflightIsSideEffectFreeAndExact(t *testing.T) {
+	root := t.TempDir()
+	application := filepath.Join(root, "OpenRealtime Developer.app")
+	if err := os.Mkdir(application, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := preflightCompanionMacOSApplication(application); err != nil {
+		t.Fatal(err)
+	}
+	plainDirectory := filepath.Join(root, "plain")
+	if err := os.Mkdir(plainDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	plainFile := filepath.Join(root, "plain.app")
+	if err := os.WriteFile(plainFile, []byte("not an app\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	symlink := filepath.Join(root, "linked.app")
+	if err := os.Symlink(application, symlink); err != nil {
+		t.Fatal(err)
+	}
+	for name, path := range map[string]string{
+		"missing":         filepath.Join(root, "missing.app"),
+		"plain directory": plainDirectory,
+		"plain file":      plainFile,
+		"symlink":         symlink,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := preflightCompanionMacOSApplication(path); err == nil {
+				t.Fatal("invalid macOS application passed preflight")
 			}
 		})
 	}
@@ -229,6 +272,125 @@ func TestCompanionRejectsNonWebRTCManifestBeforeReady(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "companion ready") {
 		t.Fatal("companion announced readiness for the wrong browser profile")
+	}
+}
+
+func TestCompanionReadinessRejectsIdentitySubstitutionAndDuplicateJSON(t *testing.T) {
+	header := http.Header{"Content-Type": []string{"application/json"}}
+	server := func(model, binding, profile string) []byte {
+		return []byte(fmt.Sprintf(`{
+			"status":"ok","model":%q,"binding":%q,
+			"protocol":{"openai_realtime":"pinned","openrealtime":{"version":1}},
+			"server_profile":{"format_version":1,"realm":"server","state":"active","fingerprint":%q}
+		}`, model, binding, profile))
+	}
+	digest := "sha256:" + strings.Repeat("a", 64)
+	if err := validateCompanionServerHealth(http.StatusOK, header, server("model", "cascade", digest), "model"); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string][]byte{
+		"model":           server("other", "cascade", digest),
+		"binding":         server("model", "", digest),
+		"profile digest":  server("model", "cascade", "sha256:no"),
+		"missing profile": []byte(`{"status":"ok","model":"model","binding":"cascade","protocol":{"openai_realtime":"pinned","openrealtime":{"version":1}}}`),
+		"duplicate":       []byte(`{"status":"ok","status":"warming"}`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateCompanionServerHealth(http.StatusOK, header, body, "model"); err == nil {
+				t.Fatal("substituted server readiness was accepted")
+			}
+		})
+	}
+	webrtc := []byte(`{"status":"ok","transport":"webrtc","codec":"audio/PCMU","endpoint":"ws://127.0.0.1:8765/v1/realtime"}`)
+	if err := validateCompanionWebRTCHealth(
+		http.StatusOK, header, webrtc, "ws://127.0.0.1:8765/v1/realtime",
+	); err != nil {
+		t.Fatal(err)
+	}
+	for _, replacement := range []string{"websocket", "audio/opus", "ws://127.0.0.1:9999/v1/realtime"} {
+		body := bytes.Replace(webrtc, []byte("webrtc"), []byte(replacement), 1)
+		if replacement == "audio/opus" {
+			body = bytes.Replace(webrtc, []byte("audio/PCMU"), []byte(replacement), 1)
+		}
+		if strings.HasPrefix(replacement, "ws://") {
+			body = bytes.Replace(webrtc, []byte("ws://127.0.0.1:8765/v1/realtime"), []byte(replacement), 1)
+		}
+		if err := validateCompanionWebRTCHealth(
+			http.StatusOK, header, body, "ws://127.0.0.1:8765/v1/realtime",
+		); err == nil {
+			t.Fatalf("WebRTC substitution %q was accepted", replacement)
+		}
+	}
+}
+
+func TestCompanionShutdownKillsSidecarAfterPresentationLeaderExits(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process-group contract is Unix-specific")
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	grandchildAddress := companionFreeAddress(t)
+	marker := filepath.Join(t.TempDir(), "grandchild-ready")
+	readyChannel := make(chan companionReady, 1)
+	runtime := companionRuntime{
+		executable: executable,
+		prefix:     []string{"-test.run=^TestCompanionHelperProcess$", "--"},
+		environment: append(os.Environ(),
+			"OPENREALTIME_COMPANION_HELPER=1",
+			"OPENREALTIME_COMPANION_HELPER_STUBBORN=1",
+			"OPENREALTIME_COMPANION_GRANDCHILD_ADDRESS="+grandchildAddress,
+			"OPENREALTIME_COMPANION_GRANDCHILD_MARKER="+marker,
+		),
+		goos:        runtime.GOOS,
+		httpClient:  &http.Client{Timeout: time.Second},
+		childOutput: io.Discard,
+		onReady:     func(ready companionReady) { readyChannel <- ready },
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	serverAddress := companionFreeAddress(t)
+	webRTCAddress := companionFreeAddress(t)
+	presentationAddress := companionFreeAddress(t)
+	go func() {
+		done <- runCompanionContext(ctx, []string{
+			"-server-listen", serverAddress,
+			"-webrtc-listen", webRTCAddress,
+			"-presentation-listen", presentationAddress,
+			"-client", "none", "-ready-timeout", "10s", "-shutdown-timeout", "2s",
+		}, io.Discard, runtime)
+	}()
+	select {
+	case <-readyChannel:
+	case err := <-done:
+		t.Fatalf("stubborn companion stopped before ready: %v", err)
+	case <-time.After(15 * time.Second):
+		t.Fatal("stubborn companion did not become ready")
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("grandchild did not publish readiness: %v", err)
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("process-group shutdown error = %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("forced companion shutdown did not finish")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		listener, err := net.Listen("tcp", grandchildAddress)
+		if err == nil {
+			_ = listener.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("presentation grandchild still owns %s after group kill: %v", grandchildAddress, err)
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
 }
 
@@ -274,8 +436,13 @@ func TestCompanionHelperProcess(t *testing.T) {
 		record("serve-start")
 		fmt.Println("helper serve stdout")
 		fmt.Fprintln(os.Stderr, "helper serve stderr")
-		server := companionHelperHealthServer(t, companionArgumentValue(t, arguments, "-listen"))
-		webRTC := companionHelperHealthServer(t, companionArgumentValue(t, arguments, "-webrtc-listen"))
+		serverAddress := companionArgumentValue(t, arguments, "-listen")
+		model := companionArgumentValue(t, arguments, "-model")
+		server := companionHelperServerHealth(t, serverAddress, model)
+		webRTC := companionHelperWebRTCHealth(
+			t, companionArgumentValue(t, arguments, "-webrtc-listen"),
+			"ws://"+serverAddress+"/v1/realtime",
+		)
 		<-ctx.Done()
 		companionHelperShutdown(t, webRTC)
 		companionHelperShutdown(t, server)
@@ -304,6 +471,27 @@ func TestCompanionHelperProcess(t *testing.T) {
 			_, _ = writer.Write(payload)
 		})
 		server := companionHelperServer(t, companionArgumentValue(t, arguments, "-listen"), mux)
+		if os.Getenv("OPENREALTIME_COMPANION_HELPER_STUBBORN") == "1" {
+			command := exec.Command(
+				os.Args[0], "-test.run=^TestCompanionGrandchildProcess$", "--",
+				os.Getenv("OPENREALTIME_COMPANION_GRANDCHILD_ADDRESS"),
+				os.Getenv("OPENREALTIME_COMPANION_GRANDCHILD_MARKER"),
+			)
+			command.Env = append(os.Environ(), "OPENREALTIME_COMPANION_GRANDCHILD=1")
+			if err := command.Start(); err != nil {
+				t.Fatal(err)
+			}
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				if _, err := os.Stat(os.Getenv("OPENREALTIME_COMPANION_GRANDCHILD_MARKER")); err == nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("grandchild did not start")
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
 		<-ctx.Done()
 		companionHelperShutdown(t, server)
 		record("present-stop")
@@ -312,17 +500,65 @@ func TestCompanionHelperProcess(t *testing.T) {
 	}
 }
 
+func TestCompanionGrandchildProcess(t *testing.T) {
+	if os.Getenv("OPENREALTIME_COMPANION_GRANDCHILD") != "1" {
+		return
+	}
+	separator := -1
+	for index, argument := range os.Args {
+		if argument == "--" {
+			separator = index
+			break
+		}
+	}
+	if separator < 0 || separator+2 >= len(os.Args) {
+		t.Fatal("grandchild arguments are absent")
+	}
+	signal.Ignore(os.Interrupt, syscall.SIGTERM)
+	listener, err := net.Listen("tcp", os.Args[separator+1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if err := os.WriteFile(os.Args[separator+2], []byte("ready\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	select {}
+}
+
 type companionHelperRecord struct {
 	Event     string   `json:"event"`
 	Arguments []string `json:"arguments"`
 }
 
-func companionHelperHealthServer(t *testing.T, address string) *http.Server {
+func companionHelperServerHealth(t *testing.T, address, model string) *http.Server {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(writer, `{"status":"ok"}`)
+		_ = json.NewEncoder(writer).Encode(map[string]any{
+			"status": "ok", "model": model, "binding": "companion-helper",
+			"protocol": map[string]any{
+				"openai_realtime": "pinned",
+				"openrealtime":    map[string]any{"version": 1},
+			},
+			"server_profile": map[string]any{
+				"format_version": 1, "realm": "server", "state": "active",
+				"fingerprint": "sha256:" + strings.Repeat("a", 64),
+			},
+		})
+	})
+	return companionHelperServer(t, address, mux)
+}
+
+func companionHelperWebRTCHealth(t *testing.T, address, upstream string) *http.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(map[string]any{
+			"status": "ok", "transport": "webrtc", "codec": "audio/PCMU", "endpoint": upstream,
+		})
 	})
 	return companionHelperServer(t, address, mux)
 }

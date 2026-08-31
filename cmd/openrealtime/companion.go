@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,15 +15,20 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/internal/strictjson"
 	"github.com/bojieli/OpenRealtime/macos"
 	"github.com/bojieli/OpenRealtime/management"
+	"github.com/bojieli/OpenRealtime/plugin"
+	pluginruntime "github.com/bojieli/OpenRealtime/plugin/runtime"
 	"github.com/bojieli/OpenRealtime/presentation"
 	presentationbrowser "github.com/bojieli/OpenRealtime/presentation/browser"
+	openrealtime "github.com/bojieli/OpenRealtime/protocol/openrealtime"
 )
 
 const (
@@ -54,14 +60,13 @@ type companionOptions struct {
 }
 
 type companionReady struct {
-	ServerURL                string
-	WebRTCURL                string
-	PresentationURL          string
-	ManagementURL            string
-	BrowserManifest          presentation.ClientManifest
-	NativeEndpointDirectory  presentation.EndpointDirectory
-	NativeEndpointFile       string
-	NativeEndpointFileRetain bool
+	ServerURL               string
+	WebRTCURL               string
+	PresentationURL         string
+	ManagementURL           string
+	BrowserManifest         presentation.ClientManifest
+	NativeEndpointDirectory presentation.EndpointDirectory
+	NativeEndpointFile      string
 }
 
 type companionRuntime struct {
@@ -126,6 +131,11 @@ func runCompanionContext(
 	if (options.client == companionClientMacOS || options.client == companionClientBoth) && runtime.goos != "darwin" {
 		return errors.New("the macOS companion client can only be launched on macOS; use -client browser or -client none on this host")
 	}
+	if options.client == companionClientMacOS || options.client == companionClientBoth {
+		if err := preflightCompanionMacOSApplication(options.macOSApplication); err != nil {
+			return err
+		}
+	}
 
 	browserBundle, err := presentationbrowser.ObserverDeveloperWebRTCBundle()
 	if err != nil {
@@ -147,13 +157,9 @@ func runCompanionContext(
 		if err != nil {
 			return err
 		}
-		published := false
 		defer func() {
-			if !published {
-				returnErr = errors.Join(returnErr, os.RemoveAll(filepath.Dir(ready.NativeEndpointFile)))
-			}
+			returnErr = errors.Join(returnErr, os.RemoveAll(filepath.Dir(ready.NativeEndpointFile)))
 		}()
-		defer func() { published = ready.NativeEndpointFileRetain }()
 	}
 
 	serialized := &companionSerializedWriter{writer: runtime.childOutput}
@@ -182,22 +188,18 @@ func runCompanionContext(
 	defer cancelReady()
 	if err := waitCompanionHTTPReady(
 		readyContext, runtime.httpClient, ready.ServerURL+"/healthz", server,
-		func(status int, _ http.Header, _ []byte) error {
-			if status != http.StatusOK {
-				return fmt.Errorf("health status is %d", status)
-			}
-			return nil
+		func(status int, header http.Header, body []byte) error {
+			return validateCompanionServerHealth(status, header, body, options.model)
 		},
 	); err != nil {
 		return fmt.Errorf("companion server readiness: %w", err)
 	}
 	if err := waitCompanionHTTPReady(
 		readyContext, runtime.httpClient, "http://"+options.webRTCAddress+"/healthz", server,
-		func(status int, _ http.Header, _ []byte) error {
-			if status != http.StatusOK {
-				return fmt.Errorf("WebRTC health status is %d", status)
-			}
-			return nil
+		func(status int, header http.Header, body []byte) error {
+			return validateCompanionWebRTCHealth(
+				status, header, body, "ws://"+options.serverAddress+"/v1/realtime",
+			)
 		},
 	); err != nil {
 		return fmt.Errorf("companion WebRTC readiness: %w", err)
@@ -248,7 +250,6 @@ func runCompanionContext(
 	); err != nil {
 		return fmt.Errorf("companion presentation readiness: %w", err)
 	}
-	ready.NativeEndpointFileRetain = ready.NativeEndpointFile != ""
 
 	fmt.Fprintln(output, "OpenRealtime companion ready")
 	fmt.Fprintf(output, "  server       %s/v1/realtime\n", ready.ServerURL)
@@ -256,7 +257,7 @@ func runCompanionContext(
 	fmt.Fprintf(output, "  browser      %s\n", ready.PresentationURL)
 	fmt.Fprintf(output, "  management   %s\n", ready.ManagementURL)
 	fmt.Fprintf(output, "  browser plan %s\n", ready.BrowserManifest.Plan.Fingerprint)
-	fmt.Fprintf(output, "  native plan  %s\n", ready.NativeEndpointDirectory.Fingerprint)
+	fmt.Fprintf(output, "  native endpoints %s\n", ready.NativeEndpointDirectory.Fingerprint)
 	if ready.NativeEndpointFile != "" {
 		fmt.Fprintf(output, "  native file  %s\n", ready.NativeEndpointFile)
 	} else {
@@ -401,13 +402,126 @@ func validateCompanionLoopbackAddress(value string) (string, error) {
 	if err != nil || host == "" || port == "" {
 		return "", errors.New("must be an explicit host:port")
 	}
-	if host != "localhost" {
-		address := net.ParseIP(host)
-		if address == nil || !address.IsLoopback() {
-			return "", errors.New("must be loopback")
-		}
+	address := net.ParseIP(host)
+	if address == nil || !address.IsLoopback() {
+		return "", errors.New("must use an explicit loopback IP address")
 	}
-	return net.JoinHostPort(strings.ToLower(host), port), nil
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 || strconv.Itoa(portNumber) != port {
+		return "", errors.New("port must be a canonical integer in [1,65535]")
+	}
+	return net.JoinHostPort(address.String(), port), nil
+}
+
+func preflightCompanionMacOSApplication(path string) error {
+	if path == "" || path != strings.TrimSpace(path) || strings.ContainsAny(path, "\x00\r\n") {
+		return errors.New("companion macOS application path is invalid")
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("preflight companion macOS application: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() || filepath.Ext(path) != ".app" {
+		return errors.New("companion macOS application must be an exact .app directory, not a symlink")
+	}
+	return nil
+}
+
+type companionServerHealth struct {
+	Status   string `json:"status"`
+	Model    string `json:"model"`
+	Binding  string `json:"binding"`
+	Protocol struct {
+		OpenAIRealtime string `json:"openai_realtime"`
+		OpenRealtime   struct {
+			Version uint64 `json:"version"`
+		} `json:"openrealtime"`
+	} `json:"protocol"`
+	ServerProfile *struct {
+		FormatVersion uint64       `json:"format_version"`
+		Realm         plugin.Realm `json:"realm"`
+		State         string       `json:"state"`
+		Fingerprint   string       `json:"fingerprint"`
+	} `json:"server_profile"`
+}
+
+type companionWebRTCHealth struct {
+	Status    string `json:"status"`
+	Transport string `json:"transport"`
+	Codec     string `json:"codec"`
+	Endpoint  string `json:"endpoint"`
+}
+
+func validateCompanionServerHealth(
+	status int, header http.Header, body []byte, model string,
+) error {
+	if status != http.StatusOK {
+		return fmt.Errorf("health status is %d", status)
+	}
+	if err := validateCompanionJSONMediaType(header, "server health"); err != nil {
+		return err
+	}
+	var health companionServerHealth
+	if err := decodeCompanionReadinessJSON(body, &health); err != nil {
+		return fmt.Errorf("decode server health: %w", err)
+	}
+	if health.Status != "ok" || health.Model != model || strings.TrimSpace(health.Binding) == "" ||
+		health.Protocol.OpenAIRealtime != "pinned" ||
+		health.Protocol.OpenRealtime.Version != openrealtime.Version {
+		return errors.New("server health does not attest the expected active server profile and model")
+	}
+	profile := health.ServerProfile
+	if profile == nil || profile.FormatVersion != pluginruntime.LiveFormatVersion ||
+		profile.Realm != plugin.ServerRealm || profile.State != "active" ||
+		!management.CanonicalDigest(profile.Fingerprint) {
+		return errors.New("server health does not contain the exact active server profile")
+	}
+	return nil
+}
+
+func validateCompanionWebRTCHealth(
+	status int, header http.Header, body []byte, upstream string,
+) error {
+	if status != http.StatusOK {
+		return fmt.Errorf("WebRTC health status is %d", status)
+	}
+	if err := validateCompanionJSONMediaType(header, "WebRTC health"); err != nil {
+		return err
+	}
+	var health companionWebRTCHealth
+	if err := decodeCompanionReadinessJSON(body, &health); err != nil {
+		return fmt.Errorf("decode WebRTC health: %w", err)
+	}
+	if health.Status != "ok" || health.Transport != "webrtc" ||
+		health.Codec != "audio/PCMU" || health.Endpoint != upstream {
+		return errors.New("WebRTC health does not attest the expected transport and upstream")
+	}
+	return nil
+}
+
+func validateCompanionJSONMediaType(header http.Header, name string) error {
+	mediaType := strings.ToLower(strings.TrimSpace(strings.Split(header.Get("Content-Type"), ";")[0]))
+	if mediaType != "application/json" {
+		return fmt.Errorf("%s media type is %q", name, mediaType)
+	}
+	return nil
+}
+
+func decodeCompanionReadinessJSON(body []byte, destination any) error {
+	if err := strictjson.Validate(body); err != nil {
+		return err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err == nil {
+		return errors.New("readiness response has a trailing JSON value")
+	} else if !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
 }
 
 func normalizeCompanionRuntime(value companionRuntime) (companionRuntime, error) {
@@ -499,6 +613,7 @@ func startCompanionProcess(
 	command := exec.Command(runtime.executable, commandArguments...)
 	command.Env = append([]string(nil), runtime.environment...)
 	command.Stdout, command.Stderr = output, output
+	configureCompanionProcess(command)
 	if err := command.Start(); err != nil {
 		return nil, err
 	}
@@ -530,27 +645,33 @@ func (process *companionProcess) waitError() error {
 func (process *companionProcess) stop(timeout time.Duration) error {
 	select {
 	case <-process.done:
-		return nil
+		return process.killGroup()
 	default:
 	}
-	if err := process.command.Process.Signal(os.Interrupt); err != nil && !errors.Is(err, os.ErrProcessDone) {
+	if err := interruptCompanionProcess(process.command.Process); err != nil &&
+		!errors.Is(err, os.ErrProcessDone) && !companionProcessMissing(err) {
 		return fmt.Errorf("interrupt process: %w", err)
 	}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case <-process.done:
-		if err := process.waitError(); err != nil {
-			return err
-		}
-		return nil
+		return errors.Join(process.waitError(), process.killGroup())
 	case <-timer.C:
-		if err := process.command.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		if err := process.killGroup(); err != nil {
 			return fmt.Errorf("kill process after shutdown timeout: %w", err)
 		}
 		<-process.done
 		return errors.New("process exceeded companion shutdown timeout and was killed")
 	}
+}
+
+func (process *companionProcess) killGroup() error {
+	err := killCompanionProcess(process.command.Process)
+	if err == nil || errors.Is(err, os.ErrProcessDone) || companionProcessMissing(err) {
+		return nil
+	}
+	return err
 }
 
 func waitCompanionHTTPReady(
@@ -583,7 +704,12 @@ func waitCompanionHTTPReady(
 			default:
 				lastErr = validate(response.StatusCode, response.Header.Clone(), body)
 				if lastErr == nil {
-					return nil
+					select {
+					case <-process.done:
+						return fmt.Errorf("process exited while publishing readiness: %w", process.result())
+					default:
+						return nil
+					}
 				}
 			}
 		} else {
