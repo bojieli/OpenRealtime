@@ -26,6 +26,14 @@ jobs:
       - name: Build native developer client
         run: swift build --package-path macos -c debug
 
+      - name: Build and verify native application bundle
+        run: |
+          ./macos/build-app.sh debug
+          app="macos/.build/OpenRealtime Developer.app"
+          test -x "$app/Contents/MacOS/OpenRealtimeMac"
+          plutil -lint "$app/Contents/Info.plist"
+          codesign --verify --deep --strict "$app"
+
       - name: Check browser-use adapter and app bundler
         run: |
           python3 -m py_compile macos/BrowserUseBridge/bridge.py
