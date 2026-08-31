@@ -395,3 +395,24 @@ func TestNativeVideoIsSilentUntilVideoInputIsNegotiated(t *testing.T) {
 		t.Error("browser capture announces a close for a source it never declared active")
 	}
 }
+
+// A start that throws has to leave nothing behind. The microphone tap used to
+// stay installed when the engine failed to start, and the early return in
+// startMicrophone then reported a live microphone that fed nothing; the
+// browser bridge subprocess used to outlive a first capture that failed.
+func TestNativeCaptureStartsCleanUpAfterThemselves(t *testing.T) {
+	audio, err := os.ReadFile("Sources/OpenRealtimeMac/AudioIO.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	browser, err := os.ReadFile("Sources/OpenRealtimeMac/BrowserUseBridge.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(audio), "input.removeTap(onBus: 0)\n            inputInstalled = false") {
+		t.Error("a microphone start that fails leaves its tap installed")
+	}
+	if !strings.Contains(string(browser), "} catch {\n            // A start that never produced a frame owns its own teardown; the\n            // bridge subprocess must not outlive the failure.\n            await stop()") {
+		t.Error("a browser start that never captured a frame leaves its bridge running")
+	}
+}

@@ -159,7 +159,14 @@ final class BrowserUseController {
         try await bridge.start()
         self.bridge = bridge
         active = true
-        try await captureOnce()
+        do {
+            try await captureOnce()
+        } catch {
+            // A start that never produced a frame owns its own teardown; the
+            // bridge subprocess must not outlive the failure.
+            await stop()
+            throw error
+        }
         let delay = UInt64(1_000_000_000 / max(1, limits.fpsCap))
         captureTask = Task { [weak self] in
             while let self, self.active, !Task.isCancelled {

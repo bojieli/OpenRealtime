@@ -89,7 +89,17 @@ final class AudioIO {
             }
         }
         inputInstalled = true
-        try ensureEngineRunning()
+        do {
+            try ensureEngineRunning()
+        } catch {
+            // A half-installed tap must not survive: the early return above
+            // would otherwise report a live microphone on the next attempt
+            // while the engine that feeds it never started.
+            input.removeTap(onBus: 0)
+            inputInstalled = false
+            self.converter = nil
+            throw error
+        }
         microphoneActive = true
         muted = false
         onStatus?("microphone live · PCM16 24 kHz")
