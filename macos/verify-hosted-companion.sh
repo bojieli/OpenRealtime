@@ -280,15 +280,47 @@ if [[ "${initial_process_receipt}" != OPENREALTIME_COMPANION_PROCESS_RECEIPT\ * 
   printf '%s\n' "Darwin process validator omitted its exact receipt" >&2
   exit 1
 fi
-server_pid="$(python3 -c 'import json,sys
-print(json.loads(sys.argv[1].split(" ",1)[1])["server"]["pid"])' "${initial_process_receipt}")"
-presentation_pid="$(python3 -c 'import json,sys
-print(json.loads(sys.argv[1].split(" ",1)[1])["presentation"]["pid"])' "${initial_process_receipt}")"
+process_roles="$(python3 -c 'import json,sys
+value=json.loads(sys.argv[1].split(" ",1)[1])
+if value.get("schema") != "openrealtime/companion/process-receipt/v2":
+  raise SystemExit("Darwin process receipt schema is not exact")
+def validate(role, expected):
+  process=value.get(role) or {}
+  listeners=process.get("tcp_listeners")
+  if not isinstance(listeners,list) or len(listeners) != len(expected):
+    raise SystemExit(role+" TCP listener count is not exact")
+  observed=set()
+  descriptors=set()
+  for listener in listeners:
+    if set(listener) != {"fd","network","address","port","generation"}:
+      raise SystemExit(role+" TCP listener receipt is not strict")
+    fd=listener.get("fd"); generation=listener.get("generation")
+    if not isinstance(fd,int) or fd < 0 or fd in descriptors or not isinstance(generation,int) or generation <= 0:
+      raise SystemExit(role+" TCP listener identity is invalid")
+    descriptors.add(fd)
+    observed.add((listener.get("network"),listener.get("address"),listener.get("port")))
+  if observed != expected:
+    raise SystemExit(role+" TCP listener endpoints are not exact")
+  pid=process.get("pid")
+  if not isinstance(pid,int) or pid <= 1:
+    raise SystemExit(role+" PID is invalid")
+  return pid
+companion=validate("companion",set())
+server=validate("server",{("tcp4","127.0.0.1",18765),("tcp4","127.0.0.1",18766)})
+presentation=validate("presentation",{("tcp4","127.0.0.1",18767)})
+print(server,presentation)' "${initial_process_receipt}")"
+read -r server_pid presentation_pid <<<"${process_roles}"
+
+# The receipt above is kernel evidence about the companion's own descriptors: it
+# proves these three processes hold exactly these listening sockets, identified
+# by descriptor and kernel generation. It cannot see a *fourth* process, so it
+# cannot answer "is anyone else on this port" or "is the debugger port free".
+# lsof answers exactly that, and only that, which is why both checks are here.
 if [[ "$(listener_owner 18765)" != "${server_pid}" || \
       "$(listener_owner 18766)" != "${server_pid}" || \
       "$(listener_owner 18767)" != "${presentation_pid}" || \
       -n "$(listener_owner 18768)" ]]; then
-  printf '%s\n' "companion listener ownership is not exact before client launch" >&2
+  printf '%s\n' "companion listener ownership is not exclusive before client launch" >&2
   exit 1
 fi
 
@@ -466,7 +498,7 @@ if [[ "${final_process_receipt}" != "${initial_process_receipt}" || \
       -n "$(listener_owner 18768)" || \
       "$(shasum -a 256 "${binary}" | awk '{print $1}')" != "${server_executable_digest}" || \
       "$(stat -f '%d:%i:%z:%m:%p' "${binary}")" != "${server_executable_file_identity}" ]]; then
-  printf '%s\n' "companion process, executable, argv, code, or listener identity changed" >&2
+  printf '%s\n' "companion process, executable, argv, code, kernel socket, or listener identity changed" >&2
   exit 1
 fi
 /usr/bin/codesign --verify --strict "${binary}"

@@ -26,14 +26,15 @@ import (
 )
 
 type processIdentity struct {
-	PID           int    `json:"pid"`
-	PPID          int    `json:"ppid"`
-	PGID          int    `json:"pgid"`
-	StartSeconds  int64  `json:"start_seconds"`
-	StartMicros   int32  `json:"start_micros"`
-	Executable    string `json:"executable"`
-	ArgumentsHash string `json:"arguments_digest"`
-	RuntimeDigest string `json:"runtime_digest"`
+	PID           int           `json:"pid"`
+	PPID          int           `json:"ppid"`
+	PGID          int           `json:"pgid"`
+	StartSeconds  int64         `json:"start_seconds"`
+	StartMicros   int32         `json:"start_micros"`
+	Executable    string        `json:"executable"`
+	ArgumentsHash string        `json:"arguments_digest"`
+	RuntimeDigest string        `json:"runtime_digest"`
+	TCPListeners  []tcpListener `json:"tcp_listeners"`
 }
 
 type processReceipt struct {
@@ -52,6 +53,12 @@ type kernelIdentity struct {
 	pid, ppid, pgid int
 	seconds         int64
 	micros          int32
+}
+
+type populationSnapshot struct {
+	Processes   []kernelIdentity
+	DirectChild []int
+	Groups      [][]int
 }
 
 func main() {
@@ -91,15 +98,13 @@ func inspectPopulation(binaryPath string, companionPID int, expectedDigest strin
 	if err != nil {
 		return processReceipt{}, fmt.Errorf("read Darwin process table: %w", err)
 	}
-	children := make([]int, 0, 2)
-	for _, process := range processes {
-		if int(process.Eproc.Ppid) == companionPID {
-			children = append(children, int(process.Proc.P_pid))
-		}
-	}
-	sort.Ints(children)
+	children := directChildren(processes, companionPID)
 	if len(children) != 2 {
 		return processReceipt{}, fmt.Errorf("companion direct child count is %d, want 2", len(children))
+	}
+	beforePopulation, err := snapshotPopulation(processes, companionPID, children)
+	if err != nil {
+		return processReceipt{}, err
 	}
 	parent, err := sampleProcess(companionPID)
 	if err != nil {
@@ -141,28 +146,49 @@ func inspectPopulation(binaryPath string, companionPID int, expectedDigest strin
 			return processReceipt{}, errors.New("process executable or active code-signature identity differs from server health")
 		}
 	}
-	for _, child := range []processSample{server, presentation} {
-		members := 0
-		for _, process := range processes {
-			if int(process.Eproc.Pgid) == child.identity.PID {
-				members++
-				if int(process.Proc.P_pid) != child.identity.PID {
-					return processReceipt{}, errors.New("companion child process group has an unexpected member")
-				}
-			}
+	if err := validateHostedListeners(parent.identity.TCPListeners, server.identity.TCPListeners,
+		presentation.identity.TCPListeners); err != nil {
+		return processReceipt{}, err
+	}
+	if err := populationMatchesSamples(beforePopulation, parent, server, presentation); err != nil {
+		return processReceipt{}, err
+	}
+	for _, current := range []struct {
+		role     string
+		original processSample
+	}{{"companion", parent}, {"server", server}, {"presentation", presentation}} {
+		role, original := current.role, current.original
+		resampled, sampleErr := sampleProcess(original.identity.PID)
+		if sampleErr != nil {
+			return processReceipt{}, fmt.Errorf("resample %s: %w", role, sampleErr)
 		}
-		if members != 1 {
-			return processReceipt{}, errors.New("companion child process group is not exact")
+		if !reflect.DeepEqual(original, resampled) {
+			return processReceipt{}, fmt.Errorf("%s argv, executable, code, socket, or kernel identity changed", role)
 		}
 	}
+	afterProcesses, err := unix.SysctlKinfoProcSlice("kern.proc.all")
+	if err != nil {
+		return processReceipt{}, fmt.Errorf("resample Darwin process table: %w", err)
+	}
+	afterPopulation, err := snapshotPopulation(afterProcesses, companionPID, children)
+	if err != nil {
+		return processReceipt{}, err
+	}
+	if !reflect.DeepEqual(beforePopulation, afterPopulation) {
+		return processReceipt{}, errors.New("companion child or process-group population changed while it was inspected")
+	}
 	return processReceipt{
-		Schema:    "openrealtime/companion/process-receipt/v1",
+		Schema:    "openrealtime/companion/process-receipt/v2",
 		Companion: parent.identity, Server: server.identity, Presentation: presentation.identity,
 	}, nil
 }
 
 func sampleProcess(pid int) (processSample, error) {
 	before, err := readKernelIdentity(pid)
+	if err != nil {
+		return processSample{}, err
+	}
+	listenersBefore, err := stableTCPListeners(pid)
 	if err != nil {
 		return processSample{}, err
 	}
@@ -183,6 +209,13 @@ func sampleProcess(pid int) (processSample, error) {
 	if err != nil {
 		return processSample{}, err
 	}
+	listenersAfter, err := stableTCPListeners(pid)
+	if err != nil {
+		return processSample{}, err
+	}
+	if !reflect.DeepEqual(listenersBefore, listenersAfter) {
+		return processSample{}, errors.New("TCP listener population changed while process identity was inspected")
+	}
 	after, err := readKernelIdentity(pid)
 	if err != nil || before != after {
 		return processSample{}, errors.New("process identity changed while it was inspected")
@@ -195,7 +228,90 @@ func sampleProcess(pid int) (processSample, error) {
 		PID: before.pid, PPID: before.ppid, PGID: before.pgid,
 		StartSeconds: before.seconds, StartMicros: before.micros,
 		Executable: executable, ArgumentsHash: digest(encoded), RuntimeDigest: artifact.Digest,
+		TCPListeners: listenersBefore,
 	}, args: args}, nil
+}
+
+func directChildren(processes []unix.KinfoProc, parentPID int) []int {
+	children := make([]int, 0, 2)
+	for _, process := range processes {
+		if int(process.Eproc.Ppid) == parentPID {
+			children = append(children, int(process.Proc.P_pid))
+		}
+	}
+	sort.Ints(children)
+	return children
+}
+
+func snapshotPopulation(processes []unix.KinfoProc, companionPID int, children []int) (populationSnapshot, error) {
+	if len(children) != 2 || children[0] <= 1 || children[0] == children[1] {
+		return populationSnapshot{}, errors.New("companion child PID set is invalid")
+	}
+	currentChildren := directChildren(processes, companionPID)
+	if !reflect.DeepEqual(currentChildren, children) {
+		return populationSnapshot{}, errors.New("companion direct child population changed")
+	}
+	wanted := map[int]struct{}{companionPID: {}, children[0]: {}, children[1]: {}}
+	identities := make(map[int]kernelIdentity, len(wanted))
+	groups := make([][]int, len(children))
+	for _, process := range processes {
+		pid := int(process.Proc.P_pid)
+		if _, ok := wanted[pid]; ok {
+			if _, duplicate := identities[pid]; duplicate {
+				return populationSnapshot{}, errors.New("Darwin process table repeats a companion PID")
+			}
+			identities[pid] = kernelIdentityFromProcess(process)
+		}
+		for index, child := range children {
+			if int(process.Eproc.Pgid) == child {
+				groups[index] = append(groups[index], pid)
+			}
+			if int(process.Eproc.Ppid) == child {
+				return populationSnapshot{}, errors.New("companion child unexpectedly owns a descendant process")
+			}
+		}
+	}
+	if len(identities) != len(wanted) {
+		return populationSnapshot{}, errors.New("companion process population is incomplete")
+	}
+	ordered := make([]kernelIdentity, 0, len(wanted))
+	for _, pid := range []int{companionPID, children[0], children[1]} {
+		ordered = append(ordered, identities[pid])
+	}
+	for index, child := range children {
+		sort.Ints(groups[index])
+		if !reflect.DeepEqual(groups[index], []int{child}) {
+			return populationSnapshot{}, errors.New("companion child process group is not exact")
+		}
+	}
+	return populationSnapshot{Processes: ordered, DirectChild: currentChildren, Groups: groups}, nil
+}
+
+func kernelIdentityFromProcess(process unix.KinfoProc) kernelIdentity {
+	return kernelIdentity{
+		pid: int(process.Proc.P_pid), ppid: int(process.Eproc.Ppid), pgid: int(process.Eproc.Pgid),
+		seconds: process.Proc.P_starttime.Sec, micros: process.Proc.P_starttime.Usec,
+	}
+}
+
+func populationMatchesSamples(population populationSnapshot, samples ...processSample) error {
+	observed := make(map[int]kernelIdentity, len(samples))
+	for _, sample := range samples {
+		identity := sample.identity
+		observed[identity.PID] = kernelIdentity{
+			pid: identity.PID, ppid: identity.PPID, pgid: identity.PGID,
+			seconds: identity.StartSeconds, micros: identity.StartMicros,
+		}
+	}
+	if len(observed) != len(population.Processes) {
+		return errors.New("sampled companion process population is incomplete")
+	}
+	for _, identity := range population.Processes {
+		if observed[identity.pid] != identity {
+			return errors.New("sampled companion process identity differs from process table")
+		}
+	}
+	return nil
 }
 
 func readKernelIdentity(pid int) (kernelIdentity, error) {
