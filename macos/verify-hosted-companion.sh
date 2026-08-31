@@ -54,6 +54,8 @@ proof_nonce="$(openssl rand -hex 32)"
 
 cd "${repository_root}"
 go build -trimpath -o "${binary}" ./cmd/openrealtime
+/usr/bin/codesign --force --sign - "${binary}"
+/usr/bin/codesign --verify --strict "${binary}"
 export OPENREALTIME_HOSTED_COMPANION_TOKEN="hosted-companion-private-token"
 "${binary}" companion \
   -server-listen "${server_address}" \
