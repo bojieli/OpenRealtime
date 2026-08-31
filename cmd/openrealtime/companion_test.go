@@ -441,8 +441,17 @@ func TestCompanionShutdownKillsSidecarAfterPresentationLeaderExits(t *testing.T)
 	case <-time.After(15 * time.Second):
 		t.Fatal("stubborn companion did not become ready")
 	}
-	if _, err := os.Stat(marker); err != nil {
-		t.Fatalf("grandchild did not publish readiness: %v", err)
+	markerDeadline := time.Now().Add(6 * time.Second)
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		} else if !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("read grandchild readiness: %v", err)
+		}
+		if time.Now().After(markerDeadline) {
+			t.Fatal("grandchild did not publish readiness")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	cancel()
 	select {
