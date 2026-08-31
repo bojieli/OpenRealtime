@@ -35,6 +35,7 @@ graph meeting_assistant {
     flow.Drop :: background_activation_state_audit;
     flow.Drop :: background_activation_outcome_audit;
     flow.Drop :: background_commit_audit;
+    flow.Drop :: background_trigger_drop;
     flow.Drop :: foreground_interaction_audit;
     flow.Drop :: foreground_state_audit;
     flow.Drop :: screen_reference_audit;
@@ -85,14 +86,15 @@ graph meeting_assistant {
     trajectory_snapshot_copy.out -> background_model.context;
     // Every committed correction or screen observation can start independent
     // slow work. Its prepared stream cannot bypass the bounded injection
-    // element, and injection causally precedes the foreground response trigger.
+    // element. The result becomes context for a later user-authorized turn;
+    // background completion by itself cannot open a second voiced response.
     observation_commit.outcome -> observation_outcome_copy.in;
     observation_outcome_copy.out -> background_activation.committed;
     background_activation.trigger -> background_model.trigger;
     background_activation.authority -> background_authority_drop.in;
     background_model.text -> background_injection.text;
     background_injection.injection -> text_injection_mux.in;
-    background_injection.trigger -> foreground_trigger_mux.in;
+    background_injection.trigger -> background_trigger_drop.in;
     background_injection.outcome -> background_outcome_copy.in;
     text_injection_mux.out -> foreground.text;
     foreground_trigger_mux.out -> foreground.trigger;
