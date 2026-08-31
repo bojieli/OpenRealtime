@@ -81,6 +81,167 @@ func TestReadSnapshotRejectsUnknownUnredactedAndNonPrivateArtifacts(t *testing.T
 	}
 }
 
+func TestReadSnapshotRejectsSymlinkAndHardLinkArtifacts(t *testing.T) {
+	value := testSnapshot(1, time.Unix(1_700_000_000, 0).UTC())
+	original := writeSnapshot(t, "original.json", value)
+
+	symlinkPath := filepath.Join(privateTempDir(t), "snapshot.json")
+	if err := os.Symlink(original, symlinkPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := readSnapshot(symlinkPath); err == nil || !strings.Contains(err.Error(), "regular file") {
+		t.Fatalf("symlink error = %v", err)
+	}
+
+	hardLinkPath := original + ".linked"
+	if err := os.Link(original, hardLinkPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := readSnapshot(hardLinkPath); err == nil || !strings.Contains(err.Error(), "link count") {
+		t.Fatalf("hard-link error = %v", err)
+	}
+}
+
+func TestReadSnapshotRejectsEntryReplacementBeforeOpen(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		replace   func(string, []byte) error
+		errorText string
+	}{
+		{
+			name: "regular file",
+			replace: func(path string, payload []byte) error {
+				if err := os.Rename(path, path+".original"); err != nil {
+					return err
+				}
+				return os.WriteFile(path, payload, 0o600)
+			},
+			errorText: "identity changed while it was opened",
+		},
+		{
+			name: "symbolic link",
+			replace: func(path string, _ []byte) error {
+				target := path + ".original"
+				if err := os.Rename(path, target); err != nil {
+					return err
+				}
+				return os.Symlink(target, path)
+			},
+			errorText: "without following symbolic links",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := writeSnapshot(t, "snapshot.json", testSnapshot(
+				1, time.Unix(1_700_000_000, 0).UTC()))
+			payload, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			replaced := false
+			_, _, err = readSnapshotWithCheckpoint(path, func(stage snapshotReadStage) error {
+				if stage != snapshotEntryChecked || replaced {
+					return nil
+				}
+				replaced = true
+				return test.replace(path, payload)
+			})
+			if !replaced {
+				t.Fatal("entry-replacement checkpoint was not reached")
+			}
+			if err == nil || !strings.Contains(err.Error(), test.errorText) {
+				t.Fatalf("replacement error = %v", err)
+			}
+		})
+	}
+}
+
+func TestReadSnapshotRejectsPathReplacementAfterOpen(t *testing.T) {
+	path := writeSnapshot(t, "snapshot.json", testSnapshot(
+		1, time.Unix(1_700_000_000, 0).UTC()))
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replaced := false
+	_, _, err = readSnapshotWithCheckpoint(path, func(stage snapshotReadStage) error {
+		if stage != snapshotArtifactOpened || replaced {
+			return nil
+		}
+		replaced = true
+		if err := os.Rename(path, path+".original"); err != nil {
+			return err
+		}
+		return os.WriteFile(path, payload, 0o600)
+	})
+	if !replaced {
+		t.Fatal("post-open replacement checkpoint was not reached")
+	}
+	if err == nil || (!strings.Contains(err.Error(), "changed while it was read") &&
+		!strings.Contains(err.Error(), "path no longer identifies")) {
+		t.Fatalf("post-open replacement error = %v", err)
+	}
+}
+
+func TestReadSnapshotRejectsParentPathReplacementAfterOpen(t *testing.T) {
+	path := writeSnapshot(t, "snapshot.json", testSnapshot(
+		1, time.Unix(1_700_000_000, 0).UTC()))
+	parent := filepath.Dir(path)
+	replaced := false
+	_, _, err := readSnapshotWithCheckpoint(path, func(stage snapshotReadStage) error {
+		if stage != snapshotParentOpened || replaced {
+			return nil
+		}
+		replaced = true
+		if err := os.Rename(parent, parent+".original"); err != nil {
+			return err
+		}
+		return os.Mkdir(parent, 0o700)
+	})
+	if !replaced {
+		t.Fatal("parent-replacement checkpoint was not reached")
+	}
+	if err == nil || !strings.Contains(err.Error(), "parent path no longer identifies") {
+		t.Fatalf("parent-replacement error = %v", err)
+	}
+}
+
+func TestReadSnapshotRejectsHardLinkIntroducedAfterOpen(t *testing.T) {
+	path := writeSnapshot(t, "snapshot.json", testSnapshot(
+		1, time.Unix(1_700_000_000, 0).UTC()))
+	linked := false
+	_, _, err := readSnapshotWithCheckpoint(path, func(stage snapshotReadStage) error {
+		if stage != snapshotArtifactOpened || linked {
+			return nil
+		}
+		linked = true
+		return os.Link(path, path+".linked")
+	})
+	if !linked {
+		t.Fatal("post-open hard-link checkpoint was not reached")
+	}
+	if err == nil || !strings.Contains(err.Error(), "changed while it was read") {
+		t.Fatalf("post-open hard-link error = %v", err)
+	}
+}
+
+func TestReadSnapshotRejectsOversizeSparseArtifact(t *testing.T) {
+	path := filepath.Join(privateTempDir(t), "oversize.json")
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(maximumSnapshotBytes + 1); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := readSnapshot(path); err == nil || !strings.Contains(err.Error(), "response limit") {
+		t.Fatalf("oversize error = %v", err)
+	}
+}
+
 func TestReadSnapshotRequiresRunningGraphState(t *testing.T) {
 	value := testSnapshot(1, time.Unix(1_700_000_000, 0).UTC())
 	value.State = "active"

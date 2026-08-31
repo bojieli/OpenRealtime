@@ -18,12 +18,12 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
-	"syscall"
 	"time"
 
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/internal/strictjson"
 	"github.com/bojieli/OpenRealtime/management"
+	"golang.org/x/sys/unix"
 )
 
 const maximumSnapshotBytes = 32 << 20
@@ -83,6 +83,30 @@ type stableSnapshot struct {
 	Deployment    *inspect.DeploymentEvidence       `json:"deployment,omitempty"`
 	Adapter       *inspect.SessionAdapterResolution `json:"adapter,omitempty"`
 	Nodes         []stableNode                      `json:"nodes"`
+}
+
+type snapshotReadStage uint8
+
+const (
+	snapshotParentOpened snapshotReadStage = iota + 1
+	snapshotEntryChecked
+	snapshotArtifactOpened
+	snapshotPayloadRead
+)
+
+type snapshotReadCheckpoint func(snapshotReadStage) error
+
+type snapshotObjectIdentity struct {
+	device          uint64
+	inode           uint64
+	mode            uint32
+	links           uint64
+	owner           uint32
+	size            int64
+	modifiedSeconds int64
+	modifiedNanos   int64
+	statusSeconds   int64
+	statusNanos     int64
 }
 
 func main() {
@@ -172,47 +196,113 @@ func validate(value options) (receipt, error) {
 }
 
 func readSnapshot(path string) (inspect.Live, []byte, error) {
+	return readSnapshotWithCheckpoint(path, nil)
+}
+
+func readSnapshotWithCheckpoint(
+	path string,
+	checkpoint snapshotReadCheckpoint,
+) (inspect.Live, []byte, error) {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path || filepath.Base(path) == "." ||
 		filepath.Base(path) == string(filepath.Separator) {
 		return inspect.Live{}, nil, errors.New("artifact path is not canonical and absolute")
 	}
-	parent, err := os.Lstat(filepath.Dir(path))
-	if err != nil || !parent.IsDir() || parent.Mode().Perm() != 0o700 {
-		return inspect.Live{}, nil, errors.New("artifact parent is not one private directory")
+
+	parentPath := filepath.Dir(path)
+	base := filepath.Base(path)
+	var parentPathBefore unix.Stat_t
+	if err := unix.Lstat(parentPath, &parentPathBefore); err != nil {
+		return inspect.Live{}, nil, fmt.Errorf("inspect artifact parent: %w", err)
 	}
-	parentSystem, parentOK := parent.Sys().(*syscall.Stat_t)
-	if !parentOK || int(parentSystem.Uid) != os.Geteuid() {
-		return inspect.Live{}, nil, errors.New("artifact parent has another owner")
-	}
-	info, err := os.Lstat(path)
-	if err != nil {
+	if err := validateSnapshotParent(parentPathBefore); err != nil {
 		return inspect.Live{}, nil, err
 	}
-	if !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 || info.Size() <= 0 ||
-		info.Size() > maximumSnapshotBytes {
-		return inspect.Live{}, nil, errors.New("artifact must be one 0600 regular file within the response limit")
-	}
-	fileSystem, fileOK := info.Sys().(*syscall.Stat_t)
-	if !fileOK || int(fileSystem.Uid) != os.Geteuid() || fileSystem.Nlink != 1 {
-		return inspect.Live{}, nil, errors.New("artifact owner or link count is invalid")
-	}
-	file, err := os.Open(path)
+	parentDescriptor, err := unix.Open(parentPath,
+		unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
 	if err != nil {
+		return inspect.Live{}, nil, fmt.Errorf("open artifact parent without following links: %w", err)
+	}
+	parent := os.NewFile(uintptr(parentDescriptor), parentPath)
+	if parent == nil {
+		_ = unix.Close(parentDescriptor)
+		return inspect.Live{}, nil, errors.New("open artifact parent: invalid descriptor")
+	}
+	defer parent.Close()
+
+	var parentOpened unix.Stat_t
+	if err := unix.Fstat(parentDescriptor, &parentOpened); err != nil {
+		return inspect.Live{}, nil, fmt.Errorf("inspect opened artifact parent: %w", err)
+	}
+	if err := validateSnapshotParent(parentOpened); err != nil {
 		return inspect.Live{}, nil, err
+	}
+	if !sameSnapshotAuthority(parentPathBefore, parentOpened) {
+		return inspect.Live{}, nil, errors.New("artifact parent identity changed while it was opened")
+	}
+	if err := runSnapshotCheckpoint(checkpoint, snapshotParentOpened); err != nil {
+		return inspect.Live{}, nil, err
+	}
+
+	var entryBefore unix.Stat_t
+	if err := unix.Fstatat(parentDescriptor, base, &entryBefore, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return inspect.Live{}, nil, fmt.Errorf("inspect artifact entry: %w", err)
+	}
+	if err := validateSnapshotArtifact(entryBefore); err != nil {
+		return inspect.Live{}, nil, err
+	}
+	if err := runSnapshotCheckpoint(checkpoint, snapshotEntryChecked); err != nil {
+		return inspect.Live{}, nil, err
+	}
+
+	artifactDescriptor, err := unix.Openat(parentDescriptor, base,
+		unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	if err != nil {
+		return inspect.Live{}, nil, fmt.Errorf("open artifact without following symbolic links: %w", err)
+	}
+	file := os.NewFile(uintptr(artifactDescriptor), path)
+	if file == nil {
+		_ = unix.Close(artifactDescriptor)
+		return inspect.Live{}, nil, errors.New("open artifact: invalid descriptor")
 	}
 	defer file.Close()
-	opened, err := file.Stat()
-	if err != nil || !os.SameFile(info, opened) {
+
+	var opened unix.Stat_t
+	if err := unix.Fstat(artifactDescriptor, &opened); err != nil {
+		return inspect.Live{}, nil, fmt.Errorf("inspect opened artifact: %w", err)
+	}
+	if err := validateSnapshotArtifact(opened); err != nil {
+		return inspect.Live{}, nil, err
+	}
+	if snapshotIdentity(entryBefore) != snapshotIdentity(opened) {
 		return inspect.Live{}, nil, errors.New("artifact identity changed while it was opened")
 	}
+	if err := runSnapshotCheckpoint(checkpoint, snapshotArtifactOpened); err != nil {
+		return inspect.Live{}, nil, err
+	}
+
 	payload, err := io.ReadAll(io.LimitReader(file, maximumSnapshotBytes+1))
-	if err != nil || len(payload) == 0 || len(payload) > maximumSnapshotBytes {
+	if err != nil || len(payload) == 0 || len(payload) > maximumSnapshotBytes ||
+		int64(len(payload)) != opened.Size {
 		return inspect.Live{}, nil, errors.New("artifact could not be read within the response limit")
 	}
-	after, err := file.Stat()
-	if err != nil || !os.SameFile(opened, after) || opened.Size() != after.Size() ||
-		opened.Mode() != after.Mode() || !opened.ModTime().Equal(after.ModTime()) {
+	if err := runSnapshotCheckpoint(checkpoint, snapshotPayloadRead); err != nil {
+		return inspect.Live{}, nil, err
+	}
+
+	var after unix.Stat_t
+	if err := unix.Fstat(artifactDescriptor, &after); err != nil ||
+		snapshotIdentity(opened) != snapshotIdentity(after) {
 		return inspect.Live{}, nil, errors.New("artifact changed while it was read")
+	}
+	var entryAfter unix.Stat_t
+	if err := unix.Fstatat(parentDescriptor, base, &entryAfter, unix.AT_SYMLINK_NOFOLLOW); err != nil ||
+		snapshotIdentity(after) != snapshotIdentity(entryAfter) {
+		return inspect.Live{}, nil, errors.New("artifact path no longer identifies the opened artifact")
+	}
+	var parentPathAfter unix.Stat_t
+	if err := unix.Lstat(parentPath, &parentPathAfter); err != nil ||
+		!sameSnapshotAuthority(parentOpened, parentPathAfter) {
+		return inspect.Live{}, nil, errors.New("artifact parent path no longer identifies the opened directory")
 	}
 	if err := strictjson.ValidateWithLimits(payload, strictjson.Limits{
 		MaxInputBytes: maximumSnapshotBytes,
@@ -259,6 +349,61 @@ func readSnapshot(path string) (inspect.Live, []byte, error) {
 		return inspect.Live{}, nil, errors.New("live response is not the idempotently redacted public projection")
 	}
 	return snapshot, payload, nil
+}
+
+func runSnapshotCheckpoint(checkpoint snapshotReadCheckpoint, stage snapshotReadStage) error {
+	if checkpoint == nil {
+		return nil
+	}
+	if err := checkpoint(stage); err != nil {
+		return fmt.Errorf("artifact read checkpoint: %w", err)
+	}
+	return nil
+}
+
+func validateSnapshotParent(stat unix.Stat_t) error {
+	mode := uint32(stat.Mode)
+	if mode&unix.S_IFMT != unix.S_IFDIR || mode&0o777 != 0o700 {
+		return errors.New("artifact parent is not one private directory")
+	}
+	if int(stat.Uid) != os.Geteuid() {
+		return errors.New("artifact parent has another owner")
+	}
+	return nil
+}
+
+func validateSnapshotArtifact(stat unix.Stat_t) error {
+	mode := uint32(stat.Mode)
+	if mode&unix.S_IFMT != unix.S_IFREG || mode&0o777 != 0o600 || stat.Size <= 0 ||
+		stat.Size > maximumSnapshotBytes {
+		return errors.New("artifact must be one 0600 regular file within the response limit")
+	}
+	if int(stat.Uid) != os.Geteuid() || uint64(stat.Nlink) != 1 {
+		return errors.New("artifact owner or link count is invalid")
+	}
+	return nil
+}
+
+func sameSnapshotAuthority(left, right unix.Stat_t) bool {
+	leftMode := uint32(left.Mode)
+	rightMode := uint32(right.Mode)
+	return uint64(left.Dev) == uint64(right.Dev) && left.Ino == right.Ino &&
+		leftMode == rightMode && left.Uid == right.Uid
+}
+
+func snapshotIdentity(stat unix.Stat_t) snapshotObjectIdentity {
+	return snapshotObjectIdentity{
+		device:          uint64(stat.Dev),
+		inode:           stat.Ino,
+		mode:            uint32(stat.Mode),
+		links:           uint64(stat.Nlink),
+		owner:           stat.Uid,
+		size:            stat.Size,
+		modifiedSeconds: stat.Mtim.Sec,
+		modifiedNanos:   stat.Mtim.Nsec,
+		statusSeconds:   stat.Ctim.Sec,
+		statusNanos:     stat.Ctim.Nsec,
+	}
 }
 
 func stableIdentity(snapshot inspect.Live) (stableSnapshot, error) {
