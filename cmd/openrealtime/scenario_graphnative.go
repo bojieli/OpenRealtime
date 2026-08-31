@@ -229,7 +229,7 @@ func (bundle *scenarioGraphReviewBundle) Finalize(
 		return graphnative.SourceReceipt{}, err
 	}
 	directory := bundle.review.Directory()
-	closeErr := bundle.review.Close()
+	closeErr := bundle.review.ClosePartial()
 	bundle.review = nil
 	closeErr = errors.Join(closeErr, bundle.root.Close())
 	bundle.root = nil
@@ -257,18 +257,46 @@ func (bundle *scenarioGraphReviewBundle) sourceAttempts(
 	if err := checklist.Validate(); err != nil {
 		return nil, fmt.Errorf("index final graph-native scenario checklist: %w", err)
 	}
-	if len(bundle.media) != checklist.Expected || len(checklist.Attempts) != checklist.Expected {
-		return nil, errors.New("scenario review media population differs from the final checklist")
+	if len(checklist.Attempts) == 0 {
+		return []graphnative.SourceAttempt{}, nil
 	}
-	result := make([]graphnative.SourceAttempt, 0, checklist.Expected)
+	result := make([]graphnative.SourceAttempt, 0, len(checklist.Attempts))
+	retainedMedia := 0
 	for _, record := range checklist.Attempts {
-		if record.Media == nil {
-			return nil, fmt.Errorf("scenario attempt %s has no verified media", record.Key.TaskID)
+		resultName := scenarioGraphAttemptFilename(record.Key, "result.json")
+		resultPayload, err := bundle.root.ReadFile(resultName)
+		if err != nil {
+			return nil, fmt.Errorf("read scenario attempt %s scorer result: %w", record.Key.TaskID, err)
+		}
+		var scorerResult scenario.Result
+		decoder := json.NewDecoder(bytes.NewReader(resultPayload))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&scorerResult); err != nil || requireScenarioGraphJSONEOF(decoder) != nil {
+			return nil, fmt.Errorf("scenario attempt %s scorer result is invalid", record.Key.TaskID)
+		}
+		resultDigest, err := graphnative.FingerprintResult(scorerResult)
+		if err != nil || resultDigest != record.Execution.ResultSHA256 {
+			return nil, fmt.Errorf("scenario attempt %s scorer result changed", record.Key.TaskID)
+		}
+		source := graphnative.SourceAttempt{
+			Record: record.Clone(),
+			Result: graphnative.SourceFile{
+				Path: resultName, Purpose: "scorer_result",
+				SHA256: resultDigest, SizeBytes: int64(len(resultPayload)),
+			},
 		}
 		reference, found := bundle.media[record.Key.TaskID]
-		if !found || reference.Handle != record.Media.Handle ||
+		if !found {
+			if record.Media != nil {
+				return nil, fmt.Errorf("scenario attempt %s verified media is missing", record.Key.TaskID)
+			}
+			result = append(result, source)
+			continue
+		}
+		retainedMedia++
+		if record.Media != nil && (reference.Handle != record.Media.Handle ||
 			reference.ManifestSHA256 != record.Media.ManifestSHA256 ||
-			!reflect.DeepEqual(reference.Submitted, record.Media.Submitted) {
+			!reflect.DeepEqual(reference.Submitted, record.Media.Submitted)) {
 			return nil, fmt.Errorf("scenario attempt %s media differs from its verified checklist row",
 				record.Key.TaskID)
 		}
@@ -293,20 +321,9 @@ func (bundle *scenarioGraphReviewBundle) sourceAttempts(
 		); err != nil {
 			return nil, err
 		}
-		resultPayload, err := bundle.root.ReadFile(manifest.Result.Path)
-		if err != nil {
-			return nil, err
-		}
-		var scorerResult scenario.Result
-		decoder := json.NewDecoder(bytes.NewReader(resultPayload))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&scorerResult); err != nil || requireScenarioGraphJSONEOF(decoder) != nil {
-			return nil, fmt.Errorf("scenario attempt %s scorer result is invalid", record.Key.TaskID)
-		}
-		resultDigest, err := graphnative.FingerprintResult(scorerResult)
-		if err != nil || resultDigest != record.Execution.ResultSHA256 ||
-			manifest.Result.SHA256 != record.Execution.ResultSHA256 ||
-			scorerResult.Scenario != record.Key.CaseName {
+		if manifest.Result.Path != source.Result.Path ||
+			manifest.Result.SHA256 != source.Result.SHA256 ||
+			manifest.Result.SizeBytes != source.Result.SizeBytes {
 			return nil, fmt.Errorf("scenario attempt %s scorer result changed", record.Key.TaskID)
 		}
 		if err := bundle.verifyArtifact(
@@ -321,21 +338,16 @@ func (bundle *scenarioGraphReviewBundle) sourceAttempts(
 		if err := validateScenarioGraphStereoWAV(audioPayload); err != nil {
 			return nil, err
 		}
-		source := graphnative.SourceAttempt{
-			Record: record.Clone(),
-			Result: graphnative.SourceFile{
-				Path: manifest.Result.Path, Purpose: "scorer_result",
-				SHA256: manifest.Result.SHA256, SizeBytes: manifest.Result.SizeBytes,
-			},
-			MediaManifest: graphnative.SourceFile{
-				Path: reference.Handle, Purpose: "media_manifest",
-				SHA256: reference.ManifestSHA256, SizeBytes: int64(len(manifestPayload)),
-			},
-			Audio: graphnative.SourceFile{
-				Path: manifest.Audio.Path, Purpose: "stereo_audio",
-				SHA256: manifest.Audio.SHA256, SizeBytes: manifest.Audio.SizeBytes,
-			},
+		mediaManifest := graphnative.SourceFile{
+			Path: reference.Handle, Purpose: "media_manifest",
+			SHA256: reference.ManifestSHA256, SizeBytes: int64(len(manifestPayload)),
 		}
+		audio := graphnative.SourceFile{
+			Path: manifest.Audio.Path, Purpose: "stereo_audio",
+			SHA256: manifest.Audio.SHA256, SizeBytes: manifest.Audio.SizeBytes,
+		}
+		source.MediaManifest = &mediaManifest
+		source.Audio = &audio
 		for _, submitted := range manifest.Submitted {
 			if err := bundle.verifyArtifact(
 				submitted.Media, submitted.Receipt.MediaType, "submitted_visual_input",
@@ -351,6 +363,9 @@ func (bundle *scenarioGraphReviewBundle) sourceAttempts(
 			})
 		}
 		result = append(result, source)
+	}
+	if retainedMedia != len(bundle.media) {
+		return nil, errors.New("scenario review contains media outside the attempted checklist prefix")
 	}
 	return result, nil
 }
@@ -397,14 +412,9 @@ func (bundle *scenarioGraphReviewBundle) Retain(
 	if !capture.RunSucceeded {
 		runErr = errors.New("scenario attempt ended with an infrastructure error; inspect the checklist")
 	}
-	resultPayload, err := json.Marshal(capture.Result)
+	resultPayload, err := bundle.retainResultLocked(capture.Key, capture.Result)
 	if err != nil {
-		return graphnative.MediaReference{}, fmt.Errorf("encode scenario scorer result: %w", err)
-	}
-	if scenarioGraphJSONContainsSecret(resultPayload, bundle.secrets) {
-		return graphnative.MediaReference{}, errors.New(
-			"scenario scorer result contains a declared sensitive value",
-		)
+		return graphnative.MediaReference{}, err
 	}
 	if err := bundle.review.Record(
 		capture.Key.CaseName, capture.Key.Trial, capture.Audio, capture.Result, runErr,
@@ -412,9 +422,6 @@ func (bundle *scenarioGraphReviewBundle) Retain(
 		return graphnative.MediaReference{}, err
 	}
 	resultName := scenarioGraphAttemptFilename(capture.Key, "result.json")
-	if err := writeScenarioGraphFile(bundle.root, resultName, resultPayload); err != nil {
-		return graphnative.MediaReference{}, fmt.Errorf("retain scenario scorer result: %w", err)
-	}
 	audio, err := bundle.findAttemptAudio(capture.Key)
 	if err != nil {
 		return graphnative.MediaReference{}, err
@@ -472,6 +479,41 @@ func (bundle *scenarioGraphReviewBundle) Retain(
 	}
 	bundle.media[capture.Key.TaskID] = reference
 	return reference, nil
+}
+
+func (bundle *scenarioGraphReviewBundle) RetainResult(
+	ctx context.Context, key graphnative.AttemptKey, result scenario.Result,
+) error {
+	if ctx == nil {
+		return errors.New("retain scenario scorer result: nil context")
+	}
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
+	bundle.mu.Lock()
+	defer bundle.mu.Unlock()
+	if bundle.closed || bundle.root == nil {
+		return errors.New("scenario review bundle is closed")
+	}
+	_, err := bundle.retainResultLocked(key, result)
+	return err
+}
+
+func (bundle *scenarioGraphReviewBundle) retainResultLocked(
+	key graphnative.AttemptKey, result scenario.Result,
+) ([]byte, error) {
+	payload, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("encode scenario scorer result: %w", err)
+	}
+	if scenarioGraphJSONContainsSecret(payload, bundle.secrets) {
+		return nil, errors.New("scenario scorer result contains a declared sensitive value")
+	}
+	name := scenarioGraphAttemptFilename(key, "result.json")
+	if err := writeOrVerifyScenarioGraphFile(bundle.root, name, payload); err != nil {
+		return nil, fmt.Errorf("retain scenario scorer result: %w", err)
+	}
+	return payload, nil
 }
 
 func (bundle *scenarioGraphReviewBundle) Verify(
@@ -620,10 +662,12 @@ func (bundle *scenarioGraphReviewBundle) Sink() graphnative.ChecklistSink {
 			if err != nil {
 				return err
 			}
-			if err := writeScenarioGraphFile(bundle.root, "CHECKLIST.md", []byte(markdown)); err != nil {
+			if err := writeOrVerifyScenarioGraphFile(
+				bundle.root, "CHECKLIST.md", []byte(markdown),
+			); err != nil {
 				return fmt.Errorf("retain scenario checklist review: %w", err)
 			}
-			return writeScenarioGraphFile(bundle.root, "checklist.json", payload)
+			return writeOrVerifyScenarioGraphFile(bundle.root, "checklist.json", payload)
 		},
 	}
 }
@@ -713,6 +757,7 @@ func (bundle *scenarioGraphReviewBundle) readMediaManifest(
 
 func executeScenarioGraphChecklist(
 	ctx context.Context,
+	evidenceParent context.Context,
 	selection scenarioGraphSelection,
 	requirement bench.ExecutionRequirement,
 	adapterProfileFingerprint string,
@@ -726,18 +771,74 @@ func executeScenarioGraphChecklist(
 	if ctx == nil {
 		return outcome, errors.New("run graph-native scenarios: nil context")
 	}
+	if evidenceParent == nil {
+		return outcome, errors.New("run graph-native scenarios: nil evidence context")
+	}
 	if newExecutor == nil {
 		return outcome, errors.New("run graph-native scenarios: nil executor factory")
 	}
 	if bundle == nil {
 		return outcome, errors.New("run graph-native scenarios: nil review bundle")
 	}
+	sink := bundle.Sink()
+	configFor := func(executor graphnative.AttemptExecutor) graphnative.ChecklistConfig {
+		return graphnative.ChecklistConfig{
+			Contract: selection.Contract, Profile: selection.Profile,
+			AdapterProfileFingerprint: adapterProfileFingerprint,
+			ExecutionRequirement:      requirement,
+			Repetitions:               repetitions,
+			RequireMedia:              true,
+			Executor:                  executor,
+			VerifyMedia: func(
+				_ context.Context, key graphnative.AttemptKey,
+				requirement graphnative.CaseRequirement, reference graphnative.MediaReference,
+			) (graphnative.VerifiedMedia, error) {
+				cleanup, cancel := context.WithTimeout(evidenceParent, scenarioGraphEvidenceTimeout)
+				defer cancel()
+				return bundle.Verify(cleanup, key, requirement, reference)
+			},
+			SanitizeError: func(string) string {
+				return "scenario attempt failed; inspect the create-only review bundle"
+			},
+			Sink: graphnative.ChecklistSink{
+				Attempt: func(_ context.Context, record graphnative.AttemptRecord) error {
+					cleanup, cancel := context.WithTimeout(evidenceParent, scenarioGraphEvidenceTimeout)
+					defer cancel()
+					return sink.Attempt(cleanup, record)
+				},
+				Finalize: func(_ context.Context, checklist graphnative.Checklist) error {
+					cleanup, cancel := context.WithTimeout(evidenceParent, scenarioGraphEvidenceTimeout)
+					defer cancel()
+					return sink.Finalize(cleanup, checklist)
+				},
+			},
+		}
+	}
 	executor, err := newExecutor(graphnative.LiveExecutorConfig{
 		Voice: voice, Session: session, Retain: bundle.Retain,
-		EvidenceContext: ctx, EvidenceTimeout: scenarioGraphEvidenceTimeout,
+		EvidenceContext: evidenceParent, EvidenceTimeout: scenarioGraphEvidenceTimeout,
 	})
 	if err != nil {
-		return outcome, err
+		// The executor factory is the first production-attempt boundary. Freeze a
+		// truthful zero-row checklist if it fails: no case or media is invented,
+		// but the attempted campaign still receives a durable source receipt.
+		diagnostic, cancelDiagnostic := context.WithCancel(context.Background())
+		cancelDiagnostic()
+		checklist, checklistErr := graphnative.RunChecklist(
+			diagnostic,
+			configFor(func(
+				context.Context, graphnative.AttemptKey, scenario.Scenario,
+			) (graphnative.AttemptObservation, error) {
+				return graphnative.AttemptObservation{}, errors.New(
+					"diagnostic checklist executor must not run",
+				)
+			}),
+		)
+		outcome.Checklist = checklist
+		if checklistErr == context.Canceled {
+			checklistErr = nil
+		}
+		return outcome, errors.Join(err, checklistErr)
 	}
 	observed := make([]scenarioGraphAttempt, 0, len(selection.Contract.Cases)*repetitions)
 	wrapped := func(
@@ -746,24 +847,32 @@ func executeScenarioGraphChecklist(
 		bounded, cancel := context.WithTimeout(attemptContext, timeout)
 		defer cancel()
 		observation, runErr := executor(bounded, key, item)
+		cleanup, cancelEvidence := context.WithTimeout(evidenceParent, scenarioGraphEvidenceTimeout)
+		resultErr := bundle.RetainResult(cleanup, key, observation.Result)
+		if resultErr != nil {
+			// A malformed or sensitive scorer result must not erase the attempted
+			// row. Replace it with a canonical diagnostic result and retain the
+			// original failure only as sanitized infrastructure evidence.
+			diagnostic := scenario.Result{
+				Scenario: key.CaseName,
+				Failures: []string{
+					"deterministic scorer result was unavailable; inspect infrastructure evidence",
+				},
+			}
+			fallbackErr := bundle.RetainResult(cleanup, key, diagnostic)
+			if fallbackErr == nil {
+				observation.Result = diagnostic
+			}
+			resultErr = errors.Join(resultErr, fallbackErr)
+		}
+		cancelEvidence()
+		runErr = errors.Join(runErr, resultErr)
 		observed = append(observed, scenarioGraphAttempt{
 			Key: key, Result: observation.Result, Err: runErr,
 		})
 		return observation, runErr
 	}
-	checklist, err := graphnative.RunChecklist(ctx, graphnative.ChecklistConfig{
-		Contract: selection.Contract, Profile: selection.Profile,
-		AdapterProfileFingerprint: adapterProfileFingerprint,
-		ExecutionRequirement:      requirement,
-		Repetitions:               repetitions,
-		RequireMedia:              true,
-		Executor:                  wrapped,
-		VerifyMedia:               bundle.Verify,
-		SanitizeError: func(string) string {
-			return "scenario attempt failed; inspect the create-only review bundle"
-		},
-		Sink: bundle.Sink(),
-	})
+	checklist, err := graphnative.RunChecklist(ctx, configFor(wrapped))
 	outcome.Checklist = checklist
 	outcome.Attempts = observed
 	return outcome, err
@@ -1021,5 +1130,20 @@ func writeScenarioGraphFile(root *os.Root, name string, payload []byte) error {
 		return err
 	}
 	written = true
+	return nil
+}
+
+func writeOrVerifyScenarioGraphFile(root *os.Root, name string, payload []byte) error {
+	err := writeScenarioGraphFile(root, name, payload)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, os.ErrExist) {
+		return err
+	}
+	existing, readErr := root.ReadFile(name)
+	if readErr != nil || !bytes.Equal(existing, payload) {
+		return errors.New("existing scenario review file differs from the final payload")
+	}
 	return nil
 }

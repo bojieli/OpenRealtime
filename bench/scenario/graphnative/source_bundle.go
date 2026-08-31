@@ -25,7 +25,7 @@ import (
 
 const (
 	SourceBundleFormat        = "openrealtime.scenario-source-bundle"
-	SourceBundleFormatVersion = 1
+	SourceBundleFormatVersion = 2
 	SourceReceiptFormat       = "openrealtime.scenario-source-receipt"
 	SourceReceiptVersion      = 1
 	SourceManifestName        = "source-manifest.json"
@@ -70,8 +70,8 @@ type SourceSubmittedInput struct {
 type SourceAttempt struct {
 	Record        AttemptRecord          `json:"record"`
 	Result        SourceFile             `json:"result"`
-	MediaManifest SourceFile             `json:"media_manifest"`
-	Audio         SourceFile             `json:"audio"`
+	MediaManifest *SourceFile            `json:"media_manifest,omitempty"`
+	Audio         *SourceFile            `json:"audio,omitempty"`
 	Submitted     []SourceSubmittedInput `json:"submitted_inputs,omitempty"`
 }
 
@@ -79,9 +79,12 @@ type SourceAttempt struct {
 // complete pre-manifest tree, so an added, removed, swapped, or hard-linked
 // artifact invalidates verification.
 type SourceManifest struct {
-	Format                    string          `json:"format"`
-	FormatVersion             int             `json:"format_version"`
+	Format        string `json:"format"`
+	FormatVersion int    `json:"format_version"`
+	// Complete is the create-only publication commit marker. PopulationComplete
+	// separately states whether every planned checklist row was attempted.
 	Complete                  bool            `json:"complete"`
+	PopulationComplete        bool            `json:"population_complete"`
 	Suite                     string          `json:"suite"`
 	Cases                     int             `json:"cases"`
 	Trials                    int             `json:"trials"`
@@ -222,7 +225,8 @@ func PublishSourceBundle(
 	}
 	manifest := SourceManifest{
 		Format: SourceBundleFormat, FormatVersion: SourceBundleFormatVersion,
-		Complete: true, Suite: SuiteName, Cases: len(publication.Checklist.Cases),
+		Complete: true, PopulationComplete: publication.Checklist.Complete,
+		Suite: SuiteName, Cases: len(publication.Checklist.Cases),
 		Trials:           publication.Checklist.Repetitions,
 		ExpectedAttempts: publication.Checklist.Expected, Origin: publication.Origin,
 		ChecklistFingerprint: publication.Checklist.Fingerprint,
@@ -421,8 +425,7 @@ func (origin SourceOrigin) Validate() error {
 }
 
 func validateSourceAttempts(checklist Checklist, source []SourceAttempt) ([]SourceAttempt, error) {
-	if len(source) != checklist.Expected || len(source) > maximumSourceAttempts ||
-		len(source) != len(checklist.Attempts) {
+	if len(source) > maximumSourceAttempts || len(source) != len(checklist.Attempts) {
 		return nil, errors.New("scenario source attempt count differs from the final checklist")
 	}
 	result := make([]SourceAttempt, len(source))
@@ -443,14 +446,23 @@ func validateSourceAttempt(attempt SourceAttempt) error {
 	if err := validateSourceFile(attempt.Result, "scorer_result"); err != nil {
 		return err
 	}
-	if err := validateSourceFile(attempt.MediaManifest, "media_manifest"); err != nil {
-		return err
-	}
-	if err := validateSourceFile(attempt.Audio, "stereo_audio"); err != nil {
-		return err
-	}
 	if attempt.Result.SHA256 != attempt.Record.Execution.ResultSHA256 {
 		return errors.New("result file digest differs from the checklist result")
+	}
+	if (attempt.MediaManifest == nil) != (attempt.Audio == nil) {
+		return errors.New("media manifest and stereo audio availability differ")
+	}
+	if attempt.MediaManifest == nil {
+		if attempt.Record.Media != nil || len(attempt.Submitted) != 0 {
+			return errors.New("unavailable attempt media disagrees with the checklist or submitted inputs")
+		}
+		return nil
+	}
+	if err := validateSourceFile(*attempt.MediaManifest, "media_manifest"); err != nil {
+		return err
+	}
+	if err := validateSourceFile(*attempt.Audio, "stereo_audio"); err != nil {
+		return err
 	}
 	if attempt.Record.Media != nil {
 		if attempt.Record.Media.Handle != attempt.MediaManifest.Path ||
@@ -478,9 +490,11 @@ func validateSourceAttempt(attempt SourceAttempt) error {
 
 func validateSourceAttemptFiles(attempts []SourceAttempt, files []SourceFile) error {
 	for _, attempt := range attempts {
-		for _, wanted := range append([]SourceFile{
-			attempt.Result, attempt.MediaManifest, attempt.Audio,
-		}, sourceSubmittedFiles(attempt.Submitted)...) {
+		wantedFiles := []SourceFile{attempt.Result}
+		if attempt.MediaManifest != nil {
+			wantedFiles = append(wantedFiles, *attempt.MediaManifest, *attempt.Audio)
+		}
+		for _, wanted := range append(wantedFiles, sourceSubmittedFiles(attempt.Submitted)...) {
 			found, ok := sourceFileByPath(files, wanted.Path)
 			if !ok || found != wanted {
 				return fmt.Errorf("scenario source attempt %s file %q differs from the tree",
@@ -507,8 +521,7 @@ func verifySourceAttemptPayloads(
 	if err := requireJSONEOF(decoder); err != nil {
 		return err
 	}
-	if sourceDigest(resultPayload) != attempt.Record.Execution.ResultSHA256 ||
-		result.Scenario != attempt.Record.Key.CaseName {
+	if sourceDigest(resultPayload) != attempt.Record.Execution.ResultSHA256 {
 		return errors.New("retained scenario source result differs from its checklist row")
 	}
 	return nil
@@ -534,7 +547,8 @@ func validateSourceArchitecture(
 	}
 	if result.Version != archbench.ResultVersion || result.Measurement.Suite != SuiteName ||
 		result.Measurement.Expected != checklist.Expected ||
-		len(result.Measurement.Tasks) != checklist.Expected || len(result.Records) != checklist.Expected ||
+		len(result.Measurement.Tasks) != len(checklist.Attempts) ||
+		len(result.Records) != len(checklist.Attempts) ||
 		strings.TrimSpace(result.Measurement.Provenance.FinishedAt) == "" {
 		return archbench.Result{}, nil, false, "", errors.New(
 			"scenario architecture result is not the exact finished checklist population",
@@ -545,7 +559,14 @@ func validateSourceArchitecture(
 	}
 	derived := result.Measurement
 	derived.Finish()
-	if !reflect.DeepEqual(derived.Summary, result.Measurement.Summary) {
+	retainedSummary := result.Measurement.Summary
+	if len(derived.Summary.Distributions) == 0 {
+		derived.Summary.Distributions = nil
+	}
+	if len(retainedSummary.Distributions) == 0 {
+		retainedSummary.Distributions = nil
+	}
+	if !reflect.DeepEqual(derived.Summary, retainedSummary) {
 		return archbench.Result{}, nil, false, "", errors.New("scenario architecture summary is stale")
 	}
 	for index, attempt := range checklist.Attempts {
@@ -577,6 +598,7 @@ func validateSourceArchitecture(
 func validateSourceManifest(manifest SourceManifest, checklist Checklist) error {
 	if manifest.Format != SourceBundleFormat || manifest.FormatVersion != SourceBundleFormatVersion ||
 		!manifest.Complete || manifest.Suite != SuiteName || manifest.Cases != len(checklist.Cases) ||
+		manifest.PopulationComplete != checklist.Complete ||
 		manifest.Trials != checklist.Repetitions || manifest.ExpectedAttempts != checklist.Expected ||
 		manifest.ChecklistFingerprint != checklist.Fingerprint {
 		return errors.New("scenario source manifest identity is invalid")
@@ -592,7 +614,8 @@ func validateSourceManifest(manifest SourceManifest, checklist Checklist) error 
 		manifest.ArchitectureResult.Path != SourceArchitectureName {
 		return errors.New("scenario source architecture file identity is invalid")
 	}
-	if len(manifest.Attempts) != checklist.Expected || len(manifest.Files) == 0 ||
+	if len(manifest.Attempts) != len(checklist.Attempts) ||
+		len(manifest.Files) == 0 ||
 		len(manifest.Files) > maximumSourceFiles {
 		return errors.New("scenario source manifest counts are invalid")
 	}
@@ -1152,6 +1175,14 @@ func sourceSubmittedFiles(source []SourceSubmittedInput) []SourceFile {
 
 func cloneSourceAttempt(source SourceAttempt) SourceAttempt {
 	source.Record = source.Record.Clone()
+	if source.MediaManifest != nil {
+		copy := *source.MediaManifest
+		source.MediaManifest = &copy
+	}
+	if source.Audio != nil {
+		copy := *source.Audio
+		source.Audio = &copy
+	}
 	source.Submitted = slices.Clone(source.Submitted)
 	return source
 }

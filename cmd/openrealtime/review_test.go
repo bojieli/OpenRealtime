@@ -25,6 +25,7 @@ type scenarioEvaluationFixtureProvider struct {
 	reviewCalls    atomic.Int32
 	closeCalls     atomic.Int32
 	fail           bool
+	hang           bool
 	assessment     *benchreview.Assessment
 }
 
@@ -60,6 +61,10 @@ func (provider *scenarioEvaluationFixtureProvider) Review(
 	}
 	if provider.fail {
 		return benchreview.ProviderResponse{}, errors.New("fixture review unavailable")
+	}
+	if provider.hang {
+		<-ctx.Done()
+		return benchreview.ProviderResponse{}, context.Cause(ctx)
 	}
 	var source graphnative.SourceReviewContext
 	if err := json.Unmarshal(request.Context, &source); err != nil {
@@ -403,6 +408,106 @@ func TestScenarioEvaluationPublishesAndReopensAllElevenAttempts(t *testing.T) {
 		"-evaluation-receipt", outputDirectory + ".receipt.json",
 	}, &bytes.Buffer{}); err == nil {
 		t.Fatal("symlinked scenario evaluation receipt unexpectedly verified")
+	}
+}
+
+func TestScenarioEvaluationPublishesCanceledAttemptedPrefix(t *testing.T) {
+	t.Chdir("../..")
+	sourceDirectory, sourceReceipt, outcome := publishScenarioGraphCanceledPrefixFixture(t)
+	if outcome.Checklist.Expected != 11 || outcome.Checklist.Executed != 1 ||
+		outcome.Checklist.Complete {
+		t.Fatalf("partial source checklist = %+v", outcome.Checklist)
+	}
+	outputDirectory := filepath.Join(t.TempDir(), "partial-evaluations")
+	registry, provider := scenarioEvaluationFixtureRegistry(t, false)
+	var output bytes.Buffer
+	if err := runScenarioEvaluation([]string{
+		"-source-dir", sourceDirectory,
+		"-source-receipt", sourceDirectory + ".receipt.json",
+		"-out", outputDirectory,
+		"-provider", "fixture.scenario-review",
+		"-parallel", "1",
+		"-timeout", time.Minute.String(),
+	}, &output, registry); err != nil {
+		t.Fatal(err)
+	}
+	if provider.reviewCalls.Load() != 1 || provider.closeCalls.Load() != 1 ||
+		!strings.Contains(output.String(), "evaluations  1/1 retained attempts (11 planned)") {
+		t.Fatalf("partial evaluation calls=%d close=%d output=%q",
+			provider.reviewCalls.Load(), provider.closeCalls.Load(), output.String())
+	}
+	manifestPayload, err := os.ReadFile(filepath.Join(outputDirectory, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := decodeScenarioEvaluationIndex(manifestPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if index.Planned != 11 || index.Retained != 1 || index.Expected != 1 || index.SourceComplete ||
+		!index.ReviewCoverageComplete || index.ChecklistReportable ||
+		index.ArchitectureReportable || len(index.Entries) != 1 ||
+		index.Entries[0].Case != outcome.Checklist.Attempts[0].Key.CaseName {
+		t.Fatalf("partial evaluation index = %+v", index)
+	}
+	receiptPayload, err := os.ReadFile(outputDirectory + ".receipt.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	evaluationReceipt, err := decodeScenarioEvaluationIndexReceipt(receiptPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved := scenarioEvaluationRunOptions{
+		SourceDirectory: sourceDirectory, SourceReceipt: sourceDirectory + ".receipt.json",
+		OutputDirectory: outputDirectory, OutputReceipt: outputDirectory + ".receipt.json",
+		Provider: "fixture.scenario-review", Parallel: 1, Timeout: time.Minute,
+	}
+	if err := verifyScenarioEvaluationCollection(
+		t.Context(), resolved, sourceReceipt, evaluationReceipt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	review, err := os.ReadFile(filepath.Join(outputDirectory, "REVIEW.md"))
+	if err != nil ||
+		!bytes.Contains(review, []byte("Source population: 1/11 retained; complete: false")) ||
+		!bytes.Contains(review, []byte("Media-complete review inputs: 1/1 retained attempts; complete: true")) ||
+		!bytes.Contains(review, []byte("Advisory evaluations: 1/1 media-complete attempts")) {
+		t.Fatalf("partial evaluation human index=%q error=%v", review, err)
+	}
+}
+
+func TestScenarioEvaluationHangingProviderHonorsCleanupDeadline(t *testing.T) {
+	t.Chdir("../..")
+	sourceDirectory, sourceReceipt, _ := publishScenarioGraphCanceledPrefixFixture(t)
+	outputDirectory := filepath.Join(t.TempDir(), "hanging-evaluations")
+	registry, provider := scenarioEvaluationFixtureRegistry(t, false)
+	provider.hang = true
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	err := runScenarioEvaluationContext(ctx, []string{
+		"-source-dir", sourceDirectory,
+		"-source-receipt", sourceDirectory + ".receipt.json",
+		"-out", outputDirectory,
+		"-provider", "fixture.scenario-review",
+		"-parallel", "1",
+		"-timeout", time.Minute.String(),
+	}, &bytes.Buffer{}, registry)
+	if !errors.Is(err, context.DeadlineExceeded) || provider.reviewCalls.Load() != 1 ||
+		provider.closeCalls.Load() != 1 {
+		t.Fatalf("hanging provider error=%v calls=%d close=%d",
+			err, provider.reviewCalls.Load(), provider.closeCalls.Load())
+	}
+	if _, err := os.Lstat(filepath.Join(outputDirectory, "manifest.json")); !os.IsNotExist(err) {
+		t.Fatalf("hanging provider published an evaluation manifest: %v", err)
+	}
+	if _, err := os.Lstat(outputDirectory + ".receipt.json"); !os.IsNotExist(err) {
+		t.Fatalf("hanging provider published an evaluation receipt: %v", err)
+	}
+	if _, err := graphnative.VerifySourceBundle(
+		t.Context(), graphnative.SourceBundleOptions{Directory: sourceDirectory}, sourceReceipt,
+	); err != nil {
+		t.Fatalf("hanging provider changed the sealed partial source: %v", err)
 	}
 }
 

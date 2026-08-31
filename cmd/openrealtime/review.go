@@ -30,7 +30,7 @@ import (
 
 const (
 	scenarioEvaluationIndexFormat        = "openrealtime.scenario-evaluation-index"
-	scenarioEvaluationIndexFormatVersion = 1
+	scenarioEvaluationIndexFormatVersion = 2
 	scenarioEvaluationReceiptFormat      = "openrealtime.scenario-evaluation-receipt"
 	scenarioEvaluationReceiptVersion     = 1
 	maximumScenarioEvaluationIndex       = 16 << 20
@@ -69,18 +69,24 @@ type scenarioEvaluationEntry struct {
 }
 
 type scenarioEvaluationIndex struct {
-	Format               string                    `json:"format"`
-	FormatVersion        int                       `json:"format_version"`
-	Complete             bool                      `json:"complete"`
-	Suite                string                    `json:"suite"`
-	SourceReceiptSHA256  string                    `json:"source_receipt_sha256"`
-	SourceManifestSHA256 string                    `json:"source_manifest_sha256"`
-	SourceFileSetSHA256  string                    `json:"source_file_set_sha256"`
-	ChecklistFingerprint string                    `json:"checklist_fingerprint"`
-	Expected             int                       `json:"expected"`
-	EvaluationSetSHA256  string                    `json:"evaluation_set_sha256"`
-	ReviewSHA256         string                    `json:"review_sha256"`
-	Entries              []scenarioEvaluationEntry `json:"entries"`
+	Format                 string                    `json:"format"`
+	FormatVersion          int                       `json:"format_version"`
+	Complete               bool                      `json:"complete"`
+	Suite                  string                    `json:"suite"`
+	SourceReceiptSHA256    string                    `json:"source_receipt_sha256"`
+	SourceManifestSHA256   string                    `json:"source_manifest_sha256"`
+	SourceFileSetSHA256    string                    `json:"source_file_set_sha256"`
+	ChecklistFingerprint   string                    `json:"checklist_fingerprint"`
+	Planned                int                       `json:"planned_attempts"`
+	Retained               int                       `json:"retained_attempts"`
+	Expected               int                       `json:"expected_evaluations"`
+	ReviewCoverageComplete bool                      `json:"review_coverage_complete"`
+	SourceComplete         bool                      `json:"source_population_complete"`
+	ChecklistReportable    bool                      `json:"deterministic_checklist_reportable"`
+	ArchitectureReportable bool                      `json:"architecture_result_reportable"`
+	EvaluationSetSHA256    string                    `json:"evaluation_set_sha256"`
+	ReviewSHA256           string                    `json:"review_sha256"`
+	Entries                []scenarioEvaluationEntry `json:"entries"`
 }
 
 type scenarioEvaluationIndexReceipt struct {
@@ -183,8 +189,14 @@ func runScenarioEvaluationContext(
 	if err != nil {
 		return fmt.Errorf("verify scenario source before provider selection: %w", err)
 	}
-	source, requests := population.Bundle, population.Requests
-	if len(requests) != source.Checklist.Expected {
+	source, requests, reviewAttempts := population.Bundle, population.Requests, population.Attempts
+	if len(requests) == 0 {
+		return errors.New(
+			"scenario source has no media-complete attempts for exact review; " +
+				"the sealed source receipt remains the recovery boundary",
+		)
+	}
+	if len(requests) != len(reviewAttempts) {
 		return errors.New("scenario source review request population is incomplete")
 	}
 	var progressMu sync.Mutex
@@ -195,7 +207,7 @@ func runScenarioEvaluationContext(
 		completed++
 		fmt.Fprintf(
 			output, "  reviewed     %d/%d  %s  trial %d\n",
-			completed, source.Checklist.Expected, entry.Case, entry.Trial,
+			completed, len(requests), entry.Case, entry.Trial,
 		)
 	}
 	// Provider credentials remain provider-owned. In particular, the Gemini
@@ -228,7 +240,7 @@ func runScenarioEvaluationContext(
 		}
 	}()
 	entries, err := evaluateScenarioRequests(
-		ctx, resolved, lease, requests, source.Manifest.Attempts,
+		ctx, resolved, lease, requests, reviewAttempts,
 	)
 	if err != nil {
 		return err
@@ -243,7 +255,7 @@ func runScenarioEvaluationContext(
 		return errors.New("scenario source changed during secondary review")
 	}
 	index, manifestPayload, reviewPayload, err := buildScenarioEvaluationIndex(
-		source, sourceReceipt, entries,
+		source, sourceReceipt, reviewAttempts, entries,
 	)
 	if err != nil {
 		return err
@@ -287,10 +299,18 @@ func runScenarioEvaluationContext(
 	rootClosed = true
 	fmt.Fprintf(output, "  source       %s\n", sourceReceipt.ReceiptSHA256)
 	fmt.Fprintf(output, "  provider     %s\n", resolved.Provider)
-	fmt.Fprintf(output, "  evaluations  %d/%d\n", len(entries), source.Checklist.Expected)
+	fmt.Fprintf(output, "  evaluations  %d/%d retained attempts (%d planned)\n",
+		len(entries), len(source.Manifest.Attempts), source.Checklist.Expected)
 	fmt.Fprintf(output, "  review       %s\n", resolved.OutputDirectory)
 	fmt.Fprintf(output, "  receipt      %s\n", resolved.OutputReceipt)
 	fmt.Fprintf(output, "  index        %s\n", expectedReceipt.ManifestSHA256)
+	if !index.ReviewCoverageComplete {
+		return fmt.Errorf(
+			"scenario advisory review covered %d of %d retained attempts; "+
+				"result-only attempts remain explicitly unreviewable without fabricated media",
+			index.Expected, index.Retained,
+		)
+	}
 	return nil
 }
 
@@ -687,14 +707,15 @@ func scenarioEvaluationNames(
 func buildScenarioEvaluationIndex(
 	source graphnative.SourceBundle,
 	sourceReceipt graphnative.SourceReceipt,
+	attempts []graphnative.SourceAttempt,
 	entries []scenarioEvaluationEntry,
 ) (scenarioEvaluationIndex, []byte, []byte, error) {
-	if len(entries) != source.Checklist.Expected || len(entries) != len(source.Manifest.Attempts) {
+	if len(entries) == 0 || len(entries) != len(attempts) {
 		return scenarioEvaluationIndex{}, nil, nil, errors.New(
 			"scenario evaluation entries do not cover the sealed source population")
 	}
 	for index := range entries {
-		if err := validateScenarioEvaluationEntry(entries[index], index, source.Manifest.Attempts[index]); err != nil {
+		if err := validateScenarioEvaluationEntry(entries[index], index, attempts[index]); err != nil {
 			return scenarioEvaluationIndex{}, nil, nil, err
 		}
 	}
@@ -705,13 +726,19 @@ func buildScenarioEvaluationIndex(
 	index := scenarioEvaluationIndex{
 		Format: scenarioEvaluationIndexFormat, FormatVersion: scenarioEvaluationIndexFormatVersion,
 		Complete: true, Suite: graphnative.SuiteName,
-		SourceReceiptSHA256:  sourceReceipt.ReceiptSHA256,
-		SourceManifestSHA256: sourceReceipt.ManifestSHA256,
-		SourceFileSetSHA256:  sourceReceipt.FileSetSHA256,
-		ChecklistFingerprint: source.Checklist.Fingerprint,
-		Expected:             source.Checklist.Expected,
-		EvaluationSetSHA256:  scenarioEvaluationDigest(evaluationSetPayload),
-		Entries:              entries,
+		SourceReceiptSHA256:    sourceReceipt.ReceiptSHA256,
+		SourceManifestSHA256:   sourceReceipt.ManifestSHA256,
+		SourceFileSetSHA256:    sourceReceipt.FileSetSHA256,
+		ChecklistFingerprint:   source.Checklist.Fingerprint,
+		Planned:                source.Checklist.Expected,
+		Retained:               len(source.Manifest.Attempts),
+		Expected:               len(attempts),
+		ReviewCoverageComplete: len(attempts) == len(source.Manifest.Attempts),
+		SourceComplete:         source.Checklist.Complete,
+		ChecklistReportable:    source.Checklist.Reportable,
+		ArchitectureReportable: source.Manifest.ArchitectureReportable,
+		EvaluationSetSHA256:    scenarioEvaluationDigest(evaluationSetPayload),
+		Entries:                entries,
 	}
 	reviewPayload, err := renderScenarioEvaluationReview(index)
 	if err != nil {
@@ -753,7 +780,14 @@ func renderScenarioEvaluationReview(index scenarioEvaluationIndex) ([]byte, erro
 	output.WriteString("Deterministic checklist and scorer results remain authoritative. Model reviews are advisory and retained per attempt for human inspection.\n\n")
 	fmt.Fprintf(&output, "- Source receipt: `%s`\n", index.SourceReceiptSHA256)
 	fmt.Fprintf(&output, "- Checklist: `%s`\n", index.ChecklistFingerprint)
-	fmt.Fprintf(&output, "- Evaluations: %d/%d\n", len(index.Entries), index.Expected)
+	fmt.Fprintf(&output, "- Source population: %d/%d retained; complete: %t\n",
+		index.Retained, index.Planned, index.SourceComplete)
+	fmt.Fprintf(&output, "- Deterministic checklist reportable: %t\n", index.ChecklistReportable)
+	fmt.Fprintf(&output, "- Architecture result reportable: %t\n", index.ArchitectureReportable)
+	fmt.Fprintf(&output, "- Media-complete review inputs: %d/%d retained attempts; complete: %t\n",
+		index.Expected, index.Retained, index.ReviewCoverageComplete)
+	fmt.Fprintf(&output, "- Advisory evaluations: %d/%d media-complete attempts\n",
+		len(index.Entries), index.Expected)
 	lastCase := ""
 	for _, entry := range index.Entries {
 		if entry.Case != lastCase {
@@ -941,7 +975,7 @@ func verifyScenarioEvaluationCollection(
 	if err != nil {
 		return fmt.Errorf("verify scenario source while reopening evaluations: %w", err)
 	}
-	source, requests := population.Bundle, population.Requests
+	source, requests, reviewAttempts := population.Bundle, population.Requests, population.Attempts
 	root, rootInfo, err := openScenarioEvaluationRoot(options.OutputDirectory)
 	if err != nil {
 		return err
@@ -966,8 +1000,15 @@ func verifyScenarioEvaluationCollection(
 		index.SourceFileSetSHA256 != sourceReceipt.FileSetSHA256 ||
 		index.ChecklistFingerprint != source.Checklist.Fingerprint ||
 		index.EvaluationSetSHA256 != expectedReceipt.EvaluationSetSHA256 ||
-		index.Expected != source.Checklist.Expected || len(index.Entries) != len(requests) ||
-		len(index.Entries) != len(source.Manifest.Attempts) {
+		index.Planned != source.Checklist.Expected ||
+		index.Retained != len(source.Manifest.Attempts) ||
+		index.Expected != len(reviewAttempts) ||
+		index.ReviewCoverageComplete != (len(reviewAttempts) == len(source.Manifest.Attempts)) ||
+		index.SourceComplete != source.Checklist.Complete ||
+		index.ChecklistReportable != source.Checklist.Reportable ||
+		index.ArchitectureReportable != source.Manifest.ArchitectureReportable ||
+		len(index.Entries) != len(requests) ||
+		len(index.Entries) != len(reviewAttempts) {
 		return errors.New("scenario evaluation index differs from its sealed source")
 	}
 	reviewPayload, err := readScenarioEvaluationFile(
@@ -982,7 +1023,7 @@ func verifyScenarioEvaluationCollection(
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		attempt := source.Manifest.Attempts[attemptIndex]
+		attempt := reviewAttempts[attemptIndex]
 		if err := validateScenarioEvaluationEntry(manifestEntry, attemptIndex, attempt); err != nil {
 			return err
 		}
@@ -1027,7 +1068,7 @@ func verifyScenarioEvaluationCollection(
 		expectedNames[receiptName] = false
 	}
 	rebuilt, rebuiltManifest, rebuiltReview, err := buildScenarioEvaluationIndex(
-		source, sourceReceipt, reconstructed,
+		source, sourceReceipt, reviewAttempts, reconstructed,
 	)
 	if err != nil || !reflect.DeepEqual(rebuilt, index) ||
 		!bytes.Equal(rebuiltManifest, manifestPayload) || !bytes.Equal(rebuiltReview, reviewPayload) {
@@ -1296,6 +1337,10 @@ func decodeScenarioEvaluationIndex(payload []byte) (scenarioEvaluationIndex, err
 	if index.Format != scenarioEvaluationIndexFormat ||
 		index.FormatVersion != scenarioEvaluationIndexFormatVersion || !index.Complete ||
 		index.Suite != graphnative.SuiteName || index.Expected <= 0 ||
+		index.Planned < index.Retained || index.Retained < index.Expected ||
+		index.ReviewCoverageComplete != (index.Expected == index.Retained) ||
+		index.SourceComplete != (index.Retained == index.Planned) ||
+		((index.ChecklistReportable || index.ArchitectureReportable) && !index.SourceComplete) ||
 		len(index.Entries) != index.Expected ||
 		!validScenarioEvaluationDigest(index.SourceReceiptSHA256) ||
 		!validScenarioEvaluationDigest(index.SourceManifestSHA256) ||

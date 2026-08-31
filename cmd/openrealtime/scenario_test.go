@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,13 +13,19 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
+	projectarch "github.com/bojieli/OpenRealtime/architecture"
 	"github.com/bojieli/OpenRealtime/bench"
+	archbench "github.com/bojieli/OpenRealtime/bench/architecture"
 	"github.com/bojieli/OpenRealtime/bench/scenario"
+	"github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
+	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
+	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 )
@@ -143,6 +150,267 @@ func TestScenarioRequiresGraphNativeManifestBeforeArtifactReservation(t *testing
 		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
 			t.Fatalf("invalid scenario invocation reserved %s: %v", path, statErr)
 		}
+	}
+}
+
+func TestScenarioSignalsCancelExecutionThenEvidenceCleanup(t *testing.T) {
+	execution, cancelExecution := context.WithCancel(context.Background())
+	cleanup, cancelCleanup := context.WithCancel(context.Background())
+	signals := make(chan os.Signal, 2)
+	done := make(chan struct{})
+	go relayScenarioSignals(signals, done, cancelExecution, cancelCleanup)
+	t.Cleanup(func() {
+		close(done)
+		cancelExecution()
+		cancelCleanup()
+	})
+	signals <- os.Interrupt
+	select {
+	case <-execution.Done():
+	case <-time.After(time.Second):
+		t.Fatal("first signal did not cancel scenario execution")
+	}
+	if cleanup.Err() != nil {
+		t.Fatalf("first signal canceled evidence cleanup: %v", cleanup.Err())
+	}
+	signals <- os.Interrupt
+	select {
+	case <-cleanup.Done():
+	case <-time.After(time.Second):
+		t.Fatal("second signal did not cancel scenario evidence cleanup")
+	}
+}
+
+func TestScenarioFirstSignalDuringReviewPreservesPublicationUntilSecondSignal(t *testing.T) {
+	_, cancelExecution := context.WithCancel(context.Background())
+	cleanup, cancelCleanup := context.WithCancel(context.Background())
+	// Model the phase handoff: behavioral execution has already ended before
+	// the signal relay starts receiving signals for a long advisory review.
+	cancelExecution()
+	signals := make(chan os.Signal, 2)
+	done := make(chan struct{})
+	go relayScenarioSignals(signals, done, cancelExecution, cancelCleanup)
+	t.Cleanup(func() {
+		close(done)
+		cancelCleanup()
+	})
+	signals <- syscall.SIGTERM
+	select {
+	case <-cleanup.Done():
+		t.Fatal("first signal during review canceled evidence publication")
+	case <-time.After(25 * time.Millisecond):
+	}
+	signals <- syscall.SIGTERM
+	select {
+	case <-cleanup.Done():
+	case <-time.After(time.Second):
+		t.Fatal("second signal during review did not cancel evidence publication")
+	}
+}
+
+func TestScenarioOSSignalSealsAttemptedResultOnlySourceWithoutCallingReviewer(t *testing.T) {
+	t.Chdir("../..")
+	arguments, sourceDirectory, sourceReceipt := scenarioSignalCommandFixture(t)
+	t.Setenv("GEMINI_API_KEY", "scenario-signal-gemini-key-fixture-long-enough")
+	executorEntered := make(chan struct{})
+	returned := make(chan error, 1)
+	var output bytes.Buffer
+	go func() {
+		returned <- runScenarioWithExecutor(
+			arguments, &output,
+			func(graphnative.LiveExecutorConfig) (graphnative.AttemptExecutor, error) {
+				return func(
+					ctx context.Context, key graphnative.AttemptKey, _ scenario.Scenario,
+				) (graphnative.AttemptObservation, error) {
+					close(executorEntered)
+					<-ctx.Done()
+					return graphnative.AttemptObservation{
+						Result: scenario.Result{Scenario: key.CaseName},
+					}, context.Cause(ctx)
+				}, nil
+			},
+		)
+	}()
+	select {
+	case <-executorEntered:
+	case err := <-returned:
+		t.Fatalf("scenario command returned before signal: %v\n%s", err, output.String())
+	case <-time.After(3 * time.Second):
+		t.Fatal("scenario command did not begin its first attempt")
+	}
+	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	var runErr error
+	select {
+	case runErr = <-returned:
+	case <-time.After(5 * time.Second):
+		t.Fatal("SIGTERM did not finish scenario source publication")
+	}
+	if !errors.Is(runErr, context.Canceled) ||
+		!strings.Contains(runErr.Error(), "no media-complete attempts") {
+		t.Fatalf("signaled scenario error = %v\n%s", runErr, output.String())
+	}
+	receipt, err := graphnative.ReadSourceReceipt(sourceReceipt)
+	if err != nil {
+		t.Fatalf("read signaled source receipt: %v\n%s", err, output.String())
+	}
+	source, err := graphnative.VerifySourceBundle(
+		context.Background(), graphnative.SourceBundleOptions{Directory: sourceDirectory}, receipt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.Manifest.PopulationComplete || len(source.Manifest.Attempts) != 1 ||
+		source.Manifest.Attempts[0].Audio != nil ||
+		source.Manifest.Attempts[0].MediaManifest != nil ||
+		source.Checklist.Executed != 1 || source.Checklist.Complete {
+		t.Fatalf("signaled scenario source = %+v", source.Manifest)
+	}
+	if _, err := os.Lstat(sourceDirectory + ".evaluations"); !os.IsNotExist(err) {
+		t.Fatalf("zero-media signaled run created evaluation output: %v", err)
+	}
+	if _, err := os.Lstat(sourceDirectory + ".evaluations.receipt.json"); !os.IsNotExist(err) {
+		t.Fatalf("zero-media signaled run created evaluation receipt: %v", err)
+	}
+}
+
+func scenarioSignalCommandFixture(t *testing.T) ([]string, string, string) {
+	t.Helper()
+	graphFixture := writeGraphExecutionFixture(t)
+	requirement := requirementForGraphFixture(t, graphFixture)
+	selection, _, adapterFingerprint := scenarioGraphCommandFixture(t)
+	plan := selection.Profile.Plan
+	plan.GraphID = graphFixture.graph.ID
+	plan.GraphRevision = graphFixture.graph.Revision
+	plan.GraphFingerprint = graphFixture.graph.Fingerprint
+	plan.PlanFingerprint = ""
+	plan.PlanFingerprint = scenarioGraphTestPlanFingerprint(t, plan)
+	if err := plan.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	profileDraft := selection.Profile
+	profileDraft.Fingerprint = ""
+	profileDraft.Plan = plan
+	profile, err := launchprofile.Freeze(profileDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := t.TempDir()
+	profilePath := filepath.Join(directory, "scenario.launch.yaml")
+	profilePayload, err := launchprofile.MarshalYAML(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(profilePath, profilePayload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const cellName = "signal-graph-native"
+	manifestPath := filepath.Join(directory, "architecture.json")
+	if err := archbench.WriteManifest(manifestPath, archbench.Manifest{
+		Version: archbench.ManifestVersion, Name: "scenario-signal-fixture",
+		Suite: "scenario", FixtureRevision: "scenario-signal-v1",
+		Cells: []archbench.Cell{scenarioSignalArchitectureCell(
+			t, cellName, profile.Adapter.ProfileName, adapterFingerprint, requirement,
+		)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sourceDirectory := filepath.Join(directory, "source")
+	sourceReceipt := sourceDirectory + ".receipt.json"
+	return []string{
+		"-url", "ws://127.0.0.1:8765/v1/realtime",
+		"-speech-url", "http://127.0.0.1:8081/v1/audio/speech",
+		"-architecture-manifest", manifestPath,
+		"-architecture-cell", cellName,
+		"-launch-profile", profilePath,
+		"-inspection-graph", graphFixture.graphPath,
+		"-review-dir", sourceDirectory,
+		"-review-receipt", sourceReceipt,
+		"-review-parallel", "1",
+		"-review-timeout", "1s",
+	}, sourceDirectory, sourceReceipt
+}
+
+func scenarioSignalArchitectureCell(
+	t *testing.T,
+	name, runtimeBinding, profile string,
+	requirement bench.ExecutionRequirement,
+) archbench.Cell {
+	t.Helper()
+	definition, err := projectarch.Default().Resolve("omni.external-policy@4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownership := binding.Ownership{
+		Perception: binding.OwnerModel, FastCognition: binding.OwnerModel,
+		SlowCognition: binding.OwnerEngine, Action: binding.OwnerModel,
+		Interaction: binding.OwnerEngine, Floor: binding.OwnerEngine,
+	}
+	capabilities := binding.StackCapabilities{
+		AudioInput: true, AudioOutput: true, Transcription: true, TurnGeneration: true,
+		ConcurrentIO: true, NativeFloor: true, NativeInteraction: true,
+		InteractionActs: true, TextInjection: true,
+	}
+	interactionIdentity := archbench.InteractionIdentity{
+		PolicyName: "model:policy-3b",
+		Model: archbench.ModelIdentity{
+			Provider: "fixture", Model: "policy-3b", Revision: "policy-r1",
+		},
+		InstructionRevision: "interaction-instruction-r2", DecisionTimeoutMS: 150,
+		Evidence: archbench.EvidenceIdentity{
+			Source:       archbench.EvidenceTranscript,
+			Capabilities: *definition.Interaction.EvidenceCapabilities,
+			Recognizer: archbench.ModelIdentity{
+				Provider: "fixture", Model: "asr", Revision: "asr-r1",
+				AdapterRevision: "asr-adapter-r1",
+			},
+		},
+		Protocol: archbench.ProtocolIdentity{
+			Transport: "sidecar", Version: 2, Handoff: archbench.HandoffTyped,
+		},
+		NativeSuppressionContract: definition.Interaction.NativeSuppression,
+		Control:                   *definition.Interaction.Control,
+	}
+	cell := archbench.Cell{
+		Name: name, Availability: archbench.AvailabilityRunnable, Execution: requirement,
+		Architecture: archbench.Architecture{
+			Definition: definition, Level: archbench.LevelTextPolicy,
+			RuntimeBinding: runtimeBinding, Profile: profile,
+			Foreground: archbench.ModelIdentity{
+				Provider: "fixture", Model: "foreground", Revision: "foreground-r1",
+			},
+			Slow: archbench.ModelIdentity{
+				Provider: "fixture", Model: "slow", Revision: "slow-r1",
+			},
+			Ownership: ownership, Capabilities: capabilities,
+			Policies: interaction.Report{
+				Trigger: "endpoint", Preparation: "endpoint", Rollout: "slow-only",
+				Floor: "model:foreground", BargeIn: "never", Commitment: "complete",
+				Repair: "audible", Backchannel: "none", TurnProjection: "vad",
+				Overlap: "unclassified", Deferral: "always",
+				Interaction: interactionIdentity.PolicyName, Extraction: "unset",
+			},
+			Observers: []string{"fixture:foreground"}, Interaction: interactionIdentity,
+			ToolAuthority: binding.ToolStatus{
+				Fast: "propose", Slow: "execute", Authorization: "engine",
+				Execution: "engine-or-client",
+			},
+		},
+	}
+	if err := cell.Architecture.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	return cell
+}
+
+func TestScenarioReviewCleanupBudgetCoversEveryWorkerBatch(t *testing.T) {
+	options := scenarioEvaluationRunOptions{Parallel: 4, Timeout: 12 * time.Minute}
+	if got, want := scenarioReviewPublicationTimeout(165, options), 8*time.Hour+29*time.Minute; got != want {
+		t.Fatalf("165-attempt cleanup timeout = %v, want %v", got, want)
+	}
+	if got, want := scenarioReviewPublicationTimeout(1, options), 17*time.Minute; got != want {
+		t.Fatalf("one-attempt cleanup timeout = %v, want %v", got, want)
 	}
 }
 

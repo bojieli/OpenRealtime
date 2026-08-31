@@ -369,6 +369,19 @@ func (run *ReviewRun) Record(
 // the required human review. Close is idempotent and returns the first close
 // result on subsequent calls.
 func (run *ReviewRun) Close() error {
+	return run.close(true)
+}
+
+// ClosePartial publishes the same create-only human index as Close but does
+// not turn an honestly declared missing-attempt population into an I/O error.
+// Callers must still use the manifest's Complete and Missing fields as the
+// population authority. This is intended for cancellation/failure sealing;
+// write, sync, and root-close failures are always returned.
+func (run *ReviewRun) ClosePartial() error {
+	return run.close(false)
+}
+
+func (run *ReviewRun) close(requireComplete bool) error {
 	if run == nil {
 		return errors.New("review run is nil")
 	}
@@ -437,7 +450,7 @@ func (run *ReviewRun) Close() error {
 	if err := writeReviewFile(run.root, "manifest.json", encoded); err != nil {
 		return finish(fmt.Errorf("write review manifest commit marker: %w", err))
 	}
-	if !manifest.Complete {
+	if requireComplete && !manifest.Complete {
 		return finish(fmt.Errorf("review run retained %d of %d expected attempts",
 			len(manifest.Attempts), manifest.Expected))
 	}

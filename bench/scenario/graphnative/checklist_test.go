@@ -321,6 +321,34 @@ func TestValidateChecklistConfigIsResourceFree(t *testing.T) {
 }
 
 func TestChecklistCancellationAndSinkFailureReturnFingerprintValidPartialRecords(t *testing.T) {
+	t.Run("before first attempt", func(t *testing.T) {
+		fixture := newChecklistFixture(t, 1)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		finalized := 0
+		fixture.config.Sink = graphnative.ChecklistSink{
+			Attempt: func(context.Context, graphnative.AttemptRecord) error {
+				t.Fatal("zero-row checklist retained an attempt")
+				return nil
+			},
+			Finalize: func(_ context.Context, checklist graphnative.Checklist) error {
+				finalized++
+				if len(checklist.Attempts) != 0 {
+					return errors.New("zero-row checklist gained an attempt")
+				}
+				return checklist.Validate()
+			},
+		}
+		checklist, err := graphnative.RunChecklist(ctx, fixture.config)
+		if !errors.Is(err, context.Canceled) || finalized != 1 ||
+			checklist.Executed != 0 || checklist.Complete || checklist.Fingerprint == "" {
+			t.Fatalf("zero-row checklist = %+v, err=%v finalized=%d", checklist, err, finalized)
+		}
+		if err := checklist.Clone().Validate(); err != nil {
+			t.Fatalf("cloned zero-row checklist changed identity: %v", err)
+		}
+	})
+
 	t.Run("cancellation", func(t *testing.T) {
 		fixture := newChecklistFixture(t, 1)
 		ctx, cancel := context.WithCancelCause(context.Background())

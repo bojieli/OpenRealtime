@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
@@ -29,6 +31,82 @@ import (
 // spoke at the right moments. A system can pass every benchmark here while
 // talking over everybody in it.
 func runScenario(arguments []string, output io.Writer) (returnErr error) {
+	return runScenarioWithExecutor(arguments, output, graphnative.NewLiveExecutor)
+}
+
+func runScenarioWithExecutor(
+	arguments []string,
+	output io.Writer,
+	newExecutor func(graphnative.LiveExecutorConfig) (graphnative.AttemptExecutor, error),
+) (returnErr error) {
+	if newExecutor == nil {
+		return errors.New("scenario benchmark requires an executor factory")
+	}
+	executionContext, cancelExecution := context.WithCancel(context.Background())
+	cleanupContext, cancelCleanup := context.WithCancel(context.Background())
+	signals := make(chan os.Signal, 2)
+	done := make(chan struct{})
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer func() {
+		close(done)
+		signal.Stop(signals)
+		cancelExecution()
+		cancelCleanup()
+	}()
+	go relayScenarioSignals(signals, done, cancelExecution, cancelCleanup)
+	return runScenarioContexts(
+		executionContext, cleanupContext, arguments, output, newExecutor,
+	)
+}
+
+func relayScenarioSignals(
+	signals <-chan os.Signal, done <-chan struct{},
+	cancelExecution context.CancelFunc, cancelCleanup context.CancelFunc,
+) {
+	// The first signal always requests a graceful behavioral stop and preserves
+	// evidence publication, even if execution has already ended and review is in
+	// progress. A second signal is the explicit escape hatch for aborting cleanup.
+	select {
+	case <-signals:
+		cancelExecution()
+	case <-done:
+		return
+	}
+	select {
+	case <-signals:
+		cancelCleanup()
+	case <-done:
+	}
+}
+
+func runScenarioContext(
+	ctx context.Context, arguments []string, output io.Writer,
+) (returnErr error) {
+	if ctx == nil {
+		return errors.New("scenario benchmark requires a context")
+	}
+	return runScenarioContexts(
+		ctx, context.WithoutCancel(ctx), arguments, output, graphnative.NewLiveExecutor,
+	)
+}
+
+func runScenarioContexts(
+	ctx context.Context, cleanupParent context.Context,
+	arguments []string, output io.Writer,
+	newExecutor func(graphnative.LiveExecutorConfig) (graphnative.AttemptExecutor, error),
+) (returnErr error) {
+	if ctx == nil {
+		return errors.New("scenario benchmark requires a context")
+	}
+	if cleanupParent == nil {
+		return errors.New("scenario benchmark requires a cleanup context")
+	}
+	if newExecutor == nil {
+		return errors.New("scenario benchmark requires an executor factory")
+	}
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
 	flags := flag.NewFlagSet("scenario", flag.ContinueOnError)
 	flags.SetOutput(output)
 	var (
@@ -133,7 +211,7 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 		return err
 	}
 	evaluationOptions, registry, err := prepareAutomaticScenarioEvaluation(
-		context.Background(), *reviewDir, receiptPath, *reviewProvider,
+		ctx, *reviewDir, receiptPath, *reviewProvider,
 		*reviewParallel, *reviewTimeout,
 	)
 	if err != nil {
@@ -152,16 +230,17 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 		}
 	}()
 	outcome, err := executeScenarioGraphChecklist(
-		context.Background(), graphSelection, requirement,
+		ctx, cleanupParent, graphSelection, requirement,
 		selectedCell.Architecture.Profile, runs, *timeout, graphReview,
-		speaker, config, graphnative.NewLiveExecutor,
+		speaker, config, newExecutor,
 	)
-	if err != nil {
-		return err
-	}
+	executionErr := err
 	graphChecklist := outcome.Checklist
+	if len(outcome.Attempts) == 0 && executionErr == nil {
+		executionErr = errors.New("scenario checklist returned no attempted cases")
+	}
 	if err := appendScenarioGraphArchitectureAttempts(architectureResult, outcome.Attempts); err != nil {
-		return err
+		return errors.Join(executionErr, err)
 	}
 	reportScenarioGraphOutcome(output, outcome, runs)
 
@@ -178,29 +257,69 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 		return err
 	}
 
+	var publicationErr error
 	if strings.TrimSpace(*record) != "" {
 		if err := writeScenarioArchitectureRecord(*record, architecturePayload); err != nil {
-			return fmt.Errorf("write the architecture record: %w", err)
+			publicationErr = errors.Join(publicationErr,
+				fmt.Errorf("write the architecture record: %w", err))
 		}
 	}
 	origin, err := scenarioGraphSourceOrigin(config.Endpoint, config.Transport)
 	if err != nil {
-		return err
+		return errors.Join(executionErr, publicationErr, err)
+	}
+	publicationContext, cancelPublication := context.WithTimeout(
+		cleanupParent, scenarioSourcePublicationTimeout,
+	)
+	if executionErr != nil {
+		if err := graphReview.Sink().Finalize(publicationContext, graphChecklist); err != nil {
+			publicationErr = errors.Join(publicationErr,
+				fmt.Errorf("retain failure-terminal scenario checklist: %w", err))
+		}
 	}
 	receipt, err := graphReview.Finalize(
-		context.Background(), graphChecklist, architecturePayload, origin, receiptPath,
+		publicationContext, graphChecklist, architecturePayload, origin, receiptPath,
 	)
+	cancelPublication()
 	if err != nil {
-		return fmt.Errorf("finalize graph-native scenario source bundle: %w", err)
+		return errors.Join(executionErr, context.Cause(ctx), publicationErr,
+			fmt.Errorf("finalize graph-native scenario source bundle: %w", err))
 	}
 	fmt.Fprintf(output, "  source       %s\n", receipt.ManifestSHA256)
 	fmt.Fprintf(output, "  receipt      %s\n", receiptPath)
+	reviewContext, cancelReview := context.WithTimeout(
+		cleanupParent,
+		scenarioReviewPublicationTimeout(len(graphChecklist.Attempts), evaluationOptions),
+	)
+	defer cancelReview()
 	if err := runScenarioEvaluationContext(
-		context.Background(), scenarioEvaluationArguments(evaluationOptions), output, registry,
+		reviewContext, scenarioEvaluationArguments(evaluationOptions), output, registry,
 	); err != nil {
-		return fmt.Errorf("run mandatory exact Gemini 3.7 Flash scenario review: %w", err)
+		publicationErr = errors.Join(publicationErr,
+			fmt.Errorf("run mandatory exact Gemini 3.7 Flash scenario review: %w", err))
 	}
-	return nil
+	return errors.Join(executionErr, context.Cause(ctx), publicationErr)
+}
+
+const (
+	// Source publication performs no provider work. Five minutes bounds hashing,
+	// fsync, reopen verification, and the external receipt even for the full
+	// population while keeping ordinary signal shutdown finite.
+	scenarioSourcePublicationTimeout = 5 * time.Minute
+)
+
+// scenarioReviewPublicationTimeout gives each configured worker batch its
+// exact per-attempt timeout plus a bounded publication margin. The value can
+// be long for an intentionally large population, but it is never
+// uninterruptible: the second SIGINT/SIGTERM cancels cleanupParent. If that
+// happens, the immutable source receipt remains the recovery boundary and the
+// explicit review command can use a fresh create-only destination.
+func scenarioReviewPublicationTimeout(
+	attempts int, options scenarioEvaluationRunOptions,
+) time.Duration {
+	workers := max(1, options.Parallel)
+	batches := max(1, (attempts+workers-1)/workers)
+	return 5*time.Minute + time.Duration(batches)*options.Timeout
 }
 
 func resolveScenarioSourceReceiptPath(sourceDirectory, configured string) (string, error) {

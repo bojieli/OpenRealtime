@@ -882,9 +882,12 @@ func (record AttemptRecord) Clone() AttemptRecord {
 func (checklist Checklist) Clone() Checklist {
 	checklist.Cases = slices.Clone(checklist.Cases)
 	attempts := checklist.Attempts
-	checklist.Attempts = make([]AttemptRecord, len(attempts))
-	for index, attempt := range attempts {
-		checklist.Attempts[index] = attempt.Clone()
+	checklist.Attempts = nil
+	if attempts != nil {
+		checklist.Attempts = make([]AttemptRecord, len(attempts))
+		for index, attempt := range attempts {
+			checklist.Attempts[index] = attempt.Clone()
+		}
 	}
 	return checklist
 }

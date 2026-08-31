@@ -64,6 +64,7 @@ type SourceReviewContext struct {
 type SourceReviewPopulation struct {
 	Bundle   SourceBundle
 	Requests []review.Request
+	Attempts []SourceAttempt
 }
 
 // BuildSourceReviewRequests converts one externally anchored scenario source
@@ -109,8 +110,8 @@ func BuildSourceReviewPopulation(
 			resultErr = errors.Join(resultErr, errors.New("close scenario source review root"))
 		}
 	}()
-	if len(bundle.Manifest.Attempts) != bundle.Checklist.Expected ||
-		len(bundle.ArchitectureResult.Measurement.Tasks) != bundle.Checklist.Expected {
+	if len(bundle.Manifest.Attempts) != len(bundle.Checklist.Attempts) ||
+		len(bundle.ArchitectureResult.Measurement.Tasks) != len(bundle.Checklist.Attempts) {
 		return SourceReviewPopulation{}, errors.New("scenario source review population is incomplete")
 	}
 	observations := make(map[string]archbench.Observation, len(bundle.ArchitectureResult.Observed))
@@ -121,7 +122,8 @@ func BuildSourceReviewPopulation(
 		observations[observation.TaskID] = observation
 	}
 	guard := sourceSensitiveValues(options.SensitiveValues)
-	requests := make([]review.Request, 0, bundle.Checklist.Expected)
+	requests := make([]review.Request, 0, len(bundle.Manifest.Attempts))
+	reviewedAttempts := make([]SourceAttempt, 0, len(bundle.Manifest.Attempts))
 	for index, attempt := range bundle.Manifest.Attempts {
 		if err := ctx.Err(); err != nil {
 			return SourceReviewPopulation{}, err
@@ -138,7 +140,10 @@ func BuildSourceReviewPopulation(
 			digest != attempt.Record.Execution.ResultSHA256 {
 			return SourceReviewPopulation{}, errors.New("scenario source review result differs from the checklist")
 		}
-		audioPayload, err := readSourceFile(ctx, root, attempt.Audio)
+		if attempt.Audio == nil || attempt.MediaManifest == nil {
+			continue
+		}
+		audioPayload, err := readSourceFile(ctx, root, *attempt.Audio)
 		if err != nil {
 			return SourceReviewPopulation{}, err
 		}
@@ -200,6 +205,7 @@ func BuildSourceReviewPopulation(
 			RootDirectory:             options.Directory, Context: contextPayload, Media: media,
 			SensitiveValues: slices.Clone(options.SensitiveValues),
 		})
+		reviewedAttempts = append(reviewedAttempts, cloneSourceAttempt(attempt))
 	}
 	if err := verifySourceRootIdentity(options.Directory, root, rootInfo); err != nil {
 		return SourceReviewPopulation{}, err
@@ -209,7 +215,9 @@ func BuildSourceReviewPopulation(
 		reopened.Checklist.Fingerprint != bundle.Checklist.Fingerprint {
 		return SourceReviewPopulation{}, errors.New("scenario source bundle changed while building review requests")
 	}
-	return SourceReviewPopulation{Bundle: reopened, Requests: requests}, nil
+	return SourceReviewPopulation{
+		Bundle: reopened, Requests: requests, Attempts: reviewedAttempts,
+	}, nil
 }
 
 // marshalSourceReviewContext makes the secondary model context's unit

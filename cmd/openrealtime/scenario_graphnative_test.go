@@ -7,7 +7,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -70,7 +72,7 @@ func TestScenarioGraphChecklistRetainsVerifiesAndIndexesAllElevenAttempts(t *tes
 		t.Fatal(err)
 	}
 	outcome, err := executeScenarioGraphChecklist(
-		context.Background(), selection, requirement, adapterFingerprint, 1, time.Second,
+		context.Background(), context.Background(), selection, requirement, adapterFingerprint, 1, time.Second,
 		bundle, scenario.SpeechVoice{Endpoint: "http://speech.invalid"},
 		bench.SessionConfig{Endpoint: "ws://realtime.invalid", Token: secret, Timeout: time.Second},
 		newExecutor,
@@ -134,7 +136,8 @@ func TestScenarioGraphChecklistRetainsVerifiesAndIndexesAllElevenAttempts(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if source.Manifest.ExpectedAttempts != 11 || len(source.Manifest.Attempts) != 11 ||
+	if !source.Manifest.PopulationComplete || source.Manifest.ExpectedAttempts != 11 ||
+		len(source.Manifest.Attempts) != 11 ||
 		source.Checklist.Fingerprint != outcome.Checklist.Fingerprint ||
 		len(source.ArchitectureResult.Records) != 11 {
 		t.Fatalf("verified scenario source bundle = %+v", source.Manifest)
@@ -237,6 +240,619 @@ func TestScenarioGraphChecklistRetainsVerifiesAndIndexesAllElevenAttempts(t *tes
 	}
 }
 
+func TestScenarioGraphCancellationSealsAttemptedPrefixForExactReview(t *testing.T) {
+	t.Chdir("../..")
+	selection, requirement, adapterFingerprint := scenarioGraphCommandFixture(t)
+	directory := filepath.Join(t.TempDir(), "partial-review")
+	const secret = "scenario-partial-secret-must-not-be-retained"
+	bundle, err := newScenarioGraphReviewBundle(directory, 1, requirement, []string{secret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	var calls atomic.Int32
+	newExecutor := func(
+		config graphnative.LiveExecutorConfig,
+	) (graphnative.AttemptExecutor, error) {
+		return func(
+			attemptContext context.Context, key graphnative.AttemptKey, item scenario.Scenario,
+		) (graphnative.AttemptObservation, error) {
+			calls.Add(1)
+			result := scenarioGraphSuccessfulResult(
+				t, requirement, selection, adapterFingerprint, key, item,
+			)
+			reference, retainErr := config.Retain(attemptContext, graphnative.AttemptCapture{
+				Key: key, Result: result, RunSucceeded: true,
+				Audio: bench.SessionAudioCapture{
+					SampleRateHz: 24_000, RoomPCM16: []int16{1, 2, 3, 4},
+					Agent: []bench.TimedAudioChunk{{AtMS: 0.125, PCM16: []int16{5, 6}}},
+				},
+				Submitted: scenarioGraphSubmittedFixture(t, item),
+			})
+			if retainErr != nil {
+				return graphnative.AttemptObservation{Result: result}, retainErr
+			}
+			cancel()
+			return graphnative.AttemptObservation{Result: result, Media: &reference}, nil
+		}, nil
+	}
+	outcome, runErr := executeScenarioGraphChecklist(
+		ctx, context.Background(), selection, requirement, adapterFingerprint, 1, time.Second, bundle,
+		scenario.SpeechVoice{}, bench.SessionConfig{}, newExecutor,
+	)
+	if !errors.Is(runErr, context.Canceled) || calls.Load() != 1 ||
+		outcome.Checklist.Executed != 1 || outcome.Checklist.Complete ||
+		len(outcome.Checklist.Attempts) != 1 || len(outcome.Attempts) != 1 {
+		t.Fatalf("canceled outcome=%+v runErr=%v calls=%d observed=%d",
+			outcome.Checklist, runErr, calls.Load(), len(outcome.Attempts))
+	}
+	if _, err := os.Stat(filepath.Join(directory, "checklist.json")); err != nil {
+		t.Fatalf("failure-terminal checklist was not retained: %v", err)
+	}
+	architecture := archbench.Result{
+		Version: archbench.ResultVersion,
+		Measurement: bench.Result{
+			Suite: graphnative.SuiteName, Expected: outcome.Checklist.Expected,
+			Provenance: bench.Provenance{StartedAt: time.Now().UTC().Format(time.RFC3339)},
+		},
+	}
+	if err := appendScenarioGraphArchitectureAttempts(&architecture, outcome.Attempts); err != nil {
+		t.Fatal(err)
+	}
+	architecture.Finish()
+	architecturePayload, err := marshalScenarioArchitectureResult(architecture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiptPath := directory + ".receipt.json"
+	receipt, err := bundle.Finalize(
+		context.Background(), outcome.Checklist, architecturePayload,
+		graphnative.SourceOrigin{
+			Kind: "hermetic_fixture", Transport: bench.TransportWebSocket,
+			EndpointSHA256: scenarioGraphTestDigest("partial-endpoint"),
+		},
+		receiptPath,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := graphnative.SourceBundleOptions{
+		Directory: directory, SensitiveValues: []string{secret},
+	}
+	opened, err := graphnative.VerifySourceBundle(context.Background(), options, receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requests, err := graphnative.BuildSourceReviewRequests(context.Background(), options, receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opened.Manifest.PopulationComplete || opened.Manifest.ExpectedAttempts != 11 ||
+		len(opened.Manifest.Attempts) != 1 ||
+		opened.Checklist.Complete || len(opened.ArchitectureResult.Measurement.Tasks) != 1 ||
+		len(requests) != 1 || requests[0].Case != scenario.Suite()[0].Name {
+		t.Fatalf("partial source=%+v checklist=%+v requests=%+v",
+			opened.Manifest, opened.Checklist, requests)
+	}
+	if review, err := os.ReadFile(filepath.Join(directory, "REVIEW.md")); err != nil ||
+		!bytes.Contains(review, []byte("Complete: no (1/11 attempts retained)")) {
+		t.Fatalf("partial human review=%q error=%v", review, err)
+	}
+}
+
+func TestScenarioGraphSecondSignalCancelsActualEvidenceContext(t *testing.T) {
+	t.Chdir("../..")
+	selection, requirement, adapterFingerprint := scenarioGraphCommandFixture(t)
+	bundle, err := newScenarioGraphReviewBundle(
+		filepath.Join(t.TempDir(), "signal-review"), 1, requirement, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	execution, cancelExecution := context.WithCancel(context.Background())
+	cleanup, cancelCleanup := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancelExecution()
+		cancelCleanup()
+		_ = bundle.Close()
+	})
+	waitingOnEvidence := make(chan struct{})
+	executorEntered := make(chan struct{})
+	returned := make(chan error, 1)
+	go func() {
+		_, runErr := executeScenarioGraphChecklist(
+			execution, cleanup, selection, requirement, adapterFingerprint,
+			1, time.Second, bundle, scenario.SpeechVoice{}, bench.SessionConfig{},
+			func(config graphnative.LiveExecutorConfig) (graphnative.AttemptExecutor, error) {
+				return func(
+					attemptContext context.Context, key graphnative.AttemptKey, _ scenario.Scenario,
+				) (graphnative.AttemptObservation, error) {
+					close(executorEntered)
+					<-attemptContext.Done()
+					if cause := context.Cause(config.EvidenceContext); cause != nil {
+						return graphnative.AttemptObservation{Result: scenario.Result{Scenario: key.CaseName}},
+							fmt.Errorf("first signal canceled evidence context: %w", cause)
+					}
+					close(waitingOnEvidence)
+					<-config.EvidenceContext.Done()
+					return graphnative.AttemptObservation{Result: scenario.Result{Scenario: key.CaseName}},
+						context.Cause(config.EvidenceContext)
+				}, nil
+			},
+		)
+		returned <- runErr
+	}()
+	select {
+	case <-executorEntered:
+	case err := <-returned:
+		t.Fatalf("scenario execution ended before the first attempt: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("scenario executor did not begin")
+	}
+	cancelExecution()
+	select {
+	case <-waitingOnEvidence:
+	case err := <-returned:
+		t.Fatalf("first signal ended evidence work early: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("executor did not enter evidence cleanup after first signal")
+	}
+	select {
+	case err := <-returned:
+		t.Fatalf("evidence work returned before second signal: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+	cancelCleanup()
+	select {
+	case err := <-returned:
+		if !errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "first signal canceled") {
+			t.Fatalf("second-signal evidence cancellation error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("second signal did not cancel actual evidence work")
+	}
+}
+
+func publishScenarioGraphCanceledPrefixFixture(
+	tb testing.TB,
+) (string, graphnative.SourceReceipt, scenarioGraphOutcome) {
+	tb.Helper()
+	selection, requirement, adapterFingerprint := scenarioGraphCommandFixture(tb)
+	directory := filepath.Join(tb.TempDir(), "partial-review")
+	bundle, err := newScenarioGraphReviewBundle(directory, 1, requirement, nil)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	newExecutor := func(
+		config graphnative.LiveExecutorConfig,
+	) (graphnative.AttemptExecutor, error) {
+		return func(
+			attemptContext context.Context, key graphnative.AttemptKey, item scenario.Scenario,
+		) (graphnative.AttemptObservation, error) {
+			result := scenarioGraphSuccessfulResult(
+				tb, requirement, selection, adapterFingerprint, key, item,
+			)
+			reference, retainErr := config.Retain(attemptContext, graphnative.AttemptCapture{
+				Key: key, Result: result, RunSucceeded: true,
+				Audio: bench.SessionAudioCapture{
+					SampleRateHz: 24_000, RoomPCM16: []int16{1, 2},
+					Agent: []bench.TimedAudioChunk{{AtMS: 0.05, PCM16: []int16{3, 4}}},
+				},
+				Submitted: scenarioGraphSubmittedFixture(tb, item),
+			})
+			if retainErr != nil {
+				return graphnative.AttemptObservation{Result: result}, retainErr
+			}
+			cancel()
+			return graphnative.AttemptObservation{Result: result, Media: &reference}, nil
+		}, nil
+	}
+	outcome, runErr := executeScenarioGraphChecklist(
+		ctx, context.Background(), selection, requirement, adapterFingerprint, 1, time.Second, bundle,
+		scenario.SpeechVoice{}, bench.SessionConfig{}, newExecutor,
+	)
+	if !errors.Is(runErr, context.Canceled) || len(outcome.Attempts) != 1 ||
+		outcome.Checklist.Executed != 1 || outcome.Checklist.Complete {
+		tb.Fatalf("partial scenario fixture outcome=%+v error=%v", outcome, runErr)
+	}
+	architecture := archbench.Result{
+		Version: archbench.ResultVersion,
+		Measurement: bench.Result{
+			Suite: graphnative.SuiteName, Expected: outcome.Checklist.Expected,
+			Provenance: bench.Provenance{StartedAt: time.Now().UTC().Format(time.RFC3339)},
+		},
+	}
+	if err := appendScenarioGraphArchitectureAttempts(&architecture, outcome.Attempts); err != nil {
+		tb.Fatal(err)
+	}
+	architecture.Finish()
+	payload, err := marshalScenarioArchitectureResult(architecture)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	receipt, err := bundle.Finalize(
+		context.Background(), outcome.Checklist, payload,
+		graphnative.SourceOrigin{
+			Kind: "hermetic_fixture", Transport: bench.TransportWebSocket,
+			EndpointSHA256: scenarioGraphTestDigest("partial-review-endpoint"),
+		},
+		directory+".receipt.json",
+	)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return directory, receipt, outcome
+}
+
+func TestScenarioGraphPreSessionFailureSealsResultOnlyAttempt(t *testing.T) {
+	t.Chdir("../..")
+	selection, requirement, adapterFingerprint := scenarioGraphCommandFixture(t)
+	directory := filepath.Join(t.TempDir(), "result-only-review")
+	bundle, err := newScenarioGraphReviewBundle(directory, 1, requirement, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	newExecutor := func(
+		graphnative.LiveExecutorConfig,
+	) (graphnative.AttemptExecutor, error) {
+		return func(
+			_ context.Context, key graphnative.AttemptKey, _ scenario.Scenario,
+		) (graphnative.AttemptObservation, error) {
+			cancel()
+			return graphnative.AttemptObservation{
+				Result: scenario.Result{Scenario: key.CaseName},
+			}, errors.New("fixture failed before the Realtime session produced media")
+		}, nil
+	}
+	outcome, runErr := executeScenarioGraphChecklist(
+		ctx, context.Background(), selection, requirement, adapterFingerprint, 1, time.Second, bundle,
+		scenario.SpeechVoice{}, bench.SessionConfig{}, newExecutor,
+	)
+	if !errors.Is(runErr, context.Canceled) || len(outcome.Attempts) != 1 ||
+		len(outcome.Checklist.Attempts) != 1 || outcome.Checklist.Attempts[0].Media != nil {
+		t.Fatalf("result-only outcome=%+v error=%v", outcome, runErr)
+	}
+	architecture := archbench.Result{
+		Version: archbench.ResultVersion,
+		Measurement: bench.Result{
+			Suite: graphnative.SuiteName, Expected: outcome.Checklist.Expected,
+			Provenance: bench.Provenance{StartedAt: time.Now().UTC().Format(time.RFC3339)},
+		},
+	}
+	if err := appendScenarioGraphArchitectureAttempts(&architecture, outcome.Attempts); err != nil {
+		t.Fatal(err)
+	}
+	architecture.Finish()
+	payload, err := marshalScenarioArchitectureResult(architecture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := bundle.Finalize(
+		context.Background(), outcome.Checklist, payload,
+		graphnative.SourceOrigin{
+			Kind: "hermetic_fixture", Transport: bench.TransportWebSocket,
+			EndpointSHA256: scenarioGraphTestDigest("result-only-endpoint"),
+		},
+		directory+".receipt.json",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	population, err := graphnative.BuildSourceReviewPopulation(
+		context.Background(), graphnative.SourceBundleOptions{Directory: directory}, receipt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if population.Bundle.Manifest.PopulationComplete || len(population.Bundle.Manifest.Attempts) != 1 ||
+		population.Bundle.Manifest.Attempts[0].Audio != nil ||
+		population.Bundle.Manifest.Attempts[0].MediaManifest != nil ||
+		len(population.Requests) != 0 || len(population.Attempts) != 0 {
+		t.Fatalf("result-only source population = %+v", population)
+	}
+	if checklist, err := os.ReadFile(filepath.Join(directory, "CHECKLIST.md")); err != nil ||
+		!bytes.Contains(checklist, []byte("INFRASTRUCTURE FAILURE")) {
+		t.Fatalf("result-only human checklist=%q error=%v", checklist, err)
+	}
+	registry, provider := scenarioEvaluationFixtureRegistry(t, false)
+	evaluationDirectory := filepath.Join(t.TempDir(), "must-not-publish")
+	err = runScenarioEvaluation([]string{
+		"-source-dir", directory,
+		"-source-receipt", directory + ".receipt.json",
+		"-out", evaluationDirectory,
+		"-provider", "fixture.scenario-review",
+		"-parallel", "1",
+	}, &bytes.Buffer{}, registry)
+	if err == nil || !strings.Contains(err.Error(), "no media-complete attempts") ||
+		provider.claimed.Load() || provider.reviewCalls.Load() != 0 {
+		t.Fatalf("result-only exact review error=%v claimed=%t calls=%d",
+			err, provider.claimed.Load(), provider.reviewCalls.Load())
+	}
+	if _, err := os.Lstat(evaluationDirectory); !os.IsNotExist(err) {
+		t.Fatalf("result-only review created an evaluation directory: %v", err)
+	}
+}
+
+func TestScenarioGraphMalformedResultFallsBackToSealableDiagnostic(t *testing.T) {
+	t.Chdir("../..")
+	selection, requirement, adapterFingerprint := scenarioGraphCommandFixture(t)
+	directory := filepath.Join(t.TempDir(), "malformed-result-review")
+	bundle, err := newScenarioGraphReviewBundle(directory, 1, requirement, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	outcome, runErr := executeScenarioGraphChecklist(
+		ctx, context.Background(), selection, requirement, adapterFingerprint,
+		1, time.Second, bundle, scenario.SpeechVoice{}, bench.SessionConfig{},
+		func(graphnative.LiveExecutorConfig) (graphnative.AttemptExecutor, error) {
+			return func(
+				_ context.Context, key graphnative.AttemptKey, _ scenario.Scenario,
+			) (graphnative.AttemptObservation, error) {
+				cancel()
+				return graphnative.AttemptObservation{Result: scenario.Result{
+					Scenario:  key.CaseName,
+					Latencies: []scenario.Latency{{MS: math.NaN()}},
+				}}, errors.New("fixture returned malformed scorer output")
+			}, nil
+		},
+	)
+	if !errors.Is(runErr, context.Canceled) || len(outcome.Attempts) != 1 ||
+		len(outcome.Checklist.Attempts) != 1 ||
+		len(outcome.Attempts[0].Result.Failures) != 1 ||
+		!strings.Contains(outcome.Attempts[0].Result.Failures[0], "unavailable") ||
+		outcome.Checklist.Attempts[0].Execution.ResultSHA256 == "" {
+		t.Fatalf("malformed-result outcome=%+v error=%v", outcome, runErr)
+	}
+	architecture := archbench.Result{
+		Version: archbench.ResultVersion,
+		Measurement: bench.Result{
+			Suite: graphnative.SuiteName, Expected: outcome.Checklist.Expected,
+			Provenance: bench.Provenance{StartedAt: time.Now().UTC().Format(time.RFC3339)},
+		},
+	}
+	if err := appendScenarioGraphArchitectureAttempts(&architecture, outcome.Attempts); err != nil {
+		t.Fatal(err)
+	}
+	architecture.Finish()
+	payload, err := marshalScenarioArchitectureResult(architecture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := bundle.Finalize(
+		context.Background(), outcome.Checklist, payload,
+		graphnative.SourceOrigin{
+			Kind: "hermetic_fixture", Transport: bench.TransportWebSocket,
+			EndpointSHA256: scenarioGraphTestDigest("malformed-result-endpoint"),
+		},
+		directory+".receipt.json",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, err := graphnative.VerifySourceBundle(
+		context.Background(), graphnative.SourceBundleOptions{Directory: directory}, receipt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(opened.Manifest.Attempts) != 1 || opened.Manifest.Attempts[0].Audio != nil ||
+		opened.Manifest.Attempts[0].Record.Execution.ResultSHA256 !=
+			outcome.Checklist.Attempts[0].Execution.ResultSHA256 {
+		t.Fatalf("malformed diagnostic source = %+v", opened.Manifest)
+	}
+}
+
+func TestScenarioGraphExecutorFactoryFailureSealsZeroMediaDiagnosticSource(t *testing.T) {
+	t.Chdir("../..")
+	selection, requirement, adapterFingerprint := scenarioGraphCommandFixture(t)
+	directory := filepath.Join(t.TempDir(), "factory-failure-review")
+	bundle, err := newScenarioGraphReviewBundle(directory, 1, requirement, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	factoryErr := errors.New("fixture executor factory failed after attempt boundary")
+	outcome, runErr := executeScenarioGraphChecklist(
+		context.Background(), context.Background(), selection, requirement,
+		adapterFingerprint, 1, time.Second, bundle, scenario.SpeechVoice{},
+		bench.SessionConfig{}, func(
+			graphnative.LiveExecutorConfig,
+		) (graphnative.AttemptExecutor, error) {
+			return nil, factoryErr
+		},
+	)
+	if !errors.Is(runErr, factoryErr) || outcome.Checklist.Executed != 0 ||
+		outcome.Checklist.Expected != 11 || outcome.Checklist.Complete ||
+		len(outcome.Checklist.Attempts) != 0 || len(outcome.Attempts) != 0 {
+		t.Fatalf("factory-failure outcome=%+v error=%v", outcome, runErr)
+	}
+	if err := outcome.Checklist.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	architecture := archbench.Result{
+		Version: archbench.ResultVersion,
+		Measurement: bench.Result{
+			Suite: graphnative.SuiteName, Expected: outcome.Checklist.Expected,
+			Provenance: bench.Provenance{StartedAt: time.Now().UTC().Format(time.RFC3339)},
+		},
+	}
+	architecture.Finish()
+	payload, err := marshalScenarioArchitectureResult(architecture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiptPath := directory + ".receipt.json"
+	receipt, err := bundle.Finalize(
+		context.Background(), outcome.Checklist, payload,
+		graphnative.SourceOrigin{
+			Kind: "hermetic_fixture", Transport: bench.TransportWebSocket,
+			EndpointSHA256: scenarioGraphTestDigest("factory-failure-endpoint"),
+		},
+		receiptPath,
+	)
+	if err != nil {
+		t.Fatalf("finalize zero-media source: %v; execution error: %v", err, runErr)
+	}
+	population, err := graphnative.BuildSourceReviewPopulation(
+		context.Background(), graphnative.SourceBundleOptions{Directory: directory}, receipt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if population.Bundle.Manifest.PopulationComplete ||
+		population.Bundle.Manifest.ExpectedAttempts != 11 ||
+		len(population.Bundle.Manifest.Attempts) != 0 ||
+		len(population.Requests) != 0 || len(population.Attempts) != 0 {
+		t.Fatalf("zero-media source population = %+v", population)
+	}
+	if review, err := os.ReadFile(filepath.Join(directory, "REVIEW.md")); err != nil ||
+		!bytes.Contains(review, []byte("Complete: no (0/11 attempts retained)")) {
+		t.Fatalf("zero-media human review=%q error=%v", review, err)
+	}
+	registry, provider := scenarioEvaluationFixtureRegistry(t, false)
+	evaluationDirectory := filepath.Join(t.TempDir(), "must-not-publish")
+	err = runScenarioEvaluation([]string{
+		"-source-dir", directory,
+		"-source-receipt", receiptPath,
+		"-out", evaluationDirectory,
+		"-provider", "fixture.scenario-review",
+		"-parallel", "1",
+	}, &bytes.Buffer{}, registry)
+	if err == nil || !strings.Contains(err.Error(), "no media-complete attempts") ||
+		provider.claimed.Load() || provider.reviewCalls.Load() != 0 {
+		t.Fatalf("zero-media review error=%v claimed=%t calls=%d",
+			err, provider.claimed.Load(), provider.reviewCalls.Load())
+	}
+	if _, err := os.Lstat(evaluationDirectory); !os.IsNotExist(err) {
+		t.Fatalf("zero-media review created an evaluation directory: %v", err)
+	}
+}
+
+func TestScenarioGraphMixedResultOnlyAndMediaPublishesIncompleteReviewCoverage(t *testing.T) {
+	t.Chdir("../..")
+	selection, requirement, adapterFingerprint := scenarioGraphCommandFixture(t)
+	directory := filepath.Join(t.TempDir(), "mixed-review")
+	bundle, err := newScenarioGraphReviewBundle(directory, 1, requirement, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	var calls atomic.Int32
+	newExecutor := func(
+		config graphnative.LiveExecutorConfig,
+	) (graphnative.AttemptExecutor, error) {
+		return func(
+			attemptContext context.Context, key graphnative.AttemptKey, item scenario.Scenario,
+		) (graphnative.AttemptObservation, error) {
+			call := calls.Add(1)
+			result := scenarioGraphSuccessfulResult(
+				t, requirement, selection, adapterFingerprint, key, item,
+			)
+			if call == 1 {
+				return graphnative.AttemptObservation{Result: result},
+					errors.New("fixture failed before media capture")
+			}
+			reference, retainErr := config.Retain(attemptContext, graphnative.AttemptCapture{
+				Key: key, Result: result, RunSucceeded: true,
+				Audio: bench.SessionAudioCapture{
+					SampleRateHz: 24_000, RoomPCM16: []int16{1, 2},
+					Agent: []bench.TimedAudioChunk{{AtMS: 0.05, PCM16: []int16{3, 4}}},
+				},
+				Submitted: scenarioGraphSubmittedFixture(t, item),
+			})
+			cancel()
+			return graphnative.AttemptObservation{Result: result, Media: &reference}, retainErr
+		}, nil
+	}
+	outcome, runErr := executeScenarioGraphChecklist(
+		ctx, context.Background(), selection, requirement, adapterFingerprint,
+		1, time.Second, bundle, scenario.SpeechVoice{}, bench.SessionConfig{}, newExecutor,
+	)
+	if !errors.Is(runErr, context.Canceled) || calls.Load() != 2 ||
+		len(outcome.Checklist.Attempts) != 2 || len(outcome.Attempts) != 2 ||
+		outcome.Checklist.Attempts[0].Media != nil || outcome.Checklist.Attempts[1].Media == nil {
+		t.Fatalf("mixed outcome=%+v error=%v calls=%d", outcome, runErr, calls.Load())
+	}
+	architecture := archbench.Result{
+		Version: archbench.ResultVersion,
+		Measurement: bench.Result{
+			Suite: graphnative.SuiteName, Expected: outcome.Checklist.Expected,
+			Provenance: bench.Provenance{StartedAt: time.Now().UTC().Format(time.RFC3339)},
+		},
+	}
+	if err := appendScenarioGraphArchitectureAttempts(&architecture, outcome.Attempts); err != nil {
+		t.Fatal(err)
+	}
+	architecture.Finish()
+	payload, err := marshalScenarioArchitectureResult(architecture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := bundle.Finalize(
+		context.Background(), outcome.Checklist, payload,
+		graphnative.SourceOrigin{
+			Kind: "hermetic_fixture", Transport: bench.TransportWebSocket,
+			EndpointSHA256: scenarioGraphTestDigest("mixed-endpoint"),
+		},
+		directory+".receipt.json",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputDirectory := filepath.Join(t.TempDir(), "mixed-evaluations")
+	registry, provider := scenarioEvaluationFixtureRegistry(t, false)
+	var output bytes.Buffer
+	err = runScenarioEvaluation([]string{
+		"-source-dir", directory,
+		"-source-receipt", directory + ".receipt.json",
+		"-out", outputDirectory,
+		"-provider", "fixture.scenario-review",
+		"-parallel", "1",
+	}, &output, registry)
+	if err == nil || !strings.Contains(err.Error(), "covered 1 of 2 retained attempts") ||
+		provider.reviewCalls.Load() != 1 || provider.closeCalls.Load() != 1 {
+		t.Fatalf("mixed evaluation error=%v calls=%d close=%d output=%q",
+			err, provider.reviewCalls.Load(), provider.closeCalls.Load(), output.String())
+	}
+	manifestPayload, err := os.ReadFile(filepath.Join(outputDirectory, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := decodeScenarioEvaluationIndex(manifestPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if index.Planned != 11 || index.Retained != 2 || index.Expected != 1 ||
+		index.ReviewCoverageComplete || len(index.Entries) != 1 ||
+		index.Entries[0].Case != outcome.Checklist.Attempts[1].Key.CaseName {
+		t.Fatalf("mixed evaluation index = %+v", index)
+	}
+	receiptPayload, err := os.ReadFile(outputDirectory + ".receipt.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	evaluationReceipt, err := decodeScenarioEvaluationIndexReceipt(receiptPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyScenarioEvaluationCollection(
+		t.Context(), scenarioEvaluationRunOptions{
+			SourceDirectory: directory, SourceReceipt: directory + ".receipt.json",
+			OutputDirectory: outputDirectory, OutputReceipt: outputDirectory + ".receipt.json",
+			Provider: "fixture.scenario-review", Parallel: 1, Timeout: time.Minute,
+		}, receipt, evaluationReceipt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	review, err := os.ReadFile(filepath.Join(outputDirectory, "REVIEW.md"))
+	if err != nil ||
+		!bytes.Contains(review, []byte("Media-complete review inputs: 1/2 retained attempts; complete: false")) {
+		t.Fatalf("mixed human evaluation=%q error=%v", review, err)
+	}
+}
+
 func TestScenarioGraphReviewPublishesHermeticOneHundredSixtyFiveAttemptPopulation(t *testing.T) {
 	t.Chdir("../..")
 	const repetitions = graphnative.MinimumReportableRepetitions
@@ -252,7 +868,8 @@ func TestScenarioGraphReviewPublishesHermeticOneHundredSixtyFiveAttemptPopulatio
 	if err != nil {
 		t.Fatal(err)
 	}
-	if verified.Manifest.ExpectedAttempts != 165 || len(verified.Manifest.Attempts) != 165 ||
+	if !verified.Manifest.PopulationComplete || verified.Manifest.ExpectedAttempts != 165 ||
+		len(verified.Manifest.Attempts) != 165 ||
 		len(verified.ArchitectureResult.Records) != 165 ||
 		verified.Manifest.ArchitectureReportable {
 		t.Fatalf("verified hermetic 165-attempt source = %+v", verified.Manifest)
@@ -354,7 +971,7 @@ func publishScenarioGraphPopulationFixture(
 		}, nil
 	}
 	outcome, err := executeScenarioGraphChecklist(
-		context.Background(), selection, requirement, adapterFingerprint,
+		context.Background(), context.Background(), selection, requirement, adapterFingerprint,
 		repetitions, time.Second, bundle, scenario.SpeechVoice{}, bench.SessionConfig{}, newExecutor,
 	)
 	if err != nil {
