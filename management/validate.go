@@ -48,6 +48,11 @@ func ValidateSessionSnapshot(snapshot inspect.Live) error {
 			return fmt.Errorf("%w: session source returned invalid adapter resolution", ErrConflict)
 		}
 	}
+	if snapshot.Deployment != nil {
+		if err := snapshot.Deployment.Validate(); err != nil {
+			return fmt.Errorf("%w: session source returned invalid deployment evidence", ErrConflict)
+		}
+	}
 	if len(snapshot.Nodes) == 0 {
 		return fmt.Errorf("%w: session source returned no resolved nodes", ErrConflict)
 	}

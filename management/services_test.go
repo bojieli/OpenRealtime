@@ -503,6 +503,23 @@ func compileManagedGraph(t *testing.T, catalog *resolve.Catalog) ir.Graph {
 	return result.Graph
 }
 
+func TestValidateSessionSnapshotRejectsMalformedDeploymentEvidence(t *testing.T) {
+	graph := compileManagedGraph(t, managedElementCatalog(t))
+	live, _ := managedLiveTrace(t, graph)
+	live.Deployment = &inspect.DeploymentEvidence{}
+	if err := ValidateSessionSnapshot(live); err == nil ||
+		!strings.Contains(err.Error(), "invalid deployment evidence") {
+		t.Fatalf("malformed deployment error = %v", err)
+	}
+	live.Deployment = &inspect.DeploymentEvidence{Public: inspect.ArtifactIdentity{
+		ID: "deployment://managed", Revision: "1",
+		Digest: "sha256:" + strings.Repeat("e", 64),
+	}}
+	if err := ValidateSessionSnapshot(live); err != nil {
+		t.Fatalf("valid compatibility deployment evidence: %v", err)
+	}
+}
+
 func managedLiveTrace(t *testing.T, graph ir.Graph) (inspect.Live, inspect.LiveTrace) {
 	t.Helper()
 	configuration := inspect.ArtifactIdentity{
