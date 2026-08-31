@@ -137,6 +137,7 @@ type serveOptions struct {
 	webrtcOrigin   string
 	webrtcICE      string
 	webrtcTokenEnv string
+	webrtcCodec    string
 
 	gpuCapacity              int
 	policyURL                string
@@ -333,6 +334,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.webrtcSTUN, "webrtc-stun", "", "comma-separated STUN servers for the WebRTC adapter")
 	flags.StringVar(&options.webrtcICE, "webrtc-ice-server", "",
 		"comma-separated ICE servers with credentials as url|username|credential; repeat for more than one. TURN is what a client behind symmetric NAT needs, and STUN alone cannot give it")
+	flags.StringVar(&options.webrtcCodec, "webrtc-audio-codec", "",
+		"audio codec sent to a WebRTC peer: pcmu or opus. PCMU is 8 kHz and always available; opus carries the session's full 24 kHz output and needs a build tagged opus, because libopus means cgo and the release binaries are static and reproducible")
 	flags.StringVar(&options.webrtcTokenEnv, "webrtc-token-env", "",
 		"environment variable holding the bearer credential a WebRTC caller must present; required when -webrtc-listen is not loopback, because the adapter spends the deployment's own upstream credential")
 	flags.StringVar(&options.webrtcOrigin, "webrtc-allow-origin", "",
@@ -1761,8 +1764,13 @@ func newWebRTCAdapter(
 	if err != nil {
 		return nil, err
 	}
+	codec, err := webrtcadapter.ParseAudioCodec(options.webrtcCodec)
+	if err != nil {
+		return nil, err
+	}
 	adapter, err := webrtcadapter.New(webrtcadapter.Config{
 		Endpoint:         "ws://" + webrtcUpstreamAuthority(options.listen) + "/v1/realtime",
+		AudioCodec:       codec,
 		Token:            gatewayToken,
 		Model:            model,
 		ICEServers:       iceServers,

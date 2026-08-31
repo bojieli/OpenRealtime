@@ -45,15 +45,30 @@ type session struct {
 	closed atomic.Bool
 	done   chan struct{}
 	once   sync.Once
+
+	// encoder is non-nil only when the adapter sends Opus. pending holds the
+	// samples left over from a delta that did not divide into whole frames:
+	// libopus takes exact frame sizes, and audio deltas do not arrive on
+	// frame boundaries.
+	encoder    opusEncoder
+	pendingPCM []int16
 }
 
 // prepare wires the peer connection before the offer is applied.
 func (session *session) prepare() error {
-	track, err := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{
-		MimeType: webrtc.MimeTypePCMU, ClockRate: 8000, Channels: 1,
-	}, "audio", "openrealtime")
+	codec := session.adapter.config.AudioCodec
+	track, err := webrtc.NewTrackLocalStaticSample(
+		codec.trackCapability(), "audio", "openrealtime",
+	)
 	if err != nil {
 		return fmt.Errorf("create audio track: %w", err)
+	}
+	if codec == AudioCodecOpus {
+		encoder, err := newOpusEncoder(inboundRate, 1)
+		if err != nil {
+			return err
+		}
+		session.encoder = encoder
 	}
 	sender, err := session.connection.AddTrack(track)
 	if err != nil {
@@ -129,7 +144,7 @@ func (session *session) connect(ctx context.Context) error {
 			"type": "realtime",
 			"audio": map[string]any{
 				"input":  map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
-				"output": map[string]any{"format": map[string]any{"type": "audio/pcmu"}},
+				"output": map[string]any{"format": session.adapter.config.AudioCodec.sessionOutputFormat()},
 			},
 		},
 	}); err != nil {
@@ -278,6 +293,10 @@ func (session *session) playAudio(raw []byte) {
 	if err != nil || len(payload) == 0 {
 		return
 	}
+	if session.encoder != nil {
+		session.playOpus(payload)
+		return
+	}
 	// mu-law is one byte per sample at 8 kHz.
 	samplesPerPacket := int(8000 * session.adapter.config.PacketDuration / time.Second)
 	if samplesPerPacket <= 0 {
@@ -291,6 +310,38 @@ func (session *session) playAudio(raw []byte) {
 			session.adapter.config.Logf("write audio sample: %v", err)
 			return
 		}
+	}
+}
+
+// playOpus encodes the session's own 24 kHz PCM onto the track.
+//
+// libopus accepts only frame sizes it recognises, and an audio delta is
+// whatever length the session produced, so samples that do not fill a frame
+// are carried to the next delta rather than padded with silence. Padding
+// would insert a gap into continuous speech on every delta boundary.
+func (session *session) playOpus(payload []byte) {
+	session.pendingPCM = append(session.pendingPCM, decodePCM16(payload)...)
+	for len(session.pendingPCM) >= opusSamplesPerFrame {
+		frame, err := session.encoder.EncodeFrame(session.pendingPCM[:opusSamplesPerFrame])
+		session.pendingPCM = session.pendingPCM[opusSamplesPerFrame:]
+		if err != nil {
+			session.adapter.config.Logf("encode audio: %v", err)
+			return
+		}
+		if len(frame) == 0 {
+			continue
+		}
+		if err := session.track.WriteSample(media.Sample{
+			Data: frame, Duration: opusFrameDuration,
+		}); err != nil {
+			session.adapter.config.Logf("write audio sample: %v", err)
+			return
+		}
+	}
+	// Left-over samples must not accumulate without bound if the track stops
+	// draining; one frame is the most that can ever legitimately be held.
+	if len(session.pendingPCM) > opusSamplesPerFrame {
+		session.pendingPCM = session.pendingPCM[:0]
 	}
 }
 

@@ -908,3 +908,37 @@ func TestOfferRefusesADisallowedOriginInsteadOfStartingTheSession(t *testing.T) 
 		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusForbidden)
 	}
 }
+
+// PCMU is the default because it is the one codec every build can produce.
+// A build without the Opus encoder has to refuse the setting rather than
+// silently downgrade it: an operator who asked for 24 kHz audio and got 8 kHz
+// without being told has no way to notice except by listening.
+func TestAudioCodecDefaultsToPCMUAndRefusesWhatItCannotEncode(t *testing.T) {
+	for _, value := range []string{"", "pcmu", "PCMU", " pcmu "} {
+		codec, err := adapter.ParseAudioCodec(value)
+		if err != nil {
+			t.Fatalf("ParseAudioCodec(%q) = %v", value, err)
+		}
+		if codec != adapter.AudioCodecPCMU {
+			t.Fatalf("ParseAudioCodec(%q) = %q, want %q", value, codec, adapter.AudioCodecPCMU)
+		}
+	}
+	for _, value := range []string{"g722", "opus-ish", "pcm"} {
+		if _, err := adapter.ParseAudioCodec(value); err == nil {
+			t.Errorf("ParseAudioCodec(%q) was accepted", value)
+		}
+	}
+	codec, err := adapter.ParseAudioCodec("opus")
+	if adapter.OpusEncoderAvailable {
+		if err != nil || codec != adapter.AudioCodecOpus {
+			t.Fatalf("a tagged build refused Opus: codec=%q err=%v", codec, err)
+		}
+		return
+	}
+	if err == nil {
+		t.Fatal("a build with no Opus encoder accepted the Opus codec")
+	}
+	if !strings.Contains(err.Error(), "-tags opus") {
+		t.Errorf("refusal does not say how to get an Opus build: %v", err)
+	}
+}

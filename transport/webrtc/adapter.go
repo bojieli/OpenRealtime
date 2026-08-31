@@ -45,6 +45,9 @@ type Config struct {
 	Endpoint string
 	// Token is the credential the adapter presents to the endpoint.
 	Token string
+	// AudioCodec selects what the adapter sends the peer. Empty selects PCMU,
+	// which every build can produce.
+	AudioCodec AudioCodec
 	// ClientCredential is the bearer token a caller must present to open a
 	// session here. Empty accepts unauthenticated offers, which is only ever
 	// right on a loopback listener: this endpoint spends the adapter's own
@@ -119,6 +122,11 @@ func New(config Config) (*Adapter, error) {
 	if config.PacketDuration <= 0 {
 		config.PacketDuration = 20 * time.Millisecond
 	}
+	resolved, err := ParseAudioCodec(string(config.AudioCodec))
+	if err != nil {
+		return nil, err
+	}
+	config.AudioCodec = resolved
 	if config.ConnectTimeout <= 0 {
 		config.ConnectTimeout = 15 * time.Second
 	}
