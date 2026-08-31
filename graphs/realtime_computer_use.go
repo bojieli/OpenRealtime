@@ -13,6 +13,7 @@ import (
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/elements"
+	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	realtimecubinding "github.com/bojieli/OpenRealtime/graph/binding/realtimecu"
@@ -162,6 +163,9 @@ func RealtimeComputerUseLaunchConfig(
 		Artifacts: artifacts,
 		PlanOptions: graphconfig.Options{
 			Catalog: descriptors, SchemaResolver: schemas,
+			OptionalDependencies: []string{
+				cognitionelements.MediaResolverService,
+			},
 		},
 		Catalog: graphlaunch.Catalog{
 			Assembly: assembly, Adapters: []graphlaunch.AdapterPlugin{plugin.AdapterPlugin()},

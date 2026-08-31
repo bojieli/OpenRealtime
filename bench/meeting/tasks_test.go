@@ -4,9 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	"github.com/bojieli/OpenRealtime/computeruse"
 )
 
 func TestSuiteOwnsValidRecordedScenarios(t *testing.T) {
@@ -29,11 +31,126 @@ func TestSuiteOwnsValidRecordedScenarios(t *testing.T) {
 	}
 }
 
-func TestOmniCellIsExplicitlyASystemTreatment(t *testing.T) {
-	differences := bench.Compare(ReferenceCell(), OmniCell())
-	if len(differences) != 2 || differences[0] != bench.FactorBinding ||
-		differences[1] != bench.FactorFastModel {
-		t.Fatalf("omni treatment differences = %v", differences)
+func TestReferenceCellIsOnlyDirectGraphNativeCandidate(t *testing.T) {
+	cell := ReferenceCell()
+	want := map[bench.Factor]string{
+		bench.FactorBinding:   "graph-native-meeting-v1",
+		bench.FactorCognition: "foreground-fast+graph-background",
+		bench.FactorObservers: "audio+screen",
+		bench.FactorCadence:   "200ms", bench.FactorFloor: "foreground-engine",
+		bench.FactorSlowModel:  "gemini-3.7-flash/minimal",
+		bench.FactorComponents: "narration+silent-visual-reflex",
+		bench.FactorPolicy:     "bounded-visual-reflex+foreground-fast-tool-continuations+graph-background-injection",
+		bench.FactorFastModel:  "qwen-fast/minimal",
+		bench.FactorFastAction: "bounded-execution-via-graph",
+		bench.FactorVideoRate:  "5fps", bench.FactorRecognizer: "sensevoice-small",
+		bench.FactorTransport: bench.TransportWebSocket,
+	}
+	if cell.Name != "meeting-assistant-graph-native-candidate" ||
+		len(cell.Levels) != len(want) || len(cell.Varies) != 0 {
+		t.Fatalf("Meeting candidate cell = %+v", cell)
+	}
+	for factor, level := range want {
+		if cell.Levels[factor] != level {
+			t.Fatalf("Meeting candidate %s = %q, want %q", factor, cell.Levels[factor], level)
+		}
+	}
+	for factor, level := range cell.Levels {
+		legacy := strings.ToLower(level)
+		if strings.Contains(legacy, "cascade") || strings.Contains(legacy, "omni") ||
+			strings.Contains(legacy, "qwen3-vl") || strings.Contains(legacy, "gemini-3.5") {
+			t.Fatalf("Meeting candidate retained legacy %s level %q", factor, level)
+		}
+	}
+}
+
+func TestMeetingInstructionsDisambiguateGroundedMetricAndVisibleAlertAction(t *testing.T) {
+	var openTask, alertTask Task
+	for _, task := range Suite() {
+		switch task.ID {
+		case "open-share-present":
+			openTask = task
+		case "visual-alert-during-presentation":
+			alertTask = task
+		}
+	}
+	result := string(launchReviewResult(ToolReadLaunchReview))
+	for _, want := range []string{
+		`"latest_conversion_rate_percent":18.4`,
+		`"change_from_prior_points":3.1`,
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("launch review result %q omitted %q", result, want)
+		}
+	}
+	for _, obsolete := range []string{`"conversion_rate_percent"`, `"change_points"`} {
+		if strings.Contains(result, obsolete) {
+			t.Fatalf("launch review result retained ambiguous field %q", obsolete)
+		}
+	}
+	openInstruction := taskInstruction(openTask)
+	if !strings.Contains(openInstruction, "exact latest_conversion_rate_percent") ||
+		!strings.Contains(openInstruction, "do not substitute change_from_prior_points") ||
+		!strings.Contains(openInstruction, "Do not speak until both requested screen actions") {
+		t.Fatalf("open/share instruction is ambiguous: %q", openInstruction)
+	}
+	alertInstruction := taskInstruction(alertTask)
+	if !strings.Contains(alertInstruction, "click the alert's visible Acknowledge control immediately") ||
+		!strings.Contains(alertInstruction, "verbal acknowledgment alone does not satisfy") {
+		t.Fatalf("visual alert instruction lacks an explicit UI action: %q", alertInstruction)
+	}
+}
+
+func TestMeetingKnowledgeDeclarationsExplicitlyOptIntoBoundedForegroundExecution(t *testing.T) {
+	target := computeruse.Target{
+		Name: "meeting-browser", Sources: []string{"screen"}, Width: 1280, Height: 720,
+	}
+	for _, taskID := range []string{"open-share-present", "follow-up-during-analysis"} {
+		var task Task
+		for _, candidate := range Suite() {
+			if candidate.ID == taskID {
+				task = candidate
+				break
+			}
+		}
+		if task.ID == "" {
+			t.Fatalf("suite omitted %s", taskID)
+		}
+		declared, err := declarations(target, task)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantName := ToolReadLaunchReview
+		if taskID == "follow-up-during-analysis" {
+			wantName = ToolAnalyzeLaunchReview
+		}
+		found := false
+		for _, raw := range declared {
+			var tool struct {
+				Name         string `json:"name"`
+				Description  string `json:"description"`
+				OpenRealtime struct {
+					Background bool `json:"background"`
+				} `json:"openrealtime"`
+			}
+			if err := json.Unmarshal(raw, &tool); err != nil {
+				t.Fatal(err)
+			}
+			if tool.Name != wantName {
+				continue
+			}
+			found = true
+			if !tool.OpenRealtime.Background {
+				t.Fatalf("%s did not declare its read-only background-safe execution contract", wantName)
+			}
+			if wantName == ToolAnalyzeLaunchReview &&
+				!strings.Contains(tool.Description, "emit this function call rather than merely saying") {
+				t.Fatalf("%s declaration permits a spoken-only false start: %q", wantName, tool.Description)
+			}
+		}
+		if !found {
+			t.Fatalf("%s declaration was omitted", wantName)
+		}
 	}
 }
 

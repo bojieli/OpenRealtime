@@ -310,6 +310,7 @@ type ProviderConfig struct {
 	Inspection      graphruntime.InspectionConfig
 	ShutdownTimeout time.Duration
 	TraceRecording  *graphbinding.TraceRecordingConfig
+	Readiness       []graphlaunch.ReadinessCheck
 }
 
 // LaunchConfig composes the resource-free Meeting Assistant contribution into
@@ -364,6 +365,7 @@ func LaunchConfig(config ProviderConfig) (graphlaunch.Config, error) {
 		SecretCatalog: config.SecretCatalog, Adapter: selection,
 		Inspection: config.Inspection, ShutdownTimeout: config.ShutdownTimeout,
 		TraceRecording: config.TraceRecording,
+		Readiness:      slices.Clone(config.Readiness),
 	}, nil
 }
 

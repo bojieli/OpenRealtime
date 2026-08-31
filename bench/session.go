@@ -237,6 +237,10 @@ type SessionConfig struct {
 	// quiet until every tool result has returned. Ordinary suites retain the
 	// historical synchronous behavior by leaving this false.
 	ConcurrentTools bool
+	// Observers selects the named OpenRealtime perception plug-ins for this
+	// session. Empty delegates to the binding's documented default set. Names
+	// are sent only when the OpenRealtime extension is otherwise negotiated.
+	Observers []string
 	// Realtime plays audio at its own rate. Turning it off makes a suite
 	// faster and its timing numbers meaningless, so it stays on for anything
 	// that reports latency.
@@ -282,8 +286,8 @@ type SessionConfig struct {
 	CaptureRuntimeEvidence bool
 	// RuntimeAttestor resolves exact element/capability identities after the
 	// live status arrives. Setting it automatically enables runtime evidence
-	// negotiation. Graph-native cells should use GraphAttestor; legacy cells
-	// can opt into LegacyStatusAttestor explicitly.
+	// negotiation. Graph-native cells use GraphAttestor; non-graph runtime
+	// claims are deliberately not promoted to equivalent execution evidence.
 	RuntimeAttestor RuntimeAttestor
 	// AttestationScope identifies this task/session to a live inspector. Suites
 	// set it to their task ID so selected paths cannot be attributed to a
@@ -402,6 +406,16 @@ func PlaySamples(
 			stream.Interval = time.Second / 3
 		}
 	}
+	for index, observer := range config.Observers {
+		if strings.TrimSpace(observer) == "" || strings.TrimSpace(observer) != observer {
+			return Transcript{}, fmt.Errorf("observer %d must be a canonical non-empty name", index)
+		}
+		for previous := range index {
+			if config.Observers[previous] == observer {
+				return Transcript{}, fmt.Errorf("observer %q is selected more than once", observer)
+			}
+		}
+	}
 	scheduled, err := prepareScheduledEvents(config.Scheduled)
 	if err != nil {
 		return Transcript{}, err
@@ -411,6 +425,13 @@ func PlaySamples(
 
 	timed, cancel := context.WithTimeout(ctx, config.Timeout)
 	defer cancel()
+	// The conversation horizon bounds task behavior, not the underlying
+	// connection's identity lifetime. Keep the transport alive until terminal
+	// runtime attestation has spent the session-scoped inspection capability;
+	// otherwise the read deadline closes the server session first and a timed-
+	// out-but-scoreable task loses its exact graph evidence to a 404 race.
+	connectionContext, closeConnectionContext := context.WithCancel(ctx)
+	defer closeConnectionContext()
 	endpoint := config.Endpoint
 	if transport == TransportWebRTC &&
 		(strings.HasPrefix(strings.ToLower(endpoint), "ws://") ||
@@ -428,10 +449,11 @@ func PlaySamples(
 	}
 	var client realtimeSession
 	if transport == TransportWebRTC {
-		client, err = dialWebRTC(timed, endpoint, config.Token, config.Model)
+		client, err = dialWebRTC(timed, connectionContext, endpoint, config.Token, config.Model)
 	} else {
 		client, err = realtimeclient.Dial(timed, realtimeclient.Config{
 			URL: config.Endpoint, Token: config.Token, Model: config.Model,
+			LifetimeContext: connectionContext,
 		})
 	}
 	if err != nil {
@@ -460,7 +482,7 @@ func PlaySamples(
 		copy(tools, config.Tools)
 		update["tools"] = tools
 	}
-	if len(config.Video) > 0 || config.CaptureRuntimeEvidence {
+	if len(config.Video) > 0 || len(config.Observers) > 0 || config.CaptureRuntimeEvidence {
 		extension := map[string]any{"version": openrealtime.Version}
 		if len(config.Video) > 0 {
 			extension["supports"] = []string{
@@ -468,7 +490,9 @@ func PlaySamples(
 				string(openrealtime.FeatureObservations),
 				string(openrealtime.FeatureComputerUse),
 			}
-			extension["observers"] = []string{"audio", "video"}
+		}
+		if len(config.Observers) > 0 {
+			extension["observers"] = append([]string(nil), config.Observers...)
 		}
 		if config.CaptureRuntimeEvidence {
 			extension["debug"] = map[string]any{

@@ -16,15 +16,19 @@ func TestRealtimeCUElementDescriptorIdentitiesAreStable(t *testing.T) {
 		digest     string
 	}{
 		{ObservationCommitDescriptor(), "sha256:3f6a2ed8c53bf3e8ef8e4e645b25691332f3b6c6f93283a839b4bb03088cbd28"},
-		{ActivationDescriptor(), "sha256:40478a099ac75c1adcdcb39f09adcf47f8ffb58929e42abd7c78e2d5641779fa"},
+		{ActivationDescriptor(), "sha256:4932647d135c76c32fa8889ba8641e02a3f27d4495bbb99683598bc21a3621df"},
 	} {
 		identity, err := test.descriptor.Identity()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if identity.Revision != 1 || identity.Digest != test.digest {
-			t.Fatalf("%s identity = %+v, want revision 1 digest %s",
-				identity.Name, identity, test.digest)
+		wantRevision := uint64(1)
+		if identity.Name == ActivationReference {
+			wantRevision = 3
+		}
+		if identity.Revision != wantRevision || identity.Digest != test.digest {
+			t.Fatalf("%s identity = %+v, want revision %d digest %s",
+				identity.Name, identity, wantRevision, test.digest)
 		}
 	}
 }

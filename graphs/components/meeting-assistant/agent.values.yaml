@@ -77,7 +77,7 @@ nodes:
     retain_reasoning: true
   background_injection:
     role: background
-    instruction: Integrate the just-injected grounded background result into the current meeting turn. Stay concise, honor any later correction, and do not repeat stale work.
+    instruction: Use retained grounded background context only when a later user-authorized turn requires it. Never repeat a completed response or speak merely because background work finished.
     max_output_tokens: 512
     max_runs: 64
     max_text_bytes: 65536

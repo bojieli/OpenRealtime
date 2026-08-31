@@ -304,12 +304,15 @@ func TestGeminiWireSchemaDerivesThenOmitsProviderNeutralTimestampMaximum(t *test
 			_, significantEnd := schema.Properties.Significant.Items.Properties["end_ms"]
 			_, minorStart := schema.Properties.Minor.Items.Properties["start_ms"]
 			_, minorEnd := schema.Properties.Minor.Items.Properties["end_ms"]
+			_, significantEvidence := schema.Properties.Significant.Items.Properties["evidence"]
+			_, minorEvidence := schema.Properties.Minor.Items.Properties["evidence"]
 			if boundedSchema.Properties.Confidence.Maximum != 1 ||
 				boundedSchema.Properties.Significant.Items.Properties["start_ms"].Maximum != maximumMS ||
 				boundedSchema.Properties.Significant.Items.Properties["end_ms"].Maximum != maximumMS ||
 				boundedSchema.Properties.Minor.Items.Properties["start_ms"].Maximum != maximumMS ||
 				boundedSchema.Properties.Minor.Items.Properties["end_ms"].Maximum != maximumMS ||
 				significantStart || significantEnd || minorStart || minorEnd ||
+				!significantEvidence || !minorEvidence ||
 				schema.Properties.Confidence.Maximum != 1 ||
 				bytes.Count(prepared.Schema, []byte(`"maximum": 86400000`)) != 4 ||
 				prepared.FindingTimestampMaximumMS != maximumMS {

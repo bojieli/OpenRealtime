@@ -30,9 +30,9 @@ import (
 
 const (
 	ReviewBundleFormat         = "openrealtime.realtime-cu-review"
-	ReviewBundleFormatVersion  = 2
+	ReviewBundleFormatVersion  = 3
 	ReviewContextFormat        = "openrealtime.realtime-cu-review-context"
-	ReviewContextVersion       = 1
+	ReviewContextVersion       = 2
 	ReviewSourceReceiptFormat  = "openrealtime.realtime-cu-review-source-receipt"
 	ReviewSourceReceiptVersion = 1
 	ReviewPhaseSource          = "deterministic-source"
@@ -141,6 +141,7 @@ type ReviewAttempt struct {
 	Case                         string                         `json:"case"`
 	Trial                        int                            `json:"trial"`
 	Grounding                    Grounding                      `json:"grounding"`
+	Observers                    []string                       `json:"observers,omitempty"`
 	Deterministic                bench.TaskOutcome              `json:"deterministic"`
 	Context                      ReviewArtifact                 `json:"context"`
 	MediaBundle                  NestedBundleReceipt            `json:"media_bundle"`
@@ -470,6 +471,9 @@ func ResumeReviewBundle(
 			return nil, fmt.Errorf("verify recovered deterministic realtime computer-use source: %w", err)
 		}
 	}
+	if err := recoverRejectedReviewPublication(directory); err != nil {
+		return nil, err
+	}
 	for _, name := range []string{"manifest.json", "REVIEW.md"} {
 		if _, err := os.Lstat(filepath.Join(directory, name)); err == nil {
 			return nil, errors.New("realtime computer-use review bundle already has an outer publication")
@@ -513,6 +517,7 @@ func ResumeReviewBundle(
 			Suite: SuiteName, Case: indexed.Case, Trial: indexed.Trial,
 			Task:      cloneCase(Case{Task: contextValue.Task}).Task,
 			Grounding: indexed.Grounding, Origin: contextValue.RunOrigin,
+			Observers:            slices.Clone(contextValue.Observers),
 			ExecutionRequirement: contextValue.ExecutionRequirement,
 		}
 		if err := specification.validate(); err != nil {
@@ -581,7 +586,29 @@ func ResumeReviewBundle(
 	if err != nil || !bytes.Equal(canonical, resultPayload) {
 		return fail(errors.New("resumable realtime computer-use result is noncanonical"))
 	}
+	if err := makeReviewRootWritableForResume(directory, root); err != nil {
+		return fail(err)
+	}
 	return bundle, nil
+}
+
+func makeReviewRootWritableForResume(directory string, root *os.Root) error {
+	identity, err := verifyReviewRootIdentity(directory, root, nil)
+	if err != nil {
+		return err
+	}
+	if err := chmodReviewEntryHandle(root, ".", identity, 0o700); err != nil {
+		return errors.New("make resumable realtime computer-use review root writable")
+	}
+	anchored, rootErr := root.Stat(".")
+	current, pathErr := os.Lstat(directory)
+	if rootErr != nil || pathErr != nil || !anchored.IsDir() || !current.IsDir() ||
+		current.Mode()&os.ModeSymlink != 0 || !os.SameFile(identity, anchored) ||
+		!os.SameFile(anchored, current) || anchored.Mode().Perm() != 0o700 {
+		_ = chmodReviewEntryHandle(root, ".", identity, 0o500)
+		return errors.New("resumable realtime computer-use review root changed while opening")
+	}
+	return nil
 }
 
 func resumedReviewActions(source []realtimeCUReviewAction) ([]ActionRecord, error) {
@@ -641,6 +668,40 @@ func (bundle *ReviewBundle) SourceReceipt() (ReviewSourceReceipt, bool) {
 		return ReviewSourceReceipt{}, false
 	}
 	return *bundle.sourceReceipt, true
+}
+
+// SourceResult returns an independent decode of the exact canonical result
+// sealed by the deterministic source phase. It is primarily a restart seam:
+// callers can resume advisory evaluation without rerunning browser actions or
+// trusting a separately supplied result file.
+func (bundle *ReviewBundle) SourceResult() (bench.Result, error) {
+	if bundle == nil {
+		return bench.Result{}, errors.New("read realtime computer-use source result: nil bundle")
+	}
+	bundle.mu.Lock()
+	payload := slices.Clone(bundle.finishSource)
+	var receipt ReviewSourceReceipt
+	sealed := bundle.sourceReceipt != nil
+	if sealed {
+		receipt = *bundle.sourceReceipt
+	}
+	directory := bundle.directory
+	bundle.mu.Unlock()
+	if len(payload) == 0 || !sealed {
+		return bench.Result{}, errors.New("realtime computer-use deterministic source is not sealed")
+	}
+	if _, err := VerifyReviewSourceReceipt(directory, receipt); err != nil {
+		return bench.Result{}, errors.New("verify realtime computer-use source before reading result")
+	}
+	result, err := decodeReviewResult(payload)
+	if err != nil {
+		return bench.Result{}, err
+	}
+	canonical, err := encodeReviewResult(result)
+	if err != nil || !bytes.Equal(canonical, payload) {
+		return bench.Result{}, errors.New("realtime computer-use deterministic source result is noncanonical")
+	}
+	return result, nil
 }
 
 // EvaluationReceipts returns portable receipts already durable in the
@@ -1154,6 +1215,7 @@ type realtimeCUReviewContext struct {
 	Grounding            Grounding                  `json:"grounding"`
 	RunOrigin            EvidenceRunOrigin          `json:"run_origin"`
 	ExecutionRequirement bench.ExecutionRequirement `json:"execution_requirement,omitempty"`
+	Observers            []string                   `json:"observers,omitempty"`
 	Outcome              bench.TaskOutcome          `json:"deterministic_outcome"`
 	Transcript           bench.Transcript           `json:"transcript"`
 	Page                 PageResult                 `json:"page_result"`
@@ -1201,6 +1263,7 @@ func retainedReviewContext(
 		Task:                 cloneCase(Case{Task: source.specification.Task}).Task,
 		Grounding:            source.specification.Grounding,
 		RunOrigin:            source.specification.Origin,
+		Observers:            slices.Clone(source.specification.Observers),
 		ExecutionRequirement: source.specification.ExecutionRequirement,
 		Outcome:              cloneTaskOutcome(source.completion.Outcome),
 		Transcript:           transcript,
@@ -1216,7 +1279,20 @@ func retainedReviewContext(
 }
 
 func canonicalReviewObject(value any, maximum int) ([]byte, error) {
-	source, err := json.Marshal(value)
+	encode := func(value any) ([]byte, error) {
+		var output bytes.Buffer
+		encoder := json.NewEncoder(&output)
+		// The provider-neutral review API defines canonical context JSON with
+		// HTML escaping disabled. Keep the retained source byte-identical to
+		// that contract even when a deterministic failure contains an HTML
+		// response body.
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(value); err != nil {
+			return nil, err
+		}
+		return bytes.TrimSuffix(output.Bytes(), []byte{'\n'}), nil
+	}
+	source, err := encode(value)
 	if err != nil || len(source) == 0 || len(source) > maximum || strictjson.Validate(source) != nil {
 		return nil, errors.New("encode canonical realtime computer-use review JSON")
 	}
@@ -1226,7 +1302,7 @@ func canonicalReviewObject(value any, maximum int) ([]byte, error) {
 	if err := decoder.Decode(&object); err != nil || object == nil {
 		return nil, errors.New("decode canonical realtime computer-use review JSON")
 	}
-	payload, err := json.Marshal(object)
+	payload, err := encode(object)
 	if err != nil || len(payload) == 0 || len(payload) > maximum || strictjson.Validate(payload) != nil {
 		return nil, errors.New("encode canonical realtime computer-use review JSON")
 	}
@@ -1262,6 +1338,7 @@ func materializeReviewAttempts(
 		attempt := ReviewAttempt{
 			Ordinal: source.ordinal, Case: id, Trial: 1,
 			Grounding:     source.specification.Grounding,
+			Observers:     slices.Clone(source.specification.Observers),
 			Deterministic: cloneTaskOutcome(source.completion.Outcome), Context: contextArtifact,
 			MediaBundle: NestedBundleReceipt{
 				Path:           source.relativeDirectory,
@@ -1366,6 +1443,11 @@ func attachSecondaryReviews(
 				ctx, retentionCtx, root, directory, resultPayload, localAttempts, localMedia,
 				localCompleted, reviewer, evaluationStores, sensitive, localEvaluations,
 			)
+			if err != nil {
+				err = fmt.Errorf(
+					"review realtime computer-use case %q: %w", job.attempt.Case, err,
+				)
+			}
 			var receipt *revieweval.EvaluationBundleReceipt
 			if retained, exists := localEvaluations[job.attempt.Case]; exists {
 				copy := retained
@@ -2058,7 +2140,7 @@ func (bundle *ReviewBundle) FinishSuite(ctx context.Context, source bench.Result
 		SourceManifestSHA256: sourceReceipt.ManifestSHA256,
 		SourceReceiptSHA256:  sourceReceipt.ReceiptSHA256,
 	}
-	if _, err := VerifyReviewBundleReceipt(bundle.directory, expectedReceipt); err != nil {
+	if _, verifyErr := VerifyReviewBundleReceipt(bundle.directory, expectedReceipt); verifyErr != nil {
 		if invalidateErr := invalidateReviewManifestExpected(
 			bundle.directory, sealedRootIdentity,
 		); invalidateErr != nil {
@@ -2076,11 +2158,14 @@ func (bundle *ReviewBundle) FinishSuite(ctx context.Context, source bench.Result
 				MarkerMayRemain: true,
 				cause: errors.Join(
 					errors.New("verify sealed realtime computer-use review bundle"),
+					verifyErr,
 					errors.New("invalidate rejected realtime computer-use review manifest"),
 				),
 			}, true)
 		}
-		return finishAttempt(errors.New("verify sealed realtime computer-use review bundle"), true)
+		return finishAttempt(errors.Join(
+			errors.New("verify sealed realtime computer-use review bundle"), verifyErr,
+		), true)
 	}
 	currentRoot, currentErr := os.Lstat(bundle.directory)
 	if currentErr != nil || currentRoot.Mode()&os.ModeSymlink != 0 ||
@@ -2481,6 +2566,7 @@ func cloneCell(source bench.Cell) bench.Cell {
 func cloneReviewAttempt(source ReviewAttempt) ReviewAttempt {
 	result := source
 	result.Deterministic = cloneTaskOutcome(source.Deterministic)
+	result.Observers = slices.Clone(source.Observers)
 	result.Media = slices.Clone(source.Media)
 	if source.EvaluationBundle != nil {
 		copy := *source.EvaluationBundle
@@ -2508,6 +2594,7 @@ func cloneReviewAttemptMap(source map[string]ReviewAttempt) map[string]ReviewAtt
 func sameReviewAttemptSource(reviewed, source ReviewAttempt) bool {
 	return reviewed.Ordinal == source.Ordinal && reviewed.Case == source.Case &&
 		reviewed.Trial == source.Trial && reviewed.Grounding == source.Grounding &&
+		slices.Equal(reviewed.Observers, source.Observers) &&
 		reflect.DeepEqual(reviewed.Deterministic, source.Deterministic) &&
 		reflect.DeepEqual(reviewed.Context, source.Context) &&
 		reflect.DeepEqual(reviewed.MediaBundle, source.MediaBundle) &&
@@ -2584,6 +2671,9 @@ func canonicalReportability(source []string) []string {
 		}
 		seen[value] = struct{}{}
 		result = append(result, value)
+	}
+	if len(result) == 0 {
+		return nil
 	}
 	sort.Strings(result)
 	return result
@@ -2990,6 +3080,8 @@ func verifyReviewSourceBundleAtMarkerWithOperations(
 			!equalCase(item, Case{Task: contextValue.Task, Grounding: contextValue.Grounding}) ||
 			!reflect.DeepEqual(contextValue.Outcome, attempt.Deterministic) ||
 			!reflect.DeepEqual(contextValue.RunOrigin, attempt.RunOrigin) ||
+			!slices.Equal(contextValue.Observers, attempt.Observers) ||
+			validateEvidenceObservers(contextValue.Observers) != nil ||
 			!reflect.DeepEqual(contextValue.ExecutionRequirement, result.Cell.Execution) {
 			return ReviewManifest{}, errors.New("deterministic source context differs from its attempt")
 		}
@@ -3310,6 +3402,8 @@ func verifyReviewBundleWithOperations(
 			!equalCase(item, Case{Task: contextValue.Task, Grounding: contextValue.Grounding}) ||
 			!reflect.DeepEqual(contextValue.Outcome, attempt.Deterministic) ||
 			!reflect.DeepEqual(contextValue.RunOrigin, attempt.RunOrigin) ||
+			!slices.Equal(contextValue.Observers, attempt.Observers) ||
+			validateEvidenceObservers(contextValue.Observers) != nil ||
 			!reflect.DeepEqual(contextValue.ExecutionRequirement, result.Cell.Execution) {
 			return ReviewManifest{}, errors.New("realtime computer-use review context differs from its attempt")
 		}
@@ -3419,7 +3513,10 @@ func verifyReviewBundleWithOperations(
 		rebuilt.SourceManifest = &copy
 	}
 	if err != nil || !reflect.DeepEqual(rebuilt, manifest) {
-		return ReviewManifest{}, errors.New("realtime computer-use review manifest differs from retained evidence")
+		return ReviewManifest{}, fmt.Errorf(
+			"realtime computer-use review manifest differs from retained evidence (%s)",
+			reviewManifestMismatchField(rebuilt, manifest, err),
+		)
 	}
 	markdownPayload, markdownInfo, err := readReviewFile(root, "REVIEW.md", maximumReviewMarkdownBytes)
 	if err != nil || string(markdownPayload) != renderReview(manifest) {
@@ -3456,6 +3553,44 @@ func verifyReviewBundleWithOperations(
 		return ReviewManifest{}, errors.New("realtime computer-use review tree changed during final verification")
 	}
 	return manifest, nil
+}
+
+func reviewManifestMismatchField(rebuilt, retained ReviewManifest, buildErr error) string {
+	if buildErr != nil {
+		return "rebuild"
+	}
+	if rebuilt.Format != retained.Format || rebuilt.FormatVersion != retained.FormatVersion ||
+		rebuilt.Phase != retained.Phase || rebuilt.Suite != retained.Suite ||
+		rebuilt.Expected != retained.Expected {
+		return "identity"
+	}
+	if rebuilt.Complete != retained.Complete || rebuilt.Reportable != retained.Reportable ||
+		rebuilt.CoreReportable != retained.CoreReportable ||
+		rebuilt.CoreReportability != retained.CoreReportability {
+		return "completion-reportability"
+	}
+	if !reflect.DeepEqual(rebuilt.Result, retained.Result) {
+		return "result"
+	}
+	if !reflect.DeepEqual(rebuilt.SourceManifest, retained.SourceManifest) {
+		return "source-manifest"
+	}
+	if !reflect.DeepEqual(rebuilt.Cell, retained.Cell) {
+		return "cell"
+	}
+	if !reflect.DeepEqual(rebuilt.Provenance, retained.Provenance) {
+		return "provenance"
+	}
+	if !reflect.DeepEqual(rebuilt.ReportabilityErrors, retained.ReportabilityErrors) {
+		return "reportability-errors"
+	}
+	if !reflect.DeepEqual(rebuilt.Missing, retained.Missing) {
+		return "missing"
+	}
+	if !reflect.DeepEqual(rebuilt.Attempts, retained.Attempts) {
+		return "attempts"
+	}
+	return "unknown"
 }
 
 func reverifyReviewSubtrees(directory string, manifest ReviewManifest) error {
@@ -4215,13 +4350,62 @@ func invalidateReviewManifestExpected(directory string, expectedRoot os.FileInfo
 }
 
 func invalidateReviewManifestRoot(root *os.Root) error {
+	return invalidateReviewPublicationRoot(root, true)
+}
+
+func recoverRejectedReviewPublication(directory string) (resultErr error) {
+	if _, err := os.Lstat(filepath.Join(directory, "manifest.json")); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return errors.New("inspect rejected realtime computer-use review manifest")
+	}
+	if _, err := os.Lstat(filepath.Join(directory, "REVIEW.md")); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return errors.New("inspect rejected realtime computer-use human review")
+	}
+	root, identity, err := openReviewDirectoryRoot(directory)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := root.Close(); closeErr != nil {
+			resultErr = errors.Join(resultErr,
+				errors.New("close rejected realtime computer-use review publication"))
+		}
+		current, statErr := os.Lstat(directory)
+		if statErr != nil || current.Mode()&os.ModeSymlink != 0 ||
+			!os.SameFile(current, identity) {
+			resultErr = errors.Join(resultErr,
+				errors.New("rejected realtime computer-use review root changed"))
+		}
+	}()
+	return invalidateReviewPublicationRoot(root, false)
+}
+
+func invalidateReviewPublicationRoot(root *os.Root, requireManifest bool) (resultErr error) {
 	if root == nil {
 		return errors.New("review manifest root is unavailable")
 	}
-	info, err := root.Lstat("manifest.json")
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 ||
-		reviewFileHasMultipleLinks(info) {
-		return errors.New("review manifest is not a regular owned file")
+	if !requireManifest {
+		if _, err := root.Lstat("manifest.json"); err == nil {
+			return errors.New("refuse to recover a review publication with a manifest")
+		} else if !os.IsNotExist(err) {
+			return errors.New("inspect rejected review manifest through anchored root")
+		}
+	}
+	names := []string{"REVIEW.md"}
+	if requireManifest {
+		names = append([]string{"manifest.json"}, names...)
+	}
+	infos := make(map[string]os.FileInfo, len(names))
+	for _, name := range names {
+		info, err := root.Lstat(name)
+		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 ||
+			reviewFileHasMultipleLinks(info) {
+			return errors.New("review publication is not a regular owned file set")
+		}
+		infos[name] = info
 	}
 	rootInfo, err := root.Stat(".")
 	if err != nil || !rootInfo.IsDir() {
@@ -4230,20 +4414,28 @@ func invalidateReviewManifestRoot(root *os.Root) error {
 	if err := chmodReviewEntryHandle(root, ".", rootInfo, 0o700); err != nil {
 		return err
 	}
-	if err := chmodReviewEntryHandle(root, "manifest.json", info, 0o600); err != nil {
-		return err
+	defer func() {
+		if restoreErr := chmodReviewEntryHandle(root, ".", rootInfo, 0o500); restoreErr != nil {
+			resultErr = errors.Join(resultErr,
+				errors.New("reseal rejected realtime computer-use review root"))
+		}
+	}()
+	for _, name := range names {
+		info := infos[name]
+		if err := chmodReviewEntryHandle(root, name, info, 0o600); err != nil {
+			return err
+		}
+		visible, err := root.Lstat(name)
+		if err != nil || !os.SameFile(info, visible) || visible.Mode()&os.ModeSymlink != 0 {
+			return errors.New("review publication changed before invalidation")
+		}
 	}
-	visible, err := root.Lstat("manifest.json")
-	if err != nil || !os.SameFile(info, visible) || visible.Mode()&os.ModeSymlink != 0 {
-		return errors.New("review manifest changed before invalidation")
+	for _, name := range names {
+		if err := root.Remove(name); err != nil {
+			return err
+		}
 	}
-	if err := root.Remove("manifest.json"); err != nil {
-		return err
-	}
-	if err := syncReviewRoot(root); err != nil {
-		return err
-	}
-	return chmodReviewEntryHandle(root, ".", rootInfo, 0o500)
+	return syncReviewRoot(root)
 }
 
 func invalidateReviewSourceManifest(directory string) (resultErr error) {

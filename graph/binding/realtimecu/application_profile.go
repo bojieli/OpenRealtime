@@ -148,13 +148,16 @@ func validateApplicationObserver(observer ApplicationObserverSelection) error {
 // a launch config; Factory itself remains unopened until session start.
 type ModelFactoryRegistration struct {
 	ApplicationModelSelection
-	Factory func(context.Context, legacy.Options) (continuation.Provider, error)
+	Factory   func(context.Context, legacy.Options) (continuation.Provider, error)
+	Readiness func(context.Context) error
 }
 
 // ObserverFactoryRegistration is one host-installed audiovisual observer.
 type ObserverFactoryRegistration struct {
 	ApplicationObserverSelection
-	Factory func(context.Context, legacy.Options) (Observer, error)
+	Factory         func(context.Context, legacy.Options) (Observer, error)
+	ResourceFactory func(context.Context, legacy.Options, ObserverResources) (Observer, error)
+	Readiness       func(context.Context) error
 }
 
 // ApplicationRegistrationConfig installs the Realtime-CU application plugin
@@ -207,8 +210,10 @@ func NewApplicationRegistration(
 		if err := validateApplicationObserver(registration.ApplicationObserverSelection); err != nil {
 			return launchprofile.Registration{}, fmt.Errorf("Realtime-CU observer registration %d: %w", index, err)
 		}
-		if registration.Factory == nil {
-			return launchprofile.Registration{}, fmt.Errorf("Realtime-CU observer registration %d has a nil factory", index)
+		if (registration.Factory == nil) == (registration.ResourceFactory == nil) {
+			return launchprofile.Registration{}, fmt.Errorf(
+				"Realtime-CU observer registration %d requires exactly one plain or resource-aware factory", index,
+			)
 		}
 		if _, duplicate := observers[registration.Reference]; duplicate {
 			return launchprofile.Registration{}, fmt.Errorf("Realtime-CU observer reference %q is registered more than once", registration.Reference)
@@ -251,16 +256,50 @@ func NewApplicationRegistration(
 			if err := context.Cause(ctx); err != nil {
 				return graphlaunch.Config{}, err
 			}
+			modelFactory := model.Factory
+			if model.Readiness != nil {
+				selectedFactory, readiness := modelFactory, model.Readiness
+				modelFactory = func(ctx context.Context, options legacy.Options) (continuation.Provider, error) {
+					if err := readiness(ctx); err != nil {
+						return nil, fmt.Errorf("Realtime-CU model %q is not ready: %w", model.Reference, err)
+					}
+					return selectedFactory(ctx, options)
+				}
+			}
+			observerFactory := observer.Factory
+			observerResourceFactory := observer.ResourceFactory
+			if observer.Readiness != nil {
+				readiness := observer.Readiness
+				if observerFactory != nil {
+					selectedFactory := observerFactory
+					observerFactory = func(ctx context.Context, options legacy.Options) (Observer, error) {
+						if err := readiness(ctx); err != nil {
+							return nil, fmt.Errorf("Realtime-CU observer %q is not ready: %w", observer.Reference, err)
+						}
+						return selectedFactory(ctx, options)
+					}
+				} else {
+					selectedFactory := observerResourceFactory
+					observerResourceFactory = func(
+						ctx context.Context, options legacy.Options, resources ObserverResources,
+					) (Observer, error) {
+						if err := readiness(ctx); err != nil {
+							return nil, fmt.Errorf("Realtime-CU observer %q is not ready: %w", observer.Reference, err)
+						}
+						return selectedFactory(ctx, options, resources)
+					}
+				}
+			}
 			resolved, constructorErr := constructor(PluginConfig{
 				RuntimeArtifact: runtimeArtifact,
 				Model: ModelPlugin{
 					Reference: model.Reference, Artifact: model.Artifact,
-					Descriptor: model.Descriptor, Factory: model.Factory,
+					Descriptor: model.Descriptor, Factory: modelFactory,
 				},
 				Observer: ObserverPlugin{
 					Reference: observer.Reference, Name: observer.Name,
 					Artifact: observer.Artifact, Sources: slices.Clone(observer.Sources),
-					Factory: observer.Factory,
+					Factory: observerFactory, ResourceFactory: observerResourceFactory,
 				},
 				Target: config.Target,
 			})
@@ -269,6 +308,16 @@ func NewApplicationRegistration(
 			}
 			if constructorErr != nil {
 				return graphlaunch.Config{}, constructorErr
+			}
+			if model.Readiness != nil {
+				resolved.Readiness = append(resolved.Readiness, graphlaunch.ReadinessCheck{
+					Name: "realtime-cu-model:" + model.Reference, Check: model.Readiness,
+				})
+			}
+			if observer.Readiness != nil {
+				resolved.Readiness = append(resolved.Readiness, graphlaunch.ReadinessCheck{
+					Name: "realtime-cu-observer:" + observer.Reference, Check: observer.Readiness,
+				})
 			}
 			return resolved, nil
 		},

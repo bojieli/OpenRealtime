@@ -87,7 +87,7 @@ func TestRealtimeCUReferenceNamesTheConfigurationItRuns(t *testing.T) {
 	want := map[bench.Factor]string{
 		bench.FactorObservers: "audio+video", bench.FactorComponents: "keyframe",
 		bench.FactorFastModel: "hosted-vision", bench.FactorFastAction: "slow-only",
-		bench.FactorVideoRate: "3fps", bench.FactorRecognizer: "sensevoice-small",
+		bench.FactorVideoRate: "3fps", bench.FactorRecognizer: "whisper-large-v3-turbo",
 	}
 	for factor, level := range want {
 		if cell.Levels[factor] != level {
@@ -103,6 +103,15 @@ func TestPixelInstructionStatesTheTargetCoordinateSpace(t *testing.T) {
 	for _, wanted := range []string{"1280 by 577 CSS pixels", "x is 0 through 1279", "y is 0 through 576"} {
 		if !strings.Contains(instruction, wanted) {
 			t.Errorf("pixel instruction does not contain %q: %s", wanted, instruction)
+		}
+	}
+	for _, wanted := range []string{
+		"take no placeholder or precondition action", "exactly one computer action at a time",
+		"wait for its result and changed screen", "focus the intended input with a click",
+		"match its sounds against visible labels", "stop immediately when the page reports success",
+	} {
+		if !strings.Contains(instruction, wanted) {
+			t.Errorf("pixel instruction does not contain behavior contract %q: %s", wanted, instruction)
 		}
 	}
 

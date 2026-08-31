@@ -43,6 +43,12 @@ type Config struct {
 	ReadLimit int64
 	// DialTimeout bounds connection establishment.
 	DialTimeout time.Duration
+	// LifetimeContext optionally owns the established connection's receive
+	// loop independently from the Dial call's setup context. Most callers leave
+	// it nil. Measurement drivers use it when a task deadline must stop behavior
+	// before closing a session-scoped inspection capability needed for terminal
+	// evidence collection.
+	LifetimeContext context.Context
 	// EventAliases renames inbound server events onto the names this project
 	// reads, which are OpenAI's current ones.
 	//
@@ -141,7 +147,11 @@ func Dial(ctx context.Context, config Config) (*Client, error) {
 		connection: connection, config: config, validator: protocol.NewValidator(),
 		events: make(chan Event, 256), done: make(chan struct{}),
 	}
-	go client.read(ctx)
+	readContext := ctx
+	if config.LifetimeContext != nil {
+		readContext = config.LifetimeContext
+	}
+	go client.read(readContext)
 	return client, nil
 }
 

@@ -140,6 +140,22 @@ func (lease *failAfterSourceReceiptPublishLease) Publish(
 var fixtureCUReviewerImplementation = []byte("openrealtime realtime-cu reviewer fixture v1")
 var fixtureCUReviewerConfiguration = []byte(`{"mode":"hermetic"}`)
 
+func TestCanonicalReportabilityPreservesOmittedEmptyWireForm(t *testing.T) {
+	t.Parallel()
+
+	for _, source := range [][]string{nil, {}, {"", "  "}} {
+		if got := canonicalReportability(source); got != nil {
+			t.Fatalf("canonical empty reportability = %#v, want nil", got)
+		}
+	}
+
+	got := canonicalReportability([]string{" beta ", "alpha", "beta", ""})
+	want := []string{"alpha", "beta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("canonical reportability = %#v, want %#v", got, want)
+	}
+}
+
 func fixtureCUReviewerCapabilities() revieweval.ProviderCapabilities {
 	return revieweval.ProviderCapabilities{
 		MediaTypes:        []string{"audio/wav", "video/mp4"},
@@ -491,6 +507,12 @@ func TestReviewBundleRetainsDeterministicCaseAudioVideoAndRawEvidence(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := (*ReviewBundle)(nil).SourceResult(); err == nil {
+		t.Fatal("nil SourceResult succeeded")
+	}
+	if _, err := bundle.SourceResult(); err == nil {
+		t.Fatal("unsealed SourceResult succeeded")
+	}
 	item := Case{Task: Suite()[0], Grounding: GroundingPixel}
 	outcome := fixtureReviewAttempt(t, bundle, item, true)
 	result := bench.Result{
@@ -501,6 +523,15 @@ func TestReviewBundleRetainsDeterministicCaseAudioVideoAndRawEvidence(t *testing
 	if err := bundle.FinishSuite(t.Context(), result); err == nil ||
 		!strings.Contains(err.Error(), "retained 1 of 16") {
 		t.Fatalf("FinishSuite() error = %v", err)
+	}
+	sealedResult, err := bundle.SourceResult()
+	if err != nil || !reflect.DeepEqual(sealedResult, result) {
+		t.Fatalf("SourceResult() = %+v, %v", sealedResult, err)
+	}
+	sealedResult.Tasks[0].Passed = !sealedResult.Tasks[0].Passed
+	sealedAgain, err := bundle.SourceResult()
+	if err != nil || !reflect.DeepEqual(sealedAgain, result) {
+		t.Fatalf("SourceResult() did not return an isolated decode: %+v, %v", sealedAgain, err)
 	}
 	receipt, ok := bundle.Receipt()
 	if !ok {
@@ -536,6 +567,13 @@ func TestReviewBundleRetainsDeterministicCaseAudioVideoAndRawEvidence(t *testing
 	if err != nil || !bytes.Contains(review, []byte("static-control/pixel — PASS")) ||
 		!bytes.Contains(review, []byte("Raw frames, timelines")) {
 		t.Fatalf("REVIEW.md error=%v\n%s", err, review)
+	}
+	makeReviewTreeWritable(directory)
+	if err := os.WriteFile(filepath.Join(directory, "result.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bundle.SourceResult(); err == nil {
+		t.Fatal("SourceResult accepted a mutated sealed result")
 	}
 }
 
@@ -579,6 +617,62 @@ func TestReviewBundleRetainsAllIncompleteDeterministicRowsWithoutSummaryDrift(t 
 	if err != nil || len(manifest.Attempts) != 1 || manifest.Attempts[0].Deterministic.Completed ||
 		manifest.Reportable || manifest.CoreReportable {
 		t.Fatalf("incomplete deterministic manifest=%+v error=%v", manifest, err)
+	}
+}
+
+func TestReviewBundleCanonicalizesHTMLBearingFailureContextForSecondaryReview(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "review")
+	t.Cleanup(func() { makeReviewTreeWritable(directory) })
+	reviewer := &fixtureCUReviewer{}
+	bundle, err := NewReviewBundle(ReviewBundleOptions{
+		Directory: directory, VideoFactory: &fixtureReviewVideoFactory{},
+		Reviewer:         openFixtureCUReviewer(t, reviewer),
+		SourceAnchor:     fixtureReviewSourceAnchor(directory),
+		EvaluationStores: fixtureReviewEvaluationStores(t, directory),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := Case{Task: Suite()[0], Grounding: GroundingPixel}
+	attempt, completion, _ := fixturePendingReviewAttempt(t, bundle, item, false)
+	outcome := bench.TaskOutcome{
+		ID: item.ID(), Completed: false,
+		Error:   `<html><body>fixture provider failed</body></html>`,
+		Metrics: map[string]float64{}, Notes: map[string]string{},
+	}
+	completion.Outcome = outcome
+	completion.Page = PageResult{Reason: outcome.Error}
+	if err := attempt.Complete(t.Context(), completion); err != nil {
+		t.Fatal(err)
+	}
+	result := bench.Result{
+		Suite: SuiteName, Cell: ReferenceCell(), Provenance: fixtureReviewProvenance(),
+		Expected: 16, Tasks: []bench.TaskOutcome{outcome},
+	}
+	result.Finish()
+	if err := bundle.FinishSuite(t.Context(), result); err == nil ||
+		!strings.Contains(err.Error(), "retained 1 of 16") {
+		t.Fatalf("FinishSuite() = %v, want only deterministic incompleteness", err)
+	}
+	if reviewer.calls.Load() != 1 {
+		t.Fatalf("reviewer calls = %d, want 1", reviewer.calls.Load())
+	}
+	reviewer.mu.Lock()
+	requests := slices.Clone(reviewer.requests)
+	reviewer.mu.Unlock()
+	if len(requests) != 1 ||
+		bytes.Contains(requests[0].Context, []byte(`\u003c`)) ||
+		!bytes.Contains(requests[0].Context, []byte(`<html>`)) {
+		t.Fatalf("reviewer context is not exact provider-neutral canonical JSON: %q", requests[0].Context)
+	}
+	receipt, ok := bundle.Receipt()
+	if !ok {
+		t.Fatal("HTML-bearing incomplete review has no diagnostic receipt")
+	}
+	manifest, err := VerifyReviewBundleReceipt(directory, receipt)
+	if err != nil || len(manifest.Attempts) != 1 ||
+		manifest.Attempts[0].ReviewStatus != "complete" {
+		t.Fatalf("HTML-bearing diagnostic manifest = %+v, error = %v", manifest, err)
 	}
 }
 
@@ -1063,7 +1157,8 @@ func TestReviewBundleCommitsSourceBeforeReviewerAndAdoptsVerifiedRetryReceipts(t
 	}
 	result.Finish()
 	if err := bundle.FinishSuite(t.Context(), result); err == nil ||
-		!strings.Contains(err.Error(), "transient outage") {
+		!strings.Contains(err.Error(), "transient outage") ||
+		!strings.Contains(err.Error(), cases[5].ID()) {
 		t.Fatalf("first FinishSuite() = %v", err)
 	}
 	sourceReceipt, ok := bundle.SourceReceipt()
@@ -1164,7 +1259,8 @@ func TestReviewBundleResumeAdoptsAnchoredReviewsWithoutProviderLease(t *testing.
 	}
 	result.Finish()
 	if err := bundle.FinishSuite(t.Context(), result); err == nil ||
-		!strings.Contains(err.Error(), "transient outage") {
+		!strings.Contains(err.Error(), "transient outage") ||
+		!strings.Contains(err.Error(), cases[5].ID()) {
 		t.Fatalf("first FinishSuite() = %v", err)
 	}
 	sourceReceipt, ok := bundle.SourceReceipt()
@@ -2000,6 +2096,69 @@ func TestReviewBundleVerifierRejectsNestedSealedReviewTampering(t *testing.T) {
 	}
 	if _, err := VerifyReviewBundle(directory, receipt.ManifestSHA256); err == nil {
 		t.Fatal("VerifyReviewBundle() accepted nested sealed-review tampering")
+	}
+}
+
+func TestReviewBundleResumeRecoversRejectedOuterReviewWithoutManifest(t *testing.T) {
+	directory, _ := fixtureFinishedReviewedBundle(t)
+	sourceReceipt, err := ReadReviewSourceReceipt(
+		t.Context(), fixtureReviewSourceReceiptPath(directory),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	makeReviewTreeWritable(directory)
+	if err := os.Remove(filepath.Join(directory, "manifest.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := sealReviewTree(directory); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := ResumeReviewBundle(t.Context(), ReviewBundleResumeOptions{
+		Directory: directory, SourceReceipt: sourceReceipt,
+		SourceAnchor: fixtureReviewSourceAnchor(directory),
+	})
+	if err != nil {
+		t.Fatalf("recover rejected outer review: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(directory, "REVIEW.md")); !os.IsNotExist(err) {
+		t.Fatalf("rejected outer review survived recovery: %v", err)
+	}
+	if info, err := os.Lstat(directory); err != nil || info.Mode().Perm() != 0o700 {
+		t.Fatalf("resumable review root is not writable: info=%v error=%v", info, err)
+	}
+	if err := resumed.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReviewBundleResumePreservesPublishedOuterReview(t *testing.T) {
+	directory, _ := fixtureFinishedReviewedBundle(t)
+	sourceReceipt, err := ReadReviewSourceReceipt(
+		t.Context(), fixtureReviewSourceReceiptPath(directory),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewBefore, err := os.ReadFile(filepath.Join(directory, "REVIEW.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed, err := ResumeReviewBundle(t.Context(), ReviewBundleResumeOptions{
+		Directory: directory, SourceReceipt: sourceReceipt,
+		SourceAnchor: fixtureReviewSourceAnchor(directory),
+	}); err == nil || !strings.Contains(err.Error(), "already has an outer publication") {
+		if resumed != nil {
+			_ = resumed.Close()
+		}
+		t.Fatalf("resume published outer review error = %v", err)
+	}
+	reviewAfter, err := os.ReadFile(filepath.Join(directory, "REVIEW.md"))
+	if err != nil || !bytes.Equal(reviewAfter, reviewBefore) {
+		t.Fatalf("published outer review changed: error=%v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(directory, "manifest.json")); err != nil {
+		t.Fatalf("published outer manifest changed: %v", err)
 	}
 }
 

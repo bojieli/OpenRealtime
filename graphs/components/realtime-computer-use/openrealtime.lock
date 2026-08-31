@@ -109,8 +109,8 @@
       "reference": "policy.RealtimeComputerUseActivation",
       "identity": {
         "name": "policy.RealtimeComputerUseActivation",
-        "revision": 1,
-        "digest": "sha256:40478a099ac75c1adcdcb39f09adcf47f8ffb58929e42abd7c78e2d5641779fa"
+        "revision": 3,
+        "digest": "sha256:4932647d135c76c32fa8889ba8641e02a3f27d4495bbb99683598bc21a3621df"
       }
     },
     {

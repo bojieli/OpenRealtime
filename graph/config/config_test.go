@@ -568,23 +568,23 @@ func TestCreateRejectsDeploymentDiscoveryAndSecretGaps(t *testing.T) {
 		})
 	}
 
-	declared := graphconfig.LegacyDescriptorDiscovery{Catalog: baseFixture.catalog}
-	legacyArtifacts := baseFixture.artifacts
-	legacyArtifacts.Deployment = graphconfig.Artifact{Path: "deployment.yaml", Data: []byte(`apiVersion: openrealtime.ai/deployment/v1alpha1
-graph: deployable
-nodes: {}
-`)}
-	legacyOptions := baseFixture.options
-	legacyOptions.Discovery = declared
-	legacyOptions.SecretCatalog = nil
-	if _, err := graphconfig.Create(context.Background(), legacyArtifacts, legacyOptions); err == nil ||
-		!strings.Contains(err.Error(), "declaration-only") {
-		t.Fatalf("implicit legacy compatibility error = %v", err)
+	declared := graphconfig.NewStaticDiscovery()
+	for _, implementation := range baseFixture.discovery.Snapshot().Implementations {
+		implementation.Evidence = inspect.EvidenceDeclared
+		if err := declared.RegisterImplementation(implementation); err != nil {
+			t.Fatal(err)
+		}
 	}
-	legacyOptions.AllowDeclaredImplementations = true
-	if _, err := graphconfig.Create(context.Background(), legacyArtifacts, legacyOptions); err == nil ||
-		!strings.Contains(err.Error(), "service dependencies") {
-		t.Fatalf("legacy dependency refusal = %v", err)
+	for _, dependency := range baseFixture.discovery.Snapshot().Dependencies {
+		if err := declared.RegisterDependency(dependency); err != nil {
+			t.Fatal(err)
+		}
+	}
+	declaredOptions := baseFixture.options
+	declaredOptions.Discovery = declared
+	if _, err := graphconfig.Create(context.Background(), baseFixture.artifacts, declaredOptions); err == nil ||
+		!strings.Contains(err.Error(), "declaration-only") {
+		t.Fatalf("declaration-only implementation error = %v", err)
 	}
 }
 

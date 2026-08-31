@@ -206,21 +206,6 @@ func nilInterface(value any) bool {
 	}
 }
 
-// Handler returns the compatibility HTTP surface. New server compositions use
-// the narrower handler accessors below and let descriptor-locked route plugins
-// decide which surfaces are mounted. Keeping this method assembled here
-// preserves existing embedders without making its fixed route set the server
-// plugin API.
-func (server *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle("GET /healthz", server.HealthHandler())
-	mux.Handle("GET /metrics", server.MetricsHandler())
-	mux.Handle("GET /v1/realtime", server.RealtimeHandler())
-	mux.Handle("GET /v1/realtime/sessions/{session}/live", server.InspectionHandler())
-	mux.Handle(management.APIPrefix+"/", server.ManagementHandler())
-	return mux
-}
-
 // RealtimeHandler is the OpenAI-compatible WebSocket endpoint implementation.
 // It carries no route pattern so a server profile, rather than the gateway,
 // owns public route selection.
@@ -250,22 +235,12 @@ func (server *Server) MetricsHandler() http.Handler {
 
 // ManagementHandler is the canonical, capability-authorized management API
 // implementation. Server route plugins select its exact public resource
-// families; compatibility Handler retains the historical prefix delegation.
+// families.
 func (server *Server) ManagementHandler() http.Handler {
 	if server == nil || server.management == nil || server.management.handler == nil {
 		return http.NotFoundHandler()
 	}
 	return server.management.handler
-}
-
-// InspectionHandler is the historical session-live compatibility adapter.
-// Canonical clients use ManagementHandler with the management capability
-// header.
-func (server *Server) InspectionHandler() http.Handler {
-	if server == nil {
-		return http.NotFoundHandler()
-	}
-	return http.HandlerFunc(server.inspectLive)
 }
 
 // Close releases the mounted management route realm. Active realtime sessions

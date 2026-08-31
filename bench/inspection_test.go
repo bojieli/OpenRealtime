@@ -50,6 +50,80 @@ func TestResolutionFromInspectionUsesLiveIdentitiesAndSemanticPaths(t *testing.T
 	}
 }
 
+func TestAuthorExpectedResolutionFromInspectionRequiresExactLiveProbe(t *testing.T) {
+	graph, configuration, expected := attestationFixture(t)
+	deployment := benchmarkDeploymentEvidence()
+	expected.Deployment = &deployment
+	snapshot := liveInspectionFixture(t, graph, configuration, expected)
+	for nodeID, live := range snapshot.Nodes {
+		live.Resolution.RuntimeEvidence = inspect.EvidenceLive
+		live.Resolution.CapabilitiesEvidence = inspect.EvidenceLive
+		snapshot.Nodes[nodeID] = live
+	}
+
+	authored, err := bench.AuthorExpectedResolutionFromInspection(graph, configuration, snapshot)
+	if err != nil {
+		t.Fatalf("author expected resolution: %v", err)
+	}
+	expected.Paths = nil
+	canonical, err := bench.ParseExpectedResolution(mustExpectedResolution(t, expected))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(authored, canonical) {
+		t.Fatalf("authored resolution differs\nwant: %+v\n got: %+v", canonical, authored)
+	}
+
+	// The reviewed contract must own every nested identity independently from
+	// the mutable management snapshot used to author it.
+	snapshot.Deployment.PrivateDeploymentFingerprint = testDigest('1')
+	snapshot.Nodes["model"].Resolution.Runtime.ID = "runtime://mutated"
+	snapshot.Nodes["model"].Resolution.Capabilities[0].Provider.ID = "provider://mutated"
+	model := resolutionElement(t, authored, "model")
+	if authored.Deployment.PrivateDeploymentFingerprint != deployment.PrivateDeploymentFingerprint ||
+		model.Runtime.ID != "worker://model-4" ||
+		model.Capabilities[0].Provider.ID != "deepseek/deepseek-v3.2" {
+		t.Fatal("authored expected resolution retained aliases into the probe snapshot")
+	}
+
+	valid := liveInspectionFixture(t, graph, configuration, expected)
+	for nodeID, live := range valid.Nodes {
+		live.Resolution.RuntimeEvidence = inspect.EvidenceLive
+		live.Resolution.CapabilitiesEvidence = inspect.EvidenceLive
+		valid.Nodes[nodeID] = live
+	}
+	for _, test := range []struct {
+		name string
+		want string
+		edit func(*inspect.Live)
+	}{
+		{"missing deployment", "no exact deployment", func(value *inspect.Live) { value.Deployment = nil }},
+		{"mounted lifecycle", "state is \"mounted\"", func(value *inspect.Live) { value.State = "mounted" }},
+		{"mounted node", "state is \"mounted\"", func(value *inspect.Live) {
+			node := value.Nodes["source"]
+			node.State = "mounted"
+			value.Nodes["source"] = node
+		}},
+		{"registered runtime", "runtime has \"registered\"", func(value *inspect.Live) {
+			value.Nodes["source"].Resolution.RuntimeEvidence = inspect.EvidenceRegistered
+		}},
+		{"registered empty capabilities", "capabilities have \"registered\"", func(value *inspect.Live) {
+			value.Nodes["source"].Resolution.CapabilitiesEvidence = inspect.EvidenceRegistered
+		}},
+		{"missing node", "missing graph node", func(value *inspect.Live) { delete(value.Nodes, "sink") }},
+		{"extra node", "extra node", func(value *inspect.Live) { value.Nodes["extra"] = inspect.NodeLive{} }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := valid.Clone()
+			test.edit(&candidate)
+			_, err := bench.AuthorExpectedResolutionFromInspection(graph, configuration, candidate)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("invalid probe was accepted: %v", err)
+			}
+		})
+	}
+}
+
 func TestResolutionFromInspectionRefusesUnattestedOrAmbiguousSnapshots(t *testing.T) {
 	graph, configuration, expected := attestationFixture(t)
 	valid := liveInspectionFixture(t, graph, configuration, expected)

@@ -1757,8 +1757,10 @@ graphs/        shipped reference `.ortg` files and optional generators
 catalog/       graph, element, config, deployment, and profile catalogs
 ```
 
-Existing packages can migrate into this structure gradually; a mass rename is
-not required before the contracts exist.
+New production and benchmark paths are implemented directly in this structure.
+The old implementation is reference material only: it may be deleted, and it
+does not justify a migration layer, compatibility runner, historical-attempt
+reconstruction, or alternate benchmark path.
 
 ## 25. Implementation plan
 
@@ -1787,7 +1789,7 @@ reference graphs, or conformance evidence.
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment bindings and secret-reference catalogs, exact live resolution evidence, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Mount-time deployment/secret assembly and evidence, evidence profiles, normal graph-native launch, and executed candidate artifacts |
 | 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, and a compiler-backed language-service core exposed through the UI-independent management API | Trigger/cancel/authority views, LSP/UI rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
-| 8 — obsolete-path deletion | In progress | Benchmark migration/parity code and flags are removed; old implementation remains reference-only | Move every remaining production/evaluation launch path to explicit profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
+| 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
 
 Current checkpoint notes:
 
@@ -1913,6 +1915,23 @@ it has been reviewed, tested, and committed with its evidence):
     portable receipt before exposing the final sibling name, and prove restart
     recovery, pre-receipt quarantine, root/symlink swap refusal, and no
     duplicate provider call after the durable boundary.
+  - [x] Add the provider/storage/UI-neutral candidate evidence plug-in and
+    lifecycle, including explicit production-versus-hermetic origin, exact
+    shared-session audio/video callbacks, exact external-harness media and
+    structured artifacts, immutable attempt/result snapshots, create-once
+    identities, and fail-closed population sealing. FDB, FDB v3, FD-Bench, and
+    tau-Voice now call this candidate-only boundary; no historical run or
+    migration path is represented by the API.
+  - [x] Add the provider-neutral candidate review campaign and aggregate
+    publication boundary. It streams only a sealed new-run source receipt,
+    publishes one crash-recoverable create-only evaluation and external
+    receipt per attempt, and then publishes a case-by-case media-linked
+    `REVIEW.md`, campaign manifest, and external aggregate receipt only after
+    reopening the complete transitive population. Normal, ten shuffled runs,
+    race, vet, interruption recovery, quarantine, tamper/link adversaries, and
+    exact-sixteen publication/reopen benchmarks are green; no historical
+    loader, baseline registry, migration path, server dependency, or UI is in
+    this API.
   - [ ] Finish the four-case Meeting Assistant bundle with synchronized WAV and
     MP4 per case, deterministic pass/fail plus advisory model review, durable
     source-before-model and per-evaluation receipts, case-by-case `REVIEW.md`,
@@ -1927,7 +1946,9 @@ it has been reviewed, tested, and committed with its evidence):
     FDB/FDB3/FD-Bench/tau2 benchmark recording and advisory-review bundle into
     the release matrix with retained source/evaluation receipts, audio/video
     decode assertions, exact population counts, redacted summaries, and
-    credential-free offline verification.
+    credential-free offline verification. Candidate lifecycle hooks are now
+    committed for FDB, FDB v3, FD-Bench, and tau-Voice; the shared durable
+    review-bundle composition and complete live populations remain open.
   - [ ] Run the provisioned live 165-attempt scenario candidate comparison
     against the accepted historical trail, live four-case
     Meeting Assistant review, live exact-sixteen Realtime-CU review, and signed
@@ -2044,6 +2065,10 @@ tracker by itself:
   historical-registry implementation, legacy-baseline release gates, and final
   migration-comparison gate. Direct benchmark commands now exercise only the
   new implementation.
+- [x] Delete the historical session-live route/header plug-in and fixed gateway
+  HTTP facade. Negotiated inspection capabilities now name the canonical
+  `/openrealtime/v1/sessions/{session}/live` resource and use only the
+  management capability header; compiled server profiles own all route mounts.
 - [ ] Freeze every direct candidate contract before its full run.
   - [x] Treat the benchmark owner's recorded original numbers as the trusted
     historical comparison targets. Do not reconstruct historical attempts or
@@ -2079,15 +2104,20 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
 - [ ] Re-run and compare all eleven interaction scenarios with at least fifteen
   repetitions per scenario (at least 165 newly retained candidate attempts):
   The exact population, sealed review path, offline verifier, and exact-model
-  advisory transport are implemented. A retained 11×1 diagnostic passed 2/11
-  (`cutting-in` and `ordinary-question`) and exposed real behavioral failures in
-  counting, translation, requested silence, third-party conversation, and
-  visual completion, plus four infrastructure timeouts/drifts. The obsolete
-  inspection-capability validator and missing explicit interaction-profile
-  status found by that run are fixed. A distinct clean 11×1 run must pass
-  infrastructure and drive iteration before the 165-attempt run begins. This
-  box and every case below remain open until the full candidate meets or
-  improves on 140/165 without a significant case, safety, or latency regression.
+  advisory transport are implemented. The latest sealed 11×1 deterministic
+  diagnostic passed 3/11: `ordering-from-a-waiter`,
+  `translating-as-they-speak`, and `ordinary-question`; six cases failed
+  behaviorally and two were infrastructure failures, leaving 9/11 reportable.
+  Its complete exact `google/gemini-3.7-flash` advisory attempt retained and
+  reopened 11/11 evaluations and all media, agreed with the deterministic
+  outcome on 10/11, and disagreed on `ordering-from-a-waiter`. A later distinct
+  advisory attempt correctly remained nonreportable when the new validator
+  rejected a finding timestamp beyond the sealed WAV duration; no aggregate
+  receipt was published. The provider-neutral per-request media-time bound and
+  provider schema specialization must pass their adversarial gates before the
+  next immutable diagnostic. The 165-attempt run has not started. This box and
+  every case below remain open until the full candidate meets or improves on
+  140/165 without a significant case, safety, or latency regression.
   - [ ] `count-as-they-go`
   - [ ] `asked not to be interrupted`
   - [ ] `a recorded menu`
@@ -2103,14 +2133,27 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   production profile. Hermetic candidate-02 is deterministic 4/4 at the
   declared 5 fps; all four A/V reviews are usable and exact Gemini 3.7 Flash
   reported no significant, minor, or limitation findings. It remains honestly
-  nonreportable because it did not use the shared production server. The
-  missing Meeting application/session adapter and host registration are the
-  next implementation gate before a distinct production candidate.
+  nonreportable because it did not use the shared production server. A direct
+  graph-native Meeting application/session plug-in, host registration, lazy
+  readiness/observer propagation, and production-profile composition are now
+  committed on the active review branch with focused normal, shuffle, race,
+  and vet gates green. The distinct authenticated same-server exact-four
+  candidate and its retained reviews remain open. A production readiness run
+  now accepts the bound model and SenseVoice listeners and stops at Fish Speech
+  because the current listener exposes only a bare health response and omits
+  an exact checkpoint/device binding. The next candidate requires the
+  repo-owned Fish service to expose and attest its immutable checkpoint,
+  runtime, and voice identities before any exact-four attempt is accepted.
 - [ ] Run all sixteen OpenRealtime Realtime-CU v1 cases (eight task families
   under pixel and set-of-mark observation variants). Exact-sixteen real
   Chromium/FFmpeg capture and independent full decode are green as hermetic
-  transport evidence only. The direct production profile, CLI review
-  composition, deterministic behavior, and per-case Gemini reviews remain open.
+  transport evidence only. Immutable Qwen and resolved SenseVoice module
+  snapshots, handle/TOCTOU protection, complete secret-safe behavior-environment
+  identity, mandatory authentication, observer proof, bounded session
+  revalidation, and the actual production profile-file/host/authenticated
+  WebSocket/live-inspection path now pass against the strict listeners. A
+  second frozen independent audit remains required before the new exact-sixteen
+  deterministic run and its per-case Gemini reviews begin.
 - [ ] Run all 498 FDB v1.5 tasks through the new graph-native endpoint and
   retain per-attempt review media.
 - [ ] Run all 100 released FDB v3 examples through the new graph-native
@@ -2319,9 +2362,14 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     Chromium developer/observer WebSocket and WebRTC profiles, the unchanged
     clean-server browser/macOS protocol probe, JavaScript conformance, portable
     strict-concurrency Swift tests, shuffled race gates, and focused
-    presentation benchmarks are green. A signed native Darwin application run,
-    full lifecycle/leak evidence, and the complete release-matrix rerun remain
-    open.
+    presentation benchmarks are green. The 2026-08-30 candidate rerun retained
+    passing release reports for the complete real-Chromium profile suite, the
+    unchanged-server browser/macOS-profile probe, JavaScript conformance, and
+    strict-concurrency Swift-Linux conformance under
+    `.runtime/release-validation/*-candidate-01`; focused normal, three
+    shuffled runs, race, vet, and presentation/client benchmarks also passed.
+    A signed native Darwin application run, full lifecycle/leak evidence, and
+    the complete release-matrix rerun remain open.
 
 - [ ] **Exit gate:** an operator can understand a running graph and trace an
   output to its causes without reading binding source.
@@ -2489,10 +2537,12 @@ integration test for this matrix.
 - Architecture references continue to be exact and immutable, but their
   fingerprint is derived from Graph IR plus non-secret config/deployment
   evidence selected by the catalog.
-- Legacy flags and named bindings map to pinned compatibility graphs during a
-  deprecation period.
-- Benchmarks retain old graph artifacts so historical comparisons never
-  reinterpret a topology through newer defaults.
+- No legacy flag, named binding, migration shim, or historical-result loader is
+  part of the new runtime or benchmark design. Obsolete switches are deleted as
+  direct profiles take over.
+- Trusted historical numbers remain write-up-only quality targets. Only new
+  candidate attempts require and produce retained per-attempt artifacts; old
+  graph artifacts are never runtime inputs and are not reconstructed.
 
 ## 28. Risks and mitigations
 

@@ -25,11 +25,11 @@ import (
 	openrealtime "github.com/bojieli/OpenRealtime/protocol/openrealtime"
 )
 
-const launchProfileUsage = `usage: openrealtime profile scenario [flags]
+const launchProfileUsage = `usage: openrealtime profile <scenario|meeting|realtime-cu> [flags]
 
-Freeze one strict scenario graph/server profile against the exact running
-executable and explicit provider configurations. The output is create-only and
-contains no credential. Use this same executable to serve the resulting file.`
+Freeze one strict graph/server profile against the exact running executable
+and explicit provider configurations. Outputs are create-only and contain no
+credential. Use this same executable to serve the resulting file.`
 
 const productionScenarioContinuationInstruction = "Ground every response in canonical evidence already received. " +
 	"Never invent, predict, quote, or role-play a future user or other-speaker turn, timing annotation, or stage direction. " +
@@ -128,11 +128,15 @@ func runLaunchProfile(arguments []string, output io.Writer) error {
 	switch strings.ToLower(strings.TrimSpace(arguments[0])) {
 	case "scenario":
 		return runScenarioProfileFreeze(arguments[1:], output)
+	case "meeting", "meeting-assistant":
+		return runMeetingProfileFreeze(arguments[1:], output)
+	case "realtime-cu", "realtime-computer-use", "computer-use":
+		return runRealtimeCUProfileFreeze(arguments[1:], output)
 	case "help", "-h", "--help":
 		fmt.Fprintln(output, launchProfileUsage)
 		return nil
 	default:
-		return fmt.Errorf("profile kind must be scenario, got %q\n%s", arguments[0], launchProfileUsage)
+		return fmt.Errorf("profile kind must be scenario, meeting, or realtime-cu, got %q\n%s", arguments[0], launchProfileUsage)
 	}
 }
 

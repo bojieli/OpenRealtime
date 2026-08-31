@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
-	"github.com/bojieli/OpenRealtime/graph/resolve"
 )
 
 // Discovery is a metadata-only preflight boundary. Implementations must not
@@ -211,62 +209,6 @@ func (catalog *StaticDiscovery) Snapshot() DiscoverySnapshot {
 	return result
 }
 
-// LegacyDescriptorDiscovery is the explicit compatibility adapter for
-// in-process deployments whose implementation reference is exactly the locked
-// descriptor name. It proves descriptor identity only, reports declared (not
-// registered/live) evidence, rejects custom placement/transport, and cannot
-// satisfy runtime service dependencies. New deployments should use an actual
-// discovery catalog.
-type LegacyDescriptorDiscovery struct {
-	Catalog *resolve.Catalog
-}
-
-func (legacy LegacyDescriptorDiscovery) ResolveImplementation(
-	ctx context.Context, request ImplementationRequest,
-) (ImplementationResolution, error) {
-	if ctx == nil {
-		return ImplementationResolution{}, errors.New("legacy descriptor discovery: nil context")
-	}
-	if err := context.Cause(ctx); err != nil {
-		return ImplementationResolution{}, err
-	}
-	if legacy.Catalog == nil {
-		return ImplementationResolution{}, errors.New("legacy descriptor discovery: nil descriptor catalog")
-	}
-	if request.Reference != request.Contract.Name {
-		return ImplementationResolution{}, fmt.Errorf(
-			"legacy descriptor discovery only accepts implementation %q for contract %q",
-			request.Contract.Name, request.Contract.Name)
-	}
-	if request.Placement != "" || (request.Transport != "" && request.Transport != "in-process") {
-		return ImplementationResolution{}, errors.New("legacy descriptor discovery cannot attest custom placement or transport")
-	}
-	if len(request.ResourceKeys) != 0 || len(request.SecretSlotKeys) != 0 {
-		return ImplementationResolution{}, errors.New("legacy descriptor discovery cannot attest resource or secret slots")
-	}
-	descriptor, found := legacy.Catalog.Exact(request.Contract)
-	if !found {
-		return ImplementationResolution{}, fmt.Errorf("legacy descriptor discovery cannot resolve %+v", request.Contract)
-	}
-	identity, err := descriptor.Identity()
-	if err != nil || identity != request.Contract {
-		return ImplementationResolution{}, fmt.Errorf("legacy descriptor discovery exact lookup changed identity")
-	}
-	return ImplementationResolution{
-		Reference: request.Reference, Contract: request.Contract,
-		Artifact: inspect.ArtifactIdentity{
-			ID: request.Reference, Revision: strconv.FormatUint(request.Contract.Revision, 10),
-			Digest: request.Contract.Digest,
-		},
-		Evidence:   inspect.EvidenceDeclared,
-		Transports: []string{"in-process"},
-	}, nil
-}
-
-func (LegacyDescriptorDiscovery) ResolveDependency(context.Context, string) (DependencyResolution, error) {
-	return DependencyResolution{}, errors.New("legacy descriptor discovery cannot attest service dependencies")
-}
-
 func canonicalImplementation(source ImplementationResolution) (ImplementationResolution, error) {
 	result := cloneImplementation(source)
 	if err := canonicalText("implementation reference", result.Reference); err != nil {
@@ -382,4 +324,3 @@ func containsCanonical(values []string, wanted string) bool {
 }
 
 var _ Discovery = (*StaticDiscovery)(nil)
-var _ Discovery = LegacyDescriptorDiscovery{}

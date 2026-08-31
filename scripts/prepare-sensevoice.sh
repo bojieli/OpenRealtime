@@ -17,6 +17,7 @@ venv="${SENSEVOICE_VENV:-${repository_root}/.runtime/sensevoice}"
 host="${SENSEVOICE_HOST:-127.0.0.1}"
 port="${SENSEVOICE_PORT:-8002}"
 model="${SENSEVOICE_MODEL:-iic/SenseVoiceSmall}"
+model_path="${SENSEVOICE_MODEL_PATH:-${HOME}/.cache/modelscope/models/iic--SenseVoiceSmall/snapshots/master}"
 
 if ! python3 -c 'import torch' >/dev/null 2>&1; then
   echo "this needs a working torch on the system interpreter; none imports" >&2
@@ -46,13 +47,17 @@ PY
 
 echo
 echo "ready. serve it with:"
-echo "  ${venv}/bin/python -m uvicorn server:app --host ${host} --port ${port} \\"
+echo "  SENSEVOICE_MODEL_PATH=${model_path} ${venv}/bin/python -m uvicorn server:app --host ${host} --port ${port} \\"
 echo "    --app-dir ${repository_root}/deploy/sensevoice"
 echo "then:"
 echo "  openrealtime serve -asr-provider sensevoice"
 
 if [[ "${1:-}" == "--serve" ]]; then
   echo
-  exec "${venv}/bin/python" -m uvicorn server:app --host "${host}" --port "${port}" \
+  if [[ ! -d "${model_path}" ]]; then
+    echo "exact SenseVoice model path is unavailable: ${model_path}" >&2
+    exit 1
+  fi
+  SENSEVOICE_MODEL_PATH="${model_path}" exec "${venv}/bin/python" -m uvicorn server:app --host "${host}" --port "${port}" \
     --app-dir "${repository_root}/deploy/sensevoice"
 fi

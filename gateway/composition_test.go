@@ -71,7 +71,7 @@ func TestSessionInspectionPlaneRejectsInvalidCapabilityLifetime(t *testing.T) {
 	}
 }
 
-func TestGatewayCompatibilityHandlerDelegatesInjectedManagementWithoutChangingAuth(t *testing.T) {
+func TestGatewayExposesInjectedCanonicalManagementHandlerWithoutAliases(t *testing.T) {
 	plane, err := gateway.NewSessionInspectionPlane(time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +87,7 @@ func TestGatewayCompatibilityHandlerDelegatesInjectedManagementWithoutChangingAu
 		writer.WriteHeader(299)
 	})
 	server, err := gateway.New(gateway.Config{
-		Binding: compositionBinding(t), Token: "deployment-secret",
+		Binding:           compositionBinding(t),
 		SessionInspection: plane, ManagementHandler: canonical,
 	})
 	if err != nil {
@@ -100,7 +100,7 @@ func TestGatewayCompatibilityHandlerDelegatesInjectedManagementWithoutChangingAu
 			t.Errorf("close composed gateway: %v", err)
 		}
 	})
-	httpServer := httptest.NewServer(server.Handler())
+	httpServer := httptest.NewServer(testGatewayHandler(server))
 	defer httpServer.Close()
 
 	canonicalRequest, err := http.NewRequest(
@@ -119,37 +119,20 @@ func TestGatewayCompatibilityHandlerDelegatesInjectedManagementWithoutChangingAu
 		t.Fatalf("canonical injected management status = %d", canonicalResponse.StatusCode)
 	}
 
-	legacyPath := "/v1/realtime/sessions/sess_exact/live"
-	unauthorized, err := http.Get(httpServer.URL + legacyPath)
+	historical, err := http.Get(httpServer.URL + "/v1/realtime/sessions/sess_exact/live")
 	if err != nil {
 		t.Fatal(err)
 	}
-	unauthorized.Body.Close()
-	if unauthorized.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("legacy alias without deployment bearer = %d", unauthorized.StatusCode)
-	}
-
-	legacyRequest, err := http.NewRequest(http.MethodGet, httpServer.URL+legacyPath, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacyRequest.Header.Set("Authorization", "Bearer deployment-secret")
-	legacyRequest.Header.Set(gateway.InspectionTokenHeader, "legacy-token")
-	legacyResponse, err := http.DefaultClient.Do(legacyRequest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacyResponse.Body.Close()
-	if legacyResponse.StatusCode != 299 {
-		t.Fatalf("authorized legacy alias status = %d", legacyResponse.StatusCode)
+	historical.Body.Close()
+	if historical.StatusCode != http.StatusNotFound {
+		t.Fatalf("historical alias status = %d, want %d",
+			historical.StatusCode, http.StatusNotFound)
 	}
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(calls) != 2 || calls[0] != (managementCall{
+	if len(calls) != 1 || calls[0] != (managementCall{
 		path: management.APIPrefix + "/sessions/sess_exact/live", capability: "canonical-token",
-	}) || calls[1] != (managementCall{
-		path: management.APIPrefix + "/sessions/sess_exact/live", capability: "legacy-token",
 	}) {
 		t.Fatalf("injected canonical management calls = %+v", calls)
 	}

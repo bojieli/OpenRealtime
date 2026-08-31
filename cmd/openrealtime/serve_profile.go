@@ -375,6 +375,8 @@ type serveProfileHost struct {
 	Providers     serveScenarioProviders
 	Delegate      launchprofile.Registration
 	ScenarioSuite launchprofile.Registration
+	Meeting       *serveMeetingRegistration
+	RealtimeCU    *serveRealtimeCURegistration
 	Applications  *launchprofile.Registry
 }
 
@@ -403,13 +405,46 @@ func newServeProfileHost(
 	if err != nil {
 		return serveProfileHost{}, fmt.Errorf("register scenario-suite application: %w", err)
 	}
-	applications, err := launchprofile.NewRegistry([]launchprofile.Registration{delegate, suite})
+	applicationsToRegister := []launchprofile.Registration{delegate, suite}
+	meeting, err := newProductionServeMeetingRegistration(
+		context.Background(), artifacts.Gateway,
+	)
+	if err != nil {
+		return serveProfileHost{}, fmt.Errorf("register Meeting application: %w", err)
+	}
+	if meeting != nil {
+		applicationsToRegister = append(applicationsToRegister, meeting.Application)
+	}
+	var realtimeCU *serveRealtimeCURegistration
+	if strings.TrimSpace(os.Getenv(realtimeCULocalDeploymentEnvironment)) != "" {
+		if os.Getenv(realtimeCULocalDeploymentEnvironment) != "1" {
+			return serveProfileHost{}, errors.New("Realtime-CU local deployment opt-in must be exactly 1")
+		}
+		verifier, verifierErr := newLocalRealtimeCUDeploymentVerifier()
+		if verifierErr != nil {
+			return serveProfileHost{}, fmt.Errorf("construct Realtime-CU deployment verifier: %w", verifierErr)
+		}
+		deployments, resolveErr := verifier.Resolve(context.Background())
+		if resolveErr != nil {
+			return serveProfileHost{}, fmt.Errorf("resolve Realtime-CU live deployments: %w", resolveErr)
+		}
+		registration, registrationErr := newServeRealtimeCURegistration(
+			context.Background(), artifacts.Gateway, deployments, verifier,
+		)
+		if registrationErr != nil {
+			return serveProfileHost{}, fmt.Errorf("register Realtime-CU application: %w", registrationErr)
+		}
+		realtimeCU = &registration
+		applicationsToRegister = append(applicationsToRegister, registration.Application)
+	}
+	applications, err := launchprofile.NewRegistry(applicationsToRegister)
 	if err != nil {
 		return serveProfileHost{}, fmt.Errorf("register production graph applications: %w", err)
 	}
 	return serveProfileHost{
 		Artifacts: artifacts, Providers: providerInventory,
-		Delegate: delegate, ScenarioSuite: suite, Applications: applications,
+		Delegate: delegate, ScenarioSuite: suite, Meeting: meeting, RealtimeCU: realtimeCU,
+		Applications: applications,
 	}, nil
 }
 

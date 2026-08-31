@@ -24,7 +24,7 @@ import (
 
 const (
 	ActivationReference       = "policy.RealtimeComputerUseActivation"
-	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v1"
+	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v3"
 	defaultTerminalMemory     = 512
 	defaultCancellationMemory = 256
 	maximumActivationMemory   = 1_000_000
@@ -33,20 +33,26 @@ const (
 
 // ActivationDescriptor keeps the latest committed user task as durable
 // proposal authority while grounding cognition in each newest screen/camera
-// prefix. The selected user item must be a canonical causal ancestor of the
-// current visual tail; ProposalAdmission independently re-derives and checks
-// that authority, so this element cannot weaken the shared effect contract.
+// prefix. Exactly one generation may be unsettled: a result with no proposal
+// releases the next changed frame, while a proposed effect remains closed
+// until a screen observation names its exact canonical tool result. The
+// selected user item must be a canonical causal ancestor of the current visual
+// tail; ProposalAdmission independently re-derives and checks that authority,
+// so this element cannot weaken the shared effect contract.
 func ActivationDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          ActivationReference,
-		Revision:      1,
+		Revision:      3,
 		Ports: []element.Port{
 			{Name: "committed", Direction: element.Input,
 				Type: stateelements.ObservationCommitOutcomeType(), Cardinality: element.One,
 				Required: true, DefaultDepth: 32},
 			{Name: "cancel", Direction: element.Input,
 				Type: policyelements.GenerationCancelType(), Cardinality: element.One,
+				Required: true, DefaultDepth: 16},
+			{Name: "result", Direction: element.Input,
+				Type: cognitionelements.ResultType(), Cardinality: element.One,
 				Required: true, DefaultDepth: 16},
 			{Name: "trigger", Direction: element.Output,
 				Type: cognitionelements.GenerateType(), Cardinality: element.One,
@@ -62,7 +68,7 @@ func ActivationDescriptor() element.Descriptor {
 				Required: true, DefaultDepth: 32},
 		},
 		Reaction: element.Reaction{
-			Triggers: []string{"committed"}, Interrupts: []string{"cancel"},
+			Triggers: []string{"committed", "result"}, Interrupts: []string{"cancel"},
 			Outcomes:       []string{"trigger", "authority", "state", "outcome"},
 			MaxConcurrency: 1, BreaksCycles: true,
 		},
@@ -181,7 +187,7 @@ func decodeActivationConfig(source json.RawMessage) (policyelements.GenerateOnOb
 }
 
 type activationPorts struct {
-	committed, cancel                  element.InputPort
+	committed, cancel, result          element.InputPort
 	trigger, candidate, state, outcome element.OutputPort
 }
 
@@ -193,7 +199,7 @@ func activationPortsFrom(ports element.Ports) (activationPorts, error) {
 	for _, input := range []struct {
 		name string
 		set  *element.InputPort
-	}{{"committed", &result.committed}, {"cancel", &result.cancel}} {
+	}{{"committed", &result.committed}, {"cancel", &result.cancel}, {"result", &result.result}} {
 		port, err := ports.Input(input.name)
 		if err != nil {
 			return activationPorts{}, err
@@ -221,6 +227,12 @@ type userIntentBasis struct {
 	sourceRevision        uint64
 }
 
+type activeGeneration struct {
+	id             string
+	contextVersion uint64
+	callID         string
+}
+
 type activationRunner struct {
 	instance   string
 	config     policyelements.GenerateOnObservationConfig
@@ -231,6 +243,7 @@ type activationRunner struct {
 	ports      activationPorts
 
 	intent          *userIntentBasis
+	active          *activeGeneration
 	revokedSequence uint64
 	terminal        map[string]struct{}
 	terminalOrder   []string
@@ -244,7 +257,7 @@ type activationInput struct {
 
 func (runner *activationRunner) Run(parent context.Context) error {
 	if err := reportElementRuntime(runner.resolution, activationRuntimeID,
-		"implementation:1", ActivationDescriptor()); err != nil {
+		"implementation:3", ActivationDescriptor()); err != nil {
 		return err
 	}
 	if err := runner.publishState(parent, element.Envelope{ItemID: runner.instance + ":startup"}); err != nil {
@@ -253,12 +266,12 @@ func (runner *activationRunner) Run(parent context.Context) error {
 	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
 	inputs := make(chan activationInput)
-	failures := make(chan error, 2)
+	failures := make(chan error, 3)
 	var wait sync.WaitGroup
 	for _, source := range []struct {
 		kind string
 		port element.InputPort
-	}{{"committed", runner.ports.committed}, {"cancel", runner.ports.cancel}} {
+	}{{"committed", runner.ports.committed}, {"cancel", runner.ports.cancel}, {"result", runner.ports.result}} {
 		wait.Add(1)
 		go receiveActivationInputs(ctx, source.kind, source.port, inputs, failures, &wait)
 	}
@@ -274,10 +287,15 @@ func (runner *activationRunner) Run(parent context.Context) error {
 			return err
 		case input := <-inputs:
 			var err error
-			if input.kind == "committed" {
+			switch input.kind {
+			case "committed":
 				err = runner.acceptCommit(ctx, input.envelope)
-			} else {
+			case "cancel":
 				err = runner.acceptCancel(ctx, input.envelope)
+			case "result":
+				err = runner.acceptResult(ctx, input.envelope)
+			default:
+				err = fmt.Errorf("unknown Realtime-CU activation input %q", input.kind)
 			}
 			if err != nil {
 				return err
@@ -340,6 +358,15 @@ func (runner *activationRunner) acceptCommit(
 	}
 	authorityValue := trajectory.AuthorityOf(current)
 	if authorityValue == trajectory.AuthorityUser {
+		// ASR revisions are useful canonical evidence, but a revisable prefix is
+		// not yet the participant's instruction. Clear an older durable intent
+		// while a new utterance is provisional so visual cadence cannot reactivate
+		// that older instruction as the participant is still speaking.
+		if current.Event.Type != current.Event.Source+".endpoint" {
+			runner.intent = nil
+			return runner.ignore(ctx, envelope, commit, "user_observation_not_final",
+				"a provisional user observation cannot activate computer effects")
+		}
 		runner.intent = &userIntentBasis{
 			itemID: current.ID, triggerItemID: current.Event.EventID,
 			sourceRevision: current.SourceRevision,
@@ -374,26 +401,44 @@ func (runner *activationRunner) acceptCommit(
 		return runner.refuse(ctx, envelope, commit, "intent_not_causal",
 			"current visual context is not a canonical descendant of the selected user task")
 	}
+	resultParent := ""
 	if authorityValue == trajectory.AuthorityObserver {
 		if current.Observation == nil {
 			return runner.refuse(ctx, envelope, commit, "invalid_visual_context",
 				"observer-authority context has no canonical observation metadata")
 		}
-		if current.Observation.Source != SourceScreen {
-			return runner.ignore(ctx, envelope, commit, "visual_context_not_action_target",
-				"camera evidence updates context but cannot independently reactivate computer effects")
+		if current.Observation.Source != SourceScreen && current.Observation.Source != SourceCamera {
+			return runner.refuse(ctx, envelope, commit, "invalid_visual_context",
+				"observer-authority context is outside the screen/camera evidence contract")
 		}
-		resultParent, err := canonicalResultParent(prefix, current)
+		var err error
+		resultParent, err = canonicalResultParent(prefix, current)
 		if err != nil {
 			return runner.refuse(ctx, envelope, commit, "invalid_effect_consequence", err.Error())
 		}
-		if resultParent == "" {
-			return runner.ignore(ctx, envelope, commit, "no_effect_consequence",
-				"ordinary screen cadence updates context but cannot independently reactivate computer effects")
-		}
-		if priorScreenConsequence(prefix, current.ID, resultParent) {
+		if resultParent != "" && priorScreenConsequence(prefix, current.ID, resultParent) {
 			return runner.ignore(ctx, envelope, commit, "effect_consequence_consumed",
 				"this canonical tool result already has an earlier screen consequence")
+		}
+	}
+	if runner.active != nil {
+		switch {
+		case runner.active.callID == "":
+			return runner.ignore(ctx, envelope, commit, "generation_pending",
+				"one exact cognition turn is still in flight")
+		case resultParent == "":
+			return runner.ignore(ctx, envelope, commit, "effect_pending",
+				"one proposed computer effect is waiting for its canonical visual consequence")
+		default:
+			resultItem, found := trajectoryItem(
+				trajectory.Snapshot{Version: commit.StoreVersion, Items: prefix}, resultParent,
+			)
+			if !found || resultItem.ToolResult == nil ||
+				resultItem.ToolResult.CallID != runner.active.callID {
+				return runner.refuse(ctx, envelope, commit, "effect_result_mismatch",
+					"visual consequence does not settle the one active computer effect")
+			}
+			runner.active = nil
 		}
 	}
 	generationID := activationGenerationID(runner.config.Role, envelope.SessionID, commit, basis.ID)
@@ -410,7 +455,9 @@ func (runner *activationRunner) acceptCommit(
 		}
 		return runner.publishState(ctx, envelope)
 	}
+	runner.active = &activeGeneration{id: generationID, contextVersion: commit.StoreVersion}
 	if err := runner.emit(ctx, envelope, generationID, commit, *runner.intent); err != nil {
+		runner.active = nil
 		return err
 	}
 	runner.rememberTerminal(generationID)
@@ -423,6 +470,43 @@ func (runner *activationRunner) acceptCommit(
 		TriggerItemID: commit.TriggerItemID,
 	}); err != nil {
 		return err
+	}
+	return runner.publishState(ctx, envelope)
+}
+
+func (runner *activationRunner) acceptResult(
+	ctx context.Context, envelope element.Envelope,
+) error {
+	result, ok := cognitionResultPayload(envelope.Payload)
+	if !ok || !canonical(envelope.SessionID) || !canonical(envelope.RunID) ||
+		result.RunID != envelope.RunID {
+		return fmt.Errorf("Realtime-CU activation model result has invalid identity or payload %T", envelope.Payload)
+	}
+	if runner.active == nil || runner.active.id != result.RunID {
+		// A result can race a user cancellation. It carries no authority by itself,
+		// so an already-terminal generation is safe to discard and cannot release a
+		// newer turn.
+		if _, terminal := runner.terminal[result.RunID]; terminal {
+			return nil
+		}
+		return fmt.Errorf("Realtime-CU activation received result for unknown run %q", result.RunID)
+	}
+	if result.ContextVersion != runner.active.contextVersion {
+		return fmt.Errorf("Realtime-CU activation result context is %d, want %d",
+			result.ContextVersion, runner.active.contextVersion)
+	}
+	if len(result.ToolProposals) > 1 {
+		return fmt.Errorf("Realtime-CU activation result has %d proposals; profile allows one",
+			len(result.ToolProposals))
+	}
+	if len(result.ToolProposals) == 0 {
+		runner.active = nil
+	} else {
+		callID := result.ToolProposals[0].Call.CallID
+		if !canonical(callID) {
+			return errors.New("Realtime-CU activation result proposal has a noncanonical call ID")
+		}
+		runner.active.callID = callID
 	}
 	return runner.publishState(ctx, envelope)
 }
@@ -507,6 +591,7 @@ func (runner *activationRunner) acceptCancel(
 			"invalid_cancel", "intent cancellation requires canonical session and address")
 	}
 	runner.intent = nil
+	runner.active = nil
 	if envelope.Sequence > runner.revokedSequence {
 		runner.revokedSequence = envelope.Sequence
 	}
@@ -641,6 +726,18 @@ func generationCancelPayload(payload any) (policyelements.GenerationCancel, bool
 		}
 	}
 	return policyelements.GenerationCancel{}, false
+}
+
+func cognitionResultPayload(payload any) (cognitionelements.Result, bool) {
+	switch value := payload.(type) {
+	case cognitionelements.Result:
+		return value, true
+	case *cognitionelements.Result:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return cognitionelements.Result{}, false
 }
 
 func activationGenerationID(

@@ -11,6 +11,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/graph"
 	"github.com/bojieli/OpenRealtime/graph/deployment"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	"github.com/bojieli/OpenRealtime/graph/manifest"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
@@ -47,11 +48,6 @@ type Options struct {
 
 	Revision uint64
 	Limits   Limits
-
-	// AllowDeclaredImplementations is compatibility-only. Production plans
-	// should require registered artifact evidence. It is needed when using
-	// LegacyDescriptorDiscovery during the documented migration window.
-	AllowDeclaredImplementations bool
 }
 
 // Create parses, resolves, validates, binds, and fingerprints every artifact
@@ -507,7 +503,7 @@ func resolvePlan(
 			return Resolution{}, fmt.Errorf("node %s implementation %s provides %+v, graph requires %+v",
 				node.ID, request.Reference, canonical.Contract, request.Contract)
 		}
-		if canonical.Evidence == "declared" && !options.AllowDeclaredImplementations {
+		if canonical.Evidence == inspect.EvidenceDeclared {
 			return Resolution{}, fmt.Errorf("node %s implementation %s has declaration-only evidence", node.ID, request.Reference)
 		}
 		if request.Placement != "" && !containsCanonical(canonical.Placements, request.Placement) {

@@ -28,7 +28,8 @@ func TestAdapterStreamsRawFishPCMAndRequestControls(t *testing.T) {
 		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
 			t.Fatal(err)
 		}
-		if payload["text"] != "hello" || payload["streaming"] != true || payload["format"] != "wav" {
+		if payload["text"] != "hello" || payload["streaming"] != true || payload["format"] != "wav" ||
+			payload["reference_id"] != "default" {
 			t.Errorf("unexpected request: %+v", payload)
 		}
 		if _, exists := payload["model"]; exists {
@@ -44,7 +45,9 @@ func TestAdapterStreamsRawFishPCMAndRequestControls(t *testing.T) {
 	}))
 	defer server.Close()
 
-	adapter, err := New(Config{Endpoint: server.URL + "/v1/tts", BearerToken: "secret"})
+	adapter, err := New(Config{
+		Endpoint: server.URL + "/v1/tts", BearerToken: "secret", ReferenceID: "default",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

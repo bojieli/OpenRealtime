@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	"github.com/bojieli/OpenRealtime/bench/review/candidate"
 )
 
 // PinnedRevision is the tau2-bench commit the suite is measured against.
@@ -185,6 +186,12 @@ type Config struct {
 	// Logf receives progress. tau2 runs for hours, and a runner that says
 	// nothing until it finishes is indistinguishable from one that has hung.
 	Logf func(format string, args ...any)
+	// Evidence adopts only artifacts emitted by this newly executed pinned
+	// tau2 run. The external harness owns its Realtime client, so the retained
+	// attempt explicitly says external-harness-artifacts rather than pretending
+	// OpenRealtime observed shared-session callbacks.
+	Evidence       candidate.Plugin
+	EvidenceOrigin candidate.RunOrigin
 }
 
 func (config *Config) applyDefaults() {
@@ -299,7 +306,15 @@ func (config *Config) agentToken() (string, error) {
 // silently sends the agent to a hosted endpoint, and a missing interpreter
 // wastes an hour before saying so.
 func (config *Config) Verify(ctx context.Context) error {
+	if ctx == nil {
+		return errors.New("tau-Voice evaluation requires a context")
+	}
 	config.applyDefaults()
+	if config.Evidence != nil {
+		if err := config.EvidenceOrigin.Validate(); err != nil {
+			return fmt.Errorf("tau-Voice candidate evidence origin: %w", err)
+		}
+	}
 	if err := config.Cell.Execution.Validate(); err != nil {
 		return fmt.Errorf("invalid cell execution requirement: %w", err)
 	}
@@ -389,6 +404,17 @@ func Run(ctx context.Context, config Config) (bench.Result, error) {
 	result := bench.Result{
 		Suite: "tau-voice", Cell: config.Cell, Provenance: provenance, Expected: TaskCount * config.Trials,
 	}
+	var evidenceLifecycle *candidate.Lifecycle
+	if config.Evidence != nil {
+		created, err := candidate.NewLifecycle(candidate.LifecycleConfig{
+			Context: ctx, Plugin: config.Evidence, Suite: result.Suite,
+			Cell: result.Cell, Provenance: result.Provenance, Origin: config.EvidenceOrigin,
+		})
+		if err != nil {
+			return bench.Result{}, fmt.Errorf("create tau-Voice candidate evidence lifecycle: %w", err)
+		}
+		evidenceLifecycle = created
+	}
 	if config.Limit > 0 || len(config.TaskIDs) > 0 || strings.TrimSpace(config.Domain) != "" {
 		// A restricted run is not the declared cell, and the report must not be
 		// able to claim it is. Expected stays at the declared count so Finish
@@ -396,6 +422,7 @@ func Run(ctx context.Context, config Config) (bench.Result, error) {
 		config.Logf("running a restricted subset: this cell will be reported incomplete")
 	}
 
+	var runErr error
 	for _, domain := range domains {
 		config.Logf("tau-Voice: %s domain, %s speech", domain, config.Condition)
 		// --save-to names a run rather than giving a path: tau2 writes it
@@ -423,13 +450,23 @@ func Run(ctx context.Context, config Config) (bench.Result, error) {
 			}
 			outcomes[index].Notes["artifacts"] = config.simulationDir(runName)
 			config.attachExecution(ctx, &outcomes[index])
+			if evidenceLifecycle != nil {
+				if err := config.retainCandidateOutcome(
+					ctx, evidenceLifecycle, domain, runName, outcomes[index],
+				); err != nil {
+					runErr = errors.Join(runErr, err)
+				}
+			}
 		}
 		result.Tasks = append(result.Tasks, outcomes...)
 	}
 
 	result.Provenance = result.Provenance.Complete()
 	result.Finish()
-	return result, nil
+	if evidenceLifecycle != nil {
+		runErr = errors.Join(runErr, evidenceLifecycle.Finish(result))
+	}
+	return result, runErr
 }
 
 func (config *Config) attachExecution(ctx context.Context, outcome *bench.TaskOutcome) {
@@ -480,6 +517,12 @@ func (config *Config) runDomain(ctx context.Context, domain, runName string) ([]
 		"--user-llm-args", config.userModelArgs(),
 		"--hallucination-retries", fmt.Sprint(max(0, config.HallucinationRetries)),
 		"--voice-synthesis-provider", config.SynthesisProvider,
+	}
+	if config.Evidence != nil {
+		// This is an upstream artifact switch, not an alternate benchmark path.
+		// It makes tau2 retain the exact stereo conversation and simulation trace
+		// that the candidate plug-in imports after the subprocess completes.
+		arguments = append(arguments, "--verbose-logs")
 	}
 	if config.SynthesisProvider == "fish_audio" {
 		arguments = append(arguments,
@@ -664,7 +707,10 @@ func readOutcomes(saveTo, domain string) ([]bench.TaskOutcome, error) {
 			// whatever else it did. Scoring it zero would count a crashed run
 			// as a failed task, and those are different numbers.
 			Completed: entry.Reward != nil,
-			Notes:     map[string]string{"domain": domain},
+			Notes: map[string]string{
+				"domain": domain, "simulation_id": entry.ID,
+				"task_id": fmt.Sprint(entry.TaskID), "trial_index": fmt.Sprint(entry.Trial),
+			},
 		}
 		if entry.TerminationReason != "" {
 			outcome.Notes["termination"] = entry.TerminationReason

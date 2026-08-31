@@ -276,23 +276,18 @@ func TestAdaptiveVideoGraphRunsThroughCompiledServerProfileAndRealtimeWebSocket(
 		t.Fatalf("adaptive video visual-provider evidence = %+v", vision)
 	}
 
+	if want := management.APIPrefix + "/sessions/" +
+		inspectionAccess.SessionID + "/live"; inspectionAccess.Path != want {
+		t.Fatalf("negotiated inspection path = %q, want %q", inspectionAccess.Path, want)
+	}
 	canonicalLive := readAdaptiveInspection[inspect.Live](
-		t,
-		httpServer.URL+management.APIPrefix+"/sessions/"+inspectionAccess.SessionID+"/live",
-		management.CapabilityHeader,
-		inspectionAccess.Token,
-	)
-	compatibilityLive := readAdaptiveInspection[inspect.Live](
 		t, httpServer.URL+inspectionAccess.Path,
-		gateway.InspectionTokenHeader, inspectionAccess.Token,
+		management.CapabilityHeader, inspectionAccess.Token,
 	)
 	if canonicalLive.Fingerprint != graphLive.Fingerprint ||
-		compatibilityLive.Fingerprint != graphLive.Fingerprint ||
-		canonicalLive.Configuration == nil || compatibilityLive.Configuration == nil ||
-		canonicalLive.Configuration.Digest != graphLive.Configuration.Digest ||
-		compatibilityLive.Configuration.Digest != graphLive.Configuration.Digest {
-		t.Fatalf("composed management routes lost graph identity: canonical=%+v compatibility=%+v",
-			canonicalLive, compatibilityLive)
+		canonicalLive.Configuration == nil ||
+		canonicalLive.Configuration.Digest != graphLive.Configuration.Digest {
+		t.Fatalf("composed management route lost graph identity: canonical=%+v", canonicalLive)
 	}
 
 	serverLive := realm.Live()
@@ -303,7 +298,7 @@ func TestAdaptiveVideoGraphRunsThroughCompiledServerProfileAndRealtimeWebSocket(
 		serverLive.Entries["inspection"].Runtime != gatewayArtifact ||
 		serverLive.Entries["observability"].Runtime != gatewayArtifact ||
 		serverLive.Entries["session-api"].Runtime != gatewayArtifact ||
-		len(serverLive.Entries) != 8 ||
+		len(serverLive.Entries) != 7 ||
 		!serverLive.Exports[serverplugin.RealtimeHTTPExport].Available {
 		t.Fatalf("adaptive video server realm evidence = %+v", serverLive)
 	}

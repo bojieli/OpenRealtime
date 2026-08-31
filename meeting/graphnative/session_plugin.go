@@ -104,6 +104,12 @@ func NewSessionPlugin(source SessionPluginConfig) (*SessionPlugin, error) {
 		return nil, err
 	}
 	plugin := &SessionPlugin{config: config, coordinator: newMeetingStoreCoordinator()}
+	additionalObservers := make([]string, 0, len(config.Foreground.Capabilities.Observers))
+	for _, observer := range config.Foreground.Capabilities.Observers {
+		if observer != "screen" {
+			additionalObservers = append(additionalObservers, observer)
+		}
+	}
 	adapter := AdapterPluginConfig{
 		Reference: SessionAdapterReference,
 		Artifact:  config.AdapterArtifact,
@@ -113,7 +119,7 @@ func NewSessionPlugin(source SessionPluginConfig) (*SessionPlugin, error) {
 			Voice:               config.Foreground.Capabilities.Voice,
 			Stack:               config.Foreground.Capabilities.Stack,
 			MaxOutputTokens:     config.Foreground.Capabilities.MaxOutputTokens,
-			AdditionalObservers: []string{"meeting.foreground.asr"},
+			AdditionalObservers: additionalObservers,
 		},
 		Factory: plugin.sessionAdapterFactory(),
 	}
@@ -288,10 +294,12 @@ func validateSessionPluginConfig(config SessionPluginConfig) error {
 	if err := continuation.ValidateDescriptor(config.Foreground.Descriptor); err != nil {
 		return fmt.Errorf("meeting foreground descriptor: %w", err)
 	}
+	foregroundToolAuthority := config.Foreground.Descriptor.EffectiveToolAuthority()
 	if config.Foreground.Descriptor.Phase != trajectory.PhaseFast ||
-		config.Foreground.Descriptor.EffectiveToolAuthority() != continuation.ToolAuthorityPropose ||
+		(foregroundToolAuthority != continuation.ToolAuthorityPropose &&
+			foregroundToolAuthority != continuation.ToolAuthorityExecute) ||
 		config.Foreground.Descriptor.EffectiveSpeechAuthority() != continuation.SpeechAuthorityVoice {
-		return errors.New("meeting foreground descriptor must be a proposal-only, voiced fast provider")
+		return errors.New("meeting foreground descriptor must be a proposal-or-execution, voiced fast provider")
 	}
 	if config.Visual.Factory == nil {
 		return errors.New("meeting visual plugin requires a factory")

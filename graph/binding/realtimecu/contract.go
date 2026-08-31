@@ -77,11 +77,21 @@ type VisualConsequence struct {
 // requires microphone, screen, and camera even though camera is not an action
 // target.
 type ObserverPlugin struct {
-	Reference string
-	Name      string
-	Artifact  inspect.ArtifactIdentity
-	Sources   []string
-	Factory   func(context.Context, legacy.Options) (Observer, error)
+	Reference       string
+	Name            string
+	Artifact        inspect.ArtifactIdentity
+	Sources         []string
+	Factory         func(context.Context, legacy.Options) (Observer, error)
+	ResourceFactory func(context.Context, legacy.Options, ObserverResources) (Observer, error)
+}
+
+// ObserverResources are session-scoped graph services an observer may use.
+// The profile selects only the observer artifact; handles and retained bytes
+// never enter serializable configuration. Retainer is shared with the graph's
+// cognition media resolver, so an attached keyframe is the exact byte payload
+// the selected continuation provider receives.
+type ObserverResources struct {
+	Retainer perception.Retainer
 }
 
 // PluginConfig supplies exact runtime/provider identities and the one bounded
@@ -120,9 +130,11 @@ func validatePluginConfig(config PluginConfig) error {
 	if err := config.Observer.Artifact.Validate(); err != nil {
 		return fmt.Errorf("realtime-CU observer artifact: %w", err)
 	}
-	if !canonical(config.Observer.Reference) || !canonical(config.Observer.Name) ||
-		config.Observer.Factory == nil {
-		return errors.New("realtime-CU observer plugin requires a canonical reference, name, and factory")
+	if !canonical(config.Observer.Reference) || !canonical(config.Observer.Name) {
+		return errors.New("realtime-CU observer plugin requires a canonical reference and name")
+	}
+	if (config.Observer.Factory == nil) == (config.Observer.ResourceFactory == nil) {
+		return errors.New("realtime-CU observer plugin requires exactly one plain or resource-aware factory")
 	}
 	sources := canonicalStrings(config.Observer.Sources)
 	for _, source := range config.Observer.Sources {

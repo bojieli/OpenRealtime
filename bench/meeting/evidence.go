@@ -55,8 +55,7 @@ func meetingEndpointIdentity(endpoint string) string {
 
 // EvidenceAttempt identifies one exact Meeting Assistant evaluation before
 // any browser, media, or Realtime work begins. Trial is one because the v1
-// runner owns a single repetition; an outer migration runner may construct a
-// fresh evidence plug-in for each preregistered repetition.
+// candidate runner owns a single preregistered repetition.
 type EvidenceAttempt struct {
 	Suite string `json:"suite"`
 	Case  string `json:"case"`

@@ -112,7 +112,7 @@ the complete candidate population.
 The graph-native scenario candidate also owns a create-only human/media review
 directory and an external source receipt. The source manifest is published
 only after all 165 checklist rows, exact scorer results, stereo WAVs, submitted
-visual inputs, legacy review indexes, and the finished architecture result are
+visual inputs, candidate review indexes, and the finished architecture result are
 closed and cross-bound. The release gate requires both the committed source
 manifest and the portable receipt outside that directory; `CHECKLIST.md` or an
 ordinary result JSON by itself is not retained-review evidence. Advisory model

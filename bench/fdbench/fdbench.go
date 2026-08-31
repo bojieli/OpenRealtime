@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	"github.com/bojieli/OpenRealtime/bench/review/candidate"
 )
 
 // TimestampRate is the rate the released .timestamps offsets are expressed
@@ -153,10 +154,22 @@ type Options struct {
 	Progress      func(string)
 	// RuntimeAttestor captures exact graph execution evidence per conversation.
 	RuntimeAttestor bench.RuntimeAttestor
+	// Evidence receives every newly executed candidate conversation and exact
+	// audio from the deterministic scorer's shared Realtime session.
+	Evidence       candidate.Plugin
+	EvidenceOrigin candidate.RunOrigin
 }
 
 // Run executes the suite.
 func Run(ctx context.Context, options Options) (bench.Result, error) {
+	if ctx == nil {
+		return bench.Result{}, errors.New("FD-Bench evaluation requires a context")
+	}
+	if options.Evidence != nil {
+		if err := options.EvidenceOrigin.Validate(); err != nil {
+			return bench.Result{}, fmt.Errorf("FD-Bench candidate evidence origin: %w", err)
+		}
+	}
 	if options.LatencyBudget <= 0 {
 		options.LatencyBudget = 2 * time.Second
 	}
@@ -178,39 +191,88 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	result := bench.Result{
 		Suite: "fd-bench", Cell: options.Cell, Provenance: bench.Capture(), Expected: expected,
 	}
+	var evidenceLifecycle *candidate.Lifecycle
+	if options.Evidence != nil {
+		evidenceLifecycle, err = candidate.NewLifecycle(candidate.LifecycleConfig{
+			Context: ctx, Plugin: options.Evidence, Suite: result.Suite,
+			Cell: result.Cell, Provenance: result.Provenance, Origin: options.EvidenceOrigin,
+		})
+		if err != nil {
+			return bench.Result{}, fmt.Errorf("create FD-Bench candidate evidence lifecycle: %w", err)
+		}
+	}
+	finish := func(runErr error) (bench.Result, error) {
+		result.Finish()
+		if evidenceLifecycle == nil {
+			return result, runErr
+		}
+		return result, errors.Join(runErr, evidenceLifecycle.Finish(result))
+	}
+	var runErr error
 	for index, conversation := range conversations {
 		if options.Progress != nil {
 			options.Progress(fmt.Sprintf("[%d/%d] %s", index+1, len(conversations), conversation.ID))
 		}
-		result.Tasks = append(result.Tasks, runConversation(ctx, options, conversation))
+		outcome, evidenceErr := runConversation(ctx, options, conversation, evidenceLifecycle)
+		result.Tasks = append(result.Tasks, outcome)
+		runErr = errors.Join(runErr, evidenceErr)
 	}
-	result.Finish()
-	return result, nil
+	return finish(runErr)
 }
 
-func runConversation(ctx context.Context, options Options, conversation Conversation) bench.TaskOutcome {
-	outcome := bench.TaskOutcome{
+func runConversation(
+	ctx context.Context, options Options, conversation Conversation,
+	evidenceLifecycle *candidate.Lifecycle,
+) (outcome bench.TaskOutcome, evidenceErr error) {
+	outcome = bench.TaskOutcome{
 		ID:    conversation.ID,
 		Notes: map[string]string{"condition": conversation.Condition},
 	}
-	transcript, err := bench.Play(ctx, bench.SessionConfig{
+	var transcript bench.Transcript
+	var attempt *candidate.ActiveAttempt
+	if evidenceLifecycle != nil {
+		var err error
+		attempt, err = evidenceLifecycle.Begin(conversation.ID, 1, struct {
+			Condition       string `json:"condition"`
+			Turns           []Turn `json:"turns"`
+			LatencyBudgetMS int64  `json:"latency_budget_ms"`
+			Criterion       string `json:"criterion"`
+		}{
+			Condition: conversation.Condition, Turns: conversation.Turns,
+			LatencyBudgetMS: options.LatencyBudget.Milliseconds(),
+			Criterion:       "measure response latency, premature starts, overruns, and missed annotated turns",
+		})
+		if err != nil {
+			outcome.Error = err.Error()
+			return outcome, err
+		}
+		defer func() {
+			evidenceErr = errors.Join(evidenceErr, attempt.Complete(outcome, transcript))
+		}()
+	}
+	config := bench.SessionConfig{
 		Endpoint: options.Endpoint, Token: options.Token, Model: options.Model,
 		Instructions: "You are a helpful voice assistant. Reply briefly to each thing the person says.",
 		Realtime:     true, Timeout: options.Timeout, RuntimeAttestor: options.RuntimeAttestor,
 		AttestationScope: conversation.ID,
-	}, conversation.AudioPath)
+	}
+	if attempt != nil {
+		config.CaptureAudio = attempt.CaptureAudio
+	}
+	var err error
+	transcript, err = bench.Play(ctx, config, conversation.AudioPath)
 	outcome.AttachExecution(transcript)
 	if err != nil {
 		outcome.Error = err.Error()
-		return outcome
+		return outcome, evidenceErr
 	}
 	if transcript.Failure != "" {
 		outcome.Error = transcript.Failure
-		return outcome
+		return outcome, evidenceErr
 	}
 	outcome.Completed = true
 	score(&outcome, transcript, conversation.Turns, float64(options.LatencyBudget.Milliseconds()))
-	return outcome
+	return outcome, evidenceErr
 }
 
 // score reduces one played conversation to its reading.

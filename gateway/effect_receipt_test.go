@@ -44,7 +44,7 @@ func startServerWithEffectIssuer(
 	if err != nil {
 		t.Fatalf("new gateway: %v", err)
 	}
-	httpServer := httptest.NewServer(server.Handler())
+	httpServer := httptest.NewServer(testGatewayHandler(server))
 	t.Cleanup(httpServer.Close)
 	return httpServer
 }

@@ -102,7 +102,7 @@ func configureSessionBenchmarkAttestor(
 
 	if prepared != nil {
 		client := bench.LiveInspectionClient{
-			Endpoint: endpoint, DeploymentToken: deploymentToken,
+			Endpoint: endpoint,
 		}
 		resolve, resolverErr := client.Resolver(
 			prepared.graph, prepared.configuration, prepared.expected,

@@ -76,6 +76,7 @@ type ApplicationHostConfig struct {
 	Inspection      graphruntime.InspectionConfig
 	ShutdownTimeout time.Duration
 	TraceRecording  *graphbinding.TraceRecordingConfig
+	Readiness       []graphlaunch.ReadinessCheck
 }
 
 // NewApplicationRegistration snapshots and validates one host-installed
@@ -174,6 +175,7 @@ func NewApplicationRegistration(
 				Adapter:       adapter.config, Inspection: host.Inspection,
 				ShutdownTimeout: host.ShutdownTimeout,
 				TraceRecording:  cloneApplicationTraceConfig(host.TraceRecording),
+				Readiness:       slices.Clone(host.Readiness),
 			})
 			if err != nil {
 				return graphlaunch.Config{}, err
@@ -269,6 +271,7 @@ func cloneApplicationHost(source ApplicationHostConfig) ApplicationHostConfig {
 		result.Adapters[index] = cloneAdapterPluginConfig(source.Adapters[index])
 	}
 	result.TraceRecording = cloneApplicationTraceConfig(source.TraceRecording)
+	result.Readiness = slices.Clone(source.Readiness)
 	return result
 }
 

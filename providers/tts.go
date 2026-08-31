@@ -57,7 +57,7 @@ var ttsCatalog = []TTS{
 			Local: true, KeyEnv: []string{"OPENREALTIME_TTS_API_KEY"},
 			Notes: "The native Fish server, which selects its model at start-up rather than per request.",
 		},
-		Model: fishaudio.DefaultModel,
+		Model: fishaudio.DefaultModel, Voice: "default",
 	},
 	{
 		Common: Common{
@@ -215,7 +215,8 @@ func NewTTS(request TTSRequest) (v1.StreamingSpeechProvider, error) {
 	case DialectFishNative:
 		return fishaudio.New(fishaudio.Config{
 			Endpoint: endpoint, Model: model, BearerToken: key,
-			Headers: request.Header, RequestTimeout: request.RequestTimeout,
+			ReferenceID: voice,
+			Headers:     request.Header, RequestTimeout: request.RequestTimeout,
 			OutputSampleRateHz: rate,
 		})
 	case DialectPCMPost:

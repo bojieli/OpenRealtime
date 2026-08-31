@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	// TaskInventoryVersion is the on-disk contract used by migration census
+	// TaskInventoryVersion is the on-disk contract used by candidate inventory
 	// registration. Changing the task identity contract requires a new version;
 	// silently reinterpreting an old inventory would change the experiment.
 	TaskInventoryVersion = 1
@@ -37,8 +37,8 @@ type TaskIdentity struct {
 	ID     string `json:"id"`
 }
 
-// TaskInventory is the canonical compatibility boundary between the pinned
-// tau2 harness and OpenRealtime's preregistered migration census.
+// TaskInventory is the canonical candidate boundary between the pinned tau2
+// harness and OpenRealtime's preregistered direct-run population.
 type TaskInventory struct {
 	Version  int            `json:"version"`
 	Revision string         `json:"revision"`

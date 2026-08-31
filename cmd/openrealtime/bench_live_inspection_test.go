@@ -19,6 +19,7 @@ import (
 	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
+	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 )
 
@@ -34,10 +35,10 @@ func TestConfigureSessionBenchmarkAttestorBindsReviewedGraphAndOneCredential(t *
 		if request.URL.Path != access.Path {
 			t.Errorf("inspection path = %q, want %q", request.URL.Path, access.Path)
 		}
-		if request.Header.Get("Authorization") != "Bearer "+secret {
-			t.Errorf("deployment authorization = %q", request.Header.Get("Authorization"))
+		if request.Header.Get("Authorization") != "" {
+			t.Errorf("deployment authorization leaked to management route")
 		}
-		if request.Header.Get(openrealtime.InspectionTokenHeader) != access.Token {
+		if request.Header.Get(management.CapabilityHeader) != access.Token {
 			t.Errorf("session inspection capability was not presented")
 		}
 		writer.Header().Set("Content-Type", "application/json")
@@ -306,7 +307,7 @@ func requirementForGraphFixture(t *testing.T, fixture graphExecutionFixture) ben
 func benchmarkInspectionAccess(sessionID string) openrealtime.InspectionAccess {
 	return openrealtime.InspectionAccess{
 		SessionID: sessionID,
-		Path:      "/v1/realtime/sessions/" + sessionID + "/live",
+		Path:      management.APIPrefix + "/sessions/" + sessionID + "/live",
 		Token: "mgmt_" + base64.RawURLEncoding.EncodeToString(
 			bytes.Repeat([]byte{0x61}, 32),
 		),

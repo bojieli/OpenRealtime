@@ -264,9 +264,10 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 		t.Fatalf("first model invocation sequence = %d", invocation)
 	}
 
-	// Continuous camera and screen cadence must update canonical context but
-	// cannot autonomously reactivate effects. Only a new user task or the first
-	// screen carrying a new canonical result is an activation boundary.
+	// Continuous camera and screen cadence updates canonical context, but the
+	// first effect is still unsettled. The activation policy admits no overlap:
+	// changed visual evidence can reactivate only after the model returned no
+	// proposal or the exact proposed effect has a canonical visual consequence.
 	time.Sleep(350 * time.Millisecond)
 	for _, source := range []string{realtimecu.SourceCamera, realtimecu.SourceScreen} {
 		client.send(map[string]any{
@@ -280,7 +281,7 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 	}
 	select {
 	case invocation := <-model.invocations:
-		t.Fatalf("ordinary audiovisual cadence caused model invocation %d", invocation)
+		t.Fatalf("pending effect allowed overlapping audiovisual invocation %d", invocation)
 	case <-time.After(250 * time.Millisecond):
 	}
 

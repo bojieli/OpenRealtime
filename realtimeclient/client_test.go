@@ -116,6 +116,29 @@ func TestDialDoesNotOverrideAModelTheURLAlreadyNames(t *testing.T) {
 	}
 }
 
+func TestDialCanSeparateSetupDeadlineFromConnectionLifetime(t *testing.T) {
+	release := make(chan struct{})
+	endpoint := newEchoServer(t, func(send func(any)) {
+		<-release
+		send(map[string]any{"type": "session.created", "event_id": "after-setup"})
+	})
+	setupContext, cancelSetup := context.WithCancel(context.Background())
+	lifetimeContext, cancelLifetime := context.WithCancel(context.Background())
+	defer cancelLifetime()
+	client, err := realtimeclient.Dial(setupContext, realtimeclient.Config{
+		URL: endpoint.url(), LifetimeContext: lifetimeContext,
+	})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer client.Close()
+	cancelSetup()
+	close(release)
+	if event := receive(t, client); event.Field("event_id") != "after-setup" {
+		t.Fatalf("setup cancellation closed the established connection: %+v", event)
+	}
+}
+
 func TestEventsAreDeliveredWithTheirRawBytes(t *testing.T) {
 	endpoint := newEchoServer(t, func(send func(any)) {
 		send(map[string]any{
