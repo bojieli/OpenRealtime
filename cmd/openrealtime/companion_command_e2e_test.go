@@ -175,11 +175,17 @@ func TestPublicCompanionCommandRunsRealBrowserAndNativeClients(t *testing.T) {
 		filepath.Join(repositoryRoot, "cmd", "openrealtime", "testdata", "companion_browser.mjs"),
 		presentationURL,
 	)
-	browser.Env = append(os.Environ(), "CHROMIUM="+chromium, "CDP_PORT="+cdpPort)
+	browserSnapshot := filepath.Join(t.TempDir(), "browser-live.json")
+	browser.Env = append(os.Environ(), "CHROMIUM="+chromium, "CDP_PORT="+cdpPort,
+		"OPENREALTIME_COMPANION_BROWSER_SNAPSHOT="+browserSnapshot)
 	browserOutput, err := browser.CombinedOutput()
 	t.Logf("public companion browser:\n%s", browserOutput)
 	if err != nil {
 		t.Fatalf("drive public companion browser WebRTC client: %v", err)
+	}
+	if info, err := os.Lstat(browserSnapshot); err != nil || !info.Mode().IsRegular() ||
+		info.Mode().Perm() != 0o600 || info.Size() == 0 {
+		t.Fatalf("browser did not publish one private exact management response: info=%v err=%v", info, err)
 	}
 
 	companionCommandRunNativeProbe(t, nativeBundle)

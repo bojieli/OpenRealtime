@@ -1,12 +1,21 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  closeSync, constants, fstatSync, fsyncSync, mkdtempSync, openSync, rmSync, writeSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const pageURL = process.argv[2];
+const snapshotPath = process.env.OPENREALTIME_COMPANION_BROWSER_SNAPSHOT ?? "";
 const port = Number(process.env.CDP_PORT ?? 19888);
-const profile = mkdtempSync(join(tmpdir(), "openrealtime-companion-command-"));
+const profileParent = process.env.OPENREALTIME_COMPANION_BROWSER_PROFILE_PARENT ?? tmpdir();
+if (!isAbsolute(profileParent) || profileParent.includes("\0") ||
+    profileParent.includes("\r") || profileParent.includes("\n")) {
+  throw new Error("browser profile parent is not canonical");
+}
+const profile = mkdtempSync(join(profileParent, "openrealtime-companion-command-"));
 const chromium = spawn(process.env.CHROMIUM ?? "chromium", [
   "--headless=new", `--remote-debugging-port=${port}`, "--no-sandbox", "--disable-gpu",
   "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream",
@@ -41,7 +50,9 @@ class CDP {
         client.#pending.delete(frame.id);
         frame.error ? pending.reject(new Error(JSON.stringify(frame.error))) : pending.resolve(frame.result);
       } else if (frame.method) {
-        for (const handler of client.#handlers.get(frame.method) ?? []) handler(frame.params);
+        for (const handler of client.#handlers.get(frame.method) ?? []) {
+          handler(frame.params, frame.sessionId);
+        }
       }
     });
     return client;
@@ -65,16 +76,72 @@ function check(name, ok, detail = "") {
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`);
 }
 
+function writeExclusive(path, bytes) {
+  if (!isAbsolute(path) || path.includes("\0") || path.includes("\r") || path.includes("\n")) {
+    throw new Error("browser management snapshot path is not canonical");
+  }
+  const descriptor = openSync(path, constants.O_WRONLY | constants.O_CREAT |
+    constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+  try {
+    let offset = 0;
+    while (offset < bytes.byteLength) {
+      const written = writeSync(descriptor, bytes, offset, bytes.byteLength - offset);
+      if (written <= 0) throw new Error("browser management snapshot write made no progress");
+      offset += written;
+    }
+    fsyncSync(descriptor);
+    const info = fstatSync(descriptor);
+    if (!info.isFile() || info.nlink !== 1 || (info.mode & 0o777) !== 0o600 ||
+        info.size !== bytes.byteLength) {
+      throw new Error("browser management snapshot is not one exact private file");
+    }
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
 try {
   const browser = await CDP.connect(await debuggerEndpoint());
   const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" });
   const { sessionId } = await browser.send("Target.attachToTarget", { targetId, flatten: true });
   const call = (method, params) => browser.send(method, params, sessionId);
   const exceptions = []; const failures = [];
-  browser.on("Runtime.exceptionThrown", (event) => exceptions.push(
-    event.exceptionDetails.exception?.description ?? event.exceptionDetails.text));
-  browser.on("Network.loadingFailed", (event) => { if (!event.canceled) failures.push(event.errorText); });
+  const managementResponses = new Map();
+  const managementFailures = [];
+  browser.on("Runtime.exceptionThrown", (event, eventSessionID) => {
+    if (eventSessionID === sessionId) exceptions.push(
+      event.exceptionDetails.exception?.description ?? event.exceptionDetails.text);
+  });
+  browser.on("Network.loadingFailed", (event, eventSessionID) => {
+    if (eventSessionID !== sessionId) return;
+    if (managementResponses.has(event.requestId)) {
+      managementFailures.push(event.errorText ?? "management response load failed");
+    } else if (!event.canceled) failures.push(event.errorText);
+  });
   await call("Runtime.enable"); await call("Network.enable"); await call("Page.enable");
+  const pageOrigin = new URL(pageURL).origin;
+  browser.on("Network.responseReceived", (event, eventSessionID) => {
+    if (eventSessionID !== sessionId) return;
+    try {
+      const url = new URL(event.response.url);
+      if (url.origin !== pageOrigin || event.response.status !== 200 ||
+          event.response.mimeType !== "application/json" || url.search || url.hash ||
+          !/^\/client\/v1\/management\/sessions\/[A-Za-z0-9._%:-]+\/live$/.test(url.pathname)) return;
+      managementResponses.set(event.requestId, { url: url.href, bytes: null, complete: false });
+    } catch (error) {
+      managementFailures.push(error?.message ?? String(error));
+    }
+  });
+  browser.on("Network.loadingFinished", (event, eventSessionID) => {
+    if (eventSessionID !== sessionId) return;
+    const response = managementResponses.get(event.requestId);
+    if (!response) return;
+    call("Network.getResponseBody", { requestId: event.requestId }).then((body) => {
+      response.bytes = body.base64Encoded
+        ? Buffer.from(body.body, "base64") : Buffer.from(body.body, "utf8");
+      response.complete = true;
+    }).catch((error) => managementFailures.push(error?.message ?? String(error)));
+  });
   await call("Page.navigate", { url: pageURL });
   const evaluate = async (expression) => {
     const { result, exceptionDetails } = await call("Runtime.evaluate", {
@@ -125,14 +192,35 @@ try {
   const browserSessionID = await evaluate(
     `document.querySelector('[data-view=inspection]')?.dataset.sessionId ?? ""`);
   check("browser exposes its negotiated session identity", browserSessionID.startsWith("sess_"));
+  const expectedManagementPath = `/client/v1/management/sessions/${encodeURIComponent(browserSessionID)}/live`;
+  const captured = await waitFor("exact browser management response", async () =>
+    [...managementResponses.values()].some((value) =>
+      value.complete && new URL(value.url).pathname === expectedManagementPath));
+  const managementEvidence = [...managementResponses.values()].find((value) =>
+    value.complete && new URL(value.url).pathname === expectedManagementPath);
+  check("browser captured its exact authenticated management response",
+    captured && managementEvidence?.bytes?.byteLength > 0 && managementFailures.length === 0,
+    managementFailures.join("; "));
+  if (!managementEvidence?.bytes?.byteLength) {
+    throw new Error("browser did not retain an exact management response body");
+  }
+  writeExclusive(snapshotPath, managementEvidence.bytes);
+  const managementDigest = `sha256:${createHash("sha256").update(managementEvidence.bytes).digest("hex")}`;
   console.log(`OPENREALTIME_COMPANION_BROWSER_PROOF ${JSON.stringify({
-    schema: "openrealtime/browser/hosted-companion-proof/v1",
+    schema: "openrealtime/browser/hosted-companion-proof/v3",
     nonce: process.env.OPENREALTIME_COMPANION_PROOF_NONCE ?? "",
     session_id: browserSessionID,
     transport: "webrtc",
     manifest_fingerprint: await evaluate(`window.__openrealtime.manifest.fingerprint`),
     plan_fingerprint: await evaluate(`window.__openrealtime.manifest.plan.fingerprint`),
     endpoint: pageURL,
+    management: {
+      session_id: browserSessionID,
+      resource: "live",
+      url: managementEvidence.url,
+      payload_bytes: managementEvidence.bytes.byteLength,
+      payload_digest: managementDigest,
+    },
   })}`);
   check("no browser exception", exceptions.length === 0, exceptions.join("; "));
   check("no uncancelled network failure", failures.length === 0, failures.join("; "));
