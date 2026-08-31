@@ -4,7 +4,7 @@
   "profile_fingerprint": "sha256:6dc8ab4f689f61abe904c51603916e73a768a5905cce6d2da56cb59fbb4c5a0d",
   "lock_fingerprint": "sha256:4ccde14f034e51c6649d979288036037e575dd40a3127756528448867934a274",
   "plan_fingerprint": "sha256:cf3b454f5a6d5366139bee0b1cbdc2ab03e75fce21c97fb5c65fa6e452cfab42",
-  "manifest_fingerprint": "sha256:ecdd05f854a7907c56ebdb1499cd68afbe97ebc2083d1c18a74bbccc055723c8",
+  "manifest_fingerprint": "sha256:8ec83db62cd1e9117606cf3a7780b4cfdfd8398383d8e20ac1d231071058335a",
   "endpoints": [],
   "providers": [
     {

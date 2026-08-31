@@ -437,3 +437,21 @@ func TestNativeModelSurfacesEveryServerError(t *testing.T) {
 		t.Error("native view no longer displays the projected session error")
 	}
 }
+
+// Every live-session control has to state the same precondition the model
+// enforces, so a disconnected window cannot offer an action that silently
+// does nothing.
+func TestNativeLiveControlsAreDisabledWhileDisconnected(t *testing.T) {
+	view, err := os.ReadFile("Sources/OpenRealtimeMac/ContentView.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{
+		"Button(\"End turn\") { model.endTurn() }\n                        .disabled(model.connectionState != .connected)",
+		"Button(\"Send\") { model.submitText() }\n                    .keyboardShortcut(.return, modifiers: [.command])\n                    .disabled(model.connectionState != .connected ||",
+	} {
+		if !strings.Contains(string(view), fragment) {
+			t.Errorf("native view no longer gates a live-session control on the connection: %q", fragment)
+		}
+	}
+}

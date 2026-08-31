@@ -138,6 +138,7 @@ struct ContentView: View {
                     }
                     Spacer()
                     Button("End turn") { model.endTurn() }
+                        .disabled(model.connectionState != .connected)
                 }
                 .padding(6)
             }
@@ -185,7 +186,8 @@ struct ContentView: View {
                     .onSubmit { model.submitText() }
                 Button("Send") { model.submitText() }
                     .keyboardShortcut(.return, modifiers: [.command])
-                    .disabled(model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(model.connectionState != .connected ||
+                              model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
     }
