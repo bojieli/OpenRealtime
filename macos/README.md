@@ -157,3 +157,36 @@ bash -n build-app.sh
 ```
 
 The signed gate intentionally fails closed away from macOS.
+
+The provisioned `external.macos.signed-e2e` gate does not accept a runner's
+exit status as evidence. The Go test builds the exact OpenRealtime server
+executable from the checked source, hashes it and the supplied frozen launch
+profile, captures the signed app's bundle/executable bytes plus code-signing
+identifier, TeamIdentifier, CDHash, authority chain, and designated
+requirement, and generates an unpredictable invocation nonce and server-run
+identity. It writes that exact browser-then-native contract once in a private
+gate-owned directory. The trusted runner is invoked as:
+
+```text
+runner --app APP --contract CONTRACT --receipt RECEIPT --nonce SHA256
+```
+
+`RECEIPT` must not exist before launch. The runner creates one canonical
+private JSON receipt. The gate strictly reopens it and rejects unknown fields,
+replay, path or identity substitution, duplicate/reordered sessions, and
+credential retention. Browser WebRTC must complete before native WebSocket on
+one unchanged server process/run. Each session separately retains microphone
+input, assistant-audio output, camera frames, screen frames, permission-path,
+interruption-to-tool-continuation, tool, and graph-inspection assertions. The
+native permission record includes Accessibility when the selected distribution
+actually mounts desktop effects. Exact population and bounded cleanup evidence
+cover both sessions, the presentation/server processes, listeners, generated
+endpoint file, and media. Only after verification are the original contract
+and canonical receipt published create-only to the release artifact directory.
+
+The gate additionally requires
+`OPENREALTIME_MACOS_E2E_LAUNCH_PROFILE`,
+`OPENREALTIME_MACOS_E2E_GRAPH_FINGERPRINT`, and
+`OPENREALTIME_MACOS_E2E_SERVER_PROFILE_FINGERPRINT`. Portable Go tests verify
+the receipt schema and mismatch/tamper/replay cases, but they are not signed
+Darwin execution evidence.

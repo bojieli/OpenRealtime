@@ -279,20 +279,36 @@
     },
     {
       "id": "external.macos.signed-e2e",
-      "description": "Verify and drive the signed native macOS application with the trusted E2E runner",
+      "description": "Verify a nonce-bound browser-then-signed-native run against one exact gate-built server and retain its strict contract and receipt",
       "availability": "provisioned",
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
       "command": ["{go}", "test", "-tags", "signed_macos_e2e", "./macos", "-run", "^TestSignedNativeRunnerReleaseGate$", "-count=1", "-v"],
-      "environment": {"OPENREALTIME_SIGNED_MACOS_E2E": "1"},
+      "environment": {
+        "OPENREALTIME_SIGNED_MACOS_E2E": "1",
+        "OPENREALTIME_MACOS_E2E_LAUNCH_PROFILE": "{env:OPENREALTIME_MACOS_E2E_LAUNCH_PROFILE}",
+        "OPENREALTIME_MACOS_E2E_GRAPH_FINGERPRINT": "{env:OPENREALTIME_MACOS_E2E_GRAPH_FINGERPRINT}",
+        "OPENREALTIME_MACOS_E2E_SERVER_PROFILE_FINGERPRINT": "{env:OPENREALTIME_MACOS_E2E_SERVER_PROFILE_FINGERPRINT}",
+        "OPENREALTIME_SIGNED_MACOS_VERIFIED_CONTRACT": "{artifacts}/signed-macos-companion.contract.json",
+        "OPENREALTIME_SIGNED_MACOS_VERIFIED_RECEIPT": "{artifacts}/signed-macos-companion.receipt.json"
+      },
       "timeout": "30m",
       "skip_policy": "forbid",
       "prerequisites": [
         {"kind": "command", "value": "codesign", "description": "Apple codesign is available"},
         {"kind": "env_directory", "value": "OPENREALTIME_SIGNED_APP", "description": "an absolute signed OpenRealtime.app is supplied"},
         {"kind": "env_executable", "value": "OPENREALTIME_MACOS_E2E_RUNNER", "description": "the trusted native E2E driver is supplied"},
+        {"kind": "env_file", "value": "OPENREALTIME_MACOS_E2E_LAUNCH_PROFILE", "description": "the exact frozen server launch profile is supplied"},
+        {"kind": "env", "value": "OPENREALTIME_MACOS_E2E_GRAPH_FINGERPRINT", "description": "the exact expected server Graph fingerprint is supplied"},
+        {"kind": "env", "value": "OPENREALTIME_MACOS_E2E_SERVER_PROFILE_FINGERPRINT", "description": "the exact expected active server profile fingerprint is supplied"},
         {"kind": "os", "value": "darwin", "description": "the job runs on macOS"}
+      ],
+      "assertions": [
+        {"kind": "file_nonempty", "value": "{artifacts}/signed-macos-companion.contract.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/signed-macos-companion.receipt.json"},
+        {"kind": "stdout_regex", "value": "(?m)^signed macOS companion contract verified sha256:[0-9a-f]{64}$"},
+        {"kind": "stdout_regex", "value": "(?m)^signed macOS companion receipt verified sha256:[0-9a-f]{64}$"}
       ]
     },
     {
