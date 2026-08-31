@@ -181,13 +181,26 @@ final class RealtimeClient {
 
     private nonisolated func waitForOpen(_ webSocket: URLSessionWebSocketTask) async throws {
         try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask { try await webSocket.sendPing() }
+            group.addTask { try await Self.sendPing(webSocket) }
             group.addTask {
                 try await Task.sleep(nanoseconds: 20_000_000_000)
                 throw ClientError("WebSocket opening handshake timed out")
             }
             defer { group.cancelAll() }
             _ = try await group.next()
+        }
+    }
+
+    private nonisolated static func sendPing(_ webSocket: URLSessionWebSocketTask) async throws {
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Void, Error>) in
+            webSocket.sendPing { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
         }
     }
 

@@ -2,7 +2,7 @@ import Foundation
 import CoreGraphics
 import OpenRealtimeClientCore
 
-struct DisplayTarget: Identifiable, Hashable {
+struct DisplayTarget: Identifiable {
     let id: CGDirectDisplayID
     let name: String
     let bounds: CGRect
