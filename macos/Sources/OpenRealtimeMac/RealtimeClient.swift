@@ -162,6 +162,8 @@ final class RealtimeClient: RealtimeTransport {
         diagnostics = nil
     }
 
+    var transportKind: String { "websocket" }
+
     var connected: Bool { socket != nil }
 
     func connect(token: String) async throws {
