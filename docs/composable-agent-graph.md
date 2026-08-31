@@ -2019,7 +2019,29 @@ it has been reviewed, tested, and committed with its evidence):
   scenario runs must require exact graph evidence and `-inspection-graph` must
   fail closed for every unattested mode.
 - [ ] Execute and compare the eleven interaction scenarios; scenario names
-  remain individually tracked below.
+  remain individually tracked below. A local diagnostic baseline now exists and
+  is *not* the reviewed comparison this box requires: fifty-five attempts, five
+  per scenario, against a frozen graph-native launch profile
+  (`openrealtime.launch.scenario-local@1`, sensevoice + vllm `qwen-fast` +
+  fish-audio, all loopback) in the unattested diagnostic mode, with no
+  `-review-dir` and no execution requirement. Thirty of fifty-five passed. The
+  split is deterministic rather than noisy — six scenarios passed five of five,
+  five failed zero of five, and none was flaky — which is what makes the result
+  worth keeping: the failures are capability gaps, not variance.
+  Passing: `asked not to be interrupted`, `cutting in on something wrong`,
+  `ordering from a waiter`, `waiting out a silence they asked for`,
+  `an acknowledgement is not an interruption`, `an ordinary question`.
+  Failing: `count-as-they-go` (counts the first animal, then stops),
+  `a recorded menu` (never calls `press_key`), `translating as they speak`,
+  `somebody else's conversation` (speaks when not addressed), and
+  `telling them what it saw`. Conversational turn-taking and silence discipline
+  hold; standing-policy execution, tool invocation, simultaneous speech, and
+  visual triggering do not.
+  A single attempt per scenario is not enough to classify one: the first
+  eleven-scenario run scored `waiting out a silence they asked for` as a
+  failure, and it then passed ten of ten across two configurations. That is the
+  reason this box asks for fifteen attempts, and the reason the run above is
+  recorded as a diagnostic rather than as evidence.
 - [ ] Complete descriptor-driven values-schema authoring support.
   - [x] Snapshot immutable exact descriptors and reject unknown identities or
     Graph IR/descriptor contract drift before deriving a schema.
