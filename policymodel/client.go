@@ -52,9 +52,10 @@ type Config struct {
 	// live conversation that arrives late is worthless, and waiting for it is
 	// worse than falling back to the rule.
 	Timeout time.Duration
-	// GuidedChoice asks the server to constrain decoding to the enumerated
-	// options. vLLM and SGLang support it; a server that does not simply
-	// ignores the field, and the client's own validation still holds.
+	// GuidedChoice asks a current vLLM-compatible server to constrain decoding
+	// to the enumerated options through its structured_outputs.choice request
+	// contract. The client's own validation remains authoritative even when a
+	// provider returns malformed output.
 	GuidedChoice bool
 	// Governor admits decisions against a shared compute budget. A policy
 	// model competes for the same GPU as everything else, so it belongs under
@@ -125,8 +126,11 @@ type chatRequest struct {
 	Temperature float64       `json:"temperature"`
 	Logprobs    bool          `json:"logprobs,omitempty"`
 	TopLogprobs int           `json:"top_logprobs,omitempty"`
-	// GuidedChoice is the vLLM and SGLang extension for constrained decoding.
-	GuidedChoice []string `json:"guided_choice,omitempty"`
+	// StructuredOutputs is the current vLLM extension for constrained decoding.
+	// Older top-level guided_choice fields are deliberately not emitted: current
+	// vLLM ignores that unknown field and silently turns a constrained decision
+	// into free generation.
+	StructuredOutputs *structuredOutputs `json:"structured_outputs,omitempty"`
 	// ReasoningEffort, EnableThinking, Thinking and ChatTemplateKwargs are the
 	// spellings of one switch. Exactly one is sent, chosen by the profile.
 	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
@@ -142,6 +146,10 @@ type chatRequest struct {
 	// Constrained decoding does not save it either: the thinking block is
 	// emitted before the constraint applies.
 	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
+}
+
+type structuredOutputs struct {
+	Choice []string `json:"choice"`
 }
 
 type chatMessage struct {
@@ -259,7 +267,9 @@ func (client *Client) Decide(ctx context.Context, decision interaction.Decision)
 		body.Thinking = map[string]any{"type": "disabled"}
 	}
 	if client.config.GuidedChoice {
-		body.GuidedChoice = decision.Options
+		// Copy the caller-owned options so that a concurrent caller mutation
+		// cannot change the constraint between validation and JSON encoding.
+		body.StructuredOutputs = &structuredOutputs{Choice: append([]string(nil), decision.Options...)}
 	}
 	encoded, err := json.Marshal(body)
 	if err != nil {

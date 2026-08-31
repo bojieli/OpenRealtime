@@ -595,6 +595,9 @@ var ScopeInstruction = "A policy was set for a voice assistant. Does it stand fr
 	"standing: tell them the moment the build finishes\n" +
 	"standing: never speak while they are reading something out\n" +
 	"standing: say the running total each time they read out a number\n" +
+	"standing: order the matching dish when the waiter names one\n" +
+	"standing: translate everything the colleague says as they speak\n" +
+	"standing: correct them whenever they state the wrong deadline\n" +
 	"passing: do not reply until they have made their point\n" +
 	"passing: do not reply until they have finished reading it out\n" +
 	"passing: wait, they have not got to the point yet\n\n" +

@@ -130,6 +130,16 @@ func (model *InteractionModel) Decide(ctx context.Context, state Situation) (Act
 		return InertialAct(state), Outcome{Option: string(InertialAct(state))}, nil
 	}
 	acts := state.AvailableActs()
+	switch len(acts) {
+	case 0:
+		return InertialAct(state), Outcome{}, fmt.Errorf("interaction situation has no executable act")
+	case 1:
+		// There is no policy judgement to make when the runtime has left one
+		// executable act. Decider.Decide deliberately rejects singleton
+		// enumerations: asking a provider to choose would manufacture a
+		// two-sided decision where the graph exposes only one outcome.
+		return acts[0], Outcome{Index: 0, Option: string(acts[0])}, nil
+	}
 	options := make([]string, len(acts))
 	for index, act := range acts {
 		options[index] = string(act)

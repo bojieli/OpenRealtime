@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"mime"
 	"reflect"
 	"slices"
@@ -22,6 +23,7 @@ import (
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/perception"
 )
@@ -32,7 +34,9 @@ const (
 	ProfileRevision  = uint64(2)
 
 	ASRReference          = "deployment.scenario-conversation.asr"
+	PolicyReference       = "deployment.scenario-conversation.semantic-policy"
 	ModelReference        = "deployment.scenario-conversation.model"
+	SilentModelReference  = "deployment.scenario-conversation.model-silent"
 	TTSReference          = "deployment.scenario-conversation.tts"
 	PlaybackReference     = "deployment.scenario-conversation.playback"
 	ToolReference         = "deployment.scenario-conversation.tools"
@@ -112,6 +116,18 @@ type ModelPlugin struct {
 	Factory    func(context.Context, legacy.Options) (continuation.Provider, error)
 }
 
+// PolicyPlugin is the exact semantic-admission provider selected by one
+// launch profile. It is deliberately not a continuation provider: its
+// enumerated decision and optional declared standing-policy extraction
+// capabilities remain control-plane inputs and cannot propose tools or
+// acquire speech authority.
+type PolicyPlugin struct {
+	Reference  string
+	Artifact   inspect.ArtifactIdentity
+	Descriptor policyelements.SemanticDeciderDescriptor
+	Factory    func(context.Context, legacy.Options) (policyelements.SemanticDecider, error)
+}
+
 type TTSPlugin struct {
 	Reference  string
 	Artifact   inspect.ArtifactIdentity
@@ -132,6 +148,42 @@ type ToolDeclaration struct {
 	Target      string               `json:"target,omitempty"`
 }
 
+// SemanticAdmissionSelection pins the provider-neutral control-plane policy
+// stages enabled for one graph application. Provider capability and policy
+// use are separate: a plug-in may expose standing extraction while a profile
+// deliberately leaves it disabled.
+type SemanticAdmissionSelection struct {
+	StandingExtraction          bool    `json:"standing_extraction,omitempty"`
+	VerifyVoiceActivation       bool    `json:"verify_voice_activation,omitempty"`
+	VerifySilentAction          bool    `json:"verify_silent_action,omitempty"`
+	MinimumActivationConfidence float64 `json:"minimum_activation_confidence,omitempty"`
+	StandingMemory              int     `json:"standing_memory,omitempty"`
+}
+
+func normalizeSemanticAdmissionSelection(
+	selection SemanticAdmissionSelection, descriptor policyelements.SemanticDeciderDescriptor,
+) (SemanticAdmissionSelection, error) {
+	if selection.StandingMemory == 0 {
+		selection.StandingMemory = 64
+	}
+	if selection.StandingMemory < 1 || selection.StandingMemory > 4096 {
+		return SemanticAdmissionSelection{}, errors.New("scenario conversation standing_memory must be between 1 and 4096")
+	}
+	if math.IsNaN(selection.MinimumActivationConfidence) ||
+		math.IsInf(selection.MinimumActivationConfidence, 0) ||
+		selection.MinimumActivationConfidence < 0 || selection.MinimumActivationConfidence > 1 {
+		return SemanticAdmissionSelection{}, errors.New(
+			"scenario conversation minimum_activation_confidence must be between 0 and 1",
+		)
+	}
+	if selection.StandingExtraction && !descriptor.StandingExtraction {
+		return SemanticAdmissionSelection{}, errors.New(
+			"scenario conversation standing extraction was selected from a policy provider that does not declare it",
+		)
+	}
+	return selection, nil
+}
+
 // PluginConfig is the immutable resource-free contribution retained by a
 // launch configuration. Every factory remains unopened until session Start.
 type PluginConfig struct {
@@ -139,7 +191,10 @@ type PluginConfig struct {
 	DependencyArtifact inspect.ArtifactIdentity
 	Architecture       projectarch.Definition
 	ASR                ASRPlugin
+	Policy             PolicyPlugin
+	SemanticAdmission  SemanticAdmissionSelection
 	Model              ModelPlugin
+	SilentModel        ModelPlugin
 	TTS                TTSPlugin
 	Tools              []ToolDeclaration
 	Target             computeruse.Target
@@ -159,6 +214,12 @@ func NormalizePluginConfig(source PluginConfig) (PluginConfig, error) {
 		return PluginConfig{}, err
 	}
 	config.Architecture = architecture
+	config.SemanticAdmission, err = normalizeSemanticAdmissionSelection(
+		config.SemanticAdmission, config.Policy.Descriptor,
+	)
+	if err != nil {
+		return PluginConfig{}, err
+	}
 	if err := validatePluginConfig(config); err != nil {
 		return PluginConfig{}, err
 	}
@@ -195,8 +256,24 @@ func validatePluginConfig(config PluginConfig) error {
 	if err := validateASRPlugin(config.ASR); err != nil {
 		return err
 	}
-	if err := validateModelPlugin(config.Model); err != nil {
+	if err := validatePolicyPlugin(config.Policy); err != nil {
 		return err
+	}
+	if _, err := normalizeSemanticAdmissionSelection(config.SemanticAdmission, config.Policy.Descriptor); err != nil {
+		return err
+	}
+	if evidence := config.Architecture.Interaction.EvidenceCapabilities; evidence != nil &&
+		evidence.DirectVisualInput && !config.Policy.Descriptor.Vision {
+		return errors.New("scenario conversation direct-visual architecture requires a vision-capable semantic policy")
+	}
+	if err := validateModelPlugin(config.Model, ModelReference, continuation.SpeechAuthorityVoice); err != nil {
+		return err
+	}
+	if err := validateModelPlugin(config.SilentModel, SilentModelReference, continuation.SpeechAuthoritySilent); err != nil {
+		return err
+	}
+	if config.Model.Artifact != config.SilentModel.Artifact {
+		return errors.New("scenario conversation voice and silent cognition must come from one exact provider plugin artifact")
 	}
 	if err := validateTTSPlugin(config.TTS); err != nil {
 		return err
@@ -265,13 +342,32 @@ func validateASRPlugin(plugin ASRPlugin) error {
 	return nil
 }
 
-func validateModelPlugin(plugin ModelPlugin) error {
+func validatePolicyPlugin(plugin PolicyPlugin) error {
+	if !canonicalIdentity(plugin.Reference) || plugin.Factory == nil {
+		return errors.New("scenario conversation semantic policy plugin requires a canonical reference and factory")
+	}
+	if plugin.Reference != PolicyReference {
+		return fmt.Errorf("scenario conversation semantic policy reference %q, want exact graph selection %q",
+			plugin.Reference, PolicyReference)
+	}
+	if err := plugin.Artifact.Validate(); err != nil {
+		return fmt.Errorf("scenario conversation semantic policy artifact: %w", err)
+	}
+	if err := plugin.Descriptor.Validate(); err != nil {
+		return fmt.Errorf("scenario conversation semantic policy descriptor: %w", err)
+	}
+	return nil
+}
+
+func validateModelPlugin(
+	plugin ModelPlugin, reference string, speechAuthority continuation.SpeechAuthority,
+) error {
 	if !canonicalIdentity(plugin.Reference) || plugin.Factory == nil {
 		return errors.New("scenario conversation model plugin requires a canonical reference and factory")
 	}
-	if plugin.Reference != ModelReference {
+	if plugin.Reference != reference {
 		return fmt.Errorf("scenario conversation model reference %q, want exact graph selection %q",
-			plugin.Reference, ModelReference)
+			plugin.Reference, reference)
 	}
 	if err := plugin.Artifact.Validate(); err != nil {
 		return fmt.Errorf("scenario conversation model artifact: %w", err)
@@ -282,8 +378,9 @@ func validateModelPlugin(plugin ModelPlugin) error {
 	if plugin.Descriptor.EffectiveToolAuthority() != continuation.ToolAuthorityPropose {
 		return errors.New("scenario conversation model must have proposal-only tool authority")
 	}
-	if plugin.Descriptor.EffectiveSpeechAuthority() != continuation.SpeechAuthorityVoice {
-		return errors.New("scenario conversation model must have voice speech authority")
+	if plugin.Descriptor.EffectiveSpeechAuthority() != speechAuthority {
+		return fmt.Errorf("scenario conversation model %q must have %s speech authority",
+			plugin.Reference, speechAuthority)
 	}
 	return nil
 }

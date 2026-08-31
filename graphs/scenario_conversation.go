@@ -92,6 +92,20 @@ func ScenarioConversationArtifacts(
 	}); err != nil {
 		return graphconfig.Artifacts{}, err
 	}
+	directVisual := false
+	if evidence := config.Architecture.Interaction.EvidenceCapabilities; evidence != nil {
+		directVisual = evidence.DirectVisualInput
+	}
+	if err := updateScenarioNode(document.Nodes, "semantic_admission", map[string]any{
+		"direct_visual_input":           directVisual,
+		"standing_extraction":           config.SemanticAdmission.StandingExtraction,
+		"verify_voice_activation":       config.SemanticAdmission.VerifyVoiceActivation,
+		"verify_silent_action":          config.SemanticAdmission.VerifySilentAction,
+		"minimum_activation_confidence": config.SemanticAdmission.MinimumActivationConfidence,
+		"standing_memory":               config.SemanticAdmission.StandingMemory,
+	}); err != nil {
+		return graphconfig.Artifacts{}, err
+	}
 	values, err := json.Marshal(document)
 	if err != nil {
 		return graphconfig.Artifacts{}, fmt.Errorf("encode scenario conversation values artifact: %w", err)

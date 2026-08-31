@@ -159,14 +159,37 @@ func TestTheOptionsAreSentToTheModel(t *testing.T) {
 		t.Fatalf("the enumeration must reach the model: %q", prompts[0])
 	}
 	stub.mu.Lock()
-	guided, present := stub.requests[0]["guided_choice"]
+	structured, present := stub.requests[0]["structured_outputs"].(map[string]any)
+	_, legacyPresent := stub.requests[0]["guided_choice"]
 	maxTokens := stub.requests[0]["max_tokens"]
 	stub.mu.Unlock()
-	if !present || len(guided.([]any)) != 2 {
-		t.Fatal("guided decoding must carry the enumeration when it is enabled")
+	choice, choicePresent := structured["choice"].([]any)
+	if !present || !choicePresent || len(choice) != 2 || choice[0] != "none" || choice[1] != "acknowledge" {
+		t.Fatalf("structured choice must carry the exact ordered enumeration when enabled: %#v", structured)
+	}
+	if legacyPresent {
+		t.Fatal("current vLLM ignores the obsolete top-level guided_choice field")
 	}
 	if maxTokens.(float64) > 8 {
 		t.Fatal("a policy model is given no room to generate freely")
+	}
+}
+
+func TestStructuredChoiceIsAbsentUnlessExplicitlyEnabled(t *testing.T) {
+	stub := newStub(t, "none")
+	client := newClient(t, stub, nil)
+	if _, err := client.Decide(context.Background(), interaction.Decision{
+		Prompt: "should the agent interject", Options: []string{"none", "acknowledge"},
+	}); err != nil {
+		t.Fatalf("decide: %v", err)
+	}
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	if _, present := stub.requests[0]["structured_outputs"]; present {
+		t.Fatal("structured decoding must not be assumed for an undeclared provider")
+	}
+	if _, present := stub.requests[0]["guided_choice"]; present {
+		t.Fatal("the obsolete top-level guided_choice field must never be sent")
 	}
 }
 

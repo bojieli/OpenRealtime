@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,18 +44,31 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 	}
 	for _, exact := range []string{
 		`"architecture":{"fingerprint":"sha256:`,
-		`"id":"cascade.controlled","revision":3`,
+		`"id":"cascade.composed-policy-direct-visual","revision":1`,
 		`"reference":"provider.openrealtime.asr.sensevoice.v1"`,
 		`"model":"iic/SenseVoiceSmall"`,
 		`"base_url":"http://127.0.0.1:8002/v1"`,
+		`"reference":"provider.openrealtime.policy.vllm.v1"`,
+		`"vision":true`,
+		`"guided_choice":true`,
+		`"reasoning":"chat_template_kwargs"`,
+		`"semantic_admission":{`,
+		`"standing_extraction":true`,
+		`"verify_voice_activation":true`,
+		`"verify_silent_action":true`,
+		`"minimum_activation_confidence":0.7`,
+		`"standing_memory":64`,
 		`"reference":"provider.openrealtime.model.vllm.v1"`,
 		`"model":"qwen-fast"`,
 		`"base_url":"http://127.0.0.1:8000/v1"`,
+		`"speech_authority":"voice"`,
+		`"speech_authority":"silent"`,
 		`"reference":"provider.openrealtime.tts.fish-audio.v1"`,
 		`"model":"fishaudio/fish-speech-1.5"`,
 		`"base_url":"http://127.0.0.1:8123/v1/tts"`,
 		`"description":"Send a keypad tone on the open call."`,
 		`"digit":{"type":"string"}`,
+		`"max_output_tokens":128`,
 	} {
 		if !bytes.Contains(profile.Application.Configuration, []byte(exact)) {
 			t.Fatalf("profile application configuration omitted %s", exact)
@@ -83,6 +97,22 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 	values, err := graphvalues.ParseJSON(valuesPath, valuesPayload)
 	if err != nil {
 		t.Fatal(err)
+	}
+	var semanticAdmission struct {
+		DirectVisualInput           bool    `json:"direct_visual_input"`
+		StandingExtraction          bool    `json:"standing_extraction"`
+		VerifyVoiceActivation       bool    `json:"verify_voice_activation"`
+		VerifySilentAction          bool    `json:"verify_silent_action"`
+		MinimumActivationConfidence float64 `json:"minimum_activation_confidence"`
+		StandingMemory              int     `json:"standing_memory"`
+	}
+	if err := json.Unmarshal(values.Nodes["semantic_admission"], &semanticAdmission); err != nil {
+		t.Fatal(err)
+	}
+	if !semanticAdmission.DirectVisualInput || !semanticAdmission.StandingExtraction ||
+		!semanticAdmission.VerifyVoiceActivation || !semanticAdmission.VerifySilentAction ||
+		semanticAdmission.MinimumActivationConfidence != 0.7 || semanticAdmission.StandingMemory != 64 {
+		t.Fatalf("frozen production scenario graph omitted semantic admission selection: %+v", semanticAdmission)
 	}
 	rebound, err := graphvalues.Bind(boundGraph, values)
 	if err != nil {
@@ -159,10 +189,23 @@ func TestScenarioProfileFreezeRejectsUnsupportedArchitectureBeforeOutput(t *test
 	err := runLaunchProfile([]string{
 		"scenario", "-out", path, "-architecture", "cascade.text-policy@3",
 	}, &bytes.Buffer{})
-	if err == nil || !strings.Contains(err.Error(), "not an exactly attested predicate controller") {
+	if err == nil || !strings.Contains(err.Error(), "not the exact composed semantic-policy controller") {
 		t.Fatalf("unsupported-architecture error = %v", err)
 	}
 	if _, err := os.Lstat(path); !os.IsNotExist(err) {
 		t.Fatalf("invalid architecture created output: %v", err)
+	}
+}
+
+func TestScenarioProfileFreezeRejectsDirectVisualPolicyCapabilityDriftBeforeOutput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "scenario-profile.yaml")
+	err := runLaunchProfile([]string{
+		"scenario", "-out", path, "-policy-vision=false",
+	}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "vision-capable semantic policy") {
+		t.Fatalf("direct-visual policy drift error = %v", err)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("drifted direct-visual profile created output: %v", err)
 	}
 }

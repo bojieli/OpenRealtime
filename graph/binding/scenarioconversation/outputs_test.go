@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +12,8 @@ import (
 	acousticelements "github.com/bojieli/OpenRealtime/elements/acoustic"
 	actionelements "github.com/bojieli/OpenRealtime/elements/action"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
+	stateelements "github.com/bojieli/OpenRealtime/elements/state"
+	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -52,14 +55,13 @@ func TestResponseCreateContextWaitsForExactPublishedSnapshot(t *testing.T) {
 		contentAcks: make(map[string]*pendingContent), snapshotChanged: make(chan struct{}),
 	}
 	type binding struct {
-		version uint64
-		itemID  string
+		context stateelements.CommittedContext
 		err     error
 	}
 	result := make(chan binding, 1)
 	go func() {
-		version, itemID, err := session.responseCreateContext(context.Background())
-		result <- binding{version: version, itemID: itemID, err: err}
+		committed, err := session.responseCreateContext(context.Background())
+		result <- binding{context: committed, err: err}
 	}()
 	select {
 	case got := <-result:
@@ -74,7 +76,8 @@ func TestResponseCreateContextWaitsForExactPublishedSnapshot(t *testing.T) {
 	}
 	select {
 	case got := <-result:
-		if got.err != nil || got.version != 0 || got.itemID != "trajectory-snapshot-0" {
+		if got.err != nil || got.context.Prefix.Version != 0 ||
+			got.context.StateItemID != "trajectory-snapshot-0" || got.context.Prefix.Digest == "" {
 			t.Fatalf("response context binding = %+v", got)
 		}
 	case <-time.After(time.Second):
@@ -121,7 +124,9 @@ func TestInvocationOutcomeAcceptsOnlyTheExactGraphInternalSilenceCreate(t *testi
 	}
 	valid := element.Envelope{
 		ItemID: causeID + ":session_invocation_outcome:9", SessionID: sessionID,
-		CausalParents: []string{"durable-commit", "trajectory-state", causeID}, Payload: outcome,
+		CausalParents: []string{
+			"durable-commit", "trajectory-state", causeID, "semantic_admission:decision:8",
+		}, Payload: outcome,
 	}
 	newSession := func() *session {
 		return &session{
@@ -155,6 +160,9 @@ func TestInvocationOutcomeAcceptsOnlyTheExactGraphInternalSilenceCreate(t *testi
 		{name: "refused create", edit: func(_ *element.Envelope, outcome *policyelements.SessionInvocationOutcome) {
 			outcome.Kind = policyelements.SessionInvocationRefused
 		}},
+		{name: "missing semantic decision", edit: func(envelope *element.Envelope, _ *policyelements.SessionInvocationOutcome) {
+			envelope.CausalParents = envelope.CausalParents[:3]
+		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -170,6 +178,167 @@ func TestInvocationOutcomeAcceptsOnlyTheExactGraphInternalSilenceCreate(t *testi
 				t.Fatal("invalid internal create mutated active generations")
 			}
 		})
+	}
+}
+
+func TestInvocationOutcomeAcceptsOnlyExactGatewaySemanticCreateChain(t *testing.T) {
+	const (
+		sessionID    = "session-a"
+		requestID    = "sc_create_7"
+		generationID = "generation-a"
+	)
+	outcome := policyelements.SessionInvocationOutcome{
+		Kind: policyelements.SessionInvocationEmitted, Operation: "create",
+		Role: "foreground", GenerationID: generationID,
+	}
+	valid := element.Envelope{
+		ItemID: requestID + ":session_invocation_outcome:9", SessionID: sessionID,
+		CausalParents: []string{"semantic_admission:decision:8", requestID}, Payload: outcome,
+	}
+	newSession := func() (*session, *pendingOperation) {
+		pending := &pendingOperation{
+			requestID: requestID, operation: "create", result: make(chan operationAck, 1),
+		}
+		return &session{
+			sessionID: sessionID, pendingOps: map[string]*pendingOperation{requestID: pending},
+			active: make(map[string]struct{}), terminalRuns: make(map[string]struct{}),
+		}, pending
+	}
+	accepted, pending := newSession()
+	if err := accepted.acceptInvocationOutcome(valid); err != nil {
+		t.Fatal(err)
+	}
+	ack := <-pending.result
+	if ack.err != nil || ack.generationID != generationID || !pending.completed {
+		t.Fatalf("semantic create acknowledgement = %+v pending=%+v", ack, pending)
+	}
+	if _, found := accepted.active[generationID]; !found || len(accepted.pendingOps) != 0 {
+		t.Fatalf("semantic create active=%v pending=%v", accepted.active, accepted.pendingOps)
+	}
+
+	tests := []struct {
+		name string
+		edit func(*element.Envelope)
+	}{
+		{name: "missing semantic decision", edit: func(envelope *element.Envelope) {
+			envelope.CausalParents = []string{requestID}
+		}},
+		{name: "different policy node", edit: func(envelope *element.Envelope) {
+			envelope.CausalParents[0] = "other_admission:decision:8"
+		}},
+		{name: "zero decision sequence", edit: func(envelope *element.Envelope) {
+			envelope.CausalParents[0] = "semantic_admission:decision:0"
+		}},
+		{name: "arbitrary extra parent", edit: func(envelope *element.Envelope) {
+			envelope.CausalParents = append(envelope.CausalParents, "forged-parent")
+		}},
+		{name: "outcome derived from another cause", edit: func(envelope *element.Envelope) {
+			envelope.ItemID = "sc_create_8:session_invocation_outcome:9"
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate, pending := newSession()
+			envelope := valid.Clone()
+			test.edit(&envelope)
+			if err := candidate.acceptInvocationOutcome(envelope); err == nil {
+				t.Fatal("drifted semantic create acknowledgement was accepted")
+			}
+			if len(candidate.active) != 0 || pending.completed ||
+				candidate.pendingOps[requestID] != pending {
+				t.Fatalf("invalid acknowledgement mutated session active=%v pending=%+v",
+					candidate.active, pending)
+			}
+		})
+	}
+	unknown, _ := newSession()
+	unknown.pendingOps = make(map[string]*pendingOperation)
+	if err := unknown.acceptInvocationOutcome(valid); err == nil {
+		t.Fatal("semantic create for an unknown gateway request was accepted")
+	}
+	if len(unknown.active) != 0 {
+		t.Fatalf("unknown semantic create acquired active generation: %v", unknown.active)
+	}
+}
+
+func TestSemanticAdmissionOutcomeTerminatesSuppressedGatewayCreate(t *testing.T) {
+	const (
+		sessionID = "session-a"
+		requestID = "sc_create_7"
+	)
+	newSession := func() (*session, *pendingOperation) {
+		pending := &pendingOperation{
+			requestID: requestID, operation: "create", result: make(chan operationAck, 1),
+		}
+		return &session{
+			sessionID: sessionID, pendingOps: map[string]*pendingOperation{requestID: pending},
+		}, pending
+	}
+	base := element.Envelope{
+		ItemID: "semantic_admission:outcome:9", SessionID: sessionID,
+		CausalParents: []string{requestID},
+	}
+
+	admitted, pending := newSession()
+	envelope := base.Clone()
+	envelope.Payload = policyelements.SemanticAdmissionOutcome{
+		Kind: policyelements.SemanticAdmissionAdmitted, Operation: "create",
+		Act: coreinteraction.ActAnswer, DecisionItemID: "semantic_admission:decision:8",
+	}
+	if err := admitted.acceptSemanticAdmissionOutcome(context.Background(), envelope); err != nil {
+		t.Fatal(err)
+	}
+	if pending.completed || admitted.pendingOps[requestID] != pending {
+		t.Fatal("admitted semantic outcome completed before its invocation acknowledgement")
+	}
+
+	suppressed, pending := newSession()
+	envelope = base.Clone()
+	envelope.Payload = policyelements.SemanticAdmissionOutcome{
+		Kind: policyelements.SemanticAdmissionSuppressed, Operation: "create",
+		Act: coreinteraction.ActStaySilent, DecisionItemID: "semantic_admission:decision:8",
+		Code: "listen", Message: "policy selected no generation",
+	}
+	if err := suppressed.acceptSemanticAdmissionOutcome(context.Background(), envelope); err != nil {
+		t.Fatal(err)
+	}
+	ack := <-pending.result
+	if ack.err != nil || ack.generationID != "" ||
+		!pending.completed || len(suppressed.pendingOps) != 0 {
+		t.Fatalf("suppressed semantic acknowledgement=%+v pending=%+v map=%v",
+			ack, pending, suppressed.pendingOps)
+	}
+	if len(suppressed.active) != 0 {
+		t.Fatalf("suppressed semantic acknowledgement acquired a generation: %v", suppressed.active)
+	}
+
+	refused, pending := newSession()
+	envelope = base.Clone()
+	envelope.Payload = policyelements.SemanticAdmissionOutcome{
+		Kind: policyelements.SemanticAdmissionRefused, Operation: "create",
+		Act: coreinteraction.ActAnswer, Code: "policy_refused", Message: "policy refused generation",
+	}
+	if err := refused.acceptSemanticAdmissionOutcome(context.Background(), envelope); err != nil {
+		t.Fatal(err)
+	}
+	ack = <-pending.result
+	if ack.err == nil || !strings.Contains(ack.err.Error(), "refused/policy_refused") ||
+		!pending.completed || len(refused.pendingOps) != 0 {
+		t.Fatalf("refused semantic acknowledgement=%+v pending=%+v map=%v",
+			ack, pending, refused.pendingOps)
+	}
+
+	invalid, pending := newSession()
+	envelope = base.Clone()
+	envelope.Payload = policyelements.SemanticAdmissionOutcome{
+		Kind: policyelements.SemanticAdmissionAdmitted, Operation: "create",
+		Act: coreinteraction.ActAnswer, DecisionItemID: "other:decision:8",
+	}
+	if err := invalid.acceptSemanticAdmissionOutcome(context.Background(), envelope); err == nil {
+		t.Fatal("admitted semantic outcome with forged decision identity was accepted")
+	}
+	if pending.completed || invalid.pendingOps[requestID] != pending {
+		t.Fatal("invalid semantic outcome mutated the pending gateway operation")
 	}
 }
 

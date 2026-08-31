@@ -95,11 +95,19 @@ func TestPostCommitSilenceWaitsExactIntervalAndResetsFromLatestDurableCommit(t *
 	if !ok || create.ResponseID != createEnvelope.ItemID ||
 		create.ExpectedContextVersion == nil || *create.ExpectedContextVersion != 4 ||
 		create.ExpectedContextItemID != "trajectory-snapshot-4" ||
+		create.CommittedContext == nil || create.CommittedContext.StateItemID != "trajectory-snapshot-4" ||
+		create.CommittedContext.Prefix.Version != 4 ||
 		!createEnvelope.Type.Equal(policyelements.ResponseCreateType()) ||
 		createEnvelope.SessionID != second.SessionID ||
 		!slicesContain(createEnvelope.CausalParents, second.ItemID) ||
 		!slicesContain(createEnvelope.CausalParents, "trajectory-snapshot-4") {
 		t.Fatalf("post-commit response create = %+v payload=%+v", createEnvelope, create)
+	}
+	if err := trajectory.VerifyPrefix(
+		trajectory.Snapshot{Version: 4, Items: make([]trajectory.Item, 4)},
+		create.CommittedContext.Prefix,
+	); err != nil {
+		t.Fatalf("post-commit response create has no exact prefix identity: %v", err)
 	}
 	fired := receive(t, outcomes).Payload.(PostCommitSilenceOutcome)
 	state = receive(t, states).Payload.(PostCommitSilenceState)
@@ -152,7 +160,8 @@ func TestPostCommitSilenceRejectsInvalidEvidenceWithoutDisarmingAValidTimer(t *t
 
 	manual.AdvanceNS(uint64(15 * time.Second))
 	create := receive(t, created).Payload.(policyelements.ResponseCreate)
-	if create.ExpectedContextVersion == nil || *create.ExpectedContextVersion != 1 {
+	if create.ExpectedContextVersion == nil || *create.ExpectedContextVersion != 1 ||
+		create.CommittedContext == nil || create.CommittedContext.Prefix.Version != 1 {
 		t.Fatalf("invalid evidence changed armed prefix: %+v", create)
 	}
 	_ = receive(t, outcomes)

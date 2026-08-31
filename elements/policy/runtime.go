@@ -591,6 +591,11 @@ func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
 				ID: sessionInvocationRuntimeID, Revision: sessionInvocationRuntimeRevision,
 			},
 		},
+		factoryprofile.Entry{
+			Factory: semanticAdmissionFactory{}, Artifact: inspect.ArtifactIdentity{
+				ID: semanticAdmissionRuntimeID, Revision: semanticAdmissionRuntimeRevision,
+			},
+		},
 	)
 }
 
