@@ -343,7 +343,7 @@ OPENREALTIME_HOSTED_MANAGEMENT_SNAPSHOT="${native_snapshot}" \
 application_pid="$!"
 
 native_proof=""
-for _ in $(seq 1 900); do
+for _ in $(seq 1 1000); do
   native_proof="$(sed -n 's/^OPENREALTIME_HOSTED_COMPANION_PROOF //p' "${application_log}" | tail -n 1)"
   if [[ -n "${native_proof}" ]]; then
     break
@@ -378,8 +378,8 @@ valid = (
   value.get("endpoint") == sys.argv[5] and
   re.fullmatch(r"sess_[A-Za-z0-9_-]{1,128}", session) and
   management.get("session_id") == session and management.get("resource") == "live" and
-  parsed.scheme == "http" and parsed.netloc == "127.0.0.1:18765" and
-  parsed.path == "/openrealtime/v1/sessions/" + urllib.parse.quote(session, safe="") + "/live" and
+  parsed.scheme == "http" and parsed.netloc == "127.0.0.1:18767" and
+  parsed.path == "/client/v1/management/sessions/" + urllib.parse.quote(session, safe="") + "/live" and
   not parsed.query and not parsed.fragment and
   stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o600 and info.st_nlink == 1 and
   0 < len(payload) <= (32 << 20) and management.get("payload_bytes") == len(payload) and

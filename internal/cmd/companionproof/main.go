@@ -159,7 +159,7 @@ func validate(value options) (receipt, error) {
 	)
 	result.Native = makeSnapshotReceipt(
 		2, "macos_native", "websocket",
-		"http://127.0.0.1:18765/openrealtime/v1/sessions/"+
+		"http://127.0.0.1:18767/client/v1/management/sessions/"+
 			url.PathEscape(value.nativeSession)+"/live",
 		value.nativeSession, native, nativePayload, stableDigest,
 	)
@@ -238,9 +238,9 @@ func readSnapshot(path string) (inspect.Live, []byte, error) {
 	if err := management.ValidateSessionSnapshot(snapshot); err != nil {
 		return inspect.Live{}, nil, err
 	}
-	if snapshot.Sequence == 0 || snapshot.ObservedAt.IsZero() || snapshot.State != "active" ||
+	if snapshot.Sequence == 0 || snapshot.ObservedAt.IsZero() || snapshot.State != "running" ||
 		snapshot.Error != "" {
-		return inspect.Live{}, nil, errors.New("live response is not an active sequenced observation")
+		return inspect.Live{}, nil, errors.New("live response is not a running sequenced observation")
 	}
 	for id, node := range snapshot.Nodes {
 		if node.Error != "" || node.State == "failed" || node.State == "error" {

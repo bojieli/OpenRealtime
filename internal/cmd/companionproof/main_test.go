@@ -35,6 +35,8 @@ func TestValidateBindsTwoRedactedSnapshotsToOneStableGraph(t *testing.T) {
 		receipt.Browser.Transport != "webrtc" || receipt.Native.Order != 2 ||
 		receipt.Native.Client != "macos_native" || receipt.Native.Transport != "websocket" ||
 		receipt.Browser.SessionID != "sess_browser" || receipt.Native.SessionID != "sess_native" ||
+		receipt.Browser.ResponseURL != "http://127.0.0.1:18767/client/v1/management/sessions/sess_browser/live" ||
+		receipt.Native.ResponseURL != "http://127.0.0.1:18767/client/v1/management/sessions/sess_native/live" ||
 		receipt.Browser.Sequence != 1 || receipt.Native.Sequence != 2 ||
 		receipt.Browser.PayloadDigest == receipt.Native.PayloadDigest ||
 		receipt.Browser.StableIdentityDigest != receipt.Native.StableIdentityDigest ||
@@ -79,6 +81,15 @@ func TestReadSnapshotRejectsUnknownUnredactedAndNonPrivateArtifacts(t *testing.T
 	}
 }
 
+func TestReadSnapshotRequiresRunningGraphState(t *testing.T) {
+	value := testSnapshot(1, time.Unix(1_700_000_000, 0).UTC())
+	value.State = "active"
+	path := writeSnapshot(t, "active.json", value)
+	if _, _, err := readSnapshot(path); err == nil || !strings.Contains(err.Error(), "running") {
+		t.Fatalf("non-running state error = %v", err)
+	}
+}
+
 func TestValidateRejectsDistinctRuntimeGraphsAndSessionReuse(t *testing.T) {
 	browser := testSnapshot(1, time.Unix(1_700_000_000, 0).UTC())
 	native := testSnapshot(2, time.Unix(1_700_000_001, 0).UTC())
@@ -115,7 +126,7 @@ func testSnapshot(sequence uint64, observedAt time.Time) inspect.Live {
 		Configuration: &inspect.ArtifactIdentity{
 			ID: "values://companion", Revision: "1", Digest: "sha256:" + strings.Repeat("b", 64),
 		},
-		Sequence: sequence, ObservedAt: observedAt, State: "active",
+		Sequence: sequence, ObservedAt: observedAt, State: "running",
 		Nodes: map[string]inspect.NodeLive{
 			"node": {
 				State: "mounted",

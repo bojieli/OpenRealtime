@@ -120,7 +120,20 @@ private func runHostedSmoke(
                     management.payload, path: snapshotPath
                 )
             } catch {
-                lastFailure = error.localizedDescription
+                let failure = String(
+                    error.localizedDescription
+                        .replacingOccurrences(of: "\r", with: " ")
+                        .replacingOccurrences(of: "\n", with: " ")
+                        .prefix(512)
+                )
+                if failure != lastFailure {
+                    lastFailure = failure
+                    let diagnostic = Data(
+                        "OPENREALTIME_HOSTED_COMPANION_PROGRESS \(failure)\n".utf8
+                    )
+                    FileHandle.standardError.write(diagnostic)
+                    try? FileHandle.standardError.synchronize()
+                }
                 try? await Task.sleep(nanoseconds: 50_000_000)
                 continue
             }
@@ -181,9 +194,9 @@ private func hostedManagementEvidence(
           formatVersion.uint64Value == 1, !graphID.isEmpty,
           graphRevision.uint64Value > 0, fingerprint.hasPrefix("sha256:"),
           configurationDigest.hasPrefix("sha256:"), sequence.uint64Value > 0,
-          state == "active" else {
+          state == "running" else {
         throw NativeLaunchConfigurationError(
-            "hosted management document is not canonical active live evidence"
+            "hosted management document is not canonical running live evidence"
         )
     }
     return (evidence: [
