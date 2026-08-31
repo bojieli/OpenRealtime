@@ -35,9 +35,10 @@ const (
 // proposal authority while grounding cognition in each newest screen/camera
 // prefix. Exactly one generation may be unsettled: a result with no proposal
 // releases the next changed frame, while a proposed effect remains closed
-// until a screen observation names its exact canonical tool result. A failed
-// result terminally clears that selected intent at the same visual safe point;
-// it cannot reopen cognition without a new canonical user task. The
+// until a screen observation names its exact canonical tool result. An exact
+// failed result terminally releases only its originating intent at the next
+// committed observation; its delayed visual consequence cannot clear a newer
+// user task or reopen the failed task. The
 // selected user item must be a canonical causal ancestor of the current visual
 // tail; ProposalAdmission independently re-derives and checks that authority,
 // so this element cannot weaken the shared effect contract.
@@ -233,6 +234,7 @@ type activeGeneration struct {
 	id             string
 	contextVersion uint64
 	callID         string
+	intent         userIntentBasis
 }
 
 type activationRunner struct {
@@ -359,6 +361,37 @@ func (runner *activationRunner) acceptCommit(
 			"commit does not name the exact event-backed context tail")
 	}
 	authorityValue := trajectory.AuthorityOf(current)
+	if authorityValue != trajectory.AuthorityUser && authorityValue != trajectory.AuthorityObserver {
+		return runner.refuse(ctx, envelope, commit, "invalid_authority",
+			fmt.Sprintf("current observation carries %q authority", authorityValue))
+	}
+	resultParent := ""
+	if authorityValue == trajectory.AuthorityObserver {
+		if current.Observation == nil {
+			return runner.refuse(ctx, envelope, commit, "invalid_visual_context",
+				"observer-authority context has no canonical observation metadata")
+		}
+		if current.Observation.Source != SourceScreen && current.Observation.Source != SourceCamera {
+			return runner.refuse(ctx, envelope, commit, "invalid_visual_context",
+				"observer-authority context is outside the screen/camera evidence contract")
+		}
+		var err error
+		resultParent, err = canonicalResultParent(prefix, current)
+		if err != nil {
+			return runner.refuse(ctx, envelope, commit, "invalid_effect_consequence", err.Error())
+		}
+		if resultParent != "" && priorScreenConsequence(prefix, current.ID, resultParent) {
+			return runner.ignore(ctx, envelope, commit, "effect_consequence_consumed",
+				"this canonical tool result already has an earlier screen consequence")
+		}
+	}
+	// A failed canonical result has no successful external effect whose visual
+	// state must be observed before another explicit user task can proceed. The
+	// activation input is still an observation, so settle that terminal result
+	// from its exact committed prefix before provisional/final user handling.
+	// The active generation retains its own intent basis: a newer user task must
+	// never be cleared when the older failed result is noticed.
+	runner.settleFailedActive(prefix)
 	if authorityValue == trajectory.AuthorityUser {
 		// ASR revisions are useful canonical evidence, but a revisable prefix is
 		// not yet the participant's instruction. Clear an older durable intent
@@ -373,9 +406,35 @@ func (runner *activationRunner) acceptCommit(
 			itemID: current.ID, triggerItemID: current.Event.EventID,
 			sourceRevision: current.SourceRevision,
 		}
-	} else if authorityValue != trajectory.AuthorityObserver {
-		return runner.refuse(ctx, envelope, commit, "invalid_authority",
-			fmt.Sprintf("current observation carries %q authority", authorityValue))
+	} else {
+		if resultParent != "" {
+			resultItem, found := trajectoryItem(
+				trajectory.Snapshot{Version: commit.StoreVersion, Items: prefix}, resultParent,
+			)
+			if !found || resultItem.ToolResult == nil {
+				return runner.refuse(ctx, envelope, commit, "invalid_effect_consequence",
+					"visual consequence does not name a canonical tool result")
+			}
+			if resultItem.ToolResult.Error != "" {
+				// settleFailedActive already cleared the matching old generation
+				// and only its own intent. If another generation is now active,
+				// this is a delayed consequence of the old failure and must not
+				// compare against or disturb the newer call.
+				return runner.ignore(ctx, envelope, commit, "effect_failed",
+					"the failed computer effect is terminal and cannot reactivate cognition")
+			}
+			if runner.active != nil {
+				if runner.active.callID == "" {
+					return runner.ignore(ctx, envelope, commit, "generation_pending",
+						"one exact cognition turn is still in flight")
+				}
+				if resultItem.ToolResult.CallID != runner.active.callID {
+					return runner.refuse(ctx, envelope, commit, "effect_result_mismatch",
+						"visual consequence does not settle the one active computer effect")
+				}
+				runner.active = nil
+			}
+		}
 	}
 	if runner.intent == nil {
 		runner.state.Ignored++
@@ -403,49 +462,14 @@ func (runner *activationRunner) acceptCommit(
 		return runner.refuse(ctx, envelope, commit, "intent_not_causal",
 			"current visual context is not a canonical descendant of the selected user task")
 	}
-	resultParent := ""
-	if authorityValue == trajectory.AuthorityObserver {
-		if current.Observation == nil {
-			return runner.refuse(ctx, envelope, commit, "invalid_visual_context",
-				"observer-authority context has no canonical observation metadata")
-		}
-		if current.Observation.Source != SourceScreen && current.Observation.Source != SourceCamera {
-			return runner.refuse(ctx, envelope, commit, "invalid_visual_context",
-				"observer-authority context is outside the screen/camera evidence contract")
-		}
-		var err error
-		resultParent, err = canonicalResultParent(prefix, current)
-		if err != nil {
-			return runner.refuse(ctx, envelope, commit, "invalid_effect_consequence", err.Error())
-		}
-		if resultParent != "" && priorScreenConsequence(prefix, current.ID, resultParent) {
-			return runner.ignore(ctx, envelope, commit, "effect_consequence_consumed",
-				"this canonical tool result already has an earlier screen consequence")
-		}
-	}
 	if runner.active != nil {
 		switch {
 		case runner.active.callID == "":
 			return runner.ignore(ctx, envelope, commit, "generation_pending",
 				"one exact cognition turn is still in flight")
-		case resultParent == "":
+		default:
 			return runner.ignore(ctx, envelope, commit, "effect_pending",
 				"one proposed computer effect is waiting for its canonical visual consequence")
-		default:
-			resultItem, found := trajectoryItem(
-				trajectory.Snapshot{Version: commit.StoreVersion, Items: prefix}, resultParent,
-			)
-			if !found || resultItem.ToolResult == nil ||
-				resultItem.ToolResult.CallID != runner.active.callID {
-				return runner.refuse(ctx, envelope, commit, "effect_result_mismatch",
-					"visual consequence does not settle the one active computer effect")
-			}
-			runner.active = nil
-			if resultItem.ToolResult.Error != "" {
-				runner.intent = nil
-				return runner.ignore(ctx, envelope, commit, "effect_failed",
-					"the failed computer effect terminally cleared the selected user intent")
-			}
 		}
 	}
 	generationID := activationGenerationID(runner.config.Role, envelope.SessionID, commit, basis.ID)
@@ -462,7 +486,9 @@ func (runner *activationRunner) acceptCommit(
 		}
 		return runner.publishState(ctx, envelope)
 	}
-	runner.active = &activeGeneration{id: generationID, contextVersion: commit.StoreVersion}
+	runner.active = &activeGeneration{
+		id: generationID, contextVersion: commit.StoreVersion, intent: *runner.intent,
+	}
 	if err := runner.emit(ctx, envelope, generationID, commit, *runner.intent); err != nil {
 		runner.active = nil
 		return err
@@ -479,6 +505,33 @@ func (runner *activationRunner) acceptCommit(
 		return err
 	}
 	return runner.publishState(ctx, envelope)
+}
+
+// settleFailedActive terminally releases only the generation whose exact
+// canonical client result failed. The intent copy retained by that generation
+// prevents a later user commit from being erased when the old failure is first
+// observed in a newer committed prefix.
+func (runner *activationRunner) settleFailedActive(items []trajectory.Item) bool {
+	if runner.active == nil || runner.active.callID == "" {
+		return false
+	}
+	for index := len(items) - 1; index >= 0; index-- {
+		item := items[index]
+		if item.Kind != trajectory.KindToolResult || item.ToolResult == nil ||
+			item.ToolResult.CallID != runner.active.callID {
+			continue
+		}
+		if item.ToolResult.Error == "" {
+			return false
+		}
+		active := runner.active
+		runner.active = nil
+		if runner.intent != nil && *runner.intent == active.intent {
+			runner.intent = nil
+		}
+		return true
+	}
+	return false
 }
 
 func (runner *activationRunner) acceptResult(

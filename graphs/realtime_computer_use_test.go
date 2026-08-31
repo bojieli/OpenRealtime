@@ -305,6 +305,20 @@ func TestRealtimeComputerUseChangedCameraReactivatesDurableIntentOneEffectAtATim
 }
 
 func TestRealtimeComputerUseFailedEffectRequiresNewCanonicalUserIntent(t *testing.T) {
+	for _, ordering := range []string{
+		"consequence_then_final",
+		"final_then_consequence",
+		"provisional_then_consequence_then_final",
+	} {
+		t.Run(ordering, func(t *testing.T) {
+			t.Parallel()
+			testRealtimeComputerUseFailedEffectOrdering(t, ordering)
+		})
+	}
+}
+
+func testRealtimeComputerUseFailedEffectOrdering(t *testing.T, ordering string) {
+	t.Helper()
 	target := computeruse.Target{
 		Name: "benchmark-browser", Sources: []string{realtimecu.SourceScreen}, Width: 320, Height: 240,
 	}
@@ -401,28 +415,63 @@ func TestRealtimeComputerUseFailedEffectRequiresNewCanonicalUserIntent(t *testin
 	if consequence.CallID != call.CallID || consequence.CanonicalResultItemID == "" {
 		t.Fatalf("failed action consequence = %+v", consequence)
 	}
-	if err := runtime.Video(context.Background(), perception.Frame{
-		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 300,
-		Image: []byte{2}, MIMEType: "image/jpeg", Width: 320, Height: 240,
-	}); err != nil {
-		t.Fatal(err)
+	sendConsequence := func(capturedNS uint64) {
+		t.Helper()
+		if err := runtime.Video(context.Background(), perception.Frame{
+			Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: capturedNS,
+			Image: []byte{2}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	select {
-	case invocation := <-model.invocations:
-		t.Fatalf("failed effect automatically reopened cognition: %+v", invocation)
-	case call := <-sink.calls:
-		t.Fatalf("failed effect automatically emitted another action: %+v", call)
-	case <-time.After(200 * time.Millisecond):
+	sendFinalUser := func(capturedNS uint64) {
+		t.Helper()
+		observer.audioFinal.Store(true)
+		if err := runtime.Audio(context.Background(), perception.Frame{
+			Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: capturedNS,
+			PCM16LE: []byte{2, 0}, SampleRateHz: 24_000,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		fresh := receiveRealtimeCU(t, model.invocations, "new user intent after failed effect")
+		if fresh.Number != 3 || fresh.LastSource != realtimecu.SourceMicrophone || fresh.ToolResults != 1 {
+			t.Fatalf("new user intent after failed effect = %+v", fresh)
+		}
 	}
-	if err := runtime.Audio(context.Background(), perception.Frame{
-		Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: 400,
-		PCM16LE: []byte{2, 0}, SampleRateHz: 24_000,
-	}); err != nil {
-		t.Fatal(err)
+	assertNoReactivation := func() {
+		t.Helper()
+		select {
+		case invocation := <-model.invocations:
+			t.Fatalf("failed effect automatically reopened cognition: %+v", invocation)
+		case call := <-sink.calls:
+			t.Fatalf("failed effect automatically emitted another action: %+v", call)
+		case <-time.After(200 * time.Millisecond):
+		}
 	}
-	fresh := receiveRealtimeCU(t, model.invocations, "new user intent after failed effect")
-	if fresh.Number != 3 || fresh.LastSource != realtimecu.SourceMicrophone || fresh.ToolResults != 1 {
-		t.Fatalf("new user intent after failed effect = %+v", fresh)
+
+	switch ordering {
+	case "consequence_then_final":
+		sendConsequence(300)
+		assertNoReactivation()
+		sendFinalUser(400)
+	case "final_then_consequence":
+		sendFinalUser(300)
+		sendConsequence(400)
+		assertNoReactivation()
+	case "provisional_then_consequence_then_final":
+		observer.audioFinal.Store(false)
+		if err := runtime.Audio(context.Background(), perception.Frame{
+			Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: 300,
+			PCM16LE: []byte{2, 0}, SampleRateHz: 24_000,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		assertNoReactivation()
+		sendConsequence(400)
+		assertNoReactivation()
+		sendFinalUser(500)
+	default:
+		t.Fatalf("unknown failed-effect ordering %q", ordering)
 	}
 }
 
