@@ -428,7 +428,7 @@ func (run *ReviewRun) close(requireComplete bool) error {
 	manifest.Reportable = manifest.Complete
 	if !manifest.Complete {
 		manifest.ReportabilityErrors = append(manifest.ReportabilityErrors,
-			"the review bundle is missing expected attempts")
+			"the review bundle is missing expected media-complete attempts")
 	}
 	for _, attempt := range manifest.Attempts {
 		if attempt.Reportable {
@@ -460,11 +460,12 @@ func (run *ReviewRun) close(requireComplete bool) error {
 func (run *ReviewRun) renderMarkdown(manifest ReviewManifest) string {
 	var output strings.Builder
 	output.WriteString("# Scenario review\n\n")
+	output.WriteString("This media index covers only attempts with synchronized audio/video evidence. Result-only attempted rows remain attributable in `CHECKLIST.md` and `source-manifest.json`; a missing media row must not be read as an unattempted benchmark row.\n\n")
 	if manifest.Complete {
-		fmt.Fprintf(&output, "Complete: yes (%d/%d attempts retained).\n\n",
+		fmt.Fprintf(&output, "Complete: yes (%d/%d media-complete attempts retained).\n\n",
 			len(manifest.Attempts), manifest.Expected)
 	} else {
-		fmt.Fprintf(&output, "Complete: no (%d/%d attempts retained).\n\n",
+		fmt.Fprintf(&output, "Complete: no (%d/%d media-complete attempts retained).\n\n",
 			len(manifest.Attempts), manifest.Expected)
 	}
 	if manifest.Reportable {
@@ -492,7 +493,7 @@ func (run *ReviewRun) renderMarkdown(manifest ReviewManifest) string {
 			key := reviewAttemptKey(state.item.Name, trial)
 			attempt, ok := run.attempts[key]
 			if !ok {
-				fmt.Fprintf(&output, "### Trial %d — MISSING\n\nNo attempt artifact was retained.\n\n", trial)
+				fmt.Fprintf(&output, "### Trial %d — MEDIA MISSING\n\nNo synchronized media artifact was retained. Inspect `CHECKLIST.md` and `source-manifest.json` to distinguish a result-only attempted row from an unattempted row.\n\n", trial)
 				continue
 			}
 			status := "FAIL"

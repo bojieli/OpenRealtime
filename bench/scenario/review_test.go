@@ -179,7 +179,7 @@ func TestReviewRunWritesCompleteElevenCaseMultimodalBundle(t *testing.T) {
 
 	review := string(mustReadFile(t, filepath.Join(directory, "REVIEW.md")))
 	for _, want := range []string{
-		"Complete: yes (22/22 attempts retained)", "left channel", "right channel",
+		"Complete: yes (22/22 media-complete attempts retained)", "left channel", "right channel",
 		"Behavioral reportable: no",
 		"Scripted visual inputs", "submitted", "User: review user turn",
 		"Agent: review agent turn", "Tool call", "Latency after", "fixture failure",

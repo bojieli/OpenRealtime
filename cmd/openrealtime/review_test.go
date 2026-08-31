@@ -24,6 +24,7 @@ type scenarioEvaluationFixtureProvider struct {
 	claimed        atomic.Bool
 	reviewCalls    atomic.Int32
 	closeCalls     atomic.Int32
+	reviewEntered  chan struct{}
 	fail           bool
 	hang           bool
 	assessment     *benchreview.Assessment
@@ -56,6 +57,12 @@ func (provider *scenarioEvaluationFixtureProvider) Review(
 	ctx context.Context, request benchreview.PreparedRequest,
 ) (benchreview.ProviderResponse, error) {
 	provider.reviewCalls.Add(1)
+	if provider.reviewEntered != nil {
+		select {
+		case provider.reviewEntered <- struct{}{}:
+		default:
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return benchreview.ProviderResponse{}, err
 	}
@@ -477,23 +484,40 @@ func TestScenarioEvaluationPublishesCanceledAttemptedPrefix(t *testing.T) {
 	}
 }
 
-func TestScenarioEvaluationHangingProviderHonorsCleanupDeadline(t *testing.T) {
+func TestScenarioEvaluationHangingProviderHonorsCancellation(t *testing.T) {
 	t.Chdir("../..")
 	sourceDirectory, sourceReceipt, _ := publishScenarioGraphCanceledPrefixFixture(t)
 	outputDirectory := filepath.Join(t.TempDir(), "hanging-evaluations")
 	registry, provider := scenarioEvaluationFixtureRegistry(t, false)
 	provider.hang = true
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	err := runScenarioEvaluationContext(ctx, []string{
-		"-source-dir", sourceDirectory,
-		"-source-receipt", sourceDirectory + ".receipt.json",
-		"-out", outputDirectory,
-		"-provider", "fixture.scenario-review",
-		"-parallel", "1",
-		"-timeout", time.Minute.String(),
-	}, &bytes.Buffer{}, registry)
-	if !errors.Is(err, context.DeadlineExceeded) || provider.reviewCalls.Load() != 1 ||
+	provider.reviewEntered = make(chan struct{}, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	returned := make(chan error, 1)
+	go func() {
+		returned <- runScenarioEvaluationContext(ctx, []string{
+			"-source-dir", sourceDirectory,
+			"-source-receipt", sourceDirectory + ".receipt.json",
+			"-out", outputDirectory,
+			"-provider", "fixture.scenario-review",
+			"-parallel", "1",
+			"-timeout", time.Minute.String(),
+		}, &bytes.Buffer{}, registry)
+	}()
+	select {
+	case <-provider.reviewEntered:
+	case err := <-returned:
+		t.Fatalf("hanging provider returned before cancellation: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("hanging provider was not entered")
+	}
+	cancel()
+	var err error
+	select {
+	case err = <-returned:
+	case <-time.After(10 * time.Second):
+		t.Fatal("hanging provider did not honor cancellation")
+	}
+	if !errors.Is(err, context.Canceled) || provider.reviewCalls.Load() != 1 ||
 		provider.closeCalls.Load() != 1 {
 		t.Fatalf("hanging provider error=%v calls=%d close=%d",
 			err, provider.reviewCalls.Load(), provider.closeCalls.Load())

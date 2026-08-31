@@ -335,7 +335,7 @@ func TestScenarioGraphCancellationSealsAttemptedPrefixForExactReview(t *testing.
 			opened.Manifest, opened.Checklist, requests)
 	}
 	if review, err := os.ReadFile(filepath.Join(directory, "REVIEW.md")); err != nil ||
-		!bytes.Contains(review, []byte("Complete: no (1/11 attempts retained)")) {
+		!bytes.Contains(review, []byte("Complete: no (1/11 media-complete attempts retained)")) {
 		t.Fatalf("partial human review=%q error=%v", review, err)
 	}
 }
@@ -555,6 +555,11 @@ func TestScenarioGraphPreSessionFailureSealsResultOnlyAttempt(t *testing.T) {
 	if checklist, err := os.ReadFile(filepath.Join(directory, "CHECKLIST.md")); err != nil ||
 		!bytes.Contains(checklist, []byte("INFRASTRUCTURE FAILURE")) {
 		t.Fatalf("result-only human checklist=%q error=%v", checklist, err)
+	}
+	if review, err := os.ReadFile(filepath.Join(directory, "REVIEW.md")); err != nil ||
+		!bytes.Contains(review, []byte("Complete: no (0/11 media-complete attempts retained)")) ||
+		!bytes.Contains(review, []byte("Result-only attempted rows remain attributable")) {
+		t.Fatalf("result-only media index=%q error=%v", review, err)
 	}
 	registry, provider := scenarioEvaluationFixtureRegistry(t, false)
 	evaluationDirectory := filepath.Join(t.TempDir(), "must-not-publish")
@@ -792,7 +797,9 @@ func TestScenarioGraphExecutorFactoryFailureSealsZeroMediaDiagnosticSource(t *te
 		t.Fatalf("zero-media source population = %+v", population)
 	}
 	if review, err := os.ReadFile(filepath.Join(directory, "REVIEW.md")); err != nil ||
-		!bytes.Contains(review, []byte("Complete: no (0/11 attempts retained)")) {
+		!bytes.Contains(review, []byte("Complete: no (0/11 media-complete attempts retained)")) ||
+		!bytes.Contains(review, []byte("Result-only attempted rows remain attributable")) ||
+		!bytes.Contains(review, []byte("No synchronized media artifact was retained")) {
 		t.Fatalf("zero-media human review=%q error=%v", review, err)
 	}
 	registry, provider := scenarioEvaluationFixtureRegistry(t, false)
@@ -884,6 +891,12 @@ func TestScenarioGraphMixedResultOnlyAndMediaPublishesIncompleteReviewCoverage(t
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	sourceReview, err := os.ReadFile(filepath.Join(directory, "REVIEW.md"))
+	if err != nil ||
+		!bytes.Contains(sourceReview, []byte("Complete: no (1/11 media-complete attempts retained)")) ||
+		!bytes.Contains(sourceReview, []byte("Result-only attempted rows remain attributable")) {
+		t.Fatalf("mixed source human index=%q error=%v", sourceReview, err)
 	}
 	outputDirectory := filepath.Join(t.TempDir(), "mixed-evaluations")
 	registry, provider := scenarioEvaluationFixtureRegistry(t, false)
