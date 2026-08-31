@@ -103,15 +103,26 @@ private enum NativeMacProviderRegistry {
             return adapter(context, instance: codec, onDispose: { codec.dispose() })
         }
         try register(registry, selection(
-            "transport", .connection, "macos.urlsession-websocket.v1",
+            "transport", .connection, "macos.realtime-transport.v2",
             requires: [.strictJSON], permissions: nativePermissionCeiling(.connection)
         )) { context in
             let codec = try context.service(.strictJSON, as: StrictJSONService.self)
-            let endpoint = try endpointDirectory.endpoint(
+            // The directory carries exactly one realtime endpoint and it is
+            // what selects the transport. Both are the same session; they
+            // differ in whether audio is a protocol event or negotiated media.
+            let transport: any RealtimeTransport
+            if let webSocket = try? endpointDirectory.endpoint(
                 named: .realtimeWebSocket,
                 protocol: NativeEndpoint.realtimeWebSocketProtocol
-            )
-            let transport = try RealtimeClient(strictJSON: codec, endpoint: endpoint.url)
+            ) {
+                transport = try RealtimeClient(strictJSON: codec, endpoint: webSocket.url)
+            } else {
+                let webRTC = try endpointDirectory.endpoint(
+                    named: .realtimeWebRTC,
+                    protocol: NativeEndpoint.realtimeWebRTCProtocol
+                )
+                transport = try WebRTCTransport(strictJSON: codec, endpoint: webRTC.url)
+            }
             return adapter(
                 context, instance: transport,
                 onStop: { transport.disconnect(reason: "native transport provider stopped") }
@@ -121,7 +132,7 @@ private enum NativeMacProviderRegistry {
             "transport-diagnostics", .transportDiagnostics,
             "macos.websocket-diagnostics.v1", requires: [.connection]
         )) { context in
-            let transport = try context.service(.connection, as: RealtimeClient.self)
+            let transport = try realtimeTransport(context.service(.connection))
             let channel = TransportDiagnosticsService.makeChannel()
             return adapter(
                 context, instance: channel.service,
@@ -138,7 +149,7 @@ private enum NativeMacProviderRegistry {
             requires: [.strictJSON, .connection]
         )) { context in
             _ = try context.service(.strictJSON, as: StrictJSONService.self)
-            let transport = try context.service(.connection, as: RealtimeClient.self)
+            let transport = try realtimeTransport(context.service(.connection))
             let reducer = NativeReducerController(transport: transport)
             return adapter(
                 context, instance: reducer,
@@ -214,7 +225,7 @@ private enum NativeMacProviderRegistry {
             permissions: nativePermissionCeiling(.media)
         )) { context in
             let media = NativeMediaBoundary(
-                transport: try context.service(.connection, as: RealtimeClient.self),
+                transport: try realtimeTransport(context.service(.connection)),
                 reducer: try context.service(.reducer, as: NativeReducerController.self),
                 protocolEvents: try context.service(
                     .protocolEvents, as: ValidatedProtocolEventService.self
@@ -231,7 +242,7 @@ private enum NativeMacProviderRegistry {
             permissions: nativePermissionCeiling(.video)
         )) { context in
             let video = NativeVideoBoundary(
-                transport: try context.service(.connection, as: RealtimeClient.self),
+                transport: try realtimeTransport(context.service(.connection)),
                 reducer: try context.service(.reducer, as: NativeReducerController.self),
                 configuration: try context.service(
                     .sessionConfiguration, as: SessionConfigurationService.self
@@ -553,6 +564,19 @@ private final class NativeAdapterProvider: NativeClientProvider {
         disposed = true
         onDispose()
     }
+}
+
+/// Resolves the connection service as a transport.
+///
+/// The generic `service(_:as:)` cannot express this: an existential does not
+/// satisfy a `T: AnyObject` constraint, and the whole point of the connection
+/// service is that two concrete transports can occupy it.
+@MainActor
+private func realtimeTransport(_ instance: AnyObject) throws -> any RealtimeTransport {
+    guard let transport = instance as? any RealtimeTransport else {
+        throw NativeAssemblyError("the connection provider is not a realtime transport")
+    }
+    return transport
 }
 
 private struct NativeAssemblyError: LocalizedError {

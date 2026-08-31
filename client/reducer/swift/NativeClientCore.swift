@@ -1851,9 +1851,25 @@ public struct NativeEndpointDirectory: Codable, Equatable, Sendable {
         try validate()
         try manifest.validate()
         let services = Set(manifest.providers.map(\.service))
-        var selected: [(NativeEndpointName, String)] = [
-            (.realtimeWebSocket, NativeEndpoint.realtimeWebSocketProtocol),
-        ]
+        // Exactly one realtime endpoint, and the transport is whichever one
+        // the deployment declared. The two carry the same session and a
+        // directory that named both would leave the choice to whichever
+        // provider looked first.
+        let realtime: (NativeEndpointName, String)
+        switch (
+            endpoints.contains { $0.name == .realtimeWebSocket },
+            endpoints.contains { $0.name == .realtimeWebRTC }
+        ) {
+        case (true, false):
+            realtime = (.realtimeWebSocket, NativeEndpoint.realtimeWebSocketProtocol)
+        case (false, true):
+            realtime = (.realtimeWebRTC, NativeEndpoint.realtimeWebRTCProtocol)
+        case (true, true):
+            throw ReducerFailure("native endpoint directory declares two realtime transports")
+        default:
+            throw ReducerFailure("native endpoint directory declares no realtime transport")
+        }
+        var selected: [(NativeEndpointName, String)] = [realtime]
         if services.contains(.inspection) {
             selected.append((.management, NativeEndpoint.managementProtocol))
         }
@@ -2494,7 +2510,13 @@ private func exactNativeSelection(
 public func nativePermissionCeiling(_ service: NativeClientService) -> [NativeClientPermission] {
     switch service {
     case .connection:
-        return [NativeClientPermission(kind: "network.connect", resource: "realtime-endpoint", operations: ["websocket"])]
+        // One provider builds either transport, so it is granted both. Which
+        // one it builds is decided by the deployment's endpoint directory,
+        // not by widening a permission at connect time.
+        return [NativeClientPermission(
+            kind: "network.connect", resource: "realtime-endpoint",
+            operations: ["websocket", "webrtc"]
+        )]
     case .media:
         return [NativeClientPermission(
             kind: "device.media", resource: "native-audio",

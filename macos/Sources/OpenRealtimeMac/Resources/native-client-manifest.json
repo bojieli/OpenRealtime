@@ -1,10 +1,10 @@
 {
   "format_version": 1,
   "platform": "macos",
-  "profile_fingerprint": "sha256:399204e184e30ffe1ba1094c17eb200372250a9109a6c29bd3ee547508902b49",
-  "lock_fingerprint": "sha256:e31068971b96173feab4463ab936a41af3fe6b62c27f44723f3fde038ae4f62e",
-  "plan_fingerprint": "sha256:856e53c80ab517b9e3f4bd9c9a3aaa1e21755392b624d4788d422b5ac0f9d235",
-  "manifest_fingerprint": "sha256:31082d67817c422c2b3af5ff61e486c7123356d317f2ee4af3c795727e8882cd",
+  "profile_fingerprint": "sha256:a433eae84b17cb683ac7b49b42b5f8c8ecbaf65d311141e236e6c8421a136155",
+  "lock_fingerprint": "sha256:59363861877c85d5cea0f8fda542fcec9b942700d14fb6d7bc94a31199c7b42d",
+  "plan_fingerprint": "sha256:38debe86f369fe850e4de50f996a0df7efb5542539a2c07cc8ac646212601a9a",
+  "manifest_fingerprint": "sha256:f338987248723c8293d7a8cd764e46ed0bae75f147cea37e99406102f5dec89c",
   "endpoints": [
     {
       "name": "effects.local",
@@ -32,10 +32,10 @@
     {
       "id": "transport",
       "service": "presentation.client.connection",
-      "implementation": "macos.urlsession-websocket.v1",
+      "implementation": "macos.realtime-transport.v2",
       "requires": ["presentation.client.strict_json"],
       "permissions": [
-        {"kind": "network.connect", "resource": "realtime-endpoint", "operations": ["websocket"]}
+        {"kind": "network.connect", "resource": "realtime-endpoint", "operations": ["websocket", "webrtc"]}
       ]
     },
     {

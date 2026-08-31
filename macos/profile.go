@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -63,11 +64,15 @@ var nativeDefinitions = []nativeDefinition{
 		implementation: "portable.swift-strict-json.v1", provides: presentation.ClientCodecContract,
 	},
 	{
-		id: "transport", pluginName: "openrealtime.presentation.macos.websocket",
-		implementation: "macos.urlsession-websocket.v1", provides: presentation.ClientConnectionContract,
+		id: "transport", pluginName: "openrealtime.presentation.macos.transport",
+		implementation: "macos.realtime-transport.v2", provides: presentation.ClientConnectionContract,
 		requires: []plugin.Contract{presentation.ClientCodecContract},
+		// One provider, two transports, and the deployment's own directory
+		// decides which. Both operations are granted because the provider can
+		// build either; which one it builds is not a permission question.
 		permissions: []plugin.Permission{{
-			Kind: "network.connect", Resource: "realtime-endpoint", Operations: []string{"websocket"},
+			Kind: "network.connect", Resource: "realtime-endpoint",
+			Operations: []string{"websocket", "webrtc"},
 		}},
 	},
 	{
@@ -388,12 +393,31 @@ func validateNativeEndpointDirectory(
 	if err := directory.Validate(); err != nil {
 		return fmt.Errorf("native endpoint directory: %w", err)
 	}
+	// Exactly one realtime endpoint. The transport is whichever the
+	// deployment declared, and a directory naming both would leave the choice
+	// to whichever provider looked first.
+	_, hasWebSocket := directory.Lookup(presentation.EndpointRealtimeWebSocket)
+	_, hasWebRTC := directory.Lookup(presentation.EndpointRealtimeWebRTC)
+	var realtime struct {
+		name     presentation.EndpointName
+		protocol string
+	}
+	switch {
+	case hasWebSocket && hasWebRTC:
+		return errors.New("native endpoint directory declares two realtime transports")
+	case hasWebSocket:
+		realtime.name = presentation.EndpointRealtimeWebSocket
+		realtime.protocol = presentation.ProtocolRealtimeWebSocket
+	case hasWebRTC:
+		realtime.name = presentation.EndpointRealtimeWebRTC
+		realtime.protocol = presentation.ProtocolRealtimeWebRTC
+	default:
+		return errors.New("native endpoint directory declares no realtime transport")
+	}
 	want := []struct {
 		name     presentation.EndpointName
 		protocol string
-	}{
-		{name: presentation.EndpointRealtimeWebSocket, protocol: presentation.ProtocolRealtimeWebSocket},
-	}
+	}{realtime}
 	if nativeDefinitionsProvide(definitions, presentation.ClientInspectionContract) {
 		want = append(want, struct {
 			name     presentation.EndpointName
