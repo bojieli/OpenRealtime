@@ -101,7 +101,12 @@ func defaultScenarioProfileOptions() scenarioProfileOptions {
 		ttsURL: "http://127.0.0.1:8123/v1/tts", ttsVoice: "default",
 		ttsTimeoutMS: 30_000, ttsSentenceWrap: true, ttsSentenceMinimum: 12,
 		gateThreshold: 0.5, gatePrefixMS: 300, gateSilenceMS: 500,
-		gateSpeechMS: 120, maxOutputTokens: 512,
+		// The acknowledgement scenario deliberately asks for a long answer,
+		// then speaks over it. A 512-token response took 176 seconds to finish
+		// through the production sentence/TTS path and crossed the exact
+		// three-minute task bound. 128 tokens still spans every scripted
+		// acknowledgement while keeping one turn bounded under provider load.
+		gateSpeechMS: 120, maxOutputTokens: 128,
 		// Runtime evidence is read only after an entire authored conversation
 		// and its trailing quiet period. Five minutes covers the client's
 		// two-minute per-attempt deadline without making the capability durable.
