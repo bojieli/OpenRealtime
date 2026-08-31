@@ -77,8 +77,8 @@ func TestBenchmarkInvocationClassificationIncludesNestedReadOnlyAndRecoveryBranc
 	}
 }
 
-func TestEvalAndSimulateRemainDiagnosticsNotBenchmarkAttemptProducers(t *testing.T) {
-	for _, command := range []string{"eval", "simulate"} {
+func TestEvalRemainsDiagnosticNotBenchmarkAttemptProducer(t *testing.T) {
+	for _, command := range []string{"eval"} {
 		kind, err := classifyTopLevelMeasurementInvocation(command, nil)
 		if err != nil || kind != benchmarkInvocationDiagnostic {
 			t.Fatalf("%s classification = %q, %v", command, kind, err)

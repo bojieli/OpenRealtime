@@ -138,7 +138,7 @@ func classifyTopLevelMeasurementInvocation(command string, arguments []string) (
 		default:
 			return "", fmt.Errorf("unknown review operation %q", arguments[0])
 		}
-	case "eval", "simulate":
+	case "eval":
 		// These produce decision/conversation diagnostics, never bench.Result or
 		// a benchmark attempt lifecycle, so mandatory benchmark retention does
 		// not silently change their semantics.
