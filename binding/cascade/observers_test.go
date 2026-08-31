@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,8 +16,33 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/session"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
+
+type passiveObserverManualDeferral struct{}
+
+func (passiveObserverManualDeferral) Name() string                         { return "fixture-client-driven+silent-observers" }
+func (passiveObserverManualDeferral) Conditions() []session.TransitionKind { return nil }
+func (passiveObserverManualDeferral) Admit(waiting interaction.Waiting) (bool, string) {
+	if waiting.AutonomousObservation || waiting.Requested {
+		return true, ""
+	}
+	return false, "waiting for response.create"
+}
+func (passiveObserverManualDeferral) ConsumesResponseRequest(waiting interaction.Waiting) bool {
+	return !waiting.AutonomousObservation
+}
+
+type userOnlyObservationRollout struct{}
+
+func (userOnlyObservationRollout) Name() string { return "fixture-user-only-observation" }
+func (userOnlyObservationRollout) Plan(input interaction.RolloutInput) []interaction.Step {
+	if input.Cause.Observation && !input.Cause.AutonomousObservation {
+		return []interaction.Step{{Kind: interaction.StepFast, Reason: "answer user"}}
+	}
+	return nil
+}
 
 func videoFactory() perception.Factory {
 	return perception.VideoFactory(perception.VideoConfig{
@@ -57,6 +83,67 @@ func screenFrame(t *testing.T) perception.Frame {
 		Kind: perception.FrameImage, Source: "screen", MIMEType: "image/jpeg",
 		Width: 640, Height: 480, CapturedNS: uint64(time.Now().UnixNano()),
 		Image: buffer.Bytes(),
+	}
+}
+
+func TestManualPassiveObserverCannotConsumePendingUserResponse(t *testing.T) {
+	config := videoConfig(nil)
+	policies := interaction.Defaults()
+	policies.Rollout = userOnlyObservationRollout{}
+	config.Policies = policies
+	config.ManualDeferral = passiveObserverManualDeferral{}
+	runtime, _ := startSession(t, config, binding.Settings{ManualTurns: true})
+	fast := config.Fast.(*scriptedProvider)
+
+	// Arrange the production race directly: response.create is already
+	// pending when a screen observation reaches the manual gate. The observer
+	// lane may update silent visual state, but it must not spend the response.
+	if err := runtime.CreateResponse(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Video(t.Context(), screenFrame(t)); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		for _, item := range runtime.Trajectory().Items {
+			if item.Kind == trajectory.KindObservation &&
+				trajectory.AuthorityOf(item) == trajectory.AuthorityObserver {
+				return true
+			}
+		}
+		return false
+	}, "screen observation did not commit")
+	time.Sleep(50 * time.Millisecond)
+	if calls := fast.invocations(); calls != 0 {
+		t.Fatalf("observer-only screen batch invoked the speaking lane %d times", calls)
+	}
+
+	for index := 0; index < 3; index++ {
+		if err := runtime.Audio(t.Context(), perception.Frame{
+			Kind: perception.FrameAudio, Source: "microphone", SampleRateHz: 24_000,
+			PCM16LE: tone(2400, 8000),
+		}); err != nil {
+			t.Fatalf("audio %d: %v", index, err)
+		}
+	}
+	if err := runtime.CommitAudio(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return fast.invocations() == 1 },
+		"the user observation did not inherit the preserved response.create")
+}
+
+func TestManualDeferralCannotSilentlyCancelStablePartialObservationPolicy(t *testing.T) {
+	config := videoConfig(nil)
+	policies := interaction.Defaults()
+	policies.Deferral = interaction.NewDuplexDeferral(interaction.DeferralOptions{
+		AllowWhileUserSpeaking: true,
+	})
+	config.Policies = policies
+	config.ObservationPolicy = cascade.ObservationStablePartial
+	config.ManualDeferral = interaction.NewDuplexDeferral(interaction.DeferralOptions{})
+	if _, err := cascade.New(config); err == nil || !strings.Contains(err.Error(), "manual deferral") {
+		t.Fatalf("stable partial plus blocking manual deferral error = %v", err)
 	}
 }
 
