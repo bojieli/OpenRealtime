@@ -90,7 +90,8 @@ func TestMeetingInstructionsDisambiguateGroundedMetricAndVisibleAlertAction(t *t
 	}
 	openInstruction := taskInstruction(openTask)
 	if !strings.Contains(openInstruction, "exact latest_conversion_rate_percent") ||
-		!strings.Contains(openInstruction, "do not substitute change_from_prior_points") {
+		!strings.Contains(openInstruction, "do not substitute change_from_prior_points") ||
+		!strings.Contains(openInstruction, "Do not speak until both requested screen actions") {
 		t.Fatalf("open/share instruction is ambiguous: %q", openInstruction)
 	}
 	alertInstruction := taskInstruction(alertTask)
@@ -127,6 +128,7 @@ func TestMeetingKnowledgeDeclarationsExplicitlyOptIntoBoundedForegroundExecution
 		for _, raw := range declared {
 			var tool struct {
 				Name         string `json:"name"`
+				Description  string `json:"description"`
 				OpenRealtime struct {
 					Background bool `json:"background"`
 				} `json:"openrealtime"`
@@ -140,6 +142,10 @@ func TestMeetingKnowledgeDeclarationsExplicitlyOptIntoBoundedForegroundExecution
 			found = true
 			if !tool.OpenRealtime.Background {
 				t.Fatalf("%s did not declare its read-only background-safe execution contract", wantName)
+			}
+			if wantName == ToolAnalyzeLaunchReview &&
+				!strings.Contains(tool.Description, "emit this function call rather than merely saying") {
+				t.Fatalf("%s declaration permits a spoken-only false start: %q", wantName, tool.Description)
 			}
 		}
 		if !found {
