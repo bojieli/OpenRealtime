@@ -775,6 +775,10 @@ func (runtime *runtime) batchOnlyCompositeEndpointArtifacts(
 	}
 	for _, event := range batch.Events {
 		switch event.Kind {
+		case eventloop.KindSignal:
+			if event.Type != interaction.SignalEscalated {
+				return false
+			}
 		case trajectory.KindObservation:
 		case trajectory.KindAssistantState:
 			if !coveredActiveState(event.AssistantState) {

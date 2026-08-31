@@ -450,6 +450,7 @@ func TestCompositeEndpointSuppressionRequiresCoveredClauseAndActiveSpeech(t *tes
 			{Kind: trajectory.KindAssistantState, AssistantState: queued},
 			{Kind: trajectory.KindAssistantState, AssistantState: played},
 			{Kind: trajectory.KindObservation},
+			{Kind: eventloop.KindSignal, Type: interaction.SignalEscalated},
 		},
 	}
 	if !runtime.batchOnlyCompositeEndpointArtifacts(batch, []string{"assistant-1"}) {
@@ -492,6 +493,12 @@ func TestCompositeEndpointSuppressionRequiresCoveredClauseAndActiveSpeech(t *tes
 	})
 	if runtime.batchOnlyCompositeEndpointArtifacts(unrelated, []string{"assistant-1"}) {
 		t.Fatal("unrelated semantic work was hidden with a composite endpoint")
+	}
+	unrelatedSignal := batch
+	unrelatedSignal.Events = append([]eventloop.Event(nil), batch.Events...)
+	unrelatedSignal.Events[len(unrelatedSignal.Events)-1].Type = interaction.SignalBackgroundResult
+	if runtime.batchOnlyCompositeEndpointArtifacts(unrelatedSignal, []string{"assistant-1"}) {
+		t.Fatal("an unrelated signal was hidden with a composite endpoint")
 	}
 }
 
