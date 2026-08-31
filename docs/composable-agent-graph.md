@@ -2333,8 +2333,8 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
 - [x] Adversarially cover the refusal surface of the authority, provider,
   canonical-record, admission, descriptor-lock, policy, and capture validators.
   A mutation sweep — replacing one guard at a time with `if false` and rerunning
-  the suite — found ninety-two guards across thirty validators, in thirteen
-  packages, that no test reached. The
+  the suite — found one hundred and four guards across thirty-two validators,
+  in fifteen packages, that no test reached. The
   line above already claimed adversarial tests for target identity and ledger
   release gates; that claim was only partly supported, because four of the six
   guards in `validateTargetAuthorization` and the ledger's own check that a
@@ -2349,7 +2349,8 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   gate, the transcript-event act tables, completion provider state, the
   `element` package's own contract surface (`Canonical`, `ValidateIdentity`,
   `ValidateConcretePort`, `ValidateFor`, all at zero coverage), ASR input
-  continuity, and perception frame kinds. Eighty-nine now fail under mutation.
+  continuity, perception frame kinds, the vision input boundary, and the
+  generation invocation's bounds. One hundred and one now fail under mutation.
   Of the three that do not, two are internal cipher-error paths no caller can
   reach and one is genuine redundancy: `durationSamples` already refuses an
   out-of-range sample rate with the identical message.
