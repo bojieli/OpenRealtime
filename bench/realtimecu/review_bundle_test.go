@@ -620,6 +620,62 @@ func TestReviewBundleRetainsAllIncompleteDeterministicRowsWithoutSummaryDrift(t 
 	}
 }
 
+func TestReviewBundleCanonicalizesHTMLBearingFailureContextForSecondaryReview(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "review")
+	t.Cleanup(func() { makeReviewTreeWritable(directory) })
+	reviewer := &fixtureCUReviewer{}
+	bundle, err := NewReviewBundle(ReviewBundleOptions{
+		Directory: directory, VideoFactory: &fixtureReviewVideoFactory{},
+		Reviewer:         openFixtureCUReviewer(t, reviewer),
+		SourceAnchor:     fixtureReviewSourceAnchor(directory),
+		EvaluationStores: fixtureReviewEvaluationStores(t, directory),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := Case{Task: Suite()[0], Grounding: GroundingPixel}
+	attempt, completion, _ := fixturePendingReviewAttempt(t, bundle, item, false)
+	outcome := bench.TaskOutcome{
+		ID: item.ID(), Completed: false,
+		Error:   `<html><body>fixture provider failed</body></html>`,
+		Metrics: map[string]float64{}, Notes: map[string]string{},
+	}
+	completion.Outcome = outcome
+	completion.Page = PageResult{Reason: outcome.Error}
+	if err := attempt.Complete(t.Context(), completion); err != nil {
+		t.Fatal(err)
+	}
+	result := bench.Result{
+		Suite: SuiteName, Cell: ReferenceCell(), Provenance: fixtureReviewProvenance(),
+		Expected: 16, Tasks: []bench.TaskOutcome{outcome},
+	}
+	result.Finish()
+	if err := bundle.FinishSuite(t.Context(), result); err == nil ||
+		!strings.Contains(err.Error(), "retained 1 of 16") {
+		t.Fatalf("FinishSuite() = %v, want only deterministic incompleteness", err)
+	}
+	if reviewer.calls.Load() != 1 {
+		t.Fatalf("reviewer calls = %d, want 1", reviewer.calls.Load())
+	}
+	reviewer.mu.Lock()
+	requests := slices.Clone(reviewer.requests)
+	reviewer.mu.Unlock()
+	if len(requests) != 1 ||
+		bytes.Contains(requests[0].Context, []byte(`\u003c`)) ||
+		!bytes.Contains(requests[0].Context, []byte(`<html>`)) {
+		t.Fatalf("reviewer context is not exact provider-neutral canonical JSON: %q", requests[0].Context)
+	}
+	receipt, ok := bundle.Receipt()
+	if !ok {
+		t.Fatal("HTML-bearing incomplete review has no diagnostic receipt")
+	}
+	manifest, err := VerifyReviewBundleReceipt(directory, receipt)
+	if err != nil || len(manifest.Attempts) != 1 ||
+		manifest.Attempts[0].ReviewStatus != "complete" {
+		t.Fatalf("HTML-bearing diagnostic manifest = %+v, error = %v", manifest, err)
+	}
+}
+
 func TestReviewBundleRealChromiumOptInEndToEnd(t *testing.T) {
 	if os.Getenv("OPENREALTIME_REALTIME_CU_CHROMIUM_E2E") != "1" {
 		t.Skip("set OPENREALTIME_REALTIME_CU_CHROMIUM_E2E=1 to run real-Chromium evidence E2E")

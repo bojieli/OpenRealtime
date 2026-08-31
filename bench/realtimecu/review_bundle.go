@@ -1279,7 +1279,20 @@ func retainedReviewContext(
 }
 
 func canonicalReviewObject(value any, maximum int) ([]byte, error) {
-	source, err := json.Marshal(value)
+	encode := func(value any) ([]byte, error) {
+		var output bytes.Buffer
+		encoder := json.NewEncoder(&output)
+		// The provider-neutral review API defines canonical context JSON with
+		// HTML escaping disabled. Keep the retained source byte-identical to
+		// that contract even when a deterministic failure contains an HTML
+		// response body.
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(value); err != nil {
+			return nil, err
+		}
+		return bytes.TrimSuffix(output.Bytes(), []byte{'\n'}), nil
+	}
+	source, err := encode(value)
 	if err != nil || len(source) == 0 || len(source) > maximum || strictjson.Validate(source) != nil {
 		return nil, errors.New("encode canonical realtime computer-use review JSON")
 	}
@@ -1289,7 +1302,7 @@ func canonicalReviewObject(value any, maximum int) ([]byte, error) {
 	if err := decoder.Decode(&object); err != nil || object == nil {
 		return nil, errors.New("decode canonical realtime computer-use review JSON")
 	}
-	payload, err := json.Marshal(object)
+	payload, err := encode(object)
 	if err != nil || len(payload) == 0 || len(payload) > maximum || strictjson.Validate(payload) != nil {
 		return nil, errors.New("encode canonical realtime computer-use review JSON")
 	}
