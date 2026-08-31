@@ -25,23 +25,33 @@ const (
 // can name replacement bytes after launch, whereas csops reads the active
 // process text vnode and architecture-specific CodeDirectory.
 func Executable(id string) (inspect.ArtifactIdentity, error) {
-	statusBefore, err := darwinCodeSigningStatus()
+	return ExecutableForPID(id, os.Getpid())
+}
+
+// ExecutableForPID identifies the code-signing material retained by the
+// Darwin kernel for one exact live process. Callers must separately freeze the
+// PID/start identity around this operation to exclude PID reuse.
+func ExecutableForPID(id string, pid int) (inspect.ArtifactIdentity, error) {
+	if pid <= 0 {
+		return inspect.ArtifactIdentity{}, fmt.Errorf("running executable PID must be positive")
+	}
+	statusBefore, err := darwinCodeSigningStatus(pid)
 	if err != nil {
 		return inspect.ArtifactIdentity{}, err
 	}
-	cdhashBefore, err := darwinCodeDirectoryHash()
+	cdhashBefore, err := darwinCodeDirectoryHash(pid)
 	if err != nil {
 		return inspect.ArtifactIdentity{}, err
 	}
-	blob, err := darwinCodeSigningBlob()
+	blob, err := darwinCodeSigningBlob(pid)
 	if err != nil {
 		return inspect.ArtifactIdentity{}, err
 	}
-	cdhashAfter, err := darwinCodeDirectoryHash()
+	cdhashAfter, err := darwinCodeDirectoryHash(pid)
 	if err != nil {
 		return inspect.ArtifactIdentity{}, err
 	}
-	statusAfter, err := darwinCodeSigningStatus()
+	statusAfter, err := darwinCodeSigningStatus(pid)
 	if err != nil {
 		return inspect.ArtifactIdentity{}, err
 	}
@@ -50,26 +60,26 @@ func Executable(id string) (inspect.ArtifactIdentity, error) {
 	)
 }
 
-func darwinCodeSigningStatus() (uint32, error) {
+func darwinCodeSigningStatus(pid int) (uint32, error) {
 	var encoded [4]byte
-	if errno := darwinCSOps(darwinCodeSigningStatusOperation, encoded[:]); errno != 0 {
+	if errno := darwinCSOps(pid, darwinCodeSigningStatusOperation, encoded[:]); errno != 0 {
 		return 0, fmt.Errorf("read running executable code-signing status: %w", errno)
 	}
 	// Every Darwin architecture supported by this module is little-endian.
 	return binary.LittleEndian.Uint32(encoded[:]), nil
 }
 
-func darwinCodeDirectoryHash() ([]byte, error) {
+func darwinCodeDirectoryHash(pid int) ([]byte, error) {
 	value := make([]byte, darwinCodeDirectoryHashBytes)
-	if errno := darwinCSOps(darwinCodeDirectoryHashOperation, value); errno != 0 {
+	if errno := darwinCSOps(pid, darwinCodeDirectoryHashOperation, value); errno != 0 {
 		return nil, fmt.Errorf("read running executable CodeDirectory hash: %w", errno)
 	}
 	return value, nil
 }
 
-func darwinCodeSigningBlob() ([]byte, error) {
+func darwinCodeSigningBlob(pid int) ([]byte, error) {
 	header := make([]byte, darwinCodeSigningHeaderBytes)
-	errno := darwinCSOps(darwinCodeSigningBlobOperation, header)
+	errno := darwinCSOps(pid, darwinCodeSigningBlobOperation, header)
 	if errno == 0 {
 		return nil, fmt.Errorf("running executable has no retained code-signing blob")
 	}
@@ -81,13 +91,13 @@ func darwinCodeSigningBlob() ([]byte, error) {
 		return nil, fmt.Errorf("kernel reported an invalid code-signature size %d", size)
 	}
 	blob := make([]byte, int(size))
-	if errno := darwinCSOps(darwinCodeSigningBlobOperation, blob); errno != 0 {
+	if errno := darwinCSOps(pid, darwinCodeSigningBlobOperation, blob); errno != 0 {
 		return nil, fmt.Errorf("read running executable code-signing blob: %w", errno)
 	}
 	return blob, nil
 }
 
-func darwinCSOps(operation uintptr, destination []byte) syscall.Errno {
+func darwinCSOps(pid int, operation uintptr, destination []byte) syscall.Errno {
 	if libcCSOpsTrampolineAddress == 0 {
 		return syscall.ENOSYS
 	}
@@ -97,7 +107,7 @@ func darwinCSOps(operation uintptr, destination []byte) syscall.Errno {
 	}
 	_, _, errno := runtimeArtifactSyscall6(
 		libcCSOpsTrampolineAddress,
-		uintptr(os.Getpid()), operation, address, uintptr(len(destination)), 0, 0,
+		uintptr(pid), operation, address, uintptr(len(destination)), 0, 0,
 	)
 	runtime.KeepAlive(destination)
 	return errno
