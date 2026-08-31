@@ -725,7 +725,7 @@ type liveVisualDecision struct {
 }
 
 func (runtime *runtime) considerLiveVisual(decision interaction.Context) {
-	if runtime.policies.Interaction == nil || decision.Revision.Empty() ||
+	if !runtime.liveVisualIntentPolicyEnabled() || decision.Revision.Empty() ||
 		runtime.engine == nil || !snapshotHasVisual(runtime.store.Snapshot()) {
 		return
 	}
@@ -757,6 +757,10 @@ func (runtime *runtime) considerLiveVisual(decision interaction.Context) {
 	runtime.visualLast = pending
 	runtime.visualActionMu.Unlock()
 	runtime.startLiveVisualWorker()
+}
+
+func (runtime *runtime) liveVisualIntentPolicyEnabled() bool {
+	return runtime.policies.Interaction != nil || runtime.config.RequireExplicitVisualAuthority
 }
 
 func (runtime *runtime) startLiveVisualWorker() {

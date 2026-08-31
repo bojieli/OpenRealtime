@@ -175,6 +175,39 @@ func TestVisualReflexReturnsDistinctTypedOutcomes(t *testing.T) {
 	}
 }
 
+func TestVisualReflexCapabilityManifestMatchesItsOfferedTools(t *testing.T) {
+	provider := reflexProvider(continuation.Event{
+		Kind: continuation.EventAssistantDelta, Text: "ABSTAIN",
+	})
+	store := trajectory.NewStore()
+	seed(t, store)
+	tools := []continuation.ToolDefinition{
+		{Name: "computer.click", Description: "click", Parameters: json.RawMessage(`{"type":"object"}`)},
+		{Name: "analyze_report", Description: "analyze", Parameters: json.RawMessage(`{"type":"object"}`)},
+	}
+	engine, err := cognition.New(cognition.Config{
+		Store: store, Fast: fastProvider(), Slow: slowProvider(), Catalog: listedCatalog{tools: tools},
+		VisualReflex: &cognition.VisualReflexConfig{
+			Provider: provider,
+			ToolFilter: func(tool continuation.ToolDefinition) bool {
+				return tool.Name == "computer.click"
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	if _, err := engine.RunVisualReflex(context.Background(), cognition.Request{SourceRevision: 1}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if provider.seen == nil || len(provider.seen.Invocation.Tools) != 1 ||
+		provider.seen.Invocation.Tools[0].Name != "computer.click" ||
+		len(provider.seen.Invocation.Capabilities) != 1 ||
+		provider.seen.Invocation.Capabilities[0].Name != "computer.click" {
+		t.Fatalf("visual reflex invocation escaped its role surface: %#v", provider.seen)
+	}
+}
+
 func TestVisualReflexCurrentTaskReplacesAStaleCanonicalUserCommand(t *testing.T) {
 	provider := reflexProvider(continuation.Event{Kind: continuation.EventAssistantDelta, Text: "WAIT"})
 	engine, _ := reflexEngine(t, provider, time.Second)
@@ -455,15 +488,14 @@ func TestVisualReflexCannotPromoteAnUnfilteredTool(t *testing.T) {
 	if !errors.Is(err, cognition.ErrMalformedVisualReflex) || outcome.Kind != cognition.VisualReflexAbstain {
 		t.Fatalf("filtered call got outcome=%q err=%v", outcome.Kind, err)
 	}
-	proposal := false
 	for _, item := range store.Snapshot().Items {
-		if item.Kind == trajectory.KindToolCall {
-			t.Fatalf("filtered tool became executable: %#v", item)
+		if item.Kind == trajectory.KindToolCall || item.Kind == trajectory.KindToolProposal {
+			t.Fatalf("filtered visual tool entered shared action state: %#v", item)
 		}
-		proposal = proposal || item.Kind == trajectory.KindToolProposal
 	}
-	if !proposal {
-		t.Fatal("the rejected model output was not retained as a diagnosable proposal")
+	if provider.seen == nil || len(provider.seen.Invocation.Capabilities) != 1 ||
+		provider.seen.Invocation.Capabilities[0].Name != "get_balance" {
+		t.Fatalf("visual reflex saw capabilities outside its offered tools: %#v", provider.seen)
 	}
 }
 

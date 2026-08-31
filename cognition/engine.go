@@ -253,6 +253,12 @@ type Request struct {
 	// preparation that can be adopted only by that same observation), never
 	// for holding speech, interjections, or narration of background results.
 	AllowFastTools bool
+	// FastBackgroundToolsOnly narrows an otherwise eligible fast invocation to
+	// background-safe tools. A separate visual controller uses this when it
+	// owns the current explicit screen task, preventing the speaking provider
+	// from becoming a second coordinate controller while still allowing the
+	// semantic half of a composite request to start asynchronous work.
+	FastBackgroundToolsOnly bool
 	// PendingRepair injects the repair obligation instruction. It is runtime
 	// policy derived from typed trajectory state, never from text.
 	PendingRepair bool
@@ -406,7 +412,7 @@ func (engine *Engine) PrepareFast(
 // on every turn, so neither a static prompt nor catalog presence alone is the
 // right condition.
 func (engine *Engine) fastInvocation(request Request) continuation.Invocation {
-	tools := engine.fastTools(request.AllowFastTools)
+	tools := engine.fastTools(request.AllowFastTools, request.FastBackgroundToolsOnly)
 	capabilities := engine.capabilityManifest()
 	instruction := engine.instruction(engine.prompt(trajectory.PhaseFast), request)
 	if len(tools) > 0 && engine.config.Fast.Descriptor().EffectiveToolAuthority() == continuation.ToolAuthorityPropose {
@@ -736,13 +742,18 @@ func (engine *Engine) executableTools() []continuation.ToolDefinition {
 // Reading the catalog live matters because client session updates can replace
 // declarations after the engine was built. A removed or renamed declaration
 // disappears from the invocation and therefore cannot be proposed or execute.
-func (engine *Engine) fastTools(allowedAtSafePoint bool) []continuation.ToolDefinition {
+func (engine *Engine) fastTools(
+	allowedAtSafePoint, backgroundOnly bool,
+) []continuation.ToolDefinition {
 	if !allowedAtSafePoint || engine.config.Catalog == nil {
 		return nil
 	}
 	var result []continuation.ToolDefinition
 	for _, tool := range engine.config.Catalog.Tools() {
 		if engine.config.FastToolFilter != nil && !engine.config.FastToolFilter(tool) {
+			continue
+		}
+		if backgroundOnly && !tool.Background {
 			continue
 		}
 		tool.Parameters = slices.Clone(tool.Parameters)

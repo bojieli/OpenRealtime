@@ -222,6 +222,13 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		}
 	}
 	visualAuthorized := visualAuthority != interaction.VisualIntentNone
+	_, visualReflexEnabled := runtime.engine.VisualReflexDescriptor()
+	if visualAuthorized && visualReflexEnabled {
+		// The direct-pixel role is the sole owner of this request's visible
+		// effects. Keep background-safe semantic tools available to the voice,
+		// but do not offer it a second copy of the coordinate action surface.
+		request.FastBackgroundToolsOnly = true
+	}
 	userVisualTask = userVisualTask && visualAuthorized && runtime.visualIntentEligible(request.VisualIntentID)
 	userVisualTask = userVisualTask && !monitorArmedFromUser
 	if userVisualTask && runtime.visualPartial.Load() {
@@ -921,6 +928,12 @@ func (runtime *runtime) visualInteractionIntent(
 	if runtime.policies.Interaction == nil {
 		if interaction.ExplicitVisualMonitor(task) {
 			return interaction.VisualIntentMonitor
+		}
+		if runtime.config.RequireExplicitVisualAuthority {
+			if explicit, ok := interaction.ExplicitVisualAuthority(task); ok {
+				return explicit
+			}
+			return interaction.VisualIntentNone
 		}
 		return interaction.VisualIntentDirect
 	}

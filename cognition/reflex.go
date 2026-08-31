@@ -212,7 +212,8 @@ func (engine *Engine) RunVisualReflex(ctx context.Context, request Request) (Vis
 	}
 	result, err := reflex.runner.RunLiveProjected(bounded, contract, continuation.Invocation{
 		Instruction: Instruct(engine.visualPrompt(reflex.instruction), request), SourceRevision: request.SourceRevision,
-		Capabilities: reflex.catalog.Capabilities(), Tools: tools, MaxOutputTokens: reflex.maxTokens,
+		Capabilities: visualReflexCapabilities(reflex.catalog.Capabilities(), tools),
+		Tools:        tools, MaxOutputTokens: reflex.maxTokens,
 	}, request.VisualTask, projection, nil)
 	if err != nil {
 		return VisualReflexOutcome{Kind: VisualReflexAbstain, Result: result}, err
@@ -358,6 +359,16 @@ func (provider *visualReflexProvider) Continue(
 	word := strings.ToLower(strings.TrimSpace(text.String()))
 	switch {
 	case len(calls) == 1 && word == "":
+		if !slices.ContainsFunc(request.Invocation.Tools, func(tool continuation.ToolDefinition) bool {
+			return calls[0].ToolCall != nil && tool.Name == calls[0].ToolCall.Name
+		}) {
+			name := ""
+			if calls[0].ToolCall != nil {
+				name = calls[0].ToolCall.Name
+			}
+			return continuation.Completion{}, fmt.Errorf(
+				"%w: tool %q was not offered to the visual reflex", ErrMalformedVisualReflex, name)
+		}
 		call, more, target, err := visualActionControl(calls[0])
 		if err != nil {
 			return continuation.Completion{}, err
@@ -381,6 +392,28 @@ func (provider *visualReflexProvider) Continue(
 	completion.ProviderState = nil
 	completion.ProviderStateType = ""
 	return completion, nil
+}
+
+// visualReflexCapabilities keeps capability visibility aligned with the exact
+// tool schemas admitted to this role. The overall agent may have semantic or
+// background capabilities, but advertising those to a one-shot visual
+// controller invites it to select a name it cannot execute. A rejected hidden
+// call is not harmless: if recorded as a proposal, ordinary voice cognition
+// can later mistake the attempt for work that actually started.
+func visualReflexCapabilities(
+	capabilities []continuation.Capability, tools []continuation.ToolDefinition,
+) []continuation.Capability {
+	offered := make(map[string]struct{}, len(tools))
+	for _, tool := range tools {
+		offered[tool.Name] = struct{}{}
+	}
+	result := make([]continuation.Capability, 0, len(tools))
+	for _, capability := range capabilities {
+		if _, ok := offered[capability.Name]; ok {
+			result = append(result, capability)
+		}
+	}
+	return result
 }
 
 // visualReflexTools adds controller state to the model-only action schemas.

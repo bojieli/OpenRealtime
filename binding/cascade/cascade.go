@@ -135,6 +135,13 @@ type Config struct {
 	VisualReflex          continuation.Provider
 	VisualReflexMaxTokens int
 	VisualReflexTimeout   time.Duration
+	// RequireExplicitVisualAuthority closes the compatibility fallback used
+	// when no learned interaction policy is configured. In that mode the
+	// visual role runs only for compiler-recognized direct UI commands or
+	// explicit future visual monitors; semantic work alone cannot reach a
+	// coordinate actor. A configured interaction policy already owns this
+	// classification and makes the flag irrelevant.
+	RequireExplicitVisualAuthority bool
 
 	// Speech synthesises what the fast provider says.
 	Speech v1.StreamingSpeechProvider

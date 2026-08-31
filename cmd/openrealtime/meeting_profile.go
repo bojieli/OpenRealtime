@@ -705,8 +705,9 @@ func newMeetingForegroundBinding(
 		FastComputerUse:     true,
 		FastBackgroundTools: true,
 		VisualReflex:        visualReflex, VisualReflexMaxTokens: config.VisualReflexMaxTokens,
-		VisualReflexTimeout: time.Duration(config.VisualReflexTimeoutMS) * time.Millisecond,
-		Policies:            policies, ObservationPolicy: cascade.ObservationEndpointOnly,
+		VisualReflexTimeout:            time.Duration(config.VisualReflexTimeoutMS) * time.Millisecond,
+		RequireExplicitVisualAuthority: true,
+		Policies:                       policies, ObservationPolicy: cascade.ObservationEndpointOnly,
 		ManualDeferral: meetingManualDeferral{},
 		ASRCadence:     time.Duration(config.ASRCadenceMS) * time.Millisecond,
 		Observers: []perception.Factory{perception.VideoFactory(perception.VideoConfig{

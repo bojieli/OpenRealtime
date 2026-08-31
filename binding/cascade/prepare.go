@@ -79,6 +79,10 @@ func (runtime *runtime) prepare(ctx context.Context, decision interaction.Contex
 		SourceRevision: decision.Revision.ID, Standing: standing, Counting: runtime.countingIsInForce(), Interjecting: interjecting, Heard: heard,
 		AllowFastTools: true,
 	}
+	if _, enabled := runtime.engine.VisualReflexDescriptor(); enabled {
+		_, direct := interaction.ExplicitVisualAuthority(text)
+		request.FastBackgroundToolsOnly = direct || interaction.ExplicitVisualMonitor(text)
+	}
 
 	go func() {
 		defer cancel()

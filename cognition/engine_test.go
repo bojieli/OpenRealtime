@@ -171,6 +171,41 @@ func TestFastExecutesOnlyExactAllowedToolsAtAnEligibleSafePoint(t *testing.T) {
 	}
 }
 
+func TestFastCanRetainBackgroundToolsWhileASeparateRoleOwnsImmediateEffects(t *testing.T) {
+	store := trajectory.NewStore()
+	seed(t, store)
+	fast := fastProvider(continuation.Event{
+		Kind: continuation.EventToolCall,
+		ToolCall: &trajectory.ToolCall{
+			CallID: "analysis-1", Name: "analyze_report", Arguments: json.RawMessage(`{}`),
+		},
+	})
+	fast.descriptor.ToolAuthority = continuation.ToolAuthorityExecute
+	engine, err := cognition.New(cognition.Config{
+		Store: store, Fast: fast, Slow: slowProvider(),
+		Catalog: listedCatalog{tools: []continuation.ToolDefinition{
+			{Name: "computer.click", Description: "click", Parameters: json.RawMessage(`{"type":"object"}`)},
+			{Name: "analyze_report", Description: "analyze", Parameters: json.RawMessage(`{"type":"object"}`), Background: true},
+		}},
+		FastToolFilter: func(continuation.ToolDefinition) bool { return true },
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	result, err := engine.RunFast(context.Background(), cognition.Request{
+		SourceRevision: 1, AllowFastTools: true, FastBackgroundToolsOnly: true,
+	}, nil)
+	if err != nil {
+		t.Fatalf("run fast: %v", err)
+	}
+	if len(fast.seen.Invocation.Tools) != 1 || fast.seen.Invocation.Tools[0].Name != "analyze_report" {
+		t.Fatalf("visual ownership did not narrow fast tools to background work: %+v", fast.seen.Invocation.Tools)
+	}
+	if len(result.ToolCalls) != 1 || result.ToolCalls[0].Name != "analyze_report" {
+		t.Fatalf("background tool lost fast execution authority: %+v", result)
+	}
+}
+
 func TestFastAllowlistIsClosedOutsideAnObservationSafePoint(t *testing.T) {
 	store := trajectory.NewStore()
 	seed(t, store)

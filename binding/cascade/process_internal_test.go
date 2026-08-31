@@ -190,13 +190,35 @@ func TestVisualRevisionDedupeSeparatesAcousticAndGroundedCounters(t *testing.T) 
 }
 
 func TestVisualIntentFallbackCompilesExplicitFutureMonitor(t *testing.T) {
-	runtime := &runtime{policies: interaction.Defaults()}
+	runtime := &runtime{
+		config:   Config{RequireExplicitVisualAuthority: true},
+		policies: interaction.Defaults(),
+	}
 	task := "Present the launch overview. If a deployment alert appears, acknowledge it immediately without stopping your presentation."
 	if got := runtime.visualInteractionIntent(t.Context(), "meeting-turn", task, true); got != interaction.VisualIntentMonitor {
 		t.Fatalf("fallback visual intent = %q, want %q", got, interaction.VisualIntentMonitor)
 	}
 	if got := runtime.visualInteractionIntent(t.Context(), "meeting-turn", "Go to Overview.", true); got != interaction.VisualIntentDirect {
 		t.Fatalf("fallback direct visual intent = %q, want %q", got, interaction.VisualIntentDirect)
+	}
+	if got := runtime.visualInteractionIntent(
+		t.Context(), "meeting-turn", "Analyze the launch review in the background.", true,
+	); got != interaction.VisualIntentNone {
+		t.Fatalf("semantic-only fallback visual intent = %q, want %q", got, interaction.VisualIntentNone)
+	}
+}
+
+func TestStrictVisualAuthorityEnablesLiveCompilerWithoutALearnedPolicy(t *testing.T) {
+	compatibility := &runtime{policies: interaction.Defaults()}
+	if compatibility.liveVisualIntentPolicyEnabled() {
+		t.Fatal("the compatibility fallback unexpectedly enabled partial-speech visual control")
+	}
+	strict := &runtime{
+		config:   Config{RequireExplicitVisualAuthority: true},
+		policies: interaction.Defaults(),
+	}
+	if !strict.liveVisualIntentPolicyEnabled() {
+		t.Fatal("strict compiler authority did not enable partial-speech visual control")
 	}
 }
 
