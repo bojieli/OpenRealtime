@@ -288,17 +288,24 @@ private enum NativeMacProviderRegistry {
         }
         try register(registry, selection(
             "inspection", .inspection, "macos.inspection.v1",
-            requires: [.inspectionAccess], permissions: nativePermissionCeiling(.inspection)
+            requires: [.inspectionAccess, .sessionConfiguration],
+            permissions: nativePermissionCeiling(.inspection)
         )) { context in
             let access = try context.service(
                 .inspectionAccess, as: SessionInspectionAccessService.self
             )
+            let configuration = try context.service(
+                .sessionConfiguration, as: SessionConfigurationService.self
+            )
             guard let client = state.inspectionClients[ObjectIdentifier(access)] else {
                 throw NativeAssemblyError("native inspection client owner is unavailable")
             }
-            let inspection = NativeInspectionBoundary(client: client)
+            let inspection = NativeInspectionBoundary(
+                client: client, configuration: configuration
+            )
             return adapter(
                 context, instance: inspection,
+                onStart: { try inspection.mount() },
                 onStop: { inspection.suspend() }, onDispose: { inspection.dispose() }
             )
         }
@@ -390,10 +397,27 @@ private final class NativeMacFactoryState {
     var inspectionClients: [ObjectIdentifier: SessionInspectionClient] = [:]
 }
 
+@MainActor
 final class NativeInspectionBoundary {
     let client: SessionInspectionClient
+    private let configuration: SessionConfigurationService
+    private var removeContribution: (() -> Void)?
 
-    init(client: SessionInspectionClient) { self.client = client }
+    init(
+        client: SessionInspectionClient, configuration: SessionConfigurationService
+    ) {
+        self.client = client
+        self.configuration = configuration
+    }
+
+    func mount() throws {
+        guard removeContribution == nil else {
+            throw NativeAssemblyError("native inspection provider mounted twice")
+        }
+        removeContribution = try configuration.contribute([
+            "debug": ["enabled": true, "categories": ["session"]],
+        ])
+    }
 
     var available: Bool { client.available() }
     var access: SessionInspectionAccessProjection? { client.access() }
@@ -409,8 +433,15 @@ final class NativeInspectionBoundary {
     }
     func trace() async throws -> SessionInspectionDocument { try await client.trace() }
     func protocolPayload(_ event: [String: Any]) -> String { safeProtocolPayload(event) }
-    func suspend() { client.deactivate() }
-    func dispose() { client.dispose() }
+    func suspend() {
+        removeContribution?()
+        removeContribution = nil
+        client.deactivate()
+    }
+    func dispose() {
+        suspend()
+        client.dispose()
+    }
 }
 
 private final class NativeBoundary: NSObject {}

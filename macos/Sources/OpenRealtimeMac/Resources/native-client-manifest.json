@@ -2,9 +2,9 @@
   "format_version": 1,
   "platform": "macos",
   "profile_fingerprint": "sha256:399204e184e30ffe1ba1094c17eb200372250a9109a6c29bd3ee547508902b49",
-  "lock_fingerprint": "sha256:b2333953eb6c4786d7badb29a7d442c1d6e599850f5276ef12e565d8abec1e63",
-  "plan_fingerprint": "sha256:f40b44d74a0e4f6be91a4a1fc92aa643cf4a195c9fcbbb3955c32266a48f97ed",
-  "manifest_fingerprint": "sha256:7e6ba68affa50a9b8e62113595e2b7dd175096c494718682b4529b42aefa4038",
+  "lock_fingerprint": "sha256:e31068971b96173feab4463ab936a41af3fe6b62c27f44723f3fde038ae4f62e",
+  "plan_fingerprint": "sha256:856e53c80ab517b9e3f4bd9c9a3aaa1e21755392b624d4788d422b5ac0f9d235",
+  "manifest_fingerprint": "sha256:d312d5b7ad1eae868802b83ca6c6b5c11c2a5186eba4e73f37ab5c12fe5c0dbf",
   "endpoints": [
     {
       "name": "effects.local",
@@ -127,7 +127,10 @@
       "id": "inspection",
       "service": "presentation.client.inspection",
       "implementation": "macos.inspection.v1",
-      "requires": ["presentation.client.inspection_access"],
+      "requires": [
+        "presentation.client.inspection_access",
+        "presentation.client.session_configuration"
+      ],
       "permissions": [
         {"kind": "network.connect", "resource": "management-endpoint", "operations": ["http"]}
       ]

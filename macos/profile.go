@@ -140,7 +140,10 @@ var nativeDefinitions = []nativeDefinition{
 	{
 		id: "inspection", pluginName: "openrealtime.presentation.macos.inspection",
 		implementation: "macos.inspection.v1", provides: presentation.ClientInspectionContract,
-		requires: []plugin.Contract{presentation.ClientInspectionAccessContract},
+		requires: []plugin.Contract{
+			presentation.ClientInspectionAccessContract,
+			presentation.ClientSessionConfigurationContract,
+		},
 		permissions: []plugin.Permission{{
 			Kind: "network.connect", Resource: "management-endpoint", Operations: []string{"http"},
 		}},

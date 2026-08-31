@@ -35,7 +35,8 @@ func TestNativeDeveloperClientDeclaresEveryCapabilityBoundary(t *testing.T) {
 			"NativeClientProviderRegistry", "NativeClientProviderFactoryRegistration",
 			"NativeProviderFactoryContext", "SessionInspectionClient",
 			"SessionConfigurationService", "NativeViewBoundary", "NativeViewServices",
-			"macos.swiftui-observer-view.v1", "inspection.dispose", "client.deactivate", "onDispose",
+			"macos.swiftui-observer-view.v1", "inspection.mount", "inspection.dispose",
+			"client.deactivate", "configuration.contribute", "onDispose",
 		},
 		"../client/reducer/swift/NativeClientCore.swift": {
 			"SessionInspectionAccessService", "SessionInspectionAccessProjection",

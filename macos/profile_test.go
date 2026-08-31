@@ -111,6 +111,20 @@ func TestNativeDistributionSelectionIsExplicitAndObserverHasNoEffectsAuthority(t
 		if entry.Entry.ID == "effects" || entry.Entry.ID == "artifacts" {
 			t.Fatalf("observer plan includes privileged provider %q", entry.Entry.ID)
 		}
+		if entry.Entry.ID == "inspection" {
+			var dependencies []string
+			for _, dependency := range entry.Dependencies {
+				dependencies = append(dependencies, dependency.Service.Name)
+			}
+			for _, required := range []string{
+				presentation.ClientInspectionAccessContract.Name,
+				presentation.ClientSessionConfigurationContract.Name,
+			} {
+				if !slicesContains(dependencies, required) {
+					t.Fatalf("observer inspection does not depend on %q", required)
+				}
+			}
+		}
 		if entry.Entry.ID == "view" {
 			var dependencies []string
 			for _, dependency := range entry.Dependencies {
