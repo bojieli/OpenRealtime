@@ -31,6 +31,7 @@ import (
 	"github.com/bojieli/OpenRealtime/perception"
 	openrealtime "github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/bojieli/OpenRealtime/providers"
+	"github.com/bojieli/OpenRealtime/session"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -557,7 +558,8 @@ func (meetingForegroundRollout) Plan(input interaction.RolloutInput) []interacti
 	if input.Cause.ToolError {
 		return []interaction.Step{{Kind: interaction.StepFast, Reason: interaction.ReasonToolFailure}}
 	}
-	if input.Cause.Observation || input.Cause.CompositeResume || input.Cause.ToolResult {
+	if (input.Cause.Observation && !input.Cause.AutonomousObservation) ||
+		input.Cause.CompositeResume || input.Cause.ToolResult {
 		reason := "answer now"
 		switch {
 		case input.Cause.CompositeResume:
@@ -568,6 +570,30 @@ func (meetingForegroundRollout) Plan(input interaction.RolloutInput) []interacti
 		return []interaction.Step{{Kind: interaction.StepFast, Reason: reason}}
 	}
 	return nil
+}
+
+// meetingManualDeferral keeps the caller's one response.create reserved for
+// user-authority or tool-result work while still admitting screen observations
+// to the silent visual monitor. meetingForegroundRollout is the paired proof
+// that an observer-only batch cannot schedule the speaking fast lane.
+type meetingManualDeferral struct{}
+
+func (meetingManualDeferral) Name() string { return "meeting-client-driven+silent-observers" }
+
+func (meetingManualDeferral) Conditions() []session.TransitionKind { return nil }
+
+func (meetingManualDeferral) Admit(waiting interaction.Waiting) (bool, string) {
+	if waiting.AutonomousObservation {
+		return true, ""
+	}
+	if waiting.Requested {
+		return true, ""
+	}
+	return false, "waiting for the client to request a response"
+}
+
+func (meetingManualDeferral) ConsumesResponseRequest(waiting interaction.Waiting) bool {
+	return !waiting.AutonomousObservation
 }
 
 func meetingDormantDescriptor() continuation.Descriptor {
@@ -681,7 +707,8 @@ func newMeetingForegroundBinding(
 		VisualReflex:        visualReflex, VisualReflexMaxTokens: config.VisualReflexMaxTokens,
 		VisualReflexTimeout: time.Duration(config.VisualReflexTimeoutMS) * time.Millisecond,
 		Policies:            policies, ObservationPolicy: cascade.ObservationEndpointOnly,
-		ASRCadence: time.Duration(config.ASRCadenceMS) * time.Millisecond,
+		ManualDeferral: meetingManualDeferral{},
+		ASRCadence:     time.Duration(config.ASRCadenceMS) * time.Millisecond,
 		Observers: []perception.Factory{perception.VideoFactory(perception.VideoConfig{
 			Name: "screen", Sources: []string{"screen"}, ExternalCadence: config.ExternalVideoGate,
 			ChangeThreshold: 0.02, Narrator: narrator, AttachKeyframes: config.AttachKeyframes,

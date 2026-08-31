@@ -12,12 +12,15 @@ import (
 
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	"github.com/bojieli/OpenRealtime/graphs"
 	"github.com/bojieli/OpenRealtime/interaction"
 	meetinggraph "github.com/bojieli/OpenRealtime/meeting/graphnative"
+	"github.com/bojieli/OpenRealtime/session"
+	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 func meetingProfileArtifact(id, digestSymbol string) inspect.ArtifactIdentity {
@@ -209,14 +212,17 @@ func TestMeetingForegroundCompositionDisablesPrivateSlowLane(t *testing.T) {
 	if !foreground.inner.Capabilities().FastSlow {
 		t.Fatal("cascade test precondition changed: inner binding no longer exposes its private slow slot")
 	}
-	runtime, err := binding.Start(context.Background(), legacy.Options{Sink: meetingProfileProbeSink{}})
+	runtime, err := binding.Start(context.Background(), legacy.Options{
+		Sink: meetingProfileProbeSink{}, Settings: legacy.Settings{ManualTurns: true},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	status := runtime.Status()
 	if status.Fast != meetingLocalModelProvider+"/"+meetingLocalModelName ||
 		status.Reflex != meetingLocalModelProvider+"/"+meetingLocalModelName ||
-		status.Slow != "" || status.Tools.Fast != string(continuation.ToolAuthorityExecute) {
+		status.Slow != "" || status.Tools.Fast != string(continuation.ToolAuthorityExecute) ||
+		status.Policies.Deferral != (meetingManualDeferral{}).Name() {
 		t.Fatalf("Meeting foreground live role status = %+v", status)
 	}
 	if err := runtime.Close(context.Background(), errors.New("composition test complete")); err != nil {
@@ -255,6 +261,51 @@ func TestMeetingForegroundRolloutContinuesToolResultsWithoutPrivateSlowWork(t *t
 		if steps := policy.Plan(interaction.RolloutInput{Cause: cause}); len(steps) != 0 {
 			t.Fatalf("Meeting foreground scheduled private work for %+v: %+v", cause, steps)
 		}
+	}
+	if steps := policy.Plan(interaction.RolloutInput{Cause: interaction.Cause{
+		Observation: true, AutonomousObservation: true,
+	}}); len(steps) != 0 {
+		t.Fatalf("Meeting foreground scheduled speech for an observer-only screen batch: %+v", steps)
+	}
+}
+
+type meetingDeferralWaker struct{ wakes atomic.Int32 }
+
+func (waker *meetingDeferralWaker) Wake(string) { waker.wakes.Add(1) }
+
+func TestMeetingManualDeferralDoesNotSpendResponseCreateOnObserverOnlyScreenBatch(t *testing.T) {
+	duplex := session.NewDuplex(session.DuplexConfig{})
+	waker := &meetingDeferralWaker{}
+	gate, err := interaction.Bind(meetingManualDeferral{}, duplex, waker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gate.Close()
+	gate.RequestResponse()
+	observerBatch := eventloop.Batch{Items: []trajectory.Item{{
+		Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseObserver},
+		Observation: &trajectory.ObservationMeta{
+			Observer: "screen", Source: "screen", Authority: trajectory.AuthorityObserver,
+		},
+	}}}
+	if admitted, reason := gate.AdmitRun(t.Context(), observerBatch); !admitted || reason != "" {
+		t.Fatalf("observer-only batch admission = %t, %q", admitted, reason)
+	}
+	userBatch := eventloop.Batch{Items: []trajectory.Item{{
+		Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+		Observation: &trajectory.ObservationMeta{
+			Observer: "meeting.foreground.asr", Source: "microphone", Authority: trajectory.AuthorityUser,
+		},
+	}}}
+	if admitted, reason := gate.AdmitRun(t.Context(), userBatch); !admitted || reason != "" {
+		t.Fatalf("user batch did not retain response.create after screen observation: %t, %q", admitted, reason)
+	}
+	if admitted, reason := gate.AdmitRun(t.Context(), userBatch); admitted ||
+		!strings.Contains(reason, "request a response") {
+		t.Fatalf("one response.create authorized more than one response: %t, %q", admitted, reason)
+	}
+	if waker.wakes.Load() != 1 {
+		t.Fatalf("response request wake count = %d, want 1", waker.wakes.Load())
 	}
 }
 
