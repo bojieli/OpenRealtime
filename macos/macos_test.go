@@ -357,3 +357,41 @@ func TestBrowserUseBridgeIsPinnedAndUsesItsMarkRenderer(t *testing.T) {
 		}
 	}
 }
+
+// The reducer always projects session.openrealtime.video, stating zeroes when
+// the capability was not enabled. The native video boundary used to validate
+// those zeroes against its own ceiling on every snapshot, report a ceiling
+// breach that never happened, and schedule a teardown; the teardown emitted an
+// unconditional "browser closed" source update that the session refused, and
+// the refusal was another snapshot. One connection to a binding without a video
+// observer therefore span a source-update/error loop for the life of the
+// session. These are the exact guards that keep that loop closed.
+func TestNativeVideoIsSilentUntilVideoInputIsNegotiated(t *testing.T) {
+	providers, err := os.ReadFile("Sources/OpenRealtimeMac/NativePresentationProviders.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	browser, err := os.ReadFile("Sources/OpenRealtimeMac/BrowserUseBridge.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{
+		// Limits are only read once video.input is in the negotiated set.
+		"if offered, let raw = extensionObject?[\"video\"] as? [String: Any] {",
+		// A refused ceiling never tears down on its own; the single teardown
+		// path below stays guarded by the active set.
+		"if !enabled, !active.isEmpty { Task { [weak self] in await self?.stopAll() } }",
+		// Source declarations are wire traffic only on a session that has them.
+		"if negotiated {\n            transport.updateVideoSource(",
+	} {
+		if !strings.Contains(string(providers), fragment) {
+			t.Errorf("native video boundary no longer contains %q", fragment)
+		}
+	}
+	if strings.Contains(string(providers), "enabled = false\n                Task { [weak self] in await self?.stopAll() }") {
+		t.Error("native video boundary schedules an unguarded teardown from limit validation")
+	}
+	if !strings.Contains(string(browser), "if declared { onSource?(\"browser\", \"closed\", 0, 0) }") {
+		t.Error("browser capture announces a close for a source it never declared active")
+	}
+}

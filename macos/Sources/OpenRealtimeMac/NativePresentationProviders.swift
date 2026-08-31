@@ -161,6 +161,7 @@ final class NativeVideoBoundary {
     private var limits = VideoLimits()
     private var diagnostic = ""
     private var browserCaption = "waiting for a marked frame"
+    private var negotiated = false
     private var enabled = false
     private var mounted = false
     private var generation = 0
@@ -239,6 +240,7 @@ final class NativeVideoBoundary {
         browserCaption = "waiting for a marked frame"
         diagnostic = ""
         limits = VideoLimits()
+        negotiated = false
         enabled = false
         listeners.removeAll()
         let capture = self.capture
@@ -347,27 +349,33 @@ final class NativeVideoBoundary {
         publish()
     }
 
+    // The reducer always projects a session.openrealtime.video object, and
+    // states it as zeroes when the capability was not enabled. Limits are
+    // therefore only meaningful once video.input is actually in the negotiated
+    // set: validating the unnegotiated zeroes would report a ceiling breach
+    // that never happened and schedule a teardown on every single snapshot,
+    // and each teardown emits a source update the session refuses, whose error
+    // is another snapshot.
     private func observe(_ state: [String: Any]) {
         guard mounted else { return }
         let connection = state["connection"] as? [String: Any]
         let session = state["session"] as? [String: Any]
         let extensionObject = session?["openrealtime"] as? [String: Any]
-        let negotiated = extensionObject?["enabled"] as? [String] ?? []
-        let nextEnabled = connection?["phase"] as? String == "connected"
-            && negotiated.contains("video.input")
-        if let raw = extensionObject?["video"] as? [String: Any] {
+        let features = extensionObject?["enabled"] as? [String] ?? []
+        let offered = connection?["phase"] as? String == "connected"
+            && features.contains("video.input")
+        var nextEnabled = offered
+        if offered, let raw = extensionObject?["video"] as? [String: Any] {
             let candidate = VideoLimits(dictionary: raw)
             if Self.valid(candidate) {
                 limits = candidate
                 diagnostic = ""
             } else {
                 diagnostic = "negotiated video limits exceed the native ceiling"
-                enabled = false
-                Task { [weak self] in await self?.stopAll() }
-                publish()
-                return
+                nextEnabled = false
             }
         }
+        negotiated = offered
         enabled = nextEnabled
         if !enabled, !active.isEmpty { Task { [weak self] in await self?.stopAll() } }
         publish()
@@ -382,7 +390,12 @@ final class NativeVideoBoundary {
             active.remove(source)
             geometry.removeValue(forKey: source)
         }
-        transport.updateVideoSource(source, state: state, width: width, height: height)
+        // A source declaration only exists on a session that negotiated
+        // video.input. Local capture lifecycle is still projected into the
+        // view, but it never becomes wire traffic the session must refuse.
+        if negotiated {
+            transport.updateVideoSource(source, state: state, width: width, height: height)
+        }
         publish()
     }
 

@@ -171,14 +171,19 @@ final class BrowserUseController {
         }
     }
 
+    // Only a source that was declared active can be closed. The sibling
+    // camera and screen paths already return early when nothing is running;
+    // announcing an unconditional close here manufactured a source-lifecycle
+    // event for a source that never existed.
     func stop() async {
         captureTask?.cancel()
         captureTask = nil
         active = false
         if let bridge { await bridge.stop() }
         bridge = nil
+        let declared = declaredSize != nil
         declaredSize = nil
-        onSource?("browser", "closed", 0, 0)
+        if declared { onSource?("browser", "closed", 0, 0) }
     }
 
     func perform(name: String, arguments: [String: Any]) async throws -> String {
