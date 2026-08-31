@@ -1,6 +1,8 @@
 import SwiftUI
 import Foundation
 import AppKit
+import CryptoKit
+import Darwin
 import OpenRealtimeClientCore
 
 @main
@@ -34,7 +36,11 @@ struct OpenRealtimeMacApp: App {
                 Task { @MainActor in
                     developer.connect()
                     if let nonce = automation.hostedSmokeNonce {
-                        await runHostedSmoke(developer: developer, nonce: nonce)
+                        await runHostedSmoke(
+                            developer: developer,
+                            nonce: nonce,
+                            snapshotPath: environment["OPENREALTIME_HOSTED_MANAGEMENT_SNAPSHOT"]
+                        )
                     }
                 }
             }
@@ -95,12 +101,31 @@ private struct NativeLaunchAutomation {
 }
 
 @MainActor
-private func runHostedSmoke(developer: DeveloperModel, nonce: String) async {
+private func runHostedSmoke(
+    developer: DeveloperModel, nonce: String, snapshotPath: String?
+) async {
+    var lastFailure = "hosted management snapshot was not ready"
     for _ in 0..<1_800 {
         if developer.connectionState == .connected, !developer.sessionID.isEmpty,
            developer.updatedSessionID == developer.sessionID {
-            let proof: [String: String] = [
-                "schema": "openrealtime/macos/hosted-companion-proof/v1",
+            let management: (evidence: [String: Any], payload: Data)
+            do {
+                let document = try await developer.hostedManagementSnapshot(
+                    expectedSessionID: developer.sessionID
+                )
+                management = try hostedManagementEvidence(
+                    document, expectedSessionID: developer.sessionID
+                )
+                try publishHostedManagementSnapshot(
+                    management.payload, path: snapshotPath
+                )
+            } catch {
+                lastFailure = error.localizedDescription
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                continue
+            }
+            let proof: [String: Any] = [
+                "schema": "openrealtime/macos/hosted-companion-proof/v3",
                 "nonce": nonce,
                 "session_id": developer.sessionID,
                 "transport": "websocket",
@@ -108,6 +133,7 @@ private func runHostedSmoke(developer: DeveloperModel, nonce: String) async {
                 "manifest_fingerprint": developer.manifestFingerprint,
                 "endpoint_fingerprint": developer.endpointFingerprint,
                 "endpoint": developer.endpoint,
+                "management": management.evidence,
             ]
             if let payload = try? JSONSerialization.data(
                 withJSONObject: proof, options: [.sortedKeys, .withoutEscapingSlashes]
@@ -128,8 +154,122 @@ private func runHostedSmoke(developer: DeveloperModel, nonce: String) async {
         }
         try? await Task.sleep(nanoseconds: 50_000_000)
     }
+    let failure = Data("OPENREALTIME_HOSTED_COMPANION_FAILURE \(lastFailure)\n".utf8)
+    FileHandle.standardError.write(failure)
+    try? FileHandle.standardError.synchronize()
     developer.shutdown()
     NSApplication.shared.terminate(nil)
+}
+
+@MainActor
+private func hostedManagementEvidence(
+    _ document: SessionInspectionDocument, expectedSessionID: String
+) throws -> (evidence: [String: Any], payload: Data) {
+    let data = document.encoded()
+    guard
+          document.resource == .live, document.sessionID == expectedSessionID,
+          !document.responseURL.isEmpty, !data.isEmpty,
+          let live = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let formatVersion = live["format_version"] as? NSNumber,
+          let graphID = live["graph_id"] as? String,
+          let graphRevision = live["graph_revision"] as? NSNumber,
+          let fingerprint = live["fingerprint"] as? String,
+          let configuration = live["configuration"] as? [String: Any],
+          let configurationDigest = configuration["digest"] as? String,
+          let sequence = live["sequence"] as? NSNumber,
+          let state = live["state"] as? String,
+          formatVersion.uint64Value == 1, !graphID.isEmpty,
+          graphRevision.uint64Value > 0, fingerprint.hasPrefix("sha256:"),
+          configurationDigest.hasPrefix("sha256:"), sequence.uint64Value > 0,
+          state == "active" else {
+        throw NativeLaunchConfigurationError(
+            "hosted management document is not canonical active live evidence"
+        )
+    }
+    return (evidence: [
+        "session_id": document.sessionID,
+        "resource": "live",
+        "response_url": document.responseURL,
+        "payload_bytes": data.count,
+        "payload_digest": "sha256:" + SHA256.hash(data: data).map {
+            String(format: "%02x", $0)
+        }.joined(),
+    ], payload: data)
+}
+
+private func publishHostedManagementSnapshot(_ data: Data, path: String?) throws {
+    guard let path, !path.isEmpty,
+          path == path.trimmingCharacters(in: .whitespacesAndNewlines),
+          (path as NSString).isAbsolutePath,
+          !path.contains("\0"), !path.contains("\r"), !path.contains("\n"),
+          !data.isEmpty, data.count <= SessionInspectionClient.maximumResponseBytes else {
+        throw NativeLaunchConfigurationError("hosted management snapshot path or payload is invalid")
+    }
+    let canonical = (path as NSString).standardizingPath
+    let parent = (path as NSString).deletingLastPathComponent
+    let basename = (path as NSString).lastPathComponent
+    guard canonical == path, !parent.isEmpty, !basename.isEmpty,
+          basename != ".", basename != ".." else {
+        throw NativeLaunchConfigurationError("hosted management snapshot path is not canonical")
+    }
+    var parentInfo = stat()
+    guard lstat(parent, &parentInfo) == 0,
+          (parentInfo.st_mode & S_IFMT) == S_IFDIR,
+          (parentInfo.st_mode & 0o777) == 0o700,
+          parentInfo.st_uid == geteuid() else {
+        throw NativeLaunchConfigurationError("hosted management snapshot parent is not private")
+    }
+    var absent = stat()
+    guard lstat(path, &absent) != 0, errno == ENOENT else {
+        throw NativeLaunchConfigurationError("hosted management snapshot already exists")
+    }
+    var descriptor = path.withCString {
+        Darwin.open(
+            $0, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW,
+            mode_t(S_IRUSR | S_IWUSR)
+        )
+    }
+    guard descriptor >= 0 else {
+        throw NativeLaunchConfigurationError("hosted management snapshot create failed")
+    }
+    var keep = false
+    defer {
+        if descriptor >= 0 { _ = Darwin.close(descriptor) }
+        if !keep { _ = path.withCString { Darwin.unlink($0) } }
+    }
+    try data.withUnsafeBytes { raw in
+        guard let base = raw.baseAddress else {
+            throw NativeLaunchConfigurationError("hosted management snapshot payload is empty")
+        }
+        var offset = 0
+        while offset < raw.count {
+            let written = Darwin.write(
+                descriptor, base.advanced(by: offset), raw.count - offset
+            )
+            if written < 0, errno == EINTR { continue }
+            guard written > 0 else {
+                throw NativeLaunchConfigurationError("hosted management snapshot write failed")
+            }
+            offset += written
+        }
+    }
+    guard Darwin.fsync(descriptor) == 0 else {
+        throw NativeLaunchConfigurationError("hosted management snapshot sync failed")
+    }
+    var fileInfo = stat()
+    guard Darwin.fstat(descriptor, &fileInfo) == 0,
+          (fileInfo.st_mode & S_IFMT) == S_IFREG,
+          (fileInfo.st_mode & 0o777) == 0o600,
+          fileInfo.st_uid == geteuid(), fileInfo.st_nlink == 1,
+          fileInfo.st_size == off_t(data.count) else {
+        throw NativeLaunchConfigurationError("hosted management snapshot is not one exact private file")
+    }
+    let closeResult = Darwin.close(descriptor)
+    descriptor = -1
+    guard closeResult == 0 else {
+        throw NativeLaunchConfigurationError("hosted management snapshot close failed")
+    }
+    keep = true
 }
 
 private func nativeEndpointDirectoryData(_ path: String?) throws -> Data? {

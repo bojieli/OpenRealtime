@@ -317,7 +317,10 @@ final class DeveloperModel: ObservableObject {
             var deltaText = ""
             var traceText = ""
             var failures: [String] = []
-            do { liveText = prettyJSONString(try await self.inspection.live().snapshot()) }
+            do {
+                let document = try await self.inspection.live()
+                liveText = prettyJSONString(try document.snapshot())
+            }
             catch { failures.append("live: \(error.localizedDescription)") }
             do {
                 deltaText = prettyJSONString(
@@ -335,6 +338,45 @@ final class DeveloperModel: ObservableObject {
                 ? "canonical management snapshot loaded"
                 : failures.joined(separator: " · ")
         }
+    }
+
+    /// Hosted release-gate access to the UI-independent management client.
+    /// The returned document is rebound to the same scoped capability before
+    /// and after the network request; rendered presentation state is not part
+    /// of this proof path.
+    func hostedManagementSnapshot(
+        expectedSessionID: String
+    ) async throws -> SessionInspectionDocument {
+        guard !expectedSessionID.isEmpty,
+              let before = inspection.access,
+              before.sessionID == expectedSessionID else {
+            throw NativeLaunchConfigurationError(
+                "hosted management capability is unavailable or bound to another session"
+            )
+        }
+        let document = try await inspection.live()
+        let pathCharacters = CharacterSet.alphanumerics.union(
+            CharacterSet(charactersIn: "-._~")
+        )
+        guard let encodedSession = expectedSessionID.addingPercentEncoding(
+            withAllowedCharacters: pathCharacters
+        ) else {
+            throw NativeLaunchConfigurationError("hosted management session is not URL-safe")
+        }
+        guard document.resource == .live,
+              document.sessionID == expectedSessionID,
+              inspection.access == before,
+              let components = URLComponents(string: document.responseURL),
+              components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil,
+              components.percentEncodedPath.hasSuffix(
+                "/sessions/\(encodedSession)/live"
+              ) else {
+            throw NativeLaunchConfigurationError(
+                "hosted management response is not bound to the exact active session"
+            )
+        }
+        return document
     }
 
     func decideConfirmation(_ approved: Bool) {
@@ -445,6 +487,10 @@ final class DeveloperModel: ObservableObject {
         }
         let expiration = Date(timeIntervalSince1970: Double(access.expiresAtMS) / 1_000)
         inspectionAccessText = "session \(access.sessionID) · expires \(expiration.formatted())"
+        inspectionStatus = "reading canonical management snapshot"
+        inspectionLive = ""
+        inspectionDeltas = ""
+        inspectionTrace = ""
         refreshInspection()
     }
 

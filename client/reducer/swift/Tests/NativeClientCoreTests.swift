@@ -818,6 +818,11 @@ final class NativeClientCoreTests: XCTestCase {
 
         let live = try await client.live()
         XCTAssertEqual(live.resource, .live)
+        XCTAssertEqual(live.sessionID, "sess:test-1")
+        XCTAssertEqual(
+            live.responseURL,
+            "https://management.example:9443/custom/management/v7/sessions/sess%3Atest-1/live"
+        )
         var first = try live.snapshot()
         first["graph_id"] = "mutated"
         XCTAssertEqual(try live.snapshot()["graph_id"] as? String, "compat_graph")
@@ -850,6 +855,19 @@ final class NativeClientCoreTests: XCTestCase {
             )
             XCTAssertFalse(request.url!.absoluteString.contains("mgmt_header-only"))
         }
+
+        InspectionURLProtocol.setOnRequest {
+            try? access.capture(event: inspectionEvent(
+                token: "mgmt_rotated-during-read", expiresAtMS: 10_500
+            ))
+        }
+        do {
+            _ = try await client.live()
+            XCTFail("inspection accepted a response after its capability changed")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("changed during request"))
+        }
+        InspectionURLProtocol.setOnRequest(nil)
 
         try await withThrowingTaskGroup(of: String?.self) { group in
             for _ in 0..<32 {
@@ -1120,11 +1138,16 @@ private final class InspectionURLProtocol: URLProtocol {
         state.setOversized(value)
     }
 
+    static func setOnRequest(_ value: (@Sendable () -> Void)?) {
+        state.setOnRequest(value)
+    }
+
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        let tooLarge = Self.state.record(request)
+        let (tooLarge, onRequest) = Self.state.record(request)
+        onRequest?()
         let headers = tooLarge
             ? ["Content-Type": "application/json", "Content-Length": String(SessionInspectionClient.maximumResponseBytes + 1)]
             : ["Content-Type": "application/json", "Cache-Control": "no-store"]
@@ -1145,11 +1168,13 @@ private final class InspectionURLProtocolState: @unchecked Sendable {
     private let lock = NSLock()
     private var captured: [URLRequest] = []
     private var oversized = false
+    private var onRequest: (@Sendable () -> Void)?
 
     func reset() {
         lock.lock()
         captured.removeAll()
         oversized = false
+        onRequest = nil
         lock.unlock()
     }
 
@@ -1166,10 +1191,16 @@ private final class InspectionURLProtocolState: @unchecked Sendable {
         lock.unlock()
     }
 
-    func record(_ request: URLRequest) -> Bool {
+    func setOnRequest(_ value: (@Sendable () -> Void)?) {
+        lock.lock()
+        onRequest = value
+        lock.unlock()
+    }
+
+    func record(_ request: URLRequest) -> (Bool, (@Sendable () -> Void)?) {
         lock.lock()
         captured.append(request)
-        let result = oversized
+        let result = (oversized, onRequest)
         lock.unlock()
         return result
     }

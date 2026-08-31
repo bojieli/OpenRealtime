@@ -1164,10 +1164,17 @@ public enum SessionInspectionResource: String, Codable, Sendable {
 /// for every projection, so no renderer can mutate another subscriber's state.
 public struct SessionInspectionDocument: Equatable, Sendable {
     public let resource: SessionInspectionResource
+    public let sessionID: String
+    public let responseURL: String
     private let canonicalPayload: Data
 
-    fileprivate init(resource: SessionInspectionResource, canonicalPayload: Data) {
+    fileprivate init(
+        resource: SessionInspectionResource, sessionID: String,
+        responseURL: String, canonicalPayload: Data
+    ) {
         self.resource = resource
+        self.sessionID = sessionID
+        self.responseURL = responseURL
         self.canonicalPayload = canonicalPayload
     }
 
@@ -1512,6 +1519,9 @@ public final class SessionInspectionClient: @unchecked Sendable {
                 "session inspection \(resource.rawValue) returned \(result.response.statusCode)"
             )
         }
+        guard try accessSource.authorizedCredential() == credential else {
+            throw SessionInspectionFailure("session inspection capability changed during request")
+        }
         let object = try StrictRealtimeJSON.object(
             from: result.data, maximumBytes: Self.maximumResponseBytes
         )
@@ -1519,7 +1529,10 @@ public final class SessionInspectionClient: @unchecked Sendable {
         guard canonical.count <= Self.maximumResponseBytes else {
             throw SessionInspectionFailure("session inspection response exceeds the byte limit")
         }
-        return SessionInspectionDocument(resource: resource, canonicalPayload: canonical)
+        return SessionInspectionDocument(
+            resource: resource, sessionID: credential.sessionID,
+            responseURL: url.absoluteString, canonicalPayload: canonical
+        )
     }
 
     // Keep synchronous state access outside the async method. Swift 6 rejects
