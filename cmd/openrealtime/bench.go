@@ -1054,6 +1054,7 @@ func runFDB(arguments []string, output io.Writer) error {
 		categories      string
 		limit           int
 		cellName        string
+		referenceLevels string
 		varyFactor      string
 		varyLevel       string
 		executionPath   string
@@ -1068,6 +1069,7 @@ func runFDB(arguments []string, output io.Writer) error {
 	flags.StringVar(&categories, "categories", "", "comma-separated categories; empty runs all four")
 	flags.IntVar(&limit, "limit", 0, "stop after this many recordings; a limited run is never a complete cell")
 	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
+	flags.StringVar(&referenceLevels, "reference-levels", "", "comma-separated factor=level overrides describing what this deployment actually runs")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies from the reference, such as F2")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
@@ -1079,7 +1081,7 @@ func runFDB(arguments []string, output io.Writer) error {
 		return err
 	}
 
-	cell, err := resolveCell(cellName, varyFactor, varyLevel)
+	cell, err := resolveCell(cellName, referenceLevels, varyFactor, varyLevel)
 	if err != nil {
 		return err
 	}
@@ -1154,22 +1156,15 @@ func runFDB(arguments []string, output io.Writer) error {
 }
 
 // resolveCell builds the cell this run measures.
-func resolveCell(name, factor, level string) (bench.Cell, error) {
-	if strings.TrimSpace(factor) == "" {
-		cell := bench.Reference()
-		if strings.TrimSpace(name) != "" {
-			cell.Name = name
-		}
-		return cell, nil
-	}
-	cell, err := bench.Vary(bench.Factor(strings.ToUpper(factor)), level)
-	if err != nil {
-		return bench.Cell{}, err
-	}
-	if strings.TrimSpace(name) != "" && name != "reference" {
-		cell.Name = name
-	}
-	return cell, nil
+//
+// referenceLevels records the factors this deployment actually holds at
+// something other than the canonical reference. Without it a run on local
+// recognisers and models still declared the reference levels -- qwen3-asr, a
+// hosted slow model -- and the artifact asserted a configuration it had not
+// used. A single -vary cannot express that: a local stack differs from the
+// reference in several factors at once, and each has to be nameable.
+func resolveCell(name, referenceLevels, factor, level string) (bench.Cell, error) {
+	return resolveCellFrom(bench.Reference(), name, referenceLevels, factor, level)
 }
 
 // compareResults reads two saved cells and prints the pairing, refusing when
@@ -1228,6 +1223,7 @@ func runFDBench(arguments []string, output io.Writer) error {
 		list            bool
 		limit           int
 		cellName        string
+		referenceLevels string
 		varyFactor      string
 		varyLevel       string
 		executionPath   string
@@ -1244,6 +1240,7 @@ func runFDBench(arguments []string, output io.Writer) error {
 	flags.BoolVar(&list, "list", false, "list the conditions this dataset contains and stop")
 	flags.IntVar(&limit, "limit", 0, "stop after this many conversations")
 	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
+	flags.StringVar(&referenceLevels, "reference-levels", "", "comma-separated factor=level overrides describing what this deployment actually runs")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F4")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
@@ -1275,7 +1272,7 @@ func runFDBench(arguments []string, output io.Writer) error {
 	if len(selected) == 0 {
 		return errors.New("-conditions is required: the dataset's partitions measure different things and do not merge")
 	}
-	cell, err := resolveCell(cellName, varyFactor, varyLevel)
+	cell, err := resolveCell(cellName, referenceLevels, varyFactor, varyLevel)
 	if err != nil {
 		return err
 	}
@@ -1356,6 +1353,7 @@ func runFDBv3(arguments []string, output io.Writer) error {
 		out             string
 		limit           int
 		cellName        string
+		referenceLevels string
 		varyFactor      string
 		varyLevel       string
 		executionPath   string
@@ -1369,6 +1367,7 @@ func runFDBv3(arguments []string, output io.Writer) error {
 	flags.StringVar(&out, "out", "", "write the result to this path as JSON")
 	flags.IntVar(&limit, "limit", 0, "stop after this many recordings")
 	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
+	flags.StringVar(&referenceLevels, "reference-levels", "", "comma-separated factor=level overrides describing what this deployment actually runs")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F2")
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
@@ -1379,7 +1378,7 @@ func runFDBv3(arguments []string, output io.Writer) error {
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
-	cell, err := resolveCell(cellName, varyFactor, varyLevel)
+	cell, err := resolveCell(cellName, referenceLevels, varyFactor, varyLevel)
 	if err != nil {
 		return err
 	}
@@ -1445,26 +1444,27 @@ func runFDBv3(arguments []string, output io.Writer) error {
 func runDynaCU(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench dynacu", flag.ContinueOnError)
 	var (
-		endpoint      string
-		tokenEnv      string
-		model         string
-		aoiDir        string
-		out           string
-		category      string
-		difficulty    string
-		taskIDs       string
-		limit         int
-		maxSteps      int
-		stepInterval  time.Duration
-		withoutImages bool
-		withoutList   bool
-		resume        bool
-		python        string
-		timeout       time.Duration
-		verify        bool
-		cellName      string
-		vary          string
-		level         string
+		endpoint        string
+		tokenEnv        string
+		model           string
+		aoiDir          string
+		out             string
+		category        string
+		difficulty      string
+		taskIDs         string
+		limit           int
+		maxSteps        int
+		stepInterval    time.Duration
+		withoutImages   bool
+		withoutList     bool
+		resume          bool
+		python          string
+		timeout         time.Duration
+		verify          bool
+		cellName        string
+		referenceLevels string
+		vary            string
+		level           string
 	)
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
 	flags.StringVar(&tokenEnv, "token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token")
@@ -1484,6 +1484,7 @@ func runDynaCU(arguments []string, output io.Writer) error {
 	flags.DurationVar(&timeout, "timeout", 6*time.Hour, "bound on the whole run")
 	flags.BoolVar(&verify, "verify", false, "check the environment and exit without running")
 	flags.StringVar(&cellName, "cell", "reference", "name of the measured cell")
+	flags.StringVar(&referenceLevels, "reference-levels", "", "comma-separated factor=level overrides describing what this deployment actually runs")
 	flags.StringVar(&vary, "vary", "", "factor this cell varies from the reference")
 	flags.StringVar(&level, "level", "", "level of the varied factor")
 	flags.SetOutput(output)
@@ -1491,7 +1492,7 @@ func runDynaCU(arguments []string, output io.Writer) error {
 		return err
 	}
 
-	cell, err := resolveCell(cellName, vary, level)
+	cell, err := resolveCell(cellName, referenceLevels, vary, level)
 	if err != nil {
 		return err
 	}

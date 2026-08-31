@@ -13,7 +13,11 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/ir"
 )
 
-const benchmarkExecutionFlagHelp = "reviewed graph-native execution-requirement JSON; empty is diagnostic-only and never reportable"
+// An omitted requirement still yields a reportable cell: reportability asks
+// only that the run was complete and the build traceable. What it cannot do is
+// carry a graph-native claim, and saying "never reportable" invited exactly the
+// mistake of believing the tool would refuse an unattested number.
+const benchmarkExecutionFlagHelp = "reviewed graph-native execution-requirement JSON; empty is diagnostic-only and cannot support a graph-native claim"
 const benchmarkInspectionGraphFlagHelp = "exact bound Graph IR JSON used for authenticated live inspection"
 
 // attachBenchmarkExecution keeps the reviewed execution contract independent
