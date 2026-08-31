@@ -86,7 +86,8 @@ func (artifact CapturedArtifact) validate() error {
 		}
 	}
 	switch artifact.Kind + "\x00" + artifact.ContentType {
-	case "trace\x00application/json", "labels\x00text/plain; charset=utf-8":
+	case "trace\x00application/json", "labels\x00text/plain; charset=utf-8",
+		"wire_media\x00application/zip":
 	default:
 		return errors.New("candidate captured artifact type is unsupported")
 	}

@@ -231,8 +231,8 @@ func TestBundleSealsAndVerifiesIncompleteNewAttemptEvidence(t *testing.T) {
 	err := attempt.Complete(t.Context(), candidate.Completion{
 		Attempt: specification, Outcome: outcome, Transcript: fixtureTranscript(),
 	})
-	if err == nil || !strings.Contains(err.Error(), "missing audio") {
-		t.Fatalf("Complete() error = %v, want missing audio", err)
+	if err == nil || !strings.Contains(err.Error(), "missing review media") {
+		t.Fatalf("Complete() error = %v, want missing review media", err)
 	}
 	err = fixture.bundle.FinishSuite(t.Context(), fixtureResult(fixture, outcome))
 	if err == nil || !strings.Contains(err.Error(), "incomplete attempt evidence") {

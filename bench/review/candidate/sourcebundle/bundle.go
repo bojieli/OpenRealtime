@@ -200,7 +200,7 @@ func (attempt *attemptState) CaptureVideo(bench.SessionVideoCapture) error {
 	if attempt == nil {
 		return errors.New("candidate source attempt is nil")
 	}
-	return attempt.recordFailure(errors.New("candidate audio source bundle does not accept video"))
+	return attempt.recordFailure(errors.New("candidate source bundle accepts video only from an external harness"))
 }
 
 func (attempt *attemptState) CaptureMedia(media candidate.CapturedMedia) error {
@@ -210,15 +210,25 @@ func (attempt *attemptState) CaptureMedia(media candidate.CapturedMedia) error {
 	if attempt.spec.MediaSource != candidate.MediaExternalHarness {
 		return attempt.recordFailure(errors.New("candidate source external audio requires an external-harness attempt"))
 	}
-	if !validCapturedAudio(media) {
-		return attempt.recordFailure(errors.New("candidate audio source bundle accepts only external WAV media"))
+	if !validCapturedReviewMedia(media) {
+		return attempt.recordFailure(errors.New("candidate source bundle accepts only external WAV or MP4 review media"))
 	}
-	return attempt.retainAudio(
-		"audio.external.wav", media.Role, media.MediaType, slices.Clone(media.Bytes),
+	name := "audio.external.wav"
+	if media.Kind == "video" {
+		name = "video.external.mp4"
+	}
+	return attempt.retainReviewMedia(
+		name, media.Kind, media.Role, media.MediaType, slices.Clone(media.Bytes),
 	)
 }
 
 func (attempt *attemptState) retainAudio(name, role, mediaType string, payload []byte) error {
+	return attempt.retainReviewMedia(name, "audio", role, mediaType, payload)
+}
+
+func (attempt *attemptState) retainReviewMedia(
+	name, kind, role, mediaType string, payload []byte,
+) error {
 	attempt.mu.Lock()
 	defer attempt.mu.Unlock()
 	if attempt.terminal {
@@ -240,7 +250,7 @@ func (attempt *attemptState) retainAudio(name, role, mediaType string, payload [
 		return err
 	}
 	attempt.media = &review.Media{
-		Kind: "audio", Role: role, Path: name, SHA256: file.SHA256,
+		Kind: kind, Role: role, Path: name, SHA256: file.SHA256,
 		MediaType: mediaType, SizeBytes: file.SizeBytes,
 	}
 	return nil
@@ -304,11 +314,12 @@ func (attempt *attemptState) CaptureArtifact(artifact candidate.CapturedArtifact
 	return nil
 }
 
-func validCapturedAudio(media candidate.CapturedMedia) bool {
+func validCapturedReviewMedia(media candidate.CapturedMedia) bool {
 	if media.Name == "" || len(media.Name) > 256 || !utf8.ValidString(media.Name) ||
 		filepath.Base(media.Name) != media.Name || filepath.Clean(media.Name) != media.Name ||
 		strings.ContainsAny(media.Name, `/\`) || media.Name == "." || media.Name == ".." ||
-		media.Kind != "audio" || media.MediaType != "audio/wav" ||
+		!((media.Kind == "audio" && media.MediaType == "audio/wav") ||
+			(media.Kind == "video" && media.MediaType == "video/mp4")) ||
 		len(media.Bytes) == 0 || len(media.Bytes) > 128<<20 {
 		return false
 	}
@@ -342,7 +353,8 @@ func validArtifactIdentity(artifact candidate.CapturedArtifact) bool {
 		}
 	}
 	return (artifact.Kind == "trace" && artifact.ContentType == "application/json") ||
-		(artifact.Kind == "labels" && artifact.ContentType == "text/plain; charset=utf-8")
+		(artifact.Kind == "labels" && artifact.ContentType == "text/plain; charset=utf-8") ||
+		(artifact.Kind == "wire_media" && artifact.ContentType == "application/zip")
 }
 
 func (attempt *attemptState) recordFailure(err error) error {
@@ -383,7 +395,7 @@ func (attempt *attemptState) Complete(
 	defer func() { attempt.release() }()
 
 	if media == nil {
-		resultErr = errors.Join(resultErr, errors.New("candidate source attempt is missing audio"))
+		resultErr = errors.Join(resultErr, errors.New("candidate source attempt is missing review media"))
 	}
 	contextValue := reviewContext{
 		Attempt: snapshot.Attempt, DeterministicOutcome: snapshot.Outcome, Transcript: snapshot.Transcript,

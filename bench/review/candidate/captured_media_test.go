@@ -64,6 +64,17 @@ func TestCapturedMediaIsValidatedAndOwnedByThePlugin(t *testing.T) {
 	if len(plugin.artifacts) != 1 || plugin.artifacts[0].Bytes[0] != '{' {
 		t.Fatal("captured-artifact plug-in aliases caller-owned bytes")
 	}
+	wire := candidate.CapturedArtifact{
+		Name: "wire.zip", Kind: "wire_media", Role: "exact_realtime_input_media",
+		ContentType: "application/zip", Bytes: []byte("PK-owned-wire-bytes"),
+	}
+	if err := attempt.CaptureArtifact(wire); err != nil {
+		t.Fatal(err)
+	}
+	wire.Bytes[0] = 'X'
+	if len(plugin.artifacts) != 2 || plugin.artifacts[1].Bytes[0] != 'P' {
+		t.Fatal("captured wire-media plug-in aliases caller-owned bytes")
+	}
 	if err := attempt.Complete(bench.TaskOutcome{ID: "case"}, bench.Transcript{}); err != nil {
 		t.Fatal(err)
 	}

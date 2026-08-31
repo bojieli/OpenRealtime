@@ -145,7 +145,7 @@ func receiptPayload(receipt Receipt) ([]byte, error) {
 
 func sourceReview(result bench.Result, attempts []AttemptEntry, guard sensitiveGuard) []byte {
 	var output strings.Builder
-	output.WriteString("# Candidate audio review bundle\n\n")
+	output.WriteString("# Candidate multimodal review bundle\n\n")
 	output.WriteString("Deterministic benchmark outcomes remain authoritative. ")
 	output.WriteString("Multimodal model review is advisory and has not yet been attached to this source bundle.\n\n")
 	output.WriteString("| Case | Trial | Deterministic | Evidence | Recording | Advisory review |\n")
@@ -165,7 +165,8 @@ func sourceReview(result bench.Result, attempts []AttemptEntry, guard sensitiveG
 		}
 		recording := "missing"
 		if attempt.Media != nil {
-			recording = "[audio](" + markdownEscape(attempt.Directory+"/"+attempt.Media.Path) + ")"
+			recording = "[" + markdownEscape(attempt.Media.Kind) + "](" +
+				markdownEscape(attempt.Directory+"/"+attempt.Media.Path) + ")"
 		}
 		output.WriteString("| " + markdownEscape(attempt.Case) + " | ")
 		output.WriteString(fmt.Sprint(attempt.Trial) + " | " + deterministic + " | " + evidence + " | ")
@@ -176,7 +177,7 @@ func sourceReview(result bench.Result, attempts []AttemptEntry, guard sensitiveG
 		result.Summary.Passed, result.Expected, result.Summary.Completed, len(attempts)))
 	payload := []byte(output.String())
 	if guard.rejects(payload) {
-		return []byte("# Candidate audio review bundle\n\nReview text was withheld because it contained a declared sensitive value. Deterministic result and retained source manifests remain available.\n")
+		return []byte("# Candidate multimodal review bundle\n\nReview text was withheld because it contained a declared sensitive value. Deterministic result and retained source manifests remain available.\n")
 	}
 	return payload
 }
