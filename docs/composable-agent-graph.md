@@ -2039,15 +2039,40 @@ it has been reviewed, tested, and committed with its evidence):
     UI-independent management Authoring API.
   - [ ] Render the Authoring API metadata in the configuration-value editor and
     LSP/browser/native clients before completing authoring support.
-- [ ] Complete the sound computer-use authority and trajectory feedback chain.
-  - [ ] Join tool proposals to exact cognition-result provenance by run and
+- [x] Complete the sound computer-use authority and trajectory feedback chain.
+  - [x] Join tool proposals to exact cognition-result provenance by run and
     call identity without trusting externally asserted causal metadata.
-  - [ ] Promote an admitted proposal to an authorized trajectory tool call
-    without colliding with the proposal item.
-  - [ ] Commit dispatch results as typed tool-result trajectory items causally
-    linked to the authorized call.
-  - [ ] Compose and execute the locked silent computer-use reference only after
-    those trust and feedback paths exist.
+    `validateCandidateResultBinding` is the only place that sees the candidate
+    and the result together. Its three reachable refusals — a different
+    canonical context prefix, a different source revision, and a result not
+    causally descended from the candidate's own activation evidence — are
+    covered by `TestProvenanceJoinRejectsCandidateResultProvenanceDrift`. Its
+    run and session refusals cannot be reached through the ports, because both
+    artifacts are bound to their own envelopes upstream and meet only under one
+    run key; they are pinned directly by
+    `TestCandidateResultBindingRefusesRunAndSessionDriftItCannotReachThroughPorts`
+    so that being unreachable does not become a licence to delete them. The
+    validator was 58.3% covered and every one of its five refusals could be
+    replaced with `if false` without failing a test; it is now 100% covered and
+    all five mutations fail.
+  - [x] Promote an admitted proposal to an authorized trajectory tool call
+    without colliding with the proposal item. The authorized call takes its own
+    `canonicalTrajectoryItemID`, scoped by session, model run, proposal item,
+    and call ID, and refuses a `trajectory_id_collision` if that identity is
+    already occupied. Making the promoted item reuse the proposal ID fails the
+    canonical-append tests.
+  - [x] Commit dispatch results as typed tool-result trajectory items causally
+    linked to the authorized call. Dropping `CausalParentIDs` from the promoted
+    item fails with `tool call does not causally promote proposal item`.
+  - [x] Compose and execute the locked silent computer-use reference only after
+    those trust and feedback paths exist. The locked reference pins all twenty
+    nodes and passes `graphvalidate.ComputerUse` warnings-as-errors, and the
+    authority chain is enforced by the type system rather than by convention:
+    confirmation yields `ConfirmedAction`, the target fence `AuthorizedAction`,
+    canonical commit `CanonicalAction`, and only the ledger yields the
+    `ExecutableAction` that dispatch accepts. Bypassing the target fence or the
+    ledger boundary is `E_TYPE_MISMATCH` at compile time, not a missed runtime
+    check.
 
 Reference-agent tracker:
 
