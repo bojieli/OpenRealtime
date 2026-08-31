@@ -812,3 +812,99 @@ func TestAnAdapterWithNoAllowedOriginsAnswersNoBrowser(t *testing.T) {
 		t.Fatal("the default must grant no origin anything")
 	}
 }
+
+// The SDP endpoint opens a session using the adapter's own upstream
+// credential. Anyone who can reach it unauthenticated is therefore spending
+// the deployment's models, so a configured credential has to be required
+// before the offer is even read.
+func TestOfferRequiresTheConfiguredClientCredential(t *testing.T) {
+	endpoint := newProtocolServer(t)
+	bridge, err := adapter.New(adapter.Config{
+		Endpoint: endpoint.url(), Model: "test", ClientCredential: "expected-credential",
+	})
+	if err != nil {
+		t.Fatalf("new adapter: %v", err)
+	}
+	server := httptest.NewServer(bridge.Handler())
+	t.Cleanup(server.Close)
+
+	for _, row := range []struct {
+		name          string
+		authorization string
+		want          int
+	}{
+		{name: "absent", authorization: "", want: http.StatusUnauthorized},
+		{name: "wrong", authorization: "Bearer other-credential", want: http.StatusUnauthorized},
+		{name: "prefix only", authorization: "Bearer ", want: http.StatusUnauthorized},
+		{name: "wrong scheme", authorization: "Basic expected-credential", want: http.StatusUnauthorized},
+		// The offer body is deliberately not a valid SDP: reaching any status
+		// other than 401 is what proves the credential was accepted.
+		{name: "exact", authorization: "Bearer expected-credential", want: http.StatusBadGateway},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			request, err := http.NewRequest(
+				http.MethodPost, server.URL+"/v1/realtime/calls", strings.NewReader("v=0"),
+			)
+			if err != nil {
+				t.Fatalf("build request: %v", err)
+			}
+			request.Header.Set("Content-Type", "application/sdp")
+			if row.authorization != "" {
+				request.Header.Set("Authorization", row.authorization)
+			}
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				t.Fatalf("post offer: %v", err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != row.want {
+				t.Fatalf("status = %d, want %d", response.StatusCode, row.want)
+			}
+			if row.want == http.StatusUnauthorized &&
+				response.Header.Get("WWW-Authenticate") == "" {
+				t.Error("a refusal must state the scheme it expects")
+			}
+		})
+	}
+}
+
+// An adapter with no configured credential keeps working, which is what the
+// loopback development path relies on.
+func TestOfferWithoutAConfiguredCredentialStaysOpen(t *testing.T) {
+	endpoint := newProtocolServer(t)
+	server := startAdapter(t, endpoint)
+	response, err := http.Post(
+		server.URL+"/v1/realtime/calls", "application/sdp", strings.NewReader("v=0"),
+	)
+	if err != nil {
+		t.Fatalf("post offer: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusUnauthorized {
+		t.Fatal("an adapter with no credential must not demand one")
+	}
+}
+
+// CORS only stops a browser from reading an answer. Serving the POST anyway
+// would already have started the session, so a disallowed origin has to be
+// refused outright rather than merely denied the header.
+func TestOfferRefusesADisallowedOriginInsteadOfStartingTheSession(t *testing.T) {
+	endpoint := newProtocolServer(t)
+	server := startAdapterWithOrigins(t, endpoint, "https://allowed.example")
+	request, err := http.NewRequest(
+		http.MethodPost, server.URL+"/v1/realtime/calls", strings.NewReader("v=0"),
+	)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/sdp")
+	request.Header.Set("Origin", "https://denied.example")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("post offer: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusForbidden)
+	}
+}

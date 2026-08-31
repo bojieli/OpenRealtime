@@ -20,6 +20,7 @@ package webrtc
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -44,6 +45,13 @@ type Config struct {
 	Endpoint string
 	// Token is the credential the adapter presents to the endpoint.
 	Token string
+	// ClientCredential is the bearer token a caller must present to open a
+	// session here. Empty accepts unauthenticated offers, which is only ever
+	// right on a loopback listener: this endpoint spends the adapter's own
+	// upstream credential, so anyone who can reach it unauthenticated is
+	// spending the deployment's models. Callers binding a routable address
+	// are required to set it.
+	ClientCredential string
 	// Model selects the endpoint's model.
 	Model string
 	// ICEServers configures STUN and TURN. Empty is correct for direct and
@@ -235,8 +243,38 @@ func (adapter *Adapter) preflight(writer http.ResponseWriter, request *http.Requ
 	writer.WriteHeader(http.StatusNoContent)
 }
 
+// authorized reports whether a request carries the configured bearer
+// credential. The comparison is constant time so a caller cannot learn the
+// credential from how long a refusal takes.
+func (adapter *Adapter) authorized(request *http.Request) bool {
+	if adapter.config.ClientCredential == "" {
+		return true
+	}
+	header := request.Header.Get("Authorization")
+	const prefix = "Bearer "
+	if len(header) <= len(prefix) || !strings.EqualFold(header[:len(prefix)], prefix) {
+		return false
+	}
+	presented := strings.TrimSpace(header[len(prefix):])
+	return subtle.ConstantTimeCompare(
+		[]byte(presented), []byte(adapter.config.ClientCredential),
+	) == 1
+}
+
 func (adapter *Adapter) offer(writer http.ResponseWriter, request *http.Request) {
-	adapter.writeCORS(writer, request)
+	// A cross-origin POST that the operator did not permit is refused rather
+	// than served without the header: CORS only stops a browser from reading
+	// an answer, so serving it anyway would still have started the session.
+	if request.Header.Get("Origin") != "" && !adapter.writeCORS(writer, request) {
+		http.Error(writer, "cross-origin requests are not allowed by this adapter",
+			http.StatusForbidden)
+		return
+	}
+	if !adapter.authorized(request) {
+		writer.Header().Set("WWW-Authenticate", "Bearer")
+		http.Error(writer, "a bearer credential is required", http.StatusUnauthorized)
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(request.Body, 1<<20))
 	if err != nil || len(body) == 0 {
 		http.Error(writer, "an SDP offer is required", http.StatusBadRequest)

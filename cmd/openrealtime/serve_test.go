@@ -742,3 +742,107 @@ func TestVisualReflexCannotBeConfiguredAsANarrationOnlyNoOp(t *testing.T) {
 		t.Fatal("a reflex with no retained frame must be refused instead of silently never running")
 	}
 }
+
+// A routable WebRTC listener with no credential hands the deployment's own
+// upstream token to anyone who can reach the port, so serve refuses to start
+// one. Loopback keeps working, which is what local development uses.
+func TestWebRTCClientCredentialRefusesARoutableListenerWithoutOne(t *testing.T) {
+	for _, row := range []struct {
+		name     string
+		listen   string
+		variable string
+		value    string
+		want     string
+	}{
+		{name: "loopback ipv4", listen: "127.0.0.1:8766"},
+		{name: "loopback ipv6", listen: "[::1]:8766"},
+		{name: "loopback name", listen: "localhost:8766"},
+		{name: "no listener", listen: ""},
+		{
+			name: "wildcard", listen: "0.0.0.0:8766",
+			want: "routable and has no credential",
+		},
+		{
+			name: "routable address", listen: "203.0.113.7:8766",
+			want: "routable and has no credential",
+		},
+		{
+			name: "wildcard with credential", listen: "0.0.0.0:8766",
+			variable: "OPENREALTIME_TEST_WEBRTC_TOKEN", value: "granted",
+		},
+		{
+			name: "named variable is empty", listen: "127.0.0.1:8766",
+			variable: "OPENREALTIME_TEST_WEBRTC_TOKEN", value: "",
+			want: "which is empty or unset",
+		},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			options := serveOptions{webrtcListen: row.listen}
+			if row.variable != "" {
+				t.Setenv(row.variable, row.value)
+				options.webrtcTokenEnv = row.variable
+			}
+			credential, err := webrtcClientCredential(options)
+			if row.want == "" {
+				if err != nil {
+					t.Fatalf("credential error = %v, want none", err)
+				}
+				if credential != row.value {
+					t.Fatalf("credential = %q, want %q", credential, row.value)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), row.want) {
+				t.Fatalf("credential error = %v, want %q", err, row.want)
+			}
+		})
+	}
+}
+
+// STUN needs no credential and TURN always does, so one flag has to carry
+// both shapes without letting a half-specified TURN server through.
+func TestParseICEServersReadsCredentialsAndRefusesPartialEntries(t *testing.T) {
+	servers, err := parseICEServers(
+		"stun:stun.example:19302, turn:turn.example:3478|user|pass ",
+	)
+	if err != nil {
+		t.Fatalf("parse ICE servers: %v", err)
+	}
+	if len(servers) != 2 {
+		t.Fatalf("servers = %d, want 2", len(servers))
+	}
+	if servers[0].Username != "" || servers[0].Credential != nil {
+		t.Error("a STUN entry must not acquire a credential")
+	}
+	if servers[1].Username != "user" || servers[1].Credential != "pass" {
+		t.Errorf("TURN entry = %#v", servers[1])
+	}
+	for _, entry := range []string{
+		"turn:turn.example:3478|user",
+		"turn:turn.example:3478|user|",
+		"turn:turn.example:3478||pass",
+		"|user|pass",
+		"turn:turn.example:3478|a|b|c",
+	} {
+		if _, err := parseICEServers(entry); err == nil {
+			t.Errorf("parseICEServers(%q) was accepted", entry)
+		}
+	}
+}
+
+// A wildcard bind states where the server listens, not a host anything can
+// dial. The adapter connects to the gateway as an ordinary client, so it
+// needs a real address.
+func TestWebRTCUpstreamAuthorityResolvesAWildcardBind(t *testing.T) {
+	for listen, want := range map[string]string{
+		"0.0.0.0:8765":   "127.0.0.1:8765",
+		"[::]:8765":      "[::1]:8765",
+		"127.0.0.1:8765": "127.0.0.1:8765",
+		"10.0.0.4:8765":  "10.0.0.4:8765",
+		":8765":          "127.0.0.1:8765",
+	} {
+		if got := webrtcUpstreamAuthority(listen); got != want {
+			t.Errorf("webrtcUpstreamAuthority(%q) = %q, want %q", listen, got, want)
+		}
+	}
+}

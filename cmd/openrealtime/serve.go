@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -131,9 +132,11 @@ type serveOptions struct {
 	logFormat string
 	logLevel  string
 
-	webrtcListen string
-	webrtcSTUN   string
-	webrtcOrigin string
+	webrtcListen   string
+	webrtcSTUN     string
+	webrtcOrigin   string
+	webrtcICE      string
+	webrtcTokenEnv string
 
 	gpuCapacity              int
 	policyURL                string
@@ -328,6 +331,10 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.logLevel, "log-level", "info", "log level: debug, info, warn, or error")
 	flags.StringVar(&options.webrtcListen, "webrtc-listen", "", "additional WebRTC listen address; empty disables the adapter")
 	flags.StringVar(&options.webrtcSTUN, "webrtc-stun", "", "comma-separated STUN servers for the WebRTC adapter")
+	flags.StringVar(&options.webrtcICE, "webrtc-ice-server", "",
+		"comma-separated ICE servers with credentials as url|username|credential; repeat for more than one. TURN is what a client behind symmetric NAT needs, and STUN alone cannot give it")
+	flags.StringVar(&options.webrtcTokenEnv, "webrtc-token-env", "",
+		"environment variable holding the bearer credential a WebRTC caller must present; required when -webrtc-listen is not loopback, because the adapter spends the deployment's own upstream credential")
 	flags.StringVar(&options.webrtcOrigin, "webrtc-allow-origin", "",
 		"comma-separated web origins allowed to POST an SDP offer, or \"*\"; empty allows none, which is right unless a browser on another origin has to reach the adapter")
 	flags.BoolVar(&options.computerUse, "computer-use", false, "declare the computer.* tools against a browser target")
@@ -1745,12 +1752,22 @@ func newWebRTCAdapter(
 		}
 		iceServers = append(iceServers, webrtc.ICEServer{URLs: []string{server}})
 	}
+	credentialed, err := parseICEServers(options.webrtcICE)
+	if err != nil {
+		return nil, err
+	}
+	iceServers = append(iceServers, credentialed...)
+	clientCredential, err := webrtcClientCredential(options)
+	if err != nil {
+		return nil, err
+	}
 	adapter, err := webrtcadapter.New(webrtcadapter.Config{
-		Endpoint:       "ws://" + options.listen + "/v1/realtime",
-		Token:          gatewayToken,
-		Model:          model,
-		ICEServers:     iceServers,
-		AllowedOrigins: splitList(options.webrtcOrigin),
+		Endpoint:         "ws://" + webrtcUpstreamAuthority(options.listen) + "/v1/realtime",
+		Token:            gatewayToken,
+		Model:            model,
+		ICEServers:       iceServers,
+		AllowedOrigins:   splitList(options.webrtcOrigin),
+		ClientCredential: clientCredential,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("configure the WebRTC adapter: %w", err)
@@ -2058,6 +2075,101 @@ func buildLogger(options serveOptions) (*slog.Logger, error) {
 
 // splitList turns a comma-separated flag into a list, dropping empties so a
 // trailing comma does not become an origin nobody meant to allow.
+// parseICEServers reads "url|username|credential" entries. STUN needs no
+// credential and TURN always does, so the two cannot share one flag shape.
+func parseICEServers(value string) ([]webrtc.ICEServer, error) {
+	var servers []webrtc.ICEServer
+	for _, entry := range strings.Split(value, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		fields := strings.Split(entry, "|")
+		for index := range fields {
+			fields[index] = strings.TrimSpace(fields[index])
+		}
+		if fields[0] == "" {
+			return nil, fmt.Errorf("ICE server %q has no URL", entry)
+		}
+		server := webrtc.ICEServer{URLs: []string{fields[0]}}
+		switch len(fields) {
+		case 1:
+		case 3:
+			if fields[1] == "" || fields[2] == "" {
+				return nil, fmt.Errorf("ICE server %q needs both a username and a credential", entry)
+			}
+			server.Username = fields[1]
+			server.Credential = fields[2]
+			server.CredentialType = webrtc.ICECredentialTypePassword
+		default:
+			return nil, fmt.Errorf(
+				"ICE server %q must be url or url|username|credential", entry,
+			)
+		}
+		servers = append(servers, server)
+	}
+	return servers, nil
+}
+
+// webrtcClientCredential resolves the credential a caller must present, and
+// refuses a routable listener that has none. The adapter opens sessions with
+// the deployment's own upstream token, so an unauthenticated routable
+// listener hands that spend to anyone who can reach the port.
+func webrtcClientCredential(options serveOptions) (string, error) {
+	credential := ""
+	if name := strings.TrimSpace(options.webrtcTokenEnv); name != "" {
+		credential = strings.TrimSpace(os.Getenv(name))
+		if credential == "" {
+			return "", fmt.Errorf(
+				"-webrtc-token-env names %q, which is empty or unset", name,
+			)
+		}
+	}
+	if credential != "" {
+		return credential, nil
+	}
+	// No listener means no port anyone can reach: the adapter is being built
+	// for in-process use, and there is nothing to protect.
+	if strings.TrimSpace(options.webrtcListen) == "" {
+		return "", nil
+	}
+	host, _, err := net.SplitHostPort(options.webrtcListen)
+	if err != nil {
+		return "", fmt.Errorf("WebRTC listen address %q is not host:port", options.webrtcListen)
+	}
+	if host == "localhost" {
+		return "", nil
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return "", nil
+	}
+	return "", fmt.Errorf(
+		"WebRTC listen address %q is routable and has no credential: set -webrtc-token-env, "+
+			"because this endpoint opens sessions with the deployment's own upstream token",
+		options.webrtcListen,
+	)
+}
+
+// webrtcUpstreamAuthority turns a wildcard bind into an address the adapter
+// can actually dial. Binding 0.0.0.0 states where the server listens, not a
+// host anything connects to.
+func webrtcUpstreamAuthority(listen string) string {
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return listen
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+		if ip.To4() != nil {
+			return net.JoinHostPort("127.0.0.1", port)
+		}
+		return net.JoinHostPort("::1", port)
+	}
+	if host == "" {
+		return net.JoinHostPort("127.0.0.1", port)
+	}
+	return listen
+}
+
 func splitList(value string) []string {
 	var result []string
 	for _, entry := range strings.Split(value, ",") {
