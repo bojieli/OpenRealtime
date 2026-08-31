@@ -109,7 +109,6 @@ func NewBundle(config BundleConfig) (*Bundle, error) {
 	routerFactory := NewHTTPRouterFactory()
 	realtimeRouteFactory := NewRealtimeRouteFactory()
 	observabilityFactory := NewObservabilityRouteFactory()
-	inspectionCompatibilityFactory := NewInspectionCompatibilityRouteFactory()
 	sessionAPIFactory := managementserver.NewSessionAPIFactory()
 
 	registrations := []bundleRegistration{
@@ -120,7 +119,6 @@ func NewBundle(config BundleConfig) (*Bundle, error) {
 		{id: "realtime", factory: realtimeRouteFactory, artifact: config.GatewayArtifact},
 		{id: "observability", factory: observabilityFactory, artifact: config.GatewayArtifact},
 		{id: "session-api", factory: sessionAPIFactory, artifact: config.GatewayArtifact},
-		{id: "inspection-compat", factory: inspectionCompatibilityFactory, artifact: config.GatewayArtifact},
 	}
 
 	catalog := plugin.NewCatalog()
@@ -145,7 +143,6 @@ func NewBundle(config BundleConfig) (*Bundle, error) {
 			{ID: "realtime", Plugin: realtimeRouteFactory.Descriptor().Name, Scope: "root"},
 			{ID: "observability", Plugin: observabilityFactory.Descriptor().Name, Scope: "root"},
 			{ID: "session-api", Plugin: sessionAPIFactory.Descriptor().Name, Scope: "root"},
-			{ID: "inspection-compat", Plugin: inspectionCompatibilityFactory.Descriptor().Name, Scope: "root"},
 		},
 		Exports: []plugin.ProfileExport{{
 			Name: RealtimeHTTPExport, Provider: "http-router", Service: RealtimeHTTPContract().Name,

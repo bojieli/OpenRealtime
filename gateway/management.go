@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/bojieli/OpenRealtime/graph/inspect"
@@ -15,11 +14,6 @@ import (
 	pluginruntime "github.com/bojieli/OpenRealtime/plugin/runtime"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 )
-
-// InspectionTokenHeader is the compatibility header negotiated by the
-// OpenRealtime session protocol. Canonical management clients use
-// management.CapabilityHeader with the same opaque capability.
-const InspectionTokenHeader = openrealtime.InspectionTokenHeader
 
 const defaultInspectionTokenTTL = time.Hour
 
@@ -55,8 +49,7 @@ func (runtime managedSessionRuntime) RecordedTrace() (inspect.LiveTrace, error) 
 // SessionInspectionPlane is the payload-free session authority shared by
 // realtime negotiation and the canonical management API. A composable server
 // profile publishes this value together with its exact Authorizer and
-// SessionInspection projections; standalone gateway construction uses the
-// same value behind its compatibility handler.
+// SessionInspection projections.
 type SessionInspectionPlane struct {
 	capabilities *management.CapabilityRegistry
 	sessions     *management.SessionRegistry
@@ -109,8 +102,8 @@ func (plane *SessionInspectionPlane) Sessions() management.SessionInspection {
 }
 
 // gatewayManagement owns the canonical handler selected for a gateway and,
-// only for the compatibility constructor, its private route realm. A compiled
-// server profile injects the plane and handler and therefore leaves realm nil.
+// for standalone construction, its private route realm. A compiled server
+// profile injects the plane and handler and therefore leaves realm nil.
 type gatewayManagement struct {
 	plane   *SessionInspectionPlane
 	handler http.Handler
@@ -200,9 +193,8 @@ func (plane *SessionInspectionPlane) issue(
 	}
 	return openrealtime.InspectionAccess{
 		SessionID: session,
-		// Keep the negotiated v1 path stable. The same bearer is also valid at
-		// management.APIPrefix + "/sessions/" + session + "/live".
-		Path:        "/v1/realtime/sessions/" + url.PathEscape(session) + "/live",
+		Path: management.APIPrefix + "/sessions/" +
+			url.PathEscape(session) + "/live",
 		Token:       access.Token,
 		ExpiresAtMS: access.ExpiresAt.UnixMilli(),
 	}, revoke, nil
@@ -222,29 +214,6 @@ func (plane *gatewayManagement) close(ctx context.Context) error {
 		return nil
 	}
 	return plane.realm.Close(ctx)
-}
-
-// inspectLive is a compatibility adapter only: deployment authentication and
-// the historical header/path remain stable, then the request is delegated to
-// the canonical management server.
-func (server *Server) inspectLive(writer http.ResponseWriter, request *http.Request) {
-	if !server.authorized(request) {
-		writer.Header().Set("WWW-Authenticate", "Bearer")
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	forward := request.Clone(request.Context())
-	forward.Header = request.Header.Clone()
-	forward.Header.Set(
-		management.CapabilityHeader,
-		strings.TrimSpace(request.Header.Get(InspectionTokenHeader)),
-	)
-	forwardURL := *request.URL
-	forwardURL.Path = management.APIPrefix + "/sessions/" +
-		url.PathEscape(request.PathValue("session")) + "/live"
-	forwardURL.RawPath = ""
-	forward.URL = &forwardURL
-	server.management.handler.ServeHTTP(writer, forward)
 }
 
 func inspectionDebugEnabled(debug *openrealtime.DebugResponse) bool {

@@ -30,8 +30,8 @@ var (
 		"Register(owner, method-qualified routes) -> scoped disposer; atomic conflict rejection v1",
 	)
 	realtimeHTTPContract = serverContract(
-		"openrealtime.server.realtime_http", 2,
-		"stable composed HTTP handler exported by a descriptor-locked server route profile v2",
+		"openrealtime.server.realtime_http", 3,
+		"stable composed HTTP handler exported by a descriptor-locked server route profile v3; no historical route aliases",
 	)
 	sessionInspectionPlaneContract = serverContract(
 		"openrealtime.server.session_inspection_plane", 1,
@@ -44,10 +44,6 @@ var (
 	observabilityEndpointsContract = serverContract(
 		"openrealtime.server.observability_endpoints", 1,
 		"payload-free health and bounded telemetry HTTP handlers v1",
-	)
-	inspectionCompatibilityEndpointContract = serverContract(
-		"openrealtime.server.inspection_compatibility_endpoint", 1,
-		"deployment-authenticated historical session-live HTTP adapter v1",
 	)
 )
 
@@ -83,12 +79,6 @@ type ObservabilityEndpoints interface {
 	MetricsHandler() http.Handler
 }
 
-// InspectionCompatibilityEndpoint supplies only the historical session-live
-// adapter. Canonical management routes are owned by management API plugins.
-type InspectionCompatibilityEndpoint interface {
-	InspectionHandler() http.Handler
-}
-
 func SessionProviderContract() plugin.Contract { return sessionProviderContract }
 func HTTPRoutesContract() plugin.Contract      { return httpRoutesContract }
 func RealtimeHTTPContract() plugin.Contract    { return realtimeHTTPContract }
@@ -99,10 +89,6 @@ func RealtimeEndpointContract() plugin.Contract { return realtimeEndpointContrac
 func ObservabilityEndpointsContract() plugin.Contract {
 	return observabilityEndpointsContract
 }
-func InspectionCompatibilityEndpointContract() plugin.Contract {
-	return inspectionCompatibilityEndpointContract
-}
-
 func serverContract(name string, revision uint64, schema string) plugin.Contract {
 	digest := sha256.Sum256([]byte("openrealtime/server-contract/v1\x00" + name + "\x00" + schema))
 	return plugin.Contract{

@@ -2065,6 +2065,10 @@ tracker by itself:
   historical-registry implementation, legacy-baseline release gates, and final
   migration-comparison gate. Direct benchmark commands now exercise only the
   new implementation.
+- [x] Delete the historical session-live route/header plug-in and fixed gateway
+  HTTP facade. Negotiated inspection capabilities now name the canonical
+  `/openrealtime/v1/sessions/{session}/live` resource and use only the
+  management capability header; compiled server profiles own all route mounts.
 - [ ] Freeze every direct candidate contract before its full run.
   - [x] Treat the benchmark owner's recorded original numbers as the trusted
     historical comparison targets. Do not reconstruct historical attempts or

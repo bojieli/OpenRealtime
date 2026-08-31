@@ -19,6 +19,7 @@ import (
 	"github.com/bojieli/OpenRealtime/bench/scenario"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
+	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 )
 
@@ -46,10 +47,10 @@ func TestScenarioGraphAttestorCoversAllElevenExactSessionScopes(t *testing.T) {
 		if !found {
 			t.Errorf("inspection requested unreviewed session path %q", request.URL.Path)
 		}
-		if got := request.Header.Get("Authorization"); got != "Bearer "+deploymentBearer {
-			t.Errorf("deployment bearer = %q", got)
+		if got := request.Header.Get("Authorization"); got != "" {
+			t.Errorf("deployment bearer leaked to management route: %q", got)
 		}
-		if got := request.Header.Get(openrealtime.InspectionTokenHeader); got != access.Token {
+		if got := request.Header.Get(management.CapabilityHeader); got != access.Token {
 			t.Errorf("session management capability = %q, want %q", got, access.Token)
 		}
 		if access.Token == deploymentBearer {
@@ -300,7 +301,7 @@ func TestScenarioGraphAttestorRejectsForgedLiveInspectionEvidence(t *testing.T) 
 			access := scenarioInspectionAccess(fmt.Sprintf("sess_forged_%02d", index+1), byte(index+32))
 			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 				if request.URL.EscapedPath() != access.Path ||
-					request.Header.Get(openrealtime.InspectionTokenHeader) != access.Token {
+					request.Header.Get(management.CapabilityHeader) != access.Token {
 					t.Errorf("forged-evidence request was not session authenticated")
 				}
 				writer.Header().Set("Content-Type", "application/json")
@@ -403,7 +404,7 @@ func TestScenarioUnattestedModeRemainsDiagnosticOnly(t *testing.T) {
 func scenarioInspectionAccess(sessionID string, fill byte) openrealtime.InspectionAccess {
 	return openrealtime.InspectionAccess{
 		SessionID: sessionID,
-		Path:      "/v1/realtime/sessions/" + sessionID + "/live",
+		Path:      management.APIPrefix + "/sessions/" + sessionID + "/live",
 		Token: "mgmt_" + base64.RawURLEncoding.EncodeToString(
 			bytes.Repeat([]byte{fill}, 32),
 		),

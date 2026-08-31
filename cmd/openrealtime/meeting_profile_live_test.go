@@ -134,7 +134,7 @@ func TestMeetingProductionProfileUsesAuthenticatedLiveDeploymentsAndInspection(t
 	})
 	updated := client.awaitType(30*time.Second, "session.updated")
 	access := meetingInspectionAccess(t, updated)
-	live := awaitMeetingExactLiveResolution(t, endpoint, deploymentToken, access, frozen)
+	live := awaitMeetingExactLiveResolution(t, endpoint, access, frozen)
 	graph := frozen.Plan.Graph()
 	if live.GraphID != graph.ID || live.GraphRevision != graph.Revision ||
 		live.Fingerprint != graph.Fingerprint || live.Adapter == nil ||

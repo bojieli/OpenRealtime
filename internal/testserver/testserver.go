@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strconv"
@@ -208,7 +209,12 @@ func Start(t testing.TB, config Config) Stack {
 	if err != nil {
 		t.Fatalf("gateway: %v", err)
 	}
-	protocolHandler := server.Handler()
+	router := http.NewServeMux()
+	router.Handle("GET /v1/realtime", server.RealtimeHandler())
+	router.Handle("GET /healthz", server.HealthHandler())
+	router.Handle("GET /metrics", server.MetricsHandler())
+	router.Handle(management.APIPrefix+"/", server.ManagementHandler())
+	var protocolHandler http.Handler = router
 	var staticGraph ir.Graph
 	var valuesSchema graphschema.Bundle
 	var elementIdentity element.Identity

@@ -15,21 +15,23 @@ import (
 
 	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 )
 
 func TestLiveInspectionClientAttestsTheNegotiatedSessionNotTheTaskLabel(t *testing.T) {
 	graph, configuration, expected := attestationFixture(t)
 	snapshot := liveInspectionFixture(t, graph, configuration, expected)
-	const deploymentToken = "deployment-secret"
 	access := testInspectionAccess("sess_exact")
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != access.Path {
 			t.Errorf("inspection path = %q, want %q", request.URL.Path, access.Path)
 		}
-		if request.Header.Get("Authorization") != "Bearer "+deploymentToken ||
-			request.Header.Get(openrealtime.InspectionTokenHeader) != access.Token {
-			t.Errorf("inspection credentials were not independently presented: %v", request.Header)
+		if request.Header.Get(management.CapabilityHeader) != access.Token {
+			t.Errorf("inspection capability was not presented: %v", request.Header)
+		}
+		if request.Header.Get("Authorization") != "" {
+			t.Errorf("deployment credential leaked into management request")
 		}
 		writer.Header().Set("Content-Type", "application/json")
 		writer.Header().Set("Cache-Control", "no-store")
@@ -38,8 +40,7 @@ func TestLiveInspectionClientAttestsTheNegotiatedSessionNotTheTaskLabel(t *testi
 	t.Cleanup(server.Close)
 
 	client := bench.LiveInspectionClient{
-		Endpoint:        "ws" + strings.TrimPrefix(server.URL, "http"),
-		DeploymentToken: deploymentToken,
+		Endpoint: "ws" + strings.TrimPrefix(server.URL, "http"),
 	}
 	resolver, err := client.Resolver(graph, configuration, expected)
 	if err != nil {
@@ -199,7 +200,7 @@ func TestLiveInspectionClientRequiresStrictBoundedJSONAndExactNoStoreDirective(t
 func testInspectionAccess(sessionID string) openrealtime.InspectionAccess {
 	return openrealtime.InspectionAccess{
 		SessionID: sessionID,
-		Path:      "/v1/realtime/sessions/" + sessionID + "/live",
+		Path:      management.APIPrefix + "/sessions/" + sessionID + "/live",
 		Token: "mgmt_" + base64.RawURLEncoding.EncodeToString(
 			bytes.Repeat([]byte{0x51}, 32),
 		),

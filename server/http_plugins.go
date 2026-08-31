@@ -13,10 +13,9 @@ import (
 )
 
 const (
-	httpRouterPluginName              = "openrealtime.server.http-router"
-	realtimeRoutePluginName           = "openrealtime.server.realtime-route"
-	observabilityRoutePluginName      = "openrealtime.server.observability-routes"
-	inspectionCompatibilityPluginName = "openrealtime.server.inspection-compatibility-route"
+	httpRouterPluginName         = "openrealtime.server.http-router"
+	realtimeRoutePluginName      = "openrealtime.server.realtime-route"
+	observabilityRoutePluginName = "openrealtime.server.observability-routes"
 )
 
 // HTTPRouterFactory owns the stable route registry exported to a process
@@ -147,42 +146,6 @@ func (factory *ObservabilityRouteFactory) Mount(
 	})
 }
 
-// InspectionCompatibilityRouteFactory owns only the historical inspection
-// path/header adapter. Canonical session live/delta/trace resources are
-// registered separately by management/server.SessionAPIFactory.
-type InspectionCompatibilityRouteFactory struct{ descriptor plugin.Descriptor }
-
-func NewInspectionCompatibilityRouteFactory() *InspectionCompatibilityRouteFactory {
-	return &InspectionCompatibilityRouteFactory{descriptor: routeDescriptor(
-		inspectionCompatibilityPluginName, InspectionCompatibilityEndpointContract(),
-	)}
-}
-
-func (factory *InspectionCompatibilityRouteFactory) Descriptor() plugin.Descriptor {
-	if factory == nil {
-		return plugin.Descriptor{}
-	}
-	return factory.descriptor.Clone()
-}
-
-func (factory *InspectionCompatibilityRouteFactory) Mount(
-	_ context.Context, mount pluginruntime.MountContext,
-) error {
-	if factory == nil {
-		return errors.New("mount server inspection compatibility route plugin: nil factory")
-	}
-	endpoint, err := lookupServerService[InspectionCompatibilityEndpoint](
-		mount.Services, InspectionCompatibilityEndpointContract(),
-	)
-	if err != nil {
-		return err
-	}
-	return httpservice.RegisterRoutes(mount, HTTPRoutesContract(), []httpservice.Route{{
-		Pattern: "GET /v1/realtime/sessions/{session}/live",
-		Handler: endpoint.InspectionHandler(),
-	}})
-}
-
 func routeDescriptor(name string, endpoint plugin.Contract) plugin.Descriptor {
 	return plugin.Descriptor{
 		FormatVersion: plugin.DescriptorFormatVersion,
@@ -215,5 +178,4 @@ var (
 	_ pluginruntime.Factory = (*HTTPRouterFactory)(nil)
 	_ pluginruntime.Factory = (*RealtimeRouteFactory)(nil)
 	_ pluginruntime.Factory = (*ObservabilityRouteFactory)(nil)
-	_ pluginruntime.Factory = (*InspectionCompatibilityRouteFactory)(nil)
 )

@@ -57,7 +57,7 @@ func startVideoServer(t *testing.T, narration string) *httptest.Server {
 	if err != nil {
 		t.Fatalf("new gateway: %v", err)
 	}
-	http := httptest.NewServer(server.Handler())
+	http := httptest.NewServer(testGatewayHandler(server))
 	t.Cleanup(http.Close)
 	return http
 }
@@ -217,7 +217,7 @@ func startBoundedVideoServer(t *testing.T, maxFrameBytes int) *httptest.Server {
 	if err != nil {
 		t.Fatalf("new gateway: %v", err)
 	}
-	http := httptest.NewServer(server.Handler())
+	http := httptest.NewServer(testGatewayHandler(server))
 	t.Cleanup(http.Close)
 	return http
 }

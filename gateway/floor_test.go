@@ -42,7 +42,7 @@ func TestTakingAFloorTheBindingDoesNotHoldIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new gateway: %v", err)
 	}
-	http := httptest.NewServer(server.Handler())
+	http := httptest.NewServer(testGatewayHandler(server))
 	t.Cleanup(http.Close)
 
 	client := dial(t, http)

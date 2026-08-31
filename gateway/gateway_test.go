@@ -24,11 +24,21 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/gateway"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
+	"github.com/bojieli/OpenRealtime/management"
 	protocol "github.com/bojieli/OpenRealtime/protocol/openai"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/bojieli/OpenRealtime/trajectory"
 	"github.com/coder/websocket"
 )
+
+func testGatewayHandler(server *gateway.Server) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("GET /v1/realtime", server.RealtimeHandler())
+	mux.Handle("GET /healthz", server.HealthHandler())
+	mux.Handle("GET /metrics", server.MetricsHandler())
+	mux.Handle(management.APIPrefix+"/", server.ManagementHandler())
+	return mux
+}
 
 // --- doubles ----------------------------------------------------------------
 
@@ -214,7 +224,7 @@ func startServerWith(
 	if err != nil {
 		t.Fatalf("new gateway: %v", err)
 	}
-	http := httptest.NewServer(server.Handler())
+	http := httptest.NewServer(testGatewayHandler(server))
 	t.Cleanup(http.Close)
 	return http
 }
@@ -689,7 +699,7 @@ func TestHealthExpandsLegacyInteractionOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new gateway: %v", err)
 	}
-	listening := httptest.NewServer(server.Handler())
+	listening := httptest.NewServer(testGatewayHandler(server))
 	defer listening.Close()
 	health := getHealth(t, listening.URL)
 	ownership := health["ownership"].(map[string]any)
@@ -710,7 +720,7 @@ func TestBearerTokenIsRequiredWhenConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new gateway: %v", err)
 	}
-	http := httptest.NewServer(server.Handler())
+	http := httptest.NewServer(testGatewayHandler(server))
 	defer http.Close()
 	url := "ws" + strings.TrimPrefix(http.URL, "http") + "/v1/realtime"
 	if _, _, err := websocket.Dial(context.Background(), url, nil); err == nil {
@@ -976,7 +986,7 @@ func TestHealthReportsTheRecogniserWhenTheBindingOwnsOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listening := httptest.NewServer(server.Handler())
+	listening := httptest.NewServer(testGatewayHandler(server))
 	defer listening.Close()
 
 	health := getHealth(t, listening.URL)

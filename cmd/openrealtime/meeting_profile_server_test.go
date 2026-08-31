@@ -162,7 +162,7 @@ func TestMeetingProductionProfileUsesTheSharedAuthenticatedRealtimeServer(t *tes
 			video, frozen.Configuration.Foreground.FrameRateMilliHz)
 	}
 	access := meetingInspectionAccess(t, updated)
-	live := awaitMeetingExactLiveResolution(t, endpoint, deploymentToken, access, frozen)
+	live := awaitMeetingExactLiveResolution(t, endpoint, access, frozen)
 	graph := frozen.Plan.Graph()
 	if live.GraphID != graph.ID || live.GraphRevision != graph.Revision ||
 		live.Fingerprint != graph.Fingerprint || live.Adapter == nil ||
@@ -176,13 +176,12 @@ func TestMeetingProductionProfileUsesTheSharedAuthenticatedRealtimeServer(t *tes
 func awaitMeetingExactLiveResolution(
 	t testing.TB,
 	endpoint string,
-	deploymentToken string,
 	access openrealtime.InspectionAccess,
 	frozen frozenMeetingProfile,
 ) inspect.Live {
 	t.Helper()
 	client := bench.LiveInspectionClient{
-		Endpoint: endpoint, DeploymentToken: deploymentToken,
+		Endpoint:   endpoint,
 		HTTPClient: &http.Client{Timeout: 5 * time.Second},
 	}
 	deadline := time.Now().Add(20 * time.Second)
