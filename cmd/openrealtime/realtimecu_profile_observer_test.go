@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"image/png"
 	"slices"
 	"strings"
 	"testing"
@@ -74,6 +75,53 @@ func TestRealtimeCULocalObserverAttachesExactChangedScreenAndCameraKeyframes(t *
 	}
 }
 
+func TestRealtimeCUProductionVisualThresholdAdmitsMeasuredSmallTransitions(t *testing.T) {
+	config := realtimeCULocalObserverConfig{
+		ASRProvider: realtimeCULocalASRProvider, ASRModel: realtimeCULocalASRModel,
+		ASRBaseURL: realtimeCULocalASRURL, VideoMode: realtimeCUAttachedKeyframeMode,
+		AttachKeyframes: true, ExternalCadence: true,
+		ChangeThreshold: realtimeCUVisualChangeThreshold,
+		Gate:            perception.DefaultGateConfig(),
+	}
+	retainer := &realtimeCUKeyframeRetainerFixture{}
+	observer, err := newRealtimeCULocalObserver(context.Background(), config, retainer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if closeErr := observer.Close(); closeErr != nil {
+			t.Errorf("close production-threshold observer: %v", closeErr)
+		}
+	})
+	observe := func(capturedNS uint64, changedPixels int) []perception.Observation {
+		t.Helper()
+		observations, observeErr := observer.Video(context.Background(), perception.Frame{
+			Kind: perception.FrameImage, Source: "screen", CapturedNS: capturedNS,
+			MIMEType: "image/png", Image: realtimeCUProfilePNG(t, changedPixels),
+			Width: 32, Height: 32,
+		})
+		if observeErr != nil {
+			t.Fatal(observeErr)
+		}
+		return observations
+	}
+	if observations := observe(1, 0); len(observations) != 1 {
+		t.Fatalf("initial keyframe observations = %+v", observations)
+	}
+	// Ten of the 32x32 signature cells is 0.9766%, below the production
+	// threshold. Eleven is 1.0742%, matching the small target transitions
+	// measured in the retained candidate run and must therefore be admitted.
+	if observations := observe(2, 10); len(observations) != 0 {
+		t.Fatalf("sub-threshold keyframe observations = %+v", observations)
+	}
+	if observations := observe(3, 11); len(observations) != 1 {
+		t.Fatalf("measured small-transition observations = %+v", observations)
+	}
+	if len(retainer.payloads) != 2 {
+		t.Fatalf("retained keyframes = %d, want initial plus admitted transition", len(retainer.payloads))
+	}
+}
+
 func TestRealtimeCULocalObserverRefusesUnretainedOrNarratedVideoModes(t *testing.T) {
 	valid := realtimeCULocalObserverConfig{
 		ASRProvider: realtimeCULocalASRProvider, ASRModel: realtimeCULocalASRModel,
@@ -103,6 +151,19 @@ func realtimeCUProfileJPEG(t *testing.T, fill color.RGBA) []byte {
 	}
 	var encoded bytes.Buffer
 	if err := jpeg.Encode(&encoded, frame, &jpeg.Options{Quality: 90}); err != nil {
+		t.Fatal(err)
+	}
+	return encoded.Bytes()
+}
+
+func realtimeCUProfilePNG(t *testing.T, changedPixels int) []byte {
+	t.Helper()
+	frame := image.NewRGBA(image.Rect(0, 0, 32, 32))
+	for index := 0; index < changedPixels; index++ {
+		frame.SetRGBA(index%32, index/32, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, frame); err != nil {
 		t.Fatal(err)
 	}
 	return encoded.Bytes()

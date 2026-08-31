@@ -53,6 +53,7 @@ const (
 	realtimeCUProviderArtifactID    = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/session-provider/v1"
 	realtimeCUInspectionTokenTTLMS  = uint64((5 * time.Minute) / time.Millisecond)
 	realtimeCUAttachedKeyframeMode  = "attached-keyframe-v1"
+	realtimeCUVisualChangeThreshold = 0.01
 )
 
 type realtimeCUProfileOptions struct {
@@ -236,8 +237,9 @@ func newServeRealtimeCURegistration(
 		Observer: realtimeCULocalObserverConfig{
 			ASRProvider: realtimeCULocalASRProvider, ASRModel: realtimeCULocalASRModel,
 			ASRBaseURL: realtimeCULocalASRURL, VideoMode: realtimeCUAttachedKeyframeMode,
-			AttachKeyframes: true, ExternalCadence: true, ChangeThreshold: 0.02,
-			Gate: perception.DefaultGateConfig(), ASRDeployment: deployments.ASR,
+			AttachKeyframes: true, ExternalCadence: true,
+			ChangeThreshold: realtimeCUVisualChangeThreshold,
+			Gate:            perception.DefaultGateConfig(), ASRDeployment: deployments.ASR,
 		},
 	}
 	observerArtifact, err := realtimeCUConfigurationArtifact(
