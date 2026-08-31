@@ -55,6 +55,7 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 		`"semantic_admission":{`,
 		`"standing_extraction":true`,
 		`"verify_voice_activation":true`,
+		`"verify_silent_action":true`,
 		`"minimum_activation_confidence":0.7`,
 		`"standing_memory":64`,
 		`"reference":"provider.openrealtime.model.vllm.v1"`,
@@ -101,6 +102,7 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 		DirectVisualInput           bool    `json:"direct_visual_input"`
 		StandingExtraction          bool    `json:"standing_extraction"`
 		VerifyVoiceActivation       bool    `json:"verify_voice_activation"`
+		VerifySilentAction          bool    `json:"verify_silent_action"`
 		MinimumActivationConfidence float64 `json:"minimum_activation_confidence"`
 		StandingMemory              int     `json:"standing_memory"`
 	}
@@ -108,7 +110,7 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !semanticAdmission.DirectVisualInput || !semanticAdmission.StandingExtraction ||
-		!semanticAdmission.VerifyVoiceActivation ||
+		!semanticAdmission.VerifyVoiceActivation || !semanticAdmission.VerifySilentAction ||
 		semanticAdmission.MinimumActivationConfidence != 0.7 || semanticAdmission.StandingMemory != 64 {
 		t.Fatalf("frozen production scenario graph omitted semantic admission selection: %+v", semanticAdmission)
 	}

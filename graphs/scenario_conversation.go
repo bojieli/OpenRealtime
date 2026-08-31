@@ -100,6 +100,7 @@ func ScenarioConversationArtifacts(
 		"direct_visual_input":           directVisual,
 		"standing_extraction":           config.SemanticAdmission.StandingExtraction,
 		"verify_voice_activation":       config.SemanticAdmission.VerifyVoiceActivation,
+		"verify_silent_action":          config.SemanticAdmission.VerifySilentAction,
 		"minimum_activation_confidence": config.SemanticAdmission.MinimumActivationConfidence,
 		"standing_memory":               config.SemanticAdmission.StandingMemory,
 	}); err != nil {

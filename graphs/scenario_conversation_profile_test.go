@@ -161,6 +161,7 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 	var semanticAdmission struct {
 		StandingExtraction          bool    `json:"standing_extraction"`
 		VerifyVoiceActivation       bool    `json:"verify_voice_activation"`
+		VerifySilentAction          bool    `json:"verify_silent_action"`
 		MinimumActivationConfidence float64 `json:"minimum_activation_confidence"`
 		StandingMemory              int     `json:"standing_memory"`
 	}
@@ -168,6 +169,7 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 		t.Fatal(err)
 	}
 	if !semanticAdmission.StandingExtraction || !semanticAdmission.VerifyVoiceActivation ||
+		!semanticAdmission.VerifySilentAction ||
 		semanticAdmission.MinimumActivationConfidence != 0.7 || semanticAdmission.StandingMemory != 17 {
 		t.Fatalf("selected semantic admission controls did not enter plan: %+v", semanticAdmission)
 	}
@@ -639,7 +641,7 @@ func newScenarioProfileFixture(t testing.TB) scenarioProfileFixture {
 		Architecture:  architecture.Identity(),
 		ASR:           asrSelection, Policy: policySelection, Model: modelSelection,
 		SemanticAdmission: scenarioconversation.SemanticAdmissionSelection{
-			StandingExtraction: true, VerifyVoiceActivation: true,
+			StandingExtraction: true, VerifyVoiceActivation: true, VerifySilentAction: true,
 			MinimumActivationConfidence: 0.7, StandingMemory: 17,
 		},
 		SilentModel: silentModelSelection, TTS: ttsSelection,

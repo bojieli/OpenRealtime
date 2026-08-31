@@ -369,6 +369,7 @@ func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
 		DirectVisualInput           bool    `json:"direct_visual_input"`
 		StandingExtraction          bool    `json:"standing_extraction"`
 		VerifyVoiceActivation       bool    `json:"verify_voice_activation"`
+		VerifySilentAction          bool    `json:"verify_silent_action"`
 		MinimumActivationConfidence float64 `json:"minimum_activation_confidence"`
 		StandingMemory              int     `json:"standing_memory"`
 	}
@@ -384,6 +385,7 @@ func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
 	}
 	if semanticAdmission.StandingExtraction != config.SemanticAdmission.StandingExtraction ||
 		semanticAdmission.VerifyVoiceActivation != config.SemanticAdmission.VerifyVoiceActivation ||
+		semanticAdmission.VerifySilentAction != config.SemanticAdmission.VerifySilentAction ||
 		semanticAdmission.MinimumActivationConfidence != config.SemanticAdmission.MinimumActivationConfidence ||
 		semanticAdmission.StandingMemory != config.SemanticAdmission.StandingMemory {
 		return errors.New("scenario conversation semantic admission values drifted from the application selection")

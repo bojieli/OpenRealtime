@@ -904,20 +904,51 @@ func (runner *semanticAdmissionRunner) decide(
 			}
 		}
 	}
-	if err == nil && stage == "primary" && runner.config.VerifyVoiceActivation &&
-		act == coreinteraction.ActAnswer && len(standing) == 0 {
+	if err == nil && stage == "primary" && runner.config.VerifyVoiceActivation {
 		current := currentSemanticItem(request, prefix)
-		if semanticExtractableObservation(current) {
+		answerAvailable := slices.Contains(situation.AvailableActs(), coreinteraction.ActAnswer)
+		verify := act == coreinteraction.ActAnswer ||
+			act == coreinteraction.ActStaySilent && len(standing) > 0 && answerAvailable
+		if verify && semanticExtractableObservation(current) {
 			activationOutcome, err = runner.verifyVoiceActivation(
-				decisionCtx, update.Invocation.Instruction, current.Content,
+				decisionCtx, update.Invocation.Instruction, standing, current.Content,
 			)
 			if err != nil {
 				failure = "voice_activation_failed"
 			} else {
 				activation = strings.TrimSpace(activationOutcome.Option)
-				if activation == semanticVoiceWait {
+				confident := !activationOutcome.Measured || runner.config.MinimumActivationConfidence == 0 ||
+					activationOutcome.Confidence >= runner.config.MinimumActivationConfidence
+				switch {
+				case activation == semanticVoiceWait && act == coreinteraction.ActAnswer:
 					act = coreinteraction.ActStaySilent
 					stage = "voice_activation"
+				case activation == semanticVoiceConditionMet && confident &&
+					act == coreinteraction.ActStaySilent && answerAvailable:
+					// A final transcript is the bounded recovery point for a standing
+					// condition the primary act missed. The guard can only select an
+					// already executable Answer; it cannot generate content or widen
+					// the graph's act set.
+					act = coreinteraction.ActAnswer
+					stage = "voice_activation"
+				}
+			}
+		}
+	}
+	if err == nil && stage == "primary" && runner.config.VerifySilentAction &&
+		act == coreinteraction.ActActSilently {
+		current := currentSemanticItem(request, prefix)
+		if semanticExtractableObservation(current) {
+			activationOutcome, err = runner.verifySilentAction(decisionCtx, situation)
+			if err != nil {
+				failure = "silent_action_activation_failed"
+			} else {
+				activation = strings.TrimSpace(activationOutcome.Option)
+				confident := !activationOutcome.Measured || runner.config.MinimumActivationConfidence == 0 ||
+					activationOutcome.Confidence >= runner.config.MinimumActivationConfidence
+				if activation != semanticSilentActionReady || !confident {
+					act = coreinteraction.ActStaySilent
+					stage = "silent_action_activation"
 				}
 			}
 		}
@@ -1047,6 +1078,8 @@ const (
 	semanticVoiceConditionMet  = "condition-met"
 	semanticVoiceDirectRequest = "direct-request"
 	semanticVoiceWait          = "wait"
+	semanticSilentActionReady  = "action-ready"
+	semanticSilentActionWait   = "wait"
 )
 
 const semanticStandingCoverageInstruction = "The policy extractor listed the standing policies established by one utterance. " +
@@ -1058,12 +1091,23 @@ const semanticStandingCoverageInstruction = "The policy extractor listed the sta
 	"'From now on answer briefly; what is the capital of France?' has additional-work outside the brevity policy."
 
 const semanticVoiceActivationInstruction = "You are an activation guard, not a conversational agent. " +
-	"Classify whether the CURRENT UTTERANCE creates a reason for a voice assistant to answer now under the AGENT CONTRACT. " +
+	"Classify whether the CURRENT UTTERANCE creates a reason for a voice assistant to answer now under the AGENT CONTRACT and any STANDING POLICIES. " +
 	"condition-met means the contract says to answer when some fact occurs, and the current utterance provides that fact now. " +
 	"direct-request means the current utterance directly asks a complete question or requests work that should start now, not later. " +
-	"wait means neither: a future condition is merely being described or requested, an applicable condition has not occurred, or the utterance is narration. " +
+	"wait means neither: a future condition is merely being described or requested, an applicable condition has not occurred, the utterance is narration, " +
+	"or the current utterance only continues or refines the setup of a standing policy without satisfying it. " +
 	"Reply with one label only. Examples: contract 'correct a date that contradicts the third'; current 'we do design review next week' is wait; " +
-	"the same contract with current 'ship by the thirteenth' is condition-met. Contract 'answer briefly'; current 'what is the capital of France' is direct-request."
+	"the same contract with current 'ship by the thirteenth' is condition-met. Standing policy 'count animals as they are mentioned'; " +
+	"current 'say the count out loud' is wait, while current 'a heron landed' is condition-met. Contract 'answer briefly'; " +
+	"current 'what is the capital of France' is direct-request."
+
+const semanticSilentActionInstruction = "You are a silent-action activation guard, not an agent and not a tool chooser. " +
+	"Decide whether the CURRENT instant fully grounds some action using an AVAILABLE SILENT TOOL now. " +
+	"action-ready means the current evidence supplies the event, option, or parameters needed to use a listed tool now under the AGENT CONTRACT, " +
+	"standing policies, and recent conversation. wait means it does not: the person is still describing a goal, a recording has not offered a matching option, " +
+	"or an offered option conflicts with the requested goal. Never invent a missing option or parameter. Reply with one label only. " +
+	"Examples: tool 'press_key'; person says 'call support and find my order' is wait. The recording says 'press one for billing' while the goal is order status is wait. " +
+	"The recording says 'press two for order status' while that goal stands is action-ready."
 
 func (runner *semanticAdmissionRunner) verifyStandingCoverage(
 	ctx context.Context, utterance string, policies []coreinteraction.StandingInstruction,
@@ -1092,14 +1136,42 @@ func (runner *semanticAdmissionRunner) verifyStandingCoverage(
 }
 
 func (runner *semanticAdmissionRunner) verifyVoiceActivation(
-	ctx context.Context, contract, utterance string,
+	ctx context.Context, contract string, policies []coreinteraction.StandingInstruction, utterance string,
 ) (coreinteraction.Outcome, error) {
+	var evidence strings.Builder
+	evidence.WriteString("AGENT CONTRACT:\n")
+	evidence.WriteString(strings.TrimSpace(contract))
+	evidence.WriteString("\n\nSTANDING POLICIES:\n")
+	lines := semanticPinboard(policies).Lines(semanticNowNS(runner.clock))
+	if len(lines) == 0 {
+		evidence.WriteString("(none)\n")
+	} else {
+		for _, line := range lines {
+			evidence.WriteString("- ")
+			evidence.WriteString(line)
+			evidence.WriteByte('\n')
+		}
+	}
+	evidence.WriteString("\nCURRENT UTTERANCE:\n")
+	evidence.WriteString(strings.TrimSpace(utterance))
 	options := []string{semanticVoiceConditionMet, semanticVoiceDirectRequest, semanticVoiceWait}
 	outcome, err := runner.decider.Decide(ctx, coreinteraction.Decision{
-		Prompt:  semanticVoiceActivationInstruction,
-		Options: options,
-		Evidence: "AGENT CONTRACT:\n" + strings.TrimSpace(contract) +
-			"\n\nCURRENT UTTERANCE:\n" + strings.TrimSpace(utterance),
+		Prompt:   semanticVoiceActivationInstruction,
+		Options:  options,
+		Evidence: evidence.String(),
+	})
+	if err == nil {
+		err = validateSemanticOutcome(outcome, options)
+	}
+	return outcome, err
+}
+
+func (runner *semanticAdmissionRunner) verifySilentAction(
+	ctx context.Context, situation coreinteraction.Situation,
+) (coreinteraction.Outcome, error) {
+	options := []string{semanticSilentActionReady, semanticSilentActionWait}
+	outcome, err := runner.decider.Decide(ctx, coreinteraction.Decision{
+		Prompt: semanticSilentActionInstruction, Options: options, Evidence: situation.Render(),
 	})
 	if err == nil {
 		err = validateSemanticOutcome(outcome, options)
@@ -1172,8 +1244,21 @@ func (runner *semanticAdmissionRunner) situationWithStanding(
 		state.AllowedActs = append(state.AllowedActs, coreinteraction.ActActSilently)
 	}
 	if request.operation == "quiet" {
-		state.Quiet = true
 		state.Silence = "15s"
+		const quiet = 15 * time.Second
+		for _, policy := range standing {
+			if policy.After > 0 && policy.Due(quiet) {
+				state.Quiet = true
+				break
+			}
+		}
+		if !state.Quiet {
+			// PostCommitSilence is a generic graph clock: it fires after every
+			// durable observation and carries no authority to invent a periodic
+			// turn. Only a pinned, due silence policy turns that tick into
+			// evidence. With none, silence is the sole executable outcome.
+			state.AllowedActs = []coreinteraction.Act{coreinteraction.ActStaySilent}
+		}
 		return state, nil
 	}
 	if len(prefix.Items) == 0 {
@@ -1377,7 +1462,7 @@ func (runner *semanticAdmissionRunner) finishDecision(
 	confidence := result.outcome
 	if result.stage == "standing_coverage" {
 		confidence = result.coverageOutcome
-	} else if result.stage == "voice_activation" {
+	} else if result.stage == "voice_activation" || result.stage == "silent_action_activation" {
 		confidence = result.activationOutcome
 	}
 	decision := SemanticDecision{
@@ -1475,6 +1560,11 @@ func (runner *semanticAdmissionRunner) reportResolution() error {
 	if runner.config.VerifyVoiceActivation {
 		capabilities = append(capabilities, liveidentity.Capability(
 			"interaction.voice-activation", "openrealtime.interaction/Decider-v1", provider, adapter,
+		))
+	}
+	if runner.config.VerifySilentAction {
+		capabilities = append(capabilities, liveidentity.Capability(
+			"interaction.silent-action-activation", "openrealtime.interaction/Decider-v1", provider, adapter,
 		))
 	}
 	return liveidentity.Report(runner.resolution, liveidentity.Artifact{

@@ -30,7 +30,7 @@ const (
 	SemanticDeciderRegistryService = "policy.semantic.deciders"
 
 	semanticAdmissionRuntimeID       = "builtin://openrealtime/elements/policy.SemanticAdmission"
-	semanticAdmissionRuntimeRevision = "implementation:3"
+	semanticAdmissionRuntimeRevision = "implementation:4"
 	defaultSemanticRecentLines       = 12
 	defaultSemanticPending           = 64
 	defaultSemanticTerminalMemory    = 512
@@ -232,6 +232,7 @@ type SemanticAdmissionConfig struct {
 	DirectVisualInput           bool    `json:"direct_visual_input,omitempty"`
 	StandingExtraction          bool    `json:"standing_extraction,omitempty"`
 	VerifyVoiceActivation       bool    `json:"verify_voice_activation,omitempty"`
+	VerifySilentAction          bool    `json:"verify_silent_action,omitempty"`
 	MinimumActivationConfidence float64 `json:"minimum_activation_confidence,omitempty"`
 	RecentLines                 int     `json:"recent_lines,omitempty"`
 	MaxPending                  int     `json:"max_pending,omitempty"`

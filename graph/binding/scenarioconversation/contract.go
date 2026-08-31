@@ -155,6 +155,7 @@ type ToolDeclaration struct {
 type SemanticAdmissionSelection struct {
 	StandingExtraction          bool    `json:"standing_extraction,omitempty"`
 	VerifyVoiceActivation       bool    `json:"verify_voice_activation,omitempty"`
+	VerifySilentAction          bool    `json:"verify_silent_action,omitempty"`
 	MinimumActivationConfidence float64 `json:"minimum_activation_confidence,omitempty"`
 	StandingMemory              int     `json:"standing_memory,omitempty"`
 }

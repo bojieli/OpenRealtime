@@ -299,7 +299,7 @@ func freezeProductionScenarioProfile(
 		Architecture:  architecture.Identity(),
 		ASR:           asr, Policy: policy, Model: model, SilentModel: silentModel, TTS: tts,
 		SemanticAdmission: scenarioconversation.SemanticAdmissionSelection{
-			StandingExtraction: true, VerifyVoiceActivation: true,
+			StandingExtraction: true, VerifyVoiceActivation: true, VerifySilentAction: true,
 			MinimumActivationConfidence: 0.7, StandingMemory: 64,
 		},
 		Tools: tools,

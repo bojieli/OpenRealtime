@@ -302,7 +302,7 @@ func standardValidConfigSamples() map[string]string {
 		"schema://openrealtime/perception/asr-config/v1":                    `{"provider":"asr"}`,
 		"schema://openrealtime/perception/visual-observer-config/v1":        `{"provider":"vision","source":"screen"}`,
 		"schema://openrealtime/policy/generate-on-observation-config/v1":    `{"role":"fast","invocation":{"instruction":"Answer briefly."}}`,
-		"schema://openrealtime/policy/semantic-admission-config/v3":         `{"decider":"semantic-primary","direct_visual_input":true,"standing_extraction":true,"verify_voice_activation":true,"minimum_activation_confidence":0.75}`,
+		"schema://openrealtime/policy/semantic-admission-config/v3":         `{"decider":"semantic-primary","direct_visual_input":true,"standing_extraction":true,"verify_voice_activation":true,"verify_silent_action":true,"minimum_activation_confidence":0.75}`,
 		"schema://openrealtime/policy/session-invocation-config/v1":         `{"role":"fast"}`,
 		"schema://openrealtime/speech/playback-config/v1":                   `{"sink":"speaker"}`,
 		"schema://openrealtime/speech/tts-config/v1":                        `{"provider":"tts"}`,
