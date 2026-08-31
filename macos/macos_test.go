@@ -455,3 +455,29 @@ func TestNativeLiveControlsAreDisabledWhileDisconnected(t *testing.T) {
 		}
 	}
 }
+
+// AppKit derives a window's frame autosave name from the type of its scene's
+// content. Building that content inline from a file-private view produced a
+// name containing "(unknown context at $<address>)", which changed on every
+// launch: the window never restored its size or position, and each launch left
+// another orphan key pair behind in the app's preferences.
+func TestNativeWindowSceneIdentityIsStableAcrossLaunches(t *testing.T) {
+	app, err := os.ReadFile("Sources/OpenRealtimeMac/OpenRealtimeMacApp.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(app), "WindowGroup(\"OpenRealtime Developer\") {\n            NativeRootView(model: model, launchFailure: launchFailure)\n        }") {
+		t.Error("the window scene no longer has one named root view")
+	}
+	if !strings.Contains(string(app), "struct NativeRootView: View {") {
+		t.Error("the window scene root view is not a named type")
+	}
+	for _, fragment := range []string{
+		"private struct NativeRootView",
+		"private struct NativeLaunchFailureView",
+	} {
+		if strings.Contains(string(app), fragment) {
+			t.Errorf("%q is file-private and mangles the window autosave name", fragment)
+		}
+	}
+}

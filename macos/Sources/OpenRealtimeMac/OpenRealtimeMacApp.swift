@@ -61,13 +61,7 @@ struct OpenRealtimeMacApp: App {
 
     var body: some Scene {
         WindowGroup("OpenRealtime Developer") {
-            if let model {
-                ContentView(model: model)
-                    .frame(minWidth: 1160, minHeight: 760)
-            } else {
-                NativeLaunchFailureView(message: launchFailure)
-                    .frame(minWidth: 640, minHeight: 360)
-            }
+            NativeRootView(model: model, launchFailure: launchFailure)
         }
         .windowResizability(.contentMinSize)
         .commands {
@@ -339,7 +333,28 @@ private struct NativeLaunchConfigurationError: LocalizedError {
     var errorDescription: String? { message }
 }
 
-private struct NativeLaunchFailureView: View {
+// AppKit derives the window's frame autosave name from the type of the scene's
+// content. A conditional built inline from a file-private view mangles to
+// "(unknown context at $<address>)", so the name changed on every launch: the
+// window never restored its size or position, and each launch left another
+// orphan key pair in the preferences. One named, non-private root view keeps
+// that identity stable across launches.
+struct NativeRootView: View {
+    let model: DeveloperModel?
+    let launchFailure: String
+
+    var body: some View {
+        if let model {
+            ContentView(model: model)
+                .frame(minWidth: 1160, minHeight: 760)
+        } else {
+            NativeLaunchFailureView(message: launchFailure)
+                .frame(minWidth: 640, minHeight: 360)
+        }
+    }
+}
+
+struct NativeLaunchFailureView: View {
     let message: String
 
     var body: some View {
