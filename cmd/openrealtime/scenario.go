@@ -15,6 +15,8 @@ import (
 
 	"github.com/bojieli/OpenRealtime/bench"
 	archbench "github.com/bojieli/OpenRealtime/bench/architecture"
+	benchreview "github.com/bojieli/OpenRealtime/bench/review"
+	"github.com/bojieli/OpenRealtime/bench/review/gemini"
 	"github.com/bojieli/OpenRealtime/bench/scenario"
 	"github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
 )
@@ -37,14 +39,17 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 		voice            = flags.String("speech-model", "fishaudio/s2-pro", "speech model")
 		only             = flags.String("only", "", "run one scenario by name")
 		timeout          = flags.Duration("timeout", 3*time.Minute, "bound on one scenario")
-		record           = flags.String("record", "", "write the timed record of each scenario to this file")
-		reviewDir        = flags.String("review-dir", "", "create this new directory with per-attempt stereo WAVs, a manifest, and a Markdown review")
+		record           = flags.String("record", "", "write the graph-native architecture result to this file")
+		reviewDir        = flags.String("review-dir", "", "fresh graph-native source directory; omission reserves a private path under ./artifacts")
 		reviewReceipt    = flags.String("review-receipt", "", "write the graph-native source receipt outside -review-dir (default: <review-dir>.receipt.json)")
 		repeat           = flags.Int("repeat", 1, "runs per scenario; latency from one run is noise, so a latency claim needs several")
 		experiment       = flags.String("architecture-manifest", "", "versioned P/T/C/N architecture experiment manifest")
 		architectureCell = flags.String("architecture-cell", "", "cell name in -architecture-manifest")
 		launchProfile    = flags.String("launch-profile", "", "strict graph launch profile for a graph-native scenario checklist")
 		inspectionGraph  = flags.String("inspection-graph", "", benchmarkInspectionGraphFlagHelp)
+		reviewProvider   = flags.String("review-provider", gemini.RegistrationName, "offline reviewer plug-in (exactly google.gemini-3.7-flash)")
+		reviewParallel   = flags.Int("review-parallel", 4, "concurrent offline Gemini reviews (1..16)")
+		reviewTimeout    = flags.Duration("review-timeout", 12*time.Minute, "bound each offline Gemini review and retention")
 	)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -52,98 +57,63 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 	if flags.NArg() != 0 {
 		return errors.New("scenario accepts flags only")
 	}
-	if strings.TrimSpace(*reviewDir) != "" && strings.TrimSpace(*only) != "" {
-		return errors.New("-review-dir requires the complete scenario suite; remove -only")
+	if strings.TrimSpace(*experiment) == "" {
+		return errors.New("scenario benchmark execution requires a graph-native -architecture-manifest")
 	}
-
-	var manifest archbench.Manifest
-	var selectedCell archbench.Cell
-	architectureRun := strings.TrimSpace(*experiment) != ""
-	if architectureRun {
-		var err error
-		manifest, err = archbench.Read(*experiment)
-		if err != nil {
-			return err
-		}
-		if manifest.Suite != "scenario" {
-			return fmt.Errorf("architecture manifest suite must be scenario, got %q", manifest.Suite)
-		}
-		name := strings.TrimSpace(*architectureCell)
-		if name == "" && len(manifest.Cells) == 1 {
-			name = manifest.Cells[0].Name
-		}
-		if name == "" {
-			return errors.New("-architecture-cell is required when the manifest has multiple cells")
-		}
-		selectedCell, err = manifest.Cell(name)
-		if err != nil {
-			return err
-		}
-		if selectedCell.Availability != archbench.AvailabilityRunnable {
-			return fmt.Errorf("architecture cell %q is unavailable: %s",
-				selectedCell.Name, selectedCell.UnavailableReason)
-		}
-	} else if strings.TrimSpace(*architectureCell) != "" {
-		return errors.New("-architecture-cell requires -architecture-manifest")
+	manifest, err := archbench.Read(*experiment)
+	if err != nil {
+		return err
 	}
-
-	requirement := bench.ExecutionRequirement{}
-	if architectureRun {
-		requirement = selectedCell.Execution
+	if manifest.Suite != "scenario" {
+		return fmt.Errorf("architecture manifest suite must be scenario, got %q", manifest.Suite)
 	}
+	name := strings.TrimSpace(*architectureCell)
+	if name == "" && len(manifest.Cells) == 1 {
+		name = manifest.Cells[0].Name
+	}
+	if name == "" {
+		return errors.New("-architecture-cell is required when the manifest has multiple cells")
+	}
+	selectedCell, err := manifest.Cell(name)
+	if err != nil {
+		return err
+	}
+	if selectedCell.Availability != archbench.AvailabilityRunnable {
+		return fmt.Errorf("architecture cell %q is unavailable: %s",
+			selectedCell.Name, selectedCell.UnavailableReason)
+	}
+	requirement := selectedCell.Execution
 
-	var selected []scenario.Scenario
 	fullSuite := scenario.Suite()
-	for _, item := range fullSuite {
-		if *only == "" || item.Name == *only {
-			selected = append(selected, item)
-		}
-	}
-	if len(selected) == 0 {
-		return fmt.Errorf("no scenario named %q", *only)
-	}
-
-	var results []scenario.Result
-	passed := 0
 	runs := max(1, *repeat)
-	graphNative := requirement.Kind == bench.ExecutionGraphNative
-	if graphNative && strings.TrimSpace(*reviewDir) == "" {
-		return errors.New("graph-native scenario execution requires -review-dir")
+	if requirement.Kind != bench.ExecutionGraphNative {
+		return errors.New("scenario benchmark execution requires an exact graph-native execution requirement")
 	}
-	if !graphNative && strings.TrimSpace(*launchProfile) != "" {
-		return errors.New("-launch-profile requires a graph-native architecture cell")
+	resolvedReviewDirectory, err := resolveBenchmarkReviewDestination(
+		"scenario", *reviewDir, false, automaticBenchmarkArtifactPath,
+	)
+	if err != nil {
+		return err
 	}
-	if !graphNative && strings.TrimSpace(*reviewReceipt) != "" {
-		return errors.New("-review-receipt requires a graph-native architecture cell")
+	*reviewDir = resolvedReviewDirectory
+	if strings.TrimSpace(*only) != "" {
+		return errors.New("graph-native scenario checklists require the complete scenario suite; remove -only")
 	}
-	var graphSelection scenarioGraphSelection
-	if graphNative {
-		if strings.TrimSpace(*only) != "" {
-			return errors.New("graph-native scenario checklists require the complete scenario suite; remove -only")
-		}
-		var err error
-		graphSelection, err = prepareScenarioGraphSelection(
-			*launchProfile, selectedCell, requirement, runs,
-		)
-		if err != nil {
-			return err
-		}
+	graphSelection, err := prepareScenarioGraphSelection(
+		*launchProfile, selectedCell, requirement, runs,
+	)
+	if err != nil {
+		return err
 	}
-	var architectureResult *archbench.Result
-	if architectureRun {
-		// -only is a diagnostic filter, not a smaller definition of the suite.
-		// The missing scenarios stay expected so a convenient smoke run cannot
-		// become a publishable architecture result.
-		started := archbench.NewResult(manifest, selectedCell, len(fullSuite)*runs)
-		architectureResult = &started
-		fmt.Fprintf(output, "  architecture %s  F52=%s\n", selectedCell.Name, selectedCell.Architecture.Level)
-	}
+	started := archbench.NewResult(manifest, selectedCell, len(fullSuite)*runs)
+	architectureResult := &started
+	fmt.Fprintf(output, "  architecture %s  F52=%s\n", selectedCell.Name, selectedCell.Architecture.Level)
 
 	config := bench.SessionConfig{
 		Endpoint: *endpoint, Model: *model,
-		Timeout: *timeout, Quiet: true, CaptureRuntimeEvidence: architectureRun,
+		Timeout: *timeout, Quiet: true, CaptureRuntimeEvidence: true,
 	}
-	config, err := configureScenarioSession(
+	config, err = configureScenarioSession(
 		config, requirement, *inspectionGraph, *tokenEnv, os.Getenv,
 	)
 	if err != nil {
@@ -158,168 +128,182 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 		Voices: map[string]string{"other": "alloy"},
 	}
 
-	var review *scenario.ReviewRun
-	var graphReview *scenarioGraphReviewBundle
-	var graphChecklist graphnative.Checklist
-	if !graphNative && strings.TrimSpace(*reviewDir) != "" {
-		review, err = scenario.NewReviewRun(scenario.ReviewOptions{
-			Directory:            *reviewDir,
-			Scenarios:            selected,
-			Repeats:              runs,
-			ExecutionRequirement: requirement,
-			Secrets:              []string{config.Token},
-		})
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(output, "  review       %s\n", review.Directory())
-		defer func() {
-			if err := review.Close(); err != nil {
-				returnErr = errors.Join(returnErr, err)
-			}
-		}()
+	receiptPath, err := resolveScenarioSourceReceiptPath(*reviewDir, *reviewReceipt)
+	if err != nil {
+		return err
 	}
-	if graphNative {
-		graphReview, err = newScenarioGraphReviewBundle(
-			*reviewDir, runs, requirement, []string{config.Token},
-		)
-		if err != nil {
-			return err
+	evaluationOptions, registry, err := prepareAutomaticScenarioEvaluation(
+		context.Background(), *reviewDir, receiptPath, *reviewProvider,
+		*reviewParallel, *reviewTimeout,
+	)
+	if err != nil {
+		return err
+	}
+	graphReview, err := newScenarioGraphReviewBundle(
+		*reviewDir, runs, requirement, []string{config.Token},
+	)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(output, "  review       %s\n", graphReview.Directory())
+	defer func() {
+		if err := graphReview.Close(); err != nil {
+			returnErr = errors.Join(returnErr, err)
 		}
-		fmt.Fprintf(output, "  review       %s\n", graphReview.Directory())
-		defer func() {
-			if err := graphReview.Close(); err != nil {
-				returnErr = errors.Join(returnErr, err)
-			}
-		}()
-		outcome, err := executeScenarioGraphChecklist(
-			context.Background(), graphSelection, requirement,
-			selectedCell.Architecture.Profile, runs, *timeout, graphReview,
-			speaker, config, graphnative.NewLiveExecutor,
-		)
-		if err != nil {
-			return err
-		}
-		graphChecklist = outcome.Checklist
-		if err := appendScenarioGraphArchitectureAttempts(architectureResult, outcome.Attempts); err != nil {
-			return err
-		}
-		for _, attempt := range outcome.Attempts {
-			results = append(results, attempt.Result)
-			if attempt.Result.Passed {
-				passed++
-			}
-		}
-		reportScenarioGraphOutcome(output, outcome, runs)
+	}()
+	outcome, err := executeScenarioGraphChecklist(
+		context.Background(), graphSelection, requirement,
+		selectedCell.Architecture.Profile, runs, *timeout, graphReview,
+		speaker, config, graphnative.NewLiveExecutor,
+	)
+	if err != nil {
+		return err
+	}
+	graphChecklist := outcome.Checklist
+	if err := appendScenarioGraphArchitectureAttempts(architectureResult, outcome.Attempts); err != nil {
+		return err
+	}
+	reportScenarioGraphOutcome(output, outcome, runs)
+
+	architectureResult.Finish()
+	fmt.Fprintf(output, "  measured    %d/%d tasks completed\n",
+		architectureResult.Measurement.Summary.Completed, architectureResult.Measurement.Expected)
+	if err := architectureResult.Reportable(); err != nil {
+		fmt.Fprintf(output, "  NOT REPORTABLE: %v\n", err)
 	} else {
-		for _, item := range selected {
-			var attempts []scenario.Result
-			for run := 0; run < runs; run++ {
-				taskID := fmt.Sprintf("%s#%d", item.Name, run+1)
-				ctx, cancel := context.WithTimeout(context.Background(), *timeout)
-				taskConfig := scenarioSessionForTask(config, taskID)
-				var captured bench.SessionAudioCapture
-				if review != nil {
-					previousCapture := taskConfig.CaptureAudio
-					taskConfig.CaptureAudio = func(audio bench.SessionAudioCapture) error {
-						captured = audio
-						if previousCapture != nil {
-							return previousCapture(audio)
-						}
-						return nil
-					}
-				}
-				result, err := scenario.Play(ctx, speaker, taskConfig, item)
-				cancel()
-				if review != nil {
-					if captured.SampleRateHz == 0 {
-						captured.SampleRateHz = 24_000
-					}
-					if reviewErr := review.Record(item.Name, run+1, captured, result, err); reviewErr != nil {
-						return reviewErr
-					}
-				}
-				if err != nil {
-					fmt.Fprintf(output, "  ERR  %-28s %v\n", item.Name, err)
-				}
-				attempts = append(attempts, result)
-				results = append(results, result)
-				if result.Passed {
-					passed++
-				}
-				if architectureResult != nil {
-					architectureResult.Measurement.Tasks = append(
-						architectureResult.Measurement.Tasks, scenarioTask(taskID, result, err))
-					if result.Transcript.Runtime != nil {
-						architectureResult.Observed = append(architectureResult.Observed, archbench.Observation{
-							TaskID: taskID, Status: *result.Transcript.Runtime,
-						})
-					}
-					record, marshalErr := json.Marshal(result)
-					if marshalErr != nil {
-						return marshalErr
-					}
-					architectureResult.Records = append(architectureResult.Records, record)
-				}
-			}
-			reportScenario(output, item, attempts)
-		}
-		fmt.Fprintf(output, "\n  scenarios %d/%d\n", passed, len(results))
+		fmt.Fprintln(output, "  reportable architecture cell")
+	}
+	architecturePayload, err := marshalScenarioArchitectureResult(*architectureResult)
+	if err != nil {
+		return err
 	}
 
-	var architecturePayload []byte
-	if architectureResult != nil {
-		architectureResult.Finish()
-		fmt.Fprintf(output, "  measured    %d/%d tasks completed\n",
-			architectureResult.Measurement.Summary.Completed, architectureResult.Measurement.Expected)
-		if err := architectureResult.Reportable(); err != nil {
-			fmt.Fprintf(output, "  NOT REPORTABLE: %v\n", err)
-		} else {
-			fmt.Fprintln(output, "  reportable architecture cell")
-		}
-		architecturePayload, err = marshalScenarioArchitectureResult(*architectureResult)
-		if err != nil {
-			return err
-		}
-	}
-
-	if strings.TrimSpace(*record) != "" && architectureResult != nil {
+	if strings.TrimSpace(*record) != "" {
 		if err := writeScenarioArchitectureRecord(*record, architecturePayload); err != nil {
 			return fmt.Errorf("write the architecture record: %w", err)
 		}
-	} else if strings.TrimSpace(*record) != "" {
-		encoded, err := json.MarshalIndent(results, "", "  ")
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(*record, encoded, 0o644); err != nil {
-			return fmt.Errorf("write the record: %w", err)
-		}
 	}
-	if graphNative {
-		origin, err := scenarioGraphSourceOrigin(config.Endpoint, config.Transport)
-		if err != nil {
-			return err
-		}
-		receiptPath := strings.TrimSpace(*reviewReceipt)
-		if receiptPath == "" {
-			receiptPath = graphReview.Directory() + ".receipt.json"
-		} else {
-			receiptPath, err = filepath.Abs(receiptPath)
-			if err != nil {
-				return fmt.Errorf("resolve graph-native source receipt path: %w", err)
-			}
-		}
-		receipt, err := graphReview.Finalize(
-			context.Background(), graphChecklist, architecturePayload, origin, receiptPath,
-		)
-		if err != nil {
-			return fmt.Errorf("finalize graph-native scenario source bundle: %w", err)
-		}
-		fmt.Fprintf(output, "  source       %s\n", receipt.ManifestSHA256)
-		fmt.Fprintf(output, "  receipt      %s\n", receiptPath)
+	origin, err := scenarioGraphSourceOrigin(config.Endpoint, config.Transport)
+	if err != nil {
+		return err
+	}
+	receipt, err := graphReview.Finalize(
+		context.Background(), graphChecklist, architecturePayload, origin, receiptPath,
+	)
+	if err != nil {
+		return fmt.Errorf("finalize graph-native scenario source bundle: %w", err)
+	}
+	fmt.Fprintf(output, "  source       %s\n", receipt.ManifestSHA256)
+	fmt.Fprintf(output, "  receipt      %s\n", receiptPath)
+	if err := runScenarioEvaluationContext(
+		context.Background(), scenarioEvaluationArguments(evaluationOptions), output, registry,
+	); err != nil {
+		return fmt.Errorf("run mandatory exact Gemini 3.7 Flash scenario review: %w", err)
 	}
 	return nil
+}
+
+func resolveScenarioSourceReceiptPath(sourceDirectory, configured string) (string, error) {
+	if configured != "" && strings.TrimSpace(configured) != configured {
+		return "", errors.New("graph-native source receipt path is noncanonical")
+	}
+	if configured == "" {
+		configured = sourceDirectory + ".receipt.json"
+	}
+	resolved, err := filepath.Abs(configured)
+	if err != nil {
+		return "", errors.New("resolve graph-native source receipt path")
+	}
+	resolved = filepath.Clean(resolved)
+	if resolved == filepath.Dir(resolved) {
+		return "", errors.New("graph-native source receipt path cannot be a filesystem root")
+	}
+	return resolved, nil
+}
+
+func prepareAutomaticScenarioEvaluation(
+	ctx context.Context, sourceDirectory, sourceReceipt, provider string,
+	parallel int, timeout time.Duration,
+) (scenarioEvaluationRunOptions, *benchreview.Registry, error) {
+	if ctx == nil {
+		return scenarioEvaluationRunOptions{}, nil, errors.New("prepare scenario evaluation: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return scenarioEvaluationRunOptions{}, nil, err
+	}
+	if provider != gemini.RegistrationName || gemini.ModelID != "gemini-3.7-flash" ||
+		gemini.Descriptor().Model != gemini.ModelID {
+		return scenarioEvaluationRunOptions{}, nil, errors.New(
+			"scenario review provider must be exact google.gemini-3.7-flash",
+		)
+	}
+	options, err := resolveScenarioEvaluationOptions(scenarioEvaluationRunOptions{
+		SourceDirectory: sourceDirectory,
+		SourceReceipt:   sourceReceipt,
+		OutputDirectory: sourceDirectory + ".evaluations",
+		OutputReceipt:   sourceDirectory + ".evaluations.receipt.json",
+		Provider:        provider,
+		Parallel:        parallel,
+		Timeout:         timeout,
+	})
+	if err != nil {
+		return scenarioEvaluationRunOptions{}, nil, err
+	}
+	for _, candidate := range []struct{ label, path string }{
+		{"source directory", options.SourceDirectory},
+		{"source receipt", options.SourceReceipt},
+	} {
+		label, path := candidate.label, candidate.path
+		if _, err := os.Lstat(path); err == nil {
+			return scenarioEvaluationRunOptions{}, nil, fmt.Errorf(
+				"scenario review %s create-only path already exists", label,
+			)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return scenarioEvaluationRunOptions{}, nil, fmt.Errorf("inspect scenario review %s", label)
+		}
+		if err := validateScenarioEvaluationAncestors(filepath.Dir(path)); err != nil {
+			return scenarioEvaluationRunOptions{}, nil, err
+		}
+	}
+	registry, err := benchreview.NewRegistry([]benchreview.Registration{
+		gemini.Registration(gemini.EnvironmentAPIKey),
+	})
+	if err != nil {
+		return scenarioEvaluationRunOptions{}, nil, err
+	}
+	lease, err := registry.Open(ctx, provider)
+	if err != nil {
+		return scenarioEvaluationRunOptions{}, nil, errors.New(
+			"preflight exact Gemini 3.7 Flash scenario reviewer credential",
+		)
+	}
+	descriptor := lease.Descriptor()
+	if descriptor.Provider != "google" || descriptor.Model != gemini.ModelID ||
+		descriptor.API != gemini.Descriptor().API ||
+		descriptor.APIRevision != gemini.Descriptor().APIRevision {
+		_ = lease.Close()
+		return scenarioEvaluationRunOptions{}, nil, errors.New(
+			"preflight scenario reviewer identity differs from exact Gemini 3.7 Flash",
+		)
+	}
+	if err := lease.Close(); err != nil {
+		return scenarioEvaluationRunOptions{}, nil, errors.New(
+			"close exact Gemini 3.7 Flash scenario reviewer preflight",
+		)
+	}
+	return options, registry, nil
+}
+
+func scenarioEvaluationArguments(options scenarioEvaluationRunOptions) []string {
+	return []string{
+		"-source-dir", options.SourceDirectory,
+		"-source-receipt", options.SourceReceipt,
+		"-out", options.OutputDirectory,
+		"-out-receipt", options.OutputReceipt,
+		"-provider", options.Provider,
+		"-parallel", fmt.Sprint(options.Parallel),
+		"-timeout", options.Timeout.String(),
+	}
 }
 
 func marshalScenarioArchitectureResult(result archbench.Result) ([]byte, error) {
@@ -353,6 +337,11 @@ func configureScenarioSession(
 	tokenEnvironment string,
 	getenv func(string) string,
 ) (bench.SessionConfig, error) {
+	if requirement.Kind != bench.ExecutionGraphNative {
+		return bench.SessionConfig{}, errors.New(
+			"scenario benchmark sessions require an exact graph-native execution requirement",
+		)
+	}
 	attestor, deploymentToken, err := configureSessionBenchmarkAttestor(
 		requirement, inspectionGraph, config.Endpoint, tokenEnvironment, getenv,
 	)

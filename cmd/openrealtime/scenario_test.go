@@ -128,41 +128,96 @@ func TestScenarioGraphAttestorCoversAllElevenExactSessionScopes(t *testing.T) {
 	}
 }
 
-func TestScenarioReviewDirectoryRequiresTheCompleteSuite(t *testing.T) {
-	directory := filepath.Join(t.TempDir(), "must-not-be-created")
+func TestScenarioRequiresGraphNativeManifestBeforeArtifactReservation(t *testing.T) {
+	working := t.TempDir()
+	t.Chdir(working)
+	directory := filepath.Join(working, "must-not-be-created")
 	var output bytes.Buffer
 	err := runScenario([]string{
 		"-review-dir", directory,
-		"-only", scenario.Suite()[0].Name,
 	}, &output)
-	if err == nil || !strings.Contains(err.Error(), "requires the complete scenario suite") {
-		t.Fatalf("partial review error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "graph-native -architecture-manifest") {
+		t.Fatalf("missing manifest error = %v", err)
 	}
-	if _, statErr := os.Stat(directory); !os.IsNotExist(statErr) {
-		t.Fatalf("partial review created a directory: %v", statErr)
+	for _, path := range []string{directory, filepath.Join(working, benchmarkArtifactDirectory)} {
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Fatalf("invalid scenario invocation reserved %s: %v", path, statErr)
+		}
 	}
 }
 
-func TestScenarioReviewDirectoryIsCreateOnlyBeforeSpeechOrSessionWork(t *testing.T) {
-	directory := filepath.Join(t.TempDir(), "existing-review")
-	if err := os.Mkdir(directory, 0o700); err != nil {
+func TestPrepareAutomaticScenarioEvaluationPreflightsExactReviewerBeforeAttempt(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "gemini-review-key-fixture-long-enough")
+	parent := t.TempDir()
+	source := filepath.Join(parent, "scenario-source")
+	receipt := source + ".receipt.json"
+	options, registry, err := prepareAutomaticScenarioEvaluation(
+		t.Context(), source, receipt, "google.gemini-3.7-flash", 4, 12*time.Minute,
+	)
+	if err != nil {
 		t.Fatal(err)
 	}
-	marker := filepath.Join(directory, "owned-by-user")
-	if err := os.WriteFile(marker, []byte("preserve"), 0o600); err != nil {
+	if registry == nil || options.SourceDirectory != source || options.SourceReceipt != receipt ||
+		options.OutputDirectory != source+".evaluations" ||
+		options.OutputReceipt != source+".evaluations.receipt.json" || options.Parallel != 4 {
+		t.Fatalf("prepared automatic scenario evaluation = %+v, registry=%v", options, registry)
+	}
+	for _, path := range []string{
+		options.SourceDirectory, options.SourceReceipt,
+		options.OutputDirectory, options.OutputReceipt,
+	} {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatalf("scenario preflight mutated create-only path %s: %v", path, err)
+		}
+	}
+	arguments := scenarioEvaluationArguments(options)
+	joined := strings.Join(arguments, " ")
+	for _, exact := range []string{source, receipt, "google.gemini-3.7-flash", "12m0s"} {
+		if !strings.Contains(joined, exact) {
+			t.Fatalf("scenario evaluation arguments %q omit %q", joined, exact)
+		}
+	}
+}
+
+func TestPrepareAutomaticScenarioEvaluationRefusesCredentialAndPathBeforeAttempt(t *testing.T) {
+	parent := t.TempDir()
+	source := filepath.Join(parent, "scenario-source")
+	receipt := source + ".receipt.json"
+	t.Setenv("GEMINI_API_KEY", "")
+	if _, _, err := prepareAutomaticScenarioEvaluation(
+		t.Context(), source, receipt, "google.gemini-3.7-flash", 4, 12*time.Minute,
+	); err == nil || !strings.Contains(err.Error(), "credential") {
+		t.Fatalf("missing scenario reviewer credential error = %v", err)
+	}
+	for _, path := range []string{source, receipt, source + ".evaluations"} {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatalf("credential refusal mutated %s: %v", path, err)
+		}
+	}
+	if err := os.WriteFile(receipt, []byte("owned"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	var output bytes.Buffer
-	err := runScenario([]string{
-		"-review-dir", directory,
-		"-url", "ws://127.0.0.1:1/v1/realtime",
-		"-speech-url", "http://127.0.0.1:1/v1/audio/speech",
-	}, &output)
-	if err == nil || !strings.Contains(err.Error(), "exclusively") {
-		t.Fatalf("existing review error = %v", err)
+	t.Setenv("GEMINI_API_KEY", "gemini-review-key-fixture-long-enough")
+	if _, _, err := prepareAutomaticScenarioEvaluation(
+		t.Context(), source, receipt, "google.gemini-3.7-flash", 4, 12*time.Minute,
+	); err == nil || !strings.Contains(err.Error(), "create-only path already exists") {
+		t.Fatalf("existing source receipt error = %v", err)
 	}
-	if got, readErr := os.ReadFile(marker); readErr != nil || string(got) != "preserve" {
-		t.Fatalf("existing review contents were changed: %q, %v", got, readErr)
+	if payload, err := os.ReadFile(receipt); err != nil || string(payload) != "owned" {
+		t.Fatalf("existing receipt changed: %q, %v", payload, err)
+	}
+	if _, _, err := prepareAutomaticScenarioEvaluation(
+		t.Context(), source, filepath.Join(parent, "fresh.receipt"), "google.latest", 4, 12*time.Minute,
+	); err == nil || !strings.Contains(err.Error(), "exact google.gemini-3.7-flash") {
+		t.Fatalf("reviewer identity error = %v", err)
+	}
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, _, err := prepareAutomaticScenarioEvaluation(
+		canceled, filepath.Join(parent, "canceled-source"), filepath.Join(parent, "canceled-receipt"),
+		"google.gemini-3.7-flash", 4, 12*time.Minute,
+	); err != context.Canceled {
+		t.Fatalf("canceled reviewer preflight error = %v", err)
 	}
 }
 
@@ -363,7 +418,7 @@ func TestScenarioInspectionGraphCannotAttestUnattestedExecution(t *testing.T) {
 			return "secret"
 		})
 	if err == nil || !strings.Contains(err.Error(),
-		"requires a graph-native -execution requirement") {
+		"exact graph-native execution requirement") {
 		t.Fatalf("unattested scenario inspection graph refusal = %v", err)
 	}
 	if environmentReads.Load() != 0 {
@@ -374,30 +429,8 @@ func TestScenarioInspectionGraphCannotAttestUnattestedExecution(t *testing.T) {
 		"-inspection-graph", filepath.Join(t.TempDir(), "must-not-be-read.ir.json"),
 	}, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(),
-		"requires a graph-native -execution requirement") {
+		"graph-native -architecture-manifest") {
 		t.Fatalf("top-level scenario inspection flag was silently ignored: %v", err)
-	}
-}
-
-func TestScenarioUnattestedModeRemainsDiagnosticOnly(t *testing.T) {
-	var environmentReads atomic.Int32
-	config, err := configureScenarioSession(bench.SessionConfig{
-		Endpoint: "ws://127.0.0.1:8765/v1/realtime",
-		Model:    "diagnostic-model",
-	}, bench.ExecutionRequirement{}, "", "SCENARIO_TOKEN", func(string) string {
-		environmentReads.Add(1)
-		return "diagnostic-bearer"
-	})
-	if err != nil {
-		t.Fatalf("configure scenario diagnostic: %v", err)
-	}
-	if config.Token != "diagnostic-bearer" || config.Model != "diagnostic-model" ||
-		environmentReads.Load() != 1 || config.CaptureRuntimeEvidence || config.RuntimeAttestor != nil {
-		t.Fatalf("scenario diagnostic config = %+v, reads=%d", config, environmentReads.Load())
-	}
-	taskConfig := scenarioSessionForTask(config, "an ordinary question#1")
-	if taskConfig.AttestationScope != "" {
-		t.Fatalf("unattested scenario gained scope %q", taskConfig.AttestationScope)
 	}
 }
 

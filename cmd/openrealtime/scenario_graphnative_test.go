@@ -482,13 +482,13 @@ func TestPrepareScenarioGraphSelectionRejectsDriftBeforePluginsRun(t *testing.T)
 	}
 }
 
-func TestScenarioLaunchProfileCannotBeIgnoredByCompatibilityExecution(t *testing.T) {
+func TestScenarioLaunchProfileCannotBypassGraphNativeManifest(t *testing.T) {
 	var output bytes.Buffer
 	err := runScenario([]string{
 		"-launch-profile", filepath.Join(t.TempDir(), "must-not-be-read.yaml"),
 	}, &output)
-	if err == nil || !strings.Contains(err.Error(), "graph-native architecture cell") {
-		t.Fatalf("compatibility launch-profile error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "graph-native -architecture-manifest") {
+		t.Fatalf("launch-profile without manifest error = %v", err)
 	}
 }
 
