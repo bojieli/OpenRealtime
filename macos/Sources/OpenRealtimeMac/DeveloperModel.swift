@@ -350,7 +350,7 @@ final class DeveloperModel: ObservableObject {
         guard !expectedSessionID.isEmpty,
               let before = inspection.access,
               before.sessionID == expectedSessionID else {
-            throw NativeLaunchConfigurationError(
+            throw SessionInspectionFailure(
                 "hosted management capability is unavailable or bound to another session"
             )
         }
@@ -361,7 +361,7 @@ final class DeveloperModel: ObservableObject {
         guard let encodedSession = expectedSessionID.addingPercentEncoding(
             withAllowedCharacters: pathCharacters
         ) else {
-            throw NativeLaunchConfigurationError("hosted management session is not URL-safe")
+            throw SessionInspectionFailure("hosted management session is not URL-safe")
         }
         guard document.resource == .live,
               document.sessionID == expectedSessionID,
@@ -372,7 +372,7 @@ final class DeveloperModel: ObservableObject {
               components.percentEncodedPath.hasSuffix(
                 "/sessions/\(encodedSession)/live"
               ) else {
-            throw NativeLaunchConfigurationError(
+            throw SessionInspectionFailure(
                 "hosted management response is not bound to the exact active session"
             )
         }
