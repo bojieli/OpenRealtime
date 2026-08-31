@@ -51,7 +51,7 @@ func runSurface(arguments []string, output io.Writer) error {
 	flags.StringVar(&listen, "listen", "127.0.0.1:8768", "surface listen address; loopback only")
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "OpenRealtime protocol endpoint")
 	flags.StringVar(&webrtcEndpoint, "webrtc", "",
-		"WebRTC adapter SDP endpoint, such as http://127.0.0.1:8766/v1/realtime; empty offers WebSocket only")
+		"WebRTC adapter SDP endpoint, such as http://127.0.0.1:8766/v1/realtime/calls; empty offers WebSocket only")
 	flags.StringVar(&tokenEnv, "token-env", "OPENREALTIME_TOKEN",
 		"environment variable holding the endpoint's bearer token; the browser never sees it")
 	flags.StringVar(&model, "model", "", "model identifier to request from the endpoint")

@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const ADAPTER = process.argv[2] ?? "http://127.0.0.1:8766/v1/realtime";
+const ADAPTER = process.argv[2] ?? "http://127.0.0.1:8766/v1/realtime/calls";
 const CDP_PORT = Number(process.env.CDP_PORT ?? 19224);
 
 // A static server for the page, on its own origin.

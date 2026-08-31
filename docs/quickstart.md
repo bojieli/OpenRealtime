@@ -309,7 +309,7 @@ WebRTC adapter.
 One command on your own machine, pointed at the server:
 
 ```sh
-openrealtime console -webrtc http://127.0.0.1:8766/v1/realtime
+openrealtime console -webrtc http://127.0.0.1:8766/v1/realtime/calls
 ```
 
 Open `http://127.0.0.1:8767`. It speaks both transports against the same
