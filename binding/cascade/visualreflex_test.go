@@ -682,7 +682,7 @@ func TestCompiledMonitorAuthorityStartsVoiceBeforeGroundingTheNextFrame(t *testi
 			return trajectory.ToolResult{CallID: call.CallID, Name: call.Name, Output: json.RawMessage(`{"ok":true}`)}, nil
 		}),
 	}}
-	runtime, _ := startSession(t, config, binding.Settings{})
+	runtime, sink := startSession(t, config, binding.Settings{})
 	if err := runtime.Video(context.Background(), screenFrame(t)); err != nil {
 		t.Fatalf("initial video: %v", err)
 	}
@@ -720,6 +720,8 @@ func TestCompiledMonitorAuthorityStartsVoiceBeforeGroundingTheNextFrame(t *testi
 	if got := reflex.invocations(); got != 1 {
 		t.Fatalf("monitor grounded %d visual frames, want exactly the new frame", got)
 	}
+	waitFor(t, func() bool { return len(sink.turnOutcomes()) >= 2 },
+		"autonomous visual effect did not close its own protocol turn")
 }
 
 func TestMalformedVisualReflexFallsBackToTheExistingSlowLane(t *testing.T) {

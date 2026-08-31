@@ -683,7 +683,7 @@ func (runtime *runtime) runSilentAct(ctx context.Context, request cognition.Requ
 		runtime.applyVisualOutcome(request.VisualIntentID, outcome)
 		switch outcome.Kind {
 		case cognition.VisualReflexAct:
-			return runtime.dispatchVisual(ctx, outcome.Result, request.VisualIntentID)
+			return runtime.dispatchAutonomousVisual(ctx, outcome.Result, request.VisualIntentID)
 		case cognition.VisualReflexWait:
 			// The current frame needs no action. A later visual observation will
 			// ask the reflex again; meanwhile, preserve any independent work in
@@ -918,7 +918,7 @@ func (runtime *runtime) runLiveVisualMicroTurn(pending liveVisualDecision) {
 	}
 	runtime.applyVisualOutcome(intentID, outcome)
 	if outcome.Kind == cognition.VisualReflexAct {
-		if err := runtime.dispatchVisual(runtime.ctx, outcome.Result, intentID); err != nil {
+		if err := runtime.dispatchAutonomousVisual(runtime.ctx, outcome.Result, intentID); err != nil {
 			if runtime.config.ProfileTurns {
 				fmt.Fprintf(os.Stderr,
 					"visual-profile at=%s where=%s-dispatch intent=%q task=%q error=%q\n",

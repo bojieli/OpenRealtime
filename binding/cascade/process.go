@@ -601,7 +601,7 @@ func (runtime *runtime) processParallelVisual(ctx context.Context, batch eventlo
 	runtime.applyVisualOutcome(request.VisualIntentID, outcome)
 	switch outcome.Kind {
 	case cognition.VisualReflexAct:
-		return true, runtime.dispatchVisual(ctx, outcome.Result, request.VisualIntentID)
+		return true, runtime.dispatchAutonomousVisual(ctx, outcome.Result, request.VisualIntentID)
 	case cognition.VisualReflexWait:
 		return true, nil
 	default:
@@ -2041,6 +2041,27 @@ func (runtime *runtime) dispatchVisual(
 		runtime.visualActionMu.Unlock()
 	}
 	return err
+}
+
+// dispatchAutonomousVisual gives a silent observer action its own protocol
+// turn. The visual worker runs outside Process's ordinary response bracketing;
+// without this boundary a graph-native or Realtime sink cannot publish the
+// client tool call at all. The turn contains only the bounded effect—no voice
+// or general rollout—and does not consume a manual response request because
+// the interaction gate admitted the observer batch independently.
+func (runtime *runtime) dispatchAutonomousVisual(
+	ctx context.Context, result continuation.RunResult, intentID string,
+) error {
+	if err := runtime.sink.TurnBegin(ctx); err != nil {
+		return err
+	}
+	dispatchErr := runtime.dispatchVisual(ctx, result, intentID)
+	outcome := binding.TurnOutcome{}
+	if dispatchErr != nil {
+		outcome.Incomplete = true
+		outcome.Detail = "autonomous visual action dispatch failed"
+	}
+	return errors.Join(dispatchErr, runtime.sink.TurnEnd(ctx, outcome))
 }
 
 func earlierIdenticalPendingCall(snapshot trajectory.Snapshot, call trajectory.ToolCall) string {
