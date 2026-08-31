@@ -86,8 +86,9 @@ func (step Step) Phase() trajectory.Phase {
 // anything either of them produces arrives later as its own batch - which is
 // what keeps this a policy over events rather than a private loop.
 type Cause struct {
-	Observation bool `json:"observation"`
-	ToolResult  bool `json:"tool_result"`
+	Observation           bool `json:"observation"`
+	AutonomousObservation bool `json:"autonomous_observation,omitempty"`
+	ToolResult            bool `json:"tool_result"`
 	// ToolError distinguishes a failed action from a result that can advance a
 	// tool chain. Retrying a failed call without new user evidence is not
 	// progress: it turns one bad argument or unavailable dependency into an

@@ -452,7 +452,8 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 	}
 	result.coordinator = coordinator
 	gate, err := interaction.Bind(
-		deferralFor(policies.Deferral, result.settings.ManualTurns), result.duplex, coordinator)
+		deferralFor(policies.Deferral, bind.config.ManualDeferral, result.settings.ManualTurns),
+		result.duplex, coordinator)
 	if err != nil {
 		cancel(err)
 		return nil, err
@@ -665,7 +666,9 @@ func resolveMedia(store *session.MediaStore) continuation.MediaResolver {
 // would describe a session nobody is having.
 func (runtime *runtime) policyReport() interaction.Report {
 	report := runtime.policies.Report()
-	report.Deferral = deferralFor(runtime.policies.Deferral, runtime.manualTurns()).Name()
+	report.Deferral = deferralFor(
+		runtime.policies.Deferral, runtime.config.ManualDeferral, runtime.manualTurns(),
+	).Name()
 	return report
 }
 
@@ -702,7 +705,8 @@ func (runtime *runtime) Update(_ context.Context, settings binding.Settings) err
 		// by who owns the floor.
 		runtime.gate.Close()
 		gate, err := interaction.Bind(
-			deferralFor(runtime.policies.Deferral, settings.ManualTurns), runtime.duplex, runtime.coordinator)
+			deferralFor(runtime.policies.Deferral, runtime.config.ManualDeferral, settings.ManualTurns),
+			runtime.duplex, runtime.coordinator)
 		if err != nil {
 			return err
 		}

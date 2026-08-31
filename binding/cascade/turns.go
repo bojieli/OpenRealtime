@@ -96,8 +96,13 @@ func (runtime *runtime) CreateResponse(context.Context) error {
 }
 
 // deferralFor selects the policy a session's turn detection implies.
-func deferralFor(configured interaction.Deferral, manual bool) interaction.Deferral {
+func deferralFor(
+	configured, manualConfigured interaction.Deferral, manual bool,
+) interaction.Deferral {
 	if manual {
+		if manualConfigured != nil {
+			return manualConfigured
+		}
 		return interaction.NewClientDriven()
 	}
 	return configured

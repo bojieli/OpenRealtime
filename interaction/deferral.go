@@ -27,6 +27,19 @@ type Deferral interface {
 	Conditions() []session.TransitionKind
 }
 
+// RequestConsumption is the optional part of a Deferral that admits work for
+// a reason independent of a pending client response request. AdmitRun consults
+// it only after Admit returned true and Requested was true. Returning false
+// preserves that request for the next admitted batch.
+//
+// Most deferrals should not implement this interface: the default is to
+// consume a pending request on any admitted run. It exists for composed manual
+// turn policies that continuously process an explicitly silent observer lane
+// while client response authority remains reserved for user/tool-result work.
+type RequestConsumption interface {
+	ConsumesResponseRequest(Waiting) bool
+}
+
 // Waiting is what a deferral policy decides about.
 type Waiting struct {
 	Duplex session.Snapshot `json:"duplex"`
@@ -64,8 +77,11 @@ type Waiting struct {
 	Backpressure bool `json:"backpressure,omitempty"`
 }
 
-// WaitingFrom reduces a committed batch to what a deferral policy may see.
-func WaitingFrom(batch eventloop.Batch, state session.Snapshot) Waiting {
+// AutonomousObservation reports whether a batch contains only observer-
+// authority observations. It depends solely on immutable committed evidence,
+// so rollout and deferral composition can share the exact same classification
+// without taking another duplex snapshot.
+func AutonomousObservation(batch eventloop.Batch) bool {
 	autonomous := false
 	if batch.Contains(trajectory.KindObservation) {
 		autonomous = true
@@ -85,12 +101,17 @@ func WaitingFrom(batch eventloop.Batch, state session.Snapshot) Waiting {
 			}
 		}
 	}
+	return autonomous
+}
+
+// WaitingFrom reduces a committed batch to what a deferral policy may see.
+func WaitingFrom(batch eventloop.Batch, state session.Snapshot) Waiting {
 	return Waiting{
 		Duplex:                state,
 		Observation:           batch.Contains(trajectory.KindObservation),
 		ToolResult:            batch.Contains(trajectory.KindToolResult),
 		Repair:                batch.Contains(trajectory.KindRepair),
-		AutonomousObservation: autonomous,
+		AutonomousObservation: AutonomousObservation(batch),
 		Parallel:              batch.Triage == eventloop.TriageParallel,
 		Deliberation:          batch.Signalled(SignalEscalated) || batch.Contains(trajectory.KindToolResult),
 	}
@@ -315,7 +336,11 @@ func (gate *Gate) AdmitRun(_ context.Context, batch eventloop.Batch) (bool, stri
 	waiting.Requested = gate.requested
 	gate.mu.Unlock()
 	admitted, reason := gate.policy.Admit(waiting)
-	if admitted && waiting.Requested {
+	consumeRequest := admitted && waiting.Requested
+	if policy, ok := gate.policy.(RequestConsumption); ok && consumeRequest {
+		consumeRequest = policy.ConsumesResponseRequest(waiting)
+	}
+	if consumeRequest {
 		// A request is consumed by the run it released. Leaving it set would
 		// turn one response.create into a standing permission, and every
 		// observation after it would answer itself.
