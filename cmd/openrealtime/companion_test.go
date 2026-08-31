@@ -628,18 +628,18 @@ func companionHasArgument(arguments []string, want string) bool {
 }
 
 type companionLockedBuffer struct {
-	mu sync.Mutex
-	bytes.Buffer
+	mu     sync.Mutex
+	buffer bytes.Buffer
 }
 
 func (buffer *companionLockedBuffer) Write(value []byte) (int, error) {
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
-	return buffer.Buffer.Write(value)
+	return buffer.buffer.Write(value)
 }
 
 func (buffer *companionLockedBuffer) String() string {
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
-	return buffer.Buffer.String()
+	return buffer.buffer.String()
 }
