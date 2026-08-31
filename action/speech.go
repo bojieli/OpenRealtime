@@ -472,7 +472,13 @@ func (speech *Speech) emit(parent context.Context, utterance Utterance) {
 	} else {
 		_ = speech.config.Ledger.Complete(utterance.ID, 0)
 	}
-	_ = speech.config.Sink.End(ctx, utterance, outcome)
+	// The child context is the cancellation scope for this utterance. An
+	// ordinary barge-in cancels it by design, but End is the terminal half of a
+	// Begin/End lifecycle and still has to reach sinks that reject canceled
+	// contexts (notably graph boundaries). Publish the terminal outcome under
+	// the parent session lifetime instead: session shutdown still bounds the
+	// callback, while canceling one utterance cannot strand its response.
+	_ = speech.config.Sink.End(parent, utterance, outcome)
 	if !outcome.Completed && speech.config.Playback != nil {
 		speech.config.Playback.AgentAudioStopped(speech.scheduler.NowNS())
 	}

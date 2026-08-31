@@ -101,6 +101,22 @@ type recordingSink struct {
 	seen   int
 }
 
+type terminalContextSink struct {
+	recordingSink
+	endedWith chan error
+}
+
+func (sink *terminalContextSink) End(
+	ctx context.Context, utterance action.Utterance, outcome action.Outcome,
+) error {
+	cause := context.Cause(ctx)
+	sink.endedWith <- cause
+	if cause != nil {
+		return cause
+	}
+	return sink.recordingSink.End(ctx, utterance, outcome)
+}
+
 func (sink *recordingSink) Begin(_ context.Context, utterance action.Utterance) error {
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
@@ -334,6 +350,44 @@ func TestCancelMatchingReportsWhatWasAlreadyHeard(t *testing.T) {
 	obligation, created := ledger.Invalidate(heard[0].ID, 2)
 	if !created || len(obligation.AssistantItemIDs) != 1 {
 		t.Fatalf("invalidating heard content must create an obligation, got %+v", obligation)
+	}
+}
+
+func TestCancellingActiveSpeechKeepsItsTerminalSinkContextLive(t *testing.T) {
+	ledger := action.NewLedger()
+	sink := &terminalContextSink{endedWith: make(chan error, 1)}
+	speech, err := action.NewSpeech(action.SpeechConfig{
+		Provider: fakeSpeechProvider{rate: 24_000, chunks: 20, bytes: 4_800},
+		Sink:     sink, Ledger: ledger, FrameDuration: 20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new speech: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go speech.Run(ctx)
+	if err := speech.Enqueue(action.Utterance{
+		ID: "cancelled-active", Text: "the first answer is being corrected",
+		AssistantItemIDs: []string{"assistant-cancelled-active"},
+	}, "voice"); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	waitFor(t, func() bool {
+		commitment, exists := ledger.Lookup("cancelled-active")
+		return exists && commitment.State.Crossed()
+	}, "the utterance never reached the world")
+
+	_, heard := speech.Cancel("superseded by a correction")
+	if !heard {
+		t.Fatal("active speech was not reported as heard")
+	}
+	select {
+	case cause := <-sink.endedWith:
+		if cause != nil {
+			t.Fatalf("terminal sink context inherited utterance cancellation: %v", cause)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelled active speech never reached its terminal sink callback")
 	}
 }
 
