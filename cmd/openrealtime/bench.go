@@ -1436,6 +1436,7 @@ func runFDBv3(arguments []string, output io.Writer) error {
 // Nothing about what a task is, or whether it passed, is decided here.
 func runDynaCU(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench dynacu", flag.ContinueOnError)
+	reviewConfig := candidateReviewCLIConfig{Suite: "dynacu"}
 	var (
 		endpoint      string
 		tokenEnv      string
@@ -1474,6 +1475,7 @@ func runDynaCU(arguments []string, output io.Writer) error {
 	flags.StringVar(&cellName, "cell", "reference", "name of the measured cell")
 	flags.StringVar(&vary, "vary", "", "factor this cell varies from the reference")
 	flags.StringVar(&level, "level", "", "level of the varied factor")
+	reviewConfig.bind(flags)
 	flags.SetOutput(output)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -1503,16 +1505,52 @@ func runDynaCU(arguments []string, output io.Writer) error {
 	if verify {
 		// Refusing in seconds beats refusing after six hours of browser
 		// automation, which is the whole reason this exists as its own flag.
+		if err := rejectReviewFlagsForNonAttempt(flags, "dynacu -verify"); err != nil {
+			return err
+		}
 		if err := config.Verify(ctx); err != nil {
 			return err
 		}
 		fmt.Fprintf(output, "dynacu: ready at revision %s\n", dynacu.PinnedRevision)
 		return nil
 	}
-	return errors.New(
-		"DynaCU attempts are disabled until the pinned AOI Realtime adapter is composed with " +
-			"create-only synchronized A/V, action-context, and exact-review evidence; use -verify only",
+	reviewResources, err := openCandidateReviewCLI(
+		ctx, reviewConfig, os.Getenv(tokenEnv), endpoint, os.LookupEnv,
 	)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(output, "candidate review prefix: %s\n", reviewResources.paths.Prefix)
+	config.Output = reviewResources.paths.Prefix + ".dynacu-results.jsonl"
+	config.EvidenceDirectory = reviewResources.paths.Prefix + ".dynacu-raw"
+	config.Evidence, config.EvidenceOrigin = reviewResources.bundle, reviewResources.origin
+	fmt.Fprintf(output, "DynaCU raw evidence: %s\n", config.EvidenceDirectory)
+	result, runErr := dynacu.Run(ctx, config)
+	reviewErr := finishCandidateReviewIfConfigured(ctx, reviewResources, output)
+
+	fmt.Fprintln(output)
+	fmt.Fprintf(output, "suite      : %s (%d tasks declared)\n", result.Suite, result.Expected)
+	fmt.Fprintf(output, "completed  : %d\n", result.Summary.Completed)
+	fmt.Fprintf(output, "invalid    : %d\n", result.Summary.Failed)
+	fmt.Fprintf(output, "passed     : %d\n", result.Summary.Passed)
+	if result.Summary.Complete {
+		fmt.Fprintf(output, "pass rate  : %.3f\n", result.Summary.PassRate)
+	} else if result.Summary.Incompleteness != "" {
+		fmt.Fprintf(output, "incomplete : %s\n", result.Summary.Incompleteness)
+	}
+	if len(result.Tasks) > 0 {
+		fmt.Fprintln(output, "\nby category:")
+		breakdown := dynacu.Breakdown(result)
+		for _, category := range dynacu.Categories {
+			summary, present := breakdown[category]
+			if !present {
+				continue
+			}
+			fmt.Fprintf(output, "  %-12s %2d/%2d passed  (%d invalid)\n",
+				category, summary.Passed, summary.Completed, summary.Invalid)
+		}
+	}
+	return errors.Join(runErr, reviewErr)
 }
 
 // defaultAOIDir is where scripts/prepare-dynacu.sh puts the checkout.

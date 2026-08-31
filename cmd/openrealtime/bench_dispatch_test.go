@@ -22,7 +22,7 @@ func TestBenchmarkDispatchAliasesHaveOneCanonicalClassification(t *testing.T) {
 		{"tau-voice", benchmarkInvocationAttempt, []string{"tau-voice", "tauvoice", "tau"}},
 		{"realtime-cu", benchmarkInvocationAttempt, []string{"realtime-cu", "realtime-computer-use", "computer-use"}},
 		{"meeting", benchmarkInvocationAttempt, []string{"meeting", "meeting-assistant", "live-meeting"}},
-		{"dynacu", benchmarkInvocationBlocked, []string{"dynacu"}},
+		{"dynacu", benchmarkInvocationAttempt, []string{"dynacu"}},
 		{"review-candidate", benchmarkInvocationRecovery, []string{"review-candidate"}},
 		{"verify-candidate-review", benchmarkInvocationReadOnly, []string{"verify-candidate-review"}},
 	}
@@ -59,7 +59,7 @@ func TestBenchmarkInvocationClassificationIncludesNestedReadOnlyAndRecoveryBranc
 		{name: "meeting list", arguments: []string{"live-meeting", "--list=true"}, want: benchmarkInvocationReadOnly},
 		{name: "meeting recovery", arguments: []string{"meeting-assistant", "-review-resume=true"}, want: benchmarkInvocationRecovery},
 		{name: "Dyna verify", arguments: []string{"dynacu", "-verify"}, want: benchmarkInvocationReadOnly},
-		{name: "Dyna attempt blocked", arguments: []string{"dynacu"}, want: benchmarkInvocationBlocked},
+		{name: "Dyna attempt", arguments: []string{"dynacu"}, want: benchmarkInvocationAttempt},
 		{name: "candidate recovery", arguments: []string{"review-candidate"}, want: benchmarkInvocationRecovery},
 		{name: "candidate verification", arguments: []string{"verify-candidate-review"}, want: benchmarkInvocationReadOnly},
 		{name: "architecture live inspection authoring", arguments: []string{"architecture-pair", "inspect"}, want: benchmarkInvocationReadOnly},
@@ -119,7 +119,6 @@ func TestNonAttemptBranchesNeverReserveReviewArtifacts(t *testing.T) {
 		{name: "computer-use list review flag", arguments: []string{"realtime-computer-use", "-list", "-review-provider=ignored"}, wantError: "does not execute benchmark attempts"},
 		{name: "FD list review flag", arguments: []string{"fdbench", "-list", "-review-prefix=ignored"}, wantError: "does not execute benchmark attempts"},
 		{name: "tau verify review flag", arguments: []string{"tau", "-verify", "-review-concurrency=2"}, wantError: "does not execute benchmark attempts"},
-		{name: "Dyna attempt fail closed", arguments: []string{"dynacu"}, wantError: "attempts are disabled"},
 		{name: "candidate recovery missing path", arguments: []string{"review-candidate"}, wantError: "requires -review-prefix"},
 	}
 	for _, test := range tests {
@@ -136,5 +135,19 @@ func TestNonAttemptBranchesNeverReserveReviewArtifacts(t *testing.T) {
 				t.Fatalf("non-attempt command reserved benchmark artifacts: %v", statErr)
 			}
 		})
+	}
+}
+
+func TestDynaAttemptMissingExactReviewerRefusesBeforeAutomaticArtifact(t *testing.T) {
+	working := t.TempDir()
+	t.Chdir(working)
+	t.Setenv("GEMINI_API_KEY", "")
+	var output bytes.Buffer
+	err := runBench([]string{"dynacu"}, &output)
+	if err == nil || !strings.Contains(err.Error(), "Gemini key") {
+		t.Fatalf("DynaCU missing-reviewer error = %v", err)
+	}
+	if _, statErr := os.Lstat(filepath.Join(working, benchmarkArtifactDirectory)); !os.IsNotExist(statErr) {
+		t.Fatalf("DynaCU missing-reviewer refusal reserved artifacts: %v", statErr)
 	}
 }

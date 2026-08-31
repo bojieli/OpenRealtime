@@ -98,16 +98,24 @@
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "dynacu", "-aoi-dir", "{root}/.runtime/dynacu-bench/aoi", "-python", "{root}/.runtime/dynacu-bench/aoi/.venv/bin/python", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-out", "{artifacts}/dynacu.json"],
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "dynacu", "-aoi-dir", "{root}/.runtime/dynacu-bench/aoi", "-python", "{root}/.runtime/dynacu-bench/aoi/.venv/bin/python", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-review-prefix", "{artifacts}/candidate-dynacu-review", "-review-provider", "google.gemini-3.7-flash", "-review-key-env", "GEMINI_API_KEY", "-review-concurrency", "8"],
       "timeout": "12h",
       "skip_policy": "forbid",
       "prerequisites": [
         {"kind": "directory", "value": "{root}/.runtime/dynacu-bench/aoi/.git", "description": "the pinned DynaCU checkout is prepared"},
         {"kind": "executable", "value": "{root}/.runtime/dynacu-bench/aoi/.venv/bin/python", "description": "the DynaCU Python environment is prepared"},
+        {"kind": "env", "value": "GEMINI_API_KEY", "description": "the exact Gemini 3.7 Flash candidate-review credential is supplied"},
         {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"}
       ],
       "assertions": [
-        {"kind": "file_nonempty", "value": "{artifacts}/dynacu.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-dynacu-review.source/result.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-dynacu-review.source/manifest.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-dynacu-review.source/REVIEW.md"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-dynacu-review.source.receipt.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-dynacu-review.aggregate/manifest.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-dynacu-review.aggregate/REVIEW.md"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-dynacu-review.aggregate.receipt.json"},
+        {"kind": "stdout_regex", "value": "(?m)^candidate review: 150/150 recordings evaluated by gemini-3\\.7-flash \\(advisory\\)$"},
         {"kind": "stdout_regex", "value": "(?m)^completed  : 150$"}
       ]
     },

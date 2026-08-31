@@ -43,9 +43,7 @@ func resolveBenchmarkDispatch(alias string) (benchmarkDispatch, bool) {
 	case "meeting", "meeting-assistant", "live-meeting":
 		return benchmarkDispatch{"meeting", benchmarkInvocationAttempt, runMeeting}, true
 	case "dynacu":
-		// The score-only AOI path is deliberately blocked until its wire recorder
-		// is composed. -verify remains useful and is classified below.
-		return benchmarkDispatch{"dynacu", benchmarkInvocationBlocked, runDynaCU}, true
+		return benchmarkDispatch{"dynacu", benchmarkInvocationAttempt, runDynaCU}, true
 	case "review-candidate":
 		return benchmarkDispatch{"review-candidate", benchmarkInvocationRecovery, runCandidateReviewRecovery}, true
 	case "verify-candidate-review":
