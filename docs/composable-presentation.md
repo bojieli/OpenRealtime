@@ -1,6 +1,6 @@
 # Composable Presentation and Observability
 
-- **Status:** accepted target design; staged implementation is in progress and release evidence is pending
+- **Status:** accepted design with a shipped composable companion; signed native and complete release evidence remain pending
 - **Scope:** the OpenRealtime presentation host, browser client, macOS client,
   observability APIs, client plugin lifecycle, security boundaries, and end-to-end gates
 - **Depends on:** [Composable Real-Time Agent Element Graph](composable-agent-graph.md)
@@ -28,27 +28,20 @@ OpenAI protocol can still use the realtime endpoint. Graph inspection,
 multimodal extensions, and client composition are explicitly negotiated and
 versioned under the OpenRealtime namespace.
 
-## 1. Problems in the current presentation layer
+## 1. Presentation boundary
 
-The repository already has useful working clients, but they are separate
-applications rather than compositions of the same client platform:
+The shipped browser and macOS clients are compositions of one client platform,
+not application forks. Browser modules are selected by an immutable manifest;
+the native app selects exact Swift implementations of the same logical
+contracts. Both consume language-neutral reducer fixtures and the same public
+Realtime and negotiated management APIs.
 
-- `examples/browser` began as an embedded one-file WebRTC demo mounted by the
-  gateway; it is now retained only as a standalone compatibility oracle after
-  removal of the presentation-specific gateway field and route;
-- `console` combines static assets, credential-holding protocol relay, WebRTC
-  relay, and a local file/command tool host behind one constructor;
-- `surface` repeats much of the console transport, media, session, and tool
-  code while adding browser control, artifacts, downloads, and inspection;
-- the macOS app has another transport and event reducer with no shared
-  machine-readable client conformance suite; and
-- browser end-to-end tests exercise real Chromium and the real gateway, while
-  the current cross-platform macOS gate can only inspect source text on Linux.
-
-These are reference-only prototypes and regression oracles, not production
-inputs. New profile-composed implementations must preserve their relevant
-security and behavior contracts; obsolete applications and duplicated modules
-are then deleted rather than carried through a compatibility adapter.
+The old standalone browser/demo applications were reference prototypes, not
+production inputs. Their relevant transport and lifecycle behavior is covered
+by the composable profiles and end-to-end gates; no loader, alias, or inferred
+same-origin endpoint adapter remains in the normal client boundary. Portable
+Swift tests are cross-platform evidence only. They do not establish that a
+signed macOS app, device permission, or native media path ran.
 
 ## 2. Architectural decisions
 
@@ -122,6 +115,16 @@ Initial shipped profiles are compositions, not kernel enums:
 
 Names are distribution defaults only. Runtime code resolves services and
 descriptors; it does not switch on these names.
+
+The public developer workflow is `openrealtime companion`. It supervises a
+clean server, a separate loopback WebRTC adapter, and the descriptor-locked
+presentation host. The default opens `browser-developer-webrtc`; the
+`-client browser|macos|both|none` policy changes only client launch. The host
+mounts separate WebRTC and WebSocket relay plugins so browser and native
+clients can traverse one unchanged long-lived server. A custom presentation
+address produces an exact temporary native endpoint directory that is removed
+on shutdown. The gateway never mounts presentation assets or routes as a side
+effect of this convenience command.
 
 The Go `server.Bundle` now compiles the headless HTTP boundary as a stable
 router plus separate realtime, observability, session-inspection, and canonical
@@ -218,7 +221,7 @@ transport plugins and still reach the same server-side session graph.
 | Contract | Purpose |
 | --- | --- |
 | `GET /v1/realtime` | OpenAI-compatible WebSocket upgrade and OpenRealtime-negotiated events |
-| WebRTC call/SDP endpoint | media tracks plus the same protocol event stream over a data channel through the stable OpenAI-compatible call boundary |
+| `POST /v1/realtime/calls` | WebRTC SDP/media plus the same protocol event stream over a data channel through the GA OpenAI-compatible call boundary |
 | `openrealtime.*` events | additive multimodal, interaction, authority, and inspection negotiation |
 
 The transport interface exposes connection state, negotiated capabilities,
@@ -332,8 +335,8 @@ declared end-to-end matrix, the obsolete path is deleted.
 
 ### Stage P0: contracts and regression oracle
 
-- Freeze the current `examples/browser`, `console`, `surface`, and macOS event
-  behavior as shared conformance vectors.
+- Freeze the relevant browser and macOS event behavior as shared conformance
+  vectors, then delete the obsolete standalone implementations.
 - Inventory routes, assets, tools, permissions, transport behavior, UI state,
   cleanup, and current browser end-to-end assertions.
 - Add client-visible performance measurements and record a clean baseline.
@@ -359,11 +362,11 @@ declared end-to-end matrix, the obsolete path is deleted.
   providers as separate host plugins.
 - Build the browser client from transport, media, protocol, tool, inspection,
   editor, and view plugins selected by the manifest.
-- Replace console and surface with profiles over those plugins, then delete
-  duplicated modules once golden and real-Chromium parity holds.
+- Replace the standalone browser applications with profiles over those
+  plugins, then delete duplicated modules once golden and real-Chromium parity
+  holds.
 - [x] Remove `serve -demo`, `gateway.Config.Demo`, and `/demo` from the gateway;
-  the one-file example remains reference-only and is deleted when the minimal
-  locked browser profile closes its media gates.
+  presentation assets and browser routes live only in the separate host.
 
 ### Stage P4: macOS client
 
@@ -533,17 +536,18 @@ tau2/τ-Voice matrix defined by the parent plan.
 - [ ] Browser hosting, relays, local effects, artifacts, and every client
   capability are replaceable descriptor-locked plugins with tested scoped
   disposal and permission ceilings. Locked minimal, observer, developer
-  WebSocket, and developer WebRTC browser profiles now boot in real Chromium,
-  and shuffled race gates cover the shared host, reducer, and realtime client;
-  replacement of the standalone console/surface/demo forks and full lifecycle
-  leak evidence remain open.
+  WebSocket, and developer WebRTC browser profiles boot in real Chromium, and
+  shuffled race gates cover the shared host, reducer, and realtime client.
+  Full effect/artifact replacement and lifecycle leak evidence remain open.
 - [ ] The browser and macOS applications connect to the same unchanged server
-  APIs and pass the shared protocol/client conformance corpus. A real Chromium
-  client followed by the exact manifest-derived macOS protocol probe now uses
-  one unchanged clean server, and JavaScript plus portable Swift conformance is
-  green; this is not evidence that a signed Darwin application connected.
-- [ ] The browser application is assembled from a host-served locked client
-  graph; console, surface, and the minimal demo are profiles, not forks.
+  APIs and pass the shared protocol/client conformance corpus. The public
+  `companion` command now supervises the real server and host while real
+  Chromium WebRTC plus an exact manifest-derived native WebSocket probe use one
+  unchanged server; this is not evidence that a signed Darwin application
+  connected.
+- [x] The browser application is assembled from a host-served locked client
+  graph; obsolete standalone presentation forks have no production command or
+  route.
 - [ ] The macOS application is assembled from the same logical service
   contracts with native implementations and has real macOS release evidence.
   A native provider registry/factory seam and observer/effects profile split
@@ -561,7 +565,10 @@ tau2/τ-Voice matrix defined by the parent plan.
   tests and presentation performance gates pass without regression. Focused
   real-Chromium WebSocket/WebRTC media, tool, inspection, authoring, artifact,
   reconnect/dispose, JavaScript, Swift-Linux, shuffled race, and host/client
-  benchmark gates are green. A fresh 2026-08-30 candidate run retained passing
+  benchmark gates are green. The public companion command additionally crosses
+  the real subprocess boundary and proves Chromium WebRTC plus native-profile
+  WebSocket traversal, clean gateway routes, two sessions, and bounded
+  shutdown cleanup. A fresh 2026-08-30 candidate run retained passing
   release reports for `local.presentation.chromium`,
   `local.presentation.shared-server`, `local.client.javascript`, and
   `local.client.swift-linux` in `.runtime/release-validation/*-candidate-01`;

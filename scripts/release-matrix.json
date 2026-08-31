@@ -799,6 +799,22 @@
       ]
     },
     {
+      "id": "local.presentation.companion",
+      "description": "Drive the public companion supervisor through real serve and present child processes with Chromium WebRTC and the exact native WebSocket profile, then prove clean shutdown",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-count=1", "-v", "./cmd/openrealtime", "-run", "^TestPublicCompanionCommandRunsRealBrowserAndNativeClients$"],
+      "environment": {"OPENREALTIME_RELEASE_GATE": "1"},
+      "timeout": "15m",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "browser", "description": "a real Chromium executable is available"},
+        {"kind": "command", "value": "node", "description": "Node.js is available"}
+      ]
+    },
+    {
       "id": "local.presentation.shared-server",
       "description": "Drive real Chromium and a native-manifest-derived wire probe from the exact macOS client profile through one unchanged clean Realtime server; signed app evidence is a separate Darwin gate",
       "availability": "local",

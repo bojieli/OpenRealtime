@@ -1,11 +1,20 @@
 # Quickstart
 
-One command brings up a working `/v1/realtime` on localhost.
+One public command starts the clean Realtime server, its separate WebRTC
+adapter, and the descriptor-locked presentation host, then opens the
+media-capable browser client:
 
 ```sh
 go build -o openrealtime ./cmd/openrealtime
-./openrealtime serve
+./openrealtime companion
 ```
+
+The three loopback listeners are supervised as separate processes. The
+Realtime gateway still serves no HTML, client assets, or presentation routes.
+Use `-client none` to start the same stack without opening a client, or
+`-client macos|both` on macOS after building the native app. Arbitrary `serve`
+configuration follows a literal `--`; the companion-owned listen, model,
+credential-environment, and shutdown flags cannot be overridden there.
 
 That is the `cascade` binding: fully local, no third-party account, nothing to
 sign up for. It expects three services on the machine, and the flags say where
@@ -63,9 +72,9 @@ The default is the existing voice-only construction:
 ```
 
 `voice` is an identity profile: it selects the same observers, voice and slow
-providers, prompts, policies, token limits, tools, and rollout as the legacy
-flags. A voice+vision deployment uses the same runtime and adds roles through
-configuration rather than a second implementation:
+providers, prompts, policies, token limits, tools, and rollout as the direct
+server configuration. A voice+vision deployment uses the same runtime and adds
+roles through configuration rather than a second implementation:
 
 ```sh
 ./openrealtime serve \
@@ -146,7 +155,7 @@ SenseVoice/Gemini deployment.
 
 Both servers expose WebSocket and direct WebRTC endpoints. The default WebRTC
 listeners are `127.0.0.1:28786` for cascade and `127.0.0.1:28787` for Omni.
-Microphone audio uses the media track; the repository console/surface sends
+Microphone audio uses the media track; the composable browser client sends
 selected screen or camera frames as direct protocol video events over the
 WebRTC data channel. The fast action path sees pixels, not an intermediate
 narration. Adaptive observation can still retain keyframes and optional
@@ -233,25 +242,38 @@ the endpoint the first frame arrived.
 ## Talk to it
 
 ```sh
-./openrealtime present
+./openrealtime companion
 ```
 
-Open `http://127.0.0.1:8767`. This starts a separate, loopback-only
-presentation host pointed at the public realtime endpoint. Its browser client
-is assembled from a locked manifest of content-addressed plugins; the realtime
-gateway serves no HTML or client assets. The initial minimal profile supports
-typed text over WebSocket. Select `-client-profile browser-developer` together
-with an explicit management API base such as
-`-management-endpoint http://127.0.0.1:8765/openrealtime/v1` for the
-independently authorized inspection and graph-authoring plugins. The
-`browser-developer-webrtc` composition additionally requires an explicit
-`-webrtc-endpoint`. Realtime, WebRTC, and management endpoints are independent
-entries in the profile's fingerprinted endpoint directory; none is inferred by
-rewriting another endpoint's origin or path. Static catalog and authoring calls are available only
-when the upstream server composition selects the UI-independent management
-`StaticCatalog` and `Authoring` services and the operator supplies their narrow
-capability; an absent service stays visibly unavailable rather than falling
-back to a browser implementation.
+The default opens `http://127.0.0.1:8767` with the
+`browser-developer-webrtc` composition. Browser media reaches the clean server
+through the host's explicit WebRTC relay; the macOS observer uses a distinct
+WebSocket relay on the same presentation host. Both clients consume the same
+Realtime and negotiated management APIs, and their endpoint directories name
+every destination explicitly rather than deriving one route from another.
+
+Useful launch policies are:
+
+```sh
+./openrealtime companion -client none
+./openrealtime companion -client macos
+./openrealtime companion -client both
+```
+
+`macos` and `both` are accepted only on macOS and preflight the exact `.app`
+before starting either child process. If `-presentation-listen` differs from
+the bundled `127.0.0.1:8767`, companion writes a temporary exact native
+endpoint-directory file, passes its path to the app, and removes it during
+bounded shutdown. Credential values remain in the named environment variable;
+they are never placed in child arguments or readiness output.
+
+For manual composition, run `serve` and `present` separately. The presentation
+host must be given explicit Realtime WebSocket, GA WebRTC calls, and management
+endpoints. Its browser client is assembled from a locked manifest of
+content-addressed plugins; the gateway still serves no HTML or client assets.
+Static catalog and authoring calls are available only when the server profile
+selects the UI-independent management services and the operator supplies their
+narrow capability.
 
 Server profiles opt into that independent plane through the public
 `management/server.MountOperatorAPI` composition API. They provide an existing
@@ -262,11 +284,11 @@ operator route families use the supplied operator authority, while session and
 unrelated routes fall through to the unchanged base handler. Closing the
 overlay withdraws only those selected operator routes.
 
-The shipped `present` presets are observer-only: they do not advertise a local
-effects socket, artifact authority, or confirmation UI. An effects-enabled
-host is a separate plugin composition built with the presentation packages and
-an explicit receipt issuer/verifier. Selecting a richer view never creates
-effect authority.
+The shipped `present` and `companion` presets are observer-only: they do not
+advertise a local effects socket, artifact authority, or confirmation UI. An
+effects-enabled host is a separate plugin composition built with the
+presentation packages and an explicit receipt issuer/verifier. Selecting a
+richer view never creates effect authority.
 
 Health and metrics are HTTP:
 
@@ -292,55 +314,6 @@ background reasoner over the same conversation and hands its answers back for
 the remote to say — which is the thing a single-model server cannot do, because
 it has no second model and no shared log to put one on.
 
-## Talk to it from a browser
-
-```sh
-./openrealtime serve --webrtc-listen 127.0.0.1:8766
-python3 -m http.server 8080 --directory examples/browser
-```
-
-Open `http://127.0.0.1:8080/` and press Connect. The demo implements no media
-plumbing of its own: `getUserMedia` and `RTCPeerConnection` handle echo
-cancellation, jitter, and loss concealment, which is the whole point of the
-WebRTC adapter.
-
-## The developer console
-
-One command on your own machine, pointed at the server:
-
-```sh
-openrealtime console -webrtc http://127.0.0.1:8766/v1/realtime/calls
-```
-
-Open `http://127.0.0.1:8767`. It speaks both transports against the same
-server, shares your screen or camera, shows every event in both directions, and
-gives the session tools that run in your own working directory — with
-confirmation for anything that changes a file or runs a command.
-
-It runs locally rather than on the server for three reasons that all follow from
-where it sits: a browser only grants a microphone in a secure context and
-`127.0.0.1` is one, so nothing needs a certificate; the credential stays in
-that process instead of the page; and tools can reach your files, which a
-browser cannot. See [the console](../console/README.md).
-
-## The complete browser surface
-
-For all twelve input/output channels, downloadable files, and the searchable
-millisecond debug timeline, run the richer loopback surface:
-
-```sh
-openrealtime surface \
-  -root "$PWD" \
-  -browser-devtools-url http://127.0.0.1:9222
-```
-
-Open `http://127.0.0.1:8768`. It can send the microphone, typed text, selected
-screen, physical camera, and a CDP browser; receive speech and text; execute
-confirmed local tools and bounded browser actions; render interactive HTML;
-and offer generated files without putting their bytes in the transcript. The
-Timeline tab negotiates redacted server traces and reports absolute
-millisecond timestamps plus phase latency. See [the test surface](../surface/README.md).
-
 ## Native macOS developer app
 
 The SwiftUI app adds real local filesystem/shell tools and an explicitly
@@ -355,7 +328,8 @@ open -na "Google Chrome" --args \
 cd macos
 ./prepare-browser-use.sh
 ./build-app.sh
-open ".build/OpenRealtime Developer.app"
+cd ..
+./openrealtime companion -client macos
 ```
 
 Choose the endpoint, workspace root, initial system prompt, and either Browser
