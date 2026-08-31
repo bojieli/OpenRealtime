@@ -8,7 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
-	_ "embed"
+	"embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -49,7 +49,12 @@ const (
 	// rejects any combination whose encoded body exceeds the documented
 	// 20 MB Interactions inline-request limit before transport.
 	maximumInlineMediaBytes = 14_500_000
-	maximumResponseBytes    = 8 << 20
+	// Provider-neutral admission remains bounded by review's 128 MiB retained
+	// media ceiling. Requests above the inline envelope use the Gemini Files
+	// API without transcoding, truncation, or duplicating media into the retained
+	// transport transcript.
+	maximumFileMediaBytes = 128 << 20
+	maximumResponseBytes  = 8 << 20
 	// Three is the deliberately narrow plugin policy exercised by the exact
 	// WAV + PNG + MP4 contract fixture. A live run is reportable only when its
 	// separate create-only conformance receipt has been retained.
@@ -109,15 +114,16 @@ func interactionInlineMediaTypes() []string {
 func providerCapabilities() review.ProviderCapabilities {
 	return review.ProviderCapabilities{
 		MediaTypes: interactionInlineMediaTypes(), MaximumMediaCount: maximumPreparedMedia,
-		MaximumMediaBytes: maximumInlineMediaBytes,
+		MaximumMediaBytes: maximumFileMediaBytes,
 	}
 }
 
-// implementationSource is an inspectable source-code preimage, not a symbolic
-// label. The host registry retains these exact bytes beside every review.
+// implementationSources are inspectable source-code preimages, not symbolic
+// labels. The host registry retains the deterministic source bundle beside
+// every review. Every production transport path must be listed here.
 //
-//go:embed gemini.go
-var implementationSource []byte
+//go:embed gemini.go files.go
+var implementationSources embed.FS
 
 type Plugin struct {
 	mu             sync.Mutex
@@ -148,6 +154,7 @@ type exchangeEvidence struct {
 	reportedModel       string
 	requestID           string
 	requestIDState      string
+	transportMode       string
 	consumed            atomic.Bool
 }
 
@@ -169,7 +176,7 @@ func descriptorFor(implementation, configuration []byte) review.ProviderDescript
 		Provider: "google", Model: ModelID, API: interactionsAPI,
 		APIRevision: APIRevision,
 		Implementation: review.ContentIdentity{
-			Version: "openrealtime.gemini-review.impl.v9", SHA256: digest(implementation),
+			Version: "openrealtime.gemini-review.impl.v11", SHA256: digest(implementation),
 		},
 		ConfigurationSHA256: digest(configuration),
 		CapabilitiesSHA256:  capabilitiesSHA256,
@@ -258,7 +265,19 @@ func cloneHTTPClient(source http.Client) http.Client {
 	return result
 }
 
-func implementationArtifact() []byte { return slices.Clone(implementationSource) }
+func implementationArtifact() []byte {
+	var output bytes.Buffer
+	for _, name := range []string{"gemini.go", "files.go"} {
+		source, err := implementationSources.ReadFile(name)
+		if err != nil {
+			panic("read embedded Gemini implementation source: " + err.Error())
+		}
+		fmt.Fprintf(&output, "--- %s %d bytes ---\n", name, len(source))
+		output.Write(source)
+		output.WriteByte('\n')
+	}
+	return output.Bytes()
+}
 
 func productionConfigurationArtifact() []byte {
 	return configurationArtifact(map[string]any{
@@ -294,16 +313,23 @@ func configurationArtifact(transport map[string]any) []byte {
 			"accept": "application/json", "content_type": "application/json",
 			"credential_header": "x-goog-api-key", "user_agent": "OpenRealtime-benchmark-review/1",
 		},
-		"implementation":           "openrealtime.gemini-review.v9",
+		"implementation":           "openrealtime.gemini-review.v11",
 		"inline_media_max_count":   maximumPreparedMedia,
 		"inline_media_max_bytes":   maximumInlineMediaBytes,
 		"inline_request_max_bytes": maximumInlineRequestBytes,
+		"files_media_max_bytes":    maximumFileMediaBytes,
+		"files_upload_endpoint":    filesUploadURL,
+		"files_resource_endpoint":  filesResourceURL,
+		"files_cleanup":            "best_effort_bounded_delete_v1",
+		"files_sha256_encoding":    "base64_lowercase_hex_digest_bytes_v1",
+		"files_transport_evidence": filesTransportEvidenceFormat,
 		"input_shape":              "ordered_content_blocks", "max_output_tokens": maximumOutputTokens,
 		"media_order": "prompt_then_request_fingerprint_then_manifest_media", "seed": 1,
 		"request_binding":              "prepared_request_fingerprint_text_block_v1",
 		"request_fingerprint_label":    requestFingerprintLabel,
 		"response_schema_policy":       "omit_redundant_finding_timestamps_v1",
 		"supported_inline_media_types": interactionInlineMediaTypes(),
+		"supported_files_media_types":  interactionInlineMediaTypes(),
 		"store":                        false, "stream": false, "system_instruction": systemInstruction,
 		"thinking_level": "high", "transport": transport,
 	})
@@ -437,9 +463,30 @@ func (plugin *Plugin) Review(
 		return review.ProviderResponse{}, errors.New(
 			"Gemini review input contains credential material and was discarded")
 	}
-	body, err := marshalValidatedRequestContext(ctx, prepared)
-	if err != nil {
-		return review.ProviderResponse{}, err
+	transportMode := transportModeInline
+	var filesState *filesExchangeState
+	filesCleaned := false
+	var body []byte
+	if useFilesTransport(prepared) {
+		transportMode = transportModeFiles
+		filesState, body, err = beginFilesTransport(
+			ctx, prepared, credential, credentialScan, httpClient,
+		)
+		if err != nil {
+			return review.ProviderResponse{}, err
+		}
+		defer func() {
+			if filesState != nil && !filesCleaned {
+				filesState.cleanup(
+					context.WithoutCancel(ctx), prepared, credential, credentialScan, httpClient,
+				)
+			}
+		}()
+	} else {
+		body, err = marshalValidatedRequestContext(ctx, prepared)
+		if err != nil {
+			return review.ProviderResponse{}, err
+		}
 	}
 	// Encoding is itself a transformation boundary: base64 media can synthesize
 	// a credential or another declared secret substring that did not occur in
@@ -542,9 +589,25 @@ func (plugin *Plugin) Review(
 	if cause := ctx.Err(); cause != nil {
 		return review.ProviderResponse{}, cause
 	}
+	retainedRequest := slices.Clone(body)
+	if filesState != nil {
+		cleanup := filesState.cleanup(
+			context.WithoutCancel(ctx), prepared, credential, credentialScan, httpClient,
+		)
+		filesCleaned = true
+		retainedRequest, err = filesState.retainedEvidence(
+			body, raw, httpResponse.StatusCode, mediaType, cleanup,
+		)
+		if err != nil {
+			return review.ProviderResponse{}, err
+		}
+		if err := rejectFilesOutgoing(ctx, prepared, credentialScan, retainedRequest); err != nil {
+			return review.ProviderResponse{}, err
+		}
+	}
 	response = review.ProviderResponse{
 		Raw: slices.Clone(raw), Output: output, ReportedModel: model,
-		RequestID: requestID, RequestIDState: requestIDState, Request: slices.Clone(body),
+		RequestID: requestID, RequestIDState: requestIDState, Request: retainedRequest,
 	}
 	requestSum, err := sum256Context(ctx, response.Request)
 	if err != nil {
@@ -563,6 +626,7 @@ func (plugin *Plugin) Review(
 		requestDigest: requestSum, rawDigest: rawSum,
 		outputDigest: outputSum, reportedModel: response.ReportedModel,
 		requestID: response.RequestID, requestIDState: response.RequestIDState,
+		transportMode: transportMode,
 	}
 	return response, nil
 }
@@ -619,18 +683,27 @@ func (plugin *Plugin) VerifyResponse(
 	if containsCredential {
 		return errors.New("Gemini retained prepared review contains credential material")
 	}
-	expected, err := marshalValidatedRequestContext(ctx, prepared)
+	expectedMode := transportModeInline
+	expected := []byte(nil)
+	if useFilesTransport(prepared) {
+		expectedMode = transportModeFiles
+		expected, err = validateRetainedFilesTransport(
+			ctx, prepared, response.Request, response.Raw,
+		)
+	} else {
+		expected, err = marshalValidatedRequestContext(ctx, prepared)
+	}
 	if err != nil {
 		return err
 	}
-	containsSensitive, err := prepared.ContainsDeclaredSensitiveLiteralContext(ctx, expected)
+	containsSensitive, err := prepared.ContainsDeclaredSensitiveLiteralContext(ctx, response.Request)
 	if err != nil {
 		return err
 	}
 	if containsSensitive {
 		return errors.New("Gemini retained request contains declared sensitive material")
 	}
-	if !bytes.Equal(expected, response.Request) {
+	if expectedMode == transportModeInline && !bytes.Equal(expected, response.Request) {
 		return errors.New("Gemini retained request differs from the prepared review")
 	}
 	for _, payload := range [][]byte{
@@ -694,7 +767,8 @@ func (plugin *Plugin) VerifyResponse(
 		evidence.rawDigest != rawSum ||
 		evidence.outputDigest != outputSum ||
 		evidence.reportedModel != response.ReportedModel ||
-		evidence.requestID != response.RequestID || evidence.requestIDState != response.RequestIDState {
+		evidence.requestID != response.RequestID || evidence.requestIDState != response.RequestIDState ||
+		evidence.transportMode != expectedMode {
 		return errors.New("Gemini retained exchange lacks valid private verification evidence")
 	}
 	output, model, requestID, requestIDState, err := decodeInteractionContext(ctx, response.Raw)
@@ -856,6 +930,7 @@ type contentBlock struct {
 	Type      string `json:"type"`
 	Text      string `json:"text,omitempty"`
 	Data      string `json:"data,omitempty"`
+	URI       string `json:"uri,omitempty"`
 	MediaType string `json:"mime_type,omitempty"`
 }
 
@@ -908,15 +983,10 @@ func marshalValidatedRequestContext(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	boundedSchema, err := boundedFindingTimestampSchema(prepared)
-	if err != nil {
+	if err := validateInlineMediaBudget(prepared); err != nil {
 		return nil, err
 	}
 	input := make([]contentBlock, 0, len(prepared.Media)+2)
-	input = append(input, contentBlock{Type: "text", Text: prepared.Prompt})
-	input = append(input, contentBlock{
-		Type: "text", Text: requestFingerprintLabel + prepared.RequestFingerprint,
-	})
 	if cause := ctx.Err(); cause != nil {
 		return nil, cause
 	}
@@ -929,7 +999,29 @@ func marshalValidatedRequestContext(
 			MediaType: media.MediaType,
 		})
 	}
-	responseSchema, err := geminiResponseSchema(boundedSchema)
+	return marshalInteractionBlocksContext(ctx, prepared, input)
+}
+
+func marshalInteractionBlocksContext(
+	ctx context.Context, prepared review.PreparedRequest, media []contentBlock,
+) ([]byte, error) {
+	if ctx == nil {
+		return nil, errors.New("encode Gemini request: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	responseSchema, err := boundedFindingTimestampSchema(prepared)
+	if err != nil {
+		return nil, err
+	}
+	input := make([]contentBlock, 0, len(media)+2)
+	input = append(input, contentBlock{Type: "text", Text: prepared.Prompt})
+	input = append(input, contentBlock{
+		Type: "text", Text: requestFingerprintLabel + prepared.RequestFingerprint,
+	})
+	input = append(input, media...)
+	responseSchema, err = geminiResponseSchema(responseSchema)
 	if err != nil {
 		return nil, err
 	}
@@ -960,6 +1052,21 @@ func marshalValidatedRequestContext(
 			len(body), maximumInlineRequestBytes)
 	}
 	return slices.Clone(body), nil
+}
+
+func validateInlineMediaBudget(prepared review.PreparedRequest) error {
+	total := int64(0)
+	for _, media := range prepared.Media {
+		if int64(len(media.Bytes)) > maximumInlineMediaBytes-total {
+			return errors.New("Gemini reviewer media bytes exceed inline capabilities")
+		}
+		total += int64(len(media.Bytes))
+	}
+	return nil
+}
+
+func useFilesTransport(prepared review.PreparedRequest) bool {
+	return validateInlineMediaBudget(prepared) != nil
 }
 
 func boundedFindingTimestampSchema(
@@ -1143,8 +1250,8 @@ func validatePreparedContext(ctx context.Context, prepared review.PreparedReques
 		if len(media.Bytes) == 0 || mediaDigest != media.SHA256 {
 			return fmt.Errorf("Gemini reviewer media %d bytes do not match their digest", index)
 		}
-		if int64(len(media.Bytes)) > maximumInlineMediaBytes-totalMedia {
-			return errors.New("Gemini reviewer media bytes exceed inline capabilities")
+		if int64(len(media.Bytes)) > maximumFileMediaBytes-totalMedia {
+			return errors.New("Gemini reviewer media bytes exceed provider capabilities")
 		}
 		totalMedia += int64(len(media.Bytes))
 	}

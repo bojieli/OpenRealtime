@@ -189,6 +189,34 @@ func TestControllerCompositionIsIndependentFromEvidenceAndTopology(t *testing.T)
 	}
 }
 
+func TestComposedDirectVisualAddsOnlyTheDeclaredPixelChannel(t *testing.T) {
+	catalog := architecture.Default()
+	baseline, err := catalog.Resolve("cascade.composed-policy@1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	direct, err := catalog.Resolve("cascade.composed-policy-direct-visual@1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseline.Interaction.EvidenceCapabilities == nil || direct.Interaction.EvidenceCapabilities == nil {
+		t.Fatal("composed controller evidence vectors must be explicit")
+	}
+	want := *baseline.Interaction.EvidenceCapabilities
+	want.DirectVisualInput = true
+	if *direct.Interaction.EvidenceCapabilities != want {
+		t.Fatalf("direct visual composition changed unrelated evidence: got=%+v want=%+v",
+			*direct.Interaction.EvidenceCapabilities, want)
+	}
+	wantRequires := baseline.Requires
+	wantRequires.VisualInput = true
+	if direct.Interaction.Control == nil || baseline.Interaction.Control == nil ||
+		*direct.Interaction.Control != *baseline.Interaction.Control ||
+		direct.Ownership != baseline.Ownership || direct.Requires != wantRequires {
+		t.Fatalf("direct visual evidence changed controller/topology: baseline=%+v direct=%+v", baseline, direct)
+	}
+}
+
 func TestControllerCompositionRequiresOneExplicitArbiter(t *testing.T) {
 	definition, err := architecture.Default().Resolve("cascade.composed-policy@1")
 	if err != nil {

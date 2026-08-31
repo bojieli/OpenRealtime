@@ -266,23 +266,22 @@ func TestMeetingProviderRunsAndReportsLiveGraphWithoutCredentials(t *testing.T) 
 		_ = runtime.Close(context.Background(), errors.New("test timeout"))
 		t.Fatal("background continuation was not invoked")
 	}
-	var injectionFrame, triggerFrame sidecar.Message
+	var injectionFrame sidecar.Message
 	responseDeadline := time.After(2 * time.Second)
-	for injectionFrame.Envelope == nil || triggerFrame.Envelope == nil {
+	for injectionFrame.Envelope == nil {
 		select {
 		case message := <-external.sent:
 			switch message.Port {
 			case "text":
 				injectionFrame = message
 			case "trigger":
-				triggerFrame = message
+				t.Fatalf("background completion autonomously reached foreground trigger: %+v", message)
 			}
 		case <-native.Done():
 			t.Fatalf("meeting graph stopped during background handoff: %+v", native.Live())
 		case <-responseDeadline:
 			_ = runtime.Close(context.Background(), errors.New("test timeout"))
-			t.Fatalf("background handoff missing text=%t trigger=%t",
-				injectionFrame.Envelope != nil, triggerFrame.Envelope != nil)
+			t.Fatalf("background handoff missing retained context: live=%+v", native.Live())
 		}
 	}
 	var injection meetinggraph.ContextInjection
@@ -293,10 +292,14 @@ func TestMeetingProviderRunsAndReportsLiveGraphWithoutCredentials(t *testing.T) 
 		injection.Text != "grounded background" || injection.RunID == "" {
 		t.Fatalf("background context injection = %+v", injection)
 	}
-	if triggerFrame.Envelope.RunID == "" ||
-		!slices.Contains(triggerFrame.Envelope.CausalParents, injectionFrame.Envelope.ItemID) {
-		t.Fatalf("background trigger did not causally follow injection: text=%+v trigger=%+v",
-			injectionFrame.Envelope, triggerFrame.Envelope)
+	awaitMeetingEdgeDequeued(t, native, "background_injection.trigger", "background_trigger_drop.in")
+	awaitMeetingEdgeDequeued(t, native, "background_injection.outcome", "background_outcome_copy.in")
+	select {
+	case message := <-external.sent:
+		if message.Port == "trigger" {
+			t.Fatalf("completed background work opened a foreground generation: %+v", message)
+		}
+	default:
 	}
 	if err := runtime.Close(context.Background(), nil); err != nil {
 		t.Fatal(err)
@@ -499,10 +502,10 @@ func TestMeetingGraphRunsThroughRealtimeWebSocketWithoutCredentials(t *testing.T
 	case <-time.After(5 * time.Second):
 		t.Fatalf("screen observation did not activate background cognition; live=%+v", mounted.Live())
 	}
-	seenVideos, textOrder, triggerOrder, order := 0, 0, 0, 0
-	var injectionFrame, triggerFrame sidecar.Message
+	seenVideos, textOrder, order := 0, 0, 0
+	var injectionFrame sidecar.Message
 	deadline := time.After(5 * time.Second)
-	for seenVideos < 3 || injectionFrame.Envelope == nil || triggerFrame.Envelope == nil {
+	for seenVideos < 3 || injectionFrame.Envelope == nil {
 		select {
 		case message := <-external.sent:
 			order++
@@ -517,20 +520,18 @@ func TestMeetingGraphRunsThroughRealtimeWebSocketWithoutCredentials(t *testing.T
 					injectionFrame, textOrder = message, order
 				}
 			case "trigger":
-				if triggerFrame.Envelope == nil {
-					triggerFrame, triggerOrder = message, order
-				}
+				t.Fatalf("background completion autonomously reached foreground trigger: %+v", message)
 			}
 		case <-deadline:
-			t.Fatalf("meeting foreground handoff video=%d text=%t trigger=%t live=%+v",
-				seenVideos, injectionFrame.Envelope != nil, triggerFrame.Envelope != nil, mounted.Live())
+			t.Fatalf("meeting foreground handoff video=%d text=%t live=%+v",
+				seenVideos, injectionFrame.Envelope != nil, mounted.Live())
 		}
 	}
-	if textOrder == 0 || triggerOrder <= textOrder ||
-		!slices.Contains(triggerFrame.Envelope.CausalParents, injectionFrame.Envelope.ItemID) {
-		t.Fatalf("foreground provider observed non-causal background handoff text=%d trigger=%d: %+v / %+v",
-			textOrder, triggerOrder, injectionFrame.Envelope, triggerFrame.Envelope)
+	if textOrder == 0 {
+		t.Fatalf("foreground provider did not receive retained background context: %+v", injectionFrame)
 	}
+	awaitMeetingEdgeDequeued(t, mounted, "background_injection.trigger", "background_trigger_drop.in")
+	awaitMeetingEdgeDequeued(t, mounted, "background_injection.outcome", "background_outcome_copy.in")
 	writeMeetingWebSocketEvent(t, connection, map[string]any{"type": "response.cancel"})
 	for {
 		select {
@@ -665,7 +666,7 @@ func TestMeetingBundleLockIsExactAndMinimal(t *testing.T) {
 		{"screen_fork.frame", "screen_ingress.frame_in", ir.Lossy},
 		{"screen_fork.tick", "screen_policy.tick", ir.Lossless},
 		{"background_injection.injection", "text_injection_mux.in", ir.Lossless},
-		{"background_injection.trigger", "foreground_trigger_mux.in", ir.Lossless},
+		{"background_injection.trigger", "background_trigger_drop.in", ir.Lossless},
 		{"foreground_result_commit.outcome", "foreground_commit_audit.in", ir.Lossless},
 		{"background_model.resolved", "background_model_resolution_audit.in", ir.Lossless},
 		{"screen_observer.metrics", "screen_visual_metrics_audit.in", ir.Lossless},
@@ -673,6 +674,9 @@ func TestMeetingBundleLockIsExactAndMinimal(t *testing.T) {
 		if !hasEdge(graph, edge.from, edge.to, edge.delivery) {
 			t.Fatalf("meeting graph has no %s edge %s -> %s", edge.delivery, edge.from, edge.to)
 		}
+	}
+	if hasEdge(graph, "background_injection.trigger", "foreground_trigger_mux.in", ir.Lossless) {
+		t.Fatal("background completion can autonomously open a voiced foreground turn")
 	}
 	allowedOutputs := map[string]struct{}{
 		"transcript": {}, "observations": {}, "activity": {}, "prepared_text": {},
@@ -1216,6 +1220,39 @@ func hasEdge(graph ir.Graph, from, to string, delivery ir.Delivery) bool {
 		}
 	}
 	return false
+}
+
+func awaitMeetingEdgeDequeued(
+	t testing.TB, mounted interface {
+		Graph() ir.Graph
+		Live() inspect.Live
+	}, from, to string,
+) inspect.EdgeLive {
+	t.Helper()
+	if mounted == nil {
+		t.Fatal("await Meeting edge delivery with nil graph")
+	}
+	edgeID := ""
+	for _, edge := range mounted.Graph().Edges {
+		if edge.From.String() == from && edge.To.String() == to {
+			edgeID = edge.ID
+			break
+		}
+	}
+	if edgeID == "" {
+		t.Fatalf("Meeting graph has no edge %s -> %s", from, to)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		state := mounted.Live().Edges[edgeID]
+		if state.Enqueued > 0 && state.Dequeued == state.Enqueued && state.Occupancy == 0 {
+			return state
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Meeting edge %s -> %s did not drain: %+v", from, to, state)
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 func writeMeetingWebSocketEvent(

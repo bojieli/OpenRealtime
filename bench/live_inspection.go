@@ -18,6 +18,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	"github.com/bojieli/OpenRealtime/internal/strictjson"
+	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 )
 
@@ -28,10 +29,9 @@ const maxLiveInspectionBytes = 8 << 20
 // deployment origin; the server-issued access path selects the exact session.
 // Scope is never used as a session lookup key.
 type LiveInspectionClient struct {
-	Endpoint        string
-	DeploymentToken string
-	HTTPClient      *http.Client
-	Now             func() time.Time
+	Endpoint   string
+	HTTPClient *http.Client
+	Now        func() time.Time
 }
 
 // Resolver returns the strict live-resolution callback consumed by
@@ -91,10 +91,7 @@ func (client LiveInspectionClient) Snapshot(
 	if err != nil {
 		return inspect.Live{}, fmt.Errorf("read live inspection: %w", err)
 	}
-	request.Header.Set(openrealtime.InspectionTokenHeader, access.Token)
-	if token := strings.TrimSpace(client.DeploymentToken); token != "" {
-		request.Header.Set("Authorization", "Bearer "+token)
-	}
+	request.Header.Set(management.CapabilityHeader, access.Token)
 
 	httpClient := http.DefaultClient
 	if client.HTTPClient != nil {
@@ -162,7 +159,8 @@ func validateInspectionAccess(access openrealtime.InspectionAccess, now time.Tim
 		len(access.SessionID) > 512 || strings.ContainsAny(access.SessionID, "\x00\r\n") {
 		return errors.New("inspection access has an invalid session ID")
 	}
-	expectedPath := "/v1/realtime/sessions/" + url.PathEscape(access.SessionID) + "/live"
+	expectedPath := management.APIPrefix + "/sessions/" +
+		url.PathEscape(access.SessionID) + "/live"
 	if access.Path != expectedPath {
 		return errors.New("inspection access path is not bound to its session ID")
 	}

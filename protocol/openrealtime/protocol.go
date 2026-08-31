@@ -38,10 +38,6 @@ import (
 // repeating the name inside a field already named for it would be noise.
 const Version = 1
 
-// InspectionTokenHeader carries the ephemeral management capability returned
-// by session debugging. Bearers belong in this header, never in a URL.
-const InspectionTokenHeader = "OpenRealtime-Inspection-Token"
-
 // Feature is a negotiable capability.
 type Feature string
 

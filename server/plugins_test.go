@@ -148,14 +148,13 @@ func completeServerFactories(t *testing.T) map[string]pluginruntime.Factory {
 		t.Fatal(err)
 	}
 	return map[string]pluginruntime.Factory{
-		"http-router":       serverplugin.NewHTTPRouterFactory(),
-		"sessions":          provider,
-		"inspection":        inspection,
-		"gateway":           gatewayFactory,
-		"realtime":          serverplugin.NewRealtimeRouteFactory(),
-		"observability":     serverplugin.NewObservabilityRouteFactory(),
-		"session-api":       managementserver.NewSessionAPIFactory(),
-		"inspection-compat": serverplugin.NewInspectionCompatibilityRouteFactory(),
+		"http-router":   serverplugin.NewHTTPRouterFactory(),
+		"sessions":      provider,
+		"inspection":    inspection,
+		"gateway":       gatewayFactory,
+		"realtime":      serverplugin.NewRealtimeRouteFactory(),
+		"observability": serverplugin.NewObservabilityRouteFactory(),
+		"session-api":   managementserver.NewSessionAPIFactory(),
 	}
 }
 
@@ -164,7 +163,7 @@ func serverPlan(t *testing.T, factories map[string]pluginruntime.Factory, wantSu
 	catalog := plugin.NewCatalog()
 	order := []string{
 		"http-router", "sessions", "inspection", "gateway", "realtime",
-		"observability", "session-api", "inspection-compat", "conflict",
+		"observability", "session-api", "conflict",
 	}
 	entries := make([]plugin.ProfileEntry, 0, len(factories))
 	for _, id := range order {

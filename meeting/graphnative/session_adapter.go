@@ -22,6 +22,7 @@ import (
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/sidecar"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -29,6 +30,10 @@ const (
 	defaultMeetingVideoRateMilliHz = 5_000
 	maximumMeetingAdapterTextBytes = 1 << 20
 	maximumMeetingAdapterReason    = 1 << 10
+	maximumMeetingAdapterRuns      = 64
+	maximumMeetingAdapterRunIDs    = 65_536
+	maximumMeetingResponseEvents   = 1 << 20
+	maximumMeetingResponsePending  = 512
 )
 
 // SessionAdapterConfig is the resource-free executable contribution for the
@@ -80,6 +85,38 @@ type meetingAdapterPorts struct {
 	outputs                                map[string]element.InputPort
 }
 
+type meetingAdapterSpeech struct {
+	utterance action.Utterance
+	ready     chan struct{}
+	beginErr  error
+	done      chan struct{}
+}
+
+// meetingAdapterTurn is one open Realtime response group. A graph may finish
+// cognition for one run and admit a silent visual-action run while the first
+// run's speech is still draining. The graph run IDs remain independently
+// addressable, but every overlapping run contributes output items to the same
+// wire response and the response closes only after all of them are terminal.
+type meetingAdapterTurn struct {
+	ready     chan struct{}
+	done      chan struct{}
+	beginErr  error
+	closing   bool
+	runs      map[string]struct{}
+	completed map[string]legacy.TurnOutcome
+	order     []string
+}
+
+type meetingAdapterResponseEvent struct {
+	name     string
+	envelope element.Envelope
+}
+
+type meetingAdapterResponseOrder struct {
+	next    uint64
+	pending map[uint64]meetingAdapterResponseEvent
+}
+
 type meetingSessionAdapter struct {
 	ctx       context.Context
 	sessionID string
@@ -94,8 +131,9 @@ type meetingSessionAdapter struct {
 	videoMu       sync.Mutex
 	videoCaptured map[string]uint64
 	turnMu        sync.Mutex
-	activeTurn    string
-	activeSpeech  map[string]action.Utterance
+	turn          *meetingAdapterTurn
+	activeSpeech  map[string]*meetingAdapterSpeech
+	completedRuns map[string]struct{}
 	closed        atomic.Bool
 }
 
@@ -131,7 +169,8 @@ func newMeetingSessionAdapter(
 	return &meetingSessionAdapter{
 		ctx: ctx, sessionID: sessionID, sink: options.Sink, profile: profile.Clone(), ports: ports,
 		status: status, frameRate: config.FrameRateMilliHz, store: store,
-		videoCaptured: make(map[string]uint64), activeSpeech: make(map[string]action.Utterance),
+		videoCaptured: make(map[string]uint64), activeSpeech: make(map[string]*meetingAdapterSpeech),
+		completedRuns: make(map[string]struct{}),
 	}, nil
 }
 
@@ -199,7 +238,7 @@ func (session *meetingSessionAdapter) Audio(ctx context.Context, frame perceptio
 		return fmt.Errorf("send meeting audio: %w", err)
 	}
 	streamID := canonicalMediaStream(frame.Source, "microphone")
-	return session.send(ctx, session.ports.audio, "audio", streamID,
+	return session.sendCaptured(ctx, session.ports.audio, "audio", streamID, frame.CapturedNS,
 		acousticelements.InputFrame{StreamID: streamID, Frame: cloneMeetingFrame(frame)})
 }
 
@@ -232,9 +271,10 @@ func (session *meetingSessionAdapter) Video(ctx context.Context, frame perceptio
 	}
 	session.videoCaptured[streamID] = frame.CapturedNS
 	session.videoMu.Unlock()
-	return session.send(ctx, session.ports.video, "video", streamID, modelelements.VideoInputFrame{
-		StreamID: streamID, Frame: cloneMeetingFrame(frame), FrameRateMilliHz: frameRate,
-	})
+	return session.sendCaptured(ctx, session.ports.video, "video", streamID, frame.CapturedNS,
+		modelelements.VideoInputFrame{
+			StreamID: streamID, Frame: cloneMeetingFrame(frame), FrameRateMilliHz: frameRate,
+		})
 }
 
 func (session *meetingSessionAdapter) Text(ctx context.Context, input legacy.TextInput) error {
@@ -294,7 +334,7 @@ func (session *meetingSessionAdapter) Cancel(ctx context.Context, reason string)
 	}
 	reason = boundedMeetingReason(reason)
 	session.turnMu.Lock()
-	runID := session.activeTurn
+	runID := session.activeTurnLocked()
 	session.turnMu.Unlock()
 	return session.send(ctx, session.ports.cancel, "cancel", runID, cognitionelements.Cancel{
 		RunID: runID, Reason: reason,
@@ -338,19 +378,29 @@ func (session *meetingSessionAdapter) Run(ctx context.Context) error {
 	}
 	runCtx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	failures := make(chan error, len(session.ports.outputs))
+	failures := make(chan error, len(session.ports.outputs)+1)
+	responseEvents := make(chan meetingAdapterResponseEvent, maximumMeetingResponsePending)
 	var wait sync.WaitGroup
+	reportFailure := func(err error) {
+		if err == nil || context.Cause(runCtx) != nil {
+			return
+		}
+		select {
+		case failures <- err:
+		case <-runCtx.Done():
+		}
+	}
+	wait.Add(1)
+	go func() {
+		defer wait.Done()
+		reportFailure(session.publishOrderedResponses(runCtx, responseEvents))
+	}()
 	for name, input := range session.ports.outputs {
 		name, input := name, input
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			if err := session.drain(runCtx, name, input); err != nil && context.Cause(runCtx) == nil {
-				select {
-				case failures <- err:
-				case <-runCtx.Done():
-				}
-			}
+			reportFailure(session.drain(runCtx, name, input, responseEvents))
 		}()
 	}
 	var runErr error
@@ -365,6 +415,7 @@ func (session *meetingSessionAdapter) Run(ctx context.Context) error {
 
 func (session *meetingSessionAdapter) drain(
 	ctx context.Context, name string, input element.InputPort,
+	responseEvents chan<- meetingAdapterResponseEvent,
 ) error {
 	for {
 		envelope, err := input.Receive(ctx)
@@ -377,9 +428,90 @@ func (session *meetingSessionAdapter) drain(
 		if envelope.SessionID != "" && envelope.SessionID != session.sessionID {
 			return fmt.Errorf("meeting graph output %s crossed session boundary", name)
 		}
+		if meetingResponseBoundary(name) {
+			select {
+			case responseEvents <- meetingAdapterResponseEvent{name: name, envelope: envelope.Clone()}:
+			case <-ctx.Done():
+				return nil
+			}
+			continue
+		}
 		if err := session.publish(ctx, name, envelope); err != nil {
 			return err
 		}
+	}
+}
+
+func meetingResponseBoundary(name string) bool {
+	switch name {
+	case "prepared_text", "prepared_audio", "tool_proposals", "foreground_outcome":
+		return true
+	default:
+		return false
+	}
+}
+
+func (session *meetingSessionAdapter) publishOrderedResponses(
+	ctx context.Context, events <-chan meetingAdapterResponseEvent,
+) error {
+	order := meetingAdapterResponseOrder{
+		next: 1, pending: make(map[uint64]meetingAdapterResponseEvent),
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case event := <-events:
+			if err := session.acceptOrderedResponse(ctx, &order, event); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (session *meetingSessionAdapter) acceptOrderedResponse(
+	ctx context.Context, order *meetingAdapterResponseOrder, event meetingAdapterResponseEvent,
+) error {
+	if order == nil || order.next == 0 || order.pending == nil {
+		return errors.New("meeting response order is not initialized")
+	}
+	if !meetingResponseBoundary(event.name) {
+		return fmt.Errorf("meeting response order received non-response boundary %q", event.name)
+	}
+	envelope := event.envelope
+	if envelope.SourceID != ForegroundDeploymentReference {
+		return fmt.Errorf("meeting response boundary %s has source %q, want %q",
+			event.name, envelope.SourceID, ForegroundDeploymentReference)
+	}
+	if !canonicalText(envelope.RunID) || len(envelope.RunID) > sidecar.MaxElementIdentifierBytes {
+		return fmt.Errorf("meeting response boundary %s has a non-canonical run ID", event.name)
+	}
+	sequence := envelope.Sequence
+	if sequence == 0 || sequence > maximumMeetingResponseEvents {
+		return fmt.Errorf("meeting response boundary %s has sequence %d outside [1,%d]",
+			event.name, sequence, maximumMeetingResponseEvents)
+	}
+	if sequence < order.next {
+		return fmt.Errorf("meeting response sequence %d was replayed after %d", sequence, order.next-1)
+	}
+	if sequence-order.next >= maximumMeetingResponsePending ||
+		len(order.pending) >= maximumMeetingResponsePending {
+		return fmt.Errorf("meeting response sequence %d exceeds the pending reorder bound", sequence)
+	}
+	if _, duplicate := order.pending[sequence]; duplicate {
+		return fmt.Errorf("meeting response sequence %d was delivered twice", sequence)
+	}
+	order.pending[sequence] = meetingAdapterResponseEvent{name: event.name, envelope: envelope.Clone()}
+	for {
+		ready, found := order.pending[order.next]
+		if !found {
+			return nil
+		}
+		delete(order.pending, order.next)
+		if err := session.publish(ctx, ready.name, ready.envelope); err != nil {
+			return err
+		}
+		order.next++
 	}
 }
 
@@ -432,9 +564,9 @@ func (session *meetingSessionAdapter) publishText(
 	if delta.Boundary != cognitionelements.TextChunk {
 		return nil
 	}
-	utterance, ok := session.speech(envelope.RunID)
-	if !ok {
-		return errors.New("meeting prepared text arrived outside an active utterance")
+	utterance, err := session.speech(ctx, envelope.RunID)
+	if err != nil {
+		return fmt.Errorf("meeting prepared text arrived outside an active utterance: %w", err)
 	}
 	return session.sink.SpeechText(ctx, utterance, delta.Text)
 }
@@ -459,18 +591,23 @@ func (session *meetingSessionAdapter) publishAudio(
 		if strings.TrimSpace(utterance.ID) == "" {
 			utterance.ID = frame.UtteranceID
 		}
+		state := &meetingAdapterSpeech{
+			utterance: utterance, ready: make(chan struct{}), done: make(chan struct{}),
+		}
 		session.turnMu.Lock()
 		if _, duplicate := session.activeSpeech[runID]; duplicate {
 			session.turnMu.Unlock()
 			return errors.New("meeting graph opened the same utterance twice")
 		}
-		session.activeSpeech[runID] = utterance
+		session.activeSpeech[runID] = state
 		session.turnMu.Unlock()
-		return session.sink.SpeechBegin(ctx, utterance)
+		state.beginErr = session.sink.SpeechBegin(ctx, utterance)
+		close(state.ready)
+		return state.beginErr
 	case speechelements.AudioChunk:
-		utterance, found := session.speech(runID)
-		if !found {
-			return errors.New("meeting graph emitted audio outside an active utterance")
+		utterance, err := session.speech(ctx, runID)
+		if err != nil {
+			return fmt.Errorf("meeting graph emitted audio outside an active utterance: %w", err)
 		}
 		duration := time.Duration(0)
 		if frame.Chunk.SampleRateHz > 0 {
@@ -482,14 +619,16 @@ func (session *meetingSessionAdapter) publishAudio(
 			Duration: duration, Final: frame.Chunk.Final,
 		})
 	case speechelements.AudioEnd:
-		utterance, found := session.takeSpeech(runID)
+		state, found := session.takeSpeech(runID)
 		if !found {
 			return errors.New("meeting graph ended unknown utterance")
 		}
 		completed := frame.Terminal.Kind == speechelements.OutcomeSucceeded
-		return session.sink.SpeechEnd(ctx, utterance, action.Outcome{
+		err := session.sink.SpeechEnd(ctx, state.utterance, action.Outcome{
 			Completed: completed, Reason: frame.Terminal.Message,
 		})
+		session.finishSpeech(runID, state)
+		return err
 	default:
 		return fmt.Errorf("meeting prepared audio has unknown kind %q", frame.Kind)
 	}
@@ -518,38 +657,55 @@ func (session *meetingSessionAdapter) publishForegroundOutcome(
 		return fmt.Errorf("meeting foreground outcome has payload %T", envelope.Payload)
 	}
 	runID := envelope.RunID
-	if runID == "" {
-		runID = outcome.RunID
+	if !canonicalText(runID) || outcome.RunID != runID {
+		return fmt.Errorf("meeting foreground outcome run ID %q does not match envelope %q",
+			outcome.RunID, runID)
+	}
+	if outcome.Operation != "generate" {
+		return fmt.Errorf("meeting foreground outcome operation %q is not generate", outcome.Operation)
+	}
+	if outcome.ProviderReference != ForegroundDeploymentReference {
+		return fmt.Errorf("meeting foreground outcome provider %q does not match %q",
+			outcome.ProviderReference, ForegroundDeploymentReference)
 	}
 	if err := session.ensureTurn(ctx, runID); err != nil {
 		return err
 	}
 	session.turnMu.Lock()
-	_, speechActive := session.activeSpeech[runID]
+	speech := session.activeSpeech[runID]
 	session.turnMu.Unlock()
-	if speechActive {
-		return errors.New("meeting foreground outcome arrived before active speech ended")
+	if speech != nil {
+		select {
+		case <-speech.done:
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
 	}
 	terminal := legacy.TurnOutcome{}
 	switch outcome.Kind {
 	case cognitionelements.OutcomeSucceeded, cognitionelements.OutcomeIgnored:
 	case cognitionelements.OutcomeCanceled:
-		terminal.Incomplete, terminal.Detail = true, outcome.Message
+		terminal.Incomplete, terminal.Reason, terminal.Detail =
+			true, meetingIncompleteReason(outcome.Code), outcome.Message
 	case cognitionelements.OutcomeRefused, cognitionelements.OutcomeFailed:
-		terminal.Incomplete, terminal.Detail = true, outcome.Message
+		terminal.Incomplete, terminal.Reason, terminal.Detail =
+			true, meetingIncompleteReason(outcome.Code), outcome.Message
 		session.sink.Failed(ctx, legacy.ErrorEvent{Code: outcome.Code, Message: outcome.Message})
 	default:
 		return fmt.Errorf("meeting foreground outcome has unknown kind %q", outcome.Kind)
 	}
-	if err := session.sink.TurnEnd(ctx, terminal); err != nil {
-		return err
+	return session.finishTurn(ctx, runID, terminal)
+}
+
+func meetingIncompleteReason(code string) string {
+	switch strings.TrimSpace(code) {
+	case legacy.TurnIncompleteTokens:
+		return legacy.TurnIncompleteTokens
+	case "content_filter":
+		return "content_filter"
+	default:
+		return ""
 	}
-	session.turnMu.Lock()
-	if session.activeTurn == runID {
-		session.activeTurn = ""
-	}
-	session.turnMu.Unlock()
-	return nil
 }
 
 func (session *meetingSessionAdapter) publishBackgroundOutcome(
@@ -571,45 +727,198 @@ func (session *meetingSessionAdapter) publishBackgroundOutcome(
 }
 
 func (session *meetingSessionAdapter) ensureTurn(ctx context.Context, runID string) error {
-	if strings.TrimSpace(runID) == "" {
+	if !canonicalText(runID) || len(runID) > sidecar.MaxElementIdentifierBytes {
 		return errors.New("meeting graph output requires a run ID")
 	}
-	session.turnMu.Lock()
-	if session.activeTurn == runID {
+	for {
+		session.turnMu.Lock()
+		if session.completedRuns == nil {
+			session.completedRuns = make(map[string]struct{})
+		}
+		if _, completed := session.completedRuns[runID]; completed {
+			session.turnMu.Unlock()
+			return fmt.Errorf("meeting graph reused completed run %q", runID)
+		}
+		turn := session.turn
+		if turn == nil {
+			if len(session.completedRuns) >= maximumMeetingAdapterRunIDs {
+				session.turnMu.Unlock()
+				return errors.New("meeting adapter completed-run identity limit reached")
+			}
+			turn = &meetingAdapterTurn{
+				ready: make(chan struct{}), done: make(chan struct{}),
+				runs:      map[string]struct{}{runID: {}},
+				completed: make(map[string]legacy.TurnOutcome), order: []string{runID},
+			}
+			session.turn = turn
+			session.turnMu.Unlock()
+
+			err := session.sink.TurnBegin(ctx)
+			session.turnMu.Lock()
+			turn.beginErr = err
+			close(turn.ready)
+			if err != nil {
+				if session.turn == turn {
+					session.turn = nil
+				}
+				close(turn.done)
+			}
+			session.turnMu.Unlock()
+			return err
+		}
+		if _, completed := turn.completed[runID]; completed {
+			session.turnMu.Unlock()
+			return fmt.Errorf("meeting graph emitted output after run %q ended", runID)
+		}
+		if turn.closing {
+			done := turn.done
+			session.turnMu.Unlock()
+			select {
+			case <-done:
+				continue
+			case <-ctx.Done():
+				return context.Cause(ctx)
+			}
+		}
+		if _, active := turn.runs[runID]; active {
+			ready := turn.ready
+			session.turnMu.Unlock()
+			select {
+			case <-ready:
+				return turn.beginErr
+			case <-ctx.Done():
+				return context.Cause(ctx)
+			}
+		}
+		ready := turn.ready
+		session.turnMu.Unlock()
+		select {
+		case <-ready:
+			if turn.beginErr != nil {
+				return turn.beginErr
+			}
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+
+		session.turnMu.Lock()
+		if session.turn != turn || turn.closing {
+			session.turnMu.Unlock()
+			continue
+		}
+		if _, completed := turn.completed[runID]; completed {
+			session.turnMu.Unlock()
+			return fmt.Errorf("meeting graph emitted output after run %q ended", runID)
+		}
+		if _, active := turn.runs[runID]; !active {
+			if len(turn.order) >= maximumMeetingAdapterRuns {
+				session.turnMu.Unlock()
+				return errors.New("meeting adapter response run limit reached")
+			}
+			if len(session.completedRuns)+len(turn.order) >= maximumMeetingAdapterRunIDs {
+				session.turnMu.Unlock()
+				return errors.New("meeting adapter run identity limit reached")
+			}
+			turn.runs[runID] = struct{}{}
+			turn.order = append(turn.order, runID)
+		}
 		session.turnMu.Unlock()
 		return nil
 	}
-	if session.activeTurn != "" {
-		active := session.activeTurn
+}
+
+func (session *meetingSessionAdapter) finishTurn(
+	ctx context.Context, runID string, outcome legacy.TurnOutcome,
+) error {
+	session.turnMu.Lock()
+	turn := session.turn
+	if turn == nil {
 		session.turnMu.Unlock()
-		return fmt.Errorf("meeting graph opened run %q while %q is active", runID, active)
+		return fmt.Errorf("meeting graph ended inactive run %q", runID)
 	}
-	session.activeTurn = runID
-	session.turnMu.Unlock()
-	if err := session.sink.TurnBegin(ctx); err != nil {
-		session.turnMu.Lock()
-		if session.activeTurn == runID {
-			session.activeTurn = ""
+	if _, active := turn.runs[runID]; !active {
+		session.turnMu.Unlock()
+		return fmt.Errorf("meeting graph ended inactive run %q", runID)
+	}
+	delete(turn.runs, runID)
+	turn.completed[runID] = outcome
+	if len(turn.runs) != 0 {
+		session.turnMu.Unlock()
+		return nil
+	}
+	turn.closing = true
+	terminal := legacy.TurnOutcome{}
+	for _, completedRunID := range turn.order {
+		candidate := turn.completed[completedRunID]
+		if candidate.Incomplete {
+			terminal = candidate
+			break
 		}
-		session.turnMu.Unlock()
-		return err
 	}
-	return nil
+	if session.completedRuns == nil {
+		session.completedRuns = make(map[string]struct{}, len(turn.completed))
+	}
+	for completedRunID := range turn.completed {
+		session.completedRuns[completedRunID] = struct{}{}
+	}
+	session.turnMu.Unlock()
+
+	err := session.sink.TurnEnd(ctx, terminal)
+	session.turnMu.Lock()
+	if session.turn == turn {
+		session.turn = nil
+	}
+	close(turn.done)
+	session.turnMu.Unlock()
+	return err
 }
 
-func (session *meetingSessionAdapter) speech(runID string) (action.Utterance, bool) {
-	session.turnMu.Lock()
-	defer session.turnMu.Unlock()
-	utterance, found := session.activeSpeech[runID]
-	return utterance, found
+func (session *meetingSessionAdapter) activeTurnLocked() string {
+	if session.turn == nil || session.turn.closing {
+		return ""
+	}
+	for _, runID := range session.turn.order {
+		if _, active := session.turn.runs[runID]; active {
+			return runID
+		}
+	}
+	return ""
 }
 
-func (session *meetingSessionAdapter) takeSpeech(runID string) (action.Utterance, bool) {
+func (session *meetingSessionAdapter) speech(
+	ctx context.Context, runID string,
+) (action.Utterance, error) {
+	session.turnMu.Lock()
+	state := session.activeSpeech[runID]
+	session.turnMu.Unlock()
+	if state == nil {
+		return action.Utterance{}, errors.New("unknown utterance")
+	}
+	select {
+	case <-state.ready:
+	case <-ctx.Done():
+		return action.Utterance{}, context.Cause(ctx)
+	}
+	if state.beginErr != nil {
+		return action.Utterance{}, state.beginErr
+	}
+	return state.utterance, nil
+}
+
+func (session *meetingSessionAdapter) takeSpeech(runID string) (*meetingAdapterSpeech, bool) {
 	session.turnMu.Lock()
 	defer session.turnMu.Unlock()
-	utterance, found := session.activeSpeech[runID]
-	delete(session.activeSpeech, runID)
-	return utterance, found
+	state, found := session.activeSpeech[runID]
+	return state, found
+}
+
+func (session *meetingSessionAdapter) finishSpeech(runID string, state *meetingAdapterSpeech) {
+	session.turnMu.Lock()
+	if state != nil && session.activeSpeech[runID] == state {
+		close(state.done)
+		delete(session.activeSpeech, runID)
+	}
+	session.turnMu.Unlock()
 }
 
 func (session *meetingSessionAdapter) send(
@@ -618,23 +927,34 @@ func (session *meetingSessionAdapter) send(
 	sequence := session.sequence.Add(1)
 	kind = strings.ReplaceAll(strings.TrimSpace(kind), "_", "-")
 	itemID := fmt.Sprintf("meeting-%s-%d", kind, sequence)
-	return session.sendEnvelope(ctx, port, itemID, runID, sequence, payload)
+	return session.sendEnvelope(ctx, port, itemID, runID, sequence, 0, payload)
+}
+
+func (session *meetingSessionAdapter) sendCaptured(
+	ctx context.Context, port element.OutputPort, kind, runID string, capturedNS uint64, payload any,
+) error {
+	sequence := session.sequence.Add(1)
+	kind = strings.ReplaceAll(strings.TrimSpace(kind), "_", "-")
+	itemID := fmt.Sprintf("meeting-%s-%d", kind, sequence)
+	return session.sendEnvelope(ctx, port, itemID, runID, sequence, capturedNS, payload)
 }
 
 func (session *meetingSessionAdapter) sendWithID(
 	ctx context.Context, port element.OutputPort, itemID, runID string, payload any,
 ) error {
 	sequence := session.sequence.Add(1)
-	return session.sendEnvelope(ctx, port, itemID, runID, sequence, payload)
+	return session.sendEnvelope(ctx, port, itemID, runID, sequence, 0, payload)
 }
 
 func (session *meetingSessionAdapter) sendEnvelope(
-	ctx context.Context, port element.OutputPort, itemID, runID string, sequence uint64, payload any,
+	ctx context.Context, port element.OutputPort, itemID, runID string, sequence, capturedNS uint64,
+	payload any,
 ) error {
 	envelope := element.Envelope{
 		Type: port.Type(), ItemID: itemID, SessionID: session.sessionID,
 		SourceID: "gateway", OpportunityID: itemID, RunID: runID, Sequence: sequence,
-		TraceID: itemID, CancellationScope: session.sessionID, Payload: payload,
+		CaptureNS: capturedNS, TraceID: itemID, CancellationScope: session.sessionID,
+		Payload: payload,
 	}
 	delivery, err := port.Broadcast(ctx, envelope)
 	if err != nil {

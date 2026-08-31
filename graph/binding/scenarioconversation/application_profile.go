@@ -14,6 +14,7 @@ import (
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
@@ -23,7 +24,7 @@ import (
 
 const (
 	ApplicationReference          = "application.openrealtime.scenario-conversation.v1"
-	ApplicationFormatVersion      = uint64(2)
+	ApplicationFormatVersion      = uint64(5)
 	maximumApplicationConfigBytes = 4 << 20
 	maximumApplicationProviders   = 65_536
 )
@@ -45,6 +46,16 @@ type ApplicationModelSelection struct {
 	Artifact      inspect.ArtifactIdentity `json:"artifact"`
 	Descriptor    continuation.Descriptor  `json:"descriptor"`
 	Configuration json.RawMessage          `json:"configuration,omitempty"`
+}
+
+// ApplicationPolicySelection pins one narrow enumerated semantic decider.
+// Configuration is plugin-owned and may name a credential environment
+// variable, but must never contain credential bytes.
+type ApplicationPolicySelection struct {
+	Reference     string                                   `json:"reference"`
+	Artifact      inspect.ArtifactIdentity                 `json:"artifact"`
+	Descriptor    policyelements.SemanticDeciderDescriptor `json:"descriptor"`
+	Configuration json.RawMessage                          `json:"configuration,omitempty"`
 }
 
 // ApplicationTTSSelection pins one speech provider and its fixed voice.
@@ -74,16 +85,19 @@ func (selection ApplicationGateSelection) gateConfig() perception.GateConfig {
 // ApplicationConfig is the complete plugin-owned, resource-free selection
 // carried by a generic graph launch profile.
 type ApplicationConfig struct {
-	FormatVersion   uint64                      `json:"format_version"`
-	Architecture    legacy.ArchitectureIdentity `json:"architecture"`
-	ASR             ApplicationASRSelection     `json:"asr"`
-	Model           ApplicationModelSelection   `json:"model"`
-	TTS             ApplicationTTSSelection     `json:"tts"`
-	Tools           []ToolDeclaration           `json:"tools"`
-	Target          computeruse.Target          `json:"target"`
-	Gate            ApplicationGateSelection    `json:"gate"`
-	Media           MediaLimits                 `json:"media"`
-	MaxOutputTokens int                         `json:"max_output_tokens"`
+	FormatVersion     uint64                      `json:"format_version"`
+	Architecture      legacy.ArchitectureIdentity `json:"architecture"`
+	ASR               ApplicationASRSelection     `json:"asr"`
+	Policy            ApplicationPolicySelection  `json:"policy"`
+	SemanticAdmission SemanticAdmissionSelection  `json:"semantic_admission"`
+	Model             ApplicationModelSelection   `json:"model"`
+	SilentModel       ApplicationModelSelection   `json:"silent_model"`
+	TTS               ApplicationTTSSelection     `json:"tts"`
+	Tools             []ToolDeclaration           `json:"tools"`
+	Target            computeruse.Target          `json:"target"`
+	Gate              ApplicationGateSelection    `json:"gate"`
+	Media             MediaLimits                 `json:"media"`
+	MaxOutputTokens   int                         `json:"max_output_tokens"`
 }
 
 // DecodeApplicationConfig strictly decodes and validates an exact selection.
@@ -117,13 +131,25 @@ func normalizeApplicationConfig(source ApplicationConfig) (ApplicationConfig, er
 	if err := validateApplicationASR(config.ASR); err != nil {
 		return ApplicationConfig{}, err
 	}
-	if err := validateApplicationModel(config.Model); err != nil {
+	if err := validateApplicationPolicy(config.Policy); err != nil {
+		return ApplicationConfig{}, err
+	}
+	semanticAdmission, err := normalizeSemanticAdmissionSelection(
+		config.SemanticAdmission, config.Policy.Descriptor,
+	)
+	if err != nil {
+		return ApplicationConfig{}, err
+	}
+	config.SemanticAdmission = semanticAdmission
+	if err := validateApplicationModel(config.Model, continuation.SpeechAuthorityVoice); err != nil {
+		return ApplicationConfig{}, err
+	}
+	if err := validateApplicationModel(config.SilentModel, continuation.SpeechAuthoritySilent); err != nil {
 		return ApplicationConfig{}, err
 	}
 	if err := validateApplicationTTS(config.TTS); err != nil {
 		return ApplicationConfig{}, err
 	}
-	var err error
 	config.Tools, err = normalizeToolDeclarations(config.Tools)
 	if err != nil {
 		return ApplicationConfig{}, err
@@ -159,7 +185,22 @@ func validateApplicationASR(selection ApplicationASRSelection) error {
 	return nil
 }
 
-func validateApplicationModel(selection ApplicationModelSelection) error {
+func validateApplicationPolicy(selection ApplicationPolicySelection) error {
+	if !canonicalIdentity(selection.Reference) {
+		return errors.New("scenario conversation application semantic policy reference is not canonical")
+	}
+	if err := selection.Artifact.Validate(); err != nil {
+		return fmt.Errorf("scenario conversation application semantic policy artifact: %w", err)
+	}
+	if err := selection.Descriptor.Validate(); err != nil {
+		return fmt.Errorf("scenario conversation application semantic policy descriptor: %w", err)
+	}
+	return nil
+}
+
+func validateApplicationModel(
+	selection ApplicationModelSelection, speechAuthority continuation.SpeechAuthority,
+) error {
 	if !canonicalIdentity(selection.Reference) {
 		return errors.New("scenario conversation application model reference is not canonical")
 	}
@@ -170,8 +211,8 @@ func validateApplicationModel(selection ApplicationModelSelection) error {
 		return fmt.Errorf("scenario conversation application model descriptor: %w", err)
 	}
 	if selection.Descriptor.EffectiveToolAuthority() != continuation.ToolAuthorityPropose ||
-		selection.Descriptor.EffectiveSpeechAuthority() != continuation.SpeechAuthorityVoice {
-		return errors.New("scenario conversation application model must be proposal-only and voice-authoritative")
+		selection.Descriptor.EffectiveSpeechAuthority() != speechAuthority {
+		return fmt.Errorf("scenario conversation application model must be proposal-only and %s-authoritative", speechAuthority)
 	}
 	return nil
 }
@@ -213,6 +254,14 @@ type ModelFactoryRegistration struct {
 	ReadinessConfiguration func(context.Context, json.RawMessage) error
 }
 
+type PolicyFactoryRegistration struct {
+	ApplicationPolicySelection
+	Factory                func(context.Context, legacy.Options) (policyelements.SemanticDecider, error)
+	DescribeConfiguration  func(json.RawMessage) (policyelements.SemanticDeciderDescriptor, error)
+	FactoryConfiguration   func(context.Context, legacy.Options, json.RawMessage) (policyelements.SemanticDecider, error)
+	ReadinessConfiguration func(context.Context, json.RawMessage) error
+}
+
 type TTSFactoryRegistration struct {
 	ApplicationTTSSelection
 	Factory                func(context.Context, legacy.Options) (v1.SpeechProvider, error)
@@ -230,6 +279,7 @@ type ApplicationRegistrationConfig struct {
 	RuntimeArtifact     inspect.ArtifactIdentity
 	DependencyArtifact  inspect.ArtifactIdentity
 	ASR                 []ASRFactoryRegistration
+	Policies            []PolicyFactoryRegistration
 	Models              []ModelFactoryRegistration
 	TTS                 []TTSFactoryRegistration
 }
@@ -262,14 +312,18 @@ func NewApplicationRegistration(
 			)
 		}
 	}
-	if len(source.ASR) == 0 || len(source.Models) == 0 || len(source.TTS) == 0 ||
-		len(source.ASR) > maximumApplicationProviders || len(source.Models) > maximumApplicationProviders ||
+	if len(source.ASR) == 0 || len(source.Policies) == 0 || len(source.Models) == 0 || len(source.TTS) == 0 ||
+		len(source.ASR) > maximumApplicationProviders || len(source.Policies) > maximumApplicationProviders || len(source.Models) > maximumApplicationProviders ||
 		len(source.TTS) > maximumApplicationProviders {
 		return launchprofile.Registration{}, errors.New(
-			"scenario conversation application registration requires bounded ASR, model, and TTS inventories",
+			"scenario conversation application registration requires bounded ASR, policy, model, and TTS inventories",
 		)
 	}
 	asr, err := snapshotASRRegistrations(source.ASR)
+	if err != nil {
+		return launchprofile.Registration{}, err
+	}
+	policies, err := snapshotPolicyRegistrations(source.Policies)
 	if err != nil {
 		return launchprofile.Registration{}, err
 	}
@@ -311,6 +365,23 @@ func NewApplicationRegistration(
 			if err != nil {
 				return graphlaunch.Config{}, err
 			}
+			policyRegistration, found := policies[config.Policy.Reference]
+			if !found {
+				return graphlaunch.Config{}, fmt.Errorf(
+					"scenario conversation semantic policy registry is missing %q", config.Policy.Reference,
+				)
+			}
+			if policyRegistration.Artifact != config.Policy.Artifact {
+				return graphlaunch.Config{}, fmt.Errorf(
+					"scenario conversation semantic policy %q artifact or descriptor drifted", config.Policy.Reference,
+				)
+			}
+			policyDescriptor, policyFactory, policyReady, err := resolvePolicyRegistration(
+				policyRegistration, config.Policy,
+			)
+			if err != nil {
+				return graphlaunch.Config{}, err
+			}
 			modelRegistration, found := models[config.Model.Reference]
 			if !found {
 				return graphlaunch.Config{}, fmt.Errorf(
@@ -323,6 +394,23 @@ func NewApplicationRegistration(
 				)
 			}
 			modelDescriptor, modelFactory, modelReady, err := resolveModelRegistration(modelRegistration, config.Model)
+			if err != nil {
+				return graphlaunch.Config{}, err
+			}
+			silentModelRegistration, found := models[config.SilentModel.Reference]
+			if !found {
+				return graphlaunch.Config{}, fmt.Errorf(
+					"scenario conversation silent model registry is missing %q", config.SilentModel.Reference,
+				)
+			}
+			if silentModelRegistration.Artifact != config.SilentModel.Artifact {
+				return graphlaunch.Config{}, fmt.Errorf(
+					"scenario conversation silent model %q artifact or descriptor drifted", config.SilentModel.Reference,
+				)
+			}
+			silentModelDescriptor, silentModelFactory, silentModelReady, err := resolveModelRegistration(
+				silentModelRegistration, config.SilentModel,
+			)
 			if err != nil {
 				return graphlaunch.Config{}, err
 			}
@@ -355,8 +443,13 @@ func NewApplicationRegistration(
 				Architecture: architecture,
 				ASR: ASRPlugin{Reference: ASRReference, Artifact: asrRegistration.Artifact,
 					Descriptor: cloneV1Descriptor(asrDescriptor), Factory: asrFactory},
+				Policy: PolicyPlugin{Reference: PolicyReference, Artifact: policyRegistration.Artifact,
+					Descriptor: policyDescriptor, Factory: policyFactory},
+				SemanticAdmission: config.SemanticAdmission,
 				Model: ModelPlugin{Reference: ModelReference, Artifact: modelRegistration.Artifact,
 					Descriptor: modelDescriptor, Factory: modelFactory},
+				SilentModel: ModelPlugin{Reference: SilentModelReference, Artifact: silentModelRegistration.Artifact,
+					Descriptor: silentModelDescriptor, Factory: silentModelFactory},
 				TTS: TTSPlugin{Reference: TTSReference, Artifact: ttsRegistration.Artifact,
 					Descriptor: cloneV1Descriptor(ttsDescriptor), Voice: ttsVoice,
 					Factory: ttsFactory},
@@ -372,9 +465,17 @@ func NewApplicationRegistration(
 					resolved.Readiness = append(resolved.Readiness,
 						graphlaunch.ReadinessCheck{Name: "asr:" + config.ASR.Reference, Check: asrReady})
 				}
+				if policyReady != nil {
+					resolved.Readiness = append(resolved.Readiness,
+						graphlaunch.ReadinessCheck{Name: "policy:" + config.Policy.Reference, Check: policyReady})
+				}
 				if modelReady != nil {
 					resolved.Readiness = append(resolved.Readiness,
-						graphlaunch.ReadinessCheck{Name: "model:" + config.Model.Reference, Check: modelReady})
+						graphlaunch.ReadinessCheck{Name: "model:voice:" + config.Model.Reference, Check: modelReady})
+				}
+				if silentModelReady != nil {
+					resolved.Readiness = append(resolved.Readiness,
+						graphlaunch.ReadinessCheck{Name: "model:silent:" + config.SilentModel.Reference, Check: silentModelReady})
 				}
 				if ttsReady != nil {
 					resolved.Readiness = append(resolved.Readiness,
@@ -407,11 +508,15 @@ func resolveScenarioArchitecture(
 			"scenario conversation application architecture: %w", err,
 		)
 	}
-	if definition.Interaction.Mode != projectarch.InteractionPredicates ||
+	ref := definition.Ref()
+	baseline := ref == (projectarch.Ref{ID: "cascade.composed-policy", Revision: 1})
+	directVisual := ref == (projectarch.Ref{ID: "cascade.composed-policy-direct-visual", Revision: 1})
+	if (!baseline && !directVisual) ||
+		definition.Interaction.Mode != projectarch.InteractionComposed ||
 		definition.Interaction.EvidenceCapabilities == nil ||
 		definition.Interaction.Control == nil {
 		return projectarch.Definition{}, fmt.Errorf(
-			"scenario conversation application architecture %s is not an exactly attested predicate controller",
+			"scenario conversation application architecture %s is not the exact composed semantic-policy controller",
 			definition.Ref(),
 		)
 	}
@@ -444,6 +549,38 @@ func resolveASRRegistration(
 	}
 	return cloneV1Descriptor(descriptor),
 		func(ctx context.Context, options legacy.Options) (v1.PerceptionProvider, error) {
+			return registration.FactoryConfiguration(ctx, options, slices.Clone(configuration))
+		},
+		func(ctx context.Context) error {
+			return registration.ReadinessConfiguration(ctx, slices.Clone(configuration))
+		}, nil
+}
+
+func resolvePolicyRegistration(
+	registration PolicyFactoryRegistration, selection ApplicationPolicySelection,
+) (policyelements.SemanticDeciderDescriptor, func(context.Context, legacy.Options) (policyelements.SemanticDecider, error), func(context.Context) error, error) {
+	if registration.DescribeConfiguration == nil {
+		if len(selection.Configuration) != 0 || registration.Descriptor != selection.Descriptor {
+			return policyelements.SemanticDeciderDescriptor{}, nil, nil, fmt.Errorf(
+				"scenario conversation semantic policy %q artifact or descriptor drifted", selection.Reference,
+			)
+		}
+		return registration.Descriptor, registration.Factory, nil, nil
+	}
+	configuration := slices.Clone(selection.Configuration)
+	descriptor, err := registration.DescribeConfiguration(configuration)
+	if err != nil {
+		return policyelements.SemanticDeciderDescriptor{}, nil, nil, fmt.Errorf(
+			"scenario conversation semantic policy %q configuration: %w", selection.Reference, err,
+		)
+	}
+	if descriptor != selection.Descriptor {
+		return policyelements.SemanticDeciderDescriptor{}, nil, nil, fmt.Errorf(
+			"scenario conversation semantic policy %q descriptor drifted from its configuration", selection.Reference,
+		)
+	}
+	return descriptor,
+		func(ctx context.Context, options legacy.Options) (policyelements.SemanticDecider, error) {
 			return registration.FactoryConfiguration(ctx, options, slices.Clone(configuration))
 		},
 		func(ctx context.Context) error {
@@ -545,6 +682,33 @@ func snapshotASRRegistrations(source []ASRFactoryRegistration) (map[string]ASRFa
 	return result, nil
 }
 
+func snapshotPolicyRegistrations(source []PolicyFactoryRegistration) (map[string]PolicyFactoryRegistration, error) {
+	result := make(map[string]PolicyFactoryRegistration, len(source))
+	for index, registration := range source {
+		if err := validateApplicationProviderIdentity(registration.Reference, registration.Artifact, "semantic policy"); err != nil {
+			return nil, fmt.Errorf("scenario conversation semantic policy registration %d: %w", index, err)
+		}
+		parameterized := registration.DescribeConfiguration != nil ||
+			registration.FactoryConfiguration != nil || registration.ReadinessConfiguration != nil
+		if parameterized {
+			if registration.DescribeConfiguration == nil || registration.FactoryConfiguration == nil ||
+				registration.ReadinessConfiguration == nil || registration.Factory != nil ||
+				len(registration.Configuration) != 0 || registration.Descriptor != (policyelements.SemanticDeciderDescriptor{}) {
+				return nil, fmt.Errorf("scenario conversation semantic policy registration %d has a partial or mixed parameterized factory", index)
+			}
+		} else if registration.Factory == nil {
+			return nil, fmt.Errorf("scenario conversation semantic policy registration %d has a nil factory", index)
+		} else if err := validateApplicationPolicy(registration.ApplicationPolicySelection); err != nil {
+			return nil, fmt.Errorf("scenario conversation semantic policy registration %d: %w", index, err)
+		}
+		if _, duplicate := result[registration.Reference]; duplicate {
+			return nil, fmt.Errorf("scenario conversation semantic policy reference %q is registered more than once", registration.Reference)
+		}
+		result[registration.Reference] = registration
+	}
+	return result, nil
+}
+
 func snapshotModelRegistrations(source []ModelFactoryRegistration) (map[string]ModelFactoryRegistration, error) {
 	result := make(map[string]ModelFactoryRegistration, len(source))
 	for index, registration := range source {
@@ -561,8 +725,12 @@ func snapshotModelRegistrations(source []ModelFactoryRegistration) (map[string]M
 			}
 		} else if registration.Factory == nil {
 			return nil, fmt.Errorf("scenario conversation model registration %d has a nil factory", index)
-		} else if err := validateApplicationModel(registration.ApplicationModelSelection); err != nil {
-			return nil, fmt.Errorf("scenario conversation model registration %d: %w", index, err)
+		} else if err := continuation.ValidateDescriptor(registration.Descriptor); err != nil {
+			return nil, fmt.Errorf("scenario conversation model registration %d descriptor: %w", index, err)
+		} else if registration.Descriptor.EffectiveToolAuthority() != continuation.ToolAuthorityPropose ||
+			(registration.Descriptor.EffectiveSpeechAuthority() != continuation.SpeechAuthorityVoice &&
+				registration.Descriptor.EffectiveSpeechAuthority() != continuation.SpeechAuthoritySilent) {
+			return nil, fmt.Errorf("scenario conversation model registration %d is not proposal-only voice or silent cognition", index)
 		}
 		if _, duplicate := result[registration.Reference]; duplicate {
 			return nil, fmt.Errorf("scenario conversation model reference %q is registered more than once", registration.Reference)
@@ -626,7 +794,9 @@ func cloneApplicationConfig(source ApplicationConfig) ApplicationConfig {
 	result := source
 	result.ASR.Descriptor = cloneV1Descriptor(source.ASR.Descriptor)
 	result.ASR.Configuration = slices.Clone(source.ASR.Configuration)
+	result.Policy.Configuration = slices.Clone(source.Policy.Configuration)
 	result.Model.Configuration = slices.Clone(source.Model.Configuration)
+	result.SilentModel.Configuration = slices.Clone(source.SilentModel.Configuration)
 	result.TTS.Descriptor = cloneV1Descriptor(source.TTS.Descriptor)
 	result.TTS.Configuration = slices.Clone(source.TTS.Configuration)
 	result.Tools = cloneToolDeclarations(source.Tools)

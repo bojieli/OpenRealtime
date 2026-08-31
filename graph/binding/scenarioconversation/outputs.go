@@ -16,6 +16,7 @@ import (
 	ingresselements "github.com/bojieli/OpenRealtime/elements/ingress"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
+	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -473,35 +474,44 @@ func (session *session) acceptInvocationOutcome(envelope element.Envelope) error
 	if !ok {
 		return fmt.Errorf("scenario conversation invocation outcome has payload %T", envelope.Payload)
 	}
-	if envelope.SessionID != session.sessionID || outcome.Role != "foreground" {
+	if envelope.SessionID != session.sessionID ||
+		(outcome.Role != "foreground" && outcome.Role != "silent") {
 		return errors.New("scenario conversation invocation outcome drifted from its exact session or role")
 	}
-	internal := outcome.Operation == "committed"
-	if !internal && len(envelope.CausalParents) != 1 {
-		internal = exactPostCommitSilenceCreateOutcome(envelope, outcome)
-		if !internal {
-			return errors.New("scenario conversation invocation outcome has no exact gateway parent")
+	// Both exact invocation nodes receive session updates and cancellation
+	// memory. Foreground remains the single gateway acknowledgement owner;
+	// the silent node must nevertheless prove it accepted the identical typed
+	// control operation before its duplicate outcome is drained.
+	if outcome.Role == "silent" && outcome.Operation == "update" {
+		if outcome.Kind != policyelements.SessionInvocationUpdated ||
+			outcome.InvocationRevision == 0 || !canonicalIdentity(outcome.InvocationDigest) {
+			return errors.New("scenario conversation silent invocation refused or drifted from session update")
 		}
-	}
-	if outcome.Kind == policyelements.SessionInvocationEmitted {
-		if !canonicalIdentity(outcome.GenerationID) ||
-			(outcome.Operation != "create" && outcome.Operation != "committed") {
-			return errors.New("scenario conversation emitted invocation has invalid generation identity")
-		}
-		session.activityMu.Lock()
-		if _, terminal := session.terminalRuns[outcome.GenerationID]; !terminal {
-			if _, duplicate := session.active[outcome.GenerationID]; duplicate {
-				session.activityMu.Unlock()
-				return fmt.Errorf("scenario conversation generation %q was emitted twice", outcome.GenerationID)
-			}
-			session.active[outcome.GenerationID] = struct{}{}
-		}
-		session.activityMu.Unlock()
-	}
-	if internal {
 		return nil
 	}
-	parent := envelope.CausalParents[0]
+	if outcome.Role == "silent" && outcome.Operation == "cancel" {
+		if outcome.Kind != policyelements.SessionInvocationIgnored || outcome.Code != "cancel_recorded" ||
+			!canonicalIdentity(outcome.GenerationID) {
+			return errors.New("scenario conversation silent invocation refused cancellation memory")
+		}
+		return nil
+	}
+	internal := outcome.Operation == "committed"
+	gatewayParent := ""
+	if !internal {
+		internal = exactPostCommitSilenceCreateOutcome(envelope, outcome)
+		if !internal {
+			var exact bool
+			gatewayParent, exact = exactGatewayInvocationOutcome(envelope, outcome)
+			if !exact {
+				return errors.New("scenario conversation invocation outcome has no exact gateway and semantic-policy parents")
+			}
+		}
+	}
+	if internal {
+		return session.registerEmittedInvocation(outcome)
+	}
+	parent := gatewayParent
 	session.operationMu.Lock()
 	pending := session.pendingOps[parent]
 	if pending == nil {
@@ -536,6 +546,10 @@ func (session *session) acceptInvocationOutcome(envelope element.Envelope) error
 	default:
 		result.err = fmt.Errorf("scenario conversation unknown pending operation %q", pending.operation)
 	}
+	if err := session.registerEmittedInvocation(outcome); err != nil {
+		session.operationMu.Unlock()
+		return err
+	}
 	pending.completed = true
 	delete(session.pendingOps, parent)
 	abandoned := pending.abandoned
@@ -544,6 +558,187 @@ func (session *session) acceptInvocationOutcome(envelope element.Envelope) error
 		pending.result <- result
 	}
 	return nil
+}
+
+func (session *session) acceptSemanticAdmissionOutcome(
+	ctx context.Context, envelope element.Envelope,
+) error {
+	outcome, ok := semanticAdmissionOutcomePayload(envelope.Payload)
+	if !ok {
+		return fmt.Errorf("scenario conversation semantic admission outcome has payload %T", envelope.Payload)
+	}
+	if envelope.SessionID != session.sessionID {
+		return errors.New("scenario conversation semantic admission outcome crossed a session boundary")
+	}
+	switch outcome.Operation {
+	case "committed", "quiet":
+		// Observation and graph-owned timer decisions have no gateway operation
+		// to acknowledge; their complete typed evidence remains on this boundary.
+		if outcome.Kind == policyelements.SemanticAdmissionFailed ||
+			outcome.Kind == policyelements.SemanticAdmissionRefused {
+			return session.publishTypedFailure(ctx, outcome.Code, semanticAdmissionOutcomeError(outcome).Error())
+		}
+		return nil
+	case "cancel":
+		if outcome.Kind != policyelements.SemanticAdmissionIgnored ||
+			(outcome.Code != "cancel_recorded" && outcome.Code != "generation_not_owned") {
+			return semanticAdmissionOutcomeError(outcome)
+		}
+		return nil
+	case "update":
+		// A valid update produces state only. Any terminal outcome here means
+		// SemanticAdmission rejected an update the invocation nodes may have
+		// accepted, so the composed session can no longer claim one policy.
+		return semanticAdmissionOutcomeError(outcome)
+	case "create":
+	default:
+		return fmt.Errorf("scenario conversation semantic admission outcome has unsupported operation %q", outcome.Operation)
+	}
+
+	parent, exact := exactGatewaySemanticOutcome(envelope)
+	if !exact {
+		return errors.New("scenario conversation semantic admission outcome has no exact gateway parent")
+	}
+	if outcome.Kind == policyelements.SemanticAdmissionAdmitted &&
+		((outcome.Act != coreinteraction.ActAnswer && outcome.Act != coreinteraction.ActActSilently) ||
+			!exactSemanticDecisionIdentity(outcome.DecisionItemID)) {
+		return errors.New("scenario conversation semantic admission produced an invalid admitted branch")
+	}
+	if outcome.Kind == policyelements.SemanticAdmissionSuppressed &&
+		(outcome.Act != coreinteraction.ActStaySilent || !exactSemanticDecisionIdentity(outcome.DecisionItemID)) {
+		return errors.New("scenario conversation semantic admission produced an invalid suppressed branch")
+	}
+	session.operationMu.Lock()
+	pending := session.pendingOps[parent]
+	if pending == nil {
+		session.operationMu.Unlock()
+		// The admitted branch can race its separate invocation-outcome boundary,
+		// which may already have completed the exact pending request.
+		if outcome.Kind == policyelements.SemanticAdmissionAdmitted {
+			return nil
+		}
+		return fmt.Errorf("scenario conversation semantic admission parent %q is not pending", parent)
+	}
+	if pending.completed || pending.operation != "create" || pending.requestID != parent {
+		session.operationMu.Unlock()
+		return errors.New("scenario conversation semantic admission outcome duplicated or changed operation")
+	}
+	if outcome.Kind == policyelements.SemanticAdmissionAdmitted {
+		session.operationMu.Unlock()
+		return nil
+	}
+	result := operationAck{err: semanticAdmissionOutcomeError(outcome)}
+	if outcome.Kind == policyelements.SemanticAdmissionSuppressed {
+		// A semantic listen decision is the successful result of evaluating
+		// this response.create. It intentionally owns no generation and emits
+		// no response lifecycle. Treating it as a gateway error tears down
+		// otherwise healthy sessions which use explicit creates to re-evaluate
+		// incomplete visual evidence.
+		result.err = nil
+	}
+	pending.completed = true
+	delete(session.pendingOps, parent)
+	abandoned := pending.abandoned
+	session.operationMu.Unlock()
+	if !abandoned {
+		pending.result <- result
+	}
+	return nil
+}
+
+func exactGatewaySemanticOutcome(envelope element.Envelope) (string, bool) {
+	const prefix = "semantic_admission:outcome:"
+	if !strings.HasPrefix(envelope.ItemID, prefix) || len(envelope.CausalParents) != 1 {
+		return "", false
+	}
+	sequence, err := strconv.ParseUint(strings.TrimPrefix(envelope.ItemID, prefix), 10, 64)
+	if err != nil || sequence == 0 || !canonicalIdentity(envelope.CausalParents[0]) {
+		return "", false
+	}
+	return envelope.CausalParents[0], true
+}
+
+func semanticAdmissionOutcomeError(outcome policyelements.SemanticAdmissionOutcome) error {
+	return fmt.Errorf("scenario conversation semantic admission %s reached %s/%s: %s",
+		outcome.Operation, outcome.Kind, outcome.Code, outcome.Message)
+}
+
+func (session *session) registerEmittedInvocation(
+	outcome policyelements.SessionInvocationOutcome,
+) error {
+	if outcome.Kind != policyelements.SessionInvocationEmitted {
+		return nil
+	}
+	if !canonicalIdentity(outcome.GenerationID) ||
+		(outcome.Operation != "create" && outcome.Operation != "committed") {
+		return errors.New("scenario conversation emitted invocation has invalid generation identity")
+	}
+	session.activityMu.Lock()
+	defer session.activityMu.Unlock()
+	if _, terminal := session.terminalRuns[outcome.GenerationID]; terminal {
+		return nil
+	}
+	if _, duplicate := session.active[outcome.GenerationID]; duplicate {
+		return fmt.Errorf("scenario conversation generation %q was emitted twice", outcome.GenerationID)
+	}
+	session.active[outcome.GenerationID] = struct{}{}
+	return nil
+}
+
+// exactGatewayInvocationOutcome binds a graph acknowledgement to the adapter
+// operation that caused it. Update and cancellation remain direct one-parent
+// control operations. Creation necessarily crosses SemanticAdmission, so its
+// exact causal shape has both the gateway request and the fixed graph policy
+// node's decision. Arbitrary extra parents, a different policy node, or an
+// outcome identity derived from any other cause are rejected.
+func exactGatewayInvocationOutcome(
+	envelope element.Envelope, outcome policyelements.SessionInvocationOutcome,
+) (string, bool) {
+	const outcomeInfix = ":session_invocation_outcome:"
+	causeID, outcomeSequence, found := strings.Cut(envelope.ItemID, outcomeInfix)
+	if !found || !canonicalIdentity(causeID) {
+		return "", false
+	}
+	if sequence, err := strconv.ParseUint(outcomeSequence, 10, 64); err != nil || sequence == 0 {
+		return "", false
+	}
+	causeParents := 0
+	otherParent := ""
+	for _, parent := range envelope.CausalParents {
+		if parent == causeID {
+			causeParents++
+			continue
+		}
+		if otherParent != "" {
+			return "", false
+		}
+		otherParent = parent
+	}
+	if causeParents != 1 {
+		return "", false
+	}
+	switch outcome.Operation {
+	case "update", "cancel":
+		if len(envelope.CausalParents) != 1 || otherParent != "" {
+			return "", false
+		}
+	case "create":
+		if len(envelope.CausalParents) != 2 || !exactSemanticDecisionIdentity(otherParent) {
+			return "", false
+		}
+	default:
+		return "", false
+	}
+	return causeID, true
+}
+
+func exactSemanticDecisionIdentity(value string) bool {
+	const prefix = "semantic_admission:decision:"
+	if !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	sequence, err := strconv.ParseUint(strings.TrimPrefix(value, prefix), 10, 64)
+	return err == nil && sequence > 0
 }
 
 // exactPostCommitSilenceCreateOutcome recognizes the one graph-internal create
@@ -574,12 +769,16 @@ func exactPostCommitSilenceCreateOutcome(
 		return false
 	}
 	parents := 0
+	decisions := 0
 	for _, parent := range envelope.CausalParents {
 		if parent == causeID {
 			parents++
 		}
+		if exactSemanticDecisionIdentity(parent) {
+			decisions++
+		}
 	}
-	return parents == 1
+	return parents == 1 && decisions == 1
 }
 
 func invocationOutcomeError(outcome policyelements.SessionInvocationOutcome) error {
@@ -1019,6 +1218,18 @@ func sessionInvocationOutcomePayload(payload any) (policyelements.SessionInvocat
 		}
 	}
 	return policyelements.SessionInvocationOutcome{}, false
+}
+
+func semanticAdmissionOutcomePayload(payload any) (policyelements.SemanticAdmissionOutcome, bool) {
+	switch value := payload.(type) {
+	case policyelements.SemanticAdmissionOutcome:
+		return value, true
+	case *policyelements.SemanticAdmissionOutcome:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return policyelements.SemanticAdmissionOutcome{}, false
 }
 
 func committedActionPayload(payload any) (actionelements.CommittedAction, bool) {

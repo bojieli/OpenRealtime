@@ -59,6 +59,10 @@ const (
 	mediaResolvedBoundary               = "media_resolved"
 	mediaLeaseReturnedBoundary          = "media_lease_returned"
 	messageCommitBoundary               = "message_commit_outcome"
+	semanticDecisionBoundary            = "semantic_decision"
+	semanticAdmissionStateBoundary      = "semantic_admission_state"
+	semanticAdmissionOutcomeBoundary    = "semantic_admission_outcome"
+	semanticPolicyResolutionBoundary    = "semantic_policy_resolution"
 	invocationOutcomeBoundary           = "invocation_outcome"
 	dispatchCommitBoundary              = "dispatch_commit"
 	canonicalResultBoundary             = "canonical_result"
@@ -237,6 +241,10 @@ func validateAdapterBoundaryTypes(graph ir.Graph) (map[string]ir.Boundary, error
 		mediaResolvedBoundary:               {ir.OutputBoundary, mediaelements.ResolvedAttachmentType()},
 		mediaLeaseReturnedBoundary:          {ir.OutputBoundary, mediaelements.ReturnLeaseResultType()},
 		messageCommitBoundary:               {ir.OutputBoundary, stateelements.ObservationCommitOutcomeType()},
+		semanticDecisionBoundary:            {ir.OutputBoundary, policyelements.SemanticDecisionType()},
+		semanticAdmissionStateBoundary:      {ir.OutputBoundary, policyelements.SemanticAdmissionStateType()},
+		semanticAdmissionOutcomeBoundary:    {ir.OutputBoundary, policyelements.SemanticAdmissionOutcomeType()},
+		semanticPolicyResolutionBoundary:    {ir.OutputBoundary, policyelements.SemanticDeciderResolutionType()},
 		invocationOutcomeBoundary:           {ir.OutputBoundary, policyelements.SessionInvocationOutcomeType()},
 		dispatchCommitBoundary:              {ir.OutputBoundary, actionelements.CommittedType()},
 		canonicalResultBoundary:             {ir.OutputBoundary, actionelements.CanonicalResultType()},
@@ -317,22 +325,26 @@ func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
 	}{
 		{cognitionelements.MediaResolverService, config.DependencyArtifact},
 		{stateelements.TrajectoryStoreService, config.DependencyArtifact},
+		{policyelements.SemanticDeciderRegistryService, config.Policy.Artifact},
 	} {
 		if err := validateSelectedScenarioDependency(plan, selected.name, selected.artifact); err != nil {
 			return err
 		}
 	}
 	wanted := map[string]map[string]string{
-		"asr":                {"provider": ASRReference},
-		"model":              {"provider": ModelReference},
-		"tool_lookup":        {"registry": ToolReference},
-		"confirmation":       {"provider": ConfirmationReference},
-		"target_fence":       {"target": TargetReference},
-		"ledger_commit":      {"ledger": LedgerReference},
-		"dispatch":           {"registry": ToolReference, "ledger": LedgerReference},
-		"tts":                {"provider": TTSReference},
-		"playback":           {"sink": PlaybackReference},
-		"session_invocation": {"role": "foreground"},
+		"asr":                       {"provider": ASRReference},
+		"semantic_admission":        {"decider": PolicyReference},
+		"voice_model":               {"provider": ModelReference},
+		"silent_model":              {"provider": SilentModelReference},
+		"tool_lookup":               {"registry": ToolReference},
+		"confirmation":              {"provider": ConfirmationReference},
+		"target_fence":              {"target": TargetReference},
+		"ledger_commit":             {"ledger": LedgerReference},
+		"dispatch":                  {"registry": ToolReference, "ledger": LedgerReference},
+		"tts":                       {"provider": TTSReference},
+		"playback":                  {"sink": PlaybackReference},
+		"voice_session_invocation":  {"role": "foreground"},
+		"silent_session_invocation": {"role": "silent"},
 	}
 	values := plan.Values()
 	for node, fields := range wanted {
@@ -352,6 +364,31 @@ func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
 	}
 	if err := json.Unmarshal(values["endpoint_policy"], &endpoint); err != nil || endpoint.Mode != "automatic" {
 		return errors.New("scenario conversation endpoint policy must be exact automatic mode")
+	}
+	var semanticAdmission struct {
+		DirectVisualInput           bool    `json:"direct_visual_input"`
+		StandingExtraction          bool    `json:"standing_extraction"`
+		VerifyVoiceActivation       bool    `json:"verify_voice_activation"`
+		VerifySilentAction          bool    `json:"verify_silent_action"`
+		MinimumActivationConfidence float64 `json:"minimum_activation_confidence"`
+		StandingMemory              int     `json:"standing_memory"`
+	}
+	if err := json.Unmarshal(values["semantic_admission"], &semanticAdmission); err != nil {
+		return fmt.Errorf("decode scenario conversation semantic admission values: %w", err)
+	}
+	directVisual := false
+	if evidence := config.Architecture.Interaction.EvidenceCapabilities; evidence != nil {
+		directVisual = evidence.DirectVisualInput
+	}
+	if semanticAdmission.DirectVisualInput != directVisual {
+		return errors.New("scenario conversation semantic direct-visual selection drifted from architecture")
+	}
+	if semanticAdmission.StandingExtraction != config.SemanticAdmission.StandingExtraction ||
+		semanticAdmission.VerifyVoiceActivation != config.SemanticAdmission.VerifyVoiceActivation ||
+		semanticAdmission.VerifySilentAction != config.SemanticAdmission.VerifySilentAction ||
+		semanticAdmission.MinimumActivationConfidence != config.SemanticAdmission.MinimumActivationConfidence ||
+		semanticAdmission.StandingMemory != config.SemanticAdmission.StandingMemory {
+		return errors.New("scenario conversation semantic admission values drifted from the application selection")
 	}
 	var postCommitSilence struct {
 		DelayMS int `json:"delay_ms"`
@@ -686,6 +723,8 @@ func (session *session) runOutput(ctx context.Context, name string, port element
 			err = session.bundle.media.AcceptLeaseReturned(envelope)
 		case messageCommitBoundary:
 			err = session.acceptMessageCommit(envelope)
+		case semanticAdmissionOutcomeBoundary:
+			err = session.acceptSemanticAdmissionOutcome(ctx, envelope)
 		case invocationOutcomeBoundary:
 			err = session.acceptInvocationOutcome(envelope)
 		case dispatchCommitBoundary:

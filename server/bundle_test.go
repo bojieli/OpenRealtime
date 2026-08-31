@@ -50,8 +50,7 @@ func TestServerBundleMountsOnlyExactRuntimeArtifactsBeforeServing(t *testing.T) 
 		live.Entries["realtime"].Runtime != gatewayArtifact ||
 		live.Entries["observability"].Runtime != gatewayArtifact ||
 		live.Entries["session-api"].Runtime != gatewayArtifact ||
-		live.Entries["inspection-compat"].Runtime != gatewayArtifact ||
-		len(live.Entries) != 8 ||
+		len(live.Entries) != 7 ||
 		!live.Exports[serverplugin.RealtimeHTTPExport].Available {
 		t.Fatalf("mounted server bundle evidence = %+v", live)
 	}

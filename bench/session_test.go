@@ -22,6 +22,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/internal/testserver"
+	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/coder/websocket"
 )
@@ -658,7 +659,7 @@ func TestConnectedConversationTimeoutIsTypedAndRetainsEvidence(t *testing.T) {
 func TestConnectedConversationTimeoutAttestsBeforeClosingSession(t *testing.T) {
 	graph, configuration, resolution := attestationFixture(t)
 	inspection := openrealtime.InspectionAccess{
-		SessionID: "sess_timeout", Path: "/v1/realtime/sessions/sess_timeout/live",
+		SessionID: "sess_timeout", Path: management.APIPrefix + "/sessions/sess_timeout/live",
 		Token:       "mgmt_" + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x43}, 32)),
 		ExpiresAtMS: time.Now().Add(time.Minute).UnixMilli(),
 	}
@@ -910,7 +911,7 @@ func TestSessionAttestorPropagatesIndependentGraphEvidence(t *testing.T) {
 	graph, configuration, resolution := attestationFixture(t)
 	var debugNegotiated atomic.Bool
 	inspection := openrealtime.InspectionAccess{
-		SessionID: "sess_driver", Path: "/v1/realtime/sessions/sess_driver/live",
+		SessionID: "sess_driver", Path: management.APIPrefix + "/sessions/sess_driver/live",
 		Token:       "mgmt_" + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32)),
 		ExpiresAtMS: time.Now().Add(time.Minute).UnixMilli(),
 	}

@@ -126,9 +126,9 @@ descriptors; it does not switch on these names.
 The Go `server.Bundle` now compiles the headless HTTP boundary as a stable
 router plus separate realtime, observability, session-inspection, and canonical
 management-session API entries. Every entry carries the exact selected runtime
-artifact in server-realm live evidence. Remaining historical route aliases and
-direct gateway facades are deletion work, not dependencies of the target
-profile or APIs.
+artifact in server-realm live evidence. Historical route aliases and the fixed
+gateway facade have been deleted; the gateway exports payload handlers and the
+compiled server profile owns every public route.
 
 ## 3. Plugin contract
 
@@ -235,7 +235,8 @@ and explicit PCM/event transport.
 Observability is a versioned data/control API, not code embedded in a canvas.
 The target API exposes these resource families under an OpenRealtime-specific
 namespace. The historical session-live alias is not part of the target and is
-deleted once all new profiles use the canonical management API:
+deleted; negotiated inspection capabilities point directly at the canonical
+management API:
 
 ```text
 GET  graph descriptor and exact canonical Graph IR by fingerprint

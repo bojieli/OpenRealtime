@@ -7,6 +7,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	legacy "github.com/bojieli/OpenRealtime/binding"
@@ -15,6 +16,7 @@ import (
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	"github.com/bojieli/OpenRealtime/graphs"
+	"github.com/bojieli/OpenRealtime/interaction"
 	meetinggraph "github.com/bojieli/OpenRealtime/meeting/graphnative"
 )
 
@@ -47,14 +49,14 @@ func meetingProfileExecutable() inspect.ArtifactIdentity {
 type fixtureMeetingDeploymentVerifier struct {
 	identities meetingDeploymentIdentities
 	err        error
-	resolve    int
-	verify     int
+	resolve    atomic.Int32
+	verify     atomic.Int32
 }
 
 func (verifier *fixtureMeetingDeploymentVerifier) Resolve(
 	ctx context.Context,
 ) (meetingDeploymentIdentities, error) {
-	verifier.resolve++
+	verifier.resolve.Add(1)
 	if err := context.Cause(ctx); err != nil {
 		return meetingDeploymentIdentities{}, err
 	}
@@ -70,7 +72,7 @@ func (verifier *fixtureMeetingDeploymentVerifier) Resolve(
 func (verifier *fixtureMeetingDeploymentVerifier) Verify(
 	ctx context.Context, expected meetingDeploymentIdentities,
 ) error {
-	verifier.verify++
+	verifier.verify.Add(1)
 	if err := context.Cause(ctx); err != nil {
 		return err
 	}
@@ -189,11 +191,36 @@ func TestMeetingForegroundCompositionDisablesPrivateSlowLane(t *testing.T) {
 		!slices.Equal(capabilities.Observers, []string{"audio", "screen"}) {
 		t.Fatalf("foreground capabilities = %+v", capabilities)
 	}
-	if got := foreground.policies.Report().Rollout; got != "fast-only" {
+	if got := foreground.policies.Report().Rollout; got != "meeting-fast-tool-continuations" {
 		t.Fatalf("foreground rollout = %q", got)
+	}
+	if descriptor := meetingForegroundLLMRequest(config).ToolAuthority; descriptor != continuation.ToolAuthorityExecute {
+		t.Fatalf("foreground tool authority = %q, want execute", descriptor)
+	}
+	reflex := meetingVisualReflexLLMRequest(config)
+	if reflex.Provider != config.ModelProvider || reflex.Model != config.Model ||
+		reflex.BaseURL != config.ModelURL || reflex.Phase != meetingForegroundLLMRequest(config).Phase ||
+		reflex.ToolAuthority != continuation.ToolAuthorityExecute ||
+		reflex.SpeechAuthority != continuation.SpeechAuthoritySilent ||
+		reflex.Vision == nil || !*reflex.Vision ||
+		reflex.RequestTimeout != 2_000_000_000 {
+		t.Fatalf("Meeting visual reflex request = %+v", reflex)
 	}
 	if !foreground.inner.Capabilities().FastSlow {
 		t.Fatal("cascade test precondition changed: inner binding no longer exposes its private slow slot")
+	}
+	runtime, err := binding.Start(context.Background(), legacy.Options{Sink: meetingProfileProbeSink{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := runtime.Status()
+	if status.Fast != meetingLocalModelProvider+"/"+meetingLocalModelName ||
+		status.Reflex != meetingLocalModelProvider+"/"+meetingLocalModelName ||
+		status.Slow != "" || status.Tools.Fast != string(continuation.ToolAuthorityExecute) {
+		t.Fatalf("Meeting foreground live role status = %+v", status)
+	}
+	if err := runtime.Close(context.Background(), errors.New("composition test complete")); err != nil {
+		t.Fatal(err)
 	}
 	dormant := meetingDormantProvider{descriptor: meetingDormantDescriptor()}
 	if dormant.Descriptor().EffectiveToolAuthority() != continuation.ToolAuthorityExecute ||
@@ -203,6 +230,59 @@ func TestMeetingForegroundCompositionDisablesPrivateSlowLane(t *testing.T) {
 	if _, err := dormant.Continue(context.Background(), continuation.Request{}, nil); err == nil ||
 		!strings.Contains(err.Error(), "graph owns background") {
 		t.Fatalf("dormant foreground slow provider error = %v", err)
+	}
+}
+
+func TestMeetingForegroundRolloutContinuesToolResultsWithoutPrivateSlowWork(t *testing.T) {
+	policy := meetingForegroundRollout{}
+	for _, test := range []struct {
+		name  string
+		cause interaction.Cause
+	}{
+		{name: "observation", cause: interaction.Cause{Observation: true}},
+		{name: "tool result", cause: interaction.Cause{ToolResult: true}},
+		{name: "tool error", cause: interaction.Cause{ToolError: true}},
+		{name: "composite resume", cause: interaction.Cause{CompositeResume: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			steps := policy.Plan(interaction.RolloutInput{Cause: test.cause})
+			if len(steps) != 1 || steps[0].Kind != interaction.StepFast {
+				t.Fatalf("Meeting foreground steps = %+v", steps)
+			}
+		})
+	}
+	for _, cause := range []interaction.Cause{{Escalated: true}, {BackgroundResult: true}} {
+		if steps := policy.Plan(interaction.RolloutInput{Cause: cause}); len(steps) != 0 {
+			t.Fatalf("Meeting foreground scheduled private work for %+v: %+v", cause, steps)
+		}
+	}
+}
+
+func TestMeetingForegroundInstructionKeepsActionsSilentCompleteAndNonRepeating(t *testing.T) {
+	for _, required := range []string{
+		"successful tool result is not complete",
+		"continue until the user's requested sequence is complete",
+		"use its declared visible control silently",
+		"screen observation or background result alone does not authorize a spoken response",
+		"never repeat an answer already given",
+	} {
+		if !strings.Contains(meetingForegroundInstruction, required) {
+			t.Fatalf("Meeting foreground instruction omitted %q: %q", required, meetingForegroundInstruction)
+		}
+	}
+	for _, benchmarkSpecific := range []string{
+		"launch review", "share screen", "deployment alert", "18.4",
+	} {
+		if strings.Contains(strings.ToLower(meetingForegroundInstruction), benchmarkSpecific) {
+			t.Fatalf("Meeting foreground instruction embeds benchmark fixture %q", benchmarkSpecific)
+		}
+	}
+}
+
+func TestDefaultMeetingInspectionLeaseCoversFullCandidateCaseAndAttestation(t *testing.T) {
+	const minimumLeaseMS = 120_000
+	if got := defaultMeetingProfileOptions().inspectionTTL; got < minimumLeaseMS {
+		t.Fatalf("default Meeting inspection lease = %d ms, want at least %d", got, minimumLeaseMS)
 	}
 }
 
@@ -227,14 +307,26 @@ func TestFreezeMeetingProfileBindsExactGraphResolutionAndDeployments(t *testing.
 		frozen.Profile.Server.Model != meetingLocalModelName ||
 		frozen.Profile.Server.TranscriptionModel != meetingLocalASRModel ||
 		frozen.Profile.Server.TokenEnvironment != "OPENREALTIME_TOKEN" ||
+		frozen.Profile.Server.VideoLimits.FPSCap != 5 ||
+		frozen.Profile.Server.VideoLimits.FPSCap !=
+			(frozen.Configuration.Foreground.FrameRateMilliHz+999)/1_000 ||
+		frozen.Configuration.FormatVersion != 2 ||
 		frozen.Configuration.Foreground.TTSVoice != "default" ||
+		frozen.Configuration.Foreground.VisualReflexMaxTokens != 96 ||
+		frozen.Configuration.Foreground.VisualReflexTimeoutMS != 2_000 ||
+		!frozen.Configuration.Foreground.AttachKeyframes ||
 		frozen.Configuration.Background.Model != "gemini-3.7-flash" ||
 		frozen.Configuration.Background.Deployment != options.deployments.Background {
 		t.Fatalf("frozen Meeting profile = %+v", frozen)
 	}
 	if len(frozen.Resolution.Elements) != len(frozen.Plan.Graph().Nodes) ||
+		frozen.Resolution.Deployment == nil ||
+		frozen.Resolution.Deployment.PrivateDeploymentFingerprint == "" ||
 		frozen.Execution.Graph == nil ||
-		frozen.Execution.Graph.Graph.Fingerprint != frozen.Plan.Graph().Fingerprint {
+		frozen.Execution.Graph.Graph.Fingerprint != frozen.Plan.Graph().Fingerprint ||
+		frozen.Execution.Graph.Deployment == nil ||
+		frozen.Execution.Graph.Deployment.PrivateDeploymentFingerprint !=
+			frozen.Resolution.Deployment.PrivateDeploymentFingerprint {
 		t.Fatalf("frozen Meeting execution = %+v", frozen.Execution)
 	}
 
@@ -248,6 +340,31 @@ func TestFreezeMeetingProfileBindsExactGraphResolutionAndDeployments(t *testing.
 	if other.Profile.Fingerprint == frozen.Profile.Fingerprint ||
 		other.Plan.Identity() == frozen.Plan.Identity() {
 		t.Fatal("background deployment drift did not change exact Meeting profile and plan identities")
+	}
+
+	reflexDrift := options
+	reflexDrift.verifier = verifier
+	reflexFrozen, err := freezeProductionMeetingProfile(
+		context.Background(), reflexDrift, executable,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reflexFrozen.Configuration.Foreground.VisualReflexTimeoutMS++
+	reflexArtifact, err := meetingConfigurationArtifact(
+		meetingRuntimeArtifactID, reflexFrozen.Configuration.Foreground, executable,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalArtifact, err := meetingConfigurationArtifact(
+		meetingRuntimeArtifactID, frozen.Configuration.Foreground, executable,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reflexArtifact == originalArtifact {
+		t.Fatal("visual reflex bound drift did not change Meeting foreground artifact")
 	}
 }
 
@@ -284,5 +401,23 @@ func TestMeetingProfileRejectsCancellationAndInvalidDeploymentBeforeComposition(
 		context.Background(), options, meetingProfileExecutable(),
 	); err == nil || !strings.Contains(err.Error(), "without a deployment verifier") {
 		t.Fatalf("unverified Meeting profile error = %v", err)
+	}
+}
+
+func TestMeetingForegroundRejectsUnboundedVisualReflexBeforeProviderComposition(t *testing.T) {
+	config := defaultMeetingLocalConfiguration(
+		meetingProfileExecutable(), meetingProfileDeployments(),
+	).Foreground
+	for _, mutate := range []func(*meetingLocalForegroundConfig){
+		func(config *meetingLocalForegroundConfig) { config.VisualReflexMaxTokens = 0 },
+		func(config *meetingLocalForegroundConfig) { config.VisualReflexTimeoutMS = 0 },
+	} {
+		candidate := config
+		mutate(&candidate)
+		if _, err := newMeetingForegroundBinding(
+			context.Background(), candidate, legacy.Options{},
+		); err == nil || !strings.Contains(err.Error(), "positive token and timeout bounds") {
+			t.Fatalf("unbounded visual reflex error = %v", err)
+		}
 	}
 }

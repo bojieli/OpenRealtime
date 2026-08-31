@@ -44,41 +44,35 @@ func TestLiveInspectionIsAuthenticatedUnguessableAndBoundToOneSession(t *testing
 		t.Fatalf("inspection capability is not a header-only 256-bit token: %+v (%v)", firstAccess, err)
 	}
 
-	status, _, _ := getInspection(t, server, firstAccess.Path, firstAccess.Token, "")
-	if status != http.StatusUnauthorized {
-		t.Fatalf("session capability bypassed deployment authentication: status %d", status)
+	firstCanonical := management.APIPrefix + "/sessions/" + firstAccess.SessionID + "/live"
+	secondCanonical := management.APIPrefix + "/sessions/" + secondAccess.SessionID + "/live"
+	if firstAccess.Path != firstCanonical || secondAccess.Path != secondCanonical {
+		t.Fatalf("negotiated management paths are not canonical: %+v %+v",
+			firstAccess, secondAccess)
 	}
-	status, _, _ = getInspection(t, server, firstAccess.Path, "", deploymentToken)
+	status, _, _ := getManagement(t, server, firstAccess.Path, "")
 	if status != http.StatusNotFound {
 		t.Fatalf("guessable session ID was sufficient authority: status %d", status)
 	}
 	guessed := "ins_" + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x41}, 32))
-	status, _, _ = getInspection(t, server, firstAccess.Path, guessed, deploymentToken)
+	status, _, _ = getManagement(t, server, firstAccess.Path, guessed)
 	if status != http.StatusNotFound {
 		t.Fatalf("guessed capability was distinguishable or accepted: status %d", status)
 	}
-	status, _, _ = getInspection(t, server, secondAccess.Path, firstAccess.Token, deploymentToken)
+	status, _, _ = getManagement(t, server, secondAccess.Path, firstAccess.Token)
 	if status != http.StatusNotFound {
 		t.Fatalf("one session capability inspected another session: status %d", status)
 	}
-	firstCanonical := management.APIPrefix + "/sessions/" + firstAccess.SessionID + "/live"
-	secondCanonical := management.APIPrefix + "/sessions/" + secondAccess.SessionID + "/live"
-	status, _, _ = getManagement(t, server, firstCanonical, firstAccess.Token)
+	status, _, _ = getManagement(t, server, firstAccess.Path, firstAccess.Token)
 	if status != http.StatusOK {
-		t.Fatalf("negotiated capability is unavailable on canonical API: status %d", status)
+		t.Fatalf("negotiated capability is unavailable: status %d", status)
 	}
 	status, _, _ = getManagement(t, server, secondCanonical, firstAccess.Token)
 	if status != http.StatusNotFound {
-		t.Fatalf("canonical API allowed cross-session capability use: status %d", status)
-	}
-	status, _, _ = getInspection(t, server, firstCanonical, firstAccess.Token, deploymentToken)
-	if status != http.StatusNotFound {
-		t.Fatalf("canonical API accepted the compatibility header: status %d", status)
+		t.Fatalf("management API allowed cross-session capability use: status %d", status)
 	}
 
-	status, payload, headers := getInspection(
-		t, server, firstAccess.Path, firstAccess.Token, deploymentToken,
-	)
+	status, payload, headers := getManagement(t, server, firstAccess.Path, firstAccess.Token)
 	if status != http.StatusOK {
 		t.Fatalf("authorized live inspection: status %d: %s", status, payload)
 	}
@@ -98,7 +92,7 @@ func TestLiveInspectionIsAuthenticatedUnguessableAndBoundToOneSession(t *testing
 	if rotated.Token == firstAccess.Token {
 		t.Fatal("renegotiation retained a plaintext bearer instead of rotating it")
 	}
-	status, _, _ = getInspection(t, server, firstAccess.Path, firstAccess.Token, deploymentToken)
+	status, _, _ = getManagement(t, server, firstAccess.Path, firstAccess.Token)
 	if status != http.StatusNotFound {
 		t.Fatalf("rotated inspection capability remained active: status %d", status)
 	}
@@ -106,7 +100,7 @@ func TestLiveInspectionIsAuthenticatedUnguessableAndBoundToOneSession(t *testing
 	if status != http.StatusNotFound {
 		t.Fatalf("canonical API retained the rotated capability: status %d", status)
 	}
-	status, _, _ = getInspection(t, server, rotated.Path, rotated.Token, deploymentToken)
+	status, _, _ = getManagement(t, server, rotated.Path, rotated.Token)
 	if status != http.StatusOK {
 		t.Fatalf("rotated inspection capability is unavailable: status %d", status)
 	}
@@ -123,7 +117,7 @@ func TestLiveInspectionIsAuthenticatedUnguessableAndBoundToOneSession(t *testing
 	if access, present := debug["inspection"]; present && access != nil {
 		t.Fatalf("ordinary session update replayed inspection authority: %v", access)
 	}
-	status, _, _ = getInspection(t, server, rotated.Path, rotated.Token, deploymentToken)
+	status, _, _ = getManagement(t, server, rotated.Path, rotated.Token)
 	if status != http.StatusOK {
 		t.Fatalf("ordinary session update revoked live inspection: status %d", status)
 	}
@@ -138,7 +132,7 @@ func TestLiveInspectionExpiresAndIsRevokedWithSessionLifecycle(t *testing.T) {
 	if delay := time.Until(waitUntil); delay > 0 {
 		time.Sleep(delay)
 	}
-	status, _, _ := getInspection(t, server, first.Path, first.Token, "")
+	status, _, _ := getManagement(t, server, first.Path, first.Token)
 	if status != http.StatusNotFound {
 		t.Fatalf("expired inspection token remained active: status %d", status)
 	}
@@ -148,7 +142,7 @@ func TestLiveInspectionExpiresAndIsRevokedWithSessionLifecycle(t *testing.T) {
 		t.Fatal("expired token was reissued")
 	}
 	canonical := management.APIPrefix + "/sessions/" + second.SessionID + "/live"
-	status, _, _ = getInspection(t, server, second.Path, second.Token, "")
+	status, _, _ = getManagement(t, server, second.Path, second.Token)
 	if status != http.StatusOK {
 		t.Fatalf("renewed inspection token is unavailable: status %d", status)
 	}
@@ -161,7 +155,7 @@ func TestLiveInspectionExpiresAndIsRevokedWithSessionLifecycle(t *testing.T) {
 		"debug":   map[string]any{"enabled": false},
 	})
 	client.await("session.updated", 5*time.Second)
-	status, _, _ = getInspection(t, server, second.Path, second.Token, "")
+	status, _, _ = getManagement(t, server, second.Path, second.Token)
 	if status != http.StatusNotFound {
 		t.Fatalf("disabling debug did not revoke inspection token: status %d", status)
 	}
@@ -240,7 +234,7 @@ func TestLiveInspectionRedactsPayloadDerivedIdentifiersButPreservesConfiguration
 	client := dialInspection(t, server, "")
 	client.await("session.created", 5*time.Second)
 	access := negotiateInspection(t, client)
-	status, payload, _ := getInspection(t, server, access.Path, access.Token, "")
+	status, payload, _ := getManagement(t, server, access.Path, access.Token)
 	if status != http.StatusOK {
 		t.Fatalf("read redacted inspection: status %d: %s", status, payload)
 	}
@@ -400,7 +394,7 @@ func startInspectionServerWithGraphConfig(
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpServer := httptest.NewServer(server.Handler())
+	httpServer := httptest.NewServer(testGatewayHandler(server))
 	t.Cleanup(func() {
 		httpServer.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -472,32 +466,6 @@ func inspectionDebugResponse(t *testing.T, updated map[string]any) map[string]an
 		t.Fatalf("session.updated has no debug response: %v", extension)
 	}
 	return debug
-}
-
-func getInspection(
-	t *testing.T, server *httptest.Server, path, capability, deploymentToken string,
-) (int, []byte, http.Header) {
-	t.Helper()
-	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if capability != "" {
-		request.Header.Set(gateway.InspectionTokenHeader, capability)
-	}
-	if deploymentToken != "" {
-		request.Header.Set("Authorization", "Bearer "+deploymentToken)
-	}
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer response.Body.Close()
-	payload, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return response.StatusCode, payload, response.Header.Clone()
 }
 
 func getManagement(

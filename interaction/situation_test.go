@@ -217,6 +217,55 @@ func TestFinalTranscriptCanCatchUpARestrictedStandingAct(t *testing.T) {
 	t.Fatal("a final transcript cannot recover the required restricted act")
 }
 
+// A non-speech condition is the other way the thing reserved by "and say
+// nothing else" can arrive. The restricted policy must still be judged from
+// the frame or timer; removing answer here turns that judgement into a
+// foregone decision to stay silent.
+func TestNonSpeechEvidenceCanSatisfyARestrictedStandingAct(t *testing.T) {
+	tests := []struct {
+		name  string
+		state interaction.Situation
+	}{
+		{
+			name: "direct frame",
+			state: interaction.Situation{
+				Pins:        []string{"tell me when the build finishes and say nothing else"},
+				Restricted:  true,
+				Seeing:      []interaction.Image{{MIMEType: "image/png", Bytes: []byte("frame")}},
+				AllowedActs: []interaction.Act{interaction.ActStaySilent, interaction.ActAnswer},
+			},
+		},
+		{
+			name: "described frame",
+			state: interaction.Situation{
+				Pins:       []string{"tell me when the build finishes and say nothing else"},
+				Restricted: true, Seen: "the build finished",
+				AllowedActs: []interaction.Act{interaction.ActStaySilent, interaction.ActAnswer},
+			},
+		},
+		{
+			name: "quiet timer",
+			state: interaction.Situation{
+				Pins:       []string{"ask if I am there after fifteen seconds and say nothing else"},
+				Restricted: true, Quiet: true, Silence: "15s",
+				AllowedActs: []interaction.Act{interaction.ActStaySilent, interaction.ActAnswer},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var sawSilent, sawAnswer bool
+			for _, act := range test.state.AvailableActs() {
+				sawSilent = sawSilent || act == interaction.ActStaySilent
+				sawAnswer = sawAnswer || act == interaction.ActAnswer
+			}
+			if !sawSilent || !sawAnswer {
+				t.Fatalf("restricted condition acts = %v, want listen and answer", test.state.AvailableActs())
+			}
+		})
+	}
+}
+
 // And without such a policy it is offered as before, since the floor is free.
 func TestAnswerSurvivesAPolicyThatOnlyNamesSomethingToDo(t *testing.T) {
 	state := interaction.Situation{Pins: []string{"count the animals out loud as they mention them"}}

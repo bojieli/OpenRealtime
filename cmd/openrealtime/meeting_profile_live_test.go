@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bojieli/OpenRealtime/gateway"
-	"github.com/bojieli/OpenRealtime/graph/inspect"
 	openrealtime "github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/coder/websocket"
 )
@@ -137,31 +134,7 @@ func TestMeetingProductionProfileUsesAuthenticatedLiveDeploymentsAndInspection(t
 	})
 	updated := client.awaitType(30*time.Second, "session.updated")
 	access := meetingInspectionAccess(t, updated)
-	request, err := http.NewRequestWithContext(
-		context.Background(), http.MethodGet, server.URL+access.Path, nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request.Header.Set("Authorization", "Bearer "+deploymentToken)
-	request.Header.Set(gateway.InspectionTokenHeader, access.Token)
-	inspectionResponse, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer inspectionResponse.Body.Close()
-	payload, err := io.ReadAll(io.LimitReader(inspectionResponse.Body, 4<<20))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if inspectionResponse.StatusCode != http.StatusOK {
-		t.Fatalf("Meeting authenticated inspection status=%d payload=%s",
-			inspectionResponse.StatusCode, payload)
-	}
-	var live inspect.Live
-	if err := json.Unmarshal(payload, &live); err != nil {
-		t.Fatal(err)
-	}
+	live := awaitMeetingExactLiveResolution(t, endpoint, access, frozen)
 	graph := frozen.Plan.Graph()
 	if live.GraphID != graph.ID || live.GraphRevision != graph.Revision ||
 		live.Fingerprint != graph.Fingerprint || live.Adapter == nil ||

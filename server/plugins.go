@@ -164,7 +164,6 @@ func NewGatewayFactory(config GatewayFactoryConfig) (*GatewayFactory, error) {
 			Provides: []plugin.Contract{
 				RealtimeEndpointContract(),
 				ObservabilityEndpointsContract(),
-				InspectionCompatibilityEndpointContract(),
 			},
 			Requires: []plugin.Requirement{
 				{Contract: SessionProviderContract()},
@@ -230,13 +229,8 @@ func (factory *GatewayFactory) Mount(
 	if err := mount.Publisher.Provide(RealtimeEndpointContract(), RealtimeEndpoint(server)); err != nil {
 		return err
 	}
-	if err := mount.Publisher.Provide(
-		ObservabilityEndpointsContract(), ObservabilityEndpoints(server),
-	); err != nil {
-		return err
-	}
 	return mount.Publisher.Provide(
-		InspectionCompatibilityEndpointContract(), InspectionCompatibilityEndpoint(server),
+		ObservabilityEndpointsContract(), ObservabilityEndpoints(server),
 	)
 }
 

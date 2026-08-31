@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/computeruse"
-	"github.com/bojieli/OpenRealtime/gateway"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
+	"github.com/bojieli/OpenRealtime/management"
 	openrealtime "github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/coder/websocket"
 )
@@ -151,8 +151,7 @@ func TestRealtimeCUProductionProfileUsesAuthenticatedLiveDeploymentsAndInspectio
 	if err != nil {
 		t.Fatal(err)
 	}
-	request.Header.Set("Authorization", "Bearer "+deploymentToken)
-	request.Header.Set(gateway.InspectionTokenHeader, access.Token)
+	request.Header.Set(management.CapabilityHeader, access.Token)
 	inspectionResponse, err := http.DefaultClient.Do(request)
 	if err != nil {
 		t.Fatal(err)
