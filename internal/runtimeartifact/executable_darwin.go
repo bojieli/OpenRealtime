@@ -88,6 +88,9 @@ func darwinCodeSigningBlob() ([]byte, error) {
 }
 
 func darwinCSOps(operation uintptr, destination []byte) syscall.Errno {
+	if libcCSOpsTrampolineAddress == 0 {
+		return syscall.ENOSYS
+	}
 	var address uintptr
 	if len(destination) != 0 {
 		address = uintptr(unsafe.Pointer(&destination[0]))
@@ -102,7 +105,7 @@ func darwinCSOps(operation uintptr, destination []byte) syscall.Errno {
 
 var libcCSOpsTrampolineAddress uintptr
 
-//go:cgo_import_dynamic libcCSOpsTrampolineAddress csops "/usr/lib/libSystem.B.dylib"
+//go:cgo_import_dynamic libc_csops csops "/usr/lib/libSystem.B.dylib"
 
 // runtimeArtifactSyscall6 is the same stable libSystem bridge used by
 // golang.org/x/sys/unix on Darwin. It works in CGO_ENABLED=0 release builds.
