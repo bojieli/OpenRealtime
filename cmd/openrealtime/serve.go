@@ -529,7 +529,7 @@ func serve(options serveOptions, output io.Writer) (returnErr error) {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(output, "  webrtc   http://%s/v1/realtime (SDP offer)\n", options.webrtcListen)
+		fmt.Fprintf(output, "  webrtc   http://%s/v1/realtime/calls (SDP offer)\n", options.webrtcListen)
 		defer func() {
 			shutdown, cancel := context.WithTimeout(context.Background(), options.shutdownTimeout)
 			defer cancel()

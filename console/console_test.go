@@ -196,7 +196,7 @@ func TestTheConfigDescribesWhatThisConsoleCanDo(t *testing.T) {
 	fake := newEndpoint(t)
 	local := startConsole(t, console.Config{
 		Endpoint: fake.url(), Host: host, Token: "sekrit",
-		WebRTCEndpoint: "http://127.0.0.1:8766/v1/realtime",
+		WebRTCEndpoint: "http://127.0.0.1:8766/v1/realtime/calls",
 	})
 	response, err := http.Get(local.URL + "/api/config")
 	if err != nil {

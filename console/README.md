@@ -12,7 +12,7 @@ Open `http://127.0.0.1:8767` and press Connect.
 ```sh
 openrealtime console \
   -endpoint ws://gpu-box:8765/v1/realtime \
-  -webrtc  http://gpu-box:8766/v1/realtime \
+  -webrtc  http://gpu-box:8766/v1/realtime/calls \
   -root ~/project \
   -tools read_file,list_directory,search_files,write_file,run_command
 ```

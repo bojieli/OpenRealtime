@@ -200,7 +200,7 @@ func (client *browser) connect(t *testing.T, endpoint *httptest.Server) {
 	}
 	<-gathered
 
-	response, err := http.Post(endpoint.URL+"/v1/realtime", "application/sdp",
+	response, err := http.Post(endpoint.URL+"/v1/realtime/calls", "application/sdp",
 		strings.NewReader(client.connection.LocalDescription().SDP))
 	if err != nil {
 		t.Fatalf("offer: %v", err)
@@ -459,7 +459,7 @@ func TestOfferIsRejectedWhenTheEndpointIsUnreachable(t *testing.T) {
 	gathered := pion.GatheringCompletePromise(client.connection)
 	_ = client.connection.SetLocalDescription(offer)
 	<-gathered
-	response, err := http.Post(server.URL+"/v1/realtime", "application/sdp",
+	response, err := http.Post(server.URL+"/v1/realtime/calls", "application/sdp",
 		strings.NewReader(client.connection.LocalDescription().SDP))
 	if err != nil {
 		t.Fatalf("post: %v", err)
@@ -476,6 +476,35 @@ func TestOfferIsRejectedWhenTheEndpointIsUnreachable(t *testing.T) {
 func TestAdapterRequiresAnEndpoint(t *testing.T) {
 	if _, err := adapter.New(adapter.Config{}); err == nil {
 		t.Fatal("an adapter with no protocol endpoint has no session to bridge to")
+	}
+}
+
+func TestAdapterExposesOnlyTheGAWebRTCCallPath(t *testing.T) {
+	bridge, err := adapter.New(adapter.Config{
+		Endpoint: "ws://127.0.0.1:1/v1/realtime", ConnectTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(bridge.Handler())
+	defer server.Close()
+
+	legacy, err := http.Post(server.URL+"/v1/realtime", "application/sdp", strings.NewReader("v=0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy.Body.Close()
+	if legacy.StatusCode != http.StatusNotFound {
+		t.Fatalf("legacy WebRTC offer path status = %d, want 404", legacy.StatusCode)
+	}
+
+	current, err := http.Post(server.URL+"/v1/realtime/calls", "application/sdp", strings.NewReader("v=0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	current.Body.Close()
+	if current.StatusCode == http.StatusNotFound {
+		t.Fatal("GA WebRTC call path is not mounted")
 	}
 }
 
@@ -721,7 +750,7 @@ func TestTheAdapterAnswersOnlyTheOriginsItWasGiven(t *testing.T) {
 
 	preflight := func(origin string) *http.Response {
 		t.Helper()
-		request, err := http.NewRequest(http.MethodOptions, server.URL+"/v1/realtime", nil)
+		request, err := http.NewRequest(http.MethodOptions, server.URL+"/v1/realtime/calls", nil)
 		if err != nil {
 			t.Fatalf("build the preflight: %v", err)
 		}
@@ -766,7 +795,7 @@ func TestAnAdapterWithNoAllowedOriginsAnswersNoBrowser(t *testing.T) {
 	t.Parallel()
 	endpoint := newProtocolServer(t)
 	server := startAdapter(t, endpoint)
-	request, err := http.NewRequest(http.MethodOptions, server.URL+"/v1/realtime", nil)
+	request, err := http.NewRequest(http.MethodOptions, server.URL+"/v1/realtime/calls", nil)
 	if err != nil {
 		t.Fatalf("build the preflight: %v", err)
 	}

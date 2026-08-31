@@ -10,7 +10,7 @@ python3 -m http.server 8080 --directory examples/browser
 ```
 
 Open `http://127.0.0.1:8080` and press Connect. Point it at another adapter
-with `?adapter=http://host:port/v1/realtime`.
+with `?adapter=http://host:port/v1/realtime/calls`.
 
 The realtime gateway deliberately does not serve this page. New client work
 uses `openrealtime present`, whose standalone host serves a descriptor-locked

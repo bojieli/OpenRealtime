@@ -51,7 +51,7 @@
 // Point it at the adapter's SDP endpoint. It is served from anywhere; the only
 // thing it needs is that endpoint.
 const ADAPTER = new URLSearchParams(location.search).get("adapter")
-  ?? "http://127.0.0.1:8766/v1/realtime";
+  ?? "http://127.0.0.1:8766/v1/realtime/calls";
 
 const state = document.getElementById("state");
 const stats = document.getElementById("stats");

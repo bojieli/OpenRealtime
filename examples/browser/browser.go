@@ -34,7 +34,7 @@ func Handler() http.Handler {
 		// does connect elsewhere, and that is the whole of what it does. The
 		// SDP offer goes to an adapter that is a different origin in every
 		// documented configuration: the README points it with
-		// ?adapter=http://host:port/v1/realtime, and `serve -demo
+		// ?adapter=http://host:port/v1/realtime/calls, and `serve -demo
 		// -webrtc-listen 127.0.0.1:8766` puts the page on one port and the
 		// adapter on another. connect-src 'self' forbade exactly that request,
 		// so the demo could not reach an adapter anywhere.

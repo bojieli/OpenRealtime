@@ -40,7 +40,7 @@ func startLoopbackWebRTC(upstream, token, model string) (string, func(), error) 
 		defer cancel()
 		_ = server.Shutdown(shutdown)
 	}
-	return "http://" + listener.Addr().String() + "/v1/realtime", closeAdapter, nil
+	return "http://" + listener.Addr().String() + "/v1/realtime/calls", closeAdapter, nil
 }
 
 const (
