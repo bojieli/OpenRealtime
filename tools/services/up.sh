@@ -85,7 +85,7 @@ if [ "${#whisper_dependency_roots[@]}" -eq 0 ]; then
   exit 1
 fi
 whisper_arguments=(
-  --model "${whisper_snapshot}" --device cuda --compute-type float16
+  --model "${whisper_snapshot}" --device cuda --compute-type int8
   --language en
 )
 for dependency_root in "${whisper_dependency_roots[@]}"; do

@@ -1077,7 +1077,7 @@ func validateRealtimeCUWhisperProcess(
 	}
 	want := []string{
 		process.Arguments[0], "-I", "-S", "-B", realtimeCUWhisperServiceArgument,
-		"--model", modelPath, "--device", "cuda", "--compute-type", "float16",
+		"--model", modelPath, "--device", "cuda", "--compute-type", "int8",
 		"--language", "en",
 	}
 	for _, root := range expectedDependencyRoots {
@@ -1846,7 +1846,7 @@ func probeRealtimeCUWhisper(
 		payload.Status != "ok" || payload.Model != realtimeCULocalASRModel ||
 		payload.ModelPath != modelPath || payload.MaterializedModelPath != materializedPath ||
 		payload.Device != "cuda" ||
-		payload.ComputeType != "float16" || payload.Language != "en" ||
+		payload.ComputeType != "int8" || payload.Language != "en" ||
 		!reflect.DeepEqual(payload.DependencyRoots, dependencyRoots) ||
 		payload.DependencyDigest != material.DependencyDigest ||
 		payload.Revision != material.Revision || payload.Digest != material.LoadedDigest ||

@@ -436,7 +436,7 @@ func TestRealtimeCUWhisperProcessRequiresExactImmutableSnapshotAndCommand(t *tes
 	}
 	valid := realtimeCUProcessSnapshot{Arguments: []string{
 		"/runtime/python", "-I", "-S", "-B", realtimeCUWhisperServiceArgument,
-		"--model", model, "--device", "cuda", "--compute-type", "float16",
+		"--model", model, "--device", "cuda", "--compute-type", "int8",
 		"--language", "en", "--dependency-root", dependencyRoot, "--port", "8003",
 	}}
 	if err := validateRealtimeCUWhisperProcess(valid, service, []string{dependencyRoot}); err != nil {
@@ -447,6 +447,11 @@ func TestRealtimeCUWhisperProcessRequiresExactImmutableSnapshotAndCommand(t *tes
 		func(arguments []string) []string {
 			copy := slices.Clone(arguments)
 			copy[slices.Index(copy, "--language")+1] = "auto"
+			return copy
+		},
+		func(arguments []string) []string {
+			copy := slices.Clone(arguments)
+			copy[slices.Index(copy, "--compute-type")+1] = "float16"
 			return copy
 		},
 		func(arguments []string) []string {
@@ -1320,7 +1325,7 @@ else:
 import server, types, sys
 server.WHISPER_DEPENDENCY_MODULES = ("faster_whisper",)
 arguments = types.SimpleNamespace(
-    port=int(sys.argv[1]), model=sys.argv[2], device="cuda", compute_type="float16",
+    port=int(sys.argv[1]), model=sys.argv[2], device="cuda", compute_type="int8",
     language="en", dependency_root=[sys.argv[2]], working_directory=sys.argv[3],
 )
 try:
