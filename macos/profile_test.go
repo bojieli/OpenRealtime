@@ -17,7 +17,7 @@ import (
 )
 
 func TestNativeBundlePinsProfileLockPlanAndImplementations(t *testing.T) {
-	bundle, err := NewNativeBundle()
+	bundle, err := NewNativeEffectsDeveloperBundle()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestNativeBundlePinsProfileLockPlanAndImplementations(t *testing.T) {
 		t.Fatalf("native host effect endpoint = %#v", bundle.Manifest.Endpoints)
 	}
 
-	again, err := NewNativeBundle()
+	again, err := NewNativeEffectsDeveloperBundle()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,21 +89,6 @@ func TestNativeBundlePinsProfileLockPlanAndImplementations(t *testing.T) {
 }
 
 func TestNativeDistributionSelectionIsExplicitAndObserverHasNoEffectsAuthority(t *testing.T) {
-	compatibility, err := NewNativeBundle()
-	if err != nil {
-		t.Fatal(err)
-	}
-	effects, err := NewNativeEffectsDeveloperBundle()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if compatibility.Profile.Fingerprint != effects.Profile.Fingerprint ||
-		compatibility.Lock.Fingerprint != effects.Lock.Fingerprint ||
-		compatibility.Plan.Fingerprint != effects.Plan.Fingerprint ||
-		compatibility.Manifest.Fingerprint != effects.Manifest.Fingerprint {
-		t.Fatal("compatibility constructor no longer selects the explicit effects distribution")
-	}
-
 	observer, err := NewNativeObserverDeveloperBundle()
 	if err != nil {
 		t.Fatal(err)
@@ -366,7 +351,7 @@ func TestNativeEndpointDirectoryRefusesOmissionTamperSubstitutionAndCredentials(
 }
 
 func TestNativeEffectsDistributionPinsSelectedCatalogDigest(t *testing.T) {
-	defaultBundle, err := NewNativeBundle()
+	defaultBundle, err := NewNativeEffectsDeveloperBundle()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +414,7 @@ func slicesContains(values []string, target string) bool {
 }
 
 func TestNativeManifestResourceMatchesGoComposition(t *testing.T) {
-	bundle, err := NewNativeBundle()
+	bundle, err := NewNativeEffectsDeveloperBundle()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -550,7 +535,7 @@ func TestNativeObserverManifestResourceMatchesGoComposition(t *testing.T) {
 }
 
 func TestNativePermissionsAreIsolatedToNativeAdapters(t *testing.T) {
-	bundle, err := NewNativeBundle()
+	bundle, err := NewNativeEffectsDeveloperBundle()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -619,10 +604,10 @@ func canonicalPermissions(input []plugin.Permission) []string {
 	return result
 }
 
-func BenchmarkNewNativeBundle(b *testing.B) {
+func BenchmarkNewNativeEffectsDeveloperBundle(b *testing.B) {
 	b.ReportAllocs()
 	for range b.N {
-		if _, err := NewNativeBundle(); err != nil {
+		if _, err := NewNativeEffectsDeveloperBundle(); err != nil {
 			b.Fatal(err)
 		}
 	}

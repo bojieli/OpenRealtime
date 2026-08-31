@@ -86,7 +86,7 @@ func (factory *WebSocketRelayFactory) Mount(_ context.Context, mount pluginrunti
 }
 
 func (factory *WebSocketRelayFactory) relayWebSocket(
-	target RealtimeTarget,
+	target relayTarget,
 	credential CredentialSource,
 	writer http.ResponseWriter,
 	request *http.Request,
@@ -246,7 +246,7 @@ func (factory *WebRTCRelayFactory) Mount(_ context.Context, mount pluginruntime.
 }
 
 func (factory *WebRTCRelayFactory) relayWebRTC(
-	target RealtimeTarget,
+	target relayTarget,
 	credential CredentialSource,
 	writer http.ResponseWriter,
 	request *http.Request,
@@ -303,14 +303,7 @@ func relayPermission(operation string) plugin.Permission {
 	}
 }
 
-func relayTargetValues(websocketURL, webrtcURL, model string) json.RawMessage {
-	payload, _ := json.Marshal(targetConfig{
-		WebSocket: websocketURL, WebRTC: webrtcURL, Model: model,
-	})
-	return payload
-}
-
-func validateRelayEndpoint(target RealtimeTarget) error {
+func validateRelayEndpoint(target relayTarget) error {
 	if target.WebSocket == "" {
 		return fmt.Errorf("realtime relay target has no WebSocket endpoint")
 	}

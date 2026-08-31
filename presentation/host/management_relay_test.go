@@ -24,6 +24,7 @@ import (
 	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/plugin"
 	pluginruntime "github.com/bojieli/OpenRealtime/plugin/runtime"
+	"github.com/bojieli/OpenRealtime/presentation"
 )
 
 func TestManagementRelayForwardsOnlyNarrowSessionCapability(t *testing.T) {
@@ -47,7 +48,7 @@ func TestManagementRelayForwardsOnlyNarrowSessionCapability(t *testing.T) {
 	defer backend.Close()
 
 	router := NewRouterFactory()
-	target := NewTargetFactory()
+	target := NewEndpointDirectoryFactory()
 	relay := NewManagementRelayFactory(nil, nil)
 	factories := []pluginruntime.Factory{relay, target, router}
 	plan := makeHostPlan(t, factories)
@@ -57,8 +58,9 @@ func TestManagementRelayForwardsOnlyNarrowSessionCapability(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	values, _ := json.Marshal(map[string]any{
-		"websocket": "ws" + strings.TrimPrefix(backend.URL, "http") + "/v1/realtime",
+	values := testEndpointDirectoryValues(t, "", presentation.Endpoint{
+		Name: presentation.EndpointManagement, Protocol: presentation.ProtocolManagement,
+		URL: backend.URL + management.APIPrefix,
 	})
 	mounted, err := pluginruntime.Mount(context.Background(), pluginruntime.Config{
 		Plan: plan, Registry: registry,
@@ -153,7 +155,7 @@ func TestManagementRelayRefusesRedirectFollowing(t *testing.T) {
 	request.SetPathValue("resource", "live")
 	request.Header.Set(management.CapabilityHeader, "mgmt_scoped")
 	response := httptest.NewRecorder()
-	factory.relay(base, RealtimeTarget{DialTimeout: 15 * time.Second}, response, request)
+	factory.relay(base, relayTarget{DialTimeout: 15 * time.Second}, response, request)
 	if response.Code != http.StatusFound || captured.Load() {
 		t.Fatalf("redirect response=%d followed=%t", response.Code, captured.Load())
 	}
@@ -269,7 +271,7 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 	defer backend.Close()
 
 	router := NewRouterFactory()
-	target := NewTargetFactory()
+	target := NewEndpointDirectoryFactory()
 	relay := NewManagementRelayFactory(nil, nil)
 	factories := []pluginruntime.Factory{relay, target, router}
 	registry := pluginruntime.NewRegistry()
@@ -278,8 +280,9 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 			t.Fatal(err)
 		}
 	}
-	values, _ := json.Marshal(map[string]any{
-		"websocket": "ws" + strings.TrimPrefix(backend.URL, "http") + "/v1/realtime",
+	values := testEndpointDirectoryValues(t, "", presentation.Endpoint{
+		Name: presentation.EndpointManagement, Protocol: presentation.ProtocolManagement,
+		URL: backend.URL + management.APIPrefix,
 	})
 	mounted, err := pluginruntime.Mount(context.Background(), pluginruntime.Config{
 		Plan: makeHostPlan(t, factories), Registry: registry,
@@ -423,7 +426,7 @@ func TestManagementRelayRejectsMalformedMismatchedAndOversizedStaticResponsesWit
 		request.SetPathValue("fingerprint", graph.Fingerprint)
 		request.Header.Set(management.CapabilityHeader, "operator_log_secret")
 		response := httptest.NewRecorder()
-		factory.relayGraph(base, RealtimeTarget{DialTimeout: 15 * time.Second}, response, request)
+		factory.relayGraph(base, relayTarget{DialTimeout: 15 * time.Second}, response, request)
 		if response.Code != http.StatusBadGateway {
 			t.Fatalf("malformed static mode %d status=%d body=%s", testMode, response.Code, response.Body.String())
 		}
@@ -458,7 +461,7 @@ func TestManagementRelayRejectsRenderContentThatOnlyClaimsTheRequestedIdentity(t
 	request.Header.Set(management.CapabilityHeader, "operator_render_secret")
 	response := httptest.NewRecorder()
 	NewManagementRelayFactory(nil, nil).relayAuthoring(
-		base, RealtimeTarget{DialTimeout: 15 * time.Second}, response, request,
+		base, relayTarget{DialTimeout: 15 * time.Second}, response, request,
 	)
 	if response.Code != http.StatusBadGateway {
 		t.Fatalf("forged render status=%d body=%s", response.Code, response.Body.String())

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/bojieli/OpenRealtime/plugin"
 	"github.com/bojieli/OpenRealtime/presentation"
 	"github.com/bojieli/OpenRealtime/presentation/host"
 )
@@ -52,6 +53,65 @@ func TestMinimalBundleIsAnExactReplaceableClientPlan(t *testing.T) {
 		bundle.Manifest.Platform != "browser" || bundle.Manifest.FormatVersion != presentation.ManifestFormatVersion {
 		t.Fatalf("manifest does not pin client plan: %#v", bundle.Manifest)
 	}
+}
+
+func TestComposeTextBundlePinsCallerModuleAndItsExactDependencies(t *testing.T) {
+	source := []byte(`export default {name:"example.client.challenge",revision:1,async mount(){}};`)
+	bundle, err := ComposeTextBundle("openrealtime.browser.composed-test", []ClientModule{{
+		Entry: "challenge", Entrypoint: "challenge.js", PluginName: "example.client.challenge",
+		Source: source,
+		Requires: []plugin.Requirement{
+			{Contract: presentation.ClientStateContract},
+			{Contract: presentation.ClientSessionConfigurationContract},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, validate := range map[string]func() error{
+		"profile": bundle.Profile.Validate, "lock": bundle.Lock.Validate,
+		"plan": bundle.Plan.Validate, "manifest": bundle.Manifest.Validate,
+	} {
+		if err := validate(); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	var order []string
+	for _, entry := range bundle.Plan.Entries {
+		order = append(order, entry.Entry.ID)
+	}
+	if !reflect.DeepEqual(order, []string{
+		"slots", "transport", "reducer", "session-configuration", "view", "challenge",
+	}) {
+		t.Fatalf("composed text client mount order = %v", order)
+	}
+	implementationDigest := manifestImplementationDigest(bundle.Manifest, "challenge")
+	wantDigestBytes := sha256.Sum256(source)
+	wantDigest := "sha256:" + hex.EncodeToString(wantDigestBytes[:])
+	if implementationDigest != wantDigest {
+		t.Fatalf("composed module digest = %q, want %q", implementationDigest, wantDigest)
+	}
+	source[0] = 'X'
+	if err := bundle.Manifest.Validate(); err != nil {
+		t.Fatalf("caller source mutation invalidated composed bundle: %v", err)
+	}
+	if got := manifestImplementationDigest(bundle.Manifest, "challenge"); got != wantDigest {
+		t.Fatalf("caller source mutation changed composed digest to %q, want %q", got, wantDigest)
+	}
+	if _, err := ComposeTextBundle("openrealtime.browser.empty-module", []ClientModule{{
+		Entry: "empty", Entrypoint: "empty.js", PluginName: "example.client.empty",
+	}}); err == nil || !strings.Contains(err.Error(), "empty source") {
+		t.Fatalf("empty caller module error = %v", err)
+	}
+}
+
+func manifestImplementationDigest(manifest presentation.ClientManifest, entry string) string {
+	for _, implementation := range manifest.Implementations {
+		if implementation.Entry == entry {
+			return implementation.Artifact.Digest
+		}
+	}
+	return ""
 }
 
 func TestCachedBundlesReturnMutationIsolatedValuesAndConstructConcurrently(t *testing.T) {

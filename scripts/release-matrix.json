@@ -322,21 +322,29 @@
       "covers": ["live-review:gemini-3.7-flash"]
     },
     {
-      "id": "external.model.live-surface",
-      "description": "Drive the live browser surface against the provisioned real-model deployment",
+      "id": "external.model.live-presentation",
+      "description": "Drive the descriptor-locked composable browser client against a provisioned real-model Realtime API",
       "availability": "provisioned",
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-count=1", "-v", "./surface", "-run", "^TestLiveSurfaceAgainstRealModels$"],
-      "environment": {"OPENREALTIME_LIVE_ENDPOINT": "{env:OPENREALTIME_LIVE_ENDPOINT}"},
+      "command": ["{go}", "test", "-count=1", "-v", "./presentation/browser", "-run", "^TestLiveComposablePresentationClientAgainstRealModelInChromium$"],
+      "environment": {
+        "OPENREALTIME_PRESENTATION_LIVE_ENDPOINT": "{env:OPENREALTIME_PRESENTATION_LIVE_ENDPOINT}",
+        "OPENREALTIME_PRESENTATION_LIVE_REQUIRED": "1",
+        "OPENREALTIME_RELEASE_GATE": "1"
+      },
       "timeout": "30m",
       "skip_policy": "forbid",
       "prerequisites": [
         {"kind": "browser", "description": "a real Chromium executable is available"},
         {"kind": "command", "value": "node", "description": "Node.js is available"},
-        {"kind": "env_url", "value": "OPENREALTIME_LIVE_ENDPOINT", "description": "the live model-backed Realtime endpoint is supplied"}
-      ]
+        {"kind": "env_url", "value": "OPENREALTIME_PRESENTATION_LIVE_ENDPOINT", "description": "the public live model-backed Realtime endpoint is supplied explicitly"}
+      ],
+      "assertions": [
+        {"kind": "stdout_regex", "value": "(?m)^live composable presentation client completed$"}
+      ],
+      "covers": ["presentation:browser:real-model"]
     },
     {
       "id": "external.model.scenario-review",

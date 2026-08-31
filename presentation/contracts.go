@@ -48,10 +48,6 @@ var (
 		"presentation.host.listener",
 		"openrealtime/presentation/host/listener/v1:network-address",
 	)
-	RealtimeTargetContract = semanticContract(
-		"presentation.host.realtime_target",
-		"openrealtime/presentation/host/realtime-target/v1:websocket-webrtc-model-timeout-limit",
-	)
 	EndpointDirectoryContract = semanticContract(
 		"presentation.host.endpoint_directory",
 		"openrealtime/presentation/host/endpoint-directory/v1:immutable-fingerprinted-closed-named-endpoints-model-timeout-limit",
@@ -59,10 +55,6 @@ var (
 	CredentialContract = semanticContract(
 		"presentation.host.realtime_credential",
 		"openrealtime/presentation/host/realtime-credential/v1:authorization-header-provider",
-	)
-	RealtimeTargetConfigContract = semanticContract(
-		"presentation.host.realtime_target.config",
-		"openrealtime/presentation/host/realtime-target-config/v1",
 	)
 	EndpointDirectoryConfigContract = semanticContract(
 		"presentation.host.endpoint_directory.config",

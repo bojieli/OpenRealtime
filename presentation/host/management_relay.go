@@ -135,7 +135,7 @@ func (factory *ManagementRelayFactory) Mount(_ context.Context, mount pluginrunt
 }
 
 func (factory *ManagementRelayFactory) relaySession(
-	base *url.URL, target RealtimeTarget, writer http.ResponseWriter, request *http.Request,
+	base *url.URL, target relayTarget, writer http.ResponseWriter, request *http.Request,
 ) {
 	session := request.PathValue("session")
 	resource := request.PathValue("resource")
@@ -160,13 +160,13 @@ func (factory *ManagementRelayFactory) relaySession(
 // tests and downstream embedders while the mounted route also exposes the new
 // static and authoring families through their own whitelisted handlers.
 func (factory *ManagementRelayFactory) relay(
-	base *url.URL, target RealtimeTarget, writer http.ResponseWriter, request *http.Request,
+	base *url.URL, target relayTarget, writer http.ResponseWriter, request *http.Request,
 ) {
 	factory.relaySession(base, target, writer, request)
 }
 
 func (factory *ManagementRelayFactory) relayGraph(
-	base *url.URL, target RealtimeTarget, writer http.ResponseWriter, request *http.Request,
+	base *url.URL, target relayTarget, writer http.ResponseWriter, request *http.Request,
 ) {
 	fingerprint := request.PathValue("fingerprint")
 	if !management.CanonicalDigest(fingerprint) || len(request.URL.Query()) != 0 {
@@ -190,7 +190,7 @@ func (factory *ManagementRelayFactory) relayGraph(
 }
 
 func (factory *ManagementRelayFactory) relayElementDescriptor(
-	base *url.URL, target RealtimeTarget, writer http.ResponseWriter, request *http.Request,
+	base *url.URL, target relayTarget, writer http.ResponseWriter, request *http.Request,
 ) {
 	identity, identityText, ok := relayElementIdentity(request)
 	if !ok {
@@ -217,7 +217,7 @@ func (factory *ManagementRelayFactory) relayElementDescriptor(
 }
 
 func (factory *ManagementRelayFactory) relayPluginDescriptor(
-	base *url.URL, target RealtimeTarget, writer http.ResponseWriter, request *http.Request,
+	base *url.URL, target relayTarget, writer http.ResponseWriter, request *http.Request,
 ) {
 	identity, identityText, ok := relayPluginIdentity(request)
 	if !ok {
@@ -244,7 +244,7 @@ func (factory *ManagementRelayFactory) relayPluginDescriptor(
 }
 
 func (factory *ManagementRelayFactory) relayValuesSchema(
-	base *url.URL, target RealtimeTarget, writer http.ResponseWriter, request *http.Request,
+	base *url.URL, target relayTarget, writer http.ResponseWriter, request *http.Request,
 ) {
 	fingerprint := request.PathValue("fingerprint")
 	if !management.CanonicalDigest(fingerprint) || len(request.URL.Query()) != 0 {
@@ -269,7 +269,7 @@ func (factory *ManagementRelayFactory) relayValuesSchema(
 }
 
 func (factory *ManagementRelayFactory) relayAuthoring(
-	base *url.URL, target RealtimeTarget, writer http.ResponseWriter, request *http.Request,
+	base *url.URL, target relayTarget, writer http.ResponseWriter, request *http.Request,
 ) {
 	action := request.PathValue("action")
 	if action != "analyze" && action != "compile" && action != "render" {
@@ -394,7 +394,7 @@ type relayRequest struct {
 }
 
 func (factory *ManagementRelayFactory) relayRequest(
-	base *url.URL, target RealtimeTarget, writer http.ResponseWriter,
+	base *url.URL, target relayTarget, writer http.ResponseWriter,
 	request *http.Request, spec relayRequest,
 ) {
 	capability, ok := managementCapability(request)

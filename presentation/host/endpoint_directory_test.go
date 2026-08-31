@@ -45,7 +45,7 @@ func TestEndpointDirectoryFactoryMountsExactExplicitProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mounted := mountEndpointTarget(t, factory, values, false)
+	mounted := mountEndpointTarget(t, factory, values)
 	t.Cleanup(func() { _ = mounted.Close(context.Background()) })
 	value, contract, provider, revision, err := mounted.Export("endpoints")
 	if err != nil || contract != presentation.EndpointDirectoryContract || provider != "target" || revision == 0 {
@@ -79,68 +79,20 @@ func TestEndpointDirectoryFactoryMountsExactExplicitProfile(t *testing.T) {
 	}
 }
 
-func TestLegacySameOriginEndpointsRequireExplicitAdapterDefaults(t *testing.T) {
+func TestEndpointDirectoryRejectsShortcutAndSameOriginConfiguration(t *testing.T) {
 	strict := NewEndpointDirectoryFactory()
 	legacyValues := json.RawMessage(`{"websocket":"wss://server.example.test/v1/realtime"}`)
 	if err := strict.ValidateConfig(legacyValues); err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("strict factory legacy config error = %v", err)
 	}
-
-	defaults := LegacyEndpointDefaults{
-		ManagementPath: "/custom/management/v7",
-		EffectsPath:    "/custom/effects/v3",
-		ArtifactsPath:  "/custom/artifacts/v2",
-		DownloadsPath:  "/custom/downloads/v2",
-	}
-	compatibility, err := NewLegacySameOriginTargetFactory(defaults)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mounted := mountEndpointTarget(t, compatibility, legacyValues, true)
-	t.Cleanup(func() { _ = mounted.Close(context.Background()) })
-	value, _, _, _, err := mounted.Export("endpoints")
-	if err != nil {
-		t.Fatal(err)
-	}
-	target := value.(EndpointTarget)
-	want := map[presentation.EndpointName]string{
-		presentation.EndpointRealtimeWebSocket: "wss://server.example.test/v1/realtime",
-		presentation.EndpointManagement:        "https://server.example.test/custom/management/v7",
-		presentation.EndpointEffects:           "wss://server.example.test/custom/effects/v3",
-		presentation.EndpointArtifacts:         "https://server.example.test/custom/artifacts/v2",
-		presentation.EndpointDownloads:         "https://server.example.test/custom/downloads/v2",
-	}
-	for name, wantURL := range want {
-		endpoint, found := target.Directory().Lookup(name)
-		if !found || endpoint.URL != wantURL {
-			t.Fatalf("explicit compatibility endpoint %s = %#v", name, endpoint)
-		}
-	}
-	legacy, contract, _, _, err := mounted.Export("legacy")
-	if err != nil || contract != presentation.RealtimeTargetContract ||
-		legacy.(RealtimeTarget).WebSocket != "wss://server.example.test/v1/realtime" {
-		t.Fatalf("legacy target export = %#v, %#v, %v", legacy, contract, err)
-	}
-
-	defaultTarget, err := NewTargetFactory().parse(legacyValues)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, absent := range []presentation.EndpointName{
-		presentation.EndpointEffects, presentation.EndpointArtifacts, presentation.EndpointDownloads,
+	for _, shortcut := range []json.RawMessage{
+		json.RawMessage(`{"same_origin":true}`),
+		json.RawMessage(`{"management_path":"/openrealtime/v1"}`),
+		json.RawMessage(`{"effects_path":"/client/v1/effects"}`),
 	} {
-		if endpoint, found := defaultTarget.Directory().Lookup(absent); found {
-			t.Fatalf("default compatibility target invented %s: %#v", absent, endpoint)
+		if err := strict.ValidateConfig(shortcut); err == nil || !strings.Contains(err.Error(), "unknown field") {
+			t.Fatalf("strict factory shortcut config %s error = %v", shortcut, err)
 		}
-	}
-	if _, found := defaultTarget.Directory().Lookup(presentation.EndpointManagement); !found {
-		t.Fatal("default compatibility target omitted its explicit management default")
-	}
-
-	if _, err := NewLegacySameOriginTargetFactory(LegacyEndpointDefaults{
-		ManagementPath: "openrealtime/v1",
-	}); err == nil || !strings.Contains(err.Error(), "canonical absolute path") {
-		t.Fatalf("invalid compatibility defaults error = %v", err)
 	}
 }
 
@@ -306,7 +258,6 @@ func mountEndpointTarget(
 	t *testing.T,
 	factory *TargetFactory,
 	values json.RawMessage,
-	exportLegacy bool,
 ) *pluginruntime.Mounted {
 	t.Helper()
 	descriptor := factory.Descriptor()
@@ -317,11 +268,6 @@ func mountEndpointTarget(
 	exports := []plugin.ProfileExport{{
 		Name: "endpoints", Provider: "target", Service: presentation.EndpointDirectoryContract.Name,
 	}}
-	if exportLegacy {
-		exports = append(exports, plugin.ProfileExport{
-			Name: "legacy", Provider: "target", Service: presentation.RealtimeTargetContract.Name,
-		})
-	}
 	profile, err := plugin.FreezeProfile(plugin.Profile{
 		FormatVersion: plugin.ProfileFormatVersion,
 		Name:          "host.endpoint-directory.test", Revision: 1,
@@ -352,4 +298,15 @@ func mountEndpointTarget(
 		t.Fatal(err)
 	}
 	return mounted
+}
+
+func testEndpointDirectoryValues(
+	t *testing.T, model string, endpoints ...presentation.Endpoint,
+) json.RawMessage {
+	t.Helper()
+	payload, err := json.Marshal(EndpointDirectoryConfig{Endpoints: endpoints, Model: model})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return payload
 }

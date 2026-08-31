@@ -1704,7 +1704,7 @@ existing test suite.
 | `providers` and `adapters` | Register implementation factories and descriptors; do not own topology. |
 | `session` | Supply scoped duplex/media/session services where selected by a graph; text-only graphs need not instantiate audio state. |
 | `cmd/openrealtime` | Select graph, typed configs, deployment, and overrides through the new profile APIs; remove obsolete production flags rather than making them a second architecture. |
-| `surface`, `console`, browser demo, and macOS tools | Become profiles over the shared plugin/client contracts in [Composable Presentation and Observability](composable-presentation.md); the gateway owns no UI. |
+| `presentation/host`, `presentation/browser`, and `macos` | Remain descriptor-locked profiles over the shared plugin/client contracts in [Composable Presentation and Observability](composable-presentation.md); the retired standalone presentation forks are not compatibility paths, and the gateway owns no UI. |
 | `bench` and measurement | Record Graph IR fingerprint, element/config revisions, live resolution, traces, and exact selected paths. |
 
 ### 24.1 Invariants to demote from the kernel
@@ -2346,7 +2346,7 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   file-write mediation.
 - [ ] Implement the composable presentation and observability design before
   treating any current UI as the production inspector.
-  - [x] Inventory the current browser demo, console, surface, macOS client,
+  - [x] Inventory the former standalone presentation clients, the macOS client,
     gateway UI coupling, duplicated client protocol/media logic, and existing
     browser/native test evidence.
   - [x] Specify the shared server/host/client plugin contract, clean realtime
@@ -2358,13 +2358,16 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     host mount, permission, scoped-service, and browser lifecycle foundations
     exist; complete server-realm assembly, replacement/rollback, and leak
     evidence remain open.
-  - [ ] Complete the browser presentation server and browser client as
+  - [x] Complete the browser presentation server and browser client as
     manifest-composed plugins over the public server APIs. Locked
     minimal, observer, developer-WebSocket, and developer-WebRTC profiles now
     exercise text, media, effects, artifacts, inspection, trace, and authoring
     against a standalone host in real Chromium, and gateway-owned UI is
-    retired. The console, surface, and one-file demo remain reference fixtures
-    rather than profiles, and complete lifecycle/performance evidence is open.
+    retired. The duplicate standalone forks are deleted rather than retained as
+    compatibility paths. A descriptor-supplied unpredictable-tool challenge
+    replaces their real-model browser gate; its hermetic real-Chromium form is
+    green and its provisioned real-model form remains an external release gate,
+    not a locally claimed provider result.
   - [ ] Compose the macOS application from the same logical client services and
     public server APIs with native implementations. Native manifests,
     provider registry/factory seams, reducer, transport, media, effects,
