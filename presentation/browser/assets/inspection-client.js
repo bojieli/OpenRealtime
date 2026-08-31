@@ -20,6 +20,10 @@ function canonicalSession(value) {
   return session;
 }
 
+function canonicalNegotiatedPath(session) {
+  return `/openrealtime/v1/sessions/${session}/live`;
+}
+
 async function readBounded(response) {
   const declared = response.headers.get("Content-Length");
   if (declared !== null) {
@@ -88,6 +92,7 @@ export default {
     };
     const stopAccess = accessSource.subscribe((next) => {
       const changed = access?.token !== next?.token || access?.session_id !== next?.session_id ||
+        access?.path !== next?.path ||
         access?.expires_at_ms !== next?.expires_at_ms;
       // The reducer publishes on every protocol event. An unchanged narrow
       // capability is not a management lifecycle event: notifying here made
@@ -108,6 +113,9 @@ export default {
         throw new Error("unsupported inspection resource");
       }
       const session = canonicalSession(current.session_id);
+      if (current.path !== canonicalNegotiatedPath(session)) {
+        throw new Error("session inspection capability is bound to another management path");
+      }
       const url = new URL(`${base}/${encodeURIComponent(session)}/${resource}`, location.origin);
       for (const [name, value] of Object.entries(parameters)) {
         if (!new Set(["after", "limit"]).has(name) || !Number.isSafeInteger(value) || value < 0 ||

@@ -14,7 +14,7 @@ Two exact client distributions ship against the same server API:
   effects/artifact/download endpoint declarations. It retains native media,
   protocol diagnostics, and scoped graph inspection without inventing client
   authority.
-- `effects-developer` is an explicit compatibility distribution that mounts
+- `effects-developer` is an explicit authority-bearing distribution that mounts
   the pinned host-effects and hosted-resource providers.
 
 Set `OPENREALTIME_NATIVE_PROFILE=effects-developer` before launching to opt in
@@ -89,11 +89,6 @@ wiring as one immutable value; it is not a place for tokens or session data.
 The system prompt is the base session configuration; media, video, debug, and
 host-effect providers contribute independently disposable fragments through
 the shared session-configuration service.
-
-Embedders that must migrate an old single-URL deployment can opt into the
-explicitly named `LegacyNativeSameOriginEndpointDirectory` Go adapter or
-`NativeEndpointDirectory.legacySameOrigin` Swift adapter. The bundled app and
-normal assembly path never call either compatibility API.
 
 The first use of a native medium prompts for its corresponding macOS privacy
 permission. The app never reports a source active before frames are flowing.

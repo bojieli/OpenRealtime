@@ -384,61 +384,6 @@ func DefaultNativeEndpointDirectory(distribution NativeDistribution) (presentati
 	return presentation.FreezeEndpointDirectory(endpoints)
 }
 
-// LegacyNativeSameOriginEndpointDirectory is the explicitly named adapter for
-// callers that still supply one realtime URL. New deployments should provide
-// a frozen directory directly.
-func LegacyNativeSameOriginEndpointDirectory(
-	distribution NativeDistribution,
-	realtimeEndpoint string,
-) (presentation.EndpointDirectory, error) {
-	definitions, _, _, err := nativeDistributionDefinitions(distribution)
-	if err != nil {
-		return presentation.EndpointDirectory{}, err
-	}
-	parsed, err := url.Parse(realtimeEndpoint)
-	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" ||
-		(parsed.Scheme != "ws" && parsed.Scheme != "wss") || parsed.RawQuery != "" {
-		return presentation.EndpointDirectory{}, fmt.Errorf("legacy native realtime endpoint is invalid")
-	}
-	endpoints := []presentation.Endpoint{{
-		Name: presentation.EndpointRealtimeWebSocket, Protocol: presentation.ProtocolRealtimeWebSocket,
-		URL: parsed.String(),
-	}}
-	httpScheme := "http"
-	if parsed.Scheme == "wss" {
-		httpScheme = "https"
-	}
-	appendEndpoint := func(
-		name presentation.EndpointName, protocol, path, scheme string,
-	) {
-		copy := *parsed
-		copy.Scheme, copy.Path, copy.RawPath, copy.RawQuery, copy.Fragment = scheme, path, "", "", ""
-		endpoints = append(endpoints, presentation.Endpoint{Name: name, Protocol: protocol, URL: copy.String()})
-	}
-	if nativeDefinitionsProvide(definitions, presentation.ClientInspectionContract) {
-		appendEndpoint(presentation.EndpointManagement, presentation.ProtocolManagement,
-			"/openrealtime/v1", httpScheme)
-	}
-	if nativeDefinitionsProvide(definitions, presentation.ClientEffectsContract) {
-		appendEndpoint(presentation.EndpointEffects, presentation.ProtocolClientEffects,
-			"/client/v1/effects", parsed.Scheme)
-	}
-	if nativeDefinitionsProvide(definitions, presentation.ClientArtifactsContract) {
-		appendEndpoint(presentation.EndpointArtifacts, presentation.ProtocolHostArtifacts,
-			"/client/v1/artifacts", httpScheme)
-		appendEndpoint(presentation.EndpointDownloads, presentation.ProtocolHostDownloads,
-			"/client/v1/downloads", httpScheme)
-	}
-	directory, err := presentation.FreezeEndpointDirectory(endpoints)
-	if err != nil {
-		return presentation.EndpointDirectory{}, err
-	}
-	if err := validateNativeEndpointDirectory(definitions, directory); err != nil {
-		return presentation.EndpointDirectory{}, err
-	}
-	return directory, nil
-}
-
 func validateNativeEndpointDirectory(
 	definitions []nativeDefinition,
 	directory presentation.EndpointDirectory,

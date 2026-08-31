@@ -39,8 +39,8 @@ export default {
       const path = String(access.path ?? "");
       const token = String(access.token ?? "");
       const expiresAtMS = Number(access.expires_at_ms ?? 0);
-      if (!sessionID || byteLength(sessionID) > DEFAULT_LIMITS.max_string_bytes ||
-          !path.startsWith("/") || path.includes("..") || path.includes("?") || path.includes("#") ||
+      const canonicalPath = `/openrealtime/v1/sessions/${sessionID}/live`;
+      if (!/^[A-Za-z0-9._:-]{1,256}$/.test(sessionID) || path !== canonicalPath ||
           byteLength(path) > DEFAULT_LIMITS.max_string_bytes ||
           !/^mgmt_[A-Za-z0-9_-]+$/.test(token) || byteLength(token) > 512 ||
           !Number.isSafeInteger(expiresAtMS) || expiresAtMS <= 0) {
