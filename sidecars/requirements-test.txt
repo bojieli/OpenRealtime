@@ -1,0 +1,5 @@
+# Exact, CPU-only dependencies for the protocol and media-adapter unit suite.
+# Model runtimes own their larger accelerator-specific environments.
+numpy==2.2.6
+pillow==10.2.0
+pytest==9.0.3

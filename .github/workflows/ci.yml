@@ -177,6 +177,6 @@ jobs:
       - name: Sidecar library
         run: |
           python -m pip install --quiet --upgrade pip
-          python -m pip install --quiet pytest
+          python -m pip install --quiet -r sidecars/requirements-test.txt
           python -m compileall -q sidecars
           python -m pytest sidecars -q
