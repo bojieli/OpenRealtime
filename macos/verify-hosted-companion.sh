@@ -194,6 +194,31 @@ listener_owner() {
     sed -n 's/^p//p' | sort -u
 }
 
+assert_frozen_companion_phase() {
+  local phase="$1"
+  local process_receipt=""
+  if [[ "$(server_identity)" != "${initial_server_identity}" ]]; then
+    printf '%s\n' "server identity changed ${phase}" >&2
+    return 1
+  fi
+  if ! process_receipt="$("${process_validator}" -binary "${binary}" \
+    -companion-pid "${companion_pid}" -runtime-digest "${server_runtime_digest}")"; then
+    printf '%s\n' "companion process identity could not be revalidated ${phase}" >&2
+    return 1
+  fi
+  if [[ "${process_receipt}" != "${initial_process_receipt}" ]]; then
+    printf '%s\n' "companion process receipt changed ${phase}" >&2
+    return 1
+  fi
+  if [[ "$(listener_owner 18765)" != "${server_pid}" || \
+        "$(listener_owner 18766)" != "${server_pid}" || \
+        "$(listener_owner 18767)" != "${presentation_pid}" || \
+        -n "$(listener_owner 18768)" ]]; then
+    printf '%s\n' "companion listener ownership changed ${phase}" >&2
+    return 1
+  fi
+}
+
 assert_no_private_material() {
   local files=("${companion_log}" "${browser_log}" "${application_log}" \
     "${browser_snapshot}" "${native_snapshot}")
@@ -321,6 +346,7 @@ valid = (
 if not valid: raise SystemExit("browser proof is invalid")
 print(session)' "${browser_proof}" "${proof_nonce}" "${browser_manifest_fingerprint}" \
   "${browser_plan_fingerprint}" "${presentation_url}" "${browser_snapshot}")"
+assert_frozen_companion_phase "after browser completion"
 
 manifest_resource="$(find "${application}/Contents/Resources" -type f \
   -name native-observer-client-manifest.json -print)"
@@ -334,6 +360,7 @@ expected_native_endpoint="ws://${presentation_address}/client/v1/realtime"
 
 executable="${application}/Contents/MacOS/OpenRealtimeMac"
 executable_digest="$(shasum -a 256 "${executable}" | awk '{print $1}')"
+assert_frozen_companion_phase "immediately before native launch"
 env -u OPENREALTIME_HOSTED_COMPANION_TOKEN \
 OPENREALTIME_NATIVE_PROFILE=observer-developer \
 OPENREALTIME_NATIVE_ENDPOINT_DIRECTORY="${native_endpoint_file}" \
@@ -456,6 +483,7 @@ if ! wait "${companion_pid}"; then
   exit 1
 fi
 companion_pid=""
+assert_no_private_material
 for stopped_pid in "${server_pid}" "${presentation_pid}"; do
   if kill -0 "${stopped_pid}" 2>/dev/null; then
     printf '%s\n' "companion child PID survived supervisor shutdown" >&2

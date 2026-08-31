@@ -156,6 +156,72 @@ func TestNativeRealtimeOpenWaitUsesTheHandshakeDelegateAndCannotHangOnPing(t *te
 	}
 }
 
+func TestHostedCompanionGateBindsBrowserAndNativePhasesBeforeFinalCredentialScan(t *testing.T) {
+	content, err := os.ReadFile("verify-hosted-companion.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := string(content)
+	helperStart := strings.Index(gate, "assert_frozen_companion_phase() {")
+	helperEnd := strings.Index(gate, "\n}\n\nassert_no_private_material() {")
+	if helperStart < 0 || helperEnd <= helperStart {
+		t.Fatal("hosted companion frozen-phase helper is not one bounded shell function")
+	}
+	helper := gate[helperStart:helperEnd]
+	for _, fragment := range []string{
+		"server_identity", "${process_validator}",
+		"listener_owner 18765", "listener_owner 18766", "listener_owner 18767",
+		"listener_owner 18768", "${initial_process_receipt}",
+	} {
+		if !strings.Contains(helper, fragment) {
+			t.Errorf("hosted companion phase receipt no longer contains %q", fragment)
+		}
+	}
+
+	browserProof := strings.Index(gate, `browser_session_id="$(python3`)
+	afterBrowser := strings.Index(gate, `assert_frozen_companion_phase "after browser completion"`)
+	manifestRead := strings.Index(gate, `manifest_resource="$(find`)
+	beforeNative := strings.Index(gate, `assert_frozen_companion_phase "immediately before native launch"`)
+	nativeLaunch := strings.Index(gate, `env -u OPENREALTIME_HOSTED_COMPANION_TOKEN \
+OPENREALTIME_NATIVE_PROFILE=observer-developer`)
+	if browserProof < 0 || afterBrowser <= browserProof || manifestRead <= afterBrowser ||
+		beforeNative <= manifestRead || nativeLaunch <= beforeNative {
+		t.Fatalf(
+			"hosted companion phase checks are not ordered around browser proof and native launch: proof=%d after=%d manifest=%d before=%d launch=%d",
+			browserProof, afterBrowser, manifestRead, beforeNative, nativeLaunch,
+		)
+	}
+	between := strings.TrimSpace(gate[beforeNative+len(
+		`assert_frozen_companion_phase "immediately before native launch"`,
+	) : nativeLaunch])
+	if between != "" {
+		t.Fatalf("native launch is no longer immediately preceded by its frozen phase check: %q", between)
+	}
+
+	const scan = "\nassert_no_private_material\n"
+	firstScan := strings.Index(gate, scan)
+	if firstScan < 0 {
+		t.Fatal("hosted companion gate has no credential scan")
+	}
+	secondRelative := strings.Index(gate[firstScan+len(scan):], scan)
+	if secondRelative < 0 {
+		t.Fatal("hosted companion gate does not repeat its credential scan")
+	}
+	secondScan := firstScan + len(scan) + secondRelative
+	if strings.Index(gate[secondScan+len(scan):], scan) >= 0 {
+		t.Fatal("hosted companion gate has an unexpected third credential scan")
+	}
+	applicationWait := strings.Index(gate, `if ! wait "${application_pid}"; then`)
+	companionWait := strings.Index(gate, `if ! wait "${companion_pid}"; then`)
+	if firstScan >= applicationWait || applicationWait < 0 || companionWait <= applicationWait ||
+		secondScan <= companionWait {
+		t.Fatalf(
+			"credential scans do not bracket quiescent app and companion logs: first=%d app_wait=%d companion_wait=%d final=%d",
+			firstScan, applicationWait, companionWait, secondScan,
+		)
+	}
+}
+
 func TestNativeNormalPathNeverInfersEndpointsOrPlacesCredentialsInURLs(t *testing.T) {
 	files := []string{
 		"Sources/OpenRealtimeMac/DeveloperModel.swift",
