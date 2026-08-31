@@ -2205,21 +2205,20 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   - [ ] `an acknowledgement is not an interruption`
   - [ ] `telling them what it saw`
   - [ ] `an ordinary question`
-- [ ] Run all four OpenRealtime Meeting Assistant v1 tasks through the new
-  production profile. Hermetic candidate-02 is deterministic 4/4 at the
-  declared 5 fps; all four A/V reviews are usable and exact Gemini 3.7 Flash
-  reported no significant, minor, or limitation findings. It remains honestly
-  nonreportable because it did not use the shared production server. A direct
-  graph-native Meeting application/session plug-in, host registration, lazy
-  readiness/observer propagation, and production-profile composition are now
-  committed on the active review branch with focused normal, shuffle, race,
-  and vet gates green. The distinct authenticated same-server exact-four
-  candidate and its retained reviews remain open. A production readiness run
-  now accepts the bound model and SenseVoice listeners and stops at Fish Speech
-  because the current listener exposes only a bare health response and omits
-  an exact checkpoint/device binding. The next candidate requires the
-  repo-owned Fish service to expose and attest its immutable checkpoint,
-  runtime, and voice identities before any exact-four attempt is accepted.
+- [x] Run all four OpenRealtime Meeting Assistant v1 tasks through the new
+  production profile. Clean-worktree candidate-21 at commit `c250d83` passed
+  four independent focused two-case runs (8/8) before its immutable full run.
+  The authenticated production-shared WebSocket campaign then passed 4/4 with
+  zero infrastructure failures, invalid actions, deadline misses, or session
+  timeouts. Every attempt is graph-native-attested with playable synchronized
+  A/V, and all four exact `google/gemini-3.7-flash` reviews agreed with the
+  deterministic pass with no significant, minor, or limitation findings. The
+  retained result is
+  `meeting-candidate-exact4-20260831-21-visual-horizons-full-reviewed.json`
+  (`sha256:e7e56ea603b884b082f87315ed42e200b0fe3a4493375d2e9706b2538e486355`);
+  its complete create-only source/evaluation receipt bundle is sealed by review
+  manifest
+  `sha256:e899491212b6426114661d0898d9797823207b660f59a85671f50cb93257d020`.
 - [ ] Run all sixteen OpenRealtime Realtime-CU v1 cases (eight task families
   under pixel and set-of-mark observation variants). Exact-sixteen real
   Chromium/FFmpeg capture and independent full decode are green as hermetic
