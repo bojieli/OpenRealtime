@@ -3,6 +3,7 @@ import AVFoundation
 import ScreenCaptureKit
 import CoreImage
 import CoreGraphics
+import AppKit
 
 final class MediaCaptureController: NSObject, SCStreamOutput, AVCaptureVideoDataOutputSampleBufferDelegate {
     var onSource: ((String, String, Int, Int) -> Void)?
@@ -175,13 +176,15 @@ final class MediaCaptureController: NSObject, SCStreamOutput, AVCaptureVideoData
             width = max(1, Int((Double(originalWidth) * scale).rounded()))
             height = max(1, Int((Double(originalHeight) * scale).rounded()))
         }
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let cgImage = imageContext.createCGImage(image, from: image.extent) else {
+            emitFailure(source: "video", "a frame could not be rendered for JPEG encoding")
+            return nil
+        }
+        let bitmap = NSBitmapImageRep(cgImage: cgImage)
         var quality = 0.82
         while quality >= 0.24 {
-            if let data = imageContext.jpegRepresentation(
-                of: image,
-                colorSpace: colorSpace,
-                options: [.lossyCompressionQuality: quality]
+            if let data = bitmap.representation(
+                using: .jpeg, properties: [.compressionFactor: quality]
             ), data.count <= limits.maxFrameBytes {
                 return (data, width, height)
             }

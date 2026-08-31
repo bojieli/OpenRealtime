@@ -17,7 +17,6 @@ let package = Package(
                 .product(name: "OpenRealtimeClientCore", package: "OpenRealtimeClientCore"),
             ],
             path: "Sources/OpenRealtimeMac",
-            exclude: ["DesktopComputer.swift", "ToolHost.swift"],
             resources: [.copy("Resources")]
         ),
     ]

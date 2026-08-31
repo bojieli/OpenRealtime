@@ -26,6 +26,14 @@ jobs:
       - name: Build native developer client
         run: swift build --package-path macos -c debug
 
+      - name: Build and verify native application bundle
+        run: |
+          ./macos/build-app.sh debug
+          app="macos/.build/OpenRealtime Developer.app"
+          test -x "$app/Contents/MacOS/OpenRealtimeMac"
+          plutil -lint "$app/Contents/Info.plist"
+          codesign --verify --deep --strict "$app"
+
       - name: Check browser-use adapter and app bundler
         run: |
           python3 -m py_compile macos/BrowserUseBridge/bridge.py
@@ -42,6 +50,11 @@ jobs:
         with:
           go-version: '1.25'
           check-latest: true
+
+      - name: Review media sandbox
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg bubblewrap
 
       - name: Verification gate
         env:
@@ -131,6 +144,7 @@ jobs:
       - name: Browser for the WebRTC transport
         run: |
           sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg bubblewrap
           sudo apt-get install -y --no-install-recommends chromium-browser \
             || sudo apt-get install -y --no-install-recommends chromium
           # The test looks for chromium, chromium-browser, then google-chrome on
@@ -177,6 +191,6 @@ jobs:
       - name: Sidecar library
         run: |
           python -m pip install --quiet --upgrade pip
-          python -m pip install --quiet pytest
+          python -m pip install --quiet -r sidecars/requirements-test.txt
           python -m compileall -q sidecars
           python -m pytest sidecars -q

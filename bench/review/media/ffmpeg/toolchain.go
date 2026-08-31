@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"unicode"
 	"unicode/utf8"
 )
@@ -214,8 +213,8 @@ func snapshotTrustedFile(ctx context.Context, path string) (fileSnapshot, error)
 	if err != nil {
 		return fileSnapshot{}, errors.New("stat ffmpeg toolchain file")
 	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
+	device, inode, err := trustedFileIdentity(info)
+	if err != nil {
 		return fileSnapshot{}, errors.New("read ffmpeg toolchain file identity")
 	}
 	if current, err := filepath.EvalSymlinks(absolute); err != nil || current != resolved {
@@ -223,7 +222,7 @@ func snapshotTrustedFile(ctx context.Context, path string) (fileSnapshot, error)
 	}
 	return fileSnapshot{
 		Path: absolute, ResolvedPath: resolved, SHA256: sha, SizeBytes: size,
-		Mode: uint32(info.Mode().Perm()), Device: uint64(stat.Dev), Inode: stat.Ino,
+		Mode: uint32(info.Mode().Perm()), Device: device, Inode: inode,
 	}, nil
 }
 
@@ -238,8 +237,7 @@ func validateTrustedResolvedPath(path string) error {
 		if statErr != nil || info.Mode()&0o022 != 0 {
 			return errors.New("path has a writable component")
 		}
-		stat, ok := info.Sys().(*syscall.Stat_t)
-		if !ok || stat.Uid != 0 {
+		if err := validateTrustedOwner(info); err != nil {
 			return errors.New("path has a non-root-owned component")
 		}
 		if current == "/usr" {

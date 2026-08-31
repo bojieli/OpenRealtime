@@ -312,6 +312,59 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		}) {
 		t.Fatalf("public companion release gate was weakened: %+v", companion)
 	}
+	signedMacOS := byID["external.macos.signed-e2e"]
+	if signedMacOS.Availability != AvailabilityProvisioned ||
+		signedMacOS.Selection != SelectionOptIn || signedMacOS.SkipPolicy != SkipForbid ||
+		!slices.Equal(signedMacOS.Command, []string{
+			"{go}", "test", "-tags", "signed_macos_e2e", "./macos", "-run",
+			"^TestSignedNativeRunnerReleaseGate$", "-count=1", "-v",
+		}) || signedMacOS.Environment["OPENREALTIME_SIGNED_MACOS_E2E"] != "1" ||
+		signedMacOS.Environment["OPENREALTIME_MACOS_E2E_LAUNCH_PROFILE"] !=
+			"{env:OPENREALTIME_MACOS_E2E_LAUNCH_PROFILE}" ||
+		signedMacOS.Environment["OPENREALTIME_MACOS_E2E_GRAPH_FINGERPRINT"] !=
+			"{env:OPENREALTIME_MACOS_E2E_GRAPH_FINGERPRINT}" ||
+		signedMacOS.Environment["OPENREALTIME_MACOS_E2E_SERVER_PROFILE_FINGERPRINT"] !=
+			"{env:OPENREALTIME_MACOS_E2E_SERVER_PROFILE_FINGERPRINT}" ||
+		signedMacOS.Environment["OPENREALTIME_SIGNED_MACOS_VERIFIED_CONTRACT"] !=
+			"{artifacts}/signed-macos-companion.contract.json" ||
+		signedMacOS.Environment["OPENREALTIME_SIGNED_MACOS_VERIFIED_RECEIPT"] !=
+			"{artifacts}/signed-macos-companion.receipt.json" {
+		t.Fatalf("signed macOS receipt gate was weakened: %+v", signedMacOS)
+	}
+	for kind, name := range map[string]string{
+		"env_directory":  "OPENREALTIME_SIGNED_APP",
+		"env_executable": "OPENREALTIME_MACOS_E2E_RUNNER",
+		"env_file":       "OPENREALTIME_MACOS_E2E_LAUNCH_PROFILE",
+		"env_graph":      "OPENREALTIME_MACOS_E2E_GRAPH_FINGERPRINT",
+		"env_profile":    "OPENREALTIME_MACOS_E2E_SERVER_PROFILE_FINGERPRINT",
+	} {
+		wantKind := kind
+		if strings.HasPrefix(kind, "env_") && kind != "env_directory" &&
+			kind != "env_executable" && kind != "env_file" {
+			wantKind = "env"
+		}
+		if !slices.ContainsFunc(signedMacOS.Prerequisites, func(prerequisite Prerequisite) bool {
+			return prerequisite.Kind == wantKind && prerequisite.Value == name
+		}) {
+			t.Errorf("signed macOS gate omits %s prerequisite %s", wantKind, name)
+		}
+	}
+	for kind, value := range map[string]string{
+		"contract": "{artifacts}/signed-macos-companion.contract.json",
+		"receipt":  "{artifacts}/signed-macos-companion.receipt.json",
+	} {
+		if !gateHasAssertion(signedMacOS, "file_nonempty", value) {
+			t.Errorf("signed macOS gate omits %s artifact assertion", kind)
+		}
+	}
+	for _, value := range []string{
+		`(?m)^signed macOS companion contract verified sha256:[0-9a-f]{64}$`,
+		`(?m)^signed macOS companion receipt verified sha256:[0-9a-f]{64}$`,
+	} {
+		if !gateHasAssertion(signedMacOS, "stdout_regex", value) {
+			t.Errorf("signed macOS gate omits completion assertion %q", value)
+		}
+	}
 	scenarioWebSocket := byID["local.scenario.profiled-websocket"]
 	if scenarioWebSocket.Availability != AvailabilityLocal ||
 		scenarioWebSocket.Selection != SelectionDefault ||

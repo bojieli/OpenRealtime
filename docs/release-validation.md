@@ -52,6 +52,14 @@ asserts that the clean gateway acquired no UI route. Both refuse browser or
 Node skips in release mode. The second gate is not a substitute for the
 provisioned signed-macOS gate: its native half is a manifest-derived protocol
 probe, while an actual signed `.app` launch remains Darwin-only evidence.
+The provisioned Darwin gate builds the server executable from the checked
+source, generates a private nonce-bound browser-then-native contract, and
+accepts only a strict create-only receipt from the exact hashed runner. Its
+retained contract and receipt bind signed app/code-directory identity, the
+frozen launch profile, expected server Graph/profile and one process/run,
+ordered distinct sessions, separate audio/camera/screen and native permission
+paths, interruption-to-tool continuation, tools, inspection, population, and
+cleanup. Portable receipt-verifier tests do not satisfy this gate.
 
 `selected_outcome: passed` means only that every gate selected by that
 invocation passed. `release_complete` is stricter: it is true only when every
@@ -154,8 +162,11 @@ variables are:
   conditions;
 - `OPENREALTIME_PRESENTATION_LIVE_ENDPOINT` for the descriptor-locked,
   real-Chromium browser composition test;
-- `OPENREALTIME_SIGNED_APP` and `OPENREALTIME_MACOS_E2E_RUNNER` on Darwin for
-  the authority-signed native application gate.
+- `OPENREALTIME_SIGNED_APP`, `OPENREALTIME_MACOS_E2E_RUNNER`, the exact
+  `OPENREALTIME_MACOS_E2E_LAUNCH_PROFILE`, and expected
+  `OPENREALTIME_MACOS_E2E_GRAPH_FINGERPRINT` and
+  `OPENREALTIME_MACOS_E2E_SERVER_PROFILE_FINGERPRINT` on Darwin for the
+  authority-signed native application gate.
 
 URLs must be absolute and credential-free. Authentication stays in the
 benchmark and server credential environment rather than being copied into the

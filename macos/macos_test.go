@@ -16,7 +16,7 @@ import (
 func TestNativeDeveloperClientDeclaresEveryCapabilityBoundary(t *testing.T) {
 	required := map[string][]string{
 		"Package.swift": {
-			"exclude: [\"DesktopComputer.swift\", \"ToolHost.swift\"]",
+			".product(name: \"OpenRealtimeClientCore\", package: \"OpenRealtimeClientCore\")",
 		},
 		"Sources/OpenRealtimeMac/RealtimeClient.swift": {
 			"URLSessionWebSocketTask", "input_audio_buffer.append",
@@ -105,6 +105,14 @@ func TestNativeDeveloperClientDeclaresEveryCapabilityBoundary(t *testing.T) {
 			if !strings.Contains(string(content), fragment) {
 				t.Errorf("%s no longer contains %q", name, fragment)
 			}
+		}
+	}
+	for _, retired := range []string{
+		"Sources/OpenRealtimeMac/DesktopComputer.swift",
+		"Sources/OpenRealtimeMac/ToolHost.swift",
+	} {
+		if _, err := os.Lstat(retired); !os.IsNotExist(err) {
+			t.Errorf("retired built-in native effect implementation remains at %s: %v", retired, err)
 		}
 	}
 }

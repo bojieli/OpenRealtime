@@ -247,7 +247,7 @@ private enum NativeMacProviderRegistry {
             requires: [.strictJSON, .reducer, .protocolEvents, .sessionConfiguration],
             permissions: nativePermissionCeiling(.effects)
         )) { context in
-            let effects = NativeEffectsBoundary(
+            let effects = try NativeEffectsBoundary(
                 reducer: try context.service(.reducer, as: NativeReducerController.self),
                 strictJSON: try context.service(.strictJSON, as: StrictJSONService.self),
                 protocolEvents: try context.service(

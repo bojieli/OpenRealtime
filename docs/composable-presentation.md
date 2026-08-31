@@ -551,8 +551,11 @@ tau2/τ-Voice matrix defined by the parent plan.
 - [ ] The macOS application is assembled from the same logical service
   contracts with native implementations and has real macOS release evidence.
   A native provider registry/factory seam and observer/effects profile split
-  now exist, but Linux Swift tests and source inspection are not substitutes
-  for a signed Darwin app run.
+  now exist. The provisioned gate now requires a gate-built exact server and a
+  nonce-bound, create-only contract/receipt for ordered browser then signed
+  native sessions, with distinct media, permission, continuation, tool,
+  inspection, and cleanup evidence. Linux Swift and portable receipt-verifier
+  tests are not substitutes for actually passing that Darwin run.
 - [ ] Static Graph IR, live snapshots/deltas, causal traces, and authoring are
   clean versioned APIs usable without any shipped UI. The default compiled
   server profile now exposes session live/delta/trace through exact outer-realm
@@ -573,6 +576,8 @@ tau2/τ-Voice matrix defined by the parent plan.
   `local.presentation.shared-server`, `local.client.javascript`, and
   `local.client.swift-linux` in `.runtime/release-validation/*-candidate-01`;
   the focused package matrix also passed normal, three shuffled runs, race,
-  vet, and all presentation/client benchmarks. Signed native macOS, complete
+  vet, and all presentation/client benchmarks. On 2026-08-31 the signed-native
+  receipt contract and its portable tamper/replay verifier were added, but no
+  Darwin receipt was produced on Linux. Signed native macOS, complete
   reconciliation/leak evidence, and the project-wide release matrix remain
   open.

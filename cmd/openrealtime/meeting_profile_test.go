@@ -287,6 +287,8 @@ func TestDefaultMeetingInspectionLeaseCoversFullCandidateCaseAndAttestation(t *t
 }
 
 func TestFreezeMeetingProfileBindsExactGraphResolutionAndDeployments(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "meeting-profile-fixture-credential")
+	t.Setenv("GOOGLE_API_KEY", "")
 	options := defaultMeetingProfileOptions()
 	verifier := meetingProfileVerifier()
 	options.deployments = verifier.identities

@@ -1477,12 +1477,7 @@ public final class SessionInspectionClient: @unchecked Sendable {
         _ resource: SessionInspectionResource,
         query: [URLQueryItem] = []
     ) async throws -> SessionInspectionDocument {
-        lock.lock()
-        guard !disposed, let base = managementBase else {
-            lock.unlock()
-            throw SessionInspectionFailure("session inspection is unavailable")
-        }
-        lock.unlock()
+        let base = try configuredManagementBase()
         let credential = try accessSource.authorizedCredential()
         guard credential.path == canonicalSessionInspectionPath(credential.sessionID) else {
             throw SessionInspectionFailure("session inspection capability is bound to another management path")
@@ -1525,6 +1520,18 @@ public final class SessionInspectionClient: @unchecked Sendable {
             throw SessionInspectionFailure("session inspection response exceeds the byte limit")
         }
         return SessionInspectionDocument(resource: resource, canonicalPayload: canonical)
+    }
+
+    // Keep synchronous state access outside the async method. Swift 6 rejects
+    // direct NSLock operations from an asynchronous context, even when no
+    // suspension can occur between lock and unlock.
+    private func configuredManagementBase() throws -> URL {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !disposed, let base = managementBase else {
+            throw SessionInspectionFailure("session inspection is unavailable")
+        }
+        return base
     }
 
     private func notify() {
