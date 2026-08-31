@@ -14,6 +14,9 @@ struct OpenRealtimeMacApp: App {
     private let launchFailure: String
 
     init() {
+        let hostedSmokeRequested = CommandLine.arguments.contains {
+            $0.hasPrefix(Self.hostedSmokePrefix)
+        }
         do {
             let environment = ProcessInfo.processInfo.environment
             let automation = try NativeLaunchAutomation.parse(
@@ -47,6 +50,12 @@ struct OpenRealtimeMacApp: App {
         } catch {
             model = nil
             launchFailure = error.localizedDescription
+            if hostedSmokeRequested {
+                hostedSmokeRecord(
+                    "FAILURE", "native client initialization failed: \(error.localizedDescription)"
+                )
+                Darwin.exit(EXIT_FAILURE)
+            }
         }
     }
 
@@ -104,8 +113,10 @@ private struct NativeLaunchAutomation {
 private func runHostedSmoke(
     developer: DeveloperModel, nonce: String, snapshotPath: String?
 ) async {
+    hostedSmokeRecord("PROGRESS", "launch accepted")
     var lastFailure = "hosted management snapshot was not ready"
-    for _ in 0..<1_800 {
+    let deadline = ProcessInfo.processInfo.systemUptime + 60
+    while ProcessInfo.processInfo.systemUptime < deadline {
         if developer.connectionState == .connected, !developer.sessionID.isEmpty,
            developer.updatedSessionID == developer.sessionID {
             let management: (evidence: [String: Any], payload: Data)
@@ -120,19 +131,10 @@ private func runHostedSmoke(
                     management.payload, path: snapshotPath
                 )
             } catch {
-                let failure = String(
-                    error.localizedDescription
-                        .replacingOccurrences(of: "\r", with: " ")
-                        .replacingOccurrences(of: "\n", with: " ")
-                        .prefix(512)
-                )
+                let failure = hostedSmokeMessage(error.localizedDescription)
                 if failure != lastFailure {
                     lastFailure = failure
-                    let diagnostic = Data(
-                        "OPENREALTIME_HOSTED_COMPANION_PROGRESS \(failure)\n".utf8
-                    )
-                    FileHandle.standardError.write(diagnostic)
-                    try? FileHandle.standardError.synchronize()
+                    hostedSmokeRecord("PROGRESS", failure)
                 }
                 try? await Task.sleep(nanoseconds: 50_000_000)
                 continue
@@ -163,15 +165,30 @@ private func runHostedSmoke(
             return
         }
         if developer.connectionState == .failed {
+            lastFailure = "native realtime connection failed"
             break
         }
         try? await Task.sleep(nanoseconds: 50_000_000)
     }
-    let failure = Data("OPENREALTIME_HOSTED_COMPANION_FAILURE \(lastFailure)\n".utf8)
-    FileHandle.standardError.write(failure)
-    try? FileHandle.standardError.synchronize()
+    hostedSmokeRecord("FAILURE", lastFailure)
     developer.shutdown()
     NSApplication.shared.terminate(nil)
+}
+
+private func hostedSmokeMessage(_ value: String) -> String {
+    String(
+        value.replacingOccurrences(of: "\r", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .prefix(512)
+    )
+}
+
+private func hostedSmokeRecord(_ kind: String, _ message: String) {
+    let output = Data(
+        "OPENREALTIME_HOSTED_COMPANION_\(kind) \(hostedSmokeMessage(message))\n".utf8
+    )
+    FileHandle.standardError.write(output)
+    try? FileHandle.standardError.synchronize()
 }
 
 @MainActor

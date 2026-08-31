@@ -89,6 +89,8 @@ func TestNativeDeveloperClientDeclaresEveryCapabilityBoundary(t *testing.T) {
 			"OPENREALTIME_NATIVE_ENDPOINT_DIRECTORY", "nativeEndpointDirectoryData",
 			"isRegularFileKey", "1 << 20", "--openrealtime-connect-on-launch",
 			"--openrealtime-hosted-smoke=", "OPENREALTIME_HOSTED_COMPANION_PROOF",
+			"OPENREALTIME_HOSTED_COMPANION_", "ProcessInfo.processInfo.systemUptime",
+			"Darwin.exit(EXIT_FAILURE)",
 		},
 		"Sources/OpenRealtimeMac/ContentView.swift": {
 			"Server debug timeline", "Raw protocol log", "Generated files",
