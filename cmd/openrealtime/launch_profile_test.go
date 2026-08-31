@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
@@ -18,9 +19,12 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 	path := filepath.Join(directory, "scenario-profile.yaml")
 	graphPath := filepath.Join(directory, "scenario.ir.json")
 	valuesPath := filepath.Join(directory, "scenario.values.json")
+	resolutionPath := filepath.Join(directory, "scenario.resolution.json")
+	executionPath := filepath.Join(directory, "scenario.execution.json")
 	var output bytes.Buffer
 	if err := runLaunchProfile([]string{
 		"scenario", "-out", path, "-graph-out", graphPath, "-values-out", valuesPath,
+		"-resolution-out", resolutionPath, "-execution-out", executionPath,
 	}, &output); err != nil {
 		t.Fatal(err)
 	}
@@ -123,6 +127,34 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 		t.Fatalf("emitted graph/values/profile disagree: rebound=%s graph=%s profile=%s",
 			rebound.Graph.Fingerprint, boundGraph.Fingerprint, profile.Plan.GraphFingerprint)
 	}
+	resolution, err := bench.ReadExpectedResolution(resolutionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolution.Deployment == nil || len(resolution.Elements) != len(boundGraph.Nodes) {
+		t.Fatalf("scenario expected resolution is incomplete: deployment=%v elements=%d nodes=%d",
+			resolution.Deployment != nil, len(resolution.Elements), len(boundGraph.Nodes))
+	}
+	requirement, err := bench.ReadExecutionRequirement(executionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !requirement.Required() || requirement.Graph == nil ||
+		requirement.Graph.Graph.Fingerprint != boundGraph.Fingerprint ||
+		requirement.Graph.Configuration.Digest != rebound.Fingerprint {
+		t.Fatalf("scenario execution requirement does not bind emitted artifacts: %+v", requirement)
+	}
+	for _, artifactPath := range []string{graphPath, valuesPath, resolutionPath, executionPath} {
+		if info, statErr := os.Stat(artifactPath); statErr != nil {
+			t.Fatal(statErr)
+		} else if info.Mode().Perm() != 0o600 {
+			t.Fatalf("scenario companion %s mode = %v, want 0600", artifactPath, info.Mode())
+		}
+	}
+	if !strings.Contains(output.String(), "resolution  "+resolutionPath) ||
+		!strings.Contains(output.String(), "execution   "+executionPath) {
+		t.Fatalf("profile output omitted execution companions:\n%s", output.String())
+	}
 	if err := runLaunchProfile([]string{"scenario", "-out", path}, &bytes.Buffer{}); err == nil ||
 		!strings.Contains(err.Error(), "exclusively") {
 		t.Fatalf("create-only second freeze error = %v", err)
@@ -133,6 +165,9 @@ func TestScenarioProfileFreezeRequiresPairedDistinctCompanionOutputs(t *testing.
 	directory := t.TempDir()
 	profile := filepath.Join(directory, "scenario-profile.yaml")
 	graph := filepath.Join(directory, "scenario.ir.json")
+	values := filepath.Join(directory, "scenario.values.json")
+	resolution := filepath.Join(directory, "scenario.resolution.json")
+	execution := filepath.Join(directory, "scenario.execution.json")
 	if err := runLaunchProfile([]string{
 		"scenario", "-out", profile, "-graph-out", graph,
 	}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "together") {
@@ -142,6 +177,22 @@ func TestScenarioProfileFreezeRequiresPairedDistinctCompanionOutputs(t *testing.
 		"scenario", "-out", profile, "-graph-out", graph, "-values-out", graph,
 	}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "distinct") {
 		t.Fatalf("aliased companion error = %v", err)
+	}
+	if err := runLaunchProfile([]string{
+		"scenario", "-out", profile, "-resolution-out", resolution,
+	}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "together") {
+		t.Fatalf("unpaired execution companion error = %v", err)
+	}
+	if err := runLaunchProfile([]string{
+		"scenario", "-out", profile, "-resolution-out", resolution, "-execution-out", execution,
+	}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "require -graph-out") {
+		t.Fatalf("execution companions without graph artifacts error = %v", err)
+	}
+	if err := runLaunchProfile([]string{
+		"scenario", "-out", profile, "-graph-out", graph, "-values-out", values,
+		"-resolution-out", resolution, "-execution-out", resolution,
+	}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "distinct") {
+		t.Fatalf("aliased execution companion error = %v", err)
 	}
 	if _, err := os.Lstat(profile); !os.IsNotExist(err) {
 		t.Fatalf("invalid companion selection created profile: %v", err)

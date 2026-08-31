@@ -18,6 +18,28 @@ openrealtime serve &                       # the system under test
 openrealtime bench fdb --limit 4           # a suite against it
 ```
 
+A graph-native release run freezes the strict scenario profile together with
+its exact Graph IR, values, resource-free live-resolution probe, and reviewed
+execution requirement. Pass the resulting `execution.json` and `graph.json` to
+the suite so every task is checked against authenticated live inspection:
+
+```sh
+openrealtime profile scenario \
+  -out /absolute/campaign/profile.yaml \
+  -graph-out /absolute/campaign/graph.json \
+  -values-out /absolute/campaign/values.json \
+  -resolution-out /absolute/campaign/resolution.json \
+  -execution-out /absolute/campaign/execution.json
+openrealtime serve -launch-profile /absolute/campaign/profile.yaml &
+openrealtime bench fdb \
+  -execution /absolute/campaign/execution.json \
+  -inspection-graph /absolute/campaign/graph.json
+```
+
+The profile is published last and acts as the marker that its create-only
+companions are durable. Omitting the execution pair remains useful for local
+diagnosis, but it cannot support a graph-native release claim.
+
 ## Suites
 
 | Command | Suite | Measures |

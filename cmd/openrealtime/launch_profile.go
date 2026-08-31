@@ -14,14 +14,17 @@ import (
 
 	legacyaction "github.com/bojieli/OpenRealtime/action"
 	projectarch "github.com/bojieli/OpenRealtime/architecture"
+	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/bench/scenario"
 	"github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
+	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	scenarioconversation "github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation"
-	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
+	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
 	"github.com/bojieli/OpenRealtime/internal/fileidentity"
+	"github.com/bojieli/OpenRealtime/perception"
 	openrealtime "github.com/bojieli/OpenRealtime/protocol/openrealtime"
 )
 
@@ -32,12 +35,14 @@ and explicit provider configurations. Outputs are create-only and contain no
 credential. Use this same executable to serve the resulting file.`
 
 type scenarioProfileOptions struct {
-	out          string
-	graphOut     string
-	valuesOut    string
-	name         string
-	revision     uint64
-	architecture string
+	out           string
+	graphOut      string
+	valuesOut     string
+	resolutionOut string
+	executionOut  string
+	name          string
+	revision      uint64
+	architecture  string
 
 	asrProvider        string
 	asrModel           string
@@ -140,6 +145,8 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.out, "out", "", "new absolute launch-profile YAML path")
 	flags.StringVar(&options.graphOut, "graph-out", "", "new absolute exact bound Graph IR JSON path")
 	flags.StringVar(&options.valuesOut, "values-out", "", "new absolute exact element-values JSON path")
+	flags.StringVar(&options.resolutionOut, "resolution-out", "", "new absolute expected live-resolution JSON path")
+	flags.StringVar(&options.executionOut, "execution-out", "", "new absolute reviewed execution-requirement JSON path")
 	flags.StringVar(&options.name, "name", options.name, "immutable profile name")
 	flags.Uint64Var(&options.revision, "revision", options.revision, "positive profile revision")
 	flags.StringVar(&options.architecture, "architecture", options.architecture, "exact interaction architecture id@revision")
@@ -193,32 +200,85 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 	if (strings.TrimSpace(options.graphOut) == "") != (strings.TrimSpace(options.valuesOut) == "") {
 		return errors.New("profile scenario requires -graph-out and -values-out together")
 	}
-	if options.out == options.graphOut || options.out == options.valuesOut ||
-		(options.graphOut != "" && options.graphOut == options.valuesOut) {
-		return errors.New("profile scenario output paths must be distinct")
+	if (strings.TrimSpace(options.resolutionOut) == "") != (strings.TrimSpace(options.executionOut) == "") {
+		return errors.New("profile scenario requires -resolution-out and -execution-out together")
 	}
-	profile, plan, err := freezeProductionScenarioProfile(context.Background(), options)
+	if options.resolutionOut != "" && options.graphOut == "" {
+		return errors.New("profile scenario execution outputs require -graph-out and -values-out")
+	}
+	paths := []string{options.out, options.graphOut, options.valuesOut, options.resolutionOut, options.executionOut}
+	seenPaths := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		if _, duplicate := seenPaths[path]; duplicate {
+			return errors.New("profile scenario output paths must be distinct")
+		}
+		seenPaths[path] = struct{}{}
+	}
+	profile, launched, err := freezeProductionScenarioProfile(context.Background(), options)
 	if err != nil {
 		return err
 	}
-	payload, err := launchprofile.MarshalYAML(profile)
+	plan := launched.Plan
+	if plan == nil {
+		return errors.New("frozen scenario profile has no graph plan")
+	}
+	profilePayload, err := launchprofile.MarshalYAML(profile)
 	if err != nil {
 		return fmt.Errorf("encode scenario launch profile: %w", err)
 	}
+	var graphPayload, valuesPayload, resolutionPayload, executionPayload []byte
 	if options.graphOut != "" {
-		graphPayload, err := plan.Graph().Marshal()
+		graphPayload, err = plan.Graph().Marshal()
 		if err != nil {
 			return fmt.Errorf("encode scenario bound Graph IR: %w", err)
 		}
-		valuesPayload, err := json.MarshalIndent(graphvalues.Document{
+		values := graphvalues.Document{
 			APIVersion: graphvalues.APIVersion, Graph: plan.Graph().ID, Nodes: plan.Values(),
-		}, "", "  ")
+		}
+		valuesPayload, err = json.MarshalIndent(values, "", "  ")
 		if err != nil {
 			return fmt.Errorf("encode scenario element values: %w", err)
 		}
 		valuesPayload = append(valuesPayload, '\n')
-		// The launch profile is the publication marker: exact companions are
-		// closed and durable before it becomes visible.
+		bound, err := graphvalues.Bind(plan.Graph(), values)
+		if err != nil || bound.Graph.Fingerprint != plan.Graph().Fingerprint {
+			return errors.New("freeze scenario values did not reproduce the exact bound graph")
+		}
+		if options.resolutionOut != "" {
+			configuration := bench.ArtifactIdentity{
+				ID: "values://" + plan.Graph().ID, Revision: graphvalues.APIVersion,
+				Digest: bound.Fingerprint,
+			}
+			resolution, err := probeScenarioExpectedResolution(
+				context.Background(), launched.Binding, plan, configuration, legacy.Settings{
+					Modalities: []string{"audio"},
+					Gate: perception.GateConfig{
+						Threshold: options.gateThreshold, PrefixPaddingMS: options.gatePrefixMS,
+						SilenceDurationMS: options.gateSilenceMS, SpeechDurationMS: options.gateSpeechMS,
+					},
+				},
+			)
+			if err != nil {
+				return err
+			}
+			requirement, err := bench.RequireGraph(plan.Graph(), configuration, resolution)
+			if err != nil {
+				return fmt.Errorf("author scenario execution requirement: %w", err)
+			}
+			resolutionPayload, err = bench.MarshalExpectedResolution(resolution)
+			if err != nil {
+				return err
+			}
+			executionPayload, err = bench.MarshalExecutionRequirement(requirement)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if options.graphOut != "" {
 		if err := writeCreateOnlyLaunchProfile(options.graphOut, graphPayload); err != nil {
 			return fmt.Errorf("write scenario bound Graph IR: %w", err)
 		}
@@ -226,13 +286,27 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 			return fmt.Errorf("write scenario element values: %w", err)
 		}
 	}
-	if err := writeCreateOnlyLaunchProfile(options.out, payload); err != nil {
+	if options.resolutionOut != "" {
+		if err := writeCreateOnlyLaunchProfile(options.resolutionOut, resolutionPayload); err != nil {
+			return fmt.Errorf("write scenario expected live resolution: %w", err)
+		}
+		if err := writeCreateOnlyLaunchProfile(options.executionOut, executionPayload); err != nil {
+			return fmt.Errorf("write scenario execution requirement: %w", err)
+		}
+	}
+	// The launch profile is the publication marker: exact companions are closed
+	// and durable before it becomes visible.
+	if err := writeCreateOnlyLaunchProfile(options.out, profilePayload); err != nil {
 		return fmt.Errorf("write scenario launch profile: %w", err)
 	}
 	fmt.Fprintf(output, "wrote %s\n", options.out)
 	if options.graphOut != "" {
 		fmt.Fprintf(output, "graph       %s\n", options.graphOut)
 		fmt.Fprintf(output, "values      %s\n", options.valuesOut)
+	}
+	if options.resolutionOut != "" {
+		fmt.Fprintf(output, "resolution  %s\n", options.resolutionOut)
+		fmt.Fprintf(output, "execution   %s\n", options.executionOut)
 	}
 	fmt.Fprintf(output, "profile     %s@%d\n", profile.Name, profile.Revision)
 	fmt.Fprintf(output, "fingerprint %s\n", profile.Fingerprint)
@@ -247,56 +321,56 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 
 func freezeProductionScenarioProfile(
 	ctx context.Context, options scenarioProfileOptions,
-) (launchprofile.Document, *graphconfig.Plan, error) {
+) (launchprofile.Document, graphlaunch.Result, error) {
 	if ctx == nil {
-		return launchprofile.Document{}, nil, errors.New("freeze production scenario profile: nil context")
+		return launchprofile.Document{}, graphlaunch.Result{}, errors.New("freeze production scenario profile: nil context")
 	}
 	if err := context.Cause(ctx); err != nil {
-		return launchprofile.Document{}, nil, err
+		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
 	artifacts, err := executableServeProfileArtifacts()
 	if err != nil {
-		return launchprofile.Document{}, nil, err
+		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
 	inventory, err := newServeScenarioProviders(artifacts)
 	if err != nil {
-		return launchprofile.Document{}, nil, err
+		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
 	host, err := newServeProfileHost(artifacts, inventory)
 	if err != nil {
-		return launchprofile.Document{}, nil, err
+		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
 	asr, err := scenarioProfileASRSelection(inventory, options)
 	if err != nil {
-		return launchprofile.Document{}, nil, err
+		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
 	policy, err := scenarioProfilePolicySelection(inventory, options)
 	if err != nil {
-		return launchprofile.Document{}, nil, err
+		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
 	model, err := scenarioProfileModelSelection(inventory, options, "voice")
 	if err != nil {
-		return launchprofile.Document{}, nil, err
+		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
 	silentModel, err := scenarioProfileModelSelection(inventory, options, "silent")
 	if err != nil {
-		return launchprofile.Document{}, nil, err
+		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
 	tts, err := scenarioProfileTTSSelection(inventory, options)
 	if err != nil {
-		return launchprofile.Document{}, nil, err
+		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
 	contract, err := graphnative.BuildContract()
 	if err != nil {
-		return launchprofile.Document{}, nil, err
+		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
 	tools, err := productionScenarioToolDeclarations()
 	if err != nil {
-		return launchprofile.Document{}, nil, err
+		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
 	architecture, err := projectarch.Default().Resolve(options.architecture)
 	if err != nil {
-		return launchprofile.Document{}, nil, fmt.Errorf("resolve scenario architecture: %w", err)
+		return launchprofile.Document{}, graphlaunch.Result{}, fmt.Errorf("resolve scenario architecture: %w", err)
 	}
 	application := scenarioconversation.ApplicationConfig{
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
@@ -323,13 +397,13 @@ func freezeProductionScenarioProfile(
 	}
 	delegatePayload, err := json.Marshal(application)
 	if err != nil {
-		return launchprofile.Document{}, nil, fmt.Errorf("encode scenario application: %w", err)
+		return launchprofile.Document{}, graphlaunch.Result{}, fmt.Errorf("encode scenario application: %w", err)
 	}
 	configuration, err := graphnative.FreezeApplicationConfiguration(
 		contract, host.Delegate, delegatePayload,
 	)
 	if err != nil {
-		return launchprofile.Document{}, nil, fmt.Errorf("freeze scenario application: %w", err)
+		return launchprofile.Document{}, graphlaunch.Result{}, fmt.Errorf("freeze scenario application: %w", err)
 	}
 	profile, err := graphnative.FreezeLaunchProfile(ctx, graphnative.LaunchProfileConfig{
 		Name: options.name, Revision: options.revision, Contract: contract,
@@ -345,23 +419,34 @@ func freezeProductionScenarioProfile(
 		},
 	})
 	if err != nil {
-		return launchprofile.Document{}, nil, err
+		return launchprofile.Document{}, graphlaunch.Result{}, err
+	}
+	launchConfig, err := host.ScenarioSuite.Factory(ctx, profile.Application.Configuration)
+	if err != nil {
+		return launchprofile.Document{}, graphlaunch.Result{}, fmt.Errorf("prepare frozen scenario launch: %w", err)
+	}
+	launched, err := graphlaunch.New(ctx, launchConfig)
+	if err != nil {
+		return launchprofile.Document{}, graphlaunch.Result{}, fmt.Errorf("prepare frozen scenario binding: %w", err)
 	}
 	composition, err := newProfiledServeComposition(ctx, profile, host, nil)
 	if err != nil {
-		return launchprofile.Document{}, nil, fmt.Errorf("prepare frozen scenario profile artifacts: %w", err)
+		return launchprofile.Document{}, graphlaunch.Result{}, fmt.Errorf("prepare frozen scenario profile artifacts: %w", err)
 	}
 	if composition.Graph == nil || composition.Graph.GraphPlan == nil {
-		return launchprofile.Document{}, nil, errors.New("prepare frozen scenario profile artifacts: no graph plan")
+		return launchprofile.Document{}, graphlaunch.Result{}, errors.New("prepare frozen scenario profile artifacts: no graph plan")
 	}
-	plan := composition.Graph.GraphPlan
+	plan := launched.Plan
+	if plan == nil || composition.Graph.GraphPlan.Identity() != plan.Identity() {
+		return launchprofile.Document{}, graphlaunch.Result{}, errors.New("frozen scenario launch preparations disagree")
+	}
 	if err := plan.Validate(); err != nil {
-		return launchprofile.Document{}, nil, fmt.Errorf("validate frozen scenario graph plan: %w", err)
+		return launchprofile.Document{}, graphlaunch.Result{}, fmt.Errorf("validate frozen scenario graph plan: %w", err)
 	}
 	if plan.Identity() != profile.Plan {
-		return launchprofile.Document{}, nil, errors.New("frozen scenario profile and prepared graph plan disagree")
+		return launchprofile.Document{}, graphlaunch.Result{}, errors.New("frozen scenario profile and prepared graph plan disagree")
 	}
-	return profile, plan, nil
+	return profile, launched, nil
 }
 
 // productionScenarioToolDeclarations derives the profile-owned client action
