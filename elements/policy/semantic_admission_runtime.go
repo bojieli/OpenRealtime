@@ -905,14 +905,11 @@ func (runner *semanticAdmissionRunner) decide(
 		}
 	}
 	if err == nil && stage == "primary" && runner.config.VerifyVoiceActivation {
-		current := currentSemanticItem(request, prefix)
 		answerAvailable := slices.Contains(situation.AvailableActs(), coreinteraction.ActAnswer)
 		verify := act == coreinteraction.ActAnswer ||
 			act == coreinteraction.ActStaySilent && len(standing) > 0 && answerAvailable
-		if verify && semanticExtractableObservation(current) {
-			activationOutcome, err = runner.verifyVoiceActivation(
-				decisionCtx, update.Invocation.Instruction, standing, current.Content,
-			)
+		if verify && semanticActivationEvidence(situation) {
+			activationOutcome, err = runner.verifyVoiceActivation(decisionCtx, situation)
 			if err != nil {
 				failure = "voice_activation_failed"
 			} else {
@@ -1091,14 +1088,16 @@ const semanticStandingCoverageInstruction = "The policy extractor listed the sta
 	"'From now on answer briefly; what is the capital of France?' has additional-work outside the brevity policy."
 
 const semanticVoiceActivationInstruction = "You are an activation guard, not a conversational agent. " +
-	"Classify whether the CURRENT UTTERANCE creates a reason for a voice assistant to answer now under the AGENT CONTRACT and any STANDING POLICIES. " +
-	"condition-met means the contract says to answer when some fact occurs, and the current utterance provides that fact now. " +
-	"direct-request means the current utterance directly asks a complete question or requests work that should start now, not later. " +
-	"wait means neither: a future condition is merely being described or requested, an applicable condition has not occurred, the utterance is narration, " +
-	"or the current utterance only continues or refines the setup of a standing policy without satisfying it. " +
+	"Classify whether the CURRENT EVIDENCE creates a reason for a voice assistant to answer now under the AGENT CONTRACT and any STANDING POLICIES. " +
+	"Current evidence may be a completed utterance, an image or visual observation, or elapsed silence explicitly named by a standing policy. " +
+	"condition-met means the contract or a standing policy says to answer when some fact occurs, and the current evidence proves that fact now. " +
+	"direct-request means the current evidence directly asks a complete question or requests work that should start now, not later. " +
+	"wait means neither: a future condition is merely being described or requested, an applicable condition has not occurred, the evidence is narration, " +
+	"or the current evidence only continues or refines the setup of a standing policy without satisfying it. " +
 	"Reply with one label only. Examples: contract 'correct a date that contradicts the third'; current 'we do design review next week' is wait; " +
 	"the same contract with current 'ship by the thirteenth' is condition-met. Standing policy 'count animals as they are mentioned'; " +
-	"current 'say the count out loud' is wait, while current 'a heron landed' is condition-met. Contract 'answer briefly'; " +
+	"current 'say the count out loud' is wait, while current 'a heron landed' is condition-met. Standing policy 'tell me when the build finishes'; " +
+	"an image still showing the build in progress is wait, while an image proving it finished is condition-met. Contract 'answer briefly'; " +
 	"current 'what is the capital of France' is direct-request."
 
 const semanticSilentActionInstruction = "You are a silent-action activation guard, not an agent and not a tool chooser. " +
@@ -1136,29 +1135,12 @@ func (runner *semanticAdmissionRunner) verifyStandingCoverage(
 }
 
 func (runner *semanticAdmissionRunner) verifyVoiceActivation(
-	ctx context.Context, contract string, policies []coreinteraction.StandingInstruction, utterance string,
+	ctx context.Context, situation coreinteraction.Situation,
 ) (coreinteraction.Outcome, error) {
-	var evidence strings.Builder
-	evidence.WriteString("AGENT CONTRACT:\n")
-	evidence.WriteString(strings.TrimSpace(contract))
-	evidence.WriteString("\n\nSTANDING POLICIES:\n")
-	lines := semanticPinboard(policies).Lines(semanticNowNS(runner.clock))
-	if len(lines) == 0 {
-		evidence.WriteString("(none)\n")
-	} else {
-		for _, line := range lines {
-			evidence.WriteString("- ")
-			evidence.WriteString(line)
-			evidence.WriteByte('\n')
-		}
-	}
-	evidence.WriteString("\nCURRENT UTTERANCE:\n")
-	evidence.WriteString(strings.TrimSpace(utterance))
 	options := []string{semanticVoiceConditionMet, semanticVoiceDirectRequest, semanticVoiceWait}
 	outcome, err := runner.decider.Decide(ctx, coreinteraction.Decision{
-		Prompt:   semanticVoiceActivationInstruction,
-		Options:  options,
-		Evidence: evidence.String(),
+		Prompt: semanticVoiceActivationInstruction, Options: options,
+		Evidence: situation.Render(), Images: cloneSemanticImages(situation.Seeing),
 	})
 	if err == nil {
 		err = validateSemanticOutcome(outcome, options)
@@ -1307,6 +1289,11 @@ func (runner *semanticAdmissionRunner) situationWithStanding(
 			state.Speaker = coreinteraction.SpeakerOf(current)
 			state.Heard = strings.TrimSpace(current.Content)
 			state.HeardSince = state.Heard
+			if semanticExtractableObservation(current) {
+				state.HeardSince = semanticHeardSince(
+					prefix.Items, current.ID, state.Speaker, runner.config.RecentLines,
+				)
+			}
 			if current.Event != nil && strings.HasSuffix(current.Event.Type, ".revision") {
 				state.TranscriptEvent = coreinteraction.TranscriptPartial
 				state.Speaking = true
@@ -1339,6 +1326,81 @@ func semanticExtractableObservation(item trajectory.Item) bool {
 		trajectory.AuthorityOf(item) == trajectory.AuthorityUser &&
 		item.Event != nil && strings.HasSuffix(item.Event.Type, ".endpoint") &&
 		strings.TrimSpace(item.Content) != ""
+}
+
+func semanticActivationEvidence(situation coreinteraction.Situation) bool {
+	return situation.TranscriptEvent == coreinteraction.TranscriptFinal ||
+		situation.Seen != "" || len(situation.Seeing) > 0 || situation.Quiet
+}
+
+// semanticHeardSince reconstructs the bounded completed speech added after
+// the last assistant audio that actually crossed the playback boundary. A
+// recognizer may endpoint one spoken thought at a breath and a later response
+// may supersede a prepared-but-unheard answer; neither event makes the earlier
+// clause old evidence. Silent cognition and canceled voice output likewise do
+// not claim a conversational turn.
+func semanticHeardSince(
+	items []trajectory.Item, currentID, speaker string, maximum int,
+) string {
+	if maximum <= 0 {
+		maximum = defaultSemanticRecentLines
+	}
+	current := len(items) - 1
+	if currentID != "" {
+		for index := len(items) - 1; index >= 0; index-- {
+			if items[index].ID == currentID {
+				current = index
+				break
+			}
+		}
+	}
+	audible := make(map[string]struct{})
+	for index := 0; index <= current && index < len(items); index++ {
+		item := items[index]
+		if item.Kind == trajectory.KindAssistant &&
+			item.Producer.SpeechAuthority != string(continuation.SpeechAuthoritySilent) &&
+			strings.TrimSpace(item.Content) != "" && strings.TrimSpace(item.Content) != coreinteraction.WaitToken {
+			audible[item.ID] = struct{}{}
+		}
+	}
+	parts := make([]string, 0, min(maximum, 8))
+	for index := current; index >= 0 && len(parts) < maximum; index-- {
+		item := items[index]
+		switch item.Kind {
+		case trajectory.KindAssistantState:
+			if item.AssistantState != nil && item.AssistantState.Visibility == trajectory.VisibilityPlayed {
+				if _, spoken := audible[item.AssistantState.AssistantItemID]; spoken {
+					return strings.Join(parts, " ")
+				}
+			}
+		case trajectory.KindAssistant:
+			if _, spoken := audible[item.ID]; spoken && item.Visibility == trajectory.VisibilityPlayed {
+				return strings.Join(parts, " ")
+			}
+		case trajectory.KindObservation:
+			if !semanticExtractableObservation(item) {
+				continue
+			}
+			if coreinteraction.SpeakerOf(item) != speaker {
+				return strings.Join(parts, " ")
+			}
+			text := strings.TrimSpace(item.Content)
+			if text != "" {
+				parts = append([]string{text}, parts...)
+			}
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func cloneSemanticImages(source []coreinteraction.Image) []coreinteraction.Image {
+	result := make([]coreinteraction.Image, len(source))
+	for index := range source {
+		result[index] = coreinteraction.Image{
+			MIMEType: source[index].MIMEType, Bytes: slices.Clone(source[index].Bytes),
+		}
+	}
+	return result
 }
 
 func semanticRecentBefore(items []trajectory.Item, currentID string, maximum int) []string {

@@ -184,6 +184,145 @@ func TestSemanticAdmissionDirectVisualInputIsExplicitAndResolvedAtTheSealedPrefi
 	}
 }
 
+func TestSemanticAdmissionVisualActivationRecoversOnlyAProvenStandingCondition(t *testing.T) {
+	for _, testCase := range []struct {
+		name       string
+		activation string
+		wantAct    coreinteraction.Act
+		wantStage  string
+		wantKind   policyelements.SemanticAdmissionOutcomeKind
+	}{
+		{name: "finished build", activation: "condition-met", wantAct: coreinteraction.ActAnswer,
+			wantStage: "voice_activation", wantKind: policyelements.SemanticAdmissionAdmitted},
+		{name: "build still running", activation: "wait", wantAct: coreinteraction.ActStaySilent,
+			wantStage: "primary", wantKind: policyelements.SemanticAdmissionSuppressed},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			descriptor := semanticTestDescriptor
+			descriptor.Vision = true
+			descriptor.StandingExtraction = true
+			imageBytes := []byte("exact build-status pixels")
+			decider := &semanticTestDecider{
+				descriptor: descriptor,
+				answers: []string{
+					"covered", string(coreinteraction.ActStaySilent), testCase.activation,
+				},
+				generationAnswers: []string{
+					"pin conversation tell the user when the build has finished and say nothing else",
+					"yes", "yes", "standing", "none", "none",
+				},
+			}
+			config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+				Decider: "semantic-primary", DirectVisualInput: true,
+				StandingExtraction: true, VerifyVoiceActivation: true,
+				MinimumActivationConfidence: 0.7, RecentLines: 12,
+				MaxPending: 8, TerminalMemory: 8, CancelMemory: 8, StandingMemory: 8,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			resolver := continuation.MediaResolver(func(handle string) (continuation.Media, error) {
+				if handle != "build-frame" {
+					return continuation.Media{}, errors.New("unexpected media handle")
+				}
+				return continuation.Media{MIMEType: "image/png", Bytes: imageBytes}, nil
+			})
+			mounted, err := mountSemanticAdmissionRegisteredWithMedia(
+				t, descriptor, decider, config, resolver,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			go func() { done <- mounted.Run(ctx) }()
+			harness := policyHarness{mounted: mounted, done: done, cancel: cancel}
+			defer harness.stop(t)
+			consumeSemanticStartup(t, harness)
+			installSemanticInvocation(t, harness, 1, false)
+
+			setup := semanticEndpointObservation(
+				"visual-policy", 1, 1,
+				"Tell me when the build has finished, and say nothing else.",
+			)
+			first := trajectory.Snapshot{Version: 1, Items: []trajectory.Item{setup}}
+			firstPrefix, err := trajectory.IdentifyPrefix(first, first.Version)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sendSemanticContext(t, harness, "state-1", first)
+			sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+				Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-visual-policy",
+				SessionID: "semantic-session",
+				Payload: semanticCommittedOutcome(
+					setup, "visual-policy", firstPrefix, "state-1", first.Version,
+				),
+			})
+			_ = receivePolicy(t, harness.egress(t, "state"))
+			setupDecision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+			setupOutcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+			setupState := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SemanticAdmissionState)
+			if setupDecision.DecisionStage != "standing_coverage" ||
+				setupOutcome.Kind != policyelements.SemanticAdmissionSuppressed || setupState.StandingPolicies != 1 {
+				t.Fatalf("visual policy setup decision=%+v outcome=%+v state=%+v",
+					setupDecision, setupOutcome, setupState)
+			}
+
+			visual := trajectory.Item{
+				ID: "visual-build-status", Kind: trajectory.KindObservation,
+				MonotonicNS: 2, SourceRevision: 2,
+				Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+				Content:  "current build status frame",
+				Observation: &trajectory.ObservationMeta{
+					Observer: "client", Source: "screen", Authority: trajectory.AuthorityObserver,
+					Media: []trajectory.MediaRef{{
+						Handle: "build-frame", MIMEType: "image/png", Source: "screen",
+						Width: 64, Height: 48, Bytes: len(imageBytes),
+					}},
+				},
+				Event: &trajectory.EventMetadata{
+					EventID: "event-visual-build-status", Type: "client.image.endpoint",
+					Source: "client", Channel: "screen",
+				},
+			}
+			second := trajectory.Snapshot{Version: 2, Items: []trajectory.Item{setup, visual}}
+			secondPrefix, err := trajectory.IdentifyPrefix(second, second.Version)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sendSemanticContext(t, harness, "state-2", second)
+			sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+				Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-visual-build-status",
+				SessionID: "semantic-session",
+				Payload: semanticCommittedOutcome(
+					visual, "visual-build-status", secondPrefix, "state-2", second.Version,
+				),
+			})
+			_ = receivePolicy(t, harness.egress(t, "state"))
+			decision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+			if testCase.wantKind == policyelements.SemanticAdmissionAdmitted {
+				_ = receivePolicy(t, harness.egress(t, "voice_committed"))
+			}
+			outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+			state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SemanticAdmissionState)
+			if decision.Act != testCase.wantAct || decision.DecisionStage != testCase.wantStage ||
+				decision.Activation != testCase.activation || outcome.Kind != testCase.wantKind ||
+				state.StandingPolicies != 1 {
+				t.Fatalf("visual decision=%+v outcome=%+v state=%+v", decision, outcome, state)
+			}
+			if testCase.wantKind == policyelements.SemanticAdmissionSuppressed {
+				assertNoSemanticGeneration(t, harness)
+			}
+			captured := decider.captured()
+			if len(captured) != 3 || len(captured[2].Images) != 1 ||
+				!reflect.DeepEqual(captured[2].Images[0].Bytes, imageBytes) ||
+				!strings.Contains(captured[2].Evidence, "current build status frame") {
+				t.Fatalf("visual activation inputs = %+v", captured)
+			}
+		})
+	}
+}
+
 func TestSemanticAdmissionPinsStandingPolicyBeforeTheNextDecisionAndSuppressesItsSetup(t *testing.T) {
 	descriptor := semanticTestDescriptor
 	descriptor.StandingExtraction = true
@@ -329,7 +468,7 @@ func TestSemanticAdmissionPinsStandingPolicyBeforeTheNextDecisionAndSuppressesIt
 	captured := decider.captured()
 	if len(captured) != 5 || !strings.Contains(captured[3].Evidence, "Standing instructions:") ||
 		!strings.Contains(captured[3].Evidence, "count the animals") ||
-		!strings.Contains(captured[4].Evidence, "STANDING POLICIES:") ||
+		!strings.Contains(captured[4].Evidence, "Standing instructions:") ||
 		!strings.Contains(captured[4].Evidence, "count the animals") {
 		t.Fatalf("semantic decision inputs = %+v", captured)
 	}
