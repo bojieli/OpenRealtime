@@ -264,7 +264,7 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		"external.benchmark.dynacu",
 		"external.benchmark.meeting.omni",
 		"external.macos.signed-e2e",
-		"external.model.live-surface",
+		"external.model.live-presentation",
 		"external.model.scenario-review",
 		"external.tau.upstream",
 		"local.client.swift-linux",
@@ -279,6 +279,25 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		if !exists || !gate.Required {
 			t.Errorf("required special gate is missing: %s", id)
 		}
+	}
+	livePresentation := byID["external.model.live-presentation"]
+	if !slices.Equal(livePresentation.Command, []string{
+		"{go}", "test", "-count=1", "-v", "./presentation/browser", "-run",
+		"^TestLiveComposablePresentationClientAgainstRealModelInChromium$",
+	}) || livePresentation.Environment["OPENREALTIME_PRESENTATION_LIVE_ENDPOINT"] !=
+		"{env:OPENREALTIME_PRESENTATION_LIVE_ENDPOINT}" ||
+		livePresentation.Environment["OPENREALTIME_RELEASE_GATE"] != "1" ||
+		livePresentation.SkipPolicy != SkipForbid {
+		t.Fatalf("live composable presentation gate was weakened: %+v", livePresentation)
+	}
+	foundLiveCompletion := false
+	for _, assertion := range livePresentation.Assertions {
+		foundLiveCompletion = foundLiveCompletion ||
+			(assertion.Kind == "stdout_regex" &&
+				assertion.Value == `(?m)^live composable presentation client completed$`)
+	}
+	if !foundLiveCompletion {
+		t.Fatalf("live composable presentation gate has no exact completion assertion: %+v", livePresentation)
 	}
 	scenarioWebSocket := byID["local.scenario.profiled-websocket"]
 	if scenarioWebSocket.Availability != AvailabilityLocal ||
