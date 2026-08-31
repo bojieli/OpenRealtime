@@ -1126,6 +1126,20 @@ func asrWithinWordRegression(candidate, current string) bool {
 		strings.HasPrefix(currentWords[last], candidateWords[last])
 }
 
+func asrFinalWordCorrection(current, candidate string) bool {
+	currentWords, candidateWords := trajectory.SpokenWords(current), trajectory.SpokenWords(candidate)
+	if len(currentWords) == 0 || len(currentWords) != len(candidateWords) {
+		return false
+	}
+	for index := 0; index < len(currentWords)-1; index++ {
+		if currentWords[index] != candidateWords[index] {
+			return false
+		}
+	}
+	last := len(currentWords) - 1
+	return currentWords[last] != candidateWords[last]
+}
+
 func (runtime *runtime) rememberCompositeResumeHeard(heard string) {
 	runtime.audioMu.Lock()
 	runtime.compositeResumeHeard = strings.TrimSpace(heard)
@@ -1156,27 +1170,29 @@ func (runtime *runtime) signalCompositeResumeOnce(intentID, heard string) error 
 }
 
 func (runtime *runtime) markCompositeResumeSpoken(intentID, task string) {
-	intentID, task = strings.TrimSpace(intentID), strings.TrimSpace(task)
-	if intentID == "" || task == "" {
+	intentID = strings.TrimSpace(intentID)
+	clause := strings.TrimSpace(interaction.ImmediateNonvisualClause(task))
+	if intentID == "" || clause == "" {
 		return
 	}
 	runtime.visualActionMu.Lock()
 	if runtime.visualResumeSpoken == nil {
 		runtime.visualResumeSpoken = make(map[string]string)
 	}
-	runtime.visualResumeSpoken[intentID] = task
+	runtime.visualResumeSpoken[intentID] = clause
 	runtime.visualActionMu.Unlock()
 }
 
 func (runtime *runtime) compositeResumeAlreadySpokeFor(intentID, task string) bool {
-	intentID, task = strings.TrimSpace(intentID), strings.TrimSpace(task)
-	if intentID == "" || task == "" {
+	intentID = strings.TrimSpace(intentID)
+	clause := strings.TrimSpace(interaction.ImmediateNonvisualClause(task))
+	if intentID == "" || clause == "" {
 		return false
 	}
 	runtime.visualActionMu.Lock()
 	spoken := runtime.visualResumeSpoken[intentID]
 	runtime.visualActionMu.Unlock()
-	return slices.Equal(trajectory.SpokenWords(spoken), trajectory.SpokenWords(task))
+	return slices.Equal(trajectory.SpokenWords(spoken), trajectory.SpokenWords(clause))
 }
 
 func (runtime *runtime) clearCompositeResumeHeard(heard string) {

@@ -406,33 +406,45 @@ func TestPureSuccessfulVisualResultBatchIsControllerMemory(t *testing.T) {
 func TestCompositeEndpointSuppressionRequiresExactTaskAndPlayedArtifacts(t *testing.T) {
 	runtime := &runtime{
 		visualIntentByCall: map[string]string{"visual-1": "utterance-1"},
-		visualResumeSpoken: map[string]string{"utterance-1": "Present the overview and monitor alerts."},
 	}
+	runtime.markCompositeResumeSpoken(
+		"utterance-1",
+		"Present the overview. If an alert appears, acknowledge it without stopping your press.",
+	)
 	if !runtime.compositeResumeAlreadySpokeFor(
-		"utterance-1", "Present the overview and monitor alerts!",
+		"utterance-1",
+		"Present the overview. If an alert appears, acknowledge it without stopping your presentation.",
 	) {
-		t.Fatal("punctuation-only canonical refinement lost composite speech coverage")
+		t.Fatal("a provisional conditional-tail correction lost immediate-clause speech coverage")
 	}
 	if runtime.compositeResumeAlreadySpokeFor(
-		"utterance-1", "Present the overview and monitor alerts, then summarize risks.",
+		"utterance-1",
+		"Present the overview and summarize risks. If an alert appears, acknowledge it without stopping your presentation.",
 	) {
-		t.Fatal("new canonical words were hidden by earlier composite speech")
+		t.Fatal("a new immediate semantic obligation was hidden by earlier composite speech")
 	}
 	played := &trajectory.AssistantState{
 		AssistantItemID: "assistant-1", Visibility: trajectory.VisibilityPlayed, PlayedAudioMS: 1000,
 	}
+	queued := &trajectory.AssistantState{
+		AssistantItemID: "assistant-1", Visibility: trajectory.VisibilityQueued,
+	}
 	batch := eventloop.Batch{
 		Items: []trajectory.Item{
+			{
+				Kind: trajectory.KindAssistantState, AssistantState: queued,
+			},
 			{
 				Kind: trajectory.KindAssistantState, AssistantState: played,
 			},
 			{
 				Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
-				Content:     "Present the overview and monitor alerts.",
+				Content:     "Present the overview. If an alert appears, acknowledge it without stopping your presentation.",
 				Observation: &trajectory.ObservationMeta{Authority: trajectory.AuthorityUser},
 			},
 		},
 		Events: []eventloop.Event{
+			{Kind: trajectory.KindAssistantState, AssistantState: queued},
 			{Kind: trajectory.KindAssistantState, AssistantState: played},
 			{Kind: trajectory.KindObservation},
 		},
@@ -446,10 +458,20 @@ func TestCompositeEndpointSuppressionRequiresExactTaskAndPlayedArtifacts(t *test
 	cancelledState := &trajectory.AssistantState{
 		AssistantItemID: "assistant-1", Visibility: trajectory.VisibilityCancelled,
 	}
-	cancelled.Items[0].AssistantState = cancelledState
-	cancelled.Events[0].AssistantState = cancelledState
+	cancelled.Items[1].AssistantState = cancelledState
+	cancelled.Events[1].AssistantState = cancelledState
 	if runtime.batchOnlyCompositeEndpointArtifacts(cancelled) {
 		t.Fatal("cancelled composite speech suppressed the canonical endpoint")
+	}
+	unmatchedQueued := batch
+	unmatchedQueued.Items = append([]trajectory.Item(nil), batch.Items...)
+	unmatchedQueued.Events = append([]eventloop.Event(nil), batch.Events...)
+	unmatchedQueued.Items[0].AssistantState = &trajectory.AssistantState{
+		AssistantItemID: "assistant-other", Visibility: trajectory.VisibilityQueued,
+	}
+	unmatchedQueued.Events[0].AssistantState = unmatchedQueued.Items[0].AssistantState
+	if runtime.batchOnlyCompositeEndpointArtifacts(unmatchedQueued) {
+		t.Fatal("unmatched queued speech suppressed the canonical endpoint")
 	}
 	unrelated := batch
 	unrelated.Items = append(append([]trajectory.Item(nil), batch.Items...), trajectory.Item{
@@ -609,6 +631,42 @@ func TestCanonicalVisualTaskAcceptsWithinWordASRCompletion(t *testing.T) {
 	intent, task := runtime.visualTask(trajectory.Snapshot{Items: []trajectory.Item{final}}, true)
 	if intent != "utterance-1" || task != final.Content {
 		t.Fatalf("within-word final did not complete visual task: %q %q", intent, task)
+	}
+}
+
+func TestCanonicalVisualTaskAcceptsOnlyEndpointFinalWordCorrections(t *testing.T) {
+	newRuntime := func() *runtime {
+		return &runtime{
+			visualTaskID: "utterance-1", visualTaskRawID: "utterance-1",
+			visualTaskText: "Present the overview without stopping your press.",
+			visualArmed:    map[string]bool{}, visualEvaluated: map[string]bool{},
+			visualProvisionalTerminal: map[string]bool{},
+		}
+	}
+	observation := func(eventType string) trajectory.Item {
+		return trajectory.Item{
+			ID: "settled", Kind: trajectory.KindObservation,
+			Content: "Present the overview without stopping your presentation.", SourceRevision: 2,
+			Producer:    trajectory.Producer{Phase: trajectory.PhaseUser},
+			Observation: &trajectory.ObservationMeta{Authority: trajectory.AuthorityUser},
+			Event: &trajectory.EventMetadata{
+				CorrelationID: "utterance-1", Type: eventType,
+			},
+		}
+	}
+	partialRuntime := newRuntime()
+	_, partialTask := partialRuntime.visualTask(
+		trajectory.Snapshot{Items: []trajectory.Item{observation("audio.partial")}}, true,
+	)
+	if partialTask != "Present the overview without stopping your press." {
+		t.Fatalf("provisional rewrite replaced controller state: %q", partialTask)
+	}
+	endpointRuntime := newRuntime()
+	_, endpointTask := endpointRuntime.visualTask(
+		trajectory.Snapshot{Items: []trajectory.Item{observation("audio.endpoint")}}, true,
+	)
+	if endpointTask != "Present the overview without stopping your presentation." {
+		t.Fatalf("canonical final-word correction was not accepted: %q", endpointTask)
 	}
 }
 

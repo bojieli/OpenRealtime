@@ -242,9 +242,9 @@ type runtime struct {
 	visualPolicy     map[string]interaction.VisualIntent
 	visualPolicyTask map[string]string
 	visualResumed    map[string]bool
-	// visualResumeSpoken records the exact reconstructed task whose independent
-	// nonvisual clause actually crossed the speech boundary. Its later canonical
-	// endpoint is evidence refinement, not a second request to present again.
+	// visualResumeSpoken records the exact immediate nonvisual clause that
+	// actually crossed the speech boundary. Its enclosing task may still change
+	// as provisional ASR settles without creating a second request to speak it.
 	visualResumeSpoken        map[string]string
 	visualHandledRev          map[string]visualHandledRevisions
 	visualProvisionalTerminal map[string]bool

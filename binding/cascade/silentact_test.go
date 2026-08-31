@@ -259,8 +259,8 @@ func TestCompositeSilentVisualWaitResumesSpeechAndStillMonitors(t *testing.T) {
 	config := visualReflexVideoConfig()
 	config.Perception = func() (v1.PerceptionProvider, error) {
 		return &scriptedASR{
-			partials: []string{"present the overview and acknowledge an alert if it appears"},
-			final:    "present the overview and acknowledge an alert if it appears",
+			partials: []string{"present the overview if an alert appears acknowledge it without stopping your press"},
+			final:    "present the overview if an alert appears acknowledge it without stopping your presentation",
 		}, nil
 	}
 	config.Fast = fast

@@ -74,14 +74,27 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	if handled, err := runtime.processParallelVisual(ctx, batch); handled {
 		return err
 	}
+	compositeSpeechCovered := false
 	if runtime.batchOnlyCompositeEndpointArtifacts(batch) {
 		snapshot := runtime.store.Snapshot()
 		intentID, task := runtime.visualTask(snapshot, true)
 		if runtime.compositeResumeAlreadySpokeFor(intentID, task) {
 			// A live visual branch already resumed and audibly completed this
-			// exact nonvisual clause. The canonical ASR item refines the evidence
-			// and controller identity, but must not create a second presentation.
-			return nil
+			// exact nonvisual clause. Keep processing the canonical ASR item so it
+			// can refine or complete the visual branch, but do not treat it as a
+			// second semantic request.
+			compositeSpeechCovered = true
+			respondToObservation = false
+		}
+	} else if visualObservation(batch) && !batchHasUserObservation(batch) {
+		snapshot := runtime.store.Snapshot()
+		intentID, task := runtime.visualTask(snapshot, false)
+		if runtime.compositeResumeAlreadySpokeFor(intentID, task) {
+			// Frames and successful effects advance the visual controller. They
+			// are not new authority to repeat the independent clause which the
+			// same composite request already spoke.
+			compositeSpeechCovered = true
+			respondToObservation = false
 		}
 	}
 	revision := runtime.latestRevision(batch)
@@ -91,9 +104,9 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		},
 		Cause: interaction.Cause{
 			Observation:           respondToObservation,
-			AutonomousObservation: interaction.AutonomousObservation(batch),
+			AutonomousObservation: !compositeSpeechCovered && interaction.AutonomousObservation(batch),
 			Escalated:             batch.Signalled(interaction.SignalEscalated),
-			ToolResult:            batch.Contains(trajectory.KindToolResult),
+			ToolResult:            !compositeSpeechCovered && batch.Contains(trajectory.KindToolResult),
 			ToolError:             batchHasToolError(batch),
 			PendingRepair:         len(trajectory.PendingRepairs(runtime.store.Snapshot())) > 0,
 			BackgroundResult:      batch.Signalled(interaction.SignalBackgroundResult),
@@ -112,7 +125,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 			"step_count": len(plan), "triage": batch.Triage,
 		}, Payload: map[string]any{"steps": planned},
 	})
-	if len(plan) == 0 {
+	if len(plan) == 0 && !compositeSpeechCovered {
 		return nil
 	}
 	// A passive screen opening is evidence, not an instruction to start an
@@ -714,6 +727,33 @@ func (runtime *runtime) batchOnlyCompositeEndpointArtifacts(batch eventloop.Batc
 		}
 	}
 	runtime.visualActionMu.Unlock()
+	playedAssistantIDs := make(map[string]struct{})
+	for _, item := range batch.Items {
+		if item.Kind == trajectory.KindAssistantState && item.AssistantState != nil &&
+			item.AssistantState.Visibility == trajectory.VisibilityPlayed {
+			playedAssistantIDs[item.AssistantState.AssistantItemID] = struct{}{}
+		}
+	}
+	for _, event := range batch.Events {
+		if event.Kind == trajectory.KindAssistantState && event.AssistantState != nil &&
+			event.AssistantState.Visibility == trajectory.VisibilityPlayed {
+			playedAssistantIDs[event.AssistantState.AssistantItemID] = struct{}{}
+		}
+	}
+	playedOrPairedQueued := func(state *trajectory.AssistantState) bool {
+		if state == nil {
+			return false
+		}
+		switch state.Visibility {
+		case trajectory.VisibilityPlayed:
+			return true
+		case trajectory.VisibilityQueued:
+			_, completed := playedAssistantIDs[state.AssistantItemID]
+			return completed
+		default:
+			return false
+		}
+	}
 	hasUser := false
 	for _, item := range batch.Items {
 		switch item.Kind {
@@ -723,7 +763,7 @@ func (runtime *runtime) batchOnlyCompositeEndpointArtifacts(batch eventloop.Batc
 			}
 			hasUser = true
 		case trajectory.KindAssistantState:
-			if item.AssistantState == nil || item.AssistantState.Visibility != trajectory.VisibilityPlayed {
+			if !playedOrPairedQueued(item.AssistantState) {
 				return false
 			}
 		case trajectory.KindToolResult:
@@ -741,7 +781,7 @@ func (runtime *runtime) batchOnlyCompositeEndpointArtifacts(batch eventloop.Batc
 		switch event.Kind {
 		case trajectory.KindObservation:
 		case trajectory.KindAssistantState:
-			if event.AssistantState == nil || event.AssistantState.Visibility != trajectory.VisibilityPlayed {
+			if !playedOrPairedQueued(event.AssistantState) {
 				return false
 			}
 		case trajectory.KindToolResult:
@@ -757,7 +797,7 @@ func (runtime *runtime) batchOnlyCompositeEndpointArtifacts(batch eventloop.Batc
 			return false
 		}
 	}
-	return hasUser
+	return hasUser && len(playedAssistantIDs) > 0
 }
 
 func visualObservation(batch eventloop.Batch) bool {
@@ -844,8 +884,11 @@ func (runtime *runtime) visualTask(snapshot trajectory.Snapshot, update bool) (s
 			runtime.visualEvaluated[runtime.visualTaskID] = false
 			delete(runtime.visualProvisionalTerminal, runtime.visualTaskID)
 		}
+		canonicalFinalWordCorrection := strings.HasSuffix(
+			strings.ToLower(strings.TrimSpace(item.Event.Type)), ".endpoint",
+		) && asrFinalWordCorrection(runtime.visualTaskText, text)
 		if trajectory.SaidFurther(runtime.visualTaskText, text) ||
-			asrWithinWordRegression(runtime.visualTaskText, text) {
+			asrWithinWordRegression(runtime.visualTaskText, text) || canonicalFinalWordCorrection {
 			runtime.visualTaskText = text
 			runtime.visualEvaluated[runtime.visualTaskID] = false
 		}
