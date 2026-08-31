@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "OpenRealtimeClientCore",
+    platforms: [.macOS(.v14)],
     products: [
         .library(name: "OpenRealtimeClientCore", targets: ["OpenRealtimeClientCore"]),
     ],
