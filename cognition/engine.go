@@ -545,7 +545,8 @@ func Instruct(prompt string, request Request) string {
 	if request.CompletedVisualActions > 0 {
 		prompt += fmt.Sprintf(
 			"\n\nCompleted visual action chunks for this user request: %d. Each succeeded. Do not repeat or restart them; "+
-				"on this fresh frame, advance to the next explicitly requested control in the user's order.",
+				"on this fresh frame, advance to the next explicitly requested control in the user's order. "+
+				"Earlier coordinate arguments are intentionally omitted: ground new x/y values from the current pixels instead of copying the prior call.",
 			request.CompletedVisualActions,
 		)
 	}

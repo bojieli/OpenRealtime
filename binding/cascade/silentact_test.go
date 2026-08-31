@@ -16,7 +16,6 @@ import (
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/cascade"
-	"github.com/bojieli/OpenRealtime/cognition"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/interaction"
@@ -253,7 +252,6 @@ func TestCompositeSilentVisualWaitResumesSpeechAndStillMonitors(t *testing.T) {
 		[]continuation.Event{{
 			Kind: continuation.EventAssistantDelta, Text: "Here is the project overview.",
 		}},
-		[]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: cognition.WaitToken}},
 		[]continuation.Event{{
 			Kind: continuation.EventAssistantDelta, Text: "Here is the project overview again.",
 		}},
@@ -342,20 +340,6 @@ func TestCompositeSilentVisualWaitResumesSpeechAndStillMonitors(t *testing.T) {
 		}
 		return false
 	}, "the completed composite request did not arm later visual monitoring")
-	time.Sleep(100 * time.Millisecond)
-	beforeActionInvocations := fast.invocations()
-	if beforeActionInvocations < 1 || beforeActionInvocations > 2 {
-		t.Fatalf("canonical endpoint produced unexpected voice work: %d invocations", beforeActionInvocations)
-	}
-	if beforeActionInvocations == 2 {
-		fast.mu.Lock()
-		endpointInstruction := fast.requests[1].Invocation.Instruction
-		fast.mu.Unlock()
-		if !strings.Contains(endpointInstruction, cognition.AnsweredInstruction) ||
-			!strings.Contains(endpointInstruction, "present the overview and acknowledge an alert if it appears") {
-			t.Fatalf("composite-resume speech did not cover its live utterance: %q", endpointInstruction)
-		}
-	}
 	// The visual observer deliberately preserves its adaptive cadence and
 	// change gate. Wait one cadence, then send a genuinely changed screen.
 	time.Sleep(350 * time.Millisecond)
@@ -380,7 +364,7 @@ func TestCompositeSilentVisualWaitResumesSpeechAndStillMonitors(t *testing.T) {
 		return false
 	}, "the visual action result was not committed")
 	time.Sleep(100 * time.Millisecond)
-	if got := fast.invocations(); got > 2 {
+	if got := fast.invocations(); got != 1 {
 		fast.mu.Lock()
 		requests := append([]continuation.Request(nil), fast.requests...)
 		fast.mu.Unlock()
@@ -388,8 +372,8 @@ func TestCompositeSilentVisualWaitResumesSpeechAndStillMonitors(t *testing.T) {
 		if len(requests) > 0 {
 			last = requests[len(requests)-1].Invocation.Instruction
 		}
-		t.Fatalf("visual completion opened more than the one deferred endpoint: before=%d after=%d; last instruction=%q",
-			beforeActionInvocations, got, last)
+		t.Fatalf("canonical endpoint or visual completion repeated the resumed voice: invocations=%d; last instruction=%q",
+			got, last)
 	}
 	if spoken := sink.spokenTexts(); len(spoken) != 1 || spoken[0] != "Here is the project overview." {
 		t.Fatalf("visual monitoring repeated presentation speech: %q", spoken)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -683,9 +684,7 @@ func (runtime *runtime) runSilentAct(ctx context.Context, request cognition.Requ
 		runtime.applyVisualOutcome(request.VisualIntentID, outcome)
 		switch outcome.Kind {
 		case cognition.VisualReflexAct:
-			return runtime.dispatchAutonomousVisual(
-				ctx, outcome.Result, request.VisualIntentID, outcome.Target,
-			)
+			return runtime.dispatchAutonomousVisual(ctx, outcome.Result, request.VisualIntentID)
 		case cognition.VisualReflexWait:
 			// The current frame needs no action. A later visual observation will
 			// ask the reflex again; meanwhile, preserve any independent work in
@@ -919,9 +918,7 @@ func (runtime *runtime) runLiveVisualMicroTurn(pending liveVisualDecision) {
 	}
 	runtime.applyVisualOutcome(intentID, outcome)
 	if outcome.Kind == cognition.VisualReflexAct {
-		if err := runtime.dispatchAutonomousVisual(
-			runtime.ctx, outcome.Result, intentID, outcome.Target,
-		); err != nil {
+		if err := runtime.dispatchAutonomousVisual(runtime.ctx, outcome.Result, intentID); err != nil {
 			if runtime.config.ProfileTurns {
 				fmt.Fprintf(os.Stderr,
 					"visual-profile at=%s where=%s-dispatch intent=%q task=%q error=%q\n",
@@ -1156,6 +1153,30 @@ func (runtime *runtime) signalCompositeResumeOnce(intentID, heard string) error 
 		return err
 	}
 	return nil
+}
+
+func (runtime *runtime) markCompositeResumeSpoken(intentID, task string) {
+	intentID, task = strings.TrimSpace(intentID), strings.TrimSpace(task)
+	if intentID == "" || task == "" {
+		return
+	}
+	runtime.visualActionMu.Lock()
+	if runtime.visualResumeSpoken == nil {
+		runtime.visualResumeSpoken = make(map[string]string)
+	}
+	runtime.visualResumeSpoken[intentID] = task
+	runtime.visualActionMu.Unlock()
+}
+
+func (runtime *runtime) compositeResumeAlreadySpokeFor(intentID, task string) bool {
+	intentID, task = strings.TrimSpace(intentID), strings.TrimSpace(task)
+	if intentID == "" || task == "" {
+		return false
+	}
+	runtime.visualActionMu.Lock()
+	spoken := runtime.visualResumeSpoken[intentID]
+	runtime.visualActionMu.Unlock()
+	return slices.Equal(trajectory.SpokenWords(spoken), trajectory.SpokenWords(task))
 }
 
 func (runtime *runtime) clearCompositeResumeHeard(heard string) {

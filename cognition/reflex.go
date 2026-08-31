@@ -210,6 +210,13 @@ func (engine *Engine) RunVisualReflex(ctx context.Context, request Request) (Vis
 			return projected, nil
 		}
 	}
+	if request.CompletedVisualActions > 0 {
+		// The typed chunk count tells this receding-horizon role what already
+		// succeeded. Hiding resolved coordinate calls prevents a small tool model
+		// from copying the preceding x/y arguments while merely changing its
+		// private target label for the next control.
+		projection = withoutResolvedVisualActionCoordinates(projection)
+	}
 	result, err := reflex.runner.RunLiveProjected(bounded, contract, continuation.Invocation{
 		Instruction: Instruct(engine.visualPrompt(reflex.instruction), request), SourceRevision: request.SourceRevision,
 		Capabilities: visualReflexCapabilities(reflex.catalog.Capabilities(), tools),
@@ -238,6 +245,45 @@ func (engine *Engine) RunVisualReflex(ctx context.Context, request Request) (Vis
 			fmt.Errorf("%w: unknown outcome %q", ErrMalformedVisualReflex, outcome.Kind)
 	}
 	return outcome, nil
+}
+
+func withoutResolvedVisualActionCoordinates(
+	project continuation.TrajectoryProjection,
+) continuation.TrajectoryProjection {
+	return func(snapshot trajectory.Snapshot) (trajectory.Snapshot, error) {
+		projected, err := project(snapshot)
+		if err != nil {
+			return projected, err
+		}
+		resolved := make(map[string]struct{})
+		for _, item := range projected.Items {
+			if item.Kind == trajectory.KindToolResult && item.ToolResult != nil {
+				resolved[item.ToolResult.CallID] = struct{}{}
+			}
+		}
+		completedCoordinates := make(map[string]struct{})
+		for _, item := range projected.Items {
+			if item.Kind != trajectory.KindToolCall || item.ToolCall == nil ||
+				!strings.HasPrefix(item.ToolCall.Name, "computer.") {
+				continue
+			}
+			if _, ok := resolved[item.ToolCall.CallID]; ok {
+				completedCoordinates[item.ToolCall.CallID] = struct{}{}
+			}
+		}
+		projected.Items = slices.DeleteFunc(projected.Items, func(item trajectory.Item) bool {
+			if item.Kind == trajectory.KindToolCall && item.ToolCall != nil {
+				_, remove := completedCoordinates[item.ToolCall.CallID]
+				return remove
+			}
+			if item.Kind == trajectory.KindToolResult && item.ToolResult != nil {
+				_, remove := completedCoordinates[item.ToolResult.CallID]
+				return remove
+			}
+			return false
+		})
+		return projected, nil
+	}
 }
 
 // CompactVisualProjection retains only the current task and newest image

@@ -110,6 +110,73 @@ func TestCompactVisualProjectionKeepsTheLatestFastComputerActionAndResult(t *tes
 	}
 }
 
+func TestVisualReflexNextChunkDoesNotSeeCompletedCoordinates(t *testing.T) {
+	provider := reflexProvider(continuation.Event{
+		Kind: continuation.EventAssistantDelta, Text: "ABSTAIN",
+	})
+	store := trajectory.NewStore()
+	seed(t, store)
+	if err := store.Append(trajectory.Item{
+		ID: "prior-call", Kind: trajectory.KindToolCall, MonotonicNS: 2,
+		InvocationID: "prior-visual", Producer: trajectory.Producer{Phase: trajectory.PhaseFast},
+		ToolCall: &trajectory.ToolCall{
+			CallID: "open-review", Name: "computer.click_normalized",
+			Arguments: json.RawMessage(`{"source":"screen","x":124,"y":842}`),
+		},
+	}); err != nil {
+		t.Fatalf("append prior visual call: %v", err)
+	}
+	if err := store.Append(trajectory.Item{
+		ID: "prior-result", Kind: trajectory.KindToolResult, MonotonicNS: 3,
+		InvocationID: "prior-visual", Producer: trajectory.Producer{Phase: trajectory.PhaseTool},
+		ToolResult: &trajectory.ToolResult{
+			CallID: "open-review", Name: "computer.click_normalized", Output: json.RawMessage(`"clicked"`),
+		},
+	}); err != nil {
+		t.Fatalf("append prior visual result: %v", err)
+	}
+	postAction := visualObservation(
+		"post-action-screen", 2, trajectory.AuthorityObserver, "screen", "current-screen",
+	)
+	postAction.MonotonicNS = 4
+	if err := store.Append(postAction); err != nil {
+		t.Fatalf("append post-action screen: %v", err)
+	}
+	tool := continuation.ToolDefinition{
+		Name: "computer.click_normalized", Description: "click",
+		Parameters: json.RawMessage(`{"type":"object","properties":{"source":{"type":"string"},"x":{"type":"integer"},"y":{"type":"integer"}},"required":["source","x","y"]}`),
+	}
+	engine, err := cognition.New(cognition.Config{
+		Store: store, Fast: fastProvider(), Slow: slowProvider(), Catalog: listedCatalog{tools: []continuation.ToolDefinition{tool}},
+		VisualReflex: &cognition.VisualReflexConfig{
+			Provider: provider,
+			ToolFilter: func(candidate continuation.ToolDefinition) bool {
+				return candidate.Name == tool.Name
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	if _, err := engine.RunVisualReflex(context.Background(), cognition.Request{
+		SourceRevision: 3, VisualTask: "Open the launch review, share your screen.",
+		CompletedVisualActions: 1,
+	}); err != nil {
+		t.Fatalf("run next visual chunk: %v", err)
+	}
+	if provider.seen == nil {
+		t.Fatal("visual provider did not receive the next chunk")
+	}
+	for _, item := range provider.seen.Trajectory.Items {
+		if item.Kind == trajectory.KindToolCall || item.Kind == trajectory.KindToolResult {
+			t.Fatalf("next visual chunk could copy completed coordinates: %#v", item)
+		}
+	}
+	if !strings.Contains(provider.seen.Invocation.Instruction, "Earlier coordinate arguments are intentionally omitted") {
+		t.Fatalf("next visual chunk lacked coordinate-isolation instruction: %q", provider.seen.Invocation.Instruction)
+	}
+}
+
 func visualObservation(id string, revision uint64, authority trajectory.Authority, source, handle string) trajectory.Item {
 	phase := trajectory.PhaseObserver
 	if authority == trajectory.AuthorityUser {
