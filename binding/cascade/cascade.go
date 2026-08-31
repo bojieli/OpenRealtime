@@ -163,7 +163,13 @@ type Config struct {
 	SpeakerIdentityDescriptor v1.Descriptor
 	// Policies is the interaction policy set. A zero value selects the
 	// shipped defaults.
-	Policies          interaction.Policies
+	Policies interaction.Policies
+	// ManualDeferral optionally replaces the standard client-driven deferral
+	// when a session disables server turn detection. Nil preserves the shipped
+	// behavior. This is a composition seam, not an implicit profile switch: a
+	// caller selecting it is responsible for reporting the policy and ensuring
+	// any work it admits without response.create cannot speak.
+	ManualDeferral    interaction.Deferral
 	ObservationPolicy ObservationPolicy
 
 	// Observers extends the default set with one factory per additional
@@ -311,6 +317,13 @@ func New(config Config) (*Binding, error) {
 	}
 	if err := validateObservationAgainstDeferral(config.ObservationPolicy, config.Policies.Deferral); err != nil {
 		return nil, err
+	}
+	if config.ManualDeferral != nil {
+		if err := validateObservationAgainstDeferral(
+			config.ObservationPolicy, config.ManualDeferral,
+		); err != nil {
+			return nil, fmt.Errorf("manual deferral: %w", err)
+		}
 	}
 	for index, factory := range config.Observers {
 		if err := factory.Validate(); err != nil {
