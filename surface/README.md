@@ -11,7 +11,7 @@ Open `http://127.0.0.1:8768` and press Connect.
 ```sh
 openrealtime surface \
   -endpoint ws://gpu-box:8765/v1/realtime \
-  -webrtc  http://gpu-box:8766/v1/realtime \
+  -webrtc  http://gpu-box:8766/v1/realtime/calls \
   -root ~/project \
   -browser-devtools-url http://127.0.0.1:9222 \
   -browser-start-url https://example.com

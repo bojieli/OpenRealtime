@@ -745,7 +745,7 @@ func postServeProfileWebRTCOffer(t testing.TB, endpoint string) (int, string) {
 		t.Fatal(err)
 	}
 	<-gathered
-	response, err := http.Post(endpoint+"/v1/realtime", "application/sdp",
+	response, err := http.Post(endpoint+"/v1/realtime/calls", "application/sdp",
 		strings.NewReader(peer.LocalDescription().SDP))
 	if err != nil {
 		t.Fatal(err)

@@ -8,17 +8,25 @@
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdb", "-dataset", "{root}/.runtime/full-duplex-bench-v1.5/dataset", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-out", "{artifacts}/candidate-fdb15.json"],
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdb", "-dataset", "{root}/.runtime/full-duplex-bench-v1.5/dataset", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-review-prefix", "{artifacts}/candidate-fdb15-review", "-review-provider", "google.gemini-3.7-flash", "-review-key-env", "GEMINI_API_KEY", "-review-concurrency", "16", "-out", "{artifacts}/candidate-fdb15.json"],
       "timeout": "30h",
       "skip_policy": "forbid",
       "prerequisites": [
         {"kind": "directory", "value": "{root}/.runtime/full-duplex-bench-v1.5/dataset", "description": "the digest-checked FDB v1.5 dataset is prepared"},
+        {"kind": "env", "value": "GEMINI_API_KEY", "description": "the exact Gemini 3.7 Flash candidate-review credential is supplied"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
         {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"}
       ],
       "assertions": [
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdb15.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdb15-review.source/manifest.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdb15-review.source/REVIEW.md"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdb15-review.source.receipt.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdb15-review.aggregate/manifest.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdb15-review.aggregate/REVIEW.md"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdb15-review.aggregate.receipt.json"},
+        {"kind": "stdout_regex", "value": "(?m)^candidate review: 498/498 recordings evaluated by gemini-3\\.7-flash \\(advisory\\)$"},
         {"kind": "stdout_regex", "value": "(?m)^reportable$"},
         {"kind": "stdout_regex", "value": "(?m)^tasks      : 498 completed, 0 failed, of 498 expected$"}
       ]
@@ -30,17 +38,25 @@
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdbv3", "-dataset", "{root}/.runtime/full-duplex-bench-v3/dataset/fdb_v3_data_released", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-out", "{artifacts}/candidate-fdb3.json"],
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdbv3", "-dataset", "{root}/.runtime/full-duplex-bench-v3/dataset/fdb_v3_data_released", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-review-prefix", "{artifacts}/candidate-fdb3-review", "-review-provider", "google.gemini-3.7-flash", "-review-key-env", "GEMINI_API_KEY", "-review-concurrency", "16", "-out", "{artifacts}/candidate-fdb3.json"],
       "timeout": "12h",
       "skip_policy": "forbid",
       "prerequisites": [
         {"kind": "directory", "value": "{root}/.runtime/full-duplex-bench-v3/dataset/fdb_v3_data_released", "description": "the digest-checked FDB v3 dataset is prepared"},
+        {"kind": "env", "value": "GEMINI_API_KEY", "description": "the exact Gemini 3.7 Flash candidate-review credential is supplied"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
         {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"}
       ],
       "assertions": [
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdb3.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdb3-review.source/manifest.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdb3-review.source/REVIEW.md"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdb3-review.source.receipt.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdb3-review.aggregate/manifest.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdb3-review.aggregate/REVIEW.md"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdb3-review.aggregate.receipt.json"},
+        {"kind": "stdout_regex", "value": "(?m)^candidate review: 100/100 recordings evaluated by gemini-3\\.7-flash \\(advisory\\)$"},
         {"kind": "stdout_regex", "value": "(?m)^reportable$"},
         {"kind": "stdout_regex", "value": "(?m)^tasks      : 100 completed, 0 failed, of 100 expected$"}
       ]
@@ -52,17 +68,25 @@
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdbench", "-dataset", "{root}/.runtime/fd-bench/dataset", "-conditions", "chattts-single-round-combine-easy,chattts-single-round-combine-hard,chattts-single-round-combine-med,cosyvoice2-single-round-combine-easy,cosyvoice2-single-round-combine-easy-noisy-bg-0dB,cosyvoice2-single-round-combine-easy-noisy-bg-10dB,cosyvoice2-single-round-combine-easy-noisy-bg-20dB,cosyvoice2-single-round-combine-easy-noisy-gap-0dB,cosyvoice2-single-round-combine-easy-noisy-gap-10dB,cosyvoice2-single-round-combine-easy-noisy-gap-20dB,cosyvoice2-single-round-combine-hard,cosyvoice2-single-round-combine-med,f5tts-single-round-combine-easy,f5tts-single-round-combine-easy-noisy-bg-0dB,f5tts-single-round-combine-easy-noisy-bg-10dB,f5tts-single-round-combine-easy-noisy-bg-20dB,f5tts-single-round-combine-easy-noisy-gap-0dB,f5tts-single-round-combine-easy-noisy-gap-10dB,f5tts-single-round-combine-easy-noisy-gap-20dB,f5tts-single-round-combine-hard,f5tts-single-round-combine-med", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-out", "{artifacts}/candidate-fdbench6147.json"],
-      "timeout": "72h",
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdbench", "-dataset", "{root}/.runtime/fd-bench/dataset", "-conditions", "chattts-single-round-combine-easy,chattts-single-round-combine-hard,chattts-single-round-combine-med,cosyvoice2-single-round-combine-easy,cosyvoice2-single-round-combine-easy-noisy-bg-0dB,cosyvoice2-single-round-combine-easy-noisy-bg-10dB,cosyvoice2-single-round-combine-easy-noisy-bg-20dB,cosyvoice2-single-round-combine-easy-noisy-gap-0dB,cosyvoice2-single-round-combine-easy-noisy-gap-10dB,cosyvoice2-single-round-combine-easy-noisy-gap-20dB,cosyvoice2-single-round-combine-hard,cosyvoice2-single-round-combine-med,f5tts-single-round-combine-easy,f5tts-single-round-combine-easy-noisy-bg-0dB,f5tts-single-round-combine-easy-noisy-bg-10dB,f5tts-single-round-combine-easy-noisy-bg-20dB,f5tts-single-round-combine-easy-noisy-gap-0dB,f5tts-single-round-combine-easy-noisy-gap-10dB,f5tts-single-round-combine-easy-noisy-gap-20dB,f5tts-single-round-combine-hard,f5tts-single-round-combine-med", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-review-prefix", "{artifacts}/candidate-fdbench6147-review", "-review-provider", "google.gemini-3.7-flash", "-review-key-env", "GEMINI_API_KEY", "-review-concurrency", "16", "-out", "{artifacts}/candidate-fdbench6147.json"],
+      "timeout": "120h",
       "skip_policy": "forbid",
       "prerequisites": [
         {"kind": "directory", "value": "{root}/.runtime/fd-bench/dataset", "description": "the digest-checked FD-Bench dataset is prepared"},
+        {"kind": "env", "value": "GEMINI_API_KEY", "description": "the exact Gemini 3.7 Flash candidate-review credential is supplied"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
         {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"}
       ],
       "assertions": [
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdbench6147.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdbench6147-review.source/manifest.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdbench6147-review.source/REVIEW.md"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdbench6147-review.source.receipt.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdbench6147-review.aggregate/manifest.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdbench6147-review.aggregate/REVIEW.md"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-fdbench6147-review.aggregate.receipt.json"},
+        {"kind": "stdout_regex", "value": "(?m)^candidate review: 6147/6147 recordings evaluated by gemini-3\\.7-flash \\(advisory\\)$"},
         {"kind": "stdout_regex", "value": "(?m)^reportable$"},
         {"kind": "stdout_regex", "value": "(?m)^tasks      : 6147 completed, 0 failed, of 6147 expected$"}
       ]
@@ -194,12 +218,13 @@
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "tau-voice", "-tau2", "{root}/.runtime/tau2-bench", "-python", "{root}/.runtime/tau2-bench/.venv/bin/python", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-user-model-url", "{env:OPENREALTIME_TAU_USER_MODEL_ENDPOINT}", "-synthesis-url", "{env:OPENREALTIME_TAU_SYNTHESIS_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-condition", "control", "-out", "{artifacts}/candidate-tau-control.json"],
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "tau-voice", "-tau2", "{root}/.runtime/tau2-bench", "-python", "{root}/.runtime/tau2-bench/.venv/bin/python", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-user-model-url", "{env:OPENREALTIME_TAU_USER_MODEL_ENDPOINT}", "-synthesis-url", "{env:OPENREALTIME_TAU_SYNTHESIS_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-condition", "control", "-review-prefix", "{artifacts}/candidate-tau-control-review", "-review-provider", "google.gemini-3.7-flash", "-review-key-env", "GEMINI_API_KEY", "-review-concurrency", "16", "-out", "{artifacts}/candidate-tau-control.json"],
       "timeout": "72h",
       "skip_policy": "forbid",
       "prerequisites": [
         {"kind": "directory", "value": "{root}/.runtime/tau2-bench/.git", "description": "the pinned and patched tau2 checkout is prepared"},
         {"kind": "executable", "value": "{root}/.runtime/tau2-bench/.venv/bin/python", "description": "the complete tau2 voice environment is prepared"},
+        {"kind": "env", "value": "GEMINI_API_KEY", "description": "the exact Gemini 3.7 Flash candidate-review credential is supplied"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
         {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"},
@@ -208,6 +233,13 @@
       ],
       "assertions": [
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-tau-control.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-tau-control-review.source/manifest.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-tau-control-review.source/REVIEW.md"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-tau-control-review.source.receipt.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-tau-control-review.aggregate/manifest.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-tau-control-review.aggregate/REVIEW.md"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-tau-control-review.aggregate.receipt.json"},
+        {"kind": "stdout_regex", "value": "(?m)^candidate review: 278/278 recordings evaluated by gemini-3\\.7-flash \\(advisory\\)$"},
         {"kind": "stdout_regex", "value": "(?m)^reportable$"},
         {"kind": "stdout_regex", "value": "(?m)^tasks      : 278 completed, 0 failed, of 278 expected$"}
       ]
@@ -219,12 +251,13 @@
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "tau-voice", "-tau2", "{root}/.runtime/tau2-bench", "-python", "{root}/.runtime/tau2-bench/.venv/bin/python", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-user-model-url", "{env:OPENREALTIME_TAU_USER_MODEL_ENDPOINT}", "-synthesis-url", "{env:OPENREALTIME_TAU_SYNTHESIS_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-condition", "regular", "-out", "{artifacts}/candidate-tau-regular.json"],
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "tau-voice", "-tau2", "{root}/.runtime/tau2-bench", "-python", "{root}/.runtime/tau2-bench/.venv/bin/python", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-user-model-url", "{env:OPENREALTIME_TAU_USER_MODEL_ENDPOINT}", "-synthesis-url", "{env:OPENREALTIME_TAU_SYNTHESIS_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-condition", "regular", "-review-prefix", "{artifacts}/candidate-tau-regular-review", "-review-provider", "google.gemini-3.7-flash", "-review-key-env", "GEMINI_API_KEY", "-review-concurrency", "16", "-out", "{artifacts}/candidate-tau-regular.json"],
       "timeout": "72h",
       "skip_policy": "forbid",
       "prerequisites": [
         {"kind": "directory", "value": "{root}/.runtime/tau2-bench/.git", "description": "the pinned and patched tau2 checkout is prepared"},
         {"kind": "executable", "value": "{root}/.runtime/tau2-bench/.venv/bin/python", "description": "the complete tau2 voice environment is prepared"},
+        {"kind": "env", "value": "GEMINI_API_KEY", "description": "the exact Gemini 3.7 Flash candidate-review credential is supplied"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_EXECUTION", "description": "the reviewed execution requirement is supplied"},
         {"kind": "env_url", "value": "OPENREALTIME_BENCH_ENDPOINT", "description": "a credential-free Realtime endpoint URL is supplied"},
         {"kind": "env_file", "value": "OPENREALTIME_BENCH_INSPECTION_GRAPH", "description": "the exact graph inspection evidence is supplied"},
@@ -233,6 +266,13 @@
       ],
       "assertions": [
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-tau-regular.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-tau-regular-review.source/manifest.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-tau-regular-review.source/REVIEW.md"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-tau-regular-review.source.receipt.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-tau-regular-review.aggregate/manifest.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-tau-regular-review.aggregate/REVIEW.md"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-tau-regular-review.aggregate.receipt.json"},
+        {"kind": "stdout_regex", "value": "(?m)^candidate review: 278/278 recordings evaluated by gemini-3\\.7-flash \\(advisory\\)$"},
         {"kind": "stdout_regex", "value": "(?m)^reportable$"},
         {"kind": "stdout_regex", "value": "(?m)^tasks      : 278 completed, 0 failed, of 278 expected$"}
       ]

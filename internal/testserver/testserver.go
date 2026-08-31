@@ -282,7 +282,7 @@ func Start(t testing.TB, config Config) Stack {
 	t.Cleanup(adapterServer.Close)
 
 	return Stack{
-		ProtocolURL: protocolURL, AdapterURL: adapterServer.URL + "/v1/realtime",
+		ProtocolURL: protocolURL, AdapterURL: adapterServer.URL + "/v1/realtime/calls",
 		Graph: staticGraph, ValuesSchema: valuesSchema, ElementIdentity: elementIdentity,
 		AuthoringSource: authoringSource,
 	}

@@ -31,6 +31,7 @@ type namedPresentationFactory struct {
 func runPresent(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime present", flag.ContinueOnError)
 	var listen, endpoint, webrtcEndpoint, managementEndpoint, tokenEnv, model, logLevel, clientProfile string
+	var nativeWebSocketRelay bool
 	var shutdownTimeout time.Duration
 	flags.StringVar(&listen, "listen", presentation.DefaultLoopbackHostAddress, "presentation host listen address; loopback only")
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "public OpenRealtime WebSocket endpoint")
@@ -41,6 +42,8 @@ func runPresent(arguments []string, output io.Writer) error {
 	flags.StringVar(&model, "model", "", "model identifier requested from the endpoint")
 	flags.StringVar(&clientProfile, "client-profile", "browser-minimal",
 		"locked observer client profile: browser-minimal, browser-developer, or browser-developer-webrtc")
+	flags.BoolVar(&nativeWebSocketRelay, "native-websocket-relay", false,
+		"also mount the explicit native WebSocket relay in the browser WebRTC host")
 	flags.StringVar(&logLevel, "log-level", "info", "log level: debug, info, warn, or error")
 	flags.DurationVar(&shutdownTimeout, "shutdown-timeout", 5*time.Second, "bounded plugin shutdown timeout")
 	flags.SetOutput(output)
@@ -63,14 +66,14 @@ func runPresent(arguments []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
+	relays, relayOperations, err := presentationRelayFactories(
+		clientProfile, nativeWebSocketRelay, logger,
+	)
+	if err != nil {
+		return err
+	}
 	router := presentationhost.NewRouterFactory()
 	target := presentationhost.NewEndpointDirectoryFactory()
-	var relay pluginruntime.Factory
-	if clientProfile == "browser-developer-webrtc" {
-		relay = presentationhost.NewWebRTCRelayFactory(nil, logger)
-	} else {
-		relay = presentationhost.NewWebSocketRelayFactory(logger)
-	}
 	listener := presentationhost.NewLoopbackListenerFactory()
 	var credential *presentationhost.CredentialFactory
 	token := ""
@@ -89,12 +92,14 @@ func runPresent(arguments []string, output io.Writer) error {
 		{id: "shell", factory: bundle.Shell},
 		{id: "manifest", factory: bundle.ManifestHost},
 		{id: "modules", factory: bundle.ModuleStore},
-		{id: "relay", factory: relay},
-		{id: "target", factory: target},
-		{id: "credential", factory: credential},
-		{id: "listener", factory: listener},
-		{id: "router", factory: router},
 	}
+	instances = append(instances, relays...)
+	instances = append(instances,
+		namedPresentationFactory{id: "target", factory: target},
+		namedPresentationFactory{id: "credential", factory: credential},
+		namedPresentationFactory{id: "listener", factory: listener},
+		namedPresentationFactory{id: "router", factory: router},
+	)
 	if clientProfile == "browser-developer" || clientProfile == "browser-developer-webrtc" {
 		instances = append(instances,
 			namedPresentationFactory{id: "management-relay", factory: presentationhost.NewManagementRelayFactory(nil, logger)},
@@ -106,7 +111,7 @@ func runPresent(arguments []string, output io.Writer) error {
 		return err
 	}
 	targetConfig, err := presentationEndpointConfig(
-		clientProfile, endpoint, webrtcEndpoint, managementEndpoint, model,
+		clientProfile, endpoint, webrtcEndpoint, managementEndpoint, model, nativeWebSocketRelay,
 	)
 	if err != nil {
 		return err
@@ -121,17 +126,15 @@ func runPresent(arguments []string, output io.Writer) error {
 	listenerValues, _ := json.Marshal(map[string]any{
 		"address": listen, "shutdown_timeout_ms": shutdownTimeout.Milliseconds(),
 	})
-	relayOperation := "websocket"
-	if clientProfile == "browser-developer-webrtc" {
-		relayOperation = "http"
-	}
 	permissions := map[string][]plugin.Permission{
-		"relay": {{
-			Kind: "network.connect", Resource: "realtime-endpoint", Operations: []string{relayOperation},
-		}},
 		"listener": {{
 			Kind: "network.listen", Resource: "loopback", Operations: []string{"http"},
 		}},
+	}
+	for id, operation := range relayOperations {
+		permissions[id] = []plugin.Permission{{
+			Kind: "network.connect", Resource: "realtime-endpoint", Operations: []string{operation},
+		}}
 	}
 	if clientProfile == "browser-developer" || clientProfile == "browser-developer-webrtc" {
 		permissions["management-relay"] = []plugin.Permission{{
@@ -172,6 +175,9 @@ func runPresent(arguments []string, output io.Writer) error {
 	fmt.Fprintf(output, "OpenRealtime presentation host on %s\n", info.URL)
 	if clientProfile == "browser-developer-webrtc" {
 		fmt.Fprintf(output, "  WebRTC         %s\n", webrtcEndpoint)
+		if nativeWebSocketRelay {
+			fmt.Fprintf(output, "  native realtime %s\n", endpoint)
+		}
 	} else {
 		fmt.Fprintf(output, "  realtime       %s\n", endpoint)
 	}
@@ -198,6 +204,7 @@ func runPresent(arguments []string, output io.Writer) error {
 // remains an inspectable deployment capability rather than a UI convention.
 func presentationEndpointConfig(
 	clientProfile, websocketEndpoint, webrtcEndpoint, managementEndpoint, model string,
+	nativeWebSocketRelay bool,
 ) (presentationhost.EndpointDirectoryConfig, error) {
 	config := presentationhost.EndpointDirectoryConfig{Model: model}
 	switch clientProfile {
@@ -211,6 +218,12 @@ func presentationEndpointConfig(
 			Name: presentation.EndpointRealtimeWebRTC, Protocol: presentation.ProtocolRealtimeWebRTC,
 			URL: webrtcEndpoint,
 		})
+		if nativeWebSocketRelay {
+			config.Endpoints = append(config.Endpoints, presentation.Endpoint{
+				Name: presentation.EndpointRealtimeWebSocket, Protocol: presentation.ProtocolRealtimeWebSocket,
+				URL: websocketEndpoint,
+			})
+		}
 	default:
 		return presentationhost.EndpointDirectoryConfig{}, fmt.Errorf(
 			"unknown client profile %q", clientProfile,
@@ -233,6 +246,32 @@ func presentationEndpointConfig(
 		)
 	}
 	return config, nil
+}
+
+func presentationRelayFactories(
+	clientProfile string,
+	nativeWebSocketRelay bool,
+	logger *slog.Logger,
+) ([]namedPresentationFactory, map[string]string, error) {
+	if clientProfile != "browser-developer-webrtc" {
+		if nativeWebSocketRelay {
+			return nil, nil, errors.New("-native-websocket-relay requires browser-developer-webrtc")
+		}
+		return []namedPresentationFactory{{
+			id: "websocket-relay", factory: presentationhost.NewWebSocketRelayFactory(logger),
+		}}, map[string]string{"websocket-relay": "websocket"}, nil
+	}
+	relays := []namedPresentationFactory{{
+		id: "webrtc-relay", factory: presentationhost.NewWebRTCRelayFactory(nil, logger),
+	}}
+	operations := map[string]string{"webrtc-relay": "http"}
+	if nativeWebSocketRelay {
+		relays = append(relays, namedPresentationFactory{
+			id: "websocket-relay", factory: presentationhost.NewWebSocketRelayFactory(logger),
+		})
+		operations["websocket-relay"] = "websocket"
+	}
+	return relays, operations, nil
 }
 
 // selectPresentationBundle keeps the standalone command's normal profiles

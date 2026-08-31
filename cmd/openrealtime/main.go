@@ -40,6 +40,8 @@ func run(arguments []string, stdout, stderr io.Writer) error {
 		return runSurface(arguments[1:], stdout)
 	case "present":
 		return runPresent(arguments[1:], stdout)
+	case "companion":
+		return runCompanion(arguments[1:], stdout)
 	case "efficiency":
 		return runEfficiency(arguments[1:], stdout)
 	case "bench":
@@ -84,6 +86,7 @@ commands:
   console       serve the developer console on this machine
   surface       serve the test surface: every channel, both directions, one page
   present       run a descriptor-locked browser presentation host
+  companion     run the clean server and composable browser/native companion host
   conformance   verify protocol and component conformance
   efficiency    measure the costs the design claims are small
   bench         run a measurement suite against a running server
