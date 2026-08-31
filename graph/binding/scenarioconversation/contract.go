@@ -48,12 +48,13 @@ const (
 	SourceText       = "text"
 	SourceMessage    = "message"
 
-	defaultMediaMaxItems        = 32
-	defaultMediaMaxBytes        = 64 << 20
-	defaultMediaMaxItemBytes    = 32 << 20
-	defaultMediaMaxPending      = 32
-	defaultMediaMaxActiveLeases = 256
-	maximumMediaBytes           = 1 << 30
+	defaultMediaMaxItems                = 32
+	defaultMediaMaxBytes                = 64 << 20
+	defaultMediaMaxItemBytes            = 32 << 20
+	defaultMediaMaxPending              = 32
+	defaultMediaMaxActiveLeases         = 256
+	maximumMediaBytes                   = 1 << 30
+	maximumContinuationInstructionBytes = 4 << 10
 )
 
 // MediaLimits are copied into the graph-native media.RetainedMedia and
@@ -187,20 +188,21 @@ func normalizeSemanticAdmissionSelection(
 // PluginConfig is the immutable resource-free contribution retained by a
 // launch configuration. Every factory remains unopened until session Start.
 type PluginConfig struct {
-	RuntimeArtifact    inspect.ArtifactIdentity
-	DependencyArtifact inspect.ArtifactIdentity
-	Architecture       projectarch.Definition
-	ASR                ASRPlugin
-	Policy             PolicyPlugin
-	SemanticAdmission  SemanticAdmissionSelection
-	Model              ModelPlugin
-	SilentModel        ModelPlugin
-	TTS                TTSPlugin
-	Tools              []ToolDeclaration
-	Target             computeruse.Target
-	Gate               perception.GateConfig
-	Media              MediaLimits
-	MaxOutputTokens    int
+	RuntimeArtifact         inspect.ArtifactIdentity
+	DependencyArtifact      inspect.ArtifactIdentity
+	Architecture            projectarch.Definition
+	ASR                     ASRPlugin
+	Policy                  PolicyPlugin
+	SemanticAdmission       SemanticAdmissionSelection
+	Model                   ModelPlugin
+	SilentModel             ModelPlugin
+	TTS                     TTSPlugin
+	Tools                   []ToolDeclaration
+	Target                  computeruse.Target
+	Gate                    perception.GateConfig
+	Media                   MediaLimits
+	MaxOutputTokens         int
+	ContinuationInstruction string
 }
 
 // NormalizePluginConfig validates and snapshots one complete resource-free
@@ -293,6 +295,25 @@ func validatePluginConfig(config PluginConfig) error {
 	}
 	if config.MaxOutputTokens < 1 || config.MaxOutputTokens > 1_000_000 {
 		return errors.New("scenario conversation max_output_tokens must be between 1 and 1000000")
+	}
+	if err := validateContinuationInstruction(config.ContinuationInstruction); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateContinuationInstruction(value string) error {
+	if !utf8.ValidString(value) {
+		return errors.New("scenario conversation continuation_instruction must be valid UTF-8")
+	}
+	if value != strings.TrimSpace(value) {
+		return errors.New("scenario conversation continuation_instruction must not have leading or trailing whitespace")
+	}
+	if len(value) > maximumContinuationInstructionBytes {
+		return fmt.Errorf(
+			"scenario conversation continuation_instruction must be no larger than %d bytes",
+			maximumContinuationInstructionBytes,
+		)
 	}
 	return nil
 }

@@ -24,7 +24,7 @@ import (
 
 const (
 	ApplicationReference          = "application.openrealtime.scenario-conversation.v1"
-	ApplicationFormatVersion      = uint64(5)
+	ApplicationFormatVersion      = uint64(6)
 	maximumApplicationConfigBytes = 4 << 20
 	maximumApplicationProviders   = 65_536
 )
@@ -85,19 +85,20 @@ func (selection ApplicationGateSelection) gateConfig() perception.GateConfig {
 // ApplicationConfig is the complete plugin-owned, resource-free selection
 // carried by a generic graph launch profile.
 type ApplicationConfig struct {
-	FormatVersion     uint64                      `json:"format_version"`
-	Architecture      legacy.ArchitectureIdentity `json:"architecture"`
-	ASR               ApplicationASRSelection     `json:"asr"`
-	Policy            ApplicationPolicySelection  `json:"policy"`
-	SemanticAdmission SemanticAdmissionSelection  `json:"semantic_admission"`
-	Model             ApplicationModelSelection   `json:"model"`
-	SilentModel       ApplicationModelSelection   `json:"silent_model"`
-	TTS               ApplicationTTSSelection     `json:"tts"`
-	Tools             []ToolDeclaration           `json:"tools"`
-	Target            computeruse.Target          `json:"target"`
-	Gate              ApplicationGateSelection    `json:"gate"`
-	Media             MediaLimits                 `json:"media"`
-	MaxOutputTokens   int                         `json:"max_output_tokens"`
+	FormatVersion           uint64                      `json:"format_version"`
+	Architecture            legacy.ArchitectureIdentity `json:"architecture"`
+	ASR                     ApplicationASRSelection     `json:"asr"`
+	Policy                  ApplicationPolicySelection  `json:"policy"`
+	SemanticAdmission       SemanticAdmissionSelection  `json:"semantic_admission"`
+	Model                   ApplicationModelSelection   `json:"model"`
+	SilentModel             ApplicationModelSelection   `json:"silent_model"`
+	TTS                     ApplicationTTSSelection     `json:"tts"`
+	Tools                   []ToolDeclaration           `json:"tools"`
+	Target                  computeruse.Target          `json:"target"`
+	Gate                    ApplicationGateSelection    `json:"gate"`
+	Media                   MediaLimits                 `json:"media"`
+	MaxOutputTokens         int                         `json:"max_output_tokens"`
+	ContinuationInstruction string                      `json:"continuation_instruction,omitempty"`
 }
 
 // DecodeApplicationConfig strictly decodes and validates an exact selection.
@@ -168,6 +169,9 @@ func normalizeApplicationConfig(source ApplicationConfig) (ApplicationConfig, er
 		return ApplicationConfig{}, errors.New(
 			"scenario conversation application max_output_tokens must be between 1 and 1000000",
 		)
+	}
+	if err := validateContinuationInstruction(config.ContinuationInstruction); err != nil {
+		return ApplicationConfig{}, err
 	}
 	return config, nil
 }
@@ -455,7 +459,8 @@ func NewApplicationRegistration(
 					Factory: ttsFactory},
 				Tools: cloneToolDeclarations(config.Tools), Target: cloneTarget(config.Target),
 				Gate: config.Gate.gateConfig(), Media: config.Media,
-				MaxOutputTokens: config.MaxOutputTokens,
+				MaxOutputTokens:         config.MaxOutputTokens,
+				ContinuationInstruction: config.ContinuationInstruction,
 			})
 			if cause := context.Cause(ctx); cause != nil {
 				return graphlaunch.Config{}, errors.Join(cause, constructorErr)
