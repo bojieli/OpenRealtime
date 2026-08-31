@@ -146,6 +146,31 @@ func TestMeetingBackgroundSelectionAttestsExactGeminiWithoutRetainingCredential(
 	}
 }
 
+func TestMeetingSenseVoiceProcessUsesProfileOwnedModelIdentity(t *testing.T) {
+	if meetingLocalASRModel == realtimeCULocalASRModel {
+		t.Fatal("Meeting SenseVoice and Realtime-CU Whisper unexpectedly share one model identity")
+	}
+	valid := realtimeCUProcessSnapshot{
+		Arguments: []string{
+			"/runtime/python", "-m", "uvicorn", "server:app",
+			"--host", "127.0.0.1", "--port", "8002", "--workers", "1",
+		},
+		Environment: map[string]string{
+			"SENSEVOICE_MODEL":      meetingLocalASRModel,
+			"SENSEVOICE_MODEL_PATH": "/models/sensevoice/immutable",
+		},
+	}
+	if err := validateMeetingSenseVoiceProcess(valid); err != nil {
+		t.Fatalf("exact Meeting SenseVoice selection was rejected: %v", err)
+	}
+	changed := cloneRealtimeCUProcessSnapshot(valid)
+	changed.Environment["SENSEVOICE_MODEL"] = realtimeCULocalASRModel
+	if err := validateMeetingSenseVoiceProcess(changed); err == nil ||
+		!strings.Contains(err.Error(), "different model") {
+		t.Fatalf("Meeting accepted the Realtime-CU Whisper model: %v", err)
+	}
+}
+
 func TestMeetingFishProcessRequiresExactMaterialPathsAndRuntime(t *testing.T) {
 	checkpoint := filepath.Join(
 		"/models/models--fishaudio--fish-speech-1.5/snapshots",

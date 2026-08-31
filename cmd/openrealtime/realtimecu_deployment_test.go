@@ -390,17 +390,18 @@ func TestRealtimeCUQwenProcessRequiresOneImmutableLoadedRevision(t *testing.T) {
 }
 
 func TestRealtimeCUSenseVoiceProcessRejectsAlternateModuleLoading(t *testing.T) {
+	const expectedModel = "iic/SenseVoiceSmall"
 	valid := realtimeCUProcessSnapshot{
 		Arguments: []string{
 			"/runtime/python", "-m", "uvicorn", "server:app",
 			"--host", "127.0.0.1", "--port", "8002", "--workers", "1",
 		},
 		Environment: map[string]string{
-			"SENSEVOICE_MODEL":      realtimeCULocalASRModel,
+			"SENSEVOICE_MODEL":      expectedModel,
 			"SENSEVOICE_MODEL_PATH": "/models/sensevoice/immutable",
 		},
 	}
-	if err := validateRealtimeCUSenseVoiceProcess(valid); err != nil {
+	if err := validateSenseVoiceProcess(valid, expectedModel); err != nil {
 		t.Fatal(err)
 	}
 	for _, extra := range [][]string{
@@ -409,9 +410,19 @@ func TestRealtimeCUSenseVoiceProcessRejectsAlternateModuleLoading(t *testing.T) 
 	} {
 		changed := cloneRealtimeCUProcessSnapshot(valid)
 		changed.Arguments = append(changed.Arguments, extra...)
-		if err := validateRealtimeCUSenseVoiceProcess(changed); err == nil {
+		if err := validateSenseVoiceProcess(changed, expectedModel); err == nil {
 			t.Fatalf("SenseVoice process accepted alternate module loading: %q", extra)
 		}
+	}
+	for _, model := range []string{"", "whisper-turbo"} {
+		changed := cloneRealtimeCUProcessSnapshot(valid)
+		changed.Environment["SENSEVOICE_MODEL"] = model
+		if err := validateSenseVoiceProcess(changed, expectedModel); err == nil {
+			t.Fatalf("SenseVoice process accepted model %q instead of %q", model, expectedModel)
+		}
+	}
+	if err := validateSenseVoiceProcess(valid, ""); err == nil {
+		t.Fatal("SenseVoice process accepted an empty expected-model contract")
 	}
 }
 

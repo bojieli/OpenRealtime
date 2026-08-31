@@ -317,7 +317,7 @@ func newLocalMeetingDeploymentVerifier() (meetingDeploymentVerifier, error) {
 	}
 	asr, err := newLocalRealtimeCUBackendAttestor(realtimeCUBackendAttestorConfig{
 		Name: "meeting-sensevoice-asr", Port: 8002, ProcessSource: processes,
-		ValidateProcess: validateRealtimeCUSenseVoiceProcess,
+		ValidateProcess: validateMeetingSenseVoiceProcess,
 		Probe: func(ctx context.Context, _ realtimeCUProcessSnapshot, material realtimeCUBackendMaterial) error {
 			return probeRealtimeCUSenseVoice(ctx, client, material)
 		},
@@ -342,6 +342,10 @@ func newLocalMeetingDeploymentVerifier() (meetingDeploymentVerifier, error) {
 		return nil, err
 	}
 	return newComposedMeetingDeploymentVerifier(model, asr, tts, background)
+}
+
+func validateMeetingSenseVoiceProcess(process realtimeCUProcessSnapshot) error {
+	return validateSenseVoiceProcess(process, meetingLocalASRModel)
 }
 
 func validateMeetingFishProcess(process realtimeCUProcessSnapshot) error {

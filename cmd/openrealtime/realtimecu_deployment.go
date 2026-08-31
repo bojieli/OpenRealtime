@@ -981,8 +981,12 @@ func validateRealtimeCUQwenProcess(process realtimeCUProcessSnapshot) error {
 	return nil
 }
 
-func validateRealtimeCUSenseVoiceProcess(process realtimeCUProcessSnapshot) error {
-	if value := process.Environment["SENSEVOICE_MODEL"]; value != "" && value != realtimeCULocalASRModel {
+func validateSenseVoiceProcess(process realtimeCUProcessSnapshot, expectedModel string) error {
+	expectedModel = strings.TrimSpace(expectedModel)
+	if expectedModel == "" {
+		return errors.New("SenseVoice deployment requires one exact expected model")
+	}
+	if value := process.Environment["SENSEVOICE_MODEL"]; value != expectedModel {
 		return errors.New("SenseVoice listener selects a different model")
 	}
 	if _, err := canonicalRealtimeCUDeploymentPath(process.Environment["SENSEVOICE_MODEL_PATH"]); err != nil {
