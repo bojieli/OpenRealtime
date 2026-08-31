@@ -260,6 +260,11 @@ Useful launch policies are:
 ./openrealtime companion -client both
 ```
 
+The macOS application normally waits for the developer to press **Connect**.
+Automation can launch the same assembled application executable with the exact
+`--openrealtime-connect-on-launch` argument; this changes only the initial UI
+action and still uses the manifest-selected native transport and reducer.
+
 `macos` and `both` are accepted only on macOS and preflight the exact `.app`
 before starting either child process. If `-presentation-listen` differs from
 the bundled `127.0.0.1:8767`, companion writes a temporary exact native
@@ -316,9 +321,12 @@ it has no second model and no shared log to put one on.
 
 ## Native macOS developer app
 
-The SwiftUI app adds real local filesystem/shell tools and an explicitly
-selected desktop target to the same session. It requires macOS 14+, Xcode 16+,
-and `uv` for the pinned browser-use bridge:
+The SwiftUI app is a composable client for the same server. Its default
+observer distribution owns native microphone/playout, camera, screen, and
+marked-browser capture plus protocol diagnostics and graph inspection, but it
+does not own filesystem, shell, desktop-effect, or artifact authority. Those
+capabilities require a separately composed host/provider profile. The app
+requires macOS 14+, Xcode 16+, and `uv` for the pinned browser-use bridge:
 
 ```sh
 open -na "Google Chrome" --args \
@@ -332,13 +340,11 @@ cd ..
 ./openrealtime companion -client macos
 ```
 
-Choose the endpoint, workspace root, initial system prompt, and either Browser
-set-of-mark or selected-display pixel mode before connecting. Browser mode uses
-browser-use's DOM selector map and visible marks. Desktop mode requires Screen
-Recording and Accessibility permission and maps coordinates only into the
-chosen display; it never exposes an ambient, unbounded desktop. Writes, shell
-commands, and consequential actions wait for a native confirmation sheet. See
-[the macOS app](../macos/README.md).
+Choose the initial system prompt and optional camera, screen, or marked-browser
+capture after connecting. Browser capture uses browser-use's DOM selector map
+and visible marks; screen capture is observation only. Consequential actions
+remain outside the observer application and require an explicitly selected
+host-effects composition. See [the macOS app](../macos/README.md).
 
 ## Connect an existing Realtime client
 

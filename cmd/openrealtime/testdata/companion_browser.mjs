@@ -122,6 +122,18 @@ try {
     return view?.querySelector('#availability')?.textContent === "live" &&
       (view?.querySelector('#identity')?.textContent ?? "").includes("sha256:");
   })()`)));
+  const browserSessionID = await evaluate(
+    `document.querySelector('[data-view=inspection]')?.dataset.sessionId ?? ""`);
+  check("browser exposes its negotiated session identity", browserSessionID.startsWith("sess_"));
+  console.log(`OPENREALTIME_COMPANION_BROWSER_PROOF ${JSON.stringify({
+    schema: "openrealtime/browser/hosted-companion-proof/v1",
+    nonce: process.env.OPENREALTIME_COMPANION_PROOF_NONCE ?? "",
+    session_id: browserSessionID,
+    transport: "webrtc",
+    manifest_fingerprint: await evaluate(`window.__openrealtime.manifest.fingerprint`),
+    plan_fingerprint: await evaluate(`window.__openrealtime.manifest.plan.fingerprint`),
+    endpoint: pageURL,
+  })}`);
   check("no browser exception", exceptions.length === 0, exceptions.join("; "));
   check("no uncancelled network failure", failures.length === 0, failures.join("; "));
   await evaluate(`window.__openrealtime.dispose()`);

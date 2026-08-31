@@ -1,25 +1,43 @@
 import SwiftUI
 import Foundation
+import AppKit
 import OpenRealtimeClientCore
 
 @main
 struct OpenRealtimeMacApp: App {
+    private static let connectOnLaunchArgument = "--openrealtime-connect-on-launch"
+    private static let hostedSmokePrefix = "--openrealtime-hosted-smoke="
+
     private let model: DeveloperModel?
     private let launchFailure: String
 
     init() {
         do {
             let environment = ProcessInfo.processInfo.environment
+            let automation = try NativeLaunchAutomation.parse(
+                arguments: CommandLine.arguments,
+                connectArgument: Self.connectOnLaunchArgument,
+                hostedSmokePrefix: Self.hostedSmokePrefix
+            )
             let distribution = try NativeClientDistribution.parse(
                 environment["OPENREALTIME_NATIVE_PROFILE"]
             )
             let endpoints = try nativeEndpointDirectoryData(
                 environment["OPENREALTIME_NATIVE_ENDPOINT_DIRECTORY"]
             )
-            model = try DeveloperModel(
+            let developer = try DeveloperModel(
                 distribution: distribution, endpointDirectoryData: endpoints
             )
+            model = developer
             launchFailure = ""
+            if automation.connectOnLaunch || automation.hostedSmokeNonce != nil {
+                Task { @MainActor in
+                    developer.connect()
+                    if let nonce = automation.hostedSmokeNonce {
+                        await runHostedSmoke(developer: developer, nonce: nonce)
+                    }
+                }
+            }
         } catch {
             model = nil
             launchFailure = error.localizedDescription
@@ -47,6 +65,71 @@ struct OpenRealtimeMacApp: App {
             }
         }
     }
+}
+
+private struct NativeLaunchAutomation {
+    let connectOnLaunch: Bool
+    let hostedSmokeNonce: String?
+
+    static func parse(
+        arguments: [String], connectArgument: String, hostedSmokePrefix: String
+    ) throws -> NativeLaunchAutomation {
+        let connectCount = arguments.filter { $0 == connectArgument }.count
+        let smokeValues = arguments.compactMap { argument -> String? in
+            guard argument.hasPrefix(hostedSmokePrefix) else { return nil }
+            return String(argument.dropFirst(hostedSmokePrefix.count))
+        }
+        guard connectCount <= 1, smokeValues.count <= 1 else {
+            throw NativeLaunchConfigurationError("native launch automation argument is duplicated")
+        }
+        if let nonce = smokeValues.first {
+            guard nonce.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else {
+                throw NativeLaunchConfigurationError("hosted smoke nonce must be one lowercase SHA-256 value")
+            }
+        }
+        return NativeLaunchAutomation(
+            connectOnLaunch: connectCount == 1,
+            hostedSmokeNonce: smokeValues.first
+        )
+    }
+}
+
+@MainActor
+private func runHostedSmoke(developer: DeveloperModel, nonce: String) async {
+    for _ in 0..<1_800 {
+        if developer.connectionState == .connected, !developer.sessionID.isEmpty,
+           developer.updatedSessionID == developer.sessionID {
+            let proof: [String: String] = [
+                "schema": "openrealtime/macos/hosted-companion-proof/v1",
+                "nonce": nonce,
+                "session_id": developer.sessionID,
+                "transport": "websocket",
+                "distribution": developer.distribution,
+                "manifest_fingerprint": developer.manifestFingerprint,
+                "endpoint_fingerprint": developer.endpointFingerprint,
+                "endpoint": developer.endpoint,
+            ]
+            if let payload = try? JSONSerialization.data(
+                withJSONObject: proof, options: [.sortedKeys, .withoutEscapingSlashes]
+            ) {
+                var output = Data("OPENREALTIME_HOSTED_COMPANION_PROOF ".utf8)
+                output.append(payload)
+                output.append(contentsOf: "\n".utf8)
+                FileHandle.standardOutput.write(output)
+                try? FileHandle.standardOutput.synchronize()
+            }
+            developer.shutdown()
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            NSApplication.shared.terminate(nil)
+            return
+        }
+        if developer.connectionState == .failed {
+            break
+        }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+    }
+    developer.shutdown()
+    NSApplication.shared.terminate(nil)
 }
 
 private func nativeEndpointDirectoryData(_ path: String?) throws -> Data? {

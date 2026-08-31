@@ -20,6 +20,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       # Linux runs a source-level capability contract; this job is the actual
       # Apple-framework compile for AVFoundation, ScreenCaptureKit, WebKit,
       # Accessibility, CoreGraphics, and the SwiftUI application together.
@@ -34,11 +43,15 @@ jobs:
           plutil -lint "$app/Contents/Info.plist"
           codesign --verify --deep --strict "$app"
 
+      - name: Browser and assembled native app use one clean server
+        run: ./macos/verify-hosted-companion.sh "macos/.build/OpenRealtime Developer.app"
+
       - name: Check browser-use adapter and app bundler
         run: |
           python3 -m py_compile macos/BrowserUseBridge/bridge.py
           bash -n macos/build-app.sh
           bash -n macos/prepare-browser-use.sh
+          bash -n macos/verify-hosted-companion.sh
 
   gate:
     runs-on: ubuntu-latest

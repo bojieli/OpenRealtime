@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package runtimeartifact
 
@@ -9,7 +9,7 @@ import (
 )
 
 // Executable refuses to claim that a mutable launch pathname identifies the
-// process image. Non-Linux production builds must supply a build-time signed
+// process image. Unsupported production builds must supply a build-time signed
 // artifact manifest to their launcher instead of using this helper.
 func Executable(string) (inspect.ArtifactIdentity, error) {
 	return inspect.ArtifactIdentity{}, errors.New(

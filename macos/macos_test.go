@@ -86,7 +86,8 @@ func TestNativeDeveloperClientDeclaresEveryCapabilityBoundary(t *testing.T) {
 		},
 		"Sources/OpenRealtimeMac/OpenRealtimeMacApp.swift": {
 			"OPENREALTIME_NATIVE_ENDPOINT_DIRECTORY", "nativeEndpointDirectoryData",
-			"isRegularFileKey", "1 << 20",
+			"isRegularFileKey", "1 << 20", "--openrealtime-connect-on-launch",
+			"--openrealtime-hosted-smoke=", "OPENREALTIME_HOSTED_COMPANION_PROOF",
 		},
 		"Sources/OpenRealtimeMac/ContentView.swift": {
 			"Server debug timeline", "Raw protocol log", "Generated files",
@@ -113,6 +114,19 @@ func TestNativeDeveloperClientDeclaresEveryCapabilityBoundary(t *testing.T) {
 	} {
 		if _, err := os.Lstat(retired); !os.IsNotExist(err) {
 			t.Errorf("retired built-in native effect implementation remains at %s: %v", retired, err)
+		}
+	}
+	if _, err := os.Stat("verify-hosted-companion.sh"); err != nil {
+		t.Fatalf("hosted companion gate is missing: %v", err)
+	}
+	if output, err := exec.Command("bash", "-n", "verify-hosted-companion.sh").CombinedOutput(); err != nil {
+		t.Fatalf("hosted companion gate is not valid shell: %v\n%s", err, output)
+	}
+	if runtime.GOOS != "darwin" {
+		if output, err := exec.Command("bash", "./verify-hosted-companion.sh").CombinedOutput(); err == nil {
+			t.Fatalf("hosted companion gate unexpectedly passed off macOS: %s", output)
+		} else if !strings.Contains(string(output), "requires macOS") {
+			t.Fatalf("hosted companion gate did not fail at its platform boundary: %v\n%s", err, output)
 		}
 	}
 }
