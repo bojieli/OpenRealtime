@@ -4,6 +4,120 @@ import Foundation
 #endif
 import OpenRealtimeClientCore
 
+private final class RealtimeWebSocketSessionDelegate: NSObject,
+    URLSessionWebSocketDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: URLSessionWebSocketTask?
+    private var outcome: Result<Void, Error>?
+    private var continuation: CheckedContinuation<Void, Error>?
+    private var timeoutWorkItem: DispatchWorkItem?
+
+    func waitUntilOpen(
+        _ webSocket: URLSessionWebSocketTask, timeout: TimeInterval
+    ) async throws {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation {
+                (next: CheckedContinuation<Void, Error>) in
+                register(next, for: webSocket, timeout: timeout)
+            }
+        } onCancel: {
+            finish(
+                webSocket,
+                with: .failure(CancellationError())
+            )
+        }
+    }
+
+    func cancel(_ webSocket: URLSessionWebSocketTask, reason: String) {
+        finish(webSocket, with: .failure(ClientError(reason)))
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didOpenWithProtocol protocol: String?
+    ) {
+        finish(webSocketTask, with: .success(()))
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+        reason: Data?
+    ) {
+        finish(
+            webSocketTask,
+            with: .failure(
+                ClientError("WebSocket closed before opening (code \(closeCode.rawValue))")
+            )
+        )
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        guard let webSocket = task as? URLSessionWebSocketTask, let error else { return }
+        finish(webSocket, with: .failure(error))
+    }
+
+    private func register(
+        _ next: CheckedContinuation<Void, Error>,
+        for webSocket: URLSessionWebSocketTask,
+        timeout: TimeInterval
+    ) {
+        var immediate: Result<Void, Error>?
+        lock.lock()
+        if let task, task !== webSocket {
+            immediate = .failure(ClientError("WebSocket open delegate was rebound"))
+        } else if continuation != nil {
+            immediate = .failure(ClientError("WebSocket open wait was registered twice"))
+        } else {
+            task = webSocket
+            if let outcome {
+                immediate = outcome
+            } else {
+                continuation = next
+                let workItem = DispatchWorkItem { [weak self, weak webSocket] in
+                    guard let self, let webSocket else { return }
+                    self.finish(
+                        webSocket,
+                        with: .failure(
+                            ClientError("WebSocket opening handshake timed out")
+                        )
+                    )
+                }
+                timeoutWorkItem = workItem
+                DispatchQueue.global(qos: .utility).asyncAfter(
+                    deadline: .now() + timeout, execute: workItem
+                )
+            }
+        }
+        lock.unlock()
+        if let immediate { next.resume(with: immediate) }
+    }
+
+    private func finish(
+        _ webSocket: URLSessionWebSocketTask,
+        with result: Result<Void, Error>
+    ) {
+        var waiter: CheckedContinuation<Void, Error>?
+        lock.lock()
+        if task == nil { task = webSocket }
+        if task === webSocket, outcome == nil {
+            outcome = result
+            waiter = continuation
+            continuation = nil
+            timeoutWorkItem?.cancel()
+            timeoutWorkItem = nil
+        }
+        lock.unlock()
+        waiter?.resume(with: result)
+    }
+}
+
 @MainActor
 final class RealtimeClient {
     var onEvent: (([String: Any]) -> Void)?
@@ -11,6 +125,7 @@ final class RealtimeClient {
     var onProtocol: ((String, [String: Any]) -> Void)?
 
     private var session: URLSession?
+    private var sessionDelegate: RealtimeWebSocketSessionDelegate?
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var writerTask: Task<Void, Never>?
@@ -64,9 +179,13 @@ final class RealtimeClient {
         configuration.urlCredentialStorage = nil
         configuration.httpShouldSetCookies = false
         configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        let urlSession = URLSession(configuration: configuration)
+        let delegate = RealtimeWebSocketSessionDelegate()
+        let urlSession = URLSession(
+            configuration: configuration, delegate: delegate, delegateQueue: nil
+        )
         let webSocket = urlSession.webSocketTask(with: request)
         session = urlSession
+        sessionDelegate = delegate
         socket = webSocket
 
         var continuation: AsyncStream<String>.Continuation?
@@ -86,7 +205,7 @@ final class RealtimeClient {
 
         webSocket.resume()
         do {
-            try await waitForOpen(webSocket)
+            try await delegate.waitUntilOpen(webSocket, timeout: 20)
         } catch {
             tearDown(notify: false, reason: "connection failed")
             diagnostics?.updateState("failed")
@@ -109,10 +228,14 @@ final class RealtimeClient {
         sendContinuation = nil
         writerTask?.cancel()
         writerTask = nil
-        socket?.cancel(with: .normalClosure, reason: nil)
+        if let socket {
+            sessionDelegate?.cancel(socket, reason: "WebSocket opening handshake cancelled")
+            socket.cancel(with: .normalClosure, reason: nil)
+        }
         socket = nil
         session?.invalidateAndCancel()
         session = nil
+        sessionDelegate = nil
         queuedMessages = 0
         diagnostics?.updateQueue(0)
         diagnostics?.updateState("disconnected")
@@ -176,31 +299,6 @@ final class RealtimeClient {
         } catch {
             guard socket === webSocket else { return }
             fail("connection closed: \(error.localizedDescription)")
-        }
-    }
-
-    private nonisolated func waitForOpen(_ webSocket: URLSessionWebSocketTask) async throws {
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask { try await Self.sendPing(webSocket) }
-            group.addTask {
-                try await Task.sleep(nanoseconds: 20_000_000_000)
-                throw ClientError("WebSocket opening handshake timed out")
-            }
-            defer { group.cancelAll() }
-            _ = try await group.next()
-        }
-    }
-
-    private nonisolated static func sendPing(_ webSocket: URLSessionWebSocketTask) async throws {
-        try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<Void, Error>) in
-            webSocket.sendPing { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume()
-                }
-            }
         }
     }
 

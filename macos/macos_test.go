@@ -21,7 +21,8 @@ func TestNativeDeveloperClientDeclaresEveryCapabilityBoundary(t *testing.T) {
 		"Sources/OpenRealtimeMac/RealtimeClient.swift": {
 			"URLSessionWebSocketTask", "input_audio_buffer.append",
 			"openrealtime.input_video_frame.append", "strictJSON.parse",
-			"TransportDiagnosticsPublisher",
+			"TransportDiagnosticsPublisher", "URLSessionWebSocketDelegate",
+			"didOpenWithProtocol", "WebSocket opening handshake timed out",
 		},
 		"Sources/OpenRealtimeMac/NativeReducerController.swift": {
 			"RealtimeReducerService", "\"kind\": \"inbound\"", "\"kind\": \"tool_result\"",
@@ -130,6 +131,27 @@ func TestNativeDeveloperClientDeclaresEveryCapabilityBoundary(t *testing.T) {
 			t.Fatalf("hosted companion gate unexpectedly passed off macOS: %s", output)
 		} else if !strings.Contains(string(output), "requires macOS") {
 			t.Fatalf("hosted companion gate did not fail at its platform boundary: %v\n%s", err, output)
+		}
+	}
+}
+
+func TestNativeRealtimeOpenWaitUsesTheHandshakeDelegateAndCannotHangOnPing(t *testing.T) {
+	transport, err := os.ReadFile("Sources/OpenRealtimeMac/RealtimeClient.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(transport)
+	for _, required := range []string{
+		"URLSessionWebSocketDelegate", "didOpenWithProtocol", "withTaskCancellationHandler",
+		"DispatchWorkItem", "sessionDelegate?.cancel", "delegate.waitUntilOpen",
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("native realtime transport lost bounded handshake delegate contract %q", required)
+		}
+	}
+	for _, forbidden := range []string{"sendPing", "withThrowingTaskGroup"} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("native realtime transport retains cancellation-unsafe open probe %q", forbidden)
 		}
 	}
 }
