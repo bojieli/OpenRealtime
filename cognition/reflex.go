@@ -210,6 +210,9 @@ func (engine *Engine) RunVisualReflex(ctx context.Context, request Request) (Vis
 			return projected, nil
 		}
 	}
+	if strings.TrimSpace(request.VisualIntentID) != "" {
+		projection = onlyCurrentIntentVisualActions(projection, request.CurrentVisualCallIDs)
+	}
 	if request.CompletedVisualActions > 0 {
 		// The typed chunk count tells this receding-horizon role what already
 		// succeeded. Hiding resolved coordinate calls prevents a small tool model
@@ -217,11 +220,20 @@ func (engine *Engine) RunVisualReflex(ctx context.Context, request Request) (Vis
 		// private target label for the next control.
 		projection = withoutResolvedVisualActionCoordinates(projection)
 	}
+	liveTask := request.VisualTask
+	if request.CompletedVisualActions > 0 && strings.TrimSpace(request.NextVisualAction) != "" {
+		// The full ordered task remains in the system instruction, where it tells
+		// the actor whether another chunk follows. Give the structurally stronger
+		// temporary user turn only the current receding-horizon chunk. An unchanged
+		// post-effect frame otherwise makes a small vision model select the still-
+		// visible first control again even though typed progress says it succeeded.
+		liveTask = request.NextVisualAction
+	}
 	result, err := reflex.runner.RunLiveProjected(bounded, contract, continuation.Invocation{
 		Instruction: Instruct(engine.visualPrompt(reflex.instruction), request), SourceRevision: request.SourceRevision,
 		Capabilities: visualReflexCapabilities(reflex.catalog.Capabilities(), tools),
 		Tools:        tools, MaxOutputTokens: reflex.maxTokens,
-	}, request.VisualTask, projection, nil)
+	}, liveTask, projection, nil)
 	if err != nil {
 		return VisualReflexOutcome{Kind: VisualReflexAbstain, Result: result}, err
 	}
@@ -245,6 +257,45 @@ func (engine *Engine) RunVisualReflex(ctx context.Context, request Request) (Vis
 			fmt.Errorf("%w: unknown outcome %q", ErrMalformedVisualReflex, outcome.Kind)
 	}
 	return outcome, nil
+}
+
+func onlyCurrentIntentVisualActions(
+	project continuation.TrajectoryProjection, retainedCallIDs []string,
+) continuation.TrajectoryProjection {
+	retained := make(map[string]struct{}, len(retainedCallIDs))
+	for _, callID := range retainedCallIDs {
+		if callID = strings.TrimSpace(callID); callID != "" {
+			retained[callID] = struct{}{}
+		}
+	}
+	return func(snapshot trajectory.Snapshot) (trajectory.Snapshot, error) {
+		projected, err := project(snapshot)
+		if err != nil {
+			return projected, err
+		}
+		foreign := make(map[string]struct{})
+		for _, item := range projected.Items {
+			if item.Kind != trajectory.KindToolCall || item.ToolCall == nil ||
+				!strings.HasPrefix(item.ToolCall.Name, "computer.") {
+				continue
+			}
+			if _, keep := retained[item.ToolCall.CallID]; !keep {
+				foreign[item.ToolCall.CallID] = struct{}{}
+			}
+		}
+		projected.Items = slices.DeleteFunc(projected.Items, func(item trajectory.Item) bool {
+			if item.Kind == trajectory.KindToolCall && item.ToolCall != nil {
+				_, remove := foreign[item.ToolCall.CallID]
+				return remove
+			}
+			if item.Kind == trajectory.KindToolResult && item.ToolResult != nil {
+				_, remove := foreign[item.ToolResult.CallID]
+				return remove
+			}
+			return false
+		})
+		return projected, nil
+	}
 }
 
 func withoutResolvedVisualActionCoordinates(

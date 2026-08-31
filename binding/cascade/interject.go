@@ -592,9 +592,9 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 			VisualUnstable: decision.Revision.UnstableText,
 			Standing:       standing, Counting: runtime.countingIsInForce(),
 			Because: string(interaction.ActActSilently),
-			Heard:   decision.Revision.Text(), InFlight: inFlightToolNames(runtime.store.Snapshot()),
-			CompletedVisualActions: runtime.completedVisualActionsForIntent(runtime.store.Snapshot(), visualIntentID),
+			Heard:   decision.Revision.Text(), InFlight: inFlightToolNames(snapshot),
 		}
+		runtime.prepareVisualRequest(snapshot, &request)
 		// runSlow rather than the engine directly: a proposal that nobody
 		// dispatches is a key nobody presses. The engine produces the call and
 		// the runtime is what executes it, and calling past that layer meant
@@ -875,9 +875,9 @@ func (runtime *runtime) runLiveVisualMicroTurn(pending liveVisualDecision) {
 		SourceRevision: pending.context.Revision.ID, VisualIntentID: intentID, VisualTask: task,
 		VisualUnstable: pending.context.Revision.UnstableText,
 		Standing:       standing, Counting: runtime.countingIsInForce(), Silent: true,
-		Heard: pending.context.Revision.Text(), InFlight: inFlightToolNames(runtime.store.Snapshot()),
-		CompletedVisualActions: runtime.completedVisualActionsForIntent(runtime.store.Snapshot(), intentID),
+		Heard: pending.context.Revision.Text(), InFlight: inFlightToolNames(snapshot),
 	}
+	runtime.prepareVisualRequest(snapshot, &request)
 	if explicitVisualActionsComplete(request) {
 		// The newest ASR prefix contains no complete screen command beyond the
 		// chunks already executed. Wait for the clause to finish instead of

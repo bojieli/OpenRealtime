@@ -374,6 +374,39 @@ func TestCompletedVisualActionsForIntentCountsOnlyRealSuccessfulEffects(t *testi
 	}
 }
 
+func TestPrepareVisualRequestBindsNextChunkAndCurrentIntentHistory(t *testing.T) {
+	runtime := &runtime{visualIntentByCall: map[string]string{
+		"open": "utterance-1", "summary": "utterance-2",
+	}}
+	snapshot := trajectory.Snapshot{Items: []trajectory.Item{
+		{
+			ID: "open-call", Kind: trajectory.KindToolCall,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseFast},
+			ToolCall: &trajectory.ToolCall{
+				CallID: "open", Name: "computer.click_normalized",
+				Arguments: json.RawMessage(`{"source":"screen","x":120,"y":840}`),
+			},
+		},
+		{
+			ID: "open-result", Kind: trajectory.KindToolResult,
+			ToolResult: &trajectory.ToolResult{
+				CallID: "open", Name: "computer.click_normalized", Output: json.RawMessage(`"clicked"`),
+			},
+		},
+	}}
+	request := cognition.Request{
+		VisualIntentID: "utterance-1",
+		VisualTask:     "Open the launch review, share your screen, and report the metric.",
+	}
+	runtime.prepareVisualRequest(snapshot, &request)
+	if request.CompletedVisualActions != 1 || request.NextVisualAction != "share your screen" {
+		t.Fatalf("prepared progress = %d next %q", request.CompletedVisualActions, request.NextVisualAction)
+	}
+	if !slices.Equal(request.CurrentVisualCallIDs, []string{"open"}) {
+		t.Fatalf("prepared call IDs = %v, want only current intent", request.CurrentVisualCallIDs)
+	}
+}
+
 func TestPureSuccessfulVisualResultBatchIsControllerMemory(t *testing.T) {
 	runtime := &runtime{visualIntentByCall: map[string]string{"click-1": "utterance-1"}}
 	batch := eventloop.Batch{

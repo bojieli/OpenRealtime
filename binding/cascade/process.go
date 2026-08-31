@@ -206,7 +206,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		PendingRepair:  len(trajectory.PendingRepairs(snapshot)) > 0,
 	}
 	if request.VisualIntentID != "" {
-		request.CompletedVisualActions = runtime.completedVisualActionsForIntent(snapshot, request.VisualIntentID)
+		runtime.prepareVisualRequest(snapshot, &request)
 	}
 	// A visual reflex is a separate optional cognition role, not a mutation of
 	// the voice. It gets first refusal only on a batch carrying current visual
@@ -605,8 +605,8 @@ func (runtime *runtime) processParallelVisual(ctx context.Context, batch eventlo
 		VisualTask: task,
 		Standing:   standing, Counting: runtime.countingIsInForce(), Silent: true,
 		InFlight: inFlightToolNames(snapshot), PendingRepair: len(trajectory.PendingRepairs(snapshot)) > 0,
-		CompletedVisualActions: runtime.completedVisualActionsForIntent(snapshot, intentID),
 	}
+	runtime.prepareVisualRequest(snapshot, &request)
 	if explicitVisualActionsComplete(request) {
 		// This observer frame satisfies the fresh-frame barrier after the last
 		// chunk, but the user has not completed another screen command yet. Do
@@ -2488,6 +2488,34 @@ func (runtime *runtime) completedVisualActionsForIntent(
 		}
 	}
 	return completed
+}
+
+// prepareVisualRequest binds the semantic action horizon and effect history to
+// one controller intent. The cognition package deliberately does not parse
+// interaction language or own cascade's call-to-intent ledger; this boundary
+// supplies both as typed state before the direct-pixel role is invoked.
+func (runtime *runtime) prepareVisualRequest(
+	snapshot trajectory.Snapshot, request *cognition.Request,
+) {
+	if request == nil || strings.TrimSpace(request.VisualIntentID) == "" {
+		return
+	}
+	request.CompletedVisualActions = runtime.completedVisualActionsForIntent(
+		snapshot, request.VisualIntentID,
+	)
+	if next, ok := interaction.ExplicitVisualActionAt(
+		request.VisualTask, request.CompletedVisualActions,
+	); ok {
+		request.NextVisualAction = next
+	}
+	runtime.visualActionMu.Lock()
+	for callID, intentID := range runtime.visualIntentByCall {
+		if strings.TrimSpace(intentID) == strings.TrimSpace(request.VisualIntentID) {
+			request.CurrentVisualCallIDs = append(request.CurrentVisualCallIDs, callID)
+		}
+	}
+	runtime.visualActionMu.Unlock()
+	slices.Sort(request.CurrentVisualCallIDs)
 }
 
 func resultOrder(calls []trajectory.ToolCall, indexed map[string]trajectory.ToolResult) []trajectory.ToolResult {

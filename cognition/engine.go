@@ -238,6 +238,19 @@ type Request struct {
 	// state; this text prevents a recognizer-created tail such as "and begin
 	// presenting" from being treated as independent coordinate authority.
 	VisualTask string
+	// NextVisualAction is the controller-parsed current action chunk. After one
+	// or more ordered actions succeed, the visual provider receives this clause
+	// as its temporary user turn instead of the full sequence, while VisualTask
+	// remains in the instruction for ordering and continuation state. This keeps
+	// an unchanged screen from drawing the actor back to the first visible
+	// control in a request such as "open the review, then share your screen".
+	NextVisualAction string
+	// CurrentVisualCallIDs names computer calls dispatched for VisualIntentID.
+	// The visual projection uses it to retain only same-intent effect memory.
+	// Calls from an earlier correction target, and rejected model candidates
+	// that never crossed the effect boundary, must not become few-shot examples
+	// whose stripped private fields override the current action schema.
+	CurrentVisualCallIDs []string
 	// VisualUnstable is the recognizer's provisional tail for a live visual
 	// decision. It lets the direct-pixel actor distinguish a complete named
 	// target from an ASR prefix such as "over" that may become "Overview" on

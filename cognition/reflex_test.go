@@ -160,7 +160,7 @@ func TestVisualReflexNextChunkDoesNotSeeCompletedCoordinates(t *testing.T) {
 	}
 	if _, err := engine.RunVisualReflex(context.Background(), cognition.Request{
 		SourceRevision: 3, VisualTask: "Open the launch review, share your screen.",
-		CompletedVisualActions: 1,
+		NextVisualAction: "share your screen", CompletedVisualActions: 1,
 	}); err != nil {
 		t.Fatalf("run next visual chunk: %v", err)
 	}
@@ -174,6 +174,74 @@ func TestVisualReflexNextChunkDoesNotSeeCompletedCoordinates(t *testing.T) {
 	}
 	if !strings.Contains(provider.seen.Invocation.Instruction, "Earlier coordinate arguments are intentionally omitted") {
 		t.Fatalf("next visual chunk lacked coordinate-isolation instruction: %q", provider.seen.Invocation.Instruction)
+	}
+	userTasks := 0
+	for _, item := range provider.seen.Trajectory.Items {
+		if item.Kind == trajectory.KindObservation && trajectory.AuthorityOf(item) == trajectory.AuthorityUser {
+			userTasks++
+			if item.Content != "share your screen" {
+				t.Fatalf("provider-visible action chunk = %q, want current next action", item.Content)
+			}
+		}
+	}
+	if userTasks != 1 {
+		t.Fatalf("next visual chunk retained %d user tasks, want one", userTasks)
+	}
+}
+
+func TestVisualReflexRetainsOnlyComputerHistoryForTheCurrentIntent(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		retained []string
+		wantCall bool
+	}{
+		{name: "new correction excludes preceding intent"},
+		{name: "same intent preserves effect memory", retained: []string{"summary"}, wantCall: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			provider := reflexProvider(continuation.Event{
+				Kind: continuation.EventAssistantDelta, Text: "WAIT",
+			})
+			engine, store := reflexEngine(t, provider, time.Second)
+			if err := store.Append(trajectory.Item{
+				ID: "summary-call", Kind: trajectory.KindToolCall, MonotonicNS: 2,
+				Producer: trajectory.Producer{Phase: trajectory.PhaseFast},
+				ToolCall: &trajectory.ToolCall{
+					CallID: "summary", Name: "computer.click_normalized",
+					Arguments: json.RawMessage(`{"source":"screen","x":500,"y":800}`),
+				},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Append(trajectory.Item{
+				ID: "summary-result", Kind: trajectory.KindToolResult, MonotonicNS: 3,
+				Producer: trajectory.Producer{Phase: trajectory.PhaseTool},
+				ToolResult: &trajectory.ToolResult{
+					CallID: "summary", Name: "computer.click_normalized", Output: json.RawMessage(`"clicked"`),
+				},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			_, err := engine.RunVisualReflex(context.Background(), cognition.Request{
+				SourceRevision: 2, VisualIntentID: "correction", VisualTask: "Go back to Overview.",
+				CurrentVisualCallIDs: test.retained,
+			})
+			if err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			calls, results := 0, 0
+			for _, item := range provider.seen.Trajectory.Items {
+				if item.Kind == trajectory.KindToolCall {
+					calls++
+				}
+				if item.Kind == trajectory.KindToolResult {
+					results++
+				}
+			}
+			if got := calls == 1 && results == 1; got != test.wantCall {
+				t.Fatalf("retained call/result = %d/%d, want history %t", calls, results, test.wantCall)
+			}
+		})
 	}
 }
 
