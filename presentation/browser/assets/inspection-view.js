@@ -49,6 +49,7 @@ export default {
     };
     const changed = inspection.subscribe((access) => {
       generation++;
+      section.dataset.sessionId = access?.session_id ?? "";
       refresh.disabled = !access;
       availability.textContent = access ? "available" : "waiting";
       identity.textContent = access

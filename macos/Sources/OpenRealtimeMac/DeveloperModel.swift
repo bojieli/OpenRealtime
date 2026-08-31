@@ -6,6 +6,9 @@ import OpenRealtimeClientCore
 @MainActor
 final class DeveloperModel: ObservableObject {
     let endpoint: String
+    let distribution: String
+    let manifestFingerprint: String
+    let endpointFingerprint: String
     @Published var token = ""
     @Published var systemPrompt = """
     You are a realtime development assistant. You can hear the microphone, receive typed text, and see explicitly shared screen, camera, and browser frames. When negotiated, use only the scoped client effects declared by the host. Answer briefly and use artifacts when information is better viewed than spoken.
@@ -15,6 +18,8 @@ final class DeveloperModel: ObservableObject {
     @Published var selectedDisplayID: CGDirectDisplayID = 0
 
     @Published var connectionState: ConnectionState = .disconnected
+    @Published private(set) var sessionID = ""
+    @Published private(set) var updatedSessionID = ""
     @Published var statusText = "not connected"
     @Published var negotiationText = ""
     @Published var transportDiagnosticsText = "transport idle"
@@ -97,6 +102,9 @@ final class DeveloperModel: ObservableObject {
             distribution: distribution, endpointDirectoryData: endpointDirectoryData
         )
         self.assembly = assembly
+        self.distribution = distribution.rawValue
+        manifestFingerprint = assembly.manifest.manifestFingerprint
+        endpointFingerprint = assembly.endpointDirectory.fingerprint
         endpoint = try assembly.endpointDirectory.endpoint(
             named: .realtimeWebSocket,
             protocol: NativeEndpoint.realtimeWebSocketProtocol
@@ -123,6 +131,11 @@ final class DeveloperModel: ObservableObject {
 
         reducer.observeProtocol { [weak self] direction, event in
             self?.recordProtocol(direction, event)
+            if direction == "IN", event["type"] as? String == "session.updated",
+               let session = event["session"] as? [String: Any],
+               let sessionID = session["id"] as? String, !sessionID.isEmpty {
+                self?.updatedSessionID = sessionID
+            }
         }
         assembly.view.attach(
             onMount: { [weak self] in self?.bindProjections() },
@@ -478,6 +491,7 @@ final class DeveloperModel: ObservableObject {
         let reason = connection["reason"] as? String ?? ""
         let attempt = (connection["attempt"] as? NSNumber)?.intValue ?? 0
         let session = snapshot["session"] as? [String: Any] ?? [:]
+        sessionID = (session["id"] as? String) ?? ""
         let response = snapshot["response"] as? [String: Any] ?? [:]
         switch phase {
         case "connecting":
