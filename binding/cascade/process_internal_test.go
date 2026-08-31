@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/cognition"
 	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/interaction"
@@ -530,6 +531,42 @@ func TestCompositeSpeechCoverageFollowsCanonicalAssistantVisibility(t *testing.T
 		cancelledSnapshot, "utterance-1", task,
 	); active {
 		t.Fatal("cancelled composite speech still covered the canonical endpoint")
+	}
+}
+
+func TestCompositeSpeechCoverageUsesLedgerBeforeVisibilityCommits(t *testing.T) {
+	ledger := action.NewLedger()
+	runtime := &runtime{ledger: ledger}
+	runtime.markCompositeResumeSpoken(
+		"utterance-1",
+		"Present the overview. If an alert appears, acknowledge it without stopping your presentation.",
+		[]string{"assistant-1"},
+	)
+	task := "Present the overview. If an alert appears, acknowledge it without stopping your presentation."
+	preparedOnly := trajectory.Snapshot{Items: []trajectory.Item{{
+		ID: "assistant-1", Kind: trajectory.KindAssistant, Visibility: trajectory.VisibilityPrepared,
+		Content: "Here is the overview.", Producer: trajectory.Producer{Phase: trajectory.PhaseFast},
+	}}}
+	if err := ledger.Prepare(action.Commitment{
+		ID: "speech-1", Kind: action.KindSpeech, AssistantItemIDs: []string{"assistant-1"},
+	}); err != nil {
+		t.Fatalf("prepare speech coverage: %v", err)
+	}
+	if err := ledger.Queue("speech-1"); err != nil {
+		t.Fatalf("queue speech coverage: %v", err)
+	}
+	if ids, active := runtime.activeCompositeResumeSpeechFor(
+		preparedOnly, "utterance-1", task,
+	); !active || !slices.Equal(ids, []string{"assistant-1"}) {
+		t.Fatalf("ledger queue did not cover pre-visibility endpoint: %q, %t", ids, active)
+	}
+	if _, err := ledger.Cancel("speech-1", "user resumed"); err != nil {
+		t.Fatalf("cancel queued speech: %v", err)
+	}
+	if _, active := runtime.activeCompositeResumeSpeechFor(
+		preparedOnly, "utterance-1", task,
+	); active {
+		t.Fatal("cancelled ledger commitment still covered the endpoint")
 	}
 }
 

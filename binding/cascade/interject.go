@@ -11,6 +11,7 @@ import (
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 
+	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/cognition"
 	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/interaction"
@@ -1226,6 +1227,33 @@ func (runtime *runtime) activeCompositeResumeSpeechFor(
 	coverage, covered := runtime.compositeResumeSpeechFor(intentID, task)
 	if !covered {
 		return nil, false
+	}
+	coveredIDs := make(map[string]struct{}, len(coverage.assistantItemIDs))
+	for _, assistantItemID := range coverage.assistantItemIDs {
+		coveredIDs[assistantItemID] = struct{}{}
+	}
+	if runtime.ledger != nil {
+		matched := false
+		for _, commitment := range runtime.ledger.Snapshot() {
+			if commitment.Kind != action.KindSpeech && commitment.Kind != action.KindText {
+				continue
+			}
+			carriesCoverage := slices.ContainsFunc(commitment.AssistantItemIDs, func(id string) bool {
+				_, found := coveredIDs[id]
+				return found
+			})
+			if !carriesCoverage {
+				continue
+			}
+			matched = true
+			switch commitment.State {
+			case action.StateQueued, action.StateEmitting, action.StatePlayed:
+				return coverage.assistantItemIDs, true
+			}
+		}
+		if matched {
+			return nil, false
+		}
 	}
 	visibility := trajectory.AssistantVisibility(snapshot)
 	for _, assistantItemID := range coverage.assistantItemIDs {
