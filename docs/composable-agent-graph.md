@@ -2219,24 +2219,27 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   its complete create-only source/evaluation receipt bundle is sealed by review
   manifest
   `sha256:e899491212b6426114661d0898d9797823207b660f59a85671f50cb93257d020`.
-- [ ] Run all sixteen OpenRealtime Realtime-CU v1 cases (eight task families
-  under pixel and set-of-mark observation variants). Candidate-04 completed
-  16/16 with zero infrastructure failures through the clean binary, frozen
-  Qwen/Whisper deployments, production profile, authenticated WebSocket, and
-  live-inspection path. Its exact Gemini 3.7 Flash campaign retained and
-  reopened all 16 synchronized A/V evaluations and agreed with every
-  deterministic outcome; result
-  `realtime-cu-candidate-exact16-20260831-04-full-reviewed.json` is
-  `sha256:2df4222fb1e2ca677055533af2a4e55e1ab56df92bcb7e1dcafb51f9290bc3de`
-  and its reportable review manifest is
-  `sha256:88de2d8a995e26087b187e9cb62d8c1094eb18eeffb43fc0200ecf087a44f8b9`.
-  Quality remains open: 0/8 pixel plus 4/8 set-of-mark trails the trusted 6/16
-  slow-only reference. Retained calls and direct sealed-request replay traced
-  the pixel regression to Qwen emitting trained 0–1000 frame coordinates under
-  the absolute-pixel tool name. Pixel grounding now selects the existing typed
-  normalized-click contract exclusively and maps it through the exact target
-  fence; the affected pixel cases and then a fresh full immutable suite must
-  pass before this box closes.
+- [x] Run all sixteen OpenRealtime Realtime-CU v1 cases (eight task families
+  under pixel and set-of-mark observation variants). Candidate-05 at clean
+  commit `7f16cb1` completed 16/16 with zero infrastructure failures through
+  the immutable binary, frozen Qwen/Whisper deployments, production profile,
+  authenticated WebSocket, real Chromium capture, and live-inspection path.
+  The normalized pixel contract raised pixel quality from candidate-04's 0/8
+  to 4/8; set-of-mark held at 4/8, for 8/16 overall versus the trusted
+  slow-only reference's 6/16. All eight successes met their deadlines versus
+  five timely reference successes, while cue-to-action latency improved from
+  4,645/13,579 ms reference p50/p95 to 671/1,296 ms. Observation-path latency
+  remains a final aggregate non-regression concern: frame-to-observation p50
+  rose from 6 to 321 ms and cue-to-observation p50 from 312 to 691 ms. All 16
+  synchronized A/V attempts are graph-native-attested and reportable; the
+  exact `google/gemini-3.7-flash` reviews were retained, reopened without
+  credentials, and agreed with every deterministic outcome. The retained
+  result is
+  `realtime-cu-candidate-exact16-20260831-05-full-reviewed.json`
+  (`sha256:1f61f502203c6e259cccc0eda67b7435fd8201660d54d3a436fe6f3020cf3d30`);
+  its complete create-only source/evaluation receipt bundle is sealed by review
+  manifest
+  `sha256:dfa568a061dabc9323f74d195bccc891056d423e76f9360df6f0cc690ad93bcb`.
 - [x] Compose the FDB v1.5, FDB v3, FD-Bench, and tau-Voice direct commands
   with the candidate-only evidence plug-in. `-review-prefix` reserves a fresh
   current-run source namespace, preflights exact `gemini-3.7-flash` without a
