@@ -30,6 +30,7 @@ const candidateReviewDefaultConcurrency = 16
 // the candidate evidence API. Benchmark packages know only candidate.Plugin;
 // Gemini and filesystem publication remain an offline CLI concern.
 type candidateReviewCLIConfig struct {
+	Suite             string
 	Prefix            string
 	Provider          string
 	APIKeyEnvironment string
@@ -87,8 +88,9 @@ func (paths candidateReviewPaths) aggregateOptions(sensitive []string) campaign.
 }
 
 type candidateReviewOperations struct {
-	preflight func(context.Context, string) error
-	run       func(
+	automaticPath func(string) (string, error)
+	preflight     func(context.Context, string) error
+	run           func(
 		context.Context, candidateReviewPaths, string, []string, int,
 	) (campaign.AggregateBundle, error)
 	verify func(context.Context, candidateReviewPaths) (campaign.AggregateBundle, error)
@@ -96,8 +98,9 @@ type candidateReviewOperations struct {
 
 func productionCandidateReviewOperations() candidateReviewOperations {
 	return candidateReviewOperations{
-		preflight: preflightExactCandidateReviewer,
-		run:       runExactCandidateReviewCampaign,
+		automaticPath: automaticBenchmarkArtifactPath,
+		preflight:     preflightExactCandidateReviewer,
+		run:           runExactCandidateReviewCampaign,
 		verify: func(ctx context.Context, paths candidateReviewPaths) (campaign.AggregateBundle, error) {
 			return campaign.VerifyAggregate(ctx, paths.aggregateOptions(nil))
 		},
@@ -127,14 +130,11 @@ func openCandidateReviewCLIWithOperations(
 	ctx context.Context, config candidateReviewCLIConfig, deploymentToken, endpoint string,
 	lookupEnv func(string) (string, bool), operations candidateReviewOperations,
 ) (*candidateReviewCLIResources, error) {
-	if strings.TrimSpace(config.Prefix) == "" {
-		if config.Prefix != "" ||
-			(config.Provider != "" && config.Provider != gemini.RegistrationName) ||
-			(config.APIKeyEnvironment != "" && config.APIKeyEnvironment != "GEMINI_API_KEY") ||
-			(config.Concurrency != 0 && config.Concurrency != candidateReviewDefaultConcurrency) {
-			return nil, errors.New("candidate review options require -review-prefix")
-		}
-		return nil, nil
+	if err := validateBenchmarkArtifactSuite(config.Suite); err != nil {
+		return nil, errors.New("candidate review suite identity is invalid")
+	}
+	if config.Prefix != "" && strings.TrimSpace(config.Prefix) != config.Prefix {
+		return nil, errors.New("candidate review prefix is noncanonical")
 	}
 	if ctx == nil {
 		return nil, errors.New("open candidate review CLI: nil context")
@@ -160,6 +160,24 @@ func openCandidateReviewCLIWithOperations(
 	if err != nil {
 		return nil, err
 	}
+	origin, err := candidate.NewRunOrigin(
+		candidate.OriginProduction, bench.TransportWebSocket, endpoint,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("candidate review run origin: %w", err)
+	}
+	if operations.preflight == nil || operations.run == nil || operations.verify == nil {
+		return nil, errors.New("candidate review operations are incomplete")
+	}
+	if config.Prefix == "" {
+		if operations.automaticPath == nil {
+			return nil, errors.New("candidate review automatic artifact path operation is missing")
+		}
+		config.Prefix, err = operations.automaticPath(config.Suite)
+		if err != nil {
+			return nil, err
+		}
+	}
 	paths, err := resolveCandidateReviewPaths(config.Prefix)
 	if err != nil {
 		return nil, err
@@ -169,15 +187,6 @@ func openCandidateReviewCLIWithOperations(
 	}
 	if err := requireFreshCandidateReviewPaths(paths); err != nil {
 		return nil, err
-	}
-	origin, err := candidate.NewRunOrigin(
-		candidate.OriginProduction, bench.TransportWebSocket, endpoint,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("candidate review run origin: %w", err)
-	}
-	if operations.preflight == nil || operations.run == nil || operations.verify == nil {
-		return nil, errors.New("candidate review operations are incomplete")
 	}
 	if err := operations.preflight(ctx, apiKey); err != nil {
 		return nil, err

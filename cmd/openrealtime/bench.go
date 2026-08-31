@@ -84,32 +84,11 @@ func runBench(arguments []string, output io.Writer) error {
 		return errors.New("usage: openrealtime bench <execution|architecture|meeting|realtime-cu|fdb|fdbv3|fdbench|tau-voice|dynacu|review-candidate|verify-candidate-review> [flags]")
 	}
 	suite := strings.ToLower(strings.TrimSpace(arguments[0]))
-	switch suite {
-	case "execution", "attestation":
-		return runExecutionRequirement(arguments[1:], output)
-	case "architecture", "architecture-pair", "f52":
-		return runArchitecturePair(arguments[1:], output)
-	case "fdb", "fdb-v1.5":
-		return runFDB(arguments[1:], output)
-	case "fdbench", "fd-bench":
-		return runFDBench(arguments[1:], output)
-	case "fdbv3", "fdb-v3":
-		return runFDBv3(arguments[1:], output)
-	case "tau-voice", "tauvoice", "tau":
-		return runTauVoice(arguments[1:], output)
-	case "realtime-cu", "realtime-computer-use", "computer-use":
-		return runRealtimeCU(arguments[1:], output)
-	case "meeting", "meeting-assistant", "live-meeting":
-		return runMeeting(arguments[1:], output)
-	case "dynacu":
-		return runDynaCU(arguments[1:], output)
-	case "review-candidate":
-		return runCandidateReviewRecovery(arguments[1:], output)
-	case "verify-candidate-review":
-		return runCandidateReviewVerification(arguments[1:], output)
-	default:
+	dispatch, found := resolveBenchmarkDispatch(suite)
+	if !found {
 		return fmt.Errorf("unknown suite %q", suite)
 	}
+	return dispatch.run(arguments[1:], output)
 }
 
 type meetingCommandDependencies struct {
@@ -196,11 +175,22 @@ func runMeetingWithDependencies(
 		return errors.New("meeting accepts flags only")
 	}
 	if list {
+		if err := rejectReviewFlagsForNonAttempt(flags, "meeting -list"); err != nil {
+			return err
+		}
 		for _, task := range meeting.Suite() {
 			fmt.Fprintf(output, "%-34s %-20s %s\n", task.ID, task.Category, task.Difficulty)
 		}
 		return nil
 	}
+	var err error
+	reviewConfig.Directory, err = resolveBenchmarkReviewDestination(
+		"meeting", reviewConfig.Directory, reviewConfig.Resume, automaticBenchmarkArtifactPath,
+	)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(output, "meeting review root: %s\n", reviewConfig.Directory)
 	cell, err := resolveCellFrom(
 		meeting.ReferenceCell(), cellName, referenceLevels, varyFactor, varyLevel,
 	)
@@ -228,12 +218,12 @@ func runMeetingWithDependencies(
 	if err != nil {
 		return err
 	}
-	var evidence meeting.EvidencePlugin
-	if reviewResources != nil {
-		evidence = reviewResources.bundle
+	if reviewResources == nil || reviewResources.bundle == nil {
+		return errors.New("meeting attempt requires an active recording and review evidence plug-in")
 	}
+	var evidence meeting.EvidencePlugin = reviewResources.bundle
 	var result bench.Result
-	if reviewResources != nil && reviewResources.resumedResult != nil {
+	if reviewResources.resumedResult != nil {
 		result = *reviewResources.resumedResult
 		resumeContext, cancelResume := context.WithTimeout(context.WithoutCancel(ctx), 12*time.Minute)
 		err = reviewResources.bundle.FinishSuite(resumeContext, result)
@@ -248,13 +238,11 @@ func runMeetingWithDependencies(
 			Progress:        func(line string) { fmt.Fprintln(output, line) },
 		})
 	}
-	if reviewResources != nil {
-		retentionContext, cancelRetention := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
-		retentionErr := reviewResources.retain(retentionContext, output)
-		cancelRetention()
-		err = errors.Join(err, retentionErr)
-		err = errors.Join(err, reviewResources.close())
-	}
+	retentionContext, cancelRetention := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+	retentionErr := reviewResources.retain(retentionContext, output)
+	cancelRetention()
+	err = errors.Join(err, retentionErr)
+	err = errors.Join(err, reviewResources.close())
 	if err != nil {
 		return err
 	}
@@ -866,6 +854,9 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 		return errors.New("realtime-cu accepts flags only")
 	}
 	if list {
+		if err := rejectReviewFlagsForNonAttempt(flags, "realtime-cu -list"); err != nil {
+			return err
+		}
 		for _, task := range realtimecu.Suite() {
 			fmt.Fprintf(output, "%-30s %-18s %-6s %s\n", task.ID, task.Category, task.Difficulty, axes(task.Axes))
 		}
@@ -874,6 +865,14 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 	if fps != 3 {
 		return errors.New("the production Realtime-CU benchmark profile requires exactly 3 fps")
 	}
+	var err error
+	reviewConfig.Directory, err = resolveBenchmarkReviewDestination(
+		"realtime-cu", reviewConfig.Directory, reviewConfig.Resume, automaticBenchmarkArtifactPath,
+	)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(output, "Realtime-CU review root: %s\n", reviewConfig.Directory)
 	cell, err := resolveRealtimeCUCell(cellName, referenceLevels, varyFactor, varyLevel)
 	if err != nil {
 		return err
@@ -912,14 +911,14 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if reviewResources == nil || reviewResources.bundle == nil {
+		return errors.New("Realtime-CU attempt requires an active synchronized A/V review evidence plug-in")
+	}
 	var result bench.Result
-	if reviewResources != nil && reviewResources.resumedResult != nil {
+	if reviewResources.resumedResult != nil {
 		result, err = finishRealtimeCUReviewResume(ctx, reviewResources)
 	} else {
-		var evidence realtimecu.EvidencePlugin
-		if reviewResources != nil {
-			evidence = reviewResources.bundle
-		}
+		var evidence realtimecu.EvidencePlugin = reviewResources.bundle
 		result, err = realtimecu.Run(ctx, realtimecu.Options{
 			Endpoint: endpoint, Token: deploymentToken, Model: model,
 			Cell: cell, Browser: browser, Observers: splitList(observers), Groundings: selectedGroundings,
@@ -928,14 +927,12 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 			Progress: func(line string) { fmt.Fprintln(output, line) },
 		})
 	}
-	if reviewResources != nil {
-		retentionContext, cancelRetention := context.WithTimeout(
-			context.WithoutCancel(ctx), 2*time.Minute,
-		)
-		retentionErr := reviewResources.retain(retentionContext, output)
-		cancelRetention()
-		err = errors.Join(err, retentionErr, reviewResources.close())
-	}
+	retentionContext, cancelRetention := context.WithTimeout(
+		context.WithoutCancel(ctx), 2*time.Minute,
+	)
+	retentionErr := reviewResources.retain(retentionContext, output)
+	cancelRetention()
+	err = errors.Join(err, retentionErr, reviewResources.close())
 	if strings.TrimSpace(out) != "" && result.Suite != "" {
 		if writeErr := result.Write(out); writeErr != nil {
 			err = errors.Join(err, writeErr)
@@ -976,11 +973,6 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 	var releaseErr error
 	if reportErr := result.Reportable(); reportErr != nil {
 		fmt.Fprintf(output, "\nNOT REPORTABLE: %v\n", reportErr)
-	} else if reviewResources == nil {
-		releaseErr = errors.New(
-			"deterministic Realtime-CU result lacks the required synchronized A/V and Gemini 3.7 Flash evidence",
-		)
-		fmt.Fprintf(output, "\ndeterministic result reportable; NOT EVIDENCE-COMPLETE: %v\n", releaseErr)
 	} else if !reviewResources.evidenceComplete {
 		releaseErr = errors.New(
 			"Realtime-CU result lacks a fully verified exact16 source/evaluation receipt set",
@@ -1044,7 +1036,7 @@ func axes(values []realtimecu.Axis) string {
 
 func runFDB(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench fdb", flag.ContinueOnError)
-	var reviewConfig candidateReviewCLIConfig
+	reviewConfig := candidateReviewCLIConfig{Suite: "fdb-v1-5"}
 	var (
 		root            string
 		endpoint        string
@@ -1107,15 +1099,14 @@ func runFDB(arguments []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
+	fmt.Fprintf(output, "candidate review prefix: %s\n", reviewResources.paths.Prefix)
 	runOptions := fdb.Options{
 		Root: root, Endpoint: endpoint, Token: deploymentToken, Model: model,
 		Cell: cell, Categories: wanted, Limit: limit, Timeout: timeout,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	}
-	if reviewResources != nil {
-		runOptions.Evidence, runOptions.EvidenceOrigin = reviewResources.bundle, reviewResources.origin
-	}
+	runOptions.Evidence, runOptions.EvidenceOrigin = reviewResources.bundle, reviewResources.origin
 	result, runErr := fdb.Run(ctx, runOptions)
 	reviewErr := finishCandidateReviewIfConfigured(ctx, reviewResources, output)
 	if runErr != nil || reviewErr != nil {
@@ -1217,7 +1208,7 @@ func readResult(path string) (bench.Result, error) {
 
 func runFDBench(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench fdbench", flag.ContinueOnError)
-	var reviewConfig candidateReviewCLIConfig
+	reviewConfig := candidateReviewCLIConfig{Suite: "fd-bench"}
 	var (
 		root            string
 		endpoint        string
@@ -1256,6 +1247,9 @@ func runFDBench(arguments []string, output io.Writer) error {
 		return err
 	}
 	if list {
+		if err := rejectReviewFlagsForNonAttempt(flags, "fdbench -list"); err != nil {
+			return err
+		}
 		available, err := fdbench.Conditions(root)
 		if err != nil {
 			return err
@@ -1296,15 +1290,14 @@ func runFDBench(arguments []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
+	fmt.Fprintf(output, "candidate review prefix: %s\n", reviewResources.paths.Prefix)
 	runOptions := fdbench.Options{
 		Root: root, Conditions: selected, Endpoint: endpoint, Token: deploymentToken,
 		Model: model, Cell: cell, Limit: limit, LatencyBudget: budget, Timeout: timeout,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	}
-	if reviewResources != nil {
-		runOptions.Evidence, runOptions.EvidenceOrigin = reviewResources.bundle, reviewResources.origin
-	}
+	runOptions.Evidence, runOptions.EvidenceOrigin = reviewResources.bundle, reviewResources.origin
 	result, runErr := fdbench.Run(ctx, runOptions)
 	reviewErr := finishCandidateReviewIfConfigured(ctx, reviewResources, output)
 	if runErr != nil || reviewErr != nil {
@@ -1347,7 +1340,7 @@ func runFDBench(arguments []string, output io.Writer) error {
 
 func runFDBv3(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench fdbv3", flag.ContinueOnError)
-	var reviewConfig candidateReviewCLIConfig
+	reviewConfig := candidateReviewCLIConfig{Suite: "fdb-v3"}
 	var (
 		root            string
 		endpoint        string
@@ -1400,15 +1393,14 @@ func runFDBv3(arguments []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
+	fmt.Fprintf(output, "candidate review prefix: %s\n", reviewResources.paths.Prefix)
 	runOptions := fdbv3.Options{
 		Root: root, Endpoint: endpoint, Token: deploymentToken, Model: model,
 		Cell: cell, Limit: limit, Timeout: timeout,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	}
-	if reviewResources != nil {
-		runOptions.Evidence, runOptions.EvidenceOrigin = reviewResources.bundle, reviewResources.origin
-	}
+	runOptions.Evidence, runOptions.EvidenceOrigin = reviewResources.bundle, reviewResources.origin
 	result, runErr := fdbv3.Run(ctx, runOptions)
 	reviewErr := finishCandidateReviewIfConfigured(ctx, reviewResources, output)
 	if runErr != nil || reviewErr != nil {
@@ -1449,7 +1441,6 @@ func runDynaCU(arguments []string, output io.Writer) error {
 		tokenEnv      string
 		model         string
 		aoiDir        string
-		out           string
 		category      string
 		difficulty    string
 		taskIDs       string
@@ -1458,7 +1449,6 @@ func runDynaCU(arguments []string, output io.Writer) error {
 		stepInterval  time.Duration
 		withoutImages bool
 		withoutList   bool
-		resume        bool
 		python        string
 		timeout       time.Duration
 		verify        bool
@@ -1470,7 +1460,6 @@ func runDynaCU(arguments []string, output io.Writer) error {
 	flags.StringVar(&tokenEnv, "token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token")
 	flags.StringVar(&model, "model", "openrealtime", "model to request")
 	flags.StringVar(&aoiDir, "aoi-dir", defaultAOIDir(), "prepared AOI checkout; see scripts/prepare-dynacu.sh")
-	flags.StringVar(&out, "out", "", "write the result to this path as JSON")
 	flags.StringVar(&category, "category", "", "restrict to one category, e.g. A_podcast or S_static")
 	flags.StringVar(&difficulty, "difficulty", "", "restrict to easy, medium, or hard")
 	flags.StringVar(&taskIDs, "tasks", "", "comma-separated task IDs, for reproducing one row")
@@ -1479,7 +1468,6 @@ func runDynaCU(arguments []string, output io.Writer) error {
 	flags.DurationVar(&stepInterval, "step-interval", 2*time.Second, "how long the agent observes between actions")
 	flags.BoolVar(&withoutImages, "no-images", false, "withhold screenshots, leaving audio and the element list")
 	flags.BoolVar(&withoutList, "no-page-elements", false, "withhold the interactive-element list")
-	flags.BoolVar(&resume, "resume", false, "continue an interrupted run rather than starting again")
 	flags.StringVar(&python, "python", "", "interpreter with the AOI dependencies; empty prefers the checkout's own")
 	flags.DurationVar(&timeout, "timeout", 6*time.Hour, "bound on the whole run")
 	flags.BoolVar(&verify, "verify", false, "check the environment and exit without running")
@@ -1503,7 +1491,7 @@ func runDynaCU(arguments []string, output io.Writer) error {
 		Category: category, Difficulty: difficulty, Limit: limit,
 		MaxSteps: maxSteps, StepInterval: stepInterval,
 		WithoutImages: withoutImages, WithoutPageElements: withoutList,
-		Resume: resume, Python: python, Timeout: timeout, Cell: cell,
+		Python: python, Timeout: timeout, Cell: cell,
 		Logf: func(format string, args ...any) {
 			fmt.Fprintf(output, format+"\n", args...)
 		},
@@ -1521,38 +1509,10 @@ func runDynaCU(arguments []string, output io.Writer) error {
 		fmt.Fprintf(output, "dynacu: ready at revision %s\n", dynacu.PinnedRevision)
 		return nil
 	}
-
-	result, runErr := dynacu.Run(ctx, config)
-	if runErr != nil && len(result.Tasks) == 0 {
-		return runErr
-	}
-	fmt.Fprintln(output)
-	fmt.Fprintf(output, "suite      : %s (%d tasks declared)\n", result.Suite, result.Expected)
-	fmt.Fprintf(output, "completed  : %d\n", result.Summary.Completed)
-	fmt.Fprintf(output, "invalid    : %d\n", result.Summary.Failed)
-	fmt.Fprintf(output, "passed     : %d\n", result.Summary.Passed)
-	if result.Summary.Complete {
-		fmt.Fprintf(output, "pass rate  : %.3f\n", result.Summary.PassRate)
-	} else {
-		fmt.Fprintf(output, "incomplete : %s\n", result.Summary.Incompleteness)
-	}
-	fmt.Fprintln(output, "\nby category:")
-	breakdown := dynacu.Breakdown(result)
-	for _, category := range dynacu.Categories {
-		summary, present := breakdown[category]
-		if !present {
-			continue
-		}
-		fmt.Fprintf(output, "  %-12s %2d/%2d passed  (%d invalid)\n",
-			category, summary.Passed, summary.Completed, summary.Invalid)
-	}
-	if strings.TrimSpace(out) != "" {
-		if err := result.Write(out); err != nil {
-			return err
-		}
-		fmt.Fprintf(output, "\nwritten to %s\n", out)
-	}
-	return runErr
+	return errors.New(
+		"DynaCU attempts are disabled until the pinned AOI Realtime adapter is composed with " +
+			"create-only synchronized A/V, action-context, and exact-review evidence; use -verify only",
+	)
 }
 
 // defaultAOIDir is where scripts/prepare-dynacu.sh puts the checkout.
@@ -1571,7 +1531,7 @@ func runTauVoice(arguments []string, output io.Writer) error {
 		return runTauVoiceInventory(arguments[1:], output)
 	}
 	flags := flag.NewFlagSet("openrealtime bench tau-voice", flag.ContinueOnError)
-	var reviewConfig candidateReviewCLIConfig
+	reviewConfig := candidateReviewCLIConfig{Suite: "tau-voice"}
 	var (
 		tau2Dir         string
 		endpoint        string
@@ -1689,8 +1649,8 @@ func runTauVoice(arguments []string, output io.Writer) error {
 		Logf:      func(format string, args ...any) { fmt.Fprintf(output, format+"\n", args...) },
 	}
 	if verifyOnly {
-		if strings.TrimSpace(reviewConfig.Prefix) != "" {
-			return errors.New("tau-voice -verify does not execute candidate attempts and cannot use -review-prefix")
+		if err := rejectReviewFlagsForNonAttempt(flags, "tau-voice -verify"); err != nil {
+			return err
 		}
 		if err := config.Verify(ctx); err != nil {
 			return err
@@ -1706,9 +1666,8 @@ func runTauVoice(arguments []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if reviewResources != nil {
-		config.Evidence, config.EvidenceOrigin = reviewResources.bundle, reviewResources.origin
-	}
+	fmt.Fprintf(output, "candidate review prefix: %s\n", reviewResources.paths.Prefix)
+	config.Evidence, config.EvidenceOrigin = reviewResources.bundle, reviewResources.origin
 	result, runErr := tauvoice.Run(ctx, config)
 	reviewErr := finishCandidateReviewIfConfigured(ctx, reviewResources, output)
 	if runErr != nil || reviewErr != nil {

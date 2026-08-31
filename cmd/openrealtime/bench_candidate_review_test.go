@@ -18,7 +18,7 @@ import (
 
 func candidateReviewFixtureConfig(prefix string) candidateReviewCLIConfig {
 	return candidateReviewCLIConfig{
-		Prefix: prefix, Provider: gemini.RegistrationName,
+		Suite: "fixture-suite", Prefix: prefix, Provider: gemini.RegistrationName,
 		APIKeyEnvironment: "TEST_GEMINI_KEY", Concurrency: 16,
 	}
 }
@@ -30,16 +30,37 @@ func candidateReviewFixtureLookup(name string) (string, bool) {
 	return "gemini-review-key-fixture-long-enough", true
 }
 
-func TestOpenCandidateReviewCLILeavesEvidenceUnconfiguredWithoutPrefix(t *testing.T) {
+func TestOpenCandidateReviewCLIAutomaticallyRetainsEvidenceWithoutPrefix(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "automatic-candidate")
+	preflighted := false
 	resources, err := openCandidateReviewCLIWithOperations(
 		t.Context(), candidateReviewCLIConfig{
+			Suite:    "fixture-suite",
 			Provider: gemini.RegistrationName, APIKeyEnvironment: "GEMINI_API_KEY",
 			Concurrency: 16,
-		}, "", "ws://127.0.0.1:8765/v1/realtime", os.LookupEnv,
-		candidateReviewOperations{},
+		}, "", "ws://127.0.0.1:8765/v1/realtime", func(name string) (string, bool) {
+			return "gemini-review-key-fixture-long-enough", name == "GEMINI_API_KEY"
+		}, candidateReviewOperations{
+			automaticPath: func(suite string) (string, error) {
+				if suite != "fixture-suite" {
+					t.Fatalf("automatic suite = %q", suite)
+				}
+				return prefix, nil
+			},
+			preflight: func(context.Context, string) error { preflighted = true; return nil },
+			run: func(context.Context, candidateReviewPaths, string, []string, int) (campaign.AggregateBundle, error) {
+				return campaign.AggregateBundle{}, nil
+			},
+			verify: func(context.Context, candidateReviewPaths) (campaign.AggregateBundle, error) {
+				return campaign.AggregateBundle{}, nil
+			},
+		},
 	)
-	if err != nil || resources != nil {
-		t.Fatalf("unconfigured candidate review resources=%+v error=%v", resources, err)
+	if err != nil || resources == nil || resources.paths.Prefix != prefix || !preflighted {
+		t.Fatalf("automatic candidate review resources=%+v error=%v preflight=%v", resources, err, preflighted)
+	}
+	if err := resources.bundle.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -100,7 +121,7 @@ func TestOpenCandidateReviewCLIRejectsInvalidConfigurationWithoutMutation(t *tes
 		{
 			name: "provider",
 			config: candidateReviewCLIConfig{
-				Prefix: filepath.Join(parent, "provider"), Provider: "google.latest",
+				Suite: "fixture-suite", Prefix: filepath.Join(parent, "provider"), Provider: "google.latest",
 				APIKeyEnvironment: "TEST_GEMINI_KEY", Concurrency: 16,
 			},
 			lookup: candidateReviewFixtureLookup,
@@ -108,7 +129,7 @@ func TestOpenCandidateReviewCLIRejectsInvalidConfigurationWithoutMutation(t *tes
 		{
 			name: "concurrency",
 			config: candidateReviewCLIConfig{
-				Prefix: filepath.Join(parent, "concurrency"), Provider: gemini.RegistrationName,
+				Suite: "fixture-suite", Prefix: filepath.Join(parent, "concurrency"), Provider: gemini.RegistrationName,
 				APIKeyEnvironment: "TEST_GEMINI_KEY", Concurrency: 17,
 			},
 			lookup: candidateReviewFixtureLookup,
@@ -116,7 +137,7 @@ func TestOpenCandidateReviewCLIRejectsInvalidConfigurationWithoutMutation(t *tes
 		{
 			name: "credential",
 			config: candidateReviewCLIConfig{
-				Prefix: filepath.Join(parent, "credential"), Provider: gemini.RegistrationName,
+				Suite: "fixture-suite", Prefix: filepath.Join(parent, "credential"), Provider: gemini.RegistrationName,
 				APIKeyEnvironment: "MISSING_REVIEW_KEY", Concurrency: 16,
 			},
 			lookup: func(string) (string, bool) { return "", false },
@@ -152,6 +173,35 @@ func TestOpenCandidateReviewCLIRejectsInvalidConfigurationWithoutMutation(t *tes
 				}
 			}
 		})
+	}
+}
+
+func TestOpenCandidateReviewCLIMissingCredentialDoesNotReserveAutomaticPath(t *testing.T) {
+	automaticCalled, preflightCalled := false, false
+	resources, err := openCandidateReviewCLIWithOperations(
+		t.Context(), candidateReviewCLIConfig{
+			Suite: "fdb-v1-5", Provider: gemini.RegistrationName,
+			APIKeyEnvironment: "MISSING_REVIEW_KEY", Concurrency: 16,
+		}, "", "ws://127.0.0.1:8765/v1/realtime", func(string) (string, bool) {
+			return "", false
+		}, candidateReviewOperations{
+			automaticPath: func(string) (string, error) {
+				automaticCalled = true
+				return filepath.Join(t.TempDir(), "must-not-be-used"), nil
+			},
+			preflight: func(context.Context, string) error { preflightCalled = true; return nil },
+			run: func(context.Context, candidateReviewPaths, string, []string, int) (campaign.AggregateBundle, error) {
+				return campaign.AggregateBundle{}, nil
+			},
+			verify: func(context.Context, candidateReviewPaths) (campaign.AggregateBundle, error) {
+				return campaign.AggregateBundle{}, nil
+			},
+		},
+	)
+	if err == nil || resources != nil || automaticCalled || preflightCalled ||
+		!strings.Contains(err.Error(), "unset") {
+		t.Fatalf("missing credential resources=%+v error=%v automatic=%v preflight=%v",
+			resources, err, automaticCalled, preflightCalled)
 	}
 }
 
