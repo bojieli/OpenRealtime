@@ -33,6 +33,15 @@ struct OpenRealtimeMacApp: App {
                 distribution: distribution, pinnedDirectoryData: endpoints
             )
             host = assembled
+            // A refusal that happens inside the host is still a refusal: the
+            // hosted gate has to fail on it rather than wait out its deadline
+            // against a client that was never built.
+            if automation.hostedSmokeNonce != nil, assembled.model == nil {
+                hostedSmokeRecord(
+                    "FAILURE", "native client initialization failed: \(assembled.launchFailure)"
+                )
+                Darwin.exit(EXIT_FAILURE)
+            }
             if automation.connectOnLaunch || automation.hostedSmokeNonce != nil,
                let developer = assembled.model {
                 Task { @MainActor in
@@ -147,7 +156,7 @@ private func runHostedSmoke(
                 "schema": "openrealtime/macos/hosted-companion-proof/v3",
                 "nonce": nonce,
                 "session_id": developer.sessionID,
-                "transport": "websocket",
+                "transport": developer.transportKind,
                 "distribution": developer.distribution,
                 "manifest_fingerprint": developer.manifestFingerprint,
                 "endpoint_fingerprint": developer.endpointFingerprint,
@@ -176,7 +185,10 @@ private func runHostedSmoke(
     }
     hostedSmokeRecord("FAILURE", lastFailure)
     developer.shutdown()
-    NSApplication.shared.terminate(nil)
+    // A gate that reports FAILURE and exits zero is a gate a caller has to
+    // parse to discover it failed. The proof line remains the evidence; the
+    // status is the answer to "did this work".
+    Darwin.exit(EXIT_FAILURE)
 }
 
 private func hostedSmokeMessage(_ value: String) -> String {

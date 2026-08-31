@@ -583,3 +583,87 @@ func TestNativeProvidersDependOnTheTransportProtocol(t *testing.T) {
 		}
 	}
 }
+
+// Two transports carry the same session. Which one a client uses is deployment
+// wiring — the endpoint directory names exactly one realtime endpoint — and the
+// provider graph is rebuilt around it rather than switched at runtime.
+func TestNativeClientSelectsTheDeclaredRealtimeTransport(t *testing.T) {
+	core, err := os.ReadFile("../client/reducer/swift/NativeClientCore.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Exactly one realtime endpoint, either kind.
+	for _, fragment := range []string{
+		"native endpoint directory declares two realtime transports",
+		"native endpoint directory declares no realtime transport",
+		"operations: [\"websocket\", \"webrtc\"]",
+	} {
+		if !strings.Contains(string(core), fragment) {
+			t.Errorf("portable core no longer states %q", fragment)
+		}
+	}
+	assembly, err := os.ReadFile("Sources/OpenRealtimeMac/NativeClientAssembly.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(assembly), "macos.realtime-transport.v2") {
+		t.Error("the transport provider no longer states that it builds either transport")
+	}
+	for _, fragment := range []string{"RealtimeClient(strictJSON:", "WebRTCTransport(strictJSON:"} {
+		if !strings.Contains(string(assembly), fragment) {
+			t.Errorf("the transport provider cannot build %q", fragment)
+		}
+	}
+	// The reducer decides barge-in behaviour from the transport's own name, so
+	// a transport that misreports itself would skip clearing the server's
+	// audio buffer on a WebRTC interruption.
+	reducer, err := os.ReadFile("Sources/OpenRealtimeMac/NativeReducerController.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(reducer), `"transport": transport.transportKind`) {
+		t.Error("the reducer is told a hardcoded transport name")
+	}
+	webrtc, err := os.ReadFile("Sources/OpenRealtimeMac/WebRTCTransport.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{
+		`var transportKind: String { "webrtc" }`,
+		// Audio is RTP on this transport; an appended delta would be a second
+		// copy of the same speech.
+		"func sendAudio(_ pcm16LE: Data) {}",
+		"var carriesAudioAsMedia: Bool { true }",
+		// One-shot signalling: the adapter answers once and cannot take a
+		// later candidate.
+		"continualGatheringPolicy = .gatherOnce",
+		"oai-events",
+	} {
+		if !strings.Contains(string(webrtc), fragment) {
+			t.Errorf("the WebRTC transport no longer contains %q", fragment)
+		}
+	}
+	media, err := os.ReadFile("Sources/OpenRealtimeMac/NativePresentationProviders.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(media), "!self.transport.carriesAudioAsMedia") {
+		t.Error("the media provider still sends audio events on a media transport")
+	}
+}
+
+// A hosted smoke run that cannot build a client has to say so and exit
+// non-zero, rather than wait out its deadline against a client that was never
+// constructed.
+func TestHostedSmokeFailsFastAndLoudly(t *testing.T) {
+	app, err := os.ReadFile("Sources/OpenRealtimeMac/OpenRealtimeMacApp.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(app), "if automation.hostedSmokeNonce != nil, assembled.model == nil {") {
+		t.Error("a client that failed to build no longer fails the hosted smoke")
+	}
+	if strings.Contains(string(app), "hostedSmokeRecord(\"FAILURE\", lastFailure)\n    developer.shutdown()\n    NSApplication.shared.terminate(nil)") {
+		t.Error("the hosted smoke reports FAILURE and exits zero")
+	}
+}
