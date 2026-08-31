@@ -23,10 +23,27 @@ if [[ ! -d "${resource_bundle}" ]]; then
   exit 1
 fi
 cp -R "${resource_bundle}" "${contents_dir}/Resources/"
+# The WebRTC transport links @rpath/LiveKitWebRTC.framework, so the framework
+# has to travel inside the bundle and the executable has to be told where to
+# find it. Without both the app builds and then refuses to launch.
+webrtc_framework="${binary_dir}/LiveKitWebRTC.framework"
+if [[ ! -d "${webrtc_framework}" ]]; then
+  printf '%s\n' "missing WebRTC framework: ${webrtc_framework}" >&2
+  exit 1
+fi
+mkdir -p "${contents_dir}/Frameworks"
+cp -R "${webrtc_framework}" "${contents_dir}/Frameworks/"
+install_name_tool -add_rpath @executable_path/../Frameworks \
+  "${contents_dir}/MacOS/OpenRealtimeMac"
+
 bridge_resources="${contents_dir}/Resources/BrowserUseBridge"
 mkdir -p "${bridge_resources}"
 cp "${script_dir}/BrowserUseBridge/bridge.py" "${bridge_resources}/bridge.py"
 cp "${script_dir}/BrowserUseBridge/pyproject.toml" "${bridge_resources}/pyproject.toml"
 cp "${script_dir}/BrowserUseBridge/uv.lock" "${bridge_resources}/uv.lock"
+# The framework is signed before the bundle that contains it: install_name_tool
+# invalidated the executable's signature, and a nested framework signed after
+# its container is a signature the loader rejects.
+codesign --force --sign - "${contents_dir}/Frameworks/LiveKitWebRTC.framework"
 codesign --force --deep --sign - "${app_dir}"
 printf '%s\n' "Built ${app_dir}"
