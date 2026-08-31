@@ -63,6 +63,9 @@ export OPENREALTIME_HOSTED_COMPANION_TOKEN="hosted-companion-private-token"
   -token-env OPENREALTIME_HOSTED_COMPANION_TOKEN \
   -ready-timeout 90s \
   -shutdown-timeout 10s \
+  -- \
+  -slow-provider vllm \
+  -slow-model hosted-companion-smoke \
   >"${companion_log}" 2>&1 &
 companion_pid="$!"
 
