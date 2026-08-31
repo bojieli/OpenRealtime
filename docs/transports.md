@@ -42,7 +42,7 @@ the adapter sends against the set a plain client can send.
 openrealtime serve --webrtc-listen 127.0.0.1:8766 --webrtc-stun stun:stun.l.google.com:19302
 ```
 
-A client POSTs an SDP offer to `/v1/realtime` with `Content-Type:
+A client POSTs an SDP offer to `/v1/realtime/calls` with `Content-Type:
 application/sdp` and receives an answer. Protocol events travel on a data
 channel named `oai-events`, which is what Realtime clients already expect.
 

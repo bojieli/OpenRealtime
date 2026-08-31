@@ -41,7 +41,7 @@ The SDK's WebRTC transport only runs in a browser — it needs
 that half is bundled with esbuild and driven in Chromium:
 
 ```sh
-node browser.mjs http://127.0.0.1:8766/v1/realtime
+node browser.mjs http://127.0.0.1:8766/v1/realtime/calls
 ```
 
 The page is served from **a different origin than the adapter**, because that

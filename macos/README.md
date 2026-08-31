@@ -14,7 +14,7 @@ Two exact client distributions ship against the same server API:
   effects/artifact/download endpoint declarations. It retains native media,
   protocol diagnostics, and scoped graph inspection without inventing client
   authority.
-- `effects-developer` is an explicit compatibility distribution that mounts
+- `effects-developer` is an explicit authority-bearing distribution that mounts
   the pinned host-effects and hosted-resource providers.
 
 Set `OPENREALTIME_NATIVE_PROFILE=effects-developer` before launching to opt in
@@ -59,16 +59,24 @@ open -na "Google Chrome" --args \
 cd macos
 ./prepare-browser-use.sh
 ./build-app.sh
-open ".build/OpenRealtime Developer.app"
+cd ..
+./openrealtime companion -client macos
 ```
 
-For the bundled observer endpoint directory, launch the clean server and the
-separate presentation host from the repository root before opening the app:
+`companion` preflights the exact `.app` before starting anything, then
+supervises the clean server, separate WebRTC adapter, and descriptor-locked
+presentation host. Use `-client both` to open the browser and native observer
+against that same long-lived server, or `-client none` to leave client launch
+to another process. The equivalent manual composition remains available:
 
 ```sh
-./openrealtime serve
+./openrealtime serve \
+  -webrtc-listen 127.0.0.1:8766 \
+  -webrtc-allow-origin http://127.0.0.1:8767
 ./openrealtime present \
-  -client-profile browser-developer \
+  -client-profile browser-developer-webrtc \
+  -webrtc-endpoint http://127.0.0.1:8766/v1/realtime/calls \
+  -native-websocket-relay \
   -management-endpoint http://127.0.0.1:8765/openrealtime/v1
 ```
 
@@ -86,14 +94,12 @@ routes to the server. To select another deployment, set
 `OPENREALTIME_NATIVE_ENDPOINT_DIRECTORY` to a regular JSON file of at most
 1 MiB containing the complete exact directory. This replaces deployment
 wiring as one immutable value; it is not a place for tokens or session data.
+When companion uses a non-default presentation address it creates that exact
+file with mode `0600`, supplies it only for the launched app's lifetime, and
+removes its containing temporary directory during bounded shutdown.
 The system prompt is the base session configuration; media, video, debug, and
 host-effect providers contribute independently disposable fragments through
 the shared session-configuration service.
-
-Embedders that must migrate an old single-URL deployment can opt into the
-explicitly named `LegacyNativeSameOriginEndpointDirectory` Go adapter or
-`NativeEndpointDirectory.legacySameOrigin` Swift adapter. The bundled app and
-normal assembly path never call either compatibility API.
 
 The first use of a native medium prompts for its corresponding macOS privacy
 permission. The app never reports a source active before frames are flowing.

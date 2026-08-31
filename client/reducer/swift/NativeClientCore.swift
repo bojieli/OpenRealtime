@@ -1057,7 +1057,7 @@ public final class SessionInspectionAccessService: @unchecked Sendable {
         let path = try stringValue(
             inspection["path"], "session inspection path", ReducerLimits().maxStringBytes
         )
-        guard path.first == "/", !path.contains(".."), !path.contains("?"), !path.contains("#") else {
+        guard path == canonicalSessionInspectionPath(sessionID) else {
             throw SessionInspectionFailure("session inspection access has an invalid path")
         }
         let token = try stringValue(
@@ -1396,12 +1396,6 @@ public final class SessionInspectionClient: @unchecked Sendable {
         notify()
     }
 
-    /// Explicit compatibility adapter for deployments that published only a
-    /// realtime URL. New clients must consume a declared management endpoint.
-    public func configureLegacySameOrigin(realtimeEndpoint: String) throws {
-        try configure(managementEndpoint: Self.legacyManagementBase(for: realtimeEndpoint))
-    }
-
     public func unbind() {
         lock.lock()
         managementBase = nil
@@ -1490,6 +1484,9 @@ public final class SessionInspectionClient: @unchecked Sendable {
         }
         lock.unlock()
         let credential = try accessSource.authorizedCredential()
+        guard credential.path == canonicalSessionInspectionPath(credential.sessionID) else {
+            throw SessionInspectionFailure("session inspection capability is bound to another management path")
+        }
         let segment = credential.sessionID.addingPercentEncoding(
             withAllowedCharacters: Self.pathSegmentCharacters
         )
@@ -1562,23 +1559,6 @@ public final class SessionInspectionClient: @unchecked Sendable {
         return result
     }
 
-    private static func legacyManagementBase(for endpoint: String) throws -> String {
-        guard var components = URLComponents(string: endpoint),
-              let scheme = components.scheme?.lowercased(), ["ws", "wss"].contains(scheme),
-              let host = components.host, !host.isEmpty,
-              components.user == nil, components.password == nil else {
-            throw SessionInspectionFailure("the realtime endpoint cannot define a legacy management endpoint")
-        }
-        components.scheme = scheme == "wss" ? "https" : "http"
-        components.percentEncodedPath = "/openrealtime/v1"
-        components.query = nil
-        components.fragment = nil
-        guard let result = components.url?.absoluteString else {
-            throw SessionInspectionFailure("the realtime endpoint cannot define a legacy management endpoint")
-        }
-        return result
-    }
-
     private static var pathSegmentCharacters: CharacterSet {
         CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
     }
@@ -1590,6 +1570,10 @@ private func validSessionIdentity(_ value: String) -> Bool {
         (0x41...0x5a).contains($0) || (0x61...0x7a).contains($0) ||
             (0x30...0x39).contains($0) || [0x2e, 0x5f, 0x3a, 0x2d].contains($0)
     }
+}
+
+private func canonicalSessionInspectionPath(_ sessionID: String) -> String {
+    "/openrealtime/v1/sessions/\(sessionID)/live"
 }
 
 private func validManagementToken(_ value: String) -> Bool {
@@ -1715,28 +1699,6 @@ public enum NativeEffectEndpointResolver {
             throw ReducerFailure("the pinned host effect endpoint is invalid")
         }
         return components.url!
-    }
-
-    /// Explicit compatibility adapter for old deployments that supplied only
-    /// a realtime endpoint. Normal assembly never calls this method.
-    public static func legacySameOriginWebSocketURL(
-        realtimeEndpoint: String, declaration: NativeManifestEndpoint
-    ) throws -> URL {
-        guard var components = URLComponents(string: realtimeEndpoint),
-              let scheme = components.scheme?.lowercased(),
-              ["ws", "wss", "http", "https"].contains(scheme),
-              components.host != nil, components.user == nil, components.password == nil,
-              components.fragment == nil else {
-            throw ReducerFailure("the legacy realtime endpoint cannot define a host effect endpoint")
-        }
-        components.scheme = ["wss", "https"].contains(scheme) ? "wss" : "ws"
-        components.percentEncodedPath = declaration.path
-        components.query = nil
-        components.fragment = nil
-        guard let endpoint = components.url?.absoluteString else {
-            throw ReducerFailure("the legacy host effect endpoint cannot be derived")
-        }
-        return try websocketURL(endpoint: endpoint, declaration: declaration)
     }
 }
 
@@ -1911,51 +1873,6 @@ public struct NativeEndpointDirectory: Codable, Equatable, Sendable {
             }
         }
     }
-
-    /// Explicit compatibility adapter for old clients that accepted one
-    /// realtime URL and inferred every same-origin host route.
-    public static func legacySameOrigin(
-        realtimeEndpoint: String, manifest: NativeClientManifest
-    ) throws -> NativeEndpointDirectory {
-        guard let origin = URLComponents(string: realtimeEndpoint),
-              let scheme = origin.scheme?.lowercased(), ["ws", "wss"].contains(scheme),
-              origin.host != nil, origin.user == nil, origin.password == nil,
-              origin.query == nil, origin.fragment == nil else {
-            throw ReducerFailure("legacy native realtime endpoint is invalid")
-        }
-        var values = [NativeEndpoint(
-            name: .realtimeWebSocket,
-            protocolName: NativeEndpoint.realtimeWebSocketProtocol,
-            url: realtimeEndpoint
-        )]
-        let httpScheme = scheme == "wss" ? "https" : "http"
-        func append(_ name: NativeEndpointName, _ protocolName: String, _ path: String, _ nextScheme: String) throws {
-            var components = origin
-            components.scheme = nextScheme
-            components.percentEncodedPath = path
-            components.query = nil
-            components.fragment = nil
-            guard let url = components.url?.absoluteString else {
-                throw ReducerFailure("legacy native endpoint cannot be derived")
-            }
-            values.append(NativeEndpoint(name: name, protocolName: protocolName, url: url))
-        }
-        if manifest.providers.contains(where: { $0.service == .inspection }) {
-            try append(.management, NativeEndpoint.managementProtocol, "/openrealtime/v1", httpScheme)
-        }
-        if manifest.providers.contains(where: { $0.service == .effects }) {
-            guard let declaration = manifest.endpoints.first else {
-                throw ReducerFailure("native effects declaration is unavailable")
-            }
-            try append(.effects, NativeEndpoint.effectsProtocol, declaration.path, scheme)
-        }
-        if manifest.providers.contains(where: { $0.service == .artifacts }) {
-            try append(.artifacts, NativeEndpoint.artifactsProtocol, "/client/v1/artifacts", httpScheme)
-            try append(.downloads, NativeEndpoint.downloadsProtocol, "/client/v1/downloads", httpScheme)
-        }
-        return try freeze(values)
-    }
-
     private static func validate(_ endpoint: NativeEndpoint) throws {
         let expected: (String, Set<String>)
         switch endpoint.name {

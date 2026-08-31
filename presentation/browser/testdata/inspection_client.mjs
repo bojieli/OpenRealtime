@@ -8,7 +8,8 @@ Object.defineProperty(globalThis, "location", {
 });
 
 let access = Object.freeze({
-  session_id: "sess_one", token: "mgmt_secret_one", expires_at_ms: Date.now() + 60_000,
+  session_id: "sess_one", path: "/openrealtime/v1/sessions/sess_one/live",
+  token: "mgmt_secret_one", expires_at_ms: Date.now() + 60_000,
 });
 let updateAccess;
 const accessSource = Object.freeze({
@@ -104,6 +105,20 @@ await inspection.live().then(
   () => { throw new Error("oversized inspection response was accepted"); },
   () => {},
 );
+const canonicalAccess = access;
+access = Object.freeze({
+  ...canonicalAccess, path: "/v1/realtime/sessions/sess_one/live",
+  token: "mgmt_stale_path",
+});
+updateAccess(access);
+await inspection.live().then(
+  () => { throw new Error("stale negotiated management path was accepted"); },
+  (error) => {
+    if (!error.message.includes("another management path")) throw error;
+  },
+);
+access = canonicalAccess;
+updateAccess(access);
 
 holdNext = true;
 const pending = inspection.trace().then(
@@ -111,11 +126,12 @@ const pending = inspection.trace().then(
   (error) => error,
 );
 access = Object.freeze({
-  session_id: "sess_one", token: "mgmt_secret_two", expires_at_ms: Date.now() + 120_000,
+  session_id: "sess_one", path: "/openrealtime/v1/sessions/sess_one/live",
+  token: "mgmt_secret_two", expires_at_ms: Date.now() + 120_000,
 });
 updateAccess(access);
 const canceled = await pending;
-if (canceled?.name !== "AbortError" || notifications !== 2) {
+if (canceled?.name !== "AbortError" || notifications !== 4) {
   throw new Error("capability rotation did not cancel reads and notify exactly once");
 }
 

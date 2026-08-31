@@ -556,12 +556,6 @@ final class NativeClientCoreTests: XCTestCase {
             declaration: try XCTUnwrap(alternate.endpoints.first)
         )
         XCTAssertEqual(alternateURL.absoluteString, "wss://effects.example:9443/client/v1/effects")
-        let compatibilityURL = try NativeEffectEndpointResolver.legacySameOriginWebSocketURL(
-            realtimeEndpoint: "https://effects.example:9443/v1/realtime?model=test",
-            declaration: try XCTUnwrap(alternate.endpoints.first)
-        )
-        XCTAssertEqual(compatibilityURL, alternateURL)
-
         for replacement in [
             NativeManifestEndpoint(
                 name: "effects.local", method: "POST", path: endpoint.path,
@@ -740,25 +734,6 @@ final class NativeClientCoreTests: XCTestCase {
         XCTAssertThrowsError(try substitutedArtifact.validate(selectedBy: selectedManifest))
     }
 
-    func testEndpointDirectoryLegacyInferenceIsExplicit() throws {
-        let manifest = try fixtureManifest()
-        let directory = try NativeEndpointDirectory.legacySameOrigin(
-            realtimeEndpoint: "wss://legacy.example/v1/realtime", manifest: manifest
-        )
-        XCTAssertEqual(
-            try directory.endpoint(named: .management, protocol: NativeEndpoint.managementProtocol).url,
-            "https://legacy.example/openrealtime/v1"
-        )
-        XCTAssertEqual(
-            try directory.endpoint(named: .effects, protocol: NativeEndpoint.effectsProtocol).url,
-            "wss://legacy.example/client/v1/effects"
-        )
-        XCTAssertThrowsError(try NativeEndpointDirectory.legacySameOrigin(
-            realtimeEndpoint: "wss://user:secret@legacy.example/v1/realtime",
-            manifest: manifest
-        ))
-    }
-
     func testNativeDistributionParserFailsClosedOnUnknownValues() throws {
         XCTAssertEqual(try NativeClientDistribution.parse(nil), .observerDeveloper)
         XCTAssertEqual(try NativeClientDistribution.parse(""), .observerDeveloper)
@@ -788,6 +763,11 @@ final class NativeClientCoreTests: XCTestCase {
         let publicText = try XCTUnwrap(String(data: publicJSON, encoding: .utf8))
         XCTAssertFalse(publicText.contains("mgmt_first-token"))
         XCTAssertFalse(publicText.contains("/v1/realtime"))
+        XCTAssertThrowsError(try access.capture(event: inspectionEvent(
+            token: "mgmt_stale-path", expiresAtMS: 2_500,
+            path: "/v1/realtime/sessions/sess:test-1/live"
+        )))
+        XCTAssertEqual(access.current()?.expiresAtMS, 2_000)
 
         // An ordinary session update must not replay or revoke a capability.
         try access.capture(event: [
@@ -915,18 +895,6 @@ final class NativeClientCoreTests: XCTestCase {
         ))
     }
 
-    func testInspectionSameOriginCompatibilityIsExplicit() throws {
-        let access = SessionInspectionAccessService()
-        let client = SessionInspectionClient(accessSource: access)
-        try client.configureLegacySameOrigin(
-            realtimeEndpoint: "wss://legacy.example/v1/realtime?model=old"
-        )
-        XCTAssertThrowsError(try client.configureLegacySameOrigin(
-            realtimeEndpoint: "wss://user:secret@legacy.example/v1/realtime"
-        ))
-        client.dispose()
-        access.dispose()
-    }
 }
 
 private final class FixtureProvider: NativeClientProvider {
@@ -1115,7 +1083,9 @@ private final class TestClock: @unchecked Sendable {
     init(_ value: Int64) { self.value = value }
 }
 
-private func inspectionEvent(token: String, expiresAtMS: Int64) -> [String: Any] {
+private func inspectionEvent(
+    token: String, expiresAtMS: Int64, path: String = "/openrealtime/v1/sessions/sess:test-1/live"
+) -> [String: Any] {
     [
         "type": "session.updated",
         "session": [
@@ -1125,7 +1095,7 @@ private func inspectionEvent(token: String, expiresAtMS: Int64) -> [String: Any]
                     "enabled": true,
                     "inspection": [
                         "session_id": "sess:test-1",
-                        "path": "/v1/realtime/sessions/sess:test-1/live",
+                        "path": path,
                         "token": token,
                         "expires_at_ms": expiresAtMS,
                     ],

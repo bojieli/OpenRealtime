@@ -269,6 +269,7 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		"external.tau.upstream",
 		"local.client.swift-linux",
 		"local.presentation.chromium",
+		"local.presentation.companion",
 		"local.presentation.shared-server",
 		"local.scenario.profiled-websocket",
 		"local.sdk.official",
@@ -298,6 +299,17 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 	}
 	if !foundLiveCompletion {
 		t.Fatalf("live composable presentation gate has no exact completion assertion: %+v", livePresentation)
+	}
+	companion := byID["local.presentation.companion"]
+	if companion.Availability != AvailabilityLocal ||
+		companion.Selection != SelectionDefault ||
+		companion.SkipPolicy != SkipForbid ||
+		companion.Environment["OPENREALTIME_RELEASE_GATE"] != "1" ||
+		!slices.Equal(companion.Command, []string{
+			"{go}", "test", "-count=1", "-v", "./cmd/openrealtime", "-run",
+			"^TestPublicCompanionCommandRunsRealBrowserAndNativeClients$",
+		}) {
+		t.Fatalf("public companion release gate was weakened: %+v", companion)
 	}
 	scenarioWebSocket := byID["local.scenario.profiled-websocket"]
 	if scenarioWebSocket.Availability != AvailabilityLocal ||

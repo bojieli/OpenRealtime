@@ -59,6 +59,7 @@ func TestPresentationEndpointConfigDeclaresOnlySelectedExactEndpoints(t *testing
 		websocket  string
 		webrtc     string
 		management string
+		nativeWS   bool
 		want       map[presentation.EndpointName]string
 	}{
 		{
@@ -87,11 +88,23 @@ func TestPresentationEndpointConfigDeclaresOnlySelectedExactEndpoints(t *testing
 				presentation.EndpointManagement:     "https://management.example.test/openrealtime/v1",
 			},
 		},
+		{
+			name: "developer WebRTC with explicit native websocket", profile: "browser-developer-webrtc",
+			websocket:  "wss://realtime.example.test/v1/realtime",
+			webrtc:     "https://media.example.test/v1/realtime/calls",
+			management: "https://management.example.test/openrealtime/v1",
+			nativeWS:   true,
+			want: map[presentation.EndpointName]string{
+				presentation.EndpointRealtimeWebSocket: "wss://realtime.example.test/v1/realtime",
+				presentation.EndpointRealtimeWebRTC:    "https://media.example.test/v1/realtime/calls",
+				presentation.EndpointManagement:        "https://management.example.test/openrealtime/v1",
+			},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			config, err := presentationEndpointConfig(
-				test.profile, test.websocket, test.webrtc, test.management, "model-v1",
+				test.profile, test.websocket, test.webrtc, test.management, "model-v1", test.nativeWS,
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -159,10 +172,27 @@ func TestPresentDeveloperProfilesRequireExplicitManagementEndpoint(t *testing.T)
 
 func TestPresentationEndpointConfigRejectsCredentialBearingURL(t *testing.T) {
 	_, err := presentationEndpointConfig(
-		"browser-minimal", "wss://token:secret@realtime.example.test/v1/realtime", "", "", "",
+		"browser-minimal", "wss://token:secret@realtime.example.test/v1/realtime", "", "", "", false,
 	)
 	if err == nil || !strings.Contains(err.Error(), "credential-free") {
 		t.Fatalf("credential-bearing endpoint error = %v", err)
+	}
+}
+
+func TestPresentationWebRTCHostCanMountExplicitNativeWebSocketRelay(t *testing.T) {
+	relays, operations, err := presentationRelayFactories(
+		"browser-developer-webrtc", true, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(relays) != 2 || relays[0].id != "webrtc-relay" || relays[1].id != "websocket-relay" ||
+		operations["webrtc-relay"] != "http" || operations["websocket-relay"] != "websocket" {
+		t.Fatalf("dual relays = %#v, operations=%#v", relays, operations)
+	}
+	if _, _, err := presentationRelayFactories("browser-developer", true, nil); err == nil ||
+		!strings.Contains(err.Error(), "requires browser-developer-webrtc") {
+		t.Fatalf("invalid native relay error = %v", err)
 	}
 }
 

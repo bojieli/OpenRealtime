@@ -162,8 +162,8 @@ func (adapter *Adapter) Metrics() Metrics {
 // application/sdp, receive an answer as application/sdp.
 func (adapter *Adapter) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /v1/realtime", adapter.offer)
-	mux.HandleFunc("OPTIONS /v1/realtime", adapter.preflight)
+	mux.HandleFunc("POST /v1/realtime/calls", adapter.offer)
+	mux.HandleFunc("OPTIONS /v1/realtime/calls", adapter.preflight)
 	mux.HandleFunc("GET /healthz", func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(writer).Encode(map[string]any{

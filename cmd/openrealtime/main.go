@@ -36,6 +36,8 @@ func run(arguments []string, stdout, stderr io.Writer) error {
 		return runProbe(arguments[1:], stdout)
 	case "present":
 		return runPresent(arguments[1:], stdout)
+	case "companion":
+		return runCompanion(arguments[1:], stdout)
 	case "efficiency":
 		return runEfficiency(arguments[1:], stdout)
 	case "bench":
@@ -78,6 +80,7 @@ commands:
   serve         run the OpenRealtime server
   probe         drive a running server through one turn and report it
   present       run a descriptor-locked browser presentation host
+  companion     run the clean server and composable browser/native companion host
   conformance   verify protocol and component conformance
   efficiency    measure the costs the design claims are small
   bench         run a measurement suite against a running server

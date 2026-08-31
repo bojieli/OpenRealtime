@@ -350,33 +350,6 @@ func TestNativeEndpointDirectoryRefusesOmissionTamperSubstitutionAndCredentials(
 	}
 }
 
-func TestLegacyNativeSameOriginEndpointDirectoryIsExplicit(t *testing.T) {
-	directory, err := LegacyNativeSameOriginEndpointDirectory(
-		NativeEffectsDeveloperDistribution, "wss://legacy.example/v1/realtime",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[presentation.EndpointName]string{
-		presentation.EndpointRealtimeWebSocket: "wss://legacy.example/v1/realtime",
-		presentation.EndpointManagement:        "https://legacy.example/openrealtime/v1",
-		presentation.EndpointEffects:           "wss://legacy.example/client/v1/effects",
-		presentation.EndpointArtifacts:         "https://legacy.example/client/v1/artifacts",
-		presentation.EndpointDownloads:         "https://legacy.example/client/v1/downloads",
-	}
-	for name, url := range want {
-		endpoint, found := directory.Lookup(name)
-		if !found || endpoint.URL != url {
-			t.Fatalf("legacy native endpoint %s = %#v", name, endpoint)
-		}
-	}
-	if _, err := LegacyNativeSameOriginEndpointDirectory(
-		NativeObserverDeveloperDistribution, "wss://user:secret@legacy.example/v1/realtime",
-	); err == nil {
-		t.Fatal("legacy native compatibility accepted URL credentials")
-	}
-}
-
 func TestNativeEffectsDistributionPinsSelectedCatalogDigest(t *testing.T) {
 	defaultBundle, err := NewNativeEffectsDeveloperBundle()
 	if err != nil {
